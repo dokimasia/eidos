@@ -4,10 +4,10 @@
 package backendtest
 
 import (
-	"bytes"
 	"slices"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -22,32 +22,35 @@ import (
 // consumer's to state and the suite's [Setup] states none. A
 // satellite runs this beside the suite with the contract its own
 // binary ships.
+//
+// Every file reports on its own, so one run names each file the frame
+// refuses. A file that does not stamp, or whose frame does not verify,
+// skips the checks that read the frame.
 func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 	tb.Helper()
 
 	files, _ := runRender(tb, setup)
 	for _, f := range files {
 		stamped, err := c.Stamp(f)
-		assert.NoError(tb, err, "the rendered file stamps: "+f.Path)
+		expect.NoError(tb, err, "the rendered file stamps: "+f.Path)
 		if err != nil {
 			continue
 		}
-		assert.True(tb, bytes.Contains(stamped, f.Body),
-			"the frame contains the body byte for byte: "+f.Path)
+		expect.Contains(tb, stamped, f.Body, "the frame contains the body byte for byte: "+f.Path)
 
-		assert.Equal(tb, f.Plugins, sortedIDs(f.Plugins),
+		expect.Equal(tb, f.Plugins, sortedIDs(f.Plugins),
 			"the file's derivation is distinct and sorted: "+f.Path)
-		assert.Equal(tb, f.Sources, sortedStrings(f.Sources),
+		expect.Equal(tb, f.Sources, sortedStrings(f.Sources),
 			"the file's sources are distinct and sorted: "+f.Path)
 
 		record, err := c.Verify(stamped)
-		assert.NoError(tb, err, "the stamped file verifies whole: "+f.Path)
+		expect.NoError(tb, err, "the stamped file verifies whole: "+f.Path)
 		if err != nil {
 			continue
 		}
-		assert.Equal(tb, record.Plugins, f.Plugins,
+		expect.Equal(tb, record.Plugins, f.Plugins,
 			"the frame records the derivation the file declared: "+f.Path)
-		assert.Equal(tb, record.Sources, f.Sources,
+		expect.Equal(tb, record.Sources, f.Sources,
 			"and the sources it derives from: "+f.Path)
 	}
 }

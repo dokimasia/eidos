@@ -4,7 +4,6 @@
 package authored_test
 
 import (
-	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -13,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/authored"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -105,11 +105,7 @@ func TestWitness(t *testing.T) {
 			w := composed(t)
 			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
-			codes := make([]diag.Code, 0)
-			for d := range report.Sink.All() {
-				codes = append(codes, d.Code)
-			}
-			assert.True(t, slices.Contains(codes, directive.UnresolvedReference),
+			assert.Contains(t, coretest.Codes(report.Sink), directive.UnresolvedReference,
 				"validation refused the reference before the annotator ran")
 			_, held := meta.Get(report.Facts, f.box.TypeParams[0].ID, w.Kernel().Witness)
 			assert.False(t, held, "so nothing is stamped")

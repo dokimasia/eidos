@@ -4,11 +4,16 @@
 package symbol_test
 
 import (
+	"cmp"
+	"encoding/binary"
+	"math"
 	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -38,6 +43,11 @@ var boundary = symbol.Identity{
 
 // boundarySize is the length of boundary's spelling.
 const boundarySize = 33
+
+// parsesClosed is the property [FuzzParse] and its ForAll twin in
+// [TestIdentity] state.
+const parsesClosed = "Parse must return on any spelling, name nothing where it refuses, " +
+	"and read an identity that spells back into the same identity"
 
 // parseCase is one spelling and what [symbol.Parse] makes of it.
 type parseCase struct {
@@ -152,6 +162,12 @@ func TestIdentity(t *testing.T) {
 				assert.Equal(t, got, tt.want, "and reads back the parts it wrote")
 			})
 		}
+
+		t.Run("returns an error or an identity that spells back to itself for any spelling", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, parsesClosed, parsesBack)
+		})
 	})
 
 	t.Run("IsZero", func(t *testing.T) {
@@ -234,9 +250,9 @@ func TestIdentity(t *testing.T) {
 				t.Run(part, func(t *testing.T) {
 					t.Parallel()
 
-					assert.True(t, base.Compare(other) < 0,
+					expect.InRange(t, base.Compare(other), math.Inf(-1), -1,
 						"a lesser identity sorts before a greater one")
-					assert.True(t, other.Compare(base) > 0,
+					expect.InRange(t, other.Compare(base), 1, math.Inf(1),
 						"and the comparison reverses with its arguments")
 				})
 			}
@@ -284,70 +300,69 @@ func TestIdentity(t *testing.T) {
 }
 
 // A spelling allocates the string it returns, and nothing else reads
-// or compares with an allocation. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// or compares with an allocation. The count of the parses keeps their
+// first error, which cmp.Or returns without allocating. The check runs
+// alone, because the count includes every goroutine's allocations.
 func TestIdentityAllocs(t *testing.T) {
 	spelled := method.String()
 	other := method
 	other.Name = "Put"
+	var got string
+	assert.MaxAllocs(t, func() { got = method.String() }, 1, "String allocates the string it returns")
+	assert.Equal(t, got, spelled, "String spells the method")
+	assert.MaxAllocs(t, func() { got = boundary.String() }, 1,
+		"String allocates one string for a spelling past the 32-byte class")
+	assert.Length(t, got, boundarySize, "the spelling is 33 bytes")
+	var (
+		parsed symbol.Identity
+		err    error
+	)
 	assert.MaxAllocs(t, func() {
-		if method.String() != spelled {
-			t.Fatal("String spelled another identity")
-		}
-	}, 1, "String allocates the string it returns")
-	assert.MaxAllocs(t, func() {
-		if len(boundary.String()) != boundarySize {
-			t.Fatal("String spelled another length")
-		}
-	}, 1, "String allocates one string for a spelling past the 32-byte class")
-	assert.MaxAllocs(t, func() {
-		if _, err := symbol.Parse(spelled); err != nil {
-			t.Fatalf("Parse(%q): unexpected error: %v", spelled, err)
-		}
+		var perr error
+		parsed, perr = symbol.Parse(spelled)
+		err = cmp.Or(err, perr)
 	}, 0, "Parse allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if method.Compare(other) >= 0 {
-			t.Fatal("Compare ordered Get after Put")
-		}
-	}, 0, "Compare allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if method.PackageIdentity().IsZero() {
-			t.Fatal("PackageIdentity returned the zero identity")
-		}
-	}, 0, "PackageIdentity and IsZero allocate nothing")
+	assert.NoError(t, err, "the spelling parses")
+	assert.Equal(t, parsed, method, "back to the method")
+	var order int
+	assert.MaxAllocs(t, func() { order = method.Compare(other) }, 0, "Compare allocates nothing")
+	assert.InRange(t, order, math.Inf(-1), -1, "Get sorts before Put")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = method.PackageIdentity().IsZero() }, 0,
+		"PackageIdentity and IsZero allocate nothing")
+	assert.False(t, zero, "PackageIdentity returns the method's package")
 }
 
-// Parse reads spellings a person typed into a manifest or a
-// directive, so it meets bytes nothing generated. It returns for any
-// of them, and the grammar is closed under the round trip: an
-// identity it read spells back into the same identity.
+// FuzzParse checks [parsesClosed] on spellings nothing in this
+// repository generated: Parse reads spellings a person typed into a
+// manifest or a directive. Each seed is the choices of one case: a
+// two-byte little-endian length, then the bytes of the spelling.
 func FuzzParse(f *testing.F) {
 	for _, tt := range parseCases() {
-		f.Add(tt.in)
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(tt.in))), tt.in...))
 	}
 
-	f.Fuzz(func(t *testing.T, in string) {
-		var (
-			id       symbol.Identity
-			refusal  error
-			respelt  symbol.Identity
-			spelling string
-		)
-		assert.NotPanics(t, func() { id, refusal = symbol.Parse(in) },
-			"Parse returns on any bytes without panicking")
-		if refusal != nil {
-			assert.Equal(t, id, symbol.Identity{},
-				"a refused spelling names nothing")
-			return
-		}
+	prop.Fuzz(f, parsesClosed, parsesBack)
+}
 
-		assert.NotPanics(t, func() { spelling = id.String() },
-			"an identity spells on any parts without panicking")
-		respelt, refusal = symbol.Parse(spelling)
-		assert.NoError(t, refusal, "what Parse read spells back into the grammar")
-		assert.Equal(t, respelt, id, "and reads back as the identity it spelled")
-	})
+// parsesBack checks [parsesClosed] on a spelling that the case draws as
+// bytes.
+func parsesBack(c *prop.Case) {
+	in := string(c.Draw(prop.Bytes(), "spelling"))
+	var (
+		id       symbol.Identity
+		refusal  error
+		spelling string
+	)
+	assert.NotPanics(c, func() { id, refusal = symbol.Parse(in) }, "Parse must return on any bytes without panicking")
+	if refusal != nil {
+		assert.Equal(c, id, symbol.Identity{}, "a refused spelling must name nothing")
+		return
+	}
+	assert.NotPanics(c, func() { spelling = id.String() }, "an identity must spell on any parts without panicking")
+	respelt, refusal := symbol.Parse(spelling)
+	assert.NoError(c, refusal, "what Parse read must spell back into the grammar")
+	assert.Equal(c, respelt, id, "and must read back as the identity it spelled")
 }
 
 // BenchmarkIdentity measures the spelling, the parse and the comparison
@@ -411,7 +426,7 @@ func BenchmarkIdentity(b *testing.B) {
 		for c.Loop() {
 			order = method.Compare(other)
 		}
-		assert.True(b, order < 0, "Get sorts before Put")
+		assert.InRange(b, order, math.Inf(-1), -1, "Get sorts before Put")
 	})
 
 	b.Run("PackageIdentity", func(b *testing.B) {

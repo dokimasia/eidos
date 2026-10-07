@@ -6,6 +6,7 @@ package workspacetest
 import (
 	"context"
 	"io/fs"
+	"math"
 	"os"
 	"slices"
 	"testing"
@@ -196,9 +197,7 @@ func (c *check) Check(ctx *plugin.CheckContext) error {
 func copied(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	if f.Tree == nil {
-		tb.Fatalf("the fixture states no tree")
-	}
+	assert.NotNil(tb, f.Tree, "the fixture states a tree")
 	assert.NoError(tb, os.CopyFS(root, f.Tree), "the fixture's tree copies into the run's directory")
 }
 
@@ -207,13 +206,9 @@ func copied(tb assert.TB, f Fixture, root string) {
 func plansOf(tb assert.TB, f Fixture) []workspace.Plan {
 	tb.Helper()
 
-	if f.Plans == nil {
-		tb.Fatalf("the fixture states no plans")
-	}
+	assert.NotNil(tb, f.Plans, "the fixture states its plans")
 	plans := f.Plans()
-	if len(plans) < 2 {
-		tb.Fatalf("the suite checks at least two plans, and the fixture states %d", len(plans))
-	}
+	assert.InRange(tb, len(plans), 2, math.Inf(1), "the suite checks at least two plans")
 	return plans
 }
 
@@ -234,9 +229,7 @@ func composed(
 ) (*workspace.Workspace, error) {
 	tb.Helper()
 
-	if f.Compose == nil {
-		tb.Fatalf("the fixture states no composition")
-	}
+	assert.NotNil(tb, f.Compose, "the fixture states a composition")
 	b := f.Compose(root).Plans(plans...)
 	if edit != nil {
 		edit(b)
@@ -291,8 +284,6 @@ func treeFile(tb assert.TB, f Fixture) position.Pos {
 		return err
 	})
 	assert.NoError(tb, err, "the fixture's tree walks")
-	if first == "" {
-		tb.Fatalf("the fixture's tree contains no file")
-	}
+	assert.NotEqual(tb, first, "", "the fixture's tree contains a file")
 	return position.Pos{File: first, Line: 1, Col: 1}
 }

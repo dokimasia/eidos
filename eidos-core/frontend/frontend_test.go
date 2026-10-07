@@ -34,10 +34,6 @@ const (
 	classified    = "classified"
 )
 
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
-
 // The ceilings of a declaration's steps.
 const (
 	// newAllocs is one new declaration: the builder.
@@ -295,7 +291,7 @@ func TestFrontend(t *testing.T) {
 				Build()
 			dependent, is := f.(plugin.Dependent)
 			assert.True(t, is, "the declaration states the role")
-			_, err := dependent.Dependencies(context.Background(), &plugin.DependencyRound{Number: 1}, nil)
+			_, err := dependent.Dependencies(t.Context(), &plugin.DependencyRound{Number: 1}, nil)
 			assert.ErrorIs(t, err, refused, "the round runs the declared function")
 		})
 	})
@@ -326,7 +322,7 @@ func TestFrontend(t *testing.T) {
 		t.Run("records the classifier's stamp in the store", func(t *testing.T) {
 			t.Parallel()
 
-			g, err := loadKit(kitFake())
+			g, err := loadKit(t, kitFake())
 			assert.NoError(t, err, "the fixture loads")
 			file := symbol.Identity{
 				Lang: frontendtest.ScriptedLang, Package: storePath,
@@ -351,7 +347,7 @@ func TestFrontend(t *testing.T) {
 				Classify(markTests).
 				Resolve(inner.Resolve).
 				Build()
-			_, err := loadKit(f)
+			_, err := loadKit(t, f)
 			assert.ErrorIs(t, err, broken, "the classifiers never run over a unit the parse gave up on")
 		})
 
@@ -368,7 +364,7 @@ func TestFrontend(t *testing.T) {
 				Classify(func(*plugin.SourceUnit) error { return broken }).
 				Resolve(inner.Resolve).
 				Build()
-			_, err := loadKit(f)
+			_, err := loadKit(t, f)
 			assert.ErrorIs(t, err, broken, "the load stops and seals no half-made stamps")
 		})
 	})
@@ -377,10 +373,9 @@ func TestFrontend(t *testing.T) {
 // A declaration allocates its builder, the first entry of each list it
 // appends to, and the lowered frontend, and its setters allocate
 // nothing, in the ordinary run, which runs no benchmark. An append and a
-// Build each take a declaration built before the count, because each
+// Build each take a declaration built outside the count, because each
 // changes or freezes the declaration it is called on. The check runs
-// alone, because AllocsPerRun counts every goroutine's allocations and
-// refuses to run beside parallel tests.
+// alone, because the count includes every goroutine's allocations.
 func TestFrontendAllocs(t *testing.T) {
 	inner := frontendtest.NewScripted()
 	syntax := inner.Syntax()
@@ -390,31 +385,29 @@ func TestFrontendAllocs(t *testing.T) {
 	for _, tt := range setters(inner) {
 		var got *frontend.Builder
 		assert.MaxAllocs(t, func() { got = tt.set(b) }, 0, tt.name+" allocates nothing")
-		assert.True(t, got == b, tt.name+" returns its builder")
+		assert.Equal(t, got, b, tt.name+" returns its builder", assert.ByIdentity())
 	}
 
-	fresh, at := news(inner, allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		fresh[at].Match(anyScripted)
-		at++
-	}, appendAllocs, "Match allocates the claim of a new declaration")
-	fresh, at = news(inner, allocRuns), 0
+	fresh := func() *frontend.Builder { return frontend.New(kitName, frontendtest.ScriptedLang, syntax) }
+	var appended *frontend.Builder
+	assert.MaxAllocsWithSetup(t, fresh, func(b *frontend.Builder) { appended = b.Match(anyScripted) },
+		appendAllocs, "Match allocates the claim of a new declaration")
+	assert.NotNil(t, appended, "Match returns its builder")
 	classify := frontend.Classifier(markTests)
-	assert.MaxAllocs(t, func() {
-		fresh[at].Classify(classify)
-		at++
-	}, appendAllocs, "Classify allocates the classifier list of a new declaration")
+	assert.MaxAllocsWithSetup(t, fresh, func(b *frontend.Builder) { appended = b.Classify(classify) },
+		appendAllocs, "Classify allocates the classifier list of a new declaration")
+	assert.NotNil(t, appended, "Classify returns its builder")
 
-	bare, at := declarations(inner, allocRuns, false), 0
-	assert.MaxAllocs(t, func() {
-		bare[at].Build()
-		at++
-	}, buildAllocs, "Build allocates the lowered frontend")
-	roled, at := declarations(inner, allocRuns, true), 0
-	assert.MaxAllocs(t, func() {
-		roled[at].Build()
-		at++
-	}, buildRolesAllocs, "Build allocates the lowered frontend and the composition of its roles")
+	var built plugin.Frontend
+	assert.MaxAllocsWithSetup(t, func() *frontend.Builder { return declaration(inner, false) },
+		func(b *frontend.Builder) { built = b.Build() }, buildAllocs, "Build allocates the lowered frontend")
+	_, optioned := built.(plugin.OptionsProvider)
+	assert.False(t, optioned, "the frontend has no optional role")
+	assert.MaxAllocsWithSetup(t, func() *frontend.Builder { return declaration(inner, true) },
+		func(b *frontend.Builder) { built = b.Build() }, buildRolesAllocs,
+		"Build allocates the lowered frontend and the composition of its roles")
+	_, optioned = built.(plugin.OptionsProvider)
+	assert.True(t, optioned, "the frontend is in the options role")
 }
 
 // BenchmarkFrontend measures each step of a declaration: the builder,
@@ -442,7 +435,7 @@ func BenchmarkFrontend(b *testing.B) {
 			for c.Loop() {
 				got = tt.set(builder)
 			}
-			assert.True(b, got == builder, tt.name+" returns its builder")
+			assert.Equal(b, got, builder, tt.name+" returns its builder", assert.ByIdentity())
 		})
 	}
 
@@ -484,7 +477,7 @@ func BenchmarkFrontend(b *testing.B) {
 				got     plugin.Frontend
 			)
 			for c.Loop() {
-				c.Excluding(func() { builder = declarations(inner, 1, false)[0] })
+				c.Excluding(func() { builder = declaration(inner, false) })
 				got = builder.Build()
 			}
 			_, optioned := got.(plugin.OptionsProvider)
@@ -499,7 +492,7 @@ func BenchmarkFrontend(b *testing.B) {
 				got     plugin.Frontend
 			)
 			for c.Loop() {
-				c.Excluding(func() { builder = declarations(inner, 1, true)[0] })
+				c.Excluding(func() { builder = declaration(inner, true) })
 				got = builder.Build()
 			}
 			_, exports := got.(plugin.Exporter)
@@ -562,10 +555,10 @@ func kitTree() fstest.MapFS {
 }
 
 // loadKit drives one load over the kit tree under the suite's
-// brand with the frontend the case built, and returns the load's
-// own error.
-func loadKit(f plugin.Frontend) (*store.Graph, error) {
-	g, _, err := load.Load(context.Background(), load.Config{
+// brand with the frontend the case built, under the test's context,
+// and returns the load's own error.
+func loadKit(tb testing.TB, f plugin.Frontend) (*store.Graph, error) {
+	g, _, err := load.Load(tb.Context(), load.Config{
 		FS:        kitTree(),
 		Frontends: []plugin.Frontend{f},
 		Sink:      diag.NewSink(),
@@ -574,27 +567,15 @@ func loadKit(f plugin.Frontend) (*store.Graph, error) {
 	return g, err
 }
 
-// news returns n new declarations of the kit's frontend.
-func news(inner *frontendtest.Scripted, n int) []*frontend.Builder {
-	out := make([]*frontend.Builder, n)
-	for i := range out {
-		out[i] = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax())
+// declaration returns a whole declaration of the kit's frontend, in
+// every optional role where roles is set and in none otherwise.
+func declaration(inner *frontendtest.Scripted, roles bool) *frontend.Builder {
+	b := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+		Version("1").Match(anyScripted).Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
+	if roles {
+		b.Options(inner.Opts).
+			Dependencies(frontendtest.NewScriptedDependent().Dependencies).
+			Exports(frontendtest.NewScriptedExporter().Exports)
 	}
-	return out
-}
-
-// declarations returns n whole declarations of the kit's frontend, each
-// in every optional role where roles is set and in none otherwise.
-func declarations(inner *frontendtest.Scripted, n int, roles bool) []*frontend.Builder {
-	out := news(inner, n)
-	for i, b := range out {
-		b.Version("1").Match(anyScripted).Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
-		if roles {
-			b.Options(inner.Opts).
-				Dependencies(frontendtest.NewScriptedDependent().Dependencies).
-				Exports(frontendtest.NewScriptedExporter().Exports)
-		}
-		out[i] = b
-	}
-	return out
+	return b
 }

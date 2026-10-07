@@ -4,6 +4,7 @@
 package state_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -99,16 +100,23 @@ func TestModules(t *testing.T) {
 }
 
 // A read of the modules' counts allocates within its ceiling in the
-// ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// ordinary run, which runs no benchmark. The count keeps the first error
+// of its calls, which cmp.Or returns without allocating. The check runs
+// alone, because the count includes every goroutine's allocations.
 func TestModulesAllocs(t *testing.T) {
-	s := recordedModules(t, ledger.NewMem(), map[plugin.Module]int{rootModule: 3, nestedModule: 1}).Phases(t.Context())
+	counts := map[plugin.Module]int{rootModule: 3, nestedModule: 1}
+	s := recordedModules(t, ledger.NewMem(), counts).Phases(t.Context())
+	var (
+		got map[plugin.Module]int
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if got, err := s.Modules(); err != nil || len(got) != 2 {
-			t.Fatalf("Modules: %d modules, error %v", len(got), err)
-		}
+		var merr error
+		got, merr = s.Modules()
+		err = cmp.Or(err, merr)
 	}, modulesAllocs, "Modules allocates the table it reads and the counts")
+	assert.NoError(t, err, "the counts read")
+	assert.Equal(t, got, counts, "every module's count")
 }
 
 // BenchmarkModules measures a read of the counts of a generation that

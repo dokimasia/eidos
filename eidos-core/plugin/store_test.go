@@ -4,6 +4,7 @@
 package plugin_test
 
 import (
+	"cmp"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -227,9 +228,8 @@ func TestStore(t *testing.T) {
 // The qualified spelling allocates its joined path, the split and the
 // check allocate nothing, and a read through a helper allocates what the
 // read of the tree or the store allocates, in the ordinary run, which
-// runs no benchmark. The check runs alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// runs no benchmark. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestStoreAllocs(t *testing.T) {
 	var spelled string
 	assert.MaxAllocs(t, func() { spelled = plugin.StorePath(cacheStore, cacheFile) }, 1,
@@ -247,11 +247,10 @@ func TestStoreAllocs(t *testing.T) {
 
 	for _, tt := range storeReads(t) {
 		label := tt.name + " for " + tt.caseName
-		assert.MaxAllocs(t, func() {
-			if err := tt.own(); err != nil {
-				t.Fatalf("%s: unexpected error: %v", label, err)
-			}
-		}, plainAllocs(t, tt), label+" allocates what the read of its tree allocates")
+		var err error
+		assert.MaxAllocs(t, func() { err = cmp.Or(err, tt.own()) }, plainAllocs(t, tt),
+			label+" allocates what the read of its tree allocates")
+		assert.NoError(t, err, label+" reads")
 	}
 }
 
@@ -357,14 +356,15 @@ func storeReads(tb assert.TB) []storeRead {
 	}
 }
 
-// plainAllocs returns what the read a helper resolves to allocates: the
-// ceiling of the helper's own read, which adds nothing to it.
+// plainAllocs returns what the read a helper resolves to allocates,
+// measured with testing.AllocsPerRun: the ceiling of the helper's own
+// read, which adds nothing to it. It stops the check where the read of
+// the tree fails.
 func plainAllocs(tb assert.TB, r storeRead) uint64 {
 	tb.Helper()
 
-	return uint64(testing.AllocsPerRun(100, func() {
-		if err := r.plain(); err != nil {
-			tb.Fatalf("%s: the read of the tree failed: %v", r.name, err)
-		}
-	}))
+	var err error
+	n := testing.AllocsPerRun(100, func() { err = cmp.Or(err, r.plain()) })
+	assert.NoError(tb, err, "the read of the tree under "+r.name+" succeeds")
+	return uint64(n)
 }

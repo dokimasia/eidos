@@ -323,7 +323,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "export let x = (1;\n")
 			assert.Length(t, found, 1, "one finding")
-			assert.True(t, strings.Contains(found[0].Msg, "missing"), "the parser inserted the parenthesis")
+			assert.Contains(t, found[0].Msg, "missing", "the parser inserted the parenthesis")
 		})
 
 		t.Run("quotes at most 32 bytes of the source that does not parse", func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "export class A {\n  "+strings.Repeat("#", 40)+"\n}\n")
 			assert.NotEmpty(t, found, "the error reports")
-			assert.True(t, strings.Contains(found[0].Msg, strings.Repeat("#", 32)+"..."), "the quote is cut")
+			assert.Contains(t, found[0].Msg, strings.Repeat("#", 32)+"...", "the quote is cut")
 		})
 
 		t.Run("reports at most ten syntax errors and counts the remainder once", func(t *testing.T) {
@@ -339,7 +339,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "export {};\n"+strings.Repeat("let = ;\n", 20))
 			assert.Length(t, found, 11, "ten errors and the remainder")
-			assert.True(t, strings.Contains(found[10].Msg, "more"), "the last finding counts the rest")
+			assert.Contains(t, found[10].Msg, "more", "the last finding counts the rest")
 		})
 
 		t.Run("keeps every declaration a broken file still parses", func(t *testing.T) {

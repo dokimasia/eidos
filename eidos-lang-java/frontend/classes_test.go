@@ -590,7 +590,7 @@ func TestClasses(t *testing.T) {
 		t.Run("leaves out a field with package access at signature depth", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, slices.Contains(fieldNames(named[*node.Struct](t, libDecls(t), boxClass).Fields), "hidden"),
+			assert.NotContains(t, fieldNames(named[*node.Struct](t, libDecls(t), boxClass).Fields), "hidden",
 				"hidden has package access")
 		})
 
@@ -599,7 +599,7 @@ func TestClasses(t *testing.T) {
 
 			gb, _ := classUnit(t, classesDir, plugin.DepthFull, boxClass)
 			box := named[*node.Struct](t, fileIn(t, gb, libPackage).Decls, boxClass)
-			assert.True(t, slices.Contains(fieldNames(box.Fields), "hidden"), "every field but a private one")
+			assert.Contains(t, fieldNames(box.Fields), "hidden", "every field but a private one")
 		})
 
 		t.Run("leaves out a private field at full depth", func(t *testing.T) {
@@ -607,7 +607,7 @@ func TestClasses(t *testing.T) {
 
 			gb, _ := classUnit(t, classesDir, plugin.DepthFull, boxClass)
 			box := named[*node.Struct](t, fileIn(t, gb, libPackage).Decls, boxClass)
-			assert.False(t, slices.Contains(fieldNames(box.Fields), "secret"), "no caller can name it")
+			assert.NotContains(t, fieldNames(box.Fields), "secret", "no caller can name it")
 		})
 
 		t.Run("leaves out a synthetic field at full depth", func(t *testing.T) {
@@ -665,7 +665,7 @@ func TestClasses(t *testing.T) {
 
 			gb, _ := classUnit(t, classesDir, plugin.DepthFull, colorClass)
 			color := named[*node.Enum](t, fileIn(t, gb, libPackage).Decls, colorClass)
-			assert.False(t, slices.Contains(methodNames(color.Methods), "<clinit>"), "no source declares it")
+			assert.NotContains(t, methodNames(color.Methods), "<clinit>", "no source declares it")
 		})
 
 		t.Run("annotates a method with its annotations", func(t *testing.T) {
@@ -791,7 +791,7 @@ func TestClasses(t *testing.T) {
 			t.Parallel()
 
 			holder := named[*node.Interface](t, libDecls(t), holderClass)
-			assert.False(t, slices.Contains(methodNames(holder.Methods), "helper"), "helper is private")
+			assert.NotContains(t, methodNames(holder.Methods), "helper", "helper is private")
 		})
 
 		t.Run("lowers a method's array result as a List", func(t *testing.T) {
@@ -1015,14 +1015,14 @@ func TestClasses(t *testing.T) {
 		t.Run("returns the context's error for a class file of a done context", func(t *testing.T) {
 			t.Parallel()
 
-			assert.ErrorIs(t, cancelledParse(t, looseMember, mustRead(t, looseFixture)), context.Canceled,
+			assert.HonoursCancellation(t, memberParse(t, looseMember, mustRead(t, looseFixture)),
 				"a cancelled load decodes nothing")
 		})
 
 		t.Run("returns the context's error for a JAR of a done context", func(t *testing.T) {
 			t.Parallel()
 
-			assert.ErrorIs(t, cancelledParse(t, jarMember, mustRead(t, libJAR)), context.Canceled,
+			assert.HonoursCancellation(t, memberParse(t, jarMember, mustRead(t, libJAR)),
 				"a cancelled load opens no JAR")
 		})
 	})
@@ -1030,7 +1030,7 @@ func TestClasses(t *testing.T) {
 
 // libDecls returns the declarations of the fixture library's classes, a
 // unit of every one of them loaded at signature depth.
-func libDecls(tb assert.TB) node.Symbols {
+func libDecls(tb testing.TB) node.Symbols {
 	tb.Helper()
 
 	entries, err := os.ReadDir(path.Join(classesDir, libDir))
@@ -1049,7 +1049,7 @@ func libDecls(tb assert.TB) node.Symbols {
 
 // classTree returns a tree of fixture class files of a directory by
 // their simple names.
-func classTree(tb assert.TB, dir string, names ...string) fstest.MapFS {
+func classTree(tb testing.TB, dir string, names ...string) fstest.MapFS {
 	tb.Helper()
 
 	tree := fstest.MapFS{}
@@ -1062,7 +1062,7 @@ func classTree(tb assert.TB, dir string, names ...string) fstest.MapFS {
 
 // classUnit parses a unit whose members are fixture class files of a
 // directory by their simple names, at a depth.
-func classUnit(tb assert.TB, dir string, depth plugin.Depth, names ...string) (*plugin.GraphBuilder, []diag.Diag) {
+func classUnit(tb testing.TB, dir string, depth plugin.Depth, names ...string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parseMembers(tb, classTree(tb, dir, names...), depth)
@@ -1070,7 +1070,7 @@ func classUnit(tb assert.TB, dir string, depth plugin.Depth, names ...string) (*
 
 // patch replaces the one occurrence of a byte string in a tree's class
 // file of a simple name with another of the same length.
-func patch(tb assert.TB, tree fstest.MapFS, name, old, replacement string) {
+func patch(tb testing.TB, tree fstest.MapFS, name, old, replacement string) {
 	tb.Helper()
 
 	f := tree[path.Join(libDir, name+classSuffix)]
@@ -1080,7 +1080,7 @@ func patch(tb assert.TB, tree fstest.MapFS, name, old, replacement string) {
 
 // jarUnit parses a unit whose one member is a JAR of the given bytes, at
 // a depth.
-func jarUnit(tb assert.TB, data []byte, depth plugin.Depth) (*plugin.GraphBuilder, []diag.Diag) {
+func jarUnit(tb testing.TB, data []byte, depth plugin.Depth) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parseMembers(tb, fstest.MapFS{jarMember: {Data: data}}, depth)
@@ -1088,7 +1088,7 @@ func jarUnit(tb assert.TB, data []byte, depth plugin.Depth) (*plugin.GraphBuilde
 
 // parseMembers parses a unit whose members are every file of a tree, in
 // path order, at a depth.
-func parseMembers(tb assert.TB, tree fstest.MapFS, depth plugin.Depth) (*plugin.GraphBuilder, []diag.Diag) {
+func parseMembers(tb testing.TB, tree fstest.MapFS, depth plugin.Depth) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parseInOrder(tb, tree, depth, slices.Sorted(maps.Keys(tree))...)
@@ -1097,7 +1097,7 @@ func parseMembers(tb assert.TB, tree fstest.MapFS, depth plugin.Depth) (*plugin.
 // parseInOrder parses a unit whose members are files of a tree in the
 // order given, at a depth.
 func parseInOrder(
-	tb assert.TB, tree fstest.MapFS, depth plugin.Depth, paths ...string,
+	tb testing.TB, tree fstest.MapFS, depth plugin.Depth, paths ...string,
 ) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
@@ -1108,21 +1108,19 @@ func parseInOrder(
 	}
 	sink := diag.NewSink()
 	u := plugin.NewSourceUnit(refs, tree, depth, f.Syntax(), brand, sink, f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
 	return u.Graph(), slices.Collect(sink.All())
 }
 
-// cancelledParse parses a unit of one member of some bytes under a
-// context that is done, and returns the parse's error.
-func cancelledParse(tb assert.TB, member string, data []byte) error {
+// memberParse returns a parse of a unit of one member of some bytes, at
+// signature depth, under the context the call passes it.
+func memberParse(tb testing.TB, member string, data []byte) func(context.Context) error {
 	tb.Helper()
 
 	f := frontend.New(nil)
 	u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: member}}, fstest.MapFS{member: {Data: data}},
 		plugin.DepthSignatures, f.Syntax(), brand, diag.NewSink(), f.Name())
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return f.Parse(ctx, u)
+	return func(ctx context.Context) error { return f.Parse(ctx, u) }
 }
 
 // mustRead returns a fixture file's bytes.
@@ -1136,7 +1134,7 @@ func mustRead(tb assert.TB, p string) []byte {
 
 // packageDecls returns the declarations of every File node of a
 // builder's package of a path.
-func packageDecls(tb assert.TB, gb *plugin.GraphBuilder, pkg string) node.Symbols {
+func packageDecls(tb testing.TB, gb *plugin.GraphBuilder, pkg string) node.Symbols {
 	tb.Helper()
 
 	var out node.Symbols
@@ -1147,34 +1145,34 @@ func packageDecls(tb assert.TB, gb *plugin.GraphBuilder, pkg string) node.Symbol
 }
 
 // boxField returns the fixture library's Box field of a name.
-func boxField(tb assert.TB, name string) *node.Field {
+func boxField(tb testing.TB, name string) *node.Field {
 	tb.Helper()
 
 	fields := named[*node.Struct](tb, libDecls(tb), boxClass).Fields
 	i := slices.IndexFunc(fields, func(f *node.Field) bool { return f.Name == name })
-	assert.True(tb, i >= 0, "Box declares the field")
+	assert.NotEqual(tb, i, -1, "Box declares the field")
 	return fields[i]
 }
 
 // boxMethod returns the fixture library's Box method of a name.
-func boxMethod(tb assert.TB, name string) *node.Method {
+func boxMethod(tb testing.TB, name string) *node.Method {
 	tb.Helper()
 
 	return methodOf(tb, named[*node.Struct](tb, libDecls(tb), boxClass).Methods, name)
 }
 
 // methodOf returns the first method of a name among methods.
-func methodOf(tb assert.TB, methods []*node.Method, name string) *node.Method {
+func methodOf(tb testing.TB, methods []*node.Method, name string) *node.Method {
 	tb.Helper()
 
 	i := slices.IndexFunc(methods, func(m *node.Method) bool { return m.Name == name })
-	assert.True(tb, i >= 0, "the type declares the method")
+	assert.NotEqual(tb, i, -1, "the type declares the method")
 	return methods[i]
 }
 
 // innerConstructor returns the constructor of Box's Inner, from a tree
 // of Box's and Inner's class files.
-func innerConstructor(tb assert.TB, tree fstest.MapFS) *node.Method {
+func innerConstructor(tb testing.TB, tree fstest.MapFS) *node.Method {
 	tb.Helper()
 
 	gb, _ := parseMembers(tb, tree, plugin.DepthSignatures)
@@ -1183,7 +1181,7 @@ func innerConstructor(tb assert.TB, tree fstest.MapFS) *node.Method {
 }
 
 // fileScope returns the scope the File node of a member path recorded.
-func fileScope(tb assert.TB, gb *plugin.GraphBuilder, p string) plugin.ImportScope {
+func fileScope(tb testing.TB, gb *plugin.GraphBuilder, p string) plugin.ImportScope {
 	tb.Helper()
 
 	for _, rec := range gb.Scopes() {

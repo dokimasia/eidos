@@ -32,10 +32,11 @@ func TestAnnotation(t *testing.T) {
 			{Name: "JsonProperty", Args: []string{`"id"`}},
 			{Name: "Nullable"},
 		}
-		b, err := json.Marshal(list)
-		assert.NoError(t, err, "the list encodes")
-		var back symbol.Annotations
-		assert.NoError(t, json.Unmarshal(b, &back), "and decodes")
-		assert.Equal(t, back, list, "in its order, the argument's quotes kept")
+		assert.RoundTrip(t, func(l symbol.Annotations) ([]byte, error) { return json.Marshal(l) },
+			func(b []byte) (symbol.Annotations, error) {
+				var l symbol.Annotations
+				err := json.Unmarshal(b, &l)
+				return l, err
+			}, list, "the list decodes in its order, the argument's quotes kept")
 	})
 }

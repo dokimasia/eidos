@@ -49,7 +49,7 @@ func TestCaser(t *testing.T) {
 			t.Parallel()
 
 			first, second := naming.Default(), naming.Default()
-			assert.True(t, first == second, "one immutable value serves every caller")
+			assert.Equal(t, second, first, "one immutable value serves every caller", assert.ByIdentity())
 		})
 	})
 
@@ -59,7 +59,7 @@ func TestCaser(t *testing.T) {
 		t.Run("returns a Caser without an initialism", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Length(t, naming.New().Initialisms(), 0, "an empty set")
+			assert.Empty(t, naming.New().Initialisms(), "an empty set")
 		})
 
 		t.Run("returns a Caser that title-cases an acronym", func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestCaser(t *testing.T) {
 			base := naming.New()
 			_, err := base.WithInitialisms(ulid)
 			assert.NoError(t, err, "the derived Caser composes")
-			assert.Length(t, base.Initialisms(), 0, "a Caser is immutable, which makes it safe to share")
+			assert.Empty(t, base.Initialisms(), "a Caser is immutable, which makes it safe to share")
 		})
 
 		t.Run("returns a Caser for an initialism with digits after its first letter", func(t *testing.T) {

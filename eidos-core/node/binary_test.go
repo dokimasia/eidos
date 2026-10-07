@@ -4,11 +4,13 @@
 package node_test
 
 import (
-	"bytes"
+	"encoding/binary"
+	"math"
 	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
@@ -18,6 +20,11 @@ import (
 // overflow is a varint of eleven bytes, longer than any 64-bit integer
 // encodes to.
 var overflow = []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01}
+
+// decodesToFixedPoint is the property [FuzzDecodeBinary] and its ForAll
+// twin in [TestBinary] state.
+const decodesToFixedPoint = "DecodeBinary must return an error or a symbol whose encoding " +
+	"decodes and encodes to the same bytes again"
 
 // The binary encoding is a boundary: a generation and the memo hand
 // back bytes a previous run, another build or a damaged file wrote. A
@@ -105,52 +112,55 @@ func TestBinary(t *testing.T) {
 			_, _, err = node.DecodeBinary(encodedWithTable, &node.StringTable{})
 			assert.ErrorIs(t, err, node.ErrMalformed, "an empty table numbers none of its strings")
 		})
+
+		t.Run("returns an error or a symbol that is a fixed point after one more trip", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, decodesToFixedPoint, decodesFixed)
+		})
 	})
 }
 
-// FuzzDecodeBinary drives the decoder with bytes nothing in this
-// repository produced. Decoding returns an error or a symbol and never
-// panics, and a symbol that decoded is a fixed point after one more
-// trip: its encoding decodes and encodes to the same bytes again.
+// FuzzDecodeBinary checks [decodesToFixedPoint] on bytes nothing in this
+// repository produced. Each seed is the choices of one case: a two-byte
+// little-endian length, then the bytes of the input.
 func FuzzDecodeBinary(f *testing.F) {
+	inputs := [][]byte{{0xff}, overflow}
 	for _, seed := range []symbol.Symbol{
 		coretest.EveryKind(coretest.StorePath),
 		coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")),
 		nil,
 	} {
 		b, err := node.AppendBinary(nil, seed, nil)
-		if err != nil {
-			f.Fatalf("AppendBinary: unexpected error: %v", err)
-		}
-		f.Add(b)
+		assert.NoError(f, err, "every seed symbol encodes")
+		inputs = append(inputs, b)
 	}
-	f.Add([]byte{0xff})
-	f.Add(overflow)
+	for _, input := range inputs {
+		assert.InRange(f, len(input), 0, math.MaxUint16, "a seed's length fits the bridge's two bytes")
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(input))), input...))
+	}
 
-	f.Fuzz(func(t *testing.T, in []byte) {
-		decoded, _, err := node.DecodeBinary(in, nil)
-		if err != nil {
-			return
-		}
-		once, err := node.AppendBinary(nil, decoded, nil)
-		if err != nil {
-			t.Fatalf("DecodeBinary returned a symbol AppendBinary refuses: %v", err)
-		}
-		again, read, err := node.DecodeBinary(once, nil)
-		if err != nil {
-			t.Fatalf("DecodeBinary refuses its own encoding: %v", err)
-		}
-		if read != len(once) {
-			t.Fatalf("DecodeBinary read %d of the %d bytes AppendBinary wrote", read, len(once))
-		}
-		twice, err := node.AppendBinary(nil, again, nil)
-		if err != nil {
-			t.Fatalf("AppendBinary: unexpected error: %v", err)
-		}
-		if !bytes.Equal(once, twice) {
-			t.Fatalf("a second trip encoded %x, want %x", twice, once)
-		}
-	})
+	prop.Fuzz(f, decodesToFixedPoint, decodesFixed)
+}
+
+// decodesFixed checks [decodesToFixedPoint] on an input that the case
+// draws. An input that does not decode satisfies it, and a symbol that
+// decodes encodes, decodes from every byte of its encoding, and encodes
+// to the same bytes again.
+func decodesFixed(c *prop.Case) {
+	in := c.Draw(prop.Bytes(), "input")
+	decoded, _, err := node.DecodeBinary(in, nil)
+	if err != nil {
+		return
+	}
+	once, err := node.AppendBinary(nil, decoded, nil)
+	assert.NoError(c, err, "AppendBinary must take every symbol DecodeBinary returns")
+	assert.RoundTrip(c, func(b []byte) (symbol.Symbol, error) {
+		again, read, err := node.DecodeBinary(b, nil)
+		assert.Equal(c, read, len(b), "DecodeBinary must read every byte AppendBinary wrote")
+		return again, err
+	}, func(s symbol.Symbol) ([]byte, error) { return node.AppendBinary(nil, s, nil) }, once,
+		"a second trip must encode the same bytes")
 }
 
 // encoded returns a symbol's encoding without a table.

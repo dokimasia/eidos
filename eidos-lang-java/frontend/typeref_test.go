@@ -165,7 +165,7 @@ func TestTyperef(t *testing.T) {
 
 // fieldType parses a public class A of one field declaration and returns
 // the field's type.
-func fieldType(tb assert.TB, decl string) *node.TypeRef {
+func fieldType(tb testing.TB, decl string) *node.TypeRef {
 	tb.Helper()
 
 	st := classOf(tb, "public class A {\n    "+decl+"\n}\n", "A")

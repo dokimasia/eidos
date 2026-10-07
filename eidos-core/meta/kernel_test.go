@@ -154,25 +154,16 @@ func TestKernel(t *testing.T) {
 // The kernel's registration allocates what its registry keeps, and its
 // handles report their state without allocating, in the ordinary run,
 // which runs no benchmark. Each counted registration takes an empty
-// registry of its own, built before the count. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses
-// to run beside parallel tests.
+// registry of its own, built outside the count. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestKernelAllocs(t *testing.T) {
-	registries := make([]*meta.Registry, allocRuns)
-	for i := range registries {
-		registries[i] = meta.NewRegistry()
-	}
 	var (
 		keys meta.KernelKeys
-		at   int
+		err  error
 	)
-	assert.MaxAllocs(t, func() {
-		var err error
-		if keys, err = meta.Kernel(registries[at]); err != nil {
-			t.Fatalf("Kernel: unexpected error: %v", err)
-		}
-		at++
-	}, kernelAllocs, "Kernel allocates the registrations of the kernel's keys")
+	assert.MaxAllocsWithSetup(t, meta.NewRegistry, func(r *meta.Registry) { keys, err = meta.Kernel(r) },
+		kernelAllocs, "Kernel allocates the registrations of the kernel's keys")
+	assert.NoError(t, err, "the kernel's keys register")
 
 	zero := true
 	assert.MaxAllocs(t, func() { zero = keys.IsZero() }, 0, "IsZero allocates nothing")

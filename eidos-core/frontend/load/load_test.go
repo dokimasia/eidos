@@ -17,6 +17,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -215,7 +216,7 @@ func TestLoad(t *testing.T) {
 		t.Run("returns an error naming a config without a tree", func(t *testing.T) {
 			t.Parallel()
 
-			_, _, err := load.Load(context.Background(), load.Config{Sink: diag.NewSink(), Brand: ownBrand})
+			_, _, err := load.Load(t.Context(), load.Config{Sink: diag.NewSink(), Brand: ownBrand})
 			assert.HasError(t, err, "there is nothing to read")
 			assert.Contains(t, err.Error(), "no tree to read", "the error names the missing tree")
 		})
@@ -223,7 +224,7 @@ func TestLoad(t *testing.T) {
 		t.Run("returns an error naming a config without a sink", func(t *testing.T) {
 			t.Parallel()
 
-			_, _, err := load.Load(context.Background(), load.Config{FS: stdTree(), Brand: ownBrand})
+			_, _, err := load.Load(t.Context(), load.Config{FS: stdTree(), Brand: ownBrand})
 			assert.HasError(t, err, "there is nowhere to report")
 			assert.Contains(t, err.Error(), "no sink to report into", "the error names the missing sink")
 		})
@@ -364,7 +365,7 @@ func TestLoad(t *testing.T) {
 			tree := stdTree()
 			tree[outputFile] = &fstest.MapFile{Data: stamped(t, ownBrand, generated)}
 			err := refuse(t, &faultyFS{tree: tree, path: outputFile})
-			assert.True(t, errors.Is(err, errFault), "the error wraps the filesystem's own")
+			assert.ErrorIs(t, err, errFault, "the error wraps the filesystem's own")
 			assert.HasPrefix(t, err.Error(), proofError+outputFile, "the gate returns it, naming the file")
 		})
 	})
@@ -524,9 +525,9 @@ func TestLoad(t *testing.T) {
 			_, bare, _ := loadTree(t, stdTree(), with(optionless{frontendtest.NewScripted()}))
 
 			configured, none := keysOf(declared), keysOf(bare)
-			assert.Equal(t, len(none), len(configured), "both compositions load the same units")
+			assert.Length(t, none, len(configured), "both compositions load the same units")
 			for file, key := range configured {
-				assert.NotEqual(t, key, none[file], "a declared configuration folds where none folds nothing")
+				expect.NotEqual(t, key, none[file], "a declared configuration folds where none folds nothing: "+file)
 			}
 		})
 
@@ -593,11 +594,16 @@ func TestLoad(t *testing.T) {
 		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
 			cfg, _ := config(stdTree())
-			g, report, err := load.Load(ctx, cfg)
-			assert.ErrorIs(t, err, context.Canceled, "a skipped unit has no source unit to key")
+			var (
+				g      *store.Graph
+				report *load.Report
+				err    error
+			)
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				g, report, err = load.Load(ctx, cfg)
+				return err
+			}, "a skipped unit has no source unit to key")
 			assert.HasPrefix(t, err.Error(), "load: ", "the error has the package prefix")
 			assert.Nil(t, g, "no half-loaded graph is returned")
 			assert.Nil(t, report, "no report over units that never parsed is returned")
@@ -756,7 +762,7 @@ func TestLoad(t *testing.T) {
 			t.Parallel()
 
 			got := assert.Panics(t, func() {
-				_, _, _ = load.Load(context.Background(), mustConfig(
+				_, _, _ = load.Load(t.Context(), mustConfig(
 					oneFileTree(), with(&looseAttachment{frontendtest.NewScripted()}),
 				))
 			}, "a directive on an undeclared subject is the frontend's defect")
@@ -787,7 +793,7 @@ func TestLoad(t *testing.T) {
 			t.Parallel()
 
 			got := assert.Panics(t, func() {
-				_, _, _ = load.Load(context.Background(), mustConfig(
+				_, _, _ = load.Load(t.Context(), mustConfig(
 					oneFileTree(), with(&looseStamp{frontendtest.NewScripted()}),
 				))
 			}, "a stamp on an undeclared subject is the frontend's defect")
@@ -909,9 +915,8 @@ func TestLoad(t *testing.T) {
 
 // The count of decoded regions reads without allocating in the ordinary
 // run, which runs no benchmark. The loads' own ceilings run under -bench
-// alone: a cold load of the canonical corpus takes too long to repeat
-// 101 times, and the warm load's ceiling leaves out the record's
-// opening, which no count of [assert.MaxAllocs] leaves out.
+// alone: a cold load of the canonical corpus takes 0.25 seconds and a
+// warm load 0.08, and a count repeats each 101 times.
 func TestLoadAllocs(t *testing.T) {
 	_, report, _ := loadTree(t, stdTree())
 	got := -1
@@ -927,8 +932,8 @@ func TestLoadAllocs(t *testing.T) {
 // ending in the brand's trailer. A warm load reads the record of a load
 // of the same tree, keeps every unit, and parses none. The fake
 // language's parse is part of the cold measurement, so its number is a
-// ceiling on driver overhead, not a frontend budget. One load before
-// each measurement builds what a process builds once.
+// ceiling on driver overhead, not a frontend budget. The warm-up load of
+// each case builds what a process builds once.
 func BenchmarkLoad(b *testing.B) {
 	tree := scaledTree()
 	fronts := []plugin.Frontend{frontendtest.NewScripted()}
@@ -938,11 +943,12 @@ func BenchmarkLoad(b *testing.B) {
 
 	b.Run("Load", func(b *testing.B) {
 		b.Run("a cold load of 200,000 declarations", func(b *testing.B) {
-			_, _, err := load.Load(b.Context(), cold())
-			assert.NoError(b, err, "the corpus loads before the measurement")
-			c := bench.Start(b).MaxAllocs(coldLoadAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(coldLoadAllocs)
 			defer c.End()
-			var report *load.Report
+			var (
+				report *load.Report
+				err    error
+			)
 			for c.Loop() {
 				_, report, err = load.Load(b.Context(), cold())
 			}
@@ -960,9 +966,7 @@ func BenchmarkLoad(b *testing.B) {
 				cfg.Prior = prior
 				return cfg
 			}
-			_, _, err = load.Load(b.Context(), warm(reopened(b, rec)))
-			assert.NoError(b, err, "the corpus loads warm before the measurement")
-			c := bench.Start(b).MaxAllocs(warmLoadAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(warmLoadAllocs)
 			defer c.End()
 			var report *load.Report
 			for c.Loop() {
@@ -1031,19 +1035,19 @@ func with(fronts ...plugin.Frontend) func(*load.Config) {
 // loadTree drives one load over a tree with the fake frontend and
 // the standard configuration, mutated per test.
 func loadTree(
-	tb assert.TB, tree fs.FS, mutate ...func(*load.Config),
+	tb testing.TB, tree fs.FS, mutate ...func(*load.Config),
 ) (*store.Graph, *load.Report, *diag.Sink) {
 	tb.Helper()
 
 	cfg, sink := config(tree, mutate...)
-	g, report, err := load.Load(context.Background(), cfg)
+	g, report, err := load.Load(tb.Context(), cfg)
 	assert.NoError(tb, err, "the load finishes")
 	return g, report, sink
 }
 
 // stamped returns source framed as one brand's output, so a case
 // can put a generated file into a tree.
-func stamped(tb assert.TB, brand output.Brand, source string) []byte {
+func stamped(tb testing.TB, brand output.Brand, source string) []byte {
 	tb.Helper()
 
 	contract, err := output.NewContract(brand, frontendtest.NewScripted().Syntax())
@@ -1057,11 +1061,11 @@ func stamped(tb assert.TB, brand output.Brand, source string) []byte {
 
 // refuse drives one load the case states must fail and returns the
 // driver's error, so the case asserts on its text.
-func refuse(tb assert.TB, tree fs.FS, mutate ...func(*load.Config)) error {
+func refuse(tb testing.TB, tree fs.FS, mutate ...func(*load.Config)) error {
 	tb.Helper()
 
 	cfg, _ := config(tree, mutate...)
-	_, _, err := load.Load(context.Background(), cfg)
+	_, _, err := load.Load(tb.Context(), cfg)
 	assert.HasError(tb, err, "the load fails and seals no graph")
 	return err
 }
@@ -1093,7 +1097,7 @@ func twinID() symbol.Identity {
 
 // encoded renders the identities of every package the graph
 // contains, so two loads compare whole.
-func encoded(tb assert.TB, g *store.Graph) []string {
+func encoded(tb testing.TB, g *store.Graph) []string {
 	tb.Helper()
 
 	var out []string
@@ -1107,7 +1111,7 @@ func encoded(tb assert.TB, g *store.Graph) []string {
 
 // refAt returns the type reference at a place in the depth-first walk
 // of a region's packages, counting type references alone.
-func refAt(tb assert.TB, r *store.Region, at int) *node.TypeRef {
+func refAt(tb testing.TB, r *store.Region, at int) *node.TypeRef {
 	tb.Helper()
 
 	n := 0
@@ -1128,7 +1132,7 @@ func refAt(tb assert.TB, r *store.Region, at int) *node.TypeRef {
 }
 
 // packageOf returns the package the graph contains under a path.
-func packageOf(tb assert.TB, g *store.Graph, path string) *node.Package {
+func packageOf(tb testing.TB, g *store.Graph, path string) *node.Package {
 	tb.Helper()
 
 	found, held := g.Lookup(symbol.Identity{
@@ -1642,10 +1646,10 @@ func scaledTree() fstest.MapFS {
 // reopened returns the record the recorder made live, opened again from
 // its ledger, so a load reads and decodes it whole, as a run's load
 // does.
-func reopened(tb assert.TB, r *recorder) load.Prior {
+func reopened(tb testing.TB, r *recorder) load.Prior {
 	tb.Helper()
 
-	gen, err := state.Open(context.Background(), r.l)
+	gen, err := state.Open(tb.Context(), r.l)
 	assert.NoError(tb, err, "the live generation opens")
-	return gen.Load(context.Background())
+	return gen.Load(tb.Context())
 }

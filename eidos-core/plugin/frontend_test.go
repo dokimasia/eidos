@@ -35,8 +35,7 @@ func TestFrontend(t *testing.T) {
 			var depth plugin.Depth
 			assert.Equal(t, depth, plugin.DepthFull,
 				"a unit built without a stated depth loads full")
-			assert.True(t, plugin.DepthFull != plugin.DepthSignatures,
-				"the two depths key differently")
+			assert.NotEqual(t, plugin.DepthFull, plugin.DepthSignatures, "the two depths key differently")
 		})
 	})
 

@@ -70,10 +70,6 @@ const (
 	witnessesAllocs = 2
 )
 
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
-
 // native is the scripted rules under the fixture's language, so a
 // contributor in the fixture walks under the scripted policy. A
 // foreign language gets the absent policy. It keeps the scripted
@@ -173,12 +169,14 @@ func (n nongeneric) TypeName(word, base string) string { return n.inner.TypeName
 
 // allocCall is one call of a function or a method: the method, which
 // names its benchmark, the case it measures where the method has more
-// than one call, and the allocations the call makes.
+// than one call, the allocations the call makes, and the check of what
+// the last call returned, which runs after the count.
 type allocCall struct {
 	name     string
 	caseName string
 	allocs   uint64
 	call     func()
+	check    func(tb assert.TB)
 }
 
 // A handler calls the binding's methods, so the binding's defaults and
@@ -205,7 +203,8 @@ func TestBound(t *testing.T) {
 			t.Parallel()
 
 			source := rulestest.Scripted()
-			assert.Equal(t, rules.NewBound(source, rules.View{}, nil).Source(), source, "the binding's own rules")
+			assert.Equal(t, rules.NewBound(source, rules.View{}, nil).Source(), source, "the binding's own rules",
+				assert.ByIdentity())
 		})
 	})
 
@@ -216,7 +215,7 @@ func TestBound(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			assert.False(t, b.View().IsZero(), "the view the fixture minted")
+			assert.False(t, b.View().IsZero(), "the view the fixture minted is no zero view")
 		})
 	})
 
@@ -294,49 +293,43 @@ func TestBound(t *testing.T) {
 
 // Each method of the binding allocates what it returns or what the
 // language allocates, in the ordinary run, which runs no benchmark. A
-// first fold takes a binding built before the count, because a fold
-// fills the memo it reads. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// first fold takes a binding built outside the count, because a fold
+// fills the memo it reads. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestBoundAllocs(t *testing.T) {
-	for _, tt := range boundCalls(t) {
+	checkCalls(t, boundCalls(t))
+
+	folded, ref := foldedBinding(t)
+	var shape rules.TypeShape
+	assert.MaxAllocs(t, func() { shape = folded.TypeOf(ref) }, 0,
+		"TypeOf allocates nothing for a reference the binding folded")
+	assert.Equal(t, shape.Form, symbol.FormScalar, "TypeOf returns the folded scalar")
+
+	v, bytes := viewOnly(t), byteList()
+	assert.MaxAllocsWithSetup(t, func() rules.Bound { return rules.NewBound(scripted(), v, nil) },
+		func(b rules.Bound) { shape = b.TypeOf(ref) },
+		foldAllocs, "TypeOf allocates the memo's group and the shape for a first fold")
+	assert.Equal(t, shape.Form, symbol.FormScalar, "TypeOf folds int to a scalar")
+
+	assert.MaxAllocsWithSetup(t, func() rules.Bound { return rules.NewBound(bytesLang{scripted()}, v, nil) },
+		func(b rules.Bound) { shape = b.TypeOf(bytes) },
+		foldBytesAllocs, "TypeOf allocates the memo's group and two shapes for a first fold of a list of bytes")
+	assert.Equal(t, shape.Form, symbol.FormBytes, "TypeOf folds a list of bytes to Bytes")
+}
+
+// checkCalls checks every call's ceiling under [assert.MaxAllocs], and
+// then what the call's last run returned.
+func checkCalls(t *testing.T, calls []allocCall) {
+	t.Helper()
+
+	for _, tt := range calls {
 		msg := tt.name + " allocates what it returns"
 		if tt.caseName != "" {
 			msg = tt.name + " for " + tt.caseName + " allocates what it returns"
 		}
 		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
+		tt.check(t)
 	}
-
-	folded, ref := foldedBinding(t)
-	assert.MaxAllocs(t, func() {
-		if folded.TypeOf(ref).Form != symbol.FormScalar {
-			t.Fatal("TypeOf returned another form for a folded reference")
-		}
-	}, 0, "TypeOf allocates nothing for a reference the binding folded")
-
-	v, bytes := viewOnly(t), byteList()
-	fresh := make([]rules.Bound, allocRuns)
-	for i := range fresh {
-		fresh[i] = rules.NewBound(scripted(), v, nil)
-	}
-	at := 0
-	assert.MaxAllocs(t, func() {
-		if fresh[at].TypeOf(ref).Form != symbol.FormScalar {
-			t.Fatal("TypeOf folded int to another form")
-		}
-		at++
-	}, foldAllocs, "TypeOf allocates the memo's group and the shape for a first fold")
-
-	for i := range fresh {
-		fresh[i] = rules.NewBound(bytesLang{scripted()}, v, nil)
-	}
-	at = 0
-	assert.MaxAllocs(t, func() {
-		if fresh[at].TypeOf(bytes).Form != symbol.FormBytes {
-			t.Fatal("TypeOf folded a list of bytes to another form")
-		}
-		at++
-	}, foldBytesAllocs, "TypeOf allocates the memo's group and two shapes for a first fold of a list of bytes")
 }
 
 // BenchmarkBound measures each method of a binding over the walk
@@ -418,18 +411,19 @@ func benchCalls(b *testing.B, calls []allocCall) {
 	}
 }
 
-// benchCall measures one call under the bench contract at its ceiling.
-// The call runs once before the contract starts, so what the first call
-// initialises stays out of the count.
+// benchCall measures one call under the bench contract at its ceiling,
+// and then checks what the last call returned. One warm-up iteration
+// runs before the contract counts, so what the first call initialises
+// stays out of the count.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
-	tt.call()
-	c := bench.Start(b).MaxAllocs(tt.allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 	defer c.End()
 	for c.Loop() {
 		tt.call()
 	}
+	tt.check(b)
 }
 
 // foldedBinding returns a binding over the walk fixture and a reference
@@ -445,10 +439,10 @@ func foldedBinding(tb assert.TB) (rules.Bound, *node.TypeRef) {
 }
 
 // boundCalls returns one call of each method of a binding over the walk
-// fixture, with what the call allocates. Each call checks what it
-// returned, so a call that measured a refusal fails. The binding has
-// folded the reference the calls read, and MembersOf walks the struct
-// [promoted] returns. [foldedBinding] measures TypeOf.
+// fixture, with what the call allocates. Each check reads what the last
+// call returned, so a call that measured a refusal fails. The binding
+// has folded the reference the calls read, and MembersOf walks the
+// struct [promoted] returns. [foldedBinding] measures TypeOf.
 func boundCalls(tb assert.TB) []allocCall {
 	tb.Helper()
 
@@ -461,67 +455,80 @@ func boundCalls(tb assert.TB) []allocCall {
 	get := method(svcPath, rowName, "Get")
 	count := rowField(countField)
 	params := []*node.TypeParam{{ID: coretest.MemberID(svcPath, "Box", "T", symbol.KindTypeParam), Name: "T"}}
+	var (
+		bound     rules.Bound
+		src       rules.SourceRules
+		v         rules.View
+		lang      symbol.Lang
+		callable  rules.Callable
+		held      bool
+		promotes  rules.MemberSet
+		overrides rules.MemberSet
+		sample    rules.Sample
+		name      string
+		witnesses []*node.TypeRef
+	)
 	return []allocCall{
-		{name: "NewBound", allocs: newBoundAllocs, call: func() {
-			if rules.NewBound(source, view, nil).Lang() != coretest.Lang {
-				tb.Fatalf("NewBound bound another language")
-			}
-		}},
-		{name: "Source", call: func() {
-			if rules.IsAbsent(b.Source()) {
-				tb.Fatalf("Source returned the absent rules")
-			}
-		}},
-		{name: "View", call: func() {
-			if b.View().IsZero() {
-				tb.Fatalf("View returned the zero view")
-			}
-		}},
-		{name: "Lang", call: func() {
-			if b.Lang() != coretest.Lang {
-				tb.Fatalf("Lang returned another language")
-			}
-		}},
-		{name: "CallableOf", allocs: callableAllocs, call: func() {
-			if c, held := b.CallableOf(get); !held || len(c.Params) != 1 {
-				tb.Fatalf("CallableOf projected another signature")
-			}
-		}},
-		{name: "MembersOf", caseName: "under ShadowPromote", allocs: membersAllocs, call: func() {
-			if set, _ := promoting.MembersOf(embedder); len(set.Members) != promotedMethods {
-				tb.Fatalf("MembersOf returned another number of members")
-			}
-		}},
-		{name: "MembersOf", caseName: "under ShadowOverride", allocs: membersAllocs, call: func() {
-			if set, _ := overriding.MembersOf(extender); len(set.Members) != promotedMethods {
-				tb.Fatalf("MembersOf returned another number of members")
-			}
-		}},
-		{name: "SamplesOf", call: func() {
-			if sample, _ := b.SamplesOf(count, intRef, countField); !sample.OK() {
-				tb.Fatalf("SamplesOf derived no sample")
-			}
-		}},
-		{name: "ZeroValue", call: func() {
-			if _, held := b.ZeroValue(intRef); !held {
-				tb.Fatalf("ZeroValue derived no zero")
-			}
-		}},
-		{name: "LiteralFor", call: func() {
-			if _, held := b.LiteralFor(nil, strRef, "x"); !held {
-				tb.Fatalf("LiteralFor derived no literal")
-			}
-		}},
-		{name: "TypeName", allocs: typeNameAllocs, call: func() {
-			if b.TypeName("Builder", rowName) != "RowBuilder" {
-				tb.Fatalf("TypeName joined another name")
-			}
-		}},
-		{name: "Witnesses", allocs: witnessesAllocs, call: func() {
-			if len(b.Witnesses(params)) != 1 {
-				tb.Fatalf("Witnesses derived another number of references")
-			}
-		}},
+		{
+			name: "NewBound", allocs: newBoundAllocs,
+			call: func() { bound = rules.NewBound(source, view, nil) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, bound.Lang(), coretest.Lang, "NewBound binds the source's language")
+			},
+		},
+		{
+			name: "Source", call: func() { src = b.Source() },
+			check: func(tb assert.TB) { assert.False(tb, rules.IsAbsent(src), "Source returns the binding's rules") },
+		},
+		{
+			name: "View", call: func() { v = b.View() },
+			check: func(tb assert.TB) { assert.False(tb, v.IsZero(), "View returns the binding's view") },
+		},
+		{
+			name: "Lang", call: func() { lang = b.Lang() },
+			check: func(tb assert.TB) { assert.Equal(tb, lang, coretest.Lang, "Lang returns the rules' language") },
+		},
+		{
+			name: "CallableOf", allocs: callableAllocs, call: func() { callable, held = b.CallableOf(get) },
+			check: func(tb assert.TB) {
+				assert.True(tb, held, "CallableOf projects the method")
+				assert.Length(tb, callable.Params, 1, "with its one parameter")
+			},
+		},
+		{
+			name: "MembersOf", caseName: "under ShadowPromote", allocs: membersAllocs,
+			call: func() { promotes, _ = promoting.MembersOf(embedder) },
+			check: func(tb assert.TB) {
+				assert.Length(tb, promotes.Members, promotedMethods, "MembersOf promotes every method")
+			},
+		},
+		{
+			name: "MembersOf", caseName: "under ShadowOverride", allocs: membersAllocs,
+			call: func() { overrides, _ = overriding.MembersOf(extender) },
+			check: func(tb assert.TB) {
+				assert.Length(tb, overrides.Members, promotedMethods, "MembersOf inherits every method")
+			},
+		},
+		{
+			name: "SamplesOf", call: func() { sample, _ = b.SamplesOf(count, intRef, countField) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives a sample") },
+		},
+		{
+			name: "ZeroValue", call: func() { _, held = b.ZeroValue(intRef) },
+			check: func(tb assert.TB) { assert.True(tb, held, "ZeroValue derives a zero") },
+		},
+		{
+			name: "LiteralFor", call: func() { _, held = b.LiteralFor(nil, strRef, "x") },
+			check: func(tb assert.TB) { assert.True(tb, held, "LiteralFor derives a literal") },
+		},
+		{
+			name: "TypeName", allocs: typeNameAllocs, call: func() { name = b.TypeName("Builder", rowName) },
+			check: func(tb assert.TB) { assert.Equal(tb, name, "RowBuilder", "TypeName joins the word onto the base") },
+		},
+		{
+			name: "Witnesses", allocs: witnessesAllocs, call: func() { witnesses = b.Witnesses(params) },
+			check: func(tb assert.TB) { assert.Length(tb, witnesses, 1, "Witnesses derives one reference") },
+		},
 	}
 }
 

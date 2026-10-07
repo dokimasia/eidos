@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
@@ -77,7 +78,7 @@ func TestAssign(t *testing.T) {
 			t.Parallel()
 
 			got := assert.Panics(t, func() {
-				_, _, _ = load.Load(context.Background(), mustConfig(
+				_, _, _ = load.Load(t.Context(), mustConfig(
 					oneFileTree(), with(&pathless{frontendtest.NewScripted()}),
 				))
 			}, "a file nothing can name is the frontend's defect")
@@ -115,10 +116,9 @@ func TestAssign(t *testing.T) {
 				),
 			}
 			for _, kind := range coretest.MatchableKinds() {
-				id, stated := want[kind]
-				assert.True(t, stated,
+				assert.Contains(t, want, kind,
 					"the case names an identity for every matchable kind, including "+kind.String())
-				_, held := g.Lookup(id)
+				_, held := g.Lookup(want[kind])
 				assert.True(t, held,
 					"the assignment step spells a "+kind.String()+" canonically")
 			}
@@ -181,7 +181,7 @@ func TestAssign(t *testing.T) {
 			t.Parallel()
 
 			outer := outerOf(t, loadNested(t))
-			assert.True(t, outer.Fields[0].ID.IsZero(),
+			assert.Equal(t, outer.Fields[0].ID, symbol.Identity{},
 				"only its type names a positional field, so nothing indexes it")
 			assert.Equal(t, outer.Fields[0].Host, assigned("", outerName, symbol.KindStruct),
 				"its host is the declaration that contains it")
@@ -193,8 +193,8 @@ func TestAssign(t *testing.T) {
 			g, _, _ := loadTree(t, stdTree(), with(&inlined{frontendtest.NewScripted()}))
 			row, _ := g.Lookup(rowID())
 			body := row.(*node.Struct).Fields[0].Type
-			assert.True(t, body.Fields[0].ID.IsZero(), "a directive cannot name the body's field")
-			assert.True(t, body.Methods[0].ID.IsZero(), "or its method")
+			expect.Equal(t, body.Fields[0].ID, symbol.Identity{}, "a directive cannot name the body's field")
+			expect.Equal(t, body.Methods[0].ID, symbol.Identity{}, "or its method")
 		})
 
 		t.Run("names an embed by the embedded type's bare name", func(t *testing.T) {
@@ -227,7 +227,7 @@ func TestAssign(t *testing.T) {
 			t.Parallel()
 
 			got := assert.Panics(t, func() {
-				_, _, _ = load.Load(context.Background(), mustConfig(
+				_, _, _ = load.Load(t.Context(), mustConfig(
 					oneFileTree(), with(&foreign{frontendtest.NewScripted()}),
 				))
 			}, "a malformed graph is the frontend's defect, found at the assignment")
@@ -258,7 +258,7 @@ func TestAssign(t *testing.T) {
 			t.Parallel()
 
 			got := assert.Panics(t, func() {
-				_, _, _ = load.Load(context.Background(), mustConfig(
+				_, _, _ = load.Load(t.Context(), mustConfig(
 					oneFileTree(), with(&nameless{frontendtest.NewScripted()}),
 				))
 			}, "a nameless declaration of a named kind is a structural defect")
@@ -373,7 +373,7 @@ func TestAssign(t *testing.T) {
 
 				key := &node.Param{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}
 				got := assert.Panics(t, func() {
-					_, _, _ = load.Load(context.Background(), mustConfig(oneFileTree(), with(&holey{
+					_, _, _ = load.Load(t.Context(), mustConfig(oneFileTree(), with(&holey{
 						Scripted: singular(),
 						decl:     &node.Function{Name: serveName, Params: []*node.Param{nil, key}},
 					})))
@@ -435,13 +435,13 @@ func TestAssign(t *testing.T) {
 				t.Parallel()
 
 				got := assert.Panics(t, func() {
-					_, _, _ = load.Load(context.Background(), mustConfig(oneFileTree(), with(
+					_, _, _ = load.Load(t.Context(), mustConfig(oneFileTree(), with(
 						&holey{Scripted: frontendtest.NewScripted(), decl: tt.decl},
 					)))
 				}, "the store cannot index a nil declaration, so the frontend's defect stops the load")
-				assert.Contains(t, got, "nil "+tt.kind.String(), "naming the entry")
-				assert.Contains(t, got, string(frontendtest.ScriptedID),
-					"and the frontend that built it")
+				assert.That(t, got).
+					Contains("nil "+tt.kind.String(), "naming the entry").
+					Contains(string(frontendtest.ScriptedID), "and the frontend that built it")
 			})
 		}
 	})
@@ -494,7 +494,7 @@ func assigned(owner, name string, kind symbol.Kind) symbol.Identity {
 }
 
 // loadNested drives one load over the edge-shape package.
-func loadNested(tb assert.TB) *store.Graph {
+func loadNested(tb testing.TB) *store.Graph {
 	tb.Helper()
 
 	g, _, _ := loadTree(tb, oneFileTree(), with(&nested{frontendtest.NewScripted()}))
@@ -502,7 +502,7 @@ func loadNested(tb assert.TB) *store.Graph {
 }
 
 // outerOf returns the enclosing struct of the edge-shape package.
-func outerOf(tb assert.TB, g *store.Graph) *node.Struct {
+func outerOf(tb testing.TB, g *store.Graph) *node.Struct {
 	tb.Helper()
 
 	outer, found := g.Lookup(assigned("", outerName, symbol.KindStruct))

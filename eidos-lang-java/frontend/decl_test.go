@@ -435,7 +435,7 @@ func TestDecl(t *testing.T) {
 
 // classOf parses a body below the package clause of com.acme and
 // returns the struct of a name its file declares.
-func classOf(tb assert.TB, body, name string) *node.Struct {
+func classOf(tb testing.TB, body, name string) *node.Struct {
 	tb.Helper()
 
 	return named[*node.Struct](tb, declsOf(tb, body), name)
@@ -443,7 +443,7 @@ func classOf(tb assert.TB, body, name string) *node.Struct {
 
 // ifaceOf parses a body below the package clause of com.acme that
 // declares the interface I, and returns it.
-func ifaceOf(tb assert.TB, body string) *node.Interface {
+func ifaceOf(tb testing.TB, body string) *node.Interface {
 	tb.Helper()
 
 	return named[*node.Interface](tb, declsOf(tb, body), "I")
@@ -451,7 +451,7 @@ func ifaceOf(tb assert.TB, body string) *node.Interface {
 
 // enumOf parses a body below the package clause of com.acme that
 // declares the enum its first declaration is, and returns it.
-func enumOf(tb assert.TB, body string) *node.Enum {
+func enumOf(tb testing.TB, body string) *node.Enum {
 	tb.Helper()
 
 	decls := declsOf(tb, body)
@@ -463,7 +463,7 @@ func enumOf(tb assert.TB, body string) *node.Enum {
 
 // implicitClassOf parses compactSource and returns the class it
 // implicitly declares.
-func implicitClassOf(tb assert.TB) *node.Struct {
+func implicitClassOf(tb testing.TB) *node.Struct {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, compactSource)

@@ -4,10 +4,13 @@
 package pipelinetest
 
 import (
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/output"
@@ -21,24 +24,20 @@ var aged = time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // AssertClean runs the fixture in root, an empty directory, and checks
 // the run: it reports no Error, positions every finding at a file, and
-// returns no error. Each Error and each finding without a position fails
-// the check on a line of its own, naming the finding's code, before the
-// run's error does.
+// returns no error. Each Error and each finding without a position
+// fails the check on a record of its own, whose contract names the
+// finding's code, and the run's error fails it after them.
 func AssertClean(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
 	_, report, err := first(tb, f, root)
 	for d := range report.Sink.All() {
-		if d.Severity == diag.SeverityError {
-			tb.Errorf("the run reports the Error %s at %s: %s", d.Code, d.Pos, d.Msg)
-		}
-		if d.Pos.File == "" {
-			tb.Errorf("finding %s %q has no position", d.Code, d.Msg)
-		}
+		finding := d.Code.String() + " " + d.Msg
+		expect.NotEqual(tb, d.Severity, diag.SeverityError,
+			"the run reports no Error: "+finding+" at "+d.Pos.String())
+		expect.NotEqual(tb, d.Pos.File, "", "the finding states a file: "+finding)
 	}
-	if err != nil {
-		tb.Errorf("the run returns an error: %v", err)
-	}
+	expect.NoError(tb, err, "the run returns no error")
 }
 
 // AssertGenerated runs the fixture in root, an empty directory, and
@@ -59,21 +58,28 @@ func AssertGenerated(tb assert.TB, f Fixture, root string) {
 // checks the record the run left in the state directory: it lists
 // exactly the fixture's wanted paths, each under the composition's one
 // plan and with the digest of the file at the path, frame included.
+// Each entry the fixture does not want, each entry under another plan
+// or with another digest, and each wanted path the record omits fails
+// the check on a record of its own, whose contract names the path.
 func AssertRecorded(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
 	w, report, _ := first(tb, f, root)
 	plan := report.Plans[0].Name
-	want := make(map[string]entry, len(f.Want))
-	for path := range f.Want {
-		want[path] = entry{plan: plan, hash: rundir.Digest(tb, root, path)}
-	}
-	got := map[string]entry{}
+	wanted := slices.Sorted(maps.Keys(f.Want))
+	var listed []string
 	for _, e := range rundir.Record(tb, root, w.Brand()).Files {
-		got[e.Path] = entry{plan: e.Plan, hash: e.Hash}
+		listed = append(listed, e.Path)
+		expect.Contains(tb, wanted, e.Path, "the fixture wants "+e.Path+", which the record lists")
+		if _, held := f.Want[e.Path]; !held {
+			continue
+		}
+		expect.Equal(tb, e.Plan, plan, "the record lists "+e.Path+" under the composition's plan")
+		expect.Equal(tb, e.Hash, rundir.Digest(tb, root, e.Path), "the record states the digest of "+e.Path)
 	}
-	assert.Equal(tb, got, want,
-		"the record lists every wanted file and nothing else, under the plan and with the digest of its bytes")
+	for _, path := range wanted {
+		expect.Contains(tb, listed, path, "the record lists "+path+", which the fixture wants")
+	}
 }
 
 // AssertIdempotent runs the fixture twice in root, an empty directory,
@@ -82,7 +88,9 @@ func AssertRecorded(tb assert.TB, f Fixture, root string) {
 // included. Between the runs every file's times are set to an instant in
 // the past, so a rewrite of unchanged bytes moves its mtime. The sealed
 // state outside the manifest is the run's record of what it read, and
-// the second run records the files' new times there.
+// the second run records the files' new times there. Each changed body,
+// each moved mtime and each added file fails the check on a record of
+// its own, whose contract names the path.
 func AssertIdempotent(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
@@ -92,7 +100,15 @@ func AssertIdempotent(tb assert.TB, f Fixture, root string) {
 	}
 	before := states(tb, root, w.Brand())
 	_, _, _ = run(tb, f, root)
-	assert.Equal(tb, states(tb, root, w.Brand()), before, "a second run changes no byte and moves no mtime")
+	after := states(tb, root, w.Brand())
+	paths := slices.Sorted(maps.Keys(before))
+	for _, path := range paths {
+		expect.Equal(tb, after[path].body, before[path].body, "a second run changes no byte of "+path)
+		expect.Equal(tb, after[path].mtime, before[path].mtime, "a second run moves the mtime of no file: "+path)
+	}
+	for _, path := range slices.Sorted(maps.Keys(after)) {
+		expect.Contains(tb, paths, path, "a second run writes no file the first did not: "+path)
+	}
 }
 
 // AssertRelocated runs the fixture in one and in two, two empty
@@ -105,17 +121,10 @@ func AssertRelocated(tb assert.TB, f Fixture, one, two string) {
 
 	w1, _, _ := first(tb, f, one)
 	w2, _, _ := first(tb, f, two)
-	assert.Equal(tb, rundir.Framed(tb, two, w2.Brand()), rundir.Framed(tb, one, w1.Brand()),
+	expect.Equal(tb, rundir.Framed(tb, two, w2.Brand()), rundir.Framed(tb, one, w1.Brand()),
 		"a run in another directory generates the same bytes")
-	assert.Equal(tb, rundir.Record(tb, two, w2.Brand()).Files, rundir.Record(tb, one, w1.Brand()).Files,
+	expect.Equal(tb, rundir.Record(tb, two, w2.Brand()).Files, rundir.Record(tb, one, w1.Brand()).Files,
 		"a run in another directory records the same files")
-}
-
-// entry is what the record check compares per path: the plan the record
-// lists the file under, and the digest it states.
-type entry struct {
-	plan string
-	hash string
 }
 
 // state is what the idempotence check compares per file: its bytes, and

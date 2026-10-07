@@ -69,8 +69,7 @@ func assertAllowed(t *testing.T, modPath, path string) {
 		// A path whose first segment carries a dot names a module,
 		// so anything else is the standard library.
 		first, _, _ := strings.Cut(path, "/")
-		assert.False(t, strings.Contains(first, "."),
-			"the generator takes no third-party dependency")
+		assert.NotContains(t, first, ".", "the generator takes no third-party dependency")
 		return
 	}
 	assert.HasPrefix(t, local, "internal/",

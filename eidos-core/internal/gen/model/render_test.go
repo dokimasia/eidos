@@ -49,9 +49,8 @@ func TestRender(t *testing.T) {
 
 		set, err := model.Generate(moduleRoot(t))
 		assert.NoError(t, err, "the schema generates")
-		body, ok := set[path]
-		assert.True(t, ok, "the case reads a file the generator owns")
-		return strings.Join(strings.Fields(string(body)), " ")
+		assert.Contains(t, set, path, "the case reads a file the generator owns")
+		return strings.Join(strings.Fields(string(set[path])), " ")
 	}
 
 	// rendered is generated over a written schema and not the
@@ -61,9 +60,8 @@ func TestRender(t *testing.T) {
 
 		set, err := model.Generate(schemaModule(t, schema))
 		assert.NoError(t, err, "the written schema generates")
-		body, ok := set[path]
-		assert.True(t, ok, "the case reads a file the generator owns")
-		return strings.Join(strings.Fields(string(body)), " ")
+		assert.Contains(t, set, path, "the case reads a file the generator owns")
+		return strings.Join(strings.Fields(string(set[path])), " ")
 	}
 
 	t.Run("JSON keys", func(t *testing.T) {
@@ -72,11 +70,9 @@ func TestRender(t *testing.T) {
 		t.Run("lower an acronym as one word", func(t *testing.T) {
 			t.Parallel()
 
-			kinds := generated(t, "node/kinds.gen.go")
-			assert.Contains(t, kinds, `json:"id,omitzero"`,
-				"an acronym lowers as one word")
-			assert.NotContains(t, kinds, `json:"iD`,
-				"never by its first letter alone")
+			assert.That(t, generated(t, "node/kinds.gen.go")).
+				Contains(`json:"id,omitzero"`, "an acronym lowers as one word").
+				NotContains(`json:"iD`, "never by its first letter alone")
 		})
 
 		t.Run("keep an ordinary name camel-cased", func(t *testing.T) {
@@ -109,21 +105,17 @@ func TestRender(t *testing.T) {
 		t.Run("the node model carries a position and no origin", func(t *testing.T) {
 			t.Parallel()
 
-			kinds := generated(t, "node/kinds.gen.go")
-			assert.Contains(t, kinds, "Pos position.Pos",
-				"the node model carries a position")
-			assert.NotContains(t, kinds, "Origin symbol.Identity",
-				"and no origin, which belongs to emit")
+			assert.That(t, generated(t, "node/kinds.gen.go")).
+				Contains("Pos position.Pos", "the node model carries a position").
+				NotContains("Origin symbol.Identity", "and no origin, which belongs to emit")
 		})
 
 		t.Run("the emit model carries an origin and no position", func(t *testing.T) {
 			t.Parallel()
 
-			kinds := generated(t, "emit/kinds.gen.go")
-			assert.Contains(t, kinds, "Origin",
-				"the emit model carries an origin")
-			assert.Contains(t, kinds, "position.Pos{}",
-				"and returns the zero position")
+			assert.That(t, generated(t, "emit/kinds.gen.go")).
+				Contains("Origin", "the emit model carries an origin").
+				Contains("position.Pos{}", "and returns the zero position")
 		})
 
 		t.Run("a slot exists on the emit side alone", func(t *testing.T) {
@@ -165,12 +157,10 @@ func TestRender(t *testing.T) {
 		t.Run("the match surface generates per subject kind", func(t *testing.T) {
 			t.Parallel()
 
-			matches := generated(t, "match.gen.go")
-			assert.Contains(t, matches,
-				"func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule",
-				"a marked kind gets its constructor and Match type")
-			assert.NotContains(t, matches, "OnTypeParam",
-				"an unmarked kind gets neither: the model bounds the set")
+			assert.That(t, generated(t, "match.gen.go")).
+				Contains("func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule",
+					"a marked kind gets its constructor and Match type").
+				NotContains("OnTypeParam", "an unmarked kind gets neither: the model bounds the set")
 			assert.Contains(t, generated(t, "match.gen_test.go"), "func TestMatches",
 				"the generated twin holds every kind to the lowering")
 		})
@@ -208,23 +198,19 @@ func TestRender(t *testing.T) {
 		t.Run("a kind reaching a fact only through a child joins the traversal", func(t *testing.T) {
 			t.Parallel()
 
-			facts := rendered(t, reachSchema, "emit/facts.gen.go")
-			assert.Contains(t, facts, "case *Root: for _, child := range x.Things { statedFacts(x, child, f) }",
-				"a kind that states no fact of its own still descends, "+
-					"because the fact it reaches is its child's")
-			assert.NotContains(t, facts, "symbol.KindRoot:",
-				"and states none directly, so coverage is not held against it")
+			assert.That(t, rendered(t, reachSchema, "emit/facts.gen.go")).
+				Contains("case *Root: for _, child := range x.Things { statedFacts(x, child, f) }",
+					"a kind that states no fact of its own still descends, because the fact it reaches is its child's").
+				NotContains("symbol.KindRoot:", "and states none directly, so coverage is not held against it")
 		})
 
 		t.Run("a marker descent field takes a child of the enclosing kind", func(t *testing.T) {
 			t.Parallel()
 
-			twin := rendered(t, reachSchema, "emit/facts.gen_test.go")
-			assert.Contains(t, twin, "child := &Thing{}",
-				"a field holding any kind takes a value of the kind that declares it, "+
-					"which is always available")
-			assert.Contains(t, twin, "child.Async = true",
-				"and the child states the first fact its kind carries")
+			assert.That(t, rendered(t, reachSchema, "emit/facts.gen_test.go")).
+				Contains("child := &Thing{}",
+					"a field holding any kind takes a value of the kind that declares it, which is always available").
+				Contains("child.Async = true", "and the child states the first fact its kind carries")
 		})
 	})
 

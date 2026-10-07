@@ -130,7 +130,8 @@ func TestLink(t *testing.T) {
 
 			g, _, _ := loadTree(t, stdTree())
 			row, _ := g.Lookup(rowID())
-			assert.True(t, row.(*node.Struct).Fields[1].Type.Target.IsZero(), "a builtin keeps its spelling alone")
+			assert.Equal(t, row.(*node.Struct).Fields[1].Type.Target, symbol.Identity{},
+				"a builtin keeps its spelling alone")
 		})
 
 		t.Run("resolves nothing in a file with no recorded scope", func(t *testing.T) {
@@ -141,7 +142,7 @@ func TestLink(t *testing.T) {
 
 			found, indexed := g.Lookup(assigned("", coretest.AliasName, symbol.KindAlias))
 			assert.True(t, indexed, "the alias is indexed")
-			assert.True(t, found.(*node.Alias).Target.Target.IsZero(),
+			assert.Equal(t, found.(*node.Alias).Target.Target, symbol.Identity{},
 				"the file records no bindings, so the reference resolves to nothing")
 			assert.Equal(t, found.(*node.Alias).Target.Spelling, coretest.StructName,
 				"the reference keeps what the frontend wrote")
@@ -184,7 +185,7 @@ func TestLink(t *testing.T) {
 				with(&inlined{frontendtest.NewScripted()}))
 			coretest.AssertCodes(t, sink)
 			plain, _ := g.Lookup(genDecl("", plainName, symbol.KindStruct))
-			assert.True(t, plain.(*node.Struct).Fields[0].Type.Methods[0].Params[0].Type.Target.IsZero(),
+			assert.Equal(t, plain.(*node.Struct).Fields[0].Type.Methods[0].Params[0].Type.Target, symbol.Identity{},
 				"the parameter shadows the package type T and has no identity to target")
 		})
 
@@ -252,7 +253,7 @@ func TestLink(t *testing.T) {
 
 			g, _, sink := loadTree(t, stdTree())
 			row, _ := g.Lookup(rowID())
-			assert.False(t, row.(*node.Struct).Fields[0].Type.Target.IsZero(),
+			assert.NotEqual(t, row.(*node.Struct).Fields[0].Type.Target, symbol.Identity{},
 				"the bound spelling resolved")
 			coretest.AssertCodes(t, sink)
 		})
@@ -364,7 +365,7 @@ func TestLink(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := loadTree(t, barrelTree(leftPath))
-			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(), "the barrel declares no Thing")
+			assert.Equal(t, holderRef(t, g, holdPath).Target, symbol.Identity{}, "the barrel declares no Thing")
 		})
 
 		t.Run("follows a re-export of a re-export", func(t *testing.T) {
@@ -390,7 +391,7 @@ func TestLink(t *testing.T) {
 			tree := barrelTree(loopPath)
 			tree[loopFile] = &fstest.MapFile{Data: publishing(loopPath, barrelPath)}
 			g, _, _ := loadTree(t, tree, with(frontendtest.NewScriptedExporter()))
-			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(),
+			assert.Equal(t, holderRef(t, g, holdPath).Target, symbol.Identity{},
 				"following stops where the path meets the barrel's name again")
 		})
 
@@ -419,7 +420,7 @@ func TestLink(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := loadTree(t, barrelTree(leftPath), with(&memberExporter{frontendtest.NewScriptedExporter()}))
-			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(), "no file re-exports a type's member")
+			assert.Equal(t, holderRef(t, g, holdPath).Target, symbol.Identity{}, "no file re-exports a type's member")
 		})
 	})
 }
@@ -495,7 +496,7 @@ func splitTree() fstest.MapFS {
 
 // holderRef returns the reference the one field of a package's
 // holder spells.
-func holderRef(tb assert.TB, g *store.Graph, path string) *node.TypeRef {
+func holderRef(tb testing.TB, g *store.Graph, path string) *node.TypeRef {
 	tb.Helper()
 
 	holder, found := g.Lookup(symbol.Identity{

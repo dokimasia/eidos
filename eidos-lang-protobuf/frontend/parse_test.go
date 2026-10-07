@@ -6,6 +6,7 @@ package frontend_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -355,8 +356,9 @@ message Row {
 			row, _ := declOf(t, file, "Row").(*node.Struct)
 			assert.Length(t, row.Types, 2, "both nest under the message that declares them")
 			_, nestedMessage := row.Types[0].(*node.Struct)
+			assert.True(t, nestedMessage, "the nested message loads as a struct")
 			_, nestedEnum := row.Types[1].(*node.Enum)
-			assert.True(t, nestedMessage && nestedEnum, "each as the kind it is")
+			assert.True(t, nestedEnum, "the nested enum loads as an enum")
 		})
 
 		t.Run("stamps the residue the projection has no form for", func(t *testing.T) {
@@ -516,8 +518,7 @@ extend Row {
 }
 `)
 			assert.True(t, sink.Failed(), "an extension changes a declaration the file does not declare")
-			assert.True(t, slices.Contains(codesOf(sink), protofrontend.RefusedExtension),
-				"under the refusal's own code")
+			assert.Contains(t, codesOf(sink), protofrontend.RefusedExtension, "under the refusal's own code")
 			var msg string
 			for d := range sink.All() {
 				if d.Code == protofrontend.RefusedExtension {
@@ -542,12 +543,11 @@ message Row {
 }
 `)
 			assert.True(t, sink.Failed(), "a bad token reports")
-			assert.True(t, slices.Contains(codesOf(sink), protofrontend.UnparsedFile),
-				"under the file's own code")
+			assert.Contains(t, codesOf(sink), protofrontend.UnparsedFile, "under the file's own code")
 			for d := range sink.All() {
 				if d.Code == protofrontend.UnparsedFile {
 					assert.Equal(t, d.Pos.File, fixturePath, "positioned in the file")
-					assert.True(t, d.Pos.Line > 0, "at a line")
+					assert.InRange(t, d.Pos.Line, 1, math.Inf(1), "at a line")
 				}
 			}
 		})
@@ -685,8 +685,12 @@ message Row {
 }
 `)
 			assert.True(t, sink.Failed(), "a group inside a oneof is a group like any other")
-			assert.True(t, slices.Contains(codesOf(sink), protofrontend.RefusedGroup),
-				"the group reports under the refusal's own code")
+			assert.Contains(
+				t,
+				codesOf(sink),
+				protofrontend.RefusedGroup,
+				"the group reports under the refusal's own code",
+			)
 			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
 			sum, _ := row.Types[0].(*node.Sum)
 			assert.Length(t, sum.Variants, 1, "the field loads, and the group loads as nothing")
@@ -706,8 +710,7 @@ message Row {
 }
 `)
 			assert.True(t, sink.Failed(), "a group is one declaration the model represents as two")
-			assert.True(t, slices.Contains(codesOf(sink), protofrontend.RefusedGroup),
-				"under the refusal's own code")
+			assert.Contains(t, codesOf(sink), protofrontend.RefusedGroup, "under the refusal's own code")
 			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
 			assert.Empty(t, row.Fields, "and the group loads as nothing")
 		})
@@ -726,7 +729,7 @@ message Row {
 //+fixture:gen:table name=orphan
 `)
 			assert.True(t, sink.Failed(), "an authored directive above nothing is reported")
-			assert.True(t, slices.Contains(codesOf(sink), protofrontend.UnaddressedCarrier),
+			assert.Contains(t, codesOf(sink), protofrontend.UnaddressedCarrier,
 				"the carrier reports under its own code, never silently")
 			var msg string
 			for d := range sink.All() {
@@ -737,7 +740,7 @@ message Row {
 			}
 			assert.Contains(t, msg, `"+fixture:gen:table name=orphan"`,
 				"the finding quotes the carrier as the author wrote it")
-			assert.Length(t, gb.Attachments(), 0, "nothing attaches")
+			assert.Empty(t, gb.Attachments(), "nothing attaches")
 		})
 
 		t.Run("annotates the file with a tool directive no declaration takes", func(t *testing.T) {
@@ -821,7 +824,7 @@ message Row {
 				for _, f := range row.Fields {
 					stated += len(stampsOn(gb, f, features))
 				}
-				assert.True(t, stated > 0,
+				assert.InRange(t, stated, 1, math.Inf(1),
 					"a field states its own features, which is where presence is decided")
 			})
 		}
@@ -935,7 +938,7 @@ message Req {}
 			var refusals []string
 			for d := range sink.All() {
 				refusals = append(refusals, d.Msg)
-				assert.True(t, d.Pos.Line > 0, "every refusal is positioned")
+				assert.InRange(t, d.Pos.Line, 1, math.Inf(1), "every refusal is positioned")
 			}
 			assert.Length(t, refusals, 4,
 				"two extend blocks and two groups each report, and none is dropped")
@@ -956,15 +959,14 @@ message Req {}
 		t.Run("returns the context's error for a cancelled load", func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
 			f := protofrontend.New()
 			tree := fstest.MapFS{fixturePath: {Data: []byte("syntax = \"proto3\";\n")}}
 			u := plugin.NewSourceUnit(
 				[]plugin.SourceRef{{Path: fixturePath}}, tree, plugin.DepthFull,
 				f.Syntax(), brand, diag.NewSink(), f.Name(),
 			)
-			assert.ErrorIs(t, f.Parse(ctx, u), context.Canceled, "a cancelled load stops before it parses")
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return f.Parse(ctx, u) },
+				"a cancelled load stops before it parses")
 		})
 
 		t.Run("returns an error for a file the tree does not contain", func(t *testing.T) {
@@ -975,7 +977,7 @@ message Req {}
 				[]plugin.SourceRef{{Path: "absent.proto"}}, fstest.MapFS{}, plugin.DepthFull,
 				f.Syntax(), brand, diag.NewSink(), f.Name(),
 			)
-			assert.HasError(t, f.Parse(context.Background(), u),
+			assert.HasError(t, f.Parse(t.Context(), u),
 				"a unit whose file is missing from the tree is the load's fault, not the schema's")
 		})
 
@@ -1000,7 +1002,7 @@ message Req {}
 func BenchmarkParse(b *testing.B) {
 	tree := scaledProto()
 	f := protofrontend.New()
-	units, err := f.Partition(context.Background(), claimedIn(tree), nil)
+	units, err := f.Partition(b.Context(), claimedIn(tree), nil)
 	assert.NoError(b, err, "the corpus partitions")
 	syntax := f.Syntax()
 	c := bench.Start(b).MaxAllocs(parseAllocs)
@@ -1018,7 +1020,7 @@ func BenchmarkParse(b *testing.B) {
 
 // parsed lowers one proto source and returns the unit's builder
 // and its sink, so a case reads what loaded and the findings.
-func parsed(tb assert.TB, src string, at ...string) (*plugin.GraphBuilder, *diag.Sink) {
+func parsed(tb testing.TB, src string, at ...string) (*plugin.GraphBuilder, *diag.Sink) {
 	tb.Helper()
 
 	filePath := fixturePath
@@ -1032,13 +1034,13 @@ func parsed(tb assert.TB, src string, at ...string) (*plugin.GraphBuilder, *diag
 		[]plugin.SourceRef{{Path: filePath}}, tree, plugin.DepthFull,
 		f.Syntax(), brand, sink, f.Name(),
 	)
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
 	return u.Graph(), sink
 }
 
 // grammar lowers one schema from testdata and returns the unit's
 // builder and its sink, so a case reads a schema file on disk.
-func grammar(tb assert.TB, name string) (*plugin.GraphBuilder, *diag.Sink) {
+func grammar(tb testing.TB, name string) (*plugin.GraphBuilder, *diag.Sink) {
 	tb.Helper()
 
 	src, err := os.ReadFile(filepath.Join("testdata", "grammar", name))

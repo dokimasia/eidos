@@ -4,6 +4,7 @@
 package grow_test
 
 import (
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -36,15 +37,15 @@ func TestGrow(t *testing.T) {
 			s := make([]int, 2, 8)
 			got := grow.Room(s, 6, least)
 			assert.Equal(t, cap(got), 8, "the capacity is unchanged")
-			assert.True(t, &got[:1][0] == &s[:1][0], "and the storage is the same")
+			assert.Equal(t, got, s, "and the storage is the same", assert.ByIdentity())
 		})
 
 		t.Run("returns a copy of at least the least capacity for an empty slice", func(t *testing.T) {
 			t.Parallel()
 
 			got := grow.Room([]int(nil), 1, least)
-			assert.True(t, cap(got) >= least, "the first growth takes the least capacity")
-			assert.Length(t, got, 0, "and the length is zero")
+			assert.InRange(t, cap(got), least, math.Inf(1), "the first growth takes the least capacity")
+			assert.Empty(t, got, "and the length is zero")
 		})
 
 		t.Run("returns a copy of at least twice the length of a full slice", func(t *testing.T) {
@@ -52,7 +53,7 @@ func TestGrow(t *testing.T) {
 
 			s := make([]int, 100)
 			got := grow.Room(s, 1, least)
-			assert.True(t, cap(got) >= 200, "the capacity at least doubles")
+			assert.InRange(t, cap(got), 200, math.Inf(1), "the capacity at least doubles")
 		})
 
 		t.Run("returns a copy with room for n where n exceeds the length", func(t *testing.T) {
@@ -60,7 +61,7 @@ func TestGrow(t *testing.T) {
 
 			s := make([]int, 100)
 			got := grow.Room(s, 500, least)
-			assert.True(t, cap(got) >= 600, "the capacity covers the length and n")
+			assert.InRange(t, cap(got), 600, math.Inf(1), "the capacity covers the length and n")
 		})
 
 		t.Run("returns a copy that keeps the elements and the length", func(t *testing.T) {
@@ -83,17 +84,17 @@ func TestGrow(t *testing.T) {
 
 // Room allocates nothing where the slice has the room and one copy where
 // it does not, in the ordinary run, which runs no benchmark. The check
-// runs alone, because AllocsPerRun counts every goroutine's allocations
-// and refuses to run beside parallel tests.
+// runs alone, because the count includes every goroutine's allocations.
 func TestGrowAllocs(t *testing.T) {
 	roomy := make([]int, 0, least)
 	var got []int
 	assert.MaxAllocs(t, func() { got = grow.Room(roomy, 1, least) }, roomFitsAllocs,
 		"Room allocates nothing for a slice with room")
+	assert.Equal(t, got, roomy, "the slice keeps its storage", assert.ByIdentity())
 	full := make([]int, least)
 	assert.MaxAllocs(t, func() { got = grow.Room(full, 1, least) }, roomGrowsAllocs,
 		"Room allocates the copy of a full slice")
-	assert.True(t, cap(got) >= 2*least, "the copy at least doubles")
+	assert.InRange(t, cap(got), 2*least, math.Inf(1), "the copy at least doubles")
 }
 
 // BenchmarkGrow measures Room over a slice with room and over a full
@@ -119,7 +120,7 @@ func BenchmarkGrow(b *testing.B) {
 			for c.Loop() {
 				got = grow.Room(s, 1, least)
 			}
-			assert.True(b, cap(got) >= 2*least, "the copy at least doubles")
+			assert.InRange(b, cap(got), 2*least, math.Inf(1), "the copy at least doubles")
 		})
 	})
 }

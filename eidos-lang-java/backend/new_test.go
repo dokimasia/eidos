@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -111,12 +112,13 @@ func TestNew(t *testing.T) {
 			for _, f := range backendtest.RenderSettled(t, setup) {
 				text = append(text, f.Body...)
 			}
-			assert.Contains(t, string(text), "public class Row", "a neutral row takes Pascal")
-			assert.Contains(t, string(text), "public void boot()", "a neutral boot keeps camel case")
-			assert.Contains(t, string(text), "public final class ShapeCircle implements Shape",
-				"a lowered variant implements the respelled principal")
-			assert.Contains(t, string(text), "public sealed interface Shape permits ShapeCircle, ShapeEmpty",
-				"the sealed principal permits the respelled classes")
+			assert.That(t, string(text)).
+				Contains("public class Row", "a neutral row takes Pascal").
+				Contains("public void boot()", "a neutral boot keeps camel case").
+				Contains("public final class ShapeCircle implements Shape",
+					"a lowered variant implements the respelled principal").
+				Contains("public sealed interface Shape permits ShapeCircle, ShapeEmpty",
+					"the sealed principal permits the respelled classes")
 		})
 
 		t.Run("returns a backend that imports the class a field's type names", func(t *testing.T) {
@@ -125,11 +127,10 @@ func TestNew(t *testing.T) {
 			holder := declared(holderName)
 			holder.Fields.Append(&emit.Field{Name: "row", Type: imported(storePkg, rowName)})
 			body, sink := rendered(t, holder)
-			for d := range sink.All() {
-				t.Errorf("unexpected finding: %s", d.Msg)
-			}
-			assert.Contains(t, body, "import svc.store.Row;\n", "the class's import")
-			assert.Contains(t, body, "    public Row row;\n", "the field through the simple name")
+			assert.Empty(t, slices.Collect(sink.All()), "the file renders clean")
+			assert.That(t, body).
+				Contains("import svc.store.Row;\n", "the class's import").
+				Contains("    public Row row;\n", "the field through the simple name")
 		})
 
 		t.Run("returns a backend that names the settled class in an array", func(t *testing.T) {
@@ -142,9 +143,7 @@ func TestNew(t *testing.T) {
 				Elems:    []*emit.TypeRef{{Spelling: doubleName}},
 			}})
 			body, sink := rendered(t, declared(doubleName), holder)
-			for d := range sink.All() {
-				t.Errorf("unexpected finding: %s", d.Msg)
-			}
+			assert.Empty(t, slices.Collect(sink.All()), "the file renders clean")
 			assert.Contains(t, body, "    public "+settledDouble+"[] rows;\n", "the array names the settled class")
 		})
 	})

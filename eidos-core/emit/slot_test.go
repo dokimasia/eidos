@@ -4,6 +4,7 @@
 package emit_test
 
 import (
+	"cmp"
 	"encoding/json"
 	"testing"
 
@@ -17,10 +18,6 @@ import (
 // concreteJSON is the encoding of the concrete fixture slot: the array
 // of its two strings.
 const concreteJSON = `["a","b"]`
-
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
 
 // The ceilings of the slot's codec over the two fixture slots, each with
 // the encoder's or the decoder's state pooled by an earlier call.
@@ -212,69 +209,69 @@ func TestSlot(t *testing.T) {
 // A first append allocates the slot's storage, the reads allocate
 // nothing, and the codec allocates within its ceilings, in the ordinary
 // run, which runs no benchmark. Each first append takes a declaration
-// built before the count, because an append changes the slot it writes.
-// The check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// built outside the count, because an append changes the slot it writes.
+// Each count keeps the first error of its calls, which cmp.Or returns
+// without allocating. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestSlotAllocs(t *testing.T) {
-	empties := emptyStructs(allocRuns)
 	field := &emit.Field{Name: "ID"}
-	at := 0
-	assert.MaxAllocs(t, func() {
-		empties[at].Fields.Append(field)
-		at++
-	}, 1, "Append allocates the storage of an empty slot")
+	var appended *emit.Struct
+	assert.MaxAllocsWithSetup(t, func() *emit.Struct { return &emit.Struct{} },
+		func(s *emit.Struct) {
+			s.Fields.Append(field)
+			appended = s
+		}, 1, "Append allocates the storage of an empty slot")
+	assert.Equal(t, appended.Fields.Len(), 1, "the slot holds the field")
 
 	slot := concrete()
-	assert.MaxAllocs(t, func() {
-		if len(slot.Items()) != 2 {
-			t.Fatal("Items missed a value")
-		}
-	}, 0, "Items allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if slot.Len() != 2 {
-			t.Fatal("Len miscounted the slot")
-		}
-	}, 0, "Len allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if slot.IsZero() {
-			t.Fatal("IsZero reported a filled slot as empty")
-		}
-	}, 0, "IsZero allocates nothing")
+	var items []string
+	assert.MaxAllocs(t, func() { items = slot.Items() }, 0, "Items allocates nothing")
+	assert.Equal(t, items, []string{"a", "b"}, "Items returns the contents")
+	var n int
+	assert.MaxAllocs(t, func() { n = slot.Len() }, 0, "Len allocates nothing")
+	assert.Equal(t, n, 2, "Len counts the contents")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = slot.IsZero() }, 0, "IsZero allocates nothing")
+	assert.False(t, zero, "a filled slot is not empty")
 
+	var (
+		encoded []byte
+		err     error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := slot.MarshalJSON(); err != nil {
-			t.Fatalf("MarshalJSON: unexpected error: %v", err)
-		}
+		var merr error
+		encoded, merr = slot.MarshalJSON()
+		err = cmp.Or(err, merr)
 	}, marshalConcreteAllocs, "MarshalJSON allocates what the encoder does for a concrete slot")
+	assert.NoError(t, err, "the concrete slot encodes")
+	assert.Equal(t, string(encoded), concreteJSON, "as the array of its contents")
 	declared := declarations()
 	assert.MaxAllocs(t, func() {
-		if _, err := declared.MarshalJSON(); err != nil {
-			t.Fatalf("MarshalJSON: unexpected error: %v", err)
-		}
+		var merr error
+		encoded, merr = declared.MarshalJSON()
+		err = cmp.Or(err, merr)
 	}, marshalDeclarationAllocs, "MarshalJSON allocates what the encoder does for a declaration slot")
+	assert.NoError(t, err, "the declaration slot encodes")
+	assert.Contains(t, string(encoded), "RowID", "with its declarations")
 
 	data := []byte(concreteJSON)
 	var decoded emit.Slot[string]
-	assert.MaxAllocs(t, func() {
-		if err := decoded.UnmarshalJSON(data); err != nil {
-			t.Fatalf("UnmarshalJSON: unexpected error: %v", err)
-		}
-	}, 0, "UnmarshalJSON allocates nothing into a concrete slot with room")
-	encoded, err := declared.MarshalJSON()
-	assert.NoError(t, err, "the declaration slot encodes")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, decoded.UnmarshalJSON(data)) }, 0,
+		"UnmarshalJSON allocates nothing into a concrete slot with room")
+	assert.NoError(t, err, "the array decodes")
+	assert.Equal(t, decoded.Items(), []string{"a", "b"}, "into the contents")
 	var decodedDeclarations emit.Slot[symbol.Symbol]
-	assert.MaxAllocs(t, func() {
-		if err := decodedDeclarations.UnmarshalJSON(encoded); err != nil {
-			t.Fatalf("UnmarshalJSON: unexpected error: %v", err)
-		}
-	}, unmarshalDeclarationAllocs, "UnmarshalJSON allocates the declarations it decodes")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, decodedDeclarations.UnmarshalJSON(encoded)) },
+		unmarshalDeclarationAllocs, "UnmarshalJSON allocates the declarations it decodes")
+	assert.NoError(t, err, "the declaration array decodes")
+	assert.Equal(t, decodedDeclarations.Len(), 2, "into the declarations")
 }
 
 // BenchmarkSlot measures a first append, the slot's reads, and its
 // codec over a concrete slot and a declaration slot. Each codec case
-// calls the method once before the contract counts, which pools the
-// encoder's or the decoder's state, and its ceiling allows that state
-// once more for a run of one iteration.
+// runs one iteration before the measurement, which pools the encoder's
+// or the decoder's state, and its ceiling allows that state once more
+// for a run of one iteration.
 func BenchmarkSlot(b *testing.B) {
 	b.Run("Append", func(b *testing.B) {
 		b.Run("a first value into an empty slot", func(b *testing.B) {
@@ -326,11 +323,12 @@ func BenchmarkSlot(b *testing.B) {
 	b.Run("MarshalJSON", func(b *testing.B) {
 		b.Run("a concrete slot", func(b *testing.B) {
 			slot := concrete()
-			_, err := slot.MarshalJSON()
-			assert.NoError(b, err, "the slot encodes before the measurement")
-			c := bench.Start(b).MaxAllocs(marshalConcreteAllocs + encodeStateAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(marshalConcreteAllocs + encodeStateAllocs)
 			defer c.End()
-			var got []byte
+			var (
+				got []byte
+				err error
+			)
 			for c.Loop() {
 				got, err = slot.MarshalJSON()
 			}
@@ -340,11 +338,12 @@ func BenchmarkSlot(b *testing.B) {
 
 		b.Run("a declaration slot", func(b *testing.B) {
 			slot := declarations()
-			_, err := slot.MarshalJSON()
-			assert.NoError(b, err, "the slot encodes before the measurement")
-			c := bench.Start(b).MaxAllocs(marshalDeclarationAllocs + encodeStateAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(marshalDeclarationAllocs + encodeStateAllocs)
 			defer c.End()
-			var got []byte
+			var (
+				got []byte
+				err error
+			)
 			for c.Loop() {
 				got, err = slot.MarshalJSON()
 			}
@@ -356,10 +355,11 @@ func BenchmarkSlot(b *testing.B) {
 	b.Run("UnmarshalJSON", func(b *testing.B) {
 		b.Run("a concrete slot", func(b *testing.B) {
 			data := []byte(concreteJSON)
-			var slot emit.Slot[string]
-			err := slot.UnmarshalJSON(data)
-			assert.NoError(b, err, "the slot decodes before the measurement")
-			c := bench.Start(b).MaxAllocs(decodeStateAllocs)
+			var (
+				slot emit.Slot[string]
+				err  error
+			)
+			c := bench.Start(b).Warmup(1).MaxAllocs(decodeStateAllocs)
 			defer c.End()
 			for c.Loop() {
 				err = slot.UnmarshalJSON(data)
@@ -372,9 +372,7 @@ func BenchmarkSlot(b *testing.B) {
 			data, err := declarations().MarshalJSON()
 			assert.NoError(b, err, "the declaration slot encodes")
 			var slot emit.Slot[symbol.Symbol]
-			err = slot.UnmarshalJSON(data)
-			assert.NoError(b, err, "the slot decodes before the measurement")
-			c := bench.Start(b).MaxAllocs(unmarshalDeclarationAllocs + decodeStateAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(unmarshalDeclarationAllocs + decodeStateAllocs)
 			defer c.End()
 			for c.Loop() {
 				err = slot.UnmarshalJSON(data)
@@ -397,13 +395,4 @@ func declarations() emit.Slot[symbol.Symbol] {
 	var slot emit.Slot[symbol.Symbol]
 	slot.Append(&emit.Alias{Name: "RowID"}, &emit.Constant{Name: "Version"})
 	return slot
-}
-
-// emptyStructs returns n structs whose field slots are empty.
-func emptyStructs(n int) []*emit.Struct {
-	out := make([]*emit.Struct, n)
-	for i := range out {
-		out[i] = &emit.Struct{}
-	}
-	return out
 }

@@ -4,12 +4,13 @@
 package gosource_test
 
 import (
-	"os"
+	"cmp"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
@@ -75,7 +76,11 @@ func TestModule(t *testing.T) {
 		t.Run("reads the directive below the lines above it", func(t *testing.T) {
 			t.Parallel()
 
-			root := goMod(t, "// The module this fixture declares.\n\nmodule example.test/later\n\ngo 1.27.0\n")
+			root := files.Workspace(t, files.Tree{
+				goModName: files.Text(
+					"// The module this fixture declares.\n\nmodule example.test/later\n\ngo 1.27.0\n",
+				),
+			})
 			got, err := gosource.ModulePath(root)
 			assert.NoError(t, err, "a directive below the first line reads")
 			assert.Equal(t, got, "example.test/later",
@@ -85,7 +90,8 @@ func TestModule(t *testing.T) {
 		t.Run("unquotes a quoted module path", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := gosource.ModulePath(goMod(t, "module \"example.test/quoted\"\n"))
+			root := files.Workspace(t, files.Tree{goModName: files.Text("module \"example.test/quoted\"\n")})
+			got, err := gosource.ModulePath(root)
 			assert.NoError(t, err, "a quoted directive reads")
 			assert.Equal(t, got, "example.test/quoted",
 				"and comes back without its quotes, which are no part of the path")
@@ -94,7 +100,7 @@ func TestModule(t *testing.T) {
 		t.Run("returns an error for a go.mod without a module directive", func(t *testing.T) {
 			t.Parallel()
 
-			root := goMod(t, "go 1.27.0\n")
+			root := files.Workspace(t, files.Tree{goModName: files.Text("go 1.27.0\n")})
 			_, err := gosource.ModulePath(root)
 			assert.HasError(t, err, "a go.mod without a module directive is reported")
 			assert.Contains(t, err.Error(), filepath.Join(root, goModName),
@@ -113,18 +119,27 @@ func TestModule(t *testing.T) {
 }
 
 // The module lookups allocate within their ceilings in the ordinary
-// run, which runs no benchmark.
+// run, which runs no benchmark. Each count keeps the first error of its
+// calls, which cmp.Or returns without allocating.
 func TestModuleAllocs(t *testing.T) {
+	var (
+		got string
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := gosource.ModuleRoot(libDir); err != nil {
-			t.Fatalf("ModuleRoot: unexpected error: %v", err)
-		}
+		var merr error
+		got, merr = gosource.ModuleRoot(libDir)
+		err = cmp.Or(err, merr)
 	}, moduleRootAllocs, "ModuleRoot allocates the path and the stats")
+	assert.NoError(t, err, "the directory is inside a module")
+	assert.Equal(t, got, fixtureRoot(t), "ModuleRoot returns the fixture root")
 	assert.MaxAllocs(t, func() {
-		if _, err := gosource.ModulePath("testdata/mod"); err != nil {
-			t.Fatalf("ModulePath: unexpected error: %v", err)
-		}
+		var merr error
+		got, merr = gosource.ModulePath("testdata/mod")
+		err = cmp.Or(err, merr)
 	}, modulePathAllocs, "ModulePath allocates the read of the go.mod")
+	assert.NoError(t, err, "the go.mod reads")
+	assert.Equal(t, got, "example.test/fixture", "ModulePath returns the module directive")
 }
 
 // BenchmarkModule measures the search for the module a directory is in,
@@ -157,16 +172,4 @@ func BenchmarkModule(b *testing.B) {
 		assert.NoError(b, err, "the go.mod reads")
 		assert.Equal(b, got, "example.test/fixture", "ModulePath returns the module directive")
 	})
-}
-
-// goMod writes one go.mod into a fresh module root and returns the
-// root, so a case can read a directive the committed fixture does
-// not contain.
-func goMod(t *testing.T, body string) string {
-	t.Helper()
-
-	root := t.TempDir()
-	assert.NoError(t, os.WriteFile(filepath.Join(root, goModName), []byte(body), 0o600),
-		"the go.mod writes")
-	return root
 }

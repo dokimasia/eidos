@@ -4,11 +4,14 @@
 package facade_test
 
 import (
+	"cmp"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/gen/facade"
 )
@@ -28,8 +31,9 @@ const (
 	// check, and the parse of each curated package's files.
 	lowerMiniAllocs = 1_621 + 8*1
 	// lowerKernelAllocs is one lowering of the kernel's curated
-	// packages, 309,649 on average with a standard deviation of 7.
-	lowerKernelAllocs = 309_649 + 8*7
+	// packages, 311,002 on average with a standard deviation of 4.8,
+	// rounded up to 5.
+	lowerKernelAllocs = 311_002 + 8*5
 )
 
 // A lowering establishes what the renderer assumes. The curated
@@ -49,8 +53,8 @@ func TestIR(t *testing.T) {
 			assert.NoError(t, err, "the kernel lowers")
 			assert.Length(t, surfaces, len(facade.Surfaces), "one surface per curated entry")
 			for i, ps := range surfaces {
-				assert.Equal(t, ps.Rel, facade.Surfaces[i].Rel, "in curated order")
-				assert.True(t, len(ps.Files) > 0, "each surface parsed its files")
+				expect.Equal(t, ps.Rel, facade.Surfaces[i].Rel, "in curated order")
+				expect.NotEmpty(t, ps.Files, "each surface parsed its files")
 			}
 			assert.Equal(t, surfaces[0].KernelName, "eidos",
 				"the root surface is the kernel's authoring package")
@@ -59,35 +63,37 @@ func TestIR(t *testing.T) {
 		t.Run("returns an error for a dot import", func(t *testing.T) {
 			t.Parallel()
 
-			root := mini(t)
-			poison(t, root, poisonRel, "package emit\n\nimport . \"strings\"\n")
-			_, err := facade.Lower(filepath.Join(root, facade.KernelDir))
+			kernel := filepath.Join(mini(t), facade.KernelDir)
+			files.Write(t, kernel, files.Tree{poisonRel: files.Text("package emit\n\nimport . \"strings\"\n")})
+			_, err := facade.Lower(kernel)
 			assert.HasError(t, err, "a dot import erases the qualifier")
-			assert.Contains(t, err.Error(), "dot import", "the error names the cause")
-			assert.Contains(t, err.Error(), "poison.go:", "at the kernel position")
+			assert.That(t, err.Error()).
+				Contains("dot import", "the error names the cause").
+				Contains("poison.go:", "at the kernel position")
 		})
 
 		t.Run("returns an error for a package split", func(t *testing.T) {
 			t.Parallel()
 
-			root := mini(t)
-			poison(t, root, poisonRel, "package emitx\n")
-			_, err := facade.Lower(filepath.Join(root, facade.KernelDir))
+			kernel := filepath.Join(mini(t), facade.KernelDir)
+			files.Write(t, kernel, files.Tree{poisonRel: files.Text("package emitx\n")})
+			_, err := facade.Lower(kernel)
 			assert.HasError(t, err, "two package names in one directory")
-			assert.Contains(t, err.Error(), "declared beside", "the refusal names the split")
-			assert.Contains(t, err.Error(), "emitx", "and the name that arrived beside the package")
+			assert.That(t, err.Error()).
+				Contains("declared beside", "the refusal names the split").
+				Contains("emitx", "and the name that arrived beside the package")
 		})
 
 		t.Run("returns an error for a curated package it cannot parse", func(t *testing.T) {
 			t.Parallel()
 
-			root := mini(t)
-			poison(t, root, poisonRel, "package emit\n\nfunc Broken(\n")
-			_, err := facade.Lower(filepath.Join(root, facade.KernelDir))
+			kernel := filepath.Join(mini(t), facade.KernelDir)
+			files.Write(t, kernel, files.Tree{poisonRel: files.Text("package emit\n\nfunc Broken(\n")})
+			_, err := facade.Lower(kernel)
 			assert.HasError(t, err, "a curated package that does not parse is reported")
-			assert.Contains(t, err.Error(), "go.dokimi.dev/eidos/core/emit",
-				"naming the curated package it was reading")
-			assert.Contains(t, err.Error(), "poison.go", "and the file inside it")
+			assert.That(t, err.Error()).
+				Contains("go.dokimi.dev/eidos/core/emit", "naming the curated package it was reading").
+				Contains("poison.go", "and the file inside it")
 		})
 
 		t.Run("returns an error for a root of another module", func(t *testing.T) {
@@ -163,16 +169,17 @@ func TestIR(t *testing.T) {
 // A lowering of the mini kernel and the surfaces' paths allocate within
 // their ceilings in the ordinary run, which runs no benchmark. The
 // kernel's own lowering takes too long to repeat 101 times, so only
-// [BenchmarkIR] checks its ceiling. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// [BenchmarkIR] checks its ceiling. The count keeps the first error of
+// its calls, which cmp.Or returns without allocating. The check runs
+// alone, because the count includes every goroutine's allocations.
 func TestIRAllocs(t *testing.T) {
 	root := filepath.Join(mini(t), facade.KernelDir)
+	var err error
 	assert.MaxAllocs(t, func() {
-		if _, err := facade.Lower(root); err != nil {
-			t.Fatalf("Lower: unexpected error: %v", err)
-		}
+		_, lerr := facade.Lower(root)
+		err = cmp.Or(err, lerr)
 	}, lowerMiniAllocs, "Lower allocates the parse of each curated package")
+	assert.NoError(t, err, "the mini kernel lowers")
 	var got string
 	assert.MaxAllocs(t, func() { got = nestedSurface.KernelImportPath() }, 1,
 		"KernelImportPath allocates a nested surface's path")
@@ -200,11 +207,12 @@ func BenchmarkIR(b *testing.B) {
 	b.Run("Lower", func(b *testing.B) {
 		for _, tt := range lowerings {
 			b.Run(tt.name, func(b *testing.B) {
-				_, err := facade.Lower(tt.root)
-				assert.NoError(b, err, "the kernel lowers before the measurement")
-				c := bench.Start(b).MaxAllocs(tt.allocs)
+				c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 				defer c.End()
-				var surfaces []*facade.PackageSurface
+				var (
+					surfaces []*facade.PackageSurface
+					err      error
+				)
 				for c.Loop() {
 					surfaces, err = facade.Lower(tt.root)
 				}

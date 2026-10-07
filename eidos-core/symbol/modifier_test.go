@@ -115,11 +115,9 @@ func TestModifier(t *testing.T) {
 // benchmark.
 func TestModifierZeroAlloc(t *testing.T) {
 	form := symbol.FormInline
-	assert.MaxAllocs(t, func() {
-		if !form.Structural() {
-			t.Fatal("Structural reported false for FormInline")
-		}
-	}, 0, "Structural allocates nothing")
+	var structural bool
+	assert.MaxAllocs(t, func() { structural = form.Structural() }, 0, "Structural allocates nothing")
+	assert.True(t, structural, "Structural reports true for FormInline")
 }
 
 // BenchmarkModifier measures the one method of the modifiers.

@@ -326,7 +326,7 @@ func storeCalls(tb testing.TB) []allocCall {
 		stores map[string]fs.FS
 		err    error
 	)
-	check := func(tb assert.TB) {
+	check := func(tb testing.TB) {
 		assert.NoError(tb, err, "Stores resolves both roots")
 		assert.Length(tb, stores, 2, "Stores returns the module cache and the standard library")
 	}

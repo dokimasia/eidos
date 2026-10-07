@@ -186,7 +186,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "public class A {\n    int a\n}\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnparsedFile}, "the missing semicolon reports")
-			assert.True(t, strings.HasSuffix(found[0].Msg, missingMark), "as missing")
+			assert.HasSuffix(t, found[0].Msg, missingMark, "as missing")
 		})
 
 		t.Run("reports an ERROR node quoting its source", func(t *testing.T) {
@@ -194,7 +194,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "public class A {\n    %% bad\n}\n")
 			assert.NotEmpty(t, found, "the error reports")
-			assert.True(t, strings.Contains(found[0].Msg, "%%"), "quoting the source")
+			assert.Contains(t, found[0].Msg, "%%", "quoting the source")
 		})
 
 		t.Run("quotes the first line of an ERROR node that spans two", func(t *testing.T) {
@@ -202,7 +202,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "public class A {\n    %% one\n    %% two\n}\n")
 			assert.NotEmpty(t, found, "the error reports")
-			assert.False(t, strings.Contains(found[0].Msg, "two"), "the second line is left out")
+			assert.NotContains(t, found[0].Msg, "two", "the second line is left out")
 		})
 
 		t.Run("cuts a quoted line at its cap", func(t *testing.T) {
@@ -210,7 +210,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "public class A {\n    %% "+strings.Repeat("x", 40)+"\n}\n")
 			assert.NotEmpty(t, found, "the error reports")
-			assert.True(t, strings.Contains(found[0].Msg, cutMark), "the quote is cut")
+			assert.Contains(t, found[0].Msg, cutMark, "the quote is cut")
 		})
 
 		t.Run("reports at most eleven findings for a file's syntax errors", func(t *testing.T) {
@@ -231,7 +231,7 @@ func TestLower(t *testing.T) {
 
 // parsedPackageInfo parses a package-info.java of a source in the
 // fixture file's directory, and returns the unit's builder and findings.
-func parsedPackageInfo(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
+func parsedPackageInfo(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parsedTree(tb, fstest.MapFS{packageInfo: {Data: []byte(src)}}, packageInfo, plugin.DepthFull)
@@ -239,7 +239,7 @@ func parsedPackageInfo(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.D
 
 // parsedModuleInfo parses a module-info.java that declares the module
 // com.acme.store, and returns the unit's builder and findings.
-func parsedModuleInfo(tb assert.TB) (*plugin.GraphBuilder, []diag.Diag) {
+func parsedModuleInfo(tb testing.TB) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parsedTree(tb, fstest.MapFS{
@@ -249,7 +249,7 @@ func parsedModuleInfo(tb assert.TB) (*plugin.GraphBuilder, []diag.Diag) {
 
 // importOf parses one import declaration below the package clause of
 // com.acme and returns the Import the File node records.
-func importOf(tb assert.TB, decl string) *node.Import {
+func importOf(tb testing.TB, decl string) *node.Import {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, pkgClause+decl+publicClass)

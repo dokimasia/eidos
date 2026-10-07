@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 )
@@ -57,16 +58,14 @@ func TestKernel(t *testing.T) {
 		t.Run("returns an out schema that declares the reserved routing keys", func(t *testing.T) {
 			t.Parallel()
 
-			keys := map[directive.ParamKey]struct{}{}
+			var keys []directive.ParamKey
 			for _, spec := range kernelSchema(t, directive.KernelOut).Params {
-				keys[spec.Key] = struct{}{}
+				keys = append(keys, spec.Key)
 			}
-			_, path := keys[directive.OutPath]
-			assert.True(t, path, "the redirect target")
-			_, tag := keys[directive.OutTag]
-			assert.True(t, tag,
-				"and the companion selector: the kernel owns the reserved keys, "+
-					"so its own schema may declare one")
+			expect.That(t, keys).
+				Contains(directive.OutPath, "the redirect target").
+				Contains(directive.OutTag,
+					"and the companion selector: the kernel defines the reserved keys, so its own schema may declare one")
 		})
 
 		t.Run("returns a repeatable diag schema", func(t *testing.T) {

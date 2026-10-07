@@ -103,11 +103,12 @@ func TestScaffold(t *testing.T) {
 					Value: emit.Expr{Kind: emit.ExprName, Name: "err"},
 				}},
 			}
-			encoded, err := json.Marshal(guard)
-			assert.NoError(t, err, "the guard encodes")
-			var decoded emit.Stmt
-			assert.NoError(t, json.Unmarshal(encoded, &decoded), "the guard decodes")
-			assert.Equal(t, decoded, guard, "the round trip returns the value")
+			assert.RoundTrip(t, func(s emit.Stmt) ([]byte, error) { return json.Marshal(s) },
+				func(b []byte) (emit.Stmt, error) {
+					var s emit.Stmt
+					err := json.Unmarshal(b, &s)
+					return s, err
+				}, guard, "the round trip returns the value")
 		})
 	})
 }
@@ -116,16 +117,11 @@ func TestScaffold(t *testing.T) {
 // the value it points at, in the ordinary run, which runs no benchmark.
 func TestScaffoldAllocs(t *testing.T) {
 	stmt, expr := emit.StmtGuard, emit.ExprCall
-	assert.MaxAllocs(t, func() {
-		if stmt.String() != "guard" {
-			t.Fatal("String spelled another statement kind")
-		}
-	}, 0, "StmtKind.String allocates nothing for a declared kind")
-	assert.MaxAllocs(t, func() {
-		if expr.String() != "call" {
-			t.Fatal("String spelled another expression kind")
-		}
-	}, 0, "ExprKind.String allocates nothing for a declared kind")
+	var spelt string
+	assert.MaxAllocs(t, func() { spelt = stmt.String() }, 0, "StmtKind.String allocates nothing for a declared kind")
+	assert.Equal(t, spelt, "guard", "StmtKind.String spells the statement kind")
+	assert.MaxAllocs(t, func() { spelt = expr.String() }, 0, "ExprKind.String allocates nothing for a declared kind")
+	assert.Equal(t, spelt, "call", "ExprKind.String spells the expression kind")
 	value := forty()
 	var got emit.Expr
 	assert.MaxAllocs(t, func() { got = emit.ValueExpr(value) }, 1, "ValueExpr allocates the value it points at")

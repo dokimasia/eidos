@@ -4,6 +4,7 @@
 package naming_test
 
 import (
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -288,9 +289,7 @@ func runShared(
 
 		for _, in := range inputs([]string{"a", "d", "A", "D", "_", "-"}, 5) {
 			once := fn(in)
-			if again := fn(once); again != once {
-				t.Fatalf("%q converts to %q, and converting that again gives %q", in, once, again)
-			}
+			assert.Equal(t, fn(once), once, "a conversion of the conversion of "+strconv.Quote(in)+" changes nothing")
 		}
 	})
 }

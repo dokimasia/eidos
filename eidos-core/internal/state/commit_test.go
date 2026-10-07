@@ -4,8 +4,10 @@
 package state_test
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,10 +26,6 @@ const (
 	genPrefix = "state/gen/"
 	segPrefix = "state/seg/"
 )
-
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
 
 // The ceilings of a commit's steps.
 const (
@@ -144,11 +142,15 @@ func TestCommit(t *testing.T) {
 
 			l := ledger.NewMem()
 			first := committed(t, l, past, "alpha")
-			writes := l.Writes()
-			result, err := state.NewCommit(first, nil).Write(t.Context(), l, header(past),
-				manifest.Manifest{Version: manifest.Version})
+			var (
+				result state.Result
+				err    error
+			)
+			assert.Pure(t, l.Writes, func() {
+				result, err = state.NewCommit(first, nil).Write(t.Context(), l, header(past),
+					manifest.Manifest{Version: manifest.Version})
+			}, "the empty commit writes nothing")
 			assert.NoError(t, err, "the empty commit succeeds")
-			assert.Equal(t, l.Writes(), writes, "without a write")
 			assert.Equal(t, result, state.Result{Generation: first.Name},
 				"and the parent is still the current generation")
 		})
@@ -161,7 +163,7 @@ func TestCommit(t *testing.T) {
 			assert.NoError(t, err, "the commit writes")
 			got, _, err := state.ReadManifest(t.Context(), l)
 			assert.NoError(t, err, "the documents read")
-			assert.True(t, got.Equal(scaled()), "and join to the manifest the commit recorded")
+			assert.Equal(t, got, scaled(), "and join to the manifest the commit recorded", assert.EquateEmpty())
 		})
 
 		t.Run("records the digest of each document in the generation", func(t *testing.T) {
@@ -192,7 +194,7 @@ func TestCommit(t *testing.T) {
 			assert.NoError(t, err, "the second commit writes")
 			got, _, err := state.ReadManifest(t.Context(), l)
 			assert.NoError(t, err, "the documents read")
-			assert.True(t, got.Equal(scaled()), "the ledger records the manifest the parent records")
+			assert.Equal(t, got, scaled(), "the ledger records the manifest the parent records", assert.EquateEmpty())
 		})
 
 		t.Run("records the ledger's documents where the parent records others", func(t *testing.T) {
@@ -222,7 +224,7 @@ func TestCommit(t *testing.T) {
 			c.Put(state.TableChecks, []byte("alpha"), []byte("row"))
 			result, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
 			assert.NoError(t, err, "the commit writes")
-			assert.True(t, result.Written > 0, "it wrote bytes")
+			assert.InRange(t, result.Written, 1, math.Inf(1), "it wrote bytes")
 		})
 
 		t.Run("counts the bytes of the live generation", func(t *testing.T) {
@@ -233,7 +235,7 @@ func TestCommit(t *testing.T) {
 			c.Put(state.TableChecks, []byte("alpha"), []byte("row"))
 			result, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
 			assert.NoError(t, err, "the commit writes")
-			assert.True(t, result.Size > 0, "the live generation has bytes")
+			assert.InRange(t, result.Size, 1, math.Inf(1), "the live generation has bytes")
 		})
 
 		t.Run("removes every blob older than the anchor the live generation does not reference", func(t *testing.T) {
@@ -400,9 +402,9 @@ func TestCommit(t *testing.T) {
 
 // A commit's steps allocate within their ceilings in the ordinary run,
 // which runs no benchmark. Each step that changes a commit takes one
-// built before the count. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// built outside the count. Each count keeps the first error of its
+// calls, which cmp.Or returns without allocating. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestCommitAllocs(t *testing.T) {
 	parent, ref := parentWithRegion(t)
 	var c *state.Commit
@@ -414,38 +416,37 @@ func TestCommitAllocs(t *testing.T) {
 
 	blobs := [][]byte{[]byte("ab"), []byte("cde")}
 	key, row := []byte("alpha"), []byte("row")
-	fresh, at := newCommits(allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		if _, err := fresh[at].AddRegions(blobs); err != nil {
-			t.Fatalf("AddRegions: unexpected error: %v", err)
-		}
-		at++
+	cold := func() *state.Commit { return state.NewCommit(nil, nil) }
+	var (
+		refs []state.RegionRef
+		err  error
+	)
+	assert.MaxAllocsWithSetup(t, cold, func(fresh *state.Commit) {
+		var aerr error
+		refs, aerr = fresh.AddRegions(blobs)
+		err = cmp.Or(err, aerr)
 	}, addRegionsAllocs, "AddRegions allocates the places, the segment and its name")
-	fresh, at = newCommits(allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		fresh[at].Put(state.TableChecks, key, row)
-		at++
-	}, putAllocs, "Put allocates the copies and the table's map")
-	fresh, at = newCommits(allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		fresh[at].Delete(state.TableChecks, key)
-		at++
-	}, deleteAllocs, "Delete allocates the copy and the table's map")
+	assert.NoError(t, err, "every region adds")
+	assert.Length(t, refs, len(blobs), "one place per blob")
+	assert.MaxAllocsWithSetup(t, cold, func(fresh *state.Commit) { fresh.Put(state.TableChecks, key, row) },
+		putAllocs, "Put allocates the copies and the table's map")
+	assert.MaxAllocsWithSetup(t, cold, func(fresh *state.Commit) { fresh.Delete(state.TableChecks, key) },
+		deleteAllocs, "Delete allocates the copy and the table's map")
 
-	writes := make([]*state.Commit, allocRuns)
-	ledgers := make([]*ledger.Mem, allocRuns)
-	for i := range writes {
-		writes[i], ledgers[i] = state.NewCommit(nil, nil), ledger.NewMem()
-		writes[i].Put(state.TableChecks, key, row)
+	type writing struct {
+		commit *state.Commit
+		ledger *ledger.Mem
 	}
 	h, m := header(past), manifest.Manifest{Version: manifest.Version}
-	at = 0
-	assert.MaxAllocs(t, func() {
-		if _, err := writes[at].Write(t.Context(), ledgers[at], h, m); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, func() writing {
+		w := writing{commit: state.NewCommit(nil, nil), ledger: ledger.NewMem()}
+		w.commit.Put(state.TableChecks, key, row)
+		return w
+	}, func(w writing) {
+		_, werr := w.commit.Write(t.Context(), w.ledger, h, m)
+		err = cmp.Or(err, werr)
 	}, writeAllocs, "Write allocates the segments, the generation and CURRENT")
+	assert.NoError(t, err, "every commit writes")
 }
 
 // BenchmarkCommit measures each step of a commit: its construction, a
@@ -612,13 +613,4 @@ func parentWithRegion(tb testing.TB) (*state.Generation, state.RegionRef) {
 	g, err := state.Open(tb.Context(), l)
 	assert.NoError(tb, err, "and opens")
 	return g, refs[0]
-}
-
-// newCommits returns n commits of a cold run.
-func newCommits(n int) []*state.Commit {
-	out := make([]*state.Commit, n)
-	for i := range out {
-		out[i] = state.NewCommit(nil, nil)
-	}
-	return out
 }

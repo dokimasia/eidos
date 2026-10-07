@@ -65,8 +65,7 @@ func TestRoles(t *testing.T) {
 
 			ctx := &plugin.AnnotatorContext{Plugin: "classify", Bucket: 2}
 			assert.NoError(t, p.Annotate(ctx), "the fixture call passes")
-			assert.True(t, a.got == ctx,
-				"the phase call touches exactly what its context carries")
+			assert.Equal(t, a.got, ctx, "the phase call touches exactly what its context carries", assert.ByIdentity())
 		})
 	})
 
@@ -83,8 +82,7 @@ func TestRoles(t *testing.T) {
 				Plugin: "stubgen", Bucket: 1, Emit: plugin.NewEmit(),
 			}
 			assert.NoError(t, p.Generate(ctx), "the fixture call passes")
-			assert.True(t, g.got == ctx,
-				"the phase call touches exactly what its context carries")
+			assert.Equal(t, g.got, ctx, "the phase call touches exactly what its context carries", assert.ByIdentity())
 		})
 
 		t.Run("reads the exports of the plans it depends on through its context", func(t *testing.T) {
@@ -109,8 +107,7 @@ func TestRoles(t *testing.T) {
 
 			ctx := &plugin.CheckContext{Plugin: "stubbed", Plans: []plugin.PlanRecord{{Name: "stubs"}}}
 			assert.NoError(t, p.Check(ctx), "the fixture call passes")
-			assert.True(t, c.got == ctx,
-				"the check touches exactly what its context carries")
+			assert.Equal(t, c.got, ctx, "the check touches exactly what its context carries", assert.ByIdentity())
 		})
 
 		t.Run("names the plans it reads", func(t *testing.T) {

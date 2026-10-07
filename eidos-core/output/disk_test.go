@@ -4,6 +4,7 @@
 package output_test
 
 import (
+	"cmp"
 	"errors"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -114,9 +116,7 @@ func TestDisk(t *testing.T) {
 
 			root := t.TempDir()
 			assert.NoError(t, disk(t, root).Write(storeFile, []byte(firstBody)), "the file stages")
-			entries, err := os.ReadDir(root)
-			assert.NoError(t, err, "the root reads")
-			assert.Length(t, entries, 0, "the tree is unchanged")
+			files.Equal(t, os.DirFS(root), files.Tree{}, "the tree is unchanged")
 		})
 	})
 
@@ -126,11 +126,9 @@ func TestDisk(t *testing.T) {
 		t.Run("removes nothing from the tree before the commit", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			at := placed(t, root, storeFile, stampedAs(t, diskBrand, firstBody))
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(stampedAs(t, diskBrand, firstBody))})
 			assert.NoError(t, disk(t, root).Delete(storeFile), "the removal stages")
-			_, err := os.Stat(at)
-			assert.NoError(t, err, "the file remains")
+			files.IsFile(t, filepath.Join(root, storeFile), "the file remains")
 		})
 	})
 
@@ -224,8 +222,7 @@ func TestDisk(t *testing.T) {
 		t.Run("returns FoundForeign for a directory at the staged path", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			assert.NoError(t, os.Mkdir(filepath.Join(root, storeFile), 0o755), "the fixture makes a directory")
+			root := files.Workspace(t, files.Tree{storeFile: files.Dir()})
 			s := disk(t, root)
 			assert.NoError(t, s.Write(storeFile, []byte(firstBody)), "the file stages")
 			got, err := s.Prepare()
@@ -236,10 +233,8 @@ func TestDisk(t *testing.T) {
 		t.Run("returns an error for a path a symlink leads out of the root", func(t *testing.T) {
 			t.Parallel()
 
-			root, outside := t.TempDir(), t.TempDir()
-			placed(t, outside, "escaped.go", firstBody)
-			assert.NoError(t, os.Symlink(outside, filepath.Join(root, "away")),
-				"the fixture links out of the root")
+			outside := files.Workspace(t, files.Tree{"escaped.go": files.Text(firstBody)})
+			root := files.Workspace(t, files.Tree{"away": files.Link(outside)})
 			s := disk(t, root)
 			assert.NoError(t, s.Write("away/escaped.go", []byte(firstBody)), "the path stages")
 			_, err := s.Prepare()
@@ -256,10 +251,8 @@ func TestDisk(t *testing.T) {
 			root := t.TempDir()
 			w := committed(t, root, "svc/api/store.go", "package api\n")
 			assert.Equal(t, w.Action, output.ActionCreated, "the path did not exist")
-
-			got, err := os.ReadFile(filepath.Join(root, "svc", "api", "store.go"))
-			assert.NoError(t, err, "the file is on disk")
-			assert.Equal(t, string(got), "package api\n", "the file has the staged bytes")
+			files.HasContent(t, filepath.Join(root, "svc", "api", "store.go"), "package api\n",
+				"the file is on disk with the staged bytes")
 		})
 
 		t.Run("leaves the mtime of an unchanged file untouched", func(t *testing.T) {
@@ -285,10 +278,7 @@ func TestDisk(t *testing.T) {
 			next := stampedAs(t, diskBrand, secondBody)
 			w := committed(t, root, storeFile, next)
 			assert.Equal(t, w.Action, output.ActionUpdated, "the bytes changed")
-
-			got, err := os.ReadFile(filepath.Join(root, storeFile))
-			assert.NoError(t, err, "the file reads")
-			assert.Equal(t, string(got), next, "the file has the new bytes")
+			files.HasContent(t, filepath.Join(root, storeFile), next, "the file has the new bytes")
 		})
 
 		overwrites := []struct {
@@ -335,8 +325,8 @@ func TestDisk(t *testing.T) {
 		t.Run("returns an error for a file edited after the preparation", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			at := placed(t, root, storeFile, stampedAs(t, diskBrand, firstBody))
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(stampedAs(t, diskBrand, firstBody))})
+			at := filepath.Join(root, storeFile)
 			s := disk(t, root)
 			assert.NoError(t, s.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
 			got, err := s.Prepare()
@@ -346,33 +336,28 @@ func TestDisk(t *testing.T) {
 			assert.NoError(t, os.WriteFile(at, []byte(edited), 0o644), "a person edits the file")
 			_, err = s.Commit()
 			assert.HasError(t, err, "the commit refuses the edited file")
-			after, readErr := os.ReadFile(at)
-			assert.NoError(t, readErr, "the file reads")
-			assert.Equal(t, string(after), edited, "the edit remains")
+			files.HasContent(t, at, edited, "the edit remains")
 		})
 
 		t.Run("removes the brand's intact output a removal names", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			at := placed(t, root, storeFile, stampedAs(t, diskBrand, firstBody))
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(stampedAs(t, diskBrand, firstBody))})
+			at := filepath.Join(root, storeFile)
 			s := disk(t, root)
 			assert.NoError(t, s.Delete(storeFile), "the removal stages")
 			got, err := s.Commit()
 			assert.NoError(t, err, "the commit succeeds")
 			assert.Equal(t, got, []output.Written{{Path: storeFile, Action: output.ActionDeleted}},
 				"one removal without a digest")
-			_, statErr := os.Stat(at)
-			assert.True(t, os.IsNotExist(statErr), "the file is gone")
+			files.Absent(t, at, "the file is gone")
 		})
 
 		t.Run("returns an error for the brand's output it cannot remove", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
+			root := files.Workspace(t, files.Tree{"svc/" + storeFile: files.Text(stampedAs(t, diskBrand, firstBody))})
 			dir := filepath.Join(root, "svc")
-			assert.NoError(t, os.Mkdir(dir, 0o755), "the fixture makes the directory")
-			placed(t, dir, storeFile, stampedAs(t, diskBrand, firstBody))
 			assert.NoError(t, os.Chmod(dir, 0o555), "the directory refuses a removal")
 			t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 			s := disk(t, root)
@@ -397,25 +382,22 @@ func TestDisk(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				root := t.TempDir()
 				existing := tt.existing(t)
-				at := placed(t, root, storeFile, existing)
+				root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
+				at := filepath.Join(root, storeFile)
 				s := disk(t, root)
 				assert.NoError(t, s.Delete(storeFile), "the removal stages")
 				got, err := s.Commit()
 				assert.NoError(t, err, "a kept file is no fault")
 				assert.Empty(t, got, "no record claims a removal")
-				after, readErr := os.ReadFile(at)
-				assert.NoError(t, readErr, "the file remains")
-				assert.Equal(t, string(after), existing, "with its own bytes")
+				files.HasContent(t, at, existing, "the file remains with its own bytes")
 			})
 		}
 
 		t.Run("commits the other files after a refused overwrite", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			placed(t, root, storeFile, firstBody)
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(firstBody)})
 			s := disk(t, root)
 			assert.NoError(t, s.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
 			assert.NoError(t, s.Write("kept.go", []byte(firstBody)), "the sibling stages")
@@ -431,29 +413,23 @@ func TestDisk(t *testing.T) {
 
 			root := t.TempDir()
 			committed(t, root, storeFile, firstBody)
-			entries, err := os.ReadDir(root)
-			assert.NoError(t, err, "the root reads")
-			assert.Length(t, entries, 1, "the rename leaves one file")
-			assert.Equal(t, entries[0].Name(), storeFile, "the file is the target")
+			files.Equal(t, os.DirFS(root), files.Tree{storeFile: files.Text(firstBody)},
+				"the rename leaves the target alone")
 		})
 
 		t.Run("replaces a staging file a killed run left", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			stale := placed(t, root, storeFile+".stage", "half a file")
+			root := files.Workspace(t, files.Tree{storeFile + ".stage": files.Text("half a file")})
 			committed(t, root, storeFile, firstBody)
-			_, err := os.Stat(stale)
-			assert.True(t, os.IsNotExist(err), "the stale staging file is gone")
+			files.Absent(t, filepath.Join(root, storeFile+".stage"), "the stale staging file is gone")
 		})
 
 		t.Run("returns an error for a path that escapes through a symlink", func(t *testing.T) {
 			t.Parallel()
 
-			root, outside := t.TempDir(), t.TempDir()
-			assert.NoError(t, os.Symlink(outside, filepath.Join(root, "away")),
-				"the fixture links out of the root")
-
+			outside := t.TempDir()
+			root := files.Workspace(t, files.Tree{"away": files.Link(outside)})
 			s := disk(t, root)
 			assert.NoError(t, s.Write("away/escaped.go", []byte("package x\n")),
 				"the workspace-relative path stages")
@@ -461,8 +437,7 @@ func TestDisk(t *testing.T) {
 
 			got, err := s.Commit()
 			assert.HasError(t, err, "the link does not escape the operating system's jail")
-			_, statErr := os.Stat(filepath.Join(outside, "escaped.go"))
-			assert.True(t, os.IsNotExist(statErr), "nothing is written outside the root")
+			files.Absent(t, filepath.Join(outside, "escaped.go"), "nothing is written outside the root")
 			assert.Length(t, got, 1, "the commit continues past the refusal")
 			assert.Equal(t, got[0].Path, "kept.go", "the sibling is committed")
 		})
@@ -470,10 +445,8 @@ func TestDisk(t *testing.T) {
 		t.Run("returns an error naming a file whose directory it cannot make", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			assert.NoError(t, os.Symlink("ghost", filepath.Join(root, "svc")),
-				"the fixture leaves a dangling link where the directory belongs")
-
+			// A dangling link stands where the directory belongs.
+			root := files.Workspace(t, files.Tree{"svc": files.Link("ghost")})
 			s := disk(t, root)
 			assert.NoError(t, s.Write("svc/store.go", []byte(firstBody)), "the file stages")
 			assert.NoError(t, s.Write("kept.go", []byte(firstBody)), "the sibling stages")
@@ -488,10 +461,8 @@ func TestDisk(t *testing.T) {
 		t.Run("returns an error for a staging file it cannot write", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			assert.NoError(t, os.Mkdir(filepath.Join(root, storeFile+".stage"), 0o755),
-				"the fixture occupies the staging path with a directory")
-
+			// A directory occupies the staging path.
+			root := files.Workspace(t, files.Tree{storeFile + ".stage": files.Dir()})
 			s := disk(t, root)
 			assert.NoError(t, s.Write(storeFile, []byte(firstBody)), "the file stages")
 
@@ -499,8 +470,7 @@ func TestDisk(t *testing.T) {
 			assert.HasError(t, err, "the bytes are written to the tree through the staging file alone")
 			assert.Contains(t, err.Error(), "staging", "the error names the step that failed")
 			assert.Empty(t, got, "no record claims a file that was never written")
-			_, statErr := os.Stat(filepath.Join(root, storeFile))
-			assert.True(t, os.IsNotExist(statErr), "the target was never written")
+			files.Absent(t, filepath.Join(root, storeFile), "the target was never written")
 		})
 
 		t.Run("removes a staging file whose bytes it cannot sync", func(t *testing.T) {
@@ -523,10 +493,8 @@ func TestDisk(t *testing.T) {
 			assert.HasError(t, err, "unsynced bytes are never renamed over the target")
 			assert.Contains(t, err.Error(), "staging", "the error names the step that failed")
 			assert.Empty(t, got, "no record claims the file")
-			_, statErr := os.Stat(stage)
-			assert.True(t, os.IsNotExist(statErr), "the failed staging file is gone")
-			_, statErr = os.Stat(filepath.Join(root, storeFile))
-			assert.True(t, os.IsNotExist(statErr), "the target was never written")
+			files.Absent(t, stage, "the failed staging file is gone")
+			files.Absent(t, filepath.Join(root, storeFile), "the target was never written")
 		})
 	})
 
@@ -540,10 +508,7 @@ func TestDisk(t *testing.T) {
 			s := disk(t, root)
 			assert.NoError(t, s.Write(storeFile, []byte(firstBody)), "the file stages")
 			assert.NoError(t, s.Discard(), "the discard succeeds")
-
-			entries, err := os.ReadDir(root)
-			assert.NoError(t, err, "the root reads")
-			assert.Length(t, entries, 0, "the tree is unchanged")
+			files.Equal(t, os.DirFS(root), files.Tree{}, "the tree is unchanged")
 		})
 
 		t.Run("returns ErrFinished for a second discard", func(t *testing.T) {
@@ -567,90 +532,88 @@ func TestDisk(t *testing.T) {
 
 // Each method of the disk sink allocates what it stages, reads and
 // writes in the ordinary run, which runs no benchmark. Each call that
-// consumes its sink takes a sink of its own, opened before the count. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// consumes its sink takes a sink of its own, opened outside the count,
+// and the test discards every sink no call finished. Each count keeps
+// the first error of its calls, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestDiskAllocs(t *testing.T) {
-	root := t.TempDir()
 	same := []byte(stampedAs(t, diskBrand, firstBody))
 	other := []byte(stampedAs(t, diskBrand, secondBody))
-	placed(t, root, storeFile, string(same))
+	root := files.Workspace(t, files.Tree{storeFile: files.Bytes(same)})
 
+	var open []*output.Disk
+	t.Cleanup(func() { discardAll(t, open) })
 	built := make([]*output.Disk, 0, allocRuns)
+	var err error
 	assert.MaxAllocs(t, func() {
-		d, err := output.NewDisk(root, diskBrand)
-		if err != nil {
-			t.Fatalf("NewDisk: unexpected error: %v", err)
-		}
+		d, nerr := output.NewDisk(root, diskBrand)
+		err = cmp.Or(err, nerr)
 		built = append(built, d)
 	}, newDiskAllocs, "NewDisk allocates the sink and its root")
+	assert.NoError(t, err, "every root opens")
 	discardAll(t, built)
 
-	at, empty := 0, disks(t, root, nil)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Write(storeFile, same); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
+	sink := func(dir string, body []byte) func() *output.Disk {
+		return func() *output.Disk {
+			d := opened(t, dir, body)
+			open = append(open, d)
+			return d
 		}
-		at++
-	}, firstWriteAllocs, "Write allocates the staging's maps on the first write")
+	}
+	prepare := func(d *output.Disk) {
+		_, perr := d.Prepare()
+		err = cmp.Or(err, perr)
+	}
+	commit := func(d *output.Disk) {
+		_, cerr := d.Commit()
+		err = cmp.Or(err, cerr)
+	}
 
-	at, empty = 0, disks(t, root, nil)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Delete(storeFile); err != nil {
-			t.Fatalf("Delete: unexpected error: %v", err)
-		}
-		at++
-	}, firstDeleteAllocs, "Delete allocates the removal set on the first removal")
+	assert.MaxAllocsWithSetup(t, sink(root, nil), func(d *output.Disk) { err = cmp.Or(err, d.Write(storeFile, same)) },
+		firstWriteAllocs, "Write allocates the staging's maps on the first write")
+	assert.NoError(t, err, "every first write stages")
 
-	at, sames := 0, disks(t, root, same)
-	assert.MaxAllocs(t, func() {
-		if _, err := sames[at].Prepare(); err != nil {
-			t.Fatalf("Prepare: unexpected error: %v", err)
-		}
-		at++
-	}, prepareSameAllocs, "Prepare allocates the path list, the changes, the digest and the read")
+	assert.MaxAllocsWithSetup(t, sink(root, nil), func(d *output.Disk) { err = cmp.Or(err, d.Delete(storeFile)) },
+		firstDeleteAllocs, "Delete allocates the removal set on the first removal")
+	assert.NoError(t, err, "every first removal stages")
 
-	at, absent := 0, disks(t, t.TempDir(), same)
-	assert.MaxAllocs(t, func() {
-		if _, err := absent[at].Prepare(); err != nil {
-			t.Fatalf("Prepare: unexpected error: %v", err)
-		}
-		at++
-	}, prepareNothingAllocs, "Prepare allocates the read of a path without a file")
+	assert.MaxAllocsWithSetup(t, sink(root, same), prepare,
+		prepareSameAllocs, "Prepare allocates the path list, the changes, the digest and the read")
+	assert.NoError(t, err, "every staging over the file prepares")
 
-	at, sames = 0, disks(t, root, same)
-	assert.MaxAllocs(t, func() {
-		if _, err := sames[at].Commit(); err != nil {
-			t.Fatalf("Commit: unexpected error: %v", err)
-		}
-		at++
-	}, commitSameAllocs, "Commit allocates the path list, the records, the read and the digest")
+	assert.MaxAllocsWithSetup(t, sink(t.TempDir(), same), prepare,
+		prepareNothingAllocs, "Prepare allocates the read of a path without a file")
+	assert.NoError(t, err, "every staging over no file prepares")
 
-	at, updates := 0, alternating(t, root, other, same)
-	assert.MaxAllocs(t, func() {
-		if _, err := updates[at].Commit(); err != nil {
-			t.Fatalf("Commit: unexpected error: %v", err)
-		}
-		at++
-	}, commitUpdateAllocs, "Commit allocates the verification and the staging file of an update")
+	assert.MaxAllocsWithSetup(t, sink(root, same), commit,
+		commitSameAllocs, "Commit allocates the path list, the records, the read and the digest")
+	assert.NoError(t, err, "every commit of the file's own bytes succeeds")
 
-	at, sames = 0, disks(t, root, same)
-	assert.MaxAllocs(t, func() {
-		if err := sames[at].Discard(); err != nil {
-			t.Fatalf("Discard: unexpected error: %v", err)
-		}
-		at++
-	}, 0, "Discard allocates nothing")
+	// Each sink stages the body the file lacks, so every commit in order
+	// updates the file the commit before it wrote.
+	bodies, next := [2][]byte{other, same}, 0
+	updating := func() *output.Disk {
+		d := sink(root, bodies[next%2])()
+		next++
+		return d
+	}
+	assert.MaxAllocsWithSetup(t, updating, commit,
+		commitUpdateAllocs, "Commit allocates the verification and the staging file of an update")
+	assert.NoError(t, err, "every update commits")
+
+	assert.MaxAllocsWithSetup(t, sink(root, same), func(d *output.Disk) { err = cmp.Or(err, d.Discard()) },
+		0, "Discard allocates nothing")
+	assert.NoError(t, err, "every discard succeeds")
 }
 
 // BenchmarkDisk measures each method of the disk sink over one file of
 // the brand's, each call that consumes its sink on a sink opened outside
 // the measurement.
 func BenchmarkDisk(b *testing.B) {
-	root, nothing := b.TempDir(), b.TempDir()
 	same := []byte(stampedAs(b, diskBrand, firstBody))
 	other := []byte(stampedAs(b, diskBrand, secondBody))
-	placed(b, root, storeFile, string(same))
+	root, nothing := files.Workspace(b, files.Tree{storeFile: files.Bytes(same)}), b.TempDir()
 
 	b.Run("NewDisk", func(b *testing.B) {
 		var d *output.Disk
@@ -786,16 +749,6 @@ func stampedAs(tb assert.TB, brand output.Brand, body string) string {
 	return string(out)
 }
 
-// placed writes content at root/name outside the sink, the way a
-// person or another tool leaves a file.
-func placed(tb assert.TB, root, name, content string) string {
-	tb.Helper()
-
-	at := filepath.Join(root, name)
-	assert.NoError(tb, os.WriteFile(at, []byte(content), 0o644), "the fixture places the file")
-	return at
-}
-
 // drifted returns the brand's output of firstBody with its body edited
 // after the stamp, the trailer left as it was.
 func drifted(t *testing.T) string {
@@ -810,11 +763,11 @@ func drifted(t *testing.T) string {
 func prepared(t *testing.T, existing string, staged *string) output.Change {
 	t.Helper()
 
-	root := t.TempDir()
+	tree := files.Tree{}
 	if existing != "" {
-		placed(t, root, storeFile, existing)
+		tree[storeFile] = files.Text(existing)
 	}
-	s := disk(t, root)
+	s := disk(t, files.Workspace(t, tree))
 	if staged != nil {
 		assert.NoError(t, s.Write(storeFile, []byte(*staged)), "the file stages")
 	} else {
@@ -831,14 +784,11 @@ func prepared(t *testing.T, existing string, staged *string) output.Change {
 func refusedOverwrite(t *testing.T, existing string) (string, error) {
 	t.Helper()
 
-	root := t.TempDir()
-	at := placed(t, root, storeFile, existing)
+	root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
 	s := disk(t, root)
 	assert.NoError(t, s.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
 	_, err := s.Commit()
-	got, readErr := os.ReadFile(at)
-	assert.NoError(t, readErr, "the file reads")
-	return string(got), err
+	return files.Read(t, filepath.Join(root, storeFile)), err
 }
 
 // opened opens a disk sink over root with body staged at storeFile, or
@@ -862,42 +812,11 @@ func discarded(tb assert.TB, d *output.Disk) {
 	if d == nil {
 		return
 	}
-	if err := d.Discard(); err != nil && !errors.Is(err, output.ErrFinished) {
-		tb.Fatalf("Discard: unexpected error: %v", err)
+	err := d.Discard()
+	if errors.Is(err, output.ErrFinished) {
+		return
 	}
-}
-
-// disks returns allocRuns sinks opened over root, each with body staged
-// at storeFile, or with nothing staged for a nil body: one sink for each
-// call of an allocation check that consumes its sink. The test discards
-// every sink no call finished.
-func disks(t *testing.T, root string, body []byte) []*output.Disk {
-	t.Helper()
-
-	out := make([]*output.Disk, allocRuns)
-	for i := range out {
-		out[i] = opened(t, root, body)
-	}
-	t.Cleanup(func() { discardAll(t, out) })
-	return out
-}
-
-// alternating returns allocRuns sinks opened over root, staging first
-// and second in turn, so each commit in order updates the file the one
-// before it wrote.
-func alternating(t *testing.T, root string, first, second []byte) []*output.Disk {
-	t.Helper()
-
-	out := make([]*output.Disk, allocRuns)
-	for i := range out {
-		body := first
-		if i%2 == 1 {
-			body = second
-		}
-		out[i] = opened(t, root, body)
-	}
-	t.Cleanup(func() { discardAll(t, out) })
-	return out
+	assert.NoError(tb, err, "the sink discards")
 }
 
 // discardAll closes every sink of a check that no call finished.

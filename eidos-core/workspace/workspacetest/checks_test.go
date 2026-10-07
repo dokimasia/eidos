@@ -4,7 +4,6 @@
 package workspacetest_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -55,6 +55,12 @@ const (
 	noterID  plugin.ID = "noter"
 )
 
+// The contracts of the checks that more than one case pins.
+const (
+	builds    = "the fixture's composition builds"
+	generated = "the files under the brand's frame are the fixture's wanted files, byte for byte"
+)
+
 // otherSource is the canonical identity of a declaration the tree does
 // not declare, which a rewriting ledger records as every file's source.
 var otherSource = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: rowPkg, Name: otherDeclaration}.String()
@@ -83,23 +89,22 @@ func TestChecks(t *testing.T) {
 			bare := fixture(t)
 			bare.Tree = nil
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture with nothing to copy", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture with nothing to copy", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, bare, root)
 			})
-			assert.Contains(t, msg, "no tree", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states a tree"},
+				"the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects a directory that already contains the tree", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			placed := filepath.Join(root, filepath.FromSlash(rowFile))
-			assert.NoError(t, os.MkdirAll(filepath.Dir(placed), 0o755), "the source's directory is made")
-			assert.NoError(t, os.WriteFile(placed, []byte(rowSource), 0o644), "the source is placed")
-			msg := assert.Rejects(t, "a directory the tree cannot copy into", func(tb assert.TB) {
+			root := files.Workspace(t, files.Tree{rowFile: files.Text(rowSource)})
+			records := assert.Rejects(t, "a directory the tree cannot copy into", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, fixture(t), root)
 			})
-			assert.Contains(t, msg, "copies into the run's directory", "the rejection names the step that failed")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture's tree copies into the run's directory"},
+				"the rejection names the step that failed")
 		})
 
 		t.Run("rejects a fixture that states no plans", func(t *testing.T) {
@@ -108,10 +113,11 @@ func TestChecks(t *testing.T) {
 			planless := fixture(t)
 			planless.Plans = nil
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture with nothing to compose", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture with nothing to compose", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, planless, root)
 			})
-			assert.Contains(t, msg, "no plans", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states its plans"},
+				"the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects a fixture of one plan", func(t *testing.T) {
@@ -120,10 +126,13 @@ func TestChecks(t *testing.T) {
 			single := fixture(t)
 			single.Plans = func() []workspace.Plan { return []workspace.Plan{mirrors()} }
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture of fewer than two plans", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture of fewer than two plans", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, single, root)
 			})
-			assert.Contains(t, msg, "at least two plans", "the rejection names the plan count the suite checks")
+			assert.Equal(t, coretest.Contracts(records), []string{"the suite checks at least two plans"},
+				"the rejection names the plan count the suite checks")
+			got, _ := records[0].Got()
+			assert.Equal(t, got, any(1), "the record shows the fixture's one plan")
 		})
 
 		t.Run("rejects a fixture that states no composition", func(t *testing.T) {
@@ -132,20 +141,21 @@ func TestChecks(t *testing.T) {
 			bare := fixture(t)
 			bare.Compose = nil
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture with nothing to run", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture with nothing to run", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, bare, root)
 			})
-			assert.Contains(t, msg, "no composition", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states a composition"},
+				"the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects a composition that does not build", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a composition without a brand", func(tb assert.TB) {
+			records := assert.Rejects(t, "a composition without a brand", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, unbranded(t), root)
 			})
-			assert.Contains(t, msg, "composition builds", "the rejection names the step that failed")
+			assert.Equal(t, coretest.Contracts(records), []string{builds}, "the rejection names the step that failed")
 		})
 
 		t.Run("rejects plans that do not run clean", func(t *testing.T) {
@@ -156,44 +166,61 @@ func TestChecks(t *testing.T) {
 				return onDisk(root).Ledger(func() (ledger.Ledger, error) { return nil, errLocked })
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a ledger that does not open", func(tb assert.TB) {
+			records := assert.Rejects(t, "a ledger that does not open", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, locked, root)
 			})
-			assert.Contains(t, msg, errLocked.Error(), "the rejection names the run's error")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture's plans run clean"},
+				"the rejection names the run's error")
+			got, _ := records[0].Got()
+			err, _ := got.(error)
+			assert.ErrorIs(t, err, errLocked, "the record contains the ledger's error")
 		})
 
-		t.Run("rejects a wanted file the plans do not generate", func(t *testing.T) {
-			t.Parallel()
+		wants := []struct {
+			name string
+			edit func(map[string][]byte)
+		}{
+			{
+				name: "rejects a wanted file the plans do not generate",
+				edit: func(want map[string][]byte) { want[missingFile] = want[genFile] },
+			},
+			{
+				name: "rejects a file whose bytes differ from the wanted bytes",
+				edit: func(want map[string][]byte) { want[genFile] = want[stubFile] },
+			},
+		}
+		for _, tt := range wants {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			long := fixture(t)
-			long.Want[missingFile] = long.Want[genFile]
-			root := t.TempDir()
-			msg := assert.Rejects(t, "a golden file no plan writes", func(tb assert.TB) {
-				workspacetest.AssertGenerated(tb, long, root)
+				golden := fixture(t)
+				tt.edit(golden.Want)
+				root := t.TempDir()
+				records := assert.Rejects(t, "a golden tree the plans do not reproduce", func(tb assert.TB) {
+					workspacetest.AssertGenerated(tb, golden, root)
+				})
+				assert.Equal(t, coretest.Contracts(records), []string{generated}, "the rejection names the tree")
+				got, _ := records[0].Got()
+				f := fixture(t)
+				assert.Equal(t, got, any(map[string]string{
+					genFile: string(f.Want[genFile]), stubFile: string(f.Want[stubFile]),
+				}), "the record shows the tree the plans generated")
 			})
-			assert.Contains(t, msg, missingFile, "the rejection names the missing file")
-		})
-
-		t.Run("rejects a file whose bytes differ from the wanted bytes", func(t *testing.T) {
-			t.Parallel()
-
-			stale := fixture(t)
-			stale.Want[genFile] = stale.Want[stubFile]
-			root := t.TempDir()
-			msg := assert.Rejects(t, "a golden file the plans do not reproduce", func(tb assert.TB) {
-				workspacetest.AssertGenerated(tb, stale, root)
-			})
-			assert.Contains(t, msg, "ForRow", "the rejection shows the generated bytes")
-		})
+		}
 
 		t.Run("rejects a record that lists a file under another plan", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a ledger that records the files under another plan", func(tb assert.TB) {
+			records := assert.Rejects(t, "a ledger that records the files under another plan", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, rewritten(t, underOther), root)
 			})
-			assert.Contains(t, msg, otherPlan, "the rejection shows the recorded plan")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the record lists each file under the plan whose commit wrote it"},
+				"the rejection names the record")
+			got, _ := records[0].Got()
+			assert.Equal(t, got, any(map[string]string{genFile: otherPlan, stubFile: otherPlan}),
+				"the record shows the plan each file is recorded under")
 		})
 	})
 
@@ -204,10 +231,12 @@ func TestChecks(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a first plan whose copy collides with nothing", func(tb assert.TB) {
+			records := assert.Rejects(t, "a first plan whose copy collides with nothing", func(tb assert.TB) {
 				workspacetest.AssertCollision(tb, idleFirst(t), root)
 			})
-			assert.Contains(t, msg, "no PlanCollision", "the rejection names the missing finding")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the run reports a PlanCollision for a copy of plan " + idlePlan},
+				"the rejection names the missing finding")
 		})
 	})
 
@@ -218,10 +247,11 @@ func TestChecks(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a ledger that forgets the failed plan", func(tb assert.TB) {
+			records := assert.Rejects(t, "a ledger that forgets the failed plan", func(tb assert.TB) {
 				workspacetest.AssertIsolated(tb, rewritten(t, forgetting(stubsPlan)), root)
 			})
-			assert.Contains(t, msg, "entries remain", "the rejection names the entries the record lost")
+			assert.Equal(t, coretest.Contracts(records), []string{"the failed plan's entries remain"},
+				"the rejection names the entries the record lost")
 		})
 	})
 
@@ -231,12 +261,15 @@ func TestChecks(t *testing.T) {
 		edits := []struct {
 			name string
 			edit coretest.Edit
-			want string
+			want []string
 		}{
 			{
 				name: "rejects a record that lists the exported files under another plan",
 				edit: underOther,
-				want: "which its record does not list",
+				want: []string{
+					"plan " + mirrorsPlan + " records the file it exports ForRow in",
+					"plan " + stubsPlan + " records the file it exports RowStub in",
+				},
 			},
 			{
 				name: "rejects a record that names another plugin",
@@ -246,7 +279,10 @@ func TestChecks(t *testing.T) {
 					}
 					return m
 				},
-				want: "does not name",
+				want: []string{
+					"the record of " + genFile + " names the plugin that exports ForRow",
+					"the record of " + stubFile + " names the plugin that exports RowStub",
+				},
 			},
 			{
 				name: "rejects a record that lists another source",
@@ -256,7 +292,10 @@ func TestChecks(t *testing.T) {
 					}
 					return m
 				},
-				want: "does not list as a source",
+				want: []string{
+					"the record of " + genFile + " lists the source ForRow derives from",
+					"the record of " + stubFile + " lists the source RowStub derives from",
+				},
 			},
 			{
 				name: "rejects a record that lists a file the export does not",
@@ -268,7 +307,9 @@ func TestChecks(t *testing.T) {
 					}
 					return m
 				},
-				want: missingFile,
+				want: []string{
+					"plan " + mirrorsPlan + " exports a declaration in " + missingFile + ", which it records",
+				},
 			},
 		}
 		for _, tt := range edits {
@@ -276,10 +317,11 @@ func TestChecks(t *testing.T) {
 				t.Parallel()
 
 				root := t.TempDir()
-				msg := assert.Rejects(t, "a record other than the plans' commits", func(tb assert.TB) {
+				records := assert.Rejects(t, "a record other than the plans' commits", func(tb assert.TB) {
 					workspacetest.AssertExported(tb, rewritten(t, tt.edit), root)
 				})
-				assert.Contains(t, msg, tt.want, "the rejection names what the record and the export disagree on")
+				assert.Equal(t, coretest.Contracts(records), tt.want,
+					"the rejection names each declaration and file the record and the export disagree on")
 			})
 		}
 	})
@@ -291,10 +333,11 @@ func TestChecks(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a composition that fails before its cycle", func(tb assert.TB) {
+			records := assert.Rejects(t, "a composition that fails before its cycle", func(tb assert.TB) {
 				workspacetest.AssertCycleRefused(tb, unbranded(t), root)
 			})
-			assert.Contains(t, msg, "composition builds", "the rejection names the composition's own error")
+			assert.Equal(t, coretest.Contracts(records), []string{builds},
+				"the rejection names the composition's own error")
 		})
 	})
 
@@ -307,10 +350,12 @@ func TestChecks(t *testing.T) {
 			idleLast := fixture(t)
 			idleLast.Plans = func() []workspace.Plan { return []workspace.Plan{mirrors(), idle()} }
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a last plan with no file to remove", func(tb assert.TB) {
+			records := assert.Rejects(t, "a last plan with no file to remove", func(tb assert.TB) {
 				workspacetest.AssertSwept(tb, idleLast, root)
 			})
-			assert.Contains(t, msg, "routes no file", "the rejection names what the last plan owes")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the fixture's last plan " + idlePlan + " routes a file"},
+				"the rejection names what the last plan owes")
 		})
 	})
 
@@ -321,10 +366,12 @@ func TestChecks(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a first plan with no origin to promise a key on", func(tb assert.TB) {
+			records := assert.Rejects(t, "a first plan with no origin to promise a key on", func(tb assert.TB) {
 				workspacetest.AssertAudited(tb, idleFirst(t), root)
 			})
-			assert.Contains(t, msg, "emits nothing", "the rejection names what the first plan owes")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the fixture's first plan emits a unit that derives from a source declaration"},
+				"the rejection names what the first plan owes")
 		})
 
 		t.Run("rejects a composition that claims the suite's namespace", func(t *testing.T) {
@@ -335,10 +382,15 @@ func TestChecks(t *testing.T) {
 				return onDisk(root).Keys(func(r *meta.Registry) error { return r.ClaimNamespace(suiteNamespace) })
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a composition the suite's key cannot register in", func(tb assert.TB) {
+			records := assert.Rejects(t, "a composition the suite's key cannot register in", func(tb assert.TB) {
 				workspacetest.AssertAudited(tb, claiming, root)
 			})
-			assert.Contains(t, msg, suiteNamespace, "the rejection names the namespace claimed twice")
+			assert.Equal(t, coretest.Contracts(records), []string{builds},
+				"the rejection names the composition that does not build")
+			got, _ := records[0].Got()
+			err, _ := got.(error)
+			assert.HasError(t, err, "the record contains Build's error")
+			assert.Contains(t, err.Error(), suiteNamespace, "which names the namespace claimed twice")
 		})
 	})
 
@@ -351,20 +403,23 @@ func TestChecks(t *testing.T) {
 			empty := fixture(t)
 			empty.Tree = fstest.MapFS{}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a tree with no file to seed a failure at", func(tb assert.TB) {
+			records := assert.Rejects(t, "a tree with no file to seed a failure at", func(tb assert.TB) {
 				workspacetest.AssertChecked(tb, empty, root)
 			})
-			assert.Contains(t, msg, "contains no file", "the rejection names what the tree owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture's tree contains a file"},
+				"the rejection names what the tree owes")
 		})
 
 		t.Run("rejects a record that lists the read files under another plan", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a ledger that records the files under another plan", func(tb assert.TB) {
+			records := assert.Rejects(t, "a ledger that records the files under another plan", func(tb assert.TB) {
 				workspacetest.AssertChecked(tb, rewritten(t, underOther), root)
 			})
-			assert.Contains(t, msg, "as its commit recorded them", "the rejection names the record that differs")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the check reads the plan's files as its commit recorded them"},
+				"the rejection names the record that differs")
 		})
 	})
 
@@ -383,10 +438,11 @@ func TestChecks(t *testing.T) {
 			uneditable := fixture(t)
 			uneditable.Edit = nil
 			warm, cold := t.TempDir(), t.TempDir()
-			msg := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
 				workspacetest.AssertWarmEdited(tb, uneditable, warm, cold)
 			})
-			assert.Contains(t, msg, "no edit", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
+				"the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects an edit that leaves the first plan's files unchanged", func(t *testing.T) {
@@ -395,10 +451,12 @@ func TestChecks(t *testing.T) {
 			idempotent := fixture(t)
 			idempotent.Edit = func(root string) error { return writeRow(root, rowSource) }
 			warm, cold := t.TempDir(), t.TempDir()
-			msg := assert.Rejects(t, "an edit that writes the source as it was", func(tb assert.TB) {
+			records := assert.Rejects(t, "an edit that writes the source as it was", func(tb assert.TB) {
 				workspacetest.AssertWarmEdited(tb, idempotent, warm, cold)
 			})
-			assert.Contains(t, msg, "unchanged", "the rejection names the edit that changes nothing")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the fixture's edit changes the files of plan " + mirrorsPlan},
+				"the rejection names the edit that changes nothing")
 		})
 
 		t.Run("rejects a warm run that ignores the sealed state", func(t *testing.T) {
@@ -412,32 +470,39 @@ func TestChecks(t *testing.T) {
 				return writeRow(root, rowEdited)
 			}
 			warm, cold := t.TempDir(), t.TempDir()
-			msg := assert.Rejects(t, "an edit that also removes the sealed state", func(tb assert.TB) {
+			records := assert.Rejects(t, "an edit that also removes the sealed state", func(tb assert.TB) {
 				workspacetest.AssertWarmEdited(tb, forgetful, warm, cold)
 			})
-			assert.Contains(t, msg, "reads the sealed state", "the rejection names the run that ran cold")
+			assert.Equal(t, coretest.Contracts(records), []string{"the run after the edit reads the sealed state"},
+				"the rejection names the run that ran cold")
 		})
 
+		const (
+			files    = "the warm run leaves the cold run's files outside the state directory"
+			entries  = "the warm run records the cold run's entries"
+			findings = "the warm run reports the cold run's findings"
+			exports  = "the warm run hands the probe the cold run's exports"
+		)
 		rejections := []struct {
 			name    string
 			fixture func(*testing.T) workspacetest.Fixture
-			want    string
+			want    []string
 		}{
 			{
 				name: "rejects a warm run whose files differ from the cold run's", fixture: renamedPerRun,
-				want: "the cold run's files",
+				want: []string{files, entries, exports},
 			},
 			{
 				name: "rejects a warm run whose entries differ from the cold run's", fixture: recordedOtherCold,
-				want: "the cold run's entries",
+				want: []string{entries},
 			},
 			{
 				name: "rejects a warm run whose findings differ from the cold run's", fixture: notedPerRun,
-				want: "the cold run's findings",
+				want: []string{findings},
 			},
 			{
 				name: "rejects a warm run whose exports differ from the cold run's", fixture: packagedPerRun,
-				want: "the cold run's exports",
+				want: []string{exports},
 			},
 		}
 		for _, tt := range rejections {
@@ -445,10 +510,11 @@ func TestChecks(t *testing.T) {
 				t.Parallel()
 
 				warm, cold := t.TempDir(), t.TempDir()
-				msg := assert.Rejects(t, "a run that tells the warm run from the cold one", func(tb assert.TB) {
+				records := assert.Rejects(t, "a run that tells the warm run from the cold one", func(tb assert.TB) {
 					workspacetest.AssertWarmEdited(tb, tt.fixture(t), warm, cold)
 				})
-				assert.Contains(t, msg, tt.want, "the rejection names what the two runs disagree on")
+				assert.Equal(t, coretest.Contracts(records), tt.want,
+					"the rejection names what the two runs disagree on")
 			})
 		}
 	})
@@ -485,7 +551,7 @@ func rewritten(t *testing.T, edit coretest.Edit) workspacetest.Fixture {
 	var runs atomic.Int64
 	f.Compose = func(root string) *workspace.Builder {
 		return onDisk(root).Ledger(func() (ledger.Ledger, error) {
-			return coretest.NewRewriting(context.Background(), root, fixtureBrand, int(runs.Add(1)), edit)
+			return coretest.NewRewriting(t.Context(), root, fixtureBrand, int(runs.Add(1)), edit)
 		})
 	}
 	return f

@@ -118,8 +118,8 @@ func TestClaimed(t *testing.T) {
 
 // Comparing two facts allocates nothing, and listing one plugin's claims
 // allocates the list alone, in the ordinary run, which runs no
-// benchmark. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// benchmark. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestClaimedAllocs(t *testing.T) {
 	earlier, later := factRefs()
 	var order int

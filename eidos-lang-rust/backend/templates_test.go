@@ -43,15 +43,14 @@ func TestTemplates(t *testing.T) {
 		t.Run("returns no template for a method", func(t *testing.T) {
 			t.Parallel()
 
-			_, is := backend.KindTemplates()[symbol.KindMethod]
-			assert.False(t, is, "methods group under an impl block per receiver")
+			assert.NotContains(t, backend.KindTemplates(), symbol.KindMethod,
+				"methods group under an impl block per receiver")
 		})
 
 		t.Run("returns no template for a variable", func(t *testing.T) {
 			t.Parallel()
 
-			_, is := backend.KindTemplates()[symbol.KindVariable]
-			assert.False(t, is, "a static's initializer is constant")
+			assert.NotContains(t, backend.KindTemplates(), symbol.KindVariable, "a static's initializer is constant")
 		})
 
 		t.Run("writes a struct's fields public", func(t *testing.T) {
@@ -380,9 +379,9 @@ func TestTemplates(t *testing.T) {
 		t.Run("returns no kind the templates spell", func(t *testing.T) {
 			t.Parallel()
 
+			kinds := backend.KindTemplates()
 			for k := range backend.RefusedKinds() {
-				_, spelt := backend.KindTemplates()[k]
-				assert.False(t, spelt, "a kind is spelt or refused: "+k.String())
+				assert.NotContains(t, kinds, k, "a kind is spelt or refused: "+k.String())
 			}
 		})
 	})

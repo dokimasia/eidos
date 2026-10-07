@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // spelling is a fixture target that files every unit whole and names
@@ -35,8 +37,8 @@ func TestFile(t *testing.T) {
 			t.Parallel()
 
 			var f plugin.File
-			assert.True(t, f.Pkg.IsZero(), "a zero file declares no package")
-			assert.Length(t, f.Units, 0, "and assembles no unit")
+			expect.Equal(t, f.Pkg, symbol.Identity{}, "a zero file declares no package")
+			expect.Empty(t, f.Units, "and assembles no unit")
 		})
 	})
 

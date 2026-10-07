@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -55,7 +56,7 @@ func TestLowering(t *testing.T) {
 			in := boundParams()
 			out := lowering.CopyTypeParams(in)
 			assert.Length(t, out, 1, "one parameter copies")
-			assert.True(t, out[0] != in[0], "as a fresh parameter")
+			assert.NotEqual(t, out[0], in[0], "as a fresh parameter", assert.ByIdentity())
 			assert.Equal(t, out[0].Name, in[0].Name, "under its name")
 		})
 
@@ -65,8 +66,14 @@ func TestLowering(t *testing.T) {
 			in := boundParams()
 			out := lowering.CopyTypeParams(in)
 			bound := in[0].Bounds[0]
-			assert.True(t, out[0].Bounds[0] != bound, "with a fresh bound")
-			assert.True(t, out[0].Bounds[0].Args[0] != bound.Args[0], "down to the argument tree")
+			assert.NotEqual(t, out[0].Bounds[0], bound, "with a fresh bound", assert.ByIdentity())
+			assert.NotEqual(
+				t,
+				out[0].Bounds[0].Args[0],
+				bound.Args[0],
+				"down to the argument tree",
+				assert.ByIdentity(),
+			)
 			assert.Equal(t, out[0].Bounds[0].Args[0].Spelling, "K", "spelled the same")
 		})
 
@@ -86,7 +93,7 @@ func TestLowering(t *testing.T) {
 			in := leaves()
 			out := lowering.CopyTypeRefs(in)
 			assert.Equal(t, out, in, "the copies spell the references in order")
-			assert.True(t, out[0] != in[0], "and share no node with them")
+			assert.NotEqual(t, out[0], in[0], "and share no node with them", assert.ByIdentity())
 		})
 
 		t.Run("returns nil for no references", func(t *testing.T) {
@@ -111,8 +118,8 @@ func TestLowering(t *testing.T) {
 
 			in := mapOfUsers()
 			out := lowering.CopyTypeRef(in)
-			assert.False(t, out.Elems[1] == in.Elems[1], "a child is fresh")
-			assert.False(t, out.Elems[1].Elems[0] == in.Elems[1].Elems[0], "at any depth")
+			expect.NotEqual(t, out.Elems[1], in.Elems[1], "a child is fresh", assert.ByIdentity())
+			expect.NotEqual(t, out.Elems[1].Elems[0], in.Elems[1].Elems[0], "at any depth", assert.ByIdentity())
 		})
 
 		t.Run("returns nil for a nil reference", func(t *testing.T) {

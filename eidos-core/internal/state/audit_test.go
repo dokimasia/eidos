@@ -4,6 +4,7 @@
 package state_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -81,16 +82,21 @@ func TestAudit(t *testing.T) {
 }
 
 // A read of the audit's findings allocates within its ceiling in the
-// ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// ordinary run, which runs no benchmark. The count keeps the first error
+// of its calls, which cmp.Or returns without allocating. The check runs
+// alone, because the count includes every goroutine's allocations.
 func TestAuditAllocs(t *testing.T) {
 	s := audited(t).Phases(t.Context())
+	var (
+		n   int
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if got, err := s.Audits(); err != nil || len(got) != 1 {
-			t.Fatalf("Audits: %d findings, error %v", len(got), err)
-		}
+		got, aerr := s.Audits()
+		n, err = len(got), cmp.Or(err, aerr)
 	}, auditsAllocs, "Audits allocates the table it reads and the findings")
+	assert.NoError(t, err, "the findings read")
+	assert.Equal(t, n, 1, "the one unmet contract")
 }
 
 // BenchmarkAudit measures a read of the findings of a generation that

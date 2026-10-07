@@ -4,6 +4,7 @@
 package position_test
 
 import (
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -89,23 +90,17 @@ func TestPos(t *testing.T) {
 // String allocates its one string, and IsZero and Compare nothing, in
 // the ordinary run, which runs no benchmark.
 func TestPosAllocs(t *testing.T) {
-	assert.MaxAllocs(t, func() {
-		if located.String() == "" {
-			t.Fatal("String returned nothing")
-		}
-	}, 1, "String allocates the returned string")
-	assert.MaxAllocs(t, func() {
-		if located.IsZero() {
-			t.Fatal("IsZero reported a located position as zero")
-		}
-	}, 0, "IsZero allocates nothing")
+	var spelt string
+	assert.MaxAllocs(t, func() { spelt = located.String() }, 1, "String allocates the returned string")
+	assert.Equal(t, spelt, "svc/store.go:141:102", "String renders file:line:col")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = located.IsZero() }, 0, "IsZero allocates nothing")
+	assert.False(t, zero, "IsZero reports false for a located position")
 	other := located
 	other.Col++
-	assert.MaxAllocs(t, func() {
-		if located.Compare(other) >= 0 {
-			t.Fatal("Compare put the earlier column second")
-		}
-	}, 0, "Compare allocates nothing")
+	var order int
+	assert.MaxAllocs(t, func() { order = located.Compare(other) }, 0, "Compare allocates nothing")
+	assert.InRange(t, order, math.Inf(-1), -1, "Compare puts the earlier column first")
 }
 
 // BenchmarkPos measures the spelling, the absence check and the order

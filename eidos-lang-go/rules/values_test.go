@@ -4,7 +4,6 @@
 package rules_test
 
 import (
-	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -459,7 +458,7 @@ func TestValues(t *testing.T) {
 			for subject := range f.reads.Facts() {
 				read = append(read, subject)
 			}
-			assert.False(t, slices.Contains(read, f.field(t, rowType, idField).ID),
+			assert.NotContains(t, read, f.field(t, rowType, idField).ID,
 				"the authored pair depends on no derivation, so no field of Row is an edge")
 		})
 

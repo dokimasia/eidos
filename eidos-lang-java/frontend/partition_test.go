@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"path"
 	"slices"
 	"strings"
@@ -91,7 +90,7 @@ func TestPartition(t *testing.T) {
 			t.Parallel()
 
 			r := &countingReader{tree: fstest.MapFS{deepLeft: {}, deepRight: {}}, reads: map[string]int{}}
-			_, err := frontend.New(nil).Partition(context.Background(), claimedIn(r.tree), r)
+			_, err := frontend.New(nil).Partition(t.Context(), claimedIn(r.tree), r)
 			assert.NoError(t, err, "the tree partitions")
 			assert.Equal(t, r.reads[pomFile], 1, "the root's probe is cached")
 		})
@@ -113,17 +112,17 @@ func claimedIn(tree fstest.MapFS) []plugin.SourceRef {
 
 // partitioned partitions a tree's Java files through the frontend and
 // returns its units.
-func partitioned(tb assert.TB, tree fstest.MapFS) [][]plugin.SourceRef {
+func partitioned(tb testing.TB, tree fstest.MapFS) [][]plugin.SourceRef {
 	tb.Helper()
 
-	units, err := frontend.New(nil).Partition(context.Background(), claimedIn(tree), treeReader{tree})
+	units, err := frontend.New(nil).Partition(tb.Context(), claimedIn(tree), treeReader{tree})
 	assert.NoError(tb, err, "the tree partitions")
 	return units
 }
 
 // unitsOf returns each unit's members of a tree's partition, in
 // partition order.
-func unitsOf(tb assert.TB, tree fstest.MapFS) [][]string {
+func unitsOf(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
 	var out [][]string
@@ -139,7 +138,7 @@ func unitsOf(tb assert.TB, tree fstest.MapFS) [][]string {
 
 // sharedOf returns every member's shared inputs of a tree's partition,
 // member by member in partition order.
-func sharedOf(tb assert.TB, tree fstest.MapFS) [][]string {
+func sharedOf(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
 	var out [][]string

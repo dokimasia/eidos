@@ -4,6 +4,7 @@
 package frontend_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path"
@@ -150,7 +151,7 @@ func TestParse(t *testing.T) {
 			sink := diag.NewSink()
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: srcFile, Shared: []string{pomFile}}}, tree,
 				plugin.DepthFull, f.Syntax(), brand, sink, f.Name())
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			assert.Equal(t, codesOf(slices.Collect(sink.All())), []diag.Code{frontend.BadPOM},
 				"the project file it declares does not read")
 		})
@@ -163,7 +164,7 @@ func TestParse(t *testing.T) {
 			sink := diag.NewSink()
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: jarMember, Shared: []string{jarRecord}}}, tree,
 				plugin.DepthSignatures, f.Syntax(), brand, sink, f.Name())
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			assert.Empty(t, slices.Collect(sink.All()), "a Maven JAR's SHA-1 record states no module")
 		})
 
@@ -174,9 +175,8 @@ func TestParse(t *testing.T) {
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: srcFile}},
 				fstest.MapFS{srcFile: {Data: []byte(publicClass)}}, plugin.DepthFull, f.Syntax(), brand,
 				diag.NewSink(), f.Name())
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			assert.ErrorIs(t, f.Parse(ctx, u), context.Canceled, "a cancelled load parses nothing")
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return f.Parse(ctx, u) },
+				"a cancelled load parses nothing")
 		})
 
 		t.Run("returns the read's error for a member outside the tree", func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestParse(t *testing.T) {
 			f := frontend.New(nil)
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: srcFile}}, fstest.MapFS{}, plugin.DepthFull,
 				f.Syntax(), brand, diag.NewSink(), f.Name())
-			assert.HasError(t, f.Parse(context.Background(), u), "a member that does not read fails the unit")
+			assert.HasError(t, f.Parse(t.Context(), u), "a member that does not read fails the unit")
 		})
 	})
 }
@@ -200,20 +200,17 @@ func TestParse(t *testing.T) {
 func BenchmarkParse(b *testing.B) {
 	tree := scaledJava()
 	f := frontend.New(nil)
-	units, err := f.Partition(context.Background(), claimedIn(tree), treeReader{tree})
-	if err != nil {
-		b.Fatalf("the corpus partitions: %v", err)
-	}
+	units, err := f.Partition(b.Context(), claimedIn(tree), treeReader{tree})
+	assert.NoError(b, err, "the corpus partitions")
 	c := bench.Start(b).MaxAllocs(parseAllocs)
 	defer c.End()
 	for c.Loop() {
 		for _, unit := range units {
 			u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-			if err := f.Parse(context.Background(), u); err != nil {
-				b.Fatalf("the corpus parses: %v", err)
-			}
+			err = cmp.Or(err, f.Parse(b.Context(), u))
 		}
 	}
+	assert.NoError(b, err, "the corpus parses")
 }
 
 // scaledJava returns the canonical corpus as Java source: a directory
@@ -252,12 +249,12 @@ func pomTree(src string) fstest.MapFS {
 // parses the unit that has a member, at a depth. It returns the unit's
 // builder and the findings the parse reported.
 func parsedTree(
-	tb assert.TB, tree fstest.MapFS, member string, depth plugin.Depth,
+	tb testing.TB, tree fstest.MapFS, member string, depth plugin.Depth,
 ) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	f := frontend.New(nil)
-	units, err := f.Partition(context.Background(), claimedIn(tree), treeReader{tree})
+	units, err := f.Partition(tb.Context(), claimedIn(tree), treeReader{tree})
 	assert.NoError(tb, err, "the fixture partitions")
 	for _, unit := range units {
 		if !slices.ContainsFunc(unit, func(ref plugin.SourceRef) bool { return ref.Path == member }) {
@@ -265,7 +262,7 @@ func parsedTree(
 		}
 		sink := diag.NewSink()
 		u := plugin.NewSourceUnit(unit, tree, depth, f.Syntax(), brand, sink, f.Name())
-		assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+		assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
 		return u.Graph(), slices.Collect(sink.All())
 	}
 	tb.Fatalf("no unit has the member %s", member)
@@ -274,7 +271,7 @@ func parsedTree(
 
 // parsedSource parses one file at src/main/java/com/acme/A.java, at full
 // depth.
-func parsedSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
+func parsedSource(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parsedTree(tb, fstest.MapFS{srcFile: {Data: []byte(src)}}, srcFile, plugin.DepthFull)
@@ -282,7 +279,7 @@ func parsedSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) 
 
 // declsOf parses a body below the package clause of com.acme and
 // returns the file's declarations.
-func declsOf(tb assert.TB, body string) node.Symbols {
+func declsOf(tb testing.TB, body string) node.Symbols {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, pkgClause+body)
@@ -291,7 +288,7 @@ func declsOf(tb assert.TB, body string) node.Symbols {
 
 // shallowDecls parses a body below the package clause of com.acme at
 // signature depth and returns the file's declarations.
-func shallowDecls(tb assert.TB, body string) node.Symbols {
+func shallowDecls(tb testing.TB, body string) node.Symbols {
 	tb.Helper()
 
 	gb, _ := parsedTree(tb, fstest.MapFS{srcFile: {Data: []byte(pkgClause + body)}}, srcFile,
@@ -300,7 +297,7 @@ func shallowDecls(tb assert.TB, body string) node.Symbols {
 }
 
 // packageIn returns a builder's package of a path.
-func packageIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.Package {
+func packageIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.Package {
 	tb.Helper()
 
 	for _, p := range gb.Packages() {
@@ -313,7 +310,7 @@ func packageIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.Package 
 }
 
 // fileIn returns the first File node a builder's package of a path has.
-func fileIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
+func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 	tb.Helper()
 
 	p := packageIn(tb, gb, pkg)
@@ -323,7 +320,7 @@ func fileIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 
 // named returns the declaration of a name among declarations, of the
 // type the case expects.
-func named[T symbol.Symbol](tb assert.TB, decls node.Symbols, name string) T {
+func named[T symbol.Symbol](tb testing.TB, decls node.Symbols, name string) T {
 	tb.Helper()
 
 	for _, d := range decls {

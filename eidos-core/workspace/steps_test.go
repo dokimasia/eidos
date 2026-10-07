@@ -565,7 +565,7 @@ func TestSteps(t *testing.T) {
 
 			_, err := valid().Plans(dependingOn("a", "b"), dependingOn("b", "a"), dependingOn("tail", "a")).Build()
 			assert.HasError(t, err, "the cycle is refused")
-			assert.False(t, strings.Contains(err.Error(), `"tail"`), "the error names the cycle's plans alone")
+			assert.NotContains(t, err.Error(), `"tail"`, "the error names the cycle's plans alone")
 		})
 	})
 

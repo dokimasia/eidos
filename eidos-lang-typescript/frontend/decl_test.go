@@ -323,8 +323,11 @@ func TestDecl(t *testing.T) {
 		t.Run("lowers a variable whose source states no type with a nil type", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, named[*node.Variable](t, declsOf(t, "export let a = 1;\n"), "a").Type == nil,
-				"the language infers it")
+			assert.Nil(
+				t,
+				named[*node.Variable](t, declsOf(t, "export let a = 1;\n"), "a").Type,
+				"the language infers it",
+			)
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier on a destructuring statement", func(t *testing.T) {

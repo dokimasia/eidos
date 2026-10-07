@@ -8,8 +8,11 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // A claim's envelope decides its rank, so its zero value and the order
@@ -21,11 +24,11 @@ func TestClaim(t *testing.T) {
 		t.Parallel()
 
 		var c meta.Claim
-		assert.True(t, c.Subject.IsZero(), "a zero claim is about nothing")
-		assert.Equal(t, c.Authority, meta.AuthorityPlugin,
+		expect.Equal(t, c.Subject, symbol.Identity{}, "a zero claim is about nothing")
+		expect.Equal(t, c.Authority, meta.AuthorityPlugin,
 			"and speaks with the least authority")
-		assert.True(t, c.Pos.IsZero(), "from no carrier")
-		assert.Nil(t, c.Derived, "derived from nothing")
+		expect.Equal(t, c.Pos, position.Pos{}, "from no carrier")
+		expect.Nil(t, c.Derived, "derived from nothing")
 	})
 
 	t.Run("Compare", func(t *testing.T) {

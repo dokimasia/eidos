@@ -4,7 +4,6 @@
 package load_test
 
 import (
-	"context"
 	"encoding/hex"
 	"io/fs"
 	"iter"
@@ -113,10 +112,10 @@ func newRecorder() *recorder { return &recorder{l: ledger.NewMem()} }
 
 // record commits a load's report over the live generation and returns
 // the record as the next load reads it.
-func (r *recorder) record(tb assert.TB, report *load.Report) load.Prior {
+func (r *recorder) record(tb testing.TB, report *load.Report) load.Prior {
 	tb.Helper()
 
-	ctx := context.Background()
+	ctx := tb.Context()
 	c := state.NewCommit(r.gen, nil)
 	assert.NoError(tb, state.RecordLoad(ctx, c, r.prior, report), "the load records")
 	_, err := c.Write(ctx, r.l, state.Header{Anchor: report.Anchor}, manifest.Manifest{Version: manifest.Version})
@@ -224,7 +223,7 @@ func TestHistory(t *testing.T) {
 
 // loadOf loads a tree under the standard configuration, mutated per
 // case.
-func loadOf(tb assert.TB, tree fs.FS, mutate ...func(*load.Config)) loaded {
+func loadOf(tb testing.TB, tree fs.FS, mutate ...func(*load.Config)) loaded {
 	tb.Helper()
 
 	g, report, sink := loadTree(tb, tree, mutate...)
@@ -234,7 +233,7 @@ func loadOf(tb assert.TB, tree fs.FS, mutate ...func(*load.Config)) loaded {
 // committed returns a load's record as the next load reads it: the
 // report recorded into a fresh memory ledger's sealed state, and opened
 // again.
-func committed(tb assert.TB, report *load.Report) load.Prior {
+func committed(tb testing.TB, report *load.Report) load.Prior {
 	tb.Helper()
 
 	return newRecorder().record(tb, report)
@@ -245,7 +244,7 @@ func committed(tb assert.TB, report *load.Report) load.Prior {
 // mutated per case. Every file of after whose bytes differ from
 // before's takes [editTime], as an editor's write moves a file's
 // modification time.
-func warmCold(tb assert.TB, before, after fstest.MapFS, mutate ...func(*load.Config)) (warm, cold loaded) {
+func warmCold(tb testing.TB, before, after fstest.MapFS, mutate ...func(*load.Config)) (warm, cold loaded) {
 	tb.Helper()
 
 	for path, f := range after {
@@ -263,7 +262,7 @@ func warmCold(tb assert.TB, before, after fstest.MapFS, mutate ...func(*load.Con
 // same tree leaves: the same packages, byte for byte in the binary
 // encoding, the same directives and stamps, the same units under the
 // same keys, the same doors, and the same findings.
-func assertSameLoad(tb assert.TB, warm, cold loaded) {
+func assertSameLoad(tb testing.TB, warm, cold loaded) {
 	tb.Helper()
 
 	assert.Equal(tb, packagesOf(tb, warm.g), packagesOf(tb, cold.g), "the graphs encode the same packages")
@@ -272,13 +271,13 @@ func assertSameLoad(tb assert.TB, warm, cold loaded) {
 	assert.Equal(tb, maps.Collect(warm.g.Stamps()), maps.Collect(cold.g.Stamps()), "and the same stamps")
 	assert.Equal(tb, keysIn(warm.report), keysIn(cold.report), "the loads have the same units under the same keys")
 	assert.Equal(tb, warm.report.Doors, cold.report.Doors, "and record the same doors")
-	assert.Equal(tb, slices.SortedFunc(warm.sink.All(), diag.Diag.Compare),
-		slices.SortedFunc(cold.sink.All(), diag.Diag.Compare), "and report the same findings")
+	assert.Permutation(tb, slices.Collect(warm.sink.All()), slices.Collect(cold.sink.All()),
+		"and report the same findings")
 }
 
 // packagesOf returns the binary encoding of each package of a graph, by
 // identity.
-func packagesOf(tb assert.TB, g *store.Graph) map[symbol.Identity]string {
+func packagesOf(tb testing.TB, g *store.Graph) map[symbol.Identity]string {
 	tb.Helper()
 
 	out := map[symbol.Identity]string{}

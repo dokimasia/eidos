@@ -109,15 +109,13 @@ func TestRegion(t *testing.T) {
 // TestRegionAllocs checks the allocations of one summary of a package
 // of every kind: its package list, its file list and its kind list,
 // each once. The package attaches no directive, so its spelling list is
-// empty and allocates nothing. The check runs alone, because
-// AllocsPerRun refuses to run beside parallel tests.
+// empty and allocates nothing. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestRegionAllocs(t *testing.T) {
 	r := &store.Region{Packages: []*node.Package{coretest.EveryKind(coretest.StorePath)}}
-	assert.MaxAllocs(t, func() {
-		if len(r.Info().Kinds) == 0 {
-			t.Fatal("Info returned no kind")
-		}
-	}, infoAllocs, "Info allocates its summary")
+	var got store.RegionInfo
+	assert.MaxAllocs(t, func() { got = r.Info() }, infoAllocs, "Info allocates its summary")
+	assert.NotEmpty(t, got.Kinds, "Info returns the package's kinds")
 }
 
 // BenchmarkRegion measures the summary of a package of every kind under
@@ -132,9 +130,7 @@ func BenchmarkRegion(b *testing.B) {
 		for c.Loop() {
 			got = r.Info()
 		}
-		if len(got.Kinds) == 0 {
-			b.Fatal("Info returned no kind")
-		}
+		assert.NotEmpty(b, got.Kinds, "Info returns the package's kinds")
 	})
 }
 

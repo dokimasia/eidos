@@ -4,11 +4,13 @@
 package directive_test
 
 import (
-	"strings"
+	"cmp"
+	"encoding/binary"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/directive"
 )
@@ -19,6 +21,11 @@ const (
 	fullPayload = `indexer:index btree fields=[a, b, c] depth=3 unique=true role=server`
 	barePayload = "skip"
 )
+
+// parsesSafely is the property [FuzzParse] and its ForAll twin in
+// [TestGrammar] state.
+const parsesSafely = "Parse must return a prefixed error, or an instance that names a directive " +
+	"and positions every argument inside the payload under an identifier key"
 
 // continued is a payload written over three carrier lines.
 var continued = []string{`index \`, `fields=[a, b, \`, `c] depth=3`}
@@ -246,6 +253,12 @@ func TestGrammar(t *testing.T) {
 			assert.HasError(t, err, "the escape does not parse")
 			assert.Contains(t, err.Error(), `\é`, "the error names the escape the author wrote")
 		})
+
+		t.Run("returns an error or an instance with positioned identifier keys for any payload", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, parsesSafely, parsesPositioned)
+		})
 	})
 
 	t.Run("Join", func(t *testing.T) {
@@ -297,12 +310,10 @@ func TestGrammar(t *testing.T) {
 	})
 }
 
-// FuzzParse drives the parser with bytes nothing in this repository
-// wrote: payloads arrive from consumers' source files.
-//
-// Two properties are true whatever the bytes are: Parse never
-// panics, and every argument of a parsed instance is positioned
-// inside the payload with a key that is an identifier.
+// FuzzParse checks [parsesSafely] on payloads nothing in this
+// repository wrote: payloads arrive from consumers' source files. Each
+// seed is the choices of one case: a two-byte little-endian length,
+// then the bytes of the payload.
 func FuzzParse(f *testing.F) {
 	for _, seed := range []string{
 		"skip",
@@ -311,66 +322,65 @@ func FuzzParse(f *testing.F) {
 		"index fields=[a, b,c] unique",
 		"  x  ", "", ":", "=", `k="`, "a=[", "meta drop=shape.role",
 	} {
-		f.Add(seed)
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(seed))), seed...))
 	}
 
-	f.Fuzz(func(t *testing.T, payload string) {
-		got, err := directive.Parse(payload)
-		if err != nil {
-			assert.HasPrefix(t, err.Error(), "directive: ",
-				"every error has the package prefix")
-			return
-		}
-		assert.NotEqual(t, string(got.Name), "",
-			"a parsed instance always names a directive")
-		for _, arg := range got.Args {
-			assert.True(t, arg.Col > 0 && arg.Col <= len(payload),
-				"every argument's offset points inside the payload")
-			if arg.Key != "" {
-				assert.False(t, strings.ContainsAny(arg.Key, " \t=\"[],"),
-					"a key is an identifier, never grammar punctuation")
-			}
-		}
-	})
+	prop.Fuzz(f, parsesSafely, parsesPositioned)
+}
+
+// parsesPositioned checks [parsesSafely] on a payload that the case
+// draws as bytes.
+func parsesPositioned(c *prop.Case) {
+	payload := string(c.Draw(prop.Bytes(), "payload"))
+	got, err := directive.Parse(payload)
+	if err != nil {
+		assert.HasPrefix(c, err.Error(), "directive: ", "every error must have the package prefix")
+		return
+	}
+	assert.NotEqual(c, string(got.Name), "", "a parsed instance must name a directive")
+	for _, arg := range got.Args {
+		assert.InRange(c, arg.Col, 1, float64(len(payload)),
+			"every argument's offset must point inside the payload")
+		assert.Matches(c, string(arg.Key), "^[^ \t=\"\\[\\],]*$",
+			"a key must be an identifier, never grammar punctuation")
+	}
 }
 
 // A name's plugin reads without allocating, Parse allocates the
 // arguments and each list once, and the joined payload of continued
-// lines is one allocation. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// lines is one allocation. Each count keeps the first error of its
+// calls, which cmp.Or returns without allocating. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestGrammarAllocs(t *testing.T) {
 	name := directive.Name("mockgen:stub")
-	assert.MaxAllocs(t, func() {
-		if name.Plugin() != "mockgen" {
-			t.Fatal("Plugin returned another prefix")
-		}
-	}, 0, "Plugin allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, err := directive.Parse(fullPayload); err != nil {
-			t.Fatalf("Parse: unexpected error: %v", err)
-		}
-	}, 2, "Parse allocates the arguments and the list's elements")
-	assert.MaxAllocs(t, func() {
-		if _, err := directive.Parse(barePayload); err != nil {
-			t.Fatalf("Parse: unexpected error: %v", err)
-		}
-	}, 0, "Parse allocates nothing for a bare name")
-	assert.MaxAllocs(t, func() {
-		if _, err := directive.Parse(`doc text="plain words"`); err != nil {
-			t.Fatalf("Parse: unexpected error: %v", err)
-		}
-	}, 1, "Parse allocates the arguments and no quoted value without an escape")
-	assert.MaxAllocs(t, func() {
-		if directive.Join(continued) == "" {
-			t.Fatal("Join returned nothing")
-		}
-	}, 1, "Join allocates the joined payload")
-	assert.MaxAllocs(t, func() {
-		if directive.Join(continued[2:]) == "" {
-			t.Fatal("Join returned nothing")
-		}
-	}, 0, "Join allocates nothing for one line")
+	var plugin string
+	assert.MaxAllocs(t, func() { plugin = name.Plugin() }, 0, "Plugin allocates nothing")
+	assert.Equal(t, plugin, "mockgen", "Plugin returns the prefix")
+	var err error
+	for _, tt := range []struct {
+		payload string
+		allocs  uint64
+		msg     string
+	}{
+		{payload: fullPayload, allocs: 2, msg: "Parse allocates the arguments and the list's elements"},
+		{payload: barePayload, allocs: 0, msg: "Parse allocates nothing for a bare name"},
+		{
+			payload: `doc text="plain words"`, allocs: 1,
+			msg: "Parse allocates the arguments and no quoted value without an escape",
+		},
+	} {
+		assert.MaxAllocs(t, func() {
+			_, perr := directive.Parse(tt.payload)
+			err = cmp.Or(err, perr)
+		}, tt.allocs, tt.msg)
+		assert.NoError(t, err, "the payload parses: "+tt.payload)
+	}
+	var joined string
+	assert.MaxAllocs(t, func() { joined = directive.Join(continued) }, 1, "Join allocates the joined payload")
+	assert.NotEmpty(t, joined, "Join returns the joined payload")
+	assert.MaxAllocs(t, func() { joined = directive.Join(continued[2:]) }, 0,
+		"Join allocates nothing for one line")
+	assert.NotEmpty(t, joined, "Join returns the one line")
 }
 
 // BenchmarkGrammar measures a name's plugin, parsing, which runs once

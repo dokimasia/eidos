@@ -189,15 +189,9 @@ func TestShape(t *testing.T) {
 			t.Parallel()
 
 			b, reads, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			ref := named(svcPath, rowName, symbol.KindStruct)
-			first := b.TypeOf(ref)
-			second := b.TypeOf(ref)
-			assert.Equal(t, second, first, "one reference folds once")
-			recorded := 0
-			for range reads.Identities() {
-				recorded++
-			}
-			assert.Equal(t, recorded, 1, "and the read records once")
+			assert.Deterministic(t, func(ref *node.TypeRef) (rules.TypeShape, error) { return b.TypeOf(ref), nil },
+				named(svcPath, rowName, symbol.KindStruct), "one reference folds once")
+			assert.Length(t, slices.Collect(reads.Identities()), 1, "and the read records once")
 		})
 
 		t.Run("folds a reference once per binding", func(t *testing.T) {
@@ -213,7 +207,7 @@ func TestShape(t *testing.T) {
 			other := builtin(intSpelling)
 			b.TypeOf(other)
 			assert.Equal(t, c.asked, 2, "a distinct reference folds on its own")
-			assert.True(t, first.Args == nil, "a reference without arguments folds to a shape without any")
+			assert.Nil(t, first.Args, "a reference without arguments folds to a shape without any")
 		})
 	})
 
@@ -342,9 +336,8 @@ func TestShape(t *testing.T) {
 
 // Each constructor returns its shape by value, and allocates only the
 // list of type arguments a reference keeps, in the ordinary run, which
-// runs no benchmark. The check runs alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// runs no benchmark. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestShapeAllocs(t *testing.T) {
 	ref, arg := builtin(unknownName), rules.Scalar(intSpelling, rules.ScalarInt, 0)
 	class, id := rules.ScalarFloat, coretest.ID(svcPath, rowName, symbol.KindStruct)

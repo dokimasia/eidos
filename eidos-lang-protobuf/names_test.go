@@ -216,10 +216,12 @@ func TestNamesAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { is = protobuf.IsScalar("int64") }, 0, "IsScalar allocates nothing")
 	assert.True(t, is, "IsScalar reports int64")
 	assert.MaxAllocs(t, func() { name, is = protobuf.WellKnown(timestampName) }, 0, "WellKnown allocates nothing")
-	assert.True(t, is && name == timestampName, "WellKnown returns Timestamp")
+	assert.True(t, is, "WellKnown reports Timestamp")
+	assert.Equal(t, name, timestampName, "WellKnown returns Timestamp")
 	assert.MaxAllocs(t, func() { name, is = protobuf.WellKnownImport(timestampName) }, 0,
 		"WellKnownImport allocates nothing")
-	assert.True(t, is && name == timestampFile, "WellKnownImport returns Timestamp's file")
+	assert.True(t, is, "WellKnownImport reports Timestamp")
+	assert.Equal(t, name, timestampFile, "WellKnownImport returns Timestamp's file")
 	assert.MaxAllocs(t, func() { got = protobuf.Candidates(namesPkg, namesChain, "Key") }, chainAllocs,
 		"Candidates allocates the joined scope and the tiers")
 	assert.Length(t, got, 5, "Candidates probes five scopes")

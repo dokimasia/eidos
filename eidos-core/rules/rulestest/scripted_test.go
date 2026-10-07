@@ -114,14 +114,16 @@ func TestScripted(t *testing.T) {
 				"after reading the declaration through the view")
 
 			zero, held := s.ZeroValue(&node.TypeRef{Spelling: "bool"}, rules.View{})
-			assert.True(t, held && zero.Text == "false", "a bool's zero")
+			assert.True(t, held, "a bool has a zero")
+			assert.Equal(t, zero.Text, "false", "spelt false")
 			_, held = s.ZeroValue(&node.TypeRef{Spelling: "Row"}, rules.View{})
 			assert.False(t, held, "a named type has none")
 			_, held = s.ZeroValue(nil, rules.View{})
 			assert.False(t, held, "nor does nothing")
 
 			lit, held := s.LiteralFor(nil, &node.TypeRef{Spelling: "int"}, "12", rules.View{})
-			assert.True(t, held && lit.Text == "12", "an integer parses")
+			assert.True(t, held, "an integer parses")
+			assert.Equal(t, lit.Text, "12", "to its own text")
 			_, held = s.LiteralFor(nil, &node.TypeRef{Spelling: "int"}, "x", rules.View{})
 			assert.False(t, held, "and text that is no integer refuses")
 			_, held = s.LiteralFor(nil, &node.TypeRef{Spelling: "bool"}, "true", rules.View{})
@@ -140,20 +142,23 @@ func TestScripted(t *testing.T) {
 
 			s := rulestest.Scripted().(rules.GenericsRules)
 			ref, held := s.Derive(&node.TypeParam{Name: "T"}, rules.View{})
-			assert.True(t, held && ref.Spelling == "int", "every parameter witnesses as int")
+			assert.True(t, held, "every parameter has a witness")
+			assert.Equal(t, ref.Spelling, "int", "an int")
 			assert.False(t, s.Reified(), "and nothing is kept at runtime")
 
 			params := []*node.TypeParam{{Name: "T"}}
 			args := []*node.TypeRef{{Spelling: "string"}}
 			list := &node.TypeRef{Spelling: "[]T", Form: symbol.FormList, Elems: []*node.TypeRef{{Spelling: "T"}}}
 			got := s.Substitute(list, params, args)
+			assert.Length(t, got.Elems, 1, "the form keeps its element")
 			assert.Equal(t, got.Elems[0].Spelling, "string", "the parameter inside a form rewrites")
-			assert.True(t, got != list, "on a copy")
+			assert.NotEqual(t, got, list, "on a copy", assert.ByIdentity())
 			assert.Equal(t, s.Substitute(&node.TypeRef{Spelling: "int"}, params, args).Spelling, "int",
 				"a reference naming no parameter is returned as it is")
-			assert.True(t, s.Substitute(nil, params, args) == nil, "and nil returns nil")
+			assert.Nil(t, s.Substitute(nil, params, args), "and nil returns nil")
 			same := &node.TypeRef{Spelling: "T"}
-			assert.True(t, s.Substitute(same, params, nil) == same, "a list mismatch rewrites nothing")
+			assert.Equal(t, s.Substitute(same, params, nil), same, "a list mismatch rewrites nothing",
+				assert.ByIdentity())
 		})
 	})
 }

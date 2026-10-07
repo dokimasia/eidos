@@ -4,6 +4,7 @@
 package eidos_test
 
 import (
+	"cmp"
 	"errors"
 	"slices"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -73,10 +75,6 @@ const (
 // touch it.
 const invocationStructs = 100
 
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
-
 // emitHandler is the signature of a struct-triggered emitter rule's
 // handler, so a case can vary the rule and keep the handler.
 type emitHandler = func(m *eidos.StructMatch, e *eidos.Emitter) error
@@ -110,6 +108,19 @@ const (
 	allocDecls    = 4
 )
 
+// flushPlaced is how many declarations the flush case's graph rule
+// places into its plan file.
+const flushPlaced = 10_000
+
+// flushAllocs is the ceiling of a call that flushes one unit into an
+// empty store. The flush allocates the unit's declarations, and a graph
+// rule's placements name no origin, so the unit lists none. The store's
+// acceptance of the unit makes seven: two for the first entry of its set
+// of unit references and one for its list of units, then the kind's
+// entry in its map of kinds, the kind's map of units with its first
+// entry, and the unit's list of the kind.
+const flushAllocs = 8
+
 // dispatchRun is a generate phase call that the dispatch benchmarks and
 // TestDispatchAllocs repeat into one context: the generator, the context
 // a first call warmed, the count of the subjects the rule visited, and
@@ -140,7 +151,7 @@ func emitRun(tb assert.TB, g *store.Graph, units, perUnit int) dispatchRun {
 		visited: &visited,
 		want:    units * perUnit,
 	}
-	r.generate(tb)
+	assert.NoError(tb, r.generate(), "the first call warms the context")
 	return r
 }
 
@@ -169,7 +180,7 @@ func factGatedRun(tb assert.TB, g *store.Graph, units, perUnit int) dispatchRun 
 		visited: &visited,
 		want:    units / 10,
 	}
-	r.generate(tb)
+	assert.NoError(tb, r.generate(), "the first call warms the context")
 	return r
 }
 
@@ -192,7 +203,7 @@ func bareRun(tb assert.TB, g *store.Graph, structs int) dispatchRun {
 		visited: &visited,
 		want:    structs,
 	}
-	r.generate(tb)
+	assert.NoError(tb, r.generate(), "the first call warms the context")
 	return r
 }
 
@@ -218,17 +229,15 @@ func directiveGatedRun(tb assert.TB, packages, decls int) dispatchRun {
 		visited: &visited,
 		want:    packages * decls,
 	}
-	r.generate(tb)
+	assert.NoError(tb, r.generate(), "the first call warms the context")
 	return r
 }
 
-// generate resets the count of visited subjects and runs the phase call
-// once, failing on its error.
-func (r dispatchRun) generate(tb assert.TB) {
+// generate resets the count of visited subjects, runs the phase call
+// once and returns its error.
+func (r dispatchRun) generate() error {
 	*r.visited = 0
-	if err := r.gen.Generate(r.ctx); err != nil {
-		tb.Fatalf("Generate: unexpected error: %v", err)
-	}
+	return r.gen.Generate(r.ctx)
 }
 
 // check fails unless the last call visited every subject the rule routes
@@ -291,7 +300,7 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, units[0].Per, plugin.PerPlan, "the unit has its declared cardinality")
 			assert.Equal(t, units[0].Key, "", "a plan unit has no key")
 			assert.Length(t, units[0].Decls, 1, "the unit contains what the handler appended")
-			assert.Length(t, units[0].Origins, 0, "a graph match has no subject to record")
+			assert.Empty(t, units[0].Origins, "a graph match has no subject to record")
 		})
 
 		t.Run("wraps a handler's error with the plugin's rule", func(t *testing.T) {
@@ -338,8 +347,9 @@ func TestDispatch(t *testing.T) {
 			units := registry(t, oneWorker)
 			assert.Length(t, units, 1, "the package's matches assemble one unit")
 			assert.Length(t, units[0].Decls, manyStructs, "every match placed its struct")
-			assert.True(t, slices.IsSortedFunc(units[0].Origins, symbol.Identity.Compare),
-				"the declarations follow subject identity")
+			assert.Pairwise(t, units[0].Origins, func(earlier, later symbol.Identity) bool {
+				return earlier.Compare(later) < 0
+			}, "the declarations follow subject identity")
 		})
 
 		t.Run("assembles on eight workers the units one worker assembles", func(t *testing.T) {
@@ -422,7 +432,7 @@ func TestDispatch(t *testing.T) {
 				Build()
 			got := assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
 				"the panic propagates to the caller")
-			assert.Equal(t, got, any(errFirst), "with the handler's own value")
+			assert.Equal(t, got, any(errFirst), "with the handler's own value", assert.ByIdentity())
 		})
 
 		t.Run("records no unit of the call before", func(t *testing.T) {
@@ -747,7 +757,7 @@ func TestDispatch(t *testing.T) {
 		t.Run("visits an earlier bucket's unit", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, ownRun(t) >= 1, "the seeded unit is visited")
+			assert.NotEqual(t, ownRun(t), 0, "the seeded unit is visited")
 		})
 
 		t.Run("never visits the plugin's own unit", func(t *testing.T) {
@@ -869,13 +879,10 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			var found bool
-			for d := range ctx.Sink.All() {
-				found = true
-				assert.Equal(t, d.Pos, alpha.Pos, "the finding is at the origin's position")
-				assert.Equal(t, d.Origin, contextPlugin, "the finding is under the reporting plugin")
-			}
-			assert.True(t, found, "the finding is reported")
+			findings := slices.Collect(ctx.Sink.All())
+			assert.Length(t, findings, 1, "the finding is reported")
+			expect.Equal(t, findings[0].Pos, alpha.Pos, "the finding is at the origin's position")
+			expect.Equal(t, findings[0].Origin, contextPlugin, "the finding is under the reporting plugin")
 		})
 
 		t.Run("orders one accumulator's contributions by origin", func(t *testing.T) {
@@ -898,14 +905,14 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			var got plugin.Unit
-			var found bool
+			var flushed []plugin.Unit
 			for u := range ctx.Emit.Units() {
 				if u.Plugin == contextPlugin {
-					got, found = u, true
+					flushed = append(flushed, u)
 				}
 			}
-			assert.True(t, found, "the accumulator flushed")
+			assert.Length(t, flushed, 1, "the accumulator flushed one unit")
+			got := flushed[0]
 			assert.Equal(t, got.Key, coretest.StorePath, "a per-package unit keys on the origin's package path")
 
 			var names []string
@@ -1276,10 +1283,11 @@ func TestDispatch(t *testing.T) {
 
 // A generate phase call allocates nothing of its own on the routes a run
 // takes: an emit rule, a fact gate, a bare rule and a directive gate,
-// each into a context a call before the count warmed. The ordinary run,
-// which runs no benchmark, checks the benchmarks' zero ceilings here,
-// over a workspace of 80 structs. The check runs alone, because
-// AllocsPerRun refuses to run beside parallel tests.
+// each into a context a call before the count warmed. A flush allocates
+// the store's acceptance of its one unit. The ordinary run, which runs
+// no benchmark, checks the benchmarks' ceilings here, over a workspace
+// of 80 structs. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestDispatchAllocs(t *testing.T) {
 	g := coretest.Frozen(t, coretest.Workspace(allocPackages, allocFiles, allocDecls)...)
 	runs := []struct {
@@ -1293,21 +1301,22 @@ func TestDispatchAllocs(t *testing.T) {
 	}
 	for _, tt := range runs {
 		msg := "Generate allocates nothing for " + tt.name
-		assert.MaxAllocs(t, func() { tt.run.generate(t) }, 0, msg)
+		var err error
+		assert.MaxAllocs(t, func() { err = tt.run.generate() }, 0, msg)
+		assert.NoError(t, err, "the phase call passes for "+tt.name)
 		tt.run.check(t)
 	}
+	checkPhaseAllocs(t, []phaseCase{flushCase(t, g)})
 }
 
 // BenchmarkDispatch measures generate-phase calls on the emit side of
 // the canonical workspace: an emit rule over 20,000 values, a fact gate
 // on their origins, and the flush of 10,000 declarations a graph rule
 // places. A call allocates nothing of its own, because it takes the
-// state the call before the measurement released, and TestDispatchAllocs
-// checks that zero ceiling in the ordinary run. The flush's ceiling is
-// the store's acceptance of the one unit, which the flush case
-// decomposes. Only -bench checks it, because the case leaves each fresh
-// context out of its count, which no count of [assert.MaxAllocs] leaves
-// out.
+// state the warm-up call released. The flush's ceiling is
+// the store's acceptance of the one unit, which [flushAllocs]
+// decomposes. TestDispatchAllocs checks every ceiling in the ordinary
+// run.
 func BenchmarkDispatch(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
@@ -1320,76 +1329,19 @@ func BenchmarkDispatch(b *testing.B) {
 		benchDispatch(b, factGatedRun(b, g, packages, decls))
 	})
 
-	// flushAllocs is the ceiling of a call that flushes one unit into an
-	// empty store. The flush allocates the unit's declarations, and a
-	// graph rule's placements name no origin, so the unit lists none. The
-	// store's acceptance of the unit makes seven: two for the first entry
-	// of its set of unit references and one for its list of units, then
-	// the kind's entry in its map of kinds, the kind's map of units with
-	// its first entry, and the unit's list of the kind.
-	const flushAllocs = 8
-
-	b.Run("flush of 10k placed declarations", func(b *testing.B) {
-		_, facts := boolKey(b)
-		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		const placed = 10_000
-		payload := make([]symbol.Symbol, placed)
-		for i := range payload {
-			payload[i] = &emit.Struct{
-				Origin: coretest.Struct(coretest.StorePath+"/0", "Decl0_0").ID,
-				Name:   "Gen" + strconv.Itoa(i),
-			}
-		}
-		p := eidos.NewPlugin(benchPlugin).
-			Output(plugin.Output{Per: plugin.PerPlan, Word: "registry"}).
-			Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-				e.PlanFile().Append(payload...)
-				return nil
-			})).
-			Build()
-		gen, ok := p.(plugin.Generator)
-		if !ok {
-			b.Fatal("the bench plugin must generate")
-		}
-		var ctx *plugin.GeneratorContext
-		fresh := func() {
-			ctx = &plugin.GeneratorContext{
-				Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-				Sink: diag.NewSink(), Plugin: benchPlugin, Bucket: 1,
-			}
-		}
-		fresh()
-		if err := gen.Generate(ctx); err != nil {
-			b.Fatalf("Generate: unexpected error: %v", err)
-		}
-		c := bench.Start(b).MaxAllocs(flushAllocs)
-		defer c.End()
-		for c.Loop() {
-			c.Excluding(fresh)
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
-		}
-		units := slices.Collect(ctx.Emit.Units())
-		if len(units) != 1 || len(units[0].Decls) != placed {
-			b.Fatalf("the flush added %d units", len(units))
-		}
-	})
+	benchPhases(b, []phaseCase{flushCase(b, g)})
 }
 
 // BenchmarkNodeDispatch measures phase calls on the node side of the
 // canonical workspace: a bare rule over 200,000 structs, a
 // directive-gated rule over 20,000, and annotate calls that stamp facts
 // on every struct into an empty store. A phase call allocates nothing of
-// its own, because it takes the state the call before the measurement
-// released, and TestDispatchAllocs checks that zero ceiling in the
-// ordinary run. The annotate cases measure the fact store's claims,
-// which the store keeps, and each case's ceiling decomposes them. Only
-// -bench checks those ceilings, because each case leaves its fresh fact
-// store out of its count.
+// its own, because it takes the state the warm-up call released, and
+// TestDispatchAllocs checks that zero ceiling in the ordinary run. The
+// annotate cases measure the fact store's claims, which the store keeps,
+// and each case's ceiling decomposes them. Only -bench checks those
+// ceilings: one annotate call over 200,000 subjects takes 0.12 and 0.40
+// seconds, and a count repeats it 101 times.
 func BenchmarkNodeDispatch(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
@@ -1437,9 +1389,7 @@ func BenchmarkNodeDispatch(b *testing.B) {
 		ann := annotatorOf(b, p)
 		var ctx *plugin.AnnotatorContext
 		fresh := func() { ctx = annotateContext(b, g, reg) }
-		fresh()
-		assert.NoError(b, ann.Annotate(ctx), "the call before the measurement passes")
-		c := bench.Start(b).MaxAllocs(annotateThreeAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(annotateThreeAllocs)
 		defer c.End()
 		var err error
 		for c.Loop() {
@@ -1461,9 +1411,7 @@ func BenchmarkNodeDispatch(b *testing.B) {
 		ann := annotatorOf(b, p)
 		var ctx *plugin.AnnotatorContext
 		fresh := func() { ctx = annotateContext(b, g, reg) }
-		fresh()
-		assert.NoError(b, ann.Annotate(ctx), "the call before the measurement passes")
-		c := bench.Start(b).MaxAllocs(annotateOneAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(annotateOneAllocs)
 		defer c.End()
 		var err error
 		for c.Loop() {
@@ -1548,6 +1496,47 @@ func generatorOf(tb assert.TB, p plugin.Plugin) plugin.Generator {
 	return gen
 }
 
+// flushCase returns the generate phase call whose graph rule places
+// flushPlaced declarations into its plan file, each call over a fresh
+// context on g.
+func flushCase(tb assert.TB, g *store.Graph) phaseCase {
+	tb.Helper()
+
+	_, facts := boolKey(tb)
+	ix, err := plugin.NewIndex(g, facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	payload := make([]symbol.Symbol, flushPlaced)
+	for i := range payload {
+		payload[i] = &emit.Struct{
+			Origin: coretest.Struct(coretest.StorePath+"/0", "Decl0_0").ID,
+			Name:   "Gen" + strconv.Itoa(i),
+		}
+	}
+	p := eidos.NewPlugin(benchPlugin).
+		Output(plugin.Output{Per: plugin.PerPlan, Word: "registry"}).
+		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+			e.PlanFile().Append(payload...)
+			return nil
+		})).
+		Build()
+	return phaseCase{
+		name:   "flush of 10k placed declarations",
+		allocs: flushAllocs,
+		gen:    generatorOf(tb, p),
+		fresh: func() *plugin.GeneratorContext {
+			return &plugin.GeneratorContext{
+				Index: ix, Facts: facts, Emit: plugin.NewEmit(),
+				Sink: diag.NewSink(), Plugin: benchPlugin, Bucket: 1,
+			}
+		},
+		check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
+			units := slices.Collect(ctx.Emit.Units())
+			assert.Length(tb, units, 1, "the flush adds one unit")
+			assert.Length(tb, units[0].Decls, flushPlaced, "of every placed declaration")
+		},
+	}
+}
+
 // visitingStructs returns a plugin whose bare struct rule records
 // each subject it visits, and the record.
 func visitingStructs(name plugin.ID, rule func(emitHandler) eidos.Rule) (plugin.Plugin, *[]string) {
@@ -1584,13 +1573,10 @@ func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
 				Origin: origin, Name: "Gen" + strconv.Itoa(i),
 			})
 		}
-		err := e.Add(plugin.Unit{
+		assert.NoError(tb, e.Add(plugin.Unit{
 			Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
 			Key: "unit" + strconv.Itoa(u) + ".go", Decls: decls,
-		})
-		if err != nil {
-			tb.Fatalf("Add: unexpected error: %v", err)
-		}
+		}), "the earlier unit is added")
 	}
 	return e
 }
@@ -1703,40 +1689,39 @@ func invocationContexts(
 }
 
 // checkPhaseAllocs checks each case's ceiling in the ordinary run, which
-// runs no benchmark. Each counted call takes a context built before the
+// runs no benchmark. Each counted call takes a context built outside the
 // count, because a call leaves its units and findings in its context.
-// The count's first call warms the pooled state of a phase call.
+// The count's first call warms the pooled state of a phase call. Each
+// count keeps the first error of its calls, which cmp.Or returns
+// without allocating.
 func checkPhaseAllocs(t *testing.T, cases []phaseCase) {
 	t.Helper()
 
 	for _, tt := range cases {
-		contexts := make([]*plugin.GeneratorContext, allocRuns)
-		for i := range contexts {
-			contexts[i] = tt.fresh()
-		}
-		at := 0
+		var (
+			last *plugin.GeneratorContext
+			err  error
+		)
 		msg := tt.name + " allocates within its ceiling over the invocation fixture"
-		assert.MaxAllocs(t, func() {
-			if err := tt.gen.Generate(contexts[at]); err != nil {
-				t.Fatalf("Generate: unexpected error: %v", err)
-			}
-			at++
+		assert.MaxAllocsWithSetup(t, tt.fresh, func(ctx *plugin.GeneratorContext) {
+			err = cmp.Or(err, tt.gen.Generate(ctx))
+			last = ctx
 		}, tt.allocs, msg)
-		tt.check(t, contexts[allocRuns-1])
+		assert.NoError(t, err, "every counted call of "+tt.name+" passes")
+		tt.check(t, last)
 	}
 }
 
 // benchPhases measures each case's phase call under its ceiling. Each
-// call takes a fresh context outside the measurement, and a call before
-// the measurement warms the pooled state of a phase call.
+// call takes a fresh context outside the measurement, and a warm-up call
+// fills the pooled state of a phase call.
 func benchPhases(b *testing.B, cases []phaseCase) {
 	b.Helper()
 
 	for _, tt := range cases {
 		b.Run(tt.name, func(b *testing.B) {
-			ctx := tt.fresh()
-			assert.NoError(b, tt.gen.Generate(ctx), "the call before the measurement passes")
-			c := bench.Start(b).MaxAllocs(tt.allocs)
+			var ctx *plugin.GeneratorContext
+			c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 			defer c.End()
 			var err error
 			for c.Loop() {
@@ -1756,9 +1741,11 @@ func benchDispatch(b *testing.B, r dispatchRun) {
 
 	c := bench.Start(b).MaxAllocs(0)
 	defer c.End()
+	var err error
 	for c.Loop() {
-		r.generate(b)
+		err = r.generate()
 	}
+	assert.NoError(b, err, "the phase call passes")
 	r.check(b)
 }
 

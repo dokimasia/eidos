@@ -112,11 +112,16 @@ func TestCodec(t *testing.T) {
 			t.Parallel()
 
 			for _, subject := range populated() {
-				encoded, table := tableTrip(t, subject)
-				decoded, read, err := DecodeBinary(encoded, table)
-				assert.NoError(t, err, "the encoding decodes: "+subject.Kind().String())
-				assert.Equal(t, read, len(encoded), "whole")
-				assert.Equal(t, decoded, subject, "to the symbol that encoded it")
+				var table *StringTable
+				assert.RoundTrip(t, func(s symbol.Symbol) ([]byte, error) {
+					var encoded []byte
+					encoded, table = tableTrip(t, s)
+					return encoded, nil
+				}, func(encoded []byte) (symbol.Symbol, error) {
+					decoded, read, err := DecodeBinary(encoded, table)
+					assert.Equal(t, read, len(encoded), "the decode reads the whole encoding")
+					return decoded, err
+				}, subject, "the encoding decodes to the symbol that encoded it: "+subject.Kind().String())
 			}
 		})
 
@@ -124,12 +129,12 @@ func TestCodec(t *testing.T) {
 			t.Parallel()
 
 			for _, subject := range populated() {
-				encoded, err := AppendBinary(nil, subject, nil)
-				assert.NoError(t, err, "the symbol encodes: "+subject.Kind().String())
-				decoded, read, err := DecodeBinary(encoded, nil)
-				assert.NoError(t, err, "the encoding decodes")
-				assert.Equal(t, read, len(encoded), "whole")
-				assert.Equal(t, decoded, subject, "to the symbol that encoded it")
+				assert.RoundTrip(t, func(s symbol.Symbol) ([]byte, error) { return AppendBinary(nil, s, nil) },
+					func(encoded []byte) (symbol.Symbol, error) {
+						decoded, read, err := DecodeBinary(encoded, nil)
+						assert.Equal(t, read, len(encoded), "the decode reads the whole encoding")
+						return decoded, err
+					}, subject, "the encoding decodes to the symbol that encoded it: "+subject.Kind().String())
 			}
 		})
 

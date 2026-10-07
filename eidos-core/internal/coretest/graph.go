@@ -18,11 +18,8 @@ func Frozen(tb assert.TB, pkgs ...*node.Package) *store.Graph {
 	tb.Helper()
 
 	g := store.New()
-	for _, pkg := range pkgs {
-		assert.NoError(tb, g.AddPackage(pkg),
-			"the fixture's packages load: a case whose fixture would not "+
-				"load is not testing what it says it is")
-	}
+	assert.Total(tb, g.AddPackage, pkgs,
+		"the fixture's packages load: a case whose fixture would not load is not testing what it says it is")
 	g.Freeze()
 	return g
 }

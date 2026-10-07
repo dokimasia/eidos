@@ -10,7 +10,9 @@
 // sealed graph and a tracked reader. [CopyTree] copies a fixture tree
 // for a case that writes into the tree it runs in. [Rewriting] is a
 // disk ledger that records an edited record, for a case that checks a
-// suite rejects it.
+// suite rejects it. [Contracts] projects the failure records that
+// [go.dokimi.dev/assert.Rejects] returns onto their contracts, which a
+// case about a kit's check compares.
 //
 // Nothing here belongs to a shipped surface. Plugin authors get their
 // own testing package, and this one is for the kernel.

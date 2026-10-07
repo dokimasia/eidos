@@ -4,7 +4,6 @@
 package frontendtest_test
 
 import (
-	"context"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -101,7 +100,7 @@ func TestScripted(t *testing.T) {
 			t.Parallel()
 
 			f := frontendtest.NewScripted()
-			parts, err := f.Partition(context.Background(),
+			parts, err := f.Partition(t.Context(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
 			assert.NoError(t, err, "the partition groups")
 			assert.Length(t, parts, 1, "one directory is one unit")
@@ -116,7 +115,7 @@ func TestScripted(t *testing.T) {
 				modFile: {Data: []byte("mod v1\n")},
 				svcFile: tree[svcFile],
 			}
-			parts, err := f.Partition(context.Background(),
+			parts, err := f.Partition(t.Context(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{manifested})
 			assert.NoError(t, err, "the partition groups")
 			assert.Equal(t, parts[0][0].Shared, []string{modFile}, "the manifest is the shared input")
@@ -126,7 +125,7 @@ func TestScripted(t *testing.T) {
 			t.Parallel()
 
 			f := frontendtest.NewScripted()
-			parts, err := f.Partition(context.Background(),
+			parts, err := f.Partition(t.Context(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
 			assert.NoError(t, err, "the partition groups")
 			assert.Empty(t, parts[0][0].Shared, "the member has no shared input")
@@ -215,7 +214,7 @@ func TestScripted(t *testing.T) {
 				svcFile:  {Data: []byte("package svc\ntype A\n")},
 				foldFile: {Data: []byte("package svc\non A\nmethod Get int\n")},
 			}, svcFile, foldFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			coretest.AssertCodes(t, sink)
 			declared := u.Graph().Packages()[0].Files[0].Decls[0].(*node.Struct)
 			assert.Length(t, declared.Methods, 1, "the method folds onto the type")
@@ -229,7 +228,7 @@ func TestScripted(t *testing.T) {
 			u, sink := unitOver(f, fstest.MapFS{
 				foldFile: {Data: []byte("package svc\non A\nmethod Get int\n")},
 			}, foldFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the unknown type is not fatal")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unknown type is not fatal")
 			coretest.AssertReports(t, sink, frontendtest.ScriptedBadFile)
 		})
 
@@ -238,7 +237,7 @@ func TestScripted(t *testing.T) {
 
 			f := frontendtest.NewScripted()
 			u, _ := unitOver(f, fstest.MapFS{}, absentFile)
-			err := f.Parse(context.Background(), u)
+			err := f.Parse(t.Context(), u)
 			assert.HasError(t, err, "the parse fails")
 			assert.Contains(t, err.Error(), absentFile, "the error names the path")
 		})
@@ -252,7 +251,7 @@ func TestScripted(t *testing.T) {
 
 			f := frontendtest.NewScripted()
 			u, sink := unitOver(f, broken, svcFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the bad directive is not fatal")
+			assert.NoError(t, f.Parse(t.Context(), u), "the bad directive is not fatal")
 			coretest.AssertReports(t, sink, frontendtest.ScriptedBadFile)
 			coretest.AssertPositioned(t, sink)
 			assert.Empty(t, u.Graph().Attachments(), "nothing attaches")
@@ -263,7 +262,7 @@ func TestScripted(t *testing.T) {
 
 			f := frontendtest.NewScripted()
 			u, _ := unitOver(f, broken, svcFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the bad directive is not fatal")
+			assert.NoError(t, f.Parse(t.Context(), u), "the bad directive is not fatal")
 			assert.Length(t, u.Graph().Packages()[0].Files[0].Decls, 2, "the type and the constant are declared")
 		})
 	})
@@ -350,10 +349,10 @@ func TestScripted(t *testing.T) {
 
 		f := frontendtest.NewScriptedDependent()
 		lib := plugin.StorePath(frontendtest.ScriptedStore, extMember)
-		dependencies := func(tb assert.TB, store fs.FS, needs ...string) [][]plugin.SourceRef {
+		dependencies := func(tb testing.TB, store fs.FS, needs ...string) [][]plugin.SourceRef {
 			tb.Helper()
 
-			units, err := f.Dependencies(context.Background(), roundOf(needs...), storeReader{fsys: withStore(store)})
+			units, err := f.Dependencies(tb.Context(), roundOf(needs...), storeReader{fsys: withStore(store)})
 			assert.NoError(tb, err, "the round lists the store")
 			return units
 		}
@@ -405,7 +404,7 @@ func TestScripted(t *testing.T) {
 		t.Run("returns no unit for a load without the store", func(t *testing.T) {
 			t.Parallel()
 
-			units, err := f.Dependencies(context.Background(), roundOf(extPath), storeReader{fsys: fstest.MapFS{}})
+			units, err := f.Dependencies(t.Context(), roundOf(extPath), storeReader{fsys: fstest.MapFS{}})
 			assert.NoError(t, err, "a store the composition leaves out turns the source off")
 			assert.Empty(t, units, "nothing is read")
 		})
@@ -440,7 +439,7 @@ func TestScripted(t *testing.T) {
 				t.Parallel()
 
 				round := roundOf(tt.need)
-				_, err := f.Dependencies(context.Background(), round, storeReader{fsys: tt.store})
+				_, err := f.Dependencies(t.Context(), round, storeReader{fsys: tt.store})
 				assert.NoError(t, err, "a need placed nowhere fails nothing")
 				assert.Equal(t, round.Unplaced(), []plugin.Unplaced{{Path: tt.need, Reason: tt.want}},
 					"the round records the need and why")
@@ -452,7 +451,7 @@ func TestScripted(t *testing.T) {
 
 			round := roundOf(extPath)
 			store := withStore(fstest.MapFS{extMember: {Data: []byte(extSource)}})
-			_, err := f.Dependencies(context.Background(), round, storeReader{fsys: store})
+			_, err := f.Dependencies(t.Context(), round, storeReader{fsys: store})
 			assert.NoError(t, err, "the round lists the store")
 			assert.Empty(t, round.Unplaced(), "the store declares the package")
 		})
@@ -461,7 +460,7 @@ func TestScripted(t *testing.T) {
 			t.Parallel()
 
 			store := failingFS{tree: fstest.MapFS{extMember: {Data: []byte(extSource)}}, fail: extPath}
-			_, err := f.Dependencies(context.Background(), roundOf(extPath), storeReader{fsys: withStore(store)})
+			_, err := f.Dependencies(t.Context(), roundOf(extPath), storeReader{fsys: withStore(store)})
 			assert.ErrorIs(t, err, fs.ErrPermission, "the error is the store's own")
 		})
 	})
@@ -509,12 +508,12 @@ func unitOver(f *frontendtest.Scripted, tree fstest.MapFS, files ...string) (
 
 // parsed lowers one source as the single member of a unit and
 // returns the unit's builder, failing the test on a finding.
-func parsed(tb assert.TB, source string) *plugin.GraphBuilder {
+func parsed(tb testing.TB, source string) *plugin.GraphBuilder {
 	tb.Helper()
 
 	f := frontendtest.NewScripted()
 	u, sink := unitOver(f, fstest.MapFS{svcFile: {Data: []byte(source)}}, svcFile)
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
 	coretest.AssertCodes(tb, sink)
 	return u.Graph()
 }

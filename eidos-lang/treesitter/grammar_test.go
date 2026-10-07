@@ -80,10 +80,6 @@ const (
 // Go heap.
 const treeAllocs = 1
 
-// allocRuns is how many calls an allocation check makes: one to warm
-// up and the hundred it counts.
-const allocRuns = 101
-
 // pinned is one grammar the layer pins, and the language its binding
 // returns, which is the authority the grammar's tables are checked
 // against.
@@ -95,17 +91,13 @@ type pinned struct {
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
 // where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves. A case whose
-// ceiling only a benchmark checks sets bench, which measures the case
-// in place of the call, and no list an allocation test reads contains
-// it.
+// call, and the check of the result the call leaves.
 type allocCall struct {
 	name     string
 	caseName string
 	allocs   uint64
 	call     func()
 	check    func(tb assert.TB)
-	bench    func(b *testing.B)
 }
 
 // A grammar resolves its tables once and parses any input, so its
@@ -170,7 +162,8 @@ func TestGrammar(t *testing.T) {
 
 			for _, src := range []string{cleanJava, wideJava} {
 				named(parse(t, src).Root(), func(n treesitter.Node) {
-					assert.Equal(t, g.Kind(g.KindName(n.Kind())), n.Kind(),
+					assert.RoundTrip(t, func(k treesitter.Kind) (string, error) { return g.KindName(k), nil },
+						func(name string) (treesitter.Kind, error) { return g.Kind(name), nil }, n.Kind(),
 						"the name of a node's kind resolves to the node's own id")
 				})
 			}
@@ -265,10 +258,12 @@ func TestGrammar(t *testing.T) {
 		t.Run("returns the context's error for a done context", func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			tree, err := g.Parse(ctx, javaFile, []byte(cleanJava))
-			assert.ErrorIs(t, err, context.Canceled, "a done context parses nothing")
+			var tree *treesitter.Tree
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				var err error
+				tree, err = g.Parse(ctx, javaFile, []byte(cleanJava))
+				return err
+			}, "a done context parses nothing")
 			assert.Nil(t, tree, "no tree is returned")
 		})
 
@@ -282,7 +277,7 @@ func TestGrammar(t *testing.T) {
 		t.Run("returns a tree without errors for an empty source", func(t *testing.T) {
 			t.Parallel()
 
-			tree, err := g.Parse(context.Background(), javaFile, nil)
+			tree, err := g.Parse(t.Context(), javaFile, nil)
 			assert.NoError(t, err, "an empty source parses")
 			t.Cleanup(tree.Close)
 			assert.Equal(t, tree.Root().Kind(), g.Kind(programKind), "an empty program")
@@ -302,7 +297,7 @@ func TestGrammar(t *testing.T) {
 // ceilings here.
 func TestGrammarAllocs(t *testing.T) {
 	checkAllocs(t, grammarCalls(t))
-	ctx, src := context.Background(), []byte(cleanJava)
+	ctx, src := t.Context(), []byte(cleanJava)
 	var (
 		tree *treesitter.Tree
 		err  error
@@ -321,7 +316,7 @@ func BenchmarkGrammar(b *testing.B) {
 	benchCalls(b, grammarCalls(b))
 
 	b.Run("Parse", func(b *testing.B) {
-		ctx, src := context.Background(), []byte(cleanJava)
+		ctx, src := b.Context(), []byte(cleanJava)
 		c := bench.Start(b).MaxAllocs(treeAllocs)
 		defer c.End()
 		var (
@@ -425,18 +420,12 @@ func benchCalls(b *testing.B, calls []allocCall) {
 }
 
 // benchCall measures one call under the bench contract at its ceiling,
-// and checks the result the last call leaves. The call runs once before
-// the contract starts, so what the first call initialises stays out of
-// the count. A case that sets bench runs it instead.
+// and checks the result the last call leaves. The contract warms up with
+// one call, so what the first call initialises stays out of the count.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
-	if tt.bench != nil {
-		tt.bench(b)
-		return
-	}
-	tt.call()
-	c := bench.Start(b).MaxAllocs(tt.allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 	defer c.End()
 	for c.Loop() {
 		tt.call()
@@ -480,7 +469,7 @@ func allPinned() []pinned {
 func parse(tb testing.TB, src string) *treesitter.Tree {
 	tb.Helper()
 
-	tree, err := java.Grammar.Parse(context.Background(), javaFile, []byte(src))
+	tree, err := java.Grammar.Parse(tb.Context(), javaFile, []byte(src))
 	assert.NoError(tb, err, "the source parses")
 	tb.Cleanup(tree.Close)
 	return tree
@@ -516,11 +505,7 @@ func buildVersion(tb testing.TB, module string) string {
 
 	info, built := debug.ReadBuildInfo()
 	assert.True(tb, built, "the test binary records its build information")
-	for _, dep := range info.Deps {
-		if dep.Path == module {
-			return dep.Version
-		}
-	}
-	tb.Fatalf("the build information does not list %s", module)
-	return ""
+	at := slices.IndexFunc(info.Deps, func(dep *debug.Module) bool { return dep.Path == module })
+	assert.NotEqual(tb, at, -1, "the build information lists "+module)
+	return info.Deps[at].Version
 }

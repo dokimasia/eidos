@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
@@ -79,7 +80,7 @@ func TestTree(t *testing.T) {
 
 			residents := layout.Residents(graph(t))
 			for dir, rs := range residents {
-				assert.Equal(t, cap(rs), len(rs), "an append to "+dir+" copies the slice")
+				expect.Equal(t, cap(rs), len(rs), "an append to "+dir+" copies the slice")
 			}
 		})
 	})
@@ -153,7 +154,7 @@ func TestTree(t *testing.T) {
 				f, k := facts(t, tt.moduled)
 				got := layout.Modules(graph(t), f, k)
 				if tt.want == nil {
-					assert.True(t, got == nil, "a tree without a module returns nil")
+					assert.Nil(t, got, "a tree without a module returns nil")
 					return
 				}
 				assert.Equal(t, got, tt.want, "the modules")

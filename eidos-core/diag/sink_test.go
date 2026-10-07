@@ -7,11 +7,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/position"
@@ -67,16 +69,16 @@ func TestSink(t *testing.T) {
 				each      = 64
 			)
 			s := diag.NewSink()
-			var wg sync.WaitGroup
-			for reporter := range reporters {
-				wg.Go(func() {
-					for range each {
-						s.Errorf(diag.Code{Prefix: diag.KernelPrefix, Number: reporter},
-							somewhere, diag.PhaseLoad, "finding from reporter %d", reporter)
-					}
-				})
+			outcomes := history.Concurrently(reporters, time.Minute, func(reporter int) (any, error) {
+				for range each {
+					s.Errorf(diag.Code{Prefix: diag.KernelPrefix, Number: reporter},
+						somewhere, diag.PhaseLoad, "finding from reporter %d", reporter)
+				}
+				return reporter, nil
+			})
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "every reporter finishes")
 			}
-			wg.Wait()
 
 			assert.Length(t, collect(t, s), reporters*each,
 				"no report is lost under concurrent reporters")
@@ -89,20 +91,22 @@ func TestSink(t *testing.T) {
 
 			const each = 64
 			s := diag.NewSink()
-			var wg sync.WaitGroup
-			wg.Go(func() {
+			outcomes := history.Concurrently(2, time.Minute, func(client int) (any, error) {
 				for range each {
-					s.Report(diag.Diag{Pos: somewhere, Origin: diag.PhaseLoad})
-				}
-			})
-			wg.Go(func() {
-				for range each {
+					if client == 0 {
+						s.Report(diag.Diag{Pos: somewhere, Origin: diag.PhaseLoad})
+						continue
+					}
 					for range s.All() {
 						break
 					}
 				}
+				return client, nil
 			})
-			wg.Wait()
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "the reporter and the reader finish")
+			}
+			assert.Length(t, collect(t, s), each, "the reader loses no report")
 		})
 	})
 
@@ -282,8 +286,8 @@ func TestSink(t *testing.T) {
 // A new sink allocates itself, a report allocates only to grow the
 // sink's storage, and a formatted report allocates its message besides.
 // The outcome reads without allocating, and an enumeration allocates
-// its snapshot. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// its snapshot. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestSinkAllocs(t *testing.T) {
 	code := diag.Code{Prefix: diag.KernelPrefix, Number: 1}
 	d := diag.Diag{Code: code, Pos: somewhere, Origin: diag.PhaseLoad, Msg: "a finding"}
@@ -310,22 +314,19 @@ func TestSinkAllocs(t *testing.T) {
 	}, 1, "Infof allocates its message")
 
 	s = warmSink(d)
-	assert.MaxAllocs(t, func() {
-		if !s.Failed() {
-			t.Fatal("Failed missed the warm sink's errors")
-		}
-	}, 0, "Failed allocates nothing")
+	var failed bool
+	assert.MaxAllocs(t, func() { failed = s.Failed() }, 0, "Failed allocates nothing")
+	assert.True(t, failed, "Failed reports the warm sink's errors")
 
 	s = warmSink(d)
+	var seen int
 	assert.MaxAllocs(t, func() {
-		seen := 0
+		seen = 0
 		for range s.All() {
 			seen++
 		}
-		if seen != warmReports {
-			t.Fatal("All enumerated another number of findings")
-		}
 	}, 1, "All allocates its snapshot")
+	assert.Equal(t, seen, warmReports, "All returns every finding")
 }
 
 // BenchmarkSink measures a new sink, a report into the sink, a formatted
@@ -441,21 +442,21 @@ func BenchmarkSink(b *testing.B) {
 }
 
 // BenchmarkSinkParallel measures reports from GOMAXPROCS goroutines into
-// one sink, the cost under contention. BenchmarkSink states the
-// allocation contract, which the bench contract cannot measure under
-// RunParallel.
+// one sink, the cost under contention, under the ceiling of a serial
+// report: a report allocates only to grow the sink's storage.
 func BenchmarkSinkParallel(b *testing.B) {
 	d := diag.Diag{Code: diag.Code{Prefix: diag.KernelPrefix, Number: 1}, Pos: somewhere, Origin: diag.PhaseLoad}
 
 	b.Run("Report", func(b *testing.B) {
-		b.ReportAllocs()
-
 		s := diag.NewSink()
-		b.RunParallel(func(p *testing.PB) {
-			for p.Next() {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		c.RunParallel(func(pb *bench.PB) {
+			for pb.Next() {
 				s.Report(d)
 			}
 		})
+		assert.Length(b, slices.Collect(s.All()), b.N, "no report is lost under contention")
 	})
 }
 

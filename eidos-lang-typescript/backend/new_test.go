@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -135,11 +136,10 @@ func TestNew(t *testing.T) {
 			holder := declared(holderName)
 			holder.Fields.Append(&emit.Field{Name: "row", Type: imported(storeModule, rowName)})
 			body, sink := rendered(t, holder)
-			for d := range sink.All() {
-				t.Errorf("unexpected finding: %s", d.Msg)
-			}
-			assert.Contains(t, body, "import type { Row } from './store';\n", "the type-only import")
-			assert.Contains(t, body, "  row: Row;\n", "the field through the imported name")
+			assert.Empty(t, slices.Collect(sink.All()), "the file renders clean")
+			assert.That(t, body).
+				Contains("import type { Row } from './store';\n", "the type-only import").
+				Contains("  row: Row;\n", "the field through the imported name")
 		})
 
 		t.Run("returns a backend that names the settled class in a list", func(t *testing.T) {
@@ -152,9 +152,7 @@ func TestNew(t *testing.T) {
 				Elems:    []*emit.TypeRef{{Spelling: doubleName}},
 			}})
 			body, sink := rendered(t, declared(doubleName), holder)
-			for d := range sink.All() {
-				t.Errorf("unexpected finding: %s", d.Msg)
-			}
+			assert.Empty(t, slices.Collect(sink.All()), "the file renders clean")
 			assert.Contains(t, body, "  rows: readonly "+settledDouble+"[];\n",
 				"the list names the settled class, readonly as written")
 		})

@@ -4,6 +4,7 @@
 package state_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -103,7 +104,13 @@ func TestManifest(t *testing.T) {
 
 			got, digests, err := state.ReadManifest(t.Context(), ledger.NewMem())
 			assert.NoError(t, err, "no record is no error")
-			assert.True(t, got.Equal(manifest.Manifest{Version: manifest.Version}), "the empty manifest")
+			assert.Equal(
+				t,
+				got,
+				manifest.Manifest{Version: manifest.Version},
+				"the empty manifest",
+				assert.EquateEmpty(),
+			)
 			assert.Empty(t, digests, "and no digests")
 		})
 
@@ -114,7 +121,7 @@ func TestManifest(t *testing.T) {
 			l, want := recorded(t, m)
 			got, digests, err := state.ReadManifest(t.Context(), l)
 			assert.NoError(t, err, "the record reads")
-			assert.True(t, got.Equal(m), "the recorded manifest")
+			assert.Equal(t, got, m, "the recorded manifest", assert.EquateEmpty())
 			assert.Equal(t, digests, want, "and the recorded digests")
 		})
 
@@ -128,7 +135,7 @@ func TestManifest(t *testing.T) {
 			}
 			got, _, err := state.ReadManifest(t.Context(), l)
 			assert.NoError(t, err, "the stray blobs are skipped")
-			assert.True(t, got.Equal(m), "the recorded manifest")
+			assert.Equal(t, got, m, "the recorded manifest", assert.EquateEmpty())
 		})
 
 		t.Run("returns ErrUnsupported for a document that does not decode", func(t *testing.T) {
@@ -209,10 +216,13 @@ func TestManifest(t *testing.T) {
 
 			m := scaled()
 			l, digests := recorded(t, m)
-			before := l.Writes()
-			again, err := state.WriteManifest(t.Context(), l, m, digests)
+			var (
+				again state.Digests
+				err   error
+			)
+			assert.Pure(t, l.Writes, func() { again, err = state.WriteManifest(t.Context(), l, m, digests) },
+				"nothing is written")
 			assert.NoError(t, err, "the equal record commits")
-			assert.Equal(t, l.Writes(), before, "nothing is written")
 			assert.Equal(t, again, digests, "and the digests are the recorded ones")
 		})
 
@@ -228,7 +238,7 @@ func TestManifest(t *testing.T) {
 			assert.Equal(t, l.Writes(), before+1, "one document is written")
 			got, _, err := state.ReadManifest(t.Context(), l)
 			assert.NoError(t, err, "the record reads")
-			assert.True(t, got.Equal(m), "the changed manifest")
+			assert.Equal(t, got, m, "the changed manifest", assert.EquateEmpty())
 		})
 
 		t.Run("removes the document whose bucket the manifest leaves empty", func(t *testing.T) {
@@ -256,7 +266,7 @@ func TestManifest(t *testing.T) {
 			assert.NoError(t, err, "the record commits without digests")
 			got, digests, err := state.ReadManifest(t.Context(), l)
 			assert.NoError(t, err, "the record reads")
-			assert.True(t, got.Equal(m), "the documents of the other buckets are removed")
+			assert.Equal(t, got, m, "the documents of the other buckets are removed", assert.EquateEmpty())
 			assert.Length(t, digests, 1, "one document remains")
 		})
 
@@ -302,38 +312,48 @@ func TestManifest(t *testing.T) {
 }
 
 // A read and an unchanged write of the record allocate within their
-// ceilings in the ordinary run, which runs no benchmark. The check runs
-// alone, because AllocsPerRun counts every goroutine's allocations and
-// refuses to run beside parallel tests.
+// ceilings in the ordinary run, which runs no benchmark. Each count
+// keeps the first error of its calls, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestManifestAllocs(t *testing.T) {
 	m := scaled()
 	l, digests := recorded(t, m)
+	var (
+		got manifest.Manifest
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, _, err := state.ReadManifest(t.Context(), l); err != nil {
-			t.Fatalf("ReadManifest: unexpected error: %v", err)
-		}
+		var rerr error
+		got, _, rerr = state.ReadManifest(t.Context(), l)
+		err = cmp.Or(err, rerr)
 	}, readManifestAllocs+manifestStateAllocs, "ReadManifest allocates each document's read and decode")
-	assert.MaxAllocs(t, func() {
-		if _, err := state.WriteManifest(t.Context(), l, m, digests); err != nil {
-			t.Fatalf("WriteManifest: unexpected error: %v", err)
-		}
-	}, writeManifestAllocs+manifestStateAllocs, "WriteManifest allocates each document's encoding and digest")
+	assert.NoError(t, err, "the record reads")
+	assert.Equal(t, got, m, "the recorded manifest", assert.EquateEmpty())
+	assert.Pure(t, l.Writes, func() {
+		assert.MaxAllocs(t, func() {
+			_, werr := state.WriteManifest(t.Context(), l, m, digests)
+			err = cmp.Or(err, werr)
+		}, writeManifestAllocs+manifestStateAllocs, "WriteManifest allocates each document's encoding and digest")
+	}, "the equal record writes nothing")
+	assert.NoError(t, err, "the equal record commits")
 }
 
 // BenchmarkManifest measures a read of a record of 1,000 files, and a
 // write of a manifest equal to it, which a run without changes makes.
-// Each case runs once before the measurement.
+// Each case runs one iteration before the measurement.
 func BenchmarkManifest(b *testing.B) {
 	m := scaled()
 	l, digests := recorded(b, m)
 
 	b.Run("ReadManifest", func(b *testing.B) {
 		b.Run("a record of 1,000 files", func(b *testing.B) {
-			_, _, err := state.ReadManifest(b.Context(), l)
-			assert.NoError(b, err, "the record reads before the measurement")
-			c := bench.Start(b).MaxAllocs(readManifestAllocs + manifestStateAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(readManifestAllocs + manifestStateAllocs)
 			defer c.End()
-			var got manifest.Manifest
+			var (
+				got manifest.Manifest
+				err error
+			)
 			for c.Loop() {
 				got, _, err = state.ReadManifest(b.Context(), l)
 			}
@@ -344,18 +364,19 @@ func BenchmarkManifest(b *testing.B) {
 
 	b.Run("WriteManifest", func(b *testing.B) {
 		b.Run("a manifest equal to the record", func(b *testing.B) {
-			_, err := state.WriteManifest(b.Context(), l, m, digests)
-			assert.NoError(b, err, "the record writes before the measurement")
-			writes := l.Writes()
-			c := bench.Start(b).MaxAllocs(writeManifestAllocs + manifestStateAllocs)
-			defer c.End()
-			var got state.Digests
-			for c.Loop() {
-				got, err = state.WriteManifest(b.Context(), l, m, digests)
-			}
+			var (
+				got state.Digests
+				err error
+			)
+			assert.Pure(b, l.Writes, func() {
+				c := bench.Start(b).Warmup(1).MaxAllocs(writeManifestAllocs + manifestStateAllocs)
+				defer c.End()
+				for c.Loop() {
+					got, err = state.WriteManifest(b.Context(), l, m, digests)
+				}
+			}, "WriteManifest writes nothing")
 			assert.NoError(b, err, "the record writes")
 			assert.Equal(b, got, digests, "WriteManifest returns the recorded digests")
-			assert.Equal(b, l.Writes(), writes, "and writes nothing")
 		})
 	})
 }

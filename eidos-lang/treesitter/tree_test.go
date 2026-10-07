@@ -4,7 +4,6 @@
 package treesitter_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -125,20 +124,15 @@ func TestTree(t *testing.T) {
 
 // A tree's root, its error walk and its release allocate nothing on the
 // Go heap. The ordinary run, which runs no benchmark, checks that here.
+// Each Close takes a tree parsed outside the count.
 func TestTreeZeroAlloc(t *testing.T) {
 	checkAllocs(t, treeCalls(t))
-	trees := make([]*treesitter.Tree, 0, allocRuns)
-	for range allocRuns {
-		trees = append(trees, parse(t, cleanJava))
-	}
-	closed := 0
-	closing := func() {
-		trees[closed].Close()
-		closed++
-	}
-	assert.MaxAllocs(t, closing, 0, "Close allocates nothing")
-	assert.Equal(t, closed, allocRuns, "Close released every tree")
-	assert.True(t, trees[allocRuns-1].Root().IsZero(), "Close releases the tree")
+	var last *treesitter.Tree
+	assert.MaxAllocsWithSetup(t, func() *treesitter.Tree { return parse(t, cleanJava) }, func(tree *treesitter.Tree) {
+		tree.Close()
+		last = tree
+	}, 0, "Close allocates nothing")
+	assert.True(t, last.Root().IsZero(), "Close releases the tree")
 }
 
 // BenchmarkTree measures the root and error walk a frontend reads once
@@ -147,7 +141,7 @@ func BenchmarkTree(b *testing.B) {
 	benchCalls(b, treeCalls(b))
 
 	b.Run("Close", func(b *testing.B) {
-		ctx, src := context.Background(), []byte(cleanJava)
+		ctx, src := b.Context(), []byte(cleanJava)
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		var (

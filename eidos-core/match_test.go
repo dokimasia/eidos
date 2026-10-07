@@ -277,7 +277,7 @@ func TestMatch(t *testing.T) {
 				Build()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.True(t, ran, "the handler ran")
-			assert.False(t, slices.Contains(coretest.Codes(ctx.Sink), rules.AbsentRules),
+			assert.NotContains(t, coretest.Codes(ctx.Sink), rules.AbsentRules,
 				"a registered language reports no warning")
 		})
 
@@ -314,21 +314,17 @@ func TestMatch(t *testing.T) {
 			t.Parallel()
 
 			ctx := absentRun(t)
-			var warned int
-			for _, c := range coretest.Codes(ctx.Sink) {
-				if c == rules.AbsentRules {
-					warned++
-				}
-			}
-			assert.Equal(t, warned, 2, "the two named languages warn once each, and the zero language never")
+			other := func(c diag.Code) bool { return c != rules.AbsentRules }
+			warned := slices.DeleteFunc(coretest.Codes(ctx.Sink), other)
+			assert.Length(t, warned, 2, "the two named languages warn once each, and the zero language never")
 		})
 	})
 }
 
 // Each method of a match allocates nothing per invocation beyond what
 // it returns or reports, in the ordinary run, which runs no benchmark.
-// The check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// The check runs alone, because the count includes every goroutine's
+// allocations.
 func TestMatchAllocs(t *testing.T) {
 	checkPhaseAllocs(t, matchMethodCases(t))
 }
@@ -353,9 +349,7 @@ func matchMethodCases(tb assert.TB) []phaseCase {
 	visiting := func(h func(*eidos.StructMatch) bool) plugin.Generator {
 		return generatorOf(tb, eidos.NewPlugin(contextPlugin).
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
-				if !h(m) {
-					tb.Fatalf("the method returned another value on %s", m.Struct.Name)
-				}
+				assert.True(tb, h(m), "the method returns the fixture's value on every invocation")
 				return nil
 			})).
 			Build())

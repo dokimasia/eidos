@@ -65,7 +65,7 @@ func TestDependent(t *testing.T) {
 			t.Parallel()
 
 			var role plugin.Dependent = depending{}
-			parts, err := role.Dependencies(context.Background(), &plugin.DependencyRound{
+			parts, err := role.Dependencies(t.Context(), &plugin.DependencyRound{
 				Number: 1,
 				Needs:  []plugin.Need{{Path: "example.test/lib", From: []string{workspaceFile}}},
 			}, listing{withCache()})
@@ -101,7 +101,7 @@ func TestDependent(t *testing.T) {
 				{Path: "example.test/lib", From: []string{workspaceFile}},
 				{Path: "example.test/a/" + missingName, From: []string{workspaceFile}},
 			}}
-			_, err := depending{}.Dependencies(context.Background(), round, listing{withCache()})
+			_, err := depending{}.Dependencies(t.Context(), round, listing{withCache()})
 			assert.NoError(t, err, "the round returns")
 			assert.Equal(t, round.Unplaced(), []plugin.Unplaced{
 				{Path: "example.test/b/" + missingName, Reason: unplacedReason},
@@ -132,19 +132,19 @@ func TestDependent(t *testing.T) {
 
 // A round's first report allocates the list of reports, and reading the
 // reports allocates nothing, in the ordinary run, which runs no
-// benchmark. Each counted report goes to a round of its own. The check
-// runs alone, because AllocsPerRun counts every goroutine's allocations
-// and refuses to run beside parallel tests.
+// benchmark. Each counted report goes to a round of its own, built
+// outside the count. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestDependentAllocs(t *testing.T) {
-	rounds := make([]plugin.DependencyRound, allocRuns)
-	at := 0
-	assert.MaxAllocs(t, func() {
-		rounds[at].Unplace("example.test/"+missingName, unplacedReason)
-		at++
-	}, 1, "Unplace allocates the list of reports on a round's first report")
+	var round *plugin.DependencyRound
+	assert.MaxAllocsWithSetup(t, func() *plugin.DependencyRound { return &plugin.DependencyRound{Number: 1} },
+		func(r *plugin.DependencyRound) {
+			r.Unplace("example.test/"+missingName, unplacedReason)
+			round = r
+		}, 1, "Unplace allocates the list of reports on a round's first report")
 
 	var got []plugin.Unplaced
-	assert.MaxAllocs(t, func() { got = rounds[0].Unplaced() }, 0, "Unplaced allocates nothing")
+	assert.MaxAllocs(t, func() { got = round.Unplaced() }, 0, "Unplaced allocates nothing")
 	assert.Length(t, got, 1, "Unplaced returns the round's report")
 }
 

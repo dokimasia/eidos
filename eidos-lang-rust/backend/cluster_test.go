@@ -76,7 +76,7 @@ func TestCluster(t *testing.T) {
 		t.Run("leaves an unattached method unassigned", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Length(t, backend.Cluster([]symbol.Symbol{&emit.Method{Name: "orphan"}}), 0,
+			assert.Empty(t, backend.Cluster([]symbol.Symbol{&emit.Method{Name: "orphan"}}),
 				"the lowering refuses such a method before any render")
 		})
 	})

@@ -7,12 +7,14 @@ import (
 	"errors"
 	"io/fs"
 	"maps"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/backend/backendtest"
@@ -109,6 +111,18 @@ const (
 	variantComment = "round"
 )
 
+// The contracts the checks state, as their records state them, for the
+// cases that read which contract a check broke.
+const (
+	settleCompletes = "the settle completes"
+	settlesClean    = "the suite's fixture settles clean"
+	storeContained  = "the fixture contains a store"
+	unitsKept       = "the settle adds and drops no unit"
+	// memberRendered ends the contract of each member the member check
+	// reads, after the member's Host.Member.
+	memberRendered = " renders beside its host, or a finding names it"
+)
+
 // fake is a renderer the failing cases script: the suite has to
 // catch every way a renderer can cheat the rules.
 type fake struct {
@@ -198,26 +212,11 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertRenderedMembers(tb, memberDropped)
 				})
-			assert.Contains(t, failure, structField,
-				"the failure names the member that arrived nowhere")
-			assert.Contains(t, failure, hostStruct, "and the host it belongs to")
-		})
-
-		t.Run("reports every member its host template drops", func(t *testing.T) {
-			t.Parallel()
-
-			rec := assert.NewRecorder()
-			backendtest.AssertRenderedMembers(rec, memberDropped)
-			reported := strings.Join(rec.Messages(), "\n")
-			for _, member := range []string{
-				structField, structMethod, ifaceField, ifaceMethod,
-				enumVariant, sumVariant,
-			} {
-				assert.Contains(t, reported, member,
-					"the check reads the member lists of every host kind")
-			}
-			assert.Length(t, rec.Messages(), 6,
-				"and reports each drop, not only the first")
+			assertMissing(t, failure, []string{
+				hostStruct + "." + structField, hostStruct + "." + structMethod,
+				hostInterface + "." + ifaceField, hostInterface + "." + ifaceMethod,
+				hostEnum + "." + enumVariant, hostSum + "." + sumVariant,
+			}, "the check reads the member lists of every host kind and reports each drop")
 		})
 
 		t.Run("fails a member only another file spells", func(t *testing.T) {
@@ -253,7 +252,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertRenderedMembers(tb, shadowed)
 				})
-			assert.Contains(t, failure, structMethod, "the failure names the member its host dropped")
+			assertMissing(t, failure, []string{hostStruct + "." + structMethod},
+				"the failure names the member its host dropped")
 		})
 
 		t.Run("fails a member whose name occurs only inside a longer word", func(t *testing.T) {
@@ -282,16 +282,14 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertRenderedMembers(tb, prefixed)
 				})
-			assert.Contains(t, failure, "member "+prefixedField+" of", "the failure names the member")
+			assertMissing(t, failure, []string{hostStruct + "." + prefixedField}, "the failure names the member")
 		})
 
 		t.Run("passes a member a finding already names", func(t *testing.T) {
 			t.Parallel()
 
-			rec := assert.NewRecorder()
-			backendtest.AssertRenderedMembers(rec, memberExcused)
-			assert.False(t, rec.Failed(),
-				"a member the settle reported is excused from the bytes")
+			// A member the settle reported is excused from the bytes.
+			backendtest.AssertRenderedMembers(t, memberExcused)
 		})
 
 		t.Run("fails the same member where no finding names it", func(t *testing.T) {
@@ -308,24 +306,21 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertRenderedMembers(tb, silent)
 				})
-			assert.Contains(t, failure, structField,
+			assertMissing(t, failure, []string{hostStruct + "." + structField, hostStruct + "." + collidingField},
 				"the excusal is the settle's finding, not the fixture")
 		})
 
 		t.Run("passes the members of a host of a refused kind", func(t *testing.T) {
 			t.Parallel()
 
-			setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			// A refused host renders nothing, so no member of it is missing.
+			backendtest.AssertRenderedMembers(t, func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 				tb.Helper()
 
 				r, held := sumRefusing(tb).Build().(plugin.Renderer)
 				assert.True(tb, held, "the refusing member backend renders")
 				return r, memberFixture(tb)
-			}
-			rec := assert.NewRecorder()
-			backendtest.AssertRenderedMembers(rec, setup)
-			assert.False(t, rec.Failed(),
-				"a refused host renders nothing, so no member of it is missing")
+			})
 		})
 
 		t.Run("fails a lowering that drops its input's origin", func(t *testing.T) {
@@ -335,7 +330,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertRenderedMembers(tb, driftingSetup)
 				})
-			assert.Contains(t, failure, "settle",
+			assert.Equal(t, coretest.Contracts(failure), []string{settleCompletes},
 				"the failure names the step that failed")
 		})
 	})
@@ -354,8 +349,9 @@ func TestSuite(t *testing.T) {
 						},
 					))
 				})
-			assert.Contains(t, failure, "coverage",
-				"the failure names the missing declaration")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"the renderer reports its fact coverage, because an undeclared coverage disarms the narrowing guard",
+			}, "the failure names the missing declaration")
 		})
 
 		t.Run("passes a total declaration whose refusals report", func(t *testing.T) {
@@ -396,18 +392,19 @@ func TestSuite(t *testing.T) {
 			// ranges over its expectations. Thirty runs visit the Sum key
 			// before the SumVariant key at least once with high
 			// probability, which is the order a substring match
-			// misattributes under.
+			// misattributes under. Each refusal counts under the kind it
+			// names.
 			for range 30 {
-				rec := assert.NewRecorder()
-				backendtest.AssertCoveredFacts(rec, setup)
-				assert.False(t, rec.Failed(), "each refusal counts under the kind it names")
+				backendtest.AssertCoveredFacts(t, setup)
 			}
 		})
 
 		t.Run("passes a refused fact stated on a declaration of a refused kind", func(t *testing.T) {
 			t.Parallel()
 
-			setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			// A refused declaration renders nothing, so none of its facts
+			// reports.
+			backendtest.AssertCoveredFacts(t, func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 				tb.Helper()
 
 				r, held := sumRefusing(tb).
@@ -418,11 +415,7 @@ func TestSuite(t *testing.T) {
 				assert.NoError(tb, e.Add(unit(hostsWord, shapeOf(sumComment, variantComment))),
 					"the sum unit arrives")
 				return r, &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
-			}
-			rec := assert.NewRecorder()
-			backendtest.AssertCoveredFacts(rec, setup)
-			assert.False(t, rec.Failed(),
-				"a refused declaration renders nothing, so none of its facts reports")
+			})
 		})
 
 		t.Run("fails a declaration missing a fact", func(t *testing.T) {
@@ -441,8 +434,10 @@ func TestSuite(t *testing.T) {
 							return r, wellFixture(tb)
 						})
 				})
-			assert.Contains(t, failure, symbol.FactAsync.String(),
-				"the failure names the missing fact")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"the coverage takes a stance on " + symbol.FactAsync.String() +
+					": a declaration is total over the fact set",
+			}, "the failure names the missing fact")
 		})
 
 		t.Run("fails an exception on a kind that cannot state it", func(t *testing.T) {
@@ -463,8 +458,10 @@ func TestSuite(t *testing.T) {
 							return r, wellFixture(tb)
 						})
 				})
-			assert.Contains(t, failure, symbol.FactTag.String(),
-				"the failure names the stray fact")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"the coverage excepts " + symbol.FactTag.String() + " on a " + symbol.KindStruct.String() +
+					", which states it",
+			}, "the failure names the stray fact on its kind")
 		})
 
 		t.Run("fails a setup returning no fixture", func(t *testing.T) {
@@ -474,7 +471,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertCoveredFacts(tb, hollowSetup)
 				})
-			assert.Contains(t, failure, "fixture",
+			assert.Equal(t, coretest.Contracts(failure), []string{storeContained},
 				"the failure names what the setup did not return")
 		})
 
@@ -492,7 +489,7 @@ func TestSuite(t *testing.T) {
 							return r, wellFixture(tb)
 						})
 				})
-			assert.Contains(t, failure, "settle",
+			assert.Equal(t, coretest.Contracts(failure), []string{settleCompletes},
 				"the failure names the step that failed")
 		})
 
@@ -510,7 +507,7 @@ func TestSuite(t *testing.T) {
 							return r, wellFixture(tb)
 						})
 				})
-			assert.Contains(t, failure, "settles clean",
+			assert.Equal(t, coretest.Contracts(failure), []string{settlesClean},
 				"the failure names the fixture the coverage is read over")
 		})
 
@@ -529,7 +526,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertCoveredFacts(tb, aborting)
 				})
-			assert.Contains(t, failure, "render completes",
+			assert.Equal(t, coretest.Contracts(failure), []string{"the render completes"},
 				"the failure names the step that failed")
 		})
 
@@ -551,7 +548,8 @@ func TestSuite(t *testing.T) {
 							return r, abstractFixture(tb)
 						})
 				})
-			assert.Contains(t, failure, "no verdict",
+			assert.Length(t, failure, 1, "the check fails once")
+			assert.HasPrefix(t, failure[0].Contract, "every stated fact meets a verdict: ",
 				"the failure names the fact that met no stance")
 		})
 	})
@@ -574,17 +572,17 @@ func TestSuite(t *testing.T) {
 					backendtest.RenderSettled(tb, reportsOnce(render.UnformattedFile,
 						"the formatter refused "+fileA))
 				})
-			assert.Contains(t, failure, "renders clean",
-				"the check names what a satellite's pins read")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"the settled fixture renders clean: the formatter refused " + fileA,
+			}, "the check names what a satellite's pins read, and the finding it read")
 		})
 
 		t.Run("passes a run reporting a declared kind refusal", func(t *testing.T) {
 			t.Parallel()
 
-			rec := assert.NewRecorder()
-			files := backendtest.RenderSettled(rec, refusingRendered)
-			assert.False(t, rec.Failed(), "a declared refusal is the fixture's, not a defect")
-			assert.NotEmpty(t, files, "and the spelt kinds render")
+			// A declared refusal is the fixture's, not a defect.
+			files := backendtest.RenderSettled(t, refusingRendered)
+			assert.NotEmpty(t, files, "the spelt kinds render")
 		})
 
 		t.Run("fails a lowering that drops its input's origin", func(t *testing.T) {
@@ -594,7 +592,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.RenderSettled(tb, driftingSetup)
 				})
-			assert.Contains(t, failure, "settle",
+			assert.Equal(t, coretest.Contracts(failure), []string{settleCompletes},
 				"the failure names the step that failed, not the render")
 		})
 	})
@@ -626,7 +624,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertSettledShape(tb, setup)
 				})
-			assert.Contains(t, failure, "unit", "the failure names the drift")
+			assert.Equal(t, coretest.Contracts(failure), []string{unitsKept}, "the failure names the drift")
 		})
 
 		t.Run("passes a respell every reference follows", func(t *testing.T) {
@@ -653,25 +651,20 @@ func TestSuite(t *testing.T) {
 					return nil, nil
 				}}, &backendtest.Fixture{Emit: e}
 			}
-			rec := assert.NewRecorder()
-			backendtest.AssertSettledShape(rec, seamless)
-			assert.False(t, rec.Failed(),
-				"a hand-rolled renderer declares no settle to check")
+			// A hand-rolled renderer declares no settle to check.
+			backendtest.AssertSettledShape(t, seamless)
 		})
 
 		t.Run("passes a lowering that reshapes declarations", func(t *testing.T) {
 			t.Parallel()
 
-			setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			// A declared lowering may reshape declarations the check
+			// would otherwise compare.
+			backendtest.AssertSettledShape(t, func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 				r, held := wellBuilder(tb).Lower(duplicating).Build().(plugin.Renderer)
 				assert.True(tb, held, "the lowering backend renders")
 				return r, wellFixture(tb)
-			}
-			rec := assert.NewRecorder()
-			backendtest.AssertSettledShape(rec, setup)
-			assert.False(t, rec.Failed(),
-				"a declared lowering may reshape declarations the check "+
-					"would otherwise compare")
+			})
 		})
 
 		t.Run("fails a setup returning no store", func(t *testing.T) {
@@ -681,7 +674,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertSettledShape(tb, hollowSetup)
 				})
-			assert.Contains(t, failure, "fixture",
+			assert.Equal(t, coretest.Contracts(failure), []string{storeContained},
 				"the failure names what the setup did not return")
 		})
 
@@ -692,7 +685,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertSettledShape(tb, driftingSetup)
 				})
-			assert.Contains(t, failure, "settle",
+			assert.Equal(t, coretest.Contracts(failure), []string{settleCompletes},
 				"the failure names the step that failed")
 		})
 
@@ -710,13 +703,12 @@ func TestSuite(t *testing.T) {
 				}
 				return r, f
 			}
-			rec := assert.NewRecorder()
-			backendtest.AssertSettledShape(rec, setup)
-			assert.Length(t, rec.Failures(), 1,
-				"the count is the one failure: the comparison stops where the "+
-					"shorter build ends")
-			assert.Contains(t, rec.Message(), "unit",
-				"the failure names the unit contract")
+			failure := assert.Rejects(t, "a first build of one unit more must fail",
+				func(tb assert.TB) {
+					backendtest.AssertSettledShape(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{unitsKept},
+				"the unit count is the one failure: the check stops where the shorter build ends")
 		})
 	})
 
@@ -734,20 +726,19 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertPopulatedFixture(tb, hollow)
 				})
-			assert.Contains(t, failure, "unit",
+			assert.Equal(t, coretest.Contracts(failure), []string{"the fixture emits at least one unit"},
 				"the check demands a populated fixture")
 		})
 
 		t.Run("fails a fixture without a store", func(t *testing.T) {
 			t.Parallel()
 
-			rec := assert.NewRecorder()
-			backendtest.AssertPopulatedFixture(rec, hollowSetup)
-			assert.Length(t, rec.Failures(), 1,
-				"the missing store is the one failure: the check stops and "+
-					"ranges over nothing")
-			assert.Contains(t, rec.Message(), "store",
-				"the failure names what the fixture lacks")
+			failure := assert.Rejects(t, "a fixture without a store must fail the check",
+				func(tb assert.TB) {
+					backendtest.AssertPopulatedFixture(tb, hollowSetup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{storeContained},
+				"the missing store is the one failure: the check stops and ranges over nothing")
 		})
 	})
 
@@ -770,8 +761,11 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertDeterministicRender(tb, varying)
 				})
-			assert.Contains(t, failure, "same bytes",
-				"the check names the byte-identity contract")
+			assert.Length(t, failure, 1, "the check fails once")
+			expect.Equal(t, failure[0].Assertion, "deterministic", "on the determinism of the render")
+			expect.Equal(t, failure[0].Contract,
+				"isolated renders return the same files and report the same findings",
+				"under the byte-identity contract")
 		})
 
 		t.Run("passes one finding set reported in two orders", func(t *testing.T) {
@@ -805,8 +799,8 @@ func TestSuite(t *testing.T) {
 			}
 
 			backendtest.AssertDeterministicRender(t, swapping)
-			assert.Equal(t, runs, 2,
-				"the findings are the run's order and the check compares them as a set")
+			assert.InRange(t, runs, 2, math.MaxInt32,
+				"the check rendered more than once and compared the findings as a set")
 		})
 	})
 
@@ -821,17 +815,18 @@ func TestSuite(t *testing.T) {
 					backendtest.AssertSpeltKinds(tb, reportsOnce(render.UnspeltKind,
 						"printer declares no template for Enum"))
 				})
-			assert.Contains(t, failure, "spell",
-				"the check names the missing spelling")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"every kind the fixture emits has a spelling or a declared refusal: " +
+					"printer declares no template for Enum",
+			}, "the check names the missing spelling")
 		})
 
 		t.Run("passes a kind the language declares refused", func(t *testing.T) {
 			t.Parallel()
 
-			rec := assert.NewRecorder()
-			backendtest.AssertSpeltKinds(rec, reportsOnce(render.RefusedKind,
+			// A declared refusal is a spelling decision.
+			backendtest.AssertSpeltKinds(t, reportsOnce(render.RefusedKind,
 				"printer refuses the Sum kind: "+kindReason))
-			assert.False(t, rec.Failed(), "a declared refusal is a spelling decision")
 		})
 	})
 
@@ -846,8 +841,9 @@ func TestSuite(t *testing.T) {
 					backendtest.AssertPlacedContent(tb, reportsOnce(render.DroppedSlots,
 						"gen's template placed no marker and 2 contributions are pending"))
 				})
-			assert.Contains(t, failure, "whole",
-				"the check requires every body to arrive whole")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"every body arrives whole: gen's template placed no marker and 2 contributions are pending",
+			}, "the check requires every body to arrive whole")
 		})
 	})
 
@@ -865,60 +861,56 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.AssertContinuedRender(tb, aborting)
 				})
-			assert.Contains(t, failure, "continue",
-				"the check names the continuation rule")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"a file's problem attaches to the sink and the render continues",
+			}, "the check names the continuation rule")
 		})
 
-		t.Run("fails a finding without a position", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name     string
+			give     func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)
+			contract string
+		}{
+			{
+				name: "fails a finding without a position",
+				give: func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+					ctx.Sink.Errorf(render.UnformattedFile,
+						position.Pos{}, ctx.Plugin, "somewhere, something broke")
+					return nil, nil
+				},
+				contract: "every finding states a position: somewhere, something broke",
+			},
+			{
+				name: "fails a finding under another plugin's origin",
+				give: func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+					ctx.Sink.Errorf(render.UnformattedFile,
+						position.Pos{File: fileA}, outsider, "not the context's")
+					return nil, nil
+				},
+				contract: "every finding names the context's plugin as its origin: not the context's",
+			},
+			{
+				name: "fails a returned file reported unformatted",
+				give: func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+					ctx.Sink.Errorf(render.UnformattedFile,
+						position.Pos{File: fileA}, ctx.Plugin, "the formatter refused %s", fileA)
+					return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
+				},
+				contract: "a file the formatter refused remains withheld",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			unpositioned := scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-				ctx.Sink.Errorf(render.UnformattedFile,
-					position.Pos{}, ctx.Plugin, "somewhere, something broke")
-				return nil, nil
+				failure := assert.Rejects(t, "a breach of the failure semantics must fail the check",
+					func(tb assert.TB) {
+						backendtest.AssertContinuedRender(tb, scripted(tt.give))
+					})
+				assert.Equal(t, coretest.Contracts(failure), []string{tt.contract},
+					"the check names the rule the render broke")
 			})
-
-			failure := assert.Rejects(t, "an unpositioned finding must fail the check",
-				func(tb assert.TB) {
-					backendtest.AssertContinuedRender(tb, unpositioned)
-				})
-			assert.Contains(t, failure, "position",
-				"the check names the positioning rule")
-		})
-
-		t.Run("fails a finding under another plugin's origin", func(t *testing.T) {
-			t.Parallel()
-
-			foreign := scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-				ctx.Sink.Errorf(render.UnformattedFile,
-					position.Pos{File: fileA}, outsider, "not the context's")
-				return nil, nil
-			})
-
-			failure := assert.Rejects(t, "a mis-attributed finding must fail the check",
-				func(tb assert.TB) {
-					backendtest.AssertContinuedRender(tb, foreign)
-				})
-			assert.Contains(t, failure, "origin",
-				"the check names the attribution rule")
-		})
-
-		t.Run("fails a returned file reported unformatted", func(t *testing.T) {
-			t.Parallel()
-
-			lying := scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-				ctx.Sink.Errorf(render.UnformattedFile,
-					position.Pos{File: fileA}, ctx.Plugin, "the formatter refused %s", fileA)
-				return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
-			})
-
-			failure := assert.Rejects(t, "a withheld file must remain withheld",
-				func(tb assert.TB) {
-					backendtest.AssertContinuedRender(tb, lying)
-				})
-			assert.Contains(t, failure, "withheld",
-				"the check names the withholding rule")
-		})
+		}
 
 		t.Run("passes a format failure the render continues past", func(t *testing.T) {
 			t.Parallel()
@@ -951,6 +943,19 @@ func TestSuite(t *testing.T) {
 			backendtest.AssertContinuedRender(t, partial)
 		})
 	})
+}
+
+// assertMissing checks that the member check failed once for each
+// member want lists, each as Host.Member, in the store's order, and for
+// no other.
+func assertMissing(tb assert.TB, failure []assert.Failure, want []string, msg string) {
+	tb.Helper()
+
+	contracts := make([]string, len(want))
+	for i, member := range want {
+		contracts[i] = member + memberRendered
+	}
+	assert.Equal(tb, coretest.Contracts(failure), contracts, msg)
 }
 
 // call returns the one-line scaffold statement naming n.
@@ -1039,7 +1044,7 @@ func wellFixture(tb assert.TB) *backendtest.Fixture {
 	refBody := emit.Body{Ref: &emit.TemplateRef{Name: refTemplate}}
 	refBody.Prologue.Append(call(guardCall))
 	e := plugin.NewEmit()
-	for _, u := range []plugin.Unit{
+	assert.Total(tb, e.Add, []plugin.Unit{
 		unit(stubWord,
 			&emit.Struct{
 				Origin: coretest.Struct(coretest.StorePath, hostStruct).ID,
@@ -1050,9 +1055,7 @@ func wellFixture(tb assert.TB) *backendtest.Fixture {
 		),
 		unit(refWord, fnOf(saveName, refBody)),
 		unit(rawWord, fnOf(dumpName, emit.Body{Verbatim: dumpBody})),
-	} {
-		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
-	}
+	}, "the fixture unit arrives")
 	return &backendtest.Fixture{
 		Emit:     e,
 		Schedule: []plugin.ID{fixtureEmitter},

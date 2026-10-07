@@ -4,6 +4,7 @@
 package conformance
 
 import (
+	"fmt"
 	"io/fs"
 	"maps"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
@@ -230,42 +232,38 @@ func Run(t *testing.T, c Corpus) {
 // verdict is one the corpus may state. A refusal is always one, the
 // load verdict is one without rules, and a projection level is one
 // with them.
+//
+// Each feature and each name reports on its own, in inventory order
+// and then in name order, so one run names every silence and every
+// stray.
 func AssertCoveredInventory(tb assert.TB, c Corpus) {
 	tb.Helper()
 
-	known := map[string]bool{}
+	allowed, rule := []Verdict{Refuses, Loads}, "a corpus without rules states loads or refuses"
+	if c.Rules != nil {
+		allowed, rule = []Verdict{Refuses, Projects, ProjectsPartly, Opaque},
+			"a corpus with rules states projects, projects partly, opaque or refuses"
+	}
+	var ids []string
 	for _, f := range Inventory() {
-		known[f.ID] = true
-		verdict := c.Coverage[f.ID]
-		switch {
-		case verdict == Refuses:
-		case verdict == Loads && c.Rules == nil:
-		case verdict.projected() && c.Rules != nil:
-		case verdict == Loads:
-			tb.Errorf("%s loads under a corpus with rules: a corpus that projects states "+
-				"the level, projects, projects partly or opaque", f.ID)
-		case verdict.projected():
-			tb.Errorf("%s states a projection level under a corpus without rules, "+
-				"which nothing can evaluate", f.ID)
-		default:
-			tb.Errorf("the inventory lists %s and the coverage states no verdict for it: "+
-				"silence on a capability is the gap this list exists to close", f.ID)
+		ids = append(ids, f.ID)
+		expect.Contains(tb, c.Coverage, f.ID, fmt.Sprintf("the coverage states a verdict for %s: "+
+			"silence on a capability is the gap this list exists to close", f.ID))
+		if verdict, stated := c.Coverage[f.ID]; stated {
+			expect.Contains(tb, allowed, verdict, fmt.Sprintf("%s states %s: %s", f.ID, verdict, rule))
 		}
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.Remainder)) {
-		if !known[id] {
-			tb.Errorf("the remainder names %s, which the inventory does not list", id)
-		}
+		expect.Contains(tb, ids, id, fmt.Sprintf("the inventory lists %s, which the remainder names", id))
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.Coverage)) {
-		if !known[id] {
-			tb.Errorf("the coverage names %s, which the inventory does not list", id)
-		}
+		expect.Contains(tb, ids, id, fmt.Sprintf("the inventory lists %s, which the coverage names", id))
 	}
 }
 
 // AssertFeature checks one covered feature against its expectations
-// over the corpus graph.
+// over the corpus graph. A declaration the load lacks reports on its
+// own, and its expectation does not run.
 func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
@@ -279,11 +277,8 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	for _, d := range f.Declares {
 		id := identityOf(c, f, d)
 		decl, held := g.Lookup(id)
-		if !held {
-			tb.Errorf("%s expects %s, which the load does not contain", f.ID, id)
-			continue
-		}
-		if d.Check != nil {
+		expect.True(tb, held, fmt.Sprintf("the load contains %s, which %s declares", id, f.ID))
+		if held && d.Check != nil {
 			d.Check(tb, ctx(decl))
 		}
 	}
@@ -298,7 +293,7 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 // catches a spelling filed somewhere else, such as a shared file or
 // a rehomed tree the directory check never walks, because a
 // refusal's proof is what the graph contains, not where the bytes
-// were.
+// were. Each file and each package reports on its own.
 func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
@@ -307,9 +302,10 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && (strings.HasPrefix(path, dir+"/") || path == dir) {
-			tb.Errorf("%s is refused and %s spells it anyway: a refusal covers nothing",
-				f.ID, path)
+		if !d.IsDir() {
+			expect.NotEqual(tb, path, dir, fmt.Sprintf("%s is refused, so the tree spells no file %s", f.ID, dir))
+			expect.False(tb, strings.HasPrefix(path, dir+"/"),
+				fmt.Sprintf("%s is refused, so the tree spells no file under %s: %s", f.ID, dir, path))
 		}
 		return nil
 	})
@@ -320,10 +316,8 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 		occupied[c.pkg(f.ID, d.Sub)] = true
 	}
 	for pkg := range g.Packages() {
-		if occupied[pkg.ID.Package] {
-			tb.Errorf("%s is refused and the load contains %s anyway: a refusal "+
-				"covers nothing, wherever the spelling is", f.ID, pkg.ID.Package)
-		}
+		expect.NotContains(tb, occupied, pkg.ID.Package,
+			fmt.Sprintf("%s is refused, so the load contains no package it occupies, wherever the spelling is", f.ID))
 	}
 }
 

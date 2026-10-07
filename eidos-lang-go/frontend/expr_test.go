@@ -275,7 +275,7 @@ func TestExpr(t *testing.T) {
 
 // fieldsOf parses one file and returns the fields of its first
 // declaration, a struct.
-func fieldsOf(tb assert.TB, src string) []*node.Field {
+func fieldsOf(tb testing.TB, src string) []*node.Field {
 	tb.Helper()
 
 	file := onlyFile(tb, parsedFile(tb, nil, plugin.DepthFull, src))
@@ -284,7 +284,7 @@ func fieldsOf(tb assert.TB, src string) []*node.Field {
 
 // inlineOf parses one file whose first declaration is a struct H of
 // one field of a type, and returns the field's type.
-func inlineOf(tb assert.TB, imports, typ string) *node.TypeRef {
+func inlineOf(tb testing.TB, imports, typ string) *node.TypeRef {
 	tb.Helper()
 
 	return fieldsOf(tb, "package p\n\n"+imports+"type H struct {\n\ta "+typ+"\n}\n")[0].Type

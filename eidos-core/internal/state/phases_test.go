@@ -4,6 +4,7 @@
 package state_test
 
 import (
+	"cmp"
 	"slices"
 	"testing"
 
@@ -159,7 +160,8 @@ func TestPhases(t *testing.T) {
 			assert.Equal(t, rows[0].Value[0], byte(2), "and counts two")
 			got, held, err := g.Phases(t.Context()).Validation(recordedSubject)
 			assert.NoError(t, err, "the shared row decodes")
-			assert.True(t, held && got.Subject == recordedSubject, "and its first entry is the subject's")
+			assert.True(t, held, "and the subject has an entry")
+			assert.Equal(t, got.Subject, recordedSubject, "and its first entry is the subject's")
 			readers, err := g.Phases(t.Context()).Readers(state.DeclarationEdge(recordedSubject))
 			assert.NoError(t, err, "the subject's readers read")
 			assert.Equal(t, readers, []state.RecordRef{state.ValidationRef(recordedSubject)},
@@ -208,10 +210,10 @@ func TestPhases(t *testing.T) {
 					})
 				}
 				first := recordedPhases(t, l, emptyFacts(), nil, build)
-				writes := l.Writes()
-				second := recordedPhases(t, l, emptyFacts(), nil, build)
-				assert.Equal(t, second.Name, first.Name, "the generation is the prior one")
-				assert.Equal(t, l.Writes(), writes, "and nothing is written")
+				var second *state.Generation
+				assert.Pure(t, l.Writes, func() { second = recordedPhases(t, l, emptyFacts(), nil, build) },
+					"nothing is written")
+				assert.Equal(t, second.Name, first.Name, "and the generation is the prior one")
 			})
 
 			t.Run("deletes the row of a record the run no longer has", func(t *testing.T) {
@@ -358,9 +360,9 @@ func TestPhases(t *testing.T) {
 }
 
 // The record of a run's phases allocates within its ceilings in the
-// ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// ordinary run, which runs no benchmark. The count of the records keeps
+// their first error, which cmp.Or returns without allocating. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestPhasesAllocs(t *testing.T) {
 	g := lookedUp(t)
 	r := lookedUpRecorder(t)
@@ -368,13 +370,17 @@ func TestPhasesAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { s = g.Phases(t.Context()) }, phasesAllocs, "Phases allocates the state")
 	assert.NotNil(t, s, "Phases returns the state")
 	run := state.PhaseRun{Facts: emptyFacts()}
-	var p *state.PhaseRecord
+	var (
+		p   *state.PhaseRecord
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		var err error
-		if p, err = state.RecordPhases(t.Context(), g, r, run); err != nil {
-			t.Fatalf("RecordPhases: unexpected error: %v", err)
-		}
+		var rerr error
+		p, rerr = state.RecordPhases(t.Context(), g, r, run)
+		err = cmp.Or(err, rerr)
 	}, recordPhasesAllocs, "RecordPhases allocates the record and the prior tables it reads")
+	assert.NoError(t, err, "the phases record")
+	assert.NotNil(t, p, "RecordPhases returns the record")
 	c := state.NewCommit(g, nil)
 	assert.MaxAllocs(t, func() { p.Commit(c, nil) }, phaseCommitAllocs,
 		"Commit allocates the sorted records and the rows")

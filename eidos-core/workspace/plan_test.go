@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -127,7 +128,12 @@ func TestPlan(t *testing.T) {
 			report := cleanRun(t, w, routedIn(t, coretest.StorePath))
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the plan commits")
 			assert.Equal(t, report.Plans[0].Changes[0].Action, output.ActionCreated, "the file is new")
-			assert.Contains(t, read(t, root, storeGen), "type ForAlpha struct{}", "the file is on disk")
+			assert.Contains(
+				t,
+				files.Read(t, filepath.Join(root, storeGen)),
+				"type ForAlpha struct{}",
+				"the file is on disk",
+			)
 		})
 
 		t.Run("reports DriftedOutput for a generated file edited since its stamp", func(t *testing.T) {
@@ -136,7 +142,7 @@ func TestPlan(t *testing.T) {
 			root := t.TempDir()
 			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			changed := edited(read(t, root, storeGen))
+			changed := edited(files.Read(t, filepath.Join(root, storeGen)))
 			place(t, root, storeGen, changed)
 
 			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
@@ -146,7 +152,7 @@ func TestPlan(t *testing.T) {
 			assert.Equal(t, drifted[0].Pos, alphaAt, "at the file's first declaration's origin")
 			assert.Contains(t, drifted[0].Msg, `plan "plan"`, "naming the plan that generated it")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan commits nothing")
-			assert.Equal(t, read(t, root, storeGen), changed, "the edit remains")
+			files.HasContent(t, filepath.Join(root, storeGen), changed, "the edit remains")
 		})
 
 		t.Run("names the plan the record lists for a drifted file", func(t *testing.T) {
@@ -154,7 +160,7 @@ func TestPlan(t *testing.T) {
 
 			root := t.TempDir()
 			cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "old", layout.Config{}))), routedIn(t, coretest.StorePath))
-			place(t, root, storeGen, edited(read(t, root, storeGen)))
+			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
 
 			report, err := runOver(t, built(t, onDisk(t, root, diskPlan(t, "new", layout.Config{}))),
 				routedIn(t, coretest.StorePath))
@@ -169,7 +175,7 @@ func TestPlan(t *testing.T) {
 
 			root := t.TempDir()
 			cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "old", layout.Config{}))), routedIn(t, coretest.StorePath))
-			place(t, root, storeGen, edited(read(t, root, storeGen)))
+			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
 			assert.NoError(t, os.RemoveAll(filepath.Join(root, ledger.StateDir(fixtureBrand))),
 				"a fresh clone has no state directory")
 
@@ -235,8 +241,9 @@ func TestPlan(t *testing.T) {
 			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
 				Output(faultyOutput(func(f *faulty) { f.writeErr, f.discardErr = errReadOnly, errNoDevice })))
 			_, err := runOver(t, w, routedIn(t, coretest.StorePath))
-			assert.ErrorIs(t, err, errReadOnly, "the staging's error is returned")
-			assert.ErrorIs(t, err, errNoDevice, "and so is the discard's")
+			assert.That(t, err).
+				ErrorIs(errReadOnly, "the staging's error is returned").
+				ErrorIs(errNoDevice, "and so is the discard's")
 		})
 
 		t.Run("returns an error for a stale entry the sink refuses to remove", func(t *testing.T) {
@@ -253,8 +260,7 @@ func TestPlan(t *testing.T) {
 		t.Run("reports ForeignFile for a hand-written file at a generated path", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			place(t, root, storeGen, "written by hand\n")
+			root := files.Workspace(t, files.Tree{storeGen: files.Text("written by hand\n")})
 			report, err := runOver(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{}))),
 				routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the foreign file fails the run")
@@ -262,7 +268,7 @@ func TestPlan(t *testing.T) {
 			assert.Length(t, foreign, 1, "one finding for the hand-written file")
 			assert.Equal(t, foreign[0].Pos, alphaAt, "at the file's first declaration's origin")
 			assert.Contains(t, foreign[0].Msg, "Struct ForAlpha", "naming the declaration routed there by its kind")
-			assert.Equal(t, read(t, root, storeGen), "written by hand\n", "the file remains")
+			files.HasContent(t, filepath.Join(root, storeGen), "written by hand\n", "the file remains")
 		})
 
 		t.Run("adopts a file with the staged bytes that no record lists", func(t *testing.T) {
@@ -289,7 +295,7 @@ func TestPlan(t *testing.T) {
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
 
 			report := cleanRun(t, w, routedIn(t, coretest.CachePath))
-			assert.True(t, absent(root, storeGen), "the stale output is removed")
+			files.Absent(t, filepath.Join(root, storeGen), "the stale output is removed")
 			assert.Contains(t, report.Plans[0].Changes, output.Change{
 				Path: storeGen, Action: output.ActionDeleted, Found: output.FoundIntact,
 			}, "the report records the removal")
@@ -302,7 +308,7 @@ func TestPlan(t *testing.T) {
 			root := t.TempDir()
 			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			changed := edited(read(t, root, storeGen))
+			changed := edited(files.Read(t, filepath.Join(root, storeGen)))
 			place(t, root, storeGen, changed)
 
 			report := cleanRun(t, w, routedIn(t, coretest.CachePath))
@@ -310,7 +316,7 @@ func TestPlan(t *testing.T) {
 			assert.Length(t, kept, 1, "one warning for the kept file")
 			assert.Equal(t, kept[0].Severity, diag.SeverityWarning, "as a warning")
 			assert.Equal(t, kept[0].Pos, position.Pos{File: storeGen}, "at the kept file")
-			assert.Equal(t, read(t, root, storeGen), changed, "the edited file remains")
+			files.HasContent(t, filepath.Join(root, storeGen), changed, "the edited file remains")
 			assert.Equal(t, paths(recorded(t, root)), []string{cacheGen, storeGen}, "and keeps its entry")
 		})
 
@@ -324,7 +330,7 @@ func TestPlan(t *testing.T) {
 
 			report := cleanRun(t, w, routedIn(t, coretest.CachePath))
 			assert.Length(t, findings(report.Sink, workspace.KeptOutput), 1, "one warning for the kept file")
-			assert.Equal(t, read(t, root, storeGen), "written by hand\n", "the hand-written file remains")
+			files.HasContent(t, filepath.Join(root, storeGen), "written by hand\n", "the hand-written file remains")
 			assert.Equal(t, paths(recorded(t, root)), []string{cacheGen}, "and leaves the record")
 		})
 
@@ -335,7 +341,7 @@ func TestPlan(t *testing.T) {
 			w := built(t, onDisk(t, root,
 				diskPlan(t, "drifting", centralised("a")), diskPlan(t, "steady", centralised("b"))))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			place(t, root, "a/"+storeGen, edited(read(t, root, "a/"+storeGen)))
+			place(t, root, "a/"+storeGen, edited(files.Read(t, filepath.Join(root, "a", storeGen))))
 
 			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
@@ -354,7 +360,8 @@ func TestPlan(t *testing.T) {
 			report := cleanRun(t, built(t, onDisk(t, root,
 				diskPlan(t, "first", centralised("moved")), diskPlan(t, "second", centralised("out")))),
 				routedIn(t, coretest.StorePath))
-			assert.Contains(t, read(t, root, "out/"+storeGen), "second-mirror", "the new plan's file is on disk")
+			assert.Contains(t, files.Read(t, filepath.Join(root, "out", storeGen)), "second-mirror",
+				"the new plan's file is on disk")
 			assert.Contains(t, report.Plans[1].Changes, output.Change{
 				Path: "out/" + storeGen, Action: output.ActionUpdated, Found: output.FoundIntact,
 				Hash: report.Plans[1].Changes[1].Hash,
@@ -375,10 +382,9 @@ func TestPlan(t *testing.T) {
 			w := built(t, onDisk(t, t.TempDir(),
 				diskPlan(t, "plan", layout.Config{}), dependent(t, "bindings", reader, "plan")))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			doc, held := reader.got["plan"]
-			assert.True(t, held, "the dependent reads the plan's export")
-			assert.Length(t, doc.Symbols, 1, "the export lists the plan's one declaration")
-			got := doc.Symbols[0]
+			assert.Contains(t, reader.got, "plan", "the dependent reads the plan's export")
+			assert.Length(t, reader.got["plan"].Symbols, 1, "the export lists the plan's one declaration")
+			got := reader.got["plan"].Symbols[0]
 			assert.Equal(t, got.ExportKey, plugin.ExportKey{
 				Origin: coretest.Struct(coretest.StorePath, "Alpha").ID, Plugin: "plan-mirror", Name: "ForAlpha",
 			}, "the declaration's key")
@@ -405,7 +411,7 @@ func TestPlan(t *testing.T) {
 			w := built(t, onDisk(t, t.TempDir(), dependent(t, "alone", reader)))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
 			assert.True(t, reader.ran, "the plan generates")
-			assert.Length(t, reader.got, 0, "the exports the plan reads")
+			assert.Empty(t, reader.got, "the exports the plan reads")
 		})
 
 		t.Run("generates nothing for a plan whose dependency failed", func(t *testing.T) {
@@ -454,7 +460,7 @@ func TestPlan(t *testing.T) {
 			assert.ErrorIs(t, err, errBroken, "the generator's error is returned")
 			assert.False(t, reader.ran, "the dependent generates nothing")
 			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "the dependent commits nothing")
-			assert.Length(t, findings(report.Sink, workspace.FailedDependency), 0, "and nothing explains it")
+			assert.Empty(t, findings(report.Sink, workspace.FailedDependency), "and nothing explains it")
 		})
 
 		t.Run("cancels a plan whose dependency was cancelled", func(t *testing.T) {
@@ -552,22 +558,6 @@ func cleanRun(t *testing.T, w *workspace.Workspace, g *store.Graph) *workspace.R
 	report, err := runOver(t, w, g)
 	assert.NoError(t, err, "the run is clean")
 	return report
-}
-
-// read returns a file of the root, failing the test where it does not
-// read.
-func read(t *testing.T, root, path string) string {
-	t.Helper()
-
-	got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-	assert.NoError(t, err, "the file reads")
-	return string(got)
-}
-
-// absent reports whether a path of the root contains no file.
-func absent(root, path string) bool {
-	_, err := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
-	return os.IsNotExist(err)
 }
 
 // place writes content at a path of the root, the way a person edits a

@@ -5,13 +5,13 @@ package main_test
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 )
@@ -41,17 +41,13 @@ func TestMain(t *testing.T) {
 		out, err := runFrom(t, bin, filepath.Join(root, "symbol", "schema"))
 		assert.NoError(t, err, "the wrapper regenerates from inside the module: "+out)
 		assert.Empty(t, out, "and writes nothing on success")
-		_, err = os.Stat(filepath.Join(root, "emit", "kinds.gen.go"))
-		assert.NoError(t, err, "and the models arrive in the copied module")
+		files.IsFile(t, filepath.Join(root, "emit", "kinds.gen.go"), "and the models arrive in the copied module")
 	})
 
 	t.Run("reports a module without a schema", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-		assert.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(emptyModule), 0o600),
-			"the empty module's go.mod writes")
-
+		dir := files.Workspace(t, files.Tree{"go.mod": files.Text(emptyModule)})
 		out, err := runFrom(t, bin, dir)
 		assert.HasError(t, err, "a module without a schema is reported, not generated into")
 		assert.Contains(t, out, "model: load schema",

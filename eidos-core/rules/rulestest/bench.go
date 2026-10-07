@@ -6,6 +6,7 @@ package rulestest
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/node"
@@ -24,32 +25,28 @@ type Budget struct {
 // members, every reference's shape and every field's samples, and
 // fails when the allocations per iteration exceed the budget. The
 // fixture builds once outside the loop, and every iteration binds a
-// fresh view.
+// fresh view. A budget without a ceiling, a setup without a graph,
+// and a corpus without a subject or a reference stop the benchmark.
 //
-// One pass runs before the contract counts, at the call sites the
-// loop measures, so the count excludes what a process builds on the
-// first projection: the runtime's type-assertion caches and the
-// lazily built state of the language's rules.
+// One warm-up iteration runs before the contract counts, so the
+// count excludes what a process builds on the first projection: the
+// runtime's type-assertion caches and the lazily built state of the
+// language's rules.
 func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
-	if budget.MaxAllocs == 0 {
-		b.Fatal("the budget states no ceiling")
-	}
+	assert.NotEqual(b, budget.MaxAllocs, 0, "the budget states a ceiling")
 	r, f := setup(b)
-	if f == nil || f.Graph == nil {
-		b.Fatal("the setup has no graph")
-	}
+	viewOf(b, f)
 	subs := subjects(f.Graph)
 	refs := graphReferences(f.Graph)
-	if len(subs) == 0 || len(refs) == 0 {
-		b.Fatal("the corpus contains nothing to project")
-	}
+	assert.NotEmpty(b, subs, "the corpus contains a subject to project")
+	assert.NotEmpty(b, refs, "the corpus contains a reference to fold")
 
-	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
-	for first := true; first || c.Loop(); first = false {
-		view, _, _ := viewOf(b, f)
+	for c.Loop() {
+		view, _ := viewOf(b, f)
 		bd := rules.NewBound(r, view, nil)
 		for _, ref := range refs {
 			bd.TypeOf(ref)

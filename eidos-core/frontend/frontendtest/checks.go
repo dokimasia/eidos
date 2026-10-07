@@ -4,10 +4,10 @@
 package frontendtest
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"hash"
 	"io/fs"
 	"iter"
@@ -18,6 +18,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -40,25 +41,36 @@ const (
 	foreignSuffix = "_foreign"
 )
 
-// AssertDeterministicParse loads the fixture twice and compares
-// what each load recorded: the graphs byte for byte, the attached
+// parsed is what one load of a fixture records: the graph's encoding,
+// the attached directives and classification stamps in identity order,
+// and the findings in report order.
+type parsed struct {
+	graph      []byte
+	directives []entry[[]directive.Raw]
+	stamps     []entry[[]meta.RawStamp]
+	findings   []diag.Diag
+}
+
+// AssertDeterministicParse loads the fixture once per call of
+// [assert.Deterministic] and compares what each load recorded with
+// what the first one did: the graph byte for byte, the attached
 // directives and classification stamps, and the findings in report
-// order. Reparsing unchanged files yields the same identities,
-// which every later comparison by identity depends on.
+// order. Reparsing unchanged files yields the same identities, which
+// every later comparison by identity depends on.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
-	one := drive(tb, f, fx)
-	two := drive(tb, f, fx)
-	assert.True(tb, bytes.Equal(encoded(tb, one.graph), encoded(tb, two.graph)),
-		"two parses of one fixture encode identically")
-	assert.Equal(tb, entries(two.graph.Directives()), entries(one.graph.Directives()),
-		"and attach the same directives")
-	assert.Equal(tb, entries(two.graph.Stamps()), entries(one.graph.Stamps()),
-		"and the same classification stamps")
-	assert.Equal(tb, slices.Collect(two.sink.All()), slices.Collect(one.sink.All()),
-		"and report the same findings in the same order")
+	assert.Deterministic(tb, func(in *Fixture) (parsed, error) {
+		got := drive(tb, f, in)
+		return parsed{
+			graph:      encoded(tb, got.graph),
+			directives: entries(got.graph.Directives()),
+			stamps:     entries(got.graph.Stamps()),
+			findings:   slices.Collect(got.sink.All()),
+		}, nil
+	}, fx, "every parse of one fixture encodes the same graph, attaches the same directives and stamps, "+
+		"and reports the same findings in the same order")
 }
 
 // entry is one subject and what a load attached to it.
@@ -79,19 +91,17 @@ func entries[V any](seq iter.Seq2[symbol.Identity, V]) []entry[V] {
 
 // AssertPositionedDiagnostics checks every finding's address: a
 // finding without a position or an origin is a defect in the
-// frontend that reported it.
+// frontend that reported it. Each finding reports on its own, under
+// its code and its message.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
 	got := drive(tb, f, fx)
 	for d := range got.sink.All() {
-		if d.Pos.File == "" {
-			tb.Errorf("finding %s %q has no position", d.Code, d.Msg)
-		}
-		if d.Origin == "" {
-			tb.Errorf("finding %s %q has no origin", d.Code, d.Msg)
-		}
+		finding := d.Code.String() + " " + d.Msg
+		expect.NotEqual(tb, d.Pos.File, "", "the finding states a position: "+finding)
+		expect.NotEqual(tb, d.Origin, "", "the finding states its origin: "+finding)
 	}
 }
 
@@ -101,30 +111,28 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 // is stamped by the load, and the recorded stamps apply cleanly
 // under those keys, the way the workspace run applies them. A load
 // that stamps under a fixture declaring no keys fails, because
-// nothing could apply its stamps.
+// nothing could apply its stamps, and so does a fixture declaring keys
+// over a load that stamps nothing.
 func AssertClassified(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
 	got := drive(tb, f, fx)
 
-	declared := map[string]bool{}
+	// accounted contains each file the graph declares and each file a
+	// finding names.
+	accounted := map[string]bool{}
 	for decl := range got.graph.ByKind(symbol.KindFile) {
 		if file, is := decl.(*node.File); is {
-			declared[file.Path] = true
+			accounted[file.Path] = true
 		}
 	}
-	named := map[string]bool{}
 	for d := range got.sink.All() {
-		named[d.Pos.File] = true
+		accounted[d.Pos.File] = true
 	}
 	for _, path := range selected(tb, f, fx) {
-		if !declared[path] && !named[path] {
-			tb.Errorf(
-				"%s is selected and neither declares nor reports: a silently dropped file",
-				path,
-			)
-		}
+		expect.Contains(tb, accounted, path,
+			path+" declares into the graph or a finding names it: nothing drops in silence")
 	}
 
 	stamped := false
@@ -132,15 +140,10 @@ func AssertClassified(tb assert.TB, setup Setup) {
 		stamped = true
 		break
 	}
-	switch {
-	case fx.Keys == nil && stamped:
-		tb.Errorf("the fixture stamps and declares no keys to apply them under")
-		return
-	case fx.Keys == nil:
-		return
-	case !stamped:
-		tb.Errorf("the fixture declares classification keys and the load stamps nothing: " +
-			"a classifier that never stamps")
+	assert.Equal(tb, stamped, fx.Keys != nil,
+		"the load stamps where the fixture declares classification keys to apply the stamps under, "+
+			"and nowhere else")
+	if !stamped {
 		return
 	}
 	registry := meta.NewRegistry()
@@ -157,7 +160,7 @@ func AssertClassified(tb assert.TB, setup Setup) {
 				Order:     meta.Order{Subject: id, Instance: i},
 				Pos:       s.Pos,
 			})
-			assert.NoError(tb, err, "a recorded stamp applies under the fixture's keys")
+			expect.NoError(tb, err, "a recorded stamp applies under the fixture's keys")
 		}
 	}
 }
@@ -190,21 +193,22 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 		"the stamped copy is beside its source, inside the claim")
 
 	got := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures, Stores: fx.Stores})
-	assert.Equal(tb, got.report.Excluded, []string{own},
-		"the load refuses its own output and lists it")
+	expect.Equal(tb, got.report.Excluded, []string{own}, "the load refuses its own output and lists it")
+	var members, declared []string
 	for _, u := range got.report.Units {
-		assert.False(tb, contains(u.Files, own), "no unit contains the refused file")
-	}
-	loaded := false
-	for _, u := range got.report.Units {
-		loaded = loaded || contains(u.Files, foreign)
-	}
-	assert.True(tb, loaded, "another brand's output is ordinary input in a unit")
-	for decl := range got.graph.ByKind(symbol.KindFile) {
-		if file, is := decl.(*node.File); is {
-			assert.False(tb, file.Path == own, "the refused file declares nothing")
+		for _, ref := range u.Files {
+			members = append(members, ref.Path)
 		}
 	}
+	for decl := range got.graph.ByKind(symbol.KindFile) {
+		if file, is := decl.(*node.File); is {
+			declared = append(declared, file.Path)
+		}
+	}
+	expect.That(tb, members).
+		NotContains(own, "no unit contains the refused file").
+		Contains(foreign, "another brand's output is ordinary input in a unit")
+	expect.NotContains(tb, declared, own, "the refused file declares nothing")
 }
 
 // framed stamps source as one brand's output through the
@@ -285,18 +289,21 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 // keyed compares each unit's key in one load with the same unit's
 // key in another, in path order: equal where same is set, different
 // otherwise. A unit the second load lacks is a failure of its own,
-// because a key compared with nothing differs from it trivially.
+// because a key compared with nothing differs from it trivially. Each
+// unit reports on its own, under why and the unit's first member.
 func keyed(tb assert.TB, before, after map[string][]byte, same bool, why string) {
 	tb.Helper()
 
 	for _, file := range slices.Sorted(maps.Keys(before)) {
+		expect.Contains(tb, after, file, "the load compared with contains the unit of "+file+": "+why)
 		other, held := after[file]
-		if !held {
-			tb.Errorf("the unit containing %s is missing from the load it is compared with: %s",
-				file, why)
-			continue
+		switch {
+		case !held:
+		case same:
+			expect.Equal(tb, other, before[file], why+": "+file)
+		default:
+			expect.NotEqual(tb, other, before[file], why+": "+file)
 		}
-		assert.Equal(tb, bytes.Equal(before[file], other), same, why)
 	}
 }
 
@@ -473,30 +480,26 @@ func AssertSignatureDepth(tb assert.TB, setup Setup) {
 
 	for pkg := range sig.graph.ByKind(symbol.KindPackage) {
 		for decl := range node.Declarations(pkg) {
-			if decl.Identity().IsZero() {
-				continue
+			if id := decl.Identity(); !id.IsZero() {
+				expect.True(tb, full.graph.Holds(id),
+					"the full load declares "+id.String()+", which the shallow load declares")
 			}
-			_, held := full.graph.Lookup(decl.Identity())
-			assert.True(tb, held,
-				"the full load is a superset under the same identities")
 		}
 	}
 
 	// A dependency unit loads shallow under any root, so only the
 	// units the partition returned count.
-	shallow := 0
+	var depths []plugin.Depth
 	for _, u := range sig.report.Units {
-		if u.Round == 0 && u.Depth == plugin.DepthSignatures {
-			shallow++
+		if u.Round == 0 {
+			depths = append(depths, u.Depth)
 		}
 	}
-	assert.True(tb, shallow > 0, "a stated root loads at least one unit shallow")
+	expect.Contains(tb, depths, plugin.DepthSignatures, "a stated root loads at least one unit shallow")
 
 	for _, id := range fx.Dropped {
-		_, loaded := full.graph.Lookup(id)
-		assert.True(tb, loaded, "a listed identity loads at full depth: "+id.String())
-		_, kept := sig.graph.Lookup(id)
-		assert.False(tb, kept, "a signature-only load drops a listed identity: "+id.String())
+		expect.True(tb, full.graph.Holds(id), "a listed identity loads at full depth: "+id.String())
+		expect.False(tb, sig.graph.Holds(id), "a signature-only load drops a listed identity: "+id.String())
 	}
 }
 
@@ -530,30 +533,28 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 	for id, raws := range got.graph.Directives() {
 		attached += len(raws)
 		decl, held := got.graph.Lookup(id)
+		expect.True(tb, held, "the graph contains "+id.String()+", which directives name")
 		if !held {
-			tb.Errorf("directives on %s name a subject the graph does not contain", id)
 			continue
 		}
 		vsink := diag.NewSink()
 		directive.Validate(id, raws, registry, keys, nil, vsink)
 		for d := range vsink.All() {
-			if d.Severity == diag.SeverityError {
-				tb.Errorf("an attached instance fails validation: %s %s", d.Code, d.Msg)
-			}
+			expect.NotEqual(tb, d.Severity, diag.SeverityError,
+				"an attached instance passes validation: "+d.Code.String()+" "+d.Msg)
 		}
 		for _, line := range decl.Docs() {
 			payload := line
 			if _, cut, isCarrier := plugin.CutCarrier(line, string(Brand)); isCarrier {
 				payload = cut
 			}
-			raw, err := directive.Parse(payload)
-			if err == nil && names[raw.Name] {
-				tb.Errorf("%s keeps a carrier line in its documentation: %q", id, line)
+			if raw, err := directive.Parse(payload); err == nil {
+				expect.NotContains(tb, names, raw.Name,
+					fmt.Sprintf("%s keeps no carrier line in its documentation: %q", id, line))
 			}
 		}
 	}
-	assert.True(tb, attached > 0,
-		"the fixture declares schemas, so its carriers must attach something")
+	assert.NotEqual(tb, attached, 0, "the fixture declares schemas, so its carriers attach something")
 }
 
 // AssertLinked checks the resolution step's outcome: at least one
@@ -583,10 +584,8 @@ func AssertLinked(tb assert.TB, setup Setup) {
 				return true
 			}
 			if ref.Target.IsZero() {
-				if ref.Spelling == "" {
-					tb.Errorf("a reference in %s resolves to nothing and spells nothing: "+
-						"a builtin or an external keeps its spelling", home)
-				}
+				expect.NotEqual(tb, ref.Spelling, "", "a reference in "+home+" that resolves to nothing "+
+					"keeps its spelling, as a builtin or an external does")
 				return true
 			}
 			resolved = append(resolved, ref.Target)
@@ -599,17 +598,14 @@ func AssertLinked(tb assert.TB, setup Setup) {
 	assert.NotEmpty(tb, resolved,
 		"the fixture's in-graph spellings resolve: a Resolve that returns no candidate links nothing")
 	for _, target := range resolved {
-		_, held := got.graph.Lookup(target)
-		assert.True(tb, held, "a resolved reference targets a declaration in the graph")
+		expect.True(tb, got.graph.Holds(target),
+			"a resolved reference targets a declaration in the graph: "+target.String())
 	}
 	if packages < 2 {
 		return
 	}
 	assert.NotEmpty(tb, cross,
-		"a multi-package fixture resolving nothing across packages is a Resolve that never returns a candidate")
-	if len(cross) == 0 {
-		return
-	}
+		"a multi-package fixture resolves across its packages, or its Resolve never returns a candidate")
 
 	reader, err := got.graph.Reader(store.NewReadSet(), nil)
 	assert.NoError(tb, err, "the sealed graph hands out a reader")
@@ -630,10 +626,8 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
-	if _, dependent := f.(plugin.Dependent); !dependent {
-		tb.Errorf("the frontend is not in the dependent role, so no dependency round runs")
-		return
-	}
+	_, dependent := f.(plugin.Dependent)
+	assert.True(tb, dependent, "the frontend is in the dependent role, so a dependency round runs")
 	got := drive(tb, f, fx)
 	var first string
 	for _, u := range got.report.Units {
@@ -642,10 +636,7 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 			break
 		}
 	}
-	if first == "" {
-		tb.Errorf("no dependency round returned a unit")
-		return
-	}
+	assert.NotEqual(tb, first, "", "a dependency round returns a unit")
 
 	sources, stores := fx.Sources, fx.Stores
 	if store, inner, qualified := plugin.CutStorePath(first); qualified {
@@ -678,14 +669,10 @@ func AssertReexports(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
-	if _, exports := f.(plugin.Exporter); !exports {
-		tb.Errorf("the frontend is not in the exporter role, so no re-export is followed")
-		return
-	}
-	if len(fx.Reexported) == 0 {
-		tb.Errorf("the fixture lists no declaration a re-export publishes, so nothing is checked")
-		return
-	}
+	_, exports := f.(plugin.Exporter)
+	assert.True(tb, exports, "the frontend is in the exporter role, so a re-export is followed")
+	assert.NotEmpty(tb, fx.Reexported, "the fixture lists a declaration a re-export publishes, so the check "+
+		"has something to check")
 	got := drive(tb, f, fx)
 	targets := map[symbol.Identity]bool{}
 	for pkg := range got.graph.ByKind(symbol.KindPackage) {
@@ -697,7 +684,7 @@ func AssertReexports(tb assert.TB, setup Setup) {
 		})
 	}
 	for _, id := range fx.Reexported {
-		assert.True(tb, targets[id], "a reference through a re-export targets "+id.String())
+		expect.Contains(tb, targets, id, "a reference through a re-export targets "+id.String())
 	}
 }
 

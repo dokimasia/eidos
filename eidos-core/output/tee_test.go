@@ -4,6 +4,7 @@
 package output_test
 
 import (
+	"cmp"
 	"errors"
 	"testing"
 
@@ -186,9 +187,9 @@ func TestTee(t *testing.T) {
 // Each method of the tee allocates what its sinks allocate, and a copy
 // of the first sink's list, in the ordinary run, which runs no
 // benchmark. Each call that consumes its sinks takes a tee of its own,
-// built before the count. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// built outside the count, and each count keeps the first error of its
+// calls, which cmp.Or returns without allocating. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestTeeAllocs(t *testing.T) {
 	body := []byte(firstBody)
 	first, second := output.NewMem(), output.NewMem()
@@ -197,45 +198,30 @@ func TestTeeAllocs(t *testing.T) {
 		"NewTee allocates the tee and its list of sinks")
 	assert.NoError(t, built.Discard(), "NewTee returns a sink over both")
 
-	at, empty := 0, tees(t, nil)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Write(storeFile, body); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
-		}
-		at++
-	}, 2*firstWriteAllocs, "Write allocates each sink's first write")
+	var err error
+	assert.MaxAllocsWithSetup(t, teeOf(t, nil), func(tee *output.Tee) { err = cmp.Or(err, tee.Write(storeFile, body)) },
+		2*firstWriteAllocs, "Write allocates each sink's first write")
+	assert.NoError(t, err, "every first write stages")
 
-	at, empty = 0, tees(t, nil)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Delete(storeFile); err != nil {
-			t.Fatalf("Delete: unexpected error: %v", err)
-		}
-		at++
-	}, 2*firstDeleteAllocs, "Delete allocates each sink's first removal")
+	assert.MaxAllocsWithSetup(t, teeOf(t, nil), func(tee *output.Tee) { err = cmp.Or(err, tee.Delete(storeFile)) },
+		2*firstDeleteAllocs, "Delete allocates each sink's first removal")
+	assert.NoError(t, err, "every first removal stages")
 
-	at, one := 0, tees(t, body)
-	assert.MaxAllocs(t, func() {
-		if _, err := one[at].Prepare(); err != nil {
-			t.Fatalf("Prepare: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, teeOf(t, body), func(tee *output.Tee) {
+		_, perr := tee.Prepare()
+		err = cmp.Or(err, perr)
 	}, teePrepareAllocs, "Prepare allocates each sink's preparation and a copy of the first one's")
+	assert.NoError(t, err, "every staging prepares")
 
-	at, one = 0, tees(t, body)
-	assert.MaxAllocs(t, func() {
-		if _, err := one[at].Commit(); err != nil {
-			t.Fatalf("Commit: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, teeOf(t, body), func(tee *output.Tee) {
+		_, cerr := tee.Commit()
+		err = cmp.Or(err, cerr)
 	}, teeCommitAllocs, "Commit allocates each sink's commit and a copy of the first one's")
+	assert.NoError(t, err, "every staging commits")
 
-	at, one = 0, tees(t, body)
-	assert.MaxAllocs(t, func() {
-		if err := one[at].Discard(); err != nil {
-			t.Fatalf("Discard: unexpected error: %v", err)
-		}
-		at++
-	}, 0, "Discard allocates nothing")
+	assert.MaxAllocsWithSetup(t, teeOf(t, body), func(tee *output.Tee) { err = cmp.Or(err, tee.Discard()) },
+		0, "Discard allocates nothing")
+	assert.NoError(t, err, "every staging discards")
 }
 
 // BenchmarkTee measures each method of a tee over two memory sinks and
@@ -348,18 +334,15 @@ func stagedTee(tb assert.TB) *output.Tee {
 	return tee
 }
 
-// tees returns allocRuns tees over two memory sinks each, with body
-// staged at storeFile, or with nothing staged for a nil body: one tee
-// for each call of an allocation check that consumes its sinks.
-func tees(t *testing.T, body []byte) []*output.Tee {
-	t.Helper()
-
-	out := make([]*output.Tee, allocRuns)
-	for i := range out {
-		out[i] = output.NewTee(output.NewMem(), output.NewMem())
+// teeOf returns the setup of an allocation check that consumes its
+// sinks: each call builds a tee over two memory sinks with body staged
+// at storeFile, or with nothing staged for a nil body.
+func teeOf(tb assert.TB, body []byte) func() *output.Tee {
+	return func() *output.Tee {
+		tee := output.NewTee(output.NewMem(), output.NewMem())
 		if body != nil {
-			assert.NoError(t, out[i].Write(storeFile, body), "the file stages")
+			assert.NoError(tb, tee.Write(storeFile, body), "the file stages")
 		}
+		return tee
 	}
-	return out
 }

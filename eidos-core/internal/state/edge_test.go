@@ -126,8 +126,7 @@ func TestEdge(t *testing.T) {
 
 // Every edge hashes without allocating in the ordinary run, which runs no
 // benchmark: its spelling fits the stack buffer. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses to
-// run beside parallel tests.
+// because the count includes every goroutine's allocations.
 func TestEdgeZeroAlloc(t *testing.T) {
 	var got state.EdgeHash
 	assert.MaxAllocs(t, func() { got = state.DeclarationEdge(edgeStruct) }, 0,

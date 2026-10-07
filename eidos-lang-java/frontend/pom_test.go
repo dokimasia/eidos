@@ -71,7 +71,7 @@ func TestPom(t *testing.T) {
 
 // moduleOf parses the fixture file under a pom.xml of a source and
 // returns the module stamps the parse recorded.
-func moduleOf(tb assert.TB, src string) []any {
+func moduleOf(tb testing.TB, src string) []any {
 	tb.Helper()
 
 	gb, _ := parsedTree(tb, pomTree(src), srcFile, plugin.DepthFull)

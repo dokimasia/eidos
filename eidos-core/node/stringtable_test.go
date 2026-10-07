@@ -4,6 +4,7 @@
 package node_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -163,45 +164,51 @@ func TestStringTable(t *testing.T) {
 // TestStringTableAllocs checks the allocation contract: a read and a
 // repeat allocate nothing, a reset table refills without allocating,
 // an encoding into a buffer with room allocates nothing, and a decode
-// allocates the table, its list and one string. The check runs alone,
-// because AllocsPerRun refuses to run beside parallel tests.
+// allocates the table, its list and one string. Each count of the codec
+// keeps the first error of its calls, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestStringTableAllocs(t *testing.T) {
 	var table node.StringTable
 	table.Add("ab")
 	table.Add("c")
 	dst := make([]byte, 0, len(tableBytes))
 
-	assert.MaxAllocs(t, func() {
-		if table.Add("ab") != 1 {
-			t.Fatal("Add renumbered a repeat")
-		}
-	}, 0, "Add of a repeat allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if s, _ := table.At(2); s != "c" {
-			t.Fatal("At misses a string")
-		}
-	}, 0, "At allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if table.Len() != 2 {
-			t.Fatal("Len miscounted the table")
-		}
-	}, 0, "Len allocates nothing")
+	var number uint64
+	assert.MaxAllocs(t, func() { number = table.Add("ab") }, 0, "Add of a repeat allocates nothing")
+	assert.Equal(t, number, uint64(1), "Add returns a repeat's own number")
+	var s string
+	assert.MaxAllocs(t, func() { s, _ = table.At(2) }, 0, "At allocates nothing")
+	assert.Equal(t, s, "c", "At returns the string of the number")
+	var n int
+	assert.MaxAllocs(t, func() { n = table.Len() }, 0, "Len allocates nothing")
+	assert.Equal(t, n, 2, "Len counts both strings")
 	var reused node.StringTable
 	assert.MaxAllocs(t, func() {
 		reused.Reset()
 		reused.Add("ab")
 		reused.Add("c")
 	}, 0, "a table refilled after Reset allocates nothing")
+	assert.Equal(t, reused.Len(), 2, "the refilled table contains both strings")
+	var (
+		got []byte
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if got, _ := table.AppendBinary(dst[:0]); len(got) != len(tableBytes) {
-			t.Fatal("AppendBinary wrote another table")
-		}
+		var aerr error
+		got, aerr = table.AppendBinary(dst[:0])
+		err = cmp.Or(err, aerr)
 	}, 0, "AppendBinary into a buffer with room allocates nothing")
+	assert.NoError(t, err, "the table encodes")
+	assert.Equal(t, got, tableBytes, "AppendBinary writes the table")
+	var read int
 	assert.MaxAllocs(t, func() {
-		if _, _, err := node.DecodeStringTable(tableBytes); err != nil {
-			t.Fatal(err)
-		}
+		var derr error
+		_, read, derr = node.DecodeStringTable(tableBytes)
+		err = cmp.Or(err, derr)
 	}, decodeTableAllocs, "DecodeStringTable allocates the table, its list and one string")
+	assert.NoError(t, err, "the table decodes")
+	assert.Equal(t, read, len(tableBytes), "DecodeStringTable reads the whole table")
 }
 
 // BenchmarkStringTable measures the table's operations under their
@@ -219,9 +226,7 @@ func BenchmarkStringTable(b *testing.B) {
 		for c.Loop() {
 			got = table.Add("ab")
 		}
-		if got != 1 {
-			b.Fatalf("Add returned %d for a repeat of string 1", got)
-		}
+		assert.Equal(b, got, uint64(1), "Add returns a repeat's own number")
 	})
 
 	b.Run("At", func(b *testing.B) {
@@ -231,9 +236,7 @@ func BenchmarkStringTable(b *testing.B) {
 		for c.Loop() {
 			got, _ = table.At(2)
 		}
-		if got != "c" {
-			b.Fatalf("At(2) returned %q", got)
-		}
+		assert.Equal(b, got, "c", "At returns the string of the number")
 	})
 
 	b.Run("Len", func(b *testing.B) {
@@ -268,9 +271,7 @@ func BenchmarkStringTable(b *testing.B) {
 		for c.Loop() {
 			got, _ = table.AppendBinary(dst[:0])
 		}
-		if len(got) != len(tableBytes) {
-			b.Fatalf("AppendBinary wrote %d bytes, want %d", len(got), len(tableBytes))
-		}
+		assert.Equal(b, got, tableBytes, "AppendBinary writes the table")
 	})
 
 	b.Run("DecodeStringTable", func(b *testing.B) {
@@ -280,9 +281,7 @@ func BenchmarkStringTable(b *testing.B) {
 		for c.Loop() {
 			_, read, _ = node.DecodeStringTable(tableBytes)
 		}
-		if read != len(tableBytes) {
-			b.Fatalf("DecodeStringTable read %d bytes, want %d", read, len(tableBytes))
-		}
+		assert.Equal(b, read, len(tableBytes), "DecodeStringTable reads the whole table")
 	})
 }
 

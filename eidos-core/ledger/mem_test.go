@@ -4,9 +4,11 @@
 package ledger_test
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"io/fs"
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -59,8 +61,11 @@ func TestMem(t *testing.T) {
 		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := holding(t, docName, docBody).Read(cancelled(t), docName)
-			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
+			l := holding(t, docName, docBody)
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := l.Read(ctx, docName)
+				return err
+			}, "the cancellation is returned")
 		})
 
 		for _, tt := range invalidNames {
@@ -142,7 +147,8 @@ func TestMem(t *testing.T) {
 			t.Parallel()
 
 			l := ledger.NewMem()
-			assert.ErrorIs(t, l.Write(cancelled(t), docName, nil), context.Canceled, "the cancellation is returned")
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return l.Write(ctx, docName, nil) },
+				"the cancellation is returned")
 			assert.Equal(t, l.Writes(), 0, "and nothing is stored")
 		})
 	})
@@ -172,6 +178,7 @@ func TestMem(t *testing.T) {
 			assert.NoError(t, l.Touch(t.Context(), "memo/a"), "the first blob is touched")
 			listed, err := l.List(t.Context(), "memo")
 			assert.NoError(t, err, "the blobs list")
+			assert.Length(t, listed, 2, "both blobs")
 			assert.True(t, listed[0].ModTime.After(listed[1].ModTime), "the touched blob is the newest")
 		})
 
@@ -210,7 +217,8 @@ func TestMem(t *testing.T) {
 			t.Parallel()
 
 			l := holding(t, docName, docBody)
-			assert.ErrorIs(t, l.Remove(cancelled(t), docName), context.Canceled, "the cancellation is returned")
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return l.Remove(ctx, docName) },
+				"the cancellation is returned")
 			_, err := l.Read(t.Context(), docName)
 			assert.NoError(t, err, "and the blob remains")
 		})
@@ -223,9 +231,8 @@ func TestMem(t *testing.T) {
 			t.Parallel()
 
 			l := holding(t, "state/seg/ab/0123", docBody)
-			for _, name := range []string{"state/seg/a.b", "state/gen/0001", "state/seg/0f/9999", "state/segment"} {
-				assert.NoError(t, l.Write(t.Context(), name, []byte(otherBody)), "a blob is written")
-			}
+			assert.Total(t, func(name string) error { return l.Write(t.Context(), name, []byte(otherBody)) },
+				[]string{"state/seg/a.b", "state/gen/0001", "state/seg/0f/9999", "state/segment"}, "a blob is written")
 			listed, err := l.List(t.Context(), "state/seg")
 			assert.NoError(t, err, "the blobs list")
 			names := make([]string, 0, len(listed))
@@ -247,8 +254,11 @@ func TestMem(t *testing.T) {
 		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := holding(t, docName, docBody).List(cancelled(t), "manifest")
-			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
+			l := holding(t, docName, docBody)
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := l.List(ctx, "manifest")
+				return err
+			}, "the cancellation is returned")
 		})
 	})
 
@@ -274,54 +284,62 @@ func TestMem(t *testing.T) {
 
 // The memory ledger copies what it stores and what it returns, and its
 // other calls allocate nothing, in the ordinary run, which runs no
-// benchmark. A write replaces a blob stored before. The check runs
-// alone, because AllocsPerRun counts every goroutine's allocations and
-// refuses to run beside parallel tests.
+// benchmark. A write replaces a blob stored before, and each removal
+// removes a blob written outside the count. Each count keeps the first
+// error of its calls, which cmp.Or returns without allocating. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestMemAllocs(t *testing.T) {
 	ctx, body, p := t.Context(), []byte(docBody), make([]byte, 5)
 	var l *ledger.Mem
 	assert.MaxAllocs(t, func() { l = ledger.NewMem() }, 2, "NewMem allocates the ledger and its map")
+	assert.Equal(t, l.Writes(), 0, "NewMem returns a ledger that stored nothing")
+
 	l = listing(t)
+	var (
+		read []byte
+		err  error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := l.Read(ctx, docName); err != nil {
-			t.Fatalf("Read: unexpected error: %v", err)
-		}
+		var rerr error
+		read, rerr = l.Read(ctx, docName)
+		err = cmp.Or(err, rerr)
 	}, 1, "Read allocates the copy it returns")
+	assert.NoError(t, err, "the blob reads")
+	assert.Equal(t, string(read), docBody, "Read returns the blob")
+	var n int
 	assert.MaxAllocs(t, func() {
-		if _, err := l.ReadAt(ctx, docName, p, 4); err != nil {
-			t.Fatalf("ReadAt: unexpected error: %v", err)
-		}
+		var rerr error
+		n, rerr = l.ReadAt(ctx, docName, p, 4)
+		err = cmp.Or(err, rerr)
 	}, 0, "ReadAt allocates nothing")
+	assert.NoError(t, err, "the range reads")
+	assert.Equal(t, string(p[:n]), "first", "ReadAt copies the bytes at the offset")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, l.Write(ctx, docName, body)) }, 1,
+		"Write allocates the copy it stores")
+	assert.NoError(t, err, "the blob is written")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, l.Put(ctx, docName, body)) }, 1,
+		"Put allocates the copy it stores")
+	assert.NoError(t, err, "the blob is put")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, l.Touch(ctx, docName)) }, 0, "Touch allocates nothing")
+	assert.NoError(t, err, "the blob is touched")
+	stored := func() string {
+		assert.NoError(t, l.Write(ctx, segName, body), "the blob is written")
+		return segName
+	}
+	assert.MaxAllocsWithSetup(t, stored, func(name string) { err = cmp.Or(err, l.Remove(ctx, name)) }, 0,
+		"Remove allocates nothing")
+	assert.NoError(t, err, "every blob is removed")
+	var listed []ledger.Blob
 	assert.MaxAllocs(t, func() {
-		if err := l.Write(ctx, docName, body); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
-		}
-	}, 1, "Write allocates the copy it stores")
-	assert.MaxAllocs(t, func() {
-		if err := l.Put(ctx, docName, body); err != nil {
-			t.Fatalf("Put: unexpected error: %v", err)
-		}
-	}, 1, "Put allocates the copy it stores")
-	assert.MaxAllocs(t, func() {
-		if err := l.Touch(ctx, docName); err != nil {
-			t.Fatalf("Touch: unexpected error: %v", err)
-		}
-	}, 0, "Touch allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if err := l.Remove(ctx, segName); err != nil {
-			t.Fatalf("Remove: unexpected error: %v", err)
-		}
-	}, 0, "Remove allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if listed, err := l.List(ctx, "manifest"); err != nil || len(listed) != len(listedDocs) {
-			t.Fatalf("List: blobs %d, error %v", len(listed), err)
-		}
+		var lerr error
+		listed, lerr = l.List(ctx, "manifest")
+		err = cmp.Or(err, lerr)
 	}, 3, "List allocates the growth of its list")
-	assert.MaxAllocs(t, func() {
-		if l.Writes() == 0 {
-			t.Fatal("Writes counted nothing")
-		}
-	}, 0, "Writes allocates nothing")
+	assert.NoError(t, err, "the blobs list")
+	assert.Length(t, listed, len(listedDocs), "every document")
+	var writes int
+	assert.MaxAllocs(t, func() { writes = l.Writes() }, 0, "Writes allocates nothing")
+	assert.InRange(t, writes, 1, math.Inf(1), "Writes counts the stores")
 }
 
 // BenchmarkMem measures each call of the memory ledger over the three
@@ -438,7 +456,7 @@ func BenchmarkMem(b *testing.B) {
 		for c.Loop() {
 			got = l.Writes()
 		}
-		assert.True(b, got > 0, "Writes counts the stores")
+		assert.InRange(b, got, 1, math.Inf(1), "Writes counts the stores")
 	})
 }
 
@@ -457,8 +475,7 @@ func listing(tb testing.TB) *ledger.Mem {
 	tb.Helper()
 
 	l := holding(tb, segName, docBody)
-	for _, name := range listedDocs {
-		assert.NoError(tb, l.Write(tb.Context(), name, []byte(docBody)), "the document is written")
-	}
+	assert.Total(tb, func(name string) error { return l.Write(tb.Context(), name, []byte(docBody)) }, listedDocs,
+		"the document is written")
 	return l
 }

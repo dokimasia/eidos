@@ -69,10 +69,6 @@ const (
 	kitReason = "the fixture language declares no such construct"
 )
 
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
-
 // The ceilings of a declaration's steps.
 const (
 	// newAllocs is one new declaration: the builder, the kind, refusal
@@ -175,12 +171,12 @@ func TestBackend(t *testing.T) {
 				"the skeleton, vocabulary, kinds and scaffold all spell")
 		})
 
-		t.Run("renders the same bytes for two builds", func(t *testing.T) {
+		t.Run("renders the same bytes for every build", func(t *testing.T) {
 			t.Parallel()
 
-			first := kitRender(t, kitBackend(kitName, kitTarget).Build())
-			second := kitRender(t, kitBackend(kitName, kitTarget).Build())
-			assert.Equal(t, first, second, "a build is deterministic")
+			assert.Deterministic(t, func(name plugin.ID) ([]plugin.RenderedFile, error) {
+				return kitRender(t, kitBackend(name, kitTarget).Build()), nil
+			}, kitName, "a build is deterministic")
 		})
 
 		t.Run("renders the bytes a hand-built pass over the same language renders", func(t *testing.T) {
@@ -333,9 +329,9 @@ func TestBackend(t *testing.T) {
 					Funcs(kitFuncs).
 					Build()
 			}, "collected defects panic together")
-			text := fmt.Sprint(recovered)
-			assert.Contains(t, text, "Struct kind twice", "naming the kind defect")
-			assert.Contains(t, text, "helper twice", "naming the helper defect")
+			assert.That(t, fmt.Sprint(recovered)).
+				Contains("Struct kind twice", "naming the kind defect").
+				Contains("helper twice", "naming the helper defect")
 		})
 
 		t.Run("panics naming every language fault at once", func(t *testing.T) {
@@ -385,7 +381,7 @@ func TestBackend(t *testing.T) {
 
 			r, held := kitBackend(plainName, kitTarget).Build().(render.Refuser)
 			assert.True(t, held, "an undeclared refusal set still reads")
-			assert.Length(t, r.RefusedKinds(), 0, "the backend refuses nothing")
+			assert.Empty(t, r.RefusedKinds(), "the backend refuses nothing")
 		})
 
 		defects := []struct {
@@ -498,6 +494,7 @@ func TestBackend(t *testing.T) {
 				Finalise(kitFinalise).
 				Build()
 			files := kitRender(t, b)
+			assert.Length(t, files, 1, "the fixture assembles one file")
 			assert.ContainsInOrder(t, string(files[0].Body), []string{
 				"import (" + runtimePkg + " " + storePkg + ")\n",
 				"type " + strings.ToUpper(rowName) + " " + storeLocal + "." + rowName + "\n",
@@ -721,10 +718,10 @@ func TestBackend(t *testing.T) {
 // A declaration allocates its builder, each merge of a map, each
 // vocabulary part and the lowered backend within their ceilings, and
 // its setters allocate nothing, in the ordinary run, which runs no
-// benchmark. A merge and a Build each take a declaration built before
+// benchmark. A merge and a Build each take a declaration built outside
 // the count, because each changes or freezes the declaration it is
-// called on. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// called on. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestBackendAllocs(t *testing.T) {
 	syntax := kitSyntax()
 	var b *backend.Builder
@@ -733,25 +730,26 @@ func TestBackendAllocs(t *testing.T) {
 	for _, tt := range setters() {
 		var got *backend.Builder
 		assert.MaxAllocs(t, func() { got = tt.set(b) }, 0, tt.name+" allocates nothing")
-		assert.True(t, got == b, tt.name+" returns its builder")
+		assert.Equal(t, got, b, tt.name+" returns its builder", assert.ByIdentity())
 	}
+	fresh := func() *backend.Builder { return backend.New(kitName, kitTarget, syntax) }
 	for _, tt := range merges() {
-		fresh, at := news(allocRuns), 0
-		assert.MaxAllocs(t, func() {
-			tt.set(fresh[at])
-			at++
-		}, tt.allocs, tt.name+" allocates the sorted keys and the entry")
+		var merged *backend.Builder
+		assert.MaxAllocsWithSetup(t, fresh, func(b *backend.Builder) { merged = tt.set(b) }, tt.allocs,
+			tt.name+" allocates the sorted keys and the entry")
+		assert.NotNil(t, merged, tt.name+" returns its builder")
 	}
-	whole, at := declarations(allocRuns, false), 0
-	assert.MaxAllocs(t, func() {
-		whole[at].Build()
-		at++
-	}, buildAllocs, "Build allocates the parsed templates and the lowered backend")
-	settling, at := declarations(allocRuns, true), 0
-	assert.MaxAllocs(t, func() {
-		settling[at].Build()
-		at++
-	}, buildSeamsAllocs, "Build allocates the composition of both seams besides")
+	var built plugin.Backend
+	assert.MaxAllocsWithSetup(t, func() *backend.Builder { return declaration(false) },
+		func(b *backend.Builder) { built = b.Build() }, buildAllocs,
+		"Build allocates the parsed templates and the lowered backend")
+	_, renders := built.(plugin.Renderer)
+	assert.True(t, renders, "the lowered backend renders")
+	assert.MaxAllocsWithSetup(t, func() *backend.Builder { return declaration(true) },
+		func(b *backend.Builder) { built = b.Build() }, buildSeamsAllocs,
+		"Build allocates the composition of both seams besides")
+	_, lowers := built.(plugin.Lowerer)
+	assert.True(t, lowers, "the lowered backend has the construct seam")
 }
 
 // BenchmarkBackend measures each step of a declaration: the builder,
@@ -778,7 +776,7 @@ func BenchmarkBackend(b *testing.B) {
 			for c.Loop() {
 				got = tt.set(builder)
 			}
-			assert.True(b, got == builder, tt.name+" returns its builder")
+			assert.Equal(b, got, builder, tt.name+" returns its builder", assert.ByIdentity())
 		})
 	}
 
@@ -806,7 +804,7 @@ func BenchmarkBackend(b *testing.B) {
 				got     plugin.Backend
 			)
 			for c.Loop() {
-				c.Excluding(func() { builder = declarations(1, false)[0] })
+				c.Excluding(func() { builder = declaration(false) })
 				got = builder.Build()
 			}
 			_, renders := got.(plugin.Renderer)
@@ -821,7 +819,7 @@ func BenchmarkBackend(b *testing.B) {
 				got     plugin.Backend
 			)
 			for c.Loop() {
-				c.Excluding(func() { builder = declarations(1, true)[0] })
+				c.Excluding(func() { builder = declaration(true) })
 				got = builder.Build()
 			}
 			_, lowers := got.(plugin.Lowerer)
@@ -1089,24 +1087,12 @@ func merges() []merge {
 	}
 }
 
-// news returns n new declarations of the fixture backend.
-func news(n int) []*backend.Builder {
-	out := make([]*backend.Builder, n)
-	for i := range out {
-		out[i] = backend.New(kitName, kitTarget, kitSyntax())
+// declaration returns a whole fixture declaration, with both settle
+// seams where seams is set.
+func declaration(seams bool) *backend.Builder {
+	b := kitBackend(kitName, kitTarget)
+	if seams {
+		b.Lower(kitLower).Respell(kitRespell)
 	}
-	return out
-}
-
-// declarations returns n whole fixture declarations, each with both
-// settle seams where seams is set.
-func declarations(n int, seams bool) []*backend.Builder {
-	out := make([]*backend.Builder, n)
-	for i := range out {
-		out[i] = kitBackend(kitName, kitTarget)
-		if seams {
-			out[i].Lower(kitLower).Respell(kitRespell)
-		}
-	}
-	return out
+	return b
 }

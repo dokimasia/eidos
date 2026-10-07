@@ -5,7 +5,6 @@ package frontend_test
 
 import (
 	"io/fs"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -44,17 +43,13 @@ const newAllocs = 1 + 4 + 1 + 2 + 4
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
 // where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves. A case whose
-// ceiling only a benchmark checks sets bench, which measures the case
-// in place of the call, and no list an allocation test reads contains
-// it.
+// call, and the check of the result the call leaves.
 type allocCall struct {
 	name     string
 	caseName string
 	allocs   uint64
 	call     func()
-	check    func(tb assert.TB)
-	bench    func(b *testing.B)
+	check    func(tb testing.TB)
 }
 
 // The frontend runs the conformance suite every frontend runs, over real
@@ -80,14 +75,13 @@ func TestFrontend(t *testing.T) {
 		t.Run("returns a version that folds the frontend's version", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, strings.HasPrefix(versionOf(t), java.FrontendVersion),
-				"a graph change bumps what the unit keys fold")
+			assert.HasPrefix(t, versionOf(t), java.FrontendVersion, "a graph change bumps what the unit keys fold")
 		})
 
 		t.Run("returns a version that folds the grammar's version", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, strings.HasSuffix(versionOf(t), javagrammar.Grammar.Version()),
+			assert.HasSuffix(t, versionOf(t), javagrammar.Grammar.Version(),
 				"a grammar upgrade bumps what the unit keys fold")
 		})
 
@@ -136,7 +130,7 @@ func frontendCalls() []allocCall {
 		{
 			name: "New", allocs: newAllocs,
 			call:  func() { f = frontend.New(nil) },
-			check: func(tb assert.TB) { assert.Equal(tb, f.Name(), java.Name, "New returns the Java frontend") },
+			check: func(tb testing.TB) { assert.Equal(tb, f.Name(), java.Name, "New returns the Java frontend") },
 		},
 	}
 }
@@ -185,18 +179,12 @@ func benchCalls(b *testing.B, calls []allocCall) {
 }
 
 // benchCall measures one call under the bench contract at its ceiling,
-// and checks the result the last call leaves. The call runs once before
-// the contract starts, so what the first call initialises stays out of
-// the count. A case that sets bench runs it instead.
+// and checks the result the last call leaves. The contract warms up with
+// one call, so what the first call initialises stays out of the count.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
-	if tt.bench != nil {
-		tt.bench(b)
-		return
-	}
-	tt.call()
-	c := bench.Start(b).MaxAllocs(tt.allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 	defer c.End()
 	for c.Loop() {
 		tt.call()
@@ -242,7 +230,7 @@ func javaTree() fstest.MapFS {
 }
 
 // versionOf returns the version of a frontend built without options.
-func versionOf(tb assert.TB) string {
+func versionOf(tb testing.TB) string {
 	tb.Helper()
 
 	v, versioned := frontend.New(nil).(plugin.Versioned)

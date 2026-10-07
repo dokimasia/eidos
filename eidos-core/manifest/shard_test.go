@@ -4,6 +4,7 @@
 package manifest_test
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -83,15 +85,19 @@ func TestShard(t *testing.T) {
 
 			m := scaled()
 			shards := manifest.Split(m)
+			assert.Pairwise(t, shards, func(earlier, later manifest.Shard) bool {
+				return earlier.Bucket < later.Bucket
+			}, "the documents sort by bucket")
 			total := 0
-			for i, s := range shards {
-				assert.Equal(t, s.Version, manifest.Version, "each document states the version")
-				assert.Equal(t, s.Workspace, workspaceName, "and the workspace")
-				assert.True(t, i == 0 || s.Bucket > shards[i-1].Bucket, "the documents sort by bucket")
-				for j, e := range s.Files {
-					assert.Equal(t, manifest.BucketOf(e.Path), s.Bucket, "each entry belongs to its document")
-					assert.True(t, j == 0 || e.Path > s.Files[j-1].Path, "and the entries sort by path")
+			for _, s := range shards {
+				expect.Equal(t, s.Version, manifest.Version, "each document states the version")
+				expect.Equal(t, s.Workspace, workspaceName, "and the workspace")
+				for _, e := range s.Files {
+					expect.Equal(t, manifest.BucketOf(e.Path), s.Bucket, "each entry belongs to its document")
 				}
+				expect.Pairwise(t, s.Files, func(earlier, later manifest.Entry) bool {
+					return earlier.Path < later.Path
+				}, "and the entries sort by path")
 				total += len(s.Files)
 			}
 			assert.Equal(t, total, benchFiles, "every entry is in one document")
@@ -113,7 +119,7 @@ func TestShard(t *testing.T) {
 			m := scaled()
 			got, err := manifest.Join(manifest.Split(m))
 			assert.NoError(t, err, "the documents join")
-			assert.True(t, got.Equal(m), "the record they split from")
+			assert.Equal(t, got, m, "the record they split from", assert.EquateEmpty())
 		})
 
 		t.Run("returns the empty manifest for no documents", func(t *testing.T) {
@@ -121,7 +127,8 @@ func TestShard(t *testing.T) {
 
 			got, err := manifest.Join(nil)
 			assert.NoError(t, err, "no documents join")
-			assert.True(t, got.Equal(manifest.Manifest{Version: manifest.Version}), "to the empty manifest")
+			assert.Equal(t, got, manifest.Manifest{Version: manifest.Version}, "to the empty manifest",
+				assert.EquateEmpty())
 		})
 
 		t.Run("returns ErrUnsupported for two documents of one bucket", func(t *testing.T) {
@@ -305,7 +312,7 @@ func TestShard(t *testing.T) {
 			assert.NoError(t, err, "the bytes decode")
 			joined, err := manifest.Join([]manifest.Shard{got})
 			assert.NoError(t, err, "the document joins")
-			assert.True(t, joined.Equal(record(want.Files...)), "the document reads back")
+			assert.Equal(t, joined, record(want.Files...), "the document reads back", assert.EquateEmpty())
 		})
 
 		t.Run("returns the document without a key the format does not know", func(t *testing.T) {
@@ -346,15 +353,14 @@ func TestShard(t *testing.T) {
 
 // The bucket a path belongs to costs no allocation, and the split, the
 // join and the codec of the canonical record's documents allocate within
-// their ceilings, in the ordinary run, which runs no benchmark. The
-// check runs alone, because AllocsPerRun refuses to run beside parallel
-// tests.
+// their ceilings, in the ordinary run, which runs no benchmark. Each
+// count of the codec keeps the first error of its calls, which cmp.Or
+// returns without allocating. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestShardAllocs(t *testing.T) {
-	assert.MaxAllocs(t, func() {
-		if manifest.BucketOf(stubPath) != stubBucket {
-			t.Fatal("BucketOf names another bucket")
-		}
-	}, 0, "BucketOf allocates nothing")
+	var bucket string
+	assert.MaxAllocs(t, func() { bucket = manifest.BucketOf(stubPath) }, 0, "BucketOf allocates nothing")
+	assert.Equal(t, bucket, stubBucket, "BucketOf names the path's bucket")
 
 	m := scaled()
 	var shards []manifest.Shard
@@ -372,7 +378,9 @@ func TestShardAllocs(t *testing.T) {
 	encoded := make([][]byte, len(shards))
 	assert.MaxAllocs(t, func() {
 		for i, s := range shards {
-			encoded[i], err = manifest.EncodeShard(s)
+			var eerr error
+			encoded[i], eerr = manifest.EncodeShard(s)
+			err = cmp.Or(err, eerr)
 		}
 	}, encodeAllocs, "EncodeShard allocates six times per document")
 	assert.NoError(t, err, "every document encodes")
@@ -380,7 +388,9 @@ func TestShardAllocs(t *testing.T) {
 	var decoded manifest.Shard
 	assert.MaxAllocs(t, func() {
 		for _, e := range encoded {
-			decoded, err = manifest.DecodeShard(e)
+			var derr error
+			decoded, derr = manifest.DecodeShard(e)
+			err = cmp.Or(err, derr)
 		}
 	}, decodeAllocs, "DecodeShard allocates four times per entry")
 	assert.NoError(t, err, "every document decodes")
@@ -390,18 +400,17 @@ func TestShardAllocs(t *testing.T) {
 // BenchmarkShard measures the documents of the canonical record of
 // 10,000 generated files: naming one path's bucket, splitting the record,
 // joining its documents, and encoding and decoding every document, each
-// under its allocation ceiling. The encode and the decode run once before
-// their contracts start, so the JSON codec's pooled state is in place in
-// the sub-benchmark's own goroutine.
+// under its allocation ceiling. The encode and the decode run one
+// iteration before the measurement, so the JSON codec's pooled state is
+// in place in the sub-benchmark's own goroutine.
 func BenchmarkShard(b *testing.B) {
 	m := scaled()
 	shards := manifest.Split(m)
 	encoded := make([][]byte, len(shards))
 	for i, s := range shards {
 		var err error
-		if encoded[i], err = manifest.EncodeShard(s); err != nil {
-			b.Fatalf("EncodeShard: unexpected error: %v", err)
-		}
+		encoded[i], err = manifest.EncodeShard(s)
+		assert.NoError(b, err, "every document encodes")
 	}
 
 	b.Run("BucketOf", func(b *testing.B) {
@@ -411,9 +420,7 @@ func BenchmarkShard(b *testing.B) {
 		for c.Loop() {
 			got = manifest.BucketOf(stubPath)
 		}
-		if got != stubBucket {
-			b.Fatalf("BucketOf returned %s", got)
-		}
+		assert.Equal(b, got, stubBucket, "BucketOf names the path's bucket")
 	})
 
 	b.Run("Split", func(b *testing.B) {
@@ -423,9 +430,7 @@ func BenchmarkShard(b *testing.B) {
 		for c.Loop() {
 			got = manifest.Split(m)
 		}
-		if len(got) != len(shards) {
-			b.Fatalf("Split returned %d documents", len(got))
-		}
+		assert.Length(b, got, len(shards), "Split fills every bucket")
 	})
 
 	b.Run("Join", func(b *testing.B) {
@@ -436,64 +441,54 @@ func BenchmarkShard(b *testing.B) {
 		for c.Loop() {
 			got, err = manifest.Join(shards)
 		}
-		if err != nil || len(got.Files) != benchFiles {
-			b.Fatalf("Join returned %d files and %v", len(got.Files), err)
-		}
+		assert.NoError(b, err, "the documents join")
+		assert.Length(b, got.Files, benchFiles, "Join returns every entry")
 	})
 
 	b.Run("EncodeShard", func(b *testing.B) {
 		var got []byte
 		var err error
-		encodeAll := func() {
+		c := bench.Start(b).Warmup(1).MaxAllocs(encodeAllocs)
+		defer c.End()
+		for c.Loop() {
 			for _, s := range shards {
 				got, err = manifest.EncodeShard(s)
 			}
 		}
-		encodeAll()
-		c := bench.Start(b).MaxAllocs(encodeAllocs)
-		defer c.End()
-		for c.Loop() {
-			encodeAll()
-		}
-		if err != nil || len(got) == 0 {
-			b.Fatalf("EncodeShard returned %d bytes and %v", len(got), err)
-		}
+		assert.NoError(b, err, "every document encodes")
+		assert.NotEmpty(b, got, "into its bytes")
 	})
 
 	b.Run("DecodeShard", func(b *testing.B) {
 		var got manifest.Shard
 		var err error
-		decodeAll := func() {
+		c := bench.Start(b).Warmup(1).MaxAllocs(decodeAllocs)
+		defer c.End()
+		for c.Loop() {
 			for _, e := range encoded {
 				got, err = manifest.DecodeShard(e)
 			}
 		}
-		decodeAll()
-		c := bench.Start(b).MaxAllocs(decodeAllocs)
-		defer c.End()
-		for c.Loop() {
-			decodeAll()
-		}
-		if err != nil || got.Bucket == "" {
-			b.Fatalf("DecodeShard returned bucket %q and %v", got.Bucket, err)
-		}
+		assert.NoError(b, err, "every document decodes")
+		assert.Equal(b, got.Bucket, shards[len(shards)-1].Bucket, "the last document reads back")
 	})
 }
 
 // inBucket returns the first n paths of the form svc/fNNNN.go that
-// belong to a bucket, in path order.
+// belong to a bucket, in path order, among the first 100,000.
 func inBucket(t *testing.T, bucket string, n int) []string {
 	t.Helper()
 
 	var out []string
-	for i := 0; len(out) < n; i++ {
-		if i == 100_000 {
-			t.Fatalf("no %d paths of bucket %s among the first 100,000", n, bucket)
+	for i := range 100_000 {
+		if len(out) == n {
+			break
 		}
 		if p := fmt.Sprintf("svc/f%04d.go", i); manifest.BucketOf(p) == bucket {
 			out = append(out, p)
 		}
 	}
+	assert.Length(t, out, n, "the first 100,000 paths contain enough of bucket "+bucket)
 	return out
 }
 

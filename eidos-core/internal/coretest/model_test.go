@@ -127,15 +127,13 @@ func TestModel(t *testing.T) {
 			t.Parallel()
 
 			const packages, files, decls = 4, 2, 4
-			seen := map[symbol.Identity]struct{}{}
-			total := 0
+			var ids []symbol.Identity
 			for _, pkg := range coretest.Workspace(packages, files, decls) {
 				for decl := range node.Declarations(pkg) {
-					seen[decl.Identity()] = struct{}{}
-					total++
+					ids = append(ids, decl.Identity())
 				}
 			}
-			assert.Length(t, seen, total,
+			assert.NoDuplicates(t, func() ([]symbol.Identity, error) { return ids, nil },
 				"every built declaration is distinct, or a graph would drop some")
 		})
 
@@ -173,7 +171,8 @@ func TestModel(t *testing.T) {
 
 			got := assert.Rejects(t, "a foreign symbol fails the read-back",
 				func(tb assert.TB) { coretest.Names(tb, []symbol.Symbol{foreign{}}) })
-			assert.Contains(t, got, "names a declaration",
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"everything the traversal yielded names a declaration"},
 				"and says what the traversal was supposed to yield")
 		})
 	})

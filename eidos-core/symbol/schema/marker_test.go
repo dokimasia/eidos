@@ -8,7 +8,6 @@ import (
 	"go/token"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
@@ -163,9 +162,7 @@ func TestMarker(t *testing.T) {
 		for name := range everyKind() {
 			listed = append(listed, name)
 		}
-		slices.Sort(declared)
-		slices.Sort(listed)
-		assert.Equal(t, listed, declared,
+		assert.Permutation(t, listed, declared,
 			"every kind the schema declares takes part in the package-wide cases: "+
 				"adding one is an edit here as well as in the schema")
 	})
@@ -228,13 +225,11 @@ func everyKind() map[string]reflect.Type {
 func familyOf(tb assert.TB, file string) map[string]reflect.Type {
 	tb.Helper()
 
+	kinds := everyKind()
 	out := map[string]reflect.Type{}
 	for name := range subjectsOf(tb, file) {
-		kind, listed := everyKind()[name]
-		assert.True(tb, listed, file+" declares "+name+", and every kind takes part in the shared cases")
-		if listed {
-			out[name] = kind
-		}
+		assert.Contains(tb, kinds, name, file+" declares "+name+", and every kind takes part in the shared cases")
+		out[name] = kinds[name]
 	}
 	return out
 }
@@ -263,7 +258,7 @@ func assertAnnotations(t *testing.T, kinds map[string]reflect.Type) {
 					"every field has an "+model.TagKey+" tag, and "+
 						field.Name+" has none, so the generator would drop it")
 				side, _, _ := strings.Cut(raw, model.TokenSeparator)
-				assert.True(t, slices.Contains(everySide(), side),
+				assert.Contains(t, everySide(), side,
 					"one of the three sides opens every tag, and "+field.Name+" opens with "+side)
 
 				tag := annotation(t, kind, field.Name)
@@ -344,9 +339,7 @@ func assertSubjects(tb assert.TB, file string, want ...string) {
 			got = append(got, name)
 		}
 	}
-	slices.Sort(got)
-	slices.Sort(want)
-	assert.Equal(tb, got, want,
+	assert.Permutation(tb, got, want,
 		file+" marks exactly the kinds a rule can match: a mark gained or "+
 			"lost changes the dispatch vocabulary", assert.EquateEmpty())
 }

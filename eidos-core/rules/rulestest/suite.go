@@ -5,11 +5,14 @@ package rulestest
 
 import (
 	"slices"
-	"sync"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
 
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/rules"
@@ -74,19 +77,16 @@ func RunRulesSuite(t *testing.T, setup Setup) {
 
 // viewOf mints a view over the fixture's graph with a fresh read
 // set, and returns the set so a check can read what the view
-// recorded. A fixture without a graph fails the check and reports
-// false.
-func viewOf(tb assert.TB, f *Fixture) (rules.View, *store.ReadSet, bool) {
+// recorded. A fixture without a graph stops the check.
+func viewOf(tb assert.TB, f *Fixture) (rules.View, *store.ReadSet) {
 	tb.Helper()
 
-	if f == nil || f.Graph == nil {
-		tb.Errorf("the setup has no graph")
-		return rules.View{}, nil, false
-	}
+	assert.NotNil(tb, f, "the setup returns a fixture")
+	assert.NotNil(tb, f.Graph, "the fixture has a graph")
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
 	assert.NoError(tb, err, "the sealed graph hands out a reader")
-	return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}, reads, true
+	return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}, reads
 }
 
 // subjects returns every declaration in the graph, in the store's
@@ -153,96 +153,92 @@ func project(b rules.Bound, g *store.Graph) pass {
 	return p
 }
 
-// AssertDeterministic checks that two bounds over one view return
-// equal values from every projection. Each bound memoises its own
-// fold, so the second pass derives every value again.
+// AssertDeterministic checks that bounds over one view return equal
+// values from every projection, one bound per call of
+// [assert.Deterministic]. Each bound memoises its own fold, so every
+// pass derives every value again.
 func AssertDeterministic(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	view, _, ok := viewOf(tb, f)
-	if !ok {
-		return
-	}
-	one := project(rules.NewBound(r, view, nil), f.Graph)
-	two := project(rules.NewBound(r, view, nil), f.Graph)
-	assert.Equal(tb, two, one, "two bounds over one view return equal values")
+	view, _ := viewOf(tb, f)
+	assert.Deterministic(tb, func(v rules.View) (pass, error) {
+		return project(rules.NewBound(r, v, nil), f.Graph), nil
+	}, view, "bounds over one view return equal values")
 }
 
 // AssertTotal checks that the fold returns a shape for every
 // reference and that the mapping reports false for every
-// non-callable kind, without panicking.
+// non-callable kind, without panicking. Each reference and each
+// subject reports on its own.
 func AssertTotal(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	view, _, ok := viewOf(tb, f)
-	if !ok {
-		return
-	}
+	view, _ := viewOf(tb, f)
 	b := rules.NewBound(r, view, nil)
 	for _, ref := range graphReferences(f.Graph) {
 		s := b.TypeOf(ref)
-		if ref.Form != symbol.FormNamed && len(ref.Elems) > 0 {
-			assert.True(tb, len(s.Elems) > 0 || s.Form == symbol.FormBytes,
-				"a structural reference folds its children")
+		at := ref.Spelling + " at " + ref.Pos.String()
+		if ref.Form != symbol.FormNamed && len(ref.Elems) > 0 && s.Form != symbol.FormBytes {
+			expect.NotEmpty(tb, s.Elems, "a structural reference folds its children, unless it folds to bytes: "+at)
 		}
 		if ref.Form == symbol.FormNamed {
-			assert.False(tb, s.Form == symbol.FormNamed,
-				"a named reference folds to a leaf, never to the name itself")
+			expect.NotEqual(tb, s.Form, symbol.FormNamed,
+				"a named reference folds to a leaf, never to the name itself: "+at)
 		}
 	}
 	for _, s := range subjects(f.Graph) {
 		_, is := b.CallableOf(s)
 		callable := s.Kind() == symbol.KindFunction || s.Kind() == symbol.KindMethod
-		assert.Equal(tb, is, callable, "the mapping accepts callables and refuses the rest")
+		expect.Equal(tb, is, callable, "the mapping accepts callables and refuses the rest: "+
+			s.Kind().String()+" at "+s.Position().String())
 	}
-	assert.Equal(tb, b.TypeOf(nil).Form, symbol.FormOpaque, "a nil reference folds to opaque")
+	expect.Equal(tb, b.TypeOf(nil).Form, symbol.FormOpaque, "a nil reference folds to opaque")
 }
 
 // AssertRefusesWithReason checks that every refused sample has a
-// refusal other than none and that every gap names a reason.
+// refusal other than none and that every gap names a reason. Each
+// sample and each gap reports on its own.
 func AssertRefusesWithReason(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	view, _, ok := viewOf(tb, f)
-	if !ok {
-		return
-	}
+	view, _ := viewOf(tb, f)
 	b := rules.NewBound(r, view, nil)
 	for _, s := range subjects(f.Graph) {
 		if field, is := s.(*node.Field); is {
 			sample, alternate := b.SamplesOf(field.ID, field.Type, field.Name)
-			for _, half := range []rules.Sample{sample, alternate} {
-				if !half.OK() {
-					assert.False(tb, half.Refusal == rules.RefusedNone,
-						"a sample without a value names its refusal")
-				}
+			if !sample.OK() {
+				expect.NotEqual(tb, sample.Refusal, rules.RefusedNone,
+					"a sample without a value names its refusal: "+field.ID.String())
+			}
+			if !alternate.OK() {
+				expect.NotEqual(tb, alternate.Refusal, rules.RefusedNone,
+					"an alternate without a value names its refusal: "+field.ID.String())
 			}
 		}
 		if set, is := b.MembersOf(s); is {
 			for _, gap := range set.Gaps {
-				assert.False(tb, gap.Reason == 0, "a gap names its reason")
+				expect.NotEqual(tb, gap.Reason, 0, "a gap names its reason: "+gap.Host.String())
 			}
 		}
 	}
 	unknown := &node.TypeRef{Spelling: "rulestest.Unknown"}
 	sample, _ := b.SamplesOf(symbol.Identity{}, unknown, "unknown")
-	assert.False(tb, sample.OK(), "a spelling the language cannot reason about refuses")
-	assert.False(tb, sample.Refusal == rules.RefusedNone, "with a reason")
+	expect.False(tb, sample.OK(), "a spelling the language cannot reason about refuses")
+	expect.NotEqual(tb, sample.Refusal, rules.RefusedNone,
+		"a spelling the language cannot reason about names its refusal")
 }
 
 // AssertDistinctSamples checks that the two halves of every derived
-// pair differ, compared field by field at every depth.
+// pair differ, compared field by field at every depth. Each pair
+// reports on its own.
 func AssertDistinctSamples(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	view, _, ok := viewOf(tb, f)
-	if !ok {
-		return
-	}
+	view, _ := viewOf(tb, f)
 	b := rules.NewBound(r, view, nil)
 	derived := 0
 	for _, s := range subjects(f.Graph) {
@@ -253,12 +249,12 @@ func AssertDistinctSamples(tb assert.TB, setup Setup) {
 		sample, alternate := b.SamplesOf(field.ID, field.Type, field.Name)
 		if sample.OK() && alternate.OK() {
 			derived++
-			assert.NotEqual(tb, alternate.Value, sample.Value,
-				"the two halves differ, or a check comparing against one passes whenever the subject has it",
-				assert.EquateEmpty())
+			expect.NotEqual(tb, alternate.Value, sample.Value,
+				"the two halves differ, or a check comparing against one passes whenever the subject has it: "+
+					field.ID.String(), assert.EquateEmpty())
 		}
 	}
-	assert.True(tb, derived > 0, "the fixture derives at least one pair, or the check proves nothing")
+	assert.NotEqual(tb, derived, 0, "the fixture derives at least one pair, or the check proves nothing")
 }
 
 // AssertWitnesses checks a language's generics capability over every
@@ -275,9 +271,9 @@ func AssertWitnesses(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	view, _, ok := viewOf(tb, f)
+	view, _ := viewOf(tb, f)
 	generics, capable := r.(rules.GenericsRules)
-	if !ok || !capable {
+	if !capable {
 		return
 	}
 	generic, rewritten := 0, 0
@@ -292,33 +288,36 @@ func AssertWitnesses(tb assert.TB, setup Setup) {
 			if !derived {
 				break
 			}
-			assert.True(tb, w != nil && w.Spelling != "",
-				"a derived witness is a reference with a spelling, or no backend can write the instantiation")
+			assert.NotNil(tb, w, "a derived witness is a reference: "+p.ID.String())
+			expect.NotEqual(tb, w.Spelling, "",
+				"a derived witness has a spelling, or no backend can write the instantiation: "+p.ID.String())
 			witnesses = append(witnesses, w)
 		}
 		if len(params) == 0 || len(witnesses) != len(params) {
 			continue
 		}
 		for _, ref := range references(s) {
-			before := rules.EmitRef(ref)
-			got := generics.Substitute(ref, params, witnesses)
-			assert.Equal(tb, rules.EmitRef(ref), before,
-				"Substitute copies what it rewrites and leaves the reference it is handed unchanged")
+			where := ref.Spelling + " at " + ref.Pos.String()
 			at := slices.IndexFunc(params, func(p *node.TypeParam) bool {
 				return p != nil && ref.Target == p.ID
 			})
-			if at < 0 || ref.Form != symbol.FormNamed || len(ref.Args) > 0 {
+			direct := at >= 0 && ref.Form == symbol.FormNamed && len(ref.Args) == 0
+			var got *node.TypeRef
+			expect.Pure(tb, func() *emit.TypeRef { return rules.EmitRef(ref) }, func() {
+				got = generics.Substitute(ref, params, witnesses)
+			}, "Substitute copies what it rewrites and leaves the reference it is handed unchanged: "+where)
+			if !direct {
 				continue
 			}
 			rewritten++
-			assert.True(tb, got != nil && got.Spelling == witnesses[at].Spelling,
-				"a reference to a type parameter becomes the parameter's witness")
+			assert.NotNil(tb, got, "Substitute returns a reference: "+where)
+			expect.Equal(tb, got.Spelling, witnesses[at].Spelling,
+				"a reference to a type parameter becomes the parameter's witness: "+where)
 		}
 	}
 	if generic > 0 {
-		assert.True(tb, rewritten > 0,
-			"the fixture declares type parameters and references none whose witnesses derive, "+
-				"so the check proves nothing")
+		assert.NotEqual(tb, rewritten, 0, "the fixture declares type parameters and references one whose "+
+			"witnesses derive, or the check proves nothing")
 	}
 }
 
@@ -353,9 +352,7 @@ func AssertRecorded(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	if _, _, ok := viewOf(tb, f); !ok {
-		return
-	}
+	viewOf(tb, f)
 	driven := 0
 	for _, s := range subjects(f.Graph) {
 		field, is := s.(*node.Field)
@@ -364,41 +361,39 @@ func AssertRecorded(tb assert.TB, setup Setup) {
 			continue
 		}
 		driven++
-		view, reads, _ := viewOf(tb, f)
+		view, reads := viewOf(tb, f)
 		r.SamplesOf(field.Type, field.Name, view)
-		assert.True(tb, slices.Contains(slices.Collect(reads.Identities()), field.Type.Target),
+		expect.Contains(tb, slices.Collect(reads.Identities()), field.Type.Target,
 			"a sample of a named type reads the declaration through the view handed to it, "+
-				"or a change there re-runs nothing")
+				"or a change there re-runs nothing: "+field.ID.String())
 	}
-	assert.True(tb, driven > 0, "the fixture has a field typed by a declaration, or the check proves nothing")
+	assert.NotEqual(tb, driven, 0, "the fixture has a field typed by a declaration, or the check proves nothing")
 }
 
-// AssertConcurrent checks that the projections, run from parallel
-// goroutines each over its own view, return the serial values.
+// concurrentPasses is how many passes [AssertConcurrent] runs at once.
+const concurrentPasses = 8
+
+// AssertConcurrent checks that the projections, run by
+// [go.dokimi.dev/assert/history.Concurrently] on goroutines released
+// together, each over its own view, return the serial values. Each
+// pass reports on its own, and one that does not finish within a
+// minute fails.
 func AssertConcurrent(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
-	serial, _, ok := viewOf(tb, f)
-	if !ok {
-		return
-	}
+	serial, _ := viewOf(tb, f)
 	want := project(rules.NewBound(r, serial, nil), f.Graph)
 
-	const workers = 8
-	views := make([]rules.View, workers)
-	for i := range workers {
-		views[i], _, _ = viewOf(tb, f)
+	views := make([]rules.View, concurrentPasses)
+	for i := range views {
+		views[i], _ = viewOf(tb, f)
 	}
-	got := make([]pass, workers)
-	var wg sync.WaitGroup
-	for i := range workers {
-		wg.Go(func() {
-			got[i] = project(rules.NewBound(r, views[i], nil), f.Graph)
-		})
-	}
-	wg.Wait()
-	for i := range workers {
-		assert.Equal(tb, got[i], want, "a parallel pass returns the serial values")
+	outcomes := history.Concurrently(concurrentPasses, time.Minute, func(client int) (any, error) {
+		return project(rules.NewBound(r, views[client], nil), f.Graph), nil
+	})
+	for _, o := range outcomes {
+		expect.True(tb, o.Finished, "a parallel pass finishes")
+		expect.Equal(tb, o.Output, any(want), "a parallel pass returns the serial values")
 	}
 }

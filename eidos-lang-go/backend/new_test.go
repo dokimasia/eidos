@@ -116,17 +116,19 @@ func TestNew(t *testing.T) {
 			for _, f := range backendtest.RenderSettled(t, setup) {
 				text = append(text, f.Body...)
 			}
-			assert.Contains(t, string(text), "type Row struct", "a neutral row exports as Row")
-			assert.Contains(t, string(text), "func Fetch()", "and a neutral fetch as Fetch")
+			assert.That(t, string(text)).
+				Contains("type Row struct", "a neutral row exports as Row").
+				Contains("func Fetch()", "and a neutral fetch as Fetch")
 		})
 
 		t.Run("returns a backend that imports the package a field's type names", func(t *testing.T) {
 			t.Parallel()
 
 			body, sink := rendered(t, rowOf(&emit.Field{Name: "When", Type: imported(timePkg, timePkg, "Duration")}))
-			assert.Length(t, collected(sink), 0, "the file renders clean")
-			assert.Contains(t, body, "import (\n\t\"time\"\n)\n", "the import block")
-			assert.Contains(t, body, "\tWhen time.Duration\n", "and the qualified field")
+			assert.Empty(t, collected(sink), "the file renders clean")
+			assert.That(t, body).
+				Contains("import (\n\t\"time\"\n)\n", "the import block").
+				Contains("\tWhen time.Duration\n", "and the qualified field")
 		})
 
 		t.Run("returns a backend that renders two packages of one name under two names", func(t *testing.T) {
@@ -136,7 +138,7 @@ func TestNew(t *testing.T) {
 				&emit.Field{Name: "Current", Type: imported(storeName, storePkg, rowName)},
 				&emit.Field{Name: "Legacy", Type: imported(storeName, legacyPkg, rowName)},
 			))
-			assert.Length(t, collected(sink), 0, "the file renders clean")
+			assert.Empty(t, collected(sink), "the file renders clean")
 			assert.ContainsInOrder(t, body, []string{
 				"\t" + storeName2 + " \"" + legacyPkg + "\"\n",
 				"\t\"" + storePkg + "\"\n",
@@ -157,7 +159,7 @@ func TestNew(t *testing.T) {
 				Receives: &emit.TypeRef{Spelling: rowName},
 			}))
 			body, sink := rendered(t, row)
-			assert.Length(t, collected(sink), 0, "the file renders clean")
+			assert.Empty(t, collected(sink), "the file renders clean")
 			assert.Contains(t, body, "func (r *Row) Touch() {", "the receiver points at the host")
 		})
 
@@ -173,7 +175,7 @@ func TestNew(t *testing.T) {
 				Receives: &emit.TypeRef{Spelling: emittedName},
 			}))
 			body, sink := rendered(t, double)
-			assert.Length(t, collected(sink), 0, "the file renders clean")
+			assert.Empty(t, collected(sink), "the file renders clean")
 			assert.Contains(t, body, "func (s *"+settledName+") Touch() {", "the receiver names the settled host")
 		})
 
@@ -186,7 +188,7 @@ func TestNew(t *testing.T) {
 				Split:    1,
 				Elems:    []*emit.TypeRef{{Spelling: emittedName}, {Spelling: "error"}},
 			}}))
-			assert.Length(t, collected(sink), 0, "the file renders clean")
+			assert.Empty(t, collected(sink), "the file renders clean")
 			assert.Contains(t, body, "\t"+visitName+" func(next "+settledName+") error\n",
 				"the function type names the settled declaration, its parameter's name as written")
 		})

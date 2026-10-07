@@ -6,12 +6,10 @@ package frontend_test
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"hash/crc32"
 	"maps"
 	"path"
 	"slices"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -96,7 +94,7 @@ func TestJar(t *testing.T) {
 
 			_, found := jarUnit(t, jarOf(t, "", map[string][]byte{circlePath: []byte("junk")}), plugin.DepthSignatures)
 			assert.NotEmpty(t, found, "the entry reports")
-			assert.True(t, strings.HasPrefix(found[0].Msg, circlePath), "the entry opens the message")
+			assert.HasPrefix(t, found[0].Msg, circlePath, "the entry opens the message")
 		})
 
 		t.Run("reports BadClassFile for an entry whose bytes do not read", func(t *testing.T) {
@@ -108,7 +106,7 @@ func TestJar(t *testing.T) {
 			}
 			_, found := jarUnit(t, rawJAR(t, h, data, nil), plugin.DepthSignatures)
 			assert.NotEmpty(t, found, "the entry reports")
-			assert.True(t, strings.HasSuffix(found[0].Msg, badEntryReason), "its checksum is wrong")
+			assert.HasSuffix(t, found[0].Msg, badEntryReason, "its checksum is wrong")
 		})
 
 		t.Run("reports BadClassFile for an entry larger than 64 MiB", func(t *testing.T) {
@@ -123,7 +121,7 @@ func TestJar(t *testing.T) {
 
 			_, found := jarUnit(t, sizedJAR(t, tooLargeSize), plugin.DepthSignatures)
 			assert.NotEmpty(t, found, "the entry reports")
-			assert.True(t, strings.HasSuffix(found[0].Msg, tooLargeReason), "before any byte reads")
+			assert.HasSuffix(t, found[0].Msg, tooLargeReason, "before any byte reads")
 		})
 
 		t.Run("reads an entry whose header states 64 MiB", func(t *testing.T) {
@@ -131,7 +129,7 @@ func TestJar(t *testing.T) {
 
 			_, found := jarUnit(t, sizedJAR(t, entryCap), plugin.DepthSignatures)
 			assert.NotEmpty(t, found, "the entry reports")
-			assert.True(t, strings.HasSuffix(found[0].Msg, shortReason), "its bytes end before 64 MiB")
+			assert.HasSuffix(t, found[0].Msg, shortReason, "its bytes end before 64 MiB")
 		})
 
 		t.Run("reports BadClassFile for an entry of an unknown compression method", func(t *testing.T) {
@@ -158,7 +156,7 @@ func TestJar(t *testing.T) {
 
 			_, found := jarUnit(t, brokenManifestJAR(t), plugin.DepthSignatures)
 			assert.NotEmpty(t, found, "the manifest reports")
-			assert.True(t, strings.HasPrefix(found[0].Msg, manifestName), "the manifest opens the message")
+			assert.HasPrefix(t, found[0].Msg, manifestName, "the manifest opens the message")
 		})
 
 		t.Run("loads the root classes of a JAR whose manifest does not read", func(t *testing.T) {
@@ -318,7 +316,7 @@ func fixtureClass(tb assert.TB, name string) []byte {
 // jarOf returns a JAR of entries, each name to its bytes, written in
 // name order after a manifest of a main section, and without a manifest
 // where it is empty.
-func jarOf(tb assert.TB, manifest string, entries map[string][]byte) []byte {
+func jarOf(tb testing.TB, manifest string, entries map[string][]byte) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
@@ -340,7 +338,7 @@ func jarOf(tb assert.TB, manifest string, entries map[string][]byte) []byte {
 // rawJAR returns a JAR whose first entry is bytes stored under a header,
 // whatever compression method, size and checksum the header states, and
 // whose other entries are each name to its bytes, written in name order.
-func rawJAR(tb assert.TB, h zip.FileHeader, data []byte, entries map[string][]byte) []byte {
+func rawJAR(tb testing.TB, h zip.FileHeader, data []byte, entries map[string][]byte) []byte {
 	tb.Helper()
 
 	var buf bytes.Buffer
@@ -362,7 +360,7 @@ func rawJAR(tb assert.TB, h zip.FileHeader, data []byte, entries map[string][]by
 
 // sizedJAR returns a JAR of Circle's class file under a header that
 // states a size, whatever the size of its bytes.
-func sizedJAR(tb assert.TB, size uint64) []byte {
+func sizedJAR(tb testing.TB, size uint64) []byte {
 	tb.Helper()
 
 	data := fixtureClass(tb, circleName)
@@ -373,7 +371,7 @@ func sizedJAR(tb assert.TB, size uint64) []byte {
 // brokenManifestJAR returns a JAR whose manifest marks it multi-release
 // under a wrong checksum, with Circle at its root and Square as its
 // version 21.
-func brokenManifestJAR(tb assert.TB) []byte {
+func brokenManifestJAR(tb testing.TB) []byte {
 	tb.Helper()
 
 	manifest := []byte(multiRelease)
@@ -388,14 +386,14 @@ func brokenManifestJAR(tb assert.TB) []byte {
 // jarDecls parses a unit of one JAR through a frontend of a release, at
 // signature depth, and returns the declarations of the fixture package,
 // none where the unit declares no such package.
-func jarDecls(tb assert.TB, data []byte, release int) node.Symbols {
+func jarDecls(tb testing.TB, data []byte, release int) node.Symbols {
 	tb.Helper()
 
 	f := frontend.New(&frontend.Options{Release: release})
 	tree := fstest.MapFS{jarMember: {Data: data}}
 	u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: jarMember}}, tree, plugin.DepthSignatures, f.Syntax(), brand,
 		diag.NewSink(), f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
 	var out node.Symbols
 	for _, p := range u.Graph().Packages() {
 		if p.ID.Package == libPackage {

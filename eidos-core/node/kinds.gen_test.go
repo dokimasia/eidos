@@ -365,70 +365,70 @@ func TestKinds(t *testing.T) {
 		t.Run("returns the zero identity before it is assigned", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, (&Function{}).Identity().IsZero(),
+			assert.Equal(t, (&Function{}).Identity(), symbol.Identity{},
 				"an unassigned Function returns the zero identity")
 
-			assert.True(t, (&Method{}).Identity().IsZero(),
+			assert.Equal(t, (&Method{}).Identity(), symbol.Identity{},
 				"an unassigned Method returns the zero identity")
 
-			assert.True(t, (&Param{}).Identity().IsZero(),
+			assert.Equal(t, (&Param{}).Identity(), symbol.Identity{},
 				"an unassigned Param returns the zero identity")
 
-			assert.True(t, (&Return{}).Identity().IsZero(),
+			assert.Equal(t, (&Return{}).Identity(), symbol.Identity{},
 				"an unassigned Return returns the zero identity")
 
-			assert.True(t, (&Package{}).Identity().IsZero(),
+			assert.Equal(t, (&Package{}).Identity(), symbol.Identity{},
 				"an unassigned Package returns the zero identity")
 
-			assert.True(t, (&File{}).Identity().IsZero(),
+			assert.Equal(t, (&File{}).Identity(), symbol.Identity{},
 				"an unassigned File returns the zero identity")
 
-			assert.True(t, (&Import{}).Identity().IsZero(),
+			assert.Equal(t, (&Import{}).Identity(), symbol.Identity{},
 				"an unassigned Import returns the zero identity")
 
-			assert.True(t, (&Export{}).Identity().IsZero(),
+			assert.Equal(t, (&Export{}).Identity(), symbol.Identity{},
 				"an unassigned Export returns the zero identity")
 
-			assert.True(t, (&Binding{}).Identity().IsZero(),
+			assert.Equal(t, (&Binding{}).Identity(), symbol.Identity{},
 				"an unassigned Binding returns the zero identity")
 
-			assert.True(t, (&Enum{}).Identity().IsZero(),
+			assert.Equal(t, (&Enum{}).Identity(), symbol.Identity{},
 				"an unassigned Enum returns the zero identity")
 
-			assert.True(t, (&EnumVariant{}).Identity().IsZero(),
+			assert.Equal(t, (&EnumVariant{}).Identity(), symbol.Identity{},
 				"an unassigned EnumVariant returns the zero identity")
 
-			assert.True(t, (&Sum{}).Identity().IsZero(),
+			assert.Equal(t, (&Sum{}).Identity(), symbol.Identity{},
 				"an unassigned Sum returns the zero identity")
 
-			assert.True(t, (&SumVariant{}).Identity().IsZero(),
+			assert.Equal(t, (&SumVariant{}).Identity(), symbol.Identity{},
 				"an unassigned SumVariant returns the zero identity")
 
-			assert.True(t, (&Field{}).Identity().IsZero(),
+			assert.Equal(t, (&Field{}).Identity(), symbol.Identity{},
 				"an unassigned Field returns the zero identity")
 
-			assert.True(t, (&Variable{}).Identity().IsZero(),
+			assert.Equal(t, (&Variable{}).Identity(), symbol.Identity{},
 				"an unassigned Variable returns the zero identity")
 
-			assert.True(t, (&Constant{}).Identity().IsZero(),
+			assert.Equal(t, (&Constant{}).Identity(), symbol.Identity{},
 				"an unassigned Constant returns the zero identity")
 
-			assert.True(t, (&Struct{}).Identity().IsZero(),
+			assert.Equal(t, (&Struct{}).Identity(), symbol.Identity{},
 				"an unassigned Struct returns the zero identity")
 
-			assert.True(t, (&Interface{}).Identity().IsZero(),
+			assert.Equal(t, (&Interface{}).Identity(), symbol.Identity{},
 				"an unassigned Interface returns the zero identity")
 
-			assert.True(t, (&Alias{}).Identity().IsZero(),
+			assert.Equal(t, (&Alias{}).Identity(), symbol.Identity{},
 				"an unassigned Alias returns the zero identity")
 
-			assert.True(t, (&TypeRef{}).Identity().IsZero(),
+			assert.Equal(t, (&TypeRef{}).Identity(), symbol.Identity{},
 				"an unassigned TypeRef returns the zero identity")
 
-			assert.True(t, (&TypeParam{}).Identity().IsZero(),
+			assert.Equal(t, (&TypeParam{}).Identity(), symbol.Identity{},
 				"an unassigned TypeParam returns the zero identity")
 
-			assert.True(t, (&Embed{}).Identity().IsZero(),
+			assert.Equal(t, (&Embed{}).Identity(), symbol.Identity{},
 				"an unassigned Embed returns the zero identity")
 		})
 	})

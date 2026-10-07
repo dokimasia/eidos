@@ -27,7 +27,7 @@ func TestSplit(t *testing.T) {
 			file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 				"package p\n\n// D is documented.\n//go:build ignore\nvar D int\n"))
 			d := file.Decls[0].(*node.Variable)
-			assert.Length(t, d.Annotations, 0, "a constraint is configuration, never an annotation")
+			assert.Empty(t, d.Annotations, "a constraint is configuration, never an annotation")
 			assert.Equal(t, d.Doc, []string{"D is documented."}, "a constraint is never documentation")
 		})
 

@@ -152,7 +152,7 @@ func TestSpellRef(t *testing.T) {
 				t.Parallel()
 
 				_, err := spellref.SpellWith(tt.give, opener, closer, standIn, failing)
-				assert.True(t, errors.Is(err, refusal), "the qualify error wraps through")
+				assert.ErrorIs(t, err, refusal, "the qualify error wraps through")
 			})
 		}
 	})

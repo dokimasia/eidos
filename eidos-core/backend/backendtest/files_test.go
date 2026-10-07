@@ -93,9 +93,7 @@ func TestFiles(t *testing.T) {
 				t.Parallel()
 
 				e := plugin.NewEmit()
-				for _, u := range tt.give {
-					assert.NoError(t, e.Add(u), "the fixture unit arrives")
-				}
+				assert.Total(t, e.Add, tt.give, "the fixture unit arrives")
 				assert.Equal(t, paths(backendtest.Files(e, wordSpeller{})), tt.want, "the routed files")
 			})
 		}

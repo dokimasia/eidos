@@ -4,9 +4,11 @@
 package facade_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/gen/facade"
 )
@@ -100,8 +102,8 @@ func TestSpec(t *testing.T) {
 			t.Parallel()
 
 			root := mini(t)
-			poison(t, root, positionRel,
-				"package position\n\n// Pick is the only re-export.\nfunc Pick[T any](v T) T { return v }\n")
+			files.Write(t, filepath.Join(root, facade.KernelDir), files.Tree{positionRel: files.Text(
+				"package position\n\n// Pick is the only re-export.\nfunc Pick[T any](v T) T { return v }\n")})
 			_, err := facade.Generate(root)
 			assert.HasError(t, err, "a spec without a case pins nothing")
 			assert.Contains(t, err.Error(), "nothing the spec can pin", "the error names the fault")
@@ -115,7 +117,7 @@ func specOf(t *testing.T, content string) string {
 	t.Helper()
 
 	root := mini(t)
-	poison(t, root, poisonRel, content)
+	files.Write(t, filepath.Join(root, facade.KernelDir), files.Tree{poisonRel: files.Text(content)})
 	set, err := facade.Generate(root)
 	assert.NoError(t, err, "the poisoned mini kernel generates")
 	return string(set[emitSpecPath])

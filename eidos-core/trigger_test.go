@@ -52,8 +52,8 @@ func TestTrigger(t *testing.T) {
 				Handle(eidos.OnEmit(symbol.KindStruct,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 						ran = true
-						assert.True(t, m.Value == symbol.Symbol(value),
-							"the match has the very emit value")
+						assert.Equal(t, m.Value, symbol.Symbol(value), "the match has the very emit value",
+							assert.ByIdentity())
 						assert.Equal(t, m.Origin(), alpha.ID,
 							"and the node identity it derives from")
 						assert.Nil(t, m.Directive(),
@@ -83,14 +83,16 @@ func TestTrigger(t *testing.T) {
 			ctx := genContext(t, g, facts, nil)
 			seed(t, ctx, &emit.Struct{Name: "NoOrigin"})
 
+			ran := false
 			p := eidos.NewPlugin("t").
 				Handle(eidos.OnEmit(symbol.KindStruct,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-						t.Error("a value without an origin is not a subject")
+						ran = true
 						return nil
 					})).
 				Build()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.False(t, ran, "a value without an origin is not a subject")
 		})
 	})
 
@@ -213,8 +215,7 @@ func TestTrigger(t *testing.T) {
 
 // A trigger allocates its rule, and its matches' methods allocate what
 // they report, in the ordinary run, which runs no benchmark. The check
-// runs alone, because AllocsPerRun counts every goroutine's allocations
-// and refuses to run beside parallel tests.
+// runs alone, because the count includes every goroutine's allocations.
 func TestTriggerAllocs(t *testing.T) {
 	checkPhaseAllocs(t, triggerCases(t))
 
@@ -299,9 +300,7 @@ func triggerCases(tb assert.TB) []phaseCase {
 			name: "EmitMatch.Origin", allocs: orderAllocs, fresh: seeded,
 			gen: generatorOf(tb, eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, _ *eidos.Emitter) error {
-					if !origins[m.Origin()] {
-						tb.Fatalf("Origin returned %s, which the fixture does not declare", m.Origin())
-					}
+					assert.True(tb, origins[m.Origin()], "Origin returns an identity the fixture declares")
 					return nil
 				})).
 				Build()),

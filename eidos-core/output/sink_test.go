@@ -16,9 +16,10 @@ import (
 // package, so a case pins the bytes and does not mirror the code.
 const packageHash = "sha256:0ad6261536f6380b14ade1a508ac911b8c48230731746e0c76abd26bf3e3a15d"
 
-// allocRuns is the number of calls an allocation check makes: one
-// warm-up call and a hundred counted ones. A check of a call that
-// consumes its sink builds this many sinks before it counts.
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one
+// warm-up call and a hundred counted ones. The check of a call that
+// opens a sink keeps every sink it opened in a list of this capacity,
+// which it sizes before the count.
 const allocRuns = 101
 
 // The allocations of the staging every sink shares, which the

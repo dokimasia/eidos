@@ -4,14 +4,21 @@
 package meta_test
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/meta"
 )
+
+// namespaceIsFirstSegment is the property [FuzzKeyName] and its ForAll
+// twin in [TestKey] state.
+const namespaceIsFirstSegment = "Namespace must return the segment before a name's first dot, " +
+	"and a name without a dot whole"
 
 // A key's spelling resolves at the boundary and its handle fixes the
 // value type, so the namespace a name spells and what a handle reports
@@ -39,6 +46,12 @@ func TestKey(t *testing.T) {
 				assert.Equal(t, tt.give.Namespace(), tt.want, "the namespace is the segment before the first dot")
 			})
 		}
+
+		t.Run("returns the segment before the first dot of any name", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, namespaceIsFirstSegment, namespacesFirstSegment)
+		})
 	})
 
 	t.Run("Name", func(t *testing.T) {
@@ -156,28 +169,29 @@ func BenchmarkKey(b *testing.B) {
 	})
 }
 
-// FuzzKeyName drives the boundary spelling with bytes nothing in
-// this repository wrote: directive parameters arrive as arbitrary
-// text and resolve through these names.
+// FuzzKeyName checks [namespaceIsFirstSegment] on text nothing in this
+// repository wrote: directive parameters arrive as arbitrary text and
+// resolve through these names. Each seed is the choices of one case: a
+// two-byte little-endian length, then the bytes of the name.
 func FuzzKeyName(f *testing.F) {
 	for _, seed := range []string{"shape.role", "shape", "", ".", "a.b.c", "..", "shape."} {
-		f.Add(seed)
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(seed))), seed...))
 	}
 
-	f.Fuzz(func(t *testing.T, in string) {
-		name := meta.KeyName(in)
-		ns := name.Namespace()
+	prop.Fuzz(f, namespaceIsFirstSegment, namespacesFirstSegment)
+}
 
-		if !strings.HasPrefix(in, ns) {
-			t.Fatalf("Namespace(%q) = %q, which the name does not start with", in, ns)
-		}
-		if dot := strings.IndexByte(in, '.'); dot >= 0 && ns != in[:dot] {
-			t.Fatalf("Namespace(%q) = %q, want the segment before the first dot %q",
-				in, ns, in[:dot])
-		} else if dot < 0 && ns != in {
-			t.Fatalf("Namespace(%q) = %q, want the whole name without a separator", in, ns)
-		}
-	})
+// namespacesFirstSegment checks [namespaceIsFirstSegment] on a name
+// that the case draws.
+func namespacesFirstSegment(c *prop.Case) {
+	in := string(c.Draw(prop.Bytes(), "name"))
+	ns := meta.KeyName(in).Namespace()
+	assert.HasPrefix(c, in, ns, "the name must start with its namespace")
+	if dot := strings.IndexByte(in, '.'); dot >= 0 {
+		assert.Equal(c, ns, in[:dot], "the namespace must be the segment before the first dot")
+		return
+	}
+	assert.Equal(c, ns, in, "a name without a separator must be its own namespace")
 }
 
 // registered returns the handle of one key registered under the

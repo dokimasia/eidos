@@ -91,7 +91,7 @@ func TestSignature(t *testing.T) {
 		t.Run("leaves a rest parameter without a type untyped", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, functionOf(t, "(...rest)").Params[0].Type == nil, "the source states none")
+			assert.Nil(t, functionOf(t, "(...rest)").Params[0].Type, "the source states none")
 		})
 
 		t.Run("keeps a parameter's default verbatim", func(t *testing.T) {
@@ -186,7 +186,7 @@ func TestSignature(t *testing.T) {
 }
 
 // functionOf parses one exported function and returns it.
-func functionOf(tb assert.TB, signature string) *node.Function {
+func functionOf(tb testing.TB, signature string) *node.Function {
 	tb.Helper()
 
 	return named[*node.Function](tb, declsOf(tb, "export function "+fnName+signature+" {}\n"), fnName)

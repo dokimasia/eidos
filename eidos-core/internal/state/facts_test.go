@@ -4,6 +4,8 @@
 package state_test
 
 import (
+	"cmp"
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -68,7 +70,8 @@ func TestFacts(t *testing.T) {
 				g := recordedPhases(t, ledger.NewMem(), facts, nil, func(*state.Recorder) {})
 				restored := meta.Restore(facts.Registry(), g.Phases(t.Context()))
 				count, held := meta.Get(restored, recordedSubject, keys.count)
-				assert.True(t, held && count == -7, "the count reads its recorded winner")
+				assert.True(t, held, "the count is stamped")
+				assert.Equal(t, count, -7, "the count reads its recorded winner")
 				_, held = meta.Get(restored, recordedSubject, keys.role)
 				assert.False(t, held, "and the group drop still covers the role")
 				assert.NoError(t, restored.Damaged(), "nothing is damaged")
@@ -151,28 +154,30 @@ func TestFacts(t *testing.T) {
 
 // A subject's claims allocate within their ceiling, and a key's present
 // subjects after the first read allocate nothing, in the ordinary run,
-// which runs no benchmark. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// which runs no benchmark. The first of the 101 calls of each count is
+// the read before it. Each count keeps the first error of its calls,
+// which cmp.Or returns without allocating. The check runs alone, because
+// the count includes every goroutine's allocations.
 func TestFactsAllocs(t *testing.T) {
 	facts, keys := stampedFacts(t)
 	s := recordedPhases(t, ledger.NewMem(), facts, nil, func(*state.Recorder) {}).Phases(t.Context())
-	if _, err := s.Claims(recordedSubject); err != nil {
-		t.Fatalf("Claims before the measurement: unexpected error: %v", err)
-	}
+	var (
+		n   int
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if got, err := s.Claims(recordedSubject); err != nil || len(got) == 0 {
-			t.Fatalf("Claims: %d claims, error %v", len(got), err)
-		}
+		got, cerr := s.Claims(recordedSubject)
+		n, err = len(got), cmp.Or(err, cerr)
 	}, claimsAllocs, "Claims allocates the key, the block and the decoded claims")
-	if _, err := s.Present(keys.flag.Name()); err != nil {
-		t.Fatalf("Present before the measurement: unexpected error: %v", err)
-	}
+	assert.NoError(t, err, "the claims read")
+	assert.InRange(t, n, 1, math.Inf(1), "the subject has claims")
+	key := keys.flag.Name()
 	assert.MaxAllocs(t, func() {
-		if got, err := s.Present(keys.flag.Name()); err != nil || len(got) != 2 {
-			t.Fatalf("Present: %d subjects, error %v", len(got), err)
-		}
+		got, perr := s.Present(key)
+		n, err = len(got), cmp.Or(err, perr)
 	}, 0, "a later Present allocates nothing")
+	assert.NoError(t, err, "the present subjects read")
+	assert.Equal(t, n, 2, "both stamped subjects")
 }
 
 // BenchmarkFacts measures a lookup of the recorded subject's claims and a
@@ -184,11 +189,12 @@ func BenchmarkFacts(b *testing.B) {
 
 	b.Run("PhaseState", func(b *testing.B) {
 		b.Run("Claims", func(b *testing.B) {
-			_, err := s.Claims(recordedSubject)
-			assert.NoError(b, err, "the claims read before the measurement")
-			c := bench.Start(b).MaxAllocs(claimsAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(claimsAllocs)
 			defer c.End()
-			var got []meta.StoredClaim
+			var (
+				got []meta.StoredClaim
+				err error
+			)
 			for c.Loop() {
 				got, err = s.Claims(recordedSubject)
 			}
@@ -197,11 +203,12 @@ func BenchmarkFacts(b *testing.B) {
 		})
 
 		b.Run("Present", func(b *testing.B) {
-			_, err := s.Present(keys.flag.Name())
-			assert.NoError(b, err, "the present table reads before the measurement")
-			c := bench.Start(b).MaxAllocs(0)
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
-			var got []symbol.Identity
+			var (
+				got []symbol.Identity
+				err error
+			)
 			for c.Loop() {
 				got, err = s.Present(keys.flag.Name())
 			}

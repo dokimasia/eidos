@@ -5,12 +5,14 @@ package backendtest_test
 
 import (
 	"errors"
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -42,7 +44,7 @@ func TestBench(t *testing.T) {
 			for u := range f.Emit.Units() {
 				units++
 				decls += len(u.Decls)
-				assert.True(t, len(u.Origins) > 0, "every unit has provenance")
+				assert.NotEmpty(t, u.Origins, "every unit has provenance")
 			}
 			assert.Equal(t, units, backendtest.BenchPackages*backendtest.BenchFiles,
 				"one unit per package file")
@@ -61,8 +63,7 @@ func TestBench(t *testing.T) {
 			f := backendtest.ScaledFixture(t, refused)
 			for u := range f.Emit.Units() {
 				for _, d := range u.Decls {
-					_, out := refused[d.Kind()]
-					assert.False(t, out, "no unit emits a refused kind: "+d.Kind().String())
+					assert.NotContains(t, refused, d.Kind(), "no unit emits a refused kind")
 				}
 			}
 		})
@@ -70,14 +71,15 @@ func TestBench(t *testing.T) {
 		t.Run("cycles the kinds it emits in kind order", func(t *testing.T) {
 			t.Parallel()
 
-			first := unitsOf(t, backendtest.ScaledFixture(t, nil))[0]
-			named := false
-			for _, d := range first.Decls {
-				if fn, isFunction := d.(*emit.Function); isFunction && fn.Name == firstFunction {
-					named = true
+			units := unitsOf(t, backendtest.ScaledFixture(t, nil))
+			assert.NotEmpty(t, units, "the corpus emits units")
+			var functions []string
+			for _, d := range units[0].Decls {
+				if fn, isFunction := d.(*emit.Function); isFunction {
+					functions = append(functions, fn.Name)
 				}
 			}
-			assert.True(t, named, "the corpus opens on the kind that sorts first")
+			assert.Contains(t, functions, firstFunction, "the corpus opens on the kind that sorts first")
 		})
 
 		t.Run("orders every unit the way a flush leaves it", func(t *testing.T) {
@@ -91,7 +93,7 @@ func TestBench(t *testing.T) {
 
 			first := unitsOf(t, backendtest.ScaledFixture(t, nil))
 			second := unitsOf(t, backendtest.ScaledFixture(t, nil))
-			assert.Equal(t, len(first), len(second), "the same unit count")
+			assert.Length(t, second, len(first), "the same unit count")
 			for _, i := range []int{0, len(first) / 2, len(first) - 1} {
 				assert.Equal(t, first[i], second[i],
 					"two builds contain the same unit at "+first[i].Key)
@@ -109,7 +111,8 @@ func TestBench(t *testing.T) {
 				func(tb assert.TB) {
 					backendtest.ScaledFixture(tb, everything)
 				})
-			assert.Contains(t, failure, "refuses every canonical kind",
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"the backend spells a canonical kind, so the corpus emits a declaration"},
 				"the failure names why the corpus is empty")
 		})
 	})
@@ -128,8 +131,8 @@ func TestBench(t *testing.T) {
 				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
 			result := benchRender(setup, roomy)
-			assert.True(t, result.N > 0, "the benchmark ran")
-			assert.True(t, rendered >= result.N, "every iteration rendered")
+			assert.NotEqual(t, result.N, 0, "the benchmark ran")
+			assert.InRange(t, rendered, float64(result.N), math.Inf(1), "every iteration rendered")
 		})
 
 		t.Run("records nothing for a budget stating no ceiling", func(t *testing.T) {
@@ -138,7 +141,7 @@ func TestBench(t *testing.T) {
 			none := benchRender(wellRendered, backendtest.Budget{})
 			some := benchRender(wellRendered, roomy)
 			assert.Equal(t, none.N, 0, "a benchmark without a ceiling records nothing")
-			assert.True(t, some.N > 0, "the same setup under a stated ceiling runs")
+			assert.NotEqual(t, some.N, 0, "the same setup under a stated ceiling runs")
 		})
 
 		t.Run("builds no fixture for a budget stating no ceiling", func(t *testing.T) {
@@ -168,8 +171,9 @@ func TestBench(t *testing.T) {
 				return r, f
 			}
 			result := benchRender(setup, roomy)
-			assert.True(t, result.N > 0, "the benchmark ran")
-			assert.True(t, built != nil && built.Emit.Settled(),
+			assert.NotEqual(t, result.N, 0, "the benchmark ran")
+			assert.NotNil(t, built, "the setup built the corpus")
+			assert.True(t, built.Emit.Settled(),
 				"a backend's corpus settles before the measurement, so the "+
 					"number is the render's alone")
 		})
@@ -204,7 +208,7 @@ func TestBench(t *testing.T) {
 			}
 			result := benchRender(aborting, roomy)
 			assert.Equal(t, result.N, 0, "an aborted render records no number")
-			assert.True(t, rendered > 0, "and the guard read a real render")
+			assert.NotEqual(t, rendered, 0, "and the guard read a real render")
 		})
 
 		t.Run("records nothing for a render returning no file", func(t *testing.T) {
@@ -220,7 +224,7 @@ func TestBench(t *testing.T) {
 			result := benchRender(empty, roomy)
 			assert.Equal(t, result.N, 0,
 				"a number over a partial render measures the wrong thing")
-			assert.True(t, rendered > 0, "and the guard read a real render")
+			assert.NotEqual(t, rendered, 0, "and the guard read a real render")
 		})
 	})
 
@@ -232,8 +236,8 @@ func TestBench(t *testing.T) {
 
 			var setups int
 			result := benchSettle(counted(wellRendered, &setups), roomy)
-			assert.True(t, result.N > 0, "the benchmark ran")
-			assert.True(t, setups >= result.N,
+			assert.NotEqual(t, result.N, 0, "the benchmark ran")
+			assert.InRange(t, setups, float64(result.N), math.Inf(1),
 				"a settled store settles to itself, so every iteration builds one")
 		})
 

@@ -4,8 +4,9 @@
 package classfile_test
 
 import (
+	"cmp"
 	"encoding/binary"
-	"errors"
+	"math"
 	"os"
 	"path"
 	"slices"
@@ -14,6 +15,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/lang/java/frontend/classfile"
 )
@@ -83,6 +85,10 @@ const shortAttribute = "1 bytes are left where 2 are read"
 // descriptor and signature parses into, and the lists of each class's
 // members, attributes and annotations.
 const parseAllocs = 1_767
+
+// parsesOrRefuses is the property [FuzzParse] and its ForAll twin in
+// [TestClass] state.
+const parsesOrRefuses = "Parse must return a class or an error that wraps ErrMalformed, never both"
 
 // The attribute names the assembler writes, which pin the names the
 // reader decodes (§4.7).
@@ -310,7 +316,13 @@ func TestClass(t *testing.T) {
 			t.Parallel()
 
 			c, _ := classfile.Parse([]byte{0xCA})
-			assert.True(t, c == nil, "nothing half-decoded")
+			assert.Nil(t, c, "nothing half-decoded")
+		})
+
+		t.Run("returns a class or an error that wraps ErrMalformed for any bytes", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, parsesOrRefuses, parsedOrRefused)
 		})
 	})
 
@@ -354,7 +366,7 @@ func TestClass(t *testing.T) {
 			b.attrs = append(b.attrs, attr[:len(attr)-1])
 			_, err := classfile.Parse(b.bytes())
 			assert.HasError(t, err, "the length is past the end")
-			assert.True(t, strings.Contains(err.Error(), shortAttribute), "and not a fault of a body left unread")
+			assert.Contains(t, err.Error(), shortAttribute, "and not a fault of a body left unread")
 		})
 
 		t.Run("returns ErrMalformed for an attribute whose decode failed", func(t *testing.T) {
@@ -387,7 +399,7 @@ func TestClass(t *testing.T) {
 		t.Run("decodes no signature for a field whose type uses no type argument", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, fieldNamed(t, fixture(t, boxFile), "hidden").Signature == nil, "int")
+			assert.Nil(t, fieldNamed(t, fixture(t, boxFile), "hidden").Signature, "int")
 		})
 
 		t.Run("decodes a field's flags", func(t *testing.T) {
@@ -429,7 +441,7 @@ func TestClass(t *testing.T) {
 		t.Run("decodes a void method's result as nil", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, methodNamed(t, fixture(t, boxFile), "done", "").Result == nil, "void")
+			assert.Nil(t, methodNamed(t, fixture(t, boxFile), "done", "").Result, "void")
 		})
 
 		t.Run("decodes the exceptions a method declares", func(t *testing.T) {
@@ -459,7 +471,7 @@ func TestClass(t *testing.T) {
 			t.Parallel()
 
 			c := parsedFile(t, plainDir, boxFile)
-			assert.True(t, methodNamed(t, c, "done", "").Parameters == nil, "no MethodParameters")
+			assert.Nil(t, methodNamed(t, c, "done", "").Parameters, "no MethodParameters")
 		})
 
 		t.Run("decodes a method's parameter annotations", func(t *testing.T) {
@@ -474,7 +486,7 @@ func TestClass(t *testing.T) {
 			t.Parallel()
 
 			conv := methodNamed(t, fixture(t, boxFile), "conv", "")
-			assert.True(t, conv.ParamAnnotations == nil, "no parameter of conv is annotated")
+			assert.Nil(t, conv.ParamAnnotations, "no parameter of conv is annotated")
 		})
 
 		t.Run("decodes a method's annotations", func(t *testing.T) {
@@ -571,6 +583,7 @@ func TestClass(t *testing.T) {
 
 			c := fixture(t, boxFile)
 			i := slices.IndexFunc(c.Inner, func(ic classfile.InnerClass) bool { return ic.Inner == boxName+"$1" })
+			assert.NotEqual(t, i, -1, "Box lists Box$1")
 			assert.Equal(t, c.Inner[i].Name, "", "Box$1 has none")
 		})
 	})
@@ -667,44 +680,32 @@ func TestClass(t *testing.T) {
 }
 
 // One pass of the reader over the fixture library allocates within
-// parseAllocs in the ordinary run, which runs no benchmark. The check
-// runs alone, because AllocsPerRun refuses to run beside parallel tests.
+// parseAllocs in the ordinary run, which runs no benchmark. The count
+// keeps the first error of its passes, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestClassAllocs(t *testing.T) {
 	files := libraryFiles(t)
 	var err error
 	assert.MaxAllocs(t, func() {
 		for _, data := range files {
-			if _, err = classfile.Parse(data); err != nil {
-				return
-			}
+			_, perr := classfile.Parse(data)
+			err = cmp.Or(err, perr)
 		}
 	}, parseAllocs, "Parse allocates within its ceiling over the fixture library")
 	assert.NoError(t, err, "every fixture decodes")
 }
 
-// FuzzParse checks that no input panics the reader: every input decodes
-// to a class or returns an error that wraps ErrMalformed, never both.
+// FuzzParse checks [parsesOrRefuses] on bytes nothing in this repository
+// produced. Each seed is the choices of one case: a two-byte
+// little-endian length, then one class file of the fixture library.
 func FuzzParse(f *testing.F) {
-	entries, err := os.ReadDir(classesDir)
-	if err != nil {
-		f.Fatal(err)
+	for _, data := range libraryFiles(f) {
+		assert.InRange(f, len(data), 0, math.MaxUint16, "a class file's length fits the bridge's two bytes")
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(data))), data...))
 	}
-	for _, e := range entries {
-		data, err := os.ReadFile(path.Join(classesDir, e.Name()))
-		if err != nil {
-			f.Fatal(err)
-		}
-		f.Add(data)
-	}
-	f.Fuzz(func(t *testing.T, data []byte) {
-		c, err := classfile.Parse(data)
-		if err != nil && !errors.Is(err, classfile.ErrMalformed) {
-			t.Fatalf("the error %v wraps no ErrMalformed", err)
-		}
-		if (c == nil) == (err == nil) {
-			t.Fatalf("the class %v and the error %v", c, err)
-		}
-	})
+
+	prop.Fuzz(f, parsesOrRefuses, parsedOrRefused)
 }
 
 // BenchmarkClass measures the reader over every class file of the
@@ -714,13 +715,14 @@ func BenchmarkClass(b *testing.B) {
 		files := libraryFiles(b)
 		c := bench.Start(b).MaxAllocs(parseAllocs)
 		defer c.End()
+		var err error
 		for c.Loop() {
 			for _, data := range files {
-				if _, err := classfile.Parse(data); err != nil {
-					b.Fatalf("the fixture decodes: %v", err)
-				}
+				_, perr := classfile.Parse(data)
+				err = cmp.Or(err, perr)
 			}
 		}
+		assert.NoError(b, err, "every fixture decodes")
 	})
 }
 
@@ -761,6 +763,20 @@ func fixtureBytes(tb assert.TB, dir, name string) []byte {
 	data, err := os.ReadFile(path.Join(dir, name+classExt))
 	assert.NoError(tb, err, "the fixture is on disk")
 	return data
+}
+
+// parsedOrRefused checks [parsesOrRefuses] on an input that the case
+// draws: an error wraps ErrMalformed and comes without a class, and a
+// class comes without an error.
+func parsedOrRefused(c *prop.Case) {
+	data := c.Draw(prop.Bytes(), "input")
+	class, err := classfile.Parse(data)
+	if err != nil {
+		assert.ErrorIs(c, err, classfile.ErrMalformed, "Parse must refuse with an error that wraps ErrMalformed")
+		assert.Nil(c, class, "Parse must return no class beside its error")
+		return
+	}
+	assert.NotNil(c, class, "Parse must return a class without an error")
 }
 
 // parsed parses an assembled class file.
@@ -809,7 +825,7 @@ func fieldNamed(tb assert.TB, c *classfile.Class, name string) classfile.Field {
 	tb.Helper()
 
 	i := slices.IndexFunc(c.Fields, func(f classfile.Field) bool { return f.Name == name })
-	assert.True(tb, i >= 0, "the class declares the field")
+	assert.NotEqual(tb, i, -1, "the class declares the field")
 	return c.Fields[i]
 }
 
@@ -822,7 +838,7 @@ func methodNamed(tb assert.TB, c *classfile.Class, name, result string) classfil
 	i := slices.IndexFunc(c.Methods, func(m classfile.Method) bool {
 		return m.Name == name && (result == "" || m.Result != nil && m.Result.BinaryName() == result)
 	})
-	assert.True(tb, i >= 0, "the class declares the method")
+	assert.NotEqual(tb, i, -1, "the class declares the method")
 	return c.Methods[i]
 }
 
@@ -831,7 +847,7 @@ func innerNamed(tb assert.TB, c *classfile.Class, name string) classfile.InnerCl
 	tb.Helper()
 
 	i := slices.IndexFunc(c.Inner, func(ic classfile.InnerClass) bool { return ic.Name == name })
-	assert.True(tb, i >= 0, "the class lists the nested class")
+	assert.NotEqual(tb, i, -1, "the class lists the nested class")
 	return c.Inner[i]
 }
 

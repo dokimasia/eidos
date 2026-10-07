@@ -5,7 +5,6 @@ package conformance_test
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -37,113 +36,110 @@ func TestCorpus(t *testing.T) {
 		})
 	})
 
-	t.Run("Verdict.String", func(t *testing.T) {
+	t.Run("Verdict", func(t *testing.T) {
 		t.Parallel()
 
-		tests := []struct {
-			name string
-			give conformance.Verdict
-			want string
-		}{
-			{name: "returns loads for Loads", give: conformance.Loads, want: "loads"},
-			{name: "returns refuses for Refuses", give: conformance.Refuses, want: "refuses"},
-			{name: "returns projects for Projects", give: conformance.Projects, want: "projects"},
-			{
-				name: "returns projects partly for ProjectsPartly",
-				give: conformance.ProjectsPartly,
-				want: "projects partly",
-			},
-			{name: "returns opaque for Opaque", give: conformance.Opaque, want: "opaque"},
-			{name: "returns the number of a value outside the set", give: conformance.Verdict(9), want: "9"},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("String", func(t *testing.T) {
+			t.Parallel()
 
-				assert.Equal(t, tt.give.String(), tt.want, "the verdict's spelling")
-			})
-		}
+			tests := []struct {
+				name string
+				give conformance.Verdict
+				want string
+			}{
+				{name: "returns loads for Loads", give: conformance.Loads, want: "loads"},
+				{name: "returns refuses for Refuses", give: conformance.Refuses, want: "refuses"},
+				{name: "returns projects for Projects", give: conformance.Projects, want: "projects"},
+				{
+					name: "returns projects partly for ProjectsPartly",
+					give: conformance.ProjectsPartly,
+					want: "projects partly",
+				},
+				{name: "returns opaque for Opaque", give: conformance.Opaque, want: "opaque"},
+				{name: "returns the number of a value outside the set", give: conformance.Verdict(9), want: "9"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					assert.Equal(t, tt.give.String(), tt.want, "the verdict's spelling")
+				})
+			}
+		})
 	})
 
 	t.Run("AssertCoveredInventory", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fails a coverage without a verdict for a feature", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name string
+			give func(c *conformance.Corpus)
+			want []string
+		}{
+			{
+				name: "fails a coverage without a verdict for a feature",
+				give: func(c *conformance.Corpus) { delete(c.Coverage, "interfaces") },
+				want: []string{"the coverage states a verdict for interfaces: " +
+					"silence on a capability is the gap this list exists to close"},
+			},
+			{
+				name: "fails a verdict for a feature outside the inventory",
+				give: func(c *conformance.Corpus) { c.Coverage["warp_drives"] = conformance.Loads },
+				want: []string{"the inventory lists warp_drives, which the coverage names"},
+			},
+			{
+				name: "fails a projection level under a corpus without rules",
+				give: func(c *conformance.Corpus) { c.Coverage["struct_fields"] = conformance.Projects },
+				want: []string{"struct_fields states projects: a corpus without rules states loads or refuses"},
+			},
+			{
+				name: "fails a remainder for a feature outside the inventory",
+				give: func(c *conformance.Corpus) {
+					c.Remainder = map[string][]conformance.Remainder{"warp_drives": nil}
+				},
+				want: []string{"the inventory lists warp_drives, which the remainder names"},
+			},
+			{
+				name: "reports stray remainders in id order",
+				give: func(c *conformance.Corpus) {
+					c.Remainder = map[string][]conformance.Remainder{}
+					for _, id := range []string{"zz_c", "zz_a", "zz_e", "zz_b", "zz_d"} {
+						c.Remainder[id] = nil
+					}
+				},
+				want: []string{
+					"the inventory lists zz_a, which the remainder names",
+					"the inventory lists zz_b, which the remainder names",
+					"the inventory lists zz_c, which the remainder names",
+					"the inventory lists zz_d, which the remainder names",
+					"the inventory lists zz_e, which the remainder names",
+				},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			gapped := scriptedCorpus()
-			delete(gapped.Coverage, "interfaces")
-			msg := assert.Rejects(t, "a coverage silent on one feature", func(tb assert.TB) {
-				conformance.AssertCoveredInventory(tb, gapped)
+				c := scriptedCorpus()
+				tt.give(&c)
+				got := assert.Rejects(t, "the coverage check rejects the corpus", func(tb assert.TB) {
+					conformance.AssertCoveredInventory(tb, c)
+				})
+				assert.Equal(t, contracts(got), tt.want, "naming each feature that breaks a contract, in order")
 			})
-			assert.Contains(t, msg, "interfaces", "naming the silence")
-		})
-
-		t.Run("fails a verdict for a feature outside the inventory", func(t *testing.T) {
-			t.Parallel()
-
-			stray := scriptedCorpus()
-			stray.Coverage["warp_drives"] = conformance.Loads
-			msg := assert.Rejects(t, "a verdict naming no feature", func(tb assert.TB) {
-				conformance.AssertCoveredInventory(tb, stray)
-			})
-			assert.Contains(t, msg, "warp_drives", "naming the stray")
-		})
+		}
 
 		t.Run("fails a load verdict under a corpus with rules", func(t *testing.T) {
 			t.Parallel()
 
 			ruled := scriptedCorpus()
 			ruled.Rules = rulestest.Scripted()
-			msg := assert.Rejects(t, "loads under a corpus with rules", func(tb assert.TB) {
+			got := assert.Rejects(t, "loads under a corpus with rules", func(tb assert.TB) {
 				conformance.AssertCoveredInventory(tb, ruled)
 			})
-			assert.Contains(t, msg, "states the level", "a corpus that projects states the level")
-		})
-
-		t.Run("fails a projection level under a corpus without rules", func(t *testing.T) {
-			t.Parallel()
-
-			leveled := scriptedCorpus()
-			leveled.Coverage["struct_fields"] = conformance.Projects
-			msg := assert.Rejects(t, "a level under a corpus without rules", func(tb assert.TB) {
-				conformance.AssertCoveredInventory(tb, leveled)
-			})
-			assert.Contains(t, msg, "without rules", "which nothing can evaluate")
-		})
-
-		t.Run("fails a remainder for a feature outside the inventory", func(t *testing.T) {
-			t.Parallel()
-
-			strayRemainder := scriptedCorpus()
-			strayRemainder.Remainder = map[string][]conformance.Remainder{"warp_drives": nil}
-			msg := assert.Rejects(t, "a remainder naming no feature", func(tb assert.TB) {
-				conformance.AssertCoveredInventory(tb, strayRemainder)
-			})
-			assert.Contains(t, msg, "warp_drives", "naming the stray")
-		})
-
-		t.Run("reports stray remainders in id order", func(t *testing.T) {
-			t.Parallel()
-
-			strays := []string{"zz_a", "zz_b", "zz_c", "zz_d", "zz_e"}
-			scattered := scriptedCorpus()
-			scattered.Remainder = map[string][]conformance.Remainder{}
-			for _, id := range strays {
-				scattered.Remainder[id] = nil
-			}
-			rec := assert.NewRecorder()
-			conformance.AssertCoveredInventory(rec, scattered)
-			reported := make([]string, 0, len(strays))
-			for _, msg := range rec.Messages() {
-				for _, id := range strays {
-					if strings.Contains(msg, id) {
-						reported = append(reported, id)
-					}
-				}
-			}
-			assert.Equal(t, reported, strays,
-				"one finding per stray, in id order whatever order the map ranges in")
+			assert.Contains(t, contracts(got),
+				"struct_fields states loads: a corpus with rules states projects, projects partly, opaque or refuses",
+				"a corpus that projects states the level of a feature that loads")
 		})
 	})
 
@@ -155,11 +151,13 @@ func TestCorpus(t *testing.T) {
 
 			contradicted := scriptedCorpus()
 			contradicted.Coverage["struct_fields"] = conformance.Refuses
-			msg := assert.Rejects(t, "a refusal the tree contradicts", func(tb assert.TB) {
+			got := assert.Rejects(t, "a refusal the tree contradicts", func(tb assert.TB) {
 				conformance.AssertRefusedFeature(tb, contradicted, store.New(),
 					featureByID(t, "struct_fields"))
 			})
-			assert.Contains(t, msg, "struct_fields", "naming the contradiction")
+			assert.Equal(t, contracts(got), []string{
+				"struct_fields is refused, so the tree spells no file under f/struct_fields: f/struct_fields/a.zz",
+			}, "naming the file that contradicts the refusal")
 		})
 
 		t.Run("fails a refusal the load contradicts", func(t *testing.T) {
@@ -180,10 +178,13 @@ func TestCorpus(t *testing.T) {
 			}), "the hidden package is admitted")
 			g.Freeze()
 
-			msg := assert.Rejects(t, "a refusal the load contradicts", func(tb assert.TB) {
+			got := assert.Rejects(t, "a refusal the load contradicts", func(tb assert.TB) {
 				conformance.AssertRefusedFeature(tb, hidden, g, featureByID(t, "interfaces"))
 			})
-			assert.Contains(t, msg, "f/interfaces", "naming the package the load contains")
+			assert.Equal(t, contracts(got), []string{
+				"interfaces is refused, so the load contains no package it occupies, wherever the spelling is",
+			}, "for the load's contradiction")
+			assert.Equal(t, got[0].Detail["needle"], any("f/interfaces"), "naming the package the load contains")
 		})
 	})
 }

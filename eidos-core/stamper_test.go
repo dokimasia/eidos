@@ -4,6 +4,8 @@
 package eidos_test
 
 import (
+	"cmp"
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -296,10 +298,7 @@ func TestStamper(t *testing.T) {
 				sibling, at = beta.ID, alpha.Pos
 				return sibling
 			})
-			var reported []diag.Diag
-			for d := range ctx.Sink.All() {
-				reported = append(reported, d)
-			}
+			reported := slices.Collect(ctx.Sink.All())
 			assert.Length(t, reported, 1, "the refusal is reported once")
 			assert.Equal(t, reported[0].Code, eidos.RefusedStamp, "the code is RefusedStamp")
 			assert.Equal(t, reported[0].Pos, at, "the finding is at the subject's position")
@@ -311,25 +310,23 @@ func TestStamper(t *testing.T) {
 
 // A stamp allocates what the fact store keeps for the claim in the
 // ordinary run, which runs no benchmark. Each counted call takes a
-// context built before the count, because a call leaves its claims in
-// its fact store. The check runs alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// context built outside the count, because a call leaves its claims in
+// its fact store. Each count keeps the first error of its calls, which
+// cmp.Or returns without allocating. The check runs alone, because the
+// count includes every goroutine's allocations.
 func TestStamperAllocs(t *testing.T) {
 	for _, tt := range stampCases(t) {
-		contexts := make([]*plugin.AnnotatorContext, allocRuns)
-		for i := range contexts {
-			contexts[i] = tt.fresh()
-		}
-		at := 0
+		var (
+			last *plugin.AnnotatorContext
+			err  error
+		)
 		msg := tt.name + " allocates the second key's claim on each target"
-		assert.MaxAllocs(t, func() {
-			if err := tt.ann.Annotate(contexts[at]); err != nil {
-				t.Fatalf("Annotate: unexpected error: %v", err)
-			}
-			at++
+		assert.MaxAllocsWithSetup(t, tt.fresh, func(ctx *plugin.AnnotatorContext) {
+			err = cmp.Or(err, tt.ann.Annotate(ctx))
+			last = ctx
 		}, stampAllocs, msg)
-		tt.check(t, contexts[allocRuns-1])
+		assert.NoError(t, err, "every counted call of "+tt.name+" passes")
+		tt.check(t, last)
 	}
 }
 
@@ -339,9 +336,8 @@ func TestStamperAllocs(t *testing.T) {
 func BenchmarkStamper(b *testing.B) {
 	for _, tt := range stampCases(b) {
 		b.Run(tt.name, func(b *testing.B) {
-			ctx := tt.fresh()
-			assert.NoError(b, tt.ann.Annotate(ctx), "the call before the measurement passes")
-			c := bench.Start(b).MaxAllocs(stampAllocs)
+			var ctx *plugin.AnnotatorContext
+			c := bench.Start(b).Warmup(1).MaxAllocs(stampAllocs)
 			defer c.End()
 			var err error
 			for c.Loop() {

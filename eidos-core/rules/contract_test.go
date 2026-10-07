@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -63,7 +64,7 @@ func TestContract(t *testing.T) {
 			assert.NoError(t, r.Register(source), "a language registers")
 			got, registered := r.For(source.Lang())
 			assert.True(t, registered, "For finds the language")
-			assert.Equal(t, got, source, "For returns the registered rules")
+			assert.Equal(t, got, source, "For returns the registered rules", assert.ByIdentity())
 		})
 
 		t.Run("returns an error for nil rules", func(t *testing.T) {
@@ -233,7 +234,7 @@ func TestContract(t *testing.T) {
 				"PromotionRules":  satisfies[rules.PromotionRules](absent),
 				"EqualityRules":   satisfies[rules.EqualityRules](absent),
 			} {
-				assert.False(t, held, "the absent rules satisfy no "+name)
+				expect.False(t, held, "the absent rules satisfy no "+name)
 			}
 		})
 	})
@@ -379,10 +380,9 @@ func TestContract(t *testing.T) {
 
 // A registry, a language's registration, a lookup, a listing and the
 // absent rules allocate within their ceilings in the ordinary run, which
-// runs no benchmark. Each registration takes a registry built before the
-// count, because a registry registers a language once. The check runs
-// alone, because AllocsPerRun counts every goroutine's allocations and
-// refuses to run beside parallel tests.
+// runs no benchmark. Each registration takes a registry built outside
+// the count, because a registry registers a language once. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestContractAllocs(t *testing.T) {
 	var registry *rules.Registry
 	assert.MaxAllocs(t, func() { registry = rules.NewRegistry() }, newRegistryAllocs,
@@ -390,35 +390,23 @@ func TestContractAllocs(t *testing.T) {
 	assert.Empty(t, registry.Languages(), "NewRegistry returns a registry without a language")
 
 	source := rulestest.Scripted()
-	fresh := make([]*rules.Registry, allocRuns)
-	for i := range fresh {
-		fresh[i] = rules.NewRegistry()
-	}
-	at := 0
-	assert.MaxAllocs(t, func() {
-		if err := fresh[at].Register(source); err != nil {
-			t.Fatalf("Register: unexpected error: %v", err)
-		}
-		at++
-	}, registerAllocs, "Register allocates the map's first group for a first language")
+	var err error
+	assert.MaxAllocsWithSetup(t, rules.NewRegistry, func(r *rules.Registry) { err = r.Register(source) },
+		registerAllocs, "Register allocates the map's first group for a first language")
+	assert.NoError(t, err, "Register records the first language")
 
 	lang := source.Lang()
-	assert.MaxAllocs(t, func() {
-		if _, registered := registry.For(lang); registered {
-			t.Fatal("For found a language the registry does not register")
-		}
-	}, absentAllocs, "For allocates the absent rules for an unregistered language")
+	var registered bool
+	assert.MaxAllocs(t, func() { _, registered = registry.For(lang) }, absentAllocs,
+		"For allocates the absent rules for an unregistered language")
+	assert.False(t, registered, "For finds no language the registry does not register")
 	assert.NoError(t, registry.Register(source), "the scripted language registers")
-	assert.MaxAllocs(t, func() {
-		if _, registered := registry.For(lang); !registered {
-			t.Fatal("For missed the registered language")
-		}
-	}, 0, "For allocates nothing for a registered language")
-	assert.MaxAllocs(t, func() {
-		if len(registry.Languages()) != 1 {
-			t.Fatal("Languages listed another number of languages")
-		}
-	}, languagesAllocs, "Languages allocates the list")
+	assert.MaxAllocs(t, func() { _, registered = registry.For(lang) }, 0,
+		"For allocates nothing for a registered language")
+	assert.True(t, registered, "For finds the registered language")
+	var langs []symbol.Lang
+	assert.MaxAllocs(t, func() { langs = registry.Languages() }, languagesAllocs, "Languages allocates the list")
+	assert.Equal(t, langs, []symbol.Lang{lang}, "Languages lists the registered language")
 
 	var absent rules.SourceRules
 	assert.MaxAllocs(t, func() { absent = rules.Absent(unregistered) }, absentAllocs,
@@ -430,6 +418,7 @@ func TestContractAllocs(t *testing.T) {
 	for _, tt := range spellings(t) {
 		msg := tt.name + " allocates nothing for a declared value"
 		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
+		tt.check(t)
 	}
 }
 
@@ -530,6 +519,7 @@ func BenchmarkContract(b *testing.B) {
 			for c.Loop() {
 				tt.call()
 			}
+			tt.check(b)
 		})
 	}
 }
@@ -542,38 +532,31 @@ func satisfies[C any](r rules.SourceRules) bool {
 }
 
 // spellings returns a call of the String method of each vocabulary the
-// contract declares, on a declared value. Each call checks the spelling
-// it returned.
+// contract declares, on a declared value, and the check of the spelling
+// the last call returned.
 func spellings(tb assert.TB) []allocCall {
 	tb.Helper()
 
 	param, ret, model := rules.ParamContext, rules.ReturnError, rules.ErrorsResultType
 	contribution, shadowing := rules.ContributesImplements, rules.ShadowLinearise
+	spelled := func(want string, got *string) func(assert.TB) {
+		return func(tb assert.TB) { assert.Equal(tb, *got, want, "String returns the declared spelling") }
+	}
+	var params, rets, models, contributions, shadowings string
 	return []allocCall{
-		{name: "ParamRole.String", call: func() {
-			if param.String() != "context" {
-				tb.Fatalf("ParamRole.String returned another spelling")
-			}
-		}},
-		{name: "ReturnRole.String", call: func() {
-			if ret.String() != "error" {
-				tb.Fatalf("ReturnRole.String returned another spelling")
-			}
-		}},
-		{name: "ErrorModel.String", call: func() {
-			if model.String() != "result-type" {
-				tb.Fatalf("ErrorModel.String returned another spelling")
-			}
-		}},
-		{name: "Contribution.String", call: func() {
-			if contribution.String() != "implements" {
-				tb.Fatalf("Contribution.String returned another spelling")
-			}
-		}},
-		{name: "Shadowing.String", call: func() {
-			if shadowing.String() != "linearise" {
-				tb.Fatalf("Shadowing.String returned another spelling")
-			}
-		}},
+		{name: "ParamRole.String", call: func() { params = param.String() }, check: spelled("context", &params)},
+		{name: "ReturnRole.String", call: func() { rets = ret.String() }, check: spelled("error", &rets)},
+		{
+			name: "ErrorModel.String", call: func() { models = model.String() },
+			check: spelled("result-type", &models),
+		},
+		{
+			name: "Contribution.String", call: func() { contributions = contribution.String() },
+			check: spelled("implements", &contributions),
+		},
+		{
+			name: "Shadowing.String", call: func() { shadowings = shadowing.String() },
+			check: spelled("linearise", &shadowings),
+		},
 	}
 }

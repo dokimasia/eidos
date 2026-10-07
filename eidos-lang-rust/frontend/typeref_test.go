@@ -282,14 +282,14 @@ func TestTypeRef(t *testing.T) {
 
 // typeIn parses the fixture crate whose root states a prelude and then
 // a struct H of one field of a type, and returns the field's type.
-func typeIn(tb assert.TB, prelude, typ string) *node.TypeRef {
+func typeIn(tb testing.TB, prelude, typ string) *node.TypeRef {
 	tb.Helper()
 
 	return structOf(tb, prelude+"pub struct H {\n    pub f: "+typ+",\n}\n", "H").Fields[0].Type
 }
 
 // typeOf returns the reference a field of a type lowers to.
-func typeOf(tb assert.TB, typ string) *node.TypeRef {
+func typeOf(tb testing.TB, typ string) *node.TypeRef {
 	tb.Helper()
 
 	return typeIn(tb, "", typ)

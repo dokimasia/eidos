@@ -5,6 +5,7 @@ package load_test
 
 import (
 	"crypto/sha256"
+	"math"
 	"path"
 	"testing"
 	"testing/fstest"
@@ -156,7 +157,7 @@ func TestDoor(t *testing.T) {
 
 			_, report, _ := loadTree(t, depTree(), with(recorded()), stores(depStore()))
 			doors := report.Doors[frontendtest.ScriptedID]
-			assert.True(t, len(doors) > 1, "the partition's record comes first, then each round's")
+			assert.InRange(t, len(doors), 2, math.Inf(1), "the partition's record comes first, then each round's")
 			assert.NotEmpty(t, doors[1].Needs, "the first round's record lists its needs")
 		})
 	})

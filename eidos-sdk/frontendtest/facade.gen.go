@@ -24,18 +24,20 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 )
 
-// AssertDeterministicParse loads the fixture twice and compares
-// what each load recorded: the graphs byte for byte, the attached
+// AssertDeterministicParse loads the fixture once per call of
+// [assert.Deterministic] and compares what each load recorded with
+// what the first one did: the graph byte for byte, the attached
 // directives and classification stamps, and the findings in report
-// order. Reparsing unchanged files yields the same identities,
-// which every later comparison by identity depends on.
+// order. Reparsing unchanged files yields the same identities, which
+// every later comparison by identity depends on.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	core.AssertDeterministicParse(tb, setup)
 }
 
 // AssertPositionedDiagnostics checks every finding's address: a
 // finding without a position or an origin is a defect in the
-// frontend that reported it.
+// frontend that reported it. Each finding reports on its own, under
+// its code and its message.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	core.AssertPositionedDiagnostics(tb, setup)
 }
@@ -46,7 +48,8 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 // is stamped by the load, and the recorded stamps apply cleanly
 // under those keys, the way the workspace run applies them. A load
 // that stamps under a fixture declaring no keys fails, because
-// nothing could apply its stamps.
+// nothing could apply its stamps, and so does a fixture declaring keys
+// over a load that stamps nothing.
 func AssertClassified(tb assert.TB, setup Setup) {
 	core.AssertClassified(tb, setup)
 }

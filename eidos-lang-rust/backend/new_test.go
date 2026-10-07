@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -132,11 +133,10 @@ func TestNew(t *testing.T) {
 			holder := declared(holderName)
 			holder.Fields.Append(&emit.Field{Name: "row", Type: imported(storeModule, rowName)})
 			body, sink := rendered(t, holder)
-			for d := range sink.All() {
-				t.Errorf("unexpected finding: %s", d.Msg)
-			}
-			assert.Contains(t, body, "use crate::store::Row;\n", "the item's use")
-			assert.Contains(t, body, "    pub row: Row,\n", "the field through the item's name")
+			assert.Empty(t, slices.Collect(sink.All()), "the file renders clean")
+			assert.That(t, body).
+				Contains("use crate::store::Row;\n", "the item's use").
+				Contains("    pub row: Row,\n", "the field through the item's name")
 		})
 
 		t.Run("returns a backend that names the settled struct in a borrow", func(t *testing.T) {
@@ -149,9 +149,7 @@ func TestNew(t *testing.T) {
 				Elems:    []*emit.TypeRef{{Spelling: doubleName}},
 			}})
 			body, sink := rendered(t, declared(doubleName), holder)
-			for d := range sink.All() {
-				t.Errorf("unexpected finding: %s", d.Msg)
-			}
+			assert.Empty(t, slices.Collect(sink.All()), "the file renders clean")
 			assert.Contains(t, body, "    pub row: &'static "+settledDouble+",\n",
 				"the borrow names the settled struct, its lifetime as written")
 		})

@@ -227,7 +227,8 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, names(set), []string{"item"}, "the member arrives")
 			assert.Equal(t, set.Members[0].Symbol.(*node.Field).Type.Spelling, intSpelling,
 				"with the argument bound in place of the parameter")
-			assert.True(t, set.Members[0].Symbol != box.Fields[0], "on a copy, never the graph's node")
+			assert.NotEqual(t, set.Members[0].Symbol, symbol.Symbol(box.Fields[0]), "on a copy, never the graph's node",
+				assert.ByIdentity())
 
 			v, _, _ := viewOver(t, g)
 			plain := rules.NewBound(nongeneric{scripted()}, v, nil)
@@ -570,14 +571,14 @@ func TestMembers(t *testing.T) {
 					Path: "m.proto", Decls: node.Symbols{foreign},
 				}},
 			})
-			asked := map[symbol.Lang]bool{}
+			var asked []symbol.Lang
 			v, _, _ := viewOver(t, g)
 			b := rules.NewBound(scripted(), v, func(lang symbol.Lang) rules.SourceRules {
-				asked[lang] = true
+				asked = append(asked, lang)
 				return rules.Absent(lang)
 			})
 			set, _ := b.MembersOf(host)
-			assert.True(t, asked["proto"], "the contributor's language is asked for its policy")
+			assert.Contains(t, asked, symbol.Lang("proto"), "the contributor's language is asked for its policy")
 			assert.Equal(t, names(set), []string{"id"}, "and its declared members arrive under it")
 		})
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -70,7 +71,7 @@ func TestLower(t *testing.T) {
 
 			out, err := backend.Lower(&emit.Struct{Name: rowName})
 			assert.NoError(t, err, "a struct is not lowered")
-			assert.Length(t, out, 0, "a nil list keeps the declaration unchanged")
+			assert.Empty(t, out, "a nil list keeps the declaration unchanged")
 		})
 
 		t.Run("returns one interface per variant before the union alias", func(t *testing.T) {
@@ -81,7 +82,9 @@ func TestLower(t *testing.T) {
 			_, first := out[0].(*emit.Interface)
 			_, second := out[1].(*emit.Interface)
 			_, last := out[2].(*emit.Alias)
-			assert.True(t, first && second && last, "the interfaces, then the alias")
+			expect.True(t, first, "the first variant's interface comes first")
+			expect.True(t, second, "the second variant's interface follows")
+			expect.True(t, last, "the union alias comes last")
 		})
 
 		t.Run("names a variant's interface in its final spelling", func(t *testing.T) {
@@ -227,7 +230,7 @@ func lowerCalls() []allocCall {
 			call: func() { out, err = backend.Lower(row) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower passes the struct")
-				assert.Length(tb, out, 0, "Lower keeps the struct in place")
+				assert.Empty(tb, out, "Lower keeps the struct in place")
 			},
 		},
 		{

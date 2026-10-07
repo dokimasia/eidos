@@ -4,6 +4,7 @@
 package emit_test
 
 import (
+	"cmp"
 	"strconv"
 	"testing"
 
@@ -313,44 +314,49 @@ func TestBody(t *testing.T) {
 
 // The questions the render pass asks of a body allocate nothing, a
 // declaration allocates its slot, and the codec allocates what its
-// encoder does. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// encoder does. Each count keeps the first error of its calls, which
+// cmp.Or returns without allocating. The check runs alone, because the
+// count includes every goroutine's allocations.
 func TestBodyAllocs(t *testing.T) {
 	body := scaffold()
 	body.Declare(checksSlot)
+	var (
+		form emit.Form
+		err  error
+	)
 	assert.MaxAllocs(t, func() {
-		if form, err := body.Form(); err != nil || form != emit.FormStmts {
-			t.Fatal("the scaffold body returned another form")
-		}
+		var ferr error
+		form, ferr = body.Form()
+		err = cmp.Or(err, ferr)
 	}, 0, "Form allocates nothing for a body with one form")
-	form := emit.FormTemplate
-	assert.MaxAllocs(t, func() {
-		if form.String() != "template" {
-			t.Fatal("String spelled another form")
-		}
-	}, 0, "String allocates nothing for a declared form")
-	assert.MaxAllocs(t, func() {
-		if body.IsZero() {
-			t.Fatal("the scaffold body reported empty")
-		}
-	}, 0, "IsZero allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, declared := body.Slot(checksSlot); !declared {
-			t.Fatal("the declared slot was not found")
-		}
-	}, 0, "Slot allocates nothing")
+	assert.NoError(t, err, "the scaffold body has one form")
+	assert.Equal(t, form, emit.FormStmts, "the scaffolding form")
+	declaredForm := emit.FormTemplate
+	var spelt string
+	assert.MaxAllocs(t, func() { spelt = declaredForm.String() }, 0, "String allocates nothing for a declared form")
+	assert.Equal(t, spelt, "template", "String spells FormTemplate")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = body.IsZero() }, 0, "IsZero allocates nothing")
+	assert.False(t, zero, "the scaffold body has content")
+	var declared bool
+	assert.MaxAllocs(t, func() { _, declared = body.Slot(checksSlot) }, 0, "Slot allocates nothing")
+	assert.True(t, declared, "the declared slot is found")
 	assert.MaxAllocs(t, func() { body.Declare(checksSlot) }, 0, "Declare allocates nothing for a declared name")
+	assert.Length(t, body.Slots, 1, "the declaration returns the existing slot")
 	assert.MaxAllocs(t, func() {
 		var fresh emit.Body
 		fresh.Declare(checksSlot)
 	}, declareAllocs, "Declare allocates the slot and the list of slots on an empty body")
 
 	m := &emit.Method{Name: methodName, Body: scaffold()}
+	var encoded []byte
 	assert.MaxAllocs(t, func() {
-		if _, err := emit.EncodeJSON(m); err != nil {
-			t.Fatalf("EncodeJSON: unexpected error: %v", err)
-		}
+		var eerr error
+		encoded, eerr = emit.EncodeJSON(m)
+		err = cmp.Or(err, eerr)
 	}, encodeAllocs, "EncodeJSON allocates what the encoder does and the spliced result")
+	assert.NoError(t, err, "the bodied method encodes")
+	assert.Contains(t, string(encoded), `"body"`, "with its body")
 }
 
 // BenchmarkBody measures the per-callable operations the render pass
@@ -435,11 +441,8 @@ func BenchmarkBody(b *testing.B) {
 		m := &emit.Method{Name: methodName, Body: scaffold()}
 		// The harness collects garbage before this run, which empties the
 		// encoder's pool of encoding state. One encoding before the
-		// contract counts pools the state again.
-		if _, err := emit.EncodeJSON(m); err != nil {
-			b.Fatalf("EncodeJSON: unexpected error: %v", err)
-		}
-		c := bench.Start(b).MaxAllocs(encodeAllocs + encodeStateAllocs)
+		// measurement pools the state again.
+		c := bench.Start(b).Warmup(1).MaxAllocs(encodeAllocs + encodeStateAllocs)
 		defer c.End()
 		var (
 			encoded []byte

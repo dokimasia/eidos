@@ -44,11 +44,8 @@ func TestCodec(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				b, err := state.AppendRegion(nil, stamped(tt.give))
-				assert.NoError(t, err, "the value encodes")
-				got, err := state.DecodeRegion(b)
-				assert.NoError(t, err, "and decodes")
-				assert.Equal(t, got, stamped(tt.give), "to the value that encoded it")
+				assert.RoundTrip(t, func(r *store.Region) ([]byte, error) { return state.AppendRegion(nil, r) },
+					state.DecodeRegion, stamped(tt.give), "the value decodes to the value that encoded it")
 			})
 		}
 
@@ -71,11 +68,8 @@ func TestCodec(t *testing.T) {
 				Code: diag.Code{Prefix: "PLG", Number: 7}, Severity: diag.SeverityError, Pos: at,
 				Msg: "broken", Origin: "plug", Related: []position.Pos{at, {File: "b.zz"}},
 			}}}
-			b, err := state.AppendRegion(nil, r)
-			assert.NoError(t, err, "the finding encodes")
-			got, err := state.DecodeRegion(b)
-			assert.NoError(t, err, "and decodes")
-			assert.Equal(t, got, r, "to the finding that encoded it")
+			assert.RoundTrip(t, func(r *store.Region) ([]byte, error) { return state.AppendRegion(nil, r) },
+				state.DecodeRegion, r, "the finding decodes to the finding that encoded it")
 		})
 	})
 

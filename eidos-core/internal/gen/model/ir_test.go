@@ -4,6 +4,7 @@
 package model_test
 
 import (
+	"cmp"
 	"path/filepath"
 	"testing"
 
@@ -95,8 +96,7 @@ func TestIR(t *testing.T) {
 		t.Run("returns no field for a field without a tag", func(t *testing.T) {
 			t.Parallel()
 
-			_, found := fieldsOf(t)["Untagged"]
-			assert.False(t, found, "a field with no eidos tag is not a model field")
+			assert.NotContains(t, fieldsOf(t), "Untagged", "a field with no eidos tag is not a model field")
 		})
 
 		t.Run("returns the kernel's own kinds", func(t *testing.T) {
@@ -114,8 +114,7 @@ func TestIR(t *testing.T) {
 				byName[kind.Name] = kind
 			}
 			for _, name := range []string{"Package", "Struct", "Method", "Import", "Export"} {
-				_, ok := byName[name]
-				assert.True(t, ok, "every family representative lowers")
+				assert.Contains(t, byName, name, "every family representative lowers")
 			}
 
 			var methods model.FieldSpec
@@ -194,7 +193,7 @@ func TestIR(t *testing.T) {
 			root := schemaModule(t, reachSchema)
 			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
 			assert.NoError(t, err, "the schema lowers")
-			assert.Length(t, schema.Enums, 0, "no symbol package, no enum")
+			assert.Empty(t, schema.Enums, "no symbol package, no enum")
 		})
 
 		t.Run("returns no enum without a module root", func(t *testing.T) {
@@ -202,7 +201,7 @@ func TestIR(t *testing.T) {
 
 			schema, err := model.Lower(validSchema, "")
 			assert.NoError(t, err, "the fixture schema lowers")
-			assert.Length(t, schema.Enums, 0, "no module, no symbol package")
+			assert.Empty(t, schema.Enums, "no module, no symbol package")
 		})
 
 		t.Run("returns an error for a schema directory it cannot read", func(t *testing.T) {
@@ -296,11 +295,13 @@ func TestIR(t *testing.T) {
 
 				_, err := model.Lower(tt.dir, "")
 				assert.HasError(t, err, "a schema breaking the contract lowers nothing")
+				text := err.Error()
 				for _, want := range tt.wants {
-					assert.Contains(t, err.Error(), want, "naming what broke it")
+					assert.Contains(t, text, want, "naming what broke it")
 				}
-				assert.Contains(t, err.Error(), ".go:", "at a schema position")
-				assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
+				assert.That(t, text).
+					Contains(".go:", "at a schema position").
+					HasPrefix("model: ", "under the package prefix")
 			})
 		}
 	})
@@ -350,20 +351,22 @@ func TestIR(t *testing.T) {
 
 // A lowering of the fixture schema allocates within its ceiling, and a
 // side's questions allocate nothing, in the ordinary run, which runs no
-// benchmark. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// benchmark. The count keeps the first error of its calls, which cmp.Or
+// returns without allocating. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestIRAllocs(t *testing.T) {
+	var err error
 	assert.MaxAllocs(t, func() {
-		if _, err := model.Lower(validSchema, ""); err != nil {
-			t.Fatalf("Lower: unexpected error: %v", err)
-		}
+		_, lerr := model.Lower(validSchema, "")
+		err = cmp.Or(err, lerr)
 	}, lowerValidAllocs, "Lower allocates the parse, the type-check and the schema")
+	assert.NoError(t, err, "the fixture schema lowers")
 	side := model.SideBoth
-	assert.MaxAllocs(t, func() {
-		if !side.OnNode() || !side.OnEmit() {
-			t.Fatal("an untagged field missed a model")
-		}
-	}, 0, "OnNode and OnEmit allocate nothing")
+	var onNode, onEmit bool
+	assert.MaxAllocs(t, func() { onNode, onEmit = side.OnNode(), side.OnEmit() }, 0,
+		"OnNode and OnEmit allocate nothing")
+	assert.True(t, onNode, "an untagged field is on the node model")
+	assert.True(t, onEmit, "and on the emit model")
 }
 
 // BenchmarkIR measures a lowering of the fixture schema after one
@@ -371,11 +374,12 @@ func TestIRAllocs(t *testing.T) {
 func BenchmarkIR(b *testing.B) {
 	b.Run("Lower", func(b *testing.B) {
 		b.Run("the fixture schema", func(b *testing.B) {
-			_, err := model.Lower(validSchema, "")
-			assert.NoError(b, err, "the schema lowers before the measurement")
-			c := bench.Start(b).MaxAllocs(lowerValidAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(lowerValidAllocs)
 			defer c.End()
-			var schema model.Schema
+			var (
+				schema model.Schema
+				err    error
+			)
 			for c.Loop() {
 				schema, err = model.Lower(validSchema, "")
 			}

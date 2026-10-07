@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/backend/backendtest"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -37,7 +38,7 @@ func TestAssertStamped(t *testing.T) {
 			func(tb assert.TB) {
 				backendtest.AssertStamped(tb, unterminated, fixtureContract(tb))
 			})
-		assert.Contains(t, failure, "stamps",
+		assert.Equal(t, coretest.Contracts(failure), []string{"the rendered file stamps: a.txt"},
 			"the check names the step that refused")
 	})
 
@@ -56,8 +57,10 @@ func TestAssertStamped(t *testing.T) {
 			func(tb assert.TB) {
 				backendtest.AssertStamped(tb, unsorted, fixtureContract(tb))
 			})
-		assert.Contains(t, failure, "derivation",
-			"the check names the frame's derivation")
+		assert.Equal(t, coretest.Contracts(failure), []string{
+			"the file's derivation is distinct and sorted: a.txt",
+			"the frame records the derivation the file declared: a.txt",
+		}, "the check names the frame's derivation, which the frame then sorts")
 	})
 
 	t.Run("rejects sources the file did not sort", func(t *testing.T) {
@@ -75,11 +78,11 @@ func TestAssertStamped(t *testing.T) {
 			func(tb assert.TB) {
 				backendtest.AssertStamped(tb, unsorted, fixtureContract(tb))
 			})
-		assert.Contains(t, failure, "sources",
-			"the check names what the frame derives from")
-		assert.Contains(t, failure, "distinct and sorted",
-			"and refuses them before the frame reorders them, so the "+
-				"failure is not the file's missing emitter")
+		assert.Equal(t, coretest.Contracts(failure), []string{
+			"the file's sources are distinct and sorted: a.txt",
+			"and the sources it derives from: a.txt",
+		}, "the check refuses the sources before the frame reorders them, so the "+
+			"failure is not the file's missing emitter")
 	})
 
 	t.Run("reports every file the frame refuses", func(t *testing.T) {
@@ -92,14 +95,13 @@ func TestAssertStamped(t *testing.T) {
 			}, nil
 		})
 
-		rec := assert.NewRecorder()
-		backendtest.AssertStamped(rec, faulty, fixtureContract(t))
-		assert.Equal(t, len(rec.Failures()), 2,
-			"a file the frame refuses is reported and the next one is still read")
-		for i, name := range []string{"a.txt", "b.txt"} {
-			assert.Contains(t, rec.Failures()[i].Contract, name,
-				"each refusal names the file it read")
-		}
+		failure := assert.Rejects(t, "two files the frame refuses must fail", func(tb assert.TB) {
+			backendtest.AssertStamped(tb, faulty, fixtureContract(tb))
+		})
+		assert.Equal(t, coretest.Contracts(failure), []string{
+			"the rendered file stamps: a.txt",
+			"the rendered file stamps: b.txt",
+		}, "a file the frame refuses is reported and the next one is still read")
 	})
 }
 

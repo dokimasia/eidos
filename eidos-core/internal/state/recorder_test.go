@@ -264,9 +264,8 @@ func TestRecorder(t *testing.T) {
 
 // A lane allocates only to grow its buffers, which double when they fill,
 // and a recorder only its lanes and the lists it keeps, in the ordinary
-// run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// run, which runs no benchmark. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestRecorderAllocs(t *testing.T) {
 	reads := readsOf(t, nil, meta.FactRef{Subject: recordedSubject, Key: edgeKey})
 	inv := plugin.Invocation{Match: generated(recordedSubject), Reads: reads}

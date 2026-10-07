@@ -54,7 +54,7 @@ func TestDecl(t *testing.T) {
 			gb, _ := parsedSource(t, "pub union U {\n    a: u32,\n    b: f32,\n}\n")
 			u := named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "U")
 			assert.Length(t, u.Fields, 2, "its fields")
-			assert.True(t, stamped(gb, u, string(rust.UnionKey)), "and the union mark")
+			assert.Contains(t, stampKeys(gb, u), rust.UnionKey, "and the union mark")
 		})
 
 		t.Run("stamps a struct's lifetime parameters, which the model has no parameter for", func(t *testing.T) {
@@ -233,7 +233,7 @@ func TestDecl(t *testing.T) {
 
 			alias := traitOf(t, "    type Item;\n").Types[0].(*node.Alias)
 			assert.Equal(t, alias.Name, "Item", "the associated type")
-			assert.True(t, alias.Target == nil, "the implementation supplies the target")
+			assert.Nil(t, alias.Target, "the implementation supplies the target")
 		})
 
 		t.Run("lowers an associated type's default as its target", func(t *testing.T) {
@@ -377,7 +377,7 @@ func TestDecl(t *testing.T) {
 				"printf")
 			assert.Length(t, fn.Params, 2, "the variadic is a parameter")
 			assert.Equal(t, fn.Params[1].Variadic, symbol.VariadicPositional, "that collects positions")
-			assert.True(t, fn.Params[1].Type == nil, "and states no type")
+			assert.Nil(t, fn.Params[1].Type, "and states no type")
 		})
 
 		t.Run("leaves out a parameter a cfg predicate keeps out", func(t *testing.T) {
@@ -564,7 +564,7 @@ func TestDecl(t *testing.T) {
 
 // shallowDecls parses the fixture crate whose library root is src at
 // signature depth and returns the declarations of the crate root.
-func shallowDecls(tb assert.TB, src string) node.Symbols {
+func shallowDecls(tb testing.TB, src string) node.Symbols {
 	tb.Helper()
 
 	gb, _ := parsedTree(tb, crateTree(map[string]string{libRoot: src}), libRoot, plugin.DepthSignatures, nil)
@@ -591,7 +591,7 @@ func paramNames(params []*node.Param) []string {
 
 // traitOf parses the fixture crate whose root declares a pub trait T of
 // a body and returns the trait.
-func traitOf(tb assert.TB, body string) *node.Interface {
+func traitOf(tb testing.TB, body string) *node.Interface {
 	tb.Helper()
 
 	return named[*node.Interface](tb, declsOf(tb, "pub trait T {\n"+body+"}\n"), "T")

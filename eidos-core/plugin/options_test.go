@@ -235,8 +235,7 @@ func TestOptions(t *testing.T) {
 // sets they keep, and nothing for a plugin without the surface, in the
 // ordinary run, which runs no benchmark. The plugins are interface
 // values made once, so no check counts their conversion. The check runs
-// alone, because AllocsPerRun counts every goroutine's allocations and
-// refuses to run beside parallel tests.
+// alone, because the count includes every goroutine's allocations.
 func TestOptionsAllocs(t *testing.T) {
 	lawful, bare := optionPlugins()
 	var errs []error
@@ -292,10 +291,9 @@ func BenchmarkOptions(b *testing.B) {
 	b.Run("EncodeOptions", func(b *testing.B) {
 		for _, tt := range encodings {
 			b.Run(tt.name, func(b *testing.B) {
-				_, err := plugin.EncodeOptions(tt.give)
-				assert.NoError(b, err, "the options encode before the measurement")
-				c := bench.Start(b).MaxAllocs(tt.allocs)
+				c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 				defer c.End()
+				var err error
 				for c.Loop() {
 					_, err = plugin.EncodeOptions(tt.give)
 				}

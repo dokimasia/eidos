@@ -4,9 +4,10 @@
 package golang_test
 
 import (
-	"context"
 	"os"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/conformance"
 	golang "go.dokimi.dev/eidos/conformance/lang/go"
@@ -48,9 +49,7 @@ func TestCorpus(t *testing.T) {
 // installed, and both change without a change to the load.
 func BenchmarkCorpus(b *testing.B) {
 	stores, err := gofrontend.Stores(os.Getenv)
-	if err != nil {
-		b.Fatalf("the machine's module cache and standard library resolve: %v", err)
-	}
+	assert.NoError(b, err, "the machine's module cache and standard library resolve")
 	c := golang.Corpus(os.DirFS(repositoryRoot))
 
 	b.Run("Corpus", func(b *testing.B) {
@@ -59,16 +58,15 @@ func BenchmarkCorpus(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				sink := diag.NewSink()
-				_, loaded, loadErr := load.Load(context.Background(), load.Config{
+				_, loaded, loadErr := load.Load(b.Context(), load.Config{
 					FS:        c.Sources,
 					Frontends: []plugin.Frontend{c.Frontend},
 					Sink:      sink,
 					Brand:     frontendtest.Brand,
 					Stores:    stores,
 				})
-				if loadErr != nil || sink.Failed() {
-					b.Fatalf("the repository loads without an error: %v", loadErr)
-				}
+				assert.NoError(b, loadErr, "the repository loads")
+				assert.False(b, sink.Failed(), "the load reports no error finding")
 				report = loaded
 			}
 			var rounds, workspace, dependency int
@@ -80,9 +78,7 @@ func BenchmarkCorpus(b *testing.B) {
 					dependency++
 				}
 			}
-			if dependency == 0 {
-				b.Fatal("the dependency rounds return units")
-			}
+			assert.NotEqual(b, dependency, 0, "the dependency rounds return units")
 			b.ReportMetric(float64(rounds), "rounds")
 			b.ReportMetric(float64(workspace), "workspace-units")
 			b.ReportMetric(float64(dependency), "dependency-units")

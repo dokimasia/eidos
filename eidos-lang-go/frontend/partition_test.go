@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -48,7 +47,7 @@ func TestPartition(t *testing.T) {
 			"nested/z.go": {Data: []byte("package nested\n")},
 		}
 		f := frontend.New(nil)
-		parts, err := f.Partition(context.Background(), []plugin.SourceRef{
+		parts, err := f.Partition(t.Context(), []plugin.SourceRef{
 			{Path: "a/deep/y.go"}, {Path: "a/x.go"}, {Path: "nested/z.go"},
 		}, treeReader{tree})
 		assert.NoError(t, err, "the tree partitions")
@@ -78,7 +77,7 @@ func TestPartition(t *testing.T) {
 		}
 		f := frontend.New(nil)
 		u := unitOf(t, f, tree, "a/x.go")
-		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+		assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 		assert.Equal(t, u.Graph().Packages()[0].ID.Package, "example.test/fix/a",
 			"module path plus the directory under it")
 	})
@@ -94,7 +93,7 @@ func TestPartition(t *testing.T) {
 		}
 		reads := &countingReader{tree: tree, count: map[string]int{}}
 		f := frontend.New(nil)
-		_, err := f.Partition(context.Background(), []plugin.SourceRef{
+		_, err := f.Partition(t.Context(), []plugin.SourceRef{
 			{Path: "a/x/x.go"}, {Path: "a/y/y.go"}, {Path: "a/z/z.go"},
 		}, reads)
 		assert.NoError(t, err, "the tree partitions")
@@ -109,7 +108,7 @@ func TestPartition(t *testing.T) {
 		tree := fstest.MapFS{"f/one/x.go": {Data: []byte("package one\n")}}
 		f := frontend.New(nil)
 		u := unitOf(t, f, tree, "f/one/x.go")
-		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+		assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 		assert.Equal(t, u.Graph().Packages()[0].ID.Package, "f/one",
 			"a moduleless tree loads under its directory paths")
 	})
@@ -182,7 +181,7 @@ func TestPartition(t *testing.T) {
 		t.Run("stamps no module identity on a dependency package", func(t *testing.T) {
 			t.Parallel()
 
-			gb, err := dependencyUnit(depWorkspace(), depStores(), []string{appGoMod}, cached(libDir+"/pkg.go"))
+			gb, err := dependencyUnit(t, depWorkspace(), depStores(), []string{appGoMod}, cached(libDir+"/pkg.go"))
 			assert.NoError(t, err, "the unit parses")
 			assert.Empty(t, gb.StampRecords(), "a dependency is governed by no workspace module")
 		})
@@ -228,7 +227,7 @@ func TestPartition(t *testing.T) {
 				if tree == nil {
 					tree = depWorkspace()
 				}
-				_, err := dependencyUnit(tree, depStores(), []string{appGoMod}, tt.member)
+				_, err := dependencyUnit(t, tree, depStores(), []string{appGoMod}, tt.member)
 				assert.HasError(t, err, "the unit's place does not derive")
 				assert.Contains(t, err.Error(), tt.want, "the error names what failed")
 			})
@@ -237,10 +236,11 @@ func TestPartition(t *testing.T) {
 }
 
 // dependencyUnit parses one dependency unit over a workspace and its
-// stores at signature depth, its members declaring the shared inputs,
-// and returns the unit's builder and the parse's error.
+// stores at signature depth under the test's context, its members
+// declaring the shared inputs, and returns the unit's builder and the
+// parse's error.
 func dependencyUnit(
-	tree fstest.MapFS, stores map[string]fs.FS, shared []string, members ...string,
+	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, shared []string, members ...string,
 ) (*plugin.GraphBuilder, error) {
 	refs := make([]plugin.SourceRef, len(members))
 	for i, m := range members {
@@ -249,12 +249,12 @@ func dependencyUnit(
 	f := frontend.New(nil)
 	u := plugin.NewSourceUnit(refs, storeTree{tree, stores}, plugin.DepthSignatures,
 		f.Syntax(), brand, diag.NewSink(), f.Name())
-	return u.Graph(), f.Parse(context.Background(), u)
+	return u.Graph(), f.Parse(tb.Context(), u)
 }
 
 // dependencyPackage parses one dependency unit over a workspace and the
 // fixture stores and returns the path of the one package it declares.
-func dependencyPackage(tb assert.TB, tree fstest.MapFS, shared []string, members ...string) string {
+func dependencyPackage(tb testing.TB, tree fstest.MapFS, shared []string, members ...string) string {
 	tb.Helper()
 
 	return dependencyPackageIn(tb, tree, depStores(), shared, members...)
@@ -263,11 +263,11 @@ func dependencyPackage(tb assert.TB, tree fstest.MapFS, shared []string, members
 // dependencyPackageIn parses one dependency unit over a workspace and
 // the stores given and returns the path of the one package it declares.
 func dependencyPackageIn(
-	tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, shared []string, members ...string,
+	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, shared []string, members ...string,
 ) string {
 	tb.Helper()
 
-	gb, err := dependencyUnit(tree, stores, shared, members...)
+	gb, err := dependencyUnit(tb, tree, stores, shared, members...)
 	assert.NoError(tb, err, "the unit parses")
 	assert.Length(tb, gb.Packages(), 1, "the unit declares one package")
 	return gb.Packages()[0].ID.Package

@@ -13,6 +13,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// fixtureLoads is the contract Frozen states for the packages it
+// loads, as its record states it.
+const fixtureLoads = "the fixture's packages load: a case whose fixture would not load is not testing what it says it is"
+
 // The graph fixtures decide what a case starts from, so what they
 // hand back has to be the state the case claims to be testing.
 func TestGraph(t *testing.T) {
@@ -44,7 +48,7 @@ func TestGraph(t *testing.T) {
 			pkg := coretest.Package(coretest.StorePath)
 			got := assert.Rejects(t, "a duplicate package fails the fixture",
 				func(tb assert.TB) { coretest.Frozen(tb, pkg, pkg) })
-			assert.Contains(t, got, "fixture",
+			assert.Equal(t, coretest.Contracts(got), []string{fixtureLoads},
 				"and fails for the reason the helper is about")
 		})
 	})
@@ -87,8 +91,10 @@ func TestGraph(t *testing.T) {
 			t.Parallel()
 
 			pkg := coretest.Package(coretest.StorePath)
-			assert.Rejects(t, "the reader fixture carries the load check",
+			got := assert.Rejects(t, "the reader fixture carries the load check",
 				func(tb assert.TB) { coretest.Reading(tb, nil, pkg, pkg) })
+			assert.Equal(t, coretest.Contracts(got), []string{fixtureLoads},
+				"and fails for the reason Frozen is about")
 		})
 	})
 }

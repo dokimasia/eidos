@@ -106,8 +106,8 @@ func TestDiag(t *testing.T) {
 		var d diag.Diag
 		assert.Equal(t, d.Severity, diag.SeverityError,
 			"a zero Diag does not downgrade itself")
-		assert.True(t, d.Code.IsZero(), "a zero Diag names no code")
-		assert.True(t, d.Pos.IsZero(),
+		assert.Equal(t, d.Code, diag.Code{}, "a zero Diag names no code")
+		assert.Equal(t, d.Pos, position.Pos{},
 			"a zero Diag carries no position, so a finding reported without one is detectable")
 	})
 
@@ -137,11 +137,9 @@ func TestDiag(t *testing.T) {
 // benchmark.
 func TestDiagZeroAlloc(t *testing.T) {
 	first, second := ordered()
-	assert.MaxAllocs(t, func() {
-		if first.Compare(second) >= 0 {
-			t.Fatal("Compare ordered the earlier finding after the later one")
-		}
-	}, 0, "Compare allocates nothing")
+	var got int
+	assert.MaxAllocs(t, func() { got = first.Compare(second) }, 0, "Compare allocates nothing")
+	assert.Equal(t, got, -1, "Compare orders the earlier finding first")
 }
 
 // BenchmarkDiag measures the canonical order of two findings that

@@ -140,7 +140,7 @@ func TestExport(t *testing.T) {
 
 			free := &emit.Constant{Name: "limit", Value: "1"}
 			doc := exportOf(t, capitalizing(), settleUnit("svc", "svc/a.src", free))
-			assert.True(t, exported(t, doc, "limit").Origin.IsZero(), "the constant's origin is zero")
+			assert.Equal(t, exported(t, doc, "limit").Origin, symbol.Identity{}, "the constant's origin is zero")
 		})
 
 		t.Run("reads every name as emitted for a nil store", func(t *testing.T) {
@@ -166,9 +166,11 @@ func TestExport(t *testing.T) {
 		t.Run("sorts one key's declarations by file", func(t *testing.T) {
 			t.Parallel()
 
-			doc := keyed(1)
-			assert.Equal(t, []string{doc.Symbols[0].File, doc.Symbols[1].File},
-				[]string{exportFile, exportOther}, "the files of one key")
+			var files []string
+			for _, s := range keyed(1).Symbols {
+				files = append(files, s.File)
+			}
+			assert.Equal(t, files, []string{exportFile, exportOther}, "the files of one key")
 		})
 	})
 
@@ -193,7 +195,7 @@ func TestExport(t *testing.T) {
 
 			missing := key
 			missing.Name = "absent"
-			assert.Length(t, keyed(3).Find(missing), 0, "the declarations under an unlisted key")
+			assert.Empty(t, keyed(3).Find(missing), "the declarations under an unlisted key")
 		})
 
 		t.Run("returns a result whose capacity ends at its last match", func(t *testing.T) {
@@ -206,25 +208,18 @@ func TestExport(t *testing.T) {
 }
 
 // NewExport allocates its result and its sorted declarations, and Find
-// allocates nothing. The checks run alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// allocates nothing. The checks run alone, because the count includes
+// every goroutine's allocations.
 func TestExportAllocs(t *testing.T) {
 	files := keyedFiles(1000)
-	built := testing.AllocsPerRun(10, func() {
-		if len(plugin.NewExport(exportPlan, files, nil).Symbols) != 2000 {
-			t.Fatal("NewExport lists other than the files' 2,000 declarations")
-		}
-	})
-	assert.Equal(t, built, 2.0, "NewExport allocates its result and its sorted declarations")
-	doc := plugin.NewExport(exportPlan, files, nil)
+	var doc plugin.ExportDoc
+	assert.MaxAllocs(t, func() { doc = plugin.NewExport(exportPlan, files, nil) }, 2,
+		"NewExport allocates its result and its sorted declarations")
+	assert.Length(t, doc.Symbols, 2000, "NewExport lists the files' 2,000 declarations")
 	key := plugin.ExportKey{Origin: settleOrigin("row500", symbol.KindStruct), Plugin: exportPlugin, Name: "row500"}
-	found := testing.AllocsPerRun(100, func() {
-		if len(doc.Find(key)) != 2 {
-			t.Fatal("Find returns other than the key's two declarations")
-		}
-	})
-	assert.Equal(t, found, 0.0, "Find allocates nothing")
+	var found []plugin.ExportedSymbol
+	assert.MaxAllocs(t, func() { found = doc.Find(key) }, 0, "Find allocates nothing")
+	assert.Length(t, found, 2, "Find returns the key's two declarations")
 }
 
 // BenchmarkExport measures an export of 1,000 structs in each of two
@@ -241,9 +236,7 @@ func BenchmarkExport(b *testing.B) {
 		for c.Loop() {
 			got = plugin.NewExport(exportPlan, files, nil)
 		}
-		if len(got.Symbols) != 2000 {
-			b.Fatalf("NewExport lists %d declarations", len(got.Symbols))
-		}
+		assert.Length(b, got.Symbols, 2000, "NewExport lists the files' 2,000 declarations")
 	})
 
 	b.Run("Find", func(b *testing.B) {
@@ -254,9 +247,7 @@ func BenchmarkExport(b *testing.B) {
 		for c.Loop() {
 			got = doc.Find(key)
 		}
-		if len(got) != 2 {
-			b.Fatalf("Find returns %d declarations", len(got))
-		}
+		assert.Length(b, got, 2, "Find returns the key's two declarations")
 	})
 }
 

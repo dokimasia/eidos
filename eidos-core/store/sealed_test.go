@@ -9,9 +9,12 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -183,7 +186,7 @@ func TestSealed(t *testing.T) {
 			for _, want := range []node.Declaration{f.store, f.index} {
 				got, held := g.Lookup(want.Identity())
 				assert.True(t, held, "Lookup returns a declaration of either part")
-				assert.True(t, got == symbol.Symbol(want), "the region's own declaration")
+				assert.Equal(t, got, symbol.Symbol(want), "the region's own declaration", assert.ByIdentity())
 			}
 		})
 
@@ -213,14 +216,15 @@ func TestSealed(t *testing.T) {
 			const readers = 8
 			f := newSplit()
 			g, src := f.sealed()
-			var wg sync.WaitGroup
-			for range readers {
-				wg.Go(func() {
-					g.Lookup(f.store.ID)
-					g.Lookup(f.index.ID)
-				})
+			outcomes := history.Concurrently(readers, time.Minute, func(int) (any, error) {
+				_, store := g.Lookup(f.store.ID)
+				_, index := g.Lookup(f.index.ID)
+				return store && index, nil
+			})
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "every reader finishes")
+				expect.Equal(t, o.Output, any(true), "every reader finds both parts")
 			}
-			wg.Wait()
 			assert.Equal(t, src.decoded(), []int{1, 0, 1}, "each region decodes once")
 		})
 
@@ -261,7 +265,7 @@ func TestSealed(t *testing.T) {
 			fromFirst, held := g.PackageOf(f.store.ID)
 			assert.True(t, held, "the first part's declaration has a package")
 			fromSecond, _ := g.PackageOf(f.index.ID)
-			assert.True(t, fromFirst == fromSecond, "both parts share one merged package")
+			assert.Equal(t, fromSecond, fromFirst, "both parts share one merged package", assert.ByIdentity())
 			assert.Equal(t, filePaths(fromFirst), []string{firstFile, secondFile},
 				"whose files are both parts' files")
 		})
@@ -507,8 +511,8 @@ func TestSealed(t *testing.T) {
 
 // TestSealedZeroAlloc checks that a read of a built index allocates
 // nothing: every lookup, and every enumeration ranged directly, once
-// each has decoded its regions. The check runs alone, because
-// AllocsPerRun refuses to run beside parallel tests.
+// each has decoded its regions. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestSealedZeroAlloc(t *testing.T) {
 	f := newSplit()
 	g, _ := f.sealed()
@@ -516,16 +520,11 @@ func TestSealedZeroAlloc(t *testing.T) {
 	for range g.Packages() { // ranging is what decodes every region
 	}
 
-	assert.MaxAllocs(t, func() {
-		if _, held := g.Lookup(f.store.ID); !held {
-			t.Fatal("Lookup misses a declaration")
-		}
-	}, 0, "Lookup allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, held := g.PackageOf(f.store.ID); !held {
-			t.Fatal("PackageOf misses a declaration")
-		}
-	}, 0, "PackageOf allocates nothing")
+	var held bool
+	assert.MaxAllocs(t, func() { _, held = g.Lookup(f.store.ID) }, 0, "Lookup allocates nothing")
+	assert.True(t, held, "Lookup finds the declaration")
+	assert.MaxAllocs(t, func() { _, held = g.PackageOf(f.store.ID) }, 0, "PackageOf allocates nothing")
+	assert.True(t, held, "PackageOf finds the declaration's package")
 	assert.MaxAllocs(t, func() {
 		for range g.ByKind(symbol.KindStruct) {
 		}
@@ -534,21 +533,14 @@ func TestSealedZeroAlloc(t *testing.T) {
 		for range g.ByDirective("stub") {
 		}
 	}, 0, "ByDirective allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if len(g.DirectivesOf(f.store.ID)) == 0 {
-			t.Fatal("DirectivesOf misses an instance")
-		}
-	}, 0, "DirectivesOf allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if len(g.StampsOf(f.store.ID)) == 0 {
-			t.Fatal("StampsOf misses a stamp")
-		}
-	}, 0, "StampsOf allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if !g.Holds(f.store.ID) {
-			t.Fatal("Holds misses a declaration")
-		}
-	}, 0, "Holds allocates nothing")
+	var raws []directive.Raw
+	assert.MaxAllocs(t, func() { raws = g.DirectivesOf(f.store.ID) }, 0, "DirectivesOf allocates nothing")
+	assert.NotEmpty(t, raws, "DirectivesOf returns the declaration's instances")
+	var stamps []meta.RawStamp
+	assert.MaxAllocs(t, func() { stamps = g.StampsOf(f.store.ID) }, 0, "StampsOf allocates nothing")
+	assert.NotEmpty(t, stamps, "StampsOf returns the declaration's stamps")
+	assert.MaxAllocs(t, func() { held = g.Holds(f.store.ID) }, 0, "Holds allocates nothing")
+	assert.True(t, held, "Holds reports the declaration")
 	assert.MaxAllocs(t, func() {
 		for range g.Packages() {
 		}
@@ -581,29 +573,25 @@ func BenchmarkSealed(b *testing.B) {
 		for c.Loop() {
 			_, held = g.Lookup(id)
 		}
-		if !held {
-			b.Fatalf("Lookup(%v) = false, want the declaration", id)
-		}
+		assert.True(b, held, "Lookup finds the declaration")
 	})
 
 	b.Run("ByKind", func(b *testing.B) {
 		g := store.Sealed(summaries)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		seen := 0
-		// The first pass runs before the contract counts, at the call site
-		// it measures. It decodes the regions, and the runtime builds the
+		// One warm-up iteration runs at the call site the contract
+		// measures. It decodes the regions, and the runtime builds the
 		// site's 48-byte cache for converting a declaration to a symbol. A
 		// pass at any other call site builds a cache of its own.
-		for first := true; first || c.Loop(); first = false {
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
+		defer c.End()
+		seen := 0
+		for c.Loop() {
 			seen = 0
 			for range g.ByKind(symbol.KindStruct) {
 				seen++
 			}
 		}
-		if seen != packages*files*decls {
-			b.Fatalf("ByKind returned %d declarations, want %d", seen, packages*files*decls)
-		}
+		assert.Equal(b, seen, packages*files*decls, "ByKind returns every declaration")
 	})
 }
 
@@ -648,16 +636,20 @@ func warm(g *store.Graph, id symbol.Identity) {
 	}
 }
 
-// packageAt returns the package of one path a graph enumerates.
+// packageAt returns the package of one path a graph enumerates. It
+// stops the check, naming the paths the graph enumerates, where none is
+// the path.
 func packageAt(tb testing.TB, g *store.Graph, path string) *node.Package {
 	tb.Helper()
 
+	var paths []string
 	for pkg := range g.Packages() {
 		if pkg.ID.Package == path {
 			return pkg
 		}
+		paths = append(paths, pkg.ID.Package)
 	}
-	tb.Fatalf("no package %s", path)
+	assert.Contains(tb, paths, path, "the graph enumerates the package")
 	return nil
 }
 

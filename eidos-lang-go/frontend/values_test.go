@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -63,7 +62,7 @@ func TestStampConstValues(t *testing.T) {
 			[]plugin.SourceRef{{Path: "p/a.go"}, {Path: "p/b.go"}}, tree,
 			plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name(),
 		)
-		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+		assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 		values := stampsOf(u.Graph(), string(golang.ConstValueKey))
 		assert.Equal(t, values, []any{"1024"},
 			"the package evaluates as one scope, whichever file declared the type")

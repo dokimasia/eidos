@@ -146,7 +146,8 @@ func TestEffects(t *testing.T) {
 
 			got := fieldNames(weave(t, oneWorker, manyInstances, immediately))
 			assert.Length(t, got, manyInstances, "every invocation appended once")
-			assert.True(t, slices.IsSorted(got), "the appends follow the gating instances' order")
+			assert.Pairwise(t, got, func(earlier, later string) bool { return earlier < later },
+				"the appends follow the gating instances' order")
 		})
 
 		t.Run("applies slot appends in canonical match order when two workers interleave", func(t *testing.T) {
@@ -215,7 +216,8 @@ func TestEffects(t *testing.T) {
 
 			got := warnEach(t, oneWorker, manyStructs, immediately)
 			assert.Length(t, got, manyStructs, "every subject reported once")
-			assert.True(t, slices.IsSorted(got), "the findings follow the subjects' order")
+			assert.Pairwise(t, got, func(earlier, later string) bool { return earlier < later },
+				"the findings follow the subjects' order")
 		})
 
 		t.Run("reports findings in canonical match order when two workers interleave", func(t *testing.T) {
@@ -306,9 +308,9 @@ func TestEffects(t *testing.T) {
 		t.Run("stamps on eight workers what one worker stamps", func(t *testing.T) {
 			t.Parallel()
 
-			got := stampEach(t, eightWorkers)
-			assert.Length(t, got, manyStructs, "every subject is stamped")
-			assert.Equal(t, got, stampEach(t, oneWorker), "the facts do not depend on the worker count")
+			assert.That(t, stampEach(t, eightWorkers)).
+				Length(manyStructs, "every subject is stamped").
+				Equal(stampEach(t, oneWorker), "the facts do not depend on the worker count")
 		})
 
 		t.Run("stamps the first invocation's value in canonical match order when two workers interleave",

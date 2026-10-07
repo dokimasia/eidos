@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
@@ -32,9 +33,9 @@ import (
 
 // What the broken fixtures add: a source file without a package line, a
 // file no run generates, another tool's output in the tree under its
-// brand, the plan a second composition or a rewriting ledger names, and
-// the digest of no bytes, which a rewriting ledger records, with its hex
-// digits apart because a diff splits the digest after its name.
+// brand, the plan a second composition or a rewriting ledger names, the
+// digest of no bytes, which a rewriting ledger records, and the warning
+// a frontend reports without a position.
 const (
 	brokenFile                = "svc/broken/bad.zz"
 	brokenSource              = "type Lost string\n"
@@ -43,9 +44,24 @@ const (
 	foreignBody               = "type Other struct{}\n"
 	otherBrand   output.Brand = "other"
 	otherPlan                 = "other"
-	emptyHex                  = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	emptyDigest               = "sha256:" + emptyHex
+	emptyDigest               = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	warned                    = "a warning the fixture reports"
 )
+
+// The contracts of the checks, each before or after the path it names.
+const (
+	lists           = "the record lists "
+	wanted          = ", which the fixture wants"
+	changes         = "a second run changes no byte of "
+	moves           = "a second run moves the mtime of no file: "
+	relocatedBytes  = "a run in another directory generates the same bytes"
+	relocatedRecord = "a run in another directory records the same files"
+)
+
+// manifestFile is the record's document that lists genFile: the
+// document of the path's bucket in the state directory, named with the
+// extension the ledger stores every document under.
+var manifestFile = ledger.ManifestPath(fixtureBrand) + "/" + manifest.BucketOf(genFile) + ".json"
 
 // errLocked is what the locked ledger's open returns.
 var errLocked = errors.New("pipelinetest_test: the state directory is locked")
@@ -75,20 +91,26 @@ func TestChecks(t *testing.T) {
 				brokenFile: {Data: []byte(brokenSource)},
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a source file the frontend reports an Error for", func(tb assert.TB) {
+			records := assert.Rejects(t, "a source file the frontend reports an Error for", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, broken, root)
 			})
-			assert.Contains(t, msg, frontendtest.ScriptedBadFile.String(), "the rejection names the finding's code")
+			assert.Equal(t, coretest.Contracts(records), []string{
+				"the run reports no Error: " + frontendtest.ScriptedBadFile.String() + " " + brokenFile +
+					` opens with "type", not a package line at ` + brokenFile + ":1:0",
+				"the run returns no error",
+			}, "the rejection names the finding's code and position, then the run's error")
 		})
 
 		t.Run("rejects a finding without a position", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a warning no reader can open", func(tb assert.TB) {
+			records := assert.Rejects(t, "a warning no reader can open", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, over(&warning{Scripted: frontendtest.NewScripted()}), root)
 			})
-			assert.Contains(t, msg, "has no position", "the rejection names what is missing")
+			assert.Equal(t, coretest.Contracts(records), []string{
+				"the finding states a file: " + frontendtest.ScriptedBadFile.String() + " " + warned,
+			}, "the rejection names the finding without a file")
 		})
 
 		t.Run("rejects a run that returns an error", func(t *testing.T) {
@@ -101,10 +123,14 @@ func TestChecks(t *testing.T) {
 					Plans(plan(planName, mirror())).Build()
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a ledger that does not open", func(tb assert.TB) {
+			records := assert.Rejects(t, "a ledger that does not open", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, locked, root)
 			})
-			assert.Contains(t, msg, errLocked.Error(), "the rejection names the run's error")
+			assert.Equal(t, coretest.Contracts(records), []string{"the run returns no error"},
+				"the rejection names the run's error")
+			got, _ := records[0].Got()
+			err, _ := got.(error)
+			assert.ErrorIs(t, err, errLocked, "the record contains the ledger's error")
 		})
 
 		t.Run("rejects a composition of two plans", func(t *testing.T) {
@@ -117,20 +143,23 @@ func TestChecks(t *testing.T) {
 					Plans(plan(planName, mirror()), plan(otherPlan, other)).Build()
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture of more than one plan", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture of more than one plan", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, twice, root)
 			})
-			assert.Contains(t, msg, "one plan", "the rejection names the plan count the suite checks")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the suite checks one plan, and the composition runs one"},
+				"the rejection names the plan count the suite checks")
 		})
 
 		t.Run("rejects a fixture that states no tree", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture with nothing to copy", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture with nothing to copy", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, pipelinetest.Fixture{Compose: compose}, root)
 			})
-			assert.Contains(t, msg, "no tree", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states a tree"},
+				"the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects a fixture that states no composition", func(t *testing.T) {
@@ -139,10 +168,11 @@ func TestChecks(t *testing.T) {
 			bare := fixture()
 			bare.Compose = nil
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a fixture with nothing to run", func(tb assert.TB) {
+			records := assert.Rejects(t, "a fixture with nothing to run", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, bare, root)
 			})
-			assert.Contains(t, msg, "no composition", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states a composition"},
+				"the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects a composition that does not build", func(t *testing.T) {
@@ -151,24 +181,23 @@ func TestChecks(t *testing.T) {
 			unbranded := fixture()
 			unbranded.Compose = func(string) (*workspace.Workspace, error) { return workspace.New().Build() }
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a composition without a brand", func(tb assert.TB) {
+			records := assert.Rejects(t, "a composition without a brand", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, unbranded, root)
 			})
-			assert.Contains(t, msg, "composes", "the rejection names the step that failed")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture's workspace composes"},
+				"the rejection names the step that failed")
 		})
 
 		t.Run("rejects a directory that already contains the tree", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			assert.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, filepath.FromSlash(rowFile))), 0o755),
-				"the source's directory is made")
-			assert.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(rowFile)), []byte(rowSource), 0o644),
-				"the source is placed")
-			msg := assert.Rejects(t, "a directory the tree cannot copy into", func(tb assert.TB) {
+			root := files.Workspace(t, files.Tree{rowFile: files.Text(rowSource)})
+			records := assert.Rejects(t, "a directory the tree cannot copy into", func(tb assert.TB) {
 				pipelinetest.AssertClean(tb, fixture(), root)
 			})
-			assert.Contains(t, msg, "copies", "the rejection names the step that failed")
+			assert.Equal(t, coretest.Contracts(records),
+				[]string{"the fixture's tree copies into the run's directory"},
+				"the rejection names the step that failed")
 		})
 	})
 
@@ -186,41 +215,41 @@ func TestChecks(t *testing.T) {
 			pipelinetest.AssertGenerated(t, shared, t.TempDir())
 		})
 
-		t.Run("rejects a file whose bytes differ from the wanted bytes", func(t *testing.T) {
-			t.Parallel()
+		wants := []struct {
+			name string
+			want map[string][]byte
+		}{
+			{
+				name: "rejects a file whose bytes differ from the wanted bytes",
+				want: map[string][]byte{genFile: []byte(userStamped)},
+			},
+			{
+				name: "rejects a generated file the fixture does not list",
+				want: map[string][]byte{},
+			},
+			{
+				name: "rejects a wanted file the run does not generate",
+				want: map[string][]byte{genFile: []byte(genStamped), missingFile: []byte(genStamped)},
+			},
+		}
+		for _, tt := range wants {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			stale := fixture()
-			stale.Want = map[string][]byte{genFile: []byte(userStamped)}
-			root := t.TempDir()
-			msg := assert.Rejects(t, "a golden file the run does not reproduce", func(tb assert.TB) {
-				pipelinetest.AssertGenerated(tb, stale, root)
+				golden := fixture()
+				golden.Want = tt.want
+				root := t.TempDir()
+				records := assert.Rejects(t, "a golden tree the run does not reproduce", func(tb assert.TB) {
+					pipelinetest.AssertGenerated(tb, golden, root)
+				})
+				assert.Equal(t, coretest.Contracts(records), []string{
+					"the files under the brand's frame are the fixture's wanted files, byte for byte",
+				}, "the rejection names the generated tree")
+				got, _ := records[0].Got()
+				assert.Equal(t, got, any(map[string]string{genFile: genStamped}),
+					"the record shows the tree the run generated")
 			})
-			assert.Contains(t, msg, "ForRow", "the rejection shows the generated bytes")
-		})
-
-		t.Run("rejects a generated file the fixture does not list", func(t *testing.T) {
-			t.Parallel()
-
-			short := fixture()
-			short.Want = map[string][]byte{}
-			root := t.TempDir()
-			msg := assert.Rejects(t, "a generated file no golden covers", func(tb assert.TB) {
-				pipelinetest.AssertGenerated(tb, short, root)
-			})
-			assert.Contains(t, msg, genFile, "the rejection names the unlisted file")
-		})
-
-		t.Run("rejects a wanted file the run does not generate", func(t *testing.T) {
-			t.Parallel()
-
-			long := fixture()
-			long.Want = map[string][]byte{genFile: []byte(genStamped), missingFile: []byte(genStamped)}
-			root := t.TempDir()
-			msg := assert.Rejects(t, "a golden file the run never writes", func(tb assert.TB) {
-				pipelinetest.AssertGenerated(tb, long, root)
-			})
-			assert.Contains(t, msg, missingFile, "the rejection names the missing file")
-		})
+		}
 	})
 
 	t.Run("AssertRecorded", func(t *testing.T) {
@@ -236,16 +265,20 @@ func TestChecks(t *testing.T) {
 					Plans(plan(planName, mirror())).Build()
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a ledger that leaves no record on disk", func(tb assert.TB) {
+			records := assert.Rejects(t, "a ledger that leaves no record on disk", func(tb assert.TB) {
 				pipelinetest.AssertRecorded(tb, elsewhere, root)
 			})
-			assert.Contains(t, msg, "record", "the rejection names the missing record")
+			assert.Equal(t, coretest.Contracts(records), []string{lists + genFile + wanted},
+				"the rejection names the wanted file the record omits")
 		})
 
 		edits := []struct {
-			name string
-			edit func(manifest.Manifest) manifest.Manifest
-			want string
+			name     string
+			edit     func(manifest.Manifest) manifest.Manifest
+			contract string
+			// got is the value the record shows, and nil for a membership
+			// check, whose record states none.
+			got any
 		}{
 			{
 				name: "rejects a record that lists a file under another plan",
@@ -255,7 +288,8 @@ func TestChecks(t *testing.T) {
 					}
 					return m
 				},
-				want: otherPlan,
+				contract: lists + genFile + " under the composition's plan",
+				got:      otherPlan,
 			},
 			{
 				name: "rejects a record whose digest is not the file's",
@@ -265,7 +299,8 @@ func TestChecks(t *testing.T) {
 					}
 					return m
 				},
-				want: emptyHex,
+				contract: "the record states the digest of " + genFile,
+				got:      emptyDigest,
 			},
 			{
 				name: "rejects a record that lists a file the fixture does not want",
@@ -276,7 +311,7 @@ func TestChecks(t *testing.T) {
 					}
 					return m
 				},
-				want: missingFile,
+				contract: "the fixture wants " + missingFile + ", which the record lists",
 			},
 			{
 				name: "rejects a record that omits a wanted file",
@@ -284,7 +319,7 @@ func TestChecks(t *testing.T) {
 					m.Files = nil
 					return m
 				},
-				want: genFile,
+				contract: lists + genFile + wanted,
 			},
 		}
 		for _, tt := range edits {
@@ -292,10 +327,13 @@ func TestChecks(t *testing.T) {
 				t.Parallel()
 
 				root := t.TempDir()
-				msg := assert.Rejects(t, "a record other than the run's", func(tb assert.TB) {
-					pipelinetest.AssertRecorded(tb, rewritten(tt.edit), root)
+				records := assert.Rejects(t, "a record other than the run's", func(tb assert.TB) {
+					pipelinetest.AssertRecorded(tb, rewritten(t, tt.edit), root)
 				})
-				assert.Contains(t, msg, tt.want, "the rejection shows the recorded difference")
+				assert.Equal(t, coretest.Contracts(records), []string{tt.contract},
+					"the rejection names the entry that differs")
+				got, _ := records[0].Got()
+				assert.Equal(t, got, tt.got, "the record shows the recorded value")
 			})
 		}
 	})
@@ -315,10 +353,15 @@ func TestChecks(t *testing.T) {
 				return onDisk(root, frontendtest.NewScripted()).Plans(plan(planName, counting)).Build()
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a generator that counts its runs", func(tb assert.TB) {
+			records := assert.Rejects(t, "a generator that counts its runs", func(tb assert.TB) {
 				pipelinetest.AssertIdempotent(tb, restless, root)
 			})
-			assert.Contains(t, msg, "ForRow2", "the rejection shows the second run's bytes")
+			assert.Equal(t, coretest.Contracts(records), []string{
+				changes + manifestFile, moves + manifestFile, changes + genFile, moves + genFile,
+			}, "the rejection names the record and the generated file that the second run rewrote, in path order")
+			got, _ := records[2].Got()
+			body, _ := got.(string)
+			assert.Contains(t, body, "ForRow2", "the record shows the second run's bytes")
 		})
 
 		t.Run("rejects a sink that rewrites an unchanged file", func(t *testing.T) {
@@ -334,10 +377,11 @@ func TestChecks(t *testing.T) {
 					Plans(plan(planName, mirror())).Build()
 			}
 			root := t.TempDir()
-			msg := assert.Rejects(t, "a sink that touches what it committed", func(tb assert.TB) {
+			records := assert.Rejects(t, "a sink that touches what it committed", func(tb assert.TB) {
 				pipelinetest.AssertIdempotent(tb, rewriter, root)
 			})
-			assert.Contains(t, msg, genFile, "the rejection names the touched file")
+			assert.Equal(t, coretest.Contracts(records), []string{moves + genFile},
+				"the rejection names the touched file")
 		})
 	})
 
@@ -355,10 +399,15 @@ func TestChecks(t *testing.T) {
 				return onDisk(root, frontendtest.NewScripted()).Plans(plan(planName, placed)).Build()
 			}
 			one, two := t.TempDir(), t.TempDir()
-			msg := assert.Rejects(t, "a generator that spells its directory", func(tb assert.TB) {
+			records := assert.Rejects(t, "a generator that spells its directory", func(tb assert.TB) {
 				pipelinetest.AssertRelocated(tb, rooted, one, two)
 			})
-			assert.Contains(t, msg, "same bytes", "the rejection names the bytes that differ")
+			assert.Equal(t, coretest.Contracts(records), []string{relocatedBytes, relocatedRecord},
+				"the rejection names the bytes and the digests that differ")
+			got, _ := records[0].Got()
+			framed, _ := got.(map[string]string)
+			assert.Contains(t, framed[genFile], "ForRowIn"+filepath.Base(two),
+				"the record shows the second directory's bytes")
 		})
 
 		t.Run("rejects a composition whose record depends on its directory", func(t *testing.T) {
@@ -370,10 +419,11 @@ func TestChecks(t *testing.T) {
 					Plans(plan(planName+"-"+filepath.Base(root), mirror())).Build()
 			}
 			one, two := t.TempDir(), t.TempDir()
-			msg := assert.Rejects(t, "a plan named after its directory", func(tb assert.TB) {
+			records := assert.Rejects(t, "a plan named after its directory", func(tb assert.TB) {
 				pipelinetest.AssertRelocated(tb, named, one, two)
 			})
-			assert.Contains(t, msg, "records the same files", "the rejection names the record that differs")
+			assert.Equal(t, coretest.Contracts(records), []string{relocatedRecord},
+				"the rejection names the record that differs")
 		})
 	})
 }
@@ -388,15 +438,16 @@ func over(front plugin.Frontend) pipelinetest.Fixture {
 }
 
 // rewritten returns the plain fixture whose ledger records the edited
-// copy of every record the run commits. The edit is applied after every
-// document the commit writes, so it is idempotent.
-func rewritten(edit func(manifest.Manifest) manifest.Manifest) pipelinetest.Fixture {
+// copy of every record the run commits, opened under the test's context.
+// The edit is applied after every document the commit writes, so it is
+// idempotent.
+func rewritten(tb testing.TB, edit func(manifest.Manifest) manifest.Manifest) pipelinetest.Fixture {
 	f := fixture()
 	var runs atomic.Int64
 	f.Compose = func(root string) (*workspace.Workspace, error) {
 		return onDisk(root, frontendtest.NewScripted()).
 			Ledger(func() (ledger.Ledger, error) {
-				return coretest.NewRewriting(context.Background(), root, fixtureBrand, int(runs.Add(1)),
+				return coretest.NewRewriting(tb.Context(), root, fixtureBrand, int(runs.Add(1)),
 					func(_ int, m manifest.Manifest) manifest.Manifest { return edit(m) })
 			}).
 			Plans(plan(planName, mirror())).Build()
@@ -426,7 +477,7 @@ type warning struct {
 
 // Parse warns, then lowers the unit.
 func (f *warning) Parse(ctx context.Context, u *plugin.SourceUnit) error {
-	u.Warnf(frontendtest.ScriptedBadFile, f.at, "a warning the fixture reports")
+	u.Warnf(frontendtest.ScriptedBadFile, f.at, warned)
 	return f.Scripted.Parse(ctx, u)
 }
 

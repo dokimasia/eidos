@@ -5,6 +5,7 @@ package conformance
 
 import (
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -87,7 +88,7 @@ func Inventory() []Feature {
 							Name: "Target", Kind: symbol.KindStruct,
 						}
 						for _, field := range holder.Fields {
-							assert.True(tb, namesBelowRoot(field.Type, target),
+							expect.Contains(tb, targetsBelowRoot(field.Type), target,
 								field.Name+" resolves to the sibling's declaration below its reference's root")
 						}
 					},
@@ -104,7 +105,7 @@ func Inventory() []Feature {
 						plain, is := c.Decl.(*node.Struct)
 						assert.True(tb, is, "the type loads as a struct")
 						assert.Length(tb, plain.Fields, 1, "with its one field")
-						assert.True(tb, plain.Fields[0].Type.Target.IsZero(),
+						assert.Equal(tb, plain.Fields[0].Type.Target, symbol.Identity{},
 							"a builtin resolves to nothing and degrades visibly")
 					},
 				},
@@ -131,14 +132,11 @@ func Inventory() []Feature {
 			ID:  "test_classification",
 			Doc: "a test file stamped by the language's own convention",
 			Check: func(tb assert.TB, c *Ctx) {
-				stamped := false
+				var stamped []string
 				for id := range c.Graph.Stamps() {
-					if id.Package == c.Pkg("") {
-						stamped = true
-					}
+					stamped = append(stamped, id.Package)
 				}
-				assert.True(tb, stamped,
-					"the load stamps a subject in the feature's package")
+				assert.Contains(tb, stamped, c.Pkg(""), "the load stamps a subject in the feature's package")
 			},
 		},
 		{
@@ -159,18 +157,18 @@ func Inventory() []Feature {
 	}
 }
 
-// namesBelowRoot reports whether a reference below a tree's root
-// targets a declaration: an element of a structural form, such as a
-// pointer's, a map's or a function type's, or a type argument of an
+// targetsBelowRoot returns the targets of the references below a tree's
+// root, in walk order: each element of a structural form, such as a
+// pointer's, a map's or a function type's, and each type argument of an
 // instantiation, such as Option<Target>'s. The root itself does not
-// count.
-func namesBelowRoot(root *node.TypeRef, target symbol.Identity) bool {
-	found := false
+// count, and neither does a reference that resolved to nothing.
+func targetsBelowRoot(root *node.TypeRef) []symbol.Identity {
+	var out []symbol.Identity
 	node.Walk(root, func(s symbol.Symbol) bool {
-		if ref, is := s.(*node.TypeRef); is && ref != root && ref.Target == target {
-			found = true
+		if ref, is := s.(*node.TypeRef); is && ref != root && !ref.Target.IsZero() {
+			out = append(out, ref.Target)
 		}
 		return true
 	})
-	return found
+	return out
 }

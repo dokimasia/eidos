@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -50,7 +49,7 @@ func TestComment(t *testing.T) {
 
 			_, found := parsedSource(t, pkgClause+carrierLine+"\n"+publicClass)
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.True(t, strings.Contains(found[0].Msg, carrierText), "quoting the carrier")
+			assert.Contains(t, found[0].Msg, carrierText, "quoting the carrier")
 		})
 	})
 
@@ -221,7 +220,7 @@ func TestComment(t *testing.T) {
 
 			_, found := parsedSource(t, carrierLine+"int x = 1;\n")
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.True(t, strings.Contains(found[0].Msg, onStatement), "where the author put it")
+			assert.Contains(t, found[0].Msg, onStatement, "where the author put it")
 		})
 	})
 
@@ -241,7 +240,7 @@ func TestComment(t *testing.T) {
 
 			_, found := parsedSource(t, pkgClause+carrierLine+"\n"+publicClass)
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.True(t, strings.Contains(found[0].Msg, onNothing), "the comment is apart from every declaration")
+			assert.Contains(t, found[0].Msg, onNothing, "the comment is apart from every declaration")
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier in a class body no member takes", func(t *testing.T) {
@@ -271,7 +270,7 @@ func TestComment(t *testing.T) {
 
 // shallowSource parses one file at src/main/java/com/acme/A.java, at
 // signature depth.
-func shallowSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
+func shallowSource(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parsedTree(tb, fstest.MapFS{srcFile: {Data: []byte(src)}}, srcFile, plugin.DepthSignatures)

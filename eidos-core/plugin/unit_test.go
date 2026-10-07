@@ -4,6 +4,7 @@
 package plugin_test
 
 import (
+	"cmp"
 	"io/fs"
 	"strconv"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -594,7 +596,8 @@ func TestSourceUnit(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			attached := u.Graph().Attachments()
 			assert.Length(t, attached, 1, "the carrier attaches")
-			assert.True(t, attached[0].Subject == symbol.Symbol(row), "the subject is the one passed in")
+			assert.Equal(t, attached[0].Subject, symbol.Symbol(row), "the subject is the one passed in",
+				assert.ByIdentity())
 			assert.Equal(t, attached[0].Raw.Name, tableName, "the name is the payload's")
 			assert.Equal(t, attached[0].Raw.Pos, carrierAt, "the instance is at the carrier's line")
 			assert.False(t, attached[0].Raw.Negated, "the instance is set")
@@ -771,7 +774,7 @@ func TestSourceUnit(t *testing.T) {
 
 			u := unitOf(t, unitTree())
 			first, second := u.Graph(), u.Graph()
-			assert.True(t, first == second, "the unit has one write handle")
+			assert.Equal(t, second, first, "the unit has one write handle", assert.ByIdentity())
 		})
 	})
 
@@ -801,7 +804,8 @@ func TestSourceUnit(t *testing.T) {
 
 			gb := unitOf(t, unitTree()).Graph()
 			a := gb.Package("svc/store")
-			assert.True(t, a == gb.Package("svc/store"), "the second call returns the first package")
+			assert.Equal(t, gb.Package("svc/store"), a, "the second call returns the first package",
+				assert.ByIdentity())
 		})
 
 		t.Run("returns the path's segments", func(t *testing.T) {
@@ -831,7 +835,8 @@ func TestSourceUnit(t *testing.T) {
 			gb.Package("svc/store")
 			got := gb.Packages()
 			assert.Length(t, got, 2, "each path is one package")
-			assert.True(t, got[0] == a && got[1] == b, "the packages are in first-touch order")
+			expect.Equal(t, got[0], a, "the first-touched package comes first", assert.ByIdentity())
+			expect.Equal(t, got[1], b, "the second-touched package comes second", assert.ByIdentity())
 		})
 	})
 
@@ -846,7 +851,7 @@ func TestSourceUnit(t *testing.T) {
 			gb.Scope(file, map[string]string{"emit": "core/emit"})
 			scopes := gb.Scopes()
 			assert.Length(t, scopes, 1, "one record is kept")
-			assert.True(t, scopes[0].File == file, "the record is under its file node")
+			assert.Equal(t, scopes[0].File, file, "the record is under its file node", assert.ByIdentity())
 		})
 
 		t.Run("panics on a nil file", func(t *testing.T) {
@@ -868,7 +873,8 @@ func TestSourceUnit(t *testing.T) {
 			gb.Attach(row, directive.Raw{Name: tableName})
 			attached := gb.Attachments()
 			assert.Length(t, attached, 1, "one attachment is kept")
-			assert.True(t, attached[0].Subject == symbol.Symbol(row), "the attachment is on its subject")
+			assert.Equal(t, attached[0].Subject, symbol.Symbol(row), "the attachment is on its subject",
+				assert.ByIdentity())
 			assert.Equal(t, attached[0].Raw.Name, tableName, "the attachment has the instance")
 		})
 
@@ -891,7 +897,7 @@ func TestSourceUnit(t *testing.T) {
 			gb.Stamp(file, meta.RawStamp{Key: "fake.testFile", Value: true})
 			stamps := gb.StampRecords()
 			assert.Length(t, stamps, 1, "one stamp is kept")
-			assert.True(t, stamps[0].Subject == symbol.Symbol(file), "the stamp is on its subject")
+			assert.Equal(t, stamps[0].Subject, symbol.Symbol(file), "the stamp is on its subject", assert.ByIdentity())
 		})
 
 		t.Run("panics on a nil subject", func(t *testing.T) {
@@ -923,21 +929,23 @@ func TestSourceUnit(t *testing.T) {
 			t.Parallel()
 
 			gb, replacement, _ := rehomed(t)
-			assert.True(t, gb.Attachments()[0].Subject == replacement, "the attachment is on the replacement")
+			assert.Equal(t, gb.Attachments()[0].Subject, replacement, "the attachment is on the replacement",
+				assert.ByIdentity())
 		})
 
 		t.Run("keeps an unrelated subject's attachment", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _, other := rehomed(t)
-			assert.True(t, gb.Attachments()[1].Subject == other, "the attachment is on its subject")
+			assert.Equal(t, gb.Attachments()[1].Subject, other, "the attachment is on its subject", assert.ByIdentity())
 		})
 
 		t.Run("moves the stamps onto the replacement", func(t *testing.T) {
 			t.Parallel()
 
 			gb, replacement, _ := rehomed(t)
-			assert.True(t, gb.StampRecords()[0].Subject == replacement, "the stamp is on the replacement")
+			assert.Equal(t, gb.StampRecords()[0].Subject, replacement, "the stamp is on the replacement",
+				assert.ByIdentity())
 		})
 
 		t.Run("panics on a nil source", func(t *testing.T) {
@@ -958,9 +966,8 @@ func TestSourceUnit(t *testing.T) {
 
 // Each method of the source unit allocates what it returns or keeps in
 // the ordinary run, which runs no benchmark. Each call that records into
-// its unit takes a unit of its own, built before the count. The check
-// runs alone, because AllocsPerRun counts every goroutine's allocations
-// and refuses to run beside parallel tests.
+// its unit takes a unit of its own, built outside the count. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestSourceUnitAllocs(t *testing.T) {
 	refs, tree, syntax, sink := []plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), diag.NewSink()
 	var built *plugin.SourceUnit
@@ -997,60 +1004,56 @@ func TestSourceUnitAllocs(t *testing.T) {
 	negated := plugin.Carrier{Mark: negatedMark, Payload: tablePayload}
 	assert.MaxAllocs(t, func() { held = negated.Negated() }, 0, "Negated allocates nothing")
 	assert.True(t, held, "Negated reports true for the negated mark")
-	assert.MaxAllocs(t, func() {
-		if len(u.Files()) != 1 || u.Depth() != plugin.DepthFull || u.Graph() == nil {
-			t.Fatal("the unit's members, depth or builder read back wrong")
-		}
-	}, 0, "Files, Depth and Graph allocate nothing")
+	var (
+		members int
+		depth   plugin.Depth
+		graph   *plugin.GraphBuilder
+	)
+	assert.MaxAllocs(t, func() { members, depth, graph = len(u.Files()), u.Depth(), u.Graph() }, 0,
+		"Files, Depth and Graph allocate nothing")
+	expect.Equal(t, members, 1, "Files returns the unit's one member")
+	expect.Equal(t, depth, plugin.DepthFull, "Depth returns the unit's depth")
+	expect.NotNil(t, graph, "Graph returns the unit's builder")
 
 	read := unitRead(u)
-	assert.MaxAllocs(t, func() {
-		if err := read.own(); err != nil {
-			t.Fatalf("Read: unexpected error: %v", err)
-		}
-	}, plainAllocs(t, read), "Read allocates what the read of its tree allocates")
+	var err error
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, read.own()) }, plainAllocs(t, read),
+		"Read allocates what the read of its tree allocates")
+	assert.NoError(t, err, "Read reads the unit's member")
 	for _, tt := range unitReports() {
 		assert.MaxAllocs(t, func() { tt.report(u) }, reportAllocs, tt.method+" allocates the finding's message")
 	}
 
+	fresh := func() *plugin.SourceUnit { return unitOf(t, unitTree()) }
 	carriers := []plugin.Carrier{{Mark: bareMark, Payload: tablePayload, Pos: carrierAt}}
-	next, fresh := 0, freshUnits(t)
-	assert.MaxAllocs(t, func() {
-		fresh[next].AttachCarriers(recordSubject, carriers, unitCode)
-		next++
-	}, attachCarriersAllocs, "AttachCarriers allocates the parsed instance and the list of attachments")
+	assert.MaxAllocsWithSetup(t, fresh,
+		func(fu *plugin.SourceUnit) { fu.AttachCarriers(recordSubject, carriers, unitCode) },
+		attachCarriersAllocs, "AttachCarriers allocates the parsed instance and the list of attachments")
 
-	next, fresh = 0, freshUnits(t)
-	assert.MaxAllocs(t, func() {
-		fresh[next].Graph().Package("svc/store")
-		next++
-	}, firstPackageAllocs, "Package allocates a unit's first package")
-	gb := fresh[0].Graph()
-	assert.MaxAllocs(
-		t,
-		func() { gb.Package("svc/store") },
-		0,
-		"Package allocates nothing for a package it returned before",
-	)
+	assert.MaxAllocsWithSetup(t, fresh, func(fu *plugin.SourceUnit) { fu.Graph().Package("svc/store") },
+		firstPackageAllocs, "Package allocates a unit's first package")
+	gb := fresh().Graph()
+	gb.Package("svc/store")
+	assert.MaxAllocs(t, func() { gb.Package("svc/store") }, 0,
+		"Package allocates nothing for a package it returned before")
 	var pkgs []*node.Package
 	assert.MaxAllocs(t, func() { pkgs = gb.Packages() }, packagesAllocs, "Packages allocates the list")
 	assert.Length(t, pkgs, 1, "Packages returns the one package")
 
 	for _, tt := range unitRecords() {
-		next, fresh = 0, freshUnits(t)
-		assert.MaxAllocs(t, func() {
-			tt.record(fresh[next].Graph())
-			next++
-		}, firstRecordAllocs, tt.method+" allocates a unit's list of its records")
+		assert.MaxAllocsWithSetup(t, fresh, func(fu *plugin.SourceUnit) { tt.record(fu.Graph()) },
+			firstRecordAllocs, tt.method+" allocates a unit's list of its records")
 	}
 	full := recorded(t)
 	replacement := &node.Struct{Name: "Row"}
 	assert.MaxAllocs(t, func() { full.Rehome(recordSubject, replacement) }, 0, "Rehome allocates nothing")
+	var scopes, attachments, stamps int
 	assert.MaxAllocs(t, func() {
-		if len(full.Scopes()) != 1 || len(full.Attachments()) != 1 || len(full.StampRecords()) != 1 {
-			t.Fatal("the builder's records read back wrong")
-		}
+		scopes, attachments, stamps = len(full.Scopes()), len(full.Attachments()), len(full.StampRecords())
 	}, 0, "Scopes, Attachments and StampRecords allocate nothing")
+	expect.Equal(t, scopes, 1, "Scopes returns the builder's one scope")
+	expect.Equal(t, attachments, 1, "Attachments returns the builder's one attachment")
+	expect.Equal(t, stamps, 1, "StampRecords returns the builder's one stamp")
 }
 
 // BenchmarkSourceUnit measures what a frontend's parse calls on its
@@ -1162,7 +1165,7 @@ func BenchmarkSourceUnit(b *testing.B) {
 		for c.Loop() {
 			got = u.Graph()
 		}
-		assert.True(b, got == u.Graph(), "Graph returns the unit's builder")
+		assert.Equal(b, got, u.Graph(), "Graph returns the unit's builder", assert.ByIdentity())
 	})
 
 	b.Run("Read", func(b *testing.B) {
@@ -1225,7 +1228,7 @@ func BenchmarkSourceUnit(b *testing.B) {
 			for c.Loop() {
 				pkg = gb.Package("svc/store")
 			}
-			assert.True(b, pkg == first, "Package returns the first package")
+			assert.Equal(b, pkg, first, "Package returns the first package", assert.ByIdentity())
 		})
 	})
 
@@ -1441,16 +1444,4 @@ func unitRead(u *plugin.SourceUnit) storeRead {
 		own:   func() error { _, err := u.Read(member); return err },
 		plain: func() error { _, err := fs.ReadFile(tree, member); return err },
 	}
-}
-
-// freshUnits returns allocRuns units over the fixture tree: one for each
-// call of an allocation check that records into its unit.
-func freshUnits(t *testing.T) []*plugin.SourceUnit {
-	t.Helper()
-
-	out := make([]*plugin.SourceUnit, allocRuns)
-	for i := range out {
-		out[i] = unitOf(t, unitTree())
-	}
-	return out
 }

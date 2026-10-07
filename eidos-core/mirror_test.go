@@ -142,16 +142,14 @@ func TestMirror(t *testing.T) {
 			t.Parallel()
 
 			got := eidos.Mirror(mirrorHost, &node.Method{Name: getMethod})
-			assert.True(t, got.Receiver == nil,
-				"a pointer receiver is Go's spelling, and Rust spells self")
+			assert.Nil(t, got.Receiver, "a pointer receiver is Go's spelling, and Rust spells self")
 		})
 	})
 }
 
 // A mirror allocates the method it returns and its parts in the
 // ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// the count includes every goroutine's allocations.
 func TestMirrorAllocs(t *testing.T) {
 	signed, bare := getter(), &node.Method{ID: methodID(getMethod), Name: getMethod}
 	var got *emit.Method

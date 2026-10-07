@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -41,17 +40,13 @@ const (
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
 // where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves. A case whose
-// ceiling only a benchmark checks sets bench, which measures the case
-// in place of the call, and no list an allocation test reads contains
-// it.
+// call, and the check of the result the call leaves.
 type allocCall struct {
 	name     string
 	caseName string
 	allocs   uint64
 	call     func()
 	check    func(tb assert.TB)
-	bench    func(b *testing.B)
 }
 
 // The load calls the frontend through its contract surface, so the
@@ -162,7 +157,7 @@ func TestFrontend(t *testing.T) {
 		t.Run("returns one unit per file", func(t *testing.T) {
 			t.Parallel()
 
-			units, err := f.Partition(context.Background(), unordered(), nil)
+			units, err := f.Partition(t.Context(), unordered(), nil)
 			assert.NoError(t, err, "the grain needs no bytes to settle")
 			assert.Equal(t, []int{len(units[0]), len(units[1]), len(units[2])}, []int{1, 1, 1},
 				"a file compiles alone")
@@ -171,7 +166,7 @@ func TestFrontend(t *testing.T) {
 		t.Run("returns the units in path order", func(t *testing.T) {
 			t.Parallel()
 
-			units, _ := f.Partition(context.Background(), unordered(), nil)
+			units, _ := f.Partition(t.Context(), unordered(), nil)
 			assert.Equal(t, []string{units[0][0].Path, units[1][0].Path, units[2][0].Path},
 				[]string{firstFile, secondFile, thirdFile}, "two runs over one tree partition alike")
 		})
@@ -179,14 +174,14 @@ func TestFrontend(t *testing.T) {
 		t.Run("returns units without a shared input", func(t *testing.T) {
 			t.Parallel()
 
-			units, _ := f.Partition(context.Background(), unordered(), nil)
+			units, _ := f.Partition(t.Context(), unordered(), nil)
 			assert.Empty(t, units[0][0].Shared, "no file outside a unit contributes to it")
 		})
 
 		t.Run("returns units without spare capacity", func(t *testing.T) {
 			t.Parallel()
 
-			units, _ := f.Partition(context.Background(), unordered(), nil)
+			units, _ := f.Partition(t.Context(), unordered(), nil)
 			assert.Equal(t, cap(units[0]), 1, "an append to a unit copies it, so the next unit stays as it is")
 		})
 
@@ -194,14 +189,14 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			files := unordered()
-			_, _ = f.Partition(context.Background(), files, nil)
+			_, _ = f.Partition(t.Context(), files, nil)
 			assert.Equal(t, files[0].Path, secondFile, "the partition sorts a copy")
 		})
 
 		t.Run("returns nothing for no files", func(t *testing.T) {
 			t.Parallel()
 
-			units, err := f.Partition(context.Background(), nil, nil)
+			units, err := f.Partition(t.Context(), nil, nil)
 			assert.NoError(t, err, "an empty claim partitions")
 			assert.Empty(t, units, "there is no unit")
 		})
@@ -212,18 +207,18 @@ func TestFrontend(t *testing.T) {
 // partition's two lists. The ordinary run, which runs no benchmark,
 // checks those ceilings here.
 func TestFrontendAllocs(t *testing.T) {
-	checkAllocs(t, frontendCalls())
+	checkAllocs(t, frontendCalls(t))
 }
 
 // BenchmarkFrontend measures each method the load calls before it
 // parses.
 func BenchmarkFrontend(b *testing.B) {
-	benchCalls(b, frontendCalls())
+	benchCalls(b, frontendCalls(b))
 }
 
 // frontendCalls returns a call of the constructor and of every method
-// of frontend.go.
-func frontendCalls() []allocCall {
+// of frontend.go, each under the test's context.
+func frontendCalls(tb testing.TB) []allocCall {
 	f := protofrontend.New()
 	versioned, _ := f.(plugin.Versioned)
 	files := unordered()
@@ -278,7 +273,7 @@ func frontendCalls() []allocCall {
 		},
 		{
 			name: "Partition", allocs: partitionAllocs,
-			call: func() { units, err = f.Partition(context.Background(), files, nil) },
+			call: func() { units, err = f.Partition(tb.Context(), files, nil) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Partition settles")
 				assert.Length(tb, units, 3, "Partition returns one unit per file")
@@ -331,18 +326,12 @@ func benchCalls(b *testing.B, calls []allocCall) {
 }
 
 // benchCall measures one call under the bench contract at its ceiling,
-// and checks the result the last call leaves. The call runs once before
-// the contract starts, so what the first call initialises stays out of
-// the count. A case that sets bench runs it instead.
+// and checks the result the last call leaves. The contract warms up with
+// one call, so what the first call initialises stays out of the count.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
-	if tt.bench != nil {
-		tt.bench(b)
-		return
-	}
-	tt.call()
-	c := bench.Start(b).MaxAllocs(tt.allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 	defer c.End()
 	for c.Loop() {
 		tt.call()

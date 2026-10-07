@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
@@ -18,6 +19,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -119,22 +121,21 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	_, f := setup(tb)
-	if f == nil || f.Graph == nil {
-		tb.Errorf("the setup returns no fixture graph")
-		return
-	}
+	assert.NotNil(tb, f, "the setup returns a fixture")
+	assert.NotNil(tb, f.Graph, "the fixture contains a graph")
 	// No other check uses this setup's fixture, so sealing it here
 	// is the same seal the first phase call would make.
 	f.Graph.Freeze()
+	declared := 0
 	for pkg := range f.Graph.Packages() {
 		for _, file := range pkg.Files {
-			if file != nil && len(file.Decls) > 0 {
-				return
+			if file != nil {
+				declared += len(file.Decls)
 			}
 		}
 	}
-	tb.Errorf("the fixture graph's files declare nothing: an " +
-		"empty run passes vacuously and proves nothing")
+	assert.NotEqual(tb, declared, 0,
+		"the fixture graph's files declare something: an empty run passes vacuously and proves nothing")
 }
 
 // AssertStableDeclaration fails unless two builds of one plugin
@@ -197,10 +198,7 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 
 	p, f := setup(tb)
 	tp, held := p.(plugin.TemplateProvider)
-	if !held {
-		tb.Errorf("the plugin declares no templates, and the check proves nothing")
-		return
-	}
+	assert.True(tb, held, "the plugin declares templates, so the check proves something")
 	linted := 0
 	for _, target := range slices.Sorted(maps.Keys(f.Languages)) {
 		tree, declared := tp.Templates(target)
@@ -211,37 +209,36 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 		pass, err := render.New("lint", f.Languages[target])
 		assert.NoError(tb, err, "the fixture language composes")
 		for _, finding := range pass.Lint(tree, tp.TemplateFuncs(target), tp.Overrides(target)) {
-			assert.NoError(tb, finding, "the tree meets the template rules")
+			expect.NoError(tb, finding, "the tree meets the template rules")
 		}
 	}
-	assert.True(tb, linted > 0,
-		"no fixture language meets a declared tree, and the check proves nothing")
+	assert.NotEqual(tb, linted, 0, "a fixture language meets a declared tree, so the check proves something")
 }
 
 // AssertOptionsSchema checks the plugin's options struct against
 // the tag contract, through the check the composition runs, so a
-// plugin that would fail at Build fails in its own tests first.
+// plugin that would fail at Build fails in its own tests first. Each
+// fault of the struct reports on its own.
 func AssertOptionsSchema(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	p, _ := setup(tb)
 	for _, err := range plugin.ValidateOptions(p) {
-		assert.NoError(tb, err, "the options struct meets the tag contract")
+		expect.NoError(tb, err, "the options struct meets the tag contract")
 	}
 }
 
-// AssertDeterministicEmit runs one plugin over two isolated
-// fixtures and fails unless both runs emit the same bytes: the
-// byte-identity contract, checked before any renderer exists.
+// AssertDeterministicEmit runs the plugin of a fresh setup over the
+// setup's fixture once per call of [assert.Deterministic], and fails
+// unless every run emits the bytes of the first: the byte-identity
+// contract, checked before any renderer exists.
 func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 	tb.Helper()
 
-	firstPlugin, firstFixture := setup(tb)
-	secondPlugin, secondFixture := setup(tb)
-	assert.Equal(tb,
-		string(encodeEmit(tb, generateOnce(tb, secondPlugin, secondFixture))),
-		string(encodeEmit(tb, generateOnce(tb, firstPlugin, firstFixture))),
-		"two isolated runs emit the same bytes")
+	assert.Deterministic(tb, func(s Setup) (string, error) {
+		p, f := s(tb)
+		return string(encodeEmit(tb, generateOnce(tb, p, f))), nil
+	}, setup, "isolated runs emit the same bytes")
 }
 
 // AssertParallelDispatch runs every phase the plugin implements over
@@ -259,13 +256,13 @@ func AssertParallelDispatch(tb assert.TB, setup Setup) {
 	serialFixture.Workers, parallelFixture.Workers = 1, parallelWorkers
 	serial := runAll(tb, serialPlugin, serialFixture)
 	parallel := runAll(tb, parallelPlugin, parallelFixture)
-	assert.Equal(tb,
+	expect.Equal(tb,
 		string(encodeEmit(tb, parallelFixture.store())),
 		string(encodeEmit(tb, serialFixture.store())),
 		"a parallel phase call emits what a sequential one does")
-	assert.Equal(tb, presentFacts(parallelFixture), presentFacts(serialFixture),
+	expect.Equal(tb, presentFacts(parallelFixture), presentFacts(serialFixture),
 		"and it ends with the fact values a sequential call ends with")
-	assert.Equal(tb, findingsOf(parallel), findingsOf(serial),
+	expect.Equal(tb, findingsOf(parallel), findingsOf(serial),
 		"and it reports the same findings in the same order")
 }
 
@@ -290,16 +287,17 @@ func AssertSelective(tb assert.TB, setup Setup) {
 	whole, wholeKeys := journaledRun(tb, p, wholeFixture, nil)
 	selected, selectedKeys := journaledRun(tb, p, selectedFixture, wholeKeys)
 	for _, keys := range wholeKeys {
-		assert.True(tb, ascending(keys), "the journal lists every match once, in canonical match order")
+		expect.Pairwise(tb, keys, func(earlier, later plugin.MatchKey) bool { return earlier.Compare(later) < 0 },
+			"the journal lists every match once, in canonical match order")
 	}
-	assert.Equal(tb, selectedKeys, wholeKeys, "the selected run journals the matches the whole run journaled")
-	assert.Equal(tb,
+	expect.Equal(tb, selectedKeys, wholeKeys, "the selected run journals the matches the whole run journaled")
+	expect.Equal(tb,
 		string(encodeEmit(tb, selectedFixture.store())),
 		string(encodeEmit(tb, wholeFixture.store())),
 		"a selection of every match emits what the whole call does")
-	assert.Equal(tb, presentFacts(selectedFixture), presentFacts(wholeFixture),
+	expect.Equal(tb, presentFacts(selectedFixture), presentFacts(wholeFixture),
 		"and it ends with the fact values the whole call ends with")
-	assert.Equal(tb, canonicalFindings(selected), canonicalFindings(whole),
+	expect.Equal(tb, canonicalFindings(selected), canonicalFindings(whole),
 		"and it reports the same findings")
 }
 
@@ -346,17 +344,6 @@ func journaledRun(
 	return results, keys
 }
 
-// ascending reports whether every key sorts after the one before it in
-// canonical match order, which no repeated key does.
-func ascending(keys []plugin.MatchKey) bool {
-	for i := 1; i < len(keys); i++ {
-		if keys[i-1].Compare(keys[i]) >= 0 {
-			return false
-		}
-	}
-	return true
-}
-
 // findingsOf returns every finding of a sequence of phase results, in
 // phase order and then report order.
 func findingsOf(results []Result) []diag.Diag {
@@ -376,24 +363,21 @@ func canonicalFindings(results []Result) []diag.Diag {
 }
 
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
-// over one fixture. It fails unless both passes stamp clean and the
-// second pass leaves every fact's value unchanged. A stamp that
-// depends on run state either claims a second value from the same
-// rank source, which the fact store refuses, or changes the value
-// that ranks first, which the comparison refuses.
+// over one fixture, through [assert.Idempotent]. It fails unless both
+// passes run whole and stamp clean, and the second pass leaves every
+// fact's value as the first left it. A stamp that depends on run state
+// either claims a second value from the same rank source, which the
+// fact store refuses, or changes the value that ranks first, which the
+// comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	p, f := setup(tb)
-	first := f.Annotate(tb, p)
-	assert.NoError(tb, first.Err, "the first pass runs whole")
-	assert.False(tb, first.Sink.Failed(), "and stamps clean")
-	settled := presentFacts(f)
-	second := f.Annotate(tb, p)
-	assert.NoError(tb, second.Err, "the second pass runs whole")
-	assert.False(tb, second.Sink.Failed(),
-		"a repeated pass re-stamps identical claims, never new values")
-	assert.Equal(tb, presentFacts(f), settled,
+	assert.Idempotent(tb, func(annotator plugin.Plugin) error {
+		r := f.Annotate(tb, annotator)
+		assert.False(tb, r.Sink.Failed(), "a pass stamps clean, and a repeated pass re-stamps identical claims")
+		return r.Err
+	}, p, func() []presentFact { return presentFacts(f) },
 		"a repeated pass leaves every fact's value as the first pass left it")
 }
 
@@ -423,15 +407,15 @@ func presentFacts(f *Fixture) []presentFact {
 
 // AssertPositionedDiagnostics runs every phase the plugin implements and
 // refuses a finding without a position: a diagnostic nobody can
-// jump to is a defect in whatever reported it.
+// jump to is a defect in whatever reported it. Each finding reports on
+// its own.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	p, f := setup(tb)
 	for _, r := range runAll(tb, p, f) {
 		for d := range r.Sink.All() {
-			assert.False(tb, d.Pos.IsZero(),
-				"every finding names the position it is about")
+			expect.NotEqual(tb, d.Pos, position.Pos{}, "every finding names the position it is about: "+d.Msg)
 		}
 	}
 }
@@ -459,10 +443,8 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 		if seeded[u.Ref()] {
 			continue
 		}
-		assert.Equal(tb, u.Plugin, p.Name(),
-			"every unit names the plugin that emitted it")
-		assert.True(tb, declared[u.Tag],
-			"every unit arrives under a declared family")
+		expect.Equal(tb, u.Plugin, p.Name(), "every unit names the plugin that emitted it")
+		expect.Contains(tb, declared, u.Tag, "every unit arrives under a declared family")
 	}
 }
 
@@ -549,9 +531,7 @@ func AssertNoStructuralWrites(tb assert.TB, setup Setup) {
 
 	p, f := setup(tb)
 	f.Graph.Freeze()
-	before := encodeGraph(tb, f)
-	runAll(tb, p, f)
-	assert.Equal(tb, string(encodeGraph(tb, f)), string(before),
+	assert.Pure(tb, func() string { return string(encodeGraph(tb, f)) }, func() { runAll(tb, p, f) },
 		"the graph is input truth, and no phase call rewrites it")
 }
 

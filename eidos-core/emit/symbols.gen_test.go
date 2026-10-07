@@ -6,13 +6,15 @@
 package emit_test
 
 import (
-	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/prop"
 	. "go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -21,6 +23,11 @@ import (
 // errRefused is the error [refusing] returns, so a case can tell an
 // encoder's own fault from an error the codec added.
 var errRefused = errors.New("emit_test: the encoder refused")
+
+// jsonFixedPoint is the property [FuzzDecodeJSON] and its ForAll twin
+// in [TestSymbols] state.
+const jsonFixedPoint = "DecodeJSON must return an error or a declaration whose encoding " +
+	"decodes and encodes to the same bytes again"
 
 // The JSON codec's allocations over the cases' input, the same in each
 // of 10 runs: encoding/json's encoder and decoder state, boxed values
@@ -92,159 +99,159 @@ func TestSymbols(t *testing.T) {
 			{
 				encoded, err := EncodeJSON(&Function{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Function"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Function"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Method{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Method"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Method"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Param{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Param"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Param"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Return{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Return"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Return"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Package{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Package"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Package"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&File{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"File"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"File"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Import{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Import"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Import"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Export{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Export"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Export"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Binding{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Binding"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Binding"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Enum{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Enum"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Enum"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&EnumVariant{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"EnumVariant"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"EnumVariant"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Sum{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Sum"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Sum"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&SumVariant{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"SumVariant"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"SumVariant"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Field{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Field"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Field"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Variable{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Variable"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Variable"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Constant{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Constant"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Constant"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Struct{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Struct"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Struct"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Interface{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Interface"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Interface"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Alias{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Alias"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Alias"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&TypeRef{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"TypeRef"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"TypeRef"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&TypeParam{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"TypeParam"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"TypeParam"`,
+					"with its kind, so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Embed{})
 				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Embed"`,
-					"carrying its kind so a decoder can place it")
+				expect.Contains(t, string(encoded), `"kind":"Embed"`,
+					"with its kind, so a decoder can place it")
 			}
 		})
 
-		t.Run("a concrete field needs no kind", func(t *testing.T) {
+		t.Run("leaves the kind out of a concretely typed field", func(t *testing.T) {
 			t.Parallel()
 
 			// The struct tags encode a concretely typed field on their
@@ -341,16 +348,12 @@ func TestSymbols(t *testing.T) {
 				t.Run(subject.Kind().String(), func(t *testing.T) {
 					t.Parallel()
 
+					assert.RoundTrip(t, EncodeJSON, DecodeJSON, subject,
+						"DecodeJSON returns the declaration EncodeJSON encoded", assert.EquateEmpty())
 					encoded, err := EncodeJSON(subject)
 					assert.NoError(t, err, "the kind encodes")
-					decoded, err := DecodeJSON(encoded)
-					assert.NoError(t, err, "its encoding decodes")
-					assert.Equal(t, decoded.Kind(), subject.Kind(),
-						"to the kind that produced it")
-					again, err := EncodeJSON(decoded)
-					assert.NoError(t, err, "and encodes again")
-					assert.Equal(t, string(again), string(encoded),
-						"to the same bytes: the round trip is a fixed point")
+					assert.RoundTrip(t, DecodeJSON, EncodeJSON, encoded,
+						"EncodeJSON returns the bytes DecodeJSON decoded: the round trip is a fixed point")
 				})
 			}
 		})
@@ -364,18 +367,8 @@ func TestSymbols(t *testing.T) {
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 5,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Function with every child the original has", assert.EquateEmpty())
 			}
 
 			{
@@ -386,52 +379,22 @@ func TestSymbols(t *testing.T) {
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 7,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Method with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Param{}
 				subject.Type = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Param with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Return{}
 				subject.Type = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Return with every child the original has", assert.EquateEmpty())
 			}
 
 			{
@@ -439,18 +402,8 @@ func TestSymbols(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 4,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Enum with every child the original has", assert.EquateEmpty())
 			}
 
 			{
@@ -458,86 +411,36 @@ func TestSymbols(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 4,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Sum with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &SumVariant{}
 				subject.FieldsSlot().Append(&Field{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a SumVariant with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Field with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Variable{}
 				subject.Type = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Variable with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Constant{}
 				subject.Type = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Constant with every child the original has", assert.EquateEmpty())
 			}
 
 			{
@@ -550,18 +453,8 @@ func TestSymbols(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 9,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Struct with every child the original has", assert.EquateEmpty())
 			}
 
 			{
@@ -573,54 +466,24 @@ func TestSymbols(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 8,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Interface with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Alias{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Target = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 3,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Alias with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 3,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a TypeRef with every child the original has", assert.EquateEmpty())
 			}
 
 			{
@@ -628,35 +491,15 @@ func TestSymbols(t *testing.T) {
 				subject.Bounds = append(subject.Bounds, &TypeRef{})
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 4,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a TypeParam with every child the original has", assert.EquateEmpty())
 			}
 
 			{
 				subject := &Embed{}
 				subject.Ref = &TypeRef{}
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
-					"with every child the original held")
+				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
+					"DecodeJSON returns a Embed with every child the original has", assert.EquateEmpty())
 			}
 		})
 
@@ -669,7 +512,7 @@ func TestSymbols(t *testing.T) {
 			} {
 				decoded, err := DecodeJSON([]byte(data))
 				assert.NoError(t, err, "an encoding EncodeJSON did not write still decodes: "+data)
-				assert.Equal(t, decoded.Kind(), symbol.KindFunction,
+				expect.Equal(t, decoded.Kind(), symbol.KindFunction,
 					"to the kind it names")
 			}
 		})
@@ -715,6 +558,12 @@ func TestSymbols(t *testing.T) {
 				})
 			}
 		})
+
+		t.Run("returns an error or a declaration that is a fixed point after one more trip", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, jsonFixedPoint, decodesJSONFixed)
+		})
 	})
 
 	t.Run("UnmarshalJSON", func(t *testing.T) {
@@ -754,12 +603,12 @@ func TestSymbols(t *testing.T) {
 			assert.NoError(t, json.Unmarshal(encoded, &decoded), "and unmarshals")
 			assert.Length(t, decoded, len(subjects), "whole")
 			for i, want := range subjects {
-				assert.Equal(t, decoded[i].Kind(), want.Kind(),
+				expect.Equal(t, decoded[i].Kind(), want.Kind(),
 					"each element through its own kind")
 			}
 		})
 
-		t.Run("a plain interface slice cannot decode the same bytes", func(t *testing.T) {
+		t.Run("decodes bytes that a plain interface slice returns an error for", func(t *testing.T) {
 			t.Parallel()
 
 			encoded, err := json.Marshal(Symbols{&Function{}})
@@ -770,7 +619,7 @@ func TestSymbols(t *testing.T) {
 					"which is why Symbols exists")
 		})
 
-		t.Run("null decodes to nothing", func(t *testing.T) {
+		t.Run("decodes null to a nil list", func(t *testing.T) {
 			t.Parallel()
 
 			decoded := Symbols{&Function{}}
@@ -804,63 +653,41 @@ func TestSymbols(t *testing.T) {
 	})
 }
 
-// FuzzDecodeJSON drives the decoder with bytes nothing in this
-// repository produced.
-//
-// The encoding is a boundary. A sealed state and an encoded
-// declaration arrive as bytes that a previous release, another tool
-// or a corrupted file wrote. The fuzzer checks two properties for
-// any input. Decoding returns an error and never panics. A value
-// that decoded re-encodes to bytes that decode to the same
-// encoding, so one trip through the boundary is a fixed point.
+// FuzzDecodeJSON checks [jsonFixedPoint] on bytes nothing in this
+// repository produced. The encoding is a boundary: a sealed state and an
+// encoded declaration arrive as bytes that a previous release, another
+// tool or a corrupted file wrote. Each seed is the choices of one case: a
+// two-byte little-endian length, then the bytes of the input.
 func FuzzDecodeJSON(f *testing.F) {
-	f.Add([]byte(`{"kind":"Function"}`))
-	f.Add([]byte(`{"kind":"Method"}`))
-	f.Add([]byte(`{"kind":"Param"}`))
-	f.Add([]byte(`{"kind":"Return"}`))
-	f.Add([]byte(`{"kind":"Package"}`))
-	f.Add([]byte(`{"kind":"File"}`))
-	f.Add([]byte(`{"kind":"Import"}`))
-	f.Add([]byte(`{"kind":"Export"}`))
-	f.Add([]byte(`{"kind":"Binding"}`))
-	f.Add([]byte(`{"kind":"Enum"}`))
-	f.Add([]byte(`{"kind":"EnumVariant"}`))
-	f.Add([]byte(`{"kind":"Sum"}`))
-	f.Add([]byte(`{"kind":"SumVariant"}`))
-	f.Add([]byte(`{"kind":"Field"}`))
-	f.Add([]byte(`{"kind":"Variable"}`))
-	f.Add([]byte(`{"kind":"Constant"}`))
-	f.Add([]byte(`{"kind":"Struct"}`))
-	f.Add([]byte(`{"kind":"Interface"}`))
-	f.Add([]byte(`{"kind":"Alias"}`))
-	f.Add([]byte(`{"kind":"TypeRef"}`))
-	f.Add([]byte(`{"kind":"TypeParam"}`))
-	f.Add([]byte(`{"kind":"Embed"}`))
-	for _, seed := range []string{`null`, `{}`, `[]`, `{"kind":"Nonexistent"}`} {
-		f.Add([]byte(seed))
+	for _, seed := range []string{
+		`{"kind":"Function"}`,
+		`{"kind":"Method"}`,
+		`{"kind":"Param"}`,
+		`{"kind":"Return"}`,
+		`{"kind":"Package"}`,
+		`{"kind":"File"}`,
+		`{"kind":"Import"}`,
+		`{"kind":"Export"}`,
+		`{"kind":"Binding"}`,
+		`{"kind":"Enum"}`,
+		`{"kind":"EnumVariant"}`,
+		`{"kind":"Sum"}`,
+		`{"kind":"SumVariant"}`,
+		`{"kind":"Field"}`,
+		`{"kind":"Variable"}`,
+		`{"kind":"Constant"}`,
+		`{"kind":"Struct"}`,
+		`{"kind":"Interface"}`,
+		`{"kind":"Alias"}`,
+		`{"kind":"TypeRef"}`,
+		`{"kind":"TypeParam"}`,
+		`{"kind":"Embed"}`,
+		`null`, `{}`, `[]`, `{"kind":"Nonexistent"}`,
+	} {
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(seed))), seed...))
 	}
 
-	f.Fuzz(func(t *testing.T, in []byte) {
-		decoded, err := DecodeJSON(in)
-		if err != nil {
-			return
-		}
-		encoded, err := EncodeJSON(decoded)
-		if err != nil {
-			t.Fatalf("DecodeJSON(%s) answered a value EncodeJSON refuses: %v", in, err)
-		}
-		again, err := DecodeJSON(encoded)
-		if err != nil {
-			t.Fatalf("DecodeJSON refuses its own encoding %s: %v", encoded, err)
-		}
-		twice, err := EncodeJSON(again)
-		if err != nil {
-			t.Fatalf("EncodeJSON: unexpected error: %v", err)
-		}
-		if !bytes.Equal(encoded, twice) {
-			t.Fatalf("a second trip encoded as %s, want %s", twice, encoded)
-		}
-	})
+	prop.Fuzz(f, jsonFixedPoint, decodesJSONFixed)
 }
 
 // The JSON codec allocates within its ceilings in the ordinary run,
@@ -879,10 +706,10 @@ func BenchmarkSymbols(b *testing.B) {
 	for _, tt := range symbolsCases(b) {
 		b.Run(tt.method, func(b *testing.B) {
 			b.Run(tt.name, func(b *testing.B) {
-				// The first call caches the codec's functions for each type
-				// and refills the pools the harness's collection emptied.
-				tt.call()
-				c := bench.Start(b).MaxAllocs(tt.allocs)
+				// The warm-up call caches the codec's functions for each
+				// type and refills the pools the harness's collection
+				// emptied.
+				c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 				defer c.End()
 				for c.Loop() {
 					tt.call()
@@ -968,6 +795,21 @@ func symbolsCases(tb testing.TB) []symbolsCase {
 			},
 		},
 	}
+}
+
+// decodesJSONFixed checks [jsonFixedPoint] on an input that the case
+// draws. An input that does not decode satisfies it, and a declaration
+// that decodes encodes to bytes that decode and encode to the same bytes
+// again.
+func decodesJSONFixed(c *prop.Case) {
+	in := c.Draw(prop.Bytes(), "input")
+	decoded, err := DecodeJSON(in)
+	if err != nil {
+		return
+	}
+	encoded, err := EncodeJSON(decoded)
+	assert.NoError(c, err, "EncodeJSON must encode every declaration DecodeJSON returns")
+	assert.RoundTrip(c, DecodeJSON, EncodeJSON, encoded, "a second trip must encode the same bytes")
 }
 
 // symbolsList returns a list of a subject of every kind, each with one

@@ -4,7 +4,6 @@
 package rules_test
 
 import (
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -230,7 +229,8 @@ func TestResolve(t *testing.T) {
 
 			f := loaded(t)
 			_, err := r.Resolve(f.scope(row), "Ghost", directive.ResolveCallableInScope, f.view)
-			assert.True(t, strings.HasPrefix(err.Error(), refusalPrefix), "every satellite's refusals open alike")
+			assert.HasError(t, err, "a name the scope does not bind is refused")
+			assert.HasPrefix(t, err.Error(), refusalPrefix, "every satellite's refusals open alike")
 		})
 
 		t.Run("returns an error for a qualified name from a subject without a file", func(t *testing.T) {

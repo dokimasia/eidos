@@ -5,6 +5,7 @@ package state_test
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"hash/crc32"
 	"testing"
@@ -32,14 +33,11 @@ func TestRegion(t *testing.T) {
 	t.Run("AppendRegion", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("encodes one region to the same bytes twice", func(t *testing.T) {
+		t.Run("encodes one region to the same bytes on every call", func(t *testing.T) {
 			t.Parallel()
 
-			one, err := state.AppendRegion(nil, fullRegion())
-			assert.NoError(t, err, "the region encodes")
-			two, err := state.AppendRegion(nil, fullRegion())
-			assert.NoError(t, err, "and again")
-			assert.True(t, bytes.Equal(one, two), "the maps encode in identity order, so the bytes agree")
+			assert.Deterministic(t, func(r *store.Region) ([]byte, error) { return state.AppendRegion(nil, r) },
+				fullRegion(), "the maps encode in identity order, so the bytes agree")
 		})
 
 		t.Run("returns an error for a stamp value outside the fact vocabulary", func(t *testing.T) {
@@ -71,21 +69,15 @@ func TestRegion(t *testing.T) {
 		t.Run("returns every part of the region it encodes", func(t *testing.T) {
 			t.Parallel()
 
-			b, err := state.AppendRegion(nil, fullRegion())
-			assert.NoError(t, err, "the region encodes")
-			got, err := state.DecodeRegion(b)
-			assert.NoError(t, err, "and decodes")
-			assert.Equal(t, got, fullRegion(), "to the region that encoded it")
+			assert.RoundTrip(t, func(r *store.Region) ([]byte, error) { return state.AppendRegion(nil, r) },
+				state.DecodeRegion, fullRegion(), "the region decodes to the region that encoded it")
 		})
 
 		t.Run("returns an empty region for an empty region's blob", func(t *testing.T) {
 			t.Parallel()
 
-			b, err := state.AppendRegion(nil, &store.Region{})
-			assert.NoError(t, err, "the empty region encodes")
-			got, err := state.DecodeRegion(b)
-			assert.NoError(t, err, "and decodes")
-			assert.Equal(t, got, &store.Region{}, "to nothing")
+			assert.RoundTrip(t, func(r *store.Region) ([]byte, error) { return state.AppendRegion(nil, r) },
+				state.DecodeRegion, &store.Region{}, "the empty region decodes to nothing")
 		})
 
 		blob, err := state.AppendRegion(nil, fullRegion())
@@ -99,7 +91,10 @@ func TestRegion(t *testing.T) {
 			{name: "returns ErrDamaged for a blob shorter than its trailer", give: blob[:2]},
 			{name: "returns ErrDamaged for a blob whose CRC-32C fails", give: flipped},
 			{name: "returns ErrDamaged for a blob cut short", give: resealed(blob[:len(blob)/2])},
-			{name: "returns ErrDamaged for bytes after the body", give: resealed(append(body(blob), 0))},
+			{
+				name: "returns ErrDamaged for bytes after the body",
+				give: resealed(append(bytes.Clone(blob[:len(blob)-4]), 0)),
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -123,8 +118,9 @@ func TestRegion(t *testing.T) {
 			table, err := (&node.StringTable{}).AppendBinary(nil)
 			assert.NoError(t, err, "an empty table encodes")
 			_, err = state.DecodeRegion(resealed(append(table, 0xff)))
-			assert.ErrorIs(t, err, state.ErrDamaged, "the region is damaged")
-			assert.ErrorIs(t, err, wire.ErrMalformed, "because its body is malformed")
+			assert.That(t, err).
+				ErrorIs(state.ErrDamaged, "the region is damaged").
+				ErrorIs(wire.ErrMalformed, "because its body is malformed")
 		})
 	})
 }
@@ -133,24 +129,33 @@ func TestRegion(t *testing.T) {
 // an encoding into a buffer with room allocates nothing once the pool
 // contains its scratch, and a decode of one canonical package allocates
 // its table, its region, its package list and each declaration and
-// list of the package once. The check runs alone, because AllocsPerRun
-// refuses to run beside parallel tests.
+// list of the package once. Each count keeps the first error of its
+// calls, which cmp.Or returns without allocating. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestRegionAllocs(t *testing.T) {
 	r := fullRegion()
 	dst := make([]byte, 0, 1<<16)
+	want, err := state.AppendRegion(nil, r)
+	assert.NoError(t, err, "the region encodes")
+	var got []byte
 	assert.MaxAllocs(t, func() {
-		if _, err := state.AppendRegion(dst[:0], r); err != nil {
-			t.Fatal(err)
-		}
+		var aerr error
+		got, aerr = state.AppendRegion(dst[:0], r)
+		err = cmp.Or(err, aerr)
 	}, 0, "AppendRegion allocates nothing past its pooled scratch")
+	assert.NoError(t, err, "every encoding succeeds")
+	assert.Equal(t, got, want, "to the same bytes")
 
 	blob, err := state.AppendRegion(nil, &store.Region{Packages: coretest.Workspace(1, 10, 20)})
 	assert.NoError(t, err, "the canonical package encodes")
+	var decoded *store.Region
 	assert.MaxAllocs(t, func() {
-		if _, err := state.DecodeRegion(blob); err != nil {
-			t.Fatal(err)
-		}
+		var derr error
+		decoded, derr = state.DecodeRegion(blob)
+		err = cmp.Or(err, derr)
 	}, canonicalDecodeAllocs, "DecodeRegion allocates the region it returns")
+	assert.NoError(t, err, "every decode succeeds")
+	assert.Length(t, decoded.Packages, 1, "to the one package")
 }
 
 // BenchmarkRegion measures a region's encoding and decoding over one
@@ -164,18 +169,16 @@ func BenchmarkRegion(b *testing.B) {
 		dst := make([]byte, 0, 2*len(blob))
 		// The harness collects garbage before this run and runs it on a
 		// goroutine of its own, so the pool can miss the scratch of the
-		// parent's encoding. One encoding before the contract counts pools
-		// the scratch again.
-		_, err = state.AppendRegion(dst[:0], r)
-		assert.NoError(b, err, "the encoding before the measurement succeeds")
-		c := bench.Start(b).MaxAllocs(0)
+		// parent's encoding. One encoding before the measurement pools the
+		// scratch again.
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		var got []byte
 		for c.Loop() {
 			got, err = state.AppendRegion(dst[:0], r)
 		}
 		assert.NoError(b, err, "every encoding succeeds")
-		assert.Equal(b, len(got), len(blob), "to the same bytes")
+		assert.Equal(b, got, blob, "to the same bytes")
 	})
 
 	b.Run("DecodeRegion", func(b *testing.B) {
@@ -237,9 +240,6 @@ func fullRegion() *store.Region {
 // region, its package list, and the package's 223 declarations and
 // lists.
 const canonicalDecodeAllocs = 3 + 1 + 1 + 223
-
-// body returns a blob without its trailer.
-func body(blob []byte) []byte { return bytes.Clone(blob[:len(blob)-4]) }
 
 // resealed returns a body with a fresh CRC-32C trailer, so the decode
 // gets past the checksum to the body however damaged it is.

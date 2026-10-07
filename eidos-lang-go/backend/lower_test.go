@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"cmp"
 	"strconv"
 	"testing"
 
@@ -68,9 +69,6 @@ const (
 	throwsAllocs = 1 + 1 + 1
 	// receiveAllocs is a struct of two methods: each method's receiver.
 	receiveAllocs = 2
-	// allocRuns is the calls assert.MaxAllocs makes: one to warm up and
-	// one hundred it counts.
-	allocRuns = 101
 )
 
 // The lowering is Go's declared idiom for the constructs it states
@@ -205,8 +203,8 @@ func TestLower(t *testing.T) {
 			s.Methods.Append(&emit.Method{Name: getName}, &emit.Method{Name: putName})
 			lowered(t, s)
 			methods := s.Methods.Items()
-			assert.True(t, methods[0].Receives.Args[0] != methods[1].Receives.Args[0],
-				"a respell of one method's receiver leaves the other's")
+			assert.NotEqual(t, methods[0].Receives.Args[0], methods[1].Receives.Args[0],
+				"a respell of one method's receiver leaves the other's", assert.ByIdentity())
 		})
 
 		t.Run("fills the host receiver of a struct method stating none", func(t *testing.T) {
@@ -217,7 +215,7 @@ func TestLower(t *testing.T) {
 			s.Methods.Append(&emit.Method{Name: loadName})
 			lowered(t, s)
 			filled := s.Methods.Items()[0]
-			assert.True(t, filled.Receives != nil, "an unstated receiver is filled")
+			assert.NotNil(t, filled.Receives, "an unstated receiver is filled")
 			assert.Equal(t, filled.Receives.Spelling, rowName, "with the host's name")
 			assert.Equal(t, filled.Receives.Target, origin,
 				"bound to the host's origin, so the settle respells both together")
@@ -232,7 +230,7 @@ func TestLower(t *testing.T) {
 				Receiver: &emit.Param{Name: receiverName, Type: &emit.TypeRef{Spelling: "*" + rowName}},
 			})
 			lowered(t, s)
-			assert.True(t, s.Methods.Items()[0].Receives == nil,
+			assert.Nil(t, s.Methods.Items()[0].Receives,
 				"a stated receiver is how a generator asks for a pointer or a name")
 		})
 
@@ -252,7 +250,7 @@ func TestLower(t *testing.T) {
 
 			f := thrower(nil, notFoundType)
 			lowered(t, f)
-			assert.Length(t, f.Throws, 0, "a second settle finds nothing to lower")
+			assert.Empty(t, f.Throws, "a second settle finds nothing to lower")
 		})
 
 		t.Run("lowers the failures a struct's member method announces", func(t *testing.T) {
@@ -265,7 +263,7 @@ func TestLower(t *testing.T) {
 			})
 			lowered(t, host)
 			m := host.Methods.Items()[0]
-			assert.Length(t, m.Throws, 0, "the member's failures are consumed")
+			assert.Empty(t, m.Throws, "the member's failures are consumed")
 			assert.Equal(t, m.Returns, []*emit.Return{{Type: &emit.TypeRef{Spelling: errorType}}},
 				"a bare thrower returns the unnamed error alone")
 		})
@@ -310,28 +308,26 @@ func TestLower(t *testing.T) {
 // A declaration Go states as it is allocates nothing, and a reshaping
 // allocates the declarations and the references it adds. A lowering in
 // place consumes its fact, so each counted call lowers a fresh
-// declaration. The ordinary run, which runs no benchmark, checks those
-// ceilings here.
+// declaration, built outside the count. The ordinary run, which runs no
+// benchmark, checks those ceilings here. Each count keeps the first
+// error of its calls, which cmp.Or returns without allocating.
 func TestLowerAllocs(t *testing.T) {
 	checkAllocs(t, lowerCalls())
 
-	fns, next := make([]*emit.Function, allocRuns), 0
-	for i := range fns {
-		fns[i] = thrower(nil, overflowType)
-	}
-	assert.MaxAllocs(t, func() {
-		_, _ = backend.Lower(fns[next])
-		next++
-	}, throwsAllocs, "Lower appends the error return within its ceiling")
+	var err error
+	assert.MaxAllocsWithSetup(t, func() *emit.Function { return thrower(nil, overflowType) },
+		func(f *emit.Function) {
+			_, lerr := backend.Lower(f)
+			err = cmp.Or(err, lerr)
+		}, throwsAllocs, "Lower appends the error return within its ceiling")
+	assert.NoError(t, err, "Lower lowers every function that throws")
 
-	hosts, next := make([]*emit.Struct, allocRuns), 0
-	for i := range hosts {
-		hosts[i] = hostOf(getName, putName)
-	}
-	assert.MaxAllocs(t, func() {
-		_, _ = backend.Lower(hosts[next])
-		next++
-	}, receiveAllocs, "Lower fills the receivers within its ceiling")
+	assert.MaxAllocsWithSetup(t, func() *emit.Struct { return hostOf(getName, putName) },
+		func(s *emit.Struct) {
+			_, lerr := backend.Lower(s)
+			err = cmp.Or(err, lerr)
+		}, receiveAllocs, "Lower fills the receivers within its ceiling")
+	assert.NoError(t, err, "Lower lowers every struct")
 }
 
 // BenchmarkLower measures the lowering the settle runs over every
@@ -381,7 +377,7 @@ func lowerCalls() []allocCall {
 			call: func() { out, err = backend.Lower(constant) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower passes the constant")
-				assert.Length(tb, out, 0, "Lower keeps the constant in place")
+				assert.Empty(tb, out, "Lower keeps the constant in place")
 			},
 		},
 		{
@@ -434,9 +430,7 @@ func constantValues(tb assert.TB, e *emit.Enum) []string {
 	for _, d := range out[1:] {
 		c, isConstant := d.(*emit.Constant)
 		assert.True(tb, isConstant, "a variant lowers to a constant")
-		if isConstant {
-			got = append(got, c.Value)
-		}
+		got = append(got, c.Value)
 	}
 	return got
 }
@@ -457,6 +451,6 @@ func lowered(tb assert.TB, s symbol.Symbol) symbol.Symbol {
 
 	out, err := backend.Lower(s)
 	assert.NoError(tb, err, "the declaration lowers")
-	assert.Length(tb, out, 0, "in place: a nil list keeps the declaration")
+	assert.Empty(tb, out, "in place: a nil list keeps the declaration")
 	return s
 }

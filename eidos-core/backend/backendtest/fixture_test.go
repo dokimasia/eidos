@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -40,14 +41,14 @@ func TestFixture(t *testing.T) {
 		}
 
 		backendtest.AssertSpeltKinds(t, probe)
-		assert.True(t, seen != nil, "the check rendered")
-		assert.True(t, seen.Emit == f.Emit, "the same store")
-		assert.Equal(t, seen.Schedule, f.Schedule, "the schedule as data")
-		assert.True(t, seen.Trees["gen"] != nil, "the trees reach the context")
-		assert.True(t, seen.Funcs["gen"] != nil, "the helpers reach the context")
-		assert.Equal(t, seen.Overrides["gen"], []string{"up"},
+		assert.NotNil(t, seen, "the check rendered")
+		expect.Equal(t, seen.Emit, f.Emit, "the same store", assert.ByIdentity())
+		expect.Equal(t, seen.Schedule, f.Schedule, "the schedule as data")
+		expect.Equal(t, seen.Trees["gen"], f.Trees["gen"], "the trees reach the context", assert.ByIdentity())
+		expect.Equal(t, seen.Funcs["gen"], f.Funcs["gen"], "the helpers reach the context", assert.ByIdentity())
+		expect.Equal(t, seen.Overrides["gen"], []string{"up"},
 			"the override declarations reach the context")
-		assert.True(t, seen.Sink != nil, "the suite supplies a fresh sink")
-		assert.True(t, seen.Plugin != "", "the suite renders under its own identity")
+		expect.NotNil(t, seen.Sink, "the suite supplies a fresh sink")
+		expect.NotEmpty(t, seen.Plugin, "the suite renders under its own identity")
 	})
 }

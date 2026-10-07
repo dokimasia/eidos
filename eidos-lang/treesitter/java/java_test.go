@@ -4,7 +4,6 @@
 package java_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -31,7 +30,7 @@ func TestJava(t *testing.T) {
 		t.Run("parses a class without an error", func(t *testing.T) {
 			t.Parallel()
 
-			tree, err := java.Grammar.Parse(context.Background(), javaFile, []byte(javaSource))
+			tree, err := java.Grammar.Parse(t.Context(), javaFile, []byte(javaSource))
 			assert.NoError(t, err, "the source parses")
 			defer tree.Close()
 			assert.Empty(t, slices.Collect(tree.Errors()), "the source fits the grammar")

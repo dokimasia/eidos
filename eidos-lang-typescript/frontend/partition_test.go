@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -55,14 +54,14 @@ func TestPartition(t *testing.T) {
 }
 
 // partitioned partitions every file of a tree through the frontend.
-func partitioned(tb assert.TB, tree fstest.MapFS, claimed ...string) [][]plugin.SourceRef {
+func partitioned(tb testing.TB, tree fstest.MapFS, claimed ...string) [][]plugin.SourceRef {
 	tb.Helper()
 
 	refs := make([]plugin.SourceRef, 0, len(claimed))
 	for _, p := range claimed {
 		refs = append(refs, plugin.SourceRef{Path: p})
 	}
-	units, err := frontend.New().Partition(context.Background(), refs, treeReader{tree})
+	units, err := frontend.New().Partition(tb.Context(), refs, treeReader{tree})
 	assert.NoError(tb, err, "the tree partitions")
 	return units
 }

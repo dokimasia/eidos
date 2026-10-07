@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -117,7 +118,7 @@ func TestCommit(t *testing.T) {
 			assert.Equal(t, got.Files, []manifest.Entry{{
 				Path:    storeGen,
 				Plan:    "plan",
-				Hash:    digestOf(read(t, root, storeGen)),
+				Hash:    digestOf(files.Read(t, filepath.Join(root, storeGen))),
 				Plugins: []plugin.ID{"plan-mirror"},
 				Sources: []string{coretest.Struct(coretest.StorePath, "Alpha").ID.String()},
 			}}, "the record of the one file")
@@ -145,7 +146,7 @@ func TestCommit(t *testing.T) {
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanPrepared, "the plan prepares")
 			assert.Equal(t, report.Plans[0].Changes[0].Action, output.ActionCreated, "the change it would make")
 			assert.Equal(t, paths(report.Manifest), []string{storeGen}, "the record it would commit")
-			assert.True(t, absent(root, storeGen), "nothing is written")
+			files.Absent(t, filepath.Join(root, storeGen), "nothing is written")
 			assert.Equal(t, mem.Writes(), 0, "and nothing is recorded")
 		})
 
@@ -197,7 +198,7 @@ func TestCommit(t *testing.T) {
 			report, err := runOver(t, w, g)
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
 			want := manifest.Manifest{Version: manifest.Version, Files: []manifest.Entry{gone}}
-			assert.True(t, report.Manifest.Equal(want), "the removed plan's entry remains")
+			assert.Equal(t, report.Manifest, want, "the removed plan's entry remains", assert.EquateEmpty())
 		})
 
 		t.Run("keeps the previous entries of a plan that fails", func(t *testing.T) {
@@ -206,7 +207,7 @@ func TestCommit(t *testing.T) {
 			root := t.TempDir()
 			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			place(t, root, storeGen, edited(read(t, root, storeGen)))
+			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
 
 			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
@@ -230,7 +231,7 @@ func TestCommit(t *testing.T) {
 			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the first plan committed")
 			assert.Equal(t, report.Plans[1].Status, workspace.PlanCancelled, "the second is cancelled")
-			assert.True(t, absent(root, "b/"+storeGen), "the cancelled plan writes nothing")
+			files.Absent(t, filepath.Join(root, "b", storeGen), "the cancelled plan writes nothing")
 			assert.Equal(t, mem.Writes(), 1, "the record matches the destination")
 			assert.Equal(t, paths(recordIn(t, mem)), []string{"a/" + storeGen}, "it lists the committed plan's file")
 		})
@@ -276,7 +277,7 @@ func TestCommit(t *testing.T) {
 			root := t.TempDir()
 			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			changed := edited(read(t, root, storeGen))
+			changed := edited(files.Read(t, filepath.Join(root, storeGen)))
 			meddled := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).
 				Output(func() (output.Sink, error) {
 					d, err := output.NewDisk(root, fixtureBrand)
@@ -285,7 +286,7 @@ func TestCommit(t *testing.T) {
 				}))
 
 			report := cleanRun(t, meddled, routedIn(t, coretest.CachePath))
-			assert.Equal(t, read(t, root, storeGen), changed, "the commit leaves the edited file")
+			files.HasContent(t, filepath.Join(root, storeGen), changed, "the commit leaves the edited file")
 			assert.Contains(t, report.Plans[0].Changes, output.Change{
 				Path: storeGen, Action: output.ActionUnchanged, Found: output.FoundIntact,
 			}, "the report records no removal")
@@ -317,7 +318,7 @@ func TestCommit(t *testing.T) {
 			w := built(t, onDisk(t, root, diskPlan(t, "producer", centralised("a")),
 				dependentOn(t, "dependent", "b", "producer")))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			place(t, root, "a/"+storeGen, edited(read(t, root, "a/"+storeGen)))
+			place(t, root, "a/"+storeGen, edited(files.Read(t, filepath.Join(root, "a", storeGen))))
 
 			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
@@ -349,7 +350,7 @@ func TestCommit(t *testing.T) {
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the shared Error fails the run")
 			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "the dependent commits nothing")
 			explained := findings(report.Sink, workspace.FailedDependency)
-			assert.Length(t, explained, 0, "and no FailedDependency explains it")
+			assert.Empty(t, explained, "and no FailedDependency explains it")
 		})
 
 		t.Run("cancels a plan whose dependency's commit a cancellation skipped", func(t *testing.T) {
@@ -364,7 +365,7 @@ func TestCommit(t *testing.T) {
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCancelled, "the producer's commit is skipped")
 			assert.Equal(t, report.Plans[1].Status, workspace.PlanCancelled, "and so is the dependent's")
 			explained := findings(report.Sink, workspace.FailedDependency)
-			assert.Length(t, explained, 0, "and no FailedDependency explains it")
+			assert.Empty(t, explained, "and no FailedDependency explains it")
 		})
 	})
 }

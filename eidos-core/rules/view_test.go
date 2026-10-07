@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -262,8 +263,8 @@ func TestView(t *testing.T) {
 			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy(), aliases()))
 			region := named(aliasPath, regionName, symbol.KindAlias)
 			sample, alternate := v.Authored(scripted(), rowField(nameField), region)
-			assert.Equal(t, [2]rules.Sample{sample, alternate}, [2]rules.Sample{},
-				"a half nobody stated is left for the caller to derive")
+			expect.Equal(t, sample, rules.Sample{}, "a sample nobody stated is left for the caller to derive")
+			expect.Equal(t, alternate, rules.Sample{}, "and so is an alternate")
 		})
 
 		t.Run("tags raw text with the language of the declaration that states it", func(t *testing.T) {
@@ -289,7 +290,7 @@ func TestView(t *testing.T) {
 			for id := range reads.Facts() {
 				read = append(read, id)
 			}
-			assert.True(t, slices.Contains(read, region),
+			assert.Contains(t, read, region,
 				"a value stated on the type later changes the result, so the read is an edge")
 		})
 
@@ -363,17 +364,10 @@ func TestView(t *testing.T) {
 }
 
 // Each read of a view allocates what it lifts, in the ordinary run,
-// which runs no benchmark. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// which runs no benchmark. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestViewAllocs(t *testing.T) {
-	for _, tt := range viewCalls(t) {
-		msg := tt.name + " allocates what it lifts"
-		if tt.caseName != "" {
-			msg = tt.name + " for " + tt.caseName + " allocates what it lifts"
-		}
-		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
-	}
+	checkCalls(t, viewCalls(t))
 }
 
 // BenchmarkView measures each read a projection makes through a view:
@@ -385,8 +379,8 @@ func BenchmarkView(b *testing.B) {
 
 // viewCalls returns one call of each read of a view over the walk
 // fixture, with what the call allocates. Row's name field states a
-// sample, and its count field states none. Each call checks what it
-// returned, so a call that measured another path fails.
+// sample, and its count field states none. Each check reads what the
+// last call returned, so a call that measured another path fails.
 func viewCalls(tb assert.TB) []allocCall {
 	tb.Helper()
 
@@ -398,37 +392,42 @@ func viewCalls(tb assert.TB) []allocCall {
 	stamp(tb, facts, v.Kernel.Sample, stated, authoredText)
 	assert.NoError(tb, meta.Stamp(facts, v.Kernel.Module, modulePath, meta.Claim{Subject: pkg}), "a fact stamps")
 	strRef, intRef := builtin(strSpelling), builtin(intSpelling)
+	var (
+		held   bool
+		sample rules.Sample
+		got    string
+	)
 	return []allocCall{
-		{name: "IsZero", call: func() {
-			if v.IsZero() {
-				tb.Fatalf("IsZero reported true for a minted view")
-			}
-		}},
-		{name: "Lookup", call: func() {
-			if _, held := v.Lookup(row); !held {
-				tb.Fatalf("Lookup missed the fixture's struct")
-			}
-		}},
-		{name: "PackageOf", call: func() {
-			if _, held := v.PackageOf(row); !held {
-				tb.Fatalf("PackageOf missed the fixture's package")
-			}
-		}},
-		{name: "Authored", caseName: "a type without a stated value", call: func() {
-			if sample, _ := v.Authored(source, unstated, intRef); !sample.Value.IsZero() {
-				tb.Fatalf("Authored returned a value nobody stated")
-			}
-		}},
-		{name: "Authored", caseName: "a stated value", allocs: authoredAllocs, call: func() {
-			if sample, _ := v.Authored(source, stated, strRef); sample.Value.Text != authoredText {
-				tb.Fatalf("Authored returned another value")
-			}
-		}},
-		{name: "Fact", call: func() {
-			if got, _ := rules.Fact(v, pkg, v.Kernel.Module); got != modulePath {
-				tb.Fatalf("Fact returned another value")
-			}
-		}},
+		{
+			name: "IsZero", call: func() { held = v.IsZero() },
+			check: func(tb assert.TB) { assert.False(tb, held, "IsZero reports false for a minted view") },
+		},
+		{
+			name: "Lookup", call: func() { _, held = v.Lookup(row) },
+			check: func(tb assert.TB) { assert.True(tb, held, "Lookup finds the fixture's struct") },
+		},
+		{
+			name: "PackageOf", call: func() { _, held = v.PackageOf(row) },
+			check: func(tb assert.TB) { assert.True(tb, held, "PackageOf finds the fixture's package") },
+		},
+		{
+			name: "Authored", caseName: "a type without a stated value",
+			call: func() { sample, _ = v.Authored(source, unstated, intRef) },
+			check: func(tb assert.TB) {
+				assert.True(tb, sample.Value.IsZero(), "Authored returns no value nobody stated")
+			},
+		},
+		{
+			name: "Authored", caseName: "a stated value", allocs: authoredAllocs,
+			call: func() { sample, _ = v.Authored(source, stated, strRef) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Text, authoredText, "Authored returns the stated value")
+			},
+		},
+		{
+			name: "Fact", call: func() { got, _ = rules.Fact(v, pkg, v.Kernel.Module) },
+			check: func(tb assert.TB) { assert.Equal(tb, got, modulePath, "Fact returns the stamped value") },
+		},
 	}
 }
 

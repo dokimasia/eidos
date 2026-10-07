@@ -49,8 +49,7 @@ func TestTemplates(t *testing.T) {
 				symbol.KindMethod, symbol.KindAlias, symbol.KindConstant,
 				symbol.KindVariable,
 			} {
-				_, held := kinds[k]
-				assert.True(t, held, "the inventory spells "+k.String())
+				assert.Contains(t, kinds, k, "the inventory spells "+k.String())
 			}
 		})
 
@@ -374,9 +373,9 @@ func TestTemplates(t *testing.T) {
 		t.Run("returns no kind the templates spell", func(t *testing.T) {
 			t.Parallel()
 
+			kinds := backend.KindTemplates()
 			for k := range backend.RefusedKinds() {
-				_, spelt := backend.KindTemplates()[k]
-				assert.False(t, spelt, "a kind is spelt or refused: "+k.String())
+				assert.NotContains(t, kinds, k, "a kind is spelt or refused: "+k.String())
 			}
 		})
 	})

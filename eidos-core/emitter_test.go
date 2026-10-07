@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
@@ -175,16 +176,15 @@ func TestEmitter(t *testing.T) {
 			})).Build()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
-			units := 0
-			for u := range ctx.Emit.Units() {
-				units++
+			units := slices.Collect(ctx.Emit.Units())
+			assert.Length(t, units, len(tags), "one unit per family")
+			for _, u := range units {
 				assert.Length(t, u.Decls, 2, "every family took its two appends")
 				first, held := u.Decls[0].(*emit.Struct)
 				assert.True(t, held, "the fixture emits structs")
 				assert.HasPrefix(t, first.Name, u.Tag,
 					"each append arrived under the handle that made it")
 			}
-			assert.Equal(t, units, len(tags), "one unit per family")
 		})
 	})
 
@@ -209,16 +209,15 @@ func TestEmitter(t *testing.T) {
 				Build()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
-			var got plugin.Unit
-			found := false
+			var flushed []plugin.Unit
 			for u := range ctx.Emit.Units() {
 				if u.Plugin == "weaver" {
-					got, found = u, true
+					flushed = append(flushed, u)
 				}
 			}
-			assert.True(t, found, "the touched accumulator still flushes")
-			assert.Length(t, got.Decls, 0, "the unit has no declaration")
-			assert.Length(t, got.Origins, 0, "an empty append fabricates no provenance")
+			assert.Length(t, flushed, 1, "the touched accumulator still flushes")
+			expect.Empty(t, flushed[0].Decls, "the unit has no declaration")
+			expect.Empty(t, flushed[0].Origins, "an empty append fabricates no provenance")
 		})
 
 		t.Run("places one origin's declarations in gating instance order across rules", func(t *testing.T) {
@@ -453,7 +452,7 @@ func TestEmitter(t *testing.T) {
 			t.Parallel()
 
 			_, unit := woven(t, 0)
-			assert.Length(t, unit.Contributors, 0, "an empty append contributes nothing")
+			assert.Empty(t, unit.Contributors, "an empty append contributes nothing")
 		})
 
 		t.Run("panics on the zero view", func(t *testing.T) {
@@ -469,9 +468,8 @@ func TestEmitter(t *testing.T) {
 // Each method of the emitter, its handle and its slot view allocates
 // nothing per invocation in the ordinary run, which runs no benchmark,
 // and a phase call allocates what its effects leave in the store. A
-// name join allocates the name. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// name join allocates the name. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestEmitterAllocs(t *testing.T) {
 	checkPhaseAllocs(t, emitterCases(t))
 
@@ -591,9 +589,7 @@ func emitterCases(tb assert.TB) []phaseCase {
 		return generatorOf(tb, eidos.NewPlugin(contextPlugin).
 			Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 				s, held := m.Value.(*emit.Struct)
-				if !held {
-					tb.Fatalf("the struct rule received a %T", m.Value)
-				}
+				assert.True(tb, held, "a struct rule receives structs")
 				h(s, e)
 				return nil
 			})).

@@ -52,7 +52,7 @@ func TestClassify(t *testing.T) {
 // testStamps parses one file at a path through the frontend's parse and
 // classifiers, and returns the values of the test-file stamps it
 // recorded.
-func testStamps(tb assert.TB, p string) []any {
+func testStamps(tb testing.TB, p string) []any {
 	tb.Helper()
 
 	gb, _ := parsedTree(tb, fstest.MapFS{p: {Data: []byte(publicClass)}}, p, plugin.DepthFull)

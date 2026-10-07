@@ -4,6 +4,7 @@
 package frontend_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -108,7 +109,7 @@ func TestParse(t *testing.T) {
 			sink := diag.NewSink()
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: aFile, Shared: []string{rootConfig}}}, tree,
 				plugin.DepthFull, f.Syntax(), brand, sink, f.Name())
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			assert.Equal(t, codesOf(slices.Collect(sink.All())), []diag.Code{frontend.BadConfig},
 				"the configuration it declares does not read")
 		})
@@ -120,9 +121,8 @@ func TestParse(t *testing.T) {
 			tree := fstest.MapFS{aFile: {Data: []byte(exportClass)}}
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: aFile}}, tree, plugin.DepthFull,
 				f.Syntax(), brand, diag.NewSink(), f.Name())
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			assert.ErrorIs(t, f.Parse(ctx, u), context.Canceled, "a cancelled load parses nothing")
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return f.Parse(ctx, u) },
+				"a cancelled load parses nothing")
 		})
 
 		t.Run("returns the read's error for a member outside the tree", func(t *testing.T) {
@@ -131,7 +131,7 @@ func TestParse(t *testing.T) {
 			f := frontend.New()
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: aFile}}, fstest.MapFS{}, plugin.DepthFull,
 				f.Syntax(), brand, diag.NewSink(), f.Name())
-			assert.HasError(t, f.Parse(context.Background(), u), "a member that does not read fails the unit")
+			assert.HasError(t, f.Parse(t.Context(), u), "a member that does not read fails the unit")
 		})
 	})
 }
@@ -146,20 +146,17 @@ func TestParse(t *testing.T) {
 func BenchmarkParse(b *testing.B) {
 	tree := scaledTypeScript()
 	f := frontend.New()
-	units, err := f.Partition(context.Background(), claimedIn(tree), treeReader{tree})
-	if err != nil {
-		b.Fatalf("the corpus partitions: %v", err)
-	}
+	units, err := f.Partition(b.Context(), claimedIn(tree), treeReader{tree})
+	assert.NoError(b, err, "the corpus partitions")
 	c := bench.Start(b).MaxAllocs(parseAllocs)
 	defer c.End()
 	for c.Loop() {
 		for _, unit := range units {
 			u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-			if err := f.Parse(context.Background(), u); err != nil {
-				b.Fatalf("the corpus parses: %v", err)
-			}
+			err = cmp.Or(err, f.Parse(b.Context(), u))
 		}
 	}
+	assert.NoError(b, err, "the corpus parses")
 }
 
 // scaledTypeScript returns the canonical corpus as TypeScript modules: a
@@ -200,28 +197,23 @@ func claimedIn(tree fstest.MapFS) []plugin.SourceRef {
 // of one member at a depth. It returns the unit's builder and the
 // findings the parse reported.
 func parsedTree(
-	tb assert.TB, tree fstest.MapFS, member string, depth plugin.Depth,
+	tb testing.TB, tree fstest.MapFS, member string, depth plugin.Depth,
 ) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	f := frontend.New()
-	units, err := f.Partition(context.Background(), claimedIn(tree), treeReader{tree})
+	units, err := f.Partition(tb.Context(), claimedIn(tree), treeReader{tree})
 	assert.NoError(tb, err, "the fixture partitions")
-	for _, unit := range units {
-		if unit[0].Path != member {
-			continue
-		}
-		sink := diag.NewSink()
-		u := plugin.NewSourceUnit(unit, tree, depth, f.Syntax(), brand, sink, f.Name())
-		assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
-		return u.Graph(), slices.Collect(sink.All())
-	}
-	tb.Fatalf("no unit has the member %s", member)
-	return nil, nil
+	at := slices.IndexFunc(units, func(unit []plugin.SourceRef) bool { return unit[0].Path == member })
+	assert.NotEqual(tb, at, -1, "a unit has the member "+member)
+	sink := diag.NewSink()
+	u := plugin.NewSourceUnit(units[at], tree, depth, f.Syntax(), brand, sink, f.Name())
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
+	return u.Graph(), slices.Collect(sink.All())
 }
 
 // parsedSource parses one module's source at src/a.ts, at full depth.
-func parsedSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
+func parsedSource(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parsedTree(tb, fstest.MapFS{aFile: {Data: []byte(src)}}, aFile, plugin.DepthFull)
@@ -229,7 +221,7 @@ func parsedSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) 
 
 // declsOf parses one module's source and returns the declarations of
 // its file package.
-func declsOf(tb assert.TB, src string) node.Symbols {
+func declsOf(tb testing.TB, src string) node.Symbols {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, src)
@@ -237,32 +229,28 @@ func declsOf(tb assert.TB, src string) node.Symbols {
 }
 
 // fileIn returns the File node a builder's package of a path has.
-func fileIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
+func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 	tb.Helper()
 
-	for _, p := range gb.Packages() {
-		if p.ID.Package == pkg {
-			assert.Length(tb, p.Files, 1, "the package has the file's one File node")
-			return p.Files[0]
-		}
-	}
-	tb.Fatalf("the unit declares no package %q", pkg)
-	return nil
+	pkgs := gb.Packages()
+	at := slices.IndexFunc(pkgs, func(p *node.Package) bool { return p.ID.Package == pkg })
+	assert.NotEqual(tb, at, -1, "the unit declares the package "+pkg)
+	assert.Length(tb, pkgs[at].Files, 1, "the package has the file's one File node")
+	return pkgs[at].Files[0]
 }
 
 // named returns the declaration of a name among declarations, of the
 // type the case expects.
-func named[T symbol.Symbol](tb assert.TB, decls node.Symbols, name string) T {
+func named[T symbol.Symbol](tb testing.TB, decls node.Symbols, name string) T {
 	tb.Helper()
 
-	for _, d := range decls {
-		if decl, is := d.(T); is && nameOf(d) == name {
-			return decl
-		}
-	}
+	at := slices.IndexFunc(decls, func(d symbol.Symbol) bool {
+		_, is := d.(T)
+		return is && nameOf(d) == name
+	})
 	var zero T
-	tb.Fatalf("no %T is named %s", zero, name)
-	return zero
+	assert.NotEqual(tb, at, -1, fmt.Sprintf("a %T is named %s", zero, name))
+	return decls[at].(T)
 }
 
 // nameOf returns a declaration's written name.

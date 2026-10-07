@@ -5,13 +5,13 @@ package main_test
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 )
@@ -42,17 +42,14 @@ func TestMain(t *testing.T) {
 		out, err := runFrom(t, bin, filepath.Join(root, "eidos-core"))
 		assert.NoError(t, err, "the wrapper regenerates from inside the kernel: "+out)
 		assert.Empty(t, out, "and writes nothing on success")
-		_, err = os.Stat(filepath.Join(root, "eidos-sdk", "facade.gen.go"))
-		assert.NoError(t, err, "and the facade arrives beside the copied kernel")
+		files.IsFile(t, filepath.Join(root, "eidos-sdk", "facade.gen.go"),
+			"and the facade arrives beside the copied kernel")
 	})
 
 	t.Run("reports a module that is not the kernel", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-		assert.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(otherModule), 0o600),
-			"the other module's go.mod writes")
-
+		dir := files.Workspace(t, files.Tree{"go.mod": files.Text(otherModule)})
 		out, err := runFrom(t, bin, dir)
 		assert.HasError(t, err,
 			"a module that is not the kernel is reported, not generated into")

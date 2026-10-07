@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -120,13 +121,9 @@ func (f *fixture) field(tb assert.TB, host, name string) *node.Field {
 
 	s, is := f.decl(tb, id(fxPath, host, symbol.KindStruct)).(*node.Struct)
 	assert.True(tb, is, host+" is a struct")
-	for _, candidate := range s.Fields {
-		if candidate.Name == name {
-			return candidate
-		}
-	}
-	tb.Fatalf("%s declares no field %s", host, name)
-	return nil
+	at := slices.IndexFunc(s.Fields, func(candidate *node.Field) bool { return candidate.Name == name })
+	assert.NotEqual(tb, at, -1, host+" declares the field "+name)
+	return s.Fields[at]
 }
 
 // scope returns a resolution scope from a fixture subject.

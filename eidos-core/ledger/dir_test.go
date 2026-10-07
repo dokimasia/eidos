@@ -4,10 +4,12 @@
 package ledger_test
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -15,16 +17,13 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/ledger"
 )
 
 // past is the mtime a fixture sets on a blob, so a touch moves the time.
 var past = time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
-
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
 
 // The ceilings of the disk ledger's calls over a state directory of two
 // documents. Every call other than an open opens the root, resolves the
@@ -87,9 +86,8 @@ func TestDir(t *testing.T) {
 		t.Run("returns an error for a root that is a file", func(t *testing.T) {
 			t.Parallel()
 
-			file := filepath.Join(t.TempDir(), "file")
-			assert.NoError(t, os.WriteFile(file, nil, 0o600), "the file is written")
-			_, err := ledger.OpenDir(file, brand)
+			dir := files.Workspace(t, files.Tree{"file": files.Text("")})
+			_, err := ledger.OpenDir(filepath.Join(dir, "file"), brand)
 			assert.HasError(t, err, "the root is refused")
 		})
 	})
@@ -104,26 +102,23 @@ func TestDir(t *testing.T) {
 			d, err := ledger.OpenAt(dir)
 			assert.NoError(t, err, "a missing directory opens")
 			assert.NoError(t, d.Put(t.Context(), docName, []byte(docBody)), "the first write creates it")
-			got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(docName)))
-			assert.NoError(t, err, "the blob is a file of the directory itself")
-			assert.Equal(t, string(got), docBody, "with its bytes")
+			files.HasContent(t, filepath.Join(dir, filepath.FromSlash(docName)), docBody,
+				"the blob is a file of the directory itself, with its bytes")
 		})
 
 		t.Run("returns an error for a path that is a file", func(t *testing.T) {
 			t.Parallel()
 
-			file := filepath.Join(t.TempDir(), "file")
-			assert.NoError(t, os.WriteFile(file, nil, 0o600), "the file is written")
-			_, err := ledger.OpenAt(file)
+			dir := files.Workspace(t, files.Tree{"file": files.Text("")})
+			_, err := ledger.OpenAt(filepath.Join(dir, "file"))
 			assert.HasError(t, err, "the path is refused")
 		})
 
 		t.Run("returns an error for a path whose parent does not stat", func(t *testing.T) {
 			t.Parallel()
 
-			file := filepath.Join(t.TempDir(), "file")
-			assert.NoError(t, os.WriteFile(file, nil, 0o600), "the file is written")
-			_, err := ledger.OpenAt(filepath.Join(file, "below"))
+			dir := files.Workspace(t, files.Tree{"file": files.Text("")})
+			_, err := ledger.OpenAt(filepath.Join(dir, "file", "below"))
 			assert.HasError(t, err, "a path below a file is refused")
 		})
 
@@ -199,8 +194,10 @@ func TestDir(t *testing.T) {
 			t.Parallel()
 
 			d, _ := written(t, docName, docBody)
-			_, err := d.Read(cancelled(t), docName)
-			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := d.Read(ctx, docName)
+				return err
+			}, "the cancellation is returned")
 		})
 
 		for _, tt := range invalidNames {
@@ -261,18 +258,16 @@ func TestDir(t *testing.T) {
 			t.Parallel()
 
 			_, root := written(t, segName, docBody)
-			got, err := os.ReadFile(onDisk(root, segName))
-			assert.NoError(t, err, "the blob is a file of the state directory")
-			assert.Equal(t, string(got), docBody, "with its bytes")
+			files.HasContent(t, onDisk(root, segName), docBody,
+				"the blob is a file of the state directory, with its bytes")
 		})
 
 		t.Run("leaves the blob alone in its directory", func(t *testing.T) {
 			t.Parallel()
 
 			_, root := written(t, docName, docBody)
-			listed, err := os.ReadDir(filepath.Dir(onDisk(root, docName)))
-			assert.NoError(t, err, "the directory reads")
-			assert.Length(t, listed, 1, "no staging file remains")
+			files.Equal(t, os.DirFS(filepath.Dir(onDisk(root, docName))),
+				files.Tree{path.Base(docName): files.Text(docBody)}, "no staging file remains")
 		})
 
 		t.Run("returns an error for a blob whose directory is a file", func(t *testing.T) {
@@ -287,8 +282,7 @@ func TestDir(t *testing.T) {
 
 			d, root := written(t, segName, docBody)
 			assert.HasError(t, d.Write(t.Context(), "state/seg", []byte(docBody)), "the rename is refused")
-			_, err := os.Stat(onDisk(root, segName))
-			assert.NoError(t, err, "the directory's blob remains")
+			files.IsFile(t, onDisk(root, segName), "the directory's blob remains")
 		})
 
 		t.Run("returns an error for a root removed after the ledger opened", func(t *testing.T) {
@@ -303,10 +297,10 @@ func TestDir(t *testing.T) {
 			t.Parallel()
 
 			d, root := opened(t)
-			assert.ErrorIs(t, d.Write(cancelled(t), docName, []byte(docBody)), context.Canceled,
-				"the cancellation is returned")
-			_, err := os.Stat(filepath.Join(root, ledger.StateDir(brand)))
-			assert.ErrorIs(t, err, fs.ErrNotExist, "and nothing is created")
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				return d.Write(ctx, docName, []byte(docBody))
+			}, "the cancellation is returned")
+			files.Absent(t, filepath.Join(root, ledger.StateDir(brand)), "and nothing is created")
 		})
 
 		t.Run("returns ErrInvalid for an invalid name", func(t *testing.T) {
@@ -349,6 +343,7 @@ func TestDir(t *testing.T) {
 			assert.NoError(t, d.Touch(t.Context(), docName), "the blob is touched")
 			listed, err := d.List(t.Context(), "manifest")
 			assert.NoError(t, err, "the blobs list")
+			assert.Length(t, listed, 1, "the touched blob")
 			assert.True(t, listed[0].ModTime.After(past), "the time moved")
 		})
 
@@ -416,9 +411,8 @@ func TestDir(t *testing.T) {
 			t.Parallel()
 
 			d, _ := written(t, "state/seg/ab/0123", docBody)
-			for _, name := range []string{"state/seg/a.b", "state/gen/0001", "state/seg/0f/9999"} {
-				assert.NoError(t, d.Write(t.Context(), name, []byte(otherBody)), "a blob is written")
-			}
+			assert.Total(t, func(name string) error { return d.Write(t.Context(), name, []byte(otherBody)) },
+				[]string{"state/seg/a.b", "state/gen/0001", "state/seg/0f/9999"}, "a blob is written")
 			listed, err := d.List(t.Context(), "state/seg")
 			assert.NoError(t, err, "the blobs list")
 			names := make([]string, 0, len(listed))
@@ -484,69 +478,70 @@ func TestDir(t *testing.T) {
 
 // The disk ledger's calls allocate within their ceilings in the ordinary
 // run, which runs no benchmark. Each removal removes a blob of its own,
-// written before the count. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// put outside the count, and each count keeps the first error of its
+// calls, which cmp.Or returns without allocating. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestDirAllocs(t *testing.T) {
 	ctx, body, p := t.Context(), []byte(docBody), make([]byte, 5)
 	d, root := documented(t)
+	var err error
 	assert.MaxAllocs(t, func() {
-		if _, err := ledger.OpenDir(root, brand); err != nil {
-			t.Fatalf("OpenDir: unexpected error: %v", err)
-		}
+		_, oerr := ledger.OpenDir(root, brand)
+		err = cmp.Or(err, oerr)
 	}, openDirAllocs, "OpenDir allocates the path and the ledger")
+	assert.NoError(t, err, "the ledger opens")
 	assert.MaxAllocs(t, func() {
-		if _, err := ledger.OpenAt(root); err != nil {
-			t.Fatalf("OpenAt: unexpected error: %v", err)
-		}
+		_, oerr := ledger.OpenAt(root)
+		err = cmp.Or(err, oerr)
 	}, openAtAllocs, "OpenAt allocates the path and the ledger")
+	assert.NoError(t, err, "the directory opens")
+	var workspace string
+	assert.MaxAllocs(t, func() { workspace = d.Workspace() }, 0, "Workspace allocates nothing")
+	assert.Equal(t, workspace, filepath.Base(root), "Workspace returns the root's base name")
+	var read []byte
 	assert.MaxAllocs(t, func() {
-		if d.Workspace() == "" {
-			t.Fatal("Workspace returned no name")
-		}
-	}, 0, "Workspace allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, err := d.Read(ctx, docName); err != nil {
-			t.Fatalf("Read: unexpected error: %v", err)
-		}
+		var rerr error
+		read, rerr = d.Read(ctx, docName)
+		err = cmp.Or(err, rerr)
 	}, dirReadAllocs, "Read allocates the root, the file and the bytes")
+	assert.NoError(t, err, "the blob reads")
+	assert.Equal(t, string(read), docBody, "Read returns the blob")
+	var n int
 	assert.MaxAllocs(t, func() {
-		if _, err := d.ReadAt(ctx, docName, p, 4); err != nil {
-			t.Fatalf("ReadAt: unexpected error: %v", err)
-		}
+		var rerr error
+		n, rerr = d.ReadAt(ctx, docName, p, 4)
+		err = cmp.Or(err, rerr)
 	}, dirReadAtAllocs, "ReadAt allocates the root and the file")
+	assert.NoError(t, err, "the range reads")
+	assert.Equal(t, string(p[:n]), "first", "ReadAt copies the bytes at the offset")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, d.Write(ctx, docName, body)) }, dirWriteAllocs,
+		"Write allocates the root and the staged, synced file")
+	assert.NoError(t, err, "the blob is written")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, d.Put(ctx, docName, body)) }, dirPutAllocs,
+		"Put allocates the root and the staged file")
+	assert.NoError(t, err, "the blob is put")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, d.Touch(ctx, docName)) }, dirTouchAllocs,
+		"Touch allocates the root and the times' change")
+	assert.NoError(t, err, "the blob is touched")
+	var listed []ledger.Blob
 	assert.MaxAllocs(t, func() {
-		if err := d.Write(ctx, docName, body); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
-		}
-	}, dirWriteAllocs, "Write allocates the root and the staged, synced file")
-	assert.MaxAllocs(t, func() {
-		if err := d.Put(ctx, docName, body); err != nil {
-			t.Fatalf("Put: unexpected error: %v", err)
-		}
-	}, dirPutAllocs, "Put allocates the root and the staged file")
-	assert.MaxAllocs(t, func() {
-		if err := d.Touch(ctx, docName); err != nil {
-			t.Fatalf("Touch: unexpected error: %v", err)
-		}
-	}, dirTouchAllocs, "Touch allocates the root and the times' change")
-	assert.MaxAllocs(t, func() {
-		if listed, err := d.List(ctx, "manifest"); err != nil || len(listed) != 2 {
-			t.Fatalf("List: blobs %d, error %v", len(listed), err)
-		}
+		var lerr error
+		listed, lerr = d.List(ctx, "manifest")
+		err = cmp.Or(err, lerr)
 	}, dirListAllocs, "List allocates the root, the walk and the blobs")
-	stored := make([]string, allocRuns)
-	for i := range stored {
-		stored[i] = "state/seg/rm/" + strconv.Itoa(i)
-		assert.NoError(t, d.Put(ctx, stored[i], body), "the blob is put")
+	assert.NoError(t, err, "the blobs list")
+	assert.Length(t, listed, 2, "both documents")
+
+	next := 0
+	put := func() string {
+		name := "state/seg/rm/" + strconv.Itoa(next)
+		next++
+		assert.NoError(t, d.Put(ctx, name, body), "the blob is put")
+		return name
 	}
-	at := 0
-	assert.MaxAllocs(t, func() {
-		if err := d.Remove(ctx, stored[at]); err != nil {
-			t.Fatalf("Remove: unexpected error: %v", err)
-		}
-		at++
-	}, dirRemoveAllocs, "Remove allocates the root and the removal")
+	assert.MaxAllocsWithSetup(t, put, func(name string) { err = cmp.Or(err, d.Remove(ctx, name)) },
+		dirRemoveAllocs, "Remove allocates the root and the removal")
+	assert.NoError(t, err, "every blob is removed")
 }
 
 // BenchmarkDir measures each call of the disk ledger over a state
@@ -717,8 +712,7 @@ func documented(tb testing.TB) (*ledger.Dir, string) {
 	tb.Helper()
 
 	d, root := written(tb, docName, docBody)
-	for _, name := range []string{"manifest/cd.json", segName} {
-		assert.NoError(tb, d.Write(tb.Context(), name, []byte(docBody)), "the blob is written")
-	}
+	assert.Total(tb, func(name string) error { return d.Write(tb.Context(), name, []byte(docBody)) },
+		[]string{"manifest/cd.json", segName}, "the blob is written")
 	return d, root
 }

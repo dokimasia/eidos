@@ -191,7 +191,7 @@ func TestScope(t *testing.T) {
 
 // plainScope returns the scope of a file of com.acme that imports
 // nothing and declares the class A.
-func plainScope(tb assert.TB) plugin.ImportScope {
+func plainScope(tb testing.TB) plugin.ImportScope {
 	tb.Helper()
 
 	return scopeIn(tb, pkgClause+publicClass, pkgPath)
@@ -199,7 +199,7 @@ func plainScope(tb assert.TB) plugin.ImportScope {
 
 // scopeIn parses one file of a source and returns the scope the File
 // node of one package recorded.
-func scopeIn(tb assert.TB, src, pkg string) plugin.ImportScope {
+func scopeIn(tb testing.TB, src, pkg string) plugin.ImportScope {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, src)

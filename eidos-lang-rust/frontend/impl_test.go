@@ -4,10 +4,10 @@
 package frontend_test
 
 import (
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/frontend"
@@ -71,8 +71,8 @@ func TestImpl(t *testing.T) {
 			gb, _ := parsedSource(t, "pub struct A;\nimpl A {\n    pub(super) const K: u8 = 1;\n"+
 				"    #[cfg(test)]\n    pub const T: u8 = 2;\n}\n")
 			st := named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "A")
-			assert.True(t, stamped(gb, st.Fields[0], string(rust.VisibilityKey)), "the restriction")
-			assert.True(t, stamped(gb, st.Fields[1], string(rust.TestKey)), "the test mark")
+			expect.Contains(t, stampKeys(gb, st.Fields[0]), rust.VisibilityKey, "the restriction")
+			expect.Contains(t, stampKeys(gb, st.Fields[1]), rust.TestKey, "the test mark")
 		})
 
 		t.Run("attaches the carriers of an associated constant to its field", func(t *testing.T) {
@@ -105,7 +105,7 @@ func TestImpl(t *testing.T) {
 				"    #[inline]\n    fn clone(&self) -> Self { A }\n}\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
 				"the trait declares the item, and the attribute between is no item")
-			assert.True(t, strings.Contains(found[0].Msg, traitImplItem), "the finding names why")
+			assert.Contains(t, found[0].Msg, traitImplItem, "the finding names why")
 		})
 	})
 

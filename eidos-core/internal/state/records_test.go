@@ -4,7 +4,9 @@
 package state_test
 
 import (
+	"cmp"
 	"encoding/binary"
+	"math"
 	"slices"
 	"testing"
 
@@ -214,7 +216,8 @@ func TestRecords(t *testing.T) {
 				s := shared.Phases(t.Context())
 				got, held, err := s.Validation(recordedSubject)
 				assert.NoError(t, err, "the shared row reads")
-				assert.True(t, held && got.Subject == recordedSubject, "the subject's own entry is found")
+				assert.True(t, held, "the subject has an entry")
+				assert.Equal(t, got.Subject, recordedSubject, "the subject's own entry is found")
 				_, held, err = s.Validation(siblingSubject)
 				assert.NoError(t, err, "the sibling's own row reads")
 				assert.False(t, held, "and the sibling's entry is found only under its own ID")
@@ -359,7 +362,8 @@ func TestRecords(t *testing.T) {
 					})
 				got, held, err := shared.Phases(t.Context()).Invocation(recordedPlan, generated(recordedSubject))
 				assert.NoError(t, err, "the shared row reads")
-				assert.True(t, held && got.Match.Subject == recordedSubject, "the invocation's own entry is found")
+				assert.True(t, held, "the invocation has an entry")
+				assert.Equal(t, got.Match.Subject, recordedSubject, "the invocation's own entry is found")
 			})
 		})
 
@@ -402,7 +406,8 @@ func TestRecords(t *testing.T) {
 					func(r *state.Recorder) { r.Lane("").Check(checkID, nil, nil) })
 				got, held, err := shared.Phases(t.Context()).Check(checkID)
 				assert.NoError(t, err, "the shared row reads")
-				assert.True(t, held && got.Name == checkID, "the check's own entry is found")
+				assert.True(t, held, "the check has an entry")
+				assert.Equal(t, got.Name, checkID, "the check's own entry is found")
 			})
 		})
 
@@ -487,8 +492,9 @@ func TestRecords(t *testing.T) {
 
 // A reference and its comparison allocate nothing, and a record's lookups
 // allocate within their ceilings, in the ordinary run, which runs no
-// benchmark. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// benchmark. Each count of a lookup keeps the first error of its calls,
+// which cmp.Or returns without allocating. The check runs alone, because
+// the count includes every goroutine's allocations.
 func TestRecordsAllocs(t *testing.T) {
 	var got state.RecordRef
 	assert.MaxAllocs(t, func() { got = state.ValidationRef(recordedSubject) }, 0,
@@ -500,30 +506,44 @@ func TestRecordsAllocs(t *testing.T) {
 	other := state.ValidationRef(recordedSubject)
 	order := 0
 	assert.MaxAllocs(t, func() { order = got.Compare(other) }, 0, "Compare allocates nothing")
-	assert.True(t, order > 0, "a check sorts after a validation")
+	assert.InRange(t, order, 1, math.Inf(1), "a check sorts after a validation")
 
 	s := lookedUp(t).Phases(t.Context())
+	var (
+		held bool
+		err  error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, held, err := s.Validation(recordedSubject); err != nil || !held {
-			t.Fatalf("Validation: held %t, error %v", held, err)
-		}
+		var verr error
+		_, held, verr = s.Validation(recordedSubject)
+		err = cmp.Or(err, verr)
 	}, validationAllocs, "Validation allocates the key, the block and the decoded record")
+	assert.NoError(t, err, "the validation reads")
+	assert.True(t, held, "the subject's validation is recorded")
+	match := generated(recordedSubject)
 	assert.MaxAllocs(t, func() {
-		if _, held, err := s.Invocation(recordedPlan, generated(recordedSubject)); err != nil || !held {
-			t.Fatalf("Invocation: held %t, error %v", held, err)
-		}
+		var ierr error
+		_, held, ierr = s.Invocation(recordedPlan, match)
+		err = cmp.Or(err, ierr)
 	}, invocationAllocs, "Invocation allocates the key, the block and the decoded record")
+	assert.NoError(t, err, "the invocation reads")
+	assert.True(t, held, "the invocation is recorded")
 	assert.MaxAllocs(t, func() {
-		if _, held, err := s.Check(checkID); err != nil || !held {
-			t.Fatalf("Check: held %t, error %v", held, err)
-		}
+		var cerr error
+		_, held, cerr = s.Check(checkID)
+		err = cmp.Or(err, cerr)
 	}, checkAllocs, "Check allocates the key, the block and the decoded record")
+	assert.NoError(t, err, "the check reads")
+	assert.True(t, held, "the check is recorded")
 	edge := state.DeclarationEdge(recordedSubject)
+	var readers []state.RecordRef
 	assert.MaxAllocs(t, func() {
-		if refs, err := s.Readers(edge); err != nil || len(refs) != 2 {
-			t.Fatalf("Readers: %d records, error %v", len(refs), err)
-		}
+		var rerr error
+		readers, rerr = s.Readers(edge)
+		err = cmp.Or(err, rerr)
 	}, readersAllocs, "Readers allocates the key, the block and the list of records")
+	assert.NoError(t, err, "the readers read")
+	assert.Length(t, readers, 2, "both readers of the subject")
 }
 
 // BenchmarkRecords measures each record's reference and their
@@ -561,18 +581,19 @@ func BenchmarkRecords(b *testing.B) {
 			for c.Loop() {
 				order = check.Compare(validation)
 			}
-			assert.True(b, order > 0, "a check sorts after a validation")
+			assert.InRange(b, order, 1, math.Inf(1), "a check sorts after a validation")
 		})
 	})
 
 	s := lookedUp(b).Phases(b.Context())
 	b.Run("PhaseState", func(b *testing.B) {
 		b.Run("Validation", func(b *testing.B) {
-			_, _, err := s.Validation(recordedSubject)
-			assert.NoError(b, err, "the validation reads before the measurement")
-			c := bench.Start(b).MaxAllocs(validationAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(validationAllocs)
 			defer c.End()
-			var got state.Validation
+			var (
+				got state.Validation
+				err error
+			)
 			for c.Loop() {
 				got, _, err = s.Validation(recordedSubject)
 			}
@@ -581,11 +602,12 @@ func BenchmarkRecords(b *testing.B) {
 		})
 
 		b.Run("Invocation", func(b *testing.B) {
-			_, _, err := s.Invocation(recordedPlan, generated(recordedSubject))
-			assert.NoError(b, err, "the invocation reads before the measurement")
-			c := bench.Start(b).MaxAllocs(invocationAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(invocationAllocs)
 			defer c.End()
-			var got state.Invocation
+			var (
+				got state.Invocation
+				err error
+			)
 			for c.Loop() {
 				got, _, err = s.Invocation(recordedPlan, generated(recordedSubject))
 			}
@@ -594,11 +616,12 @@ func BenchmarkRecords(b *testing.B) {
 		})
 
 		b.Run("Check", func(b *testing.B) {
-			_, _, err := s.Check(checkID)
-			assert.NoError(b, err, "the check reads before the measurement")
-			c := bench.Start(b).MaxAllocs(checkAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(checkAllocs)
 			defer c.End()
-			var got state.Check
+			var (
+				got state.Check
+				err error
+			)
 			for c.Loop() {
 				got, _, err = s.Check(checkID)
 			}
@@ -608,11 +631,12 @@ func BenchmarkRecords(b *testing.B) {
 
 		b.Run("Readers", func(b *testing.B) {
 			edge := state.DeclarationEdge(recordedSubject)
-			_, err := s.Readers(edge)
-			assert.NoError(b, err, "the readers read before the measurement")
-			c := bench.Start(b).MaxAllocs(readersAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(readersAllocs)
 			defer c.End()
-			var got []state.RecordRef
+			var (
+				got []state.RecordRef
+				err error
+			)
 			for c.Loop() {
 				got, err = s.Readers(edge)
 			}

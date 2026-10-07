@@ -8,6 +8,7 @@ import (
 	"io/fs"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
@@ -37,9 +38,8 @@ func Loaded(
 	})
 	assert.NoError(tb, err, "the fixture tree loads")
 	for d := range sink.All() {
-		if d.Severity == diag.SeverityError {
-			tb.Errorf("the fixture load reported %v", d)
-		}
+		expect.NotEqual(tb, d.Severity, diag.SeverityError,
+			"the fixture load reports no Error: "+d.Code.String()+" "+d.Msg)
 	}
 	registry := meta.NewRegistry()
 	kernel, err := meta.Kernel(registry)

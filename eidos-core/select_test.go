@@ -420,17 +420,15 @@ func TestSelect(t *testing.T) {
 // structs of the bench workspace: the cost of a warm run's call that
 // runs one match, which enumerates no index. The call allocates
 // nothing: it takes the state, the match and the candidate's buffer of
-// matches that the call before the measurement released. The context,
-// the emit store and the sink that each iteration hands the call are
-// built outside the measurement.
+// matches that the warm-up call released. The context, the emit store
+// and the sink that each iteration hands the call are built outside the
+// measurement.
 func BenchmarkSelect(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
 	_, facts := boolKey(b)
 	ix, err := plugin.NewIndex(g, facts, nil, nil)
-	if err != nil {
-		b.Fatalf("NewIndex: unexpected error: %v", err)
-	}
+	assert.NoError(b, err, "the routing surface builds")
 	subject := coretest.Struct(coretest.StorePath+"/500", "Decl5_10").ID
 	visited := 0
 	p := eidos.NewPlugin("bench").
@@ -439,10 +437,7 @@ func BenchmarkSelect(b *testing.B) {
 			return nil
 		})).
 		Build()
-	gen, ok := p.(plugin.Generator)
-	if !ok {
-		b.Fatal("the bench plugin must generate")
-	}
+	gen := generatorOf(b, p)
 	run := func(b *testing.B, sel *plugin.Selection) {
 		b.Helper()
 
@@ -454,21 +449,15 @@ func BenchmarkSelect(b *testing.B) {
 				Plugin: "bench", Bucket: 1, Select: sel,
 			}
 		}
-		fresh()
-		if err := gen.Generate(ctx); err != nil {
-			b.Fatalf("Generate: unexpected error: %v", err)
-		}
-		c := bench.Start(b).MaxAllocs(0)
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
+		var err error
 		for c.Loop() {
 			c.Excluding(fresh)
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
+			err = gen.Generate(ctx)
 		}
-		if visited != 1 {
-			b.Fatalf("the selected call ran %d matches", visited)
-		}
+		assert.NoError(b, err, "the selected call passes")
+		assert.Equal(b, visited, 1, "the selected call runs one match")
 	}
 
 	b.Run("Generate a listed match", func(b *testing.B) {

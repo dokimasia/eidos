@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -100,7 +99,7 @@ func TestPartition(t *testing.T) {
 
 // partitioned partitions a tree's Rust files through the frontend and
 // returns its units.
-func partitioned(tb assert.TB, tree fstest.MapFS) [][]plugin.SourceRef {
+func partitioned(tb testing.TB, tree fstest.MapFS) [][]plugin.SourceRef {
 	tb.Helper()
 
 	var claimed []plugin.SourceRef
@@ -110,14 +109,14 @@ func partitioned(tb assert.TB, tree fstest.MapFS) [][]plugin.SourceRef {
 		}
 	}
 	slices.SortFunc(claimed, func(a, b plugin.SourceRef) int { return strings.Compare(a.Path, b.Path) })
-	units, err := frontend.New(nil).Partition(context.Background(), claimed, treeReader{tree})
+	units, err := frontend.New(nil).Partition(tb.Context(), claimed, treeReader{tree})
 	assert.NoError(tb, err, "the tree partitions")
 	return units
 }
 
 // unitsOf returns each unit's members of a tree's partition, in
 // partition order.
-func unitsOf(tb assert.TB, tree fstest.MapFS) [][]string {
+func unitsOf(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
 	var out [][]string
@@ -133,7 +132,7 @@ func unitsOf(tb assert.TB, tree fstest.MapFS) [][]string {
 
 // sharedOf returns every member's shared inputs of a tree's partition,
 // member by member in partition order.
-func sharedOf(tb assert.TB, tree fstest.MapFS) [][]string {
+func sharedOf(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
 	var out [][]string

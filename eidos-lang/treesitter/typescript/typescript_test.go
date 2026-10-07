@@ -4,7 +4,6 @@
 package typescript_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -83,7 +82,7 @@ func TestTypeScript(t *testing.T) {
 func errorsOf(tb testing.TB, g *treesitter.Grammar, file, src string) int {
 	tb.Helper()
 
-	tree, err := g.Parse(context.Background(), file, []byte(src))
+	tree, err := g.Parse(tb.Context(), file, []byte(src))
 	assert.NoError(tb, err, "the source parses")
 	defer tree.Close()
 	return len(slices.Collect(tree.Errors()))

@@ -4,6 +4,7 @@
 package render_test
 
 import (
+	"cmp"
 	"errors"
 	"io/fs"
 	"path"
@@ -273,7 +274,7 @@ func TestPass(t *testing.T) {
 
 			p, err := render.New(passName, language())
 			assert.NoError(t, err, "the language composes")
-			assert.Length(t, p.RefusedKinds(), 0, "the language refuses nothing")
+			assert.Empty(t, p.RefusedKinds(), "the language refuses nothing")
 		})
 	})
 
@@ -406,7 +407,7 @@ func TestPass(t *testing.T) {
 			files, _ := runPass(t, language(), seeded(t, plan))
 			assert.Length(t, files, 1, "the plan unit renders")
 			assert.Equal(t, files[0].Plugins, []plugin.ID{emitter}, "its emitter alone")
-			assert.Length(t, files[0].Sources, 0,
+			assert.Empty(t, files[0].Sources,
 				"a plan file derives from no declaration")
 		})
 
@@ -509,19 +510,17 @@ func TestPass(t *testing.T) {
 			}
 		})
 
-		t.Run("returns the same bytes for two runs", func(t *testing.T) {
+		t.Run("returns the same bytes for every run", func(t *testing.T) {
 			t.Parallel()
 
-			build := func() *plugin.Emit {
-				return seeded(t,
+			assert.Deterministic(t, func(l render.Language) ([]plugin.RenderedFile, error) {
+				files, _ := runPass(t, l, seeded(t,
 					unitOf(weaverPlugin, storeKey, omegaName),
 					unitOf(emitter, storeKey, alphaName, betaName),
 					unitOf(emitter, userKey, gammaName),
-				)
-			}
-			first, _ := runPass(t, language(), build())
-			second, _ := runPass(t, language(), build())
-			assert.Equal(t, second, first, "byte identity is the contract")
+				))
+				return files, nil
+			}, language(), "byte identity is the contract")
 		})
 
 		t.Run("reports RefusedTemplate naming a file the skeleton fails on", func(t *testing.T) {
@@ -540,7 +539,7 @@ func TestPass(t *testing.T) {
 			l := language()
 			l.File = failing
 			files, _ := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
-			assert.Length(t, files, 0, "no half-assembled file is returned")
+			assert.Empty(t, files, "no half-assembled file is returned")
 		})
 
 		t.Run("withholds a file whose every declaration is skipped", func(t *testing.T) {
@@ -550,7 +549,7 @@ func TestPass(t *testing.T) {
 			u.Decls = u.Decls[1:]
 			files, sink := runPass(t, language(), seeded(t, u))
 			coretest.AssertCodes(t, sink, render.UnspeltKind)
-			assert.Length(t, files, 0, "the skipped declaration's finding explains the missing file")
+			assert.Empty(t, files, "the skipped declaration's finding explains the missing file")
 		})
 
 		t.Run("renders the skeleton of a file without declarations", func(t *testing.T) {
@@ -671,46 +670,46 @@ const (
 // run, which runs no benchmark: a composition, a refusal map's copy, a
 // filename, a unit's split, and a render of one file. The renders at
 // the canonical scale take too long to repeat 101 times, so only
-// [BenchmarkPass] checks their ceilings. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// [BenchmarkPass] checks their ceilings. Each count keeps the first
+// error of its calls, which cmp.Or returns without allocating. The
+// check runs alone, because the count includes every goroutine's
+// allocations.
 func TestPassAllocs(t *testing.T) {
 	l := language()
-	var p *render.Pass
+	var (
+		p   *render.Pass
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		var err error
-		if p, err = render.New(passName, l); err != nil {
-			t.Fatalf("New: unexpected error: %v", err)
-		}
+		var nerr error
+		p, nerr = render.New(passName, l)
+		err = cmp.Or(err, nerr)
 	}, newPassAllocs, "New allocates the parsed templates and the pass")
-	assert.MaxAllocs(t, func() {
-		if p.Coverage().Declared() {
-			t.Fatal("Coverage declared a verdict the language does not")
-		}
-	}, 0, "Coverage allocates nothing")
+	assert.NoError(t, err, "the language composes")
+	var coverage render.Coverage
+	assert.MaxAllocs(t, func() { coverage = p.Coverage() }, 0, "Coverage allocates nothing")
+	assert.False(t, coverage.Declared(), "the fixture language declares no coverage")
 	refusing := refusingPass(t)
-	assert.MaxAllocs(t, func() {
-		if len(refusing.RefusedKinds()) != 1 {
-			t.Fatal("RefusedKinds missed the refusal")
-		}
-	}, refusedKindsAllocs, "RefusedKinds allocates the copy it returns")
+	var refused map[symbol.Kind]string
+	assert.MaxAllocs(t, func() { refused = refusing.RefusedKinds() }, refusedKindsAllocs,
+		"RefusedKinds allocates the copy it returns")
+	assert.Length(t, refused, 1, "RefusedKinds returns the one refusal")
 	u := unitOf(emitter, storeKey, alphaName)
-	assert.MaxAllocs(t, func() {
-		if p.FileName(u) != storeFile {
-			t.Fatal("FileName spelled another file")
-		}
-	}, 1, "FileName allocates the spelled name")
-	assert.MaxAllocs(t, func() {
-		if len(p.SplitUnit(u)) != 1 {
-			t.Fatal("SplitUnit split an unsplit unit")
-		}
-	}, 1, "SplitUnit allocates the list of the whole unit")
+	var name string
+	assert.MaxAllocs(t, func() { name = p.FileName(u) }, 1, "FileName allocates the spelled name")
+	assert.Equal(t, name, storeFile, "FileName spells the unit's file")
+	var parts []plugin.Unit
+	assert.MaxAllocs(t, func() { parts = p.SplitUnit(u) }, 1, "SplitUnit allocates the list of the whole unit")
+	assert.Length(t, parts, 1, "an unsplit unit files whole")
 	ctx := renderOne(t, p)
+	var files []plugin.RenderedFile
 	assert.MaxAllocs(t, func() {
-		if files, err := p.Render(ctx); err != nil || len(files) != 1 {
-			t.Fatalf("Render: files %d, error %v", len(files), err)
-		}
+		var rerr error
+		files, rerr = p.Render(ctx)
+		err = cmp.Or(err, rerr)
 	}, renderOneAllocs, "Render allocates the call's frame and the file")
+	assert.NoError(t, err, "the file renders")
+	assert.Length(t, files, 1, "one file")
 }
 
 // BenchmarkPass measures the pass's methods, and the render at the
@@ -845,9 +844,7 @@ func benchStore(b *testing.B, decl func(path, name string) symbol.Symbol, prefix
 		for d := range benchDecls {
 			u.Decls = append(u.Decls, decl(path, prefix+strconv.Itoa(d)))
 		}
-		if err := e.Add(u); err != nil {
-			b.Fatalf("Add: unexpected error: %v", err)
-		}
+		assert.NoError(b, e.Add(u), "the unit is added")
 	}
 	return e
 }
@@ -865,18 +862,20 @@ func benchRender(b *testing.B, p *render.Pass, e *plugin.Emit, trees map[plugin.
 	routed := backendtest.Files(e, p)
 	c := bench.Start(b).MaxAllocs(ceiling)
 	defer c.End()
+	var (
+		files []plugin.RenderedFile
+		sink  *diag.Sink
+		err   error
+	)
 	for c.Loop() {
-		sink := diag.NewSink()
-		files, err := p.Render(&plugin.RenderContext{
+		sink = diag.NewSink()
+		files, err = p.Render(&plugin.RenderContext{
 			Emit: e, Files: routed, Trees: trees, Sink: sink, Plugin: passName,
 		})
-		if err != nil {
-			b.Fatalf("Render: unexpected error: %v", err)
-		}
-		if len(files) != benchPackages || sink.Failed() {
-			b.Fatal("every file renders clean")
-		}
 	}
+	assert.NoError(b, err, "every file renders")
+	assert.Length(b, files, benchPackages, "one file per package")
+	assert.False(b, sink.Failed(), "every file renders clean")
 }
 
 // composedPass returns the pass over the fixture language.
@@ -1086,9 +1085,7 @@ func seeded(tb assert.TB, units ...plugin.Unit) *plugin.Emit {
 	tb.Helper()
 
 	e := plugin.NewEmit()
-	for _, u := range units {
-		assert.NoError(tb, e.Add(u), "the fixture unit is added")
-	}
+	assert.Total(tb, e.Add, units, "the fixture unit is added")
 	return e
 }
 

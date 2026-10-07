@@ -99,7 +99,7 @@ func TestAttr(t *testing.T) {
 
 			gb, _ := parsedSource(t, "#[test]\nfn probe() {}\n")
 			fn := named[*node.Function](t, fileIn(t, gb, crateName).Decls, "probe")
-			assert.True(t, stamped(gb, fn, string(rust.TestKey)), "the test function")
+			assert.Contains(t, stampKeys(gb, fn), rust.TestKey, "the test function")
 		})
 
 		t.Run("stamps an item #[cfg(test)] marks rust.test and loads it", func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestAttr(t *testing.T) {
 
 			gb, _ := parsedSource(t, "#[cfg(test)]\nfn helper() {}\n")
 			fn := named[*node.Function](t, fileIn(t, gb, crateName).Decls, "helper")
-			assert.True(t, stamped(gb, fn, string(rust.TestKey)), "the test-only function")
+			assert.Contains(t, stampKeys(gb, fn), rust.TestKey, "the test-only function")
 		})
 
 		t.Run("stamps the file with the first cfg predicate that keeps an item out", func(t *testing.T) {
@@ -213,7 +213,7 @@ func TestAttr(t *testing.T) {
 
 // loadedUnder reports whether a struct A that a cfg predicate gates
 // loads under the cfg set the evaluation cases state.
-func loadedUnder(tb assert.TB, pred string) bool {
+func loadedUnder(tb testing.TB, pred string) bool {
 	tb.Helper()
 
 	src := "#[cfg(" + pred + ")]\npub struct A;\n"

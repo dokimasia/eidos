@@ -39,7 +39,6 @@ func TestKindType(t *testing.T) {
 
 		// Kind is a uint8, so the schema may hold 255 kinds before
 		// the constants wrap and two of them collide.
-		assert.True(t, symbol.KindEmbed <= symbol.Kind(200),
-			"the kind set stays clear of what a uint8 holds")
+		assert.InRange(t, symbol.KindEmbed, 0, 200, "the kind set stays clear of what a uint8 holds")
 	})
 }

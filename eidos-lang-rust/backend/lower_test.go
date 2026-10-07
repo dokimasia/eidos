@@ -4,10 +4,12 @@
 package backend_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/rust/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -44,9 +46,6 @@ const (
 	// folded return, its Result reference, its two arguments, and its list
 	// of one.
 	wrapAllocs = 1 + 1 + 1 + 1
-	// allocRuns is the calls assert.MaxAllocs makes: one to warm up and
-	// one hundred it counts.
-	allocRuns = 101
 )
 
 // The lowering folds an announced failure into the Result return,
@@ -63,7 +62,7 @@ func TestLower(t *testing.T) {
 
 			f := thrower(nil)
 			lowered(t, f)
-			assert.Length(t, f.Returns, 0, "no return is added")
+			assert.Empty(t, f.Returns, "no return is added")
 		})
 
 		t.Run("passes a method with a receiver through unchanged", func(t *testing.T) {
@@ -83,9 +82,9 @@ func TestLower(t *testing.T) {
 			wrapped := f.Returns[0].Type
 			assert.Equal(t, wrapped.Spelling, resultType, "as a Result")
 			assert.Length(t, wrapped.Args, 2, "of value and failure")
-			assert.True(t, wrapped.Args[0] == valued,
-				"the value reference moves whole, so the settle keeps following it")
-			assert.True(t, wrapped.Args[1] == failure, "and so does the failure's")
+			expect.Equal(t, wrapped.Args[0], valued,
+				"the value reference moves whole, so the settle keeps following it", assert.ByIdentity())
+			expect.Equal(t, wrapped.Args[1], failure, "and so does the failure's", assert.ByIdentity())
 		})
 
 		t.Run("consumes the failure a function announces", func(t *testing.T) {
@@ -93,7 +92,7 @@ func TestLower(t *testing.T) {
 
 			f := thrower([]*emit.Return{{Type: &emit.TypeRef{Spelling: rowType}}}, fetchError)
 			lowered(t, f)
-			assert.Length(t, f.Throws, 0, "a second settle finds nothing to lower")
+			assert.Empty(t, f.Throws, "a second settle finds nothing to lower")
 		})
 
 		t.Run("moves the result's trailing comment to the folded return", func(t *testing.T) {
@@ -115,7 +114,7 @@ func TestLower(t *testing.T) {
 			})
 			lowered(t, host)
 			m := host.Methods.Items()[0]
-			assert.Length(t, m.Throws, 0, "a host's member methods lower with it")
+			assert.Empty(t, m.Throws, "a host's member methods lower with it")
 			assert.Equal(t, m.Returns[0].Type.Args[0].Spelling, unitType,
 				"nothing returned wraps the unit type")
 		})
@@ -189,20 +188,24 @@ func TestLower(t *testing.T) {
 
 // A declaration Rust states as it is allocates nothing, and a fold
 // allocates the Result return. A fold consumes its failure, so each
-// counted call lowers a fresh function. The ordinary run, which runs no
-// benchmark, checks those ceilings here.
+// counted call lowers a fresh function, built outside the count. The
+// ordinary run, which runs no benchmark, checks those ceilings here.
+// Each count keeps the first error of its calls, which cmp.Or returns
+// without allocating.
 func TestLowerAllocs(t *testing.T) {
 	constant := &emit.Constant{Name: storeName, Type: &emit.TypeRef{Spelling: countType}, Value: "8"}
-	assert.MaxAllocs(t, func() { _, _ = backend.Lower(constant) }, 0, "Lower passes the constant within its ceiling")
-
-	fns, next := make([]*emit.Function, allocRuns), 0
-	for i := range fns {
-		fns[i] = valuedThrower()
-	}
+	var err error
 	assert.MaxAllocs(t, func() {
-		_, _ = backend.Lower(fns[next])
-		next++
+		_, lerr := backend.Lower(constant)
+		err = cmp.Or(err, lerr)
+	}, 0, "Lower passes the constant within its ceiling")
+	assert.NoError(t, err, "Lower passes every constant")
+
+	assert.MaxAllocsWithSetup(t, valuedThrower, func(f *emit.Function) {
+		_, lerr := backend.Lower(f)
+		err = cmp.Or(err, lerr)
 	}, wrapAllocs, "Lower folds the failure within its ceiling")
+	assert.NoError(t, err, "Lower folds every function that throws")
 }
 
 // BenchmarkLower measures the lowering the settle runs over every
@@ -221,7 +224,7 @@ func BenchmarkLower(b *testing.B) {
 				out, err = backend.Lower(constant)
 			}
 			assert.NoError(b, err, "Lower passes the constant")
-			assert.Length(b, out, 0, "Lower keeps the constant in place")
+			assert.Empty(b, out, "Lower keeps the constant in place")
 		})
 
 		b.Run("a function that throws", func(b *testing.B) {
@@ -279,5 +282,5 @@ func lowered(tb assert.TB, s symbol.Symbol) {
 
 	out, err := backend.Lower(s)
 	assert.NoError(tb, err, "the declaration lowers")
-	assert.Length(tb, out, 0, "in place: a nil list keeps the declaration")
+	assert.Empty(tb, out, "in place: a nil list keeps the declaration")
 }

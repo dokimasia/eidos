@@ -15,9 +15,11 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -32,6 +34,13 @@ const (
 	ghostName = "Ghost"
 )
 
+// The contracts the checks state, as their records state them, for the
+// cases that two checks or two fixtures break alike.
+const (
+	shallowRoot  = "a stated root loads at least one unit shallow"
+	linksNothing = "the fixture's in-graph spellings resolve: a Resolve that returns no candidate links nothing"
+)
+
 // The checks exist to catch broken frontends, so the broken ones
 // are simulated and each check's own failure is asserted.
 func TestChecks(t *testing.T) {
@@ -44,12 +53,16 @@ func TestChecks(t *testing.T) {
 			t.Run("rejects a "+record+" that changes between loads", func(t *testing.T) {
 				t.Parallel()
 
-				msg := assert.Rejects(t, "a frontend recording something new per load", func(tb assert.TB) {
+				got := assert.Rejects(t, "a frontend recording something new per load", func(tb assert.TB) {
 					frontendtest.AssertDeterministicParse(tb, over(&restless{
 						Scripted: frontendtest.NewScripted(), record: record,
 					}, fixture()))
 				})
-				assert.Contains(t, msg, "the same", "the rejection names what drifted")
+				assert.Length(t, got, 1, "the check fails once")
+				expect.Equal(t, got[0].Assertion, "deterministic", "on the determinism of the parse")
+				expect.Equal(t, got[0].Contract, "every parse of one fixture encodes the same graph, attaches "+
+					"the same directives and stamps, and reports the same findings in the same order",
+					"under the contract that names what may not drift")
 			})
 		}
 	})
@@ -60,23 +73,27 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a finding with no position", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a finding no reader can open", func(tb assert.TB) {
+			got := assert.Rejects(t, "a finding no reader can open", func(tb assert.TB) {
 				frontendtest.AssertPositionedDiagnostics(tb, over(&unpositioned{
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "no position", "the rejection names what is missing")
+			assert.Contains(t, coretest.Contracts(got), "the finding states a position: "+
+				frontendtest.ScriptedBadFile.String()+" a finding with nowhere to point",
+				"the rejection names the finding without a position")
 		})
 
 		t.Run("rejects a finding with no origin", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a finding nobody signed", func(tb assert.TB) {
+			got := assert.Rejects(t, "a finding nobody signed", func(tb assert.TB) {
 				frontendtest.AssertPositionedDiagnostics(tb, over(&anonymous{
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "no origin", "the rejection names what is missing")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.HasPrefix(t, got[0].Contract, "the finding states its origin: ",
+				"the rejection names the finding without an origin")
 		})
 	})
 
@@ -86,35 +103,49 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a silently dropped file", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a parse that swallows a file", func(tb assert.TB) {
+			got := assert.Rejects(t, "a parse that swallows a file", func(tb assert.TB) {
 				frontendtest.AssertClassified(tb, over(&swallower{
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "silently dropped", "the rejection names the class")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.HasSuffix(t, got[0].Contract, " declares into the graph or a finding names it: "+
+				"nothing drops in silence", "the rejection names the dropped file")
 		})
 
-		t.Run("rejects a stamping fixture without keys", func(t *testing.T) {
-			t.Parallel()
+		classified := []struct {
+			name string
+			give func() *frontendtest.Fixture
+		}{
+			{
+				name: "rejects a stamping fixture without keys",
+				give: func() *frontendtest.Fixture {
+					keyless := fixture()
+					keyless.Keys = nil
+					return keyless
+				},
+			},
+			{
+				name: "rejects keys declared over a load that stamps nothing",
+				give: func() *frontendtest.Fixture {
+					unstamped := plainFixture()
+					unstamped.Keys = frontendtest.ScriptedKeys
+					return unstamped
+				},
+			},
+		}
+		for _, tt := range classified {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			keyless := fixture()
-			keyless.Keys = nil
-			msg := assert.Rejects(t, "a stamp no registry can apply", func(tb assert.TB) {
-				frontendtest.AssertClassified(tb, setupOver(keyless))
+				got := assert.Rejects(t, "stamps without keys, or keys without stamps", func(tb assert.TB) {
+					frontendtest.AssertClassified(tb, setupOver(tt.give()))
+				})
+				assert.Equal(t, coretest.Contracts(got), []string{"the load stamps where the fixture declares " +
+					"classification keys to apply the stamps under, and nowhere else"},
+					"the rejection names what the fixture and the load owe each other")
 			})
-			assert.Contains(t, msg, "no keys", "the rejection names what the fixture owes")
-		})
-
-		t.Run("rejects keys declared over a load that stamps nothing", func(t *testing.T) {
-			t.Parallel()
-
-			unstamped := plainFixture()
-			unstamped.Keys = frontendtest.ScriptedKeys
-			msg := assert.Rejects(t, "a classifier that never stamps", func(tb assert.TB) {
-				frontendtest.AssertClassified(tb, setupOver(unstamped))
-			})
-			assert.Contains(t, msg, "stamps nothing", "the rejection names the dead classifier")
-		})
+		}
 	})
 
 	t.Run("AssertOwnedExcluded", func(t *testing.T) {
@@ -123,12 +154,14 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a claim that excludes the stamped copy", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a selection the check cannot place a copy under", func(tb assert.TB) {
+			got := assert.Rejects(t, "a selection the check cannot place a copy under", func(tb assert.TB) {
 				frontendtest.AssertOwnedExcluded(tb, over(&carved{
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "inside the claim", "the rejection names the placement")
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"the stamped copy is beside its source, inside the claim"},
+				"the rejection names the placement")
 		})
 	})
 
@@ -171,20 +204,23 @@ func TestChecks(t *testing.T) {
 				},
 				fail: notesFile,
 			}
-			msg := assert.Rejects(t, "a tree the perturbation cannot copy", func(tb assert.TB) {
+			got := assert.Rejects(t, "a tree the perturbation cannot copy", func(tb assert.TB) {
 				frontendtest.AssertFingerprinted(tb, setupOver(unreadable))
 			})
-			assert.Contains(t, msg, "copies", "the rejection names the step that could not run")
+			assert.Equal(t, coretest.Contracts(got), []string{"the fixture tree copies"},
+				"the rejection names the step that could not run")
 		})
 
 		t.Run("rejects a unit missing from a load it is compared with", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a partition that merges its units after two loads", func(tb assert.TB) {
+			got := assert.Rejects(t, "a partition that merges its units after two loads", func(tb assert.TB) {
 				frontendtest.AssertFingerprinted(tb, over(&drifter{Scripted: frontendtest.NewScripted()},
 					plainFixture()))
 			})
-			assert.Contains(t, msg, "missing", "a key compared with nothing proves nothing")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.HasPrefix(t, got[0].Contract, "the load compared with contains the unit of ",
+				"a key compared with nothing proves nothing")
 		})
 	})
 
@@ -194,10 +230,12 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a frontend declaring what it never read through the unit", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a parse whose bytes come from outside the door", func(tb assert.TB) {
+			got := assert.Rejects(t, "a parse whose bytes come from outside the door", func(tb assert.TB) {
 				frontendtest.AssertJailedReads(tb, over(&unread{frontendtest.NewScripted()}, plainFixture()))
 			})
-			assert.Contains(t, msg, "through the unit", "the rejection names the door")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.HasPrefix(t, got[0].Contract, "every unit whose members changed folds the new bytes, "+
+				"because its parse read them through the unit: ", "the rejection names the door")
 		})
 
 		t.Run("passes a language that refuses the perturbed byte", func(t *testing.T) {
@@ -211,10 +249,11 @@ func TestChecks(t *testing.T) {
 
 			unwalkable := plainFixture()
 			unwalkable.Sources = failingFS{tree: fstest.MapFS{apiFile: {Data: []byte(apiSource)}}, fail: "."}
-			msg := assert.Rejects(t, "a tree the selection cannot be read over", func(tb assert.TB) {
+			got := assert.Rejects(t, "a tree the selection cannot be read over", func(tb assert.TB) {
 				frontendtest.AssertJailedReads(tb, setupOver(unwalkable))
 			})
-			assert.Contains(t, msg, "walks", "the rejection names the step that could not run")
+			assert.Equal(t, coretest.Contracts(got), []string{"the fixture tree walks"},
+				"the rejection names the step that could not run")
 		})
 
 		t.Run("passes a fixture whose selection claims one file", func(t *testing.T) {
@@ -242,10 +281,10 @@ func TestChecks(t *testing.T) {
 
 			astray := plainFixture()
 			astray.Signatures = []string{absentRoot}
-			msg := assert.Rejects(t, "a signature root the load never applies", func(tb assert.TB) {
+			got := assert.Rejects(t, "a signature root the load never applies", func(tb assert.TB) {
 				frontendtest.AssertSignatureDepth(tb, setupOver(astray))
 			})
-			assert.Contains(t, msg, "at least one unit shallow",
+			assert.Equal(t, coretest.Contracts(got), []string{shallowRoot},
 				"the rejection names what the stated root owes")
 		})
 
@@ -254,10 +293,10 @@ func TestChecks(t *testing.T) {
 
 			astray := dependentFixture()
 			astray.Signatures = []string{absentRoot}
-			msg := assert.Rejects(t, "a signature root the load never applies", func(tb assert.TB) {
+			got := assert.Rejects(t, "a signature root the load never applies", func(tb assert.TB) {
 				frontendtest.AssertSignatureDepth(tb, over(frontendtest.NewScriptedDependent(), astray))
 			})
-			assert.Contains(t, msg, "at least one unit shallow",
+			assert.Equal(t, coretest.Contracts(got), []string{shallowRoot},
 				"a dependency unit loads shallow under any root, so it proves nothing about the root")
 		})
 
@@ -270,23 +309,29 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a listed identity the signature-only load keeps", func(t *testing.T) {
 			t.Parallel()
 
-			kept := fixture()
-			kept.Dropped = []symbol.Identity{depIdentity(depType, symbol.KindStruct)}
-			msg := assert.Rejects(t, "a depth that drops nothing the fixture lists", func(tb assert.TB) {
-				frontendtest.AssertSignatureDepth(tb, setupOver(kept))
+			kept := depIdentity(depType, symbol.KindStruct)
+			fx := fixture()
+			fx.Dropped = []symbol.Identity{kept}
+			got := assert.Rejects(t, "a depth that drops nothing the fixture lists", func(tb assert.TB) {
+				frontendtest.AssertSignatureDepth(tb, setupOver(fx))
 			})
-			assert.Contains(t, msg, "drops a listed identity", "the rejection names the identity kept")
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"a signature-only load drops a listed identity: " + kept.String()},
+				"the rejection names the identity kept")
 		})
 
 		t.Run("rejects a listed identity the full load does not declare", func(t *testing.T) {
 			t.Parallel()
 
-			absent := fixture()
-			absent.Dropped = []symbol.Identity{depIdentity(ghostName, symbol.KindConstant)}
-			msg := assert.Rejects(t, "a listing of a declaration no load makes", func(tb assert.TB) {
-				frontendtest.AssertSignatureDepth(tb, setupOver(absent))
+			ghost := depIdentity(ghostName, symbol.KindConstant)
+			fx := fixture()
+			fx.Dropped = []symbol.Identity{ghost}
+			got := assert.Rejects(t, "a listing of a declaration no load makes", func(tb assert.TB) {
+				frontendtest.AssertSignatureDepth(tb, setupOver(fx))
 			})
-			assert.Contains(t, msg, "loads at full depth", "the rejection names the missing identity")
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"a listed identity loads at full depth: " + ghost.String()},
+				"the rejection names the missing identity")
 		})
 	})
 
@@ -303,21 +348,25 @@ func TestChecks(t *testing.T) {
 				)},
 			}
 			mistyped.Signatures = nil
-			msg := assert.Rejects(t, "a carrier writing a key no schema declares", func(tb assert.TB) {
+			got := assert.Rejects(t, "a carrier writing a key no schema declares", func(tb assert.TB) {
 				frontendtest.AssertAttachedDirectives(tb, setupOver(mistyped))
 			})
-			assert.Contains(t, msg, "fails validation", "the rejection names the class")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.HasPrefix(t, got[0].Contract, "an attached instance passes validation: ",
+				"the rejection names the class")
 		})
 
 		t.Run("rejects a carrier line left in documentation", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a frontend that attaches without stripping", func(tb assert.TB) {
+			got := assert.Rejects(t, "a frontend that attaches without stripping", func(tb assert.TB) {
 				frontendtest.AssertAttachedDirectives(tb, over(&undocumented{
 					Scripted: frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "carrier line", "the rejection names the class")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.That(t, got[0].Contract).Contains(" keeps no carrier line in its documentation: ",
+				"the rejection names the class").HasSuffix(strconv.Quote(carrierLine), "and the line left behind")
 		})
 
 		marks := []struct {
@@ -331,24 +380,29 @@ func TestChecks(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				msg := assert.Rejects(t, "a documentation line the strip never saw", func(tb assert.TB) {
+				got := assert.Rejects(t, "a documentation line the strip never saw", func(tb assert.TB) {
 					frontendtest.AssertAttachedDirectives(tb, over(&undocumented{
 						Scripted: frontendtest.NewScripted(), line: tt.line,
 					}, fixture()))
 				})
-				assert.Contains(t, msg, "carrier line", "the mark does not hide the leak")
+				assert.NotEmpty(t, got, "the check fails")
+				assert.HasSuffix(t, got[0].Contract, strconv.Quote(tt.line), "the mark does not hide the leak")
 			})
 		}
 
 		t.Run("rejects directives on a subject the graph does not contain", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "an attachment to a declaration nothing declares", func(tb assert.TB) {
+			got := assert.Rejects(t, "an attachment to a declaration nothing declares", func(tb assert.TB) {
 				frontendtest.AssertAttachedDirectives(tb, over(&dangling{
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "does not contain", "the rejection names the class")
+			ghost := symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: ghostPath, Name: ghostName, Kind: symbol.KindStruct,
+			}
+			assert.Contains(t, coretest.Contracts(got), "the graph contains "+ghost.String()+", which directives name",
+				"the rejection names the subject")
 		})
 
 		t.Run("passes a fixture that declares schemas without keys", func(t *testing.T) {
@@ -368,10 +422,11 @@ func TestChecks(t *testing.T) {
 
 			barren := plainFixture()
 			barren.Schemas = frontendtest.ScriptedSchemas()
-			msg := assert.Rejects(t, "schemas no carrier in the tree writes", func(tb assert.TB) {
+			got := assert.Rejects(t, "schemas no carrier in the tree writes", func(tb assert.TB) {
 				frontendtest.AssertAttachedDirectives(tb, setupOver(barren))
 			})
-			assert.Contains(t, msg, "must attach something",
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"the fixture declares schemas, so its carriers attach something"},
 				"the rejection names what the declared schemas owe")
 		})
 	})
@@ -382,20 +437,20 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a Resolve that returns no candidate", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a mute resolver over a two-package fixture", func(tb assert.TB) {
+			got := assert.Rejects(t, "a mute resolver over a two-package fixture", func(tb assert.TB) {
 				frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, fixture()))
 			})
-			assert.Contains(t, msg, "returns no candidate", "the rejection names what never happened")
+			assert.Equal(t, coretest.Contracts(got), []string{linksNothing}, "the rejection names what never happened")
 		})
 
 		t.Run("rejects a mute Resolve over a single-package fixture", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a mute resolver with no second package to hide behind",
+			got := assert.Rejects(t, "a mute resolver with no second package to hide behind",
 				func(tb assert.TB) {
 					frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, singleFixture()))
 				})
-			assert.Contains(t, msg, "returns no candidate",
+			assert.Equal(t, coretest.Contracts(got), []string{linksNothing},
 				"in-graph spellings resolve in one package too")
 		})
 
@@ -407,21 +462,26 @@ func TestChecks(t *testing.T) {
 				apiFile:   {Data: []byte(apiSource)},
 				storeFile: {Data: []byte(crossSource + localStatement)},
 			}
-			msg := assert.Rejects(t, "a resolver returning candidates in its own package alone",
+			got := assert.Rejects(t, "a resolver returning candidates in its own package alone",
 				func(tb assert.TB) {
 					frontendtest.AssertLinked(tb, over(&insular{frontendtest.NewScripted()}, local))
 				})
-			assert.Contains(t, msg, "resolving nothing across packages",
-				"two packages are already across packages")
+			assert.Equal(t, coretest.Contracts(got), []string{
+				"a multi-package fixture resolves across its packages, or its Resolve never returns a candidate",
+			}, "two packages are already across packages")
 		})
 
 		t.Run("rejects an unresolved reference that spells nothing", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a builtin that lost its spelling", func(tb assert.TB) {
+			got := assert.Rejects(t, "a builtin that lost its spelling", func(tb assert.TB) {
 				frontendtest.AssertLinked(tb, over(&blank{frontendtest.NewScripted()}, fixture()))
 			})
-			assert.Contains(t, msg, "spells nothing", "the rejection names the lost spelling")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.That(t, got[0].Contract).
+				HasPrefix("a reference in ", "the rejection names the package").
+				HasSuffix(" that resolves to nothing keeps its spelling, as a builtin or an external does",
+					"and the lost spelling")
 		})
 
 		t.Run("passes a single-package fixture without a cross-package reference", func(t *testing.T) {
@@ -457,10 +517,12 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a frontend outside the dependent role", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a frontend that loads no dependency", func(tb assert.TB) {
+			got := assert.Rejects(t, "a frontend that loads no dependency", func(tb assert.TB) {
 				frontendtest.AssertDependencies(tb, setupOver(dependentFixture()))
 			})
-			assert.Contains(t, msg, "not in the dependent role", "the rejection names the missing role")
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"the frontend is in the dependent role, so a dependency round runs"},
+				"the rejection names the missing role")
 		})
 
 		t.Run("rejects rounds that return no unit", func(t *testing.T) {
@@ -468,21 +530,24 @@ func TestChecks(t *testing.T) {
 
 			bare := dependentFixture()
 			bare.Stores = map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{}}
-			msg := assert.Rejects(t, "a store without the imported package", func(tb assert.TB) {
+			got := assert.Rejects(t, "a store without the imported package", func(tb assert.TB) {
 				frontendtest.AssertDependencies(tb, over(frontendtest.NewScriptedDependent(), bare))
 			})
-			assert.Contains(t, msg, "no dependency round returned a unit", "the rejection names the empty rounds")
+			assert.Equal(t, coretest.Contracts(got), []string{"a dependency round returns a unit"},
+				"the rejection names the empty rounds")
 		})
 
 		t.Run("rejects a dependency unit declared from bytes it never read through the unit", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a dependency parse that reads around the door", func(tb assert.TB) {
+			got := assert.Rejects(t, "a dependency parse that reads around the door", func(tb assert.TB) {
 				frontendtest.AssertDependencies(tb, over(
 					&unreadDependency{frontendtest.NewScriptedDependent()}, dependentFixture(),
 				))
 			})
-			assert.Contains(t, msg, "door fold", "the rejection names the fold the byte never moved")
+			assert.NotEmpty(t, got, "the check fails")
+			assert.HasPrefix(t, got[0].Contract, "a changed byte in a dependency member moves the door fold "+
+				"of the unit that read it: ", "the rejection names the fold the byte never moved")
 		})
 	})
 
@@ -498,10 +563,12 @@ func TestChecks(t *testing.T) {
 		t.Run("rejects a frontend outside the exporter role", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a frontend that follows no re-export", func(tb assert.TB) {
+			got := assert.Rejects(t, "a frontend that follows no re-export", func(tb assert.TB) {
 				frontendtest.AssertReexports(tb, setupOver(exporterFixture()))
 			})
-			assert.Contains(t, msg, "not in the exporter role", "the rejection names the missing role")
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"the frontend is in the exporter role, so a re-export is followed"},
+				"the rejection names the missing role")
 		})
 
 		t.Run("rejects a fixture that lists no re-exported declaration", func(t *testing.T) {
@@ -509,20 +576,27 @@ func TestChecks(t *testing.T) {
 
 			bare := exporterFixture()
 			bare.Reexported = nil
-			msg := assert.Rejects(t, "a fixture with nothing to check", func(tb assert.TB) {
+			got := assert.Rejects(t, "a fixture with nothing to check", func(tb assert.TB) {
 				frontendtest.AssertReexports(tb, over(frontendtest.NewScriptedExporter(), bare))
 			})
-			assert.Contains(t, msg, "lists no declaration", "the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(got), []string{
+				"the fixture lists a declaration a re-export publishes, so the check has something to check",
+			}, "the rejection names what the fixture owes")
 		})
 
 		t.Run("rejects an exporter whose files publish nothing", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a re-export the frontend never names", func(tb assert.TB) {
-				frontendtest.AssertReexports(tb, over(&silentExporter{frontendtest.NewScriptedExporter()},
-					exporterFixture()))
+			fx := exporterFixture()
+			got := assert.Rejects(t, "a re-export the frontend never names", func(tb assert.TB) {
+				frontendtest.AssertReexports(tb, over(&silentExporter{frontendtest.NewScriptedExporter()}, fx))
 			})
-			assert.Contains(t, msg, "targets", "the rejection names the declaration no reference targets")
+			want := make([]string, len(fx.Reexported))
+			for i, id := range fx.Reexported {
+				want[i] = "a reference through a re-export targets " + id.String()
+			}
+			assert.Equal(t, coretest.Contracts(got), want,
+				"the rejection names each declaration no reference targets")
 		})
 	})
 }

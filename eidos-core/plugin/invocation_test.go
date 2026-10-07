@@ -181,27 +181,18 @@ func TestInvocation(t *testing.T) {
 }
 
 // The orders allocate nothing: a warm run sorts and searches its
-// records by them. The checks run alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// records by them. The checks run alone, because the count includes
+// every goroutine's allocations.
 func TestInvocationZeroAlloc(t *testing.T) {
 	later := baseMatch
 	later.Host.Index++
-	assert.MaxAllocs(t, func() {
-		if baseMatch.Compare(later) >= 0 {
-			t.Fatal("MatchKey.Compare puts the earlier host second")
-		}
-	}, 0, "MatchKey.Compare allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if baseMatch.Host.Compare(later.Host) >= 0 {
-			t.Fatal("EmitRef.Compare puts the earlier place second")
-		}
-	}, 0, "EmitRef.Compare allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if baseUnit.Compare(laterKey) >= 0 {
-			t.Fatal("UnitRef.Compare puts the earlier key second")
-		}
-	}, 0, "UnitRef.Compare allocates nothing")
+	var got int
+	assert.MaxAllocs(t, func() { got = baseMatch.Compare(later) }, 0, "MatchKey.Compare allocates nothing")
+	assert.Equal(t, got, -1, "MatchKey.Compare puts the earlier host first")
+	assert.MaxAllocs(t, func() { got = baseMatch.Host.Compare(later.Host) }, 0, "EmitRef.Compare allocates nothing")
+	assert.Equal(t, got, -1, "EmitRef.Compare puts the earlier place first")
+	assert.MaxAllocs(t, func() { got = baseUnit.Compare(laterKey) }, 0, "UnitRef.Compare allocates nothing")
+	assert.Equal(t, got, -1, "UnitRef.Compare puts the earlier key first")
 }
 
 // BenchmarkInvocation measures the orders over keys that agree on every
@@ -218,9 +209,7 @@ func BenchmarkInvocation(b *testing.B) {
 		for c.Loop() {
 			got = baseMatch.Compare(later)
 		}
-		if got != -1 {
-			b.Fatalf("MatchKey.Compare returns %d", got)
-		}
+		assert.Equal(b, got, -1, "MatchKey.Compare puts the earlier host first")
 	})
 
 	b.Run("EmitRef.Compare", func(b *testing.B) {
@@ -230,9 +219,7 @@ func BenchmarkInvocation(b *testing.B) {
 		for c.Loop() {
 			got = baseMatch.Host.Compare(later.Host)
 		}
-		if got != -1 {
-			b.Fatalf("EmitRef.Compare returns %d", got)
-		}
+		assert.Equal(b, got, -1, "EmitRef.Compare puts the earlier place first")
 	})
 
 	b.Run("UnitRef.Compare", func(b *testing.B) {
@@ -242,8 +229,6 @@ func BenchmarkInvocation(b *testing.B) {
 		for c.Loop() {
 			got = baseUnit.Compare(laterKey)
 		}
-		if got != -1 {
-			b.Fatalf("UnitRef.Compare returns %d", got)
-		}
+		assert.Equal(b, got, -1, "UnitRef.Compare puts the earlier key first")
 	})
 }

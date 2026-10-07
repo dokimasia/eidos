@@ -188,16 +188,13 @@ func TestCoverage(t *testing.T) {
 // A verdict and the declaration question allocate nothing in the
 // ordinary run, which runs no benchmark.
 func TestCoverageZeroAlloc(t *testing.T) {
-	assert.MaxAllocs(t, func() {
-		if excepted.Of(symbol.KindField, symbol.FactValue) != render.Refuses {
-			t.Fatal("Of missed the exception")
-		}
-	}, 0, "Of allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if !excepted.Declared() {
-			t.Fatal("Declared missed the base map")
-		}
-	}, 0, "Declared allocates nothing")
+	var verdict render.Verdict
+	assert.MaxAllocs(t, func() { verdict = excepted.Of(symbol.KindField, symbol.FactValue) }, 0,
+		"Of allocates nothing")
+	assert.Equal(t, verdict, render.Refuses, "Of returns the exception")
+	var declared bool
+	assert.MaxAllocs(t, func() { declared = excepted.Declared() }, 0, "Declared allocates nothing")
+	assert.True(t, declared, "a base map declares the coverage")
 }
 
 // BenchmarkCoverage measures the verdict lookup the guard makes for

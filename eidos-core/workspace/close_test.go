@@ -6,11 +6,13 @@ package workspace_test
 import (
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -121,7 +123,7 @@ func TestClose(t *testing.T) {
 			assert.Equal(t, collided[0].Related, []position.Pos{alphaAt}, "the first plan's file is related")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "neither plan commits")
 			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "neither plan commits")
-			assert.True(t, absent(root, storeGen), "nothing is written")
+			files.Absent(t, filepath.Join(root, storeGen), "nothing is written")
 		})
 
 		t.Run("reports PlanCollision for two paths that differ only in case", func(t *testing.T) {
@@ -144,7 +146,7 @@ func TestClose(t *testing.T) {
 
 			report := cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "kept", centralised("a")))),
 				routedIn(t, coretest.StorePath))
-			assert.True(t, absent(root, "b/"+storeGen), "the removed plan's file is removed")
+			files.Absent(t, filepath.Join(root, "b", storeGen), "the removed plan's file is removed")
 			assert.Equal(t, report.Swept, []output.Written{{Path: "b/" + storeGen, Action: output.ActionDeleted}},
 				"the report records the removal")
 			assert.Equal(t, paths(recorded(t, root)), []string{"a/" + storeGen},
@@ -156,13 +158,13 @@ func TestClose(t *testing.T) {
 
 			root := t.TempDir()
 			cleanRun(t, keptAndGone(t, root), routedIn(t, coretest.StorePath))
-			changed := edited(read(t, root, "b/"+storeGen))
+			changed := edited(files.Read(t, filepath.Join(root, "b", storeGen)))
 			place(t, root, "b/"+storeGen, changed)
 
 			report := cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "kept", centralised("a")))),
 				routedIn(t, coretest.StorePath))
 			assert.Length(t, findings(report.Sink, workspace.KeptOutput), 1, "one warning for the kept file")
-			assert.Equal(t, read(t, root, "b/"+storeGen), changed, "the edited file remains")
+			files.HasContent(t, filepath.Join(root, "b", storeGen), changed, "the edited file remains")
 			assert.Empty(t, report.Swept, "nothing is removed")
 			assert.Equal(t, paths(recorded(t, root)), []string{"a/" + storeGen, "b/" + storeGen},
 				"and keeps its entry")
@@ -177,7 +179,7 @@ func TestClose(t *testing.T) {
 			report, err := built(t, onDisk(t, root, diskPlan(t, "kept", centralised("a")))).
 				Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Dry: true})
 			assert.NoError(t, err, "the dry run is clean")
-			assert.False(t, absent(root, "b/"+storeGen), "the removed plan's file remains")
+			files.IsFile(t, filepath.Join(root, "b", storeGen), "the removed plan's file remains")
 			assert.Empty(t, report.Swept, "nothing is removed")
 			assert.Equal(t, paths(report.Manifest), []string{"a/" + storeGen}, "the record it would commit drops it")
 		})
@@ -251,7 +253,7 @@ func TestClose(t *testing.T) {
 			assert.Equal(t, unmet[0].Pos, alphaAt, "at the declaration")
 			assert.Contains(t, unmet[0].Msg, string(promisedKey), "naming the key")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "no plan commits")
-			assert.True(t, absent(root, storeGen), "nothing is written")
+			files.Absent(t, filepath.Join(root, storeGen), "nothing is written")
 		})
 
 		t.Run("reports UnmetContract at the contract's severity", func(t *testing.T) {
@@ -317,7 +319,7 @@ func TestClose(t *testing.T) {
 			assert.Equal(t, plans[0].Files, []manifest.Entry{{
 				Path:    storeGen,
 				Plan:    "plan",
-				Hash:    digestOf(read(t, root, storeGen)),
+				Hash:    digestOf(files.Read(t, filepath.Join(root, storeGen))),
 				Plugins: []plugin.ID{"plan-mirror"},
 				Sources: []string{coretest.Struct(coretest.StorePath, "Alpha").ID.String()},
 			}}, "the plan's files as the record lists them")
@@ -379,7 +381,7 @@ func TestClose(t *testing.T) {
 				routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check's Error fails the run")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan commits nothing")
-			assert.True(t, absent(root, storeGen), "nothing is written")
+			files.Absent(t, filepath.Join(root, storeGen), "nothing is written")
 		})
 
 		t.Run("returns a check's error wrapped with its name", func(t *testing.T) {
@@ -401,7 +403,7 @@ func TestClose(t *testing.T) {
 				Checks(&recordingCheck{name: "returning", reads: []string{"plan"}, err: errCheck}, later)),
 				routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, errCheck, "the first check's error is returned")
-			assert.Length(t, later.called, 0, "the later check does not run")
+			assert.Empty(t, later.called, "the later check does not run")
 		})
 
 		t.Run("does not call a check that reads a failed plan", func(t *testing.T) {
@@ -411,7 +413,7 @@ func TestClose(t *testing.T) {
 			_, err := runOver(t, built(t, onDisk(t, t.TempDir(), failing(t, "plan")).Checks(c)),
 				routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the failing plan fails the run")
-			assert.Length(t, c.called, 0, "the check does not run")
+			assert.Empty(t, c.called, "the check does not run")
 		})
 
 		t.Run("reports FailedDependency at the first Error of a failed plan a check reads", func(t *testing.T) {
@@ -445,8 +447,8 @@ func TestClose(t *testing.T) {
 			report, err := runOver(t, built(t, onDisk(t, t.TempDir(), broken(t, "plan")).Checks(c)),
 				routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, errBroken, "the generator's error is returned")
-			assert.Length(t, c.called, 0, "the check does not run")
-			assert.Length(t, findings(report.Sink, workspace.FailedDependency), 0, "and nothing explains it")
+			assert.Empty(t, c.called, "the check does not run")
+			assert.Empty(t, findings(report.Sink, workspace.FailedDependency), "and nothing explains it")
 		})
 
 		t.Run("runs no check after an Error in a phase every plan shares", func(t *testing.T) {
@@ -458,7 +460,7 @@ func TestClose(t *testing.T) {
 				[]directive.Raw{{Name: unclaimedName}}), "an unclaimed directive attaches before the seal")
 			_, err := runOver(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).Checks(c)), g)
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the shared Error fails the run")
-			assert.Length(t, c.called, 0, "the check does not run")
+			assert.Empty(t, c.called, "the check does not run")
 		})
 
 		t.Run("runs the checks in registration order", func(t *testing.T) {

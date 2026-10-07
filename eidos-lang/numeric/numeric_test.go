@@ -319,16 +319,19 @@ func TestNumericAllocs(t *testing.T) {
 	)
 	assert.MaxAllocs(t, func() { v, ok = numeric.Int(large, rules.ScalarInt, singleWidth) }, textAllocs,
 		"Int allocates the text")
-	assert.True(t, ok && v.Text == "2147483647", "Int returns the largest int32")
+	assert.True(t, ok, "Int reads the largest int32")
+	assert.Equal(t, v.Text, "2147483647", "Int returns the largest int32")
 	assert.MaxAllocs(t, func() { v, ok = numeric.Int(small, rules.ScalarInt, singleWidth) }, 0,
 		"Int allocates nothing for a value whose text is static")
-	assert.True(t, ok && v.Text == "42", "Int returns the small value")
+	assert.True(t, ok, "Int reads the small value")
+	assert.Equal(t, v.Text, "42", "Int returns the small value")
 	assert.MaxAllocs(t, func() { v, ok = numeric.Int(wide, rules.ScalarInt, wideWidth) }, wideIntAllocs,
 		"Int allocates the exact bounds of a wider type")
 	assert.True(t, ok, "Int returns 2^64 as an int128")
 	assert.MaxAllocs(t, func() { v, ok = numeric.Float(tenth, doubleWidth) }, floatAllocs,
 		"Float allocates the conversion and the text")
-	assert.True(t, ok && v.Text == "0.1", "Float returns a tenth")
+	assert.True(t, ok, "Float reads a tenth")
+	assert.Equal(t, v.Text, "0.1", "Float returns a tenth")
 	assert.MaxAllocs(t, func() { s = numeric.Decimal(-1.5e-10, doubleWidth) }, textAllocs,
 		"Decimal allocates the text")
 	assert.Equal(t, s, "-1.5e-10", "Decimal writes the text")

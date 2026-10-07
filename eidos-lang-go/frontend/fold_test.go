@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -77,7 +76,7 @@ func TestFold(t *testing.T) {
 
 // parsedUnit lowers one package of several files and returns its
 // files.
-func parsedUnit(tb assert.TB, sources map[string]string) []*node.File {
+func parsedUnit(tb testing.TB, sources map[string]string) []*node.File {
 	tb.Helper()
 
 	tree := fstest.MapFS{}
@@ -88,7 +87,7 @@ func parsedUnit(tb assert.TB, sources map[string]string) []*node.File {
 	}
 	f := frontend.New(nil)
 	u := plugin.NewSourceUnit(refs, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
 	assert.Length(tb, u.Graph().Packages(), 1, "one package declared")
 	return u.Graph().Packages()[0].Files
 }

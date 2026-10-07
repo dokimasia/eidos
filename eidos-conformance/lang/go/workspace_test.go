@@ -4,8 +4,7 @@
 package golang_test
 
 import (
-	"context"
-	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +13,8 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 
 	golang "go.dokimi.dev/eidos/conformance/lang/go"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -93,8 +94,8 @@ func TestWorkspace(t *testing.T) {
 				"the platform's record lists the platform's files")
 			assert.Equal(t, recordedPaths(t, gen), []string{hookDoubleFile},
 				"the generator's record lists the generator's files")
-			_, err := os.Stat(filepath.Join(repo, ledger.StateDir(golang.Brand)))
-			assert.True(t, errors.Is(err, fs.ErrNotExist), "the repository's root has no state directory")
+			files.Absent(t, filepath.Join(repo, ledger.StateDir(golang.Brand)),
+				"the repository's root has no state directory")
 		})
 
 		t.Run("reads no source of a sibling workspace", func(t *testing.T) {
@@ -107,12 +108,12 @@ func TestWorkspace(t *testing.T) {
 					for _, source := range e.Sources {
 						id, err := symbol.Parse(source)
 						assert.NoError(t, err, "the source "+source+" parses")
-						assert.True(t, strings.HasPrefix(id.Package, module),
-							"the "+root+" workspace generates "+e.Path+" from its own module, not "+id.Package)
+						assert.HasPrefix(t, id.Package, module,
+							"the "+root+" workspace generates "+e.Path+" from its own module")
 						sources++
 					}
 				}
-				assert.True(t, sources > 0, "the "+root+" workspace records the sources of its files")
+				assert.NotEqual(t, sources, 0, "the "+root+" workspace records the sources of its files")
 			}
 		})
 
@@ -121,12 +122,11 @@ func TestWorkspace(t *testing.T) {
 
 			repo := siblings(t)
 			gen := filepath.Join(repo, filepath.FromSlash(genRoot))
-			before := filesUnder(t, gen)
 			platform := filepath.Join(repo, platformRoot)
-			runClean(t, platform, golang.WorkspacePlans()[:1])
-			_, err := os.Stat(filepath.Join(platform, filepath.FromSlash(registryFile)))
-			assert.True(t, errors.Is(err, fs.ErrNotExist), "the platform removes the registry plan's file")
-			assert.Equal(t, filesUnder(t, gen), before, "the generator's workspace is unchanged")
+			files.Unchanged(t, os.DirFS(gen), func() { runClean(t, platform, golang.WorkspacePlans()[:1]) },
+				"the generator's workspace is unchanged")
+			files.Absent(t, filepath.Join(platform, filepath.FromSlash(registryFile)),
+				"the platform removes the registry plan's file")
 		})
 	})
 
@@ -141,7 +141,7 @@ func TestWorkspace(t *testing.T) {
 			copyTree(t, root, workspaceTree)
 			runClean(t, root, golang.WorkspacePlans(peek(seen)))
 			assert.True(t, seen.own.Load(), "the reader returns the registry, inside the plan's sources")
-			assert.True(t, seen.origins.Load() > 0, "the stubs plan exports a declaration with an origin")
+			assert.NotEqual(t, seen.origins.Load(), int64(0), "the stubs plan exports a declaration with an origin")
 			assert.Equal(t, seen.found.Load(), int64(0),
 				"the reader returns no origin in svc, outside the plan's sources")
 		})
@@ -179,27 +179,32 @@ func TestWorkspace(t *testing.T) {
 		})
 	})
 
-	t.Run("Stubbed.Check", func(t *testing.T) {
+	t.Run("Stubbed", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports an Error at an interface whose double no plan exports", func(t *testing.T) {
+		t.Run("Check", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			copyTree(t, root, workspaceTree)
-			copyTree(t, root, checkedTree)
-			w, err := golang.ComposeWorkspace(root).Plans(golang.WorkspacePlans()...).Checks(golang.Stubbed{}).Build()
-			assert.NoError(t, err, "the composition builds")
-			report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root)})
-			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check's Error fails the run")
-			var reported []diag.Diag
-			for d := range report.Sink.All() {
-				if d.Code == golang.Unstubbed {
-					reported = append(reported, d)
+			t.Run("reports an Error at an interface whose double no plan exports", func(t *testing.T) {
+				t.Parallel()
+
+				root := t.TempDir()
+				copyTree(t, root, workspaceTree)
+				copyTree(t, root, checkedTree)
+				w, err := golang.ComposeWorkspace(root).Plans(golang.WorkspacePlans()...).
+					Checks(golang.Stubbed{}).Build()
+				assert.NoError(t, err, "the composition builds")
+				report, err := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+				assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check's Error fails the run")
+				var reported []diag.Diag
+				for d := range report.Sink.All() {
+					if d.Code == golang.Unstubbed {
+						reported = append(reported, d)
+					}
 				}
-			}
-			assert.Length(t, reported, 1, "one Error, for the one interface outside the stubs plan's sources")
-			assert.Equal(t, reported[0].Pos.File, auditorFile, "at the interface in admin")
+				assert.Length(t, reported, 1, "one Error, for the one interface outside the stubs plan's sources")
+				assert.Equal(t, reported[0].Pos.File, auditorFile, "at the interface in admin")
+			})
 		})
 	})
 }
@@ -269,11 +274,10 @@ func runClean(t *testing.T, root string, plans []workspace.Plan) {
 
 	w, err := golang.ComposeWorkspace(root).Plans(plans...).Build()
 	assert.NoError(t, err, "the composition over "+root+" builds")
-	report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root)})
+	report, err := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
 	for d := range report.Sink.All() {
-		if d.Severity == diag.SeverityError {
-			t.Errorf("the run over %s reports the Error %s at %s: %s", root, d.Code, d.Pos, d.Msg)
-		}
+		expect.NotEqual(t, d.Severity, diag.SeverityError,
+			fmt.Sprintf("%s at %s is no Error of the run over %s: %s", d.Code, d.Pos, root, d.Msg))
 	}
 	assert.NoError(t, err, "the run over "+root+" is clean")
 }

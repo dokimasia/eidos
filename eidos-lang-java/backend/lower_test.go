@@ -45,7 +45,7 @@ func TestLower(t *testing.T) {
 
 			out, err := backend.Lower(&emit.Struct{Name: "row", Visibility: symbol.VisibilityPackage})
 			assert.NoError(t, err, "a struct is not lowered")
-			assert.Length(t, out, 0, "a nil list keeps the declaration unchanged")
+			assert.Empty(t, out, "a nil list keeps the declaration unchanged")
 		})
 
 		t.Run("passes a host of a private static member type", func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestLower(t *testing.T) {
 			})
 			out, err := backend.Lower(host)
 			assert.NoError(t, err, "the kind template spells the member type")
-			assert.Length(t, out, 0, "the host passes through unchanged")
+			assert.Empty(t, out, "the host passes through unchanged")
 		})
 
 		refused := []struct {
@@ -277,7 +277,7 @@ func lowerCalls() []allocCall {
 			call: func() { out, err = backend.Lower(row) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower passes the struct")
-				assert.Length(tb, out, 0, "Lower keeps the struct in place")
+				assert.Empty(tb, out, "Lower keeps the struct in place")
 			},
 		},
 		{

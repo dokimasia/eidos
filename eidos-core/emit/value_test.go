@@ -178,7 +178,7 @@ func TestValue(t *testing.T) {
 			ref := &emit.TypeRef{Spelling: pointType}
 			got := emit.Conversion(ref, forty())
 			assert.Equal(t, got.Kind, emit.ValueConversion, "a conversion")
-			assert.True(t, got.Type == ref, "to the type given")
+			assert.Equal(t, got.Type, ref, "to the type given", assert.ByIdentity())
 			assert.Equal(t, *got.Inner, forty(), "of the value given")
 		})
 	})
@@ -193,7 +193,7 @@ func TestValue(t *testing.T) {
 			x := emit.NamedField("X", forty())
 			got := emit.Composite(ref, x)
 			assert.Equal(t, got.Kind, emit.ValueComposite, "a composite")
-			assert.True(t, got.Type == ref, "of the type given")
+			assert.Equal(t, got.Type, ref, "of the type given", assert.ByIdentity())
 			assert.Equal(t, got.Fields, []emit.ValueField{x}, "over the fields given")
 		})
 	})
@@ -236,11 +236,12 @@ func TestValue(t *testing.T) {
 				emit.ValueField{Name: "X", Value: emit.Conversion(ref, forty())},
 				emit.ValueField{Name: "Y", Value: emit.Number(emit.LiteralFloat, "2.5", 32)},
 			))
-			b, err := json.Marshal(in)
-			assert.NoError(t, err, "the tree encodes")
-			var out emit.Value
-			assert.NoError(t, json.Unmarshal(b, &out), "and decodes")
-			assert.Equal(t, out, in, "to the same tree")
+			assert.RoundTrip(t, func(v emit.Value) ([]byte, error) { return json.Marshal(v) },
+				func(b []byte) (emit.Value, error) {
+					var v emit.Value
+					err := json.Unmarshal(b, &v)
+					return v, err
+				}, in, "the tree decodes to the tree it encodes")
 		})
 	})
 }
@@ -261,11 +262,9 @@ func TestValueAllocs(t *testing.T) {
 	assert.Equal(t, spelled, "call", "ValueKind.String spells ValueCall")
 	assert.MaxAllocs(t, func() { spelled = literalKind.String() }, 0, "LiteralKind.String allocates nothing")
 	assert.Equal(t, spelled, "float", "LiteralKind.String spells LiteralFloat")
-	assert.MaxAllocs(t, func() {
-		if value.IsZero() {
-			t.Fatal("IsZero reported a literal as zero")
-		}
-	}, 0, "IsZero allocates nothing")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = value.IsZero() }, 0, "IsZero allocates nothing")
+	assert.False(t, zero, "a literal names something")
 	assert.MaxAllocs(t, func() { got = emit.Literal(emit.LiteralInt, fortyTwo) }, 0, "Literal allocates nothing")
 	assert.MaxAllocs(t, func() { got = emit.Number(emit.LiteralFloat, "1.5", 32) }, 0, "Number allocates nothing")
 	assert.MaxAllocs(t, func() { got = emit.Raw("golang", "time.Second") }, 0, "Raw allocates nothing")

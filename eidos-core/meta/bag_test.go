@@ -4,17 +4,23 @@
 package meta_test
 
 import (
-	"math/rand/v2"
+	"encoding/binary"
 	"slices"
-	"sync"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
 )
+
+// rankDecides is the property [FuzzArbitration] and its ForAll twin in
+// [TestBag] state.
+const rankDecides = "a claim sequence and its reverse must leave one winner and one record of claims"
 
 // Arbitration is the bag's whole contract: rank decides, arrival
 // never does.
@@ -99,39 +105,39 @@ func TestBag(t *testing.T) {
 			// The presence transitions re-record under the bag lock,
 			// so racing a stamp against an outranking drop leaves the
 			// index the same whichever finished last.
-			for round := range 8 {
+			for range 8 {
 				_, f, role, _ := fixture(t)
 				drop := by("defaults", 1)
 				drop.Authority = meta.AuthorityDirective
 
-				var wg sync.WaitGroup
-				wg.Go(func() {
-					expect.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)),
-						"the racing stamp is admitted")
+				outcomes := history.Concurrently(2, time.Minute, func(client int) (any, error) {
+					if client == 0 {
+						return client, meta.Stamp(f, role, "writer", by("shape", 1))
+					}
+					return client, f.DropKey(role.ID(), drop)
 				})
-				wg.Go(func() {
-					expect.NoError(t, f.DropKey(role.ID(), drop),
-						"the racing drop is admitted")
-				})
-				wg.Wait()
+				for _, o := range outcomes {
+					expect.True(t, o.Finished, "the racing write finishes")
+					expect.NoError(t, o.Error, "the racing stamp and drop are admitted")
+				}
 
 				assert.Empty(t, slices.Collect(f.ByKey(role.ID())),
 					"the drop outranks the stamp, so the subject is no match, "+
 						"whichever write finished last")
-				_ = round
 			}
 		})
 
 		t.Run("one winner however the writes interleave", func(t *testing.T) {
 			t.Parallel()
 
-			// Every scheduling of the same claims returns the same
-			// winner, which is what lets a parallel run report what a
-			// serial one does.
-			claims := []struct {
+			// Every scheduling of the same claims returns the winner a
+			// serial run returns, which is what lets a parallel run report
+			// what a serial one does.
+			type stamp struct {
 				value string
 				claim meta.Claim
-			}{
+			}
+			claims := []stamp{
 				{"a", by("alpha", 1)},
 				{"b", by("beta", 1)},
 				{"c", by("beta", 2)},
@@ -141,32 +147,33 @@ func TestBag(t *testing.T) {
 					return c
 				}()},
 			}
+			_, serial, role, _ := fixture(t)
+			assert.Total(t, func(s stamp) error { return meta.Stamp(serial, role, s.value, s.claim) }, claims,
+				"every claim is admitted in a serial run")
+			want, held := meta.Get(serial, subject, role)
+			assert.True(t, held, "the serial run chooses a winner")
 
-			winner := ""
-			for round := range 8 {
-				_, f, role, _ := fixture(t)
-				shuffled := slices.Clone(claims)
-				seed := rand.New(rand.NewPCG(uint64(round), 0))
-				seed.Shuffle(len(shuffled), func(i, j int) {
-					shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+			prop.ForAll(t, "every scheduling of the claims must choose the serial run's winner", func(c *prop.Case) {
+				shuffled := c.Draw(prop.Permutation(claims...), "claims")
+				_, f, role, _ := fixture(c)
+				outcomes := history.Concurrently(len(shuffled), time.Minute, func(client int) (any, error) {
+					entry := shuffled[client]
+					return client, meta.Stamp(f, role, entry.value, entry.claim)
 				})
-
-				var wg sync.WaitGroup
-				for _, entry := range shuffled {
-					wg.Go(func() {
-						expect.NoError(t, meta.Stamp(f, role, entry.value, entry.claim),
-							"every racing claim is admitted")
-					})
+				for _, o := range outcomes {
+					assert.True(c, o.Finished, "the racing claim must finish")
+					assert.NoError(c, o.Error, "every racing claim must be admitted")
 				}
-				wg.Wait()
-
 				got, held := meta.Get(f, subject, role)
-				assert.True(t, held, "a winner is chosen")
-				if winner == "" {
-					winner = got
-				}
-				assert.Equal(t, got, winner, "and it is the same one every round")
-			}
+				assert.True(c, held, "a winner must be chosen")
+				assert.Equal(c, got, want, "the winner must be the serial run's")
+			})
+		})
+
+		t.Run("one winner whichever order arbitrary claims arrive in", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, rankDecides, arbitrates)
 		})
 	})
 }
@@ -189,75 +196,71 @@ type rankSource struct {
 	seq       int
 }
 
-// FuzzArbitration applies arbitrary claim sequences forwards and
-// backwards and holds the winner equal: rank decides, arrival never
-// does, whatever the claims are.
+// FuzzArbitration checks [rankDecides] on claim sequences nothing in
+// this repository wrote. Each seed is the choices of one case: a
+// two-byte little-endian length, then six bytes per claim.
 func FuzzArbitration(f *testing.F) {
-	f.Add([]byte{0, 1, 2, 3, 0, 1, 2, 1, 0, 3, 1, 0})
-	f.Add([]byte{1, 0, 0, 0, 1, 0})
-	f.Add([]byte{})
+	for _, records := range [][]byte{{0, 1, 2, 3, 0, 1, 2, 1, 0, 3, 1, 0}, {1, 0, 0, 0, 1, 0}, {}} {
+		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(records))), records...))
+	}
 
+	prop.Fuzz(f, rankDecides, arbitrates)
+}
+
+// arbitrates checks [rankDecides] on a claim sequence that the case
+// draws as bytes. It decodes fixed-width records and keeps one claim per
+// rank source, because a source claiming two values is refused by
+// design, and which of the two survives would otherwise depend on
+// arrival. It applies the claims forwards and backwards and compares the
+// two outcomes.
+func arbitrates(c *prop.Case) {
 	plugins := []diag.Origin{"alpha", "beta", "gamma", "delta"}
 	values := []string{"a", "b", "c", "d"}
+	in := c.Draw(prop.Bytes(), "claims")
 
-	f.Fuzz(func(t *testing.T, in []byte) {
-		// Decode fixed-width records, then keep one claim per rank
-		// source: a source claiming two values is refused by
-		// design, and which of the two survives would otherwise
-		// depend on arrival.
-		const record = 6
-		seen := map[rankSource]struct{}{}
-		var records []claimRecord
-		for i := 0; i+record <= len(in) && len(records) < 32; i += record {
-			r := claimRecord{
-				authority: meta.Authority(in[i] % 3),
-				bucket:    int(in[i+1] % 3),
-				plugin:    plugins[int(in[i+2])%len(plugins)],
-				seq:       int(in[i+3] % 4),
-				drop:      in[i+4]%2 == 1,
-				value:     values[int(in[i+5])%len(values)],
+	const record = 6
+	seen := map[rankSource]struct{}{}
+	var records []claimRecord
+	for i := 0; i+record <= len(in) && len(records) < 32; i += record {
+		r := claimRecord{
+			authority: meta.Authority(in[i] % 3),
+			bucket:    int(in[i+1] % 3),
+			plugin:    plugins[int(in[i+2])%len(plugins)],
+			seq:       int(in[i+3] % 4),
+			drop:      in[i+4]%2 == 1,
+			value:     values[int(in[i+5])%len(values)],
+		}
+		source := rankSource{r.authority, r.bucket, r.plugin, r.seq}
+		if _, held := seen[source]; held {
+			continue
+		}
+		seen[source] = struct{}{}
+		records = append(records, r)
+	}
+
+	apply := func(ordered []claimRecord) (string, bool, int) {
+		_, facts, role, _ := fixture(c)
+		for _, r := range ordered {
+			claim := by(r.plugin, r.seq)
+			claim.Authority = r.authority
+			claim.Bucket = r.bucket
+			var err error
+			if r.drop {
+				err = facts.DropKey(role.ID(), claim)
+			} else {
+				err = meta.Stamp(facts, role, r.value, claim)
 			}
-			source := rankSource{r.authority, r.bucket, r.plugin, r.seq}
-			if _, held := seen[source]; held {
-				continue
-			}
-			seen[source] = struct{}{}
-			records = append(records, r)
+			assert.NoError(c, err, "a deduplicated claim must be admitted")
 		}
+		got, held := meta.Get(facts, subject, role)
+		return got, held, len(slices.Collect(facts.Claims(subject, role.ID())))
+	}
 
-		apply := func(ordered []claimRecord) (string, bool, int) {
-			_, facts, role, _ := fixture(t)
-			for _, r := range ordered {
-				claim := by(r.plugin, r.seq)
-				claim.Authority = r.authority
-				claim.Bucket = r.bucket
-				var err error
-				if r.drop {
-					err = facts.DropKey(role.ID(), claim)
-				} else {
-					err = meta.Stamp(facts, role, r.value, claim)
-				}
-				if err != nil {
-					t.Fatalf("a deduplicated claim was refused: %v", err)
-				}
-			}
-			got, held := meta.Get(facts, subject, role)
-			return got, held, len(slices.Collect(facts.Claims(subject, role.ID())))
-		}
-
-		forward := records
-		backward := slices.Clone(records)
-		slices.Reverse(backward)
-
-		gotF, heldF, countF := apply(forward)
-		gotB, heldB, countB := apply(backward)
-		if heldF != heldB || gotF != gotB {
-			t.Fatalf("arrival order decided: forward (%q, %t), backward (%q, %t)",
-				gotF, heldF, gotB, heldB)
-		}
-		if countF != countB {
-			t.Fatalf("the record depends on arrival: %d claims forward, %d backward",
-				countF, countB)
-		}
-	})
+	backward := slices.Clone(records)
+	slices.Reverse(backward)
+	gotF, heldF, countF := apply(records)
+	gotB, heldB, countB := apply(backward)
+	assert.Equal(c, heldB, heldF, "arrival order must decide no winner's presence")
+	assert.Equal(c, gotB, gotF, "arrival order must decide no winner")
+	assert.Equal(c, countB, countF, "the record of claims must not depend on arrival")
 }

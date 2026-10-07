@@ -4,9 +4,9 @@
 package state_test
 
 import (
-	"context"
+	"cmp"
 	"crypto/sha256"
-	"slices"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,7 +67,7 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
-			r, hit := memoAt(l, ample, now).Get([]byte("alpha"))
+			r, hit := memoAt(t, l, ample, now).Get([]byte("alpha"))
 			assert.True(t, hit, "the key has an entry")
 			assert.Equal(t, r, fullRegion(), "the region returns whole")
 		})
@@ -77,7 +77,7 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
-			_, hit := memoAt(l, ample, now).Get([]byte("beta"))
+			_, hit := memoAt(t, l, ample, now).Get([]byte("beta"))
 			assert.False(t, hit, "the key has no entry")
 		})
 
@@ -95,9 +95,10 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
-			name := entriesOf(t, l)[0]
-			assert.NoError(t, l.Put(t.Context(), name, []byte("torn")), "the entry tears")
-			_, hit := memoAt(l, ample, now).Get([]byte("alpha"))
+			entries := entriesOf(t, l)
+			assert.Length(t, entries, 1, "the memo has the one entry")
+			assert.NoError(t, l.Put(t.Context(), entries[0], []byte("torn")), "the entry tears")
+			_, hit := memoAt(t, l, ample, now).Get([]byte("alpha"))
 			assert.False(t, hit, "a torn entry is a miss")
 		})
 	})
@@ -110,10 +111,9 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
-			writes := l.Writes()
-			_, err := memoAt(l, ample, now).Write(t.Context())
+			var err error
+			assert.Pure(t, l.Writes, func() { _, err = memoAt(t, l, ample, now).Write(t.Context()) }, "without a write")
 			assert.NoError(t, err, "the memo writes")
-			assert.Equal(t, l.Writes(), writes, "without a write")
 		})
 
 		t.Run("adds the bytes it wrote to the memo's total", func(t *testing.T) {
@@ -122,7 +122,7 @@ func TestMemo(t *testing.T) {
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
 			first := numberIn(t, l, memoTotal)
-			m := memoAt(l, ample, now)
+			m := memoAt(t, l, ample, now)
 			m.Put([]byte("beta"), fullRegion())
 			written, err := m.Write(t.Context())
 			assert.NoError(t, err, "the memo writes")
@@ -134,7 +134,7 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha", "beta")
-			m := memoAt(l, ample, now)
+			m := memoAt(t, l, ample, now)
 			m.Get([]byte("alpha"))
 			_, err := m.Write(t.Context())
 			assert.NoError(t, err, "the memo writes")
@@ -154,9 +154,10 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
-			name := entriesOf(t, l)[0]
-			assert.NoError(t, l.Put(t.Context(), name, []byte("torn")), "the entry tears")
-			m := memoAt(l, ample, now)
+			entries := entriesOf(t, l)
+			assert.Length(t, entries, 1, "the memo has the one entry")
+			assert.NoError(t, l.Put(t.Context(), entries[0], []byte("torn")), "the entry tears")
+			m := memoAt(t, l, ample, now)
 			m.Get([]byte("alpha"))
 			_, err := m.Write(t.Context())
 			assert.NoError(t, err, "the memo writes")
@@ -173,7 +174,7 @@ func TestMemo(t *testing.T) {
 			size := numberIn(t, l, memoTotal) / 4
 			limit := 3*size + size/2
 			putAll(t, l, limit, now, "e")
-			assert.Equal(t, entriesOf(t, l), sortedEntries(t, l, "e", "d", "c"),
+			assert.Permutation(t, entriesOf(t, l), []string{entryOf(t, l, "e"), entryOf(t, l, "d"), entryOf(t, l, "c")},
 				"the two oldest entries leave a memo of three entries, under nine tenths of a cap of three and a half")
 		})
 
@@ -182,17 +183,18 @@ func TestMemo(t *testing.T) {
 
 			l := ledger.NewMem()
 			putAll(t, l, ample, now, "alpha")
-			truth := numberIn(t, l, memoTotal)
-			assert.NoError(t, l.Put(t.Context(), memoTotal, []byte("1\n")), "the total drifts")
-			_, err := memoAt(l, ample, now.Add(25*time.Hour)).Write(t.Context())
+			var err error
+			assert.Pure(t, func() int64 { return numberIn(t, l, memoTotal) }, func() {
+				assert.NoError(t, l.Put(t.Context(), memoTotal, []byte("1\n")), "the total drifts")
+				_, err = memoAt(t, l, ample, now.Add(25*time.Hour)).Write(t.Context())
+			}, "the listing corrects the drifted total")
 			assert.NoError(t, err, "the memo writes")
-			assert.Equal(t, numberIn(t, l, memoTotal), truth, "the listing corrects the total")
 		})
 
 		t.Run("returns the error of a ledger that fails to write an entry", func(t *testing.T) {
 			t.Parallel()
 
-			m := memoAt(failing{Mem: ledger.NewMem(), put: true}, ample, now)
+			m := memoAt(t, failing{Mem: ledger.NewMem(), put: true}, ample, now)
 			m.Put([]byte("alpha"), fullRegion())
 			_, err := m.Write(t.Context())
 			assert.ErrorIs(t, err, errDevice, "the ledger's own error returns")
@@ -201,7 +203,7 @@ func TestMemo(t *testing.T) {
 		t.Run("returns the error of a read a load met", func(t *testing.T) {
 			t.Parallel()
 
-			m := memoAt(failing{Mem: ledger.NewMem(), read: true}, ample, now)
+			m := memoAt(t, failing{Mem: ledger.NewMem(), read: true}, ample, now)
 			_, hit := m.Get([]byte("alpha"))
 			assert.False(t, hit, "the read misses")
 			_, err := m.Write(t.Context())
@@ -211,37 +213,45 @@ func TestMemo(t *testing.T) {
 }
 
 // The memo's steps allocate within their ceilings in the ordinary run,
-// which runs no benchmark. A put takes a memo made before the count, and
-// a write takes a memo with one put over a ledger made before it. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// which runs no benchmark. A put takes a memo made outside the count,
+// and a write takes a memo with one put over a ledger made outside it.
+// The count of the writes keeps their first error, which cmp.Or returns
+// without allocating. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestMemoAllocs(t *testing.T) {
 	now, key, r := time.Now(), []byte("alpha"), fullRegion()
 	l := ledger.NewMem()
 	putAll(t, l, ample, now, string(key))
 	var m *state.Memo
-	assert.MaxAllocs(t, func() { m = memoAt(l, ample, now) }, newMemoAllocs, "NewMemo allocates the memo and its maps")
-	assert.MaxAllocs(t, func() {
-		if _, hit := m.Get(key); !hit {
-			t.Fatal("Get missed the entry")
-		}
-	}, memoGetAllocs, "Get allocates the name, the read and the decoded region")
+	assert.MaxAllocs(
+		t,
+		func() { m = memoAt(t, l, ample, now) },
+		newMemoAllocs,
+		"NewMemo allocates the memo and its maps",
+	)
+	var hit bool
+	assert.MaxAllocs(t, func() { _, hit = m.Get(key) }, memoGetAllocs,
+		"Get allocates the name, the read and the decoded region")
+	assert.True(t, hit, "Get finds the entry")
 
-	memos, at := newMemos(allocRuns, now), 0
-	assert.MaxAllocs(t, func() {
-		memos[at].Put(key, r)
-		at++
-	}, memoPutAllocs, "Put allocates the entry's name")
-	memos, at = newMemos(allocRuns, now), 0
-	for _, memo := range memos {
+	fresh := func() *state.Memo { return memoAt(t, ledger.NewMem(), ample, now) }
+	assert.MaxAllocsWithSetup(t, fresh, func(memo *state.Memo) { memo.Put(key, r) },
+		memoPutAllocs, "Put allocates the entry's name")
+	var (
+		written int64
+		err     error
+	)
+	assert.MaxAllocsWithSetup(t, func() *state.Memo {
+		memo := fresh()
 		memo.Put(key, r)
-	}
-	assert.MaxAllocs(t, func() {
-		if _, err := memos[at].Write(t.Context()); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
-		}
-		at++
+		return memo
+	}, func(memo *state.Memo) {
+		var werr error
+		written, werr = memo.Write(t.Context())
+		err = cmp.Or(err, werr)
 	}, memoWriteAllocs, "Write allocates the entry's encoding and the memo's records")
+	assert.NoError(t, err, "every memo writes")
+	assert.InRange(t, written, 1, math.Inf(1), "the entry's bytes")
 }
 
 // BenchmarkMemo measures a memo's construction, a hit, a put, and the
@@ -256,14 +266,14 @@ func BenchmarkMemo(b *testing.B) {
 		defer c.End()
 		var got *state.Memo
 		for c.Loop() {
-			got = memoAt(l, ample, now)
+			got = memoAt(b, l, ample, now)
 		}
 		assert.NotNil(b, got, "NewMemo returns the memo")
 	})
 
 	b.Run("Get", func(b *testing.B) {
 		b.Run("a hit", func(b *testing.B) {
-			m := memoAt(l, ample, now)
+			m := memoAt(b, l, ample, now)
 			c := bench.Start(b).MaxAllocs(memoGetAllocs)
 			defer c.End()
 			var hit bool
@@ -280,7 +290,7 @@ func BenchmarkMemo(b *testing.B) {
 			defer c.End()
 			var m *state.Memo
 			for c.Loop() {
-				c.Excluding(func() { m = memoAt(l, ample, now) })
+				c.Excluding(func() { m = memoAt(b, l, ample, now) })
 				m.Put(key, r)
 			}
 			assert.NotNil(b, m, "the region is put")
@@ -289,34 +299,32 @@ func BenchmarkMemo(b *testing.B) {
 
 	b.Run("Write", func(b *testing.B) {
 		b.Run("one put into an empty ledger", func(b *testing.B) {
-			// One write before the contract counts pools the region encoding's
+			// One write before the measurement pools the region encoding's
 			// scratch.
-			warm := newMemos(1, now)[0]
-			warm.Put(key, r)
-			_, err := warm.Write(b.Context())
-			assert.NoError(b, err, "a memo writes before the measurement")
-			c := bench.Start(b).MaxAllocs(memoWriteAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(memoWriteAllocs)
 			defer c.End()
 			var (
 				m       *state.Memo
 				written int64
+				err     error
 			)
 			for c.Loop() {
 				c.Excluding(func() {
-					m = newMemos(1, now)[0]
+					m = memoAt(b, ledger.NewMem(), ample, now)
 					m.Put(key, r)
 				})
 				written, err = m.Write(b.Context())
 			}
 			assert.NoError(b, err, "the memo writes")
-			assert.True(b, written > 0, "the entry's bytes")
+			assert.InRange(b, written, 1, math.Inf(1), "the entry's bytes")
 		})
 	})
 }
 
-// memoAt returns a memo of this build over a ledger, at an instant.
-func memoAt(l ledger.Ledger, limit int64, now time.Time) *state.Memo {
-	return state.NewMemo(context.Background(), l, thisBuild, limit, now)
+// memoAt returns a memo of this build over a ledger, at an instant,
+// under the test's context.
+func memoAt(tb testing.TB, l ledger.Ledger, limit int64, now time.Time) *state.Memo {
+	return state.NewMemo(tb.Context(), l, thisBuild, limit, now)
 }
 
 // putAll writes one entry for each key into the ledger's memo, the
@@ -324,7 +332,7 @@ func memoAt(l ledger.Ledger, limit int64, now time.Time) *state.Memo {
 func putAll(tb testing.TB, l ledger.Ledger, limit int64, now time.Time, keys ...string) {
 	tb.Helper()
 
-	m := memoAt(l, limit, now)
+	m := memoAt(tb, l, limit, now)
 	for _, k := range keys {
 		m.Put([]byte(k), fullRegion())
 	}
@@ -359,15 +367,6 @@ func numberIn(t *testing.T, l ledger.Ledger, name string) int64 {
 	return n
 }
 
-// newMemos returns n memos of this build, each over a ledger of its own.
-func newMemos(n int, now time.Time) []*state.Memo {
-	out := make([]*state.Memo, n)
-	for i := range out {
-		out[i] = memoAt(ledger.NewMem(), ample, now)
-	}
-	return out
-}
-
 // entryOf returns the ledger name the memo stores a key's entry under,
 // found as the one entry a fresh ledger contains after a write of the
 // key.
@@ -376,21 +375,9 @@ func entryOf(t *testing.T, l ledger.Ledger, key string) string {
 
 	probe := ledger.NewMem()
 	putAll(t, probe, ample, time.Now(), key)
-	name := entriesOf(t, probe)[0]
-	_, err := l.Read(t.Context(), name)
+	entries := entriesOf(t, probe)
+	assert.Length(t, entries, 1, "the fresh ledger has the one entry")
+	_, err := l.Read(t.Context(), entries[0])
 	assert.NoError(t, err, "the key's entry is in the ledger")
-	return name
-}
-
-// sortedEntries returns the names of the keys' entries, sorted as a
-// listing sorts them.
-func sortedEntries(t *testing.T, l ledger.Ledger, keys ...string) []string {
-	t.Helper()
-
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, entryOf(t, l, k))
-	}
-	slices.Sort(out)
-	return out
+	return entries[0]
 }

@@ -361,14 +361,14 @@ func TestMember(t *testing.T) {
 }
 
 // classOf parses one exported class body and returns the class.
-func classOf(tb assert.TB, body string) *node.Struct {
+func classOf(tb testing.TB, body string) *node.Struct {
 	tb.Helper()
 
 	return named[*node.Struct](tb, declsOf(tb, "export class "+className+" {\n"+body+"}\n"), className)
 }
 
 // ifaceOf parses one exported interface body and returns the interface.
-func ifaceOf(tb assert.TB, body string) *node.Interface {
+func ifaceOf(tb testing.TB, body string) *node.Interface {
 	tb.Helper()
 
 	return named[*node.Interface](tb, declsOf(tb, "export interface "+ifaceName+" {\n"+body+"}\n"), ifaceName)
@@ -376,7 +376,7 @@ func ifaceOf(tb assert.TB, body string) *node.Interface {
 
 // classBuilt parses one exported class body and returns the unit's
 // builder beside the class, for the cases that read the stamps.
-func classBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Struct) {
+func classBuilt(tb testing.TB, body string) (*plugin.GraphBuilder, *node.Struct) {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, "export class "+className+" {\n"+body+"}\n")
@@ -385,7 +385,7 @@ func classBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Struct) 
 
 // ifaceBuilt parses one exported interface body and returns the unit's
 // builder beside the interface, for the cases that read the stamps.
-func ifaceBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Interface) {
+func ifaceBuilt(tb testing.TB, body string) (*plugin.GraphBuilder, *node.Interface) {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, "export interface "+ifaceName+" {\n"+body+"}\n")

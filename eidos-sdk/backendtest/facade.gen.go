@@ -147,6 +147,10 @@ type Setup = core.Setup
 // consumer's to state and the suite's [Setup] states none. A
 // satellite runs this beside the suite with the contract its own
 // binary ships.
+//
+// Every file reports on its own, so one run names each file the frame
+// refuses. A file that does not stamp, or whose frame does not verify,
+// skips the checks that read the frame.
 func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 	core.AssertStamped(tb, setup, c)
 }
@@ -175,6 +179,7 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 // the host's name, and a declaration elsewhere that shares a
 // member's name does not count for the member. A host of a kind the
 // backend refuses renders nothing, so the check skips its members.
+// Each member reports on its own, as Host.Member, in the store's order.
 func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	core.AssertRenderedMembers(tb, setup)
 }
@@ -189,6 +194,12 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 // coverage fails: without a declaration the guard is disarmed and
 // every narrowing goes silent, which is the defect class the
 // contract exists to refuse.
+//
+// The setup's fixture, the declaration, the settle and the render stop
+// the check where they fail, because nothing after them has an input.
+// The declaration's totality, its exceptions and the run's refusals
+// each report on their own, so one run names every way the coverage
+// falls short.
 func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	core.AssertCoveredFacts(tb, setup)
 }
@@ -209,7 +220,9 @@ func RenderSettled(tb assert.TB, setup Setup) []plugin.RenderedFile {
 // construct lowering keeps every declaration equal to a fresh
 // build once every declared name normalizes. A settle reporting an
 // Error over the suite's fixture fails the check, because the
-// canonical declarations spell in every convention.
+// canonical declarations spell in every convention. A changed unit
+// count stops the check, and each unit's key, provenance and
+// declarations then report on their own.
 func AssertSettledShape(tb assert.TB, setup Setup) {
 	core.AssertSettledShape(tb, setup)
 }
@@ -221,11 +234,12 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	core.AssertPopulatedFixture(tb, setup)
 }
 
-// AssertDeterministicRender renders two isolated setups and fails
-// unless the files are byte-equal: the same paths, the same
-// packages, the same bytes, which is the byte-identity contract as
-// values. The findings must match as a set too; only their order is
-// the run's, because the pass reports in completion order.
+// AssertDeterministicRender renders isolated setups, one per call
+// of [assert.Deterministic], and fails unless every render returns
+// the files of the first: the same paths, the same packages, the same
+// bytes, which is the byte-identity contract as values. The findings
+// must match as a set too. Only their order is the run's, because the
+// pass reports in completion order.
 func AssertDeterministicRender(tb assert.TB, setup Setup) {
 	core.AssertDeterministicRender(tb, setup)
 }
@@ -235,14 +249,15 @@ func AssertDeterministicRender(tb assert.TB, setup Setup) {
 // fixture emits every kind an emit declaration takes at file level,
 // so over it each kind renders, reports under [render.RefusedKind]
 // with the reason the backend declares, or fails this check under
-// [render.UnspeltKind].
+// [render.UnspeltKind]. Each finding reports on its own.
 func AssertSpeltKinds(tb assert.TB, setup Setup) {
 	core.AssertSpeltKinds(tb, setup)
 }
 
 // AssertPlacedContent renders once and fails on a body that does
 // not arrive whole: conflicting forms, a reference resolving to
-// nothing, or pending slot content its template dropped.
+// nothing, or pending slot content its template dropped. Each finding
+// reports on its own.
 func AssertPlacedContent(tb assert.TB, setup Setup) {
 	core.AssertPlacedContent(tb, setup)
 }
@@ -250,7 +265,8 @@ func AssertPlacedContent(tb assert.TB, setup Setup) {
 // AssertContinuedRender renders once and fails on a breach of the
 // failure semantics: the call returns no error, every finding
 // states a position and the suite's origin, and a file reported
-// unformatted is withheld from the values.
+// unformatted is withheld from the values. Each finding reports on its
+// own.
 func AssertContinuedRender(tb assert.TB, setup Setup) {
 	core.AssertContinuedRender(tb, setup)
 }

@@ -113,7 +113,7 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			plan := plugin.RenderedFile{Path: "registry.go", Body: []byte("package p\n")}
-			assert.Length(t, plan.Sources, 0, "a plan file derives from nothing")
+			assert.Empty(t, plan.Sources, "a plan file derives from nothing")
 		})
 	})
 

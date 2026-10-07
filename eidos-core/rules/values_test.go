@@ -538,28 +538,28 @@ func TestValues(t *testing.T) {
 
 			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
 			b := rules.NewBound(nongeneric{scripted()}, v, nil)
-			assert.Length(t, b.Witnesses(params()), 0, "nothing derives the parameters")
+			assert.Nil(t, b.Witnesses(params()), "nothing derives the parameters")
 		})
 
 		t.Run("returns nil for no parameters", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			assert.Length(t, b.Witnesses(nil), 0, "there is nothing to instantiate")
+			assert.Nil(t, b.Witnesses(nil), "there is nothing to instantiate")
 		})
 
 		t.Run("returns nil for a nil parameter", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			assert.Length(t, b.Witnesses([]*node.TypeParam{nil}), 0, "a nil entry has no witness")
+			assert.Nil(t, b.Witnesses([]*node.TypeParam{nil}), "a nil entry has no witness")
 		})
 
 		t.Run("returns nil on the zero view", func(t *testing.T) {
 			t.Parallel()
 
 			b := rules.NewBound(scripted(), rules.View{}, nil)
-			assert.Length(t, b.Witnesses(params()), 0, "no view, no read")
+			assert.Nil(t, b.Witnesses(params()), "no view, no read")
 		})
 	})
 
@@ -596,21 +596,17 @@ func TestValues(t *testing.T) {
 		t.Run("returns nil for a nil reference", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, rules.EmitRef(nil) == nil, "nothing restates as nothing")
+			assert.Nil(t, rules.EmitRef(nil), "nothing restates as nothing")
 		})
 	})
 }
 
 // The constructors and combinators of a sample return values without
 // allocating, and a restated reference allocates itself, in the ordinary
-// run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// run, which runs no benchmark. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestValuesAllocs(t *testing.T) {
-	for _, tt := range valueCalls(t) {
-		msg := tt.name + " allocates what it returns"
-		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
-	}
+	checkCalls(t, valueCalls(t))
 }
 
 // BenchmarkValues measures each constructor and combinator a language's
@@ -624,14 +620,15 @@ func BenchmarkValues(b *testing.B) {
 			for c.Loop() {
 				tt.call()
 			}
+			tt.check(b)
 		})
 	}
 }
 
 // valueCalls returns one call of each function and method of the
 // values file over declared values, with what the call allocates. Each
-// call checks what it returned, so a call that measured another path
-// fails.
+// check reads what the last call returned, so a call that measured
+// another path fails.
 func valueCalls(tb assert.TB) []allocCall {
 	tb.Helper()
 
@@ -640,67 +637,68 @@ func valueCalls(tb assert.TB) []allocCall {
 	wrap := func(v emit.Value) emit.Value { return v }
 	refusal := rules.RefusedDepth
 	ref := &node.TypeRef{Spelling: outsideName, Package: outsidePackage}
+	var (
+		ok        bool
+		sample    rules.Sample
+		refused   rules.Refusal
+		spelling  string
+		restated  *emit.TypeRef
+		alternate rules.Sample
+	)
 	return []allocCall{
-		{name: "Sample.OK", call: func() {
-			if !one.OK() {
-				tb.Fatalf("OK reported false for a sample with a value")
-			}
-		}},
-		{name: "Of", call: func() {
-			if rules.Of(lit).Value.Text != derivedInt {
-				tb.Fatalf("Of returned another value")
-			}
-		}},
-		{name: "Refused", call: func() {
-			if rules.Refused(refusal).Refusal != refusal {
-				tb.Fatalf("Refused returned another refusal")
-			}
-		}},
-		{name: "Pair", call: func() {
-			if sample, _ := rules.Pair(emit.LiteralString, pairSample, pairAlternate); !sample.OK() {
-				tb.Fatalf("Pair returned a sample without a value")
-			}
-		}},
-		{name: "NumberPair", call: func() {
-			if _, alternate := rules.NumberPair(
-				emit.LiteralFloat,
-				pairSample,
-				pairAlternate,
-				pairBits,
-			); !alternate.OK() {
-				tb.Fatalf("NumberPair returned an alternate without a value")
-			}
-		}},
-		{name: "RefusedPair", call: func() {
-			if _, alternate := rules.RefusedPair(refusal); alternate.Refusal != refusal {
-				tb.Fatalf("RefusedPair returned another refusal")
-			}
-		}},
-		{name: "Lift", call: func() {
-			if !rules.Lift(one, wrap).OK() {
-				tb.Fatalf("Lift returned a sample without a value")
-			}
-		}},
-		{name: "Complete", call: func() {
-			if _, alternate := rules.Complete(two, rules.Sample{}, one, two); alternate.Value.Text != derivedInt {
-				tb.Fatalf("Complete paired another alternate")
-			}
-		}},
-		{name: "FirstRefusal", call: func() {
-			if rules.FirstRefusal(one, rules.Refused(refusal)) != refusal {
-				tb.Fatalf("FirstRefusal returned another refusal")
-			}
-		}},
-		{name: "Refusal.String", call: func() {
-			if refusal.String() != "depth" {
-				tb.Fatalf("String returned another spelling")
-			}
-		}},
-		{name: "EmitRef", allocs: emitRefAllocs, call: func() {
-			if rules.EmitRef(ref).Package != outsidePackage {
-				tb.Fatalf("EmitRef restated another package")
-			}
-		}},
+		{
+			name: "Sample.OK", call: func() { ok = one.OK() },
+			check: func(tb assert.TB) { assert.True(tb, ok, "OK reports true for a sample with a value") },
+		},
+		{
+			name: "Of", call: func() { sample = rules.Of(lit) },
+			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "Of returns the value") },
+		},
+		{
+			name: "Refused", call: func() { sample = rules.Refused(refusal) },
+			check: func(tb assert.TB) { assert.Equal(tb, sample.Refusal, refusal, "Refused returns the refusal") },
+		},
+		{
+			name: "Pair", call: func() { sample, _ = rules.Pair(emit.LiteralString, pairSample, pairAlternate) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "Pair returns a sample with a value") },
+		},
+		{
+			name: "NumberPair",
+			call: func() {
+				_, alternate = rules.NumberPair(emit.LiteralFloat, pairSample, pairAlternate, pairBits)
+			},
+			check: func(tb assert.TB) { assert.True(tb, alternate.OK(), "NumberPair returns an alternate with a value") },
+		},
+		{
+			name: "RefusedPair", call: func() { _, alternate = rules.RefusedPair(refusal) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, alternate.Refusal, refusal, "RefusedPair refuses the alternate")
+			},
+		},
+		{
+			name: "Lift", call: func() { sample = rules.Lift(one, wrap) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "Lift returns a sample with a value") },
+		},
+		{
+			name: "Complete", call: func() { _, alternate = rules.Complete(two, rules.Sample{}, one, two) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, alternate.Value.Text, derivedInt, "Complete pairs the derived alternate")
+			},
+		},
+		{
+			name: "FirstRefusal", call: func() { refused = rules.FirstRefusal(one, rules.Refused(refusal)) },
+			check: func(tb assert.TB) { assert.Equal(tb, refused, refusal, "FirstRefusal returns the refusal") },
+		},
+		{
+			name: "Refusal.String", call: func() { spelling = refusal.String() },
+			check: func(tb assert.TB) { assert.Equal(tb, spelling, "depth", "String returns the spelling") },
+		},
+		{
+			name: "EmitRef", allocs: emitRefAllocs, call: func() { restated = rules.EmitRef(ref) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, restated.Package, outsidePackage, "EmitRef restates the package")
+			},
+		},
 	}
 }
 

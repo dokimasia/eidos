@@ -298,7 +298,7 @@ func TestTyperef(t *testing.T) {
 }
 
 // targetOf parses one type alias and returns the type it names.
-func targetOf(tb assert.TB, typ string) *node.TypeRef {
+func targetOf(tb testing.TB, typ string) *node.TypeRef {
 	tb.Helper()
 
 	return named[*node.Alias](tb, declsOf(tb, "import { Imported } from './lib';\n"+

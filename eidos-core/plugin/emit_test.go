@@ -4,6 +4,7 @@
 package plugin_test
 
 import (
+	"cmp"
 	"strconv"
 	"testing"
 
@@ -421,15 +422,13 @@ func TestEmit(t *testing.T) {
 			second.Tag = "test"
 			cached := unit("stubgen", "a.go")
 			cached.Pkg = coretest.PackageID(coretest.CachePath)
-			for _, u := range []plugin.Unit{
+			assert.Total(t, e.Add, []plugin.Unit{
 				{Plugin: "stubgen", Per: plugin.PerPlan, Word: "registry"},
 				second,
 				unit("stubgen", "a.go"),
 				cached,
 				unit("audit", "z.go"),
-			} {
-				assert.NoError(t, e.Add(u), "every fixture unit arrives")
-			}
+			}, "every fixture unit arrives")
 
 			var got []string
 			for u := range e.Units() {
@@ -537,79 +536,68 @@ func TestEmit(t *testing.T) {
 
 // A reference lookup over a walked store allocates nothing, because a
 // journaled phase call resolves one for every emit-phase invocation, and
-// an add allocates what the store keeps. The checks run alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// an add allocates what the store keeps. Each counted add takes a unit
+// built outside the count. The checks run alone, because the count
+// includes every goroutine's allocations.
 func TestEmitAllocs(t *testing.T) {
 	e := plugin.NewEmit()
 	u := hosting("stubgen", "a.go", "Store")
 	assert.NoError(t, e.Add(u), "the hosting unit arrives")
 	host := methodOf(u)
 	e.Ref(host)
-	assert.MaxAllocs(t, func() {
-		if _, held := e.Ref(host); !held {
-			t.Fatal("Ref misses the walked method")
-		}
-	}, 0, "Ref allocates nothing once the store is walked")
-	assert.MaxAllocs(t, func() {
-		if u.Ref().Key != "a.go" {
-			t.Fatal("Unit.Ref returns another key")
-		}
-	}, 0, "Unit.Ref allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if !e.Contribute(host, "audit") {
-			t.Fatal("Contribute misses the walked method")
-		}
-	}, 0, "Contribute allocates nothing for a contributor the unit names")
+	var held bool
+	assert.MaxAllocs(t, func() { _, held = e.Ref(host) }, 0, "Ref allocates nothing once the store is walked")
+	assert.True(t, held, "Ref finds the walked method")
+	var ref plugin.UnitRef
+	assert.MaxAllocs(t, func() { ref = u.Ref() }, 0, "Unit.Ref allocates nothing")
+	assert.Equal(t, ref.Key, "a.go", "Unit.Ref returns the unit's key")
+	assert.MaxAllocs(t, func() { held = e.Contribute(host, "audit") }, 0,
+		"Contribute allocates nothing for a contributor the unit names")
+	assert.True(t, held, "Contribute finds the walked method")
 
+	// Each count of an add keeps the first error of its calls, which
+	// cmp.Or returns without allocating.
+	var err error
 	added := benchUnits
 	later := addedUnits(t, benchUnits)
-	units := benchUnitsOf(benchUnits + allocRuns)
-	assert.MaxAllocs(t, func() {
-		if err := later.Add(units[added]); err != nil {
-			t.Fatalf("Add: unexpected error: %v", err)
-		}
+	next := func() plugin.Unit {
+		u := benchUnit("stubgen", "unit"+strconv.Itoa(added)+".go", benchStructs, benchMethods)
 		added++
-	}, laterAddAllocs, "Add allocates the key and the declarations of each kind of a later unit")
+		return u
+	}
+	assert.MaxAllocsWithSetup(t, next, func(u plugin.Unit) { err = cmp.Or(err, later.Add(u)) },
+		laterAddAllocs, "Add allocates the key and the declarations of each kind of a later unit")
+	assert.NoError(t, err, "every later unit is added")
 
 	var built *plugin.Emit
 	assert.MaxAllocs(t, func() { built = plugin.NewEmit() }, newEmitAllocs,
 		"NewEmit allocates the store and its two maps")
 	assert.False(t, built.Settled(), "NewEmit returns an unsettled store")
 
-	empty := make([]*plugin.Emit, allocRuns)
-	for i := range empty {
-		empty[i] = plugin.NewEmit()
-	}
-	at := 0
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Add(units[0]); err != nil {
-			t.Fatalf("Add: unexpected error: %v", err)
-		}
-		at++
-	}, firstAddAllocs, "Add allocates the entries of the first unit of a store")
+	first := benchUnit("stubgen", "unit0.go", benchStructs, benchMethods)
+	assert.MaxAllocsWithSetup(t, plugin.NewEmit, func(empty *plugin.Emit) { err = cmp.Or(err, empty.Add(first)) },
+		firstAddAllocs, "Add allocates the entries of the first unit of a store")
+	assert.NoError(t, err, "every first unit is added")
 
-	hosted := make([]*plugin.Emit, allocRuns)
-	for i := range hosted {
-		hosted[i] = plugin.NewEmit()
-		assert.NoError(t, hosted[i].Add(u), "the hosting unit arrives")
+	hosting := func() *plugin.Emit {
+		hosted := plugin.NewEmit()
+		assert.NoError(t, hosted.Add(u), "the hosting unit arrives")
+		return hosted
 	}
-	at = 0
-	assert.MaxAllocs(t, func() {
-		if !hosted[at].Contribute(host, "audit") {
-			t.Fatal("Contribute misses the hosted method")
-		}
-		at++
+	contributed := true
+	assert.MaxAllocsWithSetup(t, hosting, func(hosted *plugin.Emit) {
+		contributed = contributed && hosted.Contribute(host, "audit")
 	}, firstContributeAllocs, "Contribute allocates the map of hosts and the contributor of a first contribution")
+	assert.True(t, contributed, "Contribute finds every hosted method")
 
 	settled := false
 	assert.MaxAllocs(t, func() { settled = e.Settled() }, 0, "Settled allocates nothing")
 	assert.False(t, settled, "Settled reports false before the settle")
-	assert.MaxAllocs(t, func() {
-		if u.FileKey() != "a.go" || plugin.PerSource.String() != "per-source" {
-			t.Fatal("the unit's key or the cardinality's spelling read back wrong")
-		}
-	}, 0, "FileKey and String allocate nothing")
+	var key, spelling string
+	assert.MaxAllocs(t, func() { key, spelling = u.FileKey(), plugin.PerSource.String() }, 0,
+		"FileKey and String allocate nothing")
+	assert.Equal(t, key, "a.go", "FileKey returns the unit's file")
+	assert.Equal(t, spelling, "per-source", "String spells the cardinality")
 }
 
 // BenchmarkEmit measures the emit store: the adds a phase call's flush
@@ -702,21 +690,16 @@ func BenchmarkEmit(b *testing.B) {
 		var host symbol.Symbol
 		for i := range units {
 			u := benchUnit("stubgen", "unit"+strconv.Itoa(i)+".go", 1, methods)
-			if err := e.Add(u); err != nil {
-				b.Fatalf("Add: unexpected error: %v", err)
-			}
+			assert.NoError(b, e.Add(u), "every unit is added")
 			host = methodOf(u)
 		}
-		e.Ref(host)
-		c := bench.Start(b).MaxAllocs(0)
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		var got plugin.EmitRef
 		for c.Loop() {
 			got, _ = e.Ref(host)
 		}
-		if got.Index != 1 {
-			b.Fatalf("Ref places the last unit's first method at %d", got.Index)
-		}
+		assert.Equal(b, got.Index, 1, "Ref places the last unit's first method after its host")
 	})
 
 	b.Run("Unit.Ref", func(b *testing.B) {
@@ -727,9 +710,7 @@ func BenchmarkEmit(b *testing.B) {
 		for c.Loop() {
 			got = u.Ref()
 		}
-		if got.Key != "a.go" {
-			b.Fatalf("Unit.Ref returns key %q", got.Key)
-		}
+		assert.Equal(b, got.Key, "a.go", "Unit.Ref returns the unit's key")
 	})
 
 	b.Run("String", func(b *testing.B) {
@@ -896,8 +877,6 @@ func addedUnits(tb assert.TB, n int) *plugin.Emit {
 	tb.Helper()
 
 	e := plugin.NewEmit()
-	for _, u := range benchUnitsOf(n) {
-		assert.NoError(tb, e.Add(u), "every unit is added")
-	}
+	assert.Total(tb, e.Add, benchUnitsOf(n), "every unit is added")
 	return e
 }

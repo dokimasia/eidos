@@ -76,7 +76,7 @@ func TestBuilder(t *testing.T) {
 				t.Parallel()
 
 				b := eidos.NewPlugin("planner")
-				assert.True(t, tt.set(b) == b, "a declaration chains its calls on one builder")
+				assert.Equal(t, tt.set(b), b, "a declaration chains its calls on one builder", assert.ByIdentity())
 			})
 		})
 	}
@@ -383,36 +383,27 @@ func TestBuilder(t *testing.T) {
 }
 
 // Each method of a declaration allocates within its ceiling in the
-// ordinary run, which runs no benchmark. A method that appends takes a
-// declaration built before the count, because its first call allocates
-// the list, and so does Build, because a declaration builds once. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// ordinary run, which runs no benchmark. Each counted call takes a
+// declaration built outside the count, because a method's first call
+// allocates its list and a declaration builds once. The check runs
+// alone, because the count includes every goroutine's allocations.
 func TestBuilderAllocs(t *testing.T) {
 	var declared *eidos.Builder
 	assert.MaxAllocs(t, func() { declared = eidos.NewPlugin("bench") }, newPluginAllocs,
 		"NewPlugin allocates the builder and its map of priorities")
 	assert.NotNil(t, declared, "NewPlugin returns the declaration")
 
+	fresh := func() *eidos.Builder { return eidos.NewPlugin("bench") }
 	for _, tt := range declarations(t) {
-		fresh, at := newDeclarations(allocRuns), 0
+		var got *eidos.Builder
 		msg := tt.name + " allocates within its ceiling on a new declaration"
-		assert.MaxAllocs(t, func() {
-			tt.set(fresh[at])
-			at++
-		}, tt.allocs, msg)
+		assert.MaxAllocsWithSetup(t, fresh, func(b *eidos.Builder) { got = tt.set(b) }, tt.allocs, msg)
+		assert.NotNil(t, got, tt.name+" returns its builder")
 	}
 
-	declare := benchDeclaration(t)
-	fresh, at := make([]*eidos.Builder, allocRuns), 0
-	for i := range fresh {
-		fresh[i] = declare()
-	}
 	var p plugin.Plugin
-	assert.MaxAllocs(t, func() {
-		p = fresh[at].Build()
-		at++
-	}, buildAllocs, "Build allocates the lowered rules, the subscriptions and the built value")
+	assert.MaxAllocsWithSetup(t, benchDeclaration(t), func(b *eidos.Builder) { p = b.Build() }, buildAllocs,
+		"Build allocates the lowered rules, the subscriptions and the built value")
 	assert.Equal(t, p.Name(), "bench", "Build returns the declared plugin")
 }
 
@@ -444,7 +435,7 @@ func BenchmarkBuilder(b *testing.B) {
 				}
 				got = tt.set(declared)
 			}
-			assert.True(b, got == declared, "the method returns its builder")
+			assert.Equal(b, got, declared, "the method returns its builder", assert.ByIdentity())
 		})
 	}
 
@@ -517,16 +508,6 @@ func declarations(tb assert.TB) []declaring {
 		},
 		{name: "Handle", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder { return b.Handle(rule) }},
 	}
-}
-
-// newDeclarations returns n new declarations, built before a count, so
-// each counted call takes one of its own.
-func newDeclarations(n int) []*eidos.Builder {
-	out := make([]*eidos.Builder, n)
-	for i := range out {
-		out[i] = eidos.NewPlugin("bench")
-	}
-	return out
 }
 
 // benchDeclaration returns a function that declares the bench plugin

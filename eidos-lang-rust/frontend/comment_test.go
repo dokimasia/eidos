@@ -307,7 +307,7 @@ func TestComment(t *testing.T) {
 
 // structOf parses the fixture crate whose library root is src and
 // returns the struct of a name its root declares.
-func structOf(tb assert.TB, src, name string) *node.Struct {
+func structOf(tb testing.TB, src, name string) *node.Struct {
 	tb.Helper()
 
 	return named[*node.Struct](tb, declsOf(tb, src), name)

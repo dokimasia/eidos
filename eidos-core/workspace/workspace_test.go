@@ -73,16 +73,12 @@ func TestWorkspace(t *testing.T) {
 func TestWorkspaceZeroAlloc(t *testing.T) {
 	w, err := valid().Build()
 	assert.NoError(t, err, "the fixture composition is valid")
-	assert.MaxAllocs(t, func() {
-		if w.Brand() != fixtureBrand {
-			t.Fatal("Brand returned another brand")
-		}
-	}, 0, "Brand allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if w.Kernel().IsZero() {
-			t.Fatal("Kernel returned the zero keys")
-		}
-	}, 0, "Kernel allocates nothing")
+	var brand output.Brand
+	assert.MaxAllocs(t, func() { brand = w.Brand() }, 0, "Brand allocates nothing")
+	assert.Equal(t, brand, fixtureBrand, "Brand returns the composition's brand")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = w.Kernel().IsZero() }, 0, "Kernel allocates nothing")
+	assert.False(t, zero, "Kernel returns the registered keys")
 }
 
 // BenchmarkWorkspace measures the accessors of a built workspace.

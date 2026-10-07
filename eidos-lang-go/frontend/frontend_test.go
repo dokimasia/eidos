@@ -4,7 +4,7 @@
 package frontend_test
 
 import (
-	"context"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -41,17 +41,13 @@ const newAllocs = 1 + 1 + 3 + 2 + 4
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
 // where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves. A case whose
-// ceiling only a benchmark checks sets bench, which measures the case
-// in place of the call, and no list an allocation test reads contains
-// it.
+// call, and the check of the result the call leaves.
 type allocCall struct {
 	name     string
 	caseName string
 	allocs   uint64
 	call     func()
-	check    func(tb assert.TB)
-	bench    func(b *testing.B)
+	check    func(tb testing.TB)
 }
 
 // treeReader is the partition's recorded door over a test tree.
@@ -100,7 +96,7 @@ func TestFrontend(t *testing.T) {
 
 			f := frontend.New(nil)
 			u := unitOf(t, f, goTree(), "bad/oops.go")
-			assert.NoError(t, f.Parse(context.Background(), u),
+			assert.NoError(t, f.Parse(t.Context(), u),
 				"a syntax error is the source's problem, not the load's")
 		})
 
@@ -187,7 +183,7 @@ func frontendCalls() []allocCall {
 		{
 			name: "New", allocs: newAllocs,
 			call:  func() { f = frontend.New(nil) },
-			check: func(tb assert.TB) { assert.Equal(tb, f.Name(), golang.Name, "New returns the Go frontend") },
+			check: func(tb testing.TB) { assert.Equal(tb, f.Name(), golang.Name, "New returns the Go frontend") },
 		},
 	}
 }
@@ -236,18 +232,12 @@ func benchCalls(b *testing.B, calls []allocCall) {
 }
 
 // benchCall measures one call under the bench contract at its ceiling,
-// and checks the result the last call leaves. The call runs once before
-// the contract starts, so what the first call initialises stays out of
-// the count. A case that sets bench runs it instead.
+// and checks the result the last call leaves. The contract warms up with
+// one call, so what the first call initialises stays out of the count.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
-	if tt.bench != nil {
-		tt.bench(b)
-		return
-	}
-	tt.call()
-	c := bench.Start(b).MaxAllocs(tt.allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 	defer c.End()
 	for c.Loop() {
 		tt.call()
@@ -296,7 +286,7 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 // unitOf partitions a tree and returns the unit with one file,
 // reading carriers under the suite's brand.
 func unitOf(
-	tb assert.TB, f plugin.Frontend, tree fstest.MapFS, member string,
+	tb testing.TB, f plugin.Frontend, tree fstest.MapFS, member string,
 ) *plugin.SourceUnit {
 	tb.Helper()
 
@@ -306,16 +296,11 @@ func unitOf(
 			claimed = append(claimed, plugin.SourceRef{Path: path})
 		}
 	}
-	parts, err := f.Partition(context.Background(), claimed, treeReader{tree})
+	parts, err := f.Partition(tb.Context(), claimed, treeReader{tree})
 	assert.NoError(tb, err, "the fixture partitions")
-	for _, part := range parts {
-		for _, ref := range part {
-			if ref.Path == member {
-				return plugin.NewSourceUnit(part, tree, plugin.DepthFull,
-					f.Syntax(), brand, diag.NewSink(), f.Name())
-			}
-		}
-	}
-	tb.Fatalf("no unit contains %s", member)
-	return nil
+	at := slices.IndexFunc(parts, func(part []plugin.SourceRef) bool {
+		return slices.ContainsFunc(part, func(ref plugin.SourceRef) bool { return ref.Path == member })
+	})
+	assert.NotEqual(tb, at, -1, "a unit contains "+member)
+	return plugin.NewSourceUnit(parts[at], tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
 }

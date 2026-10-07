@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
@@ -111,9 +112,9 @@ func TestPrior(t *testing.T) {
 
 			memo := memoRecorder{}
 			_, report, _ := loadTree(t, stdTree(), func(cfg *load.Config) { cfg.Memo = memo })
-			assert.Equal(t, len(memo), len(report.Units), "one entry for each unit")
+			assert.Length(t, memo, len(report.Units), "one entry for each unit")
 			for _, u := range report.Units {
-				assert.True(t, memo[string(u.Key)] == u.Region, "the entry is the unit's region")
+				expect.Equal(t, memo[string(u.Key)], u.Region, "the entry is the unit's region", assert.ByIdentity())
 			}
 		})
 

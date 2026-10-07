@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/state"
@@ -107,9 +108,9 @@ func TestLedger(t *testing.T) {
 			assert.NoError(t, err, "the ledger opens")
 			_, err = state.WriteManifest(t.Context(), l, twoFiles(), nil)
 			assert.NoError(t, err, "the record commits")
-			assert.True(t, len(seen) > 0, "the edit runs")
+			assert.NotEmpty(t, seen, "the edit runs")
 			for _, run := range seen {
-				assert.Equal(t, run, 3, "with the ledger's run")
+				expect.Equal(t, run, 3, "with the ledger's run")
 			}
 		})
 

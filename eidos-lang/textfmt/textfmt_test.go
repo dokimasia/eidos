@@ -50,7 +50,7 @@ func TestNormalize(t *testing.T) {
 
 			got, err := textfmt.Normalize(nil)
 			assert.NoError(t, err, "nothing normalizes")
-			assert.Length(t, got, 0, "to nothing")
+			assert.Empty(t, got, "to nothing")
 		})
 	})
 }

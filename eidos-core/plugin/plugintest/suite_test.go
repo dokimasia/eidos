@@ -4,6 +4,7 @@
 package plugintest_test
 
 import (
+	"fmt"
 	"io/fs"
 	"strconv"
 	"strings"
@@ -288,7 +289,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertPopulatedFixture(tb, empty)
 				})
-			assert.Contains(t, failure, "declare nothing", "the check names what the fixture lacks")
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"the fixture graph's files declare something: an empty run passes vacuously and proves nothing",
+			}, "the check names what the fixture lacks")
 		})
 
 		t.Run("passes a fixture that declares one function", func(t *testing.T) {
@@ -330,7 +333,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertIdempotentAnnotate(tb, stateful)
 				})
-			assert.Contains(t, failure, "fact's value", "the check names what changed")
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"a repeated pass leaves every fact's value as the first pass left it"},
+				"the check names what changed")
 		})
 	})
 
@@ -362,7 +367,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertDeterministicEmit(tb, nondeterministic)
 				})
-			assert.Contains(t, failure, "same bytes", "the check names the byte-identity contract")
+			assert.Equal(t, coretest.Contracts(failure), []string{"isolated runs emit the same bytes"},
+				"the check names the byte-identity contract")
 		})
 	})
 
@@ -386,7 +392,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertParallelDispatch(tb, setup)
 				})
-			assert.Contains(t, failure, "parallel phase call", "the check names the worker-count contract")
+			assert.Contains(t, coretest.Contracts(failure), "a parallel phase call emits what a sequential one does",
+				"the check names the worker-count contract")
 		})
 
 		t.Run("fails facts that depend on the worker count", func(t *testing.T) {
@@ -400,7 +407,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertParallelDispatch(tb, setup)
 				})
-			assert.Contains(t, failure, "fact values", "the check names the fact contract")
+			assert.Contains(t, coretest.Contracts(failure),
+				"and it ends with the fact values a sequential call ends with", "the check names the fact contract")
 		})
 
 		t.Run("fails findings that depend on the worker count", func(t *testing.T) {
@@ -414,7 +422,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertParallelDispatch(tb, setup)
 				})
-			assert.Contains(t, failure, "same findings", "the check names the finding contract")
+			assert.Contains(t, coretest.Contracts(failure), "and it reports the same findings in the same order",
+				"the check names the finding contract")
 		})
 	})
 
@@ -474,7 +483,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertSelective(tb, setup)
 				})
-			assert.Contains(t, failure, "selection of every match", "the check names the selection contract")
+			assert.Contains(t, coretest.Contracts(failure), "a selection of every match emits what the whole call does",
+				"the check names the selection contract")
 		})
 
 		t.Run("fails facts that depend on the order of invocations", func(t *testing.T) {
@@ -497,7 +507,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertSelective(tb, setup)
 				})
-			assert.Contains(t, failure, "fact values", "the check names the fact contract")
+			assert.Contains(t, coretest.Contracts(failure), "and it ends with the fact values the whole call ends with",
+				"the check names the fact contract")
 		})
 
 		t.Run("fails findings that depend on the order of invocations", func(t *testing.T) {
@@ -518,7 +529,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertSelective(tb, setup)
 				})
-			assert.Contains(t, failure, "same findings", "the check names the finding contract")
+			assert.Contains(t, coretest.Contracts(failure), "and it reports the same findings",
+				"the check names the finding contract")
 		})
 
 		t.Run("fails a journal that lists a match twice", func(t *testing.T) {
@@ -532,7 +544,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertSelective(tb, setup)
 				})
-			assert.Contains(t, failure, "every match once", "the check names the journal contract")
+			assert.Contains(t, coretest.Contracts(failure),
+				"the journal lists every match once, in canonical match order",
+				"the check names the journal contract")
 		})
 
 		t.Run("fails a selected call that journals other matches", func(t *testing.T) {
@@ -546,7 +560,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertSelective(tb, setup)
 				})
-			assert.Contains(t, failure, "the whole run journaled", "the check names the selection contract")
+			assert.Contains(t, coretest.Contracts(failure),
+				"the selected run journals the matches the whole run journaled",
+				"the check names the selection contract")
 		})
 	})
 
@@ -572,7 +588,10 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertOptionsSchema(tb, undocumented)
 				})
-			assert.Contains(t, failure, "doc", "the check names the missing tag")
+			assert.Equal(t, coretest.Contracts(failure), []string{"the options struct meets the tag contract"},
+				"the check names the tag contract")
+			fault, _ := failure[0].Got()
+			assert.Contains(t, fmt.Sprint(fault), "doc", "and the fault names the missing tag")
 		})
 	})
 
@@ -592,7 +611,10 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertTemplates(tb, treed(treeOf("bare\n")))
 				})
-			assert.Contains(t, failure, "marker", "the check names the rule")
+			assert.Equal(t, coretest.Contracts(failure), []string{"the tree meets the template rules"},
+				"the check names the rule")
+			fault, _ := failure[0].Got()
+			assert.Contains(t, fmt.Sprint(fault), "marker", "and the fault names the dropped marker")
 		})
 
 		t.Run("passes an override declared for one of two languages", func(t *testing.T) {
@@ -623,7 +645,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertTemplates(tb, bare)
 				})
-			assert.Contains(t, failure, "declares no templates",
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"the plugin declares templates, so the check proves something"},
 				"a lint the plugin cannot even be asked for proves nothing")
 		})
 
@@ -643,9 +666,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertTemplates(tb, treeless)
 				})
-			assert.Contains(t, failure, "proves nothing",
-				"the facade gives every plugin the provider's shape, so the "+
-					"check does not pass on the shape alone")
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"a fixture language meets a declared tree, so the check proves something"},
+				"the facade gives every plugin the provider's shape, so the check does not pass on the shape alone")
 		})
 	})
 
@@ -670,7 +693,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertPositionedDiagnostics(tb, unpositioned)
 				})
-			assert.Contains(t, failure, "position", "the check names what the finding is missing")
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"every finding names the position it is about: nowhere in particular"},
+				"the check names what the finding is missing")
 		})
 	})
 
@@ -689,7 +714,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertAttributedEmit(tb, misattributed)
 				})
-			assert.Contains(t, failure, "names the plugin", "the check names the attribution rule")
+			assert.Contains(t, coretest.Contracts(failure), "every unit names the plugin that emitted it",
+				"the check names the attribution rule")
 		})
 
 		t.Run("passes a weaver over another plugin's seeded unit", func(t *testing.T) {
@@ -738,7 +764,8 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertStableDeclaration(tb, unstable)
 				})
-			assert.Contains(t, failure, "stable", "the check names the stability rule")
+			assert.Equal(t, coretest.Contracts(failure), []string{"the gate records are stable across builds"},
+				"the check names the stability rule")
 		})
 	})
 
@@ -785,7 +812,9 @@ func TestSuite(t *testing.T) {
 						return unattributed{}, seeded(tb)
 					})
 				})
-			assert.Contains(t, failure, "same bytes", "the check names the byte-identity contract")
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"both spellings of the plugin emit the same bytes"},
+				"the check names the byte-identity contract")
 		})
 	})
 
@@ -810,7 +839,9 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertNoStructuralWrites(tb, mutating)
 				})
-			assert.Contains(t, failure, "input truth", "the check names the rule the mutation broke")
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"the graph is input truth, and no phase call rewrites it"},
+				"the check names the rule the mutation broke")
 		})
 	})
 }

@@ -4,6 +4,7 @@
 package workspace_test
 
 import (
+	"cmp"
 	"strconv"
 	"testing"
 
@@ -115,7 +116,7 @@ func TestBuilder(t *testing.T) {
 				t.Parallel()
 
 				b := workspace.New()
-				assert.True(t, tt.set(b) == b, "a composition chains its calls on one builder")
+				assert.Equal(t, tt.set(b), b, "a composition chains its calls on one builder", assert.ByIdentity())
 			})
 		})
 	}
@@ -505,37 +506,33 @@ func TestBuilder(t *testing.T) {
 
 // Each method of a builder allocates within its ceiling in the ordinary
 // run, which runs no benchmark. A registration and a build each take a
-// builder composed before the count, because a registration's first call
-// allocates the list it appends to. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// builder composed outside the count, because a registration's first
+// call allocates the list it appends to. The count of the builds keeps
+// their first error, which cmp.Or returns without allocating. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestBuilderAllocs(t *testing.T) {
 	var built *workspace.Builder
 	assert.MaxAllocs(t, func() { built = workspace.New() }, newBuilderAllocs, "New allocates the builder")
 	assert.NotNil(t, built, "New returns the builder")
 
 	for _, tt := range setters(t) {
-		msg := tt.name + " allocates the list of a new builder"
 		if !tt.list {
 			b := workspace.New()
-			msg = tt.name + " allocates nothing"
-			assert.MaxAllocs(t, func() { tt.set(b) }, 0, msg)
+			var got *workspace.Builder
+			assert.MaxAllocs(t, func() { got = tt.set(b) }, 0, tt.name+" allocates nothing")
+			assert.Equal(t, got, b, tt.name+" returns its builder", assert.ByIdentity())
 			continue
 		}
-		fresh, at := builders(allocRuns, workspace.New), 0
-		assert.MaxAllocs(t, func() {
-			tt.set(fresh[at])
-			at++
-		}, listAllocs, msg)
+		assert.MaxAllocsWithSetup(t, workspace.New, func(b *workspace.Builder) { tt.set(b) }, listAllocs,
+			tt.name+" allocates the list of a new builder")
 	}
 
-	composed, at := builders(allocRuns, composition()), 0
-	assert.MaxAllocs(t, func() {
-		if _, err := composed[at].Build(); err != nil {
-			t.Fatalf("Build: unexpected error: %v", err)
-		}
-		at++
+	var err error
+	assert.MaxAllocsWithSetup(t, composition(), func(b *workspace.Builder) {
+		_, berr := b.Build()
+		err = cmp.Or(err, berr)
 	}, buildAllocs, "Build allocates the registries, the plans and the fingerprint")
+	assert.NoError(t, err, "every composition builds")
 }
 
 // BenchmarkBuilder measures a builder's construction, each registration
@@ -569,19 +566,18 @@ func BenchmarkBuilder(b *testing.B) {
 				}
 				got = tt.set(builder)
 			}
-			assert.True(b, got == builder, "the method returns its builder")
+			assert.Equal(b, got, builder, "the method returns its builder", assert.ByIdentity())
 		})
 	}
 
 	b.Run("Build", func(b *testing.B) {
 		compose := composition()
-		_, err := compose().Build()
-		assert.NoError(b, err, "the composition builds before the measurement")
-		c := bench.Start(b).MaxAllocs(buildAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(buildAllocs)
 		defer c.End()
 		var (
 			builder *workspace.Builder
 			w       *workspace.Workspace
+			err     error
 		)
 		for c.Loop() {
 			c.Excluding(func() { builder = compose() })
@@ -639,16 +635,6 @@ func setters(tb assert.TB) []setter {
 			return b.Memo(workspace.Memo{Limit: memoLimit})
 		}},
 	}
-}
-
-// builders returns n builders that compose returns, built before a
-// count, so each counted call takes a builder of its own.
-func builders(n int, compose func() *workspace.Builder) []*workspace.Builder {
-	out := make([]*workspace.Builder, n)
-	for i := range out {
-		out[i] = compose()
-	}
-	return out
 }
 
 // composition returns a function that composes 105 plugins on a new

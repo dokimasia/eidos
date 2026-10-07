@@ -4,8 +4,7 @@
 package classfile_test
 
 import (
-	"errors"
-	"strings"
+	"fmt"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -31,9 +30,8 @@ func TestDecoder(t *testing.T) {
 			data := fixtureBytes(t, classesDir, boxFile)
 			for n := range len(data) {
 				_, err := classfile.Parse(data[:n])
-				if !errors.Is(err, classfile.ErrMalformed) {
-					t.Fatalf("the first %d of %d bytes decode with %v", n, len(data), err)
-				}
+				assert.ErrorIs(t, err, classfile.ErrMalformed,
+					fmt.Sprintf("the first %d of %d bytes are malformed", n, len(data)))
 			}
 		})
 	})
@@ -45,7 +43,8 @@ func TestDecoder(t *testing.T) {
 			t.Parallel()
 
 			_, err := classfile.Parse([]byte{0, 0})
-			assert.True(t, strings.Contains(err.Error(), "2 bytes are left where 4 are read"),
+			assert.HasError(t, err, "two bytes are no class file")
+			assert.Contains(t, err.Error(), "2 bytes are left where 4 are read",
 				"the short magic number, and not the faults after it")
 		})
 
@@ -53,7 +52,8 @@ func TestDecoder(t *testing.T) {
 			t.Parallel()
 
 			_, err := classfile.Parse(nil)
-			assert.True(t, strings.HasPrefix(err.Error(), errorPrefix), "the error names its package")
+			assert.HasError(t, err, "no bytes are no class file")
+			assert.HasPrefix(t, err.Error(), errorPrefix, "the error names its package")
 		})
 	})
 }

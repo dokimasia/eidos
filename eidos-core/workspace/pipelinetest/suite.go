@@ -70,9 +70,7 @@ func RunPipelineSuite(t *testing.T, f Fixture) {
 func first(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspace.Report, error) {
 	tb.Helper()
 
-	if f.Tree == nil {
-		tb.Fatalf("the fixture states no tree")
-	}
+	assert.NotNil(tb, f.Tree, "the fixture states a tree")
 	assert.NoError(tb, os.CopyFS(root, f.Tree), "the fixture's tree copies into the run's directory")
 	return run(tb, f, root)
 }
@@ -85,9 +83,7 @@ func first(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspa
 func run(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspace.Report, error) {
 	tb.Helper()
 
-	if f.Compose == nil {
-		tb.Fatalf("the fixture states no composition")
-	}
+	assert.NotNil(tb, f.Compose, "the fixture states a composition")
 	w, err := f.Compose(root)
 	assert.NoError(tb, err, "the fixture's workspace composes")
 	report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores})

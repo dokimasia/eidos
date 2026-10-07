@@ -4,7 +4,6 @@
 package rust_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -31,7 +30,7 @@ func TestRust(t *testing.T) {
 		t.Run("parses a struct and its impl block without an error", func(t *testing.T) {
 			t.Parallel()
 
-			tree, err := rust.Grammar.Parse(context.Background(), rustFile, []byte(rustSource))
+			tree, err := rust.Grammar.Parse(t.Context(), rustFile, []byte(rustSource))
 			assert.NoError(t, err, "the source parses")
 			defer tree.Close()
 			assert.Empty(t, slices.Collect(tree.Errors()), "the source fits the grammar")

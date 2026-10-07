@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -46,7 +45,7 @@ func TestBuild(t *testing.T) {
 			cache[laterTree+"/pkg/pkg.go"] = &fstest.MapFile{Data: []byte(libSource)}
 			cache[laterRecord] = &fstest.MapFile{Data: []byte(laterHash)}
 			stores[frontend.ModCacheStore] = cache
-			units, err := runRound(tree, stores, libPackage)
+			units, err := runRound(t, tree, stores, libPackage)
 			assert.NoError(t, err, "the round places the need")
 			assert.Equal(t, units[0][0].Path, cached(laterTree+"/pkg/pkg.go"), "the later version is the build's")
 			assert.Equal(t, units[0][0].Shared, []string{svcGoMod}, "the go.mod that requires it selects it")
@@ -64,7 +63,7 @@ func TestBuild(t *testing.T) {
 			t.Parallel()
 
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
-			_, err := dependent.Dependencies(context.Background(), &plugin.DependencyRound{
+			_, err := dependent.Dependencies(t.Context(), &plugin.DependencyRound{
 				Number: 1, Needs: []plugin.Need{{Path: libPackage}}, Shared: []string{svcGoMod},
 			}, roundReader{storeTree{depWorkspace(), depStores()}})
 			assert.ErrorIs(t, err, fs.ErrNotExist, "a go.mod the round lists and cannot read fails it")
@@ -75,7 +74,7 @@ func TestBuild(t *testing.T) {
 
 			tree := depWorkspace()
 			tree[appGoSum] = &fstest.MapFile{Mode: fs.ModeDir}
-			_, err := runRound(tree, depStores(), libPackage)
+			_, err := runRound(t, tree, depStores(), libPackage)
 			assert.HasError(t, err, "a go.sum that exists and does not read fails the round")
 		})
 	})

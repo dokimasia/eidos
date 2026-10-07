@@ -5,6 +5,7 @@ package state_test
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -209,33 +210,42 @@ func TestGeneration(t *testing.T) {
 }
 
 // An open and a generation's reads allocate within their ceilings in
-// the ordinary run, which runs no benchmark. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses
-// to run beside parallel tests.
+// the ordinary run, which runs no benchmark. Each count keeps the first
+// error of its calls, which cmp.Or returns without allocating. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestGenerationAllocs(t *testing.T) {
 	l := ledger.NewMem()
 	g := committed(t, l, past, "alpha", "beta")
+	var (
+		opened *state.Generation
+		err    error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := state.Open(t.Context(), l); err != nil {
-			t.Fatalf("Open: unexpected error: %v", err)
-		}
+		var oerr error
+		opened, oerr = state.Open(t.Context(), l)
+		err = cmp.Or(err, oerr)
 	}, openAllocs, "Open allocates the reads and the decoded generation")
+	assert.NoError(t, err, "the generation opens")
+	assert.Equal(t, opened.Name, g.Name, "Open returns the live generation")
 	key := []byte("alpha")
+	var held bool
 	assert.MaxAllocs(t, func() {
-		if _, held, err := g.Get(t.Context(), state.TableChecks, key); err != nil || !held {
-			t.Fatalf("Get: held %t, error %v", held, err)
-		}
+		var gerr error
+		_, held, gerr = g.Get(t.Context(), state.TableChecks, key)
+		err = cmp.Or(err, gerr)
 	}, getAllocs, "Get allocates the run and the block it reads")
+	assert.NoError(t, err, "the row reads")
+	assert.True(t, held, "the key has a row")
+	var rows int
 	assert.MaxAllocs(t, func() {
-		if rows, err := g.All(t.Context(), state.TableChecks); err != nil || len(rows) != 2 {
-			t.Fatalf("All: rows %d, error %v", len(rows), err)
-		}
+		got, aerr := g.All(t.Context(), state.TableChecks)
+		rows, err = len(got), cmp.Or(err, aerr)
 	}, allAllocs, "All allocates the run, its blocks and the rows")
-	assert.MaxAllocs(t, func() {
-		if g.Live(absentSegment) != 0 {
-			t.Fatal("Live counted a segment the generation does not reference")
-		}
-	}, 0, "Live allocates nothing")
+	assert.NoError(t, err, "the table reads")
+	assert.Equal(t, rows, 2, "both rows")
+	var live int
+	assert.MaxAllocs(t, func() { live = g.Live(absentSegment) }, 0, "Live allocates nothing")
+	assert.Equal(t, live, 0, "Live counts no region of a segment the generation does not reference")
 }
 
 // BenchmarkGeneration measures an open of a generation of two rows, and
@@ -260,11 +270,12 @@ func BenchmarkGeneration(b *testing.B) {
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		_, _, err := g.Get(b.Context(), state.TableChecks, key)
-		assert.NoError(b, err, "the row reads before the measurement")
-		c := bench.Start(b).MaxAllocs(getAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(getAllocs)
 		defer c.End()
-		var row []byte
+		var (
+			row []byte
+			err error
+		)
 		for c.Loop() {
 			row, _, err = g.Get(b.Context(), state.TableChecks, key)
 		}
@@ -273,11 +284,12 @@ func BenchmarkGeneration(b *testing.B) {
 	})
 
 	b.Run("All", func(b *testing.B) {
-		_, err := g.All(b.Context(), state.TableChecks)
-		assert.NoError(b, err, "the table reads before the measurement")
-		c := bench.Start(b).MaxAllocs(allAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(allAllocs)
 		defer c.End()
-		var rows []state.Row
+		var (
+			rows []state.Row
+			err  error
+		)
 		for c.Loop() {
 			rows, err = g.All(b.Context(), state.TableChecks)
 		}

@@ -106,14 +106,16 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 
 // AssertOptionsSchema checks the plugin's options struct against
 // the tag contract, through the check the composition runs, so a
-// plugin that would fail at Build fails in its own tests first.
+// plugin that would fail at Build fails in its own tests first. Each
+// fault of the struct reports on its own.
 func AssertOptionsSchema(tb assert.TB, setup Setup) {
 	core.AssertOptionsSchema(tb, setup)
 }
 
-// AssertDeterministicEmit runs one plugin over two isolated
-// fixtures and fails unless both runs emit the same bytes: the
-// byte-identity contract, checked before any renderer exists.
+// AssertDeterministicEmit runs the plugin of a fresh setup over the
+// setup's fixture once per call of [assert.Deterministic], and fails
+// unless every run emits the bytes of the first: the byte-identity
+// contract, checked before any renderer exists.
 func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 	core.AssertDeterministicEmit(tb, setup)
 }
@@ -147,18 +149,20 @@ func AssertSelective(tb assert.TB, setup Setup) {
 }
 
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
-// over one fixture. It fails unless both passes stamp clean and the
-// second pass leaves every fact's value unchanged. A stamp that
-// depends on run state either claims a second value from the same
-// rank source, which the fact store refuses, or changes the value
-// that ranks first, which the comparison refuses.
+// over one fixture, through [assert.Idempotent]. It fails unless both
+// passes run whole and stamp clean, and the second pass leaves every
+// fact's value as the first left it. A stamp that depends on run state
+// either claims a second value from the same rank source, which the
+// fact store refuses, or changes the value that ranks first, which the
+// comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	core.AssertIdempotentAnnotate(tb, setup)
 }
 
 // AssertPositionedDiagnostics runs every phase the plugin implements and
 // refuses a finding without a position: a diagnostic nobody can
-// jump to is a defect in whatever reported it.
+// jump to is a defect in whatever reported it. Each finding reports on
+// its own.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	core.AssertPositionedDiagnostics(tb, setup)
 }

@@ -34,12 +34,13 @@ type Budget = core.Budget
 // members, every reference's shape and every field's samples, and
 // fails when the allocations per iteration exceed the budget. The
 // fixture builds once outside the loop, and every iteration binds a
-// fresh view.
+// fresh view. A budget without a ceiling, a setup without a graph,
+// and a corpus without a subject or a reference stop the benchmark.
 //
-// One pass runs before the contract counts, at the call sites the
-// loop measures, so the count excludes what a process builds on the
-// first projection: the runtime's type-assertion caches and the
-// lazily built state of the language's rules.
+// One warm-up iteration runs before the contract counts, so the
+// count excludes what a process builds on the first projection: the
+// runtime's type-assertion caches and the lazily built state of the
+// language's rules.
 func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	core.BenchRules(b, setup, budget)
 }
@@ -83,28 +84,32 @@ func RunRulesSuite(t *testing.T, setup Setup) {
 	core.RunRulesSuite(t, setup)
 }
 
-// AssertDeterministic checks that two bounds over one view return
-// equal values from every projection. Each bound memoises its own
-// fold, so the second pass derives every value again.
+// AssertDeterministic checks that bounds over one view return equal
+// values from every projection, one bound per call of
+// [assert.Deterministic]. Each bound memoises its own fold, so every
+// pass derives every value again.
 func AssertDeterministic(tb assert.TB, setup Setup) {
 	core.AssertDeterministic(tb, setup)
 }
 
 // AssertTotal checks that the fold returns a shape for every
 // reference and that the mapping reports false for every
-// non-callable kind, without panicking.
+// non-callable kind, without panicking. Each reference and each
+// subject reports on its own.
 func AssertTotal(tb assert.TB, setup Setup) {
 	core.AssertTotal(tb, setup)
 }
 
 // AssertRefusesWithReason checks that every refused sample has a
-// refusal other than none and that every gap names a reason.
+// refusal other than none and that every gap names a reason. Each
+// sample and each gap reports on its own.
 func AssertRefusesWithReason(tb assert.TB, setup Setup) {
 	core.AssertRefusesWithReason(tb, setup)
 }
 
 // AssertDistinctSamples checks that the two halves of every derived
-// pair differ, compared field by field at every depth.
+// pair differ, compared field by field at every depth. Each pair
+// reports on its own.
 func AssertDistinctSamples(tb assert.TB, setup Setup) {
 	core.AssertDistinctSamples(tb, setup)
 }
@@ -134,8 +139,11 @@ func AssertRecorded(tb assert.TB, setup Setup) {
 	core.AssertRecorded(tb, setup)
 }
 
-// AssertConcurrent checks that the projections, run from parallel
-// goroutines each over its own view, return the serial values.
+// AssertConcurrent checks that the projections, run by
+// [go.dokimi.dev/assert/history.Concurrently] on goroutines released
+// together, each over its own view, return the serial values. Each
+// pass reports on its own, and one that does not finish within a
+// minute fails.
 func AssertConcurrent(tb assert.TB, setup Setup) {
 	core.AssertConcurrent(tb, setup)
 }

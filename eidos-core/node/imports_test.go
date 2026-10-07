@@ -60,9 +60,7 @@ func TestImports(t *testing.T) {
 		t.Run("yields nothing for a nil package", func(t *testing.T) {
 			t.Parallel()
 
-			for range node.Imports(nil) {
-				t.Error("a nil package imports nothing")
-			}
+			assert.Empty(t, slices.Collect(node.Imports(nil)), "a nil package imports nothing")
 		})
 	})
 }
@@ -70,24 +68,23 @@ func TestImports(t *testing.T) {
 // A range over the imports allocates nothing in the ordinary run, which
 // runs no benchmark.
 func TestImportsZeroAlloc(t *testing.T) {
+	var n int
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range node.Imports(importing) {
 			n++
 		}
-		if n != 3 {
-			t.Fatalf("Imports yielded %d statements, want 3", n)
-		}
 	}, 0, "a range over Imports allocates nothing")
+	assert.Equal(t, n, 3, "Imports yields every statement")
 }
 
 // BenchmarkImports measures a range over a package's import statements.
 func BenchmarkImports(b *testing.B) {
 	b.Run("Imports", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		var got int
-		for first := true; first || c.Loop(); first = false {
+		for c.Loop() {
 			got = 0
 			for range node.Imports(importing) {
 				got++

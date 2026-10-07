@@ -69,16 +69,13 @@ func TestPolicy(t *testing.T) {
 // A declared policy's checks allocate nothing in the ordinary run,
 // which runs no benchmark.
 func TestPolicyZeroAlloc(t *testing.T) {
-	assert.MaxAllocs(t, func() {
-		if !layout.PolicyCentralised.Valid() {
-			t.Fatal("Valid refused a declared policy")
-		}
-	}, 0, "Valid allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if layout.PolicyCentralised.String() == "" {
-			t.Fatal("String returned nothing")
-		}
-	}, 0, "String allocates nothing for a declared policy")
+	var valid bool
+	assert.MaxAllocs(t, func() { valid = layout.PolicyCentralised.Valid() }, 0, "Valid allocates nothing")
+	assert.True(t, valid, "Valid admits a declared policy")
+	var spelt string
+	assert.MaxAllocs(t, func() { spelt = layout.PolicyCentralised.String() }, 0,
+		"String allocates nothing for a declared policy")
+	assert.Equal(t, spelt, "centralised", "String spells the policy")
 }
 
 // BenchmarkPolicy measures a declared policy's checks.

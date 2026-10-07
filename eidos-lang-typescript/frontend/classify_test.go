@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -48,14 +47,14 @@ func TestClassify(t *testing.T) {
 
 // testStamps parses one file at a path through the frontend's parse and
 // classifiers, and returns how many test-file stamps it recorded.
-func testStamps(tb assert.TB, path string) int {
+func testStamps(tb testing.TB, path string) int {
 	tb.Helper()
 
 	f := frontend.New()
 	tree := fstest.MapFS{path: {Data: []byte(exportClass)}}
 	u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: path}}, tree, plugin.DepthFull,
 		f.Syntax(), brand, diag.NewSink(), f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the file parses")
 	n := 0
 	for _, s := range u.Graph().StampRecords() {
 		if s.Stamp.Key == typescript.TestFileKey {

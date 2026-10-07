@@ -12,11 +12,6 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// allocRuns is the number of calls an allocation check makes: one
-// warm-up call and a hundred counted ones. A check of a call that
-// consumes its input builds this many inputs before it counts.
-const allocRuns = 101
-
 // named is the smallest plugin: a stable name and nothing else.
 type named struct{ name plugin.ID }
 

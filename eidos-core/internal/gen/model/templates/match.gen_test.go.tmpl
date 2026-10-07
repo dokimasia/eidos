@@ -1,5 +1,6 @@
 {{template "header" .}}
 import (
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -49,7 +50,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.Kind{{.Name}}, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one {{.Name}}, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -62,19 +63,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per {{.Name}} in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.{{.Name}}Name, symbol.Kind{{.Name}}),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per {{.Name}} in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.{{.Name}}Name, symbol.Kind{{.Name}}),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.Kind{{.Name}},
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 

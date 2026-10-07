@@ -4,6 +4,7 @@
 package directive_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -11,10 +12,6 @@ import (
 
 	"go.dokimi.dev/eidos/core/directive"
 )
-
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
 
 // The foreign tool the ignore cases opt out of: its plugin prefix, and
 // one directive under it.
@@ -531,62 +528,49 @@ func TestRegistry(t *testing.T) {
 // The registry's construction, its writes and the claimant list
 // allocate within their ceilings, and its reads allocate nothing, in
 // the ordinary run, which runs no benchmark. A registration and a seal
-// each take a registry built before the count, because each changes the
-// registry it writes. The check runs alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// each take a registry built outside the count, because each changes the
+// registry it writes. Each count keeps the first error of its calls,
+// which cmp.Or returns without allocating. The check runs alone, because
+// the count includes every goroutine's allocations.
 func TestRegistryAllocs(t *testing.T) {
 	var fresh *directive.Registry
 	assert.MaxAllocs(t, func() { fresh = directive.NewRegistry() }, newRegistryAllocs,
 		"NewRegistry allocates the registry and its maps")
 	assert.False(t, fresh.Sealed(), "NewRegistry returns an open registry")
 
-	empties, stub := openRegistries(t, allocRuns), wellFormed("mockgen", "stub")
-	at := 0
-	assert.MaxAllocs(t, func() {
-		if err := empties[at].Register(stub); err != nil {
-			t.Fatalf("Register: unexpected error: %v", err)
-		}
-		at++
-	}, registerAllocs, "Register allocates the schema's entries")
+	stub := wellFormed("mockgen", "stub")
+	var err error
+	assert.MaxAllocsWithSetup(t, directive.NewRegistry,
+		func(r *directive.Registry) { err = cmp.Or(err, r.Register(stub)) },
+		registerAllocs, "Register allocates the schema's entries")
+	assert.NoError(t, err, "every registration is admitted")
 
-	kernels := openRegistries(t, allocRuns, directive.Kernel()...)
-	at = 0
-	assert.MaxAllocs(t, func() {
-		if faults := kernels[at].Seal(); len(faults) != 0 {
-			t.Fatalf("Seal: unexpected faults: %v", faults)
-		}
-		at++
-	}, sealAllocs, "Seal allocates the sorted spellings and the constraint table")
+	var faults []error
+	assert.MaxAllocsWithSetup(t, func() *directive.Registry { return openRegistry(t, directive.Kernel()...) },
+		func(r *directive.Registry) { faults = append(faults, r.Seal()...) },
+		sealAllocs, "Seal allocates the sorted spellings and the constraint table")
+	assert.Empty(t, faults, "every seal of the kernel's directives is clean")
 
-	ignoring := openRegistries(t, 1, directive.Kernel()...)[0]
-	assert.MaxAllocs(t, func() {
-		if err := ignoring.Ignore(foreignPrefix); err != nil {
-			t.Fatalf("Ignore: unexpected error: %v", err)
-		}
-	}, ignorePrefixAllocs, "Ignore of a prefix allocates the sorted spellings it checks")
-	assert.MaxAllocs(t, func() {
-		if !ignoring.Ignored(foreignName) {
-			t.Fatal("Ignored missed a name under the ignored prefix")
-		}
-	}, 0, "Ignored allocates nothing")
+	ignoring := openRegistry(t, directive.Kernel()...)
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, ignoring.Ignore(foreignPrefix)) }, ignorePrefixAllocs,
+		"Ignore of a prefix allocates the sorted spellings it checks")
+	assert.NoError(t, err, "the prefix is ignored")
+	var ignored bool
+	assert.MaxAllocs(t, func() { ignored = ignoring.Ignored(foreignName) }, 0, "Ignored allocates nothing")
+	assert.True(t, ignored, "Ignored reports a name under the ignored prefix")
 
 	r := sealed(t, wellFormed("mockgen", "stub"), wellFormed("stubgen", "stub"))
-	assert.MaxAllocs(t, func() {
-		if !r.Sealed() {
-			t.Fatal("Sealed missed the seal")
-		}
-	}, 0, "Sealed allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, held := r.ResolveName("mockgen:stub"); !held {
-			t.Fatal("a prefixed spelling did not resolve")
-		}
-	}, 0, "ResolveName allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if len(r.Candidates("stub")) != 2 {
-			t.Fatal("Candidates missed a claimant")
-		}
-	}, 1, "Candidates allocates the list it returns")
+	var isSealed bool
+	assert.MaxAllocs(t, func() { isSealed = r.Sealed() }, 0, "Sealed allocates nothing")
+	assert.True(t, isSealed, "Sealed reports the seal")
+	var resolved bool
+	assert.MaxAllocs(t, func() { _, resolved = r.ResolveName("mockgen:stub") }, 0,
+		"ResolveName allocates nothing")
+	assert.True(t, resolved, "a prefixed spelling resolves")
+	var candidates []directive.Name
+	assert.MaxAllocs(t, func() { candidates = r.Candidates("stub") }, 1, "Candidates allocates the list it returns")
+	assert.Equal(t, candidates, []directive.Name{"mockgen:stub", "stubgen:stub"},
+		"Candidates returns both claimants in registration order")
 }
 
 // BenchmarkRegistry measures the registry's construction, the writes a
@@ -606,9 +590,8 @@ func BenchmarkRegistry(b *testing.B) {
 
 	b.Run("Ignore", func(b *testing.B) {
 		b.Run("a plugin prefix", func(b *testing.B) {
-			r := openRegistries(b, 1, directive.Kernel()...)[0]
-			assert.NoError(b, r.Ignore(foreignPrefix), "the prefix is ignored before the measurement")
-			c := bench.Start(b).MaxAllocs(ignorePrefixAllocs)
+			r := openRegistry(b, directive.Kernel()...)
+			c := bench.Start(b).Warmup(1).MaxAllocs(ignorePrefixAllocs)
 			defer c.End()
 			var err error
 			for c.Loop() {
@@ -619,7 +602,7 @@ func BenchmarkRegistry(b *testing.B) {
 	})
 
 	b.Run("Ignored", func(b *testing.B) {
-		r := openRegistries(b, 1, directive.Kernel()...)[0]
+		r := openRegistry(b, directive.Kernel()...)
 		assert.NoError(b, r.Ignore(foreignPrefix), "the prefix is ignored")
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
@@ -656,7 +639,7 @@ func BenchmarkRegistry(b *testing.B) {
 				faults []error
 			)
 			for c.Loop() {
-				c.Excluding(func() { r = openRegistries(b, 1, directive.Kernel()...)[0] })
+				c.Excluding(func() { r = openRegistry(b, directive.Kernel()...) })
 				faults = r.Seal()
 			}
 			assert.Empty(b, faults, "the kernel's schemas seal without a fault")
@@ -708,19 +691,14 @@ func BenchmarkRegistry(b *testing.B) {
 	})
 }
 
-// openRegistries returns n open registries, each with the given schemas
+// openRegistry returns an open registry with the given schemas
 // registered.
-func openRegistries(tb assert.TB, n int, schemas ...directive.Schema) []*directive.Registry {
+func openRegistry(tb assert.TB, schemas ...directive.Schema) *directive.Registry {
 	tb.Helper()
 
-	out := make([]*directive.Registry, n)
-	for i := range out {
-		out[i] = directive.NewRegistry()
-		for _, s := range schemas {
-			assert.NoError(tb, out[i].Register(s), "the schema registers")
-		}
-	}
-	return out
+	r := directive.NewRegistry()
+	assert.Total(tb, r.Register, schemas, "the schema registers")
+	return r
 }
 
 // wellFormed returns a schema that passes registration, for cases
@@ -742,12 +720,8 @@ func sealed(tb assert.TB, schemas ...directive.Schema) *directive.Registry {
 	tb.Helper()
 
 	r := directive.NewRegistry()
-	for _, s := range directive.Kernel() {
-		assert.NoError(tb, r.Register(s), "the kernel schemas register first")
-	}
-	for _, s := range schemas {
-		assert.NoError(tb, r.Register(s), "the fixture schema registers")
-	}
+	assert.Total(tb, r.Register, directive.Kernel(), "the kernel schemas register first")
+	assert.Total(tb, r.Register, schemas, "the fixture schema registers")
 	assert.Empty(tb, r.Seal(), "the registry seals without faults")
 	return r
 }

@@ -38,7 +38,7 @@ func TestFacts(t *testing.T) {
 			t.Parallel()
 
 			_, _, none := stated(&{{.Name}}{})
-			assert.Length(t, none, 0, "a zero declaration states nothing")
+			assert.Empty(t, none, "a zero declaration states nothing")
 {{- range .Facts}}
 			{
 				subject := &{{$v.Name}}{}
@@ -47,7 +47,7 @@ func TestFacts(t *testing.T) {
 				assert.Length(t, facts, 1, "the stated fact alone arrives")
 				assert.Equal(t, kinds[0], symbol.Kind{{$v.Name}}, "under its kind")
 				assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
-				assert.True(t, hosts[0] == nil, "the top level has no host")
+				assert.Nil(t, hosts[0], "the top level has no host")
 			}
 {{- end}}
 {{- range .FactChildren}}
@@ -61,8 +61,8 @@ func TestFacts(t *testing.T) {
 				assert.Length(t, facts, 1, "the child's fact arrives")
 				assert.Equal(t, kinds[0], symbol.Kind{{.Kind}}, "under the child's kind")
 				assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
-				assert.True(t, hosts[0] == symbol.Symbol(subject),
-					"a member's host is its enclosing declaration")
+				assert.Equal(t, hosts[0], symbol.Symbol(subject),
+					"a member's host is its enclosing declaration", assert.ByIdentity())
 			}
 {{- end}}
 		})
@@ -73,7 +73,7 @@ func TestFacts(t *testing.T) {
 			t.Parallel()
 
 			_, _, none := stated(nil)
-			assert.Length(t, none, 0, "nothing to walk is not a fault")
+			assert.Empty(t, none, "nothing to walk is not a fault")
 		})
 	})
 

@@ -44,9 +44,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&EnumVariant{})
 			assert.Equal(t, subject.Variants.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.VariantsSlot(),
+			assert.Equal(t, slot, subject.VariantsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -65,9 +65,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Field{})
 			assert.Equal(t, subject.Fields.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.FieldsSlot(),
+			assert.Equal(t, slot, subject.FieldsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -86,9 +86,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Method{})
 			assert.Equal(t, subject.Methods.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.MethodsSlot(),
+			assert.Equal(t, slot, subject.MethodsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -107,9 +107,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&SumVariant{})
 			assert.Equal(t, subject.Variants.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.VariantsSlot(),
+			assert.Equal(t, slot, subject.VariantsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -128,9 +128,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Method{})
 			assert.Equal(t, subject.Methods.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.MethodsSlot(),
+			assert.Equal(t, slot, subject.MethodsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -149,9 +149,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Field{})
 			assert.Equal(t, subject.Fields.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.FieldsSlot(),
+			assert.Equal(t, slot, subject.FieldsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -170,9 +170,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Field{})
 			assert.Equal(t, subject.Fields.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.FieldsSlot(),
+			assert.Equal(t, slot, subject.FieldsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -191,9 +191,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Method{})
 			assert.Equal(t, subject.Methods.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.MethodsSlot(),
+			assert.Equal(t, slot, subject.MethodsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -212,9 +212,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Struct{})
 			assert.Equal(t, subject.Types.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.TypesSlot(),
+			assert.Equal(t, slot, subject.TypesSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -233,9 +233,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Field{})
 			assert.Equal(t, subject.Fields.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.FieldsSlot(),
+			assert.Equal(t, slot, subject.FieldsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -254,9 +254,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Method{})
 			assert.Equal(t, subject.Methods.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.MethodsSlot(),
+			assert.Equal(t, slot, subject.MethodsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 
@@ -275,9 +275,9 @@ func TestSlots(t *testing.T) {
 			slot.Append(&Interface{})
 			assert.Equal(t, subject.Types.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.TypesSlot(),
+			assert.Equal(t, slot, subject.TypesSlot(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 }
@@ -315,7 +315,8 @@ func slotsCases() []slotsCase {
 			name: "Enum.VariantsSlot",
 			call: func() { slot = subject.VariantsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Variants, "VariantsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Variants, "VariantsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -326,7 +327,8 @@ func slotsCases() []slotsCase {
 			name: "Enum.FieldsSlot",
 			call: func() { slot = subject.FieldsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Fields, "FieldsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Fields, "FieldsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -337,7 +339,8 @@ func slotsCases() []slotsCase {
 			name: "Enum.MethodsSlot",
 			call: func() { slot = subject.MethodsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Methods, "MethodsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Methods, "MethodsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -348,7 +351,8 @@ func slotsCases() []slotsCase {
 			name: "Sum.VariantsSlot",
 			call: func() { slot = subject.VariantsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Variants, "VariantsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Variants, "VariantsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -359,7 +363,8 @@ func slotsCases() []slotsCase {
 			name: "Sum.MethodsSlot",
 			call: func() { slot = subject.MethodsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Methods, "MethodsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Methods, "MethodsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -370,7 +375,8 @@ func slotsCases() []slotsCase {
 			name: "SumVariant.FieldsSlot",
 			call: func() { slot = subject.FieldsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Fields, "FieldsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Fields, "FieldsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -381,7 +387,8 @@ func slotsCases() []slotsCase {
 			name: "Struct.FieldsSlot",
 			call: func() { slot = subject.FieldsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Fields, "FieldsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Fields, "FieldsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -392,7 +399,8 @@ func slotsCases() []slotsCase {
 			name: "Struct.MethodsSlot",
 			call: func() { slot = subject.MethodsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Methods, "MethodsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Methods, "MethodsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -403,7 +411,8 @@ func slotsCases() []slotsCase {
 			name: "Struct.TypesSlot",
 			call: func() { slot = subject.TypesSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Types, "TypesSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Types, "TypesSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -414,7 +423,8 @@ func slotsCases() []slotsCase {
 			name: "Interface.FieldsSlot",
 			call: func() { slot = subject.FieldsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Fields, "FieldsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Fields, "FieldsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -425,7 +435,8 @@ func slotsCases() []slotsCase {
 			name: "Interface.MethodsSlot",
 			call: func() { slot = subject.MethodsSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Methods, "MethodsSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Methods, "MethodsSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}
@@ -436,7 +447,8 @@ func slotsCases() []slotsCase {
 			name: "Interface.TypesSlot",
 			call: func() { slot = subject.TypesSlot() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.Types, "TypesSlot returns the value's own storage")
+				assert.Equal(tb, slot, &subject.Types, "TypesSlot returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}

@@ -86,15 +86,13 @@ func TestManifest(t *testing.T) {
 }
 
 // The comparison a commit runs on every record allocates nothing. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// check runs alone, because the count includes every goroutine's
+// allocations.
 func TestManifestZeroAlloc(t *testing.T) {
 	m, other := scaled(), scaled()
-	assert.MaxAllocs(t, func() {
-		if !m.Equal(other) {
-			t.Fatal("Equal reports two equal records apart")
-		}
-	}, 0, "Equal allocates nothing")
+	var equal bool
+	assert.MaxAllocs(t, func() { equal = m.Equal(other) }, 0, "Equal allocates nothing")
+	assert.True(t, equal, "Equal reports two equal records as equal")
 }
 
 // BenchmarkManifest measures one comparison of two equal records at the
@@ -109,9 +107,7 @@ func BenchmarkManifest(b *testing.B) {
 		for c.Loop() {
 			equal = m.Equal(other)
 		}
-		if !equal {
-			b.Fatal("Equal reports two equal records apart")
-		}
+		assert.True(b, equal, "Equal reports two equal records as equal")
 	})
 }
 

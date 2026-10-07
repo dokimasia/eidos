@@ -5,6 +5,7 @@ package golang_test
 
 import (
 	"go/types"
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -42,7 +43,7 @@ func TestNames(t *testing.T) {
 					assert.True(t, golang.Predeclared(name), name+" is predeclared")
 				}
 			}
-			assert.True(t, count >= 22, "the universe scope declares the 22 type names of Go 1.27")
+			assert.InRange(t, count, 22, math.Inf(1), "the universe scope declares the 22 type names of Go 1.27")
 		})
 
 		t.Run("reports false for any other name", func(t *testing.T) {
@@ -157,14 +158,16 @@ func TestNames(t *testing.T) {
 			t.Parallel()
 
 			name, binds := golang.ImportName(&node.Import{Path: "gopkg.in/yaml.v3"})
-			assert.True(t, binds && name == "yaml", "the name the path assumes")
+			assert.True(t, binds, "an unaliased import binds a name")
+			assert.Equal(t, name, "yaml", "the name the path assumes")
 		})
 
 		t.Run("returns the alias of an aliased import", func(t *testing.T) {
 			t.Parallel()
 
 			name, binds := golang.ImportName(&node.Import{Path: "context", Alias: "ctx"})
-			assert.True(t, binds && name == "ctx", "the alias the import states")
+			assert.True(t, binds, "an aliased import binds a name")
+			assert.Equal(t, name, "ctx", "the alias the import states")
 		})
 
 		tests := []struct {
@@ -250,9 +253,12 @@ func nameCalls() []nameCall {
 			check: func(tb assert.TB) { assert.Equal(tb, name, "Duration", "Unqualified returns Duration") },
 		},
 		{
-			name:  "ImportName",
-			call:  func() { name, is = golang.ImportName(imp) },
-			check: func(tb assert.TB) { assert.True(tb, is && name == "yaml", "ImportName returns yaml") },
+			name: "ImportName",
+			call: func() { name, is = golang.ImportName(imp) },
+			check: func(tb assert.TB) {
+				assert.True(tb, is, "ImportName binds the import")
+				assert.Equal(tb, name, "yaml", "ImportName returns yaml")
+			},
 		},
 	}
 }

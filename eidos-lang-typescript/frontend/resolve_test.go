@@ -4,6 +4,7 @@
 package frontend_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -238,18 +239,15 @@ func TestResolve(t *testing.T) {
 
 // scopeIn parses a module's source at src/a.ts and returns the scope the
 // File node of one package recorded.
-func scopeIn(tb assert.TB, src, pkg string) plugin.ImportScope {
+func scopeIn(tb testing.TB, src, pkg string) plugin.ImportScope {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, src)
 	file := fileIn(tb, gb, pkg)
-	for _, rec := range gb.Scopes() {
-		if rec.File == file {
-			return plugin.ImportScope{Bindings: rec.Bindings}
-		}
-	}
-	tb.Fatalf("the File node of %q recorded no scope", pkg)
-	return plugin.ImportScope{}
+	scopes := gb.Scopes()
+	at := slices.IndexFunc(scopes, func(rec plugin.ScopeRecord) bool { return rec.File == file })
+	assert.NotEqual(tb, at, -1, "the File node of "+pkg+" records a scope")
+	return plugin.ImportScope{Bindings: scopes[at].Bindings}
 }
 
 // id spells one candidate.
@@ -263,7 +261,7 @@ func resolved(scope plugin.ImportScope, spelling string) plugin.Candidates {
 }
 
 // published returns what a scope's file publishes under a name.
-func published(tb assert.TB, scope plugin.ImportScope, name string) plugin.Candidates {
+func published(tb testing.TB, scope plugin.ImportScope, name string) plugin.Candidates {
 	tb.Helper()
 
 	exporter, exports := frontend.New().(plugin.Exporter)

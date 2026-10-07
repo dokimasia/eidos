@@ -17,11 +17,7 @@ func TestFingerprint(t *testing.T) {
 		t.Run("spells a sha256 in lowercase hex", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, len(ModelFingerprint), 64, "a sha256 is 64 hex digits")
-			for _, r := range ModelFingerprint {
-				assert.True(t, r >= '0' && r <= '9' || r >= 'a' && r <= 'f',
-					"each digit is lowercase hex")
-			}
+			assert.Matches(t, ModelFingerprint, "^[0-9a-f]{64}$", "a sha256 is 64 lowercase hex digits")
 		})
 	})
 }

@@ -124,8 +124,7 @@ func TestRecord(t *testing.T) {
 
 // A range over the record allocates its list of views alone in the
 // ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// the count includes every goroutine's allocations.
 func TestRecordAllocs(t *testing.T) {
 	f, role := contested(t)
 	views := 0

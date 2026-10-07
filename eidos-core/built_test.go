@@ -109,7 +109,7 @@ func TestBuilt(t *testing.T) {
 			opts := &plannerOptions{Redact: true}
 			options, held := declared(opts).(plugin.OptionsProvider)
 			assert.True(t, held, "the options struct is returned")
-			assert.True(t, options.Options() == any(opts), "the defaults are intact")
+			assert.Equal(t, options.Options(), any(opts), "the plugin's own pointer is returned", assert.ByIdentity())
 		})
 	})
 

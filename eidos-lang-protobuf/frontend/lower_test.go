@@ -4,10 +4,10 @@
 package frontend_test
 
 import (
-	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -173,12 +173,13 @@ message Row { //+fixture:gen:table name=rows
 				subjects = append(subjects, a.Subject)
 			}
 			assert.Length(t, subjects, 3, "three carriers attach")
-			assert.True(t, slices.Contains(subjects, symbol.Symbol(gb.Packages()[0])),
-				"the carrier above the package statement attaches to the package")
-			assert.True(t, slices.Contains(subjects, symbol.Symbol(row)),
-				"the carrier after a message's opening brace attaches to the message")
-			assert.True(t, slices.Contains(subjects, symbol.Symbol(row.Fields[0])),
-				"the carrier after a field attaches to the field")
+			expect.That(t, subjects).
+				Contains(symbol.Symbol(gb.Packages()[0]),
+					"the carrier above the package statement attaches to the package", assert.ByIdentity()).
+				Contains(symbol.Symbol(row),
+					"the carrier after a message's opening brace attaches to the message", assert.ByIdentity()).
+				Contains(symbol.Symbol(row.Fields[0]),
+					"the carrier after a field attaches to the field", assert.ByIdentity())
 			assert.Equal(t, row.Comment, "", "a carrier is no comment text")
 		})
 
@@ -207,11 +208,10 @@ package svc.store;
 //+fixture:gen:table name=
 message Row {}
 `)
-			codes := codesOf(sink)
-			assert.True(t, slices.Contains(codes, protofrontend.BadCarrier),
-				"the malformed carrier reports under the grammar refusal's code")
-			assert.False(t, slices.Contains(codes, protofrontend.UnaddressedCarrier),
-				"the carrier is not unaddressed, because the message addresses it")
+			assert.That(t, codesOf(sink)).
+				Contains(protofrontend.BadCarrier, "the malformed carrier reports under the grammar refusal's code").
+				NotContains(protofrontend.UnaddressedCarrier,
+					"the carrier is not unaddressed, because the message addresses it")
 			assert.Empty(t, gb.Attachments(), "the message takes no directive")
 		})
 
@@ -225,7 +225,7 @@ package svc.store;
 //+fixture:gen:table name=imp
 import "dep/t.proto";
 `)
-			assert.True(t, slices.Contains(codesOf(sink), protofrontend.UnaddressedCarrier),
+			assert.Contains(t, codesOf(sink), protofrontend.UnaddressedCarrier,
 				"an import has no identity, so the carrier reports")
 			assert.Contains(t, messageOf(sink, protofrontend.UnaddressedCarrier), `"+fixture:gen:table name=imp"`,
 				"the finding quotes the carrier as the author wrote it")

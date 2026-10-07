@@ -167,22 +167,21 @@ func TestSet(t *testing.T) {
 // path with a capital allocates its folded copy.
 func TestSetAllocs(t *testing.T) {
 	s := filled()
-	assert.MaxAllocs(t, func() {
-		if clash, _ := s.Clash(storeTest); clash != pathset.ClashNone {
-			t.Fatalf("Clash reported %s for a sibling", clash)
-		}
-	}, 0, "Clash allocates nothing for a lowercase path")
-	assert.MaxAllocs(t, func() {
-		if clash, _ := s.Clash("svc/Store.go"); clash != pathset.ClashCase {
-			t.Fatalf("Clash reported %s for a path in another case", clash)
-		}
-	}, 1, "Clash allocates the folded spelling of a path with a capital")
+	var clash pathset.Clash
+	assert.MaxAllocs(t, func() { clash, _ = s.Clash(storeTest) }, 0, "Clash allocates nothing for a lowercase path")
+	assert.Equal(t, clash, pathset.ClashNone, "a sibling fits")
+	assert.MaxAllocs(t, func() { clash, _ = s.Clash("svc/Store.go") }, 1,
+		"Clash allocates the folded spelling of a path with a capital")
+	assert.Equal(t, clash, pathset.ClashCase, "a path in another case clashes by case")
 	assert.MaxAllocs(t, func() { s.Add(storeFile) }, 0, "Add allocates nothing for a path the set contains")
-	assert.MaxAllocs(t, func() {
-		if pathset.ClashFile.String() == "" {
-			t.Fatal("String returned nothing")
-		}
-	}, 0, "String allocates nothing for a declared clash")
+	var spelt string
+	assert.MaxAllocs(
+		t,
+		func() { spelt = pathset.ClashFile.String() },
+		0,
+		"String allocates nothing for a declared clash",
+	)
+	assert.Equal(t, spelt, "file", "String spells ClashFile")
 }
 
 // BenchmarkSet measures the checks a layout runs for every file it

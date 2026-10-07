@@ -97,10 +97,7 @@ func CanonicalFixture(tb assert.TB) *Fixture {
 
 	e := plugin.NewEmit()
 	for _, k := range canonicalKinds {
-		if err := e.Add(canonicalUnit(k)); err != nil {
-			tb.Errorf("the canonical %s unit arrives: %v", k, err)
-			return nil
-		}
+		assert.NoError(tb, e.Add(canonicalUnit(k)), "the canonical "+k.String()+" unit arrives")
 	}
 	return &Fixture{
 		Emit:     e,

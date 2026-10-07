@@ -4,6 +4,8 @@
 package protobuf_test
 
 import (
+	"cmp"
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -22,10 +24,6 @@ const (
 	rivalPlugin              = "rival"
 	rivalKey    meta.KeyName = "protobuf.rival"
 )
-
-// allocRuns is how many calls an allocation check makes: one to warm
-// up and the hundred it counts.
-const allocRuns = 101
 
 // keysAllocs is a registration into a fresh registry: the eleven kind
 // lists of the keys, and fifteen allocations of the registry, its
@@ -117,7 +115,7 @@ func TestKeys(t *testing.T) {
 				"a stream mark is stamped on the rpc")
 			assert.Equal(t, spec(protobuf.ExtensionsKey).Kinds, []symbol.Kind{symbol.KindStruct},
 				"extension ranges are stamped on the message that reserves them")
-			assert.True(t, len(spec(protobuf.OptionsKey).Kinds) > 1,
+			assert.InRange(t, len(spec(protobuf.OptionsKey).Kinds), 2, math.Inf(1),
 				"options are stamped on every level that states them")
 			assert.Equal(t, spec(protobuf.FeaturesKey).Kinds, []symbol.Kind{
 				symbol.KindFile, symbol.KindStruct, symbol.KindField, symbol.KindSum,
@@ -129,16 +127,13 @@ func TestKeys(t *testing.T) {
 
 // A registration allocates its kind lists and the registry's growth.
 // The ordinary run, which runs no benchmark, checks that ceiling here,
-// each call into a registry of its own.
+// each call into a registry of its own, built outside the count. The
+// count keeps the first error of its calls, which cmp.Or returns without
+// allocating.
 func TestKeysAllocs(t *testing.T) {
-	registries := freshRegistries(allocRuns)
-	next := 0
 	var err error
-	keys := func() {
-		err = protobuf.Keys(registries[next])
-		next++
-	}
-	assert.MaxAllocs(t, keys, keysAllocs, "Keys allocates the kind lists and the registry's growth")
+	assert.MaxAllocsWithSetup(t, meta.NewRegistry, func(r *meta.Registry) { err = cmp.Or(err, protobuf.Keys(r)) },
+		keysAllocs, "Keys allocates the kind lists and the registry's growth")
 	assert.NoError(t, err, "Keys registers the vocabulary")
 }
 
@@ -168,14 +163,4 @@ func every() []meta.KeyName {
 		protobuf.LabelKey, protobuf.JSONNameKey, protobuf.ExtensionsKey,
 		protobuf.ImportKey,
 	}
-}
-
-// freshRegistries returns n empty registries, one for each counted
-// registration.
-func freshRegistries(n int) []*meta.Registry {
-	out := make([]*meta.Registry, 0, n)
-	for range n {
-		out = append(out, meta.NewRegistry())
-	}
-	return out
 }

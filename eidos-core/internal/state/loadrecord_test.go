@@ -4,10 +4,9 @@
 package state_test
 
 import (
-	"context"
+	"cmp"
 	"encoding/binary"
 	"iter"
-	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -296,9 +295,11 @@ func TestLoadState(t *testing.T) {
 			g := recordedLoad(t, l, loaded(t, tree, nil))
 			units := unitsOf(t, g.Load(t.Context()))
 			assert.Length(t, units, 1, "the dropped unit's row is gone")
-			files := filesOf(t, g.Load(t.Context()))
-			assert.False(t, slices.ContainsFunc(files, func(f load.FileRecord) bool { return f.Path == apiFile }),
-				"and so is its file's record")
+			var paths []string
+			for _, f := range filesOf(t, g.Load(t.Context())) {
+				paths = append(paths, f.Path)
+			}
+			assert.NotContains(t, paths, apiFile, "and so is its file's record")
 		})
 
 		t.Run("writes no row for a second load of the same tree", func(t *testing.T) {
@@ -310,81 +311,96 @@ func TestLoadState(t *testing.T) {
 			for i := range report.Units {
 				report.Units[i].Region = nil
 			}
-			writes := l.Writes()
-			second := recordedLoad(t, l, report)
-			assert.Equal(t, second.Name, first.Name, "the record is unchanged")
-			assert.Equal(t, l.Writes(), writes, "so nothing is written")
+			var second *state.Generation
+			assert.Pure(t, l.Writes, func() { second = recordedLoad(t, l, report) }, "nothing is written")
+			assert.Equal(t, second.Name, first.Name, "because the record is unchanged")
 		})
 	})
 }
 
 // The reads of a load's record and the record of a load allocate within
 // their ceilings in the ordinary run, which runs no benchmark. A first
-// range takes a load state made before the count, because the state
-// reads each table once, and a record takes a commit made before it. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// range takes a load state made outside the count, because the state
+// reads each table once, and a record takes a commit made outside it.
+// Each count keeps the first error of its calls, which cmp.Or returns
+// without allocating. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestLoadStateAllocs(t *testing.T) {
 	report := loaded(t, scriptedTree(), nil)
 	g := recordedLoad(t, ledger.NewMem(), report)
 	var s *state.LoadState
 	assert.MaxAllocs(t, func() { s = g.Load(t.Context()) }, loadStateAllocs, "Load allocates the state")
-	assert.MaxAllocs(t, func() {
-		if !s.Anchor().Equal(past) {
-			t.Fatal("Anchor returned another instant")
-		}
-	}, 0, "Anchor allocates nothing")
+	var anchor time.Time
+	assert.MaxAllocs(t, func() { anchor = s.Anchor() }, 0, "Anchor allocates nothing")
+	assert.True(t, anchor.Equal(past), "Anchor returns the recording run's anchor")
 
-	states, at := loadStates(t, g, allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		for range states[at].Files() {
+	fresh := func() *state.LoadState { return g.Load(t.Context()) }
+	var n int
+	assert.MaxAllocsWithSetup(t, fresh, func(ls *state.LoadState) {
+		n = 0
+		for range ls.Files() {
+			n++
 		}
-		at++
 	}, filesAllocs, "a first range over Files reads the files table")
-	states, at = loadStates(t, g, allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		for range states[at].Units() {
+	assert.Equal(t, n, len(report.Files), "the range yields every file")
+	assert.MaxAllocsWithSetup(t, fresh, func(ls *state.LoadState) {
+		n = 0
+		for range ls.Units() {
+			n++
 		}
-		at++
 	}, unitsAllocs, "a first range over Units reads the units table")
+	assert.Equal(t, n, len(report.Units), "the range yields every unit")
 	assert.MaxAllocs(t, func() {
+		n = 0
 		for range s.Files() {
+			n++
 		}
 		for range s.Units() {
+			n++
 		}
 	}, 0, "a range over tables read before allocates nothing")
+	assert.Equal(t, n, len(report.Files)+len(report.Units), "the ranges yield every file and every unit")
 
 	u := lastUnit(t, s)
+	var (
+		region *store.Region
+		err    error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := s.Region(u); err != nil {
-			t.Fatalf("Region: unexpected error: %v", err)
-		}
+		var rerr error
+		region, rerr = s.Region(u)
+		err = cmp.Or(err, rerr)
 	}, regionAllocs, "Region allocates the decoded region")
+	assert.NoError(t, err, "the region decodes")
+	assert.Length(t, region.Packages, 1, "to the unit's package")
+	var doors []load.DoorRecord
 	assert.MaxAllocs(t, func() {
-		if _, err := s.Doors(frontendtest.ScriptedID); err != nil {
-			t.Fatalf("Doors: unexpected error: %v", err)
-		}
+		var derr error
+		doors, derr = s.Doors(frontendtest.ScriptedID)
+		err = cmp.Or(err, derr)
 	}, doorsAllocs, "Doors allocates the doors table and the doors")
+	assert.NoError(t, err, "the doors read")
+	assert.Equal(t, doors, report.Doors[frontendtest.ScriptedID], "the partition's record returns whole")
 	user := userID()
+	var probed []int
 	assert.MaxAllocs(t, func() {
-		if got, err := s.Probed(user); err != nil || len(got) != 1 {
-			t.Fatalf("Probed: units %v, error %v", got, err)
-		}
+		var perr error
+		probed, perr = s.Probed(user)
+		err = cmp.Or(err, perr)
 	}, probedAllocs, "Probed allocates the key, the row and the numbers")
+	assert.NoError(t, err, "the probes read")
+	assert.Equal(t, probed, []int{1}, "the store unit named the user")
 	api := apiPackage()
 	assert.MaxAllocs(t, func() {
-		if _, err := s.Followed(api); err != nil {
-			t.Fatalf("Followed: unexpected error: %v", err)
-		}
+		_, ferr := s.Followed(api)
+		err = cmp.Or(err, ferr)
 	}, followedAllocs, "Followed allocates the key and the block")
+	assert.NoError(t, err, "the follows read")
 
-	commits, at := newCommits(allocRuns), 0
-	assert.MaxAllocs(t, func() {
-		if err := state.RecordLoad(t.Context(), commits[at], nil, report); err != nil {
-			t.Fatalf("RecordLoad: unexpected error: %v", err)
-		}
-		at++
-	}, recordLoadAllocs, "RecordLoad allocates the regions, the rows and the probes")
+	assert.MaxAllocsWithSetup(t, func() *state.Commit { return state.NewCommit(nil, nil) },
+		func(c *state.Commit) { err = cmp.Or(err, state.RecordLoad(t.Context(), c, nil, report)) },
+		recordLoadAllocs, "RecordLoad allocates the regions, the rows and the probes")
+	assert.NoError(t, err, "every load records")
 }
 
 // BenchmarkLoadState measures the reads a warm load makes of the record
@@ -432,10 +448,10 @@ func BenchmarkLoadState(b *testing.B) {
 		})
 
 		b.Run("a range over a table read before", func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(0)
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
 			n := 0
-			for first := true; first || c.Loop(); first = false {
+			for c.Loop() {
 				n = 0
 				for range s.Files() {
 					n++
@@ -461,10 +477,10 @@ func BenchmarkLoadState(b *testing.B) {
 		})
 
 		b.Run("a range over a table read before", func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(0)
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
 			n := 0
-			for first := true; first || c.Loop(); first = false {
+			for c.Loop() {
 				n = 0
 				for range s.Units() {
 					n++
@@ -504,11 +520,12 @@ func BenchmarkLoadState(b *testing.B) {
 
 	b.Run("Probed", func(b *testing.B) {
 		user := userID()
-		_, err := s.Probed(user)
-		assert.NoError(b, err, "the probes read before the measurement")
-		c := bench.Start(b).MaxAllocs(probedAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(probedAllocs)
 		defer c.End()
-		var got []int
+		var (
+			got []int
+			err error
+		)
 		for c.Loop() {
 			got, err = s.Probed(user)
 		}
@@ -518,11 +535,12 @@ func BenchmarkLoadState(b *testing.B) {
 
 	b.Run("Followed", func(b *testing.B) {
 		api := apiPackage()
-		_, err := s.Followed(api)
-		assert.NoError(b, err, "the probes read before the measurement")
-		c := bench.Start(b).MaxAllocs(followedAllocs)
+		c := bench.Start(b).Warmup(1).MaxAllocs(followedAllocs)
 		defer c.End()
-		var got []int
+		var (
+			got []int
+			err error
+		)
 		for c.Loop() {
 			got, err = s.Followed(api)
 		}
@@ -532,11 +550,8 @@ func BenchmarkLoadState(b *testing.B) {
 
 	b.Run("RecordLoad", func(b *testing.B) {
 		b.Run("a cold load of two units", func(b *testing.B) {
-			// One record before the contract counts pools the region
-			// encoding's scratch.
-			assert.NoError(b, state.RecordLoad(b.Context(), state.NewCommit(nil, nil), nil, report),
-				"the load records before the measurement")
-			c := bench.Start(b).MaxAllocs(recordLoadAllocs)
+			// The warm-up record pools the region encoding's scratch.
+			c := bench.Start(b).Warmup(1).MaxAllocs(recordLoadAllocs)
 			defer c.End()
 			var (
 				commit *state.Commit
@@ -564,7 +579,7 @@ func scriptedTree() fstest.MapFS {
 func loaded(tb testing.TB, tree fstest.MapFS, prior load.Prior) *load.Report {
 	tb.Helper()
 
-	_, report, err := load.Load(context.Background(), load.Config{
+	_, report, err := load.Load(tb.Context(), load.Config{
 		FS:        tree,
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      diag.NewSink(),
@@ -653,18 +668,6 @@ func filesOf(t *testing.T, s *state.LoadState) []load.FileRecord {
 // userID is the bare identity the store package's reference names.
 func userID() symbol.Identity {
 	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User"}
-}
-
-// loadStates returns n load states over a generation, none of which
-// has read a table.
-func loadStates(tb testing.TB, g *state.Generation, n int) []*state.LoadState {
-	tb.Helper()
-
-	out := make([]*state.LoadState, n)
-	for i := range out {
-		out[i] = g.Load(tb.Context())
-	}
-	return out
 }
 
 // lastUnit returns the record of a state's last unit, the store unit.

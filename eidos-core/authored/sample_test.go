@@ -5,7 +5,6 @@ package authored_test
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
@@ -143,7 +142,8 @@ func TestSample(t *testing.T) {
 			assert.NoError(t, err, "the run is clean")
 			assert.False(t, report.Sink.Failed(), "without a finding")
 			v, held := meta.Get(report.Facts, f.item.ID, w.Kernel().Sample)
-			assert.True(t, held && v == "1", "the value arrives as the text the author wrote")
+			assert.True(t, held, "the value is stamped")
+			assert.Equal(t, v, "1", "the value arrives as the text the author wrote")
 		})
 
 		t.Run("stamps the alternate on a field", func(t *testing.T) {
@@ -155,7 +155,8 @@ func TestSample(t *testing.T) {
 			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 			assert.NoError(t, err, "the run is clean")
 			alt, held := meta.Get(report.Facts, f.item.ID, w.Kernel().Alternate)
-			assert.True(t, held && alt == "2", "the alternate arrives as the text the author wrote")
+			assert.True(t, held, "the alternate is stamped")
+			assert.Equal(t, alt, "2", "the alternate arrives as the text the author wrote")
 		})
 
 		t.Run("leaves the alternate absent where none was stated", func(t *testing.T) {
@@ -202,7 +203,7 @@ func TestSample(t *testing.T) {
 			w := composed(t)
 			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
-			assert.True(t, slices.Contains(coretest.Codes(report.Sink), eidos.RefusedStamp),
+			assert.Contains(t, coretest.Codes(report.Sink), eidos.RefusedStamp,
 				"the key admits no callable, so the stamp is refused at the subject")
 			_, held := meta.Get(report.Facts, f.load.ID, w.Kernel().Sample)
 			assert.False(t, held, "and nothing is stamped")

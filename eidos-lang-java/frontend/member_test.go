@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -43,7 +42,7 @@ func TestMember(t *testing.T) {
 
 			_, found := parsedSource(t, pkgClause+"public class A {\n    "+carrierLine+"    static { }\n}\n")
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.True(t, strings.Contains(found[0].Msg, onInitializer), "where the author put it")
+			assert.Contains(t, found[0].Msg, onInitializer, "where the author put it")
 		})
 	})
 
@@ -555,7 +554,7 @@ func TestMember(t *testing.T) {
 			_, found := parsedSource(t, pkgClause+"public class A {\n    void f(\n        "+carrierLine+
 				"        int n) {}\n}\n")
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.True(t, strings.Contains(found[0].Msg, onParameter), "where the author put it")
+			assert.Contains(t, found[0].Msg, onParameter, "where the author put it")
 		})
 	})
 
@@ -611,7 +610,7 @@ func TestMember(t *testing.T) {
 			_, found := parsedSource(t, pkgClause+"public enum Color {\n    RED;\n    "+carrierLine+
 				"    static class Nested {}\n}\n")
 			assert.Length(t, found, 2, "the type and its carrier")
-			assert.True(t, strings.Contains(found[1].Msg, onEnumType), "where the author put it")
+			assert.Contains(t, found[1].Msg, onEnumType, "where the author put it")
 		})
 
 		t.Run("passes the sweep over a type an enum declares", func(t *testing.T) {
@@ -625,14 +624,14 @@ func TestMember(t *testing.T) {
 }
 
 // memberClass parses a public class A of a body and returns it.
-func memberClass(tb assert.TB, body string) *node.Struct {
+func memberClass(tb testing.TB, body string) *node.Struct {
 	tb.Helper()
 
 	return classOf(tb, "public class A {\n"+body+"}\n", "A")
 }
 
 // memberIface parses a public interface I of a body and returns it.
-func memberIface(tb assert.TB, body string) *node.Interface {
+func memberIface(tb testing.TB, body string) *node.Interface {
 	tb.Helper()
 
 	return ifaceOf(tb, "public interface I {\n"+body+"}\n")
@@ -640,7 +639,7 @@ func memberIface(tb assert.TB, body string) *node.Interface {
 
 // elementOf parses a public annotation type Ann of a body and returns
 // its first method.
-func elementOf(tb assert.TB, body string) *node.Method {
+func elementOf(tb testing.TB, body string) *node.Method {
 	tb.Helper()
 
 	it := named[*node.Interface](tb, declsOf(tb, "public @interface Ann {\n"+body+"}\n"), "Ann")

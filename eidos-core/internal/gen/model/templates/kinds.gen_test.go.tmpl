@@ -90,7 +90,7 @@ func TestKinds(t *testing.T) {
 				"a located {{.Name}} returns where it was written")
 {{- else}}
 
-			assert.True(t, (&{{.Name}}{}).Position().IsZero(),
+			assert.Equal(t, (&{{.Name}}{}).Position(), position.Pos{},
 				"a {{.Name}} carries no position and returns the zero position")
 {{- end}}
 {{- end}}
@@ -136,7 +136,7 @@ func TestKinds(t *testing.T) {
 {{- range .Views}}
 {{- if .IDStorage}}
 
-			assert.True(t, (&{{.Name}}{}).Identity().IsZero(),
+			assert.Equal(t, (&{{.Name}}{}).Identity(), symbol.Identity{},
 				"an unassigned {{.Name}} returns the zero identity")
 {{- end}}
 {{- end}}
@@ -287,7 +287,7 @@ func kindsCases() []kindsCase {
 {{- if .HasPos}}
 					assert.Equal(tb, pos, kindsAt, "Position returns where the declaration was written")
 {{- else}}
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 {{- end}}
 				},
 			},

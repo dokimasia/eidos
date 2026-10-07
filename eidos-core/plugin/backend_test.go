@@ -70,8 +70,7 @@ func TestBackend(t *testing.T) {
 
 // A target's name key allocates its joined spelling alone in the
 // ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// the count includes every goroutine's allocations.
 func TestBackendAllocs(t *testing.T) {
 	target := plugin.Target("golang")
 	var got meta.KeyName

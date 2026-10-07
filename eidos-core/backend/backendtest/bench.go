@@ -4,6 +4,7 @@
 package backendtest
 
 import (
+	"cmp"
 	"io/fs"
 	"slices"
 	"strconv"
@@ -61,36 +62,34 @@ type Budget struct {
 func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
-	if budget.MaxAllocs == 0 {
-		b.Fatal("the budget states no ceiling")
-	}
+	assert.NotEqual(b, budget.MaxAllocs, 0, "the budget states a ceiling")
 	r, f := setup(b)
-	if f == nil || f.Emit == nil {
-		b.Fatal("the setup returns no fixture")
-	}
+	assert.NotNil(b, f, "the setup returns a fixture")
+	assert.NotNil(b, f.Emit, "the fixture contains a store")
 	if bk, held := r.(plugin.Backend); held {
 		settleSink := diag.NewSink()
-		if err := plugin.Settle(f.Emit, bk, nil, settleSink); err != nil {
-			b.Fatalf("the settle completes: %v", err)
-		}
-		if settleSink.Failed() {
-			b.Fatal("the corpus settles clean, because a ceiling over a " +
-				"partial settle measures the wrong thing")
-		}
+		assert.NoError(b, plugin.Settle(f.Emit, bk, nil, settleSink), "the settle completes")
+		assert.False(b, settleSink.Failed(), "the corpus settles clean, because a ceiling over a "+
+			"partial settle measures the wrong thing")
 	}
 
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
+	var (
+		err    error
+		empty  bool
+		failed bool
+	)
 	for c.Loop() {
 		sink := diag.NewSink()
-		files, err := r.Render(f.context(r, sink))
-		if err != nil {
-			b.Fatalf("the render aborted: %v", err)
-		}
-		if len(files) == 0 || sink.Failed() {
-			b.Fatal("the corpus renders whole and clean")
-		}
+		files, renderErr := r.Render(f.context(r, sink))
+		err = cmp.Or(err, renderErr)
+		empty = empty || len(files) == 0
+		failed = failed || sink.Failed()
 	}
+	assert.NoError(b, err, "every render completes")
+	assert.False(b, empty, "every render returns the corpus's files")
+	assert.False(b, failed, "every render reports no Error")
 }
 
 // BenchSettle measures the settle over the setup's corpus: every
@@ -106,38 +105,37 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
-	if budget.MaxAllocs == 0 {
-		b.Fatal("the budget states no ceiling")
-	}
+	assert.NotEqual(b, budget.MaxAllocs, 0, "the budget states a ceiling")
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
+	var (
+		err    error
+		failed bool
+	)
 	for c.Loop() {
-		var r plugin.Renderer
-		var f *Fixture
-		var sink *diag.Sink
-		var facts *meta.Facts
+		var (
+			f     *Fixture
+			bk    plugin.Backend
+			facts *meta.Facts
+			sink  *diag.Sink
+		)
 		c.Excluding(func() {
+			var r plugin.Renderer
 			r, f = setup(b)
+			assert.NotNil(b, f, "the setup returns a fixture")
+			assert.NotNil(b, f.Emit, "the fixture contains a store")
+			var held bool
+			bk, held = r.(plugin.Backend)
+			assert.True(b, held, "the settle takes the backend's declared seams")
 			sink = diag.NewSink()
-			if bk, held := r.(plugin.Backend); held {
-				facts = nameFacts(b, bk.Target())
-			}
+			facts = nameFacts(b, bk.Target())
 		})
-		if f == nil || f.Emit == nil {
-			b.Fatal("the setup returns no fixture")
-		}
-		bk, held := r.(plugin.Backend)
-		if !held {
-			b.Fatal("the settle takes the backend's declared seams")
-		}
-		if err := plugin.Settle(f.Emit, bk, facts, sink); err != nil {
-			b.Fatalf("the settle completes: %v", err)
-		}
-		if sink.Failed() {
-			b.Fatal("the corpus settles clean, because a ceiling over a " +
-				"partial settle measures the wrong thing")
-		}
+		err = cmp.Or(err, plugin.Settle(f.Emit, bk, facts, sink))
+		failed = failed || sink.Failed()
 	}
+	assert.NoError(b, err, "every settle completes")
+	assert.False(b, failed, "every corpus settles clean, because a ceiling over a "+
+		"partial settle measures the wrong thing")
 }
 
 // nameFacts returns an empty fact store whose registry contains the
@@ -148,12 +146,9 @@ func nameFacts(tb assert.TB, t plugin.Target) *meta.Facts {
 
 	key := t.NameKey()
 	r := meta.NewRegistry()
-	if err := r.ClaimNamespace(key.Namespace()); err != nil {
-		tb.Fatalf("the target's namespace claims: %v", err)
-	}
-	if _, err := meta.Register[string](r, meta.KeySpec{Name: key, Doc: nameKeyDoc}); err != nil {
-		tb.Fatalf("the target's name key registers: %v", err)
-	}
+	assert.NoError(tb, r.ClaimNamespace(key.Namespace()), "the target's namespace claims")
+	_, err := meta.Register[string](r, meta.KeySpec{Name: key, Doc: nameKeyDoc})
+	assert.NoError(tb, err, "the target's name key registers")
 	return meta.NewFacts(r)
 }
 
@@ -172,10 +167,7 @@ func ScaledFixture(tb assert.TB, refused map[symbol.Kind]string) *Fixture {
 		_, out := refused[k]
 		return out
 	})
-	if len(requested) == 0 {
-		tb.Errorf("the corpus emits no declaration, because the backend refuses every canonical kind")
-		return nil
-	}
+	assert.NotEmpty(tb, requested, "the backend spells a canonical kind, so the corpus emits a declaration")
 	slices.Sort(requested)
 	e := plugin.NewEmit()
 	n := 0
@@ -197,10 +189,7 @@ func ScaledFixture(tb assert.TB, refused map[symbol.Kind]string) *Fixture {
 				Decls:   decls,
 				Origins: origins,
 			}
-			if err := e.Add(u); err != nil {
-				tb.Errorf("the scaled %s unit arrives: %v", u.Key, err)
-				return nil
-			}
+			assert.NoError(tb, e.Add(u), "the scaled "+u.Key+" unit arrives")
 		}
 	}
 	return &Fixture{

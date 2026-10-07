@@ -4,11 +4,13 @@
 package plugin_test
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -209,7 +211,7 @@ func TestIndex(t *testing.T) {
 			g, inStore, _ := twoPackages(t)
 			got, held := index(t, g, nil, nil).Lookup(inStore.ID)
 			assert.True(t, held, "the identity resolves")
-			assert.True(t, got == symbol.Symbol(inStore), "the declaration is the graph's")
+			assert.Equal(t, got, symbol.Symbol(inStore), "the declaration is the graph's", assert.ByIdentity())
 		})
 
 		t.Run("reports false for a declaration outside the scope", func(t *testing.T) {
@@ -339,7 +341,8 @@ func TestIndex(t *testing.T) {
 			r, err := index(t, g, nil, storeOnly).Reader(reads)
 			assert.NoError(t, err, "the reader mints over a frozen graph")
 			r.Lookup(inStore.ID)
-			assert.True(t, reads.Len() > 0, "the read set records an edge")
+			assert.Equal(t, slices.Collect(reads.Identities()), []symbol.Identity{inStore.ID},
+				"the read set records the declaration it read")
 		})
 	})
 }
@@ -347,94 +350,77 @@ func TestIndex(t *testing.T) {
 // The index allocates itself and the tables a run's skips and scope
 // need, a reader allocates its handle, and the enumerations and lookups
 // a phase call makes through the index allocate nothing, with a scope
-// and without one. The check runs alone, because AllocsPerRun counts
-// every goroutine's allocations and refuses to run beside parallel
-// tests.
+// and without one. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestIndexAllocs(t *testing.T) {
 	g, inStore, inCache := twoPackages(t)
 	facts, key := flagged(t, inStore.ID, inCache.ID)
 	validated := map[symbol.Identity][]directive.Directive{inStore.ID: {{Name: directive.KernelSkip}}}
 
-	var built *plugin.Index
-	assert.MaxAllocs(t, func() {
-		var err error
-		if built, err = plugin.NewIndex(g, facts, nil, nil); err != nil {
-			t.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-	}, newIndexAllocs, "NewIndex allocates the index of a run without a skip or a scope")
-	assert.MaxAllocs(t, func() {
-		var err error
-		if built, err = plugin.NewIndex(g, facts, nil, storeOnly); err != nil {
-			t.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-	}, scopedIndexAllocs, "NewIndex allocates the set of the packages a scope admits")
+	var (
+		built *plugin.Index
+		err   error
+	)
+	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, nil, nil) }, newIndexAllocs,
+		"NewIndex allocates the index of a run without a skip or a scope")
+	assert.NoError(t, err, "the routing surface builds")
+	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, nil, storeOnly) }, scopedIndexAllocs,
+		"NewIndex allocates the set of the packages a scope admits")
+	assert.NoError(t, err, "the scoped routing surface builds")
 	reads := store.NewReadSet()
-	assert.MaxAllocs(t, func() {
-		if _, err := built.Reader(reads); err != nil {
-			t.Fatalf("Reader: unexpected error: %v", err)
-		}
-	}, readerAllocs, "Reader allocates the handle")
+	assert.MaxAllocs(t, func() { _, err = built.Reader(reads) }, readerAllocs, "Reader allocates the handle")
+	assert.NoError(t, err, "the reader mints over a frozen graph")
 
 	ix, err := plugin.NewIndex(g, facts, validated, everything)
 	assert.NoError(t, err, "the routing surface builds")
+	n := 0
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range ix.ByDirective("stub") {
 			n++
 		}
-		if n != 2 {
-			t.Fatal("ByDirective enumerated another number of subjects")
-		}
 	}, 0, "ByDirective allocates nothing")
-	for range ix.ByFactKey(key.ID()) { // the first enumeration sorts the key's subjects
-	}
+	assert.Equal(t, n, 2, "ByDirective enumerates both subjects")
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range ix.ByKind(symbol.KindStruct) {
 			n++
 		}
-		if n != 2 {
-			t.Fatal("ByKind enumerated another number of structs")
-		}
 	}, 0, "ByKind allocates nothing")
+	assert.Equal(t, n, 2, "ByKind enumerates both structs")
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range ix.ByFactKey(key.ID()) {
 			n++
 		}
-		if n != 2 {
-			t.Fatal("ByFactKey enumerated another number of subjects")
-		}
 	}, 0, "ByFactKey allocates nothing for a key whose presence did not change")
+	assert.Equal(t, n, 2, "ByFactKey enumerates both subjects")
+	var held bool
+	assert.MaxAllocs(t, func() { _, held = ix.Lookup(inStore.ID) }, 0, "Lookup allocates nothing")
+	assert.True(t, held, "Lookup finds the store's struct")
+	assert.MaxAllocs(t, func() { _, held = ix.PackageOf(inStore.ID) }, 0, "PackageOf allocates nothing")
+	assert.True(t, held, "PackageOf finds the store's struct")
+	var directives []directive.Directive
 	assert.MaxAllocs(t, func() {
-		if _, held := ix.Lookup(inStore.ID); !held {
-			t.Fatal("Lookup missed the store's struct")
-		}
-	}, 0, "Lookup allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, held := ix.PackageOf(inStore.ID); !held {
-			t.Fatal("PackageOf missed the store's struct")
-		}
-	}, 0, "PackageOf allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if !ix.Skipped(inStore.ID, skippedPlugin) || len(ix.DirectivesOf(inStore.ID)) != 1 {
-			t.Fatal("the skip of the store's struct did not read back")
-		}
+		held, directives = ix.Skipped(inStore.ID, skippedPlugin), ix.DirectivesOf(inStore.ID)
 	}, 0, "Skipped and DirectivesOf allocate nothing")
+	assert.True(t, held, "Skipped reports the store's struct")
+	assert.Length(t, directives, 1, "DirectivesOf returns its skip")
 
 	bare, err := plugin.NewIndex(g, facts, nil, nil)
 	assert.NoError(t, err, "the routing surface builds without a scope")
+	var found, contained bool
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range bare.ByKind(symbol.KindStruct) {
 			n++
 		}
-		_, found := bare.Lookup(inStore.ID)
-		_, contained := bare.PackageOf(inStore.ID)
-		if n != 2 || !found || !contained {
-			t.Fatal("the reads without a scope read back wrong")
-		}
+		_, found = bare.Lookup(inStore.ID)
+		_, contained = bare.PackageOf(inStore.ID)
 	}, 0, "ByKind, Lookup and PackageOf allocate nothing without a scope")
+	expect.Equal(t, n, 2, "ByKind enumerates both structs without a scope")
+	expect.True(t, found, "Lookup finds the struct without a scope")
+	expect.True(t, contained, "PackageOf finds its package without a scope")
 }
 
 // BenchmarkIndex measures the routing surface at the store scale it
@@ -452,14 +438,14 @@ func BenchmarkIndex(b *testing.B) {
 		b.Run("unscoped", func(b *testing.B) {
 			ix, err := plugin.NewIndex(g, facts, nil, nil)
 			assert.NoError(b, err, "the routing surface builds")
-			c := bench.Start(b).MaxAllocs(0)
+			// The warm-up pass runs at the call site it measures, where the
+			// runtime builds the site's 48-byte cache for converting a
+			// declaration to a symbol. A pass at any other call site builds a
+			// cache of its own.
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
 			n := 0
-			// The first pass runs before the contract counts, at the call site
-			// it measures, where the runtime builds the site's 48-byte cache
-			// for converting a declaration to a symbol. A pass at any other
-			// call site builds a cache of its own.
-			for first := true; first || c.Loop(); first = false {
+			for c.Loop() {
 				n = 0
 				for range ix.ByKind(symbol.KindStruct) {
 					n++
@@ -471,12 +457,12 @@ func BenchmarkIndex(b *testing.B) {
 		b.Run("scoped to one package", func(b *testing.B) {
 			ix, err := plugin.NewIndex(g, facts, nil, inOne)
 			assert.NoError(b, err, "the routing surface builds")
-			c := bench.Start(b).MaxAllocs(0)
+			// The warm-up pass builds the call site's conversion cache, as in
+			// the unscoped case.
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
 			n := 0
-			// The first pass builds the call site's conversion cache before
-			// the contract counts, as in the unscoped case.
-			for first := true; first || c.Loop(); first = false {
+			for c.Loop() {
 				n = 0
 				for range ix.ByKind(symbol.KindStruct) {
 					n++
@@ -499,9 +485,8 @@ func BenchmarkIndex(b *testing.B) {
 			}
 			ix, err := plugin.NewIndex(g, stamped, nil, inOne)
 			assert.NoError(b, err, "the routing surface builds")
-			for range ix.ByFactKey(key.ID()) { // the first enumeration sorts the key's subjects
-			}
-			c := bench.Start(b).MaxAllocs(0)
+			// The warm-up enumeration sorts the key's subjects.
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
 			n := 0
 			for c.Loop() {
@@ -567,11 +552,12 @@ func BenchmarkIndex(b *testing.B) {
 	b.Run("NewIndex", func(b *testing.B) {
 		for _, tt := range scopes {
 			b.Run(tt.name, func(b *testing.B) {
-				_, err := plugin.NewIndex(g, facts, nil, tt.scope)
-				assert.NoError(b, err, "the routing surface builds before the measurement")
-				c := bench.Start(b).MaxAllocs(tt.allocs)
+				c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 				defer c.End()
-				var ix *plugin.Index
+				var (
+					ix  *plugin.Index
+					err error
+				)
 				for c.Loop() {
 					ix, err = plugin.NewIndex(g, facts, nil, tt.scope)
 				}
@@ -585,12 +571,12 @@ func BenchmarkIndex(b *testing.B) {
 	b.Run("ByDirective", func(b *testing.B) {
 		small, inStore, _ := twoPackages(b)
 		ix := index(b, small, nil, nil)
-		c := bench.Start(b).MaxAllocs(0)
+		// The warm-up pass builds the call site's conversion cache, as in
+		// the ByKind cases.
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		n := 0
-		// The first pass builds the call site's conversion cache before
-		// the contract counts, as in the ByKind cases.
-		for first := true; first || c.Loop(); first = false {
+		for c.Loop() {
 			n = 0
 			for range ix.ByDirective("stub") {
 				n++

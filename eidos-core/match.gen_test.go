@@ -6,6 +6,7 @@
 package eidos_test
 
 import (
+	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -53,7 +54,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindFunction, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Function, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -66,19 +67,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Function in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.FunctionName, symbol.KindFunction),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Function in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.FunctionName, symbol.KindFunction),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindFunction,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -140,7 +140,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindMethod, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Method, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -153,19 +153,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Method in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.MethodName, symbol.KindMethod),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Method in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.MethodName, symbol.KindMethod),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindMethod,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -227,7 +226,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindParam, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Param, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -240,19 +239,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Param in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.ParamName, symbol.KindParam),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Param in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.ParamName, symbol.KindParam),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindParam,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -314,7 +312,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindReturn, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Return, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -327,19 +325,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Return in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.ReturnName, symbol.KindReturn),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Return in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.ReturnName, symbol.KindReturn),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindReturn,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -401,7 +398,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindEnum, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Enum, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -414,19 +411,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Enum in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.EnumName, symbol.KindEnum),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Enum in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.EnumName, symbol.KindEnum),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindEnum,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -488,7 +484,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindSum, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Sum, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -501,19 +497,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Sum in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.SumName, symbol.KindSum),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Sum in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.SumName, symbol.KindSum),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindSum,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -575,7 +570,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindField, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Field, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -588,19 +583,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Field in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.FieldName, symbol.KindField),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Field in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.FieldName, symbol.KindField),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindField,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -662,7 +656,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindVariable, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Variable, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -675,19 +669,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Variable in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.VariableName, symbol.KindVariable),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Variable in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.VariableName, symbol.KindVariable),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindVariable,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -749,7 +742,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindConstant, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Constant, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -762,19 +755,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Constant in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.ConstantName, symbol.KindConstant),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Constant in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.ConstantName, symbol.KindConstant),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindConstant,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -836,7 +828,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindStruct, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Struct, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -849,19 +841,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Struct in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.StructName, symbol.KindStruct),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Struct in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.StructName, symbol.KindStruct),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindStruct,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -923,7 +914,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindInterface, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Interface, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -936,19 +927,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Interface in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.InterfaceName, symbol.KindInterface),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Interface in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.InterfaceName, symbol.KindInterface),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindInterface,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 
@@ -1010,7 +1000,7 @@ func TestMatches(t *testing.T) {
 			store := coretest.EveryKind(coretest.StorePath)
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.KindAlias, store, cache)
-			assert.True(t, want > 1,
+			assert.InRange(t, want, 2, math.Inf(1),
 				"the fixture contains more than one Alias, so one rule meets several")
 
 			var subjects []symbol.Identity
@@ -1023,19 +1013,18 @@ func TestMatches(t *testing.T) {
 				})).
 				Build(), store, cache)
 
-			assert.Length(t, subjects, want,
-				"the rule runs once per Alias in the graph")
-			assert.Contains(t, subjects,
-				coretest.EveryKindID(coretest.StorePath, coretest.AliasName, symbol.KindAlias),
-				"and the match contains the declaration, not only its identity")
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per Alias in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.AliasName, symbol.KindAlias),
+					"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindAlias,
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
-				assert.True(t, m == handles[0],
+				assert.Equal(t, m, handles[0],
 					"one match serves every invocation of the rule, so an "+
-						"invocation allocates nothing in steady state")
+						"invocation allocates nothing in steady state", assert.ByIdentity())
 			}
 		})
 

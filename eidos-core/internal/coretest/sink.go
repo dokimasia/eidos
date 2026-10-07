@@ -4,12 +4,13 @@
 package coretest
 
 import (
-	"slices"
 	"strings"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/position"
 )
 
 // Codes returns the codes a sink collected, in report order.
@@ -35,8 +36,7 @@ func AssertCodes(tb assert.TB, s *diag.Sink, want ...diag.Code) {
 
 	got := Codes(s)
 	if len(want) == 0 {
-		assert.Equal(tb, got, []diag.Code{},
-			"the run reports nothing: "+describe(s))
+		assert.Empty(tb, got, "the run reports nothing: "+describe(s))
 		return
 	}
 	assert.Equal(tb, got, want,
@@ -51,23 +51,23 @@ func AssertCodes(tb assert.TB, s *diag.Sink, want ...diag.Code) {
 func AssertReports(tb assert.TB, s *diag.Sink, want diag.Code) {
 	tb.Helper()
 
-	assert.True(tb, slices.Contains(Codes(s), want),
-		"the run reports "+want.String()+": "+describe(s))
+	assert.Contains(tb, Codes(s), want, "the run reports "+want.String()+": "+describe(s))
 }
 
 // AssertPositioned fails unless every finding the sink collected
-// carries a position and a message.
+// has a position and a message, and reports every finding that
+// lacks either.
 //
-// A finding without either cannot be acted on, so this holds the
-// contract every reporting path shares rather than one path's own.
+// A finding without either cannot be acted on, so this states the
+// contract every reporting path shares, not one path's own.
 func AssertPositioned(tb assert.TB, s *diag.Sink) {
 	tb.Helper()
 
 	for d := range s.All() {
-		assert.False(tb, d.Pos.IsZero(),
-			"the "+d.Code.String()+" finding carries a position")
-		assert.NotEmpty(tb, d.Msg,
-			"the "+d.Code.String()+" finding carries a message")
+		expect.NotEqual(tb, d.Pos, position.Pos{},
+			"the "+d.Code.String()+" finding has a position")
+		expect.NotEmpty(tb, d.Msg,
+			"the "+d.Code.String()+" finding has a message")
 	}
 }
 

@@ -200,7 +200,7 @@ func TestFixture(t *testing.T) {
 			assert.NoError(t, r.Err, "the phase call passes")
 			assert.Equal(t, kernel, f.Kernel, "the handler reads the kernel's keys the fixture registered")
 			assert.Equal(t, kernel.Module.Name(), meta.ModuleKey, "under the kernel's own names")
-			assert.Length(t, slices.Collect(r.Sink.All()), 0,
+			assert.Empty(t, slices.Collect(r.Sink.All()),
 				"a registered language binds without the absent-rules warning")
 		})
 
@@ -221,7 +221,7 @@ func TestFixture(t *testing.T) {
 						Build()
 					f.Generate(tb, p)
 				})
-			assert.Contains(t, failure, "generator role",
+			assert.Equal(t, coretest.Contracts(failure), []string{"the plugin implements the generator role"},
 				"the refusal names the missing role")
 		})
 	})

@@ -4,6 +4,7 @@
 package plugin_test
 
 import (
+	"cmp"
 	"errors"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -542,11 +544,9 @@ func TestSettle(t *testing.T) {
 			)
 			got := messages(settled(t, e, b))
 			assert.Length(t, got, 3, "one finding per group")
-			assert.True(t,
-				strings.Contains(got[0], "in api") &&
-					strings.Contains(got[1], `to "Other"`) &&
-					strings.Contains(got[2], `to "Same"`),
-				"the scope orders the groups, and inside one scope the settled spelling does")
+			expect.Contains(t, got[0], "in api", "the scope orders the groups")
+			expect.Contains(t, got[1], `to "Other"`, "and inside one scope the settled spelling does")
+			expect.Contains(t, got[2], `to "Same"`, "so the last group settles to the latest spelling")
 		})
 
 		t.Run("settles one method name on two receivers without a collision", func(t *testing.T) {
@@ -1094,22 +1094,18 @@ func TestSettle(t *testing.T) {
 // A settle allocates nothing for a backend without hooks, and the
 // rebuilt index with the plan of the names for a respell hook, in the
 // ordinary run, which runs no benchmark. Each counted settle takes a
-// store of its own, built before the count. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses
-// to run beside parallel tests.
+// store of its own, built outside the count, and the count keeps the
+// first error of its settles, which cmp.Or returns without allocating.
+// The check runs alone, because the count includes every goroutine's
+// allocations.
 func TestSettleAllocs(t *testing.T) {
 	for _, tt := range settleCases() {
-		stores := make([]*plugin.Emit, allocRuns)
-		for i := range stores {
-			stores[i] = settleStore(t)
-		}
-		sink, at := diag.NewSink(), 0
-		assert.MaxAllocs(t, func() {
-			if err := plugin.Settle(stores[at], tt.backend, nil, sink); err != nil {
-				t.Fatalf("Settle: unexpected error: %v", err)
-			}
-			at++
+		sink := diag.NewSink()
+		var err error
+		assert.MaxAllocsWithSetup(t, func() *plugin.Emit { return settleStore(t) }, func(e *plugin.Emit) {
+			err = cmp.Or(err, plugin.Settle(e, tt.backend, nil, sink))
 		}, tt.allocs, "Settle through "+tt.name+" allocates what it rebuilds")
+		assert.NoError(t, err, "every settle through "+tt.name+" completes")
 		assert.Empty(t, messages(sink), "the settle reports nothing")
 	}
 }
@@ -1161,9 +1157,7 @@ func storeOf(t *testing.T, units ...plugin.Unit) *plugin.Emit {
 	t.Helper()
 
 	e := plugin.NewEmit()
-	for _, u := range units {
-		assert.NoError(t, e.Add(u), "the unit arrives")
-	}
+	assert.Total(t, e.Add, units, "the unit arrives")
 	return e
 }
 

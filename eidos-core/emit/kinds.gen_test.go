@@ -124,70 +124,70 @@ func TestKinds(t *testing.T) {
 		t.Run("returns where the declaration was written", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, (&Function{}).Position().IsZero(),
+			assert.Equal(t, (&Function{}).Position(), position.Pos{},
 				"a Function carries no position and returns the zero position")
 
-			assert.True(t, (&Method{}).Position().IsZero(),
+			assert.Equal(t, (&Method{}).Position(), position.Pos{},
 				"a Method carries no position and returns the zero position")
 
-			assert.True(t, (&Param{}).Position().IsZero(),
+			assert.Equal(t, (&Param{}).Position(), position.Pos{},
 				"a Param carries no position and returns the zero position")
 
-			assert.True(t, (&Return{}).Position().IsZero(),
+			assert.Equal(t, (&Return{}).Position(), position.Pos{},
 				"a Return carries no position and returns the zero position")
 
-			assert.True(t, (&Package{}).Position().IsZero(),
+			assert.Equal(t, (&Package{}).Position(), position.Pos{},
 				"a Package carries no position and returns the zero position")
 
-			assert.True(t, (&File{}).Position().IsZero(),
+			assert.Equal(t, (&File{}).Position(), position.Pos{},
 				"a File carries no position and returns the zero position")
 
-			assert.True(t, (&Import{}).Position().IsZero(),
+			assert.Equal(t, (&Import{}).Position(), position.Pos{},
 				"a Import carries no position and returns the zero position")
 
-			assert.True(t, (&Export{}).Position().IsZero(),
+			assert.Equal(t, (&Export{}).Position(), position.Pos{},
 				"a Export carries no position and returns the zero position")
 
-			assert.True(t, (&Binding{}).Position().IsZero(),
+			assert.Equal(t, (&Binding{}).Position(), position.Pos{},
 				"a Binding carries no position and returns the zero position")
 
-			assert.True(t, (&Enum{}).Position().IsZero(),
+			assert.Equal(t, (&Enum{}).Position(), position.Pos{},
 				"a Enum carries no position and returns the zero position")
 
-			assert.True(t, (&EnumVariant{}).Position().IsZero(),
+			assert.Equal(t, (&EnumVariant{}).Position(), position.Pos{},
 				"a EnumVariant carries no position and returns the zero position")
 
-			assert.True(t, (&Sum{}).Position().IsZero(),
+			assert.Equal(t, (&Sum{}).Position(), position.Pos{},
 				"a Sum carries no position and returns the zero position")
 
-			assert.True(t, (&SumVariant{}).Position().IsZero(),
+			assert.Equal(t, (&SumVariant{}).Position(), position.Pos{},
 				"a SumVariant carries no position and returns the zero position")
 
-			assert.True(t, (&Field{}).Position().IsZero(),
+			assert.Equal(t, (&Field{}).Position(), position.Pos{},
 				"a Field carries no position and returns the zero position")
 
-			assert.True(t, (&Variable{}).Position().IsZero(),
+			assert.Equal(t, (&Variable{}).Position(), position.Pos{},
 				"a Variable carries no position and returns the zero position")
 
-			assert.True(t, (&Constant{}).Position().IsZero(),
+			assert.Equal(t, (&Constant{}).Position(), position.Pos{},
 				"a Constant carries no position and returns the zero position")
 
-			assert.True(t, (&Struct{}).Position().IsZero(),
+			assert.Equal(t, (&Struct{}).Position(), position.Pos{},
 				"a Struct carries no position and returns the zero position")
 
-			assert.True(t, (&Interface{}).Position().IsZero(),
+			assert.Equal(t, (&Interface{}).Position(), position.Pos{},
 				"a Interface carries no position and returns the zero position")
 
-			assert.True(t, (&Alias{}).Position().IsZero(),
+			assert.Equal(t, (&Alias{}).Position(), position.Pos{},
 				"a Alias carries no position and returns the zero position")
 
-			assert.True(t, (&TypeRef{}).Position().IsZero(),
+			assert.Equal(t, (&TypeRef{}).Position(), position.Pos{},
 				"a TypeRef carries no position and returns the zero position")
 
-			assert.True(t, (&TypeParam{}).Position().IsZero(),
+			assert.Equal(t, (&TypeParam{}).Position(), position.Pos{},
 				"a TypeParam carries no position and returns the zero position")
 
-			assert.True(t, (&Embed{}).Position().IsZero(),
+			assert.Equal(t, (&Embed{}).Position(), position.Pos{},
 				"a Embed carries no position and returns the zero position")
 		})
 	})
@@ -535,7 +535,7 @@ func kindsCases() []kindsCase {
 				name: "Function.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -573,7 +573,7 @@ func kindsCases() []kindsCase {
 				name: "Method.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -607,7 +607,7 @@ func kindsCases() []kindsCase {
 				name: "Param.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -648,7 +648,7 @@ func kindsCases() []kindsCase {
 				name: "Return.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -687,7 +687,7 @@ func kindsCases() []kindsCase {
 				name: "Package.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -719,7 +719,7 @@ func kindsCases() []kindsCase {
 				name: "File.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -750,7 +750,7 @@ func kindsCases() []kindsCase {
 				name: "Import.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -781,7 +781,7 @@ func kindsCases() []kindsCase {
 				name: "Export.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -812,7 +812,7 @@ func kindsCases() []kindsCase {
 				name: "Binding.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -848,7 +848,7 @@ func kindsCases() []kindsCase {
 				name: "Enum.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -903,7 +903,7 @@ func kindsCases() []kindsCase {
 				name: "EnumVariant.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -939,7 +939,7 @@ func kindsCases() []kindsCase {
 				name: "Sum.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -995,7 +995,7 @@ func kindsCases() []kindsCase {
 				name: "SumVariant.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1052,7 +1052,7 @@ func kindsCases() []kindsCase {
 				name: "Field.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1094,7 +1094,7 @@ func kindsCases() []kindsCase {
 				name: "Variable.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1136,7 +1136,7 @@ func kindsCases() []kindsCase {
 				name: "Constant.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1184,7 +1184,7 @@ func kindsCases() []kindsCase {
 				name: "Struct.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1248,7 +1248,7 @@ func kindsCases() []kindsCase {
 				name: "Interface.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1306,7 +1306,7 @@ func kindsCases() []kindsCase {
 				name: "Alias.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1339,7 +1339,7 @@ func kindsCases() []kindsCase {
 				name: "TypeRef.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1375,7 +1375,7 @@ func kindsCases() []kindsCase {
 				name: "TypeParam.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{
@@ -1415,7 +1415,7 @@ func kindsCases() []kindsCase {
 				name: "Embed.Position",
 				call: func() { pos = subject.Position() },
 				check: func(tb testing.TB) {
-					assert.True(tb, pos.IsZero(), "Position returns the zero position")
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
 				},
 			},
 			kindsCase{

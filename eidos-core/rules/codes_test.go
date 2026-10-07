@@ -4,10 +4,9 @@
 package rules_test
 
 import (
-	"strings"
 	"testing"
 
-	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/rules"
@@ -23,9 +22,8 @@ func TestCodes(t *testing.T) {
 		t.Run("registers under the kernel prefix", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, strings.HasPrefix(rules.AbsentRules.String(), string(diag.KernelPrefix)),
-				"the code is the kernel's")
-			assert.Contains(t, rules.AbsentRules.String(), "39", "at its number")
+			expect.HasPrefix(t, rules.AbsentRules.String(), string(diag.KernelPrefix), "the code is the kernel's")
+			expect.Contains(t, rules.AbsentRules.String(), "39", "at its number")
 		})
 	})
 }

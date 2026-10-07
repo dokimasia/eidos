@@ -48,7 +48,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 4, "every declared name visits once")
+			assert.Length(t, hosts, 4, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -84,7 +84,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Function", func(t *testing.T) {
@@ -109,8 +110,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -135,7 +135,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 5, "every declared name visits once")
+			assert.Length(t, hosts, 5, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -172,7 +172,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Method", func(t *testing.T) {
@@ -198,8 +199,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -219,7 +219,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			for i, h := range hosts {
@@ -250,7 +250,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Param", func(t *testing.T) {
@@ -272,8 +273,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -293,7 +293,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			for i, h := range hosts {
@@ -324,7 +324,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Return", func(t *testing.T) {
@@ -346,8 +347,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -371,7 +371,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 4, "every declared name visits once")
+			assert.Length(t, hosts, 4, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -407,7 +407,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Enum", func(t *testing.T) {
@@ -432,8 +433,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -453,7 +453,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			for i, h := range hosts {
@@ -484,7 +484,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind EnumVariant", func(t *testing.T) {
@@ -506,8 +507,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -531,7 +531,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 4, "every declared name visits once")
+			assert.Length(t, hosts, 4, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -567,7 +567,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Sum", func(t *testing.T) {
@@ -592,8 +593,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -614,7 +614,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 2, "every declared name visits once")
+			assert.Length(t, hosts, 2, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			for i, h := range hosts {
@@ -646,7 +646,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind SumVariant", func(t *testing.T) {
@@ -669,8 +670,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -691,7 +691,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -724,7 +724,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Field", func(t *testing.T) {
@@ -746,8 +747,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -768,7 +768,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -801,7 +801,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Variable", func(t *testing.T) {
@@ -823,8 +824,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -845,7 +845,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -878,7 +878,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Constant", func(t *testing.T) {
@@ -900,8 +901,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -926,7 +926,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 5, "every declared name visits once")
+			assert.Length(t, hosts, 5, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -963,7 +963,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Struct", func(t *testing.T) {
@@ -989,8 +990,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -1015,7 +1015,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 5, "every declared name visits once")
+			assert.Length(t, hosts, 5, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -1052,7 +1052,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Interface", func(t *testing.T) {
@@ -1078,8 +1079,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -1101,7 +1101,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 2, "every declared name visits once")
+			assert.Length(t, hosts, 2, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
@@ -1135,7 +1135,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind Alias", func(t *testing.T) {
@@ -1158,8 +1159,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -1179,7 +1179,7 @@ func TestNames(t *testing.T) {
 					return strings.ToUpper(name), nil
 				})
 			assert.NoError(t, err, "the traversal completes")
-			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Length(t, hosts, 1, "every declared name visits once")
 			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 			for i, h := range hosts {
@@ -1210,7 +1210,8 @@ func TestNames(t *testing.T) {
 			for i, c := range carriers {
 				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
 			}
-			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject",
+				assert.ByIdentity())
 		})
 
 		t.Run("stops at the hook's first refusal in kind TypeParam", func(t *testing.T) {
@@ -1232,8 +1233,7 @@ func TestNames(t *testing.T) {
 						}
 						return strings.ToUpper(name), nil
 					})
-				assert.True(t, errors.Is(err, boom),
-					"the refusal returns from however deep it was raised")
+				assert.ErrorIs(t, err, boom, "the refusal returns from however deep it was raised")
 				assert.Equal(t, calls, stop,
 					"and no name after it is offered: the first error stops the traversal")
 			}
@@ -1248,7 +1248,7 @@ func TestNames(t *testing.T) {
 				func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, _ string) (string, error) {
 					return "", boom
 				})
-			assert.True(t, errors.Is(err, boom), "the first error returns")
+			assert.ErrorIs(t, err, boom, "the first error returns")
 			assert.Equal(t, subject.Name, "alpha", "and the name is left as it was")
 		})
 
@@ -1282,11 +1282,13 @@ func TestNames(t *testing.T) {
 func TestNamesZeroAlloc(t *testing.T) {
 	subjects := namesSubjects()
 	var visits int
+	var err error
 	same := sameName(&visits)
 	assert.MaxAllocs(t, func() {
 		visits = 0
-		respellEvery(t, subjects, same)
+		err = respellEvery(subjects, same)
 	}, 0, "RespellNames allocates nothing")
+	assert.NoError(t, err, "every traversal completes")
 	assert.Equal(t, visits, namesVisits, "RespellNames offers every declared name")
 }
 
@@ -1299,13 +1301,15 @@ func BenchmarkNames(b *testing.B) {
 	b.Run("RespellNames", func(b *testing.B) {
 		b.Run("every named kind", func(b *testing.B) {
 			var visits int
+			var err error
 			same := sameName(&visits)
 			c := bench.Start(b).MaxAllocs(0)
 			defer c.End()
 			for c.Loop() {
 				visits = 0
-				respellEvery(b, subjects, same)
+				err = respellEvery(subjects, same)
 			}
+			assert.NoError(b, err, "every traversal completes")
 			assert.Equal(b, visits, namesVisits, "RespellNames offers every declared name")
 		})
 	})
@@ -1329,18 +1333,18 @@ func sameName(visits *int) func(host, carrier symbol.Symbol, kind symbol.Kind, v
 	}
 }
 
-// respellEvery respells every subject through the hook, and fails the
-// test where the traversal returns an error.
+// respellEvery respells every subject through the hook, and returns
+// the first error a traversal returns.
 func respellEvery(
-	tb testing.TB,
 	subjects []symbol.Symbol,
 	hook func(host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
-) {
+) error {
 	for _, s := range subjects {
 		if err := RespellNames(s, hook); err != nil {
-			tb.Fatalf("RespellNames: unexpected error: %v", err)
+			return err
 		}
 	}
+	return nil
 }
 
 // namesSubjects returns a subject of every kind that declares a name

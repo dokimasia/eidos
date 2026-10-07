@@ -54,11 +54,9 @@ func TestName(t *testing.T) {
 // runs no benchmark.
 func TestNameZeroAlloc(t *testing.T) {
 	var d symbol.Symbol = &emit.Variable{Name: declared}
-	assert.MaxAllocs(t, func() {
-		if emit.DeclaredName(d) != declared {
-			t.Fatal("DeclaredName returned another name")
-		}
-	}, 0, "DeclaredName allocates nothing")
+	var got string
+	assert.MaxAllocs(t, func() { got = emit.DeclaredName(d) }, 0, "DeclaredName allocates nothing")
+	assert.Equal(t, got, declared, "DeclaredName returns the variable's name")
 }
 
 // BenchmarkName measures the name a variable declares, the last kind

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
@@ -71,7 +72,7 @@ func TestCallable(t *testing.T) {
 
 			c, is := rules.NewBound(roles{scripted()}, viewOnly(t), nil).CallableOf(fetch())
 			assert.True(t, is, "a function maps")
-			assert.True(t, c.Receiver == nil, "a function has no receiver")
+			assert.Nil(t, c.Receiver, "a function has no receiver")
 			assert.True(t, c.Async, "the model's asynchrony")
 			assert.True(t, c.Params[1].Variadic, "the model's variadic flag")
 			assert.Equal(t, c.Returns[1].Name, "err", "the model's return name")
@@ -97,7 +98,7 @@ func TestCallable(t *testing.T) {
 			m.Level = symbol.LevelType
 			c, is := b.CallableOf(m)
 			assert.True(t, is, "a method maps")
-			assert.True(t, c.Receiver == nil, "a type-level method has no receiver")
+			assert.Nil(t, c.Receiver, "a type-level method has no receiver")
 		})
 
 		t.Run("pads the roles a language leaves short with ReturnValue", func(t *testing.T) {
@@ -136,8 +137,8 @@ func TestCallable(t *testing.T) {
 			bare.Params, bare.Returns = nil, nil
 			c, is := rules.NewBound(scripted(), viewOnly(t), nil).CallableOf(bare)
 			assert.True(t, is, "a function is callable")
-			assert.True(t, c.Params == nil, "no parameters, no list")
-			assert.True(t, c.Returns == nil, "no returns, no list")
+			expect.Nil(t, c.Params, "no parameters, no list")
+			expect.Nil(t, c.Returns, "no returns, no list")
 		})
 
 		tests := []struct {

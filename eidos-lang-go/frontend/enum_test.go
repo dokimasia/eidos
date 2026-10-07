@@ -4,6 +4,7 @@
 package frontend_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -44,16 +45,14 @@ func TestPromoteEnums(t *testing.T) {
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\ntype Color int\n\nconst (\n\tRed Color = iota\n)\n")
-		for _, s := range gb.StampRecords() {
-			if string(s.Stamp.Key) != "golang.underlyingKind" {
-				continue
-			}
-			_, onEnum := s.Subject.(*node.Enum)
-			assert.True(t, onEnum, "the shape is on the enum that replaces the type")
-			assert.Equal(t, s.Stamp.Value.(string), "basic", "the shape is the underlying's")
-			return
-		}
-		t.Fatalf("the underlying stamp survives the promotion")
+		records := gb.StampRecords()
+		at := slices.IndexFunc(records, func(s plugin.StampRecord) bool {
+			return string(s.Stamp.Key) == "golang.underlyingKind"
+		})
+		assert.NotEqual(t, at, -1, "the underlying stamp survives the promotion")
+		_, onEnum := records[at].Subject.(*node.Enum)
+		assert.True(t, onEnum, "the shape is on the enum that replaces the type")
+		assert.Equal(t, records[at].Stamp.Value, any("basic"), "the shape is the underlying's")
 	})
 
 	t.Run("re-homes carriers onto the enum and its variants", func(t *testing.T) {

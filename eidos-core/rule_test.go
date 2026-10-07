@@ -209,15 +209,14 @@ func TestRule(t *testing.T) {
 				"the only stamped subject has another value")
 
 			visited := gatedVisits(t, g, facts, eidos.KeyEquals(key, wantedRank))
-			assert.Length(t, visited, 0, "nothing is visited")
+			assert.Empty(t, visited, "nothing is visited")
 		})
 	})
 }
 
 // Each wrapper allocates its lists, and each predicate its test, in the
 // ordinary run, which runs no benchmark. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// the count includes every goroutine's allocations.
 func TestRuleAllocs(t *testing.T) {
 	for _, tt := range ruleCalls(t) {
 		msg := tt.name + " allocates its rule"

@@ -8,10 +8,12 @@ import (
 	"errors"
 	"io/fs"
 	"path"
+	"slices"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
@@ -409,8 +411,8 @@ func TestDependency(t *testing.T) {
 
 			_, _, sink := loadTree(t, absentTree(), with(recorded()), stores(depStore()))
 			found, _ := findingOf(sink, load.UnplacedNeed)
-			assert.Equal(t, [2]any{found.Pos.File, found.Pos.Line}, [2]any{firstFile, 2},
-				"the second line of the first file imports it")
+			expect.Equal(t, found.Pos.File, firstFile, "the first file imports it")
+			expect.Equal(t, found.Pos.Line, 2, "on its second line")
 		})
 
 		t.Run("positions the finding at the first import of the need in its file", func(t *testing.T) {
@@ -581,16 +583,12 @@ func declIn(pkg, name string) symbol.Identity {
 }
 
 // unitOf returns the report of the unit whose first member is a path.
-func unitOf(tb assert.TB, report *load.Report, first string) load.UnitReport {
+func unitOf(tb testing.TB, report *load.Report, first string) load.UnitReport {
 	tb.Helper()
 
-	for _, u := range report.Units {
-		if u.Files[0].Path == first {
-			return u
-		}
-	}
-	tb.Fatalf("no unit of the report opens with %s", first)
-	return load.UnitReport{}
+	at := slices.IndexFunc(report.Units, func(u load.UnitReport) bool { return u.Files[0].Path == first })
+	assert.NotEqual(tb, at, -1, "a unit of the report opens with "+first)
+	return report.Units[at]
 }
 
 // needPaths returns the paths of a round's needs, in round order.

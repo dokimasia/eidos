@@ -4,16 +4,19 @@
 package store_test
 
 import (
+	"cmp"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -57,11 +60,6 @@ const (
 	readFiles    = 2
 	readDecls    = 3
 )
-
-// allocRuns is the number of calls an allocation check makes: one
-// warm-up call and a hundred counted ones. A check of a call that writes
-// its input builds this many inputs before it counts.
-const allocRuns = 101
 
 // The ceilings of the graph's writes. Each counts containers whose
 // growth depends on where the run's hashes fall, so each allows eight
@@ -154,15 +152,14 @@ func TestGraph(t *testing.T) {
 
 			const frontends = 8
 			g := store.New()
-			var wg sync.WaitGroup
-			for frontend := range frontends {
-				wg.Go(func() {
-					shard := strings.Join([]string{coretest.StorePath, string(rune('a' + frontend))}, "/")
-					expect.NoError(t, g.AddPackage(coretest.Package(shard)),
-						"every parallel add is admitted")
-				})
+			outcomes := history.Concurrently(frontends, time.Minute, func(frontend int) (any, error) {
+				shard := strings.Join([]string{coretest.StorePath, string(rune('a' + frontend))}, "/")
+				return shard, g.AddPackage(coretest.Package(shard))
+			})
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "every parallel add finishes")
+				expect.NoError(t, o.Error, "every parallel add is admitted")
 			}
-			wg.Wait()
 			g.Freeze()
 
 			held := 0
@@ -317,7 +314,7 @@ func TestGraph(t *testing.T) {
 
 			got, held := g.Lookup(want.ID)
 			assert.True(t, held, "Lookup returns the declaration of the identity")
-			assert.True(t, got == symbol.Symbol(want), "the very declaration")
+			assert.Equal(t, got, symbol.Symbol(want), "the very declaration", assert.ByIdentity())
 		})
 
 		t.Run("reports false for an identity the graph does not contain", func(t *testing.T) {
@@ -519,28 +516,36 @@ func TestGraph(t *testing.T) {
 
 // TestGraphAllocs checks the ceiling of sealing the summaries of the
 // canonical workspace, the cost of a warm run before it decodes
-// anything, the ceiling of a parallel load of the canonical workspace
-// and its seal, and the allocations of a new graph, of a reader and of
-// the untracked reads, in the ordinary run, which runs no benchmark. The
-// check runs alone, because AllocsPerRun refuses to run beside parallel
-// tests.
-//
-// Only -bench checks the ceilings of Freeze and AddPackage alone. Each
-// leaves the build of a fresh graph out of its count, which no count of
-// [assert.MaxAllocs] leaves out.
+// anything, the ceilings of a seal and of a parallel load of the
+// canonical workspace, the adds of a thousand packages, and the
+// allocations of a new graph, of a reader and of the untracked reads,
+// in the ordinary run, which runs no benchmark. The seal and the adds
+// each take a graph built outside the count. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestGraphAllocs(t *testing.T) {
 	src := canonicalSource()
-	assert.MaxAllocs(t, func() {
-		if !store.Sealed(src).Frozen() {
-			t.Fatal("Sealed returned a graph that is not frozen")
-		}
-	}, sealAllocs, "Sealed allocates its index of the summaries")
+	var sealed *store.Graph
+	assert.MaxAllocs(t, func() { sealed = store.Sealed(src) }, sealAllocs,
+		"Sealed allocates its index of the summaries")
+	assert.True(t, sealed.Frozen(), "Sealed returns a frozen graph")
 
 	loaded := coretest.Workspace(benchPackages, benchFiles, benchDecls)
-	var sealed *store.Graph
 	assert.MaxAllocs(t, func() { sealed = parallelLoad(t, loaded) }, loadFreezeAllocs,
 		"a parallel load of the canonical workspace and its seal allocate within their ceiling")
 	assert.True(t, sealed.Frozen(), "the load seals the graph")
+
+	assert.MaxAllocsWithSetup(t, func() *store.Graph { sealed = addedAll(t, loaded); return sealed },
+		(*store.Graph).Freeze, freezeAllocs, "Freeze allocates the indexes of the canonical workspace")
+	assert.True(t, sealed.Frozen(), "Freeze seals the graph")
+
+	pool := emptyPackages(addBatch)
+	var added error
+	assert.MaxAllocsWithSetup(t, store.New, func(g *store.Graph) {
+		for _, pkg := range pool {
+			added = cmp.Or(added, g.AddPackage(pkg))
+		}
+	}, addAllocs, "AddPackage allocates the entries of a thousand empty packages")
+	assert.NoError(t, added, "every package is added")
 
 	var built *store.Graph
 	assert.MaxAllocs(t, func() { built = store.New() }, newGraphAllocs, "New allocates the graph")
@@ -548,39 +553,36 @@ func TestGraphAllocs(t *testing.T) {
 
 	g, hit := readGraph(t)
 	reads := store.NewReadSet()
+	var err error
+	assert.MaxAllocs(t, func() { _, err = g.Reader(reads, nil) }, graphReaderAllocs, "Reader allocates the handle")
+	assert.NoError(t, err, "the frozen graph hands out a reader")
+	var contained, frozen, holds bool
 	assert.MaxAllocs(t, func() {
-		if _, err := g.Reader(reads, nil); err != nil {
-			t.Fatalf("Reader: unexpected error: %v", err)
-		}
-	}, graphReaderAllocs, "Reader allocates the handle")
-	assert.MaxAllocs(t, func() {
-		if _, held := g.PackageOf(hit); !held || !g.Frozen() || !g.Holds(hit) || g.Damaged() != nil {
-			t.Fatal("the graph's untracked reads read back wrong")
-		}
+		_, contained = g.PackageOf(hit)
+		frozen, holds, err = g.Frozen(), g.Holds(hit), g.Damaged()
 	}, 0, "PackageOf, Frozen, Holds and Damaged allocate nothing")
+	expect.True(t, contained, "PackageOf finds the loaded declaration's package")
+	expect.True(t, frozen, "Frozen reports the sealed graph")
+	expect.True(t, holds, "Holds reports the loaded declaration")
+	expect.NoError(t, err, "a loaded graph decodes nothing, so nothing is damaged")
+	var held bool
+	assert.MaxAllocs(t, func() { _, held = g.Lookup(hit) }, 0, "Lookup allocates nothing")
+	assert.True(t, held, "Lookup finds the loaded declaration")
+	n := 0
 	assert.MaxAllocs(t, func() {
-		if _, held := g.Lookup(hit); !held {
-			t.Fatal("Lookup missed the loaded declaration")
-		}
-	}, 0, "Lookup allocates nothing")
-	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range g.ByKind(symbol.KindStruct) {
 			n++
 		}
-		if n != readPackages*readFiles*readDecls {
-			t.Fatal("ByKind enumerated another number of structs")
-		}
 	}, 0, "a range over ByKind allocates nothing")
+	assert.Equal(t, n, readPackages*readFiles*readDecls, "ByKind enumerates every struct")
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range g.Packages() {
 			n++
 		}
-		if n != readPackages {
-			t.Fatal("Packages enumerated another number of packages")
-		}
 	}, 0, "a range over Packages allocates nothing")
+	assert.Equal(t, n, readPackages, "Packages enumerates every package")
 }
 
 // BenchmarkGraph measures the graph, which is loaded once per run and
@@ -598,9 +600,7 @@ func BenchmarkGraph(b *testing.B) {
 		for c.Loop() {
 			got = store.Sealed(src)
 		}
-		if !got.Frozen() {
-			b.Fatal("Sealed returned a graph that is not frozen")
-		}
+		assert.True(b, got.Frozen(), "Sealed returns a frozen graph")
 	})
 
 	b.Run("Freeze", func(b *testing.B) {
@@ -635,10 +635,7 @@ func BenchmarkGraph(b *testing.B) {
 
 	b.Run("AddPackage", func(b *testing.B) {
 		b.Run("a thousand empty packages", func(b *testing.B) {
-			pool := make([]*node.Package, 0, addBatch)
-			for i := range addBatch {
-				pool = append(pool, coretest.Package(coretest.StorePath+"/"+strconv.Itoa(i)))
-			}
+			pool := emptyPackages(addBatch)
 			var g *store.Graph
 			fresh := func() { g = store.New() }
 			c := bench.Start(b).MaxAllocs(addAllocs)
@@ -670,14 +667,14 @@ func BenchmarkGraph(b *testing.B) {
 
 	b.Run("ByKind", func(b *testing.B) {
 		g := coretest.Frozen(b, loaded...)
-		c := bench.Start(b).MaxAllocs(0)
+		// One warm-up iteration runs at the call site the contract
+		// measures, where the runtime builds the site's 48-byte cache for
+		// converting a declaration to a symbol. A pass at any other call
+		// site builds a cache of its own.
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		seen := 0
-		// The first pass runs before the contract counts, at the call site
-		// it measures, where the runtime builds the site's 48-byte cache
-		// for converting a declaration to a symbol. A pass at any other
-		// call site builds a cache of its own.
-		for first := true; first || c.Loop(); first = false {
+		for c.Loop() {
 			seen = 0
 			for range g.ByKind(symbol.KindStruct) {
 				seen++
@@ -769,27 +766,25 @@ func BenchmarkGraph(b *testing.B) {
 }
 
 // BenchmarkGraphParallel measures adds from GOMAXPROCS goroutines, the
-// claim that two frontends adding two packages do not contend.
-// BenchmarkGraph states the allocation contract, which the bench
-// contract cannot measure under RunParallel.
+// claim that two frontends adding two packages do not contend. It
+// states no ceiling: the graph's maps grow by a number of steps that
+// b.N decides, so BenchmarkGraph states the allocation contract of a
+// batch of adds.
 func BenchmarkGraphParallel(b *testing.B) {
 	b.Run("AddPackage", func(b *testing.B) {
-		b.ReportAllocs()
-
-		// The pool is built before the timer starts and handed out by
-		// index, so every add writes a distinct package.
+		// The pool is built before the measurement starts and handed out
+		// by index, so every add writes a distinct package.
 		pool := make([]*node.Package, b.N)
 		for i := range pool {
 			pool[i] = coretest.Package(coretest.StorePath + "/" + strconv.Itoa(i))
 		}
 		g := store.New()
 		var next atomic.Int64
-		b.ResetTimer()
-		b.RunParallel(func(p *testing.PB) {
-			for p.Next() {
-				if err := g.AddPackage(pool[next.Add(1)-1]); err != nil {
-					b.Errorf("AddPackage: unexpected error: %v", err)
-				}
+		c := bench.Start(b)
+		defer c.End()
+		c.RunParallel(func(pb *bench.PB) {
+			for pb.Next() {
+				expect.NoError(b, g.AddPackage(pool[next.Add(1)-1]), "every parallel add is admitted")
 			}
 		})
 	})
@@ -800,10 +795,18 @@ func addedAll(tb assert.TB, pkgs []*node.Package) *store.Graph {
 	tb.Helper()
 
 	g := store.New()
-	for _, pkg := range pkgs {
-		assert.NoError(tb, g.AddPackage(pkg), "the package is added")
-	}
+	assert.Total(tb, g.AddPackage, pkgs, "the package is added")
 	return g
+}
+
+// emptyPackages returns n packages without files, each under a path of
+// its own.
+func emptyPackages(n int) []*node.Package {
+	out := make([]*node.Package, 0, n)
+	for i := range n {
+		out = append(out, coretest.Package(coretest.StorePath+"/"+strconv.Itoa(i)))
+	}
+	return out
 }
 
 // parallelLoad adds every package from loadFrontends goroutines, the way
@@ -814,11 +817,7 @@ func parallelLoad(tb assert.TB, loaded []*node.Package) *store.Graph {
 	g := store.New()
 	var wg sync.WaitGroup
 	for shard := range slices.Chunk(loaded, (len(loaded)+loadFrontends-1)/loadFrontends) {
-		wg.Go(func() {
-			for _, pkg := range shard {
-				expect.NoError(tb, g.AddPackage(pkg), "every package is added")
-			}
-		})
+		wg.Go(func() { expect.Total(tb, g.AddPackage, shard, "every package is added") })
 	}
 	wg.Wait()
 	g.Freeze()

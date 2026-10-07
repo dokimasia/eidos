@@ -13,11 +13,39 @@ import (
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The declarations and the reference of the scripted tree that the
+// kit's contracts name, spelled as [symbol.Identity] and
+// [position.Pos] render them.
+const (
+	userField = "fake:svc/api.User#f0"
+	boxField  = "fake:svc/api.Box#f0"
+	boxParam  = "fake:svc/api.Box#T"
+	rowUser   = "fake:svc/store.Row#f0"
+	rowInt    = "fake:svc/store.Row#f1"
+	rowString = "fake:svc/store.Row#f2"
+	boxUse    = "T at svc/api/user.zz:4:0"
+)
+
+// The contracts of the kit's per-subject checks, each followed by the
+// subject it names.
+const (
+	distinct   = "the two halves differ, or a check comparing against one passes whenever the subject has it: "
+	sampled    = "a sample without a value names its refusal: "
+	alternated = "an alternate without a value names its refusal: "
+	leaf       = "a named reference folds to a leaf, never to the name itself: "
+	spelled    = "a derived witness has a spelling, or no backend can write the instantiation: "
+	copied     = "Substitute copies what it rewrites and leaves the reference it is handed unchanged: "
+	witnessed  = "a reference to a type parameter becomes the parameter's witness: "
+	recorded   = "a sample of a named type reads the declaration through the view handed to it, " +
+		"or a change there re-runs nothing: "
 )
 
 // The suite is the projections' conformance check, so the scripted
@@ -41,13 +69,14 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a fold whose leaves change between bounds", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a builtin projection that counts its calls", func(tb assert.TB) {
+			records := assert.Rejects(t, "a builtin projection that counts its calls", func(tb assert.TB) {
 				rulestest.AssertDeterministic(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return &restless{SourceRules: rulestest.Scripted()}, f
 				})
 			})
-			assert.Contains(t, msg, "equal values", "the rejection names the property")
+			assert.Equal(t, coretest.Contracts(records), []string{"bounds over one view return equal values"},
+				"the rejection names the property")
 		})
 	})
 
@@ -57,13 +86,15 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a language deriving one value twice", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a pair that cannot tell a subject apart", func(tb assert.TB) {
+			records := assert.Rejects(t, "a pair that cannot tell a subject apart", func(tb assert.TB) {
 				rulestest.AssertDistinctSamples(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return same{rulestest.Scripted()}, f
 				})
 			})
-			assert.Contains(t, msg, "differ", "the rejection names the property")
+			assert.Permutation(t, coretest.Contracts(records), []string{
+				distinct + userField, distinct + rowInt, distinct + rowString,
+			}, "the rejection names each field whose type has a pair")
 		})
 
 		t.Run("accepts a pair differing below its first level", func(t *testing.T) {
@@ -82,13 +113,18 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a refusal without a reason", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a sample that refuses in silence", func(tb assert.TB) {
+			records := assert.Rejects(t, "a sample that refuses in silence", func(tb assert.TB) {
 				rulestest.AssertRefusesWithReason(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return silent{rulestest.Scripted()}, f
 				})
 			})
-			assert.Contains(t, msg, "refusal", "the rejection names what is missing")
+			want := []string{"a spelling the language cannot reason about names its refusal"}
+			for _, field := range []string{userField, boxField, rowUser, rowInt, rowString} {
+				want = append(want, sampled+field, alternated+field)
+			}
+			assert.Permutation(t, coretest.Contracts(records), want,
+				"the rejection names both halves of every field and the unknown spelling")
 		})
 	})
 
@@ -98,13 +134,19 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a fold that returns a name", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a leaf that is not a leaf", func(tb assert.TB) {
+			records := assert.Rejects(t, "a leaf that is not a leaf", func(tb assert.TB) {
 				rulestest.AssertTotal(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return naming{rulestest.Scripted()}, f
 				})
 			})
-			assert.Contains(t, msg, "leaf", "the rejection names the rule")
+			assert.Permutation(t, coretest.Contracts(records), []string{
+				leaf + "string at svc/api/user.zz:2:0",
+				leaf + "int at svc/api/user.zz:3:0",
+				leaf + "int at svc/store/row.zz:3:0",
+				leaf + "string at svc/store/row.zz:3:0",
+				leaf + "int at svc/store/row.zz:4:0",
+			}, "the rejection names every reference that folds through Builtin")
 		})
 	})
 
@@ -114,37 +156,40 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a derived witness without a spelling", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a witness no backend can write", func(tb assert.TB) {
+			records := assert.Rejects(t, "a witness no backend can write", func(tb assert.TB) {
 				rulestest.AssertWitnesses(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return generic(rulestest.Scripted(), unspelled), f
 				})
 			})
-			assert.Contains(t, msg, "spelling", "the rejection names what is missing")
+			assert.Equal(t, coretest.Contracts(records), []string{spelled + boxParam},
+				"the rejection names the parameter whose witness has no spelling")
 		})
 
 		t.Run("rejects a Substitute that rewrites its input", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a substitution in place", func(tb assert.TB) {
+			records := assert.Rejects(t, "a substitution in place", func(tb assert.TB) {
 				rulestest.AssertWitnesses(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return generic(rulestest.Scripted(), inPlace), f
 				})
 			})
-			assert.Contains(t, msg, "unchanged", "the rejection names the copy it owes")
+			assert.Equal(t, coretest.Contracts(records), []string{copied + boxUse},
+				"the rejection names the reference Substitute rewrote")
 		})
 
 		t.Run("rejects a Substitute that leaves a parameter in place", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a substitution that rewrites nothing", func(tb assert.TB) {
+			records := assert.Rejects(t, "a substitution that rewrites nothing", func(tb assert.TB) {
 				rulestest.AssertWitnesses(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return generic(rulestest.Scripted(), inert), f
 				})
 			})
-			assert.Contains(t, msg, "becomes the parameter's witness", "the rejection names the rewrite")
+			assert.Equal(t, coretest.Contracts(records), []string{witnessed + boxUse},
+				"the rejection names the reference that kept its parameter")
 		})
 
 		t.Run("accepts a language without the generics capability", func(t *testing.T) {
@@ -165,12 +210,15 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a fixture whose type parameters no reference names", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a generic type no field uses", func(tb assert.TB) {
+			records := assert.Rejects(t, "a generic type no field uses", func(tb assert.TB) {
 				rulestest.AssertWitnesses(tb, over(fstest.MapFS{
 					apiFile: {Data: []byte("package svc/api\ntype Box int\ntypeparam T\n")},
 				}))
 			})
-			assert.Contains(t, msg, "proves nothing", "the rejection names why the fixture fails")
+			assert.Equal(t, coretest.Contracts(records), []string{
+				"the fixture declares type parameters and references one whose witnesses derive, " +
+					"or the check proves nothing",
+			}, "the rejection names why the fixture fails")
 		})
 	})
 
@@ -180,24 +228,26 @@ func TestSuite(t *testing.T) {
 		t.Run("rejects a fixture with no graph", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "nothing to read", func(tb assert.TB) {
+			records := assert.Rejects(t, "nothing to read", func(tb assert.TB) {
 				rulestest.AssertRecorded(tb, func(assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					return rulestest.Scripted(), &rulestest.Fixture{}
 				})
 			})
-			assert.Contains(t, msg, "no graph", "the rejection names what the setup owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has a graph"},
+				"the rejection names what the setup owes")
 		})
 
 		t.Run("rejects a language reading through a view of its own", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "reads the handed view never records", func(tb assert.TB) {
+			records := assert.Rejects(t, "reads the handed view never records", func(tb assert.TB) {
 				rulestest.AssertRecorded(tb, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 					_, f := setup(tb)
 					return unrecorded{SourceRules: rulestest.Scripted(), graph: f.Graph}, f
 				})
 			})
-			assert.Contains(t, msg, "the view handed to it", "the rejection names the view")
+			assert.Equal(t, coretest.Contracts(records), []string{recorded + rowUser},
+				"the rejection names the field whose declaration the view did not record")
 		})
 	})
 }

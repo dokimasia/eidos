@@ -4,11 +4,9 @@
 package frontend_test
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -73,14 +71,16 @@ func TestStore(t *testing.T) {
 			t.Parallel()
 
 			_, err := frontend.Stores(env(nil))
-			assert.True(t, strings.Contains(err.Error(), envJavaHome), "the variable to set")
+			assert.HasError(t, err, "an unset JAVA_HOME resolves no store")
+			assert.Contains(t, err.Error(), envJavaHome, "the variable to set")
 		})
 
 		t.Run("returns an error naming HOME for an unset HOME", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t)}))
-			assert.True(t, strings.Contains(err.Error(), envHome), "the variable to set")
+			assert.HasError(t, err, "an unset HOME resolves no store")
+			assert.Contains(t, err.Error(), envHome, "the variable to set")
 		})
 
 		t.Run("returns an error for a JDK without ct.sym", func(t *testing.T) {
@@ -183,7 +183,7 @@ func storeCalls(tb testing.TB) []allocCall {
 		stores map[string]fs.FS
 		err    error
 	)
-	check := func(tb assert.TB) {
+	check := func(tb testing.TB) {
 		assert.NoError(tb, err, "Stores resolves every root")
 		assert.Length(tb, stores, 3, "Stores returns ct.sym, the Maven repository and Gradle's cache")
 	}
@@ -207,9 +207,11 @@ func storeCalls(tb testing.TB) []allocCall {
 func machineLang(tb testing.TB) node.Symbols {
 	tb.Helper()
 
-	if os.Getenv(envJavaHome) == "" && toolchain.RequiredInCI() {
-		tb.Fatal("JAVA_HOME names no JDK, which CI requires")
-	}
+	assert.False(
+		tb,
+		os.Getenv(envJavaHome) == "" && toolchain.RequiredInCI(),
+		"JAVA_HOME names a JDK, which CI requires",
+	)
 	if os.Getenv(envJavaHome) == "" {
 		tb.Skip("JAVA_HOME names no JDK, which CI provides")
 	}
@@ -220,7 +222,7 @@ func machineLang(tb testing.TB) node.Symbols {
 	f := frontend.New(nil)
 	u := plugin.NewSourceUnit(units[0], storeTree{fstest.MapFS{}, stores}, plugin.DepthSignatures, f.Syntax(), brand,
 		diag.NewSink(), f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "java/lang parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "java/lang parses")
 	return packageDecls(tb, u.Graph(), langPackage)
 }
 
@@ -240,7 +242,7 @@ func jdkHome(tb testing.TB) string {
 }
 
 // writeFile writes a file under a directory, creating its parents.
-func writeFile(tb assert.TB, dir, rel string, data []byte) {
+func writeFile(tb testing.TB, dir, rel string, data []byte) {
 	tb.Helper()
 
 	p := filepath.Join(dir, filepath.FromSlash(rel))

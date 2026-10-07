@@ -4,13 +4,16 @@
 package coretest_test
 
 import (
+	"math"
 	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -29,12 +32,12 @@ func TestDecls(t *testing.T) {
 		t.Run("declares every matchable kind", func(t *testing.T) {
 			t.Parallel()
 
-			found := map[symbol.Kind]bool{}
+			found := map[symbol.Kind]int{}
 			for decl := range node.All(coretest.EveryKind(coretest.StorePath)) {
-				found[decl.Kind()] = true
+				found[decl.Kind()]++
 			}
 			for _, kind := range coretest.MatchableKinds() {
-				assert.True(t, found[kind],
+				expect.Contains(t, found, kind,
 					"the fixture declares a "+kind.String()+
 						": a kind it omits is a rule that never fires")
 			}
@@ -146,8 +149,8 @@ func TestDecls(t *testing.T) {
 			methods := 0
 			for decl := range g.ByKind(symbol.KindMethod) {
 				got, held := g.Lookup(decl.(node.Declaration).Identity())
-				assert.True(t, held && got == decl,
-					"every method is found under its own identity, not under its namesake's")
+				assert.True(t, held, "every method is found under its own identity")
+				assert.Equal(t, got, decl, "and not under its namesake's", assert.ByIdentity())
 				methods++
 			}
 			assert.Equal(t, methods, coretest.KindCount(symbol.KindMethod, pkg),
@@ -231,7 +234,7 @@ func TestDecls(t *testing.T) {
 			assert.NotNil(t, a.Target, "an alias carries a target reference")
 			assert.Equal(t, a.Target.Spelling, coretest.StructName,
 				"an unlinked reference arrives as spelling")
-			assert.True(t, a.Target.Target.IsZero(),
+			assert.Equal(t, a.Target.Target, symbol.Identity{},
 				"and carries no resolved identity until Link runs")
 		})
 	})
@@ -244,7 +247,7 @@ func TestDecls(t *testing.T) {
 
 			pkg := coretest.EveryKind(coretest.StorePath)
 			for _, kind := range coretest.MatchableKinds() {
-				assert.True(t, coretest.KindCount(kind, pkg) > 0,
+				expect.InRange(t, coretest.KindCount(kind, pkg), 1, math.Inf(1),
 					"the every-kind package holds a "+kind.String())
 			}
 			assert.Equal(t, coretest.KindCount(symbol.KindStruct, pkg, pkg), 2,
@@ -271,7 +274,7 @@ func TestDecls(t *testing.T) {
 			assert.False(t, isStruct,
 				"and it is not the model's type for that kind, "+
 					"which is what a rule's type assertion refuses")
-			assert.True(t, ghost.Position().IsZero(),
+			assert.Equal(t, ghost.Position(), position.Pos{},
 				"it stands for a declaration no source produced, so it has no position")
 			assert.Nil(t, ghost.Docs(), "and no documentation")
 		})
@@ -296,15 +299,8 @@ func TestDecls(t *testing.T) {
 			t.Parallel()
 
 			kinds := coretest.MatchableKinds()
-			seen := map[symbol.Kind]bool{}
-			for _, kind := range kinds {
-				assert.False(t, seen[kind],
-					"no kind is listed twice: "+kind.String())
-				seen[kind] = true
-			}
-			assert.Equal(t, len(kinds), len(seen), "the list is its own set")
-			assert.False(t, slices.Contains(kinds, symbol.KindInvalid),
-				"the invalid kind is not matchable")
+			assert.NoDuplicates(t, func() ([]symbol.Kind, error) { return kinds, nil }, "no kind is listed twice")
+			assert.NotContains(t, kinds, symbol.KindInvalid, "the invalid kind is not matchable")
 		})
 	})
 }

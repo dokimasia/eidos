@@ -208,7 +208,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&{{.Name}}{})
-			assert.Equal(t, held, {{if .OriginStorage}}true{{else}}false{{end}},
+			assert.{{if .OriginStorage}}True{{else}}False{{end}}(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 {{- end}}

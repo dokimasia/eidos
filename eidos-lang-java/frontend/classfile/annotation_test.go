@@ -82,7 +82,7 @@ func TestAnnotation(t *testing.T) {
 
 				elements := spec(t).Elements
 				i := slices.IndexFunc(elements, func(e classfile.Element) bool { return e.Name == tt.give })
-				assert.True(t, i >= 0, "Specced states the element")
+				assert.NotEqual(t, i, -1, "Specced states the element")
 				assert.Equal(t, elements[i].Value, tt.want, "the value as source spells it")
 			})
 		}

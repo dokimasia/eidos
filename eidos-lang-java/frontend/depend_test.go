@@ -403,9 +403,9 @@ func TestDepend(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, err := runRound(tt.opts, tt.stores, 1)
+				_, err := runRound(t, tt.opts, tt.stores, 1)
 				assert.HasError(t, err, "the round fails")
-				assert.True(t, strings.Contains(err.Error(), tt.want), "for its own reason")
+				assert.Contains(t, err.Error(), tt.want, "for its own reason")
 			})
 		}
 
@@ -450,7 +450,7 @@ func TestDepend(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, err := runRound(tt.opts, tt.stores, 1)
+				_, err := runRound(t, tt.opts, tt.stores, 1)
 				assert.ErrorIs(t, err, errBroken, "the store's own failure")
 			})
 		}
@@ -482,12 +482,12 @@ func TestDepend(t *testing.T) {
 		t.Run("returns the context's error for a done context", func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
-			_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{Number: 1},
-				roundReader{storeTree{fstest.MapFS{}, jdkStores()}})
-			assert.ErrorIs(t, err, context.Canceled, "a cancelled round walks nothing")
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{Number: 1},
+					roundReader{storeTree{fstest.MapFS{}, jdkStores()}})
+				return err
+			}, "a cancelled round walks nothing")
 		})
 
 		lateJAR := jarOf(t, multiRelease, map[string][]byte{lateEntry: nil})
@@ -543,7 +543,7 @@ func TestDepend(t *testing.T) {
 
 				round := &plugin.DependencyRound{Number: tt.number, Needs: []plugin.Need{{Path: tt.need}}}
 				dependent, _ := frontend.New(tt.opts).(plugin.Dependent)
-				_, err := dependent.Dependencies(context.Background(), round,
+				_, err := dependent.Dependencies(t.Context(), round,
 					roundReader{storeTree{fstest.MapFS{}, tt.stores}})
 				assert.NoError(t, err, "the round places what it can")
 				assert.Equal(t, round.Unplaced(), tt.want, "the needs the round reports and why")
@@ -554,7 +554,7 @@ func TestDepend(t *testing.T) {
 
 // libStores returns the fake ct.sym beside a Maven store with the
 // library's JAR of some bytes and their SHA-1 record.
-func libStores(tb assert.TB, data []byte) map[string]fs.FS {
+func libStores(tb testing.TB, data []byte) map[string]fs.FS {
 	tb.Helper()
 
 	stores := jdkStores()
@@ -608,33 +608,34 @@ func sha1Hex(data string) string {
 }
 
 // runRound runs a round of a number through a Java frontend of options,
-// over an empty workspace and stores, for the needs given.
+// over an empty workspace and stores, for the needs given, under the
+// test's context.
 func runRound(
-	opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
+	tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
 ) ([][]plugin.SourceRef, error) {
 	round := &plugin.DependencyRound{Number: number}
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})
 	}
 	dependent, _ := frontend.New(opts).(plugin.Dependent)
-	return dependent.Dependencies(context.Background(), round, roundReader{storeTree{fstest.MapFS{}, stores}})
+	return dependent.Dependencies(tb.Context(), round, roundReader{storeTree{fstest.MapFS{}, stores}})
 }
 
 // rounds runs a round that the case states succeeds and returns its
 // units.
 func rounds(
-	tb assert.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
+	tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
 ) [][]plugin.SourceRef {
 	tb.Helper()
 
-	units, err := runRound(opts, stores, number, needs...)
+	units, err := runRound(tb, opts, stores, number, needs...)
 	assert.NoError(tb, err, "the round places its needs")
 	return units
 }
 
 // placed runs a round that the case states succeeds and returns the
 // member paths of each unit.
-func placed(tb assert.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string) [][]string {
+func placed(tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string) [][]string {
 	tb.Helper()
 
 	var out [][]string

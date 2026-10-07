@@ -55,10 +55,9 @@ func TestReadLog(t *testing.T) {
 			t.Parallel()
 
 			reads := everyGrain(t)
-			before := grainsOf(reads)
 			var log store.ReadLog
-			log.Append(reads)
-			assert.Equal(t, grainsOf(reads), before, "the set keeps its edges")
+			assert.Pure(t, func() grains { return grainsOf(reads) }, func() { log.Append(reads) },
+				"the set keeps its edges")
 		})
 
 		t.Run("keeps the edges of a set a log loaded", func(t *testing.T) {
@@ -166,38 +165,30 @@ func TestReadLog(t *testing.T) {
 // Loading an entry into a set that once had as many edges allocates
 // nothing, which is what lets a journal hand each record through one
 // set, and a log reset and filled again allocates nothing within its
-// earlier use. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// earlier use. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestReadLogZeroAlloc(t *testing.T) {
 	reads := everyGrain(t)
 	var log store.ReadLog
 	at := log.Append(reads)
 	loaded := store.NewReadSet()
-	log.Load(at, loaded)
-	assert.MaxAllocs(t, func() {
-		log.Load(at, loaded)
-		if loaded.Len() != reads.Len() {
-			t.Fatal("Load records another number of edges")
-		}
-	}, 0, "Load allocates nothing into a set that held the entry")
+	assert.MaxAllocs(t, func() { log.Load(at, loaded) }, 0, "Load allocates nothing into a set that held the entry")
+	assert.Equal(t, loaded.Len(), reads.Len(), "Load records every edge of the entry")
+	var entry int
 	assert.MaxAllocs(t, func() {
 		log.Reset()
-		if log.Append(reads) != 0 {
-			t.Fatal("Append after Reset returns another index than zero")
-		}
+		entry = log.Append(reads)
 	}, 0, "Reset and Append allocate nothing within the log's earlier use")
+	assert.Equal(t, entry, 0, "Append after Reset returns the first index")
 
 	one := store.NewReadSet()
 	one.RecordFact(coretest.Struct(coretest.StorePath, "Store").ID, logKey)
 	var small store.ReadLog
-	entry := small.Append(one)
+	entry = small.Append(one)
 	fresh := store.NewReadSet()
-	assert.MaxAllocs(t, func() {
-		small.Load(entry, fresh)
-		if fresh.Len() != 1 {
-			t.Fatal("Load records another number of edges")
-		}
-	}, 0, "Load allocates nothing for an entry of at most four edges, which a set keeps in place")
+	assert.MaxAllocs(t, func() { small.Load(entry, fresh) }, 0,
+		"Load allocates nothing for an entry of at most four edges, which a set keeps in place")
+	assert.Equal(t, fresh.Len(), 1, "Load records the entry's one edge")
 }
 
 // BenchmarkReadLog measures a set of five edges, one of each grain,
@@ -218,9 +209,7 @@ func BenchmarkReadLog(b *testing.B) {
 			c.Excluding(reset)
 			got = log.Append(reads)
 		}
-		if got != 0 {
-			b.Fatalf("Append returns entry %d", got)
-		}
+		assert.Equal(b, got, 0, "Append after Reset returns the first index")
 	})
 
 	b.Run("Reset", func(b *testing.B) {
@@ -233,24 +222,19 @@ func BenchmarkReadLog(b *testing.B) {
 			c.Excluding(fill)
 			log.Reset()
 		}
-		if got := log.Append(reads); got != 0 {
-			b.Fatalf("the reset log appends entry %d", got)
-		}
+		assert.Equal(b, log.Append(reads), 0, "the reset log appends at the first index")
 	})
 
 	b.Run("Load", func(b *testing.B) {
 		var log store.ReadLog
 		at := log.Append(reads)
 		loaded := store.NewReadSet()
-		log.Load(at, loaded)
-		c := bench.Start(b).MaxAllocs(0)
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		for c.Loop() {
 			log.Load(at, loaded)
 		}
-		if loaded.Len() != reads.Len() {
-			b.Fatalf("Load records %d edges", loaded.Len())
-		}
+		assert.Equal(b, loaded.Len(), reads.Len(), "Load records every edge of the entry")
 	})
 }
 

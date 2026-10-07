@@ -11,8 +11,11 @@ import (
 	"sync"
 	"testing"
 	"text/template"
+	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/backend"
@@ -151,7 +154,7 @@ func TestWrite(t *testing.T) {
 			run, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, errDiskFull, "the refused commit fails the run")
 			assert.Equal(t, run.Plans[0].Status, workspace.PlanFailed, "the plan fails")
-			assert.Equal(t, len(run.Plans[0].Changes), 1, "the report records the one file written to its destination")
+			assert.Length(t, run.Plans[0].Changes, 1, "the report records the one file written to its destination")
 			assert.Equal(t, run.Plans[0].Changes[0].Path, cacheGen, "the file the commit wrote before the refusal")
 		})
 
@@ -177,19 +180,18 @@ func TestWrite(t *testing.T) {
 
 			var o opener
 			w := writing(t, o.open)
-			errs := make([]error, 4)
-			var wg sync.WaitGroup
-			for i := range errs {
-				g, _ := alpha(t)
-				wg.Go(func() {
-					_, errs[i] = w.Run(t.Context(), workspace.Input{Graph: g})
-				})
+			graphs := make([]*store.Graph, 4)
+			for i := range graphs {
+				graphs[i], _ = alpha(t)
 			}
-			wg.Wait()
-			for _, err := range errs {
-				assert.NoError(t, err, "each run is clean")
+			outcomes := history.Concurrently(len(graphs), time.Minute, func(run int) (any, error) {
+				return w.Run(t.Context(), workspace.Input{Graph: graphs[run]})
+			})
+			for _, out := range outcomes {
+				expect.True(t, out.Finished, "each run finishes")
+				expect.NoError(t, out.Error, "each run is clean")
 			}
-			assert.Length(t, o.opened(), len(errs), "each run opens its own sink")
+			assert.Length(t, o.opened(), len(graphs), "each run opens its own sink")
 		})
 
 		t.Run("opens no sink for a run that reports an Error", func(t *testing.T) {
@@ -270,7 +272,7 @@ func TestWrite(t *testing.T) {
 
 			var o opener
 			g, _ := routedAlpha(t)
-			assert.Equal(t, writtenPaths(t, routing(t, layout.Config{}, o.open), g, &o),
+			assert.Permutation(t, writtenPaths(t, routing(t, layout.Config{}, o.open), g, &o),
 				[]string{coretest.StorePath + "/gen.txt"}, "the package's file is in its directory")
 		})
 
@@ -280,7 +282,7 @@ func TestWrite(t *testing.T) {
 			var o opener
 			g, _ := routedAlpha(t)
 			cfg := layout.Config{Policy: layout.PolicyCentralised, Dir: "out"}
-			assert.Equal(t, writtenPaths(t, routing(t, cfg, o.open), g, &o),
+			assert.Permutation(t, writtenPaths(t, routing(t, cfg, o.open), g, &o),
 				[]string{"out/" + coretest.StorePath + "/gen.txt"}, "the source directory under the output directory")
 		})
 
@@ -472,11 +474,11 @@ func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) 
 }
 
 // writtenPaths runs a composition over g and returns the paths its one
-// sink committed, sorted.
+// sink committed, in the order the sink's map ranges them.
 func writtenPaths(t *testing.T, w *workspace.Workspace, g *store.Graph, o *opener) []string {
 	t.Helper()
 
 	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
 	assert.NoError(t, err, "the run is clean")
-	return slices.Sorted(maps.Keys(o.opened()[0].Files()))
+	return slices.Collect(maps.Keys(o.opened()[0].Files()))
 }

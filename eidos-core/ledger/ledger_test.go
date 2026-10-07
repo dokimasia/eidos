@@ -4,7 +4,6 @@
 package ledger_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -96,13 +95,4 @@ func BenchmarkLedger(b *testing.B) {
 		}
 		assert.Equal(b, got, ".acme/manifest", "the manifest's directory")
 	})
-}
-
-// cancelled returns a context that is already cancelled.
-func cancelled(t *testing.T) context.Context {
-	t.Helper()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	return ctx
 }

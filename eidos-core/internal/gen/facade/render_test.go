@@ -4,11 +4,11 @@
 package facade_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/gen/facade"
@@ -45,38 +45,26 @@ func TestRender(t *testing.T) {
 		set, err := facade.Generate(mini(t))
 		assert.NoError(t, err, "the mini kernel generates")
 
-		root := string(set["eidos-sdk/facade.gen.go"])
-		assert.Contains(t, root, "type Rule = core.Rule",
-			"a type re-exports as an alias")
-		assert.Contains(t, root, "const Weight = core.Weight",
-			"a constant re-declares against the kernel's")
-		assert.Contains(t, root, "var Default = core.Default",
-			"a variable re-declares against the kernel's")
-		assert.Contains(t, root,
-			"func On(k symbol.Kind, hs ...func(r *Rule) error) (Rule, error) {",
-			"a function wraps under its own signature")
-		assert.Contains(t, root, "return core.On(k, hs...)",
-			"forwarding the variadic tail")
-		assert.Contains(t, root, `core "go.dokimi.dev/eidos/core"`,
-			"the kernel counterpart imports under the fixed alias")
-		assert.Contains(t, root, `"go.dokimi.dev/eidos/sdk/symbol"`,
-			"a qualified kernel reference respells to the facade sibling")
-		assert.Contains(t, root, "[go.dokimi.dev/eidos/sdk/symbol.Kind]",
-			"copied documentation respells kernel paths")
+		assert.That(t, string(set["eidos-sdk/facade.gen.go"])).
+			Contains("type Rule = core.Rule", "a type re-exports as an alias").
+			Contains("const Weight = core.Weight", "a constant re-declares against the kernel's").
+			Contains("var Default = core.Default", "a variable re-declares against the kernel's").
+			Contains("func On(k symbol.Kind, hs ...func(r *Rule) error) (Rule, error) {",
+				"a function wraps under its own signature").
+			Contains("return core.On(k, hs...)", "forwarding the variadic tail").
+			Contains(`core "go.dokimi.dev/eidos/core"`, "the kernel counterpart imports under the fixed alias").
+			Contains(`"go.dokimi.dev/eidos/sdk/symbol"`, "a qualified kernel reference respells to the facade sibling").
+			Contains("[go.dokimi.dev/eidos/sdk/symbol.Kind]", "copied documentation respells kernel paths")
 
-		sym := string(set["eidos-sdk/symbol/facade.gen.go"])
-		assert.Contains(t, sym, "KindStruct = core.KindStruct",
-			"an iota block re-declares name by name")
-		assert.Contains(t, sym, "Generic[T any] = core.Generic[T]",
-			"a parameterized type re-exports as a generic alias")
-		assert.Contains(t, sym, "// sdk/symbol imports core/symbol.",
-			"the package documentation states the computed dependency position")
+		assert.That(t, string(set["eidos-sdk/symbol/facade.gen.go"])).
+			Contains("KindStruct = core.KindStruct", "an iota block re-declares name by name").
+			Contains("Generic[T any] = core.Generic[T]", "a parameterized type re-exports as a generic alias").
+			Contains("// sdk/symbol imports core/symbol.",
+				"the package documentation states the computed dependency position")
 
-		kit := string(set["eidos-sdk/plugintest/facade.gen.go"])
-		assert.Contains(t, kit, `"example.test/dep"`,
-			"an external import is copied verbatim")
-		assert.Contains(t, kit, "func Check(d dep.T) {",
-			"and its qualifier is the source's")
+		assert.That(t, string(set["eidos-sdk/plugintest/facade.gen.go"])).
+			Contains(`"example.test/dep"`, "an external import is copied verbatim").
+			Contains("func Check(d dep.T) {", "and its qualifier is the source's")
 	})
 
 	t.Run("prints every type expression form", func(t *testing.T) {
@@ -100,32 +88,22 @@ func TestRender(t *testing.T) {
 			"// Tilde constrains by a union of underlying types.\n"+
 			"func Tilde[T interface{ ~int | ~string }](v T) {}\n")
 
-		assert.Contains(t, emit, "fixed [4]int",
-			"a fixed-length array keeps its length literal")
-		assert.Contains(t, emit, "sl []dep.T",
-			"a slice keeps its element type")
-		assert.Contains(t, emit, "m map[string]dep.T",
-			"a map keeps its key and value types")
-		assert.Contains(t, emit, "send chan<- int",
-			"a send-only channel keeps its direction")
-		assert.Contains(t, emit, "recv <-chan int",
-			"a receive-only channel keeps its direction")
-		assert.Contains(t, emit, "both chan int",
-			"a bidirectional channel prints bare")
-		assert.Contains(t, emit, "paren *int",
-			"a parenthesized type re-exports as the type it wraps")
-		assert.Contains(t, emit, "fn func(a int, b string) (n int, err error)",
-			"a function type keeps its parameter and result names")
-		assert.Contains(t, emit, "empty interface{}",
-			"an interface declaring nothing re-exports as itself")
-		assert.Contains(t, emit, "type Two[A any, B any] = core.Two[A, B]",
-			"a two-parameter generic type re-exports as a generic alias")
-		assert.Contains(t, emit, "func Use(p Two[int, string])",
-			"an instantiation with two type arguments keeps both")
-		assert.Contains(t, emit, "func Tilde[T interface{ ~int | ~string }](v T)",
-			"a constraint interface keeps its union of underlying types")
-		assert.Contains(t, emit, "core.Tilde[T](v)",
-			"and the wrapper instantiates explicitly, so inference decides nothing")
+		assert.That(t, emit).
+			Contains("fixed [4]int", "a fixed-length array keeps its length literal").
+			Contains("sl []dep.T", "a slice keeps its element type").
+			Contains("m map[string]dep.T", "a map keeps its key and value types").
+			Contains("send chan<- int", "a send-only channel keeps its direction").
+			Contains("recv <-chan int", "a receive-only channel keeps its direction").
+			Contains("both chan int", "a bidirectional channel prints bare").
+			Contains("paren *int", "a parenthesized type re-exports as the type it wraps").
+			Contains("fn func(a int, b string) (n int, err error)", "a function type keeps its parameter and result names").
+			Contains("empty interface{}", "an interface declaring nothing re-exports as itself").
+			Contains("type Two[A any, B any] = core.Two[A, B]",
+				"a two-parameter generic type re-exports as a generic alias").
+			Contains("func Use(p Two[int, string])", "an instantiation with two type arguments keeps both").
+			Contains("func Tilde[T interface{ ~int | ~string }](v T)",
+				"a constraint interface keeps its union of underlying types").
+			Contains("core.Tilde[T](v)", "and the wrapper instantiates explicitly, so inference decides nothing")
 	})
 
 	t.Run("names a parameter the kernel left without one", func(t *testing.T) {
@@ -136,16 +114,12 @@ func TestRender(t *testing.T) {
 			"// Blank discards both its parameters.\nfunc Blank(_ int, _ string) {}\n\n"+
 			"// Pair returns two results under one type.\nfunc Pair() (a, b int) { return 0, 0 }\n")
 
-		assert.Contains(t, emit, "func Unnamed(a0 int, a1 string)",
-			"an unnamed parameter gets a fresh name")
-		assert.Contains(t, emit, "core.Unnamed(a0, a1)",
-			"because the wrapper has to forward it")
-		assert.Contains(t, emit, "func Blank(a0 int, a1 string)",
-			"a blank parameter gets a fresh name for the same reason")
-		assert.Contains(t, emit, "core.Blank(a0, a1)",
-			"and forwards under it")
-		assert.Contains(t, emit, "func Pair() (a, b int)",
-			"results grouped under one type keep their names")
+		assert.That(t, emit).
+			Contains("func Unnamed(a0 int, a1 string)", "an unnamed parameter gets a fresh name").
+			Contains("core.Unnamed(a0, a1)", "because the wrapper has to forward it").
+			Contains("func Blank(a0 int, a1 string)", "a blank parameter gets a fresh name for the same reason").
+			Contains("core.Blank(a0, a1)", "and forwards under it").
+			Contains("func Pair() (a, b int)", "results grouped under one type keep their names")
 	})
 
 	t.Run("re-exports a grouped declaration with its trailing comments", func(t *testing.T) {
@@ -159,15 +133,13 @@ func TestRender(t *testing.T) {
 			"\t// Low is the low count.\n\tLow = 1 // trailing the constant\n"+
 			"\tHigh = 2\n)\n")
 
-		assert.Contains(t, emit, "type (", "a grouped type declaration re-exports as a group")
-		assert.Contains(t, emit, "First = core.First // trailing the type",
-			"an alias keeps the type spec's trailing comment")
-		assert.Contains(t, emit, "Second = core.Second",
-			"and the spec beside it re-exports too")
-		assert.Contains(t, emit, "= core.Low // trailing the constant",
-			"a re-declared constant keeps the value spec's trailing comment")
-		assert.Contains(t, emit, "// Low is the low count.",
-			"beside the spec's own documentation")
+		assert.That(t, emit).
+			Contains("type (", "a grouped type declaration re-exports as a group").
+			Contains("First = core.First // trailing the type", "an alias keeps the type spec's trailing comment").
+			Contains("Second = core.Second", "and the spec beside it re-exports too").
+			Contains("= core.Low // trailing the constant",
+				"a re-declared constant keeps the value spec's trailing comment").
+			Contains("// Low is the low count.", "beside the spec's own documentation")
 	})
 
 	t.Run("respells documentation through the curated table", func(t *testing.T) {
@@ -179,24 +151,22 @@ func TestRender(t *testing.T) {
 			"// [go.dokimi.dev/eidos/core].\n"+
 			"type Linked struct{} // see go.dokimi.dev/eidos/core/frontend/frontendtest/\n")
 
-		assert.Contains(t, emit, "[go.dokimi.dev/eidos/sdk/render.Pass]",
-			"a nested curated package respells to its flat facade path")
-		assert.Contains(t, emit, "[go.dokimi.dev/eidos/core/workspace]",
-			"an uncurated package keeps its kernel path, because no facade path exists for it")
-		assert.Contains(t, emit, "[go.dokimi.dev/eidos/sdk].",
-			"the kernel root respells to the facade root")
-		assert.Contains(t, emit, "// see go.dokimi.dev/eidos/sdk/frontendtest/",
-			"a trailing comment respells the same way, its closing slash kept")
+		assert.That(t, emit).
+			Contains("[go.dokimi.dev/eidos/sdk/render.Pass]",
+				"a nested curated package respells to its flat facade path").
+			Contains("[go.dokimi.dev/eidos/core/workspace]",
+				"an uncurated package keeps its kernel path, because no facade path exists for it").
+			Contains("[go.dokimi.dev/eidos/sdk].", "the kernel root respells to the facade root").
+			Contains("// see go.dokimi.dev/eidos/sdk/frontendtest/",
+				"a trailing comment respells the same way, its closing slash kept")
 	})
 
 	t.Run("keeps a renamed import's name", func(t *testing.T) {
 		t.Parallel()
 
-		emit := poisoned(t, renamedImport)
-		assert.Contains(t, emit, "xdep \"example.test/dep\"",
-			"an import the kernel renamed keeps its name in the facade")
-		assert.Contains(t, emit, "func Named(v xdep.T)",
-			"so the qualifier the signature spells still resolves")
+		assert.That(t, poisoned(t, renamedImport)).
+			Contains("xdep \"example.test/dep\"", "an import the kernel renamed keeps its name in the facade").
+			Contains("func Named(v xdep.T)", "so the qualifier the signature spells still resolves")
 	})
 
 	t.Run("drops a blank import", func(t *testing.T) {
@@ -308,14 +278,13 @@ func TestRender(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				err := refused(t, "package emit\n\n"+tt.poison)
+				text := refused(t, "package emit\n\n"+tt.poison).Error()
 				for _, want := range tt.wants {
-					assert.Contains(t, err.Error(), want,
-						"the refusal names what defeated re-export")
+					assert.Contains(t, text, want, "the refusal names what defeated re-export")
 				}
-				assert.Contains(t, err.Error(), "poison.go:",
-					"at the kernel position an author can go and fix")
-				assert.HasPrefix(t, err.Error(), "facade: ", "under the package prefix")
+				assert.That(t, text).
+					Contains("poison.go:", "at the kernel position an author can go and fix").
+					HasPrefix("facade: ", "under the package prefix")
 			})
 		}
 	})
@@ -324,12 +293,13 @@ func TestRender(t *testing.T) {
 		t.Parallel()
 
 		root := mini(t)
-		poison(t, root, "plugin/plugin.go", "package plugin\n\ntype marker struct{}\n")
+		files.Write(t, filepath.Join(root, facade.KernelDir),
+			files.Tree{"plugin/plugin.go": files.Text("package plugin\n\ntype marker struct{}\n")})
 		_, err := facade.Generate(root)
 		assert.HasError(t, err, "an empty facade package proves the list wrong")
-		assert.Contains(t, err.Error(), "re-exports nothing", "the refusal states the reason")
-		assert.Contains(t, err.Error(), "go.dokimi.dev/eidos/core/plugin",
-			"and names the kernel package that re-exported none of itself")
+		assert.That(t, err.Error()).
+			Contains("re-exports nothing", "the refusal states the reason").
+			Contains("go.dokimi.dev/eidos/core/plugin", "and names the kernel package that re-exported none of itself")
 	})
 }
 
@@ -342,21 +312,13 @@ func mini(tb testing.TB) string {
 	return coretest.CopyTree(tb, filepath.Join("testdata", "mini"))
 }
 
-// poison writes one file into a mini kernel copy.
-func poison(t *testing.T, root, rel, content string) {
-	t.Helper()
-
-	target := filepath.Join(root, "eidos-core", filepath.FromSlash(rel))
-	assert.NoError(t, os.WriteFile(target, []byte(content), 0o644), "the poison writes")
-}
-
 // poisoned generates a mini kernel with one injected file and
 // returns the source of the facade file the injection rendered into.
 func poisoned(t *testing.T, content string) string {
 	t.Helper()
 
 	root := mini(t)
-	poison(t, root, poisonRel, content)
+	files.Write(t, filepath.Join(root, facade.KernelDir), files.Tree{poisonRel: files.Text(content)})
 	set, err := facade.Generate(root)
 	assert.NoError(t, err, "the poisoned mini kernel generates")
 	return string(set[emitPath])
@@ -368,7 +330,7 @@ func refused(t *testing.T, content string) error {
 	t.Helper()
 
 	root := mini(t)
-	poison(t, root, poisonRel, content)
+	files.Write(t, filepath.Join(root, facade.KernelDir), files.Tree{poisonRel: files.Text(content)})
 	_, err := facade.Generate(root)
 	assert.HasError(t, err, "the injected surface is refused")
 	return err

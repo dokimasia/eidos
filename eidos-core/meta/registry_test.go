@@ -4,6 +4,7 @@
 package meta_test
 
 import (
+	"cmp"
 	"slices"
 	"testing"
 
@@ -478,85 +479,68 @@ func TestRegistry(t *testing.T) {
 // Building a registry and each registration allocate what the registry
 // keeps, and the lookups a run makes allocate nothing, in the ordinary
 // run, which runs no benchmark. Each counted registration takes a
-// registry of its own, built before the count. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses
-// to run beside parallel tests.
+// registry of its own, built outside the count, and each count keeps
+// the first error of its calls, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestRegistryAllocs(t *testing.T) {
 	var built *meta.Registry
 	assert.MaxAllocs(t, func() { built = meta.NewRegistry() }, newRegistryAllocs,
 		"NewRegistry allocates the handle, the registrations and their maps")
 	assert.MaxAllocs(t, func() { built = built.For(shapePlugin) }, forAllocs, "For allocates the handle")
 
-	at, empty := 0, registries(t, unclaimed)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].ClaimNamespace(shapeNamespace); err != nil {
-			t.Fatalf("ClaimNamespace: unexpected error: %v", err)
-		}
-		at++
+	var err error
+	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return unclaimed(t) }, func(r *meta.Registry) {
+		err = cmp.Or(err, r.ClaimNamespace(shapeNamespace))
 	}, firstNamespaceAllocs, "ClaimNamespace allocates the first entry of the namespace map")
+	assert.NoError(t, err, "every first namespace is claimed")
 
-	at, once := 0, registries(t, claimedGen)
-	assert.MaxAllocs(t, func() {
-		if err := once[at].ClaimNamespace(shapeNamespace); err != nil {
-			t.Fatalf("ClaimNamespace: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return claimedGen(t) }, func(r *meta.Registry) {
+		err = cmp.Or(err, r.ClaimNamespace(shapeNamespace))
 	}, 0, "ClaimNamespace allocates nothing for a second namespace")
+	assert.NoError(t, err, "every second namespace is claimed")
 
-	spec := roleSpec()
-	at, ungrouped := 0, registries(t, claimed)
-	assert.MaxAllocs(t, func() {
-		if _, err := meta.Register[string](ungrouped[at], spec); err != nil {
-			t.Fatalf("Register: unexpected error: %v", err)
+	register := func(spec meta.KeySpec) func(*meta.Registry) {
+		return func(r *meta.Registry) {
+			_, rerr := meta.Register[string](r, spec)
+			err = cmp.Or(err, rerr)
 		}
-		at++
-	}, firstKeyAllocs, "Register allocates the spec list, the type list and the name map's first entry")
-
-	spec = groupedRoleSpec()
-	at, grouping := 0, registries(t, claimed)
-	assert.MaxAllocs(t, func() {
-		if _, err := meta.Register[string](grouping[at], spec); err != nil {
-			t.Fatalf("Register: unexpected error: %v", err)
-		}
-		at++
-	}, firstGroupedKeyAllocs, "Register allocates the group's entry and its member list beside the key's")
+	}
+	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return claimed(t) }, register(roleSpec()),
+		firstKeyAllocs, "Register allocates the spec list, the type list and the name map's first entry")
+	assert.NoError(t, err, "every key registers")
+	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return claimed(t) }, register(groupedRoleSpec()),
+		firstGroupedKeyAllocs, "Register allocates the group's entry and its member list beside the key's")
+	assert.NoError(t, err, "every grouped key registers")
 
 	assert.MaxAllocs(t, func() { built.Seal() }, 0, "Seal allocates nothing")
 
 	r, role := grouped(t)
+	var id meta.KeyID
+	assert.MaxAllocs(t, func() { id, _ = r.Resolve("shape.role") }, 0, "Resolve allocates nothing")
+	assert.Equal(t, id, role.ID(), "Resolve returns the key's id")
+	var handle meta.Key[string]
+	assert.MaxAllocs(t, func() { handle, _ = meta.Lookup[string](r, "shape.role") }, 0, "Lookup allocates nothing")
+	assert.Equal(t, handle.ID(), role.ID(), "Lookup returns the key's handle")
+	var spec meta.KeySpec
+	assert.MaxAllocs(t, func() { spec, _ = r.Spec(role.ID()) }, 0, "Spec allocates nothing")
+	assert.Equal(t, spec.Name, role.Name(), "Spec returns the key's spec")
+	members := 0
 	assert.MaxAllocs(t, func() {
-		if id, _ := r.Resolve("shape.role"); id != role.ID() {
-			t.Fatal("Resolve returned another id")
-		}
-	}, 0, "Resolve allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if got, _ := meta.Lookup[string](r, "shape.role"); got.ID() != role.ID() {
-			t.Fatal("Lookup returned another handle")
-		}
-	}, 0, "Lookup allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if spec, _ := r.Spec(role.ID()); spec.Name != role.Name() {
-			t.Fatal("Spec returned another spec")
-		}
-	}, 0, "Spec allocates nothing")
-	assert.MaxAllocs(t, func() {
-		members := 0
+		members = 0
 		for range r.Group("shape.writer") {
 			members++
 		}
-		if members != 1 {
-			t.Fatal("Group enumerated another number of members")
-		}
 	}, 0, "Group allocates nothing")
+	assert.Equal(t, members, 1, "Group enumerates the group's one member")
+	keys := 0
 	assert.MaxAllocs(t, func() {
-		keys := 0
+		keys = 0
 		for range r.Keys() {
 			keys++
 		}
-		if keys != 1 {
-			t.Fatal("Keys enumerated another number of keys")
-		}
 	}, 0, "Keys allocates nothing")
+	assert.Equal(t, keys, 1, "Keys enumerates the one key")
 }
 
 // BenchmarkRegistry measures the registrations a composition makes once
@@ -757,16 +741,4 @@ func roleSpec() meta.KeySpec {
 // groupedRoleSpec returns the spec of the role key in the writer group.
 func groupedRoleSpec() meta.KeySpec {
 	return meta.KeySpec{Name: "shape.role", Group: "shape.writer", Doc: "the classified role"}
-}
-
-// registries returns allocRuns registries that build returns, one for
-// each call of an allocation check that consumes its registry.
-func registries(t *testing.T, build func(assert.TB) *meta.Registry) []*meta.Registry {
-	t.Helper()
-
-	out := make([]*meta.Registry, allocRuns)
-	for i := range out {
-		out[i] = build(t)
-	}
-	return out
 }

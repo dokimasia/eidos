@@ -4,7 +4,6 @@
 package symbol_test
 
 import (
-	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -23,7 +22,6 @@ func TestFactType(t *testing.T) {
 
 		var got symbol.Fact
 		assert.Equal(t, got, symbol.FactInvalid, "the zero Fact is the invalid one")
-		assert.False(t, slices.Contains(symbol.Facts(), got),
-			"and no declaration states it, so the vocabulary leaves it out")
+		assert.NotContains(t, symbol.Facts(), got, "and no declaration states it, so the vocabulary leaves it out")
 	})
 }

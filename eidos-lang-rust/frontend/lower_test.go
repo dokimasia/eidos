@@ -61,7 +61,7 @@ func TestLower(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "#![cfg(test)]\npub struct A;\n")
-			assert.True(t, stamped(gb, packageIn(t, gb, crateName), string(rust.TestKey)), "the test module")
+			assert.Contains(t, stampKeys(gb, packageIn(t, gb, crateName)), rust.TestKey, "the test module")
 			named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "A")
 		})
 
@@ -177,7 +177,7 @@ func TestLower(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "#[cfg(test)]\nmod tests {}\n")
-			assert.True(t, stamped(gb, packageIn(t, gb, crateName+"/tests"), string(rust.TestKey)), "the test module")
+			assert.Contains(t, stampKeys(gb, packageIn(t, gb, crateName+"/tests")), rust.TestKey, "the test module")
 		})
 
 		t.Run("lowers an inline module into the package below its parent", func(t *testing.T) {
@@ -282,7 +282,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "pub struct A {\n    a: u8\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnparsedFile}, "the missing brace reports")
-			assert.True(t, strings.HasSuffix(found[0].Msg, "is missing here"), "as missing")
+			assert.HasSuffix(t, found[0].Msg, "is missing here", "as missing")
 		})
 
 		t.Run("reports an ERROR node quoting its source", func(t *testing.T) {
@@ -290,7 +290,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "pub struct A;\n%% bad\n")
 			assert.NotEmpty(t, found, "the error reports")
-			assert.True(t, strings.Contains(found[0].Msg, "%%"), "quoting the source")
+			assert.Contains(t, found[0].Msg, "%%", "quoting the source")
 		})
 
 		t.Run("quotes at most the first line of an ERROR node, cut at its cap", func(t *testing.T) {
@@ -298,7 +298,7 @@ func TestLower(t *testing.T) {
 
 			_, found := parsedSource(t, "%% "+strings.Repeat("x", 40)+"\n")
 			assert.NotEmpty(t, found, "the error reports")
-			assert.True(t, strings.Contains(found[0].Msg, cutMark), "the quote is cut")
+			assert.Contains(t, found[0].Msg, cutMark, "the quote is cut")
 		})
 
 		t.Run("caps a file's syntax findings and reports the rest once", func(t *testing.T) {

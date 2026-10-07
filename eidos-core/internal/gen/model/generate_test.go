@@ -4,9 +4,10 @@
 package model_test
 
 import (
-	"io/fs"
+	"cmp"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/gen/model"
 	"go.dokimi.dev/eidos/core/internal/genfile"
@@ -120,22 +122,15 @@ type symbolModule struct {
 func (m symbolModule) write(t *testing.T) string {
 	t.Helper()
 
-	root := t.TempDir()
-	symbols := filepath.Join(root, model.SymbolPackage)
-	schema := filepath.Join(root, filepath.FromSlash(model.SchemaDir))
-	assert.NoError(t, os.MkdirAll(schema, 0o750), "the schema directory is created")
-	files := map[string]string{
-		filepath.Join(root, "go.mod"):      schemaGoMod,
-		filepath.Join(symbols, symbolFile): m.symbol,
-		filepath.Join(schema, "schema.go"): m.schema,
+	tree := files.Tree{
+		"go.mod": files.Text(schemaGoMod),
+		path.Join(model.SymbolPackage, symbolFile): files.Text(m.symbol),
+		path.Join(model.SchemaDir, "schema.go"):    files.Text(m.schema),
 	}
 	if m.generated != "" {
-		files[filepath.Join(symbols, generatedSymbolFile)] = m.generated
+		tree[path.Join(model.SymbolPackage, generatedSymbolFile)] = files.Text(m.generated)
 	}
-	for path, content := range files {
-		assert.NoError(t, os.WriteFile(path, []byte(content), 0o600), "the module file writes: "+path)
-	}
-	return root
+	return files.Workspace(t, tree)
 }
 
 // The generator's output set, its bytes across runs, its fingerprint
@@ -182,22 +177,19 @@ func TestGenerate(t *testing.T) {
 				"symbol/kind.gen.go",
 				"symbol/kind.gen_test.go",
 			}
-			assert.Equal(t, slices.Sorted(maps.Keys(set)), want,
+			assert.Permutation(t, slices.Collect(maps.Keys(set)), want,
 				"every output renders, and nothing else")
 		})
 
-		t.Run("produces the same bytes twice", func(t *testing.T) {
+		t.Run("produces the same bytes on every run", func(t *testing.T) {
 			t.Parallel()
 
-			root := moduleRoot(t)
-			first, err := model.Generate(root)
-			assert.NoError(t, err, "the first run generates")
-			second, err := model.Generate(root)
-			assert.NoError(t, err, "and the second")
-			for path, want := range first {
-				assert.Equal(t, string(second[path]), string(want),
-					"two runs produce the same bytes")
-			}
+			assert.Deterministic(
+				t,
+				model.Generate,
+				moduleRoot(t),
+				"every run produces the same files with the same bytes",
+			)
 		})
 
 		t.Run("matches the committed tree", func(t *testing.T) {
@@ -264,8 +256,11 @@ func TestGenerate(t *testing.T) {
 				t.Parallel()
 
 				before, after := fingerprintFor(t, tt.before), fingerprintFor(t, tt.after)
-				assert.Equal(t, before != after, tt.changed,
-					"a recorded graph is served exactly while its encoding keeps its meaning")
+				if tt.changed {
+					assert.NotEqual(t, after, before, "an encoding whose meaning changed gets a new fingerprint")
+					return
+				}
+				assert.Equal(t, after, before, "an encoding that keeps its meaning keeps its fingerprint")
 			})
 		}
 
@@ -281,9 +276,9 @@ func TestGenerate(t *testing.T) {
 
 			_, err := model.Generate(schemaModule(t, ""))
 			assert.HasError(t, err, "a schema declaring nothing but the marker generates nothing")
-			assert.Contains(t, err.Error(), "symbols.gen_test.go",
-				"naming the file that could not render against it")
-			assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
+			assert.That(t, err.Error()).
+				Contains("symbols.gen_test.go", "naming the file that could not render against it").
+				HasPrefix("model: ", "under the package prefix")
 		})
 
 		t.Run("returns an error for a fact stated on a shape the rendering does not model", func(t *testing.T) {
@@ -294,10 +289,9 @@ func TestGenerate(t *testing.T) {
 			_, err := model.Generate(root)
 			assert.HasError(t, err,
 				"a fact whose statedness has no expression fails the generation")
-			assert.Contains(t, err.Error(), "facts.gen.go",
-				"naming the file whose traversal would otherwise have walked wrong")
-			assert.HasPrefix(t, err.Error(), "genfile: ",
-				"under the prefix of the step that refused it")
+			assert.That(t, err.Error()).
+				Contains("facts.gen.go", "naming the file whose traversal would otherwise have walked wrong").
+				HasPrefix("genfile: ", "under the prefix of the step that refused it")
 		})
 	})
 
@@ -333,10 +327,10 @@ func TestGenerate(t *testing.T) {
 
 			root := schemaModule(t, "// Thing counts.\ntype Thing struct {\n"+
 				"\tCount int `eidos:\"emit,fact=Counted\"`\n}\n")
-			assert.HasError(t, model.Regenerate(root),
-				"a file that cannot render refuses the run")
-			assert.Empty(t, generatedFiles(t, root),
-				"and no file was written: a refused render leaves no half-generated tree")
+			var err error
+			files.Unchanged(t, os.DirFS(root), func() { err = model.Regenerate(root) },
+				"no file is written: a refused render leaves no half-generated tree")
+			assert.HasError(t, err, "a file that cannot render refuses the run")
 		})
 	})
 }
@@ -344,29 +338,34 @@ func TestGenerate(t *testing.T) {
 // A generation and a regeneration of a schema of one kind allocate
 // within their ceilings in the ordinary run, which runs no benchmark.
 // The kernel's own generation takes too long to repeat 101 times, so
-// only [BenchmarkGenerate] checks its ceiling. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses
-// to run beside parallel tests.
+// only [BenchmarkGenerate] checks its ceiling. Each count keeps the
+// first error of its calls, which cmp.Or returns without allocating. The
+// check runs alone, because the count includes every goroutine's
+// allocations.
 func TestGenerateAllocs(t *testing.T) {
 	root := schemaModule(t, reachSchema)
+	var (
+		set genfile.Set
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := model.Generate(root); err != nil {
-			t.Fatalf("Generate: unexpected error: %v", err)
-		}
+		var gerr error
+		set, gerr = model.Generate(root)
+		err = cmp.Or(err, gerr)
 	}, generateOneKindAllocs, "Generate allocates the lowering, the rendering and the formatting")
+	assert.NoError(t, err, "the schema generates")
+	assert.NotEmpty(t, set, "every output")
 	dir := filepath.Join(root, model.SchemaDir)
-	assert.MaxAllocs(t, func() {
-		if err := model.Regenerate(dir); err != nil {
-			t.Fatalf("Regenerate: unexpected error: %v", err)
-		}
-	}, regenerateOneKindAllocs, "Regenerate allocates the generation and the writes")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, model.Regenerate(dir)) }, regenerateOneKindAllocs,
+		"Regenerate allocates the generation and the writes")
+	assert.NoError(t, err, "the schema regenerates")
 }
 
 // BenchmarkGenerate measures one whole generation over the kernel's
 // own schema and over a schema of one kind, and a regeneration of the
 // one kind: the lowering, every template's execution and every file's
 // formatting, which the go:generate wrapper and each mirror guard run.
-// Each case runs once before the measurement.
+// Each case runs one iteration before the measurement.
 func BenchmarkGenerate(b *testing.B) {
 	generations := []struct {
 		name   string
@@ -379,11 +378,12 @@ func BenchmarkGenerate(b *testing.B) {
 	b.Run("Generate", func(b *testing.B) {
 		for _, tt := range generations {
 			b.Run(tt.name, func(b *testing.B) {
-				_, err := model.Generate(tt.root)
-				assert.NoError(b, err, "the schema generates before the measurement")
-				c := bench.Start(b).MaxAllocs(tt.allocs)
+				c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 				defer c.End()
-				var set genfile.Set
+				var (
+					set genfile.Set
+					err error
+				)
 				for c.Loop() {
 					set, err = model.Generate(tt.root)
 				}
@@ -396,10 +396,9 @@ func BenchmarkGenerate(b *testing.B) {
 	b.Run("Regenerate", func(b *testing.B) {
 		b.Run("a schema of one kind", func(b *testing.B) {
 			dir := filepath.Join(schemaModule(b, reachSchema), model.SchemaDir)
-			err := model.Regenerate(dir)
-			assert.NoError(b, err, "the schema regenerates before the measurement")
-			c := bench.Start(b).MaxAllocs(regenerateOneKindAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(regenerateOneKindAllocs)
 			defer c.End()
+			var err error
 			for c.Loop() {
 				err = model.Regenerate(dir)
 			}
@@ -424,16 +423,10 @@ func moduleRoot(tb assert.TB) string {
 func schemaModule(tb testing.TB, schema string) string {
 	tb.Helper()
 
-	root := tb.TempDir()
-	dir := filepath.Join(root, filepath.FromSlash(model.SchemaDir))
-	assert.NoError(tb, os.MkdirAll(dir, 0o750), "the schema directory is created")
-	assert.NoError(tb,
-		os.WriteFile(filepath.Join(root, "go.mod"), []byte(schemaGoMod), 0o600),
-		"the module's go.mod writes")
-	assert.NoError(tb,
-		os.WriteFile(filepath.Join(dir, "schema.go"), []byte(schemaMarker+schema), 0o600),
-		"the schema writes")
-	return root
+	return files.Workspace(tb, files.Tree{
+		"go.mod":                                files.Text(schemaGoMod),
+		path.Join(model.SchemaDir, "schema.go"): files.Text(schemaMarker + schema),
+	})
 }
 
 // fingerprintIn returns the value of the fingerprint a generated set
@@ -454,26 +447,4 @@ func fingerprintFor(t *testing.T, m symbolModule) string {
 	set, err := model.Generate(m.write(t))
 	assert.NoError(t, err, "the module generates")
 	return fingerprintIn(t, set)
-}
-
-// generatedFiles lists every generated file under root, which is
-// what a refused run has to leave empty.
-func generatedFiles(t *testing.T, root string) []string {
-	t.Helper()
-
-	var found []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case d.IsDir():
-			return nil
-		case strings.HasSuffix(d.Name(), genfile.GeneratedSuffix),
-			strings.HasSuffix(d.Name(), genfile.GeneratedTestSuffix):
-			found = append(found, path)
-		}
-		return nil
-	})
-	assert.NoError(t, err, "the module tree walks")
-	return found
 }

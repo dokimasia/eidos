@@ -402,7 +402,7 @@ func fieldSignature(tb assert.TB, name string) classfile.Type {
 	tb.Helper()
 
 	f := fieldNamed(tb, fixture(tb, boxFile), name)
-	assert.True(tb, f.Signature != nil, "the field has a signature")
+	assert.NotNil(tb, f.Signature, "the field has a signature")
 	return *f.Signature
 }
 

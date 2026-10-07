@@ -131,21 +131,21 @@ func TestReceiver(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.True(t, golang.PointerReceiver(tt.give).Receiver == nil, "no host, no receiver")
+				assert.Nil(t, golang.PointerReceiver(tt.give).Receiver, "no host, no receiver")
 			})
 		}
 
 		t.Run("returns nil for a nil method", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, golang.PointerReceiver(nil) == nil, "nothing to state a receiver on")
+			assert.Nil(t, golang.PointerReceiver(nil), "nothing to state a receiver on")
 		})
 
 		t.Run("returns the method it is given", func(t *testing.T) {
 			t.Parallel()
 
 			m := receiving(storeHost)
-			assert.True(t, golang.PointerReceiver(m) == m, "the call chains after Mirror")
+			assert.Equal(t, golang.PointerReceiver(m), m, "the call chains after Mirror", assert.ByIdentity())
 		})
 	})
 }

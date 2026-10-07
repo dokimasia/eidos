@@ -95,7 +95,7 @@ func importPaths(file *node.File) []string {
 }
 
 // importsAt parses one file at a depth and returns its import paths.
-func importsAt(tb assert.TB, depth plugin.Depth, src string) []string {
+func importsAt(tb testing.TB, depth plugin.Depth, src string) []string {
 	tb.Helper()
 
 	gb, _ := parsedFindings(tb, nil, depth, src)

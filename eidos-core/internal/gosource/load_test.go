@@ -4,15 +4,16 @@
 package gosource_test
 
 import (
+	"cmp"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
@@ -89,10 +90,7 @@ func TestLoad(t *testing.T) {
 		t.Run("returns an error for a file it cannot parse", func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			assert.NoError(t,
-				os.WriteFile(filepath.Join(dir, brokenName), []byte(brokenSource), 0o600),
-				"the unparseable file writes")
+			dir := files.Workspace(t, files.Tree{brokenName: files.Text(brokenSource)})
 			_, err := gosource.ParseDir(token.NewFileSet(), dir, gosource.HandWritten)
 			assert.HasError(t, err, "a file that does not parse is reported")
 			assert.Contains(t, err.Error(), brokenName, "naming the file it could not read")
@@ -201,21 +199,31 @@ func TestLoad(t *testing.T) {
 }
 
 // A parse and a load of the fixture's lib package allocate within their
-// ceilings in the ordinary run, which runs no benchmark. The check runs
-// alone, because AllocsPerRun counts every goroutine's allocations and
-// refuses to run beside parallel tests.
+// ceilings in the ordinary run, which runs no benchmark. Each count
+// keeps the first error of its calls, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestLoadAllocs(t *testing.T) {
 	modRoot := fixtureRoot(t)
+	var (
+		parsed []*ast.File
+		err    error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := gosource.ParseDir(token.NewFileSet(), libDir, gosource.HandWritten); err != nil {
-			t.Fatalf("ParseDir: unexpected error: %v", err)
-		}
+		var perr error
+		parsed, perr = gosource.ParseDir(token.NewFileSet(), libDir, gosource.HandWritten)
+		err = cmp.Or(err, perr)
 	}, parseDirAllocs, "ParseDir allocates the entries and the syntax tree")
+	assert.NoError(t, err, "the directory parses")
+	assert.Length(t, parsed, 1, "into its one hand-written file")
+	var pkg *types.Package
 	assert.MaxAllocs(t, func() {
-		if _, _, err := gosource.Load(token.NewFileSet(), libDir, libPath, modRoot, gosource.HandWritten); err != nil {
-			t.Fatalf("Load: unexpected error: %v", err)
-		}
+		var lerr error
+		pkg, _, lerr = gosource.Load(token.NewFileSet(), libDir, libPath, modRoot, gosource.HandWritten)
+		err = cmp.Or(err, lerr)
 	}, loadAllocs, "Load allocates the importer, the parse and the type-check")
+	assert.NoError(t, err, "the package loads")
+	assert.NotNil(t, pkg.Scope().Lookup("Value"), "with its declarations type-checked")
 }
 
 // BenchmarkLoad measures a parse and a load of the fixture's package

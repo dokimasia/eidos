@@ -4,6 +4,7 @@
 package frontend_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -247,7 +248,7 @@ func TestParse(t *testing.T) {
 
 			gb, _ := parsedTree(t, crateTree(map[string]string{"tests/it.rs": publicStruct}),
 				"tests/it.rs", plugin.DepthFull, nil)
-			assert.True(t, stamped(gb, fileIn(t, gb, "it"), string(rust.TestKey)), "the test target's file")
+			assert.Contains(t, stampKeys(gb, fileIn(t, gb, "it")), rust.TestKey, "the test target's file")
 		})
 
 		t.Run("stamps every file of a shared module under the tests directory rust.test", func(t *testing.T) {
@@ -256,7 +257,7 @@ func TestParse(t *testing.T) {
 			gb, _ := parsedTree(t, crateTree(map[string]string{"tests/common/mod.rs": publicStruct}),
 				"tests/common/mod.rs", plugin.DepthFull, nil)
 			file := fileIn(t, gb, crateName+"/tests/common")
-			assert.True(t, stamped(gb, file, string(rust.TestKey)), "the shared module's file")
+			assert.Contains(t, stampKeys(gb, file), rust.TestKey, "the shared module's file")
 		})
 
 		t.Run("stamps no file of the library rust.test", func(t *testing.T) {
@@ -376,7 +377,7 @@ func TestParse(t *testing.T) {
 			sink := diag.NewSink()
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: libRoot, Shared: []string{manifestPath}}}, tree,
 				plugin.DepthFull, f.Syntax(), brand, sink, f.Name())
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			assert.Equal(t, codesOf(slices.Collect(sink.All())), []diag.Code{frontend.BadManifest},
 				"the manifest it declares does not read")
 		})
@@ -388,9 +389,8 @@ func TestParse(t *testing.T) {
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: libRoot}}, crateTree(map[string]string{
 				libRoot: publicStruct,
 			}), plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			assert.ErrorIs(t, f.Parse(ctx, u), context.Canceled, "a cancelled load parses nothing")
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return f.Parse(ctx, u) },
+				"a cancelled load parses nothing")
 		})
 
 		t.Run("returns the read's error for a crate root outside the tree", func(t *testing.T) {
@@ -399,7 +399,7 @@ func TestParse(t *testing.T) {
 			f := frontend.New(nil)
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: libRoot}}, fstest.MapFS{}, plugin.DepthFull,
 				f.Syntax(), brand, diag.NewSink(), f.Name())
-			assert.HasError(t, f.Parse(context.Background(), u), "a member that does not read fails the unit")
+			assert.HasError(t, f.Parse(t.Context(), u), "a member that does not read fails the unit")
 		})
 
 		t.Run("returns the read's error for a module file outside the tree", func(t *testing.T) {
@@ -409,7 +409,7 @@ func TestParse(t *testing.T) {
 			tree := fstest.MapFS{libRoot: {Data: []byte("mod a;\nmod b;\n")}}
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: libRoot}, {Path: "src/a.rs"}, {Path: "src/b.rs"}},
 				tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-			assert.HasError(t, f.Parse(context.Background(), u), "a module that does not read fails the unit")
+			assert.HasError(t, f.Parse(t.Context(), u), "a module that does not read fails the unit")
 		})
 	})
 }
@@ -424,20 +424,17 @@ func TestParse(t *testing.T) {
 func BenchmarkParse(b *testing.B) {
 	tree := scaledRust()
 	f := frontend.New(nil)
-	units, err := f.Partition(context.Background(), claimedIn(tree), treeReader{tree})
-	if err != nil {
-		b.Fatalf("the corpus partitions: %v", err)
-	}
+	units, err := f.Partition(b.Context(), claimedIn(tree), treeReader{tree})
+	assert.NoError(b, err, "the corpus partitions")
 	c := bench.Start(b).MaxAllocs(parseAllocs)
 	defer c.End()
 	for c.Loop() {
 		for _, unit := range units {
 			u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-			if err := f.Parse(context.Background(), u); err != nil {
-				b.Fatalf("the corpus parses: %v", err)
-			}
+			err = cmp.Or(err, f.Parse(b.Context(), u))
 		}
 	}
+	assert.NoError(b, err, "the corpus parses")
 }
 
 // scaledRust returns the canonical corpus as Rust crates: a crate per
@@ -497,29 +494,24 @@ func claimedIn(tree fstest.MapFS) []plugin.SourceRef {
 // options and parses the unit whose first member is root, at a depth. It
 // returns the unit's builder and the findings the parse reported.
 func parsedTree(
-	tb assert.TB, tree fstest.MapFS, root string, depth plugin.Depth, opts *frontend.Options,
+	tb testing.TB, tree fstest.MapFS, root string, depth plugin.Depth, opts *frontend.Options,
 ) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	f := frontend.New(opts)
-	units, err := f.Partition(context.Background(), claimedIn(tree), treeReader{tree})
+	units, err := f.Partition(tb.Context(), claimedIn(tree), treeReader{tree})
 	assert.NoError(tb, err, "the fixture partitions")
-	for _, unit := range units {
-		if unit[0].Path != root {
-			continue
-		}
-		sink := diag.NewSink()
-		u := plugin.NewSourceUnit(unit, tree, depth, f.Syntax(), brand, sink, f.Name())
-		assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
-		return u.Graph(), slices.Collect(sink.All())
-	}
-	tb.Fatalf("no unit has the root %s", root)
-	return nil, nil
+	at := slices.IndexFunc(units, func(unit []plugin.SourceRef) bool { return unit[0].Path == root })
+	assert.NotEqual(tb, at, -1, "a unit has the root "+root)
+	sink := diag.NewSink()
+	u := plugin.NewSourceUnit(units[at], tree, depth, f.Syntax(), brand, sink, f.Name())
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the unit parses")
+	return u.Graph(), slices.Collect(sink.All())
 }
 
 // parsedSource parses the fixture crate whose library root is src, at
 // full depth.
-func parsedSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
+func parsedSource(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
 
 	return parsedTree(tb, crateTree(map[string]string{libRoot: src}), libRoot, plugin.DepthFull, nil)
@@ -527,7 +519,7 @@ func parsedSource(tb assert.TB, src string) (*plugin.GraphBuilder, []diag.Diag) 
 
 // declsOf parses the fixture crate whose library root is src and
 // returns the declarations of the crate root's package.
-func declsOf(tb assert.TB, src string) node.Symbols {
+func declsOf(tb testing.TB, src string) node.Symbols {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, src)
@@ -535,20 +527,17 @@ func declsOf(tb assert.TB, src string) node.Symbols {
 }
 
 // packageIn returns a builder's package of a path.
-func packageIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.Package {
+func packageIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.Package {
 	tb.Helper()
 
-	for _, p := range gb.Packages() {
-		if p.ID.Package == pkg {
-			return p
-		}
-	}
-	tb.Fatalf("the unit declares no package %q", pkg)
-	return nil
+	pkgs := gb.Packages()
+	at := slices.IndexFunc(pkgs, func(p *node.Package) bool { return p.ID.Package == pkg })
+	assert.NotEqual(tb, at, -1, "the unit declares the package "+pkg)
+	return pkgs[at]
 }
 
 // fileIn returns the one File node a builder's package of a path has.
-func fileIn(tb assert.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
+func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 	tb.Helper()
 
 	p := packageIn(tb, gb, pkg)
@@ -568,17 +557,16 @@ func packagesOf(gb *plugin.GraphBuilder) []string {
 
 // named returns the declaration of a name among declarations, of the
 // type the case expects.
-func named[T symbol.Symbol](tb assert.TB, decls node.Symbols, name string) T {
+func named[T symbol.Symbol](tb testing.TB, decls node.Symbols, name string) T {
 	tb.Helper()
 
-	for _, d := range decls {
-		if decl, is := d.(T); is && nameOf(d) == name {
-			return decl
-		}
-	}
+	at := slices.IndexFunc(decls, func(d symbol.Symbol) bool {
+		_, is := d.(T)
+		return is && nameOf(d) == name
+	})
 	var zero T
-	tb.Fatalf("no %T is named %s", zero, name)
-	return zero
+	assert.NotEqual(tb, at, -1, fmt.Sprintf("a %T is named %s", zero, name))
+	return decls[at].(T)
 }
 
 // nameOf returns a declaration's written name.
@@ -628,12 +616,14 @@ func stampsOf(gb *plugin.GraphBuilder, key string) []any {
 	return out
 }
 
-// stamped reports whether a builder stamped a subject under a key.
-func stamped(gb *plugin.GraphBuilder, subject symbol.Symbol, key string) bool {
+// stampKeys returns the keys a builder stamped on a subject, in record
+// order.
+func stampKeys(gb *plugin.GraphBuilder, subject symbol.Symbol) []meta.KeyName {
+	var out []meta.KeyName
 	for _, rec := range gb.StampRecords() {
-		if rec.Subject == subject && string(rec.Stamp.Key) == key {
-			return true
+		if rec.Subject == subject {
+			out = append(out, rec.Stamp.Key)
 		}
 	}
-	return false
+	return out
 }

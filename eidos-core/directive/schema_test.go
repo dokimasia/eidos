@@ -53,14 +53,12 @@ func TestSchema(t *testing.T) {
 		t.Run("declares five distinct values", func(t *testing.T) {
 			t.Parallel()
 
-			seen := map[directive.ParamType]struct{}{}
-			for _, pt := range []directive.ParamType{
+			types := []directive.ParamType{
 				directive.TypeString, directive.TypeInt, directive.TypeBool,
 				directive.TypeList, directive.TypeReference,
-			} {
-				seen[pt] = struct{}{}
 			}
-			assert.Length(t, seen, 5, "each type has its own value")
+			assert.NoDuplicates(t, func() ([]directive.ParamType, error) { return types, nil },
+				"each type has its own value")
 		})
 	})
 
@@ -77,16 +75,14 @@ func TestSchema(t *testing.T) {
 		t.Run("declares eight distinct values", func(t *testing.T) {
 			t.Parallel()
 
-			seen := map[directive.ResolutionKind]struct{}{}
-			for _, rk := range []directive.ResolutionKind{
+			kinds := []directive.ResolutionKind{
 				directive.ResolveNone, directive.ResolveCallableInScope,
 				directive.ResolvePackageVar, directive.ResolveValueField,
 				directive.ResolveHostParam, directive.ResolveMemberOnHandle,
 				directive.ResolveMetadataKey, directive.ResolveTypeInScope,
-			} {
-				seen[rk] = struct{}{}
 			}
-			assert.Length(t, seen, 8, "each kind has its own value")
+			assert.NoDuplicates(t, func() ([]directive.ResolutionKind, error) { return kinds, nil },
+				"each kind has its own value")
 		})
 	})
 

@@ -4,6 +4,7 @@
 package golang_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -19,10 +20,6 @@ const (
 	rivalPlugin              = "rival"
 	rivalKey    meta.KeyName = "golang.rival"
 )
-
-// allocRuns is how many calls an allocation check makes: one to warm
-// up and the hundred it counts.
-const allocRuns = 101
 
 // registerAllocs is a registration into a fresh registry: the eleven
 // kind lists of the keys, and seventeen allocations of the registry,
@@ -113,25 +110,22 @@ func TestKeys(t *testing.T) {
 
 // A registration allocates its kind lists and the registry's growth.
 // The ordinary run, which runs no benchmark, checks that ceiling here,
-// each call into a registry of its own.
+// each call into a registry of its own, built outside the count. Each
+// count keeps the first error of its calls, which cmp.Or returns without
+// allocating.
 func TestKeysAllocs(t *testing.T) {
-	registries := freshRegistries(2 * allocRuns)
-	next := 0
 	var (
 		handles golang.Handles
 		err     error
 	)
-	keys := func() {
-		err = golang.Keys(registries[next])
-		next++
-	}
-	register := func() {
-		handles, err = golang.Register(registries[next])
-		next++
-	}
-	assert.MaxAllocs(t, keys, registerAllocs, "Keys allocates the kind lists and the registry's growth")
+	assert.MaxAllocsWithSetup(t, meta.NewRegistry, func(r *meta.Registry) { err = cmp.Or(err, golang.Keys(r)) },
+		registerAllocs, "Keys allocates the kind lists and the registry's growth")
 	assert.NoError(t, err, "Keys registers the vocabulary")
-	assert.MaxAllocs(t, register, registerAllocs, "Register allocates the kind lists and the registry's growth")
+	assert.MaxAllocsWithSetup(t, meta.NewRegistry, func(r *meta.Registry) {
+		var rerr error
+		handles, rerr = golang.Register(r)
+		err = cmp.Or(err, rerr)
+	}, registerAllocs, "Register allocates the kind lists and the registry's growth")
 	assert.NoError(t, err, "Register registers the vocabulary")
 	assert.False(t, handles.Comparable.IsZero(), "Register returns the handles")
 }
@@ -166,14 +160,4 @@ func BenchmarkKeys(b *testing.B) {
 		assert.NoError(b, err, "Register registers the vocabulary")
 		assert.False(b, handles.Comparable.IsZero(), "Register returns the handles")
 	})
-}
-
-// freshRegistries returns n empty registries, one for each counted
-// registration.
-func freshRegistries(n int) []*meta.Registry {
-	out := make([]*meta.Registry, 0, n)
-	for range n {
-		out = append(out, meta.NewRegistry())
-	}
-	return out
 }

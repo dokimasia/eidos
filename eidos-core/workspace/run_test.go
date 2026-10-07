@@ -5,6 +5,7 @@ package workspace_test
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,17 +13,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"text/template"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
+	"go.dokimi.dev/assert/history"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/backend"
@@ -75,10 +77,6 @@ const (
 	fourWorkers  = 4
 	eightWorkers = 8
 )
-
-// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
-// warm the function, and the 100 it counts.
-const allocRuns = 101
 
 // mirroredCapability is what the providing mirror declares and the
 // weaver requires, which puts the weaver in the later bucket.
@@ -375,20 +373,23 @@ func TestRun(t *testing.T) {
 
 			w, err := valid().Build()
 			assert.NoError(t, err, "the fixture composition is valid")
-			reports := make([]*workspace.Report, 2)
-			errs := make([]error, 2)
-			var wg sync.WaitGroup
-			for i := range reports {
-				g, _ := alpha(t)
-				wg.Go(func() {
-					reports[i], errs[i] = w.Run(t.Context(), workspace.Input{Graph: g})
-				})
+			graphs := make([]*store.Graph, 2)
+			for i := range graphs {
+				graphs[i], _ = alpha(t)
 			}
-			wg.Wait()
-			for i := range reports {
-				assert.NoError(t, errs[i], "each run is clean")
-				assert.Length(t, units(reports[i].Emits["plan"]), 1, "each run has its own unit")
+			outcomes := history.Concurrently(len(graphs), time.Minute, func(run int) (any, error) {
+				return w.Run(t.Context(), workspace.Input{Graph: graphs[run]})
+			})
+			stores := make([]*plugin.Emit, len(outcomes))
+			for i, o := range outcomes {
+				assert.True(t, o.Finished, "each run finishes")
+				assert.NoError(t, o.Error, "each run is clean")
+				report, _ := o.Output.(*workspace.Report)
+				assert.NotNil(t, report, "each run returns its report")
+				stores[i] = report.Emits["plan"]
+				assert.Length(t, units(stores[i]), 1, "each run has its own unit")
 			}
+			assert.NotEqual(t, stores[1], stores[0], "the runs share no store", assert.ByIdentity())
 		})
 
 		t.Run("runs a graph the load already sealed", func(t *testing.T) {
@@ -466,7 +467,8 @@ func TestRun(t *testing.T) {
 			assert.NoError(t, err, "the run is clean")
 			assert.False(t, report.Sink.Failed(), "nothing is reported")
 			v, held := meta.Get(report.Facts, s, flag)
-			assert.True(t, held && v, "the plugin's key is stamped")
+			assert.True(t, held, "the plugin's key is stamped")
+			assert.True(t, v, "the stamp is the plugin's value")
 		})
 
 		t.Run("mirrors the stamped subject in the plan", func(t *testing.T) {
@@ -528,7 +530,8 @@ func TestRun(t *testing.T) {
 			assert.NoError(t, err, "neither instance is a fault")
 			coretest.AssertCodes(t, report.Sink)
 			v, held := meta.Get(report.Facts, s, flag)
-			assert.True(t, held && v, "the diag instance and the bare meta instance remove nothing")
+			assert.True(t, held, "the diag instance and the bare meta instance remove nothing")
+			assert.True(t, v, "the fact keeps the plugin's value")
 			assert.Length(t, units(report.Emits["plan"]), 1, "the flag still gates")
 		})
 
@@ -546,7 +549,8 @@ func TestRun(t *testing.T) {
 			})
 			assert.NoError(t, err, "the run is clean")
 			v, held := meta.Get(report.Facts, pkg, flag)
-			assert.True(t, held && v, "the load's classification reads back through the typed handle")
+			assert.True(t, held, "the load's classification reads back through the typed handle")
+			assert.True(t, v, "the fact is the load's value")
 		})
 
 		strayStamp := func(g *store.Graph, s symbol.Identity) {
@@ -646,7 +650,8 @@ func TestRun(t *testing.T) {
 				}
 			}
 			assert.Length(t, lines, subjects, "each subject is one finding")
-			assert.True(t, slices.IsSorted(lines), "the findings are in position order")
+			assert.Pairwise(t, lines, func(earlier, later int) bool { return earlier < later },
+				"the findings are in position order")
 		})
 
 		t.Run("validates a directive on a package", func(t *testing.T) {
@@ -772,14 +777,16 @@ func TestRun(t *testing.T) {
 			g, _ := alpha(t)
 			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.HasError(t, err, "the lowering fails the plan")
-			assert.Contains(t, err.Error(), "settle", "the error names the stage")
-			assert.Contains(t, err.Error(), "origin", "the error names the rule the backend broke")
+			assert.That(t, err.Error()).
+				Contains("settle", "the error names the stage").
+				Contains("origin", "the error names the rule the backend broke")
 			assert.ErrorIsNot(t, err, workspace.ErrRunFailed, "a backend defect is not a finding")
 
 			got := units(report.Emits["plan"])
 			assert.Length(t, got, 1, "the plan's store is in the report")
 			emitted, held := got[0].Decls[0].(*emit.Struct)
-			assert.True(t, held && emitted.Name == "ForAlpha",
+			assert.True(t, held, "the unit's declaration is the generator's struct")
+			assert.Equal(t, emitted.Name, "ForAlpha",
 				"the store has what the generator emitted, because a refused lowering replaces nothing")
 		})
 
@@ -788,11 +795,13 @@ func TestRun(t *testing.T) {
 
 			w, err := valid().Build()
 			assert.NoError(t, err, "the fixture composition is valid")
-			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
 			g, _ := alpha(t)
-			report, err := w.Run(ctx, workspace.Input{Graph: g})
-			assert.ErrorIs(t, err, context.Canceled, "the caller's cancellation is returned")
+			var report *workspace.Report
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				var err error
+				report, err = w.Run(ctx, workspace.Input{Graph: g})
+				return err
+			}, "the caller's cancellation is returned")
 			assert.Equal(t, report.Plans, []workspace.PlanReport{{Name: "plan", Status: workspace.PlanCancelled}},
 				"the report states the plan's outcome")
 		})
@@ -800,8 +809,10 @@ func TestRun(t *testing.T) {
 		t.Run("reports UnreadableRecord for a record that does not read", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			place(t, root, ledger.ManifestPath(fixtureBrand)+"/ea.json", "not a record")
+			root := files.Workspace(
+				t,
+				files.Tree{ledger.ManifestPath(fixtureBrand) + "/ea.json": files.Text("not a record")},
+			)
 			report := cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{}))),
 				routedIn(t, coretest.StorePath))
 			unreadable := findings(report.Sink, workspace.UnreadableRecord)
@@ -1006,7 +1017,7 @@ func TestRun(t *testing.T) {
 				"the directive attaches")
 			_, err = w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
-			assert.True(t, bound.IsZero(), "the rejected instance never gated the rule")
+			assert.Equal(t, bound, symbol.Identity{}, "the rejected instance never gated the rule")
 		})
 
 		t.Run("reports UnresolvedReference for a language without rules", func(t *testing.T) {
@@ -1020,8 +1031,7 @@ func TestRun(t *testing.T) {
 				"the directive attaches")
 			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
-			assert.True(t, slices.Contains(coretest.Codes(report.Sink), directive.UnresolvedReference),
-				"UnresolvedReference is reported")
+			coretest.AssertReports(t, report.Sink, directive.UnresolvedReference)
 		})
 
 		t.Run("binds the registered rules to every match", func(t *testing.T) {
@@ -1044,8 +1054,7 @@ func TestRun(t *testing.T) {
 			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the run is clean")
 			assert.Equal(t, form, symbol.FormScalar, "the annotator's match folds through the registered rules")
-			assert.False(t, slices.Contains(coretest.Codes(report.Sink), rules.AbsentRules),
-				"no language is unregistered")
+			assert.NotContains(t, coretest.Codes(report.Sink), rules.AbsentRules, "no language is unregistered")
 		})
 
 		t.Run("hands the composition's worker count to every phase call", func(t *testing.T) {
@@ -1105,14 +1114,14 @@ func TestRun(t *testing.T) {
 			}
 		})
 
-		t.Run("writes the bytes of its first run on a second run over the same corpus", func(t *testing.T) {
+		t.Run("writes the bytes of its first run on every later run over the same corpus", func(t *testing.T) {
 			t.Parallel()
 
 			w := pipelineWorkspace(t, pipelineTestPackages, oneWorker)
-			first := pipelineHashes(t, w)
-			second := pipelineHashes(t, w)
-			assert.Length(t, first, pipelineTestPackages, "one file per package commits")
-			assert.Equal(t, second, first, "nothing the first run leaves behind changes the second")
+			assert.Length(t, pipelineHashes(t, w), pipelineTestPackages, "one file per package commits")
+			assert.Deterministic(t, func(w *workspace.Workspace) (map[string]string, error) {
+				return pipelineHashes(t, w), nil
+			}, w, "nothing a run leaves behind changes the next")
 		})
 
 		t.Run("writes on four workers the bytes one worker writes for the pipeline corpus", func(t *testing.T) {
@@ -1166,34 +1175,40 @@ func TestRun(t *testing.T) {
 
 				warm := t.TempDir()
 				workspacetest.AssertWarmEdited(t, edgeFixture(tt.edit), warm, t.TempDir())
-				assert.Contains(t, read(t, warm, pipelinePath(tt.reader)+"/gen.txt"), tt.want,
+				assert.Contains(t, files.Read(t, filepath.Join(warm, pipelinePath(tt.reader), "gen.txt")), tt.want,
 					"the struct that reads the edited declaration documents the edit")
 			})
 		}
 	})
 }
 
-// A warm run over one declaration allocates within its ceiling in the
-// ordinary run, which runs no benchmark. Each call takes a graph loaded
-// before the count, because a run seals the graph it is given. The cold
-// ceilings empty the pools before each run, which no count of
-// [assert.MaxAllocs] can leave out, so only the benchmark checks them.
+// A run over one declaration allocates within its ceilings in the
+// ordinary run, which runs no benchmark: a warm run over pools that
+// earlier runs filled, and a cold run over pools the collector emptied.
+// Each run takes a graph loaded outside the count, because a run seals
+// the graph it is given, and the cold run's setup empties the pools
+// after the load. The runs over 200,000 declarations take too long to
+// repeat 101 times, so only [BenchmarkRun] checks their ceilings. Each
+// count keeps the first error of its runs, which cmp.Or returns without
+// allocating.
 func TestRunAllocs(t *testing.T) {
 	builder, _ := flagged()
 	w, err := builder.Build()
 	assert.NoError(t, err, "the flagged composition composes")
 	one := []*node.Package{coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))}
-	graphs := make([]*store.Graph, allocRuns)
-	for i := range graphs {
-		graphs[i] = loaded(t, one)
+	run := func(g *store.Graph) {
+		_, rerr := w.Run(t.Context(), workspace.Input{Graph: g})
+		err = cmp.Or(err, rerr)
 	}
-	at := 0
-	assert.MaxAllocs(t, func() {
-		if _, err := w.Run(t.Context(), workspace.Input{Graph: graphs[at]}); err != nil {
-			t.Fatalf("Run: unexpected error: %v", err)
-		}
-		at++
-	}, warmRunAllocs, "a warm run over one declaration allocates the frame's own structures")
+	assert.MaxAllocsWithSetup(t, func() *store.Graph { return loaded(t, one) }, run, warmRunAllocs,
+		"a warm run over one declaration allocates the frame's own structures")
+	assert.NoError(t, err, "every warm run succeeds")
+	assert.MaxAllocsWithSetup(t, func() *store.Graph {
+		g := loaded(t, one)
+		emptyPools()
+		return g
+	}, run, oneRunAllocs, "a cold run over one declaration allocates the phase calls' state besides")
+	assert.NoError(t, err, "every cold run succeeds")
 }
 
 // BenchmarkRun takes the frame over graphs it seals. Each iteration
@@ -1914,19 +1929,20 @@ func documenting(name plugin.ID) plugin.Backend {
 }
 
 // benchRun measures w's runs over a fresh graph of pkgs against a
-// ceiling of allocs per run, and returns the last run's report. One run
-// before the measurement builds what a process builds once. Each
-// iteration loads its graph and calls reset outside the measurement.
+// ceiling of allocs per run, and returns the last run's report. The
+// warm-up run builds what a process builds once. Each iteration loads
+// its graph and calls reset outside the measurement.
 func benchRun(
 	b *testing.B, w *workspace.Workspace, pkgs []*node.Package, reset func(), allocs uint64,
 ) *workspace.Report {
 	b.Helper()
 
-	_, err := w.Run(b.Context(), workspace.Input{Graph: loaded(b, pkgs)})
-	assert.NoError(b, err, "the run before the measurement is clean")
-	c := bench.Start(b).MaxAllocs(allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(allocs)
 	defer c.End()
-	var report *workspace.Report
+	var (
+		report *workspace.Report
+		err    error
+	)
 	for c.Loop() {
 		var g *store.Graph
 		c.Excluding(func() {
@@ -1941,18 +1957,19 @@ func benchRun(
 }
 
 // benchTree measures w's cold runs over a tree against a ceiling of
-// allocs per run, and returns the last run's report. One run before the
-// measurement builds what a process builds once, and each run records
-// into the fresh ledger w's composition opens. Each iteration empties the
-// process's pools outside the measurement.
+// allocs per run, and returns the last run's report. The warm-up run
+// builds what a process builds once, and each run records into the fresh
+// ledger w's composition opens. Each iteration empties the process's
+// pools outside the measurement.
 func benchTree(b *testing.B, w *workspace.Workspace, tree fs.FS, allocs uint64) *workspace.Report {
 	b.Helper()
 
-	_, err := w.Run(b.Context(), workspace.Input{Tree: tree})
-	assert.NoError(b, err, "the run before the measurement is clean")
-	c := bench.Start(b).MaxAllocs(allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(allocs)
 	defer c.End()
-	var report *workspace.Report
+	var (
+		report *workspace.Report
+		err    error
+	)
 	for c.Loop() {
 		c.Excluding(emptyPools)
 		report, err = w.Run(b.Context(), workspace.Input{Tree: tree})
@@ -1966,9 +1983,7 @@ func loaded(tb assert.TB, pkgs []*node.Package) *store.Graph {
 	tb.Helper()
 
 	g := store.New()
-	for _, p := range pkgs {
-		assert.NoError(tb, g.AddPackage(p), "the fixture package is admitted")
-	}
+	assert.Total(tb, g.AddPackage, pkgs, "the fixture package is admitted")
 	return g
 }
 

@@ -4,7 +4,6 @@
 package backend_test
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -198,8 +197,7 @@ func TestValue(t *testing.T) {
 					assert.Equal(t, got, tt.want, "the Java spelling")
 					return
 				}
-				var refused *render.ValueError
-				assert.True(t, errors.As(err, &refused), "the render reports the value's own code")
+				refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
 				assert.Contains(t, err.Error(), tt.want, "naming what Java cannot spell")
 				assert.Equal(t, refused.Lang, string(java.Lang), "naming the target")
 			})

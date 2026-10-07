@@ -37,11 +37,10 @@ func TestRefusal(t *testing.T) {
 			t.Parallel()
 
 			const reason = "svc/store is added after Freeze"
-			got := (&store.RefusedError{Code: store.FrozenWrite, Msg: reason}).Error()
-
-			assert.HasPrefix(t, got, "store: ", "the error has the package prefix")
-			assert.Contains(t, got, store.FrozenWrite.String(), "names its code")
-			assert.Contains(t, got, reason, "and states its reason")
+			assert.That(t, (&store.RefusedError{Code: store.FrozenWrite, Msg: reason}).Error()).
+				HasPrefix("store: ", "the error has the package prefix").
+				Contains(store.FrozenWrite.String(), "names its code").
+				Contains(reason, "and states its reason")
 		})
 
 		t.Run("returns its code to errors.As through a wrapping", func(t *testing.T) {
@@ -91,8 +90,7 @@ func TestRefusal(t *testing.T) {
 
 // A refusal's text allocates the code's spelling and the joined message
 // in the ordinary run, which runs no benchmark. The check runs alone,
-// because AllocsPerRun counts every goroutine's allocations and refuses
-// to run beside parallel tests.
+// because the count includes every goroutine's allocations.
 func TestRefusalAllocs(t *testing.T) {
 	refused := &store.RefusedError{Code: store.FrozenWrite, Msg: "svc/store is added after Freeze"}
 	var got string

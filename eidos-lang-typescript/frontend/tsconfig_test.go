@@ -4,7 +4,7 @@
 package frontend_test
 
 import (
-	"context"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -252,28 +252,24 @@ func withConfigs(configs map[string]string) fstest.MapFS {
 
 // sharedOf partitions a tree and returns the shared inputs src/a.ts
 // declares.
-func sharedOf(tb assert.TB, tree fstest.MapFS) []string {
+func sharedOf(tb testing.TB, tree fstest.MapFS) []string {
 	tb.Helper()
 
 	var claimed []plugin.SourceRef
 	for p := range tree {
 		claimed = append(claimed, plugin.SourceRef{Path: p})
 	}
-	units, err := frontend.New().Partition(context.Background(), claimed, treeReader{tree})
+	units, err := frontend.New().Partition(tb.Context(), claimed, treeReader{tree})
 	assert.NoError(tb, err, "the tree partitions")
-	for _, unit := range units {
-		if unit[0].Path == aFile {
-			return unit[0].Shared
-		}
-	}
-	tb.Fatalf("no unit has %s", aFile)
-	return nil
+	at := slices.IndexFunc(units, func(unit []plugin.SourceRef) bool { return unit[0].Path == aFile })
+	assert.NotEqual(tb, at, -1, "a unit has "+aFile)
+	return units[at][0].Shared
 }
 
 // importTiers parses src/a.ts in a tree and returns the packages the
 // tiers for its imported X name, without its own package's tier and the
 // global package's.
-func importTiers(tb assert.TB, tree fstest.MapFS) [][]string {
+func importTiers(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
 	gb, _ := parsedTree(tb, tree, aFile, plugin.DepthFull)

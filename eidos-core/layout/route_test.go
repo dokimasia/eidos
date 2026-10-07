@@ -156,9 +156,7 @@ func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 	ix, err := plugin.NewIndex(graph(tb), meta.NewFacts(meta.NewRegistry()), f.directives, nil)
 	assert.NoError(tb, err, "the fixture index builds")
 	e := plugin.NewEmit()
-	for _, u := range f.units {
-		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
-	}
+	assert.Total(tb, e.Add, f.units, "the fixture unit arrives")
 	sink := diag.NewSink()
 	assert.NoError(tb, plugin.Settle(e, nil, nil, sink), "a store without a backend settles as emitted")
 	in := layout.Input{
@@ -449,7 +447,7 @@ func TestRoute(t *testing.T) {
 			f.packager = directories{refuse: storePkg}
 			files, sink := f.route(t)
 			assert.Length(t, files, 1, "the file still routes")
-			assert.True(t, files[0].Pkg.IsZero(), "the file declares no package")
+			assert.Equal(t, files[0].Pkg, symbol.Identity{}, "the file declares no package")
 			coretest.AssertCodes(t, sink)
 		})
 
@@ -765,13 +763,11 @@ func registry(tb testing.TB) *directive.Registry {
 	tb.Helper()
 
 	r := directive.NewRegistry()
-	for _, s := range []directive.Schema{
+	assert.Total(tb, r.Register, []directive.Schema{
 		{Plugin: string(stubgen), Name: "stub", Doc: "marks a declaration stubgen stubs"},
 		{Plugin: string(docgen), Name: "doc", Doc: "marks a declaration docgen documents"},
 		{Plugin: string(pkggen), Name: "reg", Doc: "marks a declaration pkggen registers"},
-	} {
-		assert.NoError(tb, r.Register(s), "the fixture schema registers")
-	}
+	}, "the fixture schema registers")
 	return r
 }
 

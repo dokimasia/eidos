@@ -4,6 +4,7 @@
 package meta_test
 
 import (
+	"cmp"
 	"slices"
 	"testing"
 
@@ -169,29 +170,31 @@ func TestStamp(t *testing.T) {
 
 // A raw stamp allocates what the store keeps of a first claim, and
 // nothing for an identical re-stamp, in the ordinary run, which runs no
-// benchmark. Each counted first claim is on a subject of its own. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// benchmark. Each counted first claim is on a subject of its own, which
+// the setup takes outside the count. The check runs alone, because the
+// count includes every goroutine's allocations.
 func TestStampAllocs(t *testing.T) {
 	_, f, _, _ := fixture(t)
 	raw := meta.RawStamp{Key: "shape.role", Value: "writer"}
 	assert.NoError(t, f.StampRaw(raw, on(sibling, "shape", 0)),
 		"a claim outside the counted subjects creates the store's map and index")
-	claims := firstClaims(allocRuns)
+	claims := firstClaims(allocSubjects)
 
+	// Each count keeps the first error of its calls, which cmp.Or
+	// returns without allocating.
+	var err error
 	at := 0
-	assert.MaxAllocs(t, func() {
-		if err := f.StampRaw(raw, claims[at]); err != nil {
-			t.Fatalf("StampRaw: unexpected error: %v", err)
-		}
+	next := func() meta.Claim {
 		at++
-	}, rawFirstClaimAllocs, "StampRaw allocates the bag, the boxed identity and the map entry of a first claim")
+		return claims[at-1]
+	}
+	assert.MaxAllocsWithSetup(t, next, func(claim meta.Claim) { err = cmp.Or(err, f.StampRaw(raw, claim)) },
+		rawFirstClaimAllocs, "StampRaw allocates the bag, the boxed identity and the map entry of a first claim")
+	assert.NoError(t, err, "every first claim is admitted")
 
-	assert.MaxAllocs(t, func() {
-		if err := f.StampRaw(raw, claims[0]); err != nil {
-			t.Fatalf("StampRaw: unexpected error: %v", err)
-		}
-	}, 0, "StampRaw allocates nothing for an identical re-stamp")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, f.StampRaw(raw, claims[0])) }, 0,
+		"StampRaw allocates nothing for an identical re-stamp")
+	assert.NoError(t, err, "every re-stamp is accepted")
 }
 
 // BenchmarkStamp measures the raw stamps a frontend's classification

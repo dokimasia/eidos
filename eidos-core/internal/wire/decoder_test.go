@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/wire"
 )
@@ -241,11 +242,15 @@ func TestDecoder(t *testing.T) {
 // Every read but a text allocates nothing, and so does a caller's
 // failure. A text allocates its string. The ordinary run, which runs no
 // benchmark, checks these ceilings here. The check runs alone, because
-// AllocsPerRun refuses to run beside parallel tests.
+// the count includes every goroutine's allocations.
 func TestDecoderAllocs(t *testing.T) {
 	b := record()
+	var (
+		d      wire.Decoder
+		digest [32]byte
+	)
 	assert.MaxAllocs(t, func() {
-		d := wire.NewDecoder(b)
+		d = wire.NewDecoder(b)
 		d.Uvarint()
 		d.Varint()
 		d.Byte()
@@ -254,24 +259,24 @@ func TestDecoderAllocs(t *testing.T) {
 		d.Bytes()
 		_ = d.Rest()
 		d.Skip(len(textCD))
-		if d.Digest() != digestX || d.Len() != 0 || d.Err() != nil || d.Read() != len(b) {
-			t.Fatal("the record read back wrong")
-		}
+		digest = d.Digest()
 	}, 0, "every read of the record but its text allocates nothing")
+	assert.NoError(t, d.Err(), "the record reads back whole")
+	expect.Equal(t, digest, digestX, "with its digest last")
+	expect.Equal(t, d.Len(), 0, "and no byte left")
+	expect.Equal(t, d.Read(), len(b), "after every byte is read")
 	text := textCD
 	var got string
 	assert.MaxAllocs(t, func() {
-		d := wire.NewDecoder(text)
+		d = wire.NewDecoder(text)
 		got = d.Text()
 	}, 1, "Text allocates the string it returns")
 	assert.Equal(t, got, "cd", "Text returns the text")
 	assert.MaxAllocs(t, func() {
-		d := wire.NewDecoder(text)
+		d = wire.NewDecoder(text)
 		d.Fail(errFound)
-		if !errors.Is(d.Err(), errFound) {
-			t.Fatal("Fail kept another failure")
-		}
 	}, 0, "Fail allocates nothing")
+	assert.ErrorIs(t, d.Err(), errFound, "Fail keeps the caller's failure")
 }
 
 // BenchmarkDecoder measures each read over one value's encoding, and

@@ -60,11 +60,13 @@ func TestInstance(t *testing.T) {
 // benchmark.
 func TestInstanceZeroAlloc(t *testing.T) {
 	d := deep()
-	assert.MaxAllocs(t, func() {
-		if _, held := d.Param(depthKey); !held {
-			t.Fatal("Param missed the depth key")
-		}
-	}, 0, "Param allocates nothing")
+	var (
+		got  directive.Value
+		held bool
+	)
+	assert.MaxAllocs(t, func() { got, held = d.Param(depthKey) }, 0, "Param allocates nothing")
+	assert.True(t, held, "Param finds the depth key")
+	assert.Equal(t, got, depthValue, "Param returns the typed value")
 }
 
 // BenchmarkInstance measures a handler's read of one param.

@@ -64,7 +64,7 @@ func TestSymbol(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Symbol = &declaration{kind: symbol.KindStruct}
-			assert.True(t, subject.Position().IsZero(),
+			assert.Equal(t, subject.Position(), position.Pos{},
 				"a synthesized declaration returns the zero position")
 			assert.Nil(t, subject.Docs(),
 				"and carries no documentation")

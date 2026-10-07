@@ -24,7 +24,7 @@ type imported struct {
 
 // importsIn parses the fixture crate whose library root is src and
 // returns the crate root File node's imports.
-func importsIn(tb assert.TB, src string) []imported {
+func importsIn(tb testing.TB, src string) []imported {
 	tb.Helper()
 
 	var out []imported
@@ -37,7 +37,7 @@ func importsIn(tb assert.TB, src string) []imported {
 
 // exportsIn parses the fixture crate whose library root is src and
 // returns the crate root File node's exports.
-func exportsIn(tb assert.TB, src string) []imported {
+func exportsIn(tb testing.TB, src string) []imported {
 	tb.Helper()
 
 	var out []imported
@@ -209,7 +209,7 @@ func TestUse(t *testing.T) {
 
 // mustParse parses the fixture crate whose library root is src and
 // returns its builder.
-func mustParse(tb assert.TB, src string) *plugin.GraphBuilder {
+func mustParse(tb testing.TB, src string) *plugin.GraphBuilder {
 	tb.Helper()
 
 	gb, _ := parsedSource(tb, src)

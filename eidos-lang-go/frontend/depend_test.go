@@ -115,13 +115,13 @@ func TestDepend(t *testing.T) {
 		t.Run("returns the context's error for a done context", func(t *testing.T) {
 			t.Parallel()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
-			_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{
-				Number: 1, Needs: []plugin.Need{{Path: libPackage}}, Shared: []string{appGoMod},
-			}, roundReader{storeTree{depWorkspace(), depStores()}})
-			assert.ErrorIs(t, err, context.Canceled, "a done context places nothing")
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{
+					Number: 1, Needs: []plugin.Need{{Path: libPackage}}, Shared: []string{appGoMod},
+				}, roundReader{storeTree{depWorkspace(), depStores()}})
+				return err
+			}, "a done context places nothing")
 		})
 
 		t.Run("reports nothing for the needs it places", func(t *testing.T) {
@@ -277,7 +277,7 @@ func TestDepend(t *testing.T) {
 		t.Run("places a need in the module cache at the selected version", func(t *testing.T) {
 			t.Parallel()
 
-			units, err := runRound(depWorkspace(), depStores(), libPackage)
+			units, err := runRound(t, depWorkspace(), depStores(), libPackage)
 			assert.NoError(t, err, "the round places the need")
 			want := [][]plugin.SourceRef{{{Path: cached(libDir + "/pkg.go"), Shared: []string{appGoMod}}}}
 			assert.Equal(t, units, want, "the package's source, which declares the selecting go.mod")
@@ -299,9 +299,9 @@ func TestDepend(t *testing.T) {
 			cache := depCache()
 			cache[libZipHash] = &fstest.MapFile{Data: []byte(otherHash + "\n")}
 			stores[frontend.ModCacheStore] = cache
-			msg := refused(t, depWorkspace(), stores, libPackage)
-			assert.Contains(t, msg, otherHash, "the error names the cache's hash")
-			assert.Contains(t, msg, libHash, "and go.sum's")
+			assert.That(t, refused(t, depWorkspace(), stores, libPackage)).
+				Contains(otherHash, "the error names the cache's hash").
+				Contains(libHash, "and go.sum's")
 		})
 
 		t.Run("reads a module with an unfinished download as missing", func(t *testing.T) {
@@ -379,7 +379,7 @@ func TestDepend(t *testing.T) {
 		t.Run("places a need in the vendor tree when the module cache lacks the module", func(t *testing.T) {
 			t.Parallel()
 
-			units, err := runRound(vendored(), noCache(), libPackage)
+			units, err := runRound(t, vendored(), noCache(), libPackage)
 			assert.NoError(t, err, "the round places the need")
 			want := [][]plugin.SourceRef{{{Path: "vendor/" + libPackage + "/pkg.go", Shared: []string{appGoMod}}}}
 			assert.Equal(t, units, want, "the vendored copy, which declares the go.mod beside the vendor tree")
@@ -415,7 +415,7 @@ func TestDepend(t *testing.T) {
 
 			tree := depWorkspace()
 			tree["vendor/modules.txt"] = &fstest.MapFile{Mode: fs.ModeDir}
-			_, err := runRound(tree, noCache(), libPackage)
+			_, err := runRound(t, tree, noCache(), libPackage)
 			assert.HasError(t, err, "a list that exists and does not read fails the round")
 		})
 
@@ -436,7 +436,7 @@ func TestDepend(t *testing.T) {
 		t.Run("leaves out the package's test files", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, slices.Contains(placed(t, depWorkspace(), depStores(), libPackage)[0], cached(libTestFile)),
+			assert.NotContains(t, placed(t, depWorkspace(), depStores(), libPackage)[0], cached(libTestFile),
 				"a dependency's tests are not part of its API")
 		})
 
@@ -459,7 +459,7 @@ func TestDepend(t *testing.T) {
 
 			stores := depStores()
 			stores[frontend.GoRootStore] = fstest.MapFS{fmtPackage: {Data: []byte("not a directory\n")}}
-			_, err := runRound(depWorkspace(), stores, fmtPackage)
+			_, err := runRound(t, depWorkspace(), stores, fmtPackage)
 			assert.HasError(t, err, "a package path that names a file fails the round")
 		})
 
@@ -559,19 +559,20 @@ func replacedWorkspace() fstest.MapFS {
 }
 
 // runRound runs the Go frontend's first dependency round over a
-// workspace and its stores for the needs given, with every go.mod of
-// the workspace as the round's shared inputs.
+// workspace and its stores for the needs given, under the test's
+// context, with every go.mod of the workspace as the round's shared
+// inputs.
 func runRound(
-	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
+	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
 ) ([][]plugin.SourceRef, error) {
-	units, _, err := reportedRound(tree, stores, needs...)
+	units, _, err := reportedRound(tb, tree, stores, needs...)
 	return units, err
 }
 
 // reportedRound runs the round [runRound] runs and returns the round
 // beside its units, for the cases that read the round's reports.
 func reportedRound(
-	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
+	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
 ) ([][]plugin.SourceRef, *plugin.DependencyRound, error) {
 	var goMods []string
 	for p := range tree {
@@ -588,26 +589,26 @@ func reportedRound(
 	if !is {
 		panic("the Go frontend is in the dependent role")
 	}
-	units, err := dependent.Dependencies(context.Background(), round, roundReader{storeTree{tree, stores}})
+	units, err := dependent.Dependencies(tb.Context(), round, roundReader{storeTree{tree, stores}})
 	return units, round, err
 }
 
 // unplacedBy runs a round that the case states succeeds and returns
 // the needs it reports placed nowhere.
-func unplacedBy(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) []plugin.Unplaced {
+func unplacedBy(tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) []plugin.Unplaced {
 	tb.Helper()
 
-	_, round, err := reportedRound(tree, stores, needs...)
+	_, round, err := reportedRound(tb, tree, stores, needs...)
 	assert.NoError(tb, err, "the round places what it can")
 	return round.Unplaced()
 }
 
 // placed runs a round that the case states succeeds and returns the
 // member paths of each unit.
-func placed(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) [][]string {
+func placed(tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) [][]string {
 	tb.Helper()
 
-	units, err := runRound(tree, stores, needs...)
+	units, err := runRound(tb, tree, stores, needs...)
 	assert.NoError(tb, err, "the round places its needs")
 	out := make([][]string, len(units))
 	for i, unit := range units {
@@ -620,10 +621,10 @@ func placed(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...s
 
 // refused runs a round that the case states fails and returns its
 // error's text.
-func refused(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) string {
+func refused(tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) string {
 	tb.Helper()
 
-	_, err := runRound(tree, stores, needs...)
+	_, err := runRound(tb, tree, stores, needs...)
 	assert.HasError(tb, err, "the round fails")
 	return err.Error()
 }

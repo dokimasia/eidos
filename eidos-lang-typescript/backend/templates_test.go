@@ -41,8 +41,12 @@ func TestTemplates(t *testing.T) {
 		t.Run("returns no template for a method", func(t *testing.T) {
 			t.Parallel()
 
-			_, is := backend.KindTemplates()[symbol.KindMethod]
-			assert.False(t, is, "TypeScript states members inside their type")
+			assert.NotContains(
+				t,
+				backend.KindTemplates(),
+				symbol.KindMethod,
+				"TypeScript states members inside their type",
+			)
 		})
 
 		t.Run("writes a class's members at member depth", func(t *testing.T) {
@@ -521,9 +525,9 @@ func TestTemplates(t *testing.T) {
 		t.Run("returns no kind the templates spell", func(t *testing.T) {
 			t.Parallel()
 
+			kinds := backend.KindTemplates()
 			for k := range backend.RefusedKinds() {
-				_, spelt := backend.KindTemplates()[k]
-				assert.False(t, spelt, "a kind is spelt or refused: "+k.String())
+				assert.NotContains(t, kinds, k, "a kind is spelt or refused: "+k.String())
 			}
 		})
 	})

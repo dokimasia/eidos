@@ -4,7 +4,6 @@
 package conformance_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -31,7 +30,7 @@ func TestFeature(t *testing.T) {
 		)},
 	}
 	sink := diag.NewSink()
-	g, _, err := load.Load(context.Background(), load.Config{
+	g, _, err := load.Load(t.Context(), load.Config{
 		FS:        tree,
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      sink,

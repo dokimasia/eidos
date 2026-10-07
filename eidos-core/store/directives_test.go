@@ -4,6 +4,7 @@
 package store_test
 
 import (
+	"cmp"
 	"slices"
 	"strconv"
 	"testing"
@@ -273,7 +274,7 @@ func TestDirectives(t *testing.T) {
 			assert.Equal(t, got, []string{"Store"}, "the tracked enumeration returns carriers")
 			assert.Equal(t, slices.Collect(reads.Directives()), []directive.Name{"stub"},
 				"records the membership edge")
-			assert.True(t, recorded(reads, decl.ID),
+			assert.Contains(t, slices.Collect(reads.Identities()), decl.ID,
 				"and a per-identity edge for what the caller reached")
 		})
 
@@ -294,7 +295,7 @@ func TestDirectives(t *testing.T) {
 
 			assert.Empty(t, slices.Collect(r.ByDirective("stub")),
 				"a declaration outside scope is not returned")
-			assert.False(t, recorded(reads, hidden.ID), "and not recorded")
+			assert.NotContains(t, slices.Collect(reads.Identities()), hidden.ID, "and not recorded")
 		})
 
 		t.Run("returns a reader that records one membership edge for three enumerations", func(t *testing.T) {
@@ -326,36 +327,35 @@ func TestDirectives(t *testing.T) {
 // A subject's first attachment allocates what the graph keeps of it,
 // and the validator's reads of the sealed instances allocate nothing, in
 // the ordinary run, which runs no benchmark. Each counted attachment is
-// on a subject of its own. The check runs alone, because AllocsPerRun
-// counts every goroutine's allocations and refuses to run beside
-// parallel tests.
+// on a subject of its own, which the setup names outside the count. The
+// check runs alone, because the count includes every goroutine's
+// allocations.
 func TestDirectivesAllocs(t *testing.T) {
 	g := store.New()
-	ids := make([]symbol.Identity, 0, allocRuns)
-	for i := range allocRuns {
-		ids = append(ids, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)).ID)
+	attached := 0
+	next := func() symbol.Identity {
+		attached++
+		return coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(attached-1)).ID
 	}
-	raws, at := []directive.Raw{stubAt(1)}, 0
-	assert.MaxAllocs(t, func() {
-		if err := g.AttachDirectives(ids[at], raws); err != nil {
-			t.Fatalf("AttachDirectives: unexpected error: %v", err)
-		}
-		at++
-	}, attachOneAllocs, "AttachDirectives allocates what the graph keeps of a subject's first attachment")
+	raws := []directive.Raw{stubAt(1)}
+	var err error
+	assert.MaxAllocsWithSetup(t, next, func(id symbol.Identity) { err = cmp.Or(err, g.AttachDirectives(id, raws)) },
+		attachOneAllocs, "AttachDirectives allocates what the graph keeps of a subject's first attachment")
+	assert.NoError(t, err, "every first attachment is admitted")
 
 	g.Freeze()
+	first := coretest.Struct(coretest.StorePath, "Decl0").ID
 	var got []directive.Raw
-	assert.MaxAllocs(t, func() { got = g.DirectivesOf(ids[0]) }, 0, "DirectivesOf allocates nothing")
+	assert.MaxAllocs(t, func() { got = g.DirectivesOf(first) }, 0, "DirectivesOf allocates nothing")
 	assert.Length(t, got, 1, "DirectivesOf returns the subject's instance")
+	n := 0
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range g.Directives() {
 			n++
 		}
-		if n != allocRuns {
-			t.Fatal("Directives enumerated another number of subjects")
-		}
 	}, 0, "a range over Directives allocates nothing")
+	assert.Equal(t, n, attached, "Directives enumerates every subject with an attachment")
 }
 
 // BenchmarkDirectives measures the directive side, which scales with the
@@ -405,14 +405,14 @@ func BenchmarkDirectives(b *testing.B) {
 				"the directive attaches")
 		}
 		g.Freeze()
-		c := bench.Start(b).MaxAllocs(0)
+		// The warm-up pass runs at the call site it measures, where the
+		// runtime builds the site's 48-byte cache for converting a
+		// declaration to a symbol. A pass at any other call site builds a
+		// cache of its own.
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		seen := 0
-		// The first pass runs before the contract counts, at the call site
-		// it measures, where the runtime builds the site's 48-byte cache
-		// for converting a declaration to a symbol. A pass at any other
-		// call site builds a cache of its own.
-		for first := true; first || c.Loop(); first = false {
+		for c.Loop() {
 			seen = 0
 			for range g.ByDirective("stub") {
 				seen++

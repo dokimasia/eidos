@@ -235,7 +235,7 @@ func TestCapabilities(t *testing.T) {
 			untouched := builtin(witness)
 			got := capability[rules.GenericsRules](t).Substitute(untouched, paramsOf(t, f, "Box"),
 				[]*node.TypeRef{builtin(argSpelling)})
-			assert.True(t, got == untouched, "the same reference")
+			assert.Equal(t, got, untouched, "the same reference", assert.ByIdentity())
 		})
 
 		t.Run("returns the reference as it is for mismatched arguments", func(t *testing.T) {
@@ -244,7 +244,7 @@ func TestCapabilities(t *testing.T) {
 			f := loaded(t)
 			item := &node.TypeRef{Spelling: paramName}
 			got := capability[rules.GenericsRules](t).Substitute(item, paramsOf(t, f, "Box"), nil)
-			assert.True(t, got == item, "no argument binds")
+			assert.Equal(t, got, item, "no argument binds", assert.ByIdentity())
 		})
 	})
 
@@ -484,8 +484,10 @@ func capabilityCalls(tb testing.TB) []allocCall {
 		},
 		{
 			name: "Substitute", caseName: "a reference that names no parameter",
-			call:  func() { got = generics.Substitute(plain, box, args) },
-			check: func(tb assert.TB) { assert.True(tb, got == plain, "Substitute returns the reference as it is") },
+			call: func() { got = generics.Substitute(plain, box, args) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, got, plain, "Substitute returns the reference as it is", assert.ByIdentity())
+			},
 		},
 		{
 			name:  "Reified",
@@ -499,13 +501,19 @@ func capabilityCalls(tb testing.TB) []allocCall {
 		},
 		{
 			name: "Comparable", caseName: "a struct that does not compare", allocs: comparableAllocs,
-			call:  func() { reported, problems = equality.Comparable(row, f.view) },
-			check: func(tb assert.TB) { assert.True(tb, !reported && len(problems) == 4, "Comparable finds all four") },
+			call: func() { reported, problems = equality.Comparable(row, f.view) },
+			check: func(tb assert.TB) {
+				assert.False(tb, reported, "Comparable reports that Row does not compare")
+				assert.Length(tb, problems, 4, "Comparable finds all four")
+			},
 		},
 		{
 			name: "Comparable", caseName: "a struct that compares",
-			call:  func() { reported, problems = equality.Comparable(base, f.view) },
-			check: func(tb assert.TB) { assert.True(tb, reported && len(problems) == 0, "Comparable reports Base") },
+			call: func() { reported, problems = equality.Comparable(base, f.view) },
+			check: func(tb assert.TB) {
+				assert.True(tb, reported, "Comparable reports Base")
+				assert.Empty(tb, problems, "Comparable finds no problem in Base")
+			},
 		},
 	}
 }

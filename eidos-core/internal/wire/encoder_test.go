@@ -57,14 +57,17 @@ func TestEncoder(t *testing.T) {
 }
 
 // TestEncoderZeroAlloc checks that every helper appends into a buffer
-// with room without allocating. The check runs alone, because
-// AllocsPerRun refuses to run beside parallel tests.
+// with room without allocating. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestEncoderZeroAlloc(t *testing.T) {
 	dst := make([]byte, 0, 16)
 	assert.MaxAllocs(t, func() { dst = wire.AppendBool(dst[:0], true) }, 0, "AppendBool allocates nothing")
+	assert.Length(t, dst, 1, "AppendBool appends one byte")
 	assert.MaxAllocs(t, func() { dst = wire.AppendBytes(dst[:0], []byte("ab")) }, 0,
 		"AppendBytes allocates nothing")
+	assert.Length(t, dst, 3, "AppendBytes appends the length and the bytes")
 	assert.MaxAllocs(t, func() { dst = wire.AppendText(dst[:0], "ab") }, 0, "AppendText allocates nothing")
+	assert.Length(t, dst, 3, "AppendText appends the length and the text")
 }
 
 // BenchmarkEncoder measures each helper into a buffer with room, under
@@ -78,9 +81,7 @@ func BenchmarkEncoder(b *testing.B) {
 		for c.Loop() {
 			dst = wire.AppendBool(dst[:0], true)
 		}
-		if len(dst) != 1 {
-			b.Fatalf("AppendBool appended %d bytes", len(dst))
-		}
+		assert.Length(b, dst, 1, "AppendBool appends one byte")
 	})
 
 	b.Run("AppendBytes", func(b *testing.B) {
@@ -89,9 +90,7 @@ func BenchmarkEncoder(b *testing.B) {
 		for c.Loop() {
 			dst = wire.AppendBytes(dst[:0], []byte("ab"))
 		}
-		if len(dst) != 3 {
-			b.Fatalf("AppendBytes appended %d bytes", len(dst))
-		}
+		assert.Length(b, dst, 3, "AppendBytes appends the length and the bytes")
 	})
 
 	b.Run("AppendText", func(b *testing.B) {
@@ -100,8 +99,6 @@ func BenchmarkEncoder(b *testing.B) {
 		for c.Loop() {
 			dst = wire.AppendText(dst[:0], "ab")
 		}
-		if len(dst) != 3 {
-			b.Fatalf("AppendText appended %d bytes", len(dst))
-		}
+		assert.Length(b, dst, 3, "AppendText appends the length and the text")
 	})
 }

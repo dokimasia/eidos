@@ -4,7 +4,6 @@
 package workspace_test
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"io/fs"
 	"testing"
@@ -61,9 +60,8 @@ func TestFingerprint(t *testing.T) {
 			b2, _ := flagged()
 			w2, err := b2.Build()
 			assert.NoError(t, err, "its twin composes")
-			assert.True(t, bytes.Equal(w1.Fingerprint(), w2.Fingerprint()),
-				"one composition, one fingerprint")
-			assert.True(t, bytes.Equal(w1.Fingerprint(), w1.Fingerprint()),
+			assert.Equal(t, w2.Fingerprint(), w1.Fingerprint(), "one composition, one fingerprint")
+			assert.Deterministic(t, func(w *workspace.Workspace) ([]byte, error) { return w.Fingerprint(), nil }, w1,
 				"and the derivation repeats")
 		})
 
@@ -82,7 +80,7 @@ func TestFingerprint(t *testing.T) {
 			assert.NoError(t, err, "the composition composes")
 			first := w.Fingerprint()
 			first[0]++
-			assert.False(t, bytes.Equal(first, w.Fingerprint()), "a change to a copy leaves the workspace's own")
+			assert.NotEqual(t, w.Fingerprint(), first, "a change to a copy leaves the workspace's own")
 		})
 
 		t.Run("returns other bytes for another scheduled roster", func(t *testing.T) {
@@ -98,8 +96,7 @@ func TestFingerprint(t *testing.T) {
 			b2, _ := flagged()
 			w2, err := b2.Annotators(extra).Build()
 			assert.NoError(t, err, "the widened composition composes")
-			assert.False(t, bytes.Equal(w1.Fingerprint(), w2.Fingerprint()),
-				"two compositions never read one generation")
+			assert.NotEqual(t, w2.Fingerprint(), w1.Fingerprint(), "two compositions never read one generation")
 		})
 
 		// edited returns the fingerprint of the valid composition with a
@@ -121,7 +118,7 @@ func TestFingerprint(t *testing.T) {
 			scoped := edited(t, func(p *workspace.Plan) {
 				p.Sources = workspace.Sources{Packages: []string{"./svc/..."}}
 			})
-			assert.False(t, bytes.Equal(edited(t, unchanged), scoped), "a change of scope runs cold")
+			assert.NotEqual(t, scoped, edited(t, unchanged), "a change of scope runs cold")
 		})
 
 		t.Run("returns the same bytes for one scope's patterns in any order", func(t *testing.T) {
@@ -133,21 +130,21 @@ func TestFingerprint(t *testing.T) {
 			backward := edited(t, func(p *workspace.Plan) {
 				p.Sources = workspace.Sources{Packages: []string{"b", "a"}}
 			})
-			assert.True(t, bytes.Equal(forward, backward), "the patterns fold sorted")
+			assert.Equal(t, backward, forward, "the patterns fold sorted")
 		})
 
 		t.Run("returns other bytes for another dependency of a plan", func(t *testing.T) {
 			t.Parallel()
 
 			depending := edited(t, func(p *workspace.Plan) { p.DependsOn = []string{"plan"} })
-			assert.False(t, bytes.Equal(edited(t, unchanged), depending), "a dependency runs cold")
+			assert.NotEqual(t, depending, edited(t, unchanged), "a dependency runs cold")
 		})
 
 		t.Run("returns other bytes for an added check", func(t *testing.T) {
 			t.Parallel()
 
 			checked := edited(t, unchanged, &recordingCheck{name: "stubbed"})
-			assert.False(t, bytes.Equal(edited(t, unchanged), checked), "a check runs cold")
+			assert.NotEqual(t, checked, edited(t, unchanged), "a check runs cold")
 		})
 
 		t.Run("returns other bytes for other plans a check reads", func(t *testing.T) {
@@ -155,7 +152,7 @@ func TestFingerprint(t *testing.T) {
 
 			one := edited(t, unchanged, &recordingCheck{name: "stubbed", reads: []string{"plan"}})
 			other := edited(t, unchanged, &recordingCheck{name: "stubbed", reads: []string{"bindings"}})
-			assert.False(t, bytes.Equal(one, other), "the plans a check reads run cold")
+			assert.NotEqual(t, other, one, "the plans a check reads run cold")
 		})
 
 		t.Run("returns other bytes for another layout of a plan", func(t *testing.T) {
@@ -164,7 +161,7 @@ func TestFingerprint(t *testing.T) {
 			centralised := edited(t, func(p *workspace.Plan) {
 				p.Layout = layout.Config{Policy: layout.PolicyCentralised, Dir: genDir}
 			})
-			assert.False(t, bytes.Equal(edited(t, unchanged), centralised), "a change of layout runs cold")
+			assert.NotEqual(t, centralised, edited(t, unchanged), "a change of layout runs cold")
 		})
 
 		changes := []struct {
@@ -218,8 +215,12 @@ func TestFingerprint(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.False(t, bytes.Equal(fingerprinted(t, loading()), fingerprinted(t, tt.compose())),
-					"the changed input runs cold")
+				assert.NotEqual(
+					t,
+					fingerprinted(t, tt.compose()),
+					fingerprinted(t, loading()),
+					"the changed input runs cold",
+				)
 			})
 		}
 
@@ -228,7 +229,7 @@ func TestFingerprint(t *testing.T) {
 
 			one := fingerprinted(t, valid().Ignore(ignoredA))
 			other := fingerprinted(t, valid().Ignore(ignoredB))
-			assert.False(t, bytes.Equal(one, other), "the spellings fold, not their count")
+			assert.NotEqual(t, other, one, "the spellings fold, not their count")
 		})
 
 		t.Run("returns the same bytes for the ignored spellings in any order", func(t *testing.T) {
@@ -236,7 +237,7 @@ func TestFingerprint(t *testing.T) {
 
 			forward := fingerprinted(t, valid().Ignore(ignoredA, ignoredB))
 			backward := fingerprinted(t, valid().Ignore(ignoredB, ignoredA))
-			assert.True(t, bytes.Equal(forward, backward), "the spellings fold sorted")
+			assert.Equal(t, backward, forward, "the spellings fold sorted")
 		})
 
 		t.Run("returns the same bytes for another template tree, which each run folds", func(t *testing.T) {
@@ -244,22 +245,21 @@ func TestFingerprint(t *testing.T) {
 
 			one := fingerprinted(t, templatedBuilder(fstest.MapFS{templateFile: {Data: []byte("one")}}))
 			other := fingerprinted(t, templatedBuilder(fstest.MapFS{templateFile: {Data: []byte("other")}}))
-			assert.True(t, bytes.Equal(one, other), "the fingerprint leaves the trees to the run")
+			assert.Equal(t, other, one, "the fingerprint leaves the trees to the run")
 		})
 	})
 }
 
 // A fingerprint allocates its copy in the ordinary run, which runs no
-// benchmark. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// benchmark. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestFingerprintAllocs(t *testing.T) {
 	w, err := valid().Build()
 	assert.NoError(t, err, "the composition composes")
-	assert.MaxAllocs(t, func() {
-		if len(w.Fingerprint()) != sha256.Size {
-			t.Fatal("Fingerprint returned another length")
-		}
-	}, fingerprintAllocs, "Fingerprint allocates the copy it returns")
+	var got []byte
+	assert.MaxAllocs(t, func() { got = w.Fingerprint() }, fingerprintAllocs,
+		"Fingerprint allocates the copy it returns")
+	assert.Length(t, got, sha256.Size, "Fingerprint returns the digest")
 }
 
 // BenchmarkFingerprint measures the copy of a workspace's fingerprint,

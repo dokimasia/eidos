@@ -4,7 +4,6 @@
 package frontend_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -89,7 +88,7 @@ func TestResolve(t *testing.T) {
 
 // scopeOf parses one file and returns the frontend with the file's
 // recorded import scope.
-func scopeOf(tb assert.TB, src string) (plugin.Frontend, plugin.ImportScope) {
+func scopeOf(tb testing.TB, src string) (plugin.Frontend, plugin.ImportScope) {
 	tb.Helper()
 
 	tree := fstest.MapFS{resolveFile: {Data: []byte(src)}}
@@ -98,7 +97,7 @@ func scopeOf(tb assert.TB, src string) (plugin.Frontend, plugin.ImportScope) {
 		[]plugin.SourceRef{{Path: resolveFile}}, tree, plugin.DepthFull,
 		f.Syntax(), brand, diag.NewSink(), f.Name(),
 	)
-	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the file parses")
 	scopes := u.Graph().Scopes()
 	assert.Length(tb, scopes, 1, "one file, one scope")
 	return f, plugin.ImportScope{

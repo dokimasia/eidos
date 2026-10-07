@@ -4,15 +4,14 @@
 package workspacetest
 
 import (
-	"errors"
-	"io/fs"
 	"maps"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -33,6 +32,10 @@ const (
 	auditDoc                    = "a key the workspace suite promises and no annotator stamps"
 )
 
+// lacks separates the subject of an UnmetContract message from the key
+// it lacks.
+const lacks = " lacks "
+
 // AssertGenerated runs the fixture's plans in root, an empty directory,
 // and checks that the files under the brand's frame are the wanted
 // files, byte for byte, and that the record lists each file under the
@@ -41,7 +44,7 @@ func AssertGenerated(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
 	_, w, report := clean(tb, f, root)
-	assert.Equal(tb, rundir.Framed(tb, root, w.Brand()), rundir.Texts(f.Want),
+	expect.Equal(tb, rundir.Framed(tb, root, w.Brand()), rundir.Texts(f.Want),
 		"the files under the brand's frame are the fixture's wanted files, byte for byte")
 	committed := map[string]string{}
 	for _, p := range report.Plans {
@@ -53,7 +56,7 @@ func AssertGenerated(tb assert.TB, f Fixture, root string) {
 	for _, e := range rundir.Record(tb, root, w.Brand()).Files {
 		recorded[e.Path] = e.Plan
 	}
-	assert.Equal(tb, recorded, committed, "the record lists each file under the plan whose commit wrote it")
+	expect.Equal(tb, recorded, committed, "the record lists each file under the plan whose commit wrote it")
 }
 
 // AssertCollision runs the fixture's plans in root, an empty directory,
@@ -70,19 +73,17 @@ func AssertCollision(tb assert.TB, f Fixture, root string) {
 	w := built(tb, f, root, append(plans, twin), nil)
 	report, err := ran(f, w, root)
 	collisions := codes(report, workspace.PlanCollision)
-	if len(collisions) == 0 {
-		tb.Fatalf("the run reports no PlanCollision for a copy of plan %q", plans[0].Name)
-	}
+	assert.NotEmpty(tb, collisions, "the run reports a PlanCollision for a copy of plan "+plans[0].Name)
 	for _, d := range collisions {
-		assert.Contains(tb, d.Msg, strconv.Quote(plans[0].Name), "the collision names the copied plan")
-		assert.Contains(tb, d.Msg, strconv.Quote(copyPlan), "the collision names the copy")
+		expect.That(tb, d.Msg).
+			Contains(strconv.Quote(plans[0].Name), "the collision names the copied plan").
+			Contains(strconv.Quote(copyPlan), "the collision names the copy")
 	}
-	assert.ErrorIs(tb, err, workspace.ErrRunFailed, "the collision fails the run")
+	expect.ErrorIs(tb, err, workspace.ErrRunFailed, "the collision fails the run")
 	for _, p := range report.Plans {
-		assert.Equal(tb, p.Status, workspace.PlanFailed, "plan "+p.Name+" commits nothing")
+		expect.Equal(tb, p.Status, workspace.PlanFailed, "plan "+p.Name+" commits nothing")
 	}
-	_, err = os.Stat(rundir.Path(root, ledger.ManifestPath(w.Brand())))
-	assert.True(tb, errors.Is(err, fs.ErrNotExist), "the run records nothing")
+	files.Absent(tb, rundir.Path(root, ledger.ManifestPath(w.Brand())), "the run records nothing")
 }
 
 // AssertIsolated runs the fixture's plans in root, an empty directory,
@@ -101,20 +102,20 @@ func AssertIsolated(tb assert.TB, f Fixture, root string) {
 	last.Generators = append(slices.Clone(last.Generators), failure{at: at})
 	again := built(tb, f, root, plans, nil)
 	report, err := ran(f, again, root)
-	assert.ErrorIs(tb, err, workspace.ErrRunFailed, "the seeded failure fails the run")
+	expect.ErrorIs(tb, err, workspace.ErrRunFailed, "the seeded failure fails the run")
 	for _, p := range report.Plans {
 		if p.Name == last.Name {
-			assert.Equal(tb, p.Status, workspace.PlanFailed, "the plan seeded to fail commits nothing")
+			expect.Equal(tb, p.Status, workspace.PlanFailed, "the plan seeded to fail commits nothing")
 			continue
 		}
-		assert.Equal(tb, p.Status, workspace.PlanCommitted, "plan "+p.Name+" commits beside it")
+		expect.Equal(tb, p.Status, workspace.PlanCommitted, "plan "+p.Name+" commits beside it")
 	}
 	kept := entriesOf(before, last.Name)
-	assert.True(tb, sameEntries(entriesOf(rundir.Record(tb, root, again.Brand()), last.Name), kept),
-		"the failed plan's entries remain")
+	expect.Equal(tb, entriesOf(rundir.Record(tb, root, again.Brand()), last.Name), kept,
+		"the failed plan's entries remain", assert.EquateEmpty())
 	after := rundir.Framed(tb, root, again.Brand())
 	for _, e := range kept {
-		assert.Equal(tb, after[e.Path], files[e.Path], "the failed plan's file "+e.Path+" remains")
+		expect.Equal(tb, after[e.Path], files[e.Path], "the failed plan's file "+e.Path+" remains")
 	}
 }
 
@@ -130,7 +131,7 @@ func AssertExported(tb assert.TB, f Fixture, root string) {
 	names := planNames(plansOf(tb, f))
 	copied(tb, f, root)
 	run := probed(tb, f, root, false)
-	assert.Equal(tb, slices.Sorted(maps.Keys(run.exports)), slices.Sorted(slices.Values(names)),
+	expect.Permutation(tb, slices.Collect(maps.Keys(run.exports)), names,
 		"the probe reads the export of each plan it depends on")
 	record := rundir.Record(tb, root, run.brand)
 	for _, name := range names {
@@ -153,8 +154,9 @@ func AssertCycleRefused(tb assert.TB, f Fixture, root string) {
 	b.Name, b.DependsOn = cycleB, []string{cycleA}
 	_, err := composed(tb, f, root, append(plans, a, b), nil)
 	assert.HasError(tb, err, "Build refuses two plans that depend on each other")
-	assert.Contains(tb, err.Error(), strconv.Quote(cycleA), "the error names the first plan of the cycle")
-	assert.Contains(tb, err.Error(), strconv.Quote(cycleB), "the error names the second plan of the cycle")
+	expect.That(tb, err.Error()).
+		Contains(strconv.Quote(cycleA), "the error names the first plan of the cycle").
+		Contains(strconv.Quote(cycleB), "the error names the second plan of the cycle")
 }
 
 // AssertSwept runs the fixture's plans in root, an empty directory,
@@ -169,25 +171,24 @@ func AssertSwept(tb assert.TB, f Fixture, root string) {
 	plans, w, _ := clean(tb, f, root)
 	last := plans[len(plans)-1].Name
 	gone := entriesOf(rundir.Record(tb, root, w.Brand()), last)
-	if len(gone) == 0 {
-		tb.Fatalf("the fixture's last plan %q routes no file", last)
-	}
+	assert.NotEmpty(tb, gone, "the fixture's last plan "+last+" routes a file")
 	want := rundir.Framed(tb, root, w.Brand())
 	for _, e := range gone {
 		delete(want, e.Path)
 	}
 	_, after := withoutLast(tb, f, root)
-	assert.Equal(tb, after, want, "the run without the last plan removes its files and changes no other")
+	expect.Equal(tb, after, want, "the run without the last plan removes its files and changes no other")
 	_, err := ran(f, built(tb, f, root, plansOf(tb, f), nil), root)
 	assert.NoError(tb, err, "the fixture's plans run clean again")
 	kept := gone[0].Path
 	edited := drifted(tb, root, kept, w.Brand())
 	report, after := withoutLast(tb, f, root)
-	assert.Equal(tb, after[kept], edited, "the removed plan's edited file remains")
-	warned := slices.ContainsFunc(codes(report, workspace.KeptOutput), func(d diag.Diag) bool {
-		return d.Pos.File == kept
-	})
-	assert.True(tb, warned, "a KeptOutput warning names the edited file")
+	expect.Equal(tb, after[kept], edited, "the removed plan's edited file remains")
+	var warned []string
+	for _, d := range codes(report, workspace.KeptOutput) {
+		warned = append(warned, d.Pos.File)
+	}
+	expect.Contains(tb, warned, kept, "a KeptOutput warning names the edited file")
 }
 
 // AssertAudited runs the fixture's plans in root, an empty directory,
@@ -200,9 +201,7 @@ func AssertAudited(tb assert.TB, f Fixture, root string) {
 
 	plans, _, report := clean(tb, f, root)
 	id, found := firstOrigin(report.Emits[plans[0].Name])
-	if !found {
-		tb.Fatalf("the fixture's first plan emits nothing that derives from a source declaration")
-	}
+	assert.True(tb, found, "the fixture's first plan emits a unit that derives from a source declaration")
 	promise := func(r *meta.Registry) error {
 		if err := r.ClaimNamespace(auditNamespace); err != nil {
 			return err
@@ -218,13 +217,16 @@ func AssertAudited(tb assert.TB, f Fixture, root string) {
 	}
 	audited := built(tb, f, root, plansOf(tb, f), func(b *workspace.Builder) { b.Keys(promise) })
 	promised, err := ran(f, audited, root)
-	assert.NoError(tb, err, "a Warning fails no run")
-	unmet := slices.ContainsFunc(codes(promised, workspace.UnmetContract), func(d diag.Diag) bool {
-		return d.Severity == diag.SeverityWarning && strings.Contains(d.Msg, id.Kind.String()+" "+id.Name+" lacks")
-	})
-	assert.True(tb, unmet, "an UnmetContract Warning names the origin "+id.String())
+	expect.NoError(tb, err, "a Warning fails no run")
+	var unmet []string
+	for _, d := range codes(promised, workspace.UnmetContract) {
+		if subject, _, cut := strings.Cut(d.Msg, lacks); cut && d.Severity == diag.SeverityWarning {
+			unmet = append(unmet, subject)
+		}
+	}
+	expect.Contains(tb, unmet, id.Kind.String()+" "+id.Name, "an UnmetContract Warning names the origin "+id.String())
 	for _, p := range promised.Plans {
-		assert.Equal(tb, p.Status, workspace.PlanCommitted, "plan "+p.Name+" commits")
+		expect.Equal(tb, p.Status, workspace.PlanCommitted, "plan "+p.Name+" commits")
 	}
 }
 
@@ -249,8 +251,8 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 		b.Checks(blocked, reading)
 	})
 	report, err := ran(f, w, root)
-	assert.ErrorIs(tb, err, workspace.ErrRunFailed, "the seeded failure fails the run")
-	assert.Length(tb, blocked.called, 0, "the check that reads the failed plan does not run")
+	expect.ErrorIs(tb, err, workspace.ErrRunFailed, "the seeded failure fails the run")
+	expect.Empty(tb, blocked.called, "the check that reads the failed plan does not run")
 	var reported []diag.Diag
 	for _, d := range codes(report, workspace.FailedDependency) {
 		if strings.Contains(d.Msg, "check "+string(blockedCheck)) {
@@ -258,14 +260,14 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 		}
 	}
 	assert.Length(tb, reported, 1, "one FailedDependency for the check that does not run")
-	assert.Equal(tb, reported[0].Pos, at, "at the seeded failure")
+	expect.Equal(tb, reported[0].Pos, at, "at the seeded failure")
 	assert.Length(tb, reading.called, 1, "the check that reads plan "+plans[0].Name+" runs once")
 	assert.Length(tb, reading.called[0].Plans, 1, "the check reads the one plan it names")
 	read := reading.called[0].Plans[0]
-	assert.Equal(tb, read.Name, plans[0].Name, "the check reads the plan it names")
-	assert.True(tb, sameEntries(read.Files, entriesOf(rundir.Record(tb, root, w.Brand()), plans[0].Name)),
-		"the check reads the plan's files as its commit recorded them")
-	assert.Equal(tb, read.Export.Plan, plans[0].Name, "the check reads the plan's export")
+	expect.Equal(tb, read.Name, plans[0].Name, "the check reads the plan it names")
+	expect.Equal(tb, read.Files, entriesOf(rundir.Record(tb, root, w.Brand()), plans[0].Name),
+		"the check reads the plan's files as its commit recorded them", assert.EquateEmpty())
+	expect.Equal(tb, read.Export.Plan, plans[0].Name, "the check reads the plan's export")
 }
 
 // AssertWarmEdited runs the fixture's plans cold in warm, an empty
@@ -286,9 +288,7 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 	tb.Helper()
 
-	if f.Edit == nil {
-		tb.Fatalf("the fixture states no edit")
-	}
+	assert.NotNil(tb, f.Edit, "the fixture states an edit")
 	first := plansOf(tb, f)[0].Name
 	copied(tb, f, warm)
 	before := probed(tb, f, warm, false)
@@ -296,27 +296,27 @@ func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 	assert.NoError(tb, f.Edit(warm), "the fixture's edit applies in the warm directory")
 	after := probed(tb, f, warm, false)
 	record := rundir.Record(tb, warm, after.brand)
-	if sameEntries(entriesOf(record, first), planned) {
-		tb.Fatalf("the fixture's edit leaves the files of plan %q unchanged", first)
-	}
+	assert.NotEqual(tb, entriesOf(record, first), planned, "the fixture's edit changes the files of plan "+first,
+		assert.EquateEmpty())
 	assert.False(tb, after.report.Stats.Cold, "the run after the edit reads the sealed state")
 
 	copied(tb, f, cold)
 	assert.NoError(tb, f.Edit(cold), "the fixture's edit applies in the cold directory")
 	fresh := probed(tb, f, cold, true)
-	assert.Equal(tb, outside(tb, warm, after.brand), outside(tb, cold, fresh.brand),
+	expect.Equal(tb, outside(tb, warm, after.brand), outside(tb, cold, fresh.brand),
 		"the warm run leaves the cold run's files outside the state directory")
-	assert.Equal(tb, record.Files, rundir.Record(tb, cold, fresh.brand).Files,
+	expect.Equal(tb, record.Files, rundir.Record(tb, cold, fresh.brand).Files,
 		"the warm run records the cold run's entries")
-	assert.Equal(tb, slices.Collect(after.report.Sink.All()), slices.Collect(fresh.report.Sink.All()),
+	expect.Equal(tb, slices.Collect(after.report.Sink.All()), slices.Collect(fresh.report.Sink.All()),
 		"the warm run reports the cold run's findings")
-	assert.Equal(tb, after.exports, fresh.exports, "the warm run hands the probe the cold run's exports")
+	expect.Equal(tb, after.exports, fresh.exports, "the warm run hands the probe the cold run's exports")
 }
 
 // exportedIn checks one plan's export against the plan's record entries:
 // every exported declaration is in a recorded file, under one of the
 // file's plugins and, at file level, from one of its sources, and every
-// recorded file exports a declaration.
+// recorded file exports a declaration. Each declaration and each file
+// that breaks the contract fails the check on a record of its own.
 func exportedIn(tb assert.TB, doc plugin.ExportDoc, entries []manifest.Entry) {
 	tb.Helper()
 
@@ -324,25 +324,24 @@ func exportedIn(tb assert.TB, doc plugin.ExportDoc, entries []manifest.Entry) {
 	for _, e := range entries {
 		byPath[e.Path] = e
 	}
-	files := map[string]bool{}
+	recorded := slices.Sorted(maps.Keys(byPath))
+	var exported []string
 	for _, s := range doc.Symbols {
-		files[s.File] = true
-		e, recorded := byPath[s.File]
-		switch {
-		case !recorded:
-			tb.Errorf("plan %q exports %s in %s, which its record does not list", doc.Plan, s.Name, s.File)
-		case !slices.Contains(e.Plugins, s.Plugin):
-			tb.Errorf("plan %q exports %s from plugin %s, which the record of %s does not name", doc.Plan,
-				s.Name, s.Plugin, s.File)
-		case s.Host == "" && !s.Origin.IsZero() && !slices.Contains(e.Sources, s.Origin.String()):
-			tb.Errorf("plan %q exports %s derived from %s, which the record of %s does not list as a source",
-				doc.Plan, s.Name, s.Origin, s.File)
+		exported = append(exported, s.File)
+		expect.Contains(tb, recorded, s.File,
+			"plan "+doc.Plan+" records the file it exports "+s.Name+" in")
+		e, held := byPath[s.File]
+		if !held {
+			continue
+		}
+		expect.Contains(tb, e.Plugins, s.Plugin, "the record of "+s.File+" names the plugin that exports "+s.Name)
+		if s.Host == "" && !s.Origin.IsZero() {
+			expect.Contains(tb, e.Sources, s.Origin.String(),
+				"the record of "+s.File+" lists the source "+s.Name+" derives from")
 		}
 	}
-	for _, e := range entries {
-		if !files[e.Path] {
-			tb.Errorf("plan %q records %s, and its export lists no declaration in it", doc.Plan, e.Path)
-		}
+	for _, path := range recorded {
+		expect.Contains(tb, exported, path, "plan "+doc.Plan+" exports a declaration in "+path+", which it records")
 	}
 }
 
@@ -368,14 +367,13 @@ func withoutLast(tb assert.TB, f Fixture, root string) (*workspace.Report, map[s
 func drifted(tb assert.TB, root, path string, brand output.Brand) string {
 	tb.Helper()
 
-	b, err := os.ReadFile(rundir.Path(root, path))
-	assert.NoError(tb, err, "the generated file "+path+" reads")
-	text := string(b)
+	text := files.Read(tb, rundir.Path(root, path))
 	cut := strings.LastIndexByte(strings.TrimSuffix(text, "\n"), '\n') + 1
 	edited := text[:cut] + "\n" + text[cut:]
 	p, framed := output.Read([]byte(edited))
-	assert.True(tb, framed && p.Brand == brand, "an empty line before the trailer of "+path+" keeps the brand's frame")
-	assert.NoError(tb, os.WriteFile(rundir.Path(root, path), []byte(edited), 0o644), "the edit of "+path+" writes")
+	assert.True(tb, framed, "an empty line before the trailer of "+path+" keeps a frame")
+	assert.Equal(tb, p.Brand, brand, "the frame of "+path+" names the brand")
+	files.Write(tb, root, files.Tree{path: files.Text(edited)})
 	return edited
 }
 
@@ -402,13 +400,6 @@ func entriesOf(m manifest.Manifest, plan string) []manifest.Entry {
 	return out
 }
 
-// sameEntries reports whether two lists record the same files alike,
-// a nil list and an empty one alike, as a record compares them.
-func sameEntries(a, b []manifest.Entry) bool {
-	return manifest.Manifest{Version: manifest.Version, Files: a}.
-		Equal(manifest.Manifest{Version: manifest.Version, Files: b})
-}
-
 // outside returns the text of every file under root outside the brand's
 // state directory, keyed by its slash-separated path relative to root:
 // the tree's sources and the files the plans generate.
@@ -421,9 +412,7 @@ func outside(tb assert.TB, root string, brand output.Brand) map[string]string {
 		if strings.HasPrefix(path, state) {
 			continue
 		}
-		b, err := os.ReadFile(rundir.Path(root, path))
-		assert.NoError(tb, err, "a file of the run's directory reads")
-		out[path] = string(b)
+		out[path] = files.Read(tb, rundir.Path(root, path))
 	}
 	return out
 }

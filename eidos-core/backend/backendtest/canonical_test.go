@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/emit"
@@ -33,15 +34,10 @@ func TestCanonical(t *testing.T) {
 
 			var kinds []symbol.Kind
 			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
-				assert.True(t, len(u.Decls) > 0, "every unit has declarations: "+u.Key)
-				if len(u.Decls) > 0 {
-					kinds = append(kinds, u.Decls[0].Kind())
-				}
+				assert.NotEmpty(t, u.Decls, "every unit has declarations: "+u.Key)
+				kinds = append(kinds, u.Decls[0].Kind())
 			}
-			slices.Sort(kinds)
-			want := fileLevelKinds()
-			slices.Sort(want)
-			assert.Equal(t, kinds, want, "each file-level kind, once")
+			assert.Permutation(t, kinds, fileLevelKinds(), "each file-level kind, once")
 		})
 
 		t.Run("emits declarations of one kind per unit", func(t *testing.T) {
@@ -94,12 +90,8 @@ func TestCanonical(t *testing.T) {
 
 			f := backendtest.CanonicalFixture(t)
 			assert.Length(t, f.Schedule, 1, "one emitting plugin")
-			tree, declared := f.Trees[f.Schedule[0]]
-			assert.True(t, declared, "the emitter declares its template tree")
-			if !declared {
-				return
-			}
-			names, err := fs.Glob(tree, referencePattern)
+			assert.Contains(t, f.Trees, f.Schedule[0], "the emitter declares its template tree")
+			names, err := fs.Glob(f.Trees[f.Schedule[0]], referencePattern)
 			assert.NoError(t, err, "the tree lists")
 			assert.NotEmpty(t, names, "the tree contains the reference template")
 		})
@@ -107,15 +99,16 @@ func TestCanonical(t *testing.T) {
 		t.Run("routes every unit with the full key", func(t *testing.T) {
 			t.Parallel()
 
-			keys := map[string]bool{}
-			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
-				assert.True(t, u.Word != "", "every unit has its family word")
-				assert.True(t, u.Key != "", "every unit has its routing key")
-				assert.True(t, !u.Pkg.IsZero(), "every unit has its package")
-				assert.True(t, len(u.Origins) > 0, "every unit has provenance")
-				assert.True(t, !keys[u.Key], "routing keys are distinct: "+u.Key)
-				keys[u.Key] = true
+			units := unitsOf(t, backendtest.CanonicalFixture(t))
+			keys := make([]string, 0, len(units))
+			for _, u := range units {
+				expect.NotEmpty(t, u.Word, "every unit has its family word")
+				expect.NotEmpty(t, u.Key, "every unit has its routing key")
+				expect.NotEqual(t, u.Pkg, symbol.Identity{}, "every unit has its package")
+				expect.NotEmpty(t, u.Origins, "every unit has provenance")
+				keys = append(keys, u.Key)
 			}
+			assert.NoDuplicates(t, func() ([]string, error) { return keys, nil }, "routing keys are distinct")
 		})
 
 		t.Run("orders every unit the way a flush leaves it", func(t *testing.T) {
@@ -124,13 +117,12 @@ func TestCanonical(t *testing.T) {
 			assertFlushOrder(t, unitsOf(t, backendtest.CanonicalFixture(t)))
 		})
 
-		t.Run("builds the same fixture twice", func(t *testing.T) {
+		t.Run("builds the same fixture on every call", func(t *testing.T) {
 			t.Parallel()
 
-			first := unitsOf(t, backendtest.CanonicalFixture(t))
-			second := unitsOf(t, backendtest.CanonicalFixture(t))
-			assert.Equal(t, first, second,
-				"two builds contain the same units in the same order")
+			assert.Deterministic(t, func(tb assert.TB) ([]plugin.Unit, error) {
+				return unitsOf(tb, backendtest.CanonicalFixture(tb)), nil
+			}, assert.TB(t), "every build contains the same units in the same order")
 		})
 	})
 }
@@ -155,12 +147,9 @@ func fileLevelKinds() []symbol.Kind {
 func unitsOf(tb assert.TB, f *backendtest.Fixture) []plugin.Unit {
 	tb.Helper()
 
-	assert.True(tb, f != nil && f.Emit != nil, "the fixture contains a store")
-	var units []plugin.Unit
-	for u := range f.Emit.Units() {
-		units = append(units, u)
-	}
-	return units
+	assert.NotNil(tb, f, "the fixture is built")
+	assert.NotNil(tb, f.Emit, "the fixture contains a store")
+	return slices.Collect(f.Emit.Units())
 }
 
 // formsIn folds every body form found on the given callables into
@@ -196,12 +185,12 @@ func assertFlushOrder(tb assert.TB, units []plugin.Unit) {
 			id, _ := emit.OriginOf(d)
 			origins = append(origins, id)
 		}
-		assert.True(tb, slices.IsSortedFunc(origins, symbol.Identity.Compare),
-			"the declarations order by origin: "+u.Key)
-		assert.True(tb, slices.IsSortedFunc(u.Origins, symbol.Identity.Compare),
-			"and so do the origins: "+u.Key)
-		assert.Equal(tb, len(slices.Compact(slices.Clone(u.Origins))), len(u.Origins),
-			"each origin once: "+u.Key)
+		assert.Pairwise(tb, origins, func(earlier, later symbol.Identity) bool {
+			return earlier.Compare(later) <= 0
+		}, "the declarations order by origin: "+u.Key)
+		assert.Pairwise(tb, u.Origins, func(earlier, later symbol.Identity) bool {
+			return earlier.Compare(later) < 0
+		}, "the origins are sorted and distinct: "+u.Key)
 	}
 }
 

@@ -4,6 +4,7 @@
 package output_test
 
 import (
+	"cmp"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -114,54 +115,40 @@ func TestMem(t *testing.T) {
 
 // Each method of the memory sink allocates what it keeps or returns in
 // the ordinary run, which runs no benchmark. Each call that consumes
-// its sink takes a sink of its own, built before the count. The check
-// runs alone, because AllocsPerRun counts every goroutine's allocations
-// and refuses to run beside parallel tests.
+// its sink takes a sink of its own, built outside the count, and each
+// count keeps the first error of its calls, which cmp.Or returns
+// without allocating. The check runs alone, because the count includes
+// every goroutine's allocations.
 func TestMemAllocs(t *testing.T) {
 	body := []byte(firstBody)
 	var built *output.Mem
 	assert.MaxAllocs(t, func() { built = output.NewMem() }, newMemAllocs, "NewMem allocates the sink")
 	assert.Empty(t, built.Files(), "NewMem returns a sink without a file")
 
-	at, empty := 0, mems(t, nil)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Write(storeFile, body); err != nil {
-			t.Fatalf("Write: unexpected error: %v", err)
-		}
-		at++
-	}, firstWriteAllocs, "Write allocates the staging's maps on the first write")
+	var err error
+	assert.MaxAllocsWithSetup(t, memOf(t, nil), func(m *output.Mem) { err = cmp.Or(err, m.Write(storeFile, body)) },
+		firstWriteAllocs, "Write allocates the staging's maps on the first write")
+	assert.NoError(t, err, "every first write stages")
 
-	at, empty = 0, mems(t, nil)
-	assert.MaxAllocs(t, func() {
-		if err := empty[at].Delete(storeFile); err != nil {
-			t.Fatalf("Delete: unexpected error: %v", err)
-		}
-		at++
-	}, firstDeleteAllocs, "Delete allocates the removal set on the first removal")
+	assert.MaxAllocsWithSetup(t, memOf(t, nil), func(m *output.Mem) { err = cmp.Or(err, m.Delete(storeFile)) },
+		firstDeleteAllocs, "Delete allocates the removal set on the first removal")
+	assert.NoError(t, err, "every first removal stages")
 
-	at, one := 0, mems(t, body)
-	assert.MaxAllocs(t, func() {
-		if _, err := one[at].Prepare(); err != nil {
-			t.Fatalf("Prepare: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, memOf(t, body), func(m *output.Mem) {
+		_, perr := m.Prepare()
+		err = cmp.Or(err, perr)
 	}, prepareOneAllocs, "Prepare allocates the path list, the changes and the digest")
+	assert.NoError(t, err, "every staging prepares")
 
-	at, one = 0, mems(t, body)
-	assert.MaxAllocs(t, func() {
-		if _, err := one[at].Commit(); err != nil {
-			t.Fatalf("Commit: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, memOf(t, body), func(m *output.Mem) {
+		_, cerr := m.Commit()
+		err = cmp.Or(err, cerr)
 	}, commitOneAllocs, "Commit allocates the path list, the records, the committed map and the digest")
+	assert.NoError(t, err, "every staging commits")
 
-	at, one = 0, mems(t, body)
-	assert.MaxAllocs(t, func() {
-		if err := one[at].Discard(); err != nil {
-			t.Fatalf("Discard: unexpected error: %v", err)
-		}
-		at++
-	}, 0, "Discard allocates nothing")
+	assert.MaxAllocsWithSetup(t, memOf(t, body), func(m *output.Mem) { err = cmp.Or(err, m.Discard()) },
+		0, "Discard allocates nothing")
+	assert.NoError(t, err, "every staging discards")
 
 	m := committedMem(t)
 	var files map[string][]byte
@@ -301,18 +288,15 @@ func committedMem(tb assert.TB) *output.Mem {
 	return m
 }
 
-// mems returns allocRuns memory sinks, each with body staged at
-// storeFile, or with nothing staged for a nil body: one sink for each
-// call of an allocation check that consumes its sink.
-func mems(t *testing.T, body []byte) []*output.Mem {
-	t.Helper()
-
-	out := make([]*output.Mem, allocRuns)
-	for i := range out {
-		out[i] = output.NewMem()
+// memOf returns the setup of an allocation check that consumes its
+// sink: each call builds a memory sink with body staged at storeFile,
+// or with nothing staged for a nil body.
+func memOf(tb assert.TB, body []byte) func() *output.Mem {
+	return func() *output.Mem {
+		m := output.NewMem()
 		if body != nil {
-			assert.NoError(t, out[i].Write(storeFile, body), "the file stages")
+			assert.NoError(tb, m.Write(storeFile, body), "the file stages")
 		}
+		return m
 	}
-	return out
 }

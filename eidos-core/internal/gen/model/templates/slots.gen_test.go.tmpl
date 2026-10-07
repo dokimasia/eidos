@@ -42,9 +42,9 @@ func TestSlots(t *testing.T) {
 			slot.Append({{.Child}})
 			assert.Equal(t, subject.{{.Storage}}.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
-			assert.True(t, slot == subject.{{.Accessor}}(),
+			assert.Equal(t, slot, subject.{{.Accessor}}(),
 				"and a second call addresses the same storage, so two plugins "+
-					"appending through it append into one list")
+					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
 {{- end}}
@@ -86,7 +86,8 @@ func slotsCases() []slotsCase {
 			name: "{{$v.Name}}.{{.Accessor}}",
 			call: func() { slot = subject.{{.Accessor}}() },
 			check: func(tb testing.TB) {
-				assert.True(tb, slot == &subject.{{.Storage}}, "{{.Accessor}} returns the value's own storage")
+				assert.Equal(tb, slot, &subject.{{.Storage}}, "{{.Accessor}} returns the value's own storage",
+					assert.ByIdentity())
 			},
 		})
 	}

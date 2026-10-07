@@ -4,8 +4,7 @@
 package facade_test
 
 import (
-	"errors"
-	"io/fs"
+	"cmp"
 	"maps"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/internal/gen/facade"
 	"go.dokimi.dev/eidos/core/internal/genfile"
@@ -32,8 +32,9 @@ const (
 	// over each file.
 	generateMiniAllocs = 14_730 + 8*1
 	// generateKernelAllocs is one generation of the kernel's facade,
-	// 492,398 on average with a standard deviation of 13.
-	generateKernelAllocs = 492_398 + 8*13
+	// 494,279 on average with a standard deviation of 12.7, rounded up to
+	// 13.
+	generateKernelAllocs = 494_279 + 8*13
 	// regenerateMiniAllocs is one regeneration of the mini kernel's
 	// facade: the module check, the generation, and the write of each
 	// file.
@@ -60,8 +61,7 @@ func TestGenerate(t *testing.T) {
 					want = append(want, filepath.ToSlash(filepath.Join(facade.FacadeDir, s.FacadeRel(), name)))
 				}
 			}
-			slices.Sort(want)
-			assert.Equal(t, slices.Sorted(maps.Keys(set)), want,
+			assert.Permutation(t, slices.Collect(maps.Keys(set)), want,
 				"two files per curated package, and nothing else")
 		})
 
@@ -70,16 +70,14 @@ func TestGenerate(t *testing.T) {
 
 			set, err := facade.Generate(repoRoot(t))
 			assert.NoError(t, err, "the kernel generates")
-			spec := string(set["eidos-sdk/diag/facade.gen_test.go"])
-			assert.Contains(t, spec, "package diag_test", "the spec is black-box")
-			assert.Contains(t, spec,
-				"reflect.TypeFor[diag.Prefix](), reflect.TypeFor[core.Prefix]()",
-				"an alias is pinned to the kernel's type")
-			assert.Contains(t, spec, "assert.Equal(t, diag.KernelPrefix, core.KernelPrefix,",
-				"a constant is pinned to the kernel's value")
-			assert.Contains(t, spec,
-				"reflect.TypeOf(diag.NewRegistry), reflect.TypeOf(core.NewRegistry)",
-				"a wrapper is pinned to the kernel function's signature")
+			assert.That(t, string(set["eidos-sdk/diag/facade.gen_test.go"])).
+				Contains("package diag_test", "the spec is black-box").
+				Contains("reflect.TypeFor[diag.Prefix](), reflect.TypeFor[core.Prefix]()",
+					"an alias is pinned to the kernel's type").
+				Contains("assert.Equal(t, diag.KernelPrefix, core.KernelPrefix,",
+					"a constant is pinned to the kernel's value").
+				Contains("reflect.TypeOf(diag.NewRegistry), reflect.TypeOf(core.NewRegistry)",
+					"a wrapper is pinned to the kernel function's signature")
 		})
 
 		t.Run("copies the kernel's documentation", func(t *testing.T) {
@@ -96,18 +94,15 @@ func TestGenerate(t *testing.T) {
 				"a re-declared constant keeps its kernel docblock")
 		})
 
-		t.Run("returns the same bytes on a second run", func(t *testing.T) {
+		t.Run("returns the same bytes on every run", func(t *testing.T) {
 			t.Parallel()
 
-			root := repoRoot(t)
-			first, err := facade.Generate(root)
-			assert.NoError(t, err, "the first run generates")
-			second, err := facade.Generate(root)
-			assert.NoError(t, err, "and the second")
-			for path, want := range first {
-				assert.Equal(t, string(second[path]), string(want),
-					"two runs produce the same bytes")
-			}
+			assert.Deterministic(
+				t,
+				facade.Generate,
+				repoRoot(t),
+				"every run produces the same files with the same bytes",
+			)
 		})
 
 		t.Run("returns an error for a tree without a kernel", func(t *testing.T) {
@@ -149,30 +144,27 @@ func TestGenerate(t *testing.T) {
 			t.Parallel()
 
 			root := mini(t)
-			poison(t, root, poisonRel,
-				"package emit\n\n// Fetch returns a row.\nfunc Fetch() row { return row{} }\n\ntype row struct{}\n")
-			err := facade.Regenerate(filepath.Join(root, facade.KernelDir))
+			kernel := filepath.Join(root, facade.KernelDir)
+			files.Write(t, kernel, files.Tree{poisonRel: files.Text(
+				"package emit\n\n// Fetch returns a row.\nfunc Fetch() row { return row{} }\n\ntype row struct{}\n")})
+			var err error
+			files.Unchanged(t, os.DirFS(root), func() { err = facade.Regenerate(kernel) },
+				"no file is written: a refused surface leaves no half-generated facade")
 			assert.HasError(t, err, "a surface that cannot re-export refuses the run")
 			assert.Contains(t, err.Error(), "unexported row", "naming what defeated it")
-			assert.Empty(t, dirEntries(t, root, facade.FacadeDir),
-				"and no file was written: a refused surface leaves no half-generated facade")
 		})
 
 		t.Run("returns an error for a module that is not the kernel", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			assert.NoError(t,
-				os.WriteFile(filepath.Join(root, "go.mod"), []byte(otherModule), 0o600),
-				"the other module's go.mod writes")
-			err := facade.Regenerate(root)
+			root := files.Workspace(t, files.Tree{"go.mod": files.Text(otherModule)})
+			var err error
+			files.Unchanged(t, os.DirFS(root), func() { err = facade.Regenerate(root) },
+				"nothing is written: a wrong tree is refused before it is generated into")
 			assert.HasError(t, err, "a module that is not the kernel is refused")
-			assert.Contains(t, err.Error(), "example.test/other",
-				"the refusal names the module it found")
-			assert.Contains(t, err.Error(), facade.KernelModule,
-				"and the kernel it wanted")
-			assert.Empty(t, dirEntries(t, root, facade.FacadeDir),
-				"and nothing was written: a wrong tree is refused before it is generated into")
+			assert.That(t, err.Error()).
+				Contains("example.test/other", "the refusal names the module it found").
+				Contains(facade.KernelModule, "and the kernel it wanted")
 		})
 	})
 }
@@ -180,22 +172,26 @@ func TestGenerate(t *testing.T) {
 // A generation and a regeneration of the mini kernel allocate within
 // their ceilings in the ordinary run, which runs no benchmark. The
 // kernel's own generation takes too long to repeat 101 times, so only
-// [BenchmarkGenerate] checks its ceiling. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// [BenchmarkGenerate] checks its ceiling. Each count keeps the first
+// error of its calls, which cmp.Or returns without allocating. The check
+// runs alone, because the count includes every goroutine's allocations.
 func TestGenerateAllocs(t *testing.T) {
 	root := mini(t)
+	var (
+		set genfile.Set
+		err error
+	)
 	assert.MaxAllocs(t, func() {
-		if _, err := facade.Generate(root); err != nil {
-			t.Fatalf("Generate: unexpected error: %v", err)
-		}
+		var gerr error
+		set, gerr = facade.Generate(root)
+		err = cmp.Or(err, gerr)
 	}, generateMiniAllocs, "Generate allocates the lowering, the rendering and the formatting")
+	assert.NoError(t, err, "the mini kernel generates")
+	assert.NotEmpty(t, set, "every file")
 	dir := filepath.Join(root, facade.KernelDir)
-	assert.MaxAllocs(t, func() {
-		if err := facade.Regenerate(dir); err != nil {
-			t.Fatalf("Regenerate: unexpected error: %v", err)
-		}
-	}, regenerateMiniAllocs, "Regenerate allocates the generation and the writes")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, facade.Regenerate(dir)) }, regenerateMiniAllocs,
+		"Regenerate allocates the generation and the writes")
+	assert.NoError(t, err, "the mini kernel regenerates")
 }
 
 // BenchmarkGenerate measures a generation of the mini kernel's facade
@@ -214,11 +210,12 @@ func BenchmarkGenerate(b *testing.B) {
 	b.Run("Generate", func(b *testing.B) {
 		for _, tt := range generations {
 			b.Run(tt.name, func(b *testing.B) {
-				_, err := facade.Generate(tt.root)
-				assert.NoError(b, err, "the facade generates before the measurement")
-				c := bench.Start(b).MaxAllocs(tt.allocs)
+				c := bench.Start(b).Warmup(1).MaxAllocs(tt.allocs)
 				defer c.End()
-				var set genfile.Set
+				var (
+					set genfile.Set
+					err error
+				)
 				for c.Loop() {
 					set, err = facade.Generate(tt.root)
 				}
@@ -231,10 +228,9 @@ func BenchmarkGenerate(b *testing.B) {
 	b.Run("Regenerate", func(b *testing.B) {
 		b.Run("the mini kernel", func(b *testing.B) {
 			dir := filepath.Join(mini(b), facade.KernelDir)
-			err := facade.Regenerate(dir)
-			assert.NoError(b, err, "the facade regenerates before the measurement")
-			c := bench.Start(b).MaxAllocs(regenerateMiniAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(regenerateMiniAllocs)
 			defer c.End()
+			var err error
 			for c.Loop() {
 				err = facade.Regenerate(dir)
 			}
@@ -251,17 +247,4 @@ func repoRoot(tb assert.TB) string {
 	root, err := gosource.ModuleRoot(".")
 	assert.NoError(tb, err, "the kernel's module root resolves")
 	return filepath.Dir(root)
-}
-
-// dirEntries lists the entries of a directory under root, and none
-// for a directory that does not exist.
-func dirEntries(t *testing.T, root, rel string) []os.DirEntry {
-	t.Helper()
-
-	entries, err := os.ReadDir(filepath.Join(root, rel))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	assert.NoError(t, err, "the directory reads")
-	return entries
 }

@@ -4,6 +4,7 @@
 package diag_test
 
 import (
+	"cmp"
 	"sync/atomic"
 	"testing"
 
@@ -258,8 +259,8 @@ func TestCode(t *testing.T) {
 	t.Run("Kernel", func(t *testing.T) {
 		t.Run("returns one registry for every call", func(t *testing.T) {
 			first, second := diag.Kernel(), diag.Kernel()
-			assert.True(t, first == second,
-				"a code registered into one registry would be missing from another")
+			assert.Equal(t, first, second,
+				"a code registered into one registry would be missing from another", assert.ByIdentity())
 		})
 	})
 
@@ -295,55 +296,44 @@ func TestCode(t *testing.T) {
 // The registry's reads and a code's checks allocate nothing, a code's
 // spelling and the sorted list of codes allocate what they return, a
 // new registry allocates itself and its map, and a registration
-// allocates its first map group. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// allocates its first map group. Each count keeps the first error of its
+// calls, which cmp.Or returns without allocating. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestCodeAllocs(t *testing.T) {
 	code := diag.Code{Prefix: diag.KernelPrefix, Number: 7}
 	r := registryOf(t, code)
-	assert.MaxAllocs(t, func() {
-		if !diag.KernelPrefix.Valid() {
-			t.Fatal("Valid refused the kernel's prefix")
-		}
-	}, 0, "Valid allocates nothing")
+	var valid bool
+	assert.MaxAllocs(t, func() { valid = diag.KernelPrefix.Valid() }, 0, "Valid allocates nothing")
+	assert.True(t, valid, "Valid admits the kernel's prefix")
 	var fresh *diag.Registry
 	assert.MaxAllocs(t, func() { fresh = diag.NewRegistry() }, newRegistryAllocs,
 		"NewRegistry allocates the registry and its map")
 	assert.Empty(t, fresh.Codes(), "NewRegistry returns a registry without a code")
+	var err error
 	assert.MaxAllocs(t, func() {
 		fresh = diag.NewRegistry()
-		if _, err := fresh.Register(diag.KernelPrefix, firstSpec); err != nil {
-			t.Fatalf("Register: unexpected error: %v", err)
-		}
+		_, rerr := fresh.Register(diag.KernelPrefix, firstSpec)
+		err = cmp.Or(err, rerr)
 	}, registerAllocs, "NewRegistry and a first Register allocate the registry and its map")
+	assert.NoError(t, err, "every first Register records its code")
 	assert.MaxAllocs(t, func() {
 		diag.MustRegister(testPrefix, diag.CodeSpec{Number: nextTestNumber(), Meaning: firstSpec.Meaning})
 	}, 0, "MustRegister allocates only to grow the kernel registry, below once per call")
-	assert.MaxAllocs(t, func() {
-		if diag.Kernel() == nil {
-			t.Fatal("Kernel returned no registry")
-		}
-	}, 0, "Kernel allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if _, known := r.Meaning(code); !known {
-			t.Fatal("Meaning missed a registered code")
-		}
-	}, 0, "Meaning allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if len(r.Codes()) != 1 {
-			t.Fatal("Codes missed a registered code")
-		}
-	}, 1, "Codes allocates the list it returns")
-	assert.MaxAllocs(t, func() {
-		if code.IsZero() {
-			t.Fatal("IsZero reported a registered code as zero")
-		}
-	}, 0, "IsZero allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if code.String() != "EID-0007" {
-			t.Fatal("String spelled another code")
-		}
-	}, 1, "String allocates the string it returns")
+	var kernel *diag.Registry
+	assert.MaxAllocs(t, func() { kernel = diag.Kernel() }, 0, "Kernel allocates nothing")
+	assert.NotNil(t, kernel, "Kernel returns the registry")
+	var known bool
+	assert.MaxAllocs(t, func() { _, known = r.Meaning(code) }, 0, "Meaning allocates nothing")
+	assert.True(t, known, "Meaning finds the registered code")
+	var codes []diag.Code
+	assert.MaxAllocs(t, func() { codes = r.Codes() }, 1, "Codes allocates the list it returns")
+	assert.Equal(t, codes, []diag.Code{code}, "Codes returns the registered code")
+	var zero bool
+	assert.MaxAllocs(t, func() { zero = code.IsZero() }, 0, "IsZero allocates nothing")
+	assert.False(t, zero, "IsZero reports false for a registered code")
+	var spelt string
+	assert.MaxAllocs(t, func() { spelt = code.String() }, 1, "String allocates the string it returns")
+	assert.Equal(t, spelt, "EID-0007", "String spells the prefix and the padded number")
 }
 
 // BenchmarkCode measures the registry and a code's spelling, which

@@ -5,7 +5,6 @@ package workspace_test
 
 import (
 	"path"
-	"slices"
 	"strconv"
 	"testing"
 
@@ -202,8 +201,8 @@ func TestSources(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, admitted(t, tt.sources, graphOf(t, nil, tt.pkgs()...)), tt.want,
-					"the packages the plan's reader returns")
+				assert.Permutation(t, admitted(t, tt.sources, graphOf(t, nil, tt.pkgs()...)), tt.want,
+					"the packages the plan's reader returns", assert.EquateEmpty())
 			})
 		}
 
@@ -220,7 +219,7 @@ func TestSources(t *testing.T) {
 			t.Parallel()
 
 			g := graphOf(t, nil, golangSvc())
-			assert.Length(t, admitted(t, workspace.Sources{Module: billingMod}, g), 0,
+			assert.Empty(t, admitted(t, workspace.Sources{Module: billingMod}, g),
 				"the packages a module scope admits")
 		})
 	})
@@ -279,7 +278,7 @@ func scopedPlanOf(sources workspace.Sources, p *probe) workspace.Plan {
 }
 
 // admitted runs one plan of the probe under sources over the graph,
-// and returns the package paths its reader returned, sorted.
+// and returns the package paths its reader returned.
 func admitted(t *testing.T, sources workspace.Sources, g *store.Graph) []string {
 	t.Helper()
 
@@ -287,6 +286,5 @@ func admitted(t *testing.T, sources workspace.Sources, g *store.Graph) []string 
 	w := built(t, workspace.New().Brand(fixtureBrand).Targets("fixture").Rules(native{}).
 		Plans(scopedPlanOf(sources, p)))
 	cleanRun(t, w, g)
-	slices.Sort(p.seen)
 	return p.seen
 }

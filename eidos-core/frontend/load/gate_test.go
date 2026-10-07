@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"iter"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -163,7 +164,7 @@ func TestGate(t *testing.T) {
 			assert.Equal(t, recordOf(t, report, storeFile).Pkg, symbol.Identity{
 				Lang: frontendtest.ScriptedLang, Package: storePath, Kind: symbol.KindPackage,
 			}, "the file's unit declared it in its package")
-			assert.True(t, recordOf(t, report, modFile).Pkg.IsZero(), "no unit declared the module file")
+			assert.Equal(t, recordOf(t, report, modFile).Pkg, symbol.Identity{}, "no unit declared the module file")
 		})
 	})
 
@@ -218,11 +219,7 @@ func TestGate(t *testing.T) {
 func recordOf(tb testing.TB, report *load.Report, path string) load.FileRecord {
 	tb.Helper()
 
-	for _, f := range report.Files {
-		if f.Path == path {
-			return f
-		}
-	}
-	tb.Fatalf("the gate recorded no %s", path)
-	return load.FileRecord{}
+	at := slices.IndexFunc(report.Files, func(f load.FileRecord) bool { return f.Path == path })
+	assert.NotEqual(tb, at, -1, "the gate records "+path)
+	return report.Files[at]
 }

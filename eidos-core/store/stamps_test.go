@@ -4,6 +4,7 @@
 package store_test
 
 import (
+	"cmp"
 	"strconv"
 	"testing"
 
@@ -66,7 +67,7 @@ func TestStamps(t *testing.T) {
 			g := store.New()
 			assert.NoError(t, g.AddPackage(&node.Package{ID: stampSubject()}), "the subject loads")
 			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(9)}), "a stamp attaches")
-			assert.Length(t, g.StampsOf(stampSubject()), 0, "nothing reads before the seal")
+			assert.Empty(t, g.StampsOf(stampSubject()), "nothing reads before the seal")
 		})
 
 		t.Run("returns a subject's stamps in position order", func(t *testing.T) {
@@ -126,32 +127,33 @@ func TestStamps(t *testing.T) {
 // A subject's first stamps allocate what the graph keeps of them, as a
 // first attachment of directives does, and the apply step's reads of
 // the sealed stamps allocate nothing, in the ordinary run, which runs no
-// benchmark. Each counted attachment is on a subject of its own. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// benchmark. Each counted attachment is on a subject of its own, which
+// the setup takes outside the count. The check runs alone, because the
+// count includes every goroutine's allocations.
 func TestStampsAllocs(t *testing.T) {
-	g, ids := store.New(), stampedSubjects(allocRuns)
-	stamps, at := []meta.RawStamp{stampAt(1)}, 0
-	assert.MaxAllocs(t, func() {
-		if err := g.AttachStamps(ids[at], stamps); err != nil {
-			t.Fatalf("AttachStamps: unexpected error: %v", err)
-		}
-		at++
-	}, attachOneAllocs, "AttachStamps allocates what the graph keeps of a subject's first stamps")
+	g, ids := store.New(), stampedSubjects(attachBatch)
+	stamps, attached := []meta.RawStamp{stampAt(1)}, 0
+	next := func() symbol.Identity {
+		attached++
+		return ids[attached-1]
+	}
+	var err error
+	assert.MaxAllocsWithSetup(t, next, func(id symbol.Identity) { err = cmp.Or(err, g.AttachStamps(id, stamps)) },
+		attachOneAllocs, "AttachStamps allocates what the graph keeps of a subject's first stamps")
+	assert.NoError(t, err, "every first stamp attaches")
 
 	g.Freeze()
 	var got []meta.RawStamp
 	assert.MaxAllocs(t, func() { got = g.StampsOf(ids[0]) }, 0, "StampsOf allocates nothing")
 	assert.Length(t, got, 1, "StampsOf returns the subject's stamp")
+	n := 0
 	assert.MaxAllocs(t, func() {
-		n := 0
+		n = 0
 		for range g.Stamps() {
 			n++
 		}
-		if n != allocRuns {
-			t.Fatal("Stamps enumerated another number of subjects")
-		}
 	}, 0, "a range over Stamps allocates nothing")
+	assert.Equal(t, n, attached, "Stamps enumerates every stamped subject")
 }
 
 // BenchmarkStamps measures the stamp side: attachment during the

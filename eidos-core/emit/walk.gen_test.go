@@ -1237,7 +1237,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Function{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1245,7 +1245,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Method{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1253,7 +1253,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Param{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1261,7 +1261,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Return{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1269,7 +1269,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Package{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1277,7 +1277,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&File{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1285,7 +1285,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Import{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1293,7 +1293,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Export{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1301,7 +1301,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Binding{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1309,7 +1309,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Enum{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1317,7 +1317,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&EnumVariant{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1325,7 +1325,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Sum{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1333,7 +1333,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&SumVariant{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1341,7 +1341,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Field{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1349,7 +1349,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Variable{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1357,7 +1357,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Constant{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1365,7 +1365,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Struct{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1373,7 +1373,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Interface{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1381,7 +1381,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Alias{})
-			assert.Equal(t, held, true,
+			assert.True(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1389,7 +1389,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&TypeRef{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1397,7 +1397,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&TypeParam{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 
@@ -1405,7 +1405,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			_, held := OriginOf(&Embed{})
-			assert.Equal(t, held, false,
+			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
 	})

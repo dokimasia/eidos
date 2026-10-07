@@ -4,6 +4,7 @@
 package meta_test
 
 import (
+	"cmp"
 	"slices"
 	"strconv"
 	"sync/atomic"
@@ -11,6 +12,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
@@ -27,11 +29,6 @@ const benchSubjects = 200_000
 // Each check calls its write once per subject on a hundred and one
 // subjects, so the checks of one store take disjoint ranges of these.
 const allocSubjects = 1_000
-
-// allocRuns is the number of calls an allocation check makes: one
-// warm-up call and a hundred counted ones. A check of a call that
-// consumes its input builds this many inputs before it counts.
-const allocRuns = 101
 
 // stampBatch is the number of first claims one iteration of the
 // first-claim benchmark stamps into an empty store.
@@ -197,7 +194,7 @@ func TestFacts(t *testing.T) {
 
 			r := meta.NewRegistry()
 			f := meta.NewFacts(r)
-			assert.True(t, f.Registry() == r, "a reader resolves keys by name against it")
+			assert.Equal(t, f.Registry(), r, "a reader resolves keys by name against it", assert.ByIdentity())
 		})
 	})
 
@@ -478,8 +475,8 @@ func TestFacts(t *testing.T) {
 // Each write allocates what the store keeps, and each read allocates
 // nothing. Every check counts the mean over a hundred calls, each on a
 // subject of its own, so the trie nodes sync.Map adds at random round
-// down. The check runs alone, because AllocsPerRun counts every
-// goroutine's allocations and refuses to run beside parallel tests.
+// down. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestFactsAllocs(t *testing.T) {
 	subjects := benchIdentities(allocSubjects)
 	f, role, flag := stamped(t, subjects)
@@ -488,114 +485,100 @@ func TestFactsAllocs(t *testing.T) {
 	var built *meta.Facts
 	assert.MaxAllocs(t, func() { built = meta.NewFacts(f.Registry()) }, newFactsAllocs,
 		"NewFacts allocates the store and its key table")
-	assert.True(t, built.Registry() == f.Registry(), "NewFacts returns a store over the registry")
+	assert.Equal(t, built.Registry(), f.Registry(), "NewFacts returns a store over the registry",
+		assert.ByIdentity())
 
+	// Each count keeps the first error of its calls, which cmp.Or
+	// returns without allocating. Each counted call takes the next index
+	// of its range of subjects, which next returns outside the count.
+	var err error
 	empty := meta.NewFacts(f.Registry())
 	at := 0
-	assert.MaxAllocs(t, func() {
-		if err := meta.Stamp(empty, role, "writer", on(subjects[at], "shape", at)); err != nil {
-			t.Fatalf("Stamp: unexpected error: %v", err)
-		}
+	next := func() int {
 		at++
+		return at - 1
+	}
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, meta.Stamp(empty, role, "writer", on(subjects[i], "shape", i)))
 	}, firstClaimAllocs, "Stamp allocates the bag, its key, the map entry and the value of a first claim")
+	assert.NoError(t, err, "every first claim is admitted")
 
 	assert.NoError(t, meta.Stamp(f, flag, true, on(subjects[0], "shape", 0)), "the flag's index exists")
 	at = 1
-	assert.MaxAllocs(t, func() {
-		if err := meta.Stamp(f, flag, true, on(subjects[at], "shape", at)); err != nil {
-			t.Fatalf("Stamp: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, meta.Stamp(f, flag, true, on(subjects[i], "shape", i)))
 	}, secondKeyAllocs, "Stamp allocates the key map and the state of a subject's second key")
+	assert.NoError(t, err, "every second key's claim is admitted")
 
 	at = 0
-	assert.MaxAllocs(t, func() {
-		if err := meta.Stamp(f, role, "reader", on(subjects[at], "weaver", at)); err != nil {
-			t.Fatalf("Stamp: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, meta.Stamp(f, role, "reader", on(subjects[i], "weaver", i)))
 	}, secondSourceAllocs, "Stamp allocates the claim slice and the value of a second source's claim")
+	assert.NoError(t, err, "every second source's claim is admitted")
 
 	assert.MaxAllocs(t, func() {
-		if err := meta.Stamp(f, role, "writer", on(subjects[0], "shape", 0)); err != nil {
-			t.Fatalf("Stamp: unexpected error: %v", err)
-		}
+		err = cmp.Or(err, meta.Stamp(f, role, "writer", on(subjects[0], "shape", 0)))
 	}, 0, "Stamp allocates nothing for an identical re-stamp")
+	assert.NoError(t, err, "every re-stamp is accepted")
 
 	at = 200
-	assert.MaxAllocs(t, func() {
-		if err := f.DropKey(role.ID(), dropOn(subjects[at], at)); err != nil {
-			t.Fatalf("DropKey: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, f.DropKey(role.ID(), dropOn(subjects[i], i)))
 	}, dropAllocs, "DropKey allocates the claim slice of a drop on a stamped fact")
+	assert.NoError(t, err, "every drop is admitted")
 
 	at = 400
-	assert.MaxAllocs(t, func() {
-		if err := f.DropGroup("shape.writer", dropOn(subjects[at], at)); err != nil {
-			t.Fatalf("DropGroup: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, f.DropGroup("shape.writer", dropOn(subjects[i], i)))
 	}, groupDropAllocs, "DropGroup allocates the group map and the state of a subject's first group drop")
+	assert.NoError(t, err, "every group drop is admitted")
 
 	at = 400
-	assert.MaxAllocs(t, func() {
-		if err := f.WithdrawGroup("shape.writer", dropOn(subjects[at], at)); err != nil {
-			t.Fatalf("WithdrawGroup: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, f.WithdrawGroup("shape.writer", dropOn(subjects[i], i)))
 	}, 0, "WithdrawGroup allocates nothing for a group drop the store keeps")
+	assert.NoError(t, err, "every group drop is withdrawn")
 
 	at = 600
-	assert.MaxAllocs(t, func() {
-		if err := f.Withdraw(role.ID(), on(subjects[at], "shape", at)); err != nil {
-			t.Fatalf("Withdraw: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, f.Withdraw(role.ID(), on(subjects[i], "shape", i)))
 	}, 0, "Withdraw allocates nothing for a claim the store keeps")
+	assert.NoError(t, err, "every claim is withdrawn")
 
 	at = 0
-	assert.MaxAllocs(t, func() {
-		if err := f.Withdraw(role.ID(), on(absent[at], "shape", at)); err != nil {
-			t.Fatalf("Withdraw: unexpected error: %v", err)
-		}
-		at++
+	assert.MaxAllocsWithSetup(t, next, func(i int) {
+		err = cmp.Or(err, f.Withdraw(role.ID(), on(absent[i], "shape", i)))
 	}, 0, "Withdraw allocates nothing for a subject nothing claimed")
+	assert.NoError(t, err, "a withdrawal from a subject nothing claimed returns nil")
 
-	assert.MaxAllocs(t, func() {
-		if _, held := meta.Get(f, subjects[800], role); !held {
-			t.Fatal("Get returned absent for a stamped fact")
-		}
-	}, 0, "Get allocates nothing for a stamped string")
+	var held bool
+	assert.MaxAllocs(t, func() { _, held = meta.Get(f, subjects[800], role) }, 0,
+		"Get allocates nothing for a stamped string")
+	assert.True(t, held, "Get finds a stamped fact")
 
-	assert.MaxAllocs(t, func() {
-		if _, held := meta.Get(f, absent[0], role); held {
-			t.Fatal("Get returned present for a subject nothing claimed")
-		}
-	}, 0, "Get allocates nothing for a subject nothing claimed")
+	assert.MaxAllocs(t, func() { _, held = meta.Get(f, absent[0], role) }, 0,
+		"Get allocates nothing for a subject nothing claimed")
+	assert.False(t, held, "Get finds nothing on a subject nothing claimed")
 
 	var reads counter
-	assert.MaxAllocs(t, func() {
-		if _, held := meta.Fact(f, &reads, subjects[800], role); !held {
-			t.Fatal("Fact returned absent for a stamped fact")
-		}
-	}, 0, "Fact allocates nothing beyond what its recorder allocates")
+	assert.MaxAllocs(t, func() { _, held = meta.Fact(f, &reads, subjects[800], role) }, 0,
+		"Fact allocates nothing beyond what its recorder allocates")
+	assert.True(t, held, "Fact finds a stamped fact")
 
+	seen := 0
 	assert.MaxAllocs(t, func() {
-		seen := 0
+		seen = 0
 		for range f.ByKey(role.ID()) {
 			seen++
 		}
-		if seen == 0 {
-			t.Fatal("ByKey enumerated no subject")
-		}
 	}, 0, "ByKey allocates nothing for a key whose presence did not change")
+	assert.NotEqual(t, seen, 0, "ByKey enumerates the stamped subjects")
 
-	assert.MaxAllocs(t, func() {
-		if f.Damaged() != nil || f.Registry() == nil {
-			t.Fatal("the store reports damage or no registry")
-		}
-	}, 0, "Damaged and Registry allocate nothing")
+	var registry *meta.Registry
+	assert.MaxAllocs(t, func() { err, registry = f.Damaged(), f.Registry() }, 0,
+		"Damaged and Registry allocate nothing")
+	assert.NoError(t, err, "a store that restores nothing is never damaged")
+	assert.NotNil(t, registry, "the store has its registry")
 }
 
 // BenchmarkFacts measures each method of the store at the scale it is
@@ -614,7 +597,7 @@ func BenchmarkFacts(b *testing.B) {
 		for c.Loop() {
 			f = meta.NewFacts(r)
 		}
-		assert.True(b, f.Registry() == r, "NewFacts returns a store over the registry")
+		assert.Equal(b, f.Registry(), r, "NewFacts returns a store over the registry", assert.ByIdentity())
 	})
 
 	b.Run("Stamp", func(b *testing.B) {
@@ -866,46 +849,43 @@ func BenchmarkFacts(b *testing.B) {
 		for c.Loop() {
 			got = f.Registry()
 		}
-		assert.True(b, got == r, "Registry returns the store's registry")
+		assert.Equal(b, got, r, "Registry returns the store's registry", assert.ByIdentity())
 	})
 }
 
 // BenchmarkFactsParallel measures contention on GOMAXPROCS goroutines:
 // writers of first claims on distinct subjects, and readers of stamped
-// facts. Bags lock per subject, so neither serializes. BenchmarkFacts
-// states the allocation contract of each method, which the bench
-// contract cannot measure under RunParallel.
+// facts. Bags lock per subject, so neither serializes. A read allocates
+// nothing. The writers state no ceiling: once b.N passes the 200,000
+// subjects, a writer's claim is a second claim on its subject, which
+// allocates what BenchmarkFacts states for a second source.
 func BenchmarkFactsParallel(b *testing.B) {
 	subjects := benchIdentities(benchSubjects)
 
 	b.Run("Stamp", func(b *testing.B) {
-		b.ReportAllocs()
-
 		_, f, role, _ := fixture(b)
 		var next atomic.Int64
-		b.ResetTimer()
-		b.RunParallel(func(p *testing.PB) {
-			for p.Next() {
+		c := bench.Start(b)
+		defer c.End()
+		c.RunParallel(func(pb *bench.PB) {
+			for pb.Next() {
 				i := int(next.Add(1) - 1)
-				if err := meta.Stamp(f, role, "writer", on(subjects[i%len(subjects)], "shape", i)); err != nil {
-					b.Errorf("Stamp: unexpected error: %v", err)
-				}
+				expect.NoError(b, meta.Stamp(f, role, "writer", on(subjects[i%len(subjects)], "shape", i)),
+					"every racing claim is admitted")
 			}
 		})
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		b.ReportAllocs()
-
 		f, role, _ := stamped(b, subjects)
 		var next atomic.Int64
-		b.ResetTimer()
-		b.RunParallel(func(p *testing.PB) {
-			for p.Next() {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		c.RunParallel(func(pb *bench.PB) {
+			for pb.Next() {
 				i := int(next.Add(1) - 1)
-				if _, held := meta.Get(f, subjects[i%len(subjects)], role); !held {
-					b.Error("Get returned absent for a stamped fact")
-				}
+				_, held := meta.Get(f, subjects[i%len(subjects)], role)
+				expect.True(b, held, "Get finds every stamped fact")
 			}
 		})
 	})
@@ -998,9 +978,7 @@ func stamped(tb assert.TB, subjects []symbol.Identity) (*meta.Facts, meta.Key[st
 
 	_, f, role, flag := fixture(tb)
 	for i, id := range subjects {
-		if err := meta.Stamp(f, role, "writer", on(id, "shape", i)); err != nil {
-			tb.Fatalf("Stamp: unexpected error: %v", err)
-		}
+		assert.NoError(tb, meta.Stamp(f, role, "writer", on(id, "shape", i)), "the subject's fact stamps")
 	}
 	return f, role, flag
 }

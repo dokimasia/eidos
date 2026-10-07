@@ -223,9 +223,11 @@ func TestScopeAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { scope = golang.NewScope(plain) }, scopeAllocs,
 		"NewScope allocates the map and the list of unaliased imports")
 	path, bound = scope.Import("api")
-	assert.True(t, bound && path == apiPath, "NewScope binds the imports")
+	assert.True(t, bound, "NewScope binds the imports")
+	assert.Equal(t, path, apiPath, "NewScope binds api to its path")
 	assert.MaxAllocs(t, func() { path, bound = s.Import("api") }, 0, "Import allocates nothing")
-	assert.True(t, bound && path == apiPath, "Import returns the bound path")
+	assert.True(t, bound, "Import finds the bound name")
+	assert.Equal(t, path, apiPath, "Import returns the bound path")
 	assert.MaxAllocs(t, func() { got = s.Candidates(ownPath, "Thing") }, candidatesAllocs,
 		"Candidates allocates the list once")
 	assert.Length(t, got, 3, "Candidates probes the own package and both dot imports")

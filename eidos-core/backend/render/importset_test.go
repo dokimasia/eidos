@@ -519,9 +519,8 @@ func TestImportSet(t *testing.T) {
 // allocating once its storage has grown, a suffixed name allocates its
 // spelling, and the lists allocate what they return, in the ordinary
 // run, which runs no benchmark. Each write runs after a Reset, as the
-// pass runs it for each file. The check runs alone, because
-// AllocsPerRun counts every goroutine's allocations and refuses to run
-// beside parallel tests.
+// pass runs it for each file. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestImportSetAllocs(t *testing.T) {
 	s := grownSet()
 	for _, tt := range importWrites() {
@@ -533,28 +532,21 @@ func TestImportSetAllocs(t *testing.T) {
 			s.Reset()
 			tt.write(s)
 		}, tt.allocs, msg)
+		assert.InRange(t, s.Len(), 0, 2, tt.name+" records at most two paths")
 	}
 	full := filledSet()
-	assert.MaxAllocs(t, func() {
-		if full.Home() != storePkg {
-			t.Fatal("Home returned another package")
-		}
-	}, 0, "Home allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if len(full.Paths()) != filledPaths {
-			t.Fatal("Paths missed a path")
-		}
-	}, 1, "Paths allocates the list it returns")
-	assert.MaxAllocs(t, func() {
-		if len(full.Entries()) != filledEntries {
-			t.Fatal("Entries missed an entry")
-		}
-	}, 1, "Entries allocates the list it returns")
-	assert.MaxAllocs(t, func() {
-		if full.Len() != filledPaths {
-			t.Fatal("Len miscounted the paths")
-		}
-	}, 0, "Len allocates nothing for up to eight entries")
+	var home string
+	assert.MaxAllocs(t, func() { home = full.Home() }, 0, "Home allocates nothing")
+	assert.Equal(t, home, storePkg, "Home returns the file's own package")
+	var paths []string
+	assert.MaxAllocs(t, func() { paths = full.Paths() }, 1, "Paths allocates the list it returns")
+	assert.Length(t, paths, filledPaths, "Paths returns every distinct path")
+	var entries []render.Entry
+	assert.MaxAllocs(t, func() { entries = full.Entries() }, 1, "Entries allocates the list it returns")
+	assert.Length(t, entries, filledEntries, "Entries returns every entry")
+	var n int
+	assert.MaxAllocs(t, func() { n = full.Len() }, 0, "Len allocates nothing for up to eight entries")
+	assert.Equal(t, n, filledPaths, "Len counts the distinct paths")
 }
 
 // BenchmarkImportSet measures each write into a set the pass reuses,
@@ -635,7 +627,7 @@ func benchWrite(b *testing.B, tt importWrite) {
 		s.Reset()
 		tt.write(s)
 	}
-	assert.True(b, s.Len() <= 2, tt.name+" records at most two paths")
+	assert.InRange(b, s.Len(), 0, 2, tt.name+" records at most two paths")
 }
 
 // importWrites returns every write a file's spellings make into its set,

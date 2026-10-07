@@ -4,11 +4,11 @@
 package load_test
 
 import (
-	"bytes"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
@@ -27,13 +27,11 @@ func TestKeys(t *testing.T) {
 			t.Parallel()
 
 			one, two := keyed(t), keyed(t)
-			assert.Equal(t, len(one), 3, "three units load")
-			for file, key := range one {
-				assert.True(t, bytes.Equal(key, two[file]), "the key is stable")
-			}
+			assert.Length(t, one, 3, "three units load")
+			assert.Equal(t, two, one, "every unit's key is stable")
 		})
 
-		changedRead := func(tb assert.TB) map[string][]byte {
+		changedRead := func(tb testing.TB) map[string][]byte {
 			tb.Helper()
 
 			tree := stdTree()
@@ -45,13 +43,13 @@ func TestKeys(t *testing.T) {
 		t.Run("changes the key of a unit whose read changed", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, bytes.Equal(keyed(t)[apiFile], changedRead(t)[apiFile]), "the unit's key changes")
+			assert.NotEqual(t, changedRead(t)[apiFile], keyed(t)[apiFile], "the unit's key changes")
 		})
 
 		t.Run("keeps the key of a unit whose reads did not change", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, bytes.Equal(keyed(t)[storeFile], changedRead(t)[storeFile]), "the unit's key is stable")
+			assert.Equal(t, changedRead(t)[storeFile], keyed(t)[storeFile], "the unit's key is stable")
 		})
 
 		t.Run("changes the key of every unit that read a changed shared input", func(t *testing.T) {
@@ -62,8 +60,9 @@ func TestKeys(t *testing.T) {
 			tree[modFile] = &fstest.MapFile{Data: []byte("mod v2\n")}
 			_, report, _ := loadTree(t, tree)
 			after := keysOf(report)
+			assert.Length(t, after, len(before), "the same units load")
 			for file := range before {
-				assert.False(t, bytes.Equal(before[file], after[file]), "the partition read folds into every unit")
+				expect.NotEqual(t, after[file], before[file], "the partition read folds into "+file)
 			}
 		})
 
@@ -114,8 +113,7 @@ func TestKeys(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.False(t, bytes.Equal(keyed(t)[tt.file], keyed(t, tt.mutate)[tt.file]),
-					"the folded part changes the key")
+				assert.NotEqual(t, keyed(t, tt.mutate)[tt.file], keyed(t)[tt.file], "the folded part changes the key")
 			})
 		}
 	})
@@ -132,7 +130,7 @@ func keysOf(report *load.Report) map[string][]byte {
 
 // keyed loads the standard tree, mutated per case, and returns its
 // unit keys.
-func keyed(tb assert.TB, mutate ...func(*load.Config)) map[string][]byte {
+func keyed(tb testing.TB, mutate ...func(*load.Config)) map[string][]byte {
 	tb.Helper()
 
 	_, report, _ := loadTree(tb, stdTree(), mutate...)

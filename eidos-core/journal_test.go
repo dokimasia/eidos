@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -308,8 +309,11 @@ func TestJournal(t *testing.T) {
 				})).
 				Build()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
-			assert.Equal(t, [][]symbol.Identity{rec.invoked[0].identities, rec.invoked[1].identities},
-				[][]symbol.Identity{{beta.ID}, {alpha.ID}}, "no record lists a read of another invocation")
+			assert.Length(t, rec.invoked, 2, "both subjects' invocations are recorded")
+			expect.Equal(t, rec.invoked[0].identities, []symbol.Identity{beta.ID},
+				"the first record lists its own read alone")
+			expect.Equal(t, rec.invoked[1].identities, []symbol.Identity{alpha.ID},
+				"the second record lists its own read alone")
 		})
 
 		t.Run("records the facts an invocation read", func(t *testing.T) {
@@ -368,8 +372,7 @@ func TestJournal(t *testing.T) {
 			for u := range ctx.Emit.Units() {
 				flushed = append(flushed, u.Ref())
 			}
-			slices.SortFunc(flushed, plugin.UnitRef.Compare)
-			assert.Equal(t, rec.invoked[0].Units, flushed, "each unit the record names is a unit of the store")
+			assert.Permutation(t, rec.invoked[0].Units, flushed, "each unit the record names is a unit of the store")
 		})
 
 		t.Run("records the host whose slots an invocation appended into", func(t *testing.T) {
@@ -407,8 +410,10 @@ func TestJournal(t *testing.T) {
 				})).
 				Build()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
-			got := [][]string{findingMessages(rec.invoked[0].Findings), findingMessages(rec.invoked[1].Findings)}
-			assert.Equal(t, got, [][]string{{"second", "first"}, nil}, "each record lists its own findings as reported")
+			assert.Length(t, rec.invoked, 2, "both subjects' invocations are recorded")
+			expect.Equal(t, findingMessages(rec.invoked[0].Findings), []string{"second", "first"},
+				"the first record lists its findings as reported")
+			expect.Empty(t, rec.invoked[1].Findings, "the second record lists none of the first's findings")
 		})
 
 		t.Run("records a finding on its invocation after invocations without effects", func(t *testing.T) {
@@ -445,9 +450,10 @@ func TestJournal(t *testing.T) {
 				})).
 				Build()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
-			got := [][]diag.Code{findingCodes(rec.invoked[0].Findings), findingCodes(rec.invoked[1].Findings)}
-			assert.Equal(t, got, [][]diag.Code{{rules.AbsentRules}, nil},
+			assert.Length(t, rec.invoked, 2, "both subjects' invocations are recorded")
+			expect.Equal(t, findingCodes(rec.invoked[0].Findings), []diag.Code{rules.AbsentRules},
 				"the first invocation that bound the rules reports the warning")
+			expect.Empty(t, rec.invoked[1].Findings, "the second reports it no more")
 		})
 
 		t.Run("records on eight workers what one worker records", func(t *testing.T) {
@@ -709,9 +715,9 @@ func TestJournal(t *testing.T) {
 // BenchmarkJournal measures a journaled phase call over the 200,000
 // structs of the bench workspace, each invocation reading one fact. The
 // call allocates nothing: its records, its read log and the delivery's
-// buffers are the state an earlier call released, which the call before
-// the measurement grew. The context, the emit store and the sink that
-// each iteration hands the call are built outside the measurement.
+// buffers are the state an earlier call released, which the warm-up call
+// grew. The context, the emit store and the sink that each iteration
+// hands the call are built outside the measurement.
 func BenchmarkJournal(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
@@ -719,19 +725,14 @@ func BenchmarkJournal(b *testing.B) {
 	b.Run("Generate", func(b *testing.B) {
 		key, facts := boolKey(b)
 		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
+		assert.NoError(b, err, "the routing surface builds")
 		p := eidos.NewPlugin("bench").
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
 				eidos.Fact(m, key)
 				return nil
 			})).
 			Build()
-		gen, ok := p.(plugin.Generator)
-		if !ok {
-			b.Fatal("the bench plugin must generate")
-		}
+		gen := generatorOf(b, p)
 		count := &tally{}
 		var ctx *plugin.GeneratorContext
 		fresh := func() {
@@ -741,23 +742,16 @@ func BenchmarkJournal(b *testing.B) {
 				Plugin: "bench", Bucket: 1, Journal: count,
 			}
 		}
-		// The first call builds the graph's index of the kind and grows
+		// The warm-up call builds the graph's index of the kind and grows
 		// the state the measured calls take.
-		fresh()
-		if err := gen.Generate(ctx); err != nil {
-			b.Fatalf("Generate: unexpected error: %v", err)
-		}
-		c := bench.Start(b).MaxAllocs(0)
+		c := bench.Start(b).Warmup(1).MaxAllocs(0)
 		defer c.End()
 		for c.Loop() {
 			c.Excluding(fresh)
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
+			err = gen.Generate(ctx)
 		}
-		if count.invoked != packages*files*decls {
-			b.Fatalf("the journal received %d invocations", count.invoked)
-		}
+		assert.NoError(b, err, "the phase call passes")
+		assert.Equal(b, count.invoked, packages*files*decls, "the journal receives one invocation per struct")
 	})
 }
 

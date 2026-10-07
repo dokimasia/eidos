@@ -7,11 +7,11 @@ package load_test
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 )
 
 // On Linux the gate reads a file's change time and inode from the
@@ -26,9 +26,7 @@ func TestSysstat(t *testing.T) {
 		t.Run("records the change time of a file on disk", func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			assert.NoError(t, os.WriteFile(filepath.Join(dir, "one.zz"), []byte("package one\n"), 0o600),
-				"the file writes")
+			dir := files.Workspace(t, files.Tree{"one.zz": files.Text("package one\n")})
 			_, report, _ := loadTree(t, os.DirFS(dir))
 			rec := recordOf(t, report, "one.zz")
 			assert.False(t, rec.Change.IsZero(), "the kernel's stat states a change time")
@@ -37,9 +35,7 @@ func TestSysstat(t *testing.T) {
 		t.Run("records the inode of a file on disk", func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			assert.NoError(t, os.WriteFile(filepath.Join(dir, "one.zz"), []byte("package one\n"), 0o600),
-				"the file writes")
+			dir := files.Workspace(t, files.Tree{"one.zz": files.Text("package one\n")})
 			_, report, _ := loadTree(t, os.DirFS(dir))
 			rec := recordOf(t, report, "one.zz")
 			assert.NotEqual(t, rec.Inode, uint64(0), "the kernel's stat states an inode")

@@ -8,9 +8,12 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/history"
 
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -99,7 +102,8 @@ func TestRestore(t *testing.T) {
 			assert.True(t, held, "the recorded fact reads present")
 			assert.Equal(t, got, "writer", "under the claim that ranks first")
 			flagged, held := meta.Get(f, subject, flag)
-			assert.True(t, held && flagged, "and the second key reads present")
+			assert.True(t, held, "and the second key reads present")
+			assert.True(t, flagged, "with its recorded value")
 			assert.NoError(t, f.Damaged(), "nothing is damaged")
 		})
 
@@ -178,14 +182,14 @@ func TestRestore(t *testing.T) {
 				subject: {{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"}},
 			}}
 			f, role, _ := restored(t, src)
-			var wg sync.WaitGroup
-			for range 8 {
-				wg.Go(func() {
-					_, held := meta.Get(f, subject, role)
-					assert.True(t, held, "every reader finds the restored fact")
-				})
+			outcomes := history.Concurrently(8, time.Minute, func(int) (any, error) {
+				_, held := meta.Get(f, subject, role)
+				return held, nil
+			})
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "every reader finishes")
+				expect.Equal(t, o.Output, any(true), "every reader finds the restored fact")
 			}
-			wg.Wait()
 			assert.Equal(t, src.reads[subject], 1, "the source is read once")
 		})
 
@@ -362,8 +366,7 @@ func TestRestore(t *testing.T) {
 			assert.NoError(t, f.DropKey(flag.ID(), dropBy("defaults", 2)), "a directive drops the flag")
 			assert.NoError(t, f.DropGroup("shape.writer", dropBy("defaults", 3)), "and the group")
 			src := &recordedSource{claims: bagsOf(f), present: map[meta.KeyName][]symbol.Identity{}}
-			assert.Equal(t, bagsOf(meta.Restore(r, src)), map[symbol.Identity][]meta.StoredClaim{},
-				"a restored store yields no bag before a touch")
+			assert.Empty(t, bagsOf(meta.Restore(r, src)), "a restored store yields no bag before a touch")
 			again := meta.Restore(r, src)
 			_, _ = meta.Get(again, subject, role)
 			assert.Equal(t, bagsOf(again), bagsOf(f), "a touched bag yields the claims it restored")
@@ -373,8 +376,8 @@ func TestRestore(t *testing.T) {
 
 // A restored store is built without allocating more than an empty one
 // and its presence loader in the ordinary run, which runs no benchmark.
-// The check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// The check runs alone, because the count includes every goroutine's
+// allocations.
 func TestRestoreAllocs(t *testing.T) {
 	r, _, _, _ := fixture(t)
 	src := &recordedSource{}
@@ -406,7 +409,7 @@ func BenchmarkRestore(b *testing.B) {
 		for c.Loop() {
 			f = meta.Restore(r, src)
 		}
-		assert.True(b, f.Registry() == r, "Restore returns a store over the registry")
+		assert.Equal(b, f.Registry(), r, "Restore returns a store over the registry", assert.ByIdentity())
 	})
 
 	b.Run("Bags", func(b *testing.B) {

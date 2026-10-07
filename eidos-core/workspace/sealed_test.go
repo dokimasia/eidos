@@ -10,13 +10,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"io/fs"
+	"math"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -262,7 +264,7 @@ func TestSealed(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			assert.False(t, report.Stats.Cold, "the second run is warm")
-			assert.Length(t, findings(report.Sink, workspace.ColdState), 0, "and reports no ColdState")
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "and reports no ColdState")
 		})
 
 		t.Run("writes no blob for a second run over an unchanged tree", func(t *testing.T) {
@@ -271,9 +273,9 @@ func TestSealed(t *testing.T) {
 			mem := ledger.NewMem()
 			w := sealing(t, mem, "plan")
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
-			writes := mem.Writes()
-			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
-			assert.Equal(t, mem.Writes(), writes, "the run changes no record")
+			var report *workspace.Report
+			assert.Pure(t, mem.Writes, func() { report = sealedRun(t, w, workspace.Input{Tree: sealedTree()}) },
+				"the run changes no record")
 			assert.False(t, report.Stats.Generation, "and makes no generation live")
 		})
 
@@ -285,7 +287,7 @@ func TestSealed(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: sealedTree(), Cold: true})
 			assert.True(t, report.Stats.Cold, "the run ignores the generation")
-			assert.Length(t, findings(report.Sink, workspace.ColdState), 0, "and reports nothing for it")
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "and reports nothing for it")
 			g, err := state.Open(t.Context(), mem)
 			assert.NoError(t, err, "the live generation opens")
 			assert.Equal(t, g.Header.Parent, "", "and has no parent")
@@ -327,8 +329,7 @@ func TestSealed(t *testing.T) {
 		t.Run("reports ColdState after an edit to a template a plan renders through", func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			place(t, dir, templateFile, firstTemplate)
+			dir := files.Workspace(t, files.Tree{templateFile: files.Text(firstTemplate)})
 			w := built(t, sealingOf(t, ledger.NewMem(), "plan", templated("mirror", os.DirFS(dir))))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			place(t, dir, templateFile, editedTemplate)
@@ -342,13 +343,12 @@ func TestSealed(t *testing.T) {
 		t.Run("reads the generation over template trees the last run read", func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
-			place(t, dir, templateFile, firstTemplate)
+			dir := files.Workspace(t, files.Tree{templateFile: files.Text(firstTemplate)})
 			w := built(t, sealingOf(t, ledger.NewMem(), "plan", templated("mirror", os.DirFS(dir))))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			assert.False(t, report.Stats.Cold, "the second run is warm")
-			assert.Length(t, findings(report.Sink, workspace.ColdState), 0, "and reports no ColdState")
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "and reports no ColdState")
 		})
 
 		t.Run("reads the generation over a template file that does not read", func(t *testing.T) {
@@ -519,11 +519,10 @@ func TestSealed(t *testing.T) {
 				for _, h := range r.reads {
 					readers, readErr := s.Readers(h)
 					assert.NoError(t, readErr, "the readers table reads")
-					assert.True(t, slices.Contains(readers, r.ref), "every edge lists every record that read it")
+					expect.Contains(t, readers, r.ref, "every edge lists every record that read it")
 				}
 			}
-			assert.True(t, slices.Contains(readFact.Reads, state.FactEdge(rowID, flag.Name())),
-				"the generator read the flag")
+			assert.Contains(t, readFact.Reads, state.FactEdge(rowID, flag.Name()), "the generator read the flag")
 
 			for id, claims := range report.Facts.Bags() {
 				got, claimsErr := s.Claims(id)
@@ -686,7 +685,7 @@ func rowsIn(t *testing.T, l ledger.Ledger, table state.Table) int {
 	n := 0
 	for _, r := range rows {
 		count, read := binary.Uvarint(r.Value)
-		assert.True(t, read > 0, "a row opens with its count of entries")
+		assert.InRange(t, read, 1, math.Inf(1), "a row opens with its count of entries")
 		n += int(count)
 	}
 	return n

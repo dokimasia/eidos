@@ -85,9 +85,7 @@ func New(tb assert.TB) *Fixture {
 func (f *Fixture) Load(tb assert.TB, pkgs ...*node.Package) *Fixture {
 	tb.Helper()
 
-	for _, p := range pkgs {
-		assert.NoError(tb, f.Graph.AddPackage(p), "the fixture package is admitted")
-	}
+	assert.Total(tb, f.Graph.AddPackage, pkgs, "the fixture package is admitted")
 	return f
 }
 
@@ -132,9 +130,7 @@ func (f *Fixture) Validated(
 func (f *Fixture) Seed(tb assert.TB, units ...plugin.Unit) *Fixture {
 	tb.Helper()
 
-	for _, u := range units {
-		assert.NoError(tb, f.store().Add(u), "the seeded unit is added")
-	}
+	assert.Total(tb, f.store().Add, units, "the seeded unit is added")
 	return f
 }
 

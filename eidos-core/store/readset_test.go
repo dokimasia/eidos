@@ -487,37 +487,29 @@ func TestReadSet(t *testing.T) {
 
 // A derivation allocates its one slice, and a set reused across
 // invocations records within the storage an earlier invocation grew. The
-// check runs alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
+// check runs alone, because the count includes every goroutine's
+// allocations.
 func TestReadSetAllocs(t *testing.T) {
 	reads := everyGrain(t)
 	room := make([]meta.Read, 0, reads.Len())
-	assert.MaxAllocs(t, func() {
-		if len(reads.AppendPointReads(room)) != 3 {
-			t.Fatal("AppendPointReads returned another number of reads")
-		}
-	}, 0, "AppendPointReads allocates nothing into a slice with room")
-	assert.MaxAllocs(t, func() {
-		if len(reads.AppendPointReads(nil)) != 3 {
-			t.Fatal("AppendPointReads returned another number of reads")
-		}
-	}, 1, "AppendPointReads allocates one slice into nil")
+	var derived []meta.Read
+	assert.MaxAllocs(t, func() { derived = reads.AppendPointReads(room) }, 0,
+		"AppendPointReads allocates nothing into a slice with room")
+	assert.Length(t, derived, 3, "AppendPointReads returns the three point reads")
+	assert.MaxAllocs(t, func() { derived = reads.AppendPointReads(nil) }, 1,
+		"AppendPointReads allocates one slice into nil")
+	assert.Length(t, derived, 3, "AppendPointReads returns the three point reads into nil")
 
+	n := 0
 	for _, tt := range enumerations(reads) {
 		msg := "a range over " + tt.name + " of edges in maps allocates the sorted list of edges"
-		assert.MaxAllocs(t, func() {
-			if tt.count() != 1 {
-				t.Fatalf("%s enumerated another number of edges", tt.name)
-			}
-		}, enumerationAllocs, msg)
+		assert.MaxAllocs(t, func() { n = tt.count() }, enumerationAllocs, msg)
+		assert.Equal(t, n, 1, tt.name+" enumerates the one edge")
 	}
 	for _, tt := range enumerations(loadedFrom(reads)) {
 		msg := "a range over " + tt.name + " of edges a log loaded allocates nothing"
-		assert.MaxAllocs(t, func() {
-			if tt.count() != 1 {
-				t.Fatalf("%s enumerated another number of edges", tt.name)
-			}
-		}, 0, msg)
+		assert.MaxAllocs(t, func() { n = tt.count() }, 0, msg)
+		assert.Equal(t, n, 1, tt.name+" enumerates the one loaded edge")
 	}
 
 	var built *store.ReadSet
@@ -528,10 +520,8 @@ func TestReadSetAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() {
 		reads.Reset()
 		reads.RecordFact(id, "shape.role")
-		if reads.Len() != 1 {
-			t.Fatal("the reset set records another number of edges")
-		}
 	}, 0, "Reset and RecordFact allocate nothing within the set's earlier use")
+	assert.Equal(t, reads.Len(), 1, "the reset set records the one edge")
 
 	for _, tt := range enumerations(reads) {
 		msg := "a range over " + tt.name + " of edges in place allocates nothing"

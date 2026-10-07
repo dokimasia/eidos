@@ -4,11 +4,13 @@
 package workspace_test
 
 import (
+	"math"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -111,7 +113,7 @@ func TestStats(t *testing.T) {
 			w := sealing(t, ledger.NewMem(), "plan")
 			sealedRun(t, w, workspace.Input{Tree: statsTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: statsTree()})
-			assert.True(t, report.Stats.Decoded > 0, "the run's phases read the kept units' regions")
+			assert.InRange(t, report.Stats.Decoded, 1, math.Inf(1), "the run's phases read the kept units' regions")
 		})
 
 		t.Run("counts the subjects whose directives the run validated", func(t *testing.T) {
@@ -202,8 +204,8 @@ func TestStats(t *testing.T) {
 			t.Parallel()
 
 			report := sealedRun(t, sealing(t, ledger.NewMem(), "plan"), workspace.Input{Tree: statsTree()})
-			assert.True(t, report.Stats.Written > 0, "the commit wrote the generation")
-			assert.True(t, report.Stats.Size > 0, "and the live state has its bytes")
+			expect.InRange(t, report.Stats.Written, 1, math.Inf(1), "the commit wrote the generation")
+			expect.InRange(t, report.Stats.Size, 1, math.Inf(1), "the live state has its bytes")
 		})
 
 		t.Run("reports no generation for a commit that fails", func(t *testing.T) {
