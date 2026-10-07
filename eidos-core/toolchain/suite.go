@@ -20,14 +20,15 @@ type Setup func(tb TB) (Adapter, Generated)
 // absent in CI they fail, so a regression cannot hide behind a
 // missing compiler. A satellite adds its own assertions in its own
 // test, beside this call, because the kernel set is the minimum
-// every satellite runs.
+// every satellite runs. Each check runs the toolchain under its own
+// test's context.
 func RunToolchainSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
 	t.Run("the generated output parses", func(t *testing.T) {
 		t.Parallel()
 		a, g := setup(t)
-		AssertParses(t, a, g)
+		AssertParses(t.Context(), t, a, g)
 	})
 
 	a, _ := setup(t)
@@ -37,11 +38,11 @@ func RunToolchainSuite(t *testing.T, setup Setup) {
 	t.Run("the generated output type-checks", func(t *testing.T) {
 		t.Parallel()
 		a, g := setup(t)
-		AssertTypeChecks(t, a, g)
+		AssertTypeChecks(t.Context(), t, a, g)
 	})
 	t.Run("the generated tests pass", func(t *testing.T) {
 		t.Parallel()
 		a, g := setup(t)
-		AssertTestsPass(t, a, g)
+		AssertTestsPass(t.Context(), t, a, g)
 	})
 }

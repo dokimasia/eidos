@@ -125,7 +125,7 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 // no Rust file returns an error, because a parse of nothing proves
 // nothing. Rust has no parser in Go, so the parse needs the
 // toolchain, and a caller passes [toolchain.Require] first.
-func (adapter) Parse(dir string) error {
+func (adapter) Parse(ctx context.Context, dir string) error {
 	var sources []string
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -146,7 +146,7 @@ func (adapter) Parse(dir string) error {
 		return errors.New("testing: the laid-out project has no Rust file to parse")
 	}
 	for _, source := range sources {
-		if _, err := run(dir, rustfmtBinary, "--edition", edition, "--emit", "stdout", source); err != nil {
+		if _, err := run(ctx, dir, rustfmtBinary, "--edition", edition, "--emit", "stdout", source); err != nil {
 			return err
 		}
 	}
@@ -155,8 +155,8 @@ func (adapter) Parse(dir string) error {
 
 // TypeCheck checks every target of the crate, its tests included,
 // with cargo check, which is Rust's type check.
-func (adapter) TypeCheck(dir string) error {
-	_, err := cargo(dir, "check", "--all-targets")
+func (adapter) TypeCheck(ctx context.Context, dir string) error {
+	_, err := cargo(ctx, dir, "check", "--all-targets")
 	return err
 }
 
@@ -164,8 +164,8 @@ func (adapter) TypeCheck(dir string) error {
 // run through, and reads the counts off each test binary's summary
 // line. A failure the summaries do not report, such as a compile
 // error, returns an error.
-func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
-	out, err := cargo(dir, "test", "--no-fail-fast")
+func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, error) {
+	out, err := cargo(ctx, dir, "test", "--no-fail-fast")
 	report := tally(out)
 	if err != nil && report.Failed == 0 {
 		return report, err
@@ -181,8 +181,8 @@ func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
 // std::fmt::Display. A probe that rustc refuses with unsatisfied
 // trait bounds alone reports false. Any other refusal returns an
 // error, and so does a crate that does not check without the probe.
-func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
-	if err := a.TypeCheck(dir); err != nil {
+func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
+	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the crate does not check, so nothing can be asked of it: %w", err)
 	}
 	root, err := crateRoot(dir)
@@ -209,7 +209,7 @@ func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
 	}
 	defer func() { _ = os.WriteFile(root, original, filePerm) }()
 
-	out, err := cargo(dir, "check")
+	out, err := cargo(ctx, dir, "check")
 	if err == nil {
 		return true, nil
 	}
@@ -249,30 +249,37 @@ func write(dir, path string, body []byte) error {
 	return os.WriteFile(target, body, filePerm)
 }
 
-// cargo runs one cargo command over the crate, offline and building
-// into [targetDir], so a check makes no network request and writes
-// its build inside the scratch directory.
-func cargo(dir, command string, args ...string) (string, error) {
+// cargo runs one cargo command over the crate under ctx, offline and
+// building into [targetDir], so a check makes no network request and
+// writes its build inside the scratch directory.
+func cargo(ctx context.Context, dir, command string, args ...string) (string, error) {
 	full := append([]string{command, "--offline", "--manifest-path", filepath.Join(dir, manifestFile)}, args...)
-	return run(dir, cargoBinary, full...)
+	return run(ctx, dir, cargoBinary, full...)
 }
 
-// run runs one toolchain binary in dir and returns its combined
-// output. A failure wraps that output, so the error contains what the
-// tool reported. The run is bounded by [runTimeout].
-func run(dir, binary string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+// run runs one toolchain binary in dir under ctx and returns its
+// combined output. A failure wraps that output, so the error contains
+// what the tool reported. The run is bounded by [runTimeout] as well,
+// and a run that ctx or the bound ends returns an error that wraps the
+// context's error.
+func run(ctx context.Context, dir, binary string, args ...string) (string, error) {
+	bounded, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd := exec.CommandContext(bounded, binary, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "CARGO_TARGET_DIR="+filepath.Join(dir, targetDir), "CARGO_TERM_COLOR=never")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			return string(out), fmt.Errorf(
+				"testing: %s %s stopped with its caller: %w", binary, strings.Join(args, " "), ctx.Err(),
+			)
+		}
+		if bounded.Err() != nil {
+			return string(out), fmt.Errorf(
 				"testing: %s %s did not return within %s: %w",
-				binary, strings.Join(args, " "), runTimeout, ctx.Err(),
+				binary, strings.Join(args, " "), runTimeout, bounded.Err(),
 			)
 		}
 		return string(out), fmt.Errorf("%s %s: %w\n%s", binary, strings.Join(args, " "), err, out)

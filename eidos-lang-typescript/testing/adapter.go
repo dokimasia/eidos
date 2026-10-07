@@ -137,12 +137,18 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 // returns an error for a configuration tsc cannot read, and for a
 // project with no TypeScript file, because a parse of nothing proves
 // nothing. TypeScript has no parser in Go, so the parse needs the
-// toolchain, and a caller passes [toolchain.Require] first.
-func (adapter) Parse(dir string) error {
+// toolchain, and a caller passes [toolchain.Require] first. Parse reads
+// tsc's diagnostics and not its exit status, which a type error sets.
+// A context that ends stops tsc, and Parse returns an error that wraps
+// the context's error.
+func (adapter) Parse(ctx context.Context, dir string) error {
 	if err := hasSource(dir); err != nil {
 		return err
 	}
-	out, _ := run(dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+	out, err := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+	if err != nil && ctx.Err() != nil {
+		return err
+	}
 	var refused []string
 	for _, d := range diagnostics(out) {
 		if len(d.code) == classDigits && (d.code[0] == syntaxClass || d.code[0] == configClass) {
@@ -157,8 +163,8 @@ func (adapter) Parse(dir string) error {
 
 // TypeCheck checks the project against TypeScript's strict type rules
 // with tsc and emits nothing. The error contains tsc's output.
-func (adapter) TypeCheck(dir string) error {
-	_, err := run(dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+func (adapter) TypeCheck(ctx context.Context, dir string) error {
+	_, err := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
 	return err
 }
 
@@ -167,11 +173,15 @@ func (adapter) TypeCheck(dir string) error {
 // counts read off the runner's tap summary. A type error does not stop
 // the run, because tsc emits past one and [TypeCheck] reports it. A
 // project that emits no test module returns an empty report, which
-// fails the kernel's assertion.
-func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
-	emitted, _ := run(dir, tscBinary, "-p", dir, "--pretty", "false")
+// fails the kernel's assertion. A context that ends stops tsc or node,
+// and RunTests returns an error that wraps the context's error.
+func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, error) {
+	emitted, err := run(ctx, dir, tscBinary, "-p", dir, "--pretty", "false")
+	if err != nil && ctx.Err() != nil {
+		return toolchain.TestReport{Output: emitted}, err
+	}
 	var tests []string
-	err := filepath.WalkDir(filepath.Join(dir, buildDir), func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(filepath.Join(dir, buildDir), func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.HasSuffix(path, testModule) {
 			tests = append(tests, path)
 		}
@@ -183,7 +193,7 @@ func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
 	if len(tests) == 0 {
 		return toolchain.TestReport{Output: emitted}, nil
 	}
-	out, err := run(dir, nodeBinary, append([]string{"--test", "--test-reporter=tap"}, tests...)...)
+	out, err := run(ctx, dir, nodeBinary, append([]string{"--test", "--test-reporter=tap"}, tests...)...)
 	report := tally(out)
 	if err != nil && report.Failed == 0 {
 		// node exited with an error and reported no failed test.
@@ -200,8 +210,8 @@ func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
 // import("./row").Row. A probe that tsc refuses with assignability
 // codes alone reports false. Any other refusal returns an error, and
 // so does a project that does not type-check without the probe.
-func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
-	if err := a.TypeCheck(dir); err != nil {
+func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
+	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the project does not type-check, so nothing can be asked of it: %w", err)
 	}
 	probe := filepath.Join(dir, probeFile)
@@ -211,7 +221,7 @@ func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
 	}
 	defer func() { _ = os.Remove(probe) }()
 
-	out, checkErr := run(dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+	out, checkErr := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
 	if checkErr == nil {
 		return true, nil
 	}
@@ -289,21 +299,28 @@ func write(dir, path string, body []byte) error {
 	return os.WriteFile(target, body, filePerm)
 }
 
-// run runs one toolchain binary in dir and returns its combined
-// output. A failure wraps that output, so the error contains what the
-// tool reported. The run is bounded by [runTimeout].
-func run(dir, binary string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+// run runs one toolchain binary in dir under ctx and returns its
+// combined output. A failure wraps that output, so the error contains
+// what the tool reported. The run is bounded by [runTimeout] as well,
+// and a run that ctx or the bound ends returns an error that wraps the
+// context's error.
+func run(ctx context.Context, dir, binary string, args ...string) (string, error) {
+	bounded, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd := exec.CommandContext(bounded, binary, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			return string(out), fmt.Errorf(
+				"testing: %s %s stopped with its caller: %w", binary, strings.Join(args, " "), ctx.Err(),
+			)
+		}
+		if bounded.Err() != nil {
+			return string(out), fmt.Errorf(
 				"testing: %s %s did not return within %s: %w",
-				binary, strings.Join(args, " "), runTimeout, ctx.Err(),
+				binary, strings.Join(args, " "), runTimeout, bounded.Err(),
 			)
 		}
 		return string(out), fmt.Errorf("%s %s: %w\n%s", binary, strings.Join(args, " "), err, out)

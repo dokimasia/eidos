@@ -3,11 +3,20 @@
 
 package toolchain
 
-// AssertParses holds the generated output to its language's
-// grammar: it lays the fixture out and asks the adapter to read the
-// syntax and nothing more, so a syntax error is told apart from a
-// type error and reported as the one it is.
-func AssertParses(tb TB, a Adapter, g Generated) {
+import (
+	"context"
+	"strconv"
+
+	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
+)
+
+// AssertParses checks the generated output against its language's
+// grammar: it lays the fixture out and asks the adapter, under ctx, to
+// read the syntax and nothing more, so a syntax error is told apart
+// from a type error. A refusal records a failure whose detail states
+// the language's own error.
+func AssertParses(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 	tb.Helper()
 
 	dir, done := Prepare(tb, a, g)
@@ -16,15 +25,14 @@ func AssertParses(tb TB, a Adapter, g Generated) {
 	}
 	defer done()
 
-	if err := a.Parse(dir); err != nil {
-		tb.Errorf("%s: the generated output does not parse: %v", a.Lang(), err)
-	}
+	expect.NoError(tb, a.Parse(ctx, dir), string(a.Lang())+": the generated output parses")
 }
 
-// AssertTypeChecks holds the generated output to its language's
-// type rules, which is the check that catches a reference the
-// render qualified wrongly or an import it never recorded.
-func AssertTypeChecks(tb TB, a Adapter, g Generated) {
+// AssertTypeChecks checks the generated output against its language's
+// type rules under ctx, which is the check that catches a reference the
+// render qualified wrongly or an import it never recorded. A refusal
+// records a failure whose detail states the language's own error.
+func AssertTypeChecks(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 	tb.Helper()
 
 	dir, done := Prepare(tb, a, g)
@@ -33,16 +41,15 @@ func AssertTypeChecks(tb TB, a Adapter, g Generated) {
 	}
 	defer done()
 
-	if err := a.TypeCheck(dir); err != nil {
-		tb.Errorf("%s: the generated output does not type-check: %v", a.Lang(), err)
-	}
+	expect.NoError(tb, a.TypeCheck(ctx, dir), string(a.Lang())+": the generated output type-checks")
 }
 
-// AssertTestsPass runs the generated project's own tests and holds
-// every case that ran to passing. A run reporting no case at all
-// fails: generated tests that execute nothing pass while proving
-// nothing, which is the failure this assertion exists to catch.
-func AssertTestsPass(tb TB, a Adapter, g Generated) {
+// AssertTestsPass runs the generated project's own tests under ctx and
+// requires every case that ran to pass. A run that does not report a
+// case fails: generated tests that execute nothing pass while proving
+// nothing, which is the failure this assertion exists to catch. Each
+// failure's contract ends with the tool's own output.
+func AssertTestsPass(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 	tb.Helper()
 
 	dir, done := Prepare(tb, a, g)
@@ -51,48 +58,44 @@ func AssertTestsPass(tb TB, a Adapter, g Generated) {
 	}
 	defer done()
 
-	report, err := a.RunTests(dir)
+	lang := string(a.Lang())
+	report, err := a.RunTests(ctx, dir)
+	expect.NoError(tb, err, lang+": the generated tests run\n"+report.Output)
 	if err != nil {
-		tb.Errorf("%s: running the generated tests: %v\n%s", a.Lang(), err, report.Output)
 		return
 	}
-	if report.OK() {
-		return
-	}
-	if report.Passed == 0 && report.Failed == 0 {
-		tb.Errorf("%s: the generated tests reported no case, and %d skipped: a suite that "+
-			"executes nothing passes while proving nothing\n%s",
-			a.Lang(), report.Skipped, report.Output)
-		return
-	}
-	tb.Errorf("%s: %d of %d generated tests failed\n%s",
-		a.Lang(), report.Failed, report.Passed+report.Failed, report.Output)
+	expect.NotEqual(tb, report.Passed+report.Failed, 0, lang+": the generated tests report a case, and "+
+		strconv.Itoa(report.Skipped)+" skipped: a suite that executes nothing passes while proving nothing\n"+
+		report.Output)
+	expect.Equal(tb, report.Failed, 0, lang+": every generated test passes, of "+
+		strconv.Itoa(report.Passed+report.Failed)+"\n"+report.Output)
 }
 
-// AssertSatisfies holds one generated type to one contract: the
-// interface, trait or protocol a doubling generator promised its
-// output would meet.
-func AssertSatisfies(tb TB, a Adapter, g Generated, typeName, contract string) {
+// AssertSatisfies checks one generated type against one contract under
+// ctx: the interface, trait or protocol a doubling generator promised
+// its output would meet.
+func AssertSatisfies(ctx context.Context, tb assert.TB, a Adapter, g Generated, typeName, contract string) {
 	tb.Helper()
-	satisfies(tb, a, g, typeName, contract, true)
+	satisfies(ctx, tb, a, g, typeName, contract, true)
 }
 
 // AssertDoesNotSatisfy is the inverse, for a generator that
 // narrows: a type the output must not accidentally meet, so a
 // contract widened by mistake is caught rather than welcomed.
-func AssertDoesNotSatisfy(tb TB, a Adapter, g Generated, typeName, contract string) {
+func AssertDoesNotSatisfy(ctx context.Context, tb assert.TB, a Adapter, g Generated, typeName, contract string) {
 	tb.Helper()
-	satisfies(tb, a, g, typeName, contract, false)
+	satisfies(ctx, tb, a, g, typeName, contract, false)
 }
 
-// satisfies runs one satisfaction question and holds the answer to
-// what the caller expected.
-func satisfies(tb TB, a Adapter, g Generated, typeName, contract string, want bool) {
+// satisfies runs one satisfaction question under ctx and compares the
+// answer with what the caller expected. A question without a type or a
+// contract records a failure and does not run the toolchain.
+func satisfies(ctx context.Context, tb assert.TB, a Adapter, g Generated, typeName, contract string, want bool) {
 	tb.Helper()
 
+	expect.NotEmpty(tb, typeName, "toolchain: a satisfaction check names a type")
+	expect.NotEmpty(tb, contract, "toolchain: a satisfaction check names a contract")
 	if typeName == "" || contract == "" {
-		tb.Errorf("%s: a satisfaction check names a type and a contract, got %q and %q",
-			a.Lang(), typeName, contract)
 		return
 	}
 	dir, done := Prepare(tb, a, g)
@@ -101,18 +104,16 @@ func satisfies(tb TB, a Adapter, g Generated, typeName, contract string, want bo
 	}
 	defer done()
 
-	got, err := a.Satisfies(dir, typeName, contract)
+	lang := string(a.Lang())
+	got, err := a.Satisfies(ctx, dir, typeName, contract)
+	expect.NoError(tb, err, lang+": the toolchain answers whether "+typeName+" satisfies "+contract)
 	if err != nil {
-		tb.Errorf("%s: asking whether %s satisfies %s: %v", a.Lang(), typeName, contract, err)
 		return
 	}
-	switch {
-	case got == want:
-	case want:
-		tb.Errorf("%s: %s does not satisfy %s, and the generated output promised it would",
-			a.Lang(), typeName, contract)
-	default:
-		tb.Errorf("%s: %s satisfies %s, which the generated output was not to widen to",
-			a.Lang(), typeName, contract)
+	if want {
+		expect.True(tb, got, lang+": "+typeName+" satisfies "+contract+", as the generated output promised")
+		return
 	}
+	expect.False(tb, got, lang+": "+typeName+" does not satisfy "+contract+
+		", which the generated output was not to widen to")
 }

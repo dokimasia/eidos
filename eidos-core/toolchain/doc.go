@@ -25,9 +25,18 @@
 // assertions never skip: a caller reaching for one has already
 // decided the toolchain is there.
 //
+// # Failure semantics
+//
+// Every check records each contract it finds broken as the assertion
+// of go.dokimi.dev/assert/expect that states it, and returns. The
+// record's contract names the language and the broken contract, and
+// its detail states the value that broke it, so a satellite's own
+// test reads the failures of a check through
+// [go.dokimi.dev/assert.Rejects].
+//
 // # Dependency position
 //
-// core/toolchain imports core/symbol and the Go stdlib, the testing
-// package among it. It runs no compiler itself, which is what keeps
-// the kernel free of every language's tooling.
+// core/toolchain imports core/symbol, the assert module and the Go
+// stdlib, the testing package among it. It runs no compiler itself,
+// which is what keeps the kernel free of every language's tooling.
 package toolchain

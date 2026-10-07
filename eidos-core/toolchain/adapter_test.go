@@ -4,10 +4,11 @@
 package toolchain_test
 
 import (
+	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -72,22 +73,25 @@ func (s scripted) Layout(g toolchain.Generated) (string, error) {
 	return dir, nil
 }
 
-// Parse returns the case's parse error.
-func (s scripted) Parse(string) error { return s.parseErr }
+// Parse returns the error of a context that ended, and the case's parse
+// error otherwise.
+func (s scripted) Parse(ctx context.Context, _ string) error { return cmp.Or(ctx.Err(), s.parseErr) }
 
-// TypeCheck returns the case's type-check error.
-func (s scripted) TypeCheck(string) error { return s.typeErr }
+// TypeCheck returns the error of a context that ended, and the case's
+// type-check error otherwise.
+func (s scripted) TypeCheck(ctx context.Context, _ string) error { return cmp.Or(ctx.Err(), s.typeErr) }
 
-// RunTests returns the case's report and error.
-func (s scripted) RunTests(string) (toolchain.TestReport, error) {
-	return s.report, s.testsErr
+// RunTests returns the case's report, and the error of a context that
+// ended or the case's error.
+func (s scripted) RunTests(ctx context.Context, _ string) (toolchain.TestReport, error) {
+	return s.report, cmp.Or(ctx.Err(), s.testsErr)
 }
 
-// Satisfies returns the case's verdict or error, and an error for an
-// empty question.
-func (s scripted) Satisfies(_, typeName, contract string) (bool, error) {
-	if s.satisfyErr != nil {
-		return false, s.satisfyErr
+// Satisfies returns the error of a context that ended, the case's
+// verdict or error, and an error for an empty question.
+func (s scripted) Satisfies(ctx context.Context, _, typeName, contract string) (bool, error) {
+	if err := cmp.Or(ctx.Err(), s.satisfyErr); err != nil {
+		return false, err
 	}
 	if typeName == "" || contract == "" {
 		return false, errors.New("the fixture was asked an empty question")
@@ -95,45 +99,17 @@ func (s scripted) Satisfies(_, typeName, contract string) (bool, error) {
 	return s.satisfies, nil
 }
 
-// recorder is a test handle collecting what an assertion reported
-// and whether it skipped, so a case reads the outcome rather than
-// failing the run.
-type recorder struct {
-	failures []string
-	skipped  string
-	fatal    bool
+// seat is the seat a case hands the gate: an [assert.Recorder], whose
+// records of the gate's failures the case reads, that also records the
+// skip the gate asks for.
+type seat struct {
+	*assert.Recorder
+	skipped string
 }
 
-// Helper marks nothing: the recorder reports no line of its own.
-func (*recorder) Helper() {}
-
-// Errorf records one failure.
-func (r *recorder) Errorf(format string, args ...any) {
-	r.failures = append(r.failures, fmt.Sprintf(format, args...))
-}
-
-// Fatalf records one failure as fatal, and returns.
-func (r *recorder) Fatalf(format string, args ...any) {
-	r.fatal = true
-	r.failures = append(r.failures, fmt.Sprintf(format, args...))
-}
-
-// Skip records the skip's reason.
-func (r *recorder) Skip(args ...any) {
-	r.skipped = fmt.Sprint(args...)
-}
-
-// failed reports whether anything was recorded.
-func (r *recorder) failed() bool { return len(r.failures) > 0 }
-
-// says reports whether any recorded failure mentions text.
-func (r *recorder) says(text string) bool {
-	for _, f := range r.failures {
-		if strings.Contains(f, text) {
-			return true
-		}
-	}
-	return false
+// Skip records the skip's reason and returns, so the case reads it.
+func (s *seat) Skip(args ...any) {
+	s.skipped = fmt.Sprint(args...)
 }
 
 // A run over nothing proves nothing, so the fixture and the report
@@ -173,10 +149,4 @@ func output() toolchain.Generated {
 		Files:  map[string][]byte{"gen/row.s": []byte("row\n")},
 		Module: "example.test/generated",
 	}
-}
-
-// exists reports whether a path is on disk.
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

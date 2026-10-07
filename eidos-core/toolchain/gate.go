@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 )
 
 // ciEnv is the variable every runner in use sets, and the one thing
@@ -31,42 +34,47 @@ func RequiredInCI() bool {
 }
 
 // Prepare lays a fixture out and returns its directory and the
-// cleanup the caller defers. A fixture with no output and a layout
-// the language refused are both failures, reported through tb, and
-// the returned directory is empty.
-func Prepare(tb TB, a Adapter, g Generated) (string, func()) {
+// cleanup the caller defers. A missing adapter, a fixture with no
+// output and a layout the language refused each record a failure
+// through tb, as the assertion of expect it states, and return an
+// empty directory with a cleanup that does nothing.
+func Prepare(tb assert.TB, a Adapter, g Generated) (string, func()) {
 	tb.Helper()
 
+	expect.NotNil(tb, a, "toolchain: an adapter lays the fixture out")
 	if a == nil {
-		tb.Errorf("toolchain: no adapter to lay the fixture out with")
 		return "", func() {}
 	}
+	lang := string(a.Lang())
+	expect.NotEmpty(tb, g.Files, lang+": the fixture carries generated output, without which a toolchain "+
+		"run proves nothing")
 	if g.IsEmpty() {
-		tb.Errorf("%s: the fixture carries no generated output, so a toolchain run proves nothing", a.Lang())
 		return "", func() {}
 	}
 	dir, err := a.Layout(g)
+	expect.NoError(tb, err, lang+": the generated output lays out for the toolchain")
 	if err != nil {
-		tb.Errorf("%s: laying the generated output out for the toolchain: %v", a.Lang(), err)
 		return "", func() {}
 	}
 	return dir, func() { _ = os.RemoveAll(dir) }
 }
 
-// TB is the test handle the assertions report through: the assert
-// module's, widened with the skip a suite needs, so one interface
-// serves an assertion and the suite that gates it.
+// TB is the seat the gate reports through: the assert module's,
+// widened with the skip a suite needs. The assertions take the assert
+// module's seat alone, because they never skip. A failure is a record
+// of the assertion that states it, which [assert.Rejects] and an
+// [assert.Recorder] return.
 type TB interface {
-	Helper()
-	Errorf(format string, args ...any)
-	Fatalf(format string, args ...any)
+	assert.TB
+	// Skip ends the test as skipped, with args as the reason.
 	Skip(args ...any)
 }
 
 // Require reports whether the toolchain is there to run, and
 // settles the absent case: locally it skips, naming the reason the
-// adapter gave, and in CI it fails, so a regression cannot hide
-// behind a missing compiler.
+// adapter gave, and in CI it records a failure, so a regression cannot
+// hide behind a missing compiler. A missing adapter records a failure
+// and reports false.
 //
 // [RunToolchainSuite] calls it once for the kernel's two checks that
 // run a toolchain. A satellite adding assertions of its own calls it
@@ -75,8 +83,8 @@ type TB interface {
 func Require(tb TB, a Adapter) bool {
 	tb.Helper()
 
+	expect.NotNil(tb, a, "toolchain: an adapter answers whether its toolchain is present")
 	if a == nil {
-		tb.Errorf("toolchain: no adapter to ask about a toolchain")
 		return false
 	}
 	held, why := a.Available()
@@ -84,7 +92,7 @@ func Require(tb TB, a Adapter) bool {
 		return true
 	}
 	if RequiredInCI() {
-		tb.Errorf("%s: the toolchain is required in CI and is absent: %s", a.Lang(), why)
+		expect.True(tb, held, string(a.Lang())+": the toolchain CI requires is present: "+why)
 		return false
 	}
 	tb.Skip(fmt.Sprintf("%s: the toolchain is absent, so the assertion is skipped here and required in CI: %s",

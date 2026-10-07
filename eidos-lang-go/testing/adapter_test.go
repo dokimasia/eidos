@@ -4,13 +4,14 @@
 package testing_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	gotesting "go.dokimi.dev/eidos/lang/go/testing"
@@ -24,41 +25,20 @@ const (
 	rowTestFile   = "row_test.go"
 )
 
-// recorder is a test handle collecting what an assertion reported,
-// so a case reads the outcome rather than failing the run.
-type recorder struct {
-	failures []string
-	skipped  string
-}
+// lang is the prefix of every contract the toolchain assertions state
+// for the Go adapter.
+const lang = string(golang.Lang)
 
-// Helper marks nothing: the recorder reports no line of its own.
-func (*recorder) Helper() {}
-
-// Errorf records one failure.
-func (r *recorder) Errorf(format string, args ...any) {
-	r.failures = append(r.failures, fmt.Sprintf(format, args...))
-}
-
-// Fatalf records one failure, and returns.
-func (r *recorder) Fatalf(format string, args ...any) {
-	r.failures = append(r.failures, fmt.Sprintf(format, args...))
+// seat is the toolchain gate's seat over a recorder: it records each
+// assertion's failure and the reason of a skip, so a case reads both
+// without failing the run.
+type seat struct {
+	*assert.Recorder
+	skipped string
 }
 
 // Skip records the skip's reason.
-func (r *recorder) Skip(args ...any) { r.skipped = fmt.Sprint(args...) }
-
-// failed reports whether anything was recorded.
-func (r *recorder) failed() bool { return len(r.failures) > 0 }
-
-// says reports whether any recorded failure mentions text.
-func (r *recorder) says(text string) bool {
-	for _, f := range r.failures {
-		if strings.Contains(f, text) {
-			return true
-		}
-	}
-	return false
-}
+func (s *seat) Skip(args ...any) { s.skipped = fmt.Sprint(args...) }
 
 // The kernel's assertions drive the adapter, so the project it lays
 // out and the meaning of each result are its contract. The layout
@@ -110,16 +90,9 @@ func TestAdapter(t *testing.T) {
 		t.Run("writes every file beside a go.mod declaring the fixture's module", func(t *testing.T) {
 			t.Parallel()
 
-			dir, err := adapter().Layout(healthy())
-			assert.NoError(t, err, "the fixture lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-			body, err := os.ReadFile(filepath.Join(dir, rowFile))
-			assert.NoError(t, err, "the generated file is on disk")
-			assert.Contains(t, string(body), "type Row struct", "with its own bytes")
-			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-			assert.NoError(t, err, "and a go.mod beside it")
-			assert.Contains(t, string(mod), "module "+fixtureModule,
+			dir := laidOut(t, healthy())
+			assert.Contains(t, files.Read(t, filepath.Join(dir, rowFile)), "type Row struct", "with its own bytes")
+			assert.Contains(t, files.Read(t, filepath.Join(dir, "go.mod")), "module "+fixtureModule,
 				"declaring the module the fixture named, so the output resolves its own imports")
 		})
 
@@ -128,43 +101,26 @@ func TestAdapter(t *testing.T) {
 
 			g := only("gen/deep/row.go", "package deep\n")
 			g.Module = ""
-			dir, err := adapter().Layout(g)
-			assert.NoError(t, err, "the fixture lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-			_, err = os.Stat(filepath.Join(dir, "gen", "deep", "row.go"))
-			assert.NoError(t, err, "the nested path is created")
-			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-			assert.NoError(t, err, "a module is declared anyway")
-			assert.Contains(t, string(mod), "module eidos.test/generated",
+			dir := laidOut(t, g)
+			files.IsFile(t, filepath.Join(dir, "gen", "deep", "row.go"), "the nested path is created")
+			assert.Contains(t, files.Read(t, filepath.Join(dir, "go.mod")), "module eidos.test/generated",
 				"because a project without one resolves nothing")
 		})
 
 		t.Run("keeps a go.mod the output wrote", func(t *testing.T) {
 			t.Parallel()
 
-			g := with("go.mod", "module carried.test/own\n\ngo 1.27.0\n")
-			dir, err := adapter().Layout(g)
-			assert.NoError(t, err, "the fixture lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-			assert.NoError(t, err, "the output's go.mod is on disk")
-			assert.Contains(t, string(mod), "carried.test/own",
+			dir := laidOut(t, with("go.mod", "module carried.test/own\n\ngo 1.27.0\n"))
+			files.HasContent(t, filepath.Join(dir, "go.mod"), "module carried.test/own\n\ngo 1.27.0\n",
 				"the output's own module is kept, because the harness states nothing the output already did")
 		})
 
 		t.Run("declares a root module beside a nested one", func(t *testing.T) {
 			t.Parallel()
 
-			g := with("api/go.mod", "module nested.test/api\n\ngo 1.27.0\n")
-			dir, err := adapter().Layout(g)
-			assert.NoError(t, err, "the fixture lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-			assert.NoError(t, err, "the root still declares a module")
-			assert.Contains(t, string(mod), "module ", "because a nested go.mod declares only its own subtree")
+			dir := laidOut(t, with("api/go.mod", "module nested.test/api\n\ngo 1.27.0\n"))
+			assert.Contains(t, files.Read(t, filepath.Join(dir, "go.mod")), "module "+fixtureModule,
+				"because a nested go.mod declares only its own subtree")
 		})
 
 		t.Run("returns an error for a path that climbs out of the scratch project", func(t *testing.T) {
@@ -182,21 +138,14 @@ func TestAdapter(t *testing.T) {
 		t.Run("returns nil for a healthy project", func(t *testing.T) {
 			t.Parallel()
 
-			a := adapter()
-			sound, err := a.Layout(healthy())
-			assert.NoError(t, err, "the fixture lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(sound) })
-			assert.NoError(t, a.Parse(sound), "the healthy output parses without a toolchain")
+			assert.NoError(t, adapter().Parse(t.Context(), laidOut(t, healthy())),
+				"the healthy output parses without a toolchain")
 		})
 
 		t.Run("returns an error naming the file of a syntax error", func(t *testing.T) {
 			t.Parallel()
 
-			a := adapter()
-			unparsable, err := a.Layout(only(rowFile, "package harness\n\nfunc F( {}\n"))
-			assert.NoError(t, err, "the broken fixture lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(unparsable) })
-			err = a.Parse(unparsable)
+			err := adapter().Parse(t.Context(), laidOut(t, only(rowFile, "package harness\n\nfunc F( {}\n")))
 			assert.HasError(t, err, "a syntax error refuses")
 			assert.Contains(t, err.Error(), rowFile, "naming the file, relative to the project")
 		})
@@ -204,13 +153,17 @@ func TestAdapter(t *testing.T) {
 		t.Run("returns an error for a project without a Go file", func(t *testing.T) {
 			t.Parallel()
 
-			a := adapter()
-			bare, err := a.Layout(only("row.golang", "package harness\n"))
-			assert.NoError(t, err, "a fixture with no Go file lays out")
-			t.Cleanup(func() { _ = os.RemoveAll(bare) })
-			err = a.Parse(bare)
+			err := adapter().Parse(t.Context(), laidOut(t, only("row.golang", "package harness\n")))
 			assert.HasError(t, err, "a parse of no Go file refuses, because it proves nothing")
 			assert.Contains(t, err.Error(), "no Go file", "and the refusal names why")
+		})
+
+		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+			t.Parallel()
+
+			dir := laidOut(t, healthy())
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return adapter().Parse(ctx, dir) },
+				"an ended context parses no file")
 		})
 	})
 
@@ -221,29 +174,37 @@ func TestAdapter(t *testing.T) {
 		t.Run("returns nil for a healthy project", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertTypeChecks(&r, adapter(), healthy())
-			assert.False(t, r.failed(), "the generated output type-checks")
+			toolchain.AssertTypeChecks(t.Context(), t, adapter(), healthy())
 		})
 
 		t.Run("returns the compiler's error for a type error", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertTypeChecks(&r, adapter(),
-				only(rowFile, "package harness\n\nvar X int = \"text\"\n"))
-			assert.True(t, r.says("does not type-check"), "the class is named")
-			assert.True(t, r.says("cannot use"), "and the compiler's own words follow")
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertTypeChecks(t.Context(), tb, adapter(),
+					only(rowFile, "package harness\n\nvar X int = \"text\"\n"))
+			})
+			assert.Equal(t, failure.Contract, lang+": the generated output type-checks", "the class is named")
+			assert.Contains(t, reason(t, failure), "cannot use", "in the compiler's own words")
 		})
 
 		t.Run("returns an error for a type error in a generated test", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertTypeChecks(&r, adapter(), with(rowTestFile,
-				"package harness\n\nvar _ int = \"text\"\n"))
-			assert.True(t, r.says("does not type-check"),
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertTypeChecks(t.Context(), tb, adapter(),
+					with(rowTestFile, "package harness\n\nvar _ int = \"text\"\n"))
+			})
+			assert.Equal(t, failure.Contract, lang+": the generated output type-checks",
 				"a test file is compiled too, where most generated checks are")
+		})
+
+		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+			t.Parallel()
+
+			dir := laidOut(t, healthy())
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return adapter().TypeCheck(ctx, dir) },
+				"an ended context starts no go command")
 		})
 	})
 
@@ -254,29 +215,41 @@ func TestAdapter(t *testing.T) {
 		t.Run("returns a passing report for a healthy project", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertTestsPass(&r, adapter(), healthy())
-			assert.False(t, r.failed(), "the generated tests pass")
+			toolchain.AssertTestsPass(t.Context(), t, adapter(), healthy())
 		})
 
 		t.Run("returns a report of a failing generated test", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertTestsPass(&r, adapter(), with(rowTestFile,
-				"package harness\n\nimport \"testing\"\n\n"+
-					"func TestRow(t *testing.T) { t.Fatal(\"the generated check disagrees\") }\n"))
-			assert.True(t, r.says("1 of 1 generated tests failed"), "the count reads off the run")
-			assert.True(t, r.says("the generated check disagrees"), "and the case's own words follow")
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertTestsPass(t.Context(), tb, adapter(), with(rowTestFile,
+					"package harness\n\nimport \"testing\"\n\n"+
+						"func TestRow(t *testing.T) { t.Fatal(\"the generated check disagrees\") }\n"))
+			})
+			assert.HasPrefix(t, failure.Contract, lang+": every generated test passes, of 1\n",
+				"the count reads off the run")
+			assert.Contains(t, failure.Contract, "the generated check disagrees", "and the case's own words follow")
 		})
 
 		t.Run("returns a report of no case for a project without tests", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertTestsPass(&r, adapter(), only(rowFile, "package harness\n\ntype Row struct{}\n"))
-			assert.True(t, r.says("reported no case"),
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertTestsPass(t.Context(), tb, adapter(),
+					only(rowFile, "package harness\n\ntype Row struct{}\n"))
+			})
+			assert.HasPrefix(t, failure.Contract, lang+": the generated tests report a case, and 0 skipped",
 				"generated tests that run nothing pass while proving nothing")
+		})
+
+		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+			t.Parallel()
+
+			dir := laidOut(t, healthy())
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := adapter().RunTests(ctx, dir)
+				return err
+			}, "an ended context runs no test")
 		})
 	})
 
@@ -287,29 +260,24 @@ func TestAdapter(t *testing.T) {
 		t.Run("reports true for a type that implements the contract", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertSatisfies(&r, adapter(), healthy(), "*Row", "Reader")
-			assert.False(t, r.failed(), "a *Row satisfies the Reader the output declares")
+			toolchain.AssertSatisfies(t.Context(), t, adapter(), healthy(), "*Row", "Reader")
 		})
 
 		t.Run("reports false for a value whose method has a pointer receiver", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "Row", "Reader")
-			assert.False(t, r.failed(), "a Row does not satisfy Reader, because Read has a pointer receiver")
+			toolchain.AssertDoesNotSatisfy(t.Context(), t, adapter(), healthy(), "Row", "Reader")
 		})
 
 		t.Run("reports false for a contract the type does not implement", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "*Row", "error")
-			assert.False(t, r.failed(), "a *Row satisfies no error, which nothing widened it to")
-
-			r = recorder{}
-			toolchain.AssertSatisfies(&r, adapter(), healthy(), "*Row", "error")
-			assert.True(t, r.says("does not satisfy"), "a contract the output does not satisfy reports")
+			toolchain.AssertDoesNotSatisfy(t.Context(), t, adapter(), healthy(), "*Row", "error")
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertSatisfies(t.Context(), tb, adapter(), healthy(), "*Row", "error")
+			})
+			assert.Equal(t, failure.Contract, lang+": *Row satisfies error, as the generated output promised",
+				"a contract the output does not satisfy reports")
 		})
 
 		t.Run("imports the package of a qualified contract", func(t *testing.T) {
@@ -317,45 +285,53 @@ func TestAdapter(t *testing.T) {
 
 			g := with("stringer.go",
 				"package harness\n\n// String names the row.\nfunc (r Row) String() string { return r.Name }\n")
-			var r recorder
-			toolchain.AssertSatisfies(&r, adapter(), g, "Row", "fmt.Stringer")
-			assert.False(t, r.failed(), "a Row satisfies fmt.Stringer through its imported package")
-
-			r = recorder{}
-			toolchain.AssertDoesNotSatisfy(&r, adapter(), g, "Row", "io.Reader")
-			assert.False(
-				t,
-				r.failed(),
-				"and not io.Reader: the compiler reports the missing method, not a missing import",
-			)
+			toolchain.AssertSatisfies(t.Context(), t, adapter(), g, "Row", "fmt.Stringer")
+			toolchain.AssertDoesNotSatisfy(t.Context(), t, adapter(), g, "Row", "io.Reader")
 		})
 
 		t.Run("returns an error for a contract the project does not declare", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "Row", "Nowhere")
-			assert.True(t, r.says("for a reason other than the contract"),
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertDoesNotSatisfy(t.Context(), tb, adapter(), healthy(), "Row", "Nowhere")
+			})
+			assert.Equal(t, failure.Contract, lang+": the toolchain answers whether Row satisfies Nowhere",
 				"an undefined contract is a broken question, not a false answer")
+			assert.Contains(t, reason(t, failure), "for a reason other than the contract", "and the reason says so")
 		})
 
 		t.Run("probes from the package beside an external test file", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertSatisfies(&r, adapter(),
-				with("a_test.go", "package harness_test\n"), "*Row", "Reader")
-			assert.False(t, r.failed(), "an external test file sorting first leaves the probe in the package")
+			toolchain.AssertSatisfies(t.Context(), t, adapter(), with("a_test.go", "package harness_test\n"),
+				"*Row", "Reader")
 		})
 
 		t.Run("returns an error for a project that does not build", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			toolchain.AssertSatisfies(&r, adapter(),
-				only(rowFile, "package harness\n\nvar X int = \"text\"\n"), "Row", "Reader")
-			assert.True(t, r.says("does not build"),
-				"a false answer is told apart from a broken project")
+			failure := rejection(t, func(tb assert.TB) {
+				toolchain.AssertSatisfies(t.Context(), tb, adapter(),
+					only(rowFile, "package harness\n\nvar X int = \"text\"\n"), "Row", "Reader")
+			})
+			assert.Equal(t, failure.Contract, lang+": the toolchain answers whether Row satisfies Reader",
+				"a broken project leaves the question without an answer")
+			assert.Contains(
+				t,
+				reason(t, failure),
+				"does not build",
+				"a false answer is told apart from a broken project",
+			)
+		})
+
+		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+			t.Parallel()
+
+			dir := laidOut(t, healthy())
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := adapter().Satisfies(ctx, dir, "*Row", "Reader")
+				return err
+			}, "an ended context asks the compiler nothing")
 		})
 	})
 }
@@ -365,11 +341,42 @@ func TestAdapter(t *testing.T) {
 func requireGo(t *testing.T) {
 	t.Helper()
 
-	var probe recorder
-	if !toolchain.Require(&probe, adapter()) {
+	probe := &seat{Recorder: assert.NewRecorder()}
+	if !toolchain.Require(probe, adapter()) {
 		t.Skip("the Go toolchain is absent, so the toolchain cases are skipped here and required in CI: " +
 			probe.skipped)
 	}
+}
+
+// rejection runs check against a seat that must refuse it, and returns
+// the one record of the refusal.
+func rejection(t *testing.T, check func(tb assert.TB)) assert.Failure {
+	t.Helper()
+
+	got := assert.Rejects(t, "the check refuses the output", check)
+	assert.Length(t, got, 1, "the check fails once")
+	return got[0]
+}
+
+// reason returns the text of what a record states as got: the error
+// the toolchain returned.
+func reason(t *testing.T, failure assert.Failure) string {
+	t.Helper()
+
+	got, stated := failure.Got()
+	assert.True(t, stated, "the record states what the toolchain returned")
+	return fmt.Sprint(got)
+}
+
+// laidOut lays the fixture out through the adapter, and removes the
+// project when the test ends.
+func laidOut(t *testing.T, g toolchain.Generated) string {
+	t.Helper()
+
+	dir, err := adapter().Layout(g)
+	assert.NoError(t, err, "the fixture lays out")
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 // healthy returns generated output that parses, type-checks, vets
@@ -409,16 +416,16 @@ func TestRow(t *testing.T) {
 	}
 }
 
-// with returns the healthy fixture carrying one file replaced or
-// added, for a case that breaks exactly one thing.
+// with returns the healthy fixture with one file replaced or added, for
+// a case that breaks exactly one thing.
 func with(path, body string) toolchain.Generated {
 	g := healthy()
 	g.Files[path] = []byte(body)
 	return g
 }
 
-// only returns a fixture holding one file, for a case that needs no
-// test file.
+// only returns a fixture of one file, for a case that needs no test
+// file.
 func only(path, body string) toolchain.Generated {
 	return toolchain.Generated{
 		Module: fixtureModule,

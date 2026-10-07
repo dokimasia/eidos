@@ -116,12 +116,16 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 // Parse reads every Go file's syntax through the standard library,
 // which needs no toolchain, and reports the first file that
 // refuses with its own position. A project with no Go file refuses,
-// because a parse of nothing proves nothing.
-func (adapter) Parse(dir string) error {
+// because a parse of nothing proves nothing. A context that ends stops
+// the parse before the next file, and Parse returns its error.
+func (adapter) Parse(ctx context.Context, dir string) error {
 	fset := token.NewFileSet()
 	parsed := 0
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != golang.Extension {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if _, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution); err != nil {
@@ -150,16 +154,16 @@ func (adapter) Parse(dir string) error {
 // compiles a _test.go file, where most generated checks are. Vet is
 // off, because a vet finding is no type error, and [AssertVets]
 // asks for it.
-func (adapter) TypeCheck(dir string) error {
-	_, err := run(dir, "test", "-vet=off", "-count=1", "-run="+noTest, allPackages)
+func (adapter) TypeCheck(ctx context.Context, dir string) error {
+	_, err := run(ctx, dir, "test", "-vet=off", "-count=1", "-run="+noTest, allPackages)
 	return err
 }
 
 // RunTests runs the project's tests and reads the counts off the
 // tool's own JSON stream, so a report states how many cases ran, not
 // only whether the command exited zero.
-func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
-	out, err := run(dir, "test", "-json", "-count=1", allPackages)
+func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, error) {
+	out, err := run(ctx, dir, "test", "-json", "-count=1", allPackages)
 	report := tally(out)
 	if err != nil && report.Failed == 0 {
 		// The command failed for a reason the stream does not
@@ -179,8 +183,8 @@ func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
 // not implement the contract is the false answer. Any other build
 // failure returns as an error, and so does a project that does not
 // build without the probe.
-func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
-	if err := a.TypeCheck(dir); err != nil {
+func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
+	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the project does not build, so nothing can be asked of it: %w", err)
 	}
 	pkg, err := probePackage(dir)
@@ -193,7 +197,7 @@ func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
 	}
 	defer func() { _ = os.Remove(probe) }()
 
-	out, buildErr := run(dir, "build", allPackages)
+	out, buildErr := run(ctx, dir, "build", allPackages)
 	switch {
 	case buildErr == nil:
 		return true, nil
@@ -271,15 +275,17 @@ func resolve(dir, path string) (string, error) {
 // and an unbounded run would hang a suite instead of reporting.
 const runTimeout = 5 * time.Minute
 
-// run runs the go tool in dir and returns its combined output,
-// wrapping a failure with that output so a message names what the
-// tool reported. The run is bounded, so a toolchain that never
-// returns fails the assertion and not the suite.
-func run(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+// run runs the go tool in dir under ctx and returns its combined
+// output. A failure wraps that output, so the error contains what the
+// tool reported. The run is bounded by [runTimeout] as well, so a
+// toolchain that never returns fails the assertion and not the suite.
+// A run that ctx or the bound ends returns an error that wraps the
+// context's error.
+func run(ctx context.Context, dir string, args ...string) (string, error) {
+	bounded, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, goBinary, args...)
+	cmd := exec.CommandContext(bounded, goBinary, args...)
 	cmd.Dir = dir
 	// The scratch module resolves nothing from the network: a
 	// fixture that needs a dependency is a fixture that states it.
@@ -288,7 +294,12 @@ func run(dir string, args ...string) (string, error) {
 	if err != nil {
 		if ctx.Err() != nil {
 			return string(out), fmt.Errorf(
-				"testing: go %s did not answer within %s: %w", strings.Join(args, " "), runTimeout, ctx.Err(),
+				"testing: go %s stopped with its caller: %w", strings.Join(args, " "), ctx.Err(),
+			)
+		}
+		if bounded.Err() != nil {
+			return string(out), fmt.Errorf(
+				"testing: go %s did not answer within %s: %w", strings.Join(args, " "), runTimeout, bounded.Err(),
 			)
 		}
 		return string(out), fmt.Errorf("go %s: %w\n%s", strings.Join(args, " "), err, out)

@@ -4,6 +4,7 @@
 package toolchain
 
 import (
+	"context"
 	"io/fs"
 
 	"go.dokimi.dev/eidos/core/symbol"
@@ -57,6 +58,11 @@ func (r TestReport) OK() bool { return r.Failed == 0 && r.Passed > 0 }
 // tooling cannot perform returns an error saying so, which the
 // assertion reports as the failure it is; nothing here guesses at a
 // missing capability.
+//
+// Parse, TypeCheck, RunTests and Satisfies take the caller's context
+// first. When the context ends, the adapter stops the
+// toolchain's process and returns an error that wraps the context's
+// error.
 type Adapter interface {
 	// Lang names the language, for the assertions' wording.
 	Lang() symbol.Lang
@@ -69,13 +75,13 @@ type Adapter interface {
 	Layout(g Generated) (dir string, err error)
 	// Parse reads the project's syntax and nothing else, so a
 	// syntax error is told apart from a type error.
-	Parse(dir string) error
-	// TypeCheck holds the project to its language's type rules.
-	TypeCheck(dir string) error
+	Parse(ctx context.Context, dir string) error
+	// TypeCheck checks the project against its language's type rules.
+	TypeCheck(ctx context.Context, dir string) error
 	// RunTests runs the project's own tests.
-	RunTests(dir string) (TestReport, error)
+	RunTests(ctx context.Context, dir string) (TestReport, error)
 	// Satisfies reports whether one type meets one contract: an
 	// interface, a trait, a protocol, whatever the language calls
 	// the shape a value is checked against.
-	Satisfies(dir, typeName, contract string) (bool, error)
+	Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error)
 }

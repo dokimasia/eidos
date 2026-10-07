@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/toolchain"
 )
 
@@ -43,18 +44,19 @@ func TestSuite(t *testing.T) {
 		t.Run("admits a toolchain that is there", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			assert.True(t, toolchain.Require(&r, scripted{}), "the toolchain runs")
-			assert.False(t, r.failed(), "and nothing is reported")
-			assert.Equal(t, r.skipped, "", "nor skipped")
+			s := &seat{Recorder: assert.NewRecorder()}
+			assert.True(t, toolchain.Require(s, scripted{}), "the toolchain runs")
+			assert.Empty(t, s.Failures(), "and nothing is reported")
+			assert.Equal(t, s.skipped, "", "nor skipped")
 		})
 
-		t.Run("refuses no adapter at all", func(t *testing.T) {
+		t.Run("records no adapter at all", func(t *testing.T) {
 			t.Parallel()
 
-			var r recorder
-			assert.False(t, toolchain.Require(&r, nil), "there is nothing to ask")
-			assert.True(t, r.says("no adapter"), "which the refusal says")
+			s := &seat{Recorder: assert.NewRecorder()}
+			assert.False(t, toolchain.Require(s, nil), "there is nothing to ask")
+			assert.Equal(t, coretest.Contracts(s.Failures()),
+				[]string{"toolchain: an adapter answers whether its toolchain is present"}, "which the failure states")
 		})
 	})
 }

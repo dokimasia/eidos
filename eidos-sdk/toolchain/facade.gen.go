@@ -10,11 +10,15 @@
 //
 // # Dependency position
 //
-// sdk/toolchain imports core/toolchain and the Go stdlib.
+// sdk/toolchain imports core/toolchain, go.dokimi.dev/assert and
+// the Go stdlib.
 package toolchain
 
 import (
+	"context"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	core "go.dokimi.dev/eidos/core/toolchain"
 )
@@ -38,43 +42,51 @@ type TestReport = core.TestReport
 // tooling cannot perform returns an error saying so, which the
 // assertion reports as the failure it is; nothing here guesses at a
 // missing capability.
+//
+// Parse, TypeCheck, RunTests and Satisfies take the caller's context
+// first. When the context ends, the adapter stops the
+// toolchain's process and returns an error that wraps the context's
+// error.
 type Adapter = core.Adapter
 
-// AssertParses holds the generated output to its language's
-// grammar: it lays the fixture out and asks the adapter to read the
-// syntax and nothing more, so a syntax error is told apart from a
-// type error and reported as the one it is.
-func AssertParses(tb TB, a Adapter, g Generated) {
-	core.AssertParses(tb, a, g)
+// AssertParses checks the generated output against its language's
+// grammar: it lays the fixture out and asks the adapter, under ctx, to
+// read the syntax and nothing more, so a syntax error is told apart
+// from a type error. A refusal records a failure whose detail states
+// the language's own error.
+func AssertParses(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
+	core.AssertParses(ctx, tb, a, g)
 }
 
-// AssertTypeChecks holds the generated output to its language's
-// type rules, which is the check that catches a reference the
-// render qualified wrongly or an import it never recorded.
-func AssertTypeChecks(tb TB, a Adapter, g Generated) {
-	core.AssertTypeChecks(tb, a, g)
+// AssertTypeChecks checks the generated output against its language's
+// type rules under ctx, which is the check that catches a reference the
+// render qualified wrongly or an import it never recorded. A refusal
+// records a failure whose detail states the language's own error.
+func AssertTypeChecks(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
+	core.AssertTypeChecks(ctx, tb, a, g)
 }
 
-// AssertTestsPass runs the generated project's own tests and holds
-// every case that ran to passing. A run reporting no case at all
-// fails: generated tests that execute nothing pass while proving
-// nothing, which is the failure this assertion exists to catch.
-func AssertTestsPass(tb TB, a Adapter, g Generated) {
-	core.AssertTestsPass(tb, a, g)
+// AssertTestsPass runs the generated project's own tests under ctx and
+// requires every case that ran to pass. A run that does not report a
+// case fails: generated tests that execute nothing pass while proving
+// nothing, which is the failure this assertion exists to catch. Each
+// failure's contract ends with the tool's own output.
+func AssertTestsPass(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
+	core.AssertTestsPass(ctx, tb, a, g)
 }
 
-// AssertSatisfies holds one generated type to one contract: the
-// interface, trait or protocol a doubling generator promised its
-// output would meet.
-func AssertSatisfies(tb TB, a Adapter, g Generated, typeName, contract string) {
-	core.AssertSatisfies(tb, a, g, typeName, contract)
+// AssertSatisfies checks one generated type against one contract under
+// ctx: the interface, trait or protocol a doubling generator promised
+// its output would meet.
+func AssertSatisfies(ctx context.Context, tb assert.TB, a Adapter, g Generated, typeName, contract string) {
+	core.AssertSatisfies(ctx, tb, a, g, typeName, contract)
 }
 
 // AssertDoesNotSatisfy is the inverse, for a generator that
 // narrows: a type the output must not accidentally meet, so a
 // contract widened by mistake is caught rather than welcomed.
-func AssertDoesNotSatisfy(tb TB, a Adapter, g Generated, typeName, contract string) {
-	core.AssertDoesNotSatisfy(tb, a, g, typeName, contract)
+func AssertDoesNotSatisfy(ctx context.Context, tb assert.TB, a Adapter, g Generated, typeName, contract string) {
+	core.AssertDoesNotSatisfy(ctx, tb, a, g, typeName, contract)
 }
 
 // RequiredInCI reports whether a missing toolchain must fail rather
@@ -90,22 +102,26 @@ func RequiredInCI() bool {
 }
 
 // Prepare lays a fixture out and returns its directory and the
-// cleanup the caller defers. A fixture with no output and a layout
-// the language refused are both failures, reported through tb, and
-// the returned directory is empty.
-func Prepare(tb TB, a Adapter, g Generated) (string, func()) {
+// cleanup the caller defers. A missing adapter, a fixture with no
+// output and a layout the language refused each record a failure
+// through tb, as the assertion of expect it states, and return an
+// empty directory with a cleanup that does nothing.
+func Prepare(tb assert.TB, a Adapter, g Generated) (string, func()) {
 	return core.Prepare(tb, a, g)
 }
 
-// TB is the test handle the assertions report through: the assert
-// module's, widened with the skip a suite needs, so one interface
-// serves an assertion and the suite that gates it.
+// TB is the seat the gate reports through: the assert module's,
+// widened with the skip a suite needs. The assertions take the assert
+// module's seat alone, because they never skip. A failure is a record
+// of the assertion that states it, which [assert.Rejects] and an
+// [assert.Recorder] return.
 type TB = core.TB
 
 // Require reports whether the toolchain is there to run, and
 // settles the absent case: locally it skips, naming the reason the
-// adapter gave, and in CI it fails, so a regression cannot hide
-// behind a missing compiler.
+// adapter gave, and in CI it records a failure, so a regression cannot
+// hide behind a missing compiler. A missing adapter records a failure
+// and reports false.
 //
 // [RunToolchainSuite] calls it once for the kernel's two checks that
 // run a toolchain. A satellite adding assertions of its own calls it
@@ -130,7 +146,8 @@ type Setup = core.Setup
 // absent in CI they fail, so a regression cannot hide behind a
 // missing compiler. A satellite adds its own assertions in its own
 // test, beside this call, because the kernel set is the minimum
-// every satellite runs.
+// every satellite runs. Each check runs the toolchain under its own
+// test's context.
 func RunToolchainSuite(t *testing.T, setup Setup) {
 	core.RunToolchainSuite(t, setup)
 }

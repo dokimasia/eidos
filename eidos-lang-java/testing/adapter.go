@@ -165,7 +165,7 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 // with no Java file returns an error, because a parse of nothing
 // proves nothing. Java has no parser in Go, so the parse needs the
 // toolchain, and a caller passes [toolchain.Require] first.
-func (adapter) Parse(dir string) error {
+func (adapter) Parse(ctx context.Context, dir string) error {
 	sources, err := javaSources(dir)
 	if err != nil {
 		return err
@@ -174,19 +174,19 @@ func (adapter) Parse(dir string) error {
 	if err != nil {
 		return err
 	}
-	_, err = run(dir, javaBinary, append([]string{driver}, sources...)...)
+	_, err = run(ctx, dir, javaBinary, append([]string{driver}, sources...)...)
 	return err
 }
 
 // TypeCheck compiles every Java source with javac into the classes
 // directory, which is Java's type check.
-func (adapter) TypeCheck(dir string) error {
+func (adapter) TypeCheck(ctx context.Context, dir string) error {
 	sources, err := javaSources(dir)
 	if err != nil {
 		return err
 	}
 	args := []string{"-d", filepath.Join(dir, classesDir), "-proc:none", "-encoding", "UTF-8"}
-	_, err = run(dir, javacBinary, append(args, sources...)...)
+	_, err = run(ctx, dir, javacBinary, append(args, sources...)...)
 	return err
 }
 
@@ -198,8 +198,8 @@ func (adapter) TypeCheck(dir string) error {
 // A project that does not compile returns the compiler's error, and
 // one without a test class returns an empty report, which fails the
 // kernel's assertion.
-func (a adapter) RunTests(dir string) (toolchain.TestReport, error) {
-	if err := a.TypeCheck(dir); err != nil {
+func (a adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, error) {
+	if err := a.TypeCheck(ctx, dir); err != nil {
 		return toolchain.TestReport{}, err
 	}
 	classes := filepath.Join(dir, classesDir)
@@ -226,7 +226,7 @@ func (a adapter) RunTests(dir string) (toolchain.TestReport, error) {
 	if err != nil {
 		return toolchain.TestReport{}, err
 	}
-	out, err := run(dir, javaBinary, append([]string{"-cp", classes, driver}, tests...)...)
+	out, err := run(ctx, dir, javaBinary, append([]string{"-cp", classes, driver}, tests...)...)
 	report := tally(out)
 	if err != nil && report.Failed == 0 {
 		// java exited with an error and printed no fail line.
@@ -243,8 +243,8 @@ func (a adapter) RunTests(dir string) (toolchain.TestReport, error) {
 // refuses with incompatible types alone reports false. Any other
 // refusal returns an error, and so does a project that does not
 // compile without the probe.
-func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
-	if err := a.TypeCheck(dir); err != nil {
+func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
+	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the project does not compile, so nothing can be asked of it: %w", err)
 	}
 	source := "final class EidosProbe {\n    static " + contract + " probe(" + typeName +
@@ -253,7 +253,7 @@ func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	out, err := run(dir, javacBinary, "-XDrawDiagnostics", "-proc:none",
+	out, err := run(ctx, dir, javacBinary, "-XDrawDiagnostics", "-proc:none",
 		"-cp", filepath.Join(dir, classesDir), "-d", filepath.Join(dir, toolDir, probeDir), probe)
 	if err == nil {
 		return true, nil
@@ -316,21 +316,28 @@ func write(dir, path string, body []byte) error {
 	return os.WriteFile(target, body, filePerm)
 }
 
-// run runs one toolchain binary in dir and returns its combined
-// output. A failure wraps that output, so the error contains what the
-// tool reported. The run is bounded by [runTimeout].
-func run(dir, binary string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+// run runs one toolchain binary in dir under ctx and returns its
+// combined output. A failure wraps that output, so the error contains
+// what the tool reported. The run is bounded by [runTimeout] as well,
+// and a run that ctx or the bound ends returns an error that wraps the
+// context's error.
+func run(ctx context.Context, dir, binary string, args ...string) (string, error) {
+	bounded, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd := exec.CommandContext(bounded, binary, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			return string(out), fmt.Errorf(
+				"testing: %s %s stopped with its caller: %w", binary, strings.Join(args, " "), ctx.Err(),
+			)
+		}
+		if bounded.Err() != nil {
+			return string(out), fmt.Errorf(
 				"testing: %s %s did not return within %s: %w",
-				binary, strings.Join(args, " "), runTimeout, ctx.Err(),
+				binary, strings.Join(args, " "), runTimeout, bounded.Err(),
 			)
 		}
 		return string(out), fmt.Errorf("%s %s: %w\n%s", binary, strings.Join(args, " "), err, out)
