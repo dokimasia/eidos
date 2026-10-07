@@ -225,16 +225,16 @@ const (
 	parallelPipelineAllocs = 441_280 + 8*45
 	// treeRunAllocs is one cold run of the edge corpus's tree of 200,000
 	// declarations into a fresh memory ledger, its load and its record of
-	// the state included, 2,604,419 on average with a standard deviation
-	// of 54 over 24 fresh processes. A memory profile of one run
+	// the state included, 2,604,412 on average with a standard deviation
+	// of 41 over 24 fresh processes. A memory profile of one run
 	// attributes about 1,690,000 to the scripted frontend's parse of the
 	// tree, 199,000 to the phase calls' handlers, most of them the
 	// annotator's stamps, and 181,000 to the render's templates. The
 	// record of the phases allocates only to grow its buffers. The
-	// profile counts 2,231,363 and misses about 373,000 allocations below
+	// profile counts 2,231,387 and misses about 373,000 allocations below
 	// 16 bytes that share a block of the tiny allocator. The ceiling allows
 	// eight standard deviations above the mean.
-	treeRunAllocs = 2_604_419 + 8*54
+	treeRunAllocs = 2_604_412 + 8*41
 )
 
 // dropping is a backend whose lowering hook returns a declaration

@@ -333,7 +333,9 @@ func TestRecords(t *testing.T) {
 				t.Parallel()
 
 				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
-					r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{
+						Match: generated(recordedSubject), Findings: reported,
+					})
 				})
 				_, held, err := g.Phases(t.Context()).Invocation(failedPlan, generated(recordedSubject))
 				assert.NoError(t, err, "the invocations table reads")
@@ -346,10 +348,14 @@ func TestRecords(t *testing.T) {
 				ref := state.InvocationRef(recordedPlan, generated(recordedSubject))
 				shared := sharedRow(t, state.TableInvocations, ref.ID,
 					func(r *state.Recorder) {
-						r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(siblingSubject)})
+						r.Lane(recordedPlan).Invoked(plugin.Invocation{
+							Match: generated(siblingSubject), Findings: reported,
+						})
 					},
 					func(r *state.Recorder) {
-						r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+						r.Lane(recordedPlan).Invoked(plugin.Invocation{
+							Match: generated(recordedSubject), Findings: reported,
+						})
 					})
 				got, held, err := shared.Phases(t.Context()).Invocation(recordedPlan, generated(recordedSubject))
 				assert.NoError(t, err, "the shared row reads")

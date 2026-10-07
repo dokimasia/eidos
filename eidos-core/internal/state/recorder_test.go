@@ -115,10 +115,73 @@ func TestRecorder(t *testing.T) {
 
 				graphWide := plugin.MatchKey{Plugin: generatorID, Rule: structRule}
 				got := invocationOf(t, graphWide, func(l *state.Lane) {
-					l.Invoked(plugin.Invocation{Match: graphWide})
+					l.Invoked(plugin.Invocation{Match: graphWide, Findings: reported})
 				})
 				assert.Empty(t, got.Reads, "a graph-wide match reads no subject")
 			})
+
+			t.Run("records nothing for a pure invocation", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+				})
+				rows, err := g.All(t.Context(), state.TableInvocations)
+				assert.NoError(t, err, "the invocations table reads")
+				assert.Empty(t, rows, "an invocation that read, touched and reported nothing leaves no row")
+				readers, err := g.Phases(t.Context()).Readers(state.DeclarationEdge(recordedSubject))
+				assert.NoError(t, err, "the readers table reads")
+				assert.Empty(t, readers, "and reads no edge of its subject")
+			})
+
+			fact := meta.FactRef{Subject: siblingSubject, Key: edgeKey}
+			hosted := generated(recordedSubject)
+			hosted.Host = plugin.EmitRef{Unit: hostUnit, Index: 1}
+			tests := []struct {
+				name string
+				give plugin.Invocation
+			}{
+				{
+					name: "records an invocation that read an edge",
+					give: plugin.Invocation{Match: generated(recordedSubject), Reads: readsOf(t, nil, fact)},
+				},
+				{
+					name: "records an invocation that read a plan's export",
+					give: plugin.Invocation{Match: generated(recordedSubject), Exports: []string{failedPlan}},
+				},
+				{
+					name: "records an invocation that placed declarations into a unit",
+					give: plugin.Invocation{Match: generated(recordedSubject), Units: []plugin.UnitRef{hostUnit}},
+				},
+				{
+					name: "records an invocation that appended into an emit value's slots",
+					give: plugin.Invocation{Match: generated(recordedSubject), Hosts: []plugin.EmitRef{hosted.Host}},
+				},
+				{
+					name: "records an invocation that claimed a fact",
+					give: plugin.Invocation{Match: generated(recordedSubject), Claimed: []meta.FactRef{fact}},
+				},
+				{
+					name: "records an invocation that reported a finding",
+					give: plugin.Invocation{Match: generated(recordedSubject), Findings: reported},
+				},
+				{
+					name: "records a match with a host that read, touched and reported nothing",
+					give: plugin.Invocation{Match: hosted},
+				},
+				{
+					name: "records a whole call that read, touched and reported nothing",
+					give: plugin.Invocation{Match: plugin.MatchKey{Plugin: generatorID, Rule: plugin.WholeCall}},
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					got := invocationOf(t, tt.give.Match, func(l *state.Lane) { l.Invoked(tt.give) })
+					assert.Equal(t, got.Match, tt.give.Match, "the lane records the invocation")
+				})
+			}
 		})
 
 		t.Run("Evaluated", func(t *testing.T) {

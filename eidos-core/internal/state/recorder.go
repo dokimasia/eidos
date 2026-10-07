@@ -110,8 +110,19 @@ func (l *Lane) Validation(
 // where it has a subject, and what it touched and reported. The run
 // records a phase call that journaled no invocation of its own the same
 // way, as one invocation under [plugin.WholeCall].
+//
+// It records nothing for a pure invocation: one that read nothing,
+// touched nothing and reported nothing, of a match without a host and
+// of a rule other than [plugin.WholeCall]. Such an invocation produced
+// nothing. A change to its subject is the one change that can make it
+// produce something.
 func (l *Lane) Invoked(inv plugin.Invocation) {
 	if l == nil {
+		return
+	}
+	if inv.Match.Rule != plugin.WholeCall && inv.Match.Host == (plugin.EmitRef{}) &&
+		(inv.Reads == nil || inv.Reads.Len() == 0) && len(inv.Exports) == 0 && len(inv.Units) == 0 &&
+		len(inv.Hosts) == 0 && len(inv.Claimed) == 0 && len(inv.Findings) == 0 {
 		return
 	}
 	l.edges = appendEdges(l.edges[:0], inv.Reads)
@@ -164,9 +175,10 @@ func (l *Lane) add(ref RecordRef, reads []EdgeHash) {
 }
 
 // Recorder collects what one run's phases after the load executed, for
-// [RecordPhases] to write into the run's commit: each validation,
-// invocation and check with the edges it read, and the audit's findings.
-// Each goroutine that records takes a [Lane] of its own.
+// [RecordPhases] to write into the run's commit: each validation, each
+// invocation but a pure one, and each check with the edges it read, and
+// the audit's findings. Each goroutine that records takes a [Lane] of its
+// own.
 //
 // The zero Recorder is ready to record.
 //

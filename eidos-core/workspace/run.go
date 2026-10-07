@@ -578,11 +578,12 @@ func (w *Workspace) applyDrops(
 // returned error stops the frame, wrapped with the role that returned
 // it.
 //
-// Where rec is set, the journal also records each invocation into a lane
-// of the shared phases, each call reports into a sink of its own whose
-// findings then merge into the run's, and a call that journals no
-// invocation of its own is recorded as one under [plugin.WholeCall]: its
-// reader's reads, the facts its plugin claimed, and its findings.
+// Where rec is set, the journal also hands each invocation to a lane of
+// the shared phases, which records every one that is not pure, each call
+// reports into a sink of its own whose findings then merge into the
+// run's, and a call that journals no invocation of its own is recorded
+// as one under [plugin.WholeCall]: its reader's reads, the facts its
+// plugin claimed, and its findings.
 func (w *Workspace) annotateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink, stats *Stats, rec *state.Recorder,

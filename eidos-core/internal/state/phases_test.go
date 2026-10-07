@@ -42,6 +42,11 @@ var (
 	}
 )
 
+// reported is what the recorded cases' invocations report, so a lane
+// records each of them: a lane leaves out an invocation that reads,
+// touches and reports nothing.
+var reported = []diag.Diag{recordedDiag}
+
 // The ceilings of the record of a run's phases, over the generation
 // lookedUp records and a recorder of the same records.
 const (
@@ -120,7 +125,7 @@ func TestPhases(t *testing.T) {
 			g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
 				shared := r.Lane("")
 				shared.Validation(recordedSubject, nil, nil, nil)
-				shared.Invoked(plugin.Invocation{Match: annotated(recordedSubject)})
+				shared.Invoked(plugin.Invocation{Match: annotated(recordedSubject), Findings: reported})
 				shared.Check(checkID, readsOf(t, nil, fact), nil)
 				r.Lane(recordedPlan).Invoked(plugin.Invocation{
 					Match: generated(recordedSubject), Reads: readsOf(t, nil, fact),
@@ -198,7 +203,9 @@ func TestPhases(t *testing.T) {
 				l := ledger.NewMem()
 				build := func(r *state.Recorder) {
 					r.Lane("").Validation(recordedSubject, nil, nil, nil)
-					r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{
+						Match: generated(recordedSubject), Findings: reported,
+					})
 				}
 				first := recordedPhases(t, l, emptyFacts(), nil, build)
 				writes := l.Writes()
@@ -227,10 +234,10 @@ func TestPhases(t *testing.T) {
 
 				l := ledger.NewMem()
 				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
-					r.Lane(failedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+					r.Lane(failedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject), Findings: reported})
 				})
 				g := recordedPhases(t, l, emptyFacts(), []string{failedPlan}, func(r *state.Recorder) {
-					r.Lane(failedPlan).Invoked(plugin.Invocation{Match: generated(siblingSubject)})
+					r.Lane(failedPlan).Invoked(plugin.Invocation{Match: generated(siblingSubject), Findings: reported})
 				})
 				s := g.Phases(t.Context())
 				_, kept, err := s.Invocation(failedPlan, generated(recordedSubject))
@@ -276,7 +283,9 @@ func TestPhases(t *testing.T) {
 
 					l := ledger.NewMem()
 					parent := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
-						r.Lane(failedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+						r.Lane(failedPlan).Invoked(plugin.Invocation{
+							Match: generated(recordedSubject), Findings: reported,
+						})
 					})
 					c := state.NewCommit(parent, nil)
 					c.Put(state.TableInvocations, tt.give.Key, tt.give.Value)
@@ -297,10 +306,14 @@ func TestPhases(t *testing.T) {
 
 				l := ledger.NewMem()
 				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
-					r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject)})
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{
+						Match: generated(recordedSubject), Findings: reported,
+					})
 				})
 				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
-					r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(siblingSubject)})
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{
+						Match: generated(siblingSubject), Findings: reported,
+					})
 				})
 				s := g.Phases(t.Context())
 				_, held, err := s.Invocation(recordedPlan, generated(recordedSubject))
@@ -316,10 +329,10 @@ func TestPhases(t *testing.T) {
 
 				l := ledger.NewMem()
 				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
-					r.Lane("").Invoked(plugin.Invocation{Match: annotated(recordedSubject)})
+					r.Lane("").Invoked(plugin.Invocation{Match: annotated(recordedSubject), Findings: reported})
 				})
 				g := recordedPhases(t, l, emptyFacts(), []string{failedPlan}, func(r *state.Recorder) {
-					r.Lane("").Invoked(plugin.Invocation{Match: annotated(siblingSubject)})
+					r.Lane("").Invoked(plugin.Invocation{Match: annotated(siblingSubject), Findings: reported})
 				})
 				s := g.Phases(t.Context())
 				_, held, err := s.Invocation("", annotated(recordedSubject))
@@ -334,7 +347,7 @@ func TestPhases(t *testing.T) {
 				t.Parallel()
 
 				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), []string{failedPlan}, func(r *state.Recorder) {
-					r.Lane("").Invoked(plugin.Invocation{Match: annotated(recordedSubject)})
+					r.Lane("").Invoked(plugin.Invocation{Match: annotated(recordedSubject), Findings: reported})
 				})
 				_, held, err := g.Phases(t.Context()).Invocation("", annotated(recordedSubject))
 				assert.NoError(t, err, "the invocations table reads")

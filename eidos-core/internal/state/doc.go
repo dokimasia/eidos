@@ -40,7 +40,10 @@
 //
 // A [Recorder] collects what the phases after the load executed: each
 // validation, invocation and check with the edges it read, through one
-// [Lane] for each goroutine that records, and the audit's findings. An
+// [Lane] for each goroutine that records, and the audit's findings. A
+// lane leaves out a pure invocation, which read nothing and touched and
+// reported nothing. Such an invocation produced nothing, and a change to
+// its subject is the one change that can make it produce something. An
 // [EdgeHash] is the first eight bytes of the SHA-256 of an edge's
 // spelling, and a [RecordRef] names a record by the same hash of its kind
 // and its key fields. [RecordPhases] reads the prior record whole before

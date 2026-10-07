@@ -161,12 +161,13 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 // stamped files, and for a plan marked exported, the routed files that
 // rendered, which the plan's export lists.
 //
-// Where rec is set, the journal also records each invocation into the
-// plan's lane, each call reports into a sink of its own whose findings
-// then merge into the plan's, and a call that journals no invocation of
-// its own is recorded as one under [plugin.WholeCall]: its reader's
-// reads, the plans whose export it was handed, the units its plugin
-// flushed or appended into, and its findings.
+// Where rec is set, the journal also hands each invocation to the plan's
+// lane, which records every one that is not pure, each call reports into
+// a sink of its own whose findings then merge into the plan's, and a call
+// that journals no invocation of its own is recorded as one under
+// [plugin.WholeCall]: its reader's reads, the plans whose export it was
+// handed, the units its plugin flushed or appended into, and its
+// findings.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, src tree, p *planRun,
