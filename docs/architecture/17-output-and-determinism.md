@@ -133,6 +133,12 @@ brand's trailer is the tree-collision Error
 `--adopt` accepts replacement explicitly. Adopting a tool must not
 fail on the first file.
 
+The disk and memory sinks implement the optional `Overwriter`
+interface, through which a run passes `--overwrite-drift` and
+`--adopt` to them. A sink without it refuses both kinds of overwrite,
+and under either flag the sweep removes only the brand's intact
+output.
+
 ## Concurrency between runs
 
 One writer per workspace. A run takes an exclusive lock on the
@@ -140,6 +146,14 @@ workspace's state directory for its duration. A second concurrent
 invocation fails immediately with a diagnostic naming the holder,
 rather than interleaving staged commits, because two runs racing one
 manifest leaves generated files nothing tracks.
+
+The lock is `flock(2)` on the state directory's `lock` file, or an
+exclusive open on Windows, so the operating system releases it when
+the process exits, and a crash leaves no stale lock. Until its release,
+the holder records its process ID, its host, its caller and its start
+in `lock.json`, which a contender reads to name the holder. A dry run and
+`explain` take the lock too, because they read the generation that a
+committing run replaces.
 
 The state directory belongs to the brand, `.<brand>/`
 ([20-cli.md](20-cli.md)), so two different eidos-built binaries
@@ -210,7 +224,7 @@ as the body it attests.
 `--dry-run` executes every phase, including Layout, the Close checks
 and audit mode, and writes nothing. It computes the manifest and
 reports it, with a diff summary against the tree covering create,
-update, unchanged, stale and drifted. Dry run is the surface for
+update, unchanged, stale, drifted, foreign and withheld. Dry run is the surface for
 reviewing what a run would change, and its output is the same
 versioned JSON as everything else.
 

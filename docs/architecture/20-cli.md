@@ -4,44 +4,70 @@
 [16](16-diagnostics.md), [17](17-output-and-determinism.md). This is
 the consumer's surface.*
 
-The `cli` package holds command kernels: complete command
-implementations that a consumer's `main` composes. Compose them and
-your users get the commands, flags, output formats and exit codes
-specified here, and you write no UX code to get them. This document
-is the contract for that surface.
+The `cli` package of `go.dokimi.dev/eidos/cli` contains the command
+kernels: seven complete commands that a consumer's binary mounts.
+Mount them and your users get the commands, flags, output formats and
+exit codes specified here, and you write no UX code to get them. This
+document is the contract for that surface.
 
 ## Composition
 
+`cli.Kernels` takes a function that composes the workspace and
+returns the seven commands as values. A binary without a command line
+of its own passes the same function to `cli.Main`:
+
 ```go
 func main() {
-    ws := workspace.New().
-        Frontends(gofrontend.New()).
-        Annotators(shapefull.Annotators()...).
-        Plans(golang.ServerPlan(mygen.New()))
-    cli.Main(ws)
+    cli.Main(func() *workspace.Builder {
+        return workspace.New().
+            Brand("acme").
+            Frontends(gofrontend.New()).
+            Annotators(shapefull.Annotators()...).
+            Plans(golang.ServerPlan(mygen.New()))
+    })
 }
 ```
 
-`cli.Main` wires up the command tree below, config discovery, the
-global flags, diagnostic rendering
-([16-diagnostics.md](16-diagnostics.md)) and the exit codes. The
-consumer supplies its identity, meaning brand and version, through
-workspace config, and that identity appears in help text, in
-generated-file headers and in `version` output.
+A command calls the function once for each workspace it covers,
+because it applies the config file to the builder before Build runs,
+and a plugin instance belongs to one workspace. The brand that the
+builder declares names the config file, the state directory and the
+frame of every generated file. `version` prints the main module's path
+and version from the binary's build information.
 
-Consumers may add their own commands beside the kernels: an
-installer, a migration, whatever the product needs. The kernel
-command names are reserved, and a consumer command may not shadow
-one, so `run` means the same thing in every eidos-built binary. The
-composition surface, pinned:
+Consumers add their own commands beside the kernels: an installer, a
+migration, whatever the product needs. A kernel command parses its own
+flags and arguments, renders its own output and returns its own exit
+status, so it mounts in any command line:
+
+- `cli.Main` dispatches among the kernels and the consumer's
+  `cli.Command` values, and panics on a consumer command that shadows
+  a kernel name.
+- A binary with a command line of its own, such as a cobra tree or a
+  dispatcher over the standard library, mounts the values that
+  `cli.Kernels` returns, at its root or under a group. Its host passes
+  each command the arguments that follow the command's name, writes
+  nothing to the standard streams around it, and exits with the status
+  that it returns.
+
+`run` means the same thing in every eidos-built binary: under
+`cli.Main` because a shadowing command is refused, and under any other
+host because `acceptancetest` runs each kernel name on the built
+binary. The composition surface, pinned:
 
 ```go
-func Main(ws *workspace.Workspace, extra ...Command) int
+type Compose func() *workspace.Builder // a fresh composition per call
 
-type Command interface {          // the extension point
-    Name() string                 // shadowing a kernel name is refused
-    Run(ctx Context, args []string) int
+type Command interface {
+    Name() string
+    Synopsis() string
+    Usage() string
+    Run(ctx context.Context, stdio IO, args []string) int // 0, 1 or 64
 }
+
+func Kernels(compose Compose) []Command
+func Main(compose Compose, extra ...Command) // exits; panics on a shadowed name
+func Exit(status int) error                 // nil, or an ExitError for a host whose commands return errors
 ```
 
 ## Config discovery
@@ -64,11 +90,19 @@ beside its config file, holding the manifest, the cache and the lock
 per workspace root, found by the same walk, and one per entry under
 `workspaces:`.
 
-A binary composed purely in Go, with the workspace built in `main`
-and no config file, skips discovery entirely. Config then only
-selects among what the binary compiled in.
+Without a config file, the composition runs as the binary compiled it,
+and the root is the directory that contains the version control
+marker, or the working directory outside a repository. A config file
+only refines what the binary compiled in: it disables and rescopes
+compiled-in plans, sets their layouts and the plugins' options, and
+assembles nothing new
+([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
-## Global flags
+## Shared flags
+
+Every kernel command accepts these flags after its name, between its
+arguments included, and `cli.Main` also accepts them before the
+command's name. `-h` and `--help` print the command's usage.
 
 | Flag | Effect |
 |---|---|
@@ -83,15 +117,19 @@ selects among what the binary compiled in.
 ### run
 
 Executes the workspace: every plan, or a subset through `--plan
-<name>`, which repeats. Positional arguments narrow the source
-patterns within the workspace scope.
+<name>`, which repeats and brings in the plans that each selected plan
+depends on. Positional patterns narrow the commit: the run computes
+every plan over the whole graph, and commits only the changes to files
+that derive from a package the patterns admit
+([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
 `--dry-run` executes every phase and writes nothing, reporting the
-manifest diff as create, update, unchanged, stale or drifted
-([17-output-and-determinism.md](17-output-and-determinism.md)).
+manifest diff as create, update, unchanged, stale, drifted, foreign or
+withheld ([17-output-and-determinism.md](17-output-and-determinism.md)).
 
 `--overwrite-drift` accepts the loss of hand edits explicitly.
-Without it, drift fails the run.
+Without it, drift fails the run. `--adopt` replaces a file without the
+brand's frame at a path that a plan routes to.
 
 `go generate` composes with `run` without any narrowing flag,
 because it executes the command in the directive's package
@@ -112,8 +150,9 @@ it is how the warm≡cold check gets its fresh-state leg outside a
 scratch directory.
 
 `--check` is the CI gate. It runs with dry-run semantics and
-promotes a non-empty diff, meaning any create, update, stale or
-drifted entry, to an Error diagnostic naming the paths. Staleness
+promotes a non-empty diff, meaning any path that the run would create,
+update or remove, or would refuse to write, to an `OutOfDate` Error at
+that path. Staleness
 therefore exits 1 through the ordinary contract, and enforcing
 "committed output is current" needs no JSON parsing.
 
@@ -138,8 +177,10 @@ argument takes four forms, told apart by shape:
 | key at position | `shape.name@svc/store.go:41` | who stamped it, at what authority, from which reads |
 | code at position | `EIDGO-0412@svc/store.go:41` | the facts and reads behind the diagnostic |
 
-Each returns across plans. This is the tool that makes fixing a
-diagnostic cheaper than suppressing it.
+Each returns across plans. `explain` reads the sealed state's live
+generation and runs nothing, so it describes the last run that wrote a
+generation. This is the tool that makes fixing a diagnostic cheaper
+than suppressing it.
 
 ### prune
 
@@ -174,7 +215,8 @@ the poll, and the default is one second.
 
 ### version
 
-The kernel version, the contract version, every registered plugin
+The main module's path and version, the versions of the kernel and of
+the command kernels, the contract version, every registered plugin
 with its version, the composition fingerprint and the executable's
 digest. The sealed state's header records the last two, and a
 difference in either runs the next run cold
@@ -185,16 +227,22 @@ difference in either runs the next run cold
 Every command's `--format=json` emits line-delimited JSON under a
 versioned schema, and the schemas are public API
 ([15-compatibility.md](15-compatibility.md)). The stream has the
-same shape across commands: typed event objects, then one summary
-object.
+same shape across commands: a `start` event that states the schema's
+version, typed events, then one `summary` event. Standard output
+contains the stream alone, and standard error is empty unless the
+process panics.
 
 ```json
+{"event":"start","schema":"1.0","command":"run","brand":"acme",
+ "binary":{"path":"example.com/acme/cmd/acme","version":"v2.3.0"}}
 {"event":"file","action":"update","path":"svc/store_stub.go",
- "plan":"go-stubs","hash":"sha256:9f2c…"}
+ "plan":"go-stubs","found":"intact","hash":"sha256:9f2c…"}
 {"event":"diag","code":"EIDGO-0412","severity":"error",
  "pos":"svc/store.go:41:2","msg":"chan int has no TypeScript spelling"}
-{"summary":{"files":{"create":1,"update":1,"unchanged":40,"stale":0,
- "drifted":0},"errors":1,"warnings":0,"suppressed":{}}}
+{"event":"summary","status":1,"files":{"create":0,"update":1,
+ "unchanged":40,"stale":0,"drifted":0,"foreign":0,"withheld":0},
+ "plans":{"committed":0,"failed":1},"errors":1,"warnings":0,"infos":0,
+ "suppressed":{}}
 ```
 
 `plan` and `explain` emit their own event types under the same
@@ -205,7 +253,8 @@ surface.
 Exit codes come from the diagnostic contract: 0 on success, 1 when
 diagnostics failed the run, and 64 on a usage or config error. 2
 means a crash and nothing else
-([16-diagnostics.md](16-diagnostics.md)).
+([16-diagnostics.md](16-diagnostics.md)). A command returns the status,
+and its host exits with it.
 
 A consumer's CI composes these without parsing any message text:
 

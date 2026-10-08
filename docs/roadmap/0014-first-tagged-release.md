@@ -24,7 +24,8 @@ by CI, and the generated documentation artifacts publish with the tag.
 - [ ] The API baseline files are committed and the surface diff runs
       per release: an addition updates the baseline in review, and a
       removal fails. The contract-version handshake fails a mismatched
-      build naming the component and both versions.
+      build naming the component and both versions, and `version`
+      prints the contract version.
 - [ ] The schema index publishes per release, the evolution classifier
       passes additive fixtures and blocks a seeded breaking change,
       and `doctor` runs the consumer-side diff. This closes the piece
@@ -36,10 +37,11 @@ by CI, and the generated documentation artifacts publish with the tag.
 - [ ] The support matrix, the parity matrix, the diagnostic-code index
       and the benchmark comparison against the previous release
       publish beside the tag.
-- [ ] Tags exist: `eidos-core/v0.1.0`, and first tags for eidos-lang,
-      eidos-lang-go, eidos-lang-typescript, eidos-lang-protobuf,
-      eidos-plugin-shape and eidos-reference, each declaring a kernel
-      range its CI proves at the declared minimum and maximum.
+- [ ] Tags exist: `eidos-core/v0.1.0`, and first tags for eidos-cli,
+      eidos-lang, eidos-lang-go, eidos-lang-typescript,
+      eidos-lang-protobuf, eidos-plugin-shape and eidos-reference, each
+      declaring a kernel range its CI proves at the declared minimum and
+      maximum.
 - [ ] From an empty directory outside this repository, the consumer
       example from
       [14-distribution-and-cli.md](../architecture/14-distribution-and-cli.md)
@@ -79,4 +81,5 @@ and the first version tags.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-08 | The handshake bullet has `version` print the contract version, and eidos-cli joins the first tags | Milestone 0008's `version` has no contract version to print before the handshake exists, and the command kernels are a module of their own |
 | 2026-08-30 | Added at position 14 | The release comes last because it freezes what everything before it was still free to change |

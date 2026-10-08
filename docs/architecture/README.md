@@ -22,14 +22,15 @@ and links into the specification at every step. Keep the
 ## Ground rules
 
 - **eidos is a library.** It ships no binary. Consumers build their
-  own binary on the kernel's command kernels
+  own binary and mount the command kernels of `eidos-cli` in it
   ([20-cli.md](20-cli.md)).
 - **Outsiders use this.** So the kernel's API stability is checked
   by machinery rather than promised, the documentation ships as
   part of the release, and the conformance suite is what proves a
   compatibility claim.
 - **One repository, one module per component.** The kernel is
-  `go.dokimi.dev/eidos/core`. The satellites are
+  `go.dokimi.dev/eidos/core`, and the command kernels are
+  `go.dokimi.dev/eidos/cli`. The satellites are
   `go.dokimi.dev/eidos/lang/go`, `/lang/typescript`,
   `/lang/protobuf`, `/plugin-shape` and `/reference`, and the
   tree-sitter satellites share `/lang`. Each module is tagged and

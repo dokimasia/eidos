@@ -32,3 +32,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0018](0018-parallel-dispatch-and-slot-appends.md) | Parallel dispatch inside a bucket, and slot appends through the Emitter | Draft |
 | [0019](0019-source-scopes-exports-and-checks.md) | Source scopes, plan exports and workspace checks | Accepted |
 | [0020](0020-warm-runs-and-the-sealed-state.md) | Warm runs, the sealed state and re-execution by artifact | Accepted |
+| [0021](0021-the-command-kernels.md) | The command kernels, the config file and the run lock | Draft |

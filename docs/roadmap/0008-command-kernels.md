@@ -1,23 +1,23 @@
 ---
 milestone: 0008
 title: A consumer binary gets the full command surface
-status: Planned
+status: In progress
 depends-on: 0007
 ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: 0021
 ---
 
 # Milestone 0008: A consumer binary gets the full command surface
 
 ## Goal
 
-A binary whose `main` is registration plus `cli.Main(ws)` offers run,
-plan, explain, prune, doctor, watch and version, with the flags, the
-JSON output and the exit codes of
-[20-cli.md](../architecture/20-cli.md), and its author writes no UX
+A binary that mounts the command kernels, through `cli.Main` or in a
+command line of its own, offers run, plan, explain, prune, doctor,
+watch and version, with the flags, the JSON output and the exit codes
+of [20-cli.md](../architecture/20-cli.md), and its author writes no UX
 code to get them.
 
 ## Done when
@@ -30,8 +30,9 @@ code to get them.
       member over its own root, with its own `.<brand>/`. A list
       whose roots nest exits 64 before any member runs.
 - [ ] `run` works: `--dry-run` reports create, update, unchanged,
-      stale and drifted; `--check` exits 1 on a non-empty diff;
-      `--overwrite-drift`, `--cold` and `--plan` behave per contract;
+      stale, drifted, foreign and withheld; `--check` exits 1 on a
+      non-empty diff; `--overwrite-drift`, `--adopt`, `--cold` and
+      `--plan` behave per contract;
       pattern narrowing applies the narrowed-sweep rule; and
       `mybrand run .` works from a `//go:generate` line.
 - [ ] `explain` returns all four target forms across plans from
@@ -44,14 +45,16 @@ code to get them.
       and nothing else: the run summary counts suppressions per code,
       and a kernel Error is not suppressible.
 - [ ] `watch` re-runs when the fingerprint gate's poll reports a
-      change, and `version` prints the kernel version, the contract
-      version, every plugin, the composition fingerprint and the
-      executable's digest.
+      change, and `version` prints the main module's version, the
+      versions of the kernel and of the command kernels, every plugin,
+      the composition fingerprint and the executable's digest.
 - [ ] Every command's `--format=json` emits line-delimited events plus
       a summary under a versioned schema, and a second concurrent
       `run` fails naming the lock holder.
-- [ ] A consumer command registers beside the kernels, and shadowing a
-      kernel name like `run` is refused.
+- [ ] A consumer command registers beside the kernels in `cli.Main`,
+      which refuses one that shadows a kernel name like `run`, and
+      `acceptancetest` passes over a binary whose own dispatcher mounts
+      the kernels under a group.
 
 ## Why now
 
@@ -84,6 +87,9 @@ and the machine-output schemas of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-08 | Linked RFC-0021. The goal and the last bullet mount the kernels through `cli.Main` or the binary's own command line, and `acceptancetest` passes over a binary that mounts them under a group | A consumer's binary has commands of its own and can have a command-line framework, so the kernels are values that any command line mounts |
+| 2026-10-08 | `version` prints no contract version here, and milestone 0014 has it print one | The kernel declares no contract version before 0014 adds the handshake that checks it |
+| 2026-10-08 | `--dry-run` also reports foreign and withheld paths, and `run` gains `--adopt` | A narrowed run withholds the changes outside its patterns, and a file without the brand's frame at a routed path is an outcome of its own |
 | 2026-10-02 | The `version` bullet names the composition fingerprint and the executable's digest in place of the plugin-set fingerprint | The sealed state's header checks those two digests, and a unit's key no longer folds a fingerprint of the composition |
 | 2026-10-02 | Added the bullet for a `workspaces:` list | Milestone 0006 proves that two compositions over sibling roots are independent, and leaves the list to the config reader, because the kernel defines no file format. The reader is the one place that can refuse two roots that nest for every list |
 | 2026-09-30 | The suppression criterion's carrier changed from `+gen:diag` to `+<brand>:diag` | The carrier mark follows the composition's brand |

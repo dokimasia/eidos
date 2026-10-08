@@ -39,8 +39,9 @@ for every later phase.
 
 A **workspace** holds N frontends, the annotator set, N named plans,
 the output, the cache, the diagnostic sink and the config. The
-consumer's binary builds it, through the fluent builder or through
-YAML onto the same typed config structs. The output is a factory
+consumer's binary builds it through the fluent builder, and a YAML
+config file refines that composition through the same typed config
+structs ([20-cli.md](20-cli.md)). The output is a factory
 that opens a fresh sink. A sink serves one staging, so a run opens
 one for each plan it commits, and no plan has a sink of its own.
 
@@ -101,7 +102,7 @@ Run (per invocation; holds the workspace lock)
 Four rules become structure rather than discipline.
 
 Plugins are stateless values, because there is no run state outside
-`Run` to hide anything in. `--watch` is many Runs over one
+`Run` to hide anything in. `watch` is many Runs over one
 Workspace.
 
 **The dispatch plan compiles at Build**, the way a query plan does,
@@ -249,7 +250,10 @@ The steps, in order, where each assumes the ones before it:
    members.
 3. **Options.** Every plugin's options schema populates from its
    config section, and a failure names the plugin and the field.
-4. **Plans.** Each plan has exactly one backend and a registered
+4. **Plans.** The config's refinements apply first. Each refines a
+   plan that the composition declares, and no enabled plan or check
+   reads a plan that the config disables.
+   Each plan has exactly one backend and a registered
    target, and every template-claiming plugin declares that target.
    Layout refinements name plugins and tags that exist. The sources
    name a language that a frontend loads or a rules value declares,
@@ -271,6 +275,7 @@ The builder and the values it composes, pinned:
 ```go
 func New() *Builder
 func (b *Builder) Brand(brand output.Brand) *Builder // required: carriers, config, state, trailers
+func (b *Builder) BrandName() output.Brand // the brand that Brand declared, for discovery before Build
 func (b *Builder) Output(open func() (output.Sink, error)) *Builder // a fresh sink per plan a run commits
 func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder // the previous record, and this run's
 func (b *Builder) Memo(m Memo) *Builder // the parse memo's cap and its ledger, none by default
@@ -328,13 +333,11 @@ see, because the Reader is scope-filtered. The read side is the
 read them.
 
 ```yaml
-workspace:
-  scope: ["./..."]
-plans:
-  - {name: go-services, sources: {lang: golang}, target: golang}
-  - {name: go-mocks,    sources: {lang: golang}, target: golang}   # 2nd Go plan, different generators
-  - {name: py-services, sources: {lang: python}, target: python}
-  - {name: py-clients,  sources: {lang: golang}, target: python}   # cross-language plan
+plans:                                     # each refines a plan the binary compiles in
+  go-services: {sources: {lang: golang}}   # a Go backend
+  go-mocks:    {sources: {lang: golang}}   # 2nd Go plan, different generators
+  py-services: {sources: {lang: python}}   # a Python backend
+  py-clients:  {sources: {lang: golang}}   # cross-language plan: Go sources, a Python backend
 ```
 
 Several plans targeting one language, with different generator sets
@@ -470,8 +473,9 @@ It runs the **staleness sweep**, scoped per plan, because
 "everything this plan did not produce is stale" is only true within
 one plan's scope. It is also scoped per run: under narrowed patterns
 ([20-cli.md](20-cli.md)), a manifested file is deleted only when its
-sources fall inside the narrowed scope and no longer produce it, or
-when its producing plan or plugin left the composition.
+sources fall inside the narrowed scope and no longer produce it, when
+its producing plan left the composition, or when its producing plugin
+left its plan.
 Out-of-scope entries carry forward untouched, because a partial run
 must not delete outputs it merely did not look at. Reconciling the
 whole workspace is `prune`'s job.
@@ -557,17 +561,36 @@ workspace with two plans, and the architecture offers nothing weaker.
 
 ## Config
 
-The typed groups the YAML maps onto one-to-one, with a published
-JSON Schema for editor completion, where the fluent builder is the
-Go-native equal: `Identity` for brand and workspace ID, `Scope`,
-`Cache` for the parse memo's size cap, where zero keeps no memo, and
-the directory of its entries
-([09-incrementality.md](09-incrementality.md)), and `Plans
-[]PlanConfig{Name, Sources, Target, Generators, Layout, DependsOn}`.
+The config file is YAML under a published JSON Schema for editor
+completion ([20-cli.md](20-cli.md)), and it refines the composition
+that the binary compiles in. Its keys map onto the builder and onto
+`workspace.Config` one to one: the workspace ID, the worker count, the
+directive spellings a load ignores, the parse memo's size cap and the
+directory of its entries
+([09-incrementality.md](09-incrementality.md)), each plugin's options,
+and per compiled-in plan, whether it runs, its sources and its
+layout's policy, directory and import base. A config file cannot
+assemble a plan or set the brand, because the brand is part of the
+config file's name.
 
-`DryRun` resolves the full multi-plan picture, meaning buckets,
-topological order, layouts and export edges, without executing
-anything.
+```go
+type Config struct {
+    Options map[string]map[string]any // per plugin, then per option key
+    Plans   map[string]PlanConfig     // per compiled-in plan; Build refuses another name
+}
+
+type PlanConfig struct {
+    Disabled   bool          // leaves the plan out; refused while an enabled plan or a check reads it
+    Sources    *Sources      // replaces the plan's sources where set
+    Policy     layout.Policy // each of the three replaces the layout's field where set
+    Dir        string
+    ImportBase string
+}
+```
+
+`Describe` returns the composition as data: the frontends, the
+buckets, the topological order, the layouts and the export edges. It
+executes nothing, and the `plan` command prints it.
 
 The workspace ID names the workspace in manifests and in
 multi-workspace diagnostics, because merged CI output from a

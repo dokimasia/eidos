@@ -107,24 +107,32 @@ opt-out that cannot decay into a blanket mute.
   is wrong across the whole workspace gets disabled by not running
   the plugin, and a kernel Error is never suppressible, because it
   reports a broken run rather than an opinion.
-- Suppressions are audited. The run summary counts them per code,
-  and `doctor` lists every suppression whose code no longer occurs.
-  Dead suppressions are this system's lint debt.
+- Suppressions are audited. The run summary counts them per code.
+  Every run reports a suppression that removed nothing as an Info
+  under `UnusedSuppression`, and `doctor` lists those findings. Dead
+  suppressions are this system's lint debt.
+- The sinks that decide an outcome filter, and the sinks that collect
+  one execution's findings for the sealed state do not. A warm run's
+  recorded findings pass through the same filter, so an edit of a
+  suppression changes what the next run reports.
+- `--strict` promotes the Warnings that remain after the filter, so a
+  suppressed Warning never fails a strict run.
 
 ## Machine output
 
 `--format=json` renders diagnostics as line-delimited JSON under a
 versioned schema shared with every command kernel
 ([14-distribution-and-cli.md](14-distribution-and-cli.md)): one
-object per diagnostic, then a final summary object with counts by
-severity and code, suppression counts included. The schema is public
-API. Concretely:
+`diag` event per diagnostic, then a final `summary` event with counts
+by severity, suppression counts per code included. The schema is
+public API. Concretely:
 
 ```json
-{"code":"EID-0029","severity":"error","pos":"svc/store.go:41:2",
- "msg":"chan int has no TypeScript spelling",
+{"event":"diag","code":"EID-0029","severity":"error",
+ "pos":"svc/store.go:41:2","msg":"chan int has no TypeScript spelling",
  "origin":"typescript","related":["svc/api.go:12:1"]}
-{"summary":{"errors":1,"warnings":0,"suppressed":{"EID-0007":2}}}
+{"event":"summary","status":1,"errors":1,"warnings":0,"infos":0,
+ "suppressed":{"EID-0007":2}}
 ```
 
 ## Explain integration

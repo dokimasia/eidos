@@ -70,6 +70,12 @@ such as "`limit=` is now `bound=`; see code EID-…", because
 annotations sit in consumer source, which is the surface least able
 to absorb a silent change.
 
+A directive schema and each of its parameters have a `Deprecated`
+field that states the rewrite. Validation reports each use of a
+deprecated directive or parameter as a Warning under
+`DeprecatedDirective`, with the rewrite in the message, and `doctor`
+lists these warnings.
+
 ## Schema evolution is checked, not read
 
 Every schema-shaped surface publishes into a per-release **schema

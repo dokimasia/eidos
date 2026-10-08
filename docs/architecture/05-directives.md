@@ -196,7 +196,9 @@ written ([04-metadata.md](04-metadata.md)).
 ([18-routing-and-layout.md](18-routing-and-layout.md)).
 
 `diag` suppresses a diagnostic at a declaration
-([16-diagnostics.md](16-diagnostics.md)).
+([16-diagnostics.md](16-diagnostics.md)). Its `off=<code>` param
+resolves against the registered codes at validation, so a code that
+does not parse or that nothing registered is a validation Error.
 
 `skip` excludes a declaration from bare and fact-gated triggers, and
 optionally from one plugin through `skip plugin=mockgen`. The

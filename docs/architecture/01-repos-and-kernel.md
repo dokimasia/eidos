@@ -48,6 +48,12 @@ below the satellites rather than beside them. It is also where the
 tree-sitter cgo dependency stays, so the kernel keeps its zero
 dependencies and a binding or grammar upgrade touches one module.
 
+`eidos-cli` contains the seven command kernels, the config file and its
+discovery, and `acceptancetest` ([20-cli.md](20-cli.md)). It depends on
+the kernel and on one YAML library. No satellite or plugin module
+depends on it, so the kernel keeps its zero dependencies and a
+satellite never builds the YAML library.
+
 The kernel is the only module whose tags gate anyone else.
 Satellites release on their own schedule against a declared kernel
 version range ([15-compatibility.md](15-compatibility.md)).
@@ -118,8 +124,6 @@ Planned kernel packages, and the milestone that builds each:
 
 - `engine/` — incrementality: fingerprints, red-green invalidation,
   the sealed-graph persistence format. Milestone 0007.
-- `cli/` — command kernels: run, plan, explain, prune, doctor,
-  version, watch; config loading; flag conventions. Milestone 0008.
 
 Two names the map used to carry live elsewhere. Conformance is its
 own module, `eidos-conformance`, because it drives the satellites
@@ -137,6 +141,7 @@ Dependencies point one way and only one way:
 
 ```
 consumers (dokimi, org binaries) ──► satellites (eidos-lang-go, …) ──► sdk ──► kernel
+consumers (dokimi, org binaries) ──► eidos-cli (command kernels) ───────────► kernel
                                      satellites ──► eidos-lang (helpers) ──► kernel
                                      eidos-plugin-shape ─────────────► sdk ──► kernel
                                      tree-sitter satellites ──► eidos-lang ──► kernel
@@ -176,6 +181,8 @@ import line rather than in review.
 
 - Any binary. eidos ships no executable
   ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
+- The command line. The command kernels read a YAML config file, so
+  they are the module `eidos-cli`, beside the kernel.
 - Any language satellite content, including a helper table added
   "just this once". The degradation scale and the metadata
   namespaces exist so the kernel never needs a language exception.

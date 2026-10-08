@@ -44,7 +44,8 @@ The document named in each row carries the full contract.
 | eidos-lang | the shared tree-sitter bindings and pinned grammars. It sits below the satellites and registers no language | [11](11-languages.md) |
 | read-only language | a satellite that ships a frontend and rules and stops, as protobuf does | [11](11-languages.md) |
 | declarative plugin | a plugin written as files, a manifest plus templates, loaded by the kernel | [06](06-plugins.md) |
-| command kernels | the complete CLI implementations a consumer's binary composes | [20](20-cli.md) |
+| command kernels | the seven complete commands of `eidos-cli`, which a consumer's binary mounts beside its own | [20](20-cli.md) |
+| host | the command line that selects a command kernel: `cli.Main`, or the binary's own, such as a cobra tree. It passes the arguments after the command's name and exits with the command's status | [20](20-cli.md) |
 | canary ring | the satellites the kernel runs against HEAD before it tags a release | [15](15-compatibility.md) |
 | boundary string | a spelling a human types in YAML, a directive or the CLI, resolved against a registry at Build | [README](README.md) |
 | trigger | what makes a rule's handler run: every subject, a directive, a stamped fact, an emit value, or the graph | [06b](06b-authoring.md) |

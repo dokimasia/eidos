@@ -13,11 +13,12 @@ their own binary the product:
 
 - **Command kernels**, in `eidos/cli`: run, plan, explain, prune,
   doctor, version and watch, plus config loading, flag conventions
-  and diagnostic formatting. A consumer composes them, so every
-  eidos-built binary offers the same commands, flags and output
-  formats without its author writing any UX code.
+  and diagnostic formatting. A consumer mounts them beside its own
+  commands, so every eidos-built binary offers the same commands,
+  flags and output formats without its author writing any UX code.
 - **The workspace builder and plan values.** A consumer's `main` is
-  registration plus `cli.Main(...)`.
+  a composition function plus `cli.Main(...)`, or the binary's own
+  command line with the values of `cli.Kernels(...)` mounted in it.
 - **The declarative host** ([06-plugins.md](06-plugins.md)). A
   consumer that compiles it in lets its own users extend the tool
   without a toolchain.
@@ -41,14 +42,16 @@ owe it ([21-decisions.md](21-decisions.md), D13).
 
 ```go
 func main() {
-    ws := workspace.New().
-        Frontends(gofrontend.New(), protofrontend.New()).
-        Annotators(shapefull.Annotators()...).
-        Plans(
-            golang.ServerPlan(mygen.New()),
-            typescript.ClientPlan(),
-        )
-    cli.Main(ws) // run | plan | explain | prune | doctor | watch
+    cli.Main(func() *workspace.Builder {
+        return workspace.New().
+            Brand("acme").
+            Frontends(gofrontend.New(), protofrontend.New()).
+            Annotators(shapefull.Annotators()...).
+            Plans(
+                golang.ServerPlan(mygen.New()),
+                typescript.ClientPlan(),
+            )
+    }) // run | plan | explain | prune | doctor | watch | version
 }
 ```
 
@@ -62,6 +65,7 @@ What a consumer's `go.mod` takes on, and under what discipline:
 | Dependency | Discipline |
 |---|---|
 | `go.dokimi.dev/eidos/core` | semver, canary-tested, additive within a major ([15-compatibility.md](15-compatibility.md)) |
+| `go.dokimi.dev/eidos/cli` | semver; the command kernels, whose flags, JSON schemas and exit codes follow the same policy ([20-cli.md](20-cli.md)) |
 | `go.dokimi.dev/eidos/lang/<lang>` | its own cadence; declares a kernel range and proves it in CI |
 | `go.dokimi.dev/eidos/plugin-shape` | its own cadence; the catalog grows by spec |
 | third-party typed plugins | code you vet; the conformance suite is the acceptance test |

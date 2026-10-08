@@ -96,10 +96,14 @@ present, owned outputs excluded, and fingerprint-keyed caching,
 where a probe cache observes that the keys fold in the digests of the
 unit's inputs and the frontend version.
 
-**acceptancetest** drives the consumer's binary as a process: exit
-codes per [16-diagnostics.md](16-diagnostics.md), config discovery,
-idempotence at the process level, and compiling the generated
-output. It is the only check that builds what was generated.
+**acceptancetest**, in `eidos-cli`, drives the consumer's binary as a
+process, with each kernel command under the prefix where the binary's
+host mounts it: exit codes per [16-diagnostics.md](16-diagnostics.md),
+the kernel names, a seeded panic, config discovery, the JSON stream,
+idempotence at the process level, lists of workspaces, the lock, and
+compiling the generated output. It is the only check that builds what
+was generated. It checks no part of the host's own dispatch, such as
+an unknown command.
 
 **completeness** drives the conformance corpus per
 [11-languages.md](11-languages.md): every feature sits exactly on

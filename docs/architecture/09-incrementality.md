@@ -583,9 +583,10 @@ region-lazy, with open cost proportional to the dirty region. That
 property carries weight: a format that deserializes everything
 quietly brings the daemon pressure back.
 
-And **`--watch`**, an optional command kernel that polls the
-fingerprint gate, since the stat and hash pass already is the change
-detector, and at the target sweep cost a one-second poll is cheap.
+And **`watch`**, the command kernel that polls the fingerprint gate,
+since the stat and hash pass already is the change detector. At the
+measured sweep cost of 1.34 to 1.94 µs per file, a one-second poll
+over 100,000 files keeps 13% to 19% of one core busy.
 One process, the ordinary engine, no OS watcher dependency, since
 the kernel takes no dependencies, no protocol, and no state another
 process can drift from.
