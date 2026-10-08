@@ -78,11 +78,38 @@ func TestWorkspace(t *testing.T) {
 			workspacetest.RunWorkspaceSuite(t, workspaceFixture(t))
 		})
 
-		t.Run("passes the warm check over an edit that renames a parameter of Get", func(t *testing.T) {
+		t.Run("passes the warm suite over an edit that renames a parameter of Get", func(t *testing.T) {
 			t.Parallel()
 
-			workspacetest.AssertWarmEdited(t, workspaceFixture(t), t.TempDir(), t.TempDir())
+			workspacetest.RunWarmColdSuite(t, workspaceFixture(t))
 		})
+
+		t.Run("runs no invocation of the registry plan after an edit that only the stubs plan reads",
+			func(t *testing.T) {
+				t.Parallel()
+
+				root := t.TempDir()
+				copyTree(t, root, workspaceTree)
+				w, err := golang.ComposeWorkspace(root).Plans(golang.WorkspacePlans()...).Build()
+				assert.NoError(t, err, "the composition builds")
+				_, err = w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+				assert.NoError(t, err, "the first run is clean")
+				assert.NoError(t, golang.EditWorkspace(root), "the edit applies")
+				report, err := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+				assert.NoError(t, err, "the run after the edit is clean")
+				assert.False(t, report.Stats.Cold, "the run after the edit reads the sealed state")
+				invoked := map[string]int{}
+				for _, c := range report.Stats.Invoked {
+					invoked[c.Plan] += c.Count
+				}
+				for _, p := range golang.WorkspacePlans() {
+					if p.Name == golang.StubsPlan {
+						expect.NotEqual(t, invoked[p.Name], 0, "the stubs plan runs its invocation on the edited Store")
+						continue
+					}
+					expect.Equal(t, invoked[p.Name], 0, "plan "+p.Name+" runs no invocation")
+				}
+			})
 
 		t.Run("records each workspace's manifest under its own root", func(t *testing.T) {
 			t.Parallel()
