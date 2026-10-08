@@ -341,7 +341,7 @@ func parsesPositioned(c *prop.Case) {
 	for _, arg := range got.Args {
 		assert.InRange(c, arg.Col, 1, float64(len(payload)),
 			"every argument's offset must point inside the payload")
-		assert.Matches(c, string(arg.Key), "^[^ \t=\"\\[\\],]*$",
+		assert.Matches(c, arg.Key, "^[^ \t=\"\\[\\],]*$",
 			"a key must be an identifier, never grammar punctuation")
 	}
 }

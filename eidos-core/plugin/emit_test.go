@@ -561,9 +561,9 @@ func TestEmitAllocs(t *testing.T) {
 	added := benchUnits
 	later := addedUnits(t, benchUnits)
 	next := func() plugin.Unit {
-		u := benchUnit("stubgen", "unit"+strconv.Itoa(added)+".go", benchStructs, benchMethods)
+		unit := benchUnit("stubgen", "unit"+strconv.Itoa(added)+".go", benchStructs, benchMethods)
 		added++
-		return u
+		return unit
 	}
 	assert.MaxAllocsWithSetup(t, next, func(u plugin.Unit) { err = cmp.Or(err, later.Add(u)) },
 		laterAddAllocs, "Add allocates the key and the declarations of each kind of a later unit")

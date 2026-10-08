@@ -187,8 +187,8 @@ func namespacesFirstSegment(c *prop.Case) {
 	in := string(c.Draw(prop.Bytes(), "name"))
 	ns := meta.KeyName(in).Namespace()
 	assert.HasPrefix(c, in, ns, "the name must start with its namespace")
-	if dot := strings.IndexByte(in, '.'); dot >= 0 {
-		assert.Equal(c, ns, in[:dot], "the namespace must be the segment before the first dot")
+	if first, _, cut := strings.Cut(in, "."); cut {
+		assert.Equal(c, ns, first, "the namespace must be the segment before the first dot")
 		return
 	}
 	assert.Equal(c, ns, in, "a name without a separator must be its own namespace")

@@ -130,6 +130,8 @@ func frontendCalls() []allocCall {
 			name: "New", allocs: newAllocs,
 			call: func() { f = frontend.New() },
 			check: func(tb testing.TB) {
+				tb.Helper()
+
 				assert.Equal(tb, f.Name(), typescript.Name, "New returns the TypeScript frontend")
 			},
 		},

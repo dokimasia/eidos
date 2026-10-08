@@ -184,6 +184,8 @@ func storeCalls(tb testing.TB) []allocCall {
 		err    error
 	)
 	check := func(tb testing.TB) {
+		tb.Helper()
+
 		assert.NoError(tb, err, "Stores resolves every root")
 		assert.Length(tb, stores, 3, "Stores returns ct.sym, the Maven repository and Gradle's cache")
 	}

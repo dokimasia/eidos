@@ -442,6 +442,8 @@ func over(front plugin.Frontend) pipelinetest.Fixture {
 // The edit is applied after every document the commit writes, so it is
 // idempotent.
 func rewritten(tb testing.TB, edit func(manifest.Manifest) manifest.Manifest) pipelinetest.Fixture {
+	tb.Helper()
+
 	f := fixture()
 	var runs atomic.Int64
 	f.Compose = func(root string) (*workspace.Workspace, error) {

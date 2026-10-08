@@ -613,6 +613,8 @@ func sha1Hex(data string) string {
 func runRound(
 	tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
 ) ([][]plugin.SourceRef, error) {
+	tb.Helper()
+
 	round := &plugin.DependencyRound{Number: number}
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})

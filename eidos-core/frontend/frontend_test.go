@@ -558,6 +558,8 @@ func kitTree() fstest.MapFS {
 // brand with the frontend the case built, under the test's context,
 // and returns the load's own error.
 func loadKit(tb testing.TB, f plugin.Frontend) (*store.Graph, error) {
+	tb.Helper()
+
 	g, _, err := load.Load(tb.Context(), load.Config{
 		FS:        kitTree(),
 		Frontends: []plugin.Frontend{f},

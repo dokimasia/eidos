@@ -219,6 +219,8 @@ func BenchmarkFrontend(b *testing.B) {
 // frontendCalls returns a call of the constructor and of every method
 // of frontend.go, each under the test's context.
 func frontendCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
 	f := protofrontend.New()
 	versioned, _ := f.(plugin.Versioned)
 	files := unordered()

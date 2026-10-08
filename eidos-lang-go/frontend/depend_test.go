@@ -565,6 +565,8 @@ func replacedWorkspace() fstest.MapFS {
 func runRound(
 	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
 ) ([][]plugin.SourceRef, error) {
+	tb.Helper()
+
 	units, _, err := reportedRound(tb, tree, stores, needs...)
 	return units, err
 }
@@ -574,6 +576,8 @@ func runRound(
 func reportedRound(
 	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
 ) ([][]plugin.SourceRef, *plugin.DependencyRound, error) {
+	tb.Helper()
+
 	var goMods []string
 	for p := range tree {
 		if path.Base(p) == appGoMod {

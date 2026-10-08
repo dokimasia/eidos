@@ -242,6 +242,8 @@ func TestPartition(t *testing.T) {
 func dependencyUnit(
 	tb testing.TB, tree fstest.MapFS, stores map[string]fs.FS, shared []string, members ...string,
 ) (*plugin.GraphBuilder, error) {
+	tb.Helper()
+
 	refs := make([]plugin.SourceRef, len(members))
 	for i, m := range members {
 		refs[i] = plugin.SourceRef{Path: m, Shared: shared}

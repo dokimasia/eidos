@@ -136,8 +136,12 @@ func frontendCalls() []allocCall {
 	return []allocCall{
 		{
 			name: "New", allocs: newAllocs,
-			call:  func() { f = frontend.New(nil) },
-			check: func(tb testing.TB) { assert.Equal(tb, f.Name(), rust.Name, "New returns the Rust frontend") },
+			call: func() { f = frontend.New(nil) },
+			check: func(tb testing.TB) {
+				tb.Helper()
+
+				assert.Equal(tb, f.Name(), rust.Name, "New returns the Rust frontend")
+			},
 		},
 	}
 }
