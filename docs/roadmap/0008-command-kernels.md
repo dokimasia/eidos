@@ -1,7 +1,7 @@
 ---
 milestone: 0008
 title: A consumer binary gets the full command surface
-status: In progress
+status: Done
 depends-on: 0007
 ships-in: unscheduled
 deadline: none
@@ -22,36 +22,37 @@ code to get them.
 
 ## Done when
 
-- [ ] `acceptancetest` drives a fixture binary as a process: exit
+- [x] `acceptancetest` drives a fixture binary as a process: exit
       codes 0, 1 and 64 per the contract, a seeded panic exits 2
       untouched, config discovery walks up to `.<brand>.yaml` and
       stops at the VCS root, and the generated output compiles.
-- [ ] A `.<brand>.yaml` that declares a `workspaces:` list runs each
+- [x] A `.<brand>.yaml` that declares a `workspaces:` list runs each
       member over its own root, with its own `.<brand>/`. A list
       whose roots nest exits 64 before any member runs.
-- [ ] `run` works: `--dry-run` reports create, update, unchanged,
+- [x] `run` works: `--dry-run` reports create, update, unchanged,
       stale, drifted, foreign and withheld; `--check` exits 1 on a
       non-empty diff; `--overwrite-drift`, `--adopt`, `--cold` and
       `--plan` behave per contract;
       pattern narrowing applies the narrowed-sweep rule; and
       `mybrand run .` works from a `//go:generate` line.
-- [ ] `explain` returns all four target forms across plans from
+- [x] `explain` returns all four target forms across plans from
       persisted provenance.
-- [ ] `prune` removes orphans and never touches a drifted or
+- [x] `prune` removes orphans and never touches a drifted or
       unmanifested file; its `--dry-run` lists what would go.
-- [ ] `doctor` validates config against the published JSON Schema,
-      lists dead suppressions, and flags deprecated usage.
-- [ ] `+<brand>:diag off=<code>` suppresses that code at that declaration
+- [x] `doctor` validates config with the Go types from which the
+      published JSON Schema is generated, lists dead suppressions, and
+      flags deprecated usage.
+- [x] `+<brand>:diag off=<code>` suppresses that code at that declaration
       and nothing else: the run summary counts suppressions per code,
       and a kernel Error is not suppressible.
-- [ ] `watch` re-runs when the fingerprint gate's poll reports a
+- [x] `watch` re-runs when the fingerprint gate's poll reports a
       change, and `version` prints the main module's version, the
       versions of the kernel and of the command kernels, every plugin,
       the composition fingerprint and the executable's digest.
-- [ ] Every command's `--format=json` emits line-delimited events plus
+- [x] Every command's `--format=json` emits line-delimited events plus
       a summary under a versioned schema, and a second concurrent
       `run` fails naming the lock holder.
-- [ ] A consumer command registers beside the kernels in `cli.Main`,
+- [x] A consumer command registers beside the kernels in `cli.Main`,
       which refuses one that shadows a kernel name like `run`, and
       `acceptancetest` passes over a binary whose own dispatcher mounts
       the kernels under a group.
@@ -87,6 +88,8 @@ and the machine-output schemas of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-08 | Ticked every bullet and set the milestone to Done | `acceptancetest` passes over two Go binaries of the conformance module: one calls `cli.Main`, and the dispatcher of the other mounts the kernels under the group `gen`. Its checks cover the statuses 0, 1, 64 and 2, discovery up to a version control marker, the JSON stream of every command except `watch`, a cold second run that rewrites no file, a list of two workspaces, a list whose roots nest, the lock and the compiled output. The tests of the commands cover each action of a dry run, `--check`, `--overwrite-drift`, `--adopt`, `--cold`, `--plan`, narrowing and `run .` in a package directory, the four targets of `explain` across plans, a prune that leaves a drifted file and an unmanifested file, the findings of `doctor`, the suppression counts of the summary, a `watch` pass after an edit and `version`. The module `eidos-cli` has 100% statement coverage |
+| 2026-10-08 | `doctor` validates config with the Go types from which the published JSON Schema is generated | The decoder of the config file and the generator of the schema read one set of Go types, and a golden test keeps the published file equal to the generated schema. A validator of the schema file would check the same rules a second time |
 | 2026-10-08 | Linked RFC-0021. The goal and the last bullet mount the kernels through `cli.Main` or the binary's own command line, and `acceptancetest` passes over a binary that mounts them under a group | A consumer's binary has commands of its own and can have a command-line framework, so the kernels are values that any command line mounts |
 | 2026-10-08 | `version` prints no contract version here, and milestone 0014 has it print one | The kernel declares no contract version before 0014 adds the handshake that checks it |
 | 2026-10-08 | `--dry-run` also reports foreign and withheld paths, and `run` gains `--adopt` | A narrowed run withholds the changes outside its patterns, and a file without the brand's frame at a routed path is an outcome of its own |

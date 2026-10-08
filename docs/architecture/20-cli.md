@@ -197,9 +197,10 @@ scoped `run` deliberately leaves alone, `prune` reconciles.
 
 ### doctor
 
-Diagnosis, no writes. It validates config against the published
-schemas, checks the environment, reports deprecated directive and
-API usage ([15-compatibility.md](15-compatibility.md)), lists dead
+Diagnosis, no writes. It validates config with the same Go types
+from which the published schema is generated, checks the environment,
+reports deprecated directive and API usage
+([15-compatibility.md](15-compatibility.md)), lists dead
 suppressions ([16-diagnostics.md](16-diagnostics.md)), and runs the
 schema-evolution check, diffing the workspace's directive usage
 against the current schema index so a consumer sees breaking

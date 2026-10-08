@@ -1551,10 +1551,13 @@ the manifest's documents, decodes no region and executes nothing.
 - A run that changed a file, or whose findings or error differ from the
   findings or the error of the previous run over the same workspace, prints
   its events. A run that did neither prints nothing.
+- When `watch` stops, it writes one summary with the counts of every run
+  that it printed.
 - Each run takes the lock for its own duration. `watch` skips a pass whose
   run finds that another process has the lock, and renders that run's
   `StateLocked` finding once, until a pass takes the lock again.
-- An interrupt stops `watch` between two runs, and `watch` exits 0.
+- An interrupt stops `watch` during a run or between two runs, and `watch`
+  exits 0. It does not print a run that the interrupt cancelled.
 
 #### version
 
@@ -1978,9 +1981,9 @@ this.
 
 ## Drawbacks
 
-- A new module, `eidos-cli`, with about 25 production files by estimate,
-  their tests, a generator and the kit, and one dependency,
-  `go.yaml.in/yaml/v3`.
+- A new module, `eidos-cli`, with 27 production files and their tests,
+  nine files of hosts under the testdata of `acceptancetest`, and one
+  dependency, `go.yaml.in/yaml/v3`.
 - A cobra host writes about fifteen lines of wiring, and the contract is
   true only where the wiring meets the host's obligations. `acceptancetest`
   checks them on the built binary, and no compiler does.
