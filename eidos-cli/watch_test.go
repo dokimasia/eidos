@@ -26,9 +26,21 @@ const (
 	tooShort = intervalFlag + "=50ms"
 )
 
-// lastPass is the pass at whose start the cases of three passes end the
-// context of watch.
-const lastPass = 3
+// The passes at whose start the cases of three passes write their edit of
+// the tree and end the context of watch.
+const (
+	editPass = 2
+	lastPass = 3
+)
+
+// editedSummary is the summary line of text output for two rendered passes.
+// The first pass created one file, the second pass updated it, and each
+// pass committed one plan.
+const editedSummary = "files: 1 create, 1 update, 0 unchanged, 0 stale, 0 drifted, 0 foreign, 0 withheld; " +
+	"plans: 2 committed, 0 failed, 0 cancelled, 0 prepared, 0 skipped\n"
+
+// secondSource is the source of the store with a second struct.
+const secondSource = source + "type Second string\n"
 
 // cancelling is a writer that cancels a context at its first write, and
 // keeps what it receives.
@@ -62,10 +74,27 @@ func TestWatch(t *testing.T) {
 		t.Run("renders nothing for a pass that changes nothing", func(t *testing.T) {
 			t.Parallel()
 
-			status, stdout, stderr := passed(t, stored(t, nil))
+			status, stdout, stderr := passed(t, stored(t, nil), nil)
 			expect.Equal(t, status, cli.StatusOK, "the end of the context stops watch")
 			expect.Equal(t, stdout, "create svc/mirror.txt\n"+createdSummary, "the second pass renders nothing")
 			expect.Empty(t, stderr, "no pass reports anything")
+		})
+
+		t.Run("renders a pass after an edit of the tree", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := passed(t, stored(t, nil), files.Tree{storePath: files.Text(secondSource)})
+			assert.Equal(t, stdout, "create svc/mirror.txt\nupdate svc/mirror.txt\n"+editedSummary,
+				"the second pass renders the update of the mirror")
+		})
+
+		t.Run("writes the events of its passes between the start event and the summary event", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := passed(t, stored(t, nil), nil, jsonFlag)
+			assert.Equal(t, decoded[header](t, stdout, ""),
+				[]header{{Event: eventStart}, {Event: eventFile}, {Event: eventOutcome}, {Event: eventSummary}},
+				"the output has the start event, the events of the first pass and the summary event")
 		})
 
 		t.Run("renders the StateLocked finding of the passes once", func(t *testing.T) {
@@ -73,7 +102,7 @@ func TestWatch(t *testing.T) {
 
 			root := stored(t, nil)
 			locked(t, root)
-			_, _, stderr := passed(t, root)
+			_, _, stderr := passed(t, root, nil)
 			assert.Equal(t, strings.Count(stderr, workspace.StateLocked.String()), 1,
 				"the second pass finds the same lock and renders nothing")
 		})
@@ -81,7 +110,7 @@ func TestWatch(t *testing.T) {
 		t.Run("renders the error of the passes once", func(t *testing.T) {
 			t.Parallel()
 
-			_, _, stderr := passed(t, stored(t, files.Tree{storePath: files.Text(brokenSource)}))
+			_, _, stderr := passed(t, stored(t, files.Tree{storePath: files.Text(brokenSource)}), nil)
 			assert.Equal(t, stderr, brokenError, "the second pass returns the same error and renders nothing")
 		})
 
@@ -155,10 +184,12 @@ func watched(t *testing.T, dir string, args ...string) (int, string, string) {
 }
 
 // passed runs watch over the locating composition in dir at the shortest
-// interval, and ends its context at the start of lastPass, when the
-// locator reads storeVar for that time. It returns the status of watch and
-// what it wrote to standard output and to standard error.
-func passed(t *testing.T, dir string) (int, string, string) {
+// interval, with args after the interval. The locator reads storeVar at the
+// start of each pass. At the start of editPass, passed writes edit into dir,
+// and at the start of lastPass, it ends the context of watch. It returns the
+// status of watch and what it wrote to standard output and to standard
+// error.
+func passed(t *testing.T, dir string, edit files.Tree, args ...string) (int, string, string) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -167,6 +198,9 @@ func passed(t *testing.T, dir string) (int, string, string) {
 	getenv := func(key string) string {
 		if key == storeVar {
 			reads++
+			if reads == editPass {
+				files.Write(t, dir, edit)
+			}
 		}
 		if reads == lastPass {
 			cancel()
@@ -179,6 +213,6 @@ func passed(t *testing.T, dir string) (int, string, string) {
 	})
 	var stdout, stderr bytes.Buffer
 	stdio := cli.IO{Stdout: &stdout, Stderr: &stderr, Dir: dir, Getenv: getenv}
-	status := command(t, locating, cmdWatch).Run(ctx, stdio, []string{shortest})
+	status := command(t, locating, cmdWatch).Run(ctx, stdio, append([]string{shortest}, args...))
 	return status, stdout.String(), stderr.String()
 }

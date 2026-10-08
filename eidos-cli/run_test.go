@@ -51,6 +51,10 @@ const (
 	memberTool = "tools"
 )
 
+// here is the pattern of a go:generate line. The go command runs the line
+// in the directory of its package.
+const here = "."
+
 // The body of the mirror of the store, and the body that a person edited.
 const (
 	mirroredBody = "type ForStore struct{}"
@@ -252,6 +256,15 @@ func TestRun(t *testing.T) {
 			ran(t, filepath.Join(root, "svc"), "a")
 			files.IsFile(t, filepath.Join(root, "svc", "a", "mirror.txt"), "the pattern a names svc/a")
 			files.Absent(t, filepath.Join(root, "svc", "b", "mirror.txt"), "the run withholds svc/b")
+		})
+
+		t.Run("commits the package of the working directory for the pattern of a go:generate line", func(t *testing.T) {
+			t.Parallel()
+
+			root := packages(t)
+			ran(t, filepath.Join(root, "svc", "a"), here)
+			files.IsFile(t, filepath.Join(root, "svc", "a", "mirror.txt"), "the run commits the file of svc/a")
+			files.Absent(t, filepath.Join(root, "svc", "b", "mirror.txt"), "the run withholds the file of svc/b")
 		})
 
 		t.Run("returns StatusUsage for a pattern outside the root", func(t *testing.T) {

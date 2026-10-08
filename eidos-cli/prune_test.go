@@ -15,6 +15,10 @@ import (
 	"go.dokimi.dev/eidos/cli"
 )
 
+// notesPath is a file without the frame of the brand, which no run
+// generated.
+const notesPath = "svc/notes.txt"
+
 // Prune removes the stale files of each workspace, and withholds every
 // write.
 func TestPrune(t *testing.T) {
@@ -51,6 +55,27 @@ func TestPrune(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdPrune, root)
 			expect.HasPrefix(t, stdout, "withheld svc/mirror.txt\n", "the prune withholds the write")
 			files.Absent(t, filepath.Join(root, "svc", "mirror.txt"), "the prune creates no mirror")
+		})
+
+		t.Run("leaves a stale file that was edited since its stamp", func(t *testing.T) {
+			t.Parallel()
+
+			root := pruned(t)
+			drift(t, root)
+			status, stdout, _ := invoke(t, compose, cmdPrune, root)
+			expect.Equal(t, status, cli.StatusOK, "the kept file is a Warning")
+			expect.HasPrefix(t, stdout, "drifted svc/mirror.txt\n", "the output lists the kept file")
+			files.IsFile(t, filepath.Join(root, "svc", "mirror.txt"), "the prune leaves the edited mirror")
+		})
+
+		t.Run("leaves a file that no run generated", func(t *testing.T) {
+			t.Parallel()
+
+			root := pruned(t)
+			files.Write(t, root, files.Tree{notesPath: files.Text(handWritten)})
+			status, _, stderr := invoke(t, compose, cmdPrune, root)
+			assert.Equal(t, status, cli.StatusOK, "the prune succeeds: "+stderr)
+			files.HasContent(t, filepath.Join(root, "svc", "notes.txt"), handWritten, "the prune leaves the notes")
 		})
 	})
 }

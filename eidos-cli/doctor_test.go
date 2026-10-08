@@ -12,12 +12,30 @@ import (
 	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/cli"
+	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
 )
+
+// oldenName is the annotator that handles the directive old.
+const oldenName plugin.ID = "olden"
 
 // unusedSource is the source of the store with a diag directive whose code
 // the mirror does not report for the store.
 var unusedSource = source + suppressing
+
+// deprecatedSource is the source of the store with the directive old.
+var deprecatedSource = source + "+old\n"
+
+// oldSchema is the schema of the directive old. Its Deprecated field has the
+// rewrite of the directive.
+var oldSchema = directive.Schema{
+	Plugin:     string(oldenName),
+	Name:       "old",
+	Doc:        "marks a struct in the old way",
+	Deprecated: "write +new in place of +old",
+}
 
 // Doctor checks the config, the sealed state and the directives of each
 // workspace with a dry run, and writes nothing but the lock file.
@@ -44,6 +62,24 @@ func TestDoctor(t *testing.T) {
 			expect.Equal(t, status, cli.StatusOK, "an Info fails nothing")
 			expect.HasPrefix(t, stderr, storePath+":3: info "+workspace.UnusedSuppression.String()+": ",
 				"doctor writes the Info at the directive")
+		})
+
+		t.Run("writes a DeprecatedDirective Warning at a deprecated directive", func(t *testing.T) {
+			t.Parallel()
+
+			deprecating := func() *workspace.Builder {
+				olden := eidos.NewPlugin(oldenName).
+					Handle(eidos.Directive(oldSchema, eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error {
+						return nil
+					}))).
+					Build().(plugin.Annotator)
+				return compose().Annotators(olden)
+			}
+			root := stored(t, files.Tree{storePath: files.Text(deprecatedSource)})
+			status, _, stderr := invoke(t, deprecating, cmdDoctor, root)
+			expect.Equal(t, status, cli.StatusOK, "a Warning fails nothing")
+			expect.HasPrefix(t, stderr, storePath+":3: warning "+directive.DeprecatedDirective.String()+": ",
+				"doctor writes the Warning at the directive")
 		})
 
 		t.Run("writes a ColdState Info without --verbose", func(t *testing.T) {
