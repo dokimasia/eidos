@@ -25,6 +25,7 @@ their own schedule.
 |---|---|---|
 | [eidos-core](eidos-core) | `go.dokimi.dev/eidos/core` | the kernel: the symbol, node and emit models, metadata, directives, diagnostics, the store, projection rules, the plugin SPI and authoring surface, the frontend and backend kits, output, the workspace, the toolchain harness and the conformance kits |
 | [eidos-sdk](eidos-sdk) | `go.dokimi.dev/eidos/sdk` | the generated facade plugin modules import: one re-export per exported symbol of the kernel's plugin-facing packages |
+| [eidos-cli](eidos-cli) | `go.dokimi.dev/eidos/cli` | the command kernels that every binary built with eidos offers: the config file and its JSON Schema, the shared flags, the rendering of findings and the exit statuses |
 | [eidos-conformance](eidos-conformance) | `go.dokimi.dev/eidos/conformance` | the cross-language corpus: one feature inventory and one set of expectations that every language's frontend is checked against |
 | [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | the helper packages the satellites share: lowering, naming, numeric, scaffold, spellref and textfmt |
 | [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang/go` | Go satellite: frontend, projection rules, annotator, backend and the toolchain adapter for generated tests |

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "ignore": {
+          "description": "The directive names that the load does not report as unclaimed. A name is a full directive name, or a plugin prefix that ends with a colon.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "memo": {
+          "additionalProperties": false,
+          "description": "The parse memo. It stores the regions of each unit that a run parsed.",
+          "properties": {
+            "dir": {
+              "description": "The directory of the memo entries. A relative path is relative to the workspace root. The default is the memo directory inside the state directory.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "The size of the memo in bytes. The value is a number, or a number followed by KiB, MiB or GiB. The memo is off when the limit is 0.",
+              "oneOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "pattern": "^[0-9]+(KiB|MiB|GiB)$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "options": {
+          "additionalProperties": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "description": "The option values of the plugins. Each key is the name of a plugin, and each nested key is the key of an option.",
+          "type": "object"
+        },
+        "plans": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "description": "When false, the composition leaves the plan out, and the next run removes the files of the plan. The default is true.",
+                "type": "boolean"
+              },
+              "layout": {
+                "additionalProperties": false,
+                "description": "The policy, the output directory and the import base of the plan. Each value that the file sets replaces the value of the plan.",
+                "properties": {
+                  "dir": {
+                    "description": "The output directory of the plan. The path is relative to the workspace root and uses slashes.",
+                    "type": "string"
+                  },
+                  "importBase": {
+                    "description": "The import path of the output directory. A plan needs it when no loaded module contains the output directory.",
+                    "type": "string"
+                  },
+                  "policy": {
+                    "description": "The default placement of a generated file. The value is inherit, alongside-source or centralised.",
+                    "enum": [
+                      "inherit",
+                      "alongside-source",
+                      "centralised"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "sources": {
+                "additionalProperties": false,
+                "description": "The source packages of the plan. They replace the sources that the plan declares.",
+                "properties": {
+                  "lang": {
+                    "description": "The source language of the packages, such as golang.",
+                    "type": "string"
+                  },
+                  "module": {
+                    "description": "The module path of the packages.",
+                    "type": "string"
+                  },
+                  "packages": {
+                    "description": "The package directories. A directory is relative to the workspace root and uses slashes. ./svc is one directory, and ./svc/... is that directory and every directory below it.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "description": "The refinements of the plans of the binary. Each key is the name of a plan.",
+          "type": "object"
+        },
+        "version": {
+          "const": 1,
+          "description": "The version of the file format. It must be 1.",
+          "type": "integer"
+        },
+        "workers": {
+          "description": "The number of matches that one phase call runs at the same time. With 0 or 1, a phase call runs one match at a time.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workspace": {
+          "description": "The name of the workspace. The default is the base name of the workspace root.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1,
+          "description": "The version of the file format. It must be 1.",
+          "type": "integer"
+        },
+        "workspaces": {
+          "description": "The workspaces, in the order that a command runs them.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "description": "The config file of the workspace. A relative path is relative to the directory of the list. The default is the config file of the brand in the root.",
+                "type": "string"
+              },
+              "root": {
+                "description": "The workspace root. A relative path is relative to the directory of the list.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "root"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "version",
+        "workspaces"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "The config file of a binary built with eidos"
+}

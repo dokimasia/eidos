@@ -56,6 +56,8 @@ checks:
   # above it; never lower one to make a red build green.
   coverage:
     packages:
+      - path: eidos-cli/...
+        line: 100
       - path: eidos-conformance/...
         line: 90
       - path: eidos-core/...
@@ -155,6 +157,7 @@ checks:
       - deps
       - revert
     scopes:
+      - cli
       - conformance
       - core
       - lang

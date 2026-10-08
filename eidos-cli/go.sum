@@ -1,0 +1,4 @@
+go.dokimi.dev/assert v0.0.0-20261007133442-6f235714117b h1:sXlKSw/O7L2olNwVtbx0gsCpc0lxe/cLFV5Fbpco/04=
+go.dokimi.dev/assert v0.0.0-20261007133442-6f235714117b/go.mod h1:Mr2lGt+AMXUIuqxAk7aGgGpTbdvFjuCd1qmUt0r091k=
+go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
+go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
