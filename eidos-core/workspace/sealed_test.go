@@ -8,13 +8,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"hash/crc32"
 	"io/fs"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
@@ -46,9 +51,29 @@ const (
 	brokenDocument = "manifest/ea.json"
 )
 
+// The layout of a generation that the format case writes: the directory
+// of the generations, the offset of the format, and the size of the
+// CRC-32C trailer.
+const (
+	generationDir = "state/gen/"
+	formatAt      = 0
+	trailerSize   = 4
+)
+
 // sealedSource is the source file of the tree the sealed-state cases
 // load.
 const sealedSource = "svc/store/row.zz"
+
+// producedAPI is the file that the producer plan of the export cases
+// renders in the api package.
+const producedAPI = "svc/api/first.txt"
+
+// undecodableRow is a row that ends inside the uvarint that opens it.
+const undecodableRow = "\xff"
+
+// keySeparator opens the key of an artifact's folded row, and follows the
+// path in lower case inside it.
+const keySeparator = "\x00"
 
 // The annotator and the generator of the sealed-state composition, whose
 // phase calls the invocation counts name.
@@ -108,6 +133,10 @@ var markSchema = directive.Schema{Plugin: string(markerID), Name: "mark", Doc: "
 // the sealed state.
 var errStateRead = errors.New("the state directory does not read")
 
+// errReadAt is the failure that the failing ledger returns for the read
+// of a byte range that it fails.
+var errReadAt = errors.New("the read of the byte range fails")
+
 // blind is a memory ledger whose reads of the sealed state fail: a
 // ledger failing for a cause outside the source.
 type blind struct {
@@ -121,6 +150,64 @@ func (b blind) Read(ctx context.Context, name string) ([]byte, error) {
 		return nil, errStateRead
 	}
 	return b.Mem.Read(ctx, name)
+}
+
+// currentCounting is a memory ledger that counts the writes of the
+// pointer to the live generation. It is not safe for concurrent use. A
+// run writes the pointer once, after the generation's segments.
+type currentCounting struct {
+	*ledger.Mem
+
+	writes int
+}
+
+// Write adds one to the count of writes for the pointer to the live
+// generation, and writes name into the memory ledger.
+func (c *currentCounting) Write(ctx context.Context, name string, b []byte) error {
+	if name == currentBlob {
+		c.writes++
+	}
+	return c.Mem.Write(ctx, name, b)
+}
+
+// failingRead is a memory ledger that counts its reads of a byte range
+// and fails the read whose number, counted from one, is fail. A fail of
+// zero fails no read. failed reports whether the read failed. It is safe
+// for concurrent use.
+type failingRead struct {
+	*ledger.Mem
+
+	reads, fail atomic.Int64
+	failed      atomic.Bool
+}
+
+// ReadAt adds one to the count of reads, returns errReadAt for the read
+// whose number is fail, and reads the memory ledger otherwise.
+func (f *failingRead) ReadAt(ctx context.Context, name string, p []byte, off int64) (int, error) {
+	if f.reads.Add(1) == f.fail.Load() {
+		f.failed.Store(true)
+		return 0, errReadAt
+	}
+	return f.Mem.ReadAt(ctx, name, p, off)
+}
+
+// damageScenario is a warm run whose reads of the sealed state a damage
+// case breaks: the composition that build returns over a ledger, the trees
+// of the cold run before it and of the edited warm run, which before and
+// after return fresh, and the error of the clean warm run, nil for a clean
+// run.
+type damageScenario struct {
+	name          string
+	build         func(tb assert.TB, l ledger.Ledger) *workspace.Workspace
+	before, after func() fstest.MapFS
+	want          error
+}
+
+// forgedRow is one row of a generation that a damage case forges: its
+// table and its key.
+type forgedRow struct {
+	table state.Table
+	key   []byte
 }
 
 // unreadable is a template tree that lists its template file and fails
@@ -326,6 +413,25 @@ func TestSealed(t *testing.T) {
 			assert.Contains(t, cold[0].Msg, "executable changed", "the executable is the cause")
 		})
 
+		t.Run("reads the generation of an executable at another path with the same digest", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := sealing(t, mem, "plan")
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			g, err := state.Open(t.Context(), mem)
+			assert.NoError(t, err, "the live generation opens")
+			h := g.Header
+			h.Executable.Path = anotherBuild
+			h.Executable.ModTime = h.Executable.ModTime.Add(-time.Hour)
+			_, err = state.NewCommit(nil, g.Manifest).Write(t.Context(), mem, h, recordIn(t, mem))
+			assert.NoError(t, err, "the generation of a rebuild of the same code commits")
+
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			assert.False(t, report.Stats.Cold, "the run reads the generation")
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "and reports no ColdState")
+		})
+
 		t.Run("reports ColdState after an edit to a template a plan renders through", func(t *testing.T) {
 			t.Parallel()
 
@@ -401,6 +507,31 @@ func TestSealed(t *testing.T) {
 			assert.Equal(t, tree.reads, 1, "the run folds the shared tree once")
 		})
 
+		t.Run("reports ColdState for a generation of another format", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := sealing(t, mem, "plan")
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			g, err := state.Open(t.Context(), mem)
+			assert.NoError(t, err, "the live generation opens")
+			b, err := mem.Read(t.Context(), g.Name)
+			assert.NoError(t, err, "the generation reads")
+			body := bytes.Clone(b[:len(b)-trailerSize])
+			body[formatAt] = state.Format + 1
+			skewed := binary.LittleEndian.AppendUint32(body, crc32.Checksum(body, crc32.MakeTable(crc32.Castagnoli)))
+			sum := sha256.Sum256(skewed)
+			name := generationDir + hex.EncodeToString(sum[:])
+			assert.NoError(t, mem.Write(t.Context(), name, skewed), "the generation of another format writes")
+			assert.NoError(t, mem.Write(t.Context(), currentBlob, []byte(name+"\n")), "CURRENT names it")
+
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states why")
+			assert.Contains(t, cold[0].Msg, state.ErrFormat.Error(), "the format is the cause")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the cold run commits")
+		})
+
 		t.Run("reports ColdState at CURRENT for a CURRENT that names no generation", func(t *testing.T) {
 			t.Parallel()
 
@@ -447,6 +578,141 @@ func TestSealed(t *testing.T) {
 			assert.True(t, report.Stats.Cold, "the report is the cold run's")
 		})
 
+		t.Run("writes CURRENT once for a warm run whose plan meets damage in the export it reads", func(t *testing.T) {
+			t.Parallel()
+
+			l := &currentCounting{Mem: ledger.NewMem()}
+			w := built(t, sealingPlans(l, sealedPlan(t, producerPlan, mirror(mirrorID)), seeing(t, dependentPlan)))
+			before := roundsTree(rowLine+colLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: before})
+			forgeRow(t, l, state.TableArtifacts, []byte(producedAPI))
+			l.writes = 0
+			report := sealedRun(t, w, workspace.Input{
+				Tree: editedAfter(before, roundsTree(widerRow+colLine, userLine)),
+			})
+			assert.True(t, report.Stats.Cold, "the read of the producer's export finds the damage")
+			assert.Equal(t, l.writes, 1, "only the cold run makes its generation live")
+		})
+
+		t.Run("runs again cold over a damaged artifact of a kept export that a pending plan reads", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			dependent := sealedPlan(t, dependentPlan, failingMirror())
+			dependent.DependsOn = []string{producerPlan}
+			w := built(t, sealingPlans(l, sealedPlan(t, producerPlan, mirror("producer-mirror")), dependent))
+			before := roundsTree(rowLine+colLine+badLine, userLine)
+			_, err := w.Run(t.Context(), workspace.Input{Tree: before})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the dependent refuses Bad and does not commit")
+			forgeRow(t, l, state.TableArtifacts, []byte(producedAPI))
+			report := sealedRun(t, w, workspace.Input{Tree: editedAfter(before, roundsTree(rowLine+colLine, userLine))})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, `plan "second": read the export of plan "first"`,
+				"the dependent that runs whole finds the damage in the producer's export")
+		})
+
+		t.Run("runs again cold over a damaged artifact of a kept file whose export a check reads", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			w := built(t, sealingBuilder(t, l, "plan").Checks(&recordingCheck{name: lookupID, reads: []string{"plan"}}))
+			before := roundsTree(rowLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: before})
+			forgeRow(t, l, state.TableArtifacts, []byte(apiGenerated))
+			report := sealedRun(t, w, workspace.Input{Tree: editedAfter(before, roundsTree(widerRow, userLine))})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, `check lookup: read the export of plan "plan"`,
+				"the check finds the damage in the plan's export")
+		})
+
+		t.Run("runs again cold over a damaged record of a check that a warm run keeps", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			w := built(t, sealingBuilder(t, l, "plan").Checks(&recordingCheck{name: lookupID, reads: []string{"plan"}}))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			forgeRow(t, l, state.TableChecks, binary.BigEndian.AppendUint64(nil, state.CheckRef(lookupID).ID))
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "check lookup: state:", "the read of the check's record finds the damage")
+		})
+
+		t.Run("runs again cold over a damaged artifact of a generated file that changed on disk", func(t *testing.T) {
+			t.Parallel()
+
+			root, w, l := onDiskRun(t)
+			forgeRow(t, l, state.TableArtifacts, []byte(apiGenerated))
+			replaceIn(t, filepath.Join(root, filepath.FromSlash(apiGenerated)), mirroredUser, editedUser)
+			report, _ := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "the artifacts row of "+apiGenerated+" does not decode",
+				"the check of the changed file finds the damage")
+		})
+
+		t.Run("runs again cold over a damaged group of a generated file that changed on disk", func(t *testing.T) {
+			t.Parallel()
+
+			root, w, l := onDiskRun(t)
+			a, held, err := phasesIn(t, l).Artifact(apiGenerated)
+			assert.NoError(t, err, "the artifacts table reads")
+			assert.True(t, held, "the run records the generated file")
+			forgeRow(t, l, state.TableGroups, binary.BigEndian.AppendUint64(nil, state.GroupRef("plan", a.Group).ID))
+			replaceIn(t, filepath.Join(root, filepath.FromSlash(apiGenerated)), mirroredUser, editedUser)
+			report, _ := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "a groups row does not decode", "the group lookup finds the damage")
+		})
+
+		t.Run("runs again cold over a damaged row of the audit table", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			w := built(t, sealingBuilder(t, l, "plan").Keys(contracted))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			forgeRow(t, l, state.TableAudit, []byte(contractKey))
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "read the audit", "the warm audit finds the damage")
+		})
+
+		t.Run("runs again cold over a damaged folded row of a path that a plan routes", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			w := built(t, sealingOf(t, l, "plan", failingMirror()))
+			before := roundsTree(rowLine+badLine, userLine)
+			_, err := w.Run(t.Context(), workspace.Input{Tree: before})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the mirror refuses Bad and the plan does not commit")
+			forgeRow(t, l, state.TableArtifacts, []byte(keySeparator+storeGenerated+keySeparator+storeGenerated))
+			report := sealedRun(t, w, workspace.Input{Tree: editedAfter(before, roundsTree(rowLine, userLine))})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "a folded artifacts row does not decode",
+				"the lookup of the plan's paths finds the damage")
+		})
+
+		t.Run("runs again cold over a damaged artifact of a kept file in a clash with a new path", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			w := built(t, casePlans(t, l))
+			before := roundsTree(rowLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: before})
+			forgeRow(t, l, state.TableArtifacts, []byte(storeGenerated))
+			report, err := w.Run(t.Context(), workspace.Input{Tree: editedAfter(before, caseTree())})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the cold run reports the collision")
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "the artifacts row of "+storeGenerated+" does not decode",
+				"the comparison of the kept files finds the damage")
+		})
+
 		t.Run("keeps a damaged run of a phase table that no read of the run needs", func(t *testing.T) {
 			t.Parallel()
 
@@ -486,6 +752,74 @@ func TestSealed(t *testing.T) {
 			assert.Empty(t, findings(report.Sink, workspace.ColdState), "the run decodes no region")
 			assert.False(t, report.Stats.Cold, "the run reads the sealed state")
 		})
+
+		t.Run("keeps a damaged artifact of a kept file whose export no read of the run needs", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			w := built(t, sealingPlans(l, sealedPlan(t, producerPlan, mirror(mirrorID)), seeing(t, dependentPlan)))
+			tree := roundsTree(rowLine+colLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: tree})
+			forgeRow(t, l, state.TableArtifacts, []byte(producedAPI))
+			report := sealedRun(t, w, workspace.Input{Tree: tree})
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "the run decodes no artifact of a kept file")
+			assert.False(t, report.Stats.Cold, "the run reads the sealed state")
+		})
+
+		for _, tt := range damageScenarios() {
+			t.Run("runs again cold for each failed read of "+tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				clean := &failingRead{Mem: ledger.NewMem()}
+				w := tt.build(t, clean)
+				_, _ = w.Run(t.Context(), workspace.Input{Tree: tt.before()})
+				clean.reads.Store(0)
+				warm, err := w.Run(t.Context(), workspace.Input{Tree: editedAfter(tt.before(), tt.after())})
+				endsAs(t, err, tt.want)
+				assert.False(t, warm.Stats.Cold, "the clean warm run reads the sealed state")
+				reads := clean.reads.Load()
+				assert.InRange(t, reads, 1, math.Inf(1), "the warm run reads the sealed state")
+				for at := range reads {
+					l := &failingRead{Mem: ledger.NewMem()}
+					w := tt.build(t, l)
+					_, _ = w.Run(t.Context(), workspace.Input{Tree: tt.before()})
+					l.reads.Store(0)
+					l.fail.Store(at + 1)
+					report, err := w.Run(t.Context(), workspace.Input{Tree: editedAfter(tt.before(), tt.after())})
+					endsAs(t, err, tt.want)
+					expect.Equal(t, report.Stats.Cold, l.failed.Load(), "a failed read runs the run again cold")
+				}
+			})
+
+			t.Run("records the manifest of the clean run for each damaged row of "+tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				w := tt.build(t, l)
+				_, _ = w.Run(t.Context(), workspace.Input{Tree: tt.before()})
+				var rows []forgedRow
+				g, err := state.Open(t.Context(), l)
+				assert.NoError(t, err, "the live generation opens")
+				for table := state.TableFiles; table <= state.TableChecks; table++ {
+					all, allErr := g.All(t.Context(), table)
+					assert.NoError(t, allErr, "the table reads")
+					for _, r := range all {
+						rows = append(rows, forgedRow{table: table, key: r.Key})
+					}
+				}
+				warm, err := w.Run(t.Context(), workspace.Input{Tree: editedAfter(tt.before(), tt.after())})
+				endsAs(t, err, tt.want)
+				for _, r := range rows {
+					l := ledger.NewMem()
+					w := tt.build(t, l)
+					_, _ = w.Run(t.Context(), workspace.Input{Tree: tt.before()})
+					forgeRow(t, l, r.table, r.key)
+					report, err := w.Run(t.Context(), workspace.Input{Tree: editedAfter(tt.before(), tt.after())})
+					endsAs(t, err, tt.want)
+					expect.Equal(t, report.Manifest, warm.Manifest, "the run records the edited tree")
+				}
+			})
+		}
 
 		t.Run("returns the error of a ledger that fails to read the state", func(t *testing.T) {
 			t.Parallel()
@@ -827,4 +1161,124 @@ func damageSegment(t *testing.T, mem *ledger.Mem, pick func(live int) bool, dama
 		damaged++
 	}
 	assert.Equal(t, damaged, 1, "one segment is damaged")
+}
+
+// damageScenarios returns the warm runs whose reads the damage cases break
+// one at a time. Each takes paths of the warm run that the others do not:
+// a name that joins a scope, an export that changes, the audit and a
+// check, a clash with a kept file, a kept finding, a plan that did not
+// commit, a weaver that appends into a mirror again, and a weaver whose
+// mirror disappears.
+func damageScenarios() []damageScenario {
+	return []damageScenario{
+		{
+			name: "a warm run whose new name joins a scope",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, roundsBuilder(tb, l, workspace.Sources{}, mirror(mirrorID), columnMirror()))
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine+colLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(rowLine+colLine+readerLine, userLine) },
+		},
+		{
+			name: "a warm run whose edit changes an export",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				producer := sealedPlan(tb, producerPlan, mirror(mirrorID))
+				return built(tb, sealingPlans(l, producer, seeing(tb, dependentPlan)))
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine+colLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(rowLine+colLine+readerLine, userLine) },
+		},
+		{
+			name: "a warm run that audits and checks again",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				var p promise
+				return built(tb, sealingBuilder(tb, l, "plan").Keys(p.registration(diag.SeverityWarning)).
+					Checks(&recordingCheck{name: lookupID, reads: []string{"plan"}}))
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(widerRow, userLine) },
+		},
+		{
+			name: "a warm run whose new path clashes with a kept file",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, casePlans(tb, l))
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine, userLine) },
+			after:  caseTree,
+			want:   workspace.ErrRunFailed,
+		},
+		{
+			name: "a warm run that reports a kept finding",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, roundsBuilder(tb, l, workspace.Sources{}, warningMirror()))
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(widerRow, userLine) },
+		},
+		{
+			name: "a warm run of a plan that did not commit",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, sealingOf(tb, l, "plan", failingMirror()))
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine+badLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(rowLine, userLine) },
+		},
+		{
+			name: "a warm run whose weaver appends into a mirror again",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return weaving(tb, l, providing())
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine+auditLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(rowLine+auditLine+auditLine, userLine) },
+		},
+		{
+			name: "a warm run whose weaver loses the mirror it appended into",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return weaving(tb, l, conditional())
+			},
+			before: func() fstest.MapFS { return roundsTree(rowLine+auditLine+colLine, userLine) },
+			after:  func() fstest.MapFS { return roundsTree(rowLine+auditLine, userLine) },
+		},
+	}
+}
+
+// onDiskRun copies the rounds tree into a directory of the test's own,
+// runs the sealing composition over it with its output and its ledger on
+// disk, and returns the directory, the composition and the ledger.
+func onDiskRun(t *testing.T) (string, *workspace.Workspace, ledger.Ledger) {
+	t.Helper()
+
+	root := t.TempDir()
+	assert.NoError(t, os.CopyFS(root, roundsTree(rowLine, userLine)), "the tree copies into the run's directory")
+	w := built(t, sealingOnDisk(t, root))
+	sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+	l, err := ledger.OpenDir(root, fixtureBrand)
+	assert.NoError(t, err, "the ledger opens")
+	return root, w, l
+}
+
+// endsAs expects a run to return want, and no error where want is nil.
+func endsAs(tb assert.TB, err, want error) {
+	tb.Helper()
+
+	if want == nil {
+		expect.NoError(tb, err, "the run is as clean as the clean warm run")
+		return
+	}
+	expect.ErrorIs(tb, err, want, "the run fails as the clean warm run fails")
+}
+
+// forgeRow makes live a generation over the live generation of a ledger,
+// in which the row of a key in a table reads whole and does not decode.
+func forgeRow(t *testing.T, l ledger.Ledger, table state.Table, key []byte) {
+	t.Helper()
+
+	g, err := state.Open(t.Context(), l)
+	assert.NoError(t, err, "the live generation opens")
+	m, digests, err := state.ReadManifest(t.Context(), l)
+	assert.NoError(t, err, "the record reads")
+	c := state.NewCommit(g, digests)
+	c.Put(table, key, []byte(undecodableRow))
+	_, err = c.Write(t.Context(), l, g.Header, m)
+	assert.NoError(t, err, "the forged generation commits")
 }

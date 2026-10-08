@@ -5,14 +5,20 @@ package state_test
 
 import (
 	"cmp"
+	"context"
+	"errors"
+	"fmt"
 	"math"
+	"sync/atomic"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -20,6 +26,46 @@ import (
 // keySep is the byte that separates a present key's name from its
 // subject's identity key, and the identity key's parts, pinned.
 const keySep = 0
+
+// The keys of the present rows that a case writes by hand beside the
+// flag's: a key that sorts before the flag, and a key that sorts after it.
+// A read of the flag leaves their rows alone.
+const (
+	alphaKey = "shape.alpha"
+	otherKey = "shape.other"
+)
+
+// flagKey is the key of the flag, whose present rows the cases read.
+const flagKey meta.KeyName = "shape.flag"
+
+// runIndexReads is how many reads of a byte range a table's run makes
+// before its first block: the footer, then the index.
+const runIndexReads = 2
+
+// errSegmentRead is the failure that the failing ledger returns.
+var errSegmentRead = errors.New("the segment does not read")
+
+// readFailing is a memory ledger that fails each read of a byte range
+// after the first after of them. It is safe for concurrent use.
+type readFailing struct {
+	*ledger.Mem
+
+	after, reads atomic.Int64
+}
+
+// ReadAt adds one to the count of reads, returns errSegmentRead for each
+// read after the first after, and reads the memory ledger otherwise.
+func (r *readFailing) ReadAt(ctx context.Context, name string, p []byte, off int64) (int, error) {
+	if r.reads.Add(1) > r.after.Load() {
+		return 0, errSegmentRead
+	}
+	return r.Mem.ReadAt(ctx, name, p, off)
+}
+
+// spanSubjects is how many subjects each key reads present on in the cases
+// whose rows span more than one block. A row takes about 40 bytes, so 300
+// rows fill about three blocks of 4,096 bytes.
+const spanSubjects = 300
 
 // claimsAllocs is one lookup of the recorded subject's seven claims in
 // the generation of stampedFacts, after a lookup before it: the list of
@@ -111,14 +157,66 @@ func TestFacts(t *testing.T) {
 				assert.Empty(t, got, "the group drop leaves the role absent everywhere")
 			})
 
+			t.Run("reads no row of another key", func(t *testing.T) {
+				t.Parallel()
+
+				other := state.Row{Key: append([]byte(otherKey), keySep, 'x'), Value: []byte{}}
+				got, err := putRows(t, state.TablePresent, other).Phases(t.Context()).Present("shape.flag")
+				assert.NoError(t, err, "the row that does not decode is under another key")
+				assert.Empty(t, got, "the flag reads present nowhere")
+			})
+
+			t.Run("returns every subject of a key whose rows span more than one block", func(t *testing.T) {
+				t.Parallel()
+
+				rows, want := spanRows()
+				got, err := putRows(t, state.TablePresent, rows...).Phases(t.Context()).Present(flagKey)
+				assert.NoError(t, err, "the present table reads")
+				assert.Equal(t, got, want, "every subject of the key, in identity order")
+			})
+
+			t.Run("returns ErrDamaged for a failed read of rows that span more than one block", func(t *testing.T) {
+				t.Parallel()
+
+				l := &readFailing{Mem: ledger.NewMem()}
+				rows, _ := spanRows()
+				c := state.NewCommit(nil, nil)
+				for _, r := range rows {
+					c.Put(state.TablePresent, r.Key, r.Value)
+				}
+				_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+				assert.NoError(t, err, "the commit writes")
+				g, err := state.Open(t.Context(), l)
+				assert.NoError(t, err, "the generation opens")
+				l.reads.Store(0)
+				l.after.Store(runIndexReads)
+				_, err = g.Phases(t.Context()).Present(flagKey)
+				expect.That(t, err).ErrorIs(state.ErrDamaged, "the failed read is damage").
+					ErrorIs(errSegmentRead, "that wraps the ledger's failure")
+			})
+
+			t.Run("returns ErrDamaged for a damaged block among a key's rows", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				rows, _ := spanRows()
+				c := state.NewCommit(nil, nil)
+				for _, r := range rows {
+					c.Put(state.TablePresent, r.Key, r.Value)
+				}
+				_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+				assert.NoError(t, err, "the commit writes")
+				damageRun(t, l, func(n int) int { return n / 2 })
+				g, err := state.Open(t.Context(), l)
+				assert.NoError(t, err, "the generation opens")
+				_, err = g.Phases(t.Context()).Present(flagKey)
+				assert.ErrorIs(t, err, state.ErrDamaged, "the block in the middle of the run fails its CRC-32C")
+			})
+
 			tests := []struct {
 				name string
 				key  []byte
 			}{
-				{
-					name: "returns ErrDamaged for a key without the separator",
-					key:  []byte("shape.flag"),
-				},
 				{
 					name: "returns ErrDamaged for a key of fewer than four parts",
 					key:  append([]byte("shape.flag"), keySep, 'x'),
@@ -255,6 +353,27 @@ func bagOf(f *meta.Facts, subject symbol.Identity) []meta.StoredClaim {
 		}
 	}
 	return out
+}
+
+// spanRows returns the present rows of the cases whose rows span more than
+// one block, spanSubjects subjects under each of three keys with the flag's
+// rows in the middle, and the flag's subjects in identity order.
+func spanRows() ([]state.Row, []symbol.Identity) {
+	var rows []state.Row
+	flagged := make([]symbol.Identity, 0, spanSubjects)
+	for _, key := range []string{alphaKey, string(flagKey), otherKey} {
+		for i := range spanSubjects {
+			id := symbol.Identity{
+				Lang: recordedSubject.Lang, Package: recordedSubject.Package,
+				Name: fmt.Sprintf("Subject%04d", i), Kind: symbol.KindStruct,
+			}
+			rows = append(rows, state.Row{Key: append(append([]byte(key), keySep), identityKeyOf(id)...)})
+			if key == string(flagKey) {
+				flagged = append(flagged, id)
+			}
+		}
+	}
+	return rows, flagged
 }
 
 // identityKeyOf returns an identity's key as the claims table spells it,

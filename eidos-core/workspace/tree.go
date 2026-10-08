@@ -113,7 +113,8 @@ func moduleOf(facts *meta.Facts, p symbol.Identity, k meta.KernelKeys) (plugin.M
 // where a file appeared, vanished or moved to another package, or whose
 // package changed its name, and the files edge of each package that a file
 // joined or left. The directories come first, sorted, and then the
-// packages in identity order.
+// packages in identity order. It lists the paths of the files that joined
+// or left each package in the run's joined and left.
 func (r *warmRun) placements() []state.EdgeHash {
 	l := r.loaded
 	dirs := map[string]struct{}{}
@@ -124,10 +125,13 @@ func (r *warmRun) placements() []state.EdgeHash {
 			continue
 		}
 		dirs[path.Dir(p)] = struct{}{}
-		for _, id := range []symbol.Identity{before, after} {
-			if !id.IsZero() {
-				pkgs[id] = struct{}{}
-			}
+		if !before.IsZero() {
+			pkgs[before] = struct{}{}
+			r.left[before] = append(r.left[before], p)
+		}
+		if !after.IsZero() {
+			pkgs[after] = struct{}{}
+			r.joined[after] = append(r.joined[after], p)
 		}
 	}
 	for _, id := range r.changes.Renamed {

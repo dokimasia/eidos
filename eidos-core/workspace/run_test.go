@@ -178,19 +178,24 @@ const (
 // and the width of every marked struct.
 const measurerID plugin.ID = "measurer"
 
+// documentDir opens the ledger name of every manifest document.
+const documentDir = "manifest/"
+
 // The ceilings of [BenchmarkRun]. Each cold ceiling covers one run whose
-// pooled state the collector emptied before the run began.
+// pooled state the collector emptied before the run began. A run over a
+// corpus of 200,000 declarations has a round budget about 5% above its
+// measured count. One more allocation for each declaration exceeds such a
+// budget, and a drift of a few thousand allocations does not. A run over
+// one declaration has an exact ceiling.
 const (
 	// coldRunAllocs is one run over the canonical workspace of 200,000
-	// declarations, 1,091,311 on average with a standard deviation of 114
-	// over 24 fresh processes. The fact store allocates three times for
-	// each subject's first claim, 600,000 in all, and sync.Map adds about
-	// 75,600 trie nodes at random where the hashes of the subjects share
-	// a prefix. The mirror allocates twice for each struct, and the phase
-	// calls, their journals, the emit store and the seal allocate about
-	// 15,000 times. The ceiling allows eight standard deviations above the
-	// mean.
-	coldRunAllocs = 1_091_311 + 8*114
+	// declarations, which measured 1,091,311 allocations. The fact store
+	// allocates three times for each subject's first claim, 600,000 in all,
+	// and sync.Map adds about 75,600 trie nodes at random where the hashes
+	// of the subjects share a prefix. The mirror allocates twice for each
+	// struct, and the phase calls, their journals, the emit store and the
+	// seal allocate about 15,000 times.
+	coldRunAllocs = 1_150_000
 	// oneRunAllocs is one run over one declaration. The frame's own
 	// structures allocate 125 times, among them the seal, the fact store,
 	// the emit store and the phase calls' state. The headroom of 12 is for
@@ -208,41 +213,37 @@ const (
 	// again. The mean of 20 runs in one process measured up to 100.
 	warmRunAllocs = 98 + 2
 	// pipelineAllocs is one cold run of the pipeline over 200,000
-	// declarations on one worker, 440,246 on average with a standard
-	// deviation of 36 over 24 fresh processes. A memory profile
-	// attributes about 211,000 to the render, where text/template's
-	// reflection executes the struct template once for each of the
-	// 20,000 mirrors. The annotation's stamps allocate about 67,000: two
-	// for each of the 20,000 marked subjects, and the sync.Map trie
-	// nodes. The generate phase allocates about 66,000, the settle's
+	// declarations on one worker, which measured 440,246 allocations. A
+	// memory profile attributes about 211,000 to the render, where
+	// text/template's reflection executes the struct template once for
+	// each of the 20,000 mirrors. The annotation's stamps allocate about
+	// 67,000: two for each of the 20,000 marked subjects, and the sync.Map
+	// trie nodes. The generate phase allocates about 66,000, the settle's
 	// respell about 27,000 and the write about 25,000. The rest are tiny
-	// allocations, such as the mirrors' names, which the profiler
-	// samples only in part. The ceiling allows eight standard deviations
-	// above the mean.
-	pipelineAllocs = 440_246 + 8*36
-	// parallelPipelineAllocs is the same run on four workers, 441,280 on
-	// average with a standard deviation of 45 over 24 fresh processes.
-	// The parallel phase calls add about 1,000 allocations for their
-	// goroutines and for their lanes' effect buffers and journals.
-	parallelPipelineAllocs = 441_280 + 8*45
+	// allocations, such as the mirrors' names, which the profiler samples
+	// only in part.
+	pipelineAllocs = 460_000
+	// parallelPipelineAllocs is the same run on four workers, which
+	// measured 441,280 allocations. The parallel phase calls add about
+	// 1,000 allocations for their goroutines and for their lanes' effect
+	// buffers and journals.
+	parallelPipelineAllocs = 460_000
 	// treeRunAllocs is one cold run of the edge corpus's tree of 200,000
 	// declarations into a fresh memory ledger, its load and its record of
-	// the state included, 2,630,020 on average with a standard deviation
-	// of 52 over 24 fresh processes. The difference of the memory profiles
-	// of two runs of the benchmark, at two and at four iterations,
-	// attributes about 1,680,000 to the scripted frontend's parse of the
-	// tree, 199,000 to the phase calls' handlers, most of them the
-	// annotator's stamps, and 177,000 to the render's templates. The record
-	// of the plans' groups allocates about 21,000, and the record of the
-	// phases allocates only to grow its buffers. The ceiling allows eight
-	// standard deviations above the mean.
-	treeRunAllocs = 2_630_020 + 8*52
+	// the state included, which measured 2,632,004 allocations. The
+	// difference of the memory profiles of two runs of the benchmark, at
+	// two and at four iterations, attributes about 1,680,000 to the
+	// scripted frontend's parse of the tree, 199,000 to the phase calls'
+	// handlers, most of them the annotator's stamps, and 177,000 to the
+	// render's templates. The record of the plans' groups allocates about
+	// 21,000, and the record of the phases allocates only to grow its
+	// buffers.
+	treeRunAllocs = 2_750_000
 	// warmTreeRunAllocs is one warm run over the edge corpus's tree of
-	// 200,000 declarations after an edit that widens one struct,
-	// 1,333,915 on average with a standard deviation of 13 over 24 fresh
-	// processes. The difference of the memory profiles of two runs of the
-	// benchmark, at two and at six iterations, attributes these shares to
-	// one run:
+	// 200,000 declarations after an edit that widens one struct, which
+	// measured 1,333,956 allocations. The difference of the memory profiles
+	// of two runs of the benchmark, at two and at six iterations,
+	// attributes these shares to one run:
 	//
 	//   - The membership reader of the first package read the declaration
 	//     of every struct, so the edit makes it dirty, and it enumerates
@@ -253,9 +254,7 @@ const (
 	//   - The rest, about 23,000, are spread over the phase calls of the
 	//     dirty groups, their render and the commit, each below one percent
 	//     of the run.
-	//
-	// The ceiling allows eight standard deviations above the mean.
-	warmTreeRunAllocs = 1_333_915 + 8*13
+	warmTreeRunAllocs = 1_400_000
 )
 
 // dropping is a backend whose lowering hook returns a declaration
@@ -266,6 +265,24 @@ type dropping struct{ fakeBackend }
 // Lower returns one declaration without an origin.
 func (dropping) Lower(symbol.Symbol) ([]symbol.Symbol, error) {
 	return []symbol.Symbol{&emit.Struct{Name: "made"}}, nil
+}
+
+// documentCounting is a memory ledger that counts its writes of manifest
+// documents. It is safe for concurrent use, because a commit writes the
+// documents on goroutines of its own.
+type documentCounting struct {
+	*ledger.Mem
+
+	documents atomic.Int64
+}
+
+// Write adds one to the count for a manifest document, and writes name
+// into the memory ledger.
+func (d *documentCounting) Write(ctx context.Context, name string, b []byte) error {
+	if strings.HasPrefix(name, documentDir) {
+		d.documents.Add(1)
+	}
+	return d.Mem.Write(ctx, name, b)
 }
 
 // annotateSeen is a hand-rolled annotator that records the worker
@@ -370,7 +387,8 @@ type corpusKeys struct {
 // which inputs stop the frame, which findings fail the run, and what
 // the report records. A warm run after an edit that a generator reads
 // through one edge kind leaves what a cold run over the edited tree
-// leaves, for each edge kind.
+// leaves, for each edge kind, and its commit writes less than a tenth of
+// the state.
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -1202,6 +1220,29 @@ func TestRun(t *testing.T) {
 					"the struct that reads the edited declaration documents the edit")
 			})
 		}
+
+		t.Run("passes the warm suite over the edge corpus", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.RunWarmColdSuite(t, edgeFixture(edits[0].edit))
+		})
+
+		t.Run("writes less than a tenth of the bytes of its state after an edit to one declaration",
+			func(t *testing.T) {
+				t.Parallel()
+
+				report := widenedRun(t, &documentCounting{Mem: ledger.NewMem()})
+				assert.InRange(t, report.Stats.Written, 1, float64(report.Stats.Size)/10,
+					"the commit writes the edited package's region and the rows that changed")
+			})
+
+		t.Run("rewrites the one manifest document whose entry an edit to one declaration changed", func(t *testing.T) {
+			t.Parallel()
+
+			l := &documentCounting{Mem: ledger.NewMem()}
+			widenedRun(t, l)
+			assert.Equal(t, l.documents.Load(), int64(1), "the edit changes the package reader's file alone")
+		})
 	})
 }
 
@@ -1809,6 +1850,32 @@ func edgePlans(keys *corpusKeys, n int) []workspace.Plan {
 			Backend:    documenting("stubs-printer"),
 		},
 	}
+}
+
+// widenedRun runs the edge corpus's composition over the tests' share of
+// its tree into memory, recording into l, and runs it again after an edit
+// that widens edgeWidened of the package edgeEdited, a plain struct that
+// only the package reader reads. It sets the count of l's document writes
+// to zero between the two runs, and returns the report of the second run,
+// which reads the sealed state. It stops the test where a run is not
+// clean.
+func widenedRun(t *testing.T, l *documentCounting) *workspace.Report {
+	t.Helper()
+
+	keys := &corpusKeys{}
+	w := built(t, edgeComposition(keys).
+		Plans(edgePlans(keys, pipelineTestPackages)...).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Ledger(func() (ledger.Ledger, error) { return l, nil }))
+	sealedRun(t, w, workspace.Input{Tree: pipelineTree(pipelineTestPackages)})
+	l.documents.Store(0)
+	edited := pipelineTree(pipelineTestPackages)
+	path := pipelinePath(edgeEdited) + "/" + pipelineScript
+	widened := strings.Replace(string(edited[path].Data), corpusLine(edgeWidened), widenedLine(edgeWidened), 1)
+	edited[path] = &fstest.MapFile{Data: []byte(widened), ModTime: warmEdit}
+	report := sealedRun(t, w, workspace.Input{Tree: edited})
+	assert.False(t, report.Stats.Cold, "the run after the edit reads the sealed state")
+	return report
 }
 
 // recordedEdges returns the edge corpus's composition over n packages,

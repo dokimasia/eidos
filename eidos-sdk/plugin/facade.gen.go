@@ -697,6 +697,11 @@ type Generator = core.Generator
 // nothing and returns the error, wrapped with the check's name. The run
 // calls a check only where every plan it reads staged cleanly, and
 // reports one Info for a check it does not call.
+//
+// A warm run calls a check again where it found a change in the graph or
+// the facts, or where a plan the check reads rendered or removed a file or
+// changed its export. Otherwise it does not call the check, and reports
+// the findings of the check's last call.
 type WorkspaceCheck = core.WorkspaceCheck
 
 // AnnotatorContext is what one Annotate call may touch.
@@ -717,9 +722,9 @@ type GeneratorContext = core.GeneratorContext
 // commit records, and its export.
 type PlanRecord = core.PlanRecord
 
-// CheckContext is what one Check call may read. Its Index and Reader
-// see the whole graph, and the reader records into a set the run
-// discards, because Close runs every check on every run.
+// CheckContext is what one Check call may read. Its Index and Reader see
+// the whole graph. The run records the reader's reads beside the check's
+// findings, and a read through Index or Facts records nothing.
 type CheckContext = core.CheckContext
 
 // RefusedConstruct reports a lowering hook refusing a declaration:

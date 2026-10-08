@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -110,13 +111,24 @@ func pluginEntry(name plugin.ID, run any, encoded []byte) string {
 
 // fingerprint folds the composition's brand, workspace name, frontends
 // with their options' encodings, ignored spellings, scheduled plugins,
-// plans and checks, each plugin with its options' encoding.
+// plans and checks, each plugin with its options' encoding, and every key
+// of the registry with the kinds it may be stamped on, its group and its
+// contract.
 func (b *Builder) fingerprint(
 	annotate []annEntry, plans []compiledPlan, checks []compiledCheck, options map[plugin.ID][]byte,
-	fronts [][]byte,
+	fronts [][]byte, keys *meta.Registry,
 ) []byte {
 	entries := make([]string, 0, len(annotate)+len(plans)+len(checks)+4)
 	entries = append(entries, "brand\x00"+string(b.brand), "workspace\x00"+b.id)
+	for name := range keys.Keys() {
+		id, _ := keys.Resolve(name)
+		spec, _ := keys.Spec(id)
+		entry := fmt.Sprintf("key\x00%s\x00%v\x00%s", spec.Name, spec.Kinds, spec.Group)
+		if c := spec.Contract; c != nil {
+			entry += fmt.Sprintf("\x00%v\x00%s\x00%v", c.On, c.By, c.Severity)
+		}
+		entries = append(entries, entry)
+	}
 	if len(b.frontends) > 0 {
 		var sb strings.Builder
 		sb.WriteString("frontends\x00")
@@ -183,8 +195,9 @@ func (b *Builder) fingerprint(
 // name, version, canonical options and selection; every scheduled
 // annotator, generator and backend with its version and canonical
 // options; each plan's name, sources, dependencies and layout
-// configuration; each workspace check with the plans it reads; and the
-// ignored directive spellings, folded in sorted order.
+// configuration; each workspace check with the plans it reads; the
+// ignored directive spellings; and every registered key with the kinds it
+// may be stamped on, its group and its contract, folded in sorted order.
 //
 // Each generation of the sealed state records the SHA-256 of the
 // fingerprint and of each template tree the plans render through, file
@@ -192,10 +205,13 @@ func (b *Builder) fingerprint(
 // records another digest ignores the generation, reports [ColdState] and
 // runs cold, so a change of a plan's scope or layout, and an edit of a
 // template on disk, also run cold. What a plugin's code declares, such
-// as its keys and schemas, is in the executable, whose digest the
-// generation records too, so the fold walks no registry. The fingerprint
-// is taken over the options as the configuration left them. It is a
-// SHA-256 digest, and every call returns a fresh copy, one allocation.
+// as its schemas, is in the executable, whose digest the generation
+// records too. The keys are in the fold all the same, because one
+// executable can build compositions that register different keys, and a
+// warm run audits only the subjects that changed under the contracts that
+// the generation records. The fingerprint is taken over the options as
+// the configuration left them. It is a SHA-256 digest, and every call
+// returns a fresh copy, one allocation.
 func (w *Workspace) Fingerprint() []byte { return slices.Clone(w.fingerprint) }
 
 // composition returns the digest a generation's header records: the

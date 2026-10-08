@@ -71,16 +71,17 @@ type keptRecords struct {
 // # Concurrency
 //
 // A PhaseState is safe for concurrent use. It reads through the
-// generation, which is safe for concurrent use, and the present table
-// loads once under a [sync.Once]. The decodes that share strings take
+// generation, which is safe for concurrent use. The present rows of each
+// key load once under a lock, and the decodes that share strings take
 // turns under a lock.
 type PhaseState struct {
 	ctx context.Context
 	g   *Generation
 
-	presentOnce sync.Once
-	present     map[meta.KeyName][]symbol.Identity
-	presentErr  error
+	// present keeps the subjects of each key whose present rows
+	// [PhaseState.Present] read, under presentMu.
+	presentMu sync.Mutex
+	present   map[meta.KeyName][]symbol.Identity
 
 	// strings are the strings that the decodes of the claims and of the
 	// present table share, so the texts that many claims repeat, such as
@@ -132,13 +133,15 @@ type PhaseRecord struct {
 	// phases and of each plan but those in replaced: the plans with a lane
 	// that [Recorder.KeepPlan] did not name, whose lanes replace every
 	// prior record and file of the plan. validations lists the dropped
-	// validations by subject, and invocations lists the dropped annotator
-	// invocations by match. planInvocations and groups list the dropped
-	// invocations and groups of each plan, and files the dropped files.
+	// validations by subject, invocations lists the dropped annotator
+	// invocations by match, and checks the dropped checks by name.
+	// planInvocations and groups list the dropped invocations and groups of
+	// each plan, and files the dropped files.
 	keep            bool
 	replaced        map[string]struct{}
 	validations     map[symbol.Identity]struct{}
 	invocations     map[plugin.MatchKey]struct{}
+	checks          map[plugin.ID]struct{}
 	planInvocations map[string]map[plugin.MatchKey]struct{}
 	groups          map[string]map[plugin.UnitRef]struct{}
 	files           map[string]struct{}
@@ -177,7 +180,7 @@ func RecordPhases(ctx context.Context, g *Generation, r *Recorder, run PhaseRun)
 	defer r.mu.Unlock()
 	p := &PhaseRecord{
 		lanes: r.lanes, keep: r.keep && g != nil, validations: r.validations, invocations: r.invocations,
-		planInvocations: r.planInvocations, groups: r.groups, files: r.files,
+		checks: r.checks, planInvocations: r.planInvocations, groups: r.groups, files: r.files,
 	}
 	for _, l := range r.lanes {
 		if _, kept := r.plans[l.plan]; p.keep && l.plan != "" && !kept {
@@ -319,6 +322,7 @@ func (p *PhaseRecord) readRecords(ctx context.Context, g *Generation) error {
 	p.touched = map[RecordRef]struct{}{}
 	p.strings = map[string]string{}
 	var was []edgeRead
+	entries := &decoder{interned: p.strings}
 	for k, t := range recordTables {
 		kind := RecordKind(k + 1)
 		slices.Sort(ids[k])
@@ -333,7 +337,7 @@ func (p *PhaseRecord) readRecords(ctx context.Context, g *Generation) error {
 			}
 			p.prior[t] = rows
 		}
-		eachEntry(p.prior[t], p.strings, func(id uint64, _ []byte, d *decoder) {
+		eachEntry(p.prior[t], entries, func(id uint64, _ []byte, d *decoder) {
 			for _, e := range entryReads(kind, d) {
 				was = append(was, edgeRead{edge: e, ref: RecordRef{Kind: kind, ID: id}})
 			}
@@ -444,14 +448,14 @@ func (p *PhaseRecord) readFiles(ctx context.Context, g *Generation) error {
 
 // keptRecords returns the prior records that the commit keeps. These are
 // the invocations and the groups of the plans in uncommitted, and on a
-// warm run each validation and annotator invocation that the run did not
-// drop, and each invocation and group that the run did not drop of a plan
-// whose lane does not replace them. It frames each record as a row of its
-// own entry, in a buffer that the commit places after the buffers of the
-// lanes. A row that does not decode is not kept, and neither is an entry
-// whose key fields or reads do not decode. The plan of an invocation or a
-// group decides first, from its bytes, so a record of a plan that commits
-// decodes nothing more.
+// warm run each validation, annotator invocation and check that the run
+// did not drop, and each invocation and group that the run did not drop
+// of a plan whose lane does not replace them. It frames each record as a
+// row of its own entry, in a buffer that the commit places after the
+// buffers of the lanes. A row that does not decode is not kept, and
+// neither is an entry whose key fields or reads do not decode. The plan
+// of an invocation or a group decides first, from its bytes, so a record
+// of a plan that commits decodes nothing more.
 func (p *PhaseRecord) keptRecords(uncommitted []string) keptRecords {
 	var out keptRecords
 	if !p.keep && len(uncommitted) == 0 {
@@ -461,8 +465,9 @@ func (p *PhaseRecord) keptRecords(uncommitted []string) keptRecords {
 		p.strings = map[string]string{}
 	}
 	at := len(p.lanes)
+	entries := &decoder{interned: p.strings}
 	if p.keep {
-		eachEntry(p.prior[TableValidations], p.strings, func(id uint64, b []byte, d *decoder) {
+		eachEntry(p.prior[TableValidations], entries, func(id uint64, b []byte, d *decoder) {
 			subject := d.identity()
 			if _, dropped := p.validations[subject]; dropped {
 				return
@@ -472,8 +477,16 @@ func (p *PhaseRecord) keptRecords(uncommitted []string) keptRecords {
 				out.add(RecordRef{Kind: RecordValidation, ID: id}, b, v.Reads, at)
 			}
 		})
+		eachEntry(p.prior[TableChecks], entries, func(id uint64, b []byte, d *decoder) {
+			if _, dropped := p.checks[plugin.ID(d.text())]; dropped {
+				return
+			}
+			if reads := d.edges(); d.Err() == nil {
+				out.add(RecordRef{Kind: RecordCheck, ID: id}, b, reads, at)
+			}
+		})
 	}
-	eachEntry(p.prior[TableInvocations], p.strings, func(id uint64, b []byte, d *decoder) {
+	eachEntry(p.prior[TableInvocations], entries, func(id uint64, b []byte, d *decoder) {
 		plan := d.Bytes()
 		failed := slices.ContainsFunc(uncommitted, func(name string) bool { return name == string(plan) })
 		if !failed && !p.keeps(plan) {
@@ -487,7 +500,7 @@ func (p *PhaseRecord) keptRecords(uncommitted []string) keptRecords {
 			out.add(RecordRef{Kind: RecordInvocation, ID: id}, b, reads, at)
 		}
 	})
-	eachEntry(p.prior[TableGroups], p.strings, func(id uint64, b []byte, d *decoder) {
+	eachEntry(p.prior[TableGroups], entries, func(id uint64, b []byte, d *decoder) {
 		plan := d.Bytes()
 		failed := slices.ContainsFunc(uncommitted, func(name string) bool { return name == string(plan) })
 		if !failed && !p.keeps(plan) {
@@ -607,13 +620,12 @@ func (k *keptRecords) add(ref RecordRef, entry []byte, reads []EdgeHash, at int)
 }
 
 // eachEntry calls visit once for each entry in the rows of a record
-// table. visit receives the row's ID, the entry's bytes and a decoder
-// over those bytes, which is valid until visit returns and reads its
-// strings through strings. A row whose key is not an ID visits nothing. A
-// row whose framing does not decode visits only the entries before the
-// fault. It allocates one decoder, which every visit reuses.
-func eachEntry(rows []entry, strings map[string]string, visit func(id uint64, b []byte, d *decoder)) {
-	d := &decoder{}
+// table. visit receives the row's ID, the entry's bytes and d, which
+// eachEntry points at those bytes and which is valid until visit returns.
+// d keeps the strings that it interns. A row whose key is not an ID
+// visits nothing. A row whose framing does not decode visits only the
+// entries before the fault. It allocates nothing.
+func eachEntry(rows []entry, d *decoder, visit func(id uint64, b []byte, d *decoder)) {
 	for _, e := range rows {
 		if len(e.key) != 8 {
 			continue
@@ -625,7 +637,7 @@ func eachEntry(rows []entry, strings map[string]string, visit func(id uint64, b 
 			if row.Err() != nil {
 				break
 			}
-			*d = decoder{Decoder: wire.NewDecoder(b), interned: strings}
+			d.Decoder = wire.NewDecoder(b)
 			visit(id, b, d)
 		}
 	}

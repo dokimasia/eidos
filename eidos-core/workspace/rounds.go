@@ -14,6 +14,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -30,13 +31,15 @@ const hashPrefix = "sha256:"
 
 // warmState is what the plans of a warm run read of the run so far: the
 // generation's record of the phases, the dirty set that the shared phases
-// left, the subjects whose matches may have changed, the workspace files
-// that the load found moved or vanished, the run's tree, and the previous
-// record's entries of each plan. A cold run has none.
+// left, the subjects whose matches may have changed, the generation's
+// admission of each package whose files or module fact changed, the
+// workspace files that the load found moved or vanished, the run's tree,
+// and the previous record's entries of each plan. A cold run has none.
 type warmState struct {
 	phases     *state.PhaseState
 	dirty      *dirtySet
 	candidates []symbol.Identity
+	prior      []admission
 	// moved and vanished are the load's moved and vanished files, each
 	// sorted by path.
 	moved, vanished []string
@@ -77,6 +80,9 @@ type warmPlan struct {
 	ws *warmState
 	p  *planRun
 	ix *plugin.Index
+	// scope is the plan's scope over the run, nil where its sources admit
+	// every package.
+	scope store.Scope
 	// groups are the dirty groups by key unit, and files the paths of their
 	// files, each as the generation records it.
 	groups map[plugin.UnitRef]state.Group
@@ -98,33 +104,37 @@ type artifactRead struct {
 }
 
 // runWarm runs one plan of a warm run. A plan whose work the generation
-// records as pending runs whole. Any other plan executes in part: the
-// groups that the run's changes make dirty execute again, and the plan
-// keeps its other groups as the generation records them. It returns the
-// stamped files of the groups it executed, and for a plan that runs whole,
-// the routed files that rendered, as [Workspace.runPlan] does.
+// records as pending runs whole, and so does a plan whose scope decides a
+// package otherwise than in the generation, as [Sources.rebinds] states.
+// Any other plan executes in part: the groups that the run's changes make
+// dirty execute again, and the plan keeps its other groups as the
+// generation records them. It returns the stamped files of the groups it
+// executed, and for a plan that runs whole, the routed files that
+// rendered, as [Workspace.runPlan] does.
 //
-// Error modes: those of [Workspace.runPlan], and [damage] for a record of
-// the generation that does not read whole.
+// Error modes: those of [Workspace.runPlan], and an error wrapping
+// [state.ErrDamaged] for a record of the generation that does not read
+// whole.
 func (w *Workspace) runWarm(
 	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree, p *planRun,
-	exports map[string]plugin.ExportDoc, deps []*planRun, rec *state.Recorder, ws *warmState,
+	deps []*planRun, rec *state.Recorder, ws *warmState,
 ) ([]stagedFile, []plugin.File, error) {
 	pl := p.plan
 	pending, err := ws.phases.Pending(pl.name)
 	if err != nil {
-		return nil, nil, damaged(fmt.Errorf("workspace: plan %q: read the record of the phases: %w", pl.name, err))
+		return nil, nil, fmt.Errorf("read the record of the phases: %w", err)
 	}
-	if pending {
+	scope := pl.sources.bind(g, facts, w.kernel)
+	if pending || pl.sources.rebinds(scope, ws.prior) {
 		p.exportChanged = true
-		return w.runPlan(ctx, g, facts, table, src, p, exports, rec)
+		return w.runPlan(ctx, g, facts, table, src, p, deps, rec)
 	}
-	ix, err := plugin.NewIndex(g, facts, table, pl.sources.bind(g, facts, w.kernel))
+	ix, err := plugin.NewIndex(g, facts, table, scope)
 	if err != nil {
 		return nil, nil, err
 	}
 	wp := &warmPlan{
-		w: w, ws: ws, p: p, ix: ix,
+		w: w, ws: ws, p: p, ix: ix, scope: scope,
 		groups:      map[plugin.UnitRef]state.Group{},
 		files:       map[string]struct{}{},
 		invocations: map[plugin.MatchKey]state.Invocation{},
@@ -133,9 +143,9 @@ func (w *Workspace) runWarm(
 	}
 	p.selective, p.lane = true, rec.Lane(pl.name)
 	rec.KeepPlan(pl.name)
-	staged, err := wp.run(ctx, facts, src, exports, deps, rec)
+	staged, err := wp.run(ctx, facts, src, deps, rec)
 	if errors.Is(err, state.ErrDamaged) {
-		err = damaged(fmt.Errorf("workspace: plan %q: read the record of the phases: %w", pl.name, err))
+		err = fmt.Errorf("read the record of the phases: %w", err)
 	}
 	return staged, nil, err
 }
@@ -143,10 +153,10 @@ func (w *Workspace) runWarm(
 // run seeds the plan's dirty groups, executes them in rounds, and
 // records what the last round executed. It returns the stamped files of
 // the dirty groups. A plan without a dirty group, a dirty invocation or a
-// candidate executes nothing and keeps every file.
+// candidate executes nothing and keeps every file. Such a plan does not
+// read the exports of the plans it depends on.
 func (wp *warmPlan) run(
-	ctx context.Context, facts *meta.Facts, src tree, exports map[string]plugin.ExportDoc, deps []*planRun,
-	rec *state.Recorder,
+	ctx context.Context, facts *meta.Facts, src tree, deps []*planRun, rec *state.Recorder,
 ) ([]stagedFile, error) {
 	p, pl := wp.p, wp.p.plan
 	if err := wp.seed(deps); err != nil {
@@ -155,10 +165,11 @@ func (wp *warmPlan) run(
 	if len(wp.groups) == 0 && len(wp.invocations) == 0 && len(wp.ws.candidates) == 0 {
 		return nil, wp.keep(nil, nil, nil, rec)
 	}
+	exports, err := exportsOf(deps)
+	if err != nil {
+		return nil, err
+	}
 	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		p.emit, p.sink, p.invoked = plugin.NewEmit(), diag.NewSink(), nil
 		p.lane.Reset()
 		touches := &touchJournal{next: p.lane}
@@ -223,12 +234,18 @@ func (wp *warmPlan) run(
 	}
 }
 
-// seed finds the plan's first dirty invocations and groups: those that
-// the shared phases' dirty edges or candidates routed, each invocation
-// that read the export of a plan it depends on whose export changed, the
-// call of each generator that journaled no invocation of its own where
-// the run found a change, the groups of every dirty invocation, and the
-// group of each file that changed on disk since the commit that wrote it.
+// seed finds the plan's first dirty invocations and groups:
+//
+//   - those that the shared phases' dirty edges or candidates routed
+//   - each invocation that read a membership edge whose membership changed
+//     in a package that the plan's scope admits
+//   - each invocation that read the export of a plan it depends on whose
+//     export changed
+//   - the call of each generator that journaled no invocation of its own,
+//     where the run found a change
+//   - the groups of every dirty invocation
+//   - the group of each file that changed on disk since the commit that
+//     wrote it
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that does
 // not read whole, and the error of a moved file that does not read.
@@ -240,6 +257,18 @@ func (wp *warmPlan) seed(deps []*planRun) error {
 		}
 		for _, inv := range d.invocations {
 			wp.invocations[inv.Match] = inv
+		}
+	}
+	members := wp.ws.dirty.members
+	for _, e := range slices.Sorted(maps.Keys(members)) {
+		for pkg := range members[e] {
+			if wp.scope != nil && !wp.scope(pkg) {
+				continue
+			}
+			if _, err := wp.dirtyEdge(e); err != nil {
+				return err
+			}
+			break
 		}
 	}
 	exported := false
@@ -752,13 +781,15 @@ func (wp *warmPlan) nameChanged(n emittedName) (bool, error) {
 // dirty groups, of their files and of the files that they render now, so
 // the commit reads the prior rows of each path that the plan writes. It
 // lists the plan's files that the run keeps: each previous file outside the
-// dirty groups that the generation records. It builds the export of a plan
-// marked exported from the kept files' rows and the rows of the files it
-// rendered, and reports whether the export changed. It reads the kept
-// files' artifacts for that export alone. It reports the findings of the
-// plan's records that the run keeps. rendered are the routed files that
-// the last round rendered, over the settled store, and others the names of
-// the kept files. A plan that executed nothing passes none of them.
+// dirty groups that the generation records. For a plan marked exported, it
+// reports whether the export changed, from the export rows of the files
+// that it rendered and the rows that the generation records for the
+// previous files of the dirty groups. It sets the plan's export, which
+// reads the kept files' rows from the generation on its first call. It
+// reports the findings of the plan's records that the run keeps. rendered
+// are the routed files that the last round rendered, over the settled
+// store, and others the names of the kept files. A plan that executed
+// nothing passes none of them.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that does
 // not read whole.
@@ -773,37 +804,41 @@ func (wp *warmPlan) keep(rendered []plugin.File, settled *plugin.Emit, others pl
 	for _, f := range rendered {
 		rec.DropFile(f.Path)
 	}
-	var kept, before []plugin.ExportedSymbol
+	var before []plugin.ExportedSymbol
 	for _, e := range wp.ws.previous[name] {
-		_, again := wp.files[e.Path]
-		if !p.plan.exported {
-			recorded, err := wp.ws.phases.Recorded(e.Path)
-			if err != nil {
-				return err
-			}
-			if recorded && !again {
-				p.kept = append(p.kept, e)
+		if _, again := wp.files[e.Path]; again {
+			if p.plan.exported {
+				a, err := wp.artifact(e.Path)
+				if err != nil {
+					return err
+				}
+				before = append(before, a.a.Export...)
 			}
 			continue
 		}
-		a, err := wp.artifact(e.Path)
+		recorded, err := wp.ws.phases.Recorded(e.Path)
 		if err != nil {
 			return err
 		}
-		if !a.held {
-			continue
+		if recorded {
+			p.kept = append(p.kept, e)
 		}
-		if again {
-			before = append(before, a.a.Export...)
-			continue
-		}
-		p.kept = append(p.kept, e)
-		kept = append(kept, a.a.Export...)
 	}
 	if p.plan.exported {
 		fresh := plugin.NewExport(name, rendered, settled, others).Symbols
-		p.exportChanged = !slices.Equal(sortedSymbols(before), fresh)
-		p.export = plugin.ExportDoc{Plan: name, Symbols: sortedSymbols(slices.Concat(kept, fresh))}
+		phases, kept := wp.ws.phases, p.kept
+		p.fresh, p.exportChanged = fresh, !slices.Equal(sortedSymbols(before), fresh)
+		p.export = sync.OnceValues(func() (plugin.ExportDoc, error) {
+			rows := slices.Clone(fresh)
+			for _, e := range kept {
+				a, _, err := phases.Artifact(e.Path)
+				if err != nil {
+					return plugin.ExportDoc{}, err
+				}
+				rows = append(rows, a.Export...)
+			}
+			return plugin.ExportDoc{Plan: name, Symbols: sortedSymbols(rows)}, nil
+		})
 	}
 	return wp.replay()
 }

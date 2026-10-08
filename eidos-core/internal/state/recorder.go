@@ -291,13 +291,14 @@ func (l *Lane) add(ref RecordRef, reads []EdgeHash) {
 //
 // A warm run executes only part of the shared phases. It calls
 // [Recorder.Keep], and it drops the record of each validation and
-// annotator invocation that it executes again or removes. It also names
-// each subject whose claims it withdrew. The commit then keeps the other
-// shared records and bags of the generation, beside the records of the
-// lanes. A warm run that executes part of a plan also calls
-// [Recorder.KeepPlan] for the plan, and drops each of the plan's records
-// that it executes again or removes: an invocation, a group, or a file
-// with its names.
+// annotator invocation that it executes again or removes, and of each
+// check that it calls again or does not call because a plan the check
+// reads failed. It also names each subject whose claims it withdrew. The
+// commit then keeps the other shared records and bags of the generation,
+// beside the records of the lanes. A warm run that executes part of a
+// plan also calls [Recorder.KeepPlan] for the plan, and drops each of the
+// plan's records that it executes again or removes: an invocation, a
+// group, or a file with its names.
 //
 // The zero Recorder is ready to record.
 //
@@ -319,11 +320,13 @@ type Recorder struct {
 	// a record keeps the shared records and bags that the run did not
 	// drop.
 	keep bool
-	// validations lists the dropped validations by subject, and
-	// invocations lists the dropped annotator invocations by match.
-	// withdrew lists the subjects whose claims the run withdrew.
+	// validations lists the dropped validations by subject, invocations
+	// lists the dropped annotator invocations by match, and checks the
+	// dropped checks by name. withdrew lists the subjects whose claims the
+	// run withdrew.
 	validations map[symbol.Identity]struct{}
 	invocations map[plugin.MatchKey]struct{}
+	checks      map[plugin.ID]struct{}
 	withdrew    map[symbol.Identity]struct{}
 	// plans lists the plans whose records the commit keeps where the run
 	// did not drop them. planInvocations and groups list the dropped
@@ -413,6 +416,23 @@ func (r *Recorder) DropInvocation(plan string, m plugin.MatchKey) {
 		r.planInvocations[plan] = dropped
 	}
 	dropped[m] = struct{}{}
+}
+
+// DropCheck drops the generation's record of a workspace check. A run
+// calls it for each check that it calls again, and for each check that it
+// does not call because a plan the check reads failed. A lane's record of
+// the check replaces the dropped record when the run called the check.
+// DropCheck on a nil Recorder does nothing.
+func (r *Recorder) DropCheck(name plugin.ID) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.checks == nil {
+		r.checks = map[plugin.ID]struct{}{}
+	}
+	r.checks[name] = struct{}{}
 }
 
 // KeepPlan makes the commit of a warm run keep a plan's records of the

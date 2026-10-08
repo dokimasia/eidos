@@ -6,6 +6,7 @@ package workspacetest
 import (
 	"context"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"slices"
@@ -27,13 +28,19 @@ const (
 	copyPlan               = "workspacetest-copy"
 	failingPlan            = "workspacetest-failing"
 	probePlan              = "workspacetest-probe"
+	cutoffPlan             = "workspacetest-cutoff"
 	cycleA                 = "workspacetest-cycle-a"
 	cycleB                 = "workspacetest-cycle-b"
 	failureID    plugin.ID = "workspacetest-failure"
 	probeID      plugin.ID = "workspacetest-probe"
+	cutoffID     plugin.ID = "workspacetest-cutoff"
 	blockedCheck plugin.ID = "workspacetest-blocked"
 	readingCheck plugin.ID = "workspacetest-reading"
 )
+
+// cutoffRule is the rule under which the cutoff generator journals its
+// one invocation.
+const cutoffRule plugin.RuleID = 0
 
 // failureCode is the code the suite's seeded failure reports under.
 var failureCode = diag.MustRegister(diag.Prefix("WSTEST"), diag.CodeSpec{
@@ -80,8 +87,9 @@ type Fixture struct {
 // RunWorkspaceSuite checks the fixture against the workspace frame:
 // [AssertGenerated], [AssertCollision], [AssertIsolated],
 // [AssertExported], [AssertCycleRefused], [AssertSwept],
-// [AssertAudited] and [AssertChecked], each in a parallel subtest over
-// a temporary directory of its own.
+// [AssertAudited], [AssertChecked], [AssertExportCutoff] and
+// [AssertWarmChecked], each in a parallel subtest over temporary
+// directories of its own.
 func RunWorkspaceSuite(t *testing.T, f Fixture) {
 	t.Helper()
 
@@ -97,6 +105,7 @@ func RunWorkspaceSuite(t *testing.T, f Fixture) {
 		{name: "removes the files of a removed plan", check: AssertSwept},
 		{name: "reports an unmet contract at its severity", check: AssertAudited},
 		{name: "runs a check over the records it reads", check: AssertChecked},
+		{name: "runs no dependent of an unchanged export again", check: AssertExportCutoff},
 	}
 	for _, c := range checks {
 		t.Run(c.name, func(t *testing.T) {
@@ -104,6 +113,38 @@ func RunWorkspaceSuite(t *testing.T, f Fixture) {
 			c.check(t, f, t.TempDir())
 		})
 	}
+	t.Run("hands a check on a warm run the records of a cold run", func(t *testing.T) {
+		t.Parallel()
+		AssertWarmChecked(t, f, t.TempDir(), t.TempDir())
+	})
+}
+
+// RunWarmColdSuite checks the warm path of the workspace frame against its
+// cold path over the fixture: [AssertWarmUnchanged], [AssertTouched],
+// [AssertDamaged], [AssertRestored] and [AssertWarmEdited], each in a
+// parallel subtest over temporary directories of its own.
+func RunWarmColdSuite(t *testing.T, f Fixture) {
+	t.Helper()
+
+	checks := []struct {
+		name  string
+		check func(assert.TB, Fixture, string)
+	}{
+		{name: "runs nothing over an unchanged tree", check: AssertWarmUnchanged},
+		{name: "hashes a touched file once and parses nothing", check: AssertTouched},
+		{name: "runs again cold over a damaged sealed state", check: AssertDamaged},
+		{name: "restores the units of a reverted edit from the memo", check: AssertRestored},
+	}
+	for _, c := range checks {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.check(t, f, t.TempDir())
+		})
+	}
+	t.Run("leaves after an edit what a cold run over the edited tree leaves", func(t *testing.T) {
+		t.Parallel()
+		AssertWarmEdited(t, f, t.TempDir(), t.TempDir())
+	})
 }
 
 // failure is a generator that reports one Error at a file of the
@@ -145,6 +186,44 @@ func (*probe) Name() plugin.ID { return probeID }
 // Generate records the exports.
 func (p *probe) Generate(ctx *plugin.GeneratorContext) error {
 	p.got = ctx.Exports
+	return nil
+}
+
+// cutoff is a generator that journals one invocation under [cutoffRule],
+// which read the exports its context hands over and nothing else, and
+// emits nothing. A warm run selects the invocation again only where one
+// of those exports changed, and the generator runs it only where the
+// selection lists it.
+type cutoff struct{}
+
+// withCutoff returns the plans followed by a probe plan and a cutoff plan
+// that each depend on the first plan and render through its backend, and
+// the probe that records the exports the probe plan reads.
+func withCutoff(plans []workspace.Plan) ([]workspace.Plan, *probe) {
+	p := &probe{}
+	first := []string{plans[0].Name}
+	probing := workspace.Plan{
+		Name: probePlan, DependsOn: first, Generators: []plugin.Generator{p}, Backend: plans[0].Backend,
+	}
+	cutting := workspace.Plan{
+		Name: cutoffPlan, DependsOn: first, Generators: []plugin.Generator{cutoff{}}, Backend: plans[0].Backend,
+	}
+	return append(slices.Clip(plans), probing, cutting), p
+}
+
+// Name returns the cutoff generator's name.
+func (cutoff) Name() plugin.ID { return cutoffID }
+
+// Generate journals the invocation where the selection lists it, or
+// where the call runs without a selection.
+func (cutoff) Generate(ctx *plugin.GeneratorContext) error {
+	match := plugin.MatchKey{Plugin: ctx.Plugin, Rule: cutoffRule}
+	if ctx.Select != nil && !slices.ContainsFunc(ctx.Select.Matches, func(m plugin.MatchKey) bool {
+		return m.Compare(match) == 0
+	}) {
+		return nil
+	}
+	ctx.Journal.Invoked(plugin.Invocation{Match: match, Exports: slices.Sorted(maps.Keys(ctx.Exports))})
 	return nil
 }
 

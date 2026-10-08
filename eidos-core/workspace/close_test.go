@@ -6,6 +6,7 @@ package workspace_test
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
@@ -32,6 +34,16 @@ import (
 
 // promisedKey is the fixture key whose contract the audit checks.
 const promisedKey meta.KeyName = "audit.seen"
+
+// followerID names the annotator that stamps the promised key on the user.
+const followerID plugin.ID = "follower"
+
+// narrowWidth is the number of fields the row has before an edit widens
+// it.
+const narrowWidth = 2
+
+// userID is the struct of the rounds tree's api package.
+var userID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct}
 
 // promise is the fixture key a composition registers, and its handle
 // once the registration ran at Build.
@@ -63,6 +75,25 @@ func (p *promise) keeper() plugin.Annotator {
 		eidos.Stamp(st, p.key, true)
 		return nil
 	})
+}
+
+// follower is an annotator that implements its role directly. It stamps
+// the promised key on the user where the row is wider than narrowWidth,
+// so an edit of the row changes a fact of a struct the edit leaves alone.
+type follower struct{ p *promise }
+
+// Name returns the follower's name.
+func (follower) Name() plugin.ID { return followerID }
+
+// Annotate looks the row up, and stamps the promised key on the user
+// where the row is wide.
+func (f follower) Annotate(ctx *plugin.AnnotatorContext) error {
+	row, held := ctx.Reader.Lookup(rowID)
+	s, is := row.(*node.Struct)
+	if !held || !is || len(s.Fields) <= narrowWidth {
+		return nil
+	}
+	return meta.Stamp(ctx.Facts, f.p.key, true, meta.Claim{Subject: userID, Bucket: ctx.Bucket, Plugin: followerID})
 }
 
 // errCheck is the error the returning check returns.
@@ -136,6 +167,19 @@ func TestClose(t *testing.T) {
 			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the clash fails the run")
 			assert.Length(t, findings(report.Sink, workspace.PlanCollision), 1, "one finding for the clash")
+		})
+
+		t.Run("reports the PlanCollision of a new path that clashes with another plan's kept file", func(t *testing.T) {
+			t.Parallel()
+
+			after := caseTree()
+			warm, err := warmAfter(t, built(t, casePlans(t, ledger.NewMem())), roundsTree(rowLine, userLine), after)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the collision fails the run")
+			got := findings(warm.Sink, workspace.PlanCollision)
+			assert.Length(t, got, 1, "one finding names both plans")
+			cold, _ := built(t, casePlans(t, ledger.NewMem())).Run(t.Context(), workspace.Input{Tree: after})
+			assert.Permutation(t, got, findings(cold.Sink, workspace.PlanCollision),
+				"the warm run reports the same finding as the cold run")
 		})
 
 		t.Run("removes the outputs of a plan the composition no longer declares", func(t *testing.T) {
@@ -303,6 +347,83 @@ func TestClose(t *testing.T) {
 			unmet := findings(report.Sink, workspace.UnmetContract)
 			assert.Length(t, unmet, 1, "the workspace's struct alone")
 			assert.Equal(t, unmet[0].Pos.File, "svc/a/a.zz", "the dependency's struct is not audited")
+		})
+
+		t.Run("reports the UnmetContract findings that a cold run over the edited tree reports", func(t *testing.T) {
+			t.Parallel()
+
+			var p, q promise
+			edited := roundsTree(widerRow, userLine)
+			warm, err := warmAfter(t, built(t, sealingBuilder(t, ledger.NewMem(), "plan").
+				Keys(p.registration(diag.SeverityWarning))), roundsTree(rowLine, userLine), edited)
+			assert.NoError(t, err, "a warning fails no run")
+			cold := sealedRun(t, built(t, sealingBuilder(t, ledger.NewMem(), "plan").
+				Keys(q.registration(diag.SeverityWarning))), workspace.Input{Tree: edited})
+			got := findings(warm.Sink, workspace.UnmetContract)
+			assert.Length(t, got, 2, "the edited row and the kept user lack the key")
+			assert.Permutation(t, got, findings(cold.Sink, workspace.UnmetContract),
+				"the warm run reports the same findings as the cold run")
+		})
+
+		t.Run("decodes no region for the audit of a struct that a warm run keeps", func(t *testing.T) {
+			t.Parallel()
+
+			var p promise
+			before, edited := roundsTree(rowLine, userLine), roundsTree(widerRow, userLine)
+			audited, err := warmAfter(t, built(t, sealingBuilder(t, ledger.NewMem(), "plan").
+				Keys(p.registration(diag.SeverityWarning))), before, edited)
+			assert.NoError(t, err, "a warning fails no run")
+			plain, err := warmAfter(t, sealing(t, ledger.NewMem(), "plan"), before, edited)
+			assert.NoError(t, err, "the run without a contract is clean")
+			assert.Equal(t, audited.Stats.Decoded, plain.Stats.Decoded,
+				"the audit decodes the same regions as the run without a contract")
+		})
+
+		t.Run("reports the UnmetContract of a kept struct again on the next warm run", func(t *testing.T) {
+			t.Parallel()
+
+			var p promise
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").Keys(p.registration(diag.SeverityWarning)))
+			edited := roundsTree(widerRow, userLine)
+			_, err := warmAfter(t, w, roundsTree(rowLine, userLine), edited)
+			assert.NoError(t, err, "a warning fails no run")
+			report := sealedRun(t, w, workspace.Input{Tree: edited})
+			assert.False(t, report.Stats.Cold, "the third run reads the sealed state")
+			assert.Length(t, findings(report.Sink, workspace.UnmetContract), 2, "the record keeps both findings")
+		})
+
+		t.Run("reports no UnmetContract for a struct that an edit removed", func(t *testing.T) {
+			t.Parallel()
+
+			var p promise
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").Keys(p.registration(diag.SeverityWarning)))
+			report, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine), roundsTree(rowLine, userLine))
+			assert.NoError(t, err, "a warning fails no run")
+			assert.Length(t, findings(report.Sink, workspace.UnmetContract), 2, "the column's finding is gone")
+		})
+
+		t.Run("reports no UnmetContract for a kept struct that gains its key", func(t *testing.T) {
+			t.Parallel()
+
+			var p promise
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").
+				Keys(p.registration(diag.SeverityWarning)).Annotators(follower{p: &p}))
+			report, err := warmAfter(t, w, roundsTree(rowLine, userLine), roundsTree(widerRow, userLine))
+			assert.NoError(t, err, "a warning fails no run")
+			unmet := findings(report.Sink, workspace.UnmetContract)
+			assert.Length(t, unmet, 1, "the follower stamps the user")
+			assert.Equal(t, unmet[0].Pos.File, sealedSource, "the row lacks the key")
+		})
+
+		t.Run("reports no UnmetContract for a removed struct whose key the warm run withdraws", func(t *testing.T) {
+			t.Parallel()
+
+			var p promise
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").
+				Keys(p.registration(diag.SeverityWarning)).Annotators(p.keeper()))
+			report, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine), roundsTree(rowLine, userLine))
+			assert.NoError(t, err, "the run is clean")
+			assert.Empty(t, findings(report.Sink, workspace.UnmetContract), "every remaining struct has the key")
 		})
 
 		t.Run("hands a check the records of the plans it reads", func(t *testing.T) {
@@ -473,7 +594,96 @@ func TestClose(t *testing.T) {
 				routedIn(t, coretest.StorePath))
 			assert.Equal(t, log, []plugin.ID{"zeta", "alpha"}, "the order the checks ran in")
 		})
+
+		t.Run("calls no check on a warm run without a change", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").Checks(c))
+			before := roundsTree(rowLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: before})
+			report := sealedRun(t, w, workspace.Input{Tree: before})
+			assert.False(t, report.Stats.Cold, "the second run reads the sealed state")
+			assert.Length(t, c.called, 1, "the first run alone calls the check")
+		})
+
+		t.Run("calls a check again on a warm run after an edit", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").Checks(c))
+			_, err := warmAfter(t, w, roundsTree(rowLine, userLine), roundsTree(widerRow, userLine))
+			assert.NoError(t, err, "the run is clean")
+			assert.Length(t, c.called, 2, "both runs call the check")
+		})
+
+		t.Run("calls a check again on a warm run that renders a generated file that vanished", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			before := roundsTree(rowLine, userLine)
+			assert.NoError(t, os.CopyFS(root, before), "the tree copies into the run's directory")
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			w := built(t, sealingOnDisk(t, root).Checks(c))
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			assert.NoError(t, os.Remove(filepath.Join(root, filepath.FromSlash(apiGenerated))),
+				"the generated file is removed after a run that recorded its stat")
+			report := sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			assert.False(t, report.Stats.Cold, "the third run reads the sealed state")
+			assert.Equal(t, report.Stats.Rendered, 1, "the run renders the removed file again")
+			assert.Length(t, c.called, 2, "the plan's rendered file calls the check again")
+		})
+
+		t.Run("hands a check on a warm run the same export as a cold run", func(t *testing.T) {
+			t.Parallel()
+
+			warmCheck := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			edited := roundsTree(widerRow, userLine)
+			_, err := warmAfter(t, built(t, sealingBuilder(t, ledger.NewMem(), "plan").Checks(warmCheck)),
+				roundsTree(rowLine, userLine), edited)
+			assert.NoError(t, err, "the warm run is clean")
+			coldCheck := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			sealedRun(t, built(t, sealingBuilder(t, ledger.NewMem(), "plan").Checks(coldCheck)),
+				workspace.Input{Tree: edited})
+			assert.Length(t, warmCheck.called, 2, "both runs call the check")
+			assert.Equal(t, warmCheck.called[1].Plans[0].Export, coldCheck.called[0].Plans[0].Export,
+				"the warm run hands the check the kept file's rows and the rendered file's rows")
+		})
+
+		t.Run("reports the findings of a check that a warm run does not call", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "warning", reads: []string{"plan"}, script: func(ctx *plugin.CheckContext) {
+				ctx.Sink.Warnf(runCode, alphaAt, ctx.Plugin, "the claim is advisory")
+			}}
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").Checks(c))
+			before := roundsTree(rowLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: before})
+			report := sealedRun(t, w, workspace.Input{Tree: before})
+			assert.Length(t, c.called, 1, "the second run does not call the check")
+			assert.Length(t, findings(report.Sink, runCode), 1, "the second run reports the recorded warning")
+		})
 	})
+}
+
+// casePlans returns the builder of a composition of two plans that
+// mirror into files of one name beside their sources: the lower plan
+// scoped to the store package and the api package, and the upper plan
+// scoped to a package whose directory differs from the store's only in
+// case.
+func casePlans(tb assert.TB, l ledger.Ledger) *workspace.Builder {
+	tb.Helper()
+
+	lower := workspace.Plan{
+		Name: "lower", Sources: workspace.Sources{Packages: []string{"svc/store", "svc/api"}},
+		Generators: []plugin.Generator{mirror("lower-mirror")}, Backend: printerAs(tb, "lower-printer", "fixture", ""),
+	}
+	upper := workspace.Plan{
+		Name: "upper", Sources: workspace.Sources{Packages: []string{"svc/Store"}},
+		Generators: []plugin.Generator{mirror("upper-mirror")}, Backend: printerAs(tb, "upper-printer", "fixture", ""),
+	}
+	return sealingPlans(l, lower, upper)
 }
 
 // keptAndGone returns a composition of two plans writing under a and

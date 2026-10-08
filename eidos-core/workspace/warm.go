@@ -59,6 +59,9 @@ type warmRun struct {
 	// changed lists the facts whose winner differs from the winner in the
 	// generation.
 	changed map[meta.FactRef]struct{}
+	// joined and left list, for each package that a file joined or left,
+	// the paths of those files.
+	joined, left map[symbol.Identity][]string
 	// refused reports whether the stamp replay refused a stamp or met a
 	// dangling one.
 	refused bool
@@ -105,7 +108,9 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 // the earlier phases settled. The phases run in this order:
 //
 //  1. The load's changes make dirty the edges of each declaration,
-//     package, kind and directive spelling that they changed.
+//     package, kind and directive spelling that they changed. A kind or a
+//     spelling lists the packages in which it changed, and each plan
+//     routes its readers of the edge where its scope admits one of them.
 //  2. Directive validation runs again over each subject whose raw
 //     directives changed, and over each subject whose recorded validation
 //     read a dirty edge. It reads an empty fact store, as the validation
@@ -136,12 +141,14 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 //     generation's count, with the count of each package whose module
 //     facts changed and of each package that the load removed taken again.
 //     Where the modules change, their edge is dirty.
+//  9. The run lists the generation's admission of each package whose files
+//     or module fact changed, which each plan compares with its scope.
 //
-// warmShared returns the dirty set, the candidates in identity order and
-// the count of the modules, which the plans read. It records into rec
-// each validation and invocation that it executes, and each record and
-// claim that it drops. rec is nil when the run does not record its
-// phases.
+// warmShared returns the dirty set, the candidates in identity order, the
+// count of the modules and the admissions, which the plans read. It
+// records into rec each validation and invocation that it executes, and
+// each record and claim that it drops. rec is nil when the run does not
+// record its phases.
 //
 // Error modes:
 //   - [damage] for a record of the generation that does not read whole.
@@ -169,6 +176,8 @@ func (w *Workspace) warmShared(
 		candidates: map[symbol.Identity]struct{}{},
 		dropped:    map[plugin.MatchKey]struct{}{},
 		changed:    map[meta.FactRef]struct{}{},
+		joined:     map[symbol.Identity][]string{},
+		left:       map[symbol.Identity][]string{},
 	}
 	for _, f := range w.frontends {
 		r.frontends[f.Name()] = struct{}{}
@@ -203,6 +212,7 @@ func (w *Workspace) warmShared(
 		out.modules, err = r.modules()
 	}
 	if err == nil {
+		out.prior = r.prior()
 		err = cmp.Or(facts.Damaged(), r.recorded.Damaged(), r.table.Damaged())
 	}
 	if errors.Is(err, state.ErrDamaged) {
@@ -214,8 +224,9 @@ func (w *Workspace) warmShared(
 // seed makes dirty the edges that the load changed. These are the
 // declaration edge of each declaration that appeared, disappeared or
 // changed, the kind edge of each declaration that appeared or
-// disappeared, the edge of each changed package, the directive edge of
-// each spelling that a subject gained or lost, and the edges of where the
+// disappeared, in the declaration's package, the edge of each changed
+// package, the directive edge of each spelling that a subject gained or
+// lost, in each package of such a subject, and the edges of where the
 // layout places files, which [warmRun.placements] lists. The declarations
 // that appeared or changed become the first candidates.
 //
@@ -229,7 +240,8 @@ func (r *warmRun) seed() error {
 	}
 	c := r.changes
 	for _, id := range slices.Concat(c.Appeared, c.Disappeared) {
-		if err := cmp.Or(r.dirty.declaration(id), r.dirty.add(state.KindEdge(id.Kind))); err != nil {
+		err := cmp.Or(r.dirty.declaration(id), r.dirty.member(state.KindEdge(id.Kind), id.PackageIdentity()))
+		if err != nil {
 			return err
 		}
 	}
@@ -246,9 +258,11 @@ func (r *warmRun) seed() error {
 			return err
 		}
 	}
-	for _, n := range c.Spellings {
-		if err := r.dirty.add(state.DirectiveEdge(n)); err != nil {
-			return err
+	for _, s := range c.Spellings {
+		for _, pkg := range s.Packages {
+			if err := r.dirty.member(state.DirectiveEdge(s.Name), pkg); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

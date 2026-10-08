@@ -5,6 +5,7 @@ package state_test
 
 import (
 	"cmp"
+	"crypto/sha256"
 	"encoding/binary"
 	"iter"
 	"testing"
@@ -37,6 +38,10 @@ const (
 
 // loadBrand is the brand the scripted loads run under.
 const loadBrand output.Brand = "own"
+
+// createdFile is a file that a run wrote into the scripted tree after its
+// load.
+const createdFile = "svc/store/row.gen.zz"
 
 // The key of a door's row, pinned: the frontend's name, doorKeySep, and
 // the door's place as four big-endian bytes.
@@ -87,7 +92,11 @@ const (
 	// recordLoadAllocs is one record of a cold load of the two units into
 	// a new commit: each region's encoding and the segment, each file's
 	// and unit's row, the door's row, and the probes.
-	recordLoadAllocs = 88
+	recordLoadAllocs = 84
+	// recordOutputAllocs is one record of a created file into a commit
+	// that records the file already: the key, the row, and the commit's
+	// key of the change.
+	recordOutputAllocs = 3
 )
 
 // A generation's record of the load is what a warm load keeps, so every
@@ -318,6 +327,27 @@ func TestLoadState(t *testing.T) {
 			assert.Equal(t, second.Name, first.Name, "because the record is unchanged")
 		})
 	})
+
+	t.Run("RecordOutput", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records the brand's output with a size of zero", func(t *testing.T) {
+			t.Parallel()
+
+			c := state.NewCommit(nil, nil)
+			assert.NoError(t, state.RecordLoad(t.Context(), c, nil, loaded(t, scriptedTree(), nil)), "the load records")
+			digest := sha256.Sum256([]byte(createdFile))
+			state.RecordOutput(c, createdFile, digest)
+			l := ledger.NewMem()
+			_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+			assert.NoError(t, err, "the commit writes")
+			g, err := state.Open(t.Context(), l)
+			assert.NoError(t, err, "and its generation opens")
+			assert.Contains(t, filesOf(t, g.Load(t.Context())),
+				load.FileRecord{Path: createdFile, Digest: digest, Verdict: load.VerdictOutput},
+				"the next gate hashes the file where it meets it")
+		})
+	})
 }
 
 // The reads of a load's record and the record of a load allocate within
@@ -403,6 +433,12 @@ func TestLoadStateAllocs(t *testing.T) {
 		func(c *state.Commit) { err = cmp.Or(err, state.RecordLoad(t.Context(), c, nil, report)) },
 		recordLoadAllocs, "RecordLoad allocates the regions, the rows and the probes")
 	assert.NoError(t, err, "every load records")
+
+	digest := sha256.Sum256([]byte(createdFile))
+	commit := state.NewCommit(nil, nil)
+	state.RecordOutput(commit, createdFile, digest)
+	assert.MaxAllocs(t, func() { state.RecordOutput(commit, createdFile, digest) }, recordOutputAllocs,
+		"RecordOutput allocates the key, the row and the commit's key of the change")
 }
 
 // BenchmarkLoadState measures the reads a warm load makes of the record
@@ -565,6 +601,18 @@ func BenchmarkLoadState(b *testing.B) {
 			}
 			assert.NoError(b, err, "the load records")
 		})
+	})
+
+	b.Run("RecordOutput", func(b *testing.B) {
+		digest := sha256.Sum256([]byte(createdFile))
+		commit := state.NewCommit(nil, nil)
+		state.RecordOutput(commit, createdFile, digest)
+		c := bench.Start(b).MaxAllocs(recordOutputAllocs)
+		defer c.End()
+		for c.Loop() {
+			state.RecordOutput(commit, createdFile, digest)
+		}
+		assert.NotNil(b, commit, "the commit receives the record")
 	})
 }
 

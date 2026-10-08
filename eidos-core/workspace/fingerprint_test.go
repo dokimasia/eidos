@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/layout"
@@ -210,6 +211,13 @@ func TestFingerprint(t *testing.T) {
 				name:    "returns other bytes for another ignored spelling",
 				compose: func() *workspace.Builder { return loading().Ignore(otherIgnored) },
 			},
+			{
+				name: "returns other bytes for another registered key",
+				compose: func() *workspace.Builder {
+					var p promise
+					return loading().Keys(p.registration(diag.SeverityWarning))
+				},
+			},
 		}
 		for _, tt := range changes {
 			t.Run(tt.name, func(t *testing.T) {
@@ -223,6 +231,15 @@ func TestFingerprint(t *testing.T) {
 				)
 			})
 		}
+
+		t.Run("returns other bytes for another severity of a key's contract", func(t *testing.T) {
+			t.Parallel()
+
+			var p, q promise
+			warning := fingerprinted(t, valid().Keys(p.registration(diag.SeverityWarning)))
+			failing := fingerprinted(t, valid().Keys(q.registration(diag.SeverityError)))
+			assert.NotEqual(t, failing, warning, "a changed contract runs cold")
+		})
 
 		t.Run("returns other bytes for one ignored spelling in place of another", func(t *testing.T) {
 			t.Parallel()

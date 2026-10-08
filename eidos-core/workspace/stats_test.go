@@ -117,14 +117,24 @@ func TestStats(t *testing.T) {
 			assert.Equal(t, report.Stats.Reparsed, 1, "the unit that declares Twin parses again")
 		})
 
+		t.Run("counts the recorded region of the unit that an edit changed", func(t *testing.T) {
+			t.Parallel()
+
+			w := sealing(t, ledger.NewMem(), "plan")
+			sealedRun(t, w, workspace.Input{Tree: statsTree()})
+			report := sealedRun(t, w, workspace.Input{Tree: editedStatsTree()})
+			assert.Equal(t, report.Stats.Decoded, 1,
+				"the load compares the api unit with its recorded region, and the plan reads no kept unit")
+		})
+
 		t.Run("counts the region of a kept unit that the run reads", func(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, planMirroring(t, ledger.NewMem()))
 			sealedRun(t, w, workspace.Input{Tree: statsTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: editedStatsTree()})
-			assert.InRange(t, report.Stats.Decoded, 1, math.Inf(1),
-				"the plan's one group mirrors the store package's kept row again")
+			assert.Equal(t, report.Stats.Decoded, 2,
+				"the recorded region of the api unit, and the kept store unit, whose row the plan's one group reads")
 		})
 
 		t.Run("counts no region for a run over an unchanged tree", func(t *testing.T) {

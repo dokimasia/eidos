@@ -5,6 +5,7 @@ package state_test
 
 import (
 	"cmp"
+	"encoding/binary"
 	"slices"
 	"testing"
 
@@ -73,20 +74,22 @@ const (
 	// generation for a warm run that drops and records each record again
 	// with the same reads, so no readers row changes:
 	//   - the record, the set of the touched records and the shared strings
-	//   - for each record table, the list of IDs, the keys, the rows looked
-	//     up, and a decoder
+	//   - for each record table, the list of IDs, the keys and the rows
+	//     looked up
+	//   - one decoder for the reads before, and one for the records that the
+	//     commit keeps
 	//   - the fields and the reads of each prior entry, decoded once for the
 	//     reads before and once for the reads that the commit keeps
 	//   - the lists of the reads before and after
 	//   - the checks table, which the record reads whole
-	warmRecordPhasesAllocs = 58
+	warmRecordPhasesAllocs = 53
 	// warmPhaseCommitAllocs is the ceiling of that record's completion into
 	// a commit, which changes no row: the buffers, the lists of records and
-	// reads and the rows of the record tables, a decoder for each record
-	// table, and the lists and the reads of each prior entry that the commit
-	// keeps. The entries' strings are those that the preparation decoded,
-	// and the commit changes no readers row.
-	warmPhaseCommitAllocs = 26
+	// reads and the rows of the record tables, one decoder for the records
+	// that the commit keeps, and the lists and the reads of each prior entry
+	// that the commit keeps. The entries' strings are those that the
+	// preparation decoded, and the commit changes no readers row.
+	warmPhaseCommitAllocs = 24
 )
 
 // phaseKeys are the keys the recorded fact stores claim: one of each
@@ -511,6 +514,59 @@ func TestPhases(t *testing.T) {
 				assert.True(t, held, "the commit keeps an invocation that no lane replaced")
 			})
 
+			t.Run("keeps the prior check of a warm run that did not drop it", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, nil, []diag.Diag{recordedDiag})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.Lane("").Validation(recordedSubject, nil, nil, nil)
+				})
+				got, held, err := g.Phases(t.Context()).Check(checkID)
+				assert.NoError(t, err, "the checks table reads")
+				assert.True(t, held, "the commit keeps a check that no lane replaced")
+				assert.Equal(t, got.Findings, []diag.Diag{recordedDiag}, "the kept record states the check's finding")
+			})
+
+			t.Run("replaces a check that a warm run dropped with the lane's record", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, nil, []diag.Diag{recordedDiag})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.DropCheck(checkID)
+					r.Lane("").Check(checkID, nil, nil)
+				})
+				rows, err := g.All(t.Context(), state.TableChecks)
+				assert.NoError(t, err, "the checks table reads")
+				assert.Length(t, rows, 1, "the check has one row")
+				count, _ := binary.Uvarint(rows[0].Value)
+				assert.Equal(t, count, uint64(1), "the row contains the lane's record alone")
+			})
+
+			t.Run("deletes the row of a check that a warm run dropped without a lane's record", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, nil, []diag.Diag{recordedDiag})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.DropCheck(checkID)
+					r.Lane("").Validation(recordedSubject, nil, nil, nil)
+				})
+				_, held, err := g.Phases(t.Context()).Check(checkID)
+				assert.NoError(t, err, "the checks table reads")
+				assert.False(t, held, "a check that a failed plan blocked loses its record")
+			})
+
 			t.Run("keeps no prior invocation of a plan that ran whole on a warm run", func(t *testing.T) {
 				t.Parallel()
 
@@ -789,6 +845,7 @@ func lookedUpWarmRecorder(tb testing.TB) *state.Recorder {
 	r.Keep()
 	r.KeepPlan(recordedPlan)
 	r.DropValidation(recordedSubject)
+	r.DropCheck(checkID)
 	r.DropInvocation(recordedPlan, generated(recordedSubject))
 	r.DropGroup(recordedPlan, hostUnit)
 	recordLookedUp(tb, r)
@@ -863,6 +920,7 @@ func warmPhases(tb testing.TB, whole bool) *state.Generation {
 		r.KeepPlan(failedPlan)
 		r.Withdrew(recordedSubject)
 		r.DropValidation(recordedSubject)
+		r.DropCheck(checkID)
 		r.DropInvocation("", annotated(siblingSubject))
 		r.DropInvocation(recordedPlan, generated(recordedSubject))
 		r.DropGroup(recordedPlan, hostUnit)

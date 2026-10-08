@@ -25,6 +25,7 @@ import (
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -44,6 +45,10 @@ const (
 	suiteNamespace             = "workspacetest"
 	otherDeclaration           = "Other"
 )
+
+// renamedSource is Row's source with Row renamed, which an edit writes to
+// change the export of the plan that mirrors Row.
+const renamedSource = "package svc/store\ntype Record int string\n"
 
 // The sealed state's directory inside the brand's state directory, which
 // one fixture's edit removes, the ordinal of the cold run among the runs
@@ -518,6 +523,187 @@ func TestChecks(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("AssertWarmUnchanged", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a composition whose runs forget the sealed state", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			records := assert.Rejects(t, "a ledger that each run opens empty", func(tb assert.TB) {
+				workspacetest.AssertWarmUnchanged(tb, forgetful(t), root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{
+				"the run over an unchanged tree reads the sealed state",
+				"the run over an unchanged tree hashes no file",
+				"the run over an unchanged tree parses no unit",
+				"the run over an unchanged tree runs no invocation of " + string(mirrorID),
+				"the run over an unchanged tree runs no invocation of " + string(stubberID),
+			}, "the rejection names the work that the cold run does")
+		})
+	})
+
+	t.Run("AssertTouched", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a composition whose runs forget the sealed state", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			records := assert.Rejects(t, "a ledger that each run opens empty", func(tb assert.TB) {
+				workspacetest.AssertTouched(tb, forgetful(t), root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{
+				"the run after the touch reads the sealed state",
+				"the run after the touch parses no unit",
+			}, "the rejection names the parse that the cold run makes")
+		})
+	})
+
+	t.Run("AssertDamaged", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a composition that keeps no sealed state", func(t *testing.T) {
+			t.Parallel()
+
+			stateless := fixture(t)
+			stateless.Compose = func(root string) *workspace.Builder {
+				return workspace.New().
+					Brand(fixtureBrand).
+					Frontends(frontendtest.NewScripted()).
+					Targets(fixtureTarget).
+					Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) })
+			}
+			root := t.TempDir()
+			records := assert.Rejects(t, "a composition without a ledger", func(tb assert.TB) {
+				workspacetest.AssertDamaged(tb, stateless, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the run writes the segments of the sealed state"},
+				"the rejection names the state that is missing")
+		})
+	})
+
+	t.Run("AssertRestored", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+			t.Parallel()
+
+			uneditable := fixture(t)
+			uneditable.Edit = nil
+			root := t.TempDir()
+			records := assert.Rejects(t, "a fixture with nothing to revert", func(tb assert.TB) {
+				workspacetest.AssertRestored(tb, uneditable, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
+				"the rejection names what the fixture owes")
+		})
+
+		t.Run("rejects an edit that leaves the tree unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			idempotent := fixture(t)
+			idempotent.Edit = func(root string) error { return writeRow(root, rowSource) }
+			root := t.TempDir()
+			records := assert.Rejects(t, "an edit that writes the source as it was", func(tb assert.TB) {
+				workspacetest.AssertRestored(tb, idempotent, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the run after the edit parses the edited units"},
+				"the rejection names the edit that changes nothing")
+		})
+	})
+
+	t.Run("AssertExportCutoff", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+			t.Parallel()
+
+			uneditable := fixture(t)
+			uneditable.Edit = nil
+			root := t.TempDir()
+			records := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
+				workspacetest.AssertExportCutoff(tb, uneditable, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
+				"the rejection names what the fixture owes")
+		})
+
+		t.Run("rejects an edit that changes the first plan's export", func(t *testing.T) {
+			t.Parallel()
+
+			renaming := fixture(t)
+			renaming.Edit = func(root string) error { return writeRow(root, renamedSource) }
+			root := t.TempDir()
+			records := assert.Rejects(t, "an edit that renames the exported struct", func(tb assert.TB) {
+				workspacetest.AssertExportCutoff(tb, renaming, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{
+				"the first plan's export is unchanged after the edit",
+				"the cutoff plan runs no invocation after the edit",
+			}, "the rejection names the changed export and the invocation that it runs again")
+		})
+	})
+
+	t.Run("AssertWarmChecked", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+			t.Parallel()
+
+			uneditable := fixture(t)
+			uneditable.Edit = nil
+			warm, cold := t.TempDir(), t.TempDir()
+			records := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
+				workspacetest.AssertWarmChecked(tb, uneditable, warm, cold)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
+				"the rejection names what the fixture owes")
+		})
+
+		rejections := []struct {
+			name    string
+			fixture func(*testing.T) workspacetest.Fixture
+			want    []string
+		}{
+			{
+				name: "rejects a warm call whose files differ from those of the cold call", fixture: renamedPerRun,
+				want: []string{
+					"the warm call reads the same files as the cold call",
+					"the warm call reads the same export as the cold call",
+				},
+			},
+			{
+				name: "rejects a warm call whose export differs from that of the cold call", fixture: packagedPerRun,
+				want: []string{"the warm call reads the same export as the cold call"},
+			},
+		}
+		for _, tt := range rejections {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				warm, cold := t.TempDir(), t.TempDir()
+				records := assert.Rejects(t, "a run that tells the warm call from the cold one", func(tb assert.TB) {
+					workspacetest.AssertWarmChecked(tb, tt.fixture(t), warm, cold)
+				})
+				assert.Equal(t, coretest.Contracts(records), tt.want,
+					"the rejection names what the two calls disagree on")
+			})
+		}
+	})
+}
+
+// forgetful returns the fixture whose composition opens an empty memory
+// ledger for each run, so every run runs cold.
+func forgetful(t *testing.T) workspacetest.Fixture {
+	t.Helper()
+
+	f := fixture(t)
+	f.Compose = func(root string) *workspace.Builder {
+		return onDisk(root).Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil })
+	}
+	return f
 }
 
 // idleFirst returns the fixture with the idle plan first, so its first

@@ -75,6 +75,16 @@ func TestSuite(t *testing.T) {
 			workspacetest.RunWorkspaceSuite(t, fixture(t))
 		})
 	})
+
+	t.Run("RunWarmColdSuite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes two plans of which the second depends on the first", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.RunWarmColdSuite(t, fixture(t))
+		})
+	})
 }
 
 // naming returns a generator named id that emits, per struct in scope,

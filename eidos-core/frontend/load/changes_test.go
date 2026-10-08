@@ -161,16 +161,18 @@ func TestChanges(t *testing.T) {
 			t.Parallel()
 
 			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody(usersTable, viewMark)))
-			assert.Equal(t, warm.report.Changes.Spellings, []directive.Name{viewSpelling},
-				"the row gained a gen:view instance")
+			assert.Equal(t, warm.report.Changes.Spellings,
+				[]load.Spelling{{Name: viewSpelling, Packages: []symbol.Identity{storePackage}}},
+				"the row of the store package gained a gen:view instance")
 		})
 
 		t.Run("reports a spelling that a subject lost", func(t *testing.T) {
 			t.Parallel()
 
 			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody()))
-			assert.Equal(t, warm.report.Changes.Spellings, []directive.Name{tableSpelling},
-				"the row lost its gen:table instance")
+			assert.Equal(t, warm.report.Changes.Spellings,
+				[]load.Spelling{{Name: tableSpelling, Packages: []symbol.Identity{storePackage}}},
+				"the row of the store package lost its gen:table instance")
 		})
 
 		t.Run("reports a file whose stamps an edit changed as restamped", func(t *testing.T) {

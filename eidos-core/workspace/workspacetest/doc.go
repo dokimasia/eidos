@@ -29,11 +29,29 @@
 //     reports at its severity.
 //   - [AssertChecked]: a workspace check that reads a failed plan does
 //     not run, and one that reads a clean plan reads its records.
+//   - [AssertExportCutoff]: an edit that leaves the first plan's export
+//     unchanged runs no invocation that read only that export.
+//   - [AssertWarmChecked]: a check that a warm run calls after the edit
+//     reads the files and the export that a cold run hands it.
 //
-// [AssertWarmEdited] checks the warm path over the fixture's
-// [Fixture.Edit]: a warm run after the edit leaves the files, the record
-// entries, the findings and the exports that a cold run over the edited
-// tree leaves.
+// [RunWarmColdSuite] checks the warm path against the cold path over the
+// fixture's [Fixture.Edit]:
+//
+//   - [AssertWarmUnchanged]: a warm run over an unchanged tree runs
+//     nothing and writes nothing.
+//   - [AssertTouched]: a file whose modification time moved hashes once
+//     and parses nothing.
+//   - [AssertDamaged]: a damaged sealed state runs the run again cold, with
+//     one ColdState at Info.
+//   - [AssertRestored]: a parse memo restores the units of a reverted edit
+//     without a parse.
+//   - [AssertWarmEdited]: a warm run after the edit leaves the files, the
+//     record entries, the findings and the exports that a cold run over
+//     the edited tree leaves.
+//
+// A warm run hashes each file whose record does not prove it unchanged.
+// The checks of an unchanged tree move every file's modification time into
+// the past and run the fixture twice first, so each record proves its file.
 //
 // Every check takes the assert module's TB role, so the kernel's tests
 // run each one against compositions it must reject.

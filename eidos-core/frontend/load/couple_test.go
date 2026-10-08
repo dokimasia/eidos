@@ -153,6 +153,7 @@ func TestCouple(t *testing.T) {
 			warm, cold := warmCold(t, before, after, with(&importing{frontendtest.NewScripted()}))
 			assert.Equal(t, fromOf(warm.report)["svc/hold/h.zz"], load.FromParse,
 				"the holder parses for the import of the moved target")
+			assert.Equal(t, warm.report.Reparsed, 1, "the holder is the one kept unit that parses again")
 			assertSameLoad(t, warm, cold)
 		})
 

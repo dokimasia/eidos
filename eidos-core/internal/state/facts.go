@@ -4,7 +4,6 @@
 package state
 
 import (
-	"bytes"
 	"fmt"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -53,34 +52,46 @@ func (s *PhaseState) Claims(subject symbol.Identity) ([]meta.StoredClaim, error)
 
 // Present returns the subjects on which a key read present when the
 // generation was recorded, in identity order, and none for a key that
-// read present nowhere. It reads the present table once and lists every
-// key's subjects, so a later call reads nothing. It is the presence half
-// of the [meta.BagSource] a restored fact store reads.
+// read present nowhere. It reads the key's rows through a prefix scan of
+// the present table, the first time a caller asks for the key, and keeps
+// them, so a later call for the key reads nothing and allocates nothing.
+// It reads no row of another key. It is the presence half of the
+// [meta.BagSource] a restored fact store reads.
 //
-// Error modes: an error wrapping [ErrDamaged] for a table that does not
-// read whole, and for a key that does not decode.
+// Error modes: an error wrapping [ErrDamaged] for a run of the table that
+// does not read whole, and for a row of the key whose subject does not
+// decode.
 func (s *PhaseState) Present(k meta.KeyName) ([]symbol.Identity, error) {
-	s.presentOnce.Do(func() {
-		rows, err := s.g.readers[TablePresent].all(s.ctx)
-		if err != nil {
-			s.presentErr = err
-			return
-		}
-		s.present = map[meta.KeyName][]symbol.Identity{}
-		s.presentErr = s.strings.decode(func(strings map[string]string) error {
-			for _, e := range rows {
-				key, rest, found := bytes.Cut(e.key, []byte{keySep})
-				subject, parsed := parseIdentityKey(rest, strings)
-				if !found || !parsed {
-					return fmt.Errorf("%w: a present key does not decode", ErrDamaged)
-				}
-				name := meta.KeyName(intern(strings, key))
-				s.present[name] = append(s.present[name], subject)
+	s.presentMu.Lock()
+	defer s.presentMu.Unlock()
+	if subjects, read := s.present[k]; read {
+		return subjects, nil
+	}
+	var spelling [spellingCap]byte
+	prefix := append(append(spelling[:0], k...), keySep)
+	rows, err := s.g.readers[TablePresent].scan(s.ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	var subjects []symbol.Identity
+	err = s.strings.decode(func(strings map[string]string) error {
+		for _, e := range rows {
+			subject, parsed := parseIdentityKey(e.key[len(prefix):], strings)
+			if !parsed {
+				return fmt.Errorf("%w: a present key of %s does not decode", ErrDamaged, k)
 			}
-			return nil
-		})
+			subjects = append(subjects, subject)
+		}
+		return nil
 	})
-	return s.present[k], s.presentErr
+	if err != nil {
+		return nil, err
+	}
+	if s.present == nil {
+		s.present = map[meta.KeyName][]symbol.Identity{}
+	}
+	s.present[k] = subjects
+	return subjects, nil
 }
 
 // claimRows returns the claims table's rows of a fact store, sorted by

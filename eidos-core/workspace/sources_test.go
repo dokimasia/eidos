@@ -7,6 +7,7 @@ import (
 	"path"
 	"strconv"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
@@ -40,9 +41,26 @@ const (
 	scopedPlan = "scoped"
 )
 
+// outsideSource is a file of the store package outside the store
+// package's directory.
+const outsideSource = "other/col.zz"
+
+// relocatorID is the annotator that stamps the store package's module.
+const relocatorID plugin.ID = "relocator"
+
+// billedLine is the line of the struct that moves the store package into
+// the billing module.
+const billedLine = "type Billed int\n"
+
 // contextFile is the one file of the package a store provides: a path
 // qualified with the store's name.
 var contextFile = plugin.StorePath("goroot", "context/context.go")
+
+// billedID is the struct whose presence moves the store package into the
+// billing module.
+var billedID = symbol.Identity{
+	Lang: frontendtest.ScriptedLang, Package: storePkg, Name: "Billed", Kind: symbol.KindStruct,
+}
 
 // probe is a generator recording the package paths its reader returns:
 // what its plan's scope admits.
@@ -63,9 +81,29 @@ func (p *probe) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
+// relocator is an annotator that implements its role directly. It stamps
+// the store package's module: the billing module where the package
+// declares Billed, and the shared module otherwise.
+type relocator struct{}
+
+// Name returns the relocator's name.
+func (relocator) Name() plugin.ID { return relocatorID }
+
+// Annotate looks Billed up and stamps the store package's module.
+func (relocator) Annotate(ctx *plugin.AnnotatorContext) error {
+	module := sharedMod
+	if _, billed := ctx.Reader.Lookup(billedID); billed {
+		module = billingMod
+	}
+	claim := meta.Claim{Subject: storePackage, Bucket: ctx.Bucket, Plugin: relocatorID}
+	return meta.Stamp(ctx.Facts, ctx.Kernel.Module, module, claim)
+}
+
 // A plan's sources decide which packages its generators see: Build
 // checks the fields against the registries, and each run binds them to
-// the graph and its facts.
+// the graph and its facts. A warm run whose sources admit or refuse a
+// package otherwise than the generation did leaves the files of a cold
+// run.
 func TestSources(t *testing.T) {
 	t.Parallel()
 
@@ -236,6 +274,57 @@ func TestSources(t *testing.T) {
 			report := sealedRun(t, w, workspace.Input{Tree: statsTree()})
 			assert.Equal(t, report.Stats.Decoded, 0, "the scope decides no package that no reader asks about")
 		})
+
+		inStore := workspace.Sources{Packages: []string{storePkg}}
+		billing := workspace.Sources{Module: billingMod}
+		inside := func() fstest.MapFS { return roundsTree(rowLine, userLine) }
+		billed := func() fstest.MapFS { return roundsTree(rowLine+billedLine, userLine) }
+		rebound := []struct {
+			name          string
+			sources       workspace.Sources
+			before, after func() fstest.MapFS
+		}{
+			{
+				name:    "removes the files of a package that a new file takes out of its sources",
+				sources: inStore,
+				before:  inside,
+				after:   outsideTree,
+			},
+			{
+				name:    "renders the files of a package that a removed file brings into its sources",
+				sources: inStore,
+				before:  outsideTree,
+				after:   inside,
+			},
+			{
+				name:    "renders the files of a package that a new module fact brings into its sources",
+				sources: billing,
+				before:  inside,
+				after:   billed,
+			},
+			{
+				name:    "removes the files of a package that a new module fact takes out of its sources",
+				sources: billing,
+				before:  billed,
+				after:   inside,
+			},
+		}
+		for _, tt := range rebound {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				w := relocating(t, tt.sources)
+				first := sealedRun(t, w, workspace.Input{Tree: tt.before()})
+				warm, err := w.Run(t.Context(), workspace.Input{Tree: editedAfter(tt.before(), tt.after())})
+				assert.NoError(t, err, "the warm run is clean")
+				assert.False(t, warm.Stats.Cold, "the run after the edit reads the sealed state")
+				cold := sealedRun(t, relocating(t, tt.sources), workspace.Input{Tree: tt.after()})
+				assert.NotEqual(t, cold.Manifest.Files, first.Manifest.Files,
+					"the edit moves the store package across the sources", assert.EquateEmpty())
+				assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
+					"the warm run records the same entries as the cold run", assert.EquateEmpty())
+			})
+		}
 	})
 }
 
@@ -281,6 +370,23 @@ func graphOf(t *testing.T, modules map[*node.Package]string, pkgs ...*node.Packa
 		}
 	}
 	return g
+}
+
+// outsideTree returns the rounds tree with a file of the store package
+// outside the store package's directory.
+func outsideTree() fstest.MapFS {
+	tree := roundsTree(rowLine, userLine)
+	tree[outsideSource] = &fstest.MapFile{Data: []byte("package svc/store\n" + colLine)}
+	return tree
+}
+
+// relocating returns a composition over the scripted frontend that
+// records into a fresh memory ledger: the relocator, and one plan over the
+// sources whose mirror mirrors every struct.
+func relocating(tb assert.TB, sources workspace.Sources) *workspace.Workspace {
+	tb.Helper()
+
+	return built(tb, roundsBuilder(tb, ledger.NewMem(), sources, mirror(mirrorID)).Annotators(relocator{}))
 }
 
 // scopedPlanOf returns the plan the scope cases compose: the probe

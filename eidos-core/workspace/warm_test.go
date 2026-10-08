@@ -5,6 +5,7 @@ package workspace_test
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -39,6 +41,14 @@ const (
 	counterID plugin.ID         = "counter"
 	sized     plugin.Capability = "sized"
 )
+
+// copierID is the generator that copies the width of the row onto each
+// struct with its directive.
+const copierID plugin.ID = "copier"
+
+// copyLine attaches the copier's directive to the struct on the line
+// before it.
+const copyLine = "+copier:copy\n"
 
 // The file of the warm tree, and the lines that the cases edit. Each line
 // declares a struct, or attaches a directive or a stamp to the line before
@@ -67,6 +77,12 @@ var warmWarning = diag.Code{Prefix: "tst", Number: 9}
 // warmEdit is the modification time of each file that an edit changes,
 // as an editor's write moves it.
 var warmEdit = time.Date(2026, time.October, 7, 12, 0, 0, 0, time.UTC)
+
+// copySchema is the copier's directive. The copier's one rule runs on each
+// struct with the directive.
+var copySchema = directive.Schema{
+	Plugin: string(copierID), Name: "copy", Doc: "copies the width of the row onto the struct",
+}
 
 // The structs of the warm tree besides the row.
 var (
@@ -103,7 +119,8 @@ func (c counter) Annotate(ctx *plugin.AnnotatorContext) error {
 
 // A warm run executes again only the validations and annotator
 // invocations that read what an edit changed. Its facts and its findings
-// equal those of a cold run over the edited tree.
+// equal those of a cold run over the edited tree. A generator invocation
+// that read a fact whose winner did not change does not run again.
 func TestWarm(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +157,30 @@ func TestWarm(t *testing.T) {
 				warmTree(swappedRow, colLine, readerLine))
 			assert.NoError(t, err, "the run is clean")
 			assert.Equal(t, invoked(report, watcherID), 1, "the watcher evaluates the changed row alone")
+		})
+
+		t.Run("runs no generator invocation that read a fact whose winner is unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys).Plans(copying(t, keys)))
+			report, err := warmAfter(t, w, warmTree(rowLine, colLine, readerLine, copyLine),
+				warmTree(swappedRow, colLine, readerLine, copyLine))
+			assert.NoError(t, err, "the run is clean")
+			expect.Equal(t, generatedBy(report, copierID), 0, "the copier keeps its invocation on the reader")
+			expect.Equal(t, report.Stats.Rendered, 0, "the run renders no file")
+		})
+
+		t.Run("runs again a generator invocation that read a fact whose winner changed", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys).Plans(copying(t, keys)))
+			report, err := warmAfter(t, w, warmTree(rowLine, colLine, readerLine, copyLine),
+				warmTree(widerRow, colLine, readerLine, copyLine))
+			assert.NoError(t, err, "the run is clean")
+			expect.Equal(t, generatedBy(report, copierID), 1, "the copier runs on the reader again")
+			expect.Equal(t, report.Stats.Rendered, 1, "the run renders the copier's file")
 		})
 
 		t.Run("withdraws the claims on a struct that the edit removed", func(t *testing.T) {
@@ -366,6 +407,25 @@ func warmBuilder(tb assert.TB, l ledger.Ledger, keys *warmKeys, extra ...plugin.
 		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{marker}, Backend: printer(tb, "fixture")}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// copying returns the plan of the copier. On each struct with the copy
+// directive, the copier reads the width of the row. It mirrors the struct
+// with the width as its documentation, into a file named after the plan.
+func copying(tb assert.TB, keys *warmKeys) workspace.Plan {
+	tb.Helper()
+
+	copier, held := eidos.NewPlugin(copierID).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "copy"}).
+		Handle(eidos.Directive(copySchema, eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			width, _ := eidos.FactOf(m, rowID, keys.width)
+			e.PackageFile().Append(&emit.Struct{
+				Origin: m.Struct.Identity(), Name: "Copy" + m.Struct.Name, Doc: []string{strconv.FormatInt(width, 10)},
+			})
+			return nil
+		}))).Build().(plugin.Generator)
+	assert.True(tb, held, "the copier lowers to the generator role")
+	return sealedPlan(tb, "copies", copier)
 }
 
 // warner returns an annotator that reports a warning on the row.

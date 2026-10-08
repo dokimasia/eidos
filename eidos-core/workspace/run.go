@@ -172,7 +172,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	var ws *warmState
 	if phases != nil {
 		ws = &warmState{
-			phases: phases, dirty: out.dirty, candidates: out.candidates,
+			phases: phases, dirty: out.dirty, candidates: out.candidates, prior: out.prior,
 			moved: loaded.Moved, vanished: loaded.Vanished, tree: in.Tree, previous: rec.byPlan,
 		}
 	}
@@ -180,6 +180,9 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	if !shared {
 		w.stageAll(ctx, runs, rec)
 	}
+	// recordErr is the damage that the plans, the collisions, the audit and
+	// the checks met in the generation's records.
+	var recordErr error
 	for _, p := range runs {
 		report.Emits[p.plan.name] = p.emit
 		report.Stats.Invoked = append(report.Stats.Invoked, p.invoked...)
@@ -187,18 +190,38 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 		for d := range p.sink.All() {
 			sink.Report(d)
 		}
+		if errors.Is(p.err, state.ErrDamaged) {
+			recordErr = cmp.Or(recordErr, fmt.Errorf("workspace: plan %q: %w", p.plan.name, p.err))
+		}
 	}
 
-	collided := collide(runs, sink)
+	var (
+		collided, unmet      bool
+		collideErr, auditErr error
+	)
+	if phases != nil {
+		collided, collideErr = collideWarm(runs, phases, sink)
+		recordErr = cmp.Or(recordErr, collideErr)
+	} else {
+		collided = collide(runs, routedFiles(runs), sink)
+	}
 	sw, err := w.sweep(rec, runs, sink, shared || collided)
 	errs := []error{err}
-	unmet := w.audit(g, facts, loaded, sink, sealed.recorder)
+	if phases != nil {
+		unmet, auditErr = w.auditWarm(g, facts, loaded, phases, out.candidates, sink, sealed.recorder)
+		recordErr = cmp.Or(recordErr, auditErr)
+	} else {
+		unmet = w.audit(g, facts, loaded, sink, sealed.recorder)
+	}
 	checked := false
 	if !shared {
-		checked, err = w.check(g, facts, out.table, runs, sink, &report.Stats, sealed.recorder)
+		checked, err = w.check(g, facts, out.table, runs, sink, &report.Stats, sealed.recorder, ws)
+		if errors.Is(err, state.ErrDamaged) {
+			recordErr, err = cmp.Or(recordErr, err), nil
+		}
 		errs = append(errs, err)
 	}
-	broken := damaged(cmp.Or(g.Damaged(), facts.Damaged(), out.damaged()))
+	broken := damaged(cmp.Or(g.Damaged(), facts.Damaged(), out.damaged(), recordErr))
 	if broken == nil {
 		broken = sealed.recordPhases(ctx, g, facts, w.kernel, out.modules)
 	}
@@ -349,6 +372,9 @@ type shared struct {
 	dirty      *dirtySet
 	candidates []symbol.Identity
 	modules    map[plugin.Module]int
+	// prior is the generation's admission of each package whose files or
+	// module fact changed, in identity order. A cold run has none.
+	prior []admission
 	// refused reports whether the stamp replay refused a stamp or met a
 	// dangling one. No record of the sealed state keeps such a finding.
 	refused bool

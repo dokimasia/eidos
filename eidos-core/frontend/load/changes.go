@@ -39,14 +39,23 @@ type Changes struct {
 	// includes packages, and subjects that the graph does not contain.
 	Directed []symbol.Identity
 	// Spellings lists the directive spellings that a subject gained or
-	// lost. An enumeration by directive reads these spellings.
-	Spellings []directive.Name
+	// lost, each with the packages of those subjects. An enumeration by
+	// directive reads these spellings.
+	Spellings []Spelling
 	// Restamped lists the subjects whose classification stamps differ.
 	Restamped []symbol.Identity
 	// Renamed lists the packages that the load and the record both
 	// declare under different names: a package clause that an edit
 	// changed.
 	Renamed []symbol.Identity
+}
+
+// Spelling is one directive spelling that a subject gained or lost, and
+// the packages of the subjects that gained or lost it, in identity order,
+// so a reader's scope can tell whether the change is inside it.
+type Spelling struct {
+	Name     directive.Name
+	Packages []symbol.Identity
 }
 
 // fingerprint is what a change of one declaration compares: the digest
@@ -239,22 +248,24 @@ func compare(before, after *side) *Changes {
 	c.Packages = slices.SortedFunc(maps.Keys(packages), symbol.Identity.Compare)
 	c.Directed = differing(before.directives, after.directives)
 	c.Restamped = differing(before.stamps, after.stamps)
-	spellings := map[directive.Name]bool{}
+	spellings := map[directive.Name]map[symbol.Identity]bool{}
 	for _, id := range c.Directed {
 		had, has := spelled(before.directives[id]), spelled(after.directives[id])
-		for n := range had {
-			spellings[n] = spellings[n] || !has[n]
-		}
-		for n := range has {
-			spellings[n] = spellings[n] || !had[n]
-		}
-	}
-	for n, moved := range spellings {
-		if moved {
-			c.Spellings = append(c.Spellings, n)
+		for _, n := range slices.Concat(slices.Collect(maps.Keys(had)), slices.Collect(maps.Keys(has))) {
+			if had[n] == has[n] {
+				continue
+			}
+			if spellings[n] == nil {
+				spellings[n] = map[symbol.Identity]bool{}
+			}
+			spellings[n][id.PackageIdentity()] = true
 		}
 	}
-	slices.Sort(c.Spellings)
+	for _, n := range slices.Sorted(maps.Keys(spellings)) {
+		c.Spellings = append(c.Spellings, Spelling{
+			Name: n, Packages: slices.SortedFunc(maps.Keys(spellings[n]), symbol.Identity.Compare),
+		})
+	}
 	return c
 }
 

@@ -4,10 +4,15 @@
 package workspacetest
 
 import (
+	"context"
+	"io/fs"
 	"maps"
+	"math"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
@@ -35,6 +40,19 @@ const (
 // lacks separates the subject of an UnmetContract message from the key
 // it lacks.
 const lacks = " lacks "
+
+// segmentDir is the directory of the sealed state's segments in the
+// ledger of the state directory, which the damage check cuts.
+const segmentDir = "state/seg"
+
+// memoLimit is the cap in bytes of the parse memo that the restore check
+// composes. It is the largest int64, so the memo keeps every entry that
+// the check restores, whatever the size of a fixture's tree.
+const memoLimit = math.MaxInt64
+
+// age is how far the warm checks move a file's modification time into
+// the past, so the record of the file is not racily clean.
+const age = time.Hour
 
 // AssertGenerated runs the fixture's plans in root, an empty directory,
 // and checks that the files under the brand's frame are the wanted
@@ -324,6 +342,183 @@ func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 		"the probe reads the same exports in the warm run as in the cold run")
 }
 
+// AssertWarmUnchanged runs the fixture's plans in root, an empty
+// directory, as [settled] states, and then once more without a change. It
+// checks that the last run reads the sealed state, hashes no file, parses
+// no unit, decodes no region, runs no invocation and calls no check, and
+// that it leaves every file under root as it was: the outputs, the
+// manifest's documents and the sealed state.
+func AssertWarmUnchanged(tb assert.TB, f Fixture, root string) {
+	tb.Helper()
+
+	w := settled(tb, f, root)
+	var (
+		report *workspace.Report
+		err    error
+	)
+	files.Unchanged(tb, os.DirFS(root), func() { report, err = ran(f, w, root) },
+		"the run over an unchanged tree leaves every file under the root as it was")
+	assert.NoError(tb, err, "the run over an unchanged tree is clean")
+	s := report.Stats
+	expect.False(tb, s.Cold, "the run over an unchanged tree reads the sealed state")
+	expect.Equal(tb, s.Hashed, 0, "the run over an unchanged tree hashes no file")
+	expect.Equal(tb, s.Parsed, 0, "the run over an unchanged tree parses no unit")
+	expect.Equal(tb, s.Decoded, 0, "the run over an unchanged tree decodes no region")
+	expect.Equal(tb, s.Checked, 0, "the run over an unchanged tree calls no check")
+	for _, c := range s.Invoked {
+		expect.Equal(tb, c.Count, 0, "the run over an unchanged tree runs no invocation of "+string(c.Plugin))
+	}
+}
+
+// AssertTouched runs the fixture's plans in root, an empty directory, as
+// [settled] states, moves the modification time of the first file of the
+// fixture's tree to the present without changing its bytes, and runs
+// again. It checks that the run reads the sealed state, hashes that one
+// file, and parses no unit.
+func AssertTouched(tb assert.TB, f Fixture, root string) {
+	tb.Helper()
+
+	w := settled(tb, f, root)
+	touched := treeFile(tb, f).File
+	now := time.Now()
+	assert.NoError(tb, os.Chtimes(rundir.Path(root, touched), now, now),
+		"the modification time of "+touched+" moves to the present")
+	report, err := ran(f, w, root)
+	assert.NoError(tb, err, "the run after the touch is clean")
+	expect.False(tb, report.Stats.Cold, "the run after the touch reads the sealed state")
+	expect.Equal(tb, report.Stats.Hashed, 1, "the run after the touch hashes the touched file once")
+	expect.Equal(tb, report.Stats.Parsed, 0, "the run after the touch parses no unit")
+}
+
+// AssertDamaged runs the fixture's plans in root, an empty directory,
+// cuts every segment of the sealed state to its first byte, and runs
+// again. It checks that the run reports one ColdState at Info and runs
+// cold, and that it leaves the files under the brand's frame that the
+// first run left.
+func AssertDamaged(tb assert.TB, f Fixture, root string) {
+	tb.Helper()
+
+	_, w, _ := clean(tb, f, root)
+	generated := rundir.Framed(tb, root, w.Brand())
+	ctx := context.Background()
+	l, err := ledger.OpenDir(root, w.Brand())
+	assert.NoError(tb, err, "the state directory's ledger opens")
+	segments, err := l.List(ctx, segmentDir)
+	assert.NoError(tb, err, "the ledger lists the segments of the sealed state")
+	assert.NotEmpty(tb, segments, "the run writes the segments of the sealed state")
+	for _, s := range segments {
+		body, readErr := l.Read(ctx, s.Name)
+		assert.NoError(tb, readErr, "the segment "+s.Name+" reads")
+		assert.NoError(tb, l.Write(ctx, s.Name, body[:1]), "the segment "+s.Name+" is cut to its first byte")
+	}
+	report, err := ran(f, w, root)
+	assert.NoError(tb, err, "the run over the damaged state is clean")
+	cold := codes(report, workspace.ColdState)
+	assert.Length(tb, cold, 1, "the run over the damaged state reports one ColdState")
+	expect.Equal(tb, cold[0].Severity, diag.SeverityInfo, "the ColdState is an Info")
+	expect.True(tb, report.Stats.Cold, "the run over the damaged state runs cold")
+	expect.Equal(tb, rundir.Framed(tb, root, w.Brand()), generated,
+		"the run over the damaged state leaves the files that the first run left")
+}
+
+// AssertRestored composes the fixture with a parse memo and runs the
+// fixture's plans in root, an empty directory. It applies the fixture's
+// edit and runs again, then writes the fixture's tree back over the edit
+// and runs once more. It checks that the last run parses no unit and
+// restores from the memo each unit that the run after the edit parsed.
+func AssertRestored(tb assert.TB, f Fixture, root string) {
+	tb.Helper()
+
+	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	plans := plansOf(tb, f)
+	copied(tb, f, root)
+	w := built(tb, f, root, plans, func(b *workspace.Builder) { b.Memo(workspace.Memo{Limit: memoLimit}) })
+	_, err := ran(f, w, root)
+	assert.NoError(tb, err, "the fixture's plans run clean")
+	assert.NoError(tb, f.Edit(root), "the fixture's edit applies")
+	edited, err := ran(f, w, root)
+	assert.NoError(tb, err, "the run after the edit is clean")
+	assert.InRange(tb, edited.Stats.Parsed, 1, math.Inf(1), "the run after the edit parses the edited units")
+	files.Write(tb, root, treeOf(tb, f))
+	report, err := ran(f, w, root)
+	assert.NoError(tb, err, "the run after the revert is clean")
+	expect.Equal(tb, report.Stats.Parsed, 0, "the run after the revert parses no unit")
+	expect.Equal(tb, report.Stats.Restored, edited.Stats.Parsed,
+		"the run after the revert restores each unit that the edit made the run parse")
+}
+
+// AssertExportCutoff runs the fixture's plans in root, an empty
+// directory, beside a probe plan and a cutoff plan, which each depend on
+// the first plan. The probe records the exports it reads, and the cutoff
+// plan's generator journals one invocation that read the first plan's
+// export. It applies the fixture's edit and runs again. It checks that the
+// run after the edit reads the sealed state, that the first plan writes a
+// file again with an unchanged export, and that the cutoff plan runs no
+// invocation.
+func AssertExportCutoff(tb assert.TB, f Fixture, root string) {
+	tb.Helper()
+
+	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	plans, p := withCutoff(plansOf(tb, f))
+	first := plans[0].Name
+	copied(tb, f, root)
+	w := built(tb, f, root, plans, nil)
+	cold, err := ran(f, w, root)
+	assert.NoError(tb, err, "the fixture's plans and the probes run clean")
+	assert.Equal(tb, invokedIn(cold, cutoffPlan), 1, "the cold run runs the cutoff plan's invocation")
+	before := p.got[first]
+	assert.NoError(tb, f.Edit(root), "the fixture's edit applies")
+	warm, err := ran(f, w, root)
+	assert.NoError(tb, err, "the run after the edit is clean")
+	assert.False(tb, warm.Stats.Cold, "the run after the edit reads the sealed state")
+	var written []string
+	for _, r := range warm.Plans {
+		if r.Name == first {
+			for _, c := range r.Changes {
+				written = append(written, c.Path)
+			}
+		}
+	}
+	expect.NotEmpty(tb, written, "the first plan writes a file again after the edit")
+	expect.Equal(tb, p.got[first], before, "the first plan's export is unchanged after the edit")
+	expect.Equal(tb, invokedIn(warm, cutoffPlan), 0, "the cutoff plan runs no invocation after the edit")
+}
+
+// AssertWarmChecked runs the fixture's plans in warm, an empty directory,
+// with a recording check that reads the first plan, applies the fixture's
+// edit, and runs again. It runs the plans with a check of its own over
+// the edited tree in cold, an empty directory. It checks that the run
+// after the edit reads the sealed state and calls the check again, and
+// that the warm call reads the same files and the same export as the cold
+// call.
+func AssertWarmChecked(tb assert.TB, f Fixture, warm, cold string) {
+	tb.Helper()
+
+	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	first := plansOf(tb, f)[0].Name
+	warmCheck := &check{name: readingCheck, reads: []string{first}}
+	copied(tb, f, warm)
+	w := built(tb, f, warm, plansOf(tb, f), func(b *workspace.Builder) { b.Checks(warmCheck) })
+	_, err := ran(f, w, warm)
+	assert.NoError(tb, err, "the fixture's plans and the check run clean")
+	assert.NoError(tb, f.Edit(warm), "the fixture's edit applies in the warm directory")
+	after, err := ran(f, w, warm)
+	assert.NoError(tb, err, "the run after the edit is clean")
+	assert.False(tb, after.Stats.Cold, "the run after the edit reads the sealed state")
+	assert.Length(tb, warmCheck.called, 2, "the run after the edit calls the check again")
+
+	coldCheck := &check{name: readingCheck, reads: []string{first}}
+	copied(tb, f, cold)
+	assert.NoError(tb, f.Edit(cold), "the fixture's edit applies in the cold directory")
+	c := built(tb, f, cold, plansOf(tb, f), func(b *workspace.Builder) { b.Checks(coldCheck) })
+	_, err = ran(f, c, cold)
+	assert.NoError(tb, err, "the cold run over the edited tree is clean")
+	assert.Length(tb, coldCheck.called, 1, "the cold run calls the check once")
+	got, want := warmCheck.called[1].Plans[0], coldCheck.called[0].Plans[0]
+	expect.Equal(tb, got.Files, want.Files, "the warm call reads the same files as the cold call")
+	expect.Equal(tb, got.Export, want.Export, "the warm call reads the same export as the cold call")
+}
+
 // exportedIn checks one plan's export against the plan's record entries:
 // every exported declaration is in a recorded file, under one of the
 // file's plugins and, at file level, from one of its sources, and every
@@ -369,6 +564,76 @@ func withoutLast(tb assert.TB, f Fixture, root string) (*workspace.Report, map[s
 	report, err := ran(f, w, root)
 	assert.NoError(tb, err, "the run without the last plan is clean")
 	return report, rundir.Framed(tb, root, w.Brand())
+}
+
+// settled copies the fixture's tree into root, an empty directory, and
+// runs the fixture's plans there cold and then warm. Before each of the
+// two runs, it moves the modification time of every file under root
+// outside the state directory into the past, as the files of a tree that
+// nobody edits are, so no record of the sealed state is racily clean. The
+// warm run hashes each file that the cold run wrote, whose record proves
+// nothing yet, so every record proves its file after it. It returns the
+// workspace, and stops the check where a run returns an error.
+func settled(tb assert.TB, f Fixture, root string) *workspace.Workspace {
+	tb.Helper()
+
+	plans := plansOf(tb, f)
+	copied(tb, f, root)
+	w := built(tb, f, root, plans, nil)
+	aged(tb, root, w.Brand())
+	_, err := ran(f, w, root)
+	assert.NoError(tb, err, "the fixture's plans run clean")
+	aged(tb, root, w.Brand())
+	_, err = ran(f, w, root)
+	assert.NoError(tb, err, "the warm run that settles the records is clean")
+	return w
+}
+
+// aged moves the modification time of every file under root outside the
+// brand's state directory an hour into the past.
+func aged(tb assert.TB, root string, brand output.Brand) {
+	tb.Helper()
+
+	past := time.Now().Add(-age)
+	state := ledger.StateDir(brand) + "/"
+	for _, path := range rundir.Files(tb, root) {
+		if strings.HasPrefix(path, state) {
+			continue
+		}
+		assert.NoError(tb, os.Chtimes(rundir.Path(root, path), past, past),
+			"the modification time of "+path+" moves into the past")
+	}
+}
+
+// treeOf returns every file of the fixture's tree with its bytes, keyed
+// by its slash-separated path. It stops the check where the tree does not
+// walk or a file does not read.
+func treeOf(tb assert.TB, f Fixture) files.Tree {
+	tb.Helper()
+
+	tree := files.Tree{}
+	err := fs.WalkDir(f.Tree, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(f.Tree, path)
+		tree[path] = files.Bytes(b)
+		return err
+	})
+	assert.NoError(tb, err, "the fixture's tree reads")
+	return tree
+}
+
+// invokedIn returns the number of invocations that a run's statistics
+// count for the phase calls of one plan.
+func invokedIn(report *workspace.Report, plan string) int {
+	n := 0
+	for _, c := range report.Stats.Invoked {
+		if c.Plan == plan {
+			n += c.Count
+		}
+	}
+	return n
 }
 
 // drifted inserts an empty line before the final line of a generated

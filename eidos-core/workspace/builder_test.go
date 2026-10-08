@@ -34,14 +34,14 @@ const (
 	// a new builder: the list it appends to.
 	listAllocs = 1
 	// buildAllocs is the build of the composition of 64 annotators and 8
-	// plans of 4 generators: 897 allocations for the registries, the
+	// plans of 4 generators: 934 allocations for the registries, the
 	// roster, the capability order, the compiled plans and the
-	// fingerprint. The 8 more are for the runtime's type-assertion
-	// caches. An interface assertion that misses its call site's cache
-	// builds a new cache about once in 1,024 misses, so a run of one
-	// iteration counts some of these builds: 12 fresh processes counted
-	// 0 to 4.
-	buildAllocs = 897 + 8
+	// fingerprint, whose fold spells every registered key. The 8 more are
+	// for the runtime's type-assertion caches. An interface assertion that
+	// misses its call site's cache builds a new cache about once in 1,024
+	// misses, so a run of one iteration counts some of these builds: 12
+	// fresh processes counted 0 to 3.
+	buildAllocs = 934 + 8
 )
 
 // mirrorOptions is a valid options struct for the config cases.

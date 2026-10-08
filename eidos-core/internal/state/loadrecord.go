@@ -6,6 +6,7 @@ package state
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"iter"
@@ -36,6 +37,12 @@ const keySep = 0
 // parts: the separator after each of the four named parts, and the
 // kind's byte with its separator.
 const identityKeyFixed = 6
+
+// fileRowFixed is the most bytes that a file record's row takes besides
+// the texts of its package: eleven varints, which are the size, the two
+// instants, the inode, the verdict, the package's kind and the lengths of
+// its five texts, the two flags of the instants, and the digest.
+const fileRowFixed = 11*binary.MaxVarintLen64 + 2 + sha256.Size
 
 // LoadState is a generation's record of the load: its file records, its
 // units with their regions, each frontend's doors, and the probes of
@@ -292,6 +299,18 @@ func RecordLoad(ctx context.Context, c *Commit, prior *LoadState, r *load.Report
 		return err
 	}
 	return recordDoors(ctx, c, prior, r)
+}
+
+// RecordOutput records in a commit a file that a run wrote into its tree
+// after the load: the brand's output at path, whose bytes have the digest.
+// The record states a size of zero, so the next gate that meets the file
+// hashes it, and reports the file vanished where its walk does not meet
+// it. A run records each file that it created, because the record of its
+// load lists only the files that the load walked. RecordOutput allocates
+// three times: the key, the row, and the commit's key of the change.
+func RecordOutput(c *Commit, path string, digest [sha256.Size]byte) {
+	row := encodeFile(load.FileRecord{Path: path, Digest: digest, Verdict: load.VerdictOutput})
+	c.change(TableFiles, entry{key: []byte(path), row: row})
 }
 
 // recordFiles puts each file record that differs from the prior record,
@@ -601,9 +620,13 @@ func unitRowOf(u load.UnitReport, ref RegionRef) unitRow {
 	}
 }
 
-// encodeFile returns a file record's row. The path is the key.
+// encodeFile returns a file record's row. The path is the key. It sizes
+// the row once from the lengths of the package's texts, so it allocates
+// once.
 func encodeFile(f load.FileRecord) []byte {
-	e := &encoder{}
+	id := f.Pkg
+	texts := len(id.Lang) + len(id.Package) + len(id.Owner) + len(id.Name) + len(id.Disc)
+	e := &encoder{buf: make([]byte, 0, fileRowFixed+texts)}
 	e.varint(f.Size)
 	e.instant(f.ModTime)
 	e.instant(f.Change)

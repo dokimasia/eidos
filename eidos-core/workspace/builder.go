@@ -270,7 +270,7 @@ func (b *Builder) Memo(m Memo) *Builder {
 // Build allocates in proportion to the composition: the registries, the
 // roster, the capability order, the compiled plans and checks, the
 // workspace and the fingerprint. A composition of 64 annotators and 8
-// plans of 4 generators allocates 897 times.
+// plans of 4 generators allocates 934 times.
 func (b *Builder) Build() (*Workspace, error) {
 	faults := b.brandFaults()
 	if b.workers < 0 {
@@ -324,7 +324,7 @@ func (b *Builder) Build() (*Workspace, error) {
 		workers:     b.workers,
 		brand:       b.brand,
 		memo:        b.memo,
-		fingerprint: b.fingerprint(ann, plans, checks, options, fronts),
+		fingerprint: b.fingerprint(ann, plans, checks, options, fronts, reg.keys),
 		trees:       templateTrees(plans),
 	}, nil
 }

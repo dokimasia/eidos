@@ -163,29 +163,55 @@ func (r *runReader) get(ctx context.Context, key []byte) (entry, bool, error) {
 }
 
 // scan returns every entry of the run whose key begins with prefix, in key
-// order. It reads the blocks in index order from the block that get would
-// read for prefix, and stops at the first key past the keys that begin
-// with prefix.
+// order, in a list of its own. The entries are in the block that get would
+// read for prefix and in each block after it whose first key begins with
+// prefix. scan reads one such block through the block that the reader
+// keeps. It reads two or more of them from the ledger in one read, and
+// decodes them into one list, which allocates once for the read and once
+// for each doubling of the list.
 func (r *runReader) scan(ctx context.Context, prefix []byte) ([]entry, error) {
 	if err := r.load(ctx); err != nil {
 		return nil, err
 	}
-	var out []entry
-	for at := max(r.blockOf(prefix), 0); at < len(r.index); at++ {
-		block, err := r.entries(ctx, at)
+	at := r.blockOf(prefix)
+	lo, hi := max(at, 0), at+1
+	for hi < len(r.index) && bytes.HasPrefix(r.index[hi].first, prefix) {
+		hi++
+	}
+	if hi <= lo {
+		return nil, nil
+	}
+	if hi == lo+1 {
+		block, err := r.entries(ctx, lo)
 		if err != nil {
 			return nil, err
 		}
+		var out []entry
 		for _, e := range block {
-			switch {
-			case bytes.HasPrefix(e.key, prefix):
+			if bytes.HasPrefix(e.key, prefix) {
 				out = append(out, e)
-			case bytes.Compare(e.key, prefix) > 0:
-				return out, nil
 			}
 		}
+		return out, nil
 	}
-	return out, nil
+	first, last := r.index[lo], r.index[hi-1]
+	b, err := r.read(ctx, int64(first.offset), last.offset+last.length+trailerSize-first.offset)
+	if err != nil {
+		return nil, err
+	}
+	var decoded []entry
+	for _, ref := range r.index[lo:hi] {
+		from := ref.offset - first.offset
+		if decoded, err = decodeBlock(decoded, b[from:from+ref.length+trailerSize]); err != nil {
+			return nil, err
+		}
+	}
+	i := sort.Search(len(decoded), func(i int) bool { return bytes.Compare(decoded[i].key, prefix) >= 0 })
+	j := i
+	for j < len(decoded) && bytes.HasPrefix(decoded[j].key, prefix) {
+		j++
+	}
+	return decoded[i:j], nil
 }
 
 // blockOf returns the place in the index of the block whose first key is

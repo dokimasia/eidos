@@ -11,6 +11,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -47,6 +49,11 @@ type sealedState struct {
 	phases   *state.PhaseRecord
 	header   state.Header
 	memo     *state.Memo
+	// tree is the run's tree, and walked the records of the files that the
+	// run's load walked, sorted by path. write records each file that the
+	// run created in the tree.
+	tree   fs.FS
+	walked []load.FileRecord
 }
 
 // warm reports whether the run is warm. A run is warm when it opened a
@@ -75,7 +82,7 @@ func (s *sealedState) record(ctx context.Context, loaded *load.Report) error {
 	if s.commit == nil {
 		return nil
 	}
-	s.header.Anchor = loaded.Anchor
+	s.header.Anchor, s.walked = loaded.Anchor, loaded.Files
 	if err := state.RecordLoad(ctx, s.commit, s.prior, loaded); err != nil {
 		return damaged(fmt.Errorf("workspace: record the load: %w", err))
 	}
@@ -111,14 +118,18 @@ func (s *sealedState) recordPhases(
 // write completes the record of the run's phases with each plan's
 // outcome, then makes the next generation live, strictly after every
 // plan's commit, with the merged manifest's documents that differ from
-// the ledger's. It records each file that a committing plan staged. It
-// writes under a context without the run's cancellation, because the
-// record has to match the destination once a commit wrote to it, and
-// counts what it wrote in stats. A plan that does not commit keeps its
-// previous records and files.
+// the ledger's. It records each file that a committing plan staged, and
+// the file record of each such file that the run created, as
+// [sealedState.recordCreated] states. It writes under a context without
+// the run's cancellation, because the record has to match the destination
+// once a commit wrote to it, and counts what it wrote in stats. A plan
+// that does not commit keeps its previous records and files.
 //
-// Error modes: a ledger's failure to write, wrapped. A failure before
-// CURRENT leaves the parent live.
+// Error modes: a ledger's failure to write, wrapped, and [damage] for a
+// record of the generation that the merge of a table's runs reads and
+// that does not read whole. A failure before CURRENT leaves the parent
+// live, and [Workspace.Run] runs a run that met damage again cold, which
+// commits the same files and records a generation without a parent.
 func (s *sealedState) write(ctx context.Context, m manifest.Manifest, runs []*planRun, stats *Stats) error {
 	var uncommitted []string
 	for _, p := range runs {
@@ -127,15 +138,39 @@ func (s *sealedState) write(ctx context.Context, m manifest.Manifest, runs []*pl
 			continue
 		}
 		p.recordFiles()
+		s.recordCreated(p)
 	}
 	s.phases.Commit(s.commit, uncommitted)
 	result, err := s.commit.Write(context.WithoutCancel(ctx), s.ledger, s.header, m)
 	stats.Generation = result.Generation != "" && (s.gen == nil || result.Generation != s.gen.Name)
 	stats.Written, stats.Size = result.Written, result.Size
 	if err != nil {
-		return fmt.Errorf("workspace: record the run: %w", err)
+		return damaged(fmt.Errorf("workspace: record the run: %w", err))
 	}
 	return nil
+}
+
+// recordCreated records the file record of each file that the run created
+// for a committing plan. The plan staged such a file, the run's load did
+// not walk it, and the tree contains it after the plan's commit. The
+// record of the load lists only the walked files, so without this record
+// the next gate cannot find such a file removed. The check of the tree
+// costs one stat for each created file. A file that a sink wrote outside
+// the tree is not recorded.
+func (s *sealedState) recordCreated(p *planRun) {
+	for i := range p.files {
+		f := &p.files[i]
+		_, walked := slices.BinarySearchFunc(s.walked, f.path, func(r load.FileRecord, path string) int {
+			return strings.Compare(r.Path, path)
+		})
+		if walked {
+			continue
+		}
+		if _, err := fs.Stat(s.tree, f.path); err != nil {
+			continue
+		}
+		state.RecordOutput(s.commit, f.path, sha256.Sum256(f.body))
+	}
 }
 
 // damage is the sealed state found damaged in a run: a record, a block
@@ -267,7 +302,9 @@ func (w *Workspace) openSealed(ctx context.Context, rec *record, in Input, sink 
 		w.coldState(sink, "the run cannot read its executable, so it cannot tell which code wrote the state: %v", err)
 		return &sealedState{}, nil
 	}
-	s := &sealedState{ledger: rec.ledger, header: state.Header{Composition: w.composition(), Executable: exe}}
+	s := &sealedState{
+		ledger: rec.ledger, header: state.Header{Composition: w.composition(), Executable: exe}, tree: in.Tree,
+	}
 	if gen != nil && w.usable(gen, s.header, sink) {
 		s.gen, s.prior = gen, gen.Load(ctx)
 	}
@@ -312,7 +349,7 @@ func (p *planRun) recordFiles() {
 	var exported map[string][]plugin.ExportedSymbol
 	if p.plan.exported {
 		exported = map[string][]plugin.ExportedSymbol{}
-		for _, s := range p.export.Symbols {
+		for _, s := range p.fresh {
 			exported[s.File] = append(exported[s.File], s)
 		}
 	}

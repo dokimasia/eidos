@@ -89,7 +89,28 @@
 // winner than in the generation. The propagation stops at a fact whose
 // winner did not change, so no record that read the fact runs again. The
 // run reports the findings of every validation and annotator invocation
-// that it keeps. The plans and Close run whole.
+// that it keeps.
+//
+// A plan of a warm run executes again only the groups that the run's
+// changes make dirty. It keeps the files of its other groups as the
+// generation records them. It reads the export of a plan that it depends
+// on only when it executes. An enumeration by kind or by directive
+// spelling runs again only where the plan's sources admit a package in
+// which a declaration of the kind, or a subject of the spelling, appeared
+// or disappeared. A plan that did not commit in the run before runs
+// whole, and so does a plan whose sources admit or refuse a package
+// otherwise than in the generation, because the package's files or its
+// module fact changed.
+//
+// Close compares the paths that the plans routed with the paths that the
+// generation records. It audits again the declarations that appeared or
+// changed and the subjects whose facts changed. It calls a workspace check
+// again after a change in the graph or the facts, and after a change in
+// the files or the export of a plan that the check reads. It keeps the
+// record of every other check. The run reports the findings of every
+// group, audit and check that it keeps. A warm run commits the same files,
+// records the same manifest and reports the same findings as a cold run
+// over the same tree.
 //
 // Each generation records the SHA-256 of [Workspace.Fingerprint] and of
 // the template trees the plans render through, as the run reads them,
@@ -97,9 +118,11 @@
 // composition or another executable, and one that does not open, is
 // reported under [ColdState], and the run runs cold. A run that meets a
 // damaged record or region discards what it derived before any plan
-// commits. It then reports [ColdState] and runs again cold. [Input.Cold]
-// ignores the sealed state and reports nothing for it. These runs do not
-// write a generation:
+// commits. It then reports [ColdState] and runs again cold. A commit that
+// meets damage where it merges the runs of a table, after the plans
+// committed, runs the run again cold too, which commits the same files and
+// records a generation without a parent. [Input.Cold] ignores the sealed
+// state and reports nothing for it. These runs do not write a generation:
 //
 //   - a dry run
 //   - a run over a caller's graph

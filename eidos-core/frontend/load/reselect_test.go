@@ -73,6 +73,7 @@ func TestReselect(t *testing.T) {
 			after["a/left/l.zz"] = &fstest.MapFile{Data: []byte("package a/left\ntype Other string\n")}
 			warm, cold := warmCold(t, barrelTree(leftPath), after, with(frontendtest.NewScriptedExporter()))
 			assert.NotNil(t, unitOf(t, warm.report, holdFile).Region, "the holder's region changed")
+			assert.Equal(t, warm.report.Reparsed, 1, "one kept unit parses again for its bindings")
 			assertSameLoad(t, warm, cold)
 		})
 

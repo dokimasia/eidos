@@ -22,6 +22,12 @@ import (
 // plan executes again when it runs. A check runs again in Close, so it
 // does not join the set.
 //
+// A membership edge, of a declaration kind or a directive spelling, routes
+// only its validations and annotator invocations, which read the whole
+// graph. The set lists the packages in which the edge's membership
+// changed, and each plan routes its own readers of the edge where its
+// sources admit one of them.
+//
 // A probe of a candidate routes the invocations of the candidate and
 // leaves its declaration edge clean. The run withdraws the claims of the
 // annotator invocations before the call evaluates the candidate again.
@@ -43,8 +49,11 @@ import (
 type dirtySet struct {
 	phases *state.PhaseState
 	edges  map[state.EdgeHash]struct{}
-	// routed lists the records that the set has read, so it reads each
-	// record once.
+	// members lists, for each dirty membership edge, the packages in which
+	// its membership changed.
+	members map[state.EdgeHash]map[symbol.Identity]struct{}
+	// routed lists the records that the set has routed whole, so it reads
+	// each such record once.
 	routed map[state.RecordRef]struct{}
 	// validations lists the subjects whose recorded validation read a
 	// dirty edge.
@@ -72,6 +81,7 @@ func newDirtySet(phases *state.PhaseState) *dirtySet {
 	return &dirtySet{
 		phases:      phases,
 		edges:       map[state.EdgeHash]struct{}{},
+		members:     map[state.EdgeHash]map[symbol.Identity]struct{}{},
 		routed:      map[state.RecordRef]struct{}{},
 		validations: map[symbol.Identity]struct{}{},
 		pending:     map[plugin.ID]map[plugin.MatchKey]state.Invocation{},
@@ -104,6 +114,45 @@ func (d *dirtySet) add(e state.EdgeHash) error {
 		return nil
 	}
 	d.edges[e] = struct{}{}
+	return d.route(e, true)
+}
+
+// member makes a membership edge dirty for a package in which a
+// declaration of the edge's kind, or a subject of its spelling, appeared
+// or disappeared, and lists the package. The edge's first package routes
+// the edge's validations and annotator invocations.
+//
+// Error modes: those of [dirtySet.add].
+func (d *dirtySet) member(e state.EdgeHash, pkg symbol.Identity) error {
+	pkgs, dirty := d.members[e]
+	if !dirty {
+		pkgs = map[symbol.Identity]struct{}{}
+		d.members[e] = pkgs
+	}
+	pkgs[pkg] = struct{}{}
+	if dirty {
+		return nil
+	}
+	d.edges[e] = struct{}{}
+	return d.route(e, false)
+}
+
+// route reads the records that read an edge, and routes each record that
+// the set has not routed whole:
+//
+//   - a validation's subject joins the subjects to validate again
+//   - an annotator invocation joins the pending records of its plugin
+//   - a plan's group joins the dirty records of its plan
+//   - a plan's invocation joins the dirty records of its plan where plans
+//     is set, and is left to its plan otherwise
+//
+// A record that route leaves to a plan is not routed whole. A group reads
+// the edges of names, scopes, directories, files, modules and units, and
+// never a membership edge.
+//
+// Error modes: an error wrapping [state.ErrDamaged] for a row of the
+// generation that does not read whole.
+func (d *dirtySet) route(e state.EdgeHash, plans bool) error {
 	refs, err := d.phases.Readers(e)
 	if err != nil {
 		return err
@@ -112,9 +161,9 @@ func (d *dirtySet) add(e state.EdgeHash) error {
 		if _, done := d.routed[ref]; done {
 			continue
 		}
-		d.routed[ref] = struct{}{}
 		switch ref.Kind {
 		case state.RecordValidation:
+			d.routed[ref] = struct{}{}
 			vs, err := d.phases.Validations(ref)
 			if err != nil {
 				return err
@@ -127,10 +176,19 @@ func (d *dirtySet) add(e state.EdgeHash) error {
 			if err != nil {
 				return err
 			}
+			whole := true
 			for _, inv := range invs {
+				if inv.Plan != "" && !plans {
+					whole = false
+					continue
+				}
 				d.join(inv)
 			}
+			if whole {
+				d.routed[ref] = struct{}{}
+			}
 		case state.RecordGroup:
+			d.routed[ref] = struct{}{}
 			groups, err := d.phases.Groups(ref)
 			if err != nil {
 				return err

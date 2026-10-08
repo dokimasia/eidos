@@ -6,6 +6,7 @@ package workspace
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -78,6 +79,19 @@ func (d directory) names(dir string) bool {
 type packageKey struct {
 	lang symbol.Lang
 	pkg  string
+}
+
+// admission is what a package's admission into a plan's sources read in
+// the generation: the package, the paths of its files, each as a file
+// without declarations, and its module fact, named where it had one. A
+// warm run lists the admission of each package whose files or whose
+// module fact changed, so each plan can tell whether its scope now
+// decides the package otherwise.
+type admission struct {
+	pkg    symbol.Identity
+	files  []*node.File
+	module string
+	named  bool
 }
 
 // Sources is a plan's source scope: which packages its generators see,
@@ -159,12 +173,7 @@ func (s Sources) bind(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) stor
 	if s.Lang == "" && len(s.Packages) == 0 && s.Module == "" {
 		return nil
 	}
-	dirs := make([]directory, 0, len(s.Packages))
-	for _, p := range s.Packages {
-		if d, valid := parsePattern(p); valid {
-			dirs = append(dirs, d)
-		}
-	}
+	dirs := s.directories()
 	var mu sync.RWMutex
 	decided := map[packageKey]bool{}
 	return func(pkg symbol.Identity) bool {
@@ -183,10 +192,44 @@ func (s Sources) bind(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) stor
 	}
 }
 
+// rebinds reports whether a run's scope admits or refuses a package of
+// prior otherwise than the generation's admission of it did, because the
+// package's files or its module fact moved it into the sources or out of
+// them. A plan whose scope rebinds runs whole. A reader records only the
+// reads inside its scope, so the record cannot list the readers that a
+// package entering the scope concerns. A nil scope admits every package in
+// both runs, and rebinds nothing.
+func (s Sources) rebinds(scope store.Scope, prior []admission) bool {
+	if scope == nil {
+		return false
+	}
+	dirs := s.directories()
+	for _, a := range prior {
+		before := (s.Lang == "" || a.pkg.Lang == s.Lang) && s.placed(a.files, a.module, a.named, dirs)
+		if before != scope(a.pkg) {
+			return true
+		}
+	}
+	return false
+}
+
+// directories returns the parsed patterns of the sources, and skips each
+// pattern that Build would refuse.
+func (s Sources) directories() []directory {
+	dirs := make([]directory, 0, len(s.Packages))
+	for _, p := range s.Packages {
+		if d, valid := parsePattern(p); valid {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
+}
+
 // admits reports whether the graph contains a package and every field
 // that is set matches it. dirs are the parsed patterns, and an empty list
 // with patterns declared admits no package, because none of them names a
-// directory.
+// directory. The language decides first, so the run decodes no package of
+// another language.
 func (s Sources) admits(
 	g *store.Graph, id symbol.Identity, dirs []directory, facts *meta.Facts, k meta.KernelKeys,
 ) bool {
@@ -197,24 +240,32 @@ func (s Sources) admits(
 	if !held {
 		return false
 	}
-	if len(s.Packages) > 0 && !inDirectories(p, dirs) {
+	var (
+		module string
+		named  bool
+	)
+	if s.Module != "" {
+		module, named = meta.Get(facts, id, k.Module)
+	}
+	return s.placed(p.Files, module, named, dirs)
+}
+
+// placed reports whether a package's files are where the patterns that
+// are set name, and its module fact, named where it has one, is the
+// module that is set.
+func (s Sources) placed(files []*node.File, module string, named bool, dirs []directory) bool {
+	if len(s.Packages) > 0 && !inDirectories(files, dirs) {
 		return false
 	}
-	if s.Module != "" {
-		module, named := meta.Get(facts, id, k.Module)
-		if !named || module != s.Module {
-			return false
-		}
-	}
-	return true
+	return s.Module == "" || (named && module == s.Module)
 }
 
 // inDirectories reports whether a package has a file, and every file
 // it has is in a directory one of the patterns names. A file a store
 // provides is in no workspace directory.
-func inDirectories(p *node.Package, dirs []directory) bool {
+func inDirectories(files []*node.File, dirs []directory) bool {
 	seen := false
-	for _, f := range p.Files {
+	for _, f := range files {
 		if f == nil {
 			continue
 		}
@@ -228,4 +279,46 @@ func inDirectories(p *node.Package, dirs []directory) bool {
 		seen = true
 	}
 	return seen
+}
+
+// prior returns the generation's admission of each package whose
+// admission into a plan's sources the run can change, in identity order:
+// each package that the graph and the generation both contain, a file of
+// which joined or left it, or whose module fact changed. A package
+// without a file in the generation is new, and its declarations appeared.
+func (r *warmRun) prior() []admission {
+	pkgs := map[symbol.Identity]struct{}{}
+	for _, moved := range []map[symbol.Identity][]string{r.joined, r.left} {
+		for id := range moved {
+			pkgs[id] = struct{}{}
+		}
+	}
+	key := r.w.kernel.Module
+	for f := range r.changed {
+		if f.Key == key.Name() {
+			pkgs[f.Subject] = struct{}{}
+		}
+	}
+	var out []admission
+	for _, id := range slices.SortedFunc(maps.Keys(pkgs), symbol.Identity.Compare) {
+		p, held := r.g.PackageOf(id)
+		if !held {
+			continue
+		}
+		var files []*node.File
+		for _, f := range p.Files {
+			if f != nil && !slices.Contains(r.joined[id], f.Path) {
+				files = append(files, &node.File{Path: f.Path})
+			}
+		}
+		for _, gone := range r.left[id] {
+			files = append(files, &node.File{Path: gone})
+		}
+		if len(files) == 0 {
+			continue
+		}
+		module, named := meta.Get(r.recorded, id, key)
+		out = append(out, admission{pkg: id, files: files, module: module, named: named})
+	}
+	return out
 }

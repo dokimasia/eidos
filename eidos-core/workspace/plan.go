@@ -60,9 +60,16 @@ type planRun struct {
 	exportChanged bool
 	// files are what the plan rendered, in path order.
 	files []stagedFile
-	// export is what the plan rendered, as its dependents and the
-	// checks read it. The run builds it only for a plan marked exported.
-	export plugin.ExportDoc
+	// fresh are the export rows of the files that the plan rendered, in
+	// the order an export lists them, for a plan marked exported.
+	fresh []plugin.ExportedSymbol
+	// export returns the plan's export, as its dependents and the checks
+	// read it. The run sets it for a plan marked exported that did not
+	// fail. The export of a plan that a warm run executed in part reads
+	// the export rows of the kept files from the generation on its first
+	// call, and its error wraps [state.ErrDamaged] for an artifact that
+	// does not read whole.
+	export func() (plugin.ExportDoc, error)
 	// out is the plan's prepared sink, nil where it staged nothing or
 	// discarded its staging.
 	out output.Sink
@@ -121,23 +128,21 @@ func (w *Workspace) generateAll(
 	for _, p := range runs {
 		wg.Go(func() {
 			defer close(p.done)
-			exports, ready := p.await(runs)
+			deps, ready := p.await(runs)
 			if !ready {
 				return
 			}
 			var rendered []plugin.File
 			if ws != nil && rec != nil && p.plan.contract != nil {
-				deps := make([]*planRun, 0, len(p.plan.deps))
-				for _, d := range p.plan.deps {
-					deps = append(deps, runs[d])
-				}
-				p.files, rendered, p.err = w.runWarm(ctx, g, facts, table, src, p, exports, deps, rec, ws)
+				p.files, rendered, p.err = w.runWarm(ctx, g, facts, table, src, p, deps, rec, ws)
 			} else {
-				p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, exports, rec)
+				p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, deps, rec)
 			}
 			p.cancelled = p.err != nil && ctx.Err() != nil && errors.Is(p.err, ctx.Err())
 			if p.plan.exported && !p.failed() && !p.selective {
-				p.export = plugin.NewExport(p.plan.name, rendered, p.emit, nil)
+				doc := plugin.NewExport(p.plan.name, rendered, p.emit, nil)
+				p.fresh = doc.Symbols
+				p.export = func() (plugin.ExportDoc, error) { return doc, nil }
 			}
 		})
 	}
@@ -146,15 +151,15 @@ func (w *Workspace) generateAll(
 }
 
 // await blocks until every plan this one depends on has rendered, and
-// returns their exports, keyed by plan name. It reports false where
-// one of them was cancelled, which cancels this plan, or failed, which
-// it records as this plan's upstream. Either way the plan generates
+// returns those plans in the order the plan lists them. It reports false
+// where one of them was cancelled, which cancels this plan, or failed,
+// which it records as this plan's upstream. Either way the plan generates
 // nothing. A plan without dependencies returns at once.
-func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
+func (p *planRun) await(runs []*planRun) ([]*planRun, bool) {
 	if len(p.plan.deps) == 0 {
 		return nil, true
 	}
-	exports := make(map[string]plugin.ExportDoc, len(p.plan.deps))
+	deps := make([]*planRun, 0, len(p.plan.deps))
 	for _, d := range p.plan.deps {
 		dep := runs[d]
 		<-dep.done
@@ -166,9 +171,29 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 			p.upstream = dep
 			return nil, false
 		}
-		exports[dep.plan.name] = dep.export
+		deps = append(deps, dep)
 	}
-	return exports, true
+	return deps, true
+}
+
+// exportsOf returns the exports of the plans that a plan depends on,
+// keyed by plan name, and nil for a plan without dependencies.
+//
+// Error modes: an error wrapping [state.ErrDamaged] for an export that
+// reads an artifact of the generation that does not read whole.
+func exportsOf(deps []*planRun) (map[string]plugin.ExportDoc, error) {
+	var out map[string]plugin.ExportDoc
+	if len(deps) > 0 {
+		out = make(map[string]plugin.ExportDoc, len(deps))
+	}
+	for _, d := range deps {
+		doc, err := d.export()
+		if err != nil {
+			return nil, fmt.Errorf("read the export of plan %q: %w", d.plan.name, err)
+		}
+		out[d.plan.name] = doc
+	}
+	return out, nil
 }
 
 // runPlan runs one plan's roles in bucket order, which is what an
@@ -190,11 +215,20 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 // handed, the units its plugin flushed or appended into, and its
 // findings. The lane also records the plan's groups once the files
 // render, where the plan reported no Error.
+//
+// Error modes: an error wrapping [state.ErrDamaged] for an export of a
+// plan in deps that does not read, the error of an index that does not
+// build, the errors of [Workspace.generate], the settle's error, wrapped,
+// the context's error, and the errors of the layout and the render.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree, p *planRun,
-	exports map[string]plugin.ExportDoc, rec *state.Recorder,
+	deps []*planRun, rec *state.Recorder,
 ) ([]stagedFile, []plugin.File, error) {
 	pl := p.plan
+	exports, err := exportsOf(deps)
+	if err != nil {
+		return nil, nil, err
+	}
 	ix, err := plugin.NewIndex(g, facts, table, pl.sources.bind(g, facts, w.kernel))
 	if err != nil {
 		return nil, nil, err

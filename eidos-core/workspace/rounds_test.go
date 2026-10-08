@@ -4,6 +4,7 @@
 package workspace_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/backend"
@@ -78,6 +80,13 @@ const (
 // store package's directory only in case.
 const caseSource = "svc/Store/col.zz"
 
+// readerName is the name of the struct that the reader line declares.
+const readerName = "Reader"
+
+// The lines of the weaving cases: the weaver's directive, which attaches
+// to the struct on the line before it.
+const auditLine = "+weaver:audit\n"
+
 // The codes the rounds' generators report under: the warning of the
 // warning mirror on the user, and the error of the failing mirror on the
 // struct it refuses.
@@ -85,6 +94,45 @@ var (
 	roundsWarning = diag.Code{Prefix: "tst", Number: 10}
 	roundsError   = diag.Code{Prefix: "tst", Number: 11}
 )
+
+// errRender is the failure that the refusing backend's render returns.
+var errRender = errors.New("the render refuses the reader's mirror")
+
+// refusing is the printer with a render that refuses each file with the
+// reader's mirror.
+type refusing struct {
+	plugin.Backend
+}
+
+// Syntax returns the printer's comment syntax.
+func (r refusing) Syntax() plugin.CommentSyntax {
+	return r.Backend.(plugin.SyntaxProvider).Syntax()
+}
+
+// SplitUnit splits a unit as the printer does.
+func (r refusing) SplitUnit(u plugin.Unit) []plugin.Unit {
+	return r.Backend.(plugin.FileSpeller).SplitUnit(u)
+}
+
+// FileName names a unit's file as the printer does.
+func (r refusing) FileName(u plugin.Unit) string {
+	return r.Backend.(plugin.FileSpeller).FileName(u)
+}
+
+// Render returns errRender for files that contain the reader's mirror, and
+// renders them through the printer otherwise.
+func (r refusing) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+	for _, f := range ctx.Files {
+		for _, u := range f.Units {
+			for _, d := range u.Decls {
+				if emit.DeclaredName(d) == "For"+readerName {
+					return nil, errRender
+				}
+			}
+		}
+	}
+	return r.Backend.(plugin.Renderer).Render(ctx)
+}
 
 // A warm run executes again the groups of a plan that an edit makes dirty
 // and keeps the plan's other files. It leaves what a cold run over the
@@ -168,6 +216,108 @@ func TestRounds(t *testing.T) {
 			assert.Equal(t, report.Stats.Rendered, 2, "the api package's file and the direct generator's file render")
 		})
 
+		t.Run("returns the error of a generator that a warm run calls again", func(t *testing.T) {
+			t.Parallel()
+
+			refusing := generator(mirrorID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				if m.Struct.Name == readerName {
+					return errBroken
+				}
+				return mirrored(m, e)
+			})
+			w := built(t, roundsBuilder(t, ledger.NewMem(), workspace.Sources{}, refusing))
+			_, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
+				roundsTree(rowLine+colLine+readerLine, userLine))
+			assert.ErrorIs(t, err, errBroken, "the generator's error on the new struct returns")
+		})
+
+		t.Run("returns the settle error of a group that a warm run executes again", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
+				Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)}, Backend: lowering(t),
+			}))
+			_, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
+				roundsTree(rowLine+colLine+readerLine, userLine))
+			assert.HasError(t, err, "the lowering of the reader's mirror fails the settle")
+			assert.Contains(t, err.Error(), "settle", "the error names the stage")
+		})
+
+		t.Run("returns the render error of a group that a warm run executes again", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
+				Name:       "plan",
+				Generators: []plugin.Generator{mirror(mirrorID)},
+				Backend:    refusing{printer(t, "fixture")},
+			}))
+			_, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
+				roundsTree(rowLine+colLine+readerLine, userLine))
+			assert.ErrorIs(t, err, errRender, "the render's error returns")
+		})
+
+		t.Run("returns the cancellation of a warm run that a generator cancels", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			canceller := generatorAt("canceller", 2, func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+				if m.Struct.Name == readerName {
+					cancel()
+				}
+				return nil
+			})
+			w := built(t, roundsBuilder(t, ledger.NewMem(), workspace.Sources{},
+				mirror(mirrorID), columnMirror(), canceller))
+			first := roundsTree(rowLine+colLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: first})
+			report, err := w.Run(ctx, workspace.Input{
+				Tree: editedAfter(first, roundsTree(rowLine+colLine+readerLine, userLine)),
+			})
+			assert.ErrorIs(t, err, context.Canceled, "the plan returns the cancellation")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCancelled, "the report states the plan's outcome")
+		})
+
+		t.Run("records the entries that a cold run records for a weaver that appends into a mirror",
+			func(t *testing.T) {
+				t.Parallel()
+
+				after := roundsTree(rowLine+auditLine+auditLine, userLine)
+				warm, err := warmAfter(t, weaving(t, ledger.NewMem(), providing()),
+					roundsTree(rowLine+auditLine, userLine), after)
+				assert.NoError(t, err, "the warm run is clean")
+				cold := sealedRun(t, weaving(t, ledger.NewMem(), providing()), workspace.Input{Tree: after})
+				assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
+					"the warm run records the woven row's second field")
+			})
+
+		t.Run("records the entries that a cold run records after the mirror that a weaver appends into disappears",
+			func(t *testing.T) {
+				t.Parallel()
+
+				after := roundsTree(rowLine+auditLine, userLine)
+				warm, err := warmAfter(t, weaving(t, ledger.NewMem(), conditional()),
+					roundsTree(rowLine+auditLine+colLine, userLine), after)
+				assert.NoError(t, err, "the warm run is clean")
+				cold := sealedRun(t, weaving(t, ledger.NewMem(), conditional()), workspace.Input{Tree: after})
+				assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
+					"the warm run removes the store package's file", assert.EquateEmpty())
+			})
+
+		t.Run("records the entries that a cold run records for a plan that emits methods", func(t *testing.T) {
+			t.Parallel()
+
+			build := func() *workspace.Workspace {
+				return built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
+					Name: "plan", Generators: []plugin.Generator{receiving()}, Backend: receivers(t),
+				}))
+			}
+			after := roundsTree(widerRow+colLine, userLine)
+			warm, err := warmAfter(t, build(), roundsTree(rowLine+colLine, userLine), after)
+			assert.NoError(t, err, "the warm run is clean")
+			cold := sealedRun(t, build(), workspace.Input{Tree: after})
+			assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files, "the warm run records the methods of each mirror")
+		})
+
 		t.Run("reports the finding of a generator invocation that the run keeps", func(t *testing.T) {
 			t.Parallel()
 
@@ -208,6 +358,20 @@ func TestRounds(t *testing.T) {
 			assert.Equal(t, report.Stats.Rendered, 2, "the producer's store file and the dependent's file render")
 		})
 
+		t.Run("records the entries that a cold run records for a dependent of a changed export", func(t *testing.T) {
+			t.Parallel()
+
+			after := roundsTree(rowLine+colLine+readerLine, userLine)
+			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
+				seeing(t, dependentPlan)))
+			warm, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine), after)
+			assert.NoError(t, err, "the warm run is clean")
+			cold := sealedRun(t, built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
+				seeing(t, dependentPlan))), workspace.Input{Tree: after})
+			assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
+				"the dependent counts the kept file's rows and the rendered file's rows of the export")
+		})
+
 		t.Run("renders the file of each dependent plan whose producer's export changed", func(t *testing.T) {
 			t.Parallel()
 
@@ -242,8 +406,7 @@ func TestRounds(t *testing.T) {
 		t.Run("reports the PathCollision of a new path that differs from a kept path only in case", func(t *testing.T) {
 			t.Parallel()
 
-			after := roundsTree(rowLine, userLine)
-			after[caseSource] = &fstest.MapFile{Data: []byte("package svc/Store\n" + colLine)}
+			after := caseTree()
 			warm, err := warmAfter(t, sealing(t, ledger.NewMem(), "plan"), before, after)
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the collision fails the plan")
 			assert.Length(t, findings(warm.Sink, layout.PathCollision), 1, "the warm run reports the collision")
@@ -277,6 +440,21 @@ func TestRounds(t *testing.T) {
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drifted file fails the plan")
 			assert.False(t, report.Stats.Cold, "the run reads the sealed state")
 			assert.Length(t, findings(report.Sink, workspace.DriftedOutput), 1, "the run finds the edit")
+		})
+
+		t.Run("renders a removed generated file again on the run after the one that created it", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			assert.NoError(t, os.CopyFS(root, before), "the tree copies into the run's directory")
+			w := built(t, sealingOnDisk(t, root))
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			path := filepath.Join(root, filepath.FromSlash(apiGenerated))
+			assert.NoError(t, os.Remove(path), "the generated file is removed")
+			report := sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			assert.False(t, report.Stats.Cold, "the second run reads the sealed state")
+			assert.Equal(t, report.Stats.Rendered, 1, "the run renders the removed file again")
+			files.IsFile(t, path, "the commit writes the file again")
 		})
 
 		t.Run("renders no file of a group whose generated file a run only touched", func(t *testing.T) {
@@ -316,6 +494,14 @@ func roundsTree(store, api string) fstest.MapFS {
 		sealedSource: {Data: []byte("package svc/store\n" + store)},
 		apiSource:    {Data: []byte("package svc/api\n" + api)},
 	}
+}
+
+// caseTree returns the rounds tree with a file of a package whose
+// directory differs from the store package's directory only in case.
+func caseTree() fstest.MapFS {
+	tree := roundsTree(rowLine, userLine)
+	tree[caseSource] = &fstest.MapFile{Data: []byte("package svc/Store\n" + colLine)}
+	return tree
 }
 
 // roundsBuilder returns the builder of a composition over the scripted
@@ -394,6 +580,95 @@ func twofold() plugin.Generator {
 		panic("workspace_test: an emitter rule lowers to the generator role")
 	}
 	return p
+}
+
+// lowering returns the printer with a lowering hook that returns the
+// reader's mirror without its origin, which the settle refuses.
+func lowering(tb assert.TB) plugin.Backend {
+	tb.Helper()
+
+	return backend.New("lowering", "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Lower(func(s symbol.Symbol) ([]symbol.Symbol, error) {
+			if emit.DeclaredName(s) == "For"+readerName {
+				return []symbol.Symbol{&emit.Struct{Name: "For" + readerName}}, nil
+			}
+			return nil, nil
+		}).
+		Build()
+}
+
+// weaving returns a composition over the scripted frontend that records
+// into a ledger, with one plan toward the listing backend: the mirror,
+// which provides the capability that the weaver requires, and the weaver.
+func weaving(tb assert.TB, l ledger.Ledger, mirrorer plugin.Generator) *workspace.Workspace {
+	tb.Helper()
+
+	return built(tb, sealingPlans(l, workspace.Plan{
+		Name: "plan", Generators: []plugin.Generator{mirrorer, weaverOf()}, Backend: listing(tb),
+	}))
+}
+
+// conditional returns a mirror under the capability that the weaver
+// requires, which mirrors the row alone, and only while the store package
+// declares Col.
+func conditional() plugin.Generator {
+	p, held := eidos.NewPlugin("mirror").
+		Provides(mirroredCapability).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			if m.Struct.Name != rowID.Name {
+				return nil
+			}
+			if _, found := m.Reader().Lookup(colID); !found {
+				return nil
+			}
+			return mirrored(m, e)
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// receiving returns a generator that mirrors each struct and declares a
+// method named Get on each mirror, outside the mirror.
+func receiving() plugin.Generator {
+	return generator(mirrorID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+		name := "For" + m.Struct.Name
+		e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name})
+		e.PackageFile().Append(&emit.Method{
+			Origin: m.Struct.Identity(), Name: "Get", Receives: &emit.TypeRef{Spelling: name},
+		})
+		return nil
+	})
+}
+
+// receivers is a kit backend that spells each struct and each method that
+// attaches to a struct by its receiver.
+func receivers(tb assert.TB) plugin.Backend {
+	tb.Helper()
+
+	return backend.New("receivers", "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} struct{}\n",
+			symbol.KindMethod: "func ({{.Receives.Spelling}}) {{.Name}}()\n",
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
 }
 
 // commentingMirror returns a mirror that states a comment on the user's
