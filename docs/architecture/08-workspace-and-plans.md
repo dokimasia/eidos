@@ -376,7 +376,10 @@ such a package only where its own `gen.module` fact names the module,
 and a plan scoped by `lang` alone matches the store's packages of its
 language, as an unscoped plan matches every package. Each run binds a
 plan's sources to the frozen graph before the plan generates, and the
-composition's fingerprint folds them.
+composition's fingerprint folds them. When a change to a package's
+files or its module fact moves the package into a plan's sources or
+out of them, a warm run runs the plan whole
+([09-incrementality.md](09-incrementality.md)).
 
 ## Plan exports: the one declared edge between plans
 
@@ -458,7 +461,10 @@ stops a deleted plan leaving its generated files behind: a workspace
 that no longer declares a plan deletes that plan's files.
 
 It runs **path-collision detection** across the plan manifests,
-producing a stable error rather than letting the last writer win.
+producing a stable error rather than letting the last writer win. A
+warm run looks each routed path up in the recorded paths, and after a
+clash with a file that another plan keeps it compares every plan's
+routed and kept files, so it reports the collision a cold run reports.
 
 It runs the **staleness sweep**, scoped per plan, because
 "everything this plan did not produce is stale" is only true within
@@ -471,7 +477,10 @@ must not delete outputs it merely did not look at. Reconciling the
 whole workspace is `prune`'s job.
 
 **Audit mode** verifies the metadata completeness contracts
-([04-metadata.md](04-metadata.md)).
+([04-metadata.md](04-metadata.md)). A warm run evaluates them over the
+declarations that appeared or changed and the subjects whose facts
+changed, drops the findings of declarations that disappeared, and
+reports the recorded findings of the rest.
 
 Last, it runs the **cross-plan checks**, one after another in
 registration order. Each `WorkspaceCheck` names the plans it reads
@@ -479,10 +488,12 @@ and reads their *records*, meaning their manifest entries and their
 exports, with the graph and the facts, and never raw emit, which on a
 warm run does not exist for a clean plan. So a check that runs reads
 identical records cold and warm, the records of kept files included.
-A warm run calls a check again only when a plan it reads rendered,
-added or removed a file, when such a plan's export changed, or when
-the check's read record meets the dirty set. Otherwise the run
-reports the check's recorded findings. A check
+A warm run calls a check again after any change in the graph or the
+facts, because a check's index and its fact store record no reads. It
+also calls the check again when a plan it reads rendered, added or
+removed a file or changed its export, and when the last run left no
+record of the check. Otherwise the run reports the check's recorded
+findings. A check
 that reads a failed plan does not run, and the run reports one
 `FailedDependency` Info for it at the plan's first Error, because the
 missing output is already that plan's Error and does not need

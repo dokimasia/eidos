@@ -65,6 +65,9 @@ stamps an mtime.
 - A commit writes a zero size into every such record, so the next
   gate that meets the file hashes it, even when a generation in
   between copied the record forward unchecked.
+- A commit also records each file that the run's plans created in
+  the tree with a zero size, so the next gate hashes the file, or
+  finds it removed, before any walk has met it.
 
 The anchor precedes the sweep because a run commits seconds after it
 reads. An anchor at the commit would trust a file rewritten within
@@ -85,7 +88,8 @@ run. It records two digests:
 - The composition fingerprint folds everything the composition reads
   from outside the executable: its plugins with their versions and
   options, its plans with their sources, dependencies and layouts, the
-  brand, the workspace name, the ignored directive spellings and the
+  brand, the workspace name, the ignored directive spellings, the
+  registered keys with their kinds, groups and contracts, and the
   template trees read from disk.
 - The executable digest is the SHA-256 of the running executable. The
   run hashes the executable only where its path, size or modification
@@ -143,17 +147,21 @@ execute together form a **group**:
 The sealed state's `artifacts` table records per artifact:
 
 - the manifest entry: path, plan, digest, plugins and sources
-- its group, whose row lists the group's units and the invocations
-  that contributed to them
+- the package it declares, and its group
 - the position and the description of its first declaration, which a
   finding about the file is reported at
-- the export rows of its declarations
-- the name entries it declares and the name entries its references
-  read, across files of the plan
-- the facts the settle read for it, each origin's name override
-- the digest of its placement: its directory's residents and the
-  modules containing it
-- the findings the settle, the layout and the render reported for it
+- the export rows of its declarations, where a dependent plan or a
+  check reads the plan
+- the name entries it declares
+
+The `groups` table records per group its files, its units, the
+invocations that contributed to them, the findings the render
+reported for its files, and its read record: the edge of each of its
+units, and what its settle, routing and render read. Those reads are
+the name entries its references read across files of the plan, the
+collision scopes its names settle in, each origin's name override,
+the residents of each directory a target placed one of its files in,
+the files of the package of each per-package unit, and the modules.
 
 On a warm run, per plan, a group is dirty in each of these cases:
 
@@ -163,12 +171,10 @@ On a warm run, per plan, a group is dirty in each of these cases:
 - A dirty invocation or a new match placed a declaration into one of
   the group's units.
 - One of its files changed on disk since the commit that wrote it.
-- A fact the settle read for it changed, or the placement of one of
-  its files changed.
-- A name entry one of its files read changed, or an entry entered or
-  left a collision scope that one of its names settles in.
-- The plan did not commit in the last run, and the group was dirty
-  then.
+- An edge of its own read record is dirty.
+
+A plan runs whole when it did not commit in the last run, or when a
+package entered or left its sources since then.
 
 A dirty group re-runs every invocation that contributed to it,
 because an accumulated file is one output and rebuilds whole. A clean
@@ -233,7 +239,9 @@ cannot see.
 - An enumeration by kind or by directive records a membership edge
   under the reader's scope, so adding or removing a symbol in scope
   runs the enumerators again, while changing one runs only its
-  targeted readers.
+  targeted readers. A package whose files or module fact move it into
+  a plan's scope or out of it runs the plan whole, because a reader
+  records no read that its scope refused.
 - A package taken whole, through `PackageOf` or a package's own
   `Lookup`, records a package edge, which any member's change
   dirties, because the reader walks the members without another
@@ -293,13 +301,19 @@ out so that O(dirty) names an algorithm rather than a hope.
 8. **Generate, per plan**, in export topological order, otherwise in
    parallel. The plan's dirty groups re-run their contributing
    invocations through a selection, settle against the clean groups'
-   name entries, and route, render and stage their files. A plan's
-   export changes only where a dirty file's export rows changed, and
-   an unchanged export re-runs no dependent.
+   name entries, and route, render and stage their files. A plan
+   that did not commit in the last run, or whose scope moved a
+   package, runs whole. A plan's export changes only where a dirty
+   file's export rows changed, and an unchanged export re-runs no
+   dependent. The recorded rows of a plan's clean files are read only
+   where a dependent that executes, or a check that runs, reads the
+   export.
 9. **Close.** Collisions, the audit and the checks read records, and
-   each re-runs only for what changed. Every kept record reports the
-   findings its execution reported, so the run's findings equal a
-   cold run's.
+   each re-runs only for what changed: the audit over the declarations
+   that appeared or changed and the subjects whose facts changed, and
+   a check after any change in the graph or the facts or in a plan it
+   reads. Every kept record reports the findings its execution
+   reported, so the run's findings equal a cold run's.
 10. **Commit.** The plan commits run, then the state commit, strictly
     last ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
@@ -422,10 +436,14 @@ executable the run cannot read, a checksum failure, a missing segment
 or a truncated run discards the generation, and the run proceeds
 cold, reporting one `ColdState` Info. A failure found mid-run
 discards everything the run derived, which is in memory until the
-commit, and starts again cold. Stale or damaged state must never fail
-a run that source alone could complete, because the state is there to
-make things
-faster, and something that can veto a run is a dependency instead.
+commit, and starts again cold. A failure that the commit's merge of a
+table's runs finds, after the plans committed, starts the run again
+cold too. The cold run commits the same files and writes a generation
+without a parent. A damaged block that no read of the run needs is
+kept, because the run reads the state lazily. Stale or damaged state
+must never fail a run that source alone could complete, because the
+state is there to make things faster, and something that can veto a
+run is a dependency instead.
 
 The contract, pinned. The byte format is versioned and private to the
 kernel, and the ledger stores bytes:

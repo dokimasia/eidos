@@ -55,8 +55,8 @@ The document named in each row carries the full contract.
 | unit | the load granule the language defines. `u.Read` is its only door to the filesystem, and the unit's key folds the digest of every file the door admits | [11](11-languages.md) |
 | repeatable directive | a directive its schema allows more than once per subject. The handler runs once per instance | [05](05-directives.md) |
 | Workspace / Run | the immutable composition (registries, compiled dispatch plan) against one invocation's mutable state (sealed state, graph, facts, plans, diagnostics) | [08](08-workspace-and-plans.md) |
-| artifact | one generated file, the re-execution granule. Its row in the sealed state records its manifest entry, its export rows, its name entries and its findings | [09](09-incrementality.md) |
-| group | the artifacts that execute together: the files one unit splits into, the files two units share, and the files an emit-phase invocation reads and places into. A dirty group runs every invocation that contributed to it | [09](09-incrementality.md) |
+| artifact | one generated file, the re-execution granule. Its row in the sealed state records its manifest entry, its package, its group, its export rows and its name entries | [09](09-incrementality.md) |
+| group | the artifacts that execute together: the files one unit splits into, the files two units share, and the files an emit-phase invocation reads and places into. Its row records its contributors, its read record and its render's findings. A dirty group runs every invocation that contributed to it | [09](09-incrementality.md) |
 | sealed state | what a run persists for the next one: regions, facts, read records, artifacts, groups and name entries, as immutable segments under the generation that `CURRENT` names | [08](08-workspace-and-plans.md) |
 | dispatch plan | the index of every subscription, compiled at Build by kind, directive and fact key, owned by the Workspace | [08](08-workspace-and-plans.md) |
 | subscription record | a rule's gate as data (`kind`, `directive` or `factKey`, phase). It is both the dispatch index and the dirty-routing key | [06b](06b-authoring.md) |

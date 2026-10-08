@@ -4,7 +4,7 @@ title: Warm runs, the sealed state and re-execution by artifact
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-08
 discussion: none
 supersedes: none
 superseded-by: none
@@ -253,11 +253,15 @@ executable does not contain:
 - each frontend with its name, version and options
 - each plan's layout configuration
 - the ignored directive spellings
+- every registered key, with its kinds, its group and its contract
 - each plugin's template trees, file by file, for every target it declares
   one for
 
 A template tree read from disk at run time is the case the last item
 covers. A tree embedded in the executable is in the executable digest too.
+The registered keys fold because one executable can build compositions
+whose keys differ, and a generation's facts and audit findings are valid
+only under the keys that recorded them.
 
 ### Tables and runs
 
@@ -277,10 +281,10 @@ block through `ReadAt`. A deleted row is a tombstone in a newer run.
 | `claims` | subject | every claim on the subject's bag, with its envelope and value |
 | `present` | key, subject | one row for each fact that reads present |
 | `invocations` | phase call, match | the read record, what the invocation touched, and its findings |
-| `readers` | edge | the validations, invocations and checks whose read record contains the edge |
-| `plans` | plan | the work a plan that did not commit left pending |
-| `groups` | plan, group | the group's files, units and contributing invocations |
-| `artifacts` | path, and the path folded under the collision rule | the artifact row, with its plan |
+| `readers` | edge | the validations, invocations, groups and checks whose read record contains the edge |
+| `plans` | plan | that the plan did not commit, so its work is pending |
+| `groups` | plan, group | the group's files, units and contributing invocations, its read record, and the findings its render reported |
+| `artifacts` | path, and the path folded under the collision rule | the file's manifest entry, package and group, where a finding about it is positioned, its export rows and its names |
 | `names` | plan, then a package and an emitted name, or an origin and an emitted name | the name entries of the plan's files, under both keys |
 | `audit` | key, subject | an unmet-contract finding |
 | `checks` | check | the read record and the findings |
@@ -352,6 +356,21 @@ them. `Encode` and `Decode` of one whole document leave the package. The
 The state commit is the run's last step, after every plan commit, as the
 record's commit is today. A run that changed nothing writes no blob.
 
+Before any plan commits, the run prepares the rows that its commit
+writes, so damage that it meets in the generation discards the run with
+nothing written:
+
+- A warm run in which every plan that recorded its phases executed in part
+  reads each prior row that its commit can change, through a lookup of the
+  row's key.
+- A run in which a plan ran whole reads every row of the phase tables. The
+  plan's new records replace all its records, and a lookup by key cannot
+  find a record that the plan no longer makes.
+- A plan that recorded nothing in the run, such as a plan whose upstream
+  failed, keeps its records.
+
+The commit then writes in this order:
+
 1. Write the region segment and the run segment.
 2. Write the generation.
 3. Write each manifest document whose bytes differ from the digest the
@@ -383,11 +402,10 @@ two runs apart is not part of this proposal.
 A plan that does not commit keeps its previous records in the generation:
 its groups, its artifacts, its invocations and its names. The shared records
 advance whether the plan commits: the regions, the validations and the
-claims. So the generation also records, in the plan's `plans` row, the work
-the run found dirty for the plan: its dirty groups, the matches it selected,
-and its candidate subjects. The next run adds that pending work to its own
-dirty set for the plan. A plan that failed executes the failed work again
-on the next run, warm or cold, and reports the same findings.
+claims. So the generation also lists the plan in the `plans` table. The
+next warm run runs a listed plan whole, as a cold run does. A plan that
+failed executes its failed work again on the next run, warm or cold, and
+reports the same findings.
 
 ### Cold runs and their causes
 
@@ -403,12 +421,22 @@ cause.
 | The format version, the composition fingerprint or the executable digest differs | The header |
 | A block's CRC-32C does not match, a segment is missing, or a run is shorter than its record | The first read of the block or the segment |
 | A region fails to decode | The first read that needs the region, which `Graph.Damaged` reports after the phase |
+| A block that the commit's merge of a table's runs reads does not read whole | The commit, after the plans committed |
 
 The run can find a damaged block or region after it has executed work
 against the generation. Everything the run derived is in memory until the
 commit. The run discards it, reports `ColdState`, and starts again cold over
-the same input. Damaged state costs time and never correctness, and never
-fails a run that the source alone completes.
+the same input. Damage that a plan meets discards the run in the same way,
+before any plan commits. A damaged block or region that no read of the run
+needs is kept, because the run reads the generation lazily.
+
+The commit merges a table's runs after the plans have committed. Damage
+that the merge meets starts the run again cold too. The cold run commits the
+same files, which the plans already wrote, and records a generation without
+a parent, so no merge reads the damaged run again. Its report lists no
+change for the files that the discarded run wrote. Damaged state costs time
+and never correctness, and never fails a run that the source alone
+completes.
 
 A run over `Input.Graph` neither reads nor writes a generation, because the
 fingerprint gate has no tree to compare. A dry run reads the generation and
@@ -443,6 +471,13 @@ At its commit the run writes a size of zero into every file record whose
 modification time does not precede its own anchor. The next gate that meets
 the file hashes it, even after a generation between copied the record
 unchecked. These are git's two rules for racily clean index entries.
+
+The commit also records each file that the run's plans created inside the
+tree, with a size of zero and the digest of the bytes it wrote. The load's
+record lists only the files that its walk met. Without this record, the
+next gate could not find a created file removed before any walk met it, and
+the file's group would remain clean. The record costs one stat for each
+created file.
 
 The gate also records each file's verdict: a frontend's claimed input, the
 brand's own output, or unclaimed. The load reads a file's tail for the
@@ -564,6 +599,18 @@ for no memo. `load.Report` gains `Files`, the records the gate took, and
 the memo or came from the generation. The load returns a graph from
 `store.Sealed` over the regions it took from the generation and the fresh
 ones.
+
+A warm load also reports what changed against the record:
+
+- `Moved` lists the files whose record does not prove them unchanged,
+  `Vanished` the recorded files that the walk did not find, and `Was` the
+  records of both.
+- `Changes` lists the declarations that appeared, disappeared or changed,
+  the packages that changed, the subjects whose directives or stamps
+  changed, and the packages whose declared name changed.
+- `Changes` lists each directive spelling that a subject gained or lost,
+  with the packages of those subjects, so a reader's scope can tell whether
+  the change concerns it.
 
 ### Regions and the lazy graph
 
@@ -721,11 +768,17 @@ dirties every invocation of the subject.
 
 A membership edge has no scope of its own. A generator invocation records
 it under its plan's sources, and an annotator invocation under the whole
-graph. A declaration that appears in package P dirties a plan's membership
-readers only where the plan's sources admit P. A change to P's `gen.module`
-fact, or to P's files, binds the plan's scope for P again. The run then
-treats every declaration of P as appearing for that plan or disappearing
-from it.
+graph. The load lists the packages in which each kind and each directive
+spelling changed. A declaration that appears in package P dirties a plan's
+membership readers only where the plan's sources admit P.
+
+A change to P's `gen.module` fact, or to P's files, binds the plan's scope
+for P again. Where the new binding and the generation's admission of P
+differ, the plan runs whole. A reader records only the
+reads inside its scope, so no edge lists the readers that P's move
+concerns. The run compares the generation's admission of each package whose
+files or module fact changed with the new binding, so a plan runs whole
+only for an actual move.
 
 ### The dirty set and its order
 
@@ -746,7 +799,9 @@ and each phase reads only what the phases before it settled.
    again and of every match that disappeared. After the bucket, each fact
    whose winner changed adds its fact edge, before the next bucket reads.
 5. **Plans, in dependency order.** Each plan executes its dirty groups,
-   settles, routes, renders and exports, as the next sections describe.
+   settles, routes, renders and exports, as the next sections describe. A
+   plan that the generation lists as pending runs whole, and so does a plan
+   whose scope moved a package.
 6. **Close.** Collisions, the audit and the checks read records.
 
 The capability order puts a provider's bucket before its consumer's, so an
@@ -875,11 +930,12 @@ order of `MatchKey`.
 A phase call that journals nothing is one invocation, keyed by `WholeCall`.
 Its read record is its reader's set, and its claimed facts are the ones
 `Facts.ClaimedBy` lists for its plugin. The run executes it again whenever
-any declaration or fact in its plan's scope changed, because it can read
-through the untracked index. That is the implicit subscription to
-everything in scope that `Subscribed` already documents. Before the call,
-the run withdraws every claim the plugin made in that bucket on the facts
-the call claimed last time.
+the run found any change, because it can read through the untracked index.
+That is the implicit subscription to everything in scope that `Subscribed`
+already documents. Before the call, the run withdraws every claim the
+plugin made in that bucket on the facts the call claimed last time. A
+generator call that journals nothing joins its plan's dirty invocations,
+and the plan still executes in part.
 
 ### Facts across runs
 
@@ -970,17 +1026,13 @@ A generated file is an artifact. Its row in the `artifacts` table records:
 
 - the manifest entry: the path, the plan, the digest, the plugins and the
   sources
+- the package the file declares
 - the group the file belongs to
 - the position and the description of the file's first declaration, which a
   finding about the file reports at
-- the export rows of the file's declarations
-- the name entries the file declares, and the name entries its references
-  read
-- the facts the settle read for the file's declarations, each origin's name
-  override in the target, which join the group's read record
-- the digest of the file's placement: the residents of its directory and the
-  modules that contain it, which the target derives the file's package from
-- the findings the settle, the layout and the render reported for the file
+- the export rows of the file's declarations, for a plan that a dependent
+  plan or a check reads
+- the name entries the file declares
 
 A group is a set of files that execute together:
 
@@ -989,8 +1041,25 @@ A group is a set of files that execute together:
 - the files that contain an emit value an emit-phase invocation matched,
   and the files that invocation places into
 
-Each group's row lists its files, its units and the invocations that
-contributed to it. A group is dirty in each of these cases:
+Each group's row lists its files, its units, the invocations that
+contributed to it, its read record and the findings that the render
+reported for its files. The read record lists the edge of each of the
+group's units, so a warm run finds the groups of a unit among the readers
+of the unit's edge, and no row indexes the units. It also lists what the
+group's settle, routing and render read:
+
+- each name entry that its references read, whether a file declared it or
+  not
+- each collision scope that one of its names settles in
+- each origin's name override in the target, which the settle reads as a
+  fact
+- each directory that a target placed one of its files in, whose residents
+  the target derives the file's package from
+- the files of the package of each per-package unit, because the layout
+  writes the unit's file beside the package's first directory
+- the toolchain modules, where a target placed a file against them
+
+A group is dirty in each of these cases:
 
 - An invocation that contributed to it is dirty: its read record meets the
   dirty set, or it read an export that changed.
@@ -998,11 +1067,9 @@ contributed to it. A group is dirty in each of these cases:
 - A dirty invocation or a match that appeared placed a declaration into one
   of its units.
 - One of its files changed on disk since the commit that wrote it.
-- A fact the settle read for it changed, or the placement of one of its
-  files changed.
-- A name entry that one of its files read changed, or a name entry entered or
-  left a collision scope that one of its names settles in.
-- The plan did not commit in the last run, and the group was dirty then.
+- An edge of its read record is dirty: a name entry changed, a name entered
+  or left one of its scopes, a name override changed, or the residents of a
+  directory, the files of a package or the modules changed.
 
 A plan executes its dirty groups this way:
 
@@ -1131,8 +1198,11 @@ warning.
 ### Exports
 
 A plan's export is the recorded export rows of its clean files and the new
-rows of its dirty files, sorted. It is in the sealed state alone, and no
-document publishes it. The export changed when a dirty file's rows differ
+rows of its dirty files, sorted by `ExportKey.Compare` and then by file. It
+is in the sealed state alone, and no document publishes it. A warm run reads
+the recorded rows of a plan's clean files only when a dependent plan that
+executes, or a check that runs, reads the export. The export changed when a
+dirty file's rows differ
 from its recorded rows, or when a file with rows appeared or disappeared, so
 the run compares the dirty files' rows and nothing else. A dependent
 invocation that read the export through its match's `Export` is dirty when
@@ -1143,18 +1213,22 @@ dependent.
 
 ### Close
 
-- **Collisions** compare each new path with every plan's paths through the
-  `artifacts` table's two keys, and report as today.
+- **Collisions** look each routed path up in the folded keys of the
+  `artifacts` table. After a clash with a file that another plan keeps, the
+  run compares every plan's routed and kept files. It then reports the same
+  finding as a cold run.
 - **The sweep of removed plans** belongs to cold runs. Removing a plan
   changes the composition fingerprint, so the run after it is cold.
-- **The audit** evaluates the declarations of a contract's kinds in changed
-  units, and the subjects whose fact under the contract's key changed. The
+- **The audit** evaluates the contracts over the declarations that appeared
+  or changed, and over the subjects whose fact under a contract's key
+  changed. It drops the finding of a declaration that disappeared. The
   `audit` table keeps the other findings.
-- **A check** runs again when a file of a plan it reads was rendered, added
-  or removed, when such a plan's export changed, or when its read record
-  meets the dirty set. It then reads the plans' whole records, kept and new,
-  as a cold run hands them over. Otherwise the run reports its recorded
-  findings.
+- **A check** runs again after any change in the graph or the facts,
+  because `CheckContext.Index` and `CheckContext.Facts` record no reads. It
+  also runs again when a plan it reads rendered, added or removed a file or
+  changed its export, and when the generation has no record of the check.
+  It then reads the plans' whole records, kept and new, as a cold run hands
+  them over. Otherwise the run reports its recorded findings.
 
 ### Findings across runs
 
@@ -1162,9 +1236,12 @@ Every record keeps the findings its execution reported:
 
 - a region, the findings of its parse and its link
 - a validation, an invocation and a check, the findings each reported
-- an artifact, the findings of the settle, the layout and the render for its
-  file
+- a group, the findings that the render reported for its files
 - an audit row, its finding
+
+The settle and the layout report only Errors. An Error leaves its plan
+pending, so the next run executes the plan whole and reports the finding
+again.
 
 A warm run reports the findings of every record it keeps and of every
 execution it runs. Output sorts findings by position, code, message and
@@ -1248,8 +1325,9 @@ everything that grows with the corpus out of it:
   about 520 ns per entry. One document of 100,000 files would cost about
   52 ms of encoding on every edited run. A bucket of that record contains about
   390 entries, about 0.2 ms.
-- **Residents.** A directory's residents come from a prefix scan of the
-  `files` table, in place of a map over every file of the graph.
+- **Residents.** A directory's residents come from the load's file records,
+  which a run reads one directory at a time, in place of a map over every
+  file of the graph. Each resident takes its package's name from the graph.
 - **Modules.** The `modules` table counts each module's packages, and a
   change to a package's module facts updates its row.
 - **The routing index.** An index admits a package, and looks up a
@@ -1320,42 +1398,59 @@ the run's whole product.
 // fixture, each check in a parallel subtest over directories of its own.
 func RunWarmColdSuite(t *testing.T, f Fixture)
 
-// AssertWarmUnchanged runs the fixture cold in root, then warm with
-// nothing changed, and checks that the warm run hashed no file, parsed no
-// unit, ran no invocation, called no check, wrote no blob, and left the
-// manifest and every file unchanged.
+// AssertWarmUnchanged runs the fixture in root cold and then warm, with
+// every file's modification time an hour in the past before each run, and
+// then once more with nothing changed. It checks that the last run read
+// the sealed state, hashed no file, parsed no unit, decoded no region, ran
+// no invocation and called no check, and that it left every file under
+// root as it was, the manifest's documents and the state included.
 func AssertWarmUnchanged(tb assert.TB, f Fixture, root string)
 
-// AssertTouched runs the fixture cold in root, sets one source file's
-// modification time to the present without changing its bytes, runs warm,
-// and checks that the run hashed that file once and parsed nothing.
+// AssertTouched runs the fixture in root as AssertWarmUnchanged does, sets
+// one source file's modification time to the present without changing its
+// bytes, runs again, and checks that the run hashed that file once and
+// parsed nothing.
 func AssertTouched(tb assert.TB, f Fixture, root string)
 
 // AssertWarmEdited runs the fixture cold in warm and applies the edit
 // there, then runs warm. It applies the edit to a fresh copy in cold and
-// runs cold. It checks that the two directories contain the same files and
-// the same manifest documents, that a probe plan depending on every plan
-// read the same exports, and that the two runs reported the same findings.
+// runs cold. It checks that the two directories contain the same files
+// outside the state directory, that the two records list the same
+// entries, that a probe plan depending on every plan read the same
+// exports, and that the two runs reported the same findings.
 func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string)
 
-// AssertDamaged runs the fixture cold in root, truncates the live
-// generation's run segment, runs again, and checks that the run reported
-// one ColdState Info and left the files a cold run leaves.
+// AssertDamaged runs the fixture cold in root, cuts every segment of the
+// state to its first byte, runs again, and checks that the run reported
+// one ColdState Info, ran cold, and left the files that the first run
+// left.
 func AssertDamaged(tb assert.TB, f Fixture, root string)
 
-// AssertRestored composes the fixture with a memo, runs it cold in root,
-// applies the edit, runs, reverts the edit, runs again, and checks that
-// the last run parsed no unit and restored every unit the edit changed
-// from the memo.
+// AssertRestored composes the fixture with a memo whose cap removes no
+// entry, runs it cold in root, applies the edit, runs, writes the
+// fixture's tree back over the edit, and runs again. It checks that the
+// last run parsed no unit and restored from the memo each unit that the
+// run after the edit parsed.
 func AssertRestored(tb assert.TB, f Fixture, root string)
 ```
+
+`AssertWarmUnchanged` and `AssertTouched` run the fixture twice before the
+run that they check. A cold run records each file that it created with a
+size of zero, so only the second run's records prove the files unchanged.
+With every modification time an hour in the past, no record is racily
+clean.
+
+`AssertWarmEdited` compares the records' entries and not the documents'
+bytes, because a disk ledger names the workspace after its directory.
 
 `RunWorkspaceSuite` gains two warm checks:
 
 ```go
-// AssertExportCutoff runs the fixture cold in root, applies the edit, and
-// runs warm. It checks that the first plan ran again, that its export is
-// unchanged, and that no plan depending on it ran an invocation.
+// AssertExportCutoff runs the fixture cold in root beside a probe plan and
+// a dependent plan whose one invocation reads the first plan's export,
+// applies the edit, and runs warm. It checks that the first plan wrote a
+// file again, that its export is unchanged, and that the dependent ran no
+// invocation.
 func AssertExportCutoff(tb assert.TB, f Fixture, root string)
 
 // AssertWarmChecked runs the fixture with a recording check that reads the
@@ -1368,23 +1463,34 @@ func AssertWarmChecked(tb assert.TB, f Fixture, warm, cold string)
 The kernel's own tests run fixture frontends, annotators and backends
 through the probes the suites cannot vary:
 
-- An annotator that runs again and stamps identical values leaves every
-  downstream artifact clean.
-- An edit to a key one plan reads runs that plan's dirty groups and no
-  invocation of the other plan.
-- A declaration of an enumerated kind that appears outside a reader's scope
-  runs nothing.
+- An annotator that runs again and stamps identical values runs no
+  generator invocation that read the fact, and the run renders no file.
+- A declaration of an enumerated kind that appears outside a plan's sources
+  runs none of the plan's enumerations, and one inside them runs the
+  enumeration again.
 - An edit to one member of a package that a reader took through
   `PackageOf` runs the reader again.
-- A warm run decodes only the regions its reads touch.
-- The bytes a commit writes after one edit are a small fraction of the
-  state's size, and the commit rewrites one manifest document.
+- A removed file or a changed module fact that moves a package into a
+  plan's sources or out of them leaves the files of a cold run.
+- A warm run decodes the recorded region of each edited unit, which the
+  load compares, and the kept regions that its reads touch.
+- The bytes a commit writes after one edit are below a tenth of the state's
+  size, and the commit rewrites one manifest document.
 - A plan that failed in one run executes its failed work again in the next.
 - A removed declaration that a re-export of another unit publishes, and a
   target that moves to another imported file, each parse one unit again.
 - A memo over its cap removes its least recently used entries at the
-  commit, and two workspaces over one memo ledger restore each other's
-  units.
+  commit, a cold run keeps the memo's entries, and two workspaces over one
+  memo ledger restore each other's units.
+- A read that fails at any point of eight warm scenarios, and damage at the
+  commit's merge, each start the run again cold.
+
+The Go conformance fixture, two plans over one tree, runs the probe of the
+(symbol, key) grain: an edit that only the stubs plan reads runs no
+invocation of the registry plan. The second run of
+`pipelinetest.AssertIdempotent` is cold, because a warm run over an
+unchanged tree executes nothing and would not check that the phases produce
+the same bytes again.
 
 `plugintest.RunPluginSuite` gains `AssertSelective`: a selection that lists
 every match the full call ran reproduces the full call's emit, facts and
@@ -1415,15 +1521,17 @@ Measured on the machine the motivation names:
 | Encode a 10,000-entry manifest | 5.2 ms |
 | Replace a 2 KiB blob, synced | 745 µs on one goroutine, 143 µs each on 16 goroutines |
 | Replace a 2 KiB blob, unsynced | 15.6 µs |
+| A warm run after one edit, 1,000 packages of 200 declarations, from a tree | 400 ms as the mean of 12 runs, and 1.33 million allocations |
+| The state of those 200,000 declarations | 495 bytes per declaration |
 
 Estimated, at 10,000 packages, 100,000 files and two million declarations:
 
-- **A warm run with no change** stats every file, reads the `files`, `units`
-  and `artifacts` tables once, decodes no region, executes nothing and
-  writes nothing. The `artifacts` table fills `Report.Manifest`. The cost is
+- **A warm run with no change** stats every file, reads the `files` and
+  `units` tables once, decodes no region, executes nothing and writes
+  nothing. The manifest's documents fill `Report.Manifest`. The cost is
   about the stat sweep, 134 to 194 ms, plus the decoding of one row for each
-  file, unit and generated file. It grows linearly with the number of
-  files.
+  file and unit and of the manifest's documents. It grows linearly with the
+  number of files.
 - **A warm run after one edit** adds the parse of one unit, the lookups of
   the dirty edges, the executions the dirty set meets, the render of the
   dirty files, a commit of the changed rows, and one synced write for each
@@ -1438,9 +1546,8 @@ Estimated, at 10,000 packages, 100,000 files and two million declarations:
   restored and the records it read. A run that touches every region uses the
   memory of a cold run.
 - **Disk.** The state contains one row for each file, unit, validated
-  subject, fact, invocation, edge, artifact and name. This proposal states
-  no size per declaration for the region codec, because no codec exists to
-  measure.
+  subject, fact, invocation, edge, artifact and name. At 495 bytes per
+  declaration, two million declarations take about 1 GB.
 
 ### Migration
 
@@ -1659,15 +1766,21 @@ read every subject they cover.
   claim changes.
 - `core/plugin` gains `MatchKey`, `UnitRef`, `EmitRef`, `Selection`,
   `Journal`, `Invocation`, `Names`, `NameEntry`, `NameKey`, `Settled`,
-  `SettleWith` and `WholeCall`, and both phase contexts gain two fields.
+  `SettleWith`, `WholeCall` and `ExportKey.Compare`, and both phase contexts
+  gain two fields.
 - `core/store` gains `Source`, `RegionInfo`, `RegionFile`, `Region`,
   `Sealed`, `Graph.Damaged` and the package edge. `core/meta` gains `Order`,
   `FactRef`, `Withdraw`, `WithdrawGroup`, `ClaimedBy`, `BagSource`,
   `StoredClaim` and `Restore`. `core/frontend/load` gains `Prior`,
-  `FileRecord`, `Verdict`, `UnitRecord`, `DoorRecord`, `Digested` and
-  `Memo`. `core/ledger` gains `Put`, `Touch`, `List`, `Blob` and `OpenAt`.
-- A plugin that implements a role directly executes whole whenever anything
-  in its scope changed.
+  `FileRecord`, `Verdict`, `UnitRecord`, `DoorRecord`, `Digested`, `Memo`,
+  `Changes` and `Spelling`. `core/ledger` gains `Put`, `Touch`, `List`,
+  `Blob` and `OpenAt`.
+- A plugin that implements a role directly executes whole whenever the run
+  found any change.
+- A plan executes whole when a package enters or leaves its sources.
+- Damage that the commit's merge meets starts the run again cold after the
+  plans committed, and the cold run's report lists no change for the files
+  that the discarded run wrote.
 - A warm run with no change still stats every file, so it grows linearly
   with the file count.
 - Every build that changes the consumer's executable makes its first run

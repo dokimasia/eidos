@@ -83,8 +83,11 @@ Plugins plus a real backend driving one plan, each check over
 directories of its own: a clean run with every finding positioned,
 end-to-end bytes at their routed paths with no other file under the
 brand's frame, the manifest slice with each file's digest, a second
-run that leaves every byte and every mtime unchanged, and a run in a
-second directory that writes the same bytes and records the same files.
+run, cold, that leaves every byte and every mtime unchanged, and a run
+in a second directory that writes the same bytes and records the same
+files. The second run is cold because a warm run over an unchanged
+tree executes nothing, so it would not check that the phases produce
+the same bytes again.
 
 **frontendtest**, through `RunFrontendSuite(t, f FrontendFixture)`.
 A real frontend with the chain behind it: deterministic graphs, a
@@ -121,8 +124,8 @@ sources and checks the frame's promises one at a time, each check
 over a directory of its own. The fixture supplies a working
 composition without its plans, the plans and one edit. The suite
 composes every failure it checks: a copy of a plan, a seeded failure,
-a probe plan, a contract key, a cycle, two checks and a recording
-check.
+a probe plan, a dependent plan that reads one export, a contract key,
+a cycle, two checks and a recording check.
 
 1. **generated**: the plans generate the wanted files, byte for
    byte, each recorded under the plan whose commit wrote it.
@@ -147,8 +150,10 @@ check.
    plan reads the plan's files as its commit records them, and its
    export.
 9. **export cutoff**: the fixture's edit changes the first plan's
-   output and none of its export rows. The warm run after it runs the
-   first plan again and no invocation of a plan that depends on it.
+   output and none of its export rows. The suite adds a dependent plan
+   whose one invocation reads the first plan's export. The warm run
+   after the edit writes a file of the first plan again, the probe
+   reads an unchanged export, and the dependent runs no invocation.
 10. **warm checks**: a recording check that reads the first plan
     reads the same records on the warm run after the edit as on a
     cold run over the edited tree.
@@ -160,26 +165,30 @@ tree.
 **warm≡cold** runs the same fixture through five checks, each in a
 parallel subtest over directories of its own:
 
-1. **unchanged**: a cold run, then a warm run with nothing changed.
-   The warm run hashes no file, parses no unit, runs no invocation,
-   calls no check and writes no blob, and the manifest and every
-   file are unchanged.
-2. **touched**: a cold run, then one source file's modification time
-   set to the present with its bytes unchanged. The warm run hashes
-   that file once and parses nothing.
+1. **unchanged**: a cold run and a warm run, each after every file's
+   modification time moves into the past, then a run with nothing
+   changed. That run reads the sealed state, hashes no file, parses no
+   unit, decodes no region, runs no invocation and calls no check, and
+   every file under the root is unchanged, the manifest's documents
+   and the state included. The first warm run is needed because a
+   cold run records the files it created with a zero size.
+2. **touched**: the two runs of the first check, then one source
+   file's modification time set to the present with its bytes
+   unchanged. The next run hashes that file once and parses nothing.
 3. **edited**: a cold run, the edit and a warm run in one directory,
    and the edit and a cold run in a fresh copy. The two directories
-   contain the same files and manifest documents, a probe plan that
-   depends on every plan reads the same exports, and the two runs
-   report the same findings. The warm path may skip work. It may
-   never change output.
-4. **damaged**: a cold run, then the live generation's run segment
-   truncated. The next run reports one `ColdState` Info and leaves
-   the files a cold run leaves.
-5. **restored**: a composition with a parse memo runs cold, runs
-   after the edit, and runs again after reverting it. The last run
-   parses no unit and restores every unit the edit changed from the
-   memo.
+   contain the same files outside the state directory, the two records
+   list the same entries, a probe plan that depends on every plan
+   reads the same exports, and the two runs report the same findings.
+   The warm path may skip work. It may never change output.
+4. **damaged**: a cold run, then every segment of the state cut to
+   its first byte. The next run reports one `ColdState` Info, runs
+   cold, and leaves the files that the first run left.
+5. **restored**: a composition with a parse memo whose cap removes no
+   entry runs cold, runs after the edit, and runs again after the
+   fixture's tree is written back. The last run parses no unit and
+   restores from the memo each unit that the run after the edit
+   parsed.
 
 Both harnesses are kernel code, and the fixtures and compositions
 are the caller's:
@@ -201,11 +210,13 @@ type Fixture struct {
 ```
 
 The kernel's own tests cover what the suites cannot vary through a
-fixture: early cutoff, the (symbol, key) grain across two plans, the
-scoped membership edge, the package edge, lazy region decoding, the
-size of an incremental commit, pending work after a failed plan, the
-two re-link cases that parse a unit again, and the memo's eviction
-and sharing.
+fixture: early cutoff, the scoped membership edge, a package that
+moves into a plan's scope or out of it, the package edge, lazy region
+decoding, the size of an incremental commit, pending work after a
+failed plan, the two re-link cases that parse a unit again, the
+memo's eviction, its cold mode and its sharing, and damage at every
+read of eight warm runs and at the commit's merge. The Go conformance
+fixture covers the (symbol, key) grain across its two plans.
 
 ## The toolchain-adapter skeleton
 

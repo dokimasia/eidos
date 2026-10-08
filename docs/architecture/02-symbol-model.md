@@ -248,7 +248,9 @@ makes "I asked for the whole set" cost sensitivity to membership. No
 read costs more than what it observed. Scope filtering composes,
 because recorded edges stay inside the Reader's scope, so a change
 outside a plan's scope cannot re-run a plan that could never have
-seen it.
+seen it. For the same reason, a change that moves a package into a
+plan's scope or out of it runs the plan whole: no recorded edge names
+a read that the scope refused.
 
 ## Model rules
 
