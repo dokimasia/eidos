@@ -84,19 +84,23 @@ func (s *sealedState) record(ctx context.Context, loaded *load.Report) error {
 
 // recordPhases prepares the record of the run's phases, after Close and
 // before any plan commits, so damage it meets in the generation's records
-// discards the run with nothing written. A run that records no phases
-// prepares nothing.
+// discards the run with nothing written. modules counts the packages that
+// name each module on a warm run, and a cold run passes nil, which counts
+// them over the graph. A run that records no phases prepares nothing.
 //
 // Error modes: [damage] for a record of the generation that does not
 // read whole, and the error of a claim whose value is outside the fact
 // vocabulary.
-func (s *sealedState) recordPhases(ctx context.Context, g *store.Graph, facts *meta.Facts, k meta.KernelKeys) error {
+func (s *sealedState) recordPhases(
+	ctx context.Context, g *store.Graph, facts *meta.Facts, k meta.KernelKeys, modules map[plugin.Module]int,
+) error {
 	if s.recorder == nil {
 		return nil
 	}
-	p, err := state.RecordPhases(ctx, s.gen, s.recorder, state.PhaseRun{
-		Facts: facts, Modules: moduleCounts(g, facts, k),
-	})
+	if modules == nil {
+		modules = moduleCounts(g, facts, k)
+	}
+	p, err := state.RecordPhases(ctx, s.gen, s.recorder, state.PhaseRun{Facts: facts, Modules: modules})
 	if err != nil {
 		return damaged(fmt.Errorf("workspace: record the phases: %w", err))
 	}
@@ -107,10 +111,11 @@ func (s *sealedState) recordPhases(ctx context.Context, g *store.Graph, facts *m
 // write completes the record of the run's phases with each plan's
 // outcome, then makes the next generation live, strictly after every
 // plan's commit, with the merged manifest's documents that differ from
-// the ledger's. It writes under a context without the run's
-// cancellation, because the record has to match the destination once a
-// commit wrote to it, and counts what it wrote in stats. A plan that does
-// not commit keeps its previous invocations.
+// the ledger's. It records each file that a committing plan staged. It
+// writes under a context without the run's cancellation, because the
+// record has to match the destination once a commit wrote to it, and
+// counts what it wrote in stats. A plan that does not commit keeps its
+// previous records and files.
 //
 // Error modes: a ledger's failure to write, wrapped. A failure before
 // CURRENT leaves the parent live.
@@ -119,7 +124,9 @@ func (s *sealedState) write(ctx context.Context, m manifest.Manifest, runs []*pl
 	for _, p := range runs {
 		if !p.commits() {
 			uncommitted = append(uncommitted, p.plan.name)
+			continue
 		}
+		p.recordFiles()
 	}
 	s.phases.Commit(s.commit, uncommitted)
 	result, err := s.commit.Write(context.WithoutCancel(ctx), s.ledger, s.header, m)
@@ -293,6 +300,31 @@ func (w *Workspace) coldState(sink *diag.Sink, format string, args ...any) {
 	sink.Infof(ColdState, at, diag.PhaseLoad, format, args...)
 }
 
+// recordFiles records each file that the plan staged into the plan's
+// lane: its manifest entry with the digest of its commit, its package,
+// its group, where a finding about it is positioned, the export rows of
+// its declarations for a plan marked exported, and the names it
+// declares. A plan without a lane records nothing.
+func (p *planRun) recordFiles() {
+	if p.lane == nil {
+		return
+	}
+	var exported map[string][]plugin.ExportedSymbol
+	if p.plan.exported {
+		exported = map[string][]plugin.ExportedSymbol{}
+		for _, s := range p.export.Symbols {
+			exported[s.File] = append(exported[s.File], s)
+		}
+	}
+	for i, e := range p.entries() {
+		f := &p.files[i]
+		p.lane.Artifact(state.Artifact{
+			Entry: e, Pkg: f.pkg, Group: f.group, At: f.at, First: describe(f.first),
+			Export: exported[f.path], Names: f.names,
+		})
+	}
+}
+
 // moduleCounts returns how many packages name each module: every package
 // that has both module facts, the module and its root, counted under its
 // language, its module and its root. A module rooted outside the
@@ -300,10 +332,8 @@ func (w *Workspace) coldState(sink *diag.Sink, format string, args ...any) {
 func moduleCounts(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) map[plugin.Module]int {
 	out := map[plugin.Module]int{}
 	for p := range g.Packages() {
-		module, named := meta.Get(facts, p.ID, k.Module)
-		root, rooted := meta.Get(facts, p.ID, k.ModuleRoot)
-		if named && rooted {
-			out[plugin.Module{Lang: p.ID.Lang, Path: module, Root: root}]++
+		if m, named := moduleOf(facts, p.ID, k); named {
+			out[m]++
 		}
 	}
 	return out

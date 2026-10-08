@@ -43,6 +43,10 @@ type Changes struct {
 	Spellings []directive.Name
 	// Restamped lists the subjects whose classification stamps differ.
 	Restamped []symbol.Identity
+	// Renamed lists the packages that the load and the record both
+	// declare under different names: a package clause that an edit
+	// changed.
+	Renamed []symbol.Identity
 }
 
 // fingerprint is what a change of one declaration compares: the digest
@@ -61,13 +65,15 @@ func (f fingerprint) equal(o fingerprint) bool {
 }
 
 // side is one side of a load's comparison. It contains the fingerprint of
-// each declaration, and one fingerprint of a package's own fields for
-// each unit that contributes to the package. It also contains the raw
-// directives and stamps that the units attach to each subject. Each list
-// keeps the order in which the units were added.
+// each declaration, and one fingerprint of a package's own fields and the
+// name it declares the package under for each unit that contributes to
+// the package. It also contains the raw directives and stamps that the
+// units attach to each subject. Each list keeps the order in which the
+// units were added.
 type side struct {
 	decls      map[symbol.Identity]fingerprint
 	packages   map[symbol.Identity][]fingerprint
+	names      map[symbol.Identity][]string
 	directives map[symbol.Identity][]directive.Raw
 	stamps     map[symbol.Identity][]meta.RawStamp
 }
@@ -77,6 +83,7 @@ func newSide() *side {
 	return &side{
 		decls:      map[symbol.Identity]fingerprint{},
 		packages:   map[symbol.Identity][]fingerprint{},
+		names:      map[symbol.Identity][]string{},
 		directives: map[symbol.Identity][]directive.Raw{},
 		stamps:     map[symbol.Identity][]meta.RawStamp{},
 	}
@@ -104,6 +111,7 @@ func (s *side) add(r *store.Region) error {
 		s.packages[p.ID] = append(s.packages[p.ID], fingerprint{
 			digest: sha256.Sum256(b), directives: r.Directives[p.ID], stamps: r.Stamps[p.ID],
 		})
+		s.names[p.ID] = append(s.names[p.ID], p.Name)
 		for _, f := range p.Files {
 			var walkErr error
 			node.Walk(f, func(sym symbol.Symbol) bool {
@@ -218,6 +226,13 @@ func compare(before, after *side) *Changes {
 			packages[id] = true
 		}
 	}
+	for id, names := range after.names {
+		if was, held := before.names[id]; held && !slices.Equal(slices.Sorted(slices.Values(was)),
+			slices.Sorted(slices.Values(names))) {
+			c.Renamed = append(c.Renamed, id)
+		}
+	}
+	slices.SortFunc(c.Renamed, symbol.Identity.Compare)
 	slices.SortFunc(c.Appeared, symbol.Identity.Compare)
 	slices.SortFunc(c.Disappeared, symbol.Identity.Compare)
 	slices.SortFunc(c.Changed, symbol.Identity.Compare)

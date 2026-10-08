@@ -124,6 +124,25 @@ func TestChanges(t *testing.T) {
 			assert.Equal(t, warm.report.Changes.Packages, []symbol.Identity{shared}, "and the package's name changed")
 		})
 
+		t.Run("reports a package whose name an edit changed as renamed", func(t *testing.T) {
+			t.Parallel()
+
+			shared := symbol.Identity{Lang: frontendtest.ScriptedLang, Package: sharedPath, Kind: symbol.KindPackage}
+			named := func(name string) fstest.MapFS {
+				body := namePrefix + name + "\npackage " + sharedPath + "\ntype A int\n"
+				return fstest.MapFS{oneFile: {Data: []byte(body)}}
+			}
+			warm, _ := warmCold(t, named("left"), named("rite"), with(headed{frontendtest.NewScripted()}))
+			assert.Equal(t, warm.report.Changes.Renamed, []symbol.Identity{shared}, "the package declares another name")
+		})
+
+		t.Run("reports no package as renamed for an edit that keeps every name", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody(rowsTable)))
+			assert.Empty(t, warm.report.Changes.Renamed, "the store package keeps its name")
+		})
+
 		t.Run("reports a subject whose directives an edit changed as directed", func(t *testing.T) {
 			t.Parallel()
 

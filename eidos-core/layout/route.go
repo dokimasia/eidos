@@ -40,12 +40,18 @@ type Input struct {
 	// schema, which scopes the reserved routing keys. A nil registry
 	// leaves the kernel out directive as the only override.
 	Directives *directive.Registry
-	// Residents are the source files the load placed in each directory,
-	// keyed by the directory, each list sorted by file.
-	Residents map[string][]plugin.Resident
+	// Residents returns the source files that the load placed in one
+	// directory, sorted by file. Where the function is nil, no directory
+	// has residents.
+	Residents func(dir string) []plugin.Resident
 	// Modules are the toolchain modules the load resolved, innermost
 	// root first.
 	Modules []plugin.Module
+	// Others are the names of the plan's files that the run keeps
+	// without routing them again, nil for a store that contains the whole
+	// plan. A bare reference to a name of a kept file qualifies with the
+	// package of that file.
+	Others plugin.Names
 	// Sink takes the routing findings.
 	Sink *diag.Sink
 }
@@ -523,11 +529,9 @@ func (r *router) packages() {
 			f.file.Pkg = origin
 			continue
 		}
-		at := plugin.Placement{
-			Path:      f.file.Path,
-			Origin:    origin,
-			Residents: r.in.Residents[path.Dir(f.file.Path)],
-			Modules:   r.in.Modules,
+		at := plugin.Placement{Path: f.file.Path, Origin: origin, Modules: r.in.Modules}
+		if r.in.Residents != nil {
+			at.Residents = r.in.Residents(path.Dir(f.file.Path))
 		}
 		if base := r.in.Config.ImportBase; base != "" {
 			at.ImportBase, at.BaseDir = base, r.in.Config.Dir

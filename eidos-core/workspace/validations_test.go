@@ -34,9 +34,10 @@ func TestValidations(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, warmBuilder(t, ledger.NewMem(), &warmKeys{}))
-			report, err := warmAfter(t, w, before, warmTree(rowLine, markedLine, readerLine, widerCol))
+			report, err := warmAfter(t, w, warmTree(rowLine, markedLine, readerLine, colLine, markedLine),
+				warmTree(rowLine, markedLine, readerLine, widerCol, markedLine))
 			assert.NoError(t, err, "the run is clean")
-			assert.Contains(t, mirrorsIn(report), rowMirror, "the marker mirrors the row")
+			assert.Contains(t, mirrorsIn(report), rowMirror, "the marker mirrors the row into the column's file again")
 		})
 
 		t.Run("routes a subject that the run validated again by its new instances", func(t *testing.T) {

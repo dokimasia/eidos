@@ -4,6 +4,7 @@
 package plugin
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -100,7 +101,8 @@ type Respeller interface {
 // A declared name takes an override where facts contains one: a
 // value of the target's [Target.NameKey], such as golang.name, on
 // the declaration's origin, written at directive authority or above.
-// The override replaces the respell hook's spelling for the
+// The settle reads each override through a point read of the origin's
+// fact. The override replaces the respell hook's spelling for the
 // declaration that renders its origin, the one whose emitted name
 // the hook spells as it spells the origin's own name. A declaration
 // another one derives from its origin, such as a mock of an
@@ -125,12 +127,54 @@ type Respeller interface {
 // kind, and a respell hook adds the plan of every declared name and the
 // tables the references follow, each sized once to the store.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
+	return settle(e, b, facts, sink, nil, nil)
+}
+
+// SettleWith settles a store that contains part of a plan's units: the
+// units of the files that a warm run generates again. It settles as
+// [Settle] does, and resolves each reference that the store does not
+// settle against others, the names of the plan's other files. A bare
+// reference that both declare under different settled names is
+// ambiguous, as it is where the store declares the plan whole. Names
+// collide only with the store's own names, so the plan places the units
+// of every file with a name in a changed scope into the store before it
+// settles. Settle is SettleWith with no others.
+//
+// SettleWith returns what each unit read. It lists every entry that the
+// unit's references looked up, whether a file declares the entry or not.
+// It also lists the name override of every origin that the unit's
+// declarations render. It leaves out a lookup that the unit's own
+// declarations settle with no entry in others, because the unit
+// generates again whenever its own names change. A backend without a
+// respell hook rewrites no reference, and SettleWith then lists the
+// lookups of the bare type references alone. The errors are the errors
+// of Settle.
+//
+// # Allocation contract
+//
+// SettleWith allocates what Settle allocates and its read log, which is
+// all it adds for a store whose units read nothing. The first read adds
+// the set that lists each unit's read once. The lists of reads grow by
+// doubling. The settle allocates each unit's place in [Emit.Units] order
+// once, and others adds what its methods allocate.
+func SettleWith(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others Names) (Settled, error) {
+	reads := &readLog{e: e}
+	err := settle(e, b, facts, sink, others, reads)
+	return reads.out, err
+}
+
+// settle is the settle that Settle and SettleWith share. others is nil
+// for a store that contains the whole plan, and reads is nil where the
+// caller does not keep the reads.
+func settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others Names, reads *readLog) error {
 	if e == nil || e.settled {
 		return nil
 	}
 	l, lowers := b.(Lowerer)
 	r, respells := b.(Respeller)
 	if !lowers && !respells {
+		reads.typeRefs(e)
+		reads.finish()
 		e.settled = true
 		return nil
 	}
@@ -144,55 +188,59 @@ func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 		}
 	}
 	if respells {
-		respellAll(e, r, overridesFor(facts, b.Target()), by, sink)
+		respellAll(e, r, overridesFor(facts, b.Target()), others, by, sink, reads)
+	} else {
+		reads.typeRefs(e)
 	}
+	reads.finish()
 	e.reindex()
 	e.settled = true
 	return nil
 }
 
-// overrides is one target's name overrides, keyed by origin: the
-// name written on each origin at directive authority or above. The
-// nil map reads none.
-type overrides map[symbol.Identity]string
+// overrides reads one target's name overrides: the name written on an
+// origin at directive authority or above. It lists once the subjects
+// that the name key reads present on, in identity order, and reads the
+// claims of an origin that the list names. A store that a run restores
+// does not restore the bag of an origin without an override. The zero
+// value, for a nil fact store or a name key the composition did not
+// register, reads none.
+type overrides struct {
+	facts   *meta.Facts
+	key     meta.KeyID
+	name    meta.KeyName
+	present []symbol.Identity
+}
 
-// overridesFor reads a target's name overrides once per settle,
-// through the fact store's index of the subjects the target's name
-// key reads present on, so the settle's cost is one pass over the
-// overrides and a map lookup per declared name. A nil store and a
-// name key the composition did not register read none.
+// overridesFor returns the reader of a target's name overrides in one
+// fact store. It allocates the list of the subjects that the key reads
+// present on, and nothing where the key reads present on none.
 func overridesFor(facts *meta.Facts, t Target) overrides {
 	if facts == nil {
-		return nil
+		return overrides{}
 	}
 	key, registered := meta.Lookup[string](facts.Registry(), t.NameKey())
 	if !registered {
-		return nil
+		return overrides{}
 	}
-	var over overrides
-	for id := range facts.ByKey(key.ID()) {
-		name, written := overrideOn(facts, id, key.ID())
-		if !written {
-			continue
-		}
-		if over == nil {
-			over = overrides{}
-		}
-		over[id] = name
+	return overrides{
+		facts: facts, key: key.ID(), name: t.NameKey(), present: slices.Collect(facts.ByKey(key.ID())),
 	}
-	return over
 }
 
-// overrideOn returns the override written on one subject: the value
-// of the claim that ranks first, which [meta.Facts.Claims] returns
-// first. It reports false for the zero identity, which no
-// declaration renders, for a claim below directive authority and for
-// an empty value.
-func overrideOn(facts *meta.Facts, id symbol.Identity, k meta.KeyID) (string, bool) {
-	if id.IsZero() {
+// on returns the override written on one origin: the value of the claim
+// that ranks first, which [meta.Facts.Claims] returns first. It reports
+// false for a reader of no store, for the zero identity, which no
+// declaration renders, for an origin on which the key does not read
+// present, for a claim below directive authority and for an empty value.
+func (o overrides) on(id symbol.Identity) (string, bool) {
+	if o.facts == nil || id.IsZero() {
 		return "", false
 	}
-	for c := range facts.Claims(id, k) {
+	if _, present := slices.BinarySearchFunc(o.present, id, symbol.Identity.Compare); !present {
+		return "", false
+	}
+	for c := range o.facts.Claims(id, o.key) {
 		name, _ := c.Value.(string)
 		if name == "" || c.Claim.Authority < meta.AuthorityDirective {
 			return "", false
@@ -259,15 +307,19 @@ type planned struct {
 // respellAll settles every declared name and rewrites the
 // references that follow them: every visit plans first, collisions
 // resolve per scope, then the plans apply and the references
-// follow. Withheld declarations leave their units last, because
-// every pass before that addresses a plan by the declaration index
-// it was made under.
-func respellAll(e *Emit, r Respeller, over overrides, by diag.Origin, sink *diag.Sink) {
-	plans := planNames(e, r, over)
+// follow, against the store's names and then against others.
+// Withheld declarations leave their units last, because every pass
+// before that addresses a plan by the declaration index it was made
+// under. reads records each unit's override reads and lookups.
+func respellAll(
+	e *Emit, r Respeller, over overrides, others Names, by diag.Origin, sink *diag.Sink, reads *readLog,
+) {
+	plans := planNames(e, r, over, reads)
 	table, byOrigin := resolveTop(e, plans, by, sink)
 	resolveMembers(e, plans, by, sink)
 	applyNames(e, plans, by, sink)
-	rewriteRefs(e, plans, table, byOrigin, by, sink)
+	res := &resolver{table: table, byOrigin: byOrigin, others: others, by: by, sink: sink, reads: reads}
+	res.rewriteRefs(e, plans)
 	dropWithheld(e)
 }
 
@@ -303,8 +355,9 @@ func (p *plan) of(i, j int) []planned {
 // visit calls the hook, takes the override of the declaration that
 // renders its origin in place of the hook's spelling, and stores the
 // result by value, and nothing writes yet. Visit order is what the
-// apply walk replays.
-func planNames(e *Emit, r Respeller, over overrides) *plan {
+// apply walk replays. reads records the override that each unit read
+// for each origin that its declarations render.
+func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 	total := 0
 	for i := range e.units {
 		total += len(e.units[i].Decls)
@@ -324,7 +377,13 @@ func planNames(e *Emit, r Respeller, over overrides) *plan {
 	) (string, error) {
 		p := planned{host: host, kind: kind, at: at, emitted: name}
 		p.settled, p.err = r.Respell(hostKind(host), kind, v, name)
-		if override, renders := overrideOf(r, over, host, carrier, kind, v, p.settled); renders {
+		// A carrier without an origin reads the zero identity, which
+		// takes no override.
+		origin, _ := emit.OriginOf(carrier)
+		if over.facts != nil && !origin.IsZero() {
+			reads.fact(origin, over.name)
+		}
+		if override, renders := overrideOf(r, over, host, origin, kind, v, p.settled); renders {
 			p.settled = override
 		}
 		p.final = p.settled
@@ -338,6 +397,7 @@ func planNames(e *Emit, r Respeller, over overrides) *plan {
 		// An emit declaration has no source position, so every
 		// visit in a unit is positioned at the unit.
 		at = unitPos(&e.units[i])
+		reads.enter(i)
 		for j, d := range e.units[i].Decls {
 			lo := len(plans.all)
 			_ = emit.RespellNames(d, record)
@@ -347,20 +407,17 @@ func planNames(e *Emit, r Respeller, over overrides) *plan {
 	return plans
 }
 
-// overrideOf returns the override of a carrier that renders its
-// origin: an override is written on the origin, and the carrier
+// overrideOf returns the override of a carrier of origin that renders
+// the origin: an override is written on the origin, and the carrier
 // renders it where the hook spells the origin's own name as it
-// spelled the carrier's, settled. A carrier without an origin, an
-// origin without an override, a name the hook refuses and a name the
-// hook spells apart from the origin's report false.
+// spelled the carrier's, settled. An origin without an override, a
+// name the hook refuses and a name the hook spells apart from the
+// origin's report false.
 func overrideOf(
-	r Respeller, over overrides, host, carrier symbol.Symbol,
+	r Respeller, over overrides, host symbol.Symbol, origin symbol.Identity,
 	kind symbol.Kind, v symbol.Visibility, settled string,
 ) (string, bool) {
-	// A carrier without an origin reads the zero identity, which
-	// takes no override.
-	origin, _ := emit.OriginOf(carrier)
-	override, written := over[origin]
+	override, written := over.on(origin)
 	if !written {
 		return "", false
 	}
@@ -380,10 +437,21 @@ func hostKind(host symbol.Symbol) symbol.Kind {
 	return host.Kind()
 }
 
-// tableEntry is one scope's settled spelling for an emitted name.
+// tableEntry is one scope's settled spelling for an emitted name, and
+// the arrival index of the unit that declares the name, -1 where more
+// than one unit does.
 type tableEntry struct {
 	settled   string
 	ambiguous bool
+	unit      int
+}
+
+// originEntry is the settled spelling of a declaration derived from an
+// origin, and the arrival index of the unit that declares it, -1 where
+// more than one unit declares the origin's emitted name.
+type originEntry struct {
+	settled string
+	unit    int
 }
 
 // scopeName keys one settled spelling in one collision scope.
@@ -411,12 +479,13 @@ type originName struct {
 // scope is its package; a receiver-attached method's is its
 // receiver, because two types declare one method name legally
 // everywhere. byOrigin records the same decisions keyed by origin
-// identity, for resolved references. The clean path allocates
-// per name and never per group: group storage exists only where a
-// second occupant arrives.
+// identity, for resolved references. Both record the unit that
+// declares each name. The clean path allocates per name and never
+// per group: group storage exists only where a second occupant
+// arrives.
 func resolveTop(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
-) (map[pkgName]tableEntry, map[originName]string) {
+) (map[pkgName]tableEntry, map[originName]originEntry) {
 	first := make(map[scopeName]*planned, len(plans.spans))
 	var groups map[scopeName][]*planned
 	for i := range e.units {
@@ -466,7 +535,7 @@ func resolveTop(
 	}
 
 	table := make(map[pkgName]tableEntry, len(plans.spans))
-	byOrigin := make(map[originName]string, len(plans.spans))
+	byOrigin := make(map[originName]originEntry, len(plans.spans))
 	for i := range e.units {
 		pkg := e.units[i].Pkg.Package
 		for j, d := range e.units[i].Decls {
@@ -484,16 +553,22 @@ func resolveTop(
 				if p.kind != symbol.KindMethod {
 					at := pkgName{pkg: pkg, emitted: p.emitted}
 					if entry, taken := table[at]; taken {
-						if entry.settled != p.final {
-							entry.ambiguous = true
-							table[at] = entry
+						entry.ambiguous = entry.ambiguous || entry.settled != p.final
+						if entry.unit != i {
+							entry.unit = -1
 						}
+						table[at] = entry
 					} else {
-						table[at] = tableEntry{settled: p.final}
+						table[at] = tableEntry{settled: p.final, unit: i}
 					}
 				}
 				if known {
-					byOrigin[originName{id: origin, emitted: p.emitted}] = p.final
+					at := originName{id: origin, emitted: p.emitted}
+					entry := originEntry{settled: p.final, unit: i}
+					if prior, taken := byOrigin[at]; taken && prior.unit != i {
+						entry.unit = -1
+					}
+					byOrigin[at] = entry
 				}
 			}
 		}
@@ -678,6 +753,25 @@ func pinnedByVerbatim(host symbol.Symbol, kind symbol.Kind) bool {
 	}
 }
 
+// resolver follows one store's references to the names that the
+// settle left the store's declarations with, and then to the names of
+// the plan's other files. It records each lookup of the unit under
+// resolution into reads, except a lookup that the unit's own
+// declarations settle with nothing in the other files.
+type resolver struct {
+	table    map[pkgName]tableEntry
+	byOrigin map[originName]originEntry
+	others   Names
+	by       diag.Origin
+	sink     *diag.Sink
+	reads    *readLog
+	// unit is the arrival index of the unit under resolution, pkg the
+	// unit's package path, and at the position of its findings.
+	unit int
+	pkg  string
+	at   position.Pos
+}
+
 // rewriteRefs follows the settled names through the store's
 // references: a resolved reference follows its origin where its
 // spelling is the referent's emitted bare name, a bare reference
@@ -685,16 +779,11 @@ func pinnedByVerbatim(host symbol.Symbol, kind symbol.Kind) bool {
 // follows the names beneath it, and structured body names follow
 // locals first, then the package. A composite spelling without
 // elements, verbatim bodies and template text are left as written.
-func rewriteRefs(
-	e *Emit, plans *plan,
-	table map[pkgName]tableEntry,
-	byOrigin map[originName]string,
-	by diag.Origin, sink *diag.Sink,
-) {
+func (r *resolver) rewriteRefs(e *Emit, plans *plan) {
 	for i := range e.units {
 		u := &e.units[i]
-		pkg := u.Pkg.Package
-		at := unitPos(u)
+		r.unit, r.pkg, r.at = i, u.Pkg.Package, unitPos(u)
+		r.reads.enter(i)
 		for j, d := range u.Decls {
 			if d == nil {
 				continue
@@ -703,11 +792,11 @@ func rewriteRefs(
 			for s := range emit.All(d) {
 				switch t := s.(type) {
 				case *emit.TypeRef:
-					rewriteRef(t, pkg, table, byOrigin, at, by, sink)
+					r.rewriteRef(t)
 				case *emit.Function:
-					rewriteBody(&t.Body, maps.Clone(renames[t]), pkg, table, at, by, sink)
+					r.rewriteBody(&t.Body, maps.Clone(renames[t]))
 				case *emit.Method:
-					rewriteBody(&t.Body, maps.Clone(renames[t]), pkg, table, at, by, sink)
+					r.rewriteBody(&t.Body, maps.Clone(renames[t]))
 				}
 			}
 		}
@@ -741,20 +830,16 @@ func paramNames(list []planned) map[symbol.Symbol]map[string]string {
 }
 
 // rewriteRef follows one type reference: a named one to the spelling
-// [settledSpelling] returns, and a structural one through the names
+// [resolver.spelling] returns, and a structural one through the names
 // beneath it. An ambiguous match reports and is left as written.
-func rewriteRef(
-	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry,
-	byOrigin map[originName]string,
-	at position.Pos, by diag.Origin, sink *diag.Sink,
-) {
+func (r *resolver) rewriteRef(t *emit.TypeRef) {
 	if t.Form != symbol.FormNamed {
-		followElements(t, t.Elems, pkg, table, byOrigin)
+		r.followElements(t, t.Elems)
 		return
 	}
-	settled, ambiguous := settledSpelling(t, pkg, table, byOrigin)
+	settled, ambiguous := r.spelling(t)
 	if ambiguous {
-		sink.Errorf(AmbiguousReference, at, by,
+		r.sink.Errorf(AmbiguousReference, r.at, r.by,
 			"%q matches declarations whose settled names diverge, and the "+
 				"reference is left as written", t.Spelling)
 		return
@@ -762,28 +847,26 @@ func rewriteRef(
 	t.Spelling = settled
 }
 
-// settledSpelling returns the spelling a named reference settles to:
-// by origin where the reference is resolved and its spelling is the
+// spelling returns the spelling a named reference settles to: by
+// origin where the reference is resolved and its spelling is the
 // referent's emitted bare name, by the package's table where it is
 // bare, and as written otherwise. A reference without a target that
 // names another package is qualified, so no declaration of this
 // package binds it, and it is left as written. It reports true for a
 // spelling the table matches to declarations whose settled names
 // diverge, which is left as written too. It reads two maps and
-// allocates nothing.
-func settledSpelling(
-	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry, byOrigin map[originName]string,
-) (string, bool) {
+// allocates nothing but what others and the read log allocate.
+func (r *resolver) spelling(t *emit.TypeRef) (string, bool) {
 	if !t.Target.IsZero() {
-		if settled, match := byOrigin[originName{id: t.Target, emitted: t.Spelling}]; match {
+		if settled, match := r.ofOrigin(t.Target, t.Spelling); match {
 			return settled, false
 		}
 		return t.Spelling, false
 	}
-	if t.Package != "" && t.Package != pkg {
+	if t.Package != "" && t.Package != r.pkg {
 		return t.Spelling, false
 	}
-	ent, held := table[pkgName{pkg: pkg, emitted: t.Spelling}]
+	ent, held := r.inPackage(t.Spelling)
 	switch {
 	case !held:
 		return t.Spelling, false
@@ -792,6 +875,51 @@ func settledSpelling(
 	default:
 		return ent.settled, false
 	}
+}
+
+// inPackage returns the entry of a bare name of the unit's package: the
+// store's own entry merged with the entry of others, ambiguous where the
+// two settle the name apart. It records the lookup unless the unit's own
+// declarations alone settle the name.
+func (r *resolver) inPackage(emitted string) (tableEntry, bool) {
+	ent, held := r.table[pkgName{pkg: r.pkg, emitted: emitted}]
+	var kept NameEntry
+	found := false
+	if r.others != nil {
+		kept, found = r.others.InPackage(r.pkg, emitted)
+	}
+	if found || !held || ent.unit != r.unit {
+		r.reads.name(NameKey{Package: r.pkg, Emitted: emitted})
+	}
+	switch {
+	case !found:
+		return ent, held
+	case !held:
+		return tableEntry{settled: kept.Settled, ambiguous: kept.Ambiguous, unit: -1}, true
+	default:
+		ent.ambiguous = ent.ambiguous || kept.Ambiguous || kept.Settled != ent.settled
+		return ent, true
+	}
+}
+
+// ofOrigin returns the settled name of the declaration that derives from
+// an origin under an emitted name: the store's own where it declares
+// one, and otherwise the entry of others. It records the lookup unless
+// the unit's own declarations settle the name.
+func (r *resolver) ofOrigin(origin symbol.Identity, emitted string) (string, bool) {
+	ent, held := r.byOrigin[originName{id: origin, emitted: emitted}]
+	if held && ent.unit == r.unit {
+		return ent.settled, true
+	}
+	r.reads.name(NameKey{Origin: origin, Emitted: emitted})
+	switch {
+	case held:
+		return ent.settled, true
+	case r.others == nil:
+		return "", false
+	}
+	kept, found := r.others.OfOrigin(origin, emitted)
+	return kept.Settled, found
 }
 
 // followElements rewrites a structural reference's spelling for the
@@ -803,21 +931,18 @@ func settledSpelling(
 // reference before its elements, so the elements still have their
 // emitted spellings when their parent follows them. It allocates only
 // where it replaces a name.
-func followElements(
-	parent *emit.TypeRef, refs []*emit.TypeRef,
-	pkg string, table map[pkgName]tableEntry, byOrigin map[originName]string,
-) {
-	for _, r := range refs {
-		if r == nil {
+func (r *resolver) followElements(parent *emit.TypeRef, refs []*emit.TypeRef) {
+	for _, ref := range refs {
+		if ref == nil {
 			continue
 		}
-		if r.Form == symbol.FormNamed {
-			if settled, _ := settledSpelling(r, pkg, table, byOrigin); settled != r.Spelling {
-				parent.Spelling = replaceName(parent.Spelling, r.Spelling, settled)
+		if ref.Form == symbol.FormNamed {
+			if settled, _ := r.spelling(ref); settled != ref.Spelling {
+				parent.Spelling = replaceName(parent.Spelling, ref.Spelling, settled)
 			}
 		}
-		followElements(parent, r.Elems, pkg, table, byOrigin)
-		followElements(parent, r.Args, pkg, table, byOrigin)
+		r.followElements(parent, ref.Elems)
+		r.followElements(parent, ref.Args)
 	}
 }
 
@@ -883,25 +1008,21 @@ func nameRune(r rune) bool {
 // its parameters, results and declaring assignments in statement
 // order, then the package's table. A verbatim body is left as
 // written.
-func rewriteBody(
-	b *emit.Body, locals map[string]string, pkg string,
-	table map[pkgName]tableEntry,
-	at position.Pos, by diag.Origin, sink *diag.Sink,
-) {
+func (r *resolver) rewriteBody(b *emit.Body, locals map[string]string) {
 	if b.Verbatim != "" {
 		return
 	}
 	if locals == nil {
 		locals = map[string]string{}
 	}
-	rewriteStmts(b.Prologue.Items(), locals, pkg, table, at, by, sink)
-	rewriteStmts(b.Stmts, locals, pkg, table, at, by, sink)
+	r.rewriteStmts(b.Prologue.Items(), locals)
+	r.rewriteStmts(b.Stmts, locals)
 	for _, s := range b.Slots {
 		if s != nil {
-			rewriteStmts(s.Slot.Items(), locals, pkg, table, at, by, sink)
+			r.rewriteStmts(s.Slot.Items(), locals)
 		}
 	}
-	rewriteStmts(b.Epilogue.Items(), locals, pkg, table, at, by, sink)
+	r.rewriteStmts(b.Epilogue.Items(), locals)
 }
 
 // rewriteStmts follows one statement run, accumulating declared
@@ -909,26 +1030,22 @@ func rewriteBody(
 // them. An assignment that declares nothing targets names already
 // in scope, so its targets resolve the way a reference does, and a
 // guard's block is a scope of its own.
-func rewriteStmts(
-	stmts []emit.Stmt, locals map[string]string, pkg string,
-	table map[pkgName]tableEntry,
-	at position.Pos, by diag.Origin, sink *diag.Sink,
-) {
+func (r *resolver) rewriteStmts(stmts []emit.Stmt, locals map[string]string) {
 	for i := range stmts {
 		s := &stmts[i]
-		rewriteExpr(&s.Value, locals, pkg, table, at, by, sink)
+		r.rewriteExpr(&s.Value, locals)
 		for k, n := range s.Names {
 			if s.Declare {
 				locals[n] = n
 				continue
 			}
-			s.Names[k] = follow(n, locals, pkg, table, at, by, sink)
+			s.Names[k] = r.follow(n, locals)
 		}
 		if s.Name != "" {
-			s.Name = follow(s.Name, locals, pkg, table, at, by, sink)
+			s.Name = r.follow(s.Name, locals)
 		}
 		if len(s.Then) > 0 {
-			rewriteBlock(s.Then, locals, pkg, table, at, by, sink)
+			r.rewriteBlock(s.Then, locals)
 		}
 	}
 }
@@ -946,11 +1063,7 @@ type shadowed struct {
 // the block declares resolve inside it, and the enclosing bindings
 // they hid return when it ends. The restore list exists only where
 // the block declares a name.
-func rewriteBlock(
-	stmts []emit.Stmt, locals map[string]string, pkg string,
-	table map[pkgName]tableEntry,
-	at position.Pos, by diag.Origin, sink *diag.Sink,
-) {
+func (r *resolver) rewriteBlock(stmts []emit.Stmt, locals map[string]string) {
 	var hidden []shadowed
 	for i := range stmts {
 		if !stmts[i].Declare {
@@ -961,7 +1074,7 @@ func rewriteBlock(
 			hidden = append(hidden, shadowed{name: n, prev: prev, had: had})
 		}
 	}
-	rewriteStmts(stmts, locals, pkg, table, at, by, sink)
+	r.rewriteStmts(stmts, locals)
 	for _, h := range slices.Backward(hidden) {
 		if h.had {
 			locals[h.name] = h.prev
@@ -972,21 +1085,17 @@ func rewriteBlock(
 }
 
 // rewriteExpr follows one expression tree's names.
-func rewriteExpr(
-	x *emit.Expr, locals map[string]string, pkg string,
-	table map[pkgName]tableEntry,
-	at position.Pos, by diag.Origin, sink *diag.Sink,
-) {
+func (r *resolver) rewriteExpr(x *emit.Expr, locals map[string]string) {
 	if x == nil {
 		return
 	}
 	switch x.Kind {
 	case emit.ExprName:
-		x.Name = follow(x.Name, locals, pkg, table, at, by, sink)
+		x.Name = r.follow(x.Name, locals)
 	case emit.ExprCall:
-		rewriteExpr(x.Fn, locals, pkg, table, at, by, sink)
+		r.rewriteExpr(x.Fn, locals)
 		for i := range x.Args {
-			rewriteExpr(&x.Args[i], locals, pkg, table, at, by, sink)
+			r.rewriteExpr(&x.Args[i], locals)
 		}
 	}
 }
@@ -994,23 +1103,132 @@ func rewriteExpr(
 // follow resolves one structured name: the callable's locals
 // first, then the package's table. An ambiguous match reports and
 // returns the name as written.
-func follow(
-	name string, locals map[string]string, pkg string,
-	table map[pkgName]tableEntry,
-	at position.Pos, by diag.Origin, sink *diag.Sink,
-) string {
+func (r *resolver) follow(name string, locals map[string]string) string {
 	if renamed, held := locals[name]; held {
 		return renamed
 	}
-	ent, held := table[pkgName{pkg: pkg, emitted: name}]
+	ent, held := r.inPackage(name)
 	if !held {
 		return name
 	}
 	if ent.ambiguous {
-		sink.Errorf(AmbiguousReference, at, by,
+		r.sink.Errorf(AmbiguousReference, r.at, r.by,
 			"%q matches declarations whose settled names diverge, and the "+
 				"reference is left as written", name)
 		return name
 	}
 	return ent.settled
+}
+
+// readLog records what the units of one settle read, for a caller that
+// keeps the reads: each entry that a unit's references looked up and
+// each override that the settle read for a unit, each once per unit. A
+// nil log records nothing, so a settle without a caller of the reads
+// spends nothing on them.
+//
+// # Allocation contract
+//
+// A log allocates each of its two sets on its first read. The lists of
+// [Settled] grow by doubling. The log allocates the place of each unit in
+// [Emit.Units] order once when it finishes. A settle whose units read
+// nothing allocates none of them.
+type readLog struct {
+	e   *Emit
+	out Settled
+	// unit is the arrival index of the unit under the settle's current
+	// pass, and names and facts list what that unit read in the pass.
+	unit  int
+	names map[NameKey]struct{}
+	facts map[symbol.Identity]struct{}
+}
+
+// enter starts what the unit at arrival index i reads in a pass.
+func (l *readLog) enter(i int) {
+	if l == nil {
+		return
+	}
+	l.unit = i
+	clear(l.names)
+	clear(l.facts)
+}
+
+// name records that the current unit looked up k.
+func (l *readLog) name(k NameKey) {
+	if l == nil {
+		return
+	}
+	if _, seen := l.names[k]; seen {
+		return
+	}
+	if l.names == nil {
+		l.names = map[NameKey]struct{}{}
+	}
+	l.names[k] = struct{}{}
+	l.out.Read = append(l.out.Read, NameRead{Unit: l.unit, Key: k})
+}
+
+// fact records that the settle read the override of an origin under
+// the key named key for the current unit.
+func (l *readLog) fact(origin symbol.Identity, key meta.KeyName) {
+	if l == nil {
+		return
+	}
+	if _, seen := l.facts[origin]; seen {
+		return
+	}
+	if l.facts == nil {
+		l.facts = map[symbol.Identity]struct{}{}
+	}
+	l.facts[origin] = struct{}{}
+	l.out.Facts = append(l.out.Facts, FactRead{Unit: l.unit, Fact: meta.FactRef{Subject: origin, Key: key}})
+}
+
+// typeRefs records the lookups of the bare type references of every
+// unit, for a settle that rewrites no reference: what the layout
+// resolves across files. A reference that a target resolves, and one
+// qualified with another package, looks nothing up.
+func (l *readLog) typeRefs(e *Emit) {
+	if l == nil {
+		return
+	}
+	for i := range e.units {
+		l.enter(i)
+		u := &e.units[i]
+		for _, d := range u.Decls {
+			for s := range emit.All(d) {
+				t, ref := s.(*emit.TypeRef)
+				if !ref || t.Form != symbol.FormNamed || !t.Target.IsZero() ||
+					(t.Package != "" && t.Package != u.Pkg.Package) {
+					continue
+				}
+				l.name(NameKey{Package: u.Pkg.Package, Emitted: t.Spelling})
+			}
+		}
+	}
+}
+
+// finish numbers each read's unit by its place in [Emit.Units] order,
+// and sorts the reads by unit, then by key. A log without a read has
+// nothing to number.
+func (l *readLog) finish() {
+	if l == nil || len(l.out.Read)+len(l.out.Facts) == 0 {
+		return
+	}
+	order := l.e.sorted()
+	at := make([]int, len(order))
+	for k, i := range order {
+		at[i] = k
+	}
+	for i := range l.out.Read {
+		l.out.Read[i].Unit = at[l.out.Read[i].Unit]
+	}
+	for i := range l.out.Facts {
+		l.out.Facts[i].Unit = at[l.out.Facts[i].Unit]
+	}
+	slices.SortFunc(l.out.Read, func(a, b NameRead) int {
+		return cmp.Or(cmp.Compare(a.Unit, b.Unit), a.Key.Compare(b.Key))
+	})
+	slices.SortFunc(l.out.Facts, func(a, b FactRead) int {
+		return cmp.Or(cmp.Compare(a.Unit, b.Unit), a.Fact.Subject.Compare(b.Fact.Subject))
+	})
 }

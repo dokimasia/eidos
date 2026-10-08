@@ -40,13 +40,9 @@ const (
 // TestIndexAllocs checks in the ordinary run and BenchmarkIndex in a
 // benchmark run.
 const (
-	// newIndexAllocs is the ceiling of the index of a run without a scope.
+	// newIndexAllocs is the ceiling of the index, with or without a scope.
 	// A validated table does not add an allocation.
 	newIndexAllocs = 1
-	// scopedIndexAllocs is the index of a run whose scope admits one
-	// package: the index and the set of admitted packages with its first
-	// group.
-	scopedIndexAllocs = newIndexAllocs + 2
 	// readerAllocs is a reader handle.
 	readerAllocs = 1
 )
@@ -114,6 +110,18 @@ func TestIndex(t *testing.T) {
 			_, err := plugin.NewIndex(g, nil, nil, nil)
 			assert.HasError(t, err, "the index does not build")
 		})
+
+		t.Run("asks the scope about no package", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := twoPackages(t)
+			asked := 0
+			index(t, g, nil, func(symbol.Identity) bool {
+				asked++
+				return true
+			})
+			assert.Equal(t, asked, 0, "NewIndex asks the scope nothing")
+		})
 	})
 
 	t.Run("ByKind", func(t *testing.T) {
@@ -157,6 +165,25 @@ func TestIndex(t *testing.T) {
 				break
 			}
 			assert.Equal(t, got, 1, "the iteration yields once")
+		})
+
+		t.Run("asks the scope once for each package", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t,
+				coretest.Package(coretest.StorePath,
+					coretest.Struct(coretest.StorePath, "First"), coretest.Struct(coretest.StorePath, "Second")),
+				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")),
+			)
+			asked, n := 0, 0
+			for range index(t, g, nil, func(symbol.Identity) bool {
+				asked++
+				return true
+			}).ByKind(symbol.KindStruct) {
+				n++
+			}
+			assert.Equal(t, n, 3, "ByKind yields the three structs")
+			assert.Equal(t, asked, 2, "ByKind asks the scope once for each of the two packages")
 		})
 	})
 
@@ -386,11 +413,11 @@ func TestIndex(t *testing.T) {
 	})
 }
 
-// The index allocates itself, and the set of packages for a run with a
-// scope. A reader allocates its handle. The enumerations, lookups and
-// skip rulings that a phase call reads through the index allocate
-// nothing, with or without a scope. The check runs alone, because the
-// count includes every goroutine's allocations.
+// The index allocates itself alone, with or without a scope. A reader
+// allocates its handle. The enumerations, lookups and skip rulings that a
+// phase call reads through the index allocate nothing, with or without a
+// scope. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestIndexAllocs(t *testing.T) {
 	g, inStore, inCache := twoPackages(t)
 	facts, key := flagged(t, inStore.ID, inCache.ID)
@@ -406,8 +433,8 @@ func TestIndexAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, validated, nil) }, newIndexAllocs,
 		"NewIndex allocates the index alone for a run with a skip")
 	assert.NoError(t, err, "the routing surface builds with a validated table")
-	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, nil, storeOnly) }, scopedIndexAllocs,
-		"NewIndex allocates the set of the packages a scope admits")
+	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, nil, storeOnly) }, newIndexAllocs,
+		"NewIndex allocates the index alone for a run with a scope")
 	assert.NoError(t, err, "the scoped routing surface builds")
 	reads := store.NewReadSet()
 	assert.MaxAllocs(t, func() { _, err = built.Reader(reads) }, readerAllocs, "Reader allocates the handle")
@@ -592,7 +619,7 @@ func BenchmarkIndex(b *testing.B) {
 		allocs uint64
 	}{
 		{name: "a run without a scope", allocs: newIndexAllocs},
-		{name: "a run scoped to one package", scope: inOne, allocs: scopedIndexAllocs},
+		{name: "a run scoped to one package", scope: inOne, allocs: newIndexAllocs},
 	}
 	b.Run("NewIndex", func(b *testing.B) {
 		for _, tt := range scopes {

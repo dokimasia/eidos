@@ -46,6 +46,18 @@ type planRun struct {
 	// invoked counts the invocations of each of the plan's generator
 	// calls, in schedule order.
 	invoked []Invoked
+	// lane records the plan's invocations, groups and files where the
+	// run records its phases, and is nil where it does not.
+	lane *state.Lane
+	// selective reports a plan that a warm run executed in part. kept are
+	// the previous entries of the files that such a plan keeps, in path
+	// order, and its files are those of the groups it executed again.
+	// exportChanged reports that the plan's export may differ from the
+	// export the generation records, which makes dirty every invocation
+	// that read it.
+	selective     bool
+	kept          []manifest.Entry
+	exportChanged bool
 	// files are what the plan rendered, in path order.
 	files []stagedFile
 	// export is what the plan rendered, as its dependents and the
@@ -91,9 +103,13 @@ func (p *planRun) cause() (position.Pos, bool) {
 // failure does not stop its siblings, every plan that depends on it
 // generates nothing, and every plan's store arrives in the report
 // either way. Each plan records its invocations into a lane of rec of
-// its own, where rec is set.
+// its own, where rec is set. On a warm run, ws is what the plans read of
+// the run so far, and a plan that writes output executes the groups that
+// the run's changes make dirty, as [Workspace.runWarm] states. A cold run
+// passes a nil ws.
 func (w *Workspace) generateAll(
-	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree, rec *state.Recorder,
+	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree,
+	rec *state.Recorder, ws *warmState,
 ) []*planRun {
 	runs := make([]*planRun, len(w.plans))
 	for i := range w.plans {
@@ -110,10 +126,18 @@ func (w *Workspace) generateAll(
 				return
 			}
 			var rendered []plugin.File
-			p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, exports, rec)
+			if ws != nil && rec != nil && p.plan.contract != nil {
+				deps := make([]*planRun, 0, len(p.plan.deps))
+				for _, d := range p.plan.deps {
+					deps = append(deps, runs[d])
+				}
+				p.files, rendered, p.err = w.runWarm(ctx, g, facts, table, src, p, exports, deps, rec, ws)
+			} else {
+				p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, exports, rec)
+			}
 			p.cancelled = p.err != nil && ctx.Err() != nil && errors.Is(p.err, ctx.Err())
-			if p.plan.exported && !p.failed() {
-				p.export = plugin.NewExport(p.plan.name, rendered, p.emit)
+			if p.plan.exported && !p.failed() && !p.selective {
+				p.export = plugin.NewExport(p.plan.name, rendered, p.emit, nil)
 			}
 		})
 	}
@@ -155,8 +179,8 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 // counts each generator's invocations into the plan's run. Where the
 // composition writes output, the settled store routes to files against
 // the run's source tree, and the files render and stamp. It returns the
-// stamped files, and for a plan marked exported, the routed files that
-// rendered, which the plan's export lists.
+// stamped files, and the routed files that rendered, which the export of
+// a plan marked exported lists.
 //
 // Where rec is set, the journal also hands each invocation to the plan's
 // lane, which records every one that is not pure, each call reports into
@@ -164,7 +188,8 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 // that journals no invocation of its own is recorded as one under
 // [plugin.WholeCall]: its reader's reads, the plans whose export it was
 // handed, the units its plugin flushed or appended into, and its
-// findings.
+// findings. The lane also records the plan's groups once the files
+// render, where the plan reported no Error.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree, p *planRun,
 	exports map[string]plugin.ExportDoc, rec *state.Recorder,
@@ -174,22 +199,77 @@ func (w *Workspace) runPlan(
 	if err != nil {
 		return nil, nil, err
 	}
-	counted := &tally{}
+	var touches *touchJournal
+	var next plugin.Journal
 	if rec != nil {
-		counted.next = rec.Lane(pl.name)
+		p.lane = rec.Lane(pl.name)
+		touches = &touchJournal{next: p.lane}
+		next = touches
 	}
+	err = w.generate(ctx, ix, facts, p, exports, nil, next)
+	if err != nil {
+		return nil, nil, err
+	}
+	var settled plugin.Settled
+	if touches != nil {
+		settled, err = plugin.SettleWith(p.emit, pl.backend, facts, p.sink, nil)
+	} else {
+		err = plugin.Settle(p.emit, pl.backend, facts, p.sink)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("settle: %w", err)
+	}
+	if pl.contract == nil {
+		return nil, nil, nil
+	}
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	staged, rendered, err := w.write(pl, ix, src, p.emit, p.sink, nil)
+	if err == nil && touches != nil && !p.sink.Failed() {
+		_, placed := pl.backend.(plugin.Packager)
+		pg := planGroups{
+			plan: pl.name, emit: p.emit, files: rendered, staged: staged,
+			touches: touches.touches, settled: settled, placed: placed,
+		}
+		pg.record(p.lane)
+	}
+	return staged, rendered, err
+}
+
+// generate runs the plan's generator calls in bucket order into the
+// plan's store, each over a tracked reader of its own, with the exports
+// of the plans it depends on, and counts each call's invocations into
+// the plan's run. sel restricts each call to what a warm run executes
+// again, and a nil sel runs every match.
+//
+// Where next is set, each call journals into it after the count, reports
+// into a sink of its own whose findings then merge into the plan's, and a
+// call that journals no invocation of its own is journaled as one under
+// [plugin.WholeCall]: its reader's reads, the plans whose export it was
+// handed, the units its plugin flushed or appended into, and its
+// findings.
+//
+// Error modes: the context's error, a reader the index refuses, and a
+// generator's returned error, wrapped with the generator's bucket.
+func (w *Workspace) generate(
+	ctx context.Context, ix *plugin.Index, facts *meta.Facts, p *planRun,
+	exports map[string]plugin.ExportDoc, sel *plugin.Selection, next plugin.Journal,
+) error {
+	pl := p.plan
+	counted := &tally{next: next}
 	for _, s := range pl.entries {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, err
+			return err
 		}
 		reads := store.NewReadSet()
 		reader, err := ix.Reader(reads)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 		counted.count = 0
 		calls := p.sink
-		if counted.next != nil {
+		if next != nil {
 			calls = diag.NewSink()
 		}
 		call := &plugin.GeneratorContext{
@@ -204,13 +284,14 @@ func (w *Workspace) runPlan(
 			Bucket:  s.bucket,
 			Workers: w.workers,
 			Exports: exports,
+			Select:  sel,
 			Journal: counted,
 		}
 		err = s.run.Generate(call)
-		if counted.next != nil {
+		if next != nil {
 			found := reported(calls, p.sink)
 			if counted.count == 0 {
-				counted.next.Invoked(plugin.Invocation{
+				next.Invoked(plugin.Invocation{
 					Match:    plugin.MatchKey{Plugin: s.name, Rule: plugin.WholeCall},
 					Reads:    reads,
 					Exports:  slices.Sorted(maps.Keys(exports)),
@@ -220,33 +301,28 @@ func (w *Workspace) runPlan(
 			}
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
+			return fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
 		}
 		p.invoked = append(p.invoked, Invoked{
 			Plan: pl.name, Plugin: s.name, Phase: plugin.PhaseGenerate, Count: counted.count,
 		})
 	}
-	if err := plugin.Settle(p.emit, pl.backend, facts, p.sink); err != nil {
-		return nil, nil, fmt.Errorf("settle: %w", err)
-	}
-	if pl.contract == nil {
-		return nil, nil, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
-	return w.write(pl, ix, src, p.emit, p.sink)
+	return nil
 }
 
 // stageAll stages, in parallel, every plan that can commit into a sink
 // of its own and prepares it. A plan removes only the stale paths no
-// plan routes a file to in this run, so a file that moved between
-// plans is written by its new plan and never removed by its old one.
+// plan routes a file to in this run and no plan keeps, so a file that
+// moved between plans is written by its new plan and never removed by
+// its old one.
 func (w *Workspace) stageAll(ctx context.Context, runs []*planRun, rec *record) {
 	routed := map[string]struct{}{}
 	for _, p := range runs {
 		for _, f := range p.files {
 			routed[f.path] = struct{}{}
+		}
+		for _, e := range p.kept {
+			routed[e.Path] = struct{}{}
 		}
 	}
 	var wg sync.WaitGroup

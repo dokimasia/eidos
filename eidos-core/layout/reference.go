@@ -4,6 +4,10 @@
 package layout
 
 import (
+	"errors"
+	"slices"
+	"strings"
+
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -22,13 +26,16 @@ type declared struct {
 // qualifies the reference and records its import. A bare reference is
 // a type reference with no target and no package, and the settle
 // resolved it by the package of its unit and the referent's settled
-// name. Where the referent's file derives no package, the referencing
-// declaration is refused under [UnderivedPackage].
+// name. The referent is in a file that the pass routes, or else in a
+// kept file that the input's Others name. Where the referent's file
+// derives no package, the referencing declaration is refused under
+// [UnderivedPackage].
 //
 // A reference to a refused declaration is left as written, and so is a
-// name in a body.
+// name in a body. Without Others, a pass where every file declares the
+// package of its units has no reference to qualify, and returns at once.
 func (r *router) qualify() {
-	if !r.relocated() {
+	if r.in.Others == nil && !r.relocated() {
 		return
 	}
 	fileOf := map[symbol.Symbol]int{}
@@ -66,6 +73,11 @@ func (r *router) qualify() {
 	}
 }
 
+// errKeptUnderived is the reason a reference into a kept file without a
+// package states: the kept name records the file's package and not the
+// target's reason.
+var errKeptUnderived = errors.New("layout: the file is kept from an earlier run without a package")
+
 // qualifyDecl qualifies the bare references of one declaration written
 // in the file at index fi, or refuses the declaration at its first
 // reference into a file whose package derives none.
@@ -76,11 +88,10 @@ func (r *router) qualifyDecl(d symbol.Symbol, u *plugin.Unit, fi int, homes map[
 		if !ref || !t.Target.IsZero() || t.Package != "" {
 			continue
 		}
-		hi, generated := homes[declared{pkg: u.Pkg.Package, name: t.Spelling}]
-		if !generated || hi == fi {
+		home, found := r.home(homes, u.Pkg.Package, t.Spelling)
+		if !found || home.file.Path == f.file.Path {
 			continue
 		}
-		home := &r.files[hi]
 		switch {
 		case home.file.Pkg.IsZero():
 			origin, _ := emit.OriginOf(d)
@@ -93,6 +104,33 @@ func (r *router) qualifyDecl(d symbol.Symbol, u *plugin.Unit, fi int, homes map[
 			t.Package = home.file.Pkg.Package
 		}
 	}
+}
+
+// home returns the file that declares a settled name of a package: a
+// file of the pass, and else a kept file of the input's Others, whose
+// path and package the kept name records. A method is never the home of
+// a bare reference. It reports false where no file declares the name.
+func (r *router) home(homes map[declared]int, pkg, name string) (building, bool) {
+	if hi, generated := homes[declared{pkg: pkg, name: name}]; generated {
+		return r.files[hi], true
+	}
+	if r.in.Others == nil {
+		return building{}, false
+	}
+	kept := r.in.Others.InScope(pkg, "")
+	at, _ := slices.BinarySearchFunc(kept, name, func(e plugin.NameEntry, settled string) int {
+		return strings.Compare(e.Settled, settled)
+	})
+	for ; at < len(kept) && kept[at].Settled == name; at++ {
+		if e := &kept[at]; e.Kind != symbol.KindMethod {
+			home := building{file: plugin.File{Path: e.File, Pkg: e.FilePkg}}
+			if e.FilePkg.IsZero() {
+				home.reason = errKeptUnderived
+			}
+			return home, true
+		}
+	}
+	return building{}, false
 }
 
 // relocated reports whether a file declares a package other than the

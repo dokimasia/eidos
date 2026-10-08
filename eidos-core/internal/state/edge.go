@@ -11,13 +11,14 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/wire"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The tags that open the spellings of edges. Each grain has its own tag,
-// and so does the findings edge, so two edges of different grains never
-// have the same spelling.
+// and so do the findings edge and the modules edge, so two edges of
+// different grains never have the same spelling.
 const (
 	edgeDeclaration = 'd'
 	edgePackage     = 'p'
@@ -25,14 +26,33 @@ const (
 	edgeDirective   = 'r'
 	edgeFact        = 'f'
 	edgeFindings    = 'x'
+	edgeExport      = 'e'
+	edgeName        = 'n'
+	edgeScope       = 's'
+	edgeDirectory   = 'v'
+	edgeModules     = 'm'
+	edgeUnit        = 'u'
+	edgeFiles       = 'w'
+)
+
+// The tags that open the key of a name edge: a bare reference's package,
+// or a resolved reference's origin.
+const (
+	nameByPackage = 'p'
+	nameByOrigin  = 'o'
 )
 
 // FindingsEdge is an edge that a record lists among its reads when the
 // record reported a finding. No edit makes this edge dirty. Its readers
-// row lists every validation, invocation and check that reported a
-// finding, so a warm run can report the findings of each record that it
-// keeps.
+// row lists every validation, invocation, check and group that reported
+// a finding, so a warm run can report the findings of each record that
+// it keeps.
 var FindingsEdge = hashOf([]byte{edgeFindings})
+
+// ModulesEdge is the edge of the toolchain modules that the load
+// resolved: what a group records when a target placed its files against
+// the modules. It is dirty when the list of modules changed.
+var ModulesEdge = hashOf([]byte{edgeModules})
 
 // spellingCap is the capacity of the stack buffer an edge or a record's
 // key is spelled in, so a spelling allocates only where it is longer.
@@ -86,6 +106,74 @@ func FactEdge(subject symbol.Identity, key meta.KeyName) EdgeHash {
 	var spelling [spellingCap]byte
 	b := appendIdentity(append(spelling[:0], edgeFact), subject)
 	return hashOf(wire.AppendText(b, string(key)))
+}
+
+// ExportEdge returns the hash of the export edge of a plan: what an
+// invocation records for each plan whose export it read. It is dirty when
+// the plan's export changed. It allocates nothing for a name that fits
+// in 250 bytes.
+func ExportEdge(plan string) EdgeHash {
+	var spelling [spellingCap]byte
+	return hashOf(wire.AppendText(append(spelling[:0], edgeExport), plan))
+}
+
+// NameEdge returns the hash of the edge of one entry of a plan's name
+// table: what a group records for each entry that its references looked
+// up, whether a file declared the entry or not. It is dirty when the
+// entry appeared, disappeared, or changed its settled name or its file's
+// package. It allocates nothing for a spelling that fits in 255 bytes.
+func NameEdge(plan string, k plugin.NameKey) EdgeHash {
+	var spelling [spellingCap]byte
+	b := wire.AppendText(append(spelling[:0], edgeName), plan)
+	if k.Package != "" {
+		b = wire.AppendText(append(b, nameByPackage), k.Package)
+	} else {
+		b = appendIdentity(append(b, nameByOrigin), k.Origin)
+	}
+	return hashOf(wire.AppendText(b, k.Emitted))
+}
+
+// ScopeEdge returns the hash of the edge of one collision scope of a
+// plan, the names of a package that attach to receiver: what a group
+// records for each scope that its files declare a name in. It is dirty
+// when a name enters or leaves the scope. It allocates nothing for a
+// spelling that fits in 255 bytes.
+func ScopeEdge(plan, pkg, receiver string) EdgeHash {
+	var spelling [spellingCap]byte
+	b := wire.AppendText(append(spelling[:0], edgeScope), plan)
+	return hashOf(wire.AppendText(wire.AppendText(b, pkg), receiver))
+}
+
+// DirectoryEdge returns the hash of the edge of the residents of one
+// directory: what a group records for each directory that a target
+// placed one of its files in. It is dirty when a source file of the
+// directory appeared, disappeared or changed its package. It allocates
+// nothing for a path that fits in 250 bytes.
+func DirectoryEdge(dir string) EdgeHash {
+	var spelling [spellingCap]byte
+	return hashOf(wire.AppendText(append(spelling[:0], edgeDirectory), dir))
+}
+
+// FilesEdge returns the hash of the edge of the workspace files of a
+// package: what a group records for each of its per-package units, whose
+// file the layout writes beside the package's first directory. It is
+// dirty when a file appeared in the package or left it, by an edit of
+// its package clause, a new file or a removed one. It allocates nothing
+// for an identity whose spelling fits in 255 bytes.
+func FilesEdge(pkg symbol.Identity) EdgeHash {
+	var spelling [spellingCap]byte
+	return hashOf(appendIdentity(append(spelling[:0], edgeFiles), pkg))
+}
+
+// UnitEdge returns the hash of the edge of one unit of a plan: what the
+// group that contains the unit records. It is dirty when an invocation
+// that the run executes again, or a match that appeared, places a
+// declaration into the unit. It allocates nothing for a spelling that
+// fits in 255 bytes.
+func UnitEdge(plan string, u plugin.UnitRef) EdgeHash {
+	var spelling [spellingCap]byte
+	b := wire.AppendText(append(spelling[:0], edgeUnit), plan)
+	return hashOf(appendUnitRef(b, u))
 }
 
 // appendIdentity appends an identity's six fields to dst as the record

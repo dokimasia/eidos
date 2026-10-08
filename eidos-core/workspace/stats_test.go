@@ -12,8 +12,11 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
+	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
@@ -28,6 +31,13 @@ const (
 	apiSource = "svc/api/user.zz"
 	readme    = "README.md"
 )
+
+// planMirrorID is the generator that mirrors every struct into one plan
+// file.
+const planMirrorID plugin.ID = "plan-mirror"
+
+// planDir is the output directory of the plan file of planMirrorID.
+const planDir = "gen"
 
 // The counts the cases expect of the tree: every file the gate stats,
 // the claimed files a cold gate hashes, and the structs the files
@@ -107,13 +117,23 @@ func TestStats(t *testing.T) {
 			assert.Equal(t, report.Stats.Reparsed, 1, "the unit that declares Twin parses again")
 		})
 
-		t.Run("counts the regions the run decoded", func(t *testing.T) {
+		t.Run("counts the region of a kept unit that the run reads", func(t *testing.T) {
 			t.Parallel()
 
-			w := sealing(t, ledger.NewMem(), "plan")
+			w := built(t, planMirroring(t, ledger.NewMem()))
+			sealedRun(t, w, workspace.Input{Tree: statsTree()})
+			report := sealedRun(t, w, workspace.Input{Tree: editedStatsTree()})
+			assert.InRange(t, report.Stats.Decoded, 1, math.Inf(1),
+				"the plan's one group mirrors the store package's kept row again")
+		})
+
+		t.Run("counts no region for a run over an unchanged tree", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, planMirroring(t, ledger.NewMem()))
 			sealedRun(t, w, workspace.Input{Tree: statsTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: statsTree()})
-			assert.InRange(t, report.Stats.Decoded, 1, math.Inf(1), "the run's phases read the kept units' regions")
+			assert.Equal(t, report.Stats.Decoded, 0, "no phase reads a kept unit")
 		})
 
 		t.Run("counts the subjects whose directives the run validated", func(t *testing.T) {
@@ -244,4 +264,41 @@ func statsTree() fstest.MapFS {
 	tree[apiSource] = &fstest.MapFile{Data: []byte("package svc/api\ntype User string\n")}
 	tree[readme] = &fstest.MapFile{Data: []byte("# svc\n")}
 	return tree
+}
+
+// editedStatsTree returns the statistics cases' tree after an edit that
+// adds a struct to the api package.
+func editedStatsTree() fstest.MapFS {
+	tree := statsTree()
+	tree[apiSource] = &fstest.MapFile{
+		Data: []byte("package svc/api\ntype User string\ntype Account int\n"), ModTime: editTime,
+	}
+	return tree
+}
+
+// planMirroring returns the builder of a composition over the scripted
+// frontend that records into a ledger, whose one plan mirrors every
+// struct into one file under the plan's output directory.
+func planMirroring(tb assert.TB, l ledger.Ledger) *workspace.Builder {
+	tb.Helper()
+
+	return sealingPlans(l, workspace.Plan{
+		Name: "plan", Generators: []plugin.Generator{planMirror()}, Backend: printer(tb, "fixture"),
+		Layout: layout.Config{Dir: planDir},
+	})
+}
+
+// planMirror returns a generator that mirrors every struct into one plan
+// file, so one group contains the mirror of every struct.
+func planMirror() plugin.Generator {
+	p, held := eidos.NewPlugin(planMirrorID).
+		Output(plugin.Output{Per: plugin.PerPlan, Word: "all"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			e.PlanFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name})
+			return nil
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
 }

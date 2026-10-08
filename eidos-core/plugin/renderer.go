@@ -34,14 +34,20 @@ type RenderedFile struct {
 	// Body is the finished text: formatted, in the language's own
 	// spelling. The output contract stamps and stages it.
 	Body []byte
+	// Findings are the findings that the render reported to the
+	// context's sink about the file, in report order. A run records
+	// them with the file, and a warm run that keeps the file without
+	// rendering it reports them again.
+	Findings []diag.Diag
 }
 
 // Renderer renders one plan's emit into files as values.
 //
-// A problem with one file attaches to the context's sink and the
-// pass continues with the remaining files; a returned error is
-// fatal to the pass. Two calls over one store return the same
-// bytes, which the conformance suite checks every renderer for.
+// A problem with one file attaches to the context's sink and to the
+// file's [RenderedFile.Findings], and the pass continues with the
+// remaining files. A returned error is fatal to the pass. Two calls
+// over one store return the same bytes, which the conformance suite
+// checks every renderer for.
 type Renderer interface {
 	Render(ctx *RenderContext) ([]RenderedFile, error)
 }

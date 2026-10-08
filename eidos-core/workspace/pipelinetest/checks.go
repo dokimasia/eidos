@@ -83,7 +83,8 @@ func AssertRecorded(tb assert.TB, f Fixture, root string) {
 }
 
 // AssertIdempotent runs the fixture twice in root, an empty directory,
-// and checks the second run: it changes the bytes of no file under root
+// and checks the second run, which ignores the sealed state, so it
+// executes every phase again: it changes the bytes of no file under root
 // and moves the mtime of none, the source tree's and the manifest's
 // included. Between the runs every file's times are set to an instant in
 // the past, so a rewrite of unchanged bytes moves its mtime. The sealed
@@ -99,7 +100,7 @@ func AssertIdempotent(tb assert.TB, f Fixture, root string) {
 		assert.NoError(tb, os.Chtimes(rundir.Path(root, path), aged, aged), "a file of the run's directory ages")
 	}
 	before := states(tb, root, w.Brand())
-	_, _, _ = run(tb, f, root)
+	_, _, _ = run(tb, f, root, true)
 	after := states(tb, root, w.Brand())
 	paths := slices.Sorted(maps.Keys(before))
 	for _, path := range paths {

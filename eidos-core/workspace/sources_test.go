@@ -12,6 +12,8 @@ import (
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -221,6 +223,18 @@ func TestSources(t *testing.T) {
 			g := graphOf(t, nil, golangSvc())
 			assert.Empty(t, admitted(t, workspace.Sources{Module: billingMod}, g),
 				"the packages a module scope admits")
+		})
+
+		t.Run("decodes no region for a scoped plan over an unchanged tree", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
+				Name: scopedPlan, Generators: []plugin.Generator{planMirror()}, Backend: printer(t, "fixture"),
+				Layout: layout.Config{Dir: planDir}, Sources: workspace.Sources{Packages: []string{"svc/..."}},
+			}))
+			sealedRun(t, w, workspace.Input{Tree: statsTree()})
+			report := sealedRun(t, w, workspace.Input{Tree: statsTree()})
+			assert.Equal(t, report.Stats.Decoded, 0, "the scope decides no package that no reader asks about")
 		})
 	})
 }

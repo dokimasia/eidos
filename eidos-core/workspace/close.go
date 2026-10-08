@@ -275,12 +275,15 @@ func blocking(c compiledCheck, runs []*planRun) *planRun {
 }
 
 // records returns the records of the plans at the indexes, in their
-// order: each plan's manifest entries and its export.
+// order: each plan's manifest entries, those of the files it routed and
+// those of the files a warm run kept, sorted by path, and its export.
 func records(at []int, runs []*planRun) []plugin.PlanRecord {
 	out := make([]plugin.PlanRecord, 0, len(at))
 	for _, i := range at {
 		p := runs[i]
-		out = append(out, plugin.PlanRecord{Name: p.plan.name, Files: p.entries(), Export: p.export})
+		files := slices.Concat(p.entries(), p.kept)
+		slices.SortFunc(files, func(a, b manifest.Entry) int { return strings.Compare(a.Path, b.Path) })
+		out = append(out, plugin.PlanRecord{Name: p.plan.name, Files: files, Export: p.export})
 	}
 	return out
 }

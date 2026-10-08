@@ -24,6 +24,7 @@ const (
 	tagValidation = 'v'
 	tagInvocation = 'i'
 	tagCheck      = 'c'
+	tagGroup      = 'g'
 )
 
 // refSize is the size of a record's reference in a readers row: its
@@ -42,6 +43,9 @@ const (
 	RecordInvocation RecordKind = 2
 	// RecordCheck is one call of a workspace check.
 	RecordCheck RecordKind = 3
+	// RecordGroup is one group of a plan's files: the files that execute
+	// together.
+	RecordGroup RecordKind = 4
 )
 
 // RecordRef names one record: its kind, and its ID, the first eight bytes
@@ -78,6 +82,15 @@ func CheckRef(name plugin.ID) RecordRef {
 	var spelling [spellingCap]byte
 	h := hashOf(wire.AppendText(append(spelling[:0], tagCheck), string(name)))
 	return RecordRef{Kind: RecordCheck, ID: uint64(h)}
+}
+
+// GroupRef returns the reference of the group of a plan that the unit
+// key names: the group's first unit in [plugin.UnitRef.Compare] order. It
+// allocates nothing for a spelling that fits in 255 bytes.
+func GroupRef(plan string, key plugin.UnitRef) RecordRef {
+	var spelling [spellingCap]byte
+	h := hashOf(appendUnitRef(wire.AppendText(append(spelling[:0], tagGroup), plan), key))
+	return RecordRef{Kind: RecordGroup, ID: uint64(h)}
 }
 
 // Compare orders two references by kind, then by ID, and returns a
@@ -122,6 +135,32 @@ type Invocation struct {
 type Check struct {
 	Name     plugin.ID
 	Reads    []EdgeHash
+	Findings []diag.Diag
+}
+
+// Group is the record of one group of a plan's files: the files that
+// execute together, because a backend split one unit into them, two units
+// share one of them, or an emit-phase invocation matched a value of one
+// and placed declarations into another.
+type Group struct {
+	// Plan is the group's plan, and Key the group's first unit in
+	// [plugin.UnitRef.Compare] order, which names the group.
+	Plan string
+	Key  plugin.UnitRef
+	// Units are the group's units, and Files the paths of its files,
+	// each sorted.
+	Units []plugin.UnitRef
+	Files []string
+	// Contributors are the invocations that placed a declaration into a
+	// unit of the group or appended into a slot of one, in canonical
+	// match order.
+	Contributors []plugin.MatchKey
+	// Reads are the edges that the group read beyond the reads of its
+	// invocations: the edge of each of its units, and what its settle,
+	// its routing and its render read.
+	Reads []EdgeHash
+	// Findings are the findings that the render reported for the
+	// group's files.
 	Findings []diag.Diag
 }
 
@@ -175,6 +214,41 @@ func (s *PhaseState) Check(name plugin.ID) (Check, bool, error) {
 		return true
 	})
 	return out, found, err
+}
+
+// Group returns the record of the group of a plan that a unit key names,
+// and false where the generation has none.
+//
+// Error modes: an error wrapping [ErrDamaged] for a row that does not
+// read whole or does not decode.
+func (s *PhaseState) Group(plan string, key plugin.UnitRef) (Group, bool, error) {
+	var out Group
+	found, err := s.lookup(TableGroups, GroupRef(plan, key), func(d *decoder) bool {
+		gotPlan, gotKey := d.text(), d.unitRef()
+		if gotPlan != plan || gotKey.Compare(key) != 0 {
+			return false
+		}
+		out = decodeGroup(d, gotPlan, gotKey)
+		return true
+	})
+	return out, found, err
+}
+
+// Groups returns every group that the generation keeps under the ID of a
+// reference, in row order. A readers row names records by reference, and
+// Groups reads the groups that such a reference names. Records whose IDs
+// collide share one row, so the caller checks the plan and the key of
+// each record.
+//
+// Error modes: an error wrapping [ErrDamaged] for a row that does not
+// read whole or does not decode.
+func (s *PhaseState) Groups(ref RecordRef) ([]Group, error) {
+	var out []Group
+	err := s.entries(TableGroups, ref.ID, func(d *decoder) {
+		plan, key := d.text(), d.unitRef()
+		out = append(out, decodeGroup(d, plan, key))
+	})
+	return out, err
 }
 
 // Validations returns every validation that the generation keeps under
@@ -311,7 +385,7 @@ func decodeReaders(row []byte) ([]RecordRef, error) {
 	out := make([]RecordRef, 0, n)
 	for rest := d.Rest(); len(rest) >= refSize && d.Err() == nil; rest = rest[refSize:] {
 		kind := RecordKind(rest[0])
-		if kind < RecordValidation || kind > RecordCheck {
+		if kind < RecordValidation || kind > RecordGroup {
 			d.Fail(fmt.Errorf("%w: record kind %d", wire.ErrMalformed, kind))
 			break
 		}
@@ -363,7 +437,13 @@ func appendInvocation(dst []byte, inv *Invocation) []byte {
 // keeps nothing of dst, so a spelling built over a buffer on the stack
 // does not move to the heap.
 func appendInvocationKey(dst []byte, plan string, m plugin.MatchKey) []byte {
-	dst = wire.AppendText(dst, plan)
+	return appendMatchKey(wire.AppendText(dst, plan), m)
+}
+
+// appendMatchKey appends a match's key fields to dst: its plugin, rule,
+// subject, instance and host, as [decoder.match] reads them. It keeps
+// nothing of dst.
+func appendMatchKey(dst []byte, m plugin.MatchKey) []byte {
 	dst = wire.AppendText(dst, string(m.Plugin))
 	dst = binary.AppendVarint(dst, int64(m.Rule))
 	dst = appendIdentity(dst, m.Subject)
@@ -415,6 +495,47 @@ func appendCheck(dst []byte, c *Check) []byte {
 	e.edges(c.Reads)
 	e.findings(c.Findings)
 	return e.buf
+}
+
+// appendGroup appends a group's entry to dst: the plan and the key unit,
+// then the units, the files, the contributors, the reads and the
+// findings.
+func appendGroup(dst []byte, g *Group) []byte {
+	e := encoder{buf: appendUnitRef(wire.AppendText(dst, g.Plan), g.Key)}
+	e.uvarint(uint64(len(g.Units)))
+	for _, u := range g.Units {
+		e.buf = appendUnitRef(e.buf, u)
+	}
+	e.texts(g.Files)
+	e.uvarint(uint64(len(g.Contributors)))
+	for i := range g.Contributors {
+		e.buf = appendMatchKey(e.buf, g.Contributors[i])
+	}
+	e.edges(g.Reads)
+	e.findings(g.Findings)
+	return e.buf
+}
+
+// decodeGroup decodes the rest of a group's entry, after its plan and
+// its key unit.
+func decodeGroup(d *decoder, plan string, key plugin.UnitRef) Group {
+	out := Group{Plan: plan, Key: key}
+	if n := d.Count(); n > 0 {
+		out.Units = make([]plugin.UnitRef, n)
+		for i := range out.Units {
+			out.Units[i] = d.unitRef()
+		}
+	}
+	out.Files = d.texts()
+	if n := d.Count(); n > 0 {
+		out.Contributors = make([]plugin.MatchKey, n)
+		for i := range out.Contributors {
+			out.Contributors[i] = d.match()
+		}
+	}
+	out.Reads = d.edges()
+	out.Findings = d.findings()
+	return out
 }
 
 // invocationBody writes the rest of an invocation's entry: the reads,

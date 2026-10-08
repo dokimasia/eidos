@@ -451,6 +451,76 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Names", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Names](), reflect.TypeFor[core.Names](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NameEntry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.NameEntry](), reflect.TypeFor[core.NameEntry](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NameKey", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.NameKey](), reflect.TypeFor[core.NameKey](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NameRead", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.NameRead](), reflect.TypeFor[core.NameRead](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("FactRead", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.FactRead](), reflect.TypeFor[core.FactRead](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Settled", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Settled](), reflect.TypeFor[core.Settled](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NamesOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.NamesOf), reflect.TypeOf(core.NamesOf), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("ValidateOptions", func(t *testing.T) {
 		t.Parallel()
 
@@ -858,6 +928,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(plugin.Settle), reflect.TypeOf(core.Settle), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("SettleWith", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.SettleWith), reflect.TypeOf(core.SettleWith), "the wrapper has the kernel function's signature")
 		})
 	})
 

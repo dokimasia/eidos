@@ -97,15 +97,50 @@ func Modules(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) []plugin.Modu
 	for m := range seen {
 		out = append(out, m)
 	}
-	slices.SortFunc(out, func(a, b plugin.Module) int {
-		return cmp.Or(
-			cmp.Compare(depth(b.Root), depth(a.Root)),
-			strings.Compare(a.Root, b.Root),
-			cmp.Compare(a.Lang, b.Lang),
-			strings.Compare(a.Path, b.Path),
-		)
-	})
+	slices.SortFunc(out, compareModules)
 	return out
+}
+
+// ModulesOf returns the modules of a count of packages by module, in the
+// order [Modules] returns them: each module that at least one package
+// names, rooted in the workspace. A warm run keeps such a count, and reads
+// the modules off it without a walk of the graph. A count without such a
+// module returns nil.
+//
+// # Allocation contract
+//
+// ModulesOf counts the modules first, and allocates the list it returns at
+// that length, and nothing for a count without a module.
+func ModulesOf(counts map[plugin.Module]int) []plugin.Module {
+	n := 0
+	for m, c := range counts {
+		if c > 0 && workspaceFile(m.Root) {
+			n++
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make([]plugin.Module, 0, n)
+	for m, c := range counts {
+		if c > 0 && workspaceFile(m.Root) {
+			out = append(out, m)
+		}
+	}
+	slices.SortFunc(out, compareModules)
+	return out
+}
+
+// compareModules orders modules innermost root first: a module whose root
+// is below another's precedes it, and modules at one depth sort by root,
+// then language, then path.
+func compareModules(a, b plugin.Module) int {
+	return cmp.Or(
+		cmp.Compare(depth(b.Root), depth(a.Root)),
+		strings.Compare(a.Root, b.Root),
+		cmp.Compare(a.Lang, b.Lang),
+		strings.Compare(a.Path, b.Path),
+	)
 }
 
 // depth counts a workspace-relative directory's elements, zero for the

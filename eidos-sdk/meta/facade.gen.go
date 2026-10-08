@@ -350,12 +350,11 @@ type StoredClaim = core.StoredClaim
 // first use: a read, a write or a withdrawal of a subject loads the
 // subject's recorded claims before it proceeds, and [Facts.ByKey]
 // merges the recorded presence with the transitions of the run. A read
-// of a fact through [Get] or [Fact] on a subject that the run has not
-// restored or written does not load the subject's claims where the
-// recorded presence of the key leaves the subject out, and reads the fact
-// absent. A restored
-// claim ranks against the run's own claims exactly as it did when it was
-// made, because its envelope is recorded whole.
+// of a fact through [Get] or [Fact] skips the load where the recorded
+// presence of the key leaves the subject out and the run has not
+// restored or written the subject. Such a read returns the fact as
+// absent. A restored claim ranks against the run's own claims exactly as
+// it did when it was made, because its envelope is recorded whole.
 //
 // A failure of the source is not returned by the read that met it: the
 // bag reads as empty, and [Facts.Damaged] returns the failure, so the

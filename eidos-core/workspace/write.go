@@ -36,35 +36,46 @@ type stagedFile struct {
 	// first is the file's first declaration, which a finding about the
 	// file names through describe, and nil for a file without one.
 	first symbol.Symbol
+	// pkg is the package the file declares, and findings are what the
+	// render reported about the file. A recording run's groups set group,
+	// the key unit of the file's group, and names, the file-level names
+	// the file declares, which the file's artifact records.
+	pkg      symbol.Identity
+	findings []diag.Diag
+	group    plugin.UnitRef
+	names    []plugin.NameEntry
 }
 
 // write routes one plan's settled store to files against the run's
-// source tree, renders the files and stamps each one. It returns the
-// stamped files, and for a plan marked exported, the routed files that
-// rendered. A backend that spells no filenames is a declaration defect
-// the composition already refused, so the assertion here returns an
-// error and does not panic, and so does a defect in the routing's
-// inputs.
+// source tree, renders the files and stamps each one. others are the
+// names of the plan's files that a warm run keeps, and nil for a store
+// that contains the whole plan. It returns the stamped files, and the
+// routed files that rendered at the same places. A backend that spells no
+// filenames is a declaration defect the composition already refused, so
+// the assertion here returns an error and does not panic, and so does a
+// defect in the routing's inputs.
 func (w *Workspace) write(
-	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink,
+	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink, others plugin.Names,
 ) ([]stagedFile, []plugin.File, error) {
 	speller, spells := pl.backend.(plugin.FileSpeller)
 	if !spells {
 		return nil, nil, fmt.Errorf("backend %s writes output and spells no filenames", pl.backend.Name())
 	}
 	packager, _ := pl.backend.(plugin.Packager)
-	files, err := layout.Route(layout.Input{
+	in := layout.Input{
 		Emit:       into,
 		Config:     pl.routing,
 		Outputs:    pl.outputs,
 		Speller:    speller,
 		Packager:   packager,
 		Index:      ix,
-		Directives: w.directives,
 		Residents:  src.residents,
+		Directives: w.directives,
 		Modules:    src.modules,
+		Others:     others,
 		Sink:       sink,
-	})
+	}
+	files, err := layout.Route(in)
 	if err != nil {
 		return nil, nil, fmt.Errorf("route: %w", err)
 	}
@@ -73,11 +84,10 @@ func (w *Workspace) write(
 
 // render drives one plan's backend over the files its layout routed
 // and returns what the backend produced, stamped through the plan's
-// contract, at each file's routed path and in path order. For a plan
-// marked exported it also returns the routed files the backend
-// rendered, in the same order, and nil otherwise. A backend that does
-// not render is a declaration defect the composition already refused,
-// so the assertion here returns an error and does not panic.
+// contract, at each file's routed path and in path order. It also returns
+// the routed files the backend rendered, at the same places. A backend
+// that does not render is a declaration defect the composition already
+// refused, so the assertion here returns an error and does not panic.
 func render(
 	pl *compiledPlan, ix *plugin.Index, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) ([]stagedFile, []plugin.File, error) {
@@ -92,7 +102,7 @@ func render(
 		return nil, nil, fmt.Errorf("render: %w", err)
 	}
 	out := make([]stagedFile, 0, len(rendered))
-	var exported []plugin.File
+	routedFiles := make([]plugin.File, 0, len(rendered))
 	routed := 0
 	for _, f := range rendered {
 		body, err := pl.contract.Stamp(f)
@@ -108,14 +118,15 @@ func render(
 			return nil, nil, fmt.Errorf("render: %s returns %s, which the layout did not route",
 				pl.backend.Name(), f.Path)
 		}
-		staged := stagedFile{path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path}}
+		staged := stagedFile{
+			path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path},
+			pkg: files[routed].Pkg, findings: f.Findings,
+		}
 		describeFile(&staged, &files[routed], ix)
 		out = append(out, staged)
-		if pl.exported {
-			exported = append(exported, files[routed])
-		}
+		routedFiles = append(routedFiles, files[routed])
 	}
-	return out, exported, nil
+	return out, routedFiles, nil
 }
 
 // describeFile records what the manifest and the findings read off a

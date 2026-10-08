@@ -181,8 +181,9 @@ func (p *Pass) SplitUnit(u plugin.Unit) []plugin.Unit {
 // Render takes the context's routed files through the procedure and
 // returns them as values, in the context's order, which the layout
 // sorts by path. A file whose every declaration is skipped is
-// withheld. Findings attach to the context's sink at the file's path.
-// A returned error is a defect in the inputs, never a finding.
+// withheld. Findings attach to the context's sink at the file's path,
+// and a rendered file lists its own in its Findings. A returned error
+// is a defect in the inputs, never a finding.
 func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	if ctx == nil || ctx.Emit == nil {
 		return nil, errors.New("render: the pass needs a plan's emit store")
@@ -265,7 +266,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 			files = append(files, plugin.RenderedFile{
 				Path: order[i].Path, Pkg: order[i].Pkg,
 				Plugins: results[i].plugins, Sources: results[i].sources,
-				Body: results[i].body,
+				Body: results[i].body, Findings: results[i].found,
 			})
 		}
 	}

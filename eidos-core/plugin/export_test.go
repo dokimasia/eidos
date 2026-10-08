@@ -11,6 +11,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -103,6 +104,18 @@ func TestExport(t *testing.T) {
 			assert.Equal(t, exported(t, doc, "fetch").Host, exportForeign, "the method's host")
 		})
 
+		t.Run("keys a method under the emitted name that others list for its receiver's type", func(t *testing.T) {
+			t.Parallel()
+
+			kept := keptNames{{Package: "svc", Kind: symbol.KindStruct, Emitted: "box", Settled: "Box"}}
+			e := storeOf(t, settleUnit("svc", "svc/a.src", receiving("box")))
+			_, err := plugin.SettleWith(e, capitalizing(), nil, diag.NewSink(), kept)
+			assert.NoError(t, err, "the settle completes")
+			file := plugin.File{Path: exportFile, Pkg: exportPkg, Units: slices.Collect(e.Units())}
+			doc := plugin.NewExport(exportPlan, []plugin.File{file}, e, kept)
+			assert.Equal(t, exported(t, doc, "fetch").Host, "box", "the method's host")
+		})
+
 		t.Run("lists no parameter, result or type parameter", func(t *testing.T) {
 			t.Parallel()
 
@@ -150,7 +163,7 @@ func TestExport(t *testing.T) {
 			box.Name = "Box"
 			u := settleUnit("svc", "svc/a.src", box)
 			file := plugin.File{Path: exportFile, Pkg: exportPkg, Units: []plugin.Unit{u}}
-			doc := plugin.NewExport(exportPlan, []plugin.File{file}, nil)
+			doc := plugin.NewExport(exportPlan, []plugin.File{file}, nil, nil)
 			assert.Equal(t, exported(t, doc, "Box").Spelling, "Box", "the struct's spelling")
 		})
 
@@ -205,26 +218,62 @@ func TestExport(t *testing.T) {
 			assert.Equal(t, cap(found), len(found), "the result's capacity")
 		})
 	})
+
+	t.Run("ExportKey", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("Compare", func(t *testing.T) {
+			t.Parallel()
+
+			row := plugin.ExportKey{Origin: settleOrigin("row1", symbol.KindStruct), Plugin: exportPlugin, Name: "row1"}
+			other := row
+			other.Origin = settleOrigin("row2", symbol.KindStruct)
+			hosted := row
+			hosted.Host = "Box"
+			tests := []struct {
+				name string
+				a, b plugin.ExportKey
+				want int
+			}{
+				{name: "returns a negative number for an earlier origin", a: row, b: other, want: -1},
+				{name: "returns a positive number for a later host of one origin", a: hosted, b: row, want: 1},
+				{name: "returns zero for one key", a: row, b: row, want: 0},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					assert.Equal(t, tt.a.Compare(tt.b), tt.want,
+						"Compare orders the keys by origin, plugin, tag, host and name")
+				})
+			}
+		})
+	})
 }
 
-// NewExport allocates its result and its sorted declarations, and Find
-// allocates nothing. The checks run alone, because the count includes
-// every goroutine's allocations.
+// NewExport allocates its result and its sorted declarations. Find and
+// ExportKey.Compare allocate nothing. The checks run alone, because the
+// count includes every goroutine's allocations.
 func TestExportAllocs(t *testing.T) {
 	files := keyedFiles(1000)
 	var doc plugin.ExportDoc
-	assert.MaxAllocs(t, func() { doc = plugin.NewExport(exportPlan, files, nil) }, 2,
+	assert.MaxAllocs(t, func() { doc = plugin.NewExport(exportPlan, files, nil, nil) }, 2,
 		"NewExport allocates its result and its sorted declarations")
 	assert.Length(t, doc.Symbols, 2000, "NewExport lists the files' 2,000 declarations")
 	key := plugin.ExportKey{Origin: settleOrigin("row500", symbol.KindStruct), Plugin: exportPlugin, Name: "row500"}
 	var found []plugin.ExportedSymbol
 	assert.MaxAllocs(t, func() { found = doc.Find(key) }, 0, "Find allocates nothing")
 	assert.Length(t, found, 2, "Find returns the key's two declarations")
+	other := key
+	other.Name = "row501"
+	order := 0
+	assert.MaxAllocs(t, func() { order = key.Compare(other) }, 0, "Compare allocates nothing")
+	assert.Equal(t, order, -1, "row500 sorts before row501")
 }
 
 // BenchmarkExport measures an export of 1,000 structs in each of two
-// files: building it, which allocates its result and its sorted
-// declarations, and finding one key in it, which allocates nothing.
+// files. Building the export allocates its result and its sorted
+// declarations. Finding one key and comparing two keys allocate nothing.
 func BenchmarkExport(b *testing.B) {
 	files := keyedFiles(1000)
 	key := plugin.ExportKey{Origin: settleOrigin("row500", symbol.KindStruct), Plugin: exportPlugin, Name: "row500"}
@@ -234,13 +283,13 @@ func BenchmarkExport(b *testing.B) {
 		defer c.End()
 		var got plugin.ExportDoc
 		for c.Loop() {
-			got = plugin.NewExport(exportPlan, files, nil)
+			got = plugin.NewExport(exportPlan, files, nil, nil)
 		}
 		assert.Length(b, got.Symbols, 2000, "NewExport lists the files' 2,000 declarations")
 	})
 
 	b.Run("Find", func(b *testing.B) {
-		doc := plugin.NewExport(exportPlan, files, nil)
+		doc := plugin.NewExport(exportPlan, files, nil, nil)
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		var got []plugin.ExportedSymbol
@@ -248,6 +297,20 @@ func BenchmarkExport(b *testing.B) {
 			got = doc.Find(key)
 		}
 		assert.Length(b, got, 2, "Find returns the key's two declarations")
+	})
+
+	b.Run("ExportKey", func(b *testing.B) {
+		b.Run("Compare", func(b *testing.B) {
+			other := key
+			other.Name = "row501"
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			order := 0
+			for c.Loop() {
+				order = key.Compare(other)
+			}
+			assert.Equal(b, order, -1, "row500 sorts before row501")
+		})
 	})
 }
 
@@ -259,7 +322,7 @@ func exportOf(t *testing.T, b plugin.Backend, units ...plugin.Unit) plugin.Expor
 	e := storeOf(t, units...)
 	coretest.AssertCodes(t, settled(t, e, b))
 	file := plugin.File{Path: exportFile, Pkg: exportPkg, Units: slices.Collect(e.Units())}
-	return plugin.NewExport(exportPlan, []plugin.File{file}, e)
+	return plugin.NewExport(exportPlan, []plugin.File{file}, e, nil)
 }
 
 // exported returns the export's one declaration under an emitted name,
@@ -336,4 +399,4 @@ func keyedFiles(n int) []plugin.File {
 }
 
 // keyed returns the export of the files keyedFiles returns.
-func keyed(n int) plugin.ExportDoc { return plugin.NewExport(exportPlan, keyedFiles(n), nil) }
+func keyed(n int) plugin.ExportDoc { return plugin.NewExport(exportPlan, keyedFiles(n), nil, nil) }

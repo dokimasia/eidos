@@ -213,6 +213,75 @@ func TestGate(t *testing.T) {
 				"no modification time precedes the zero anchor, so each file the load reads is hashed")
 		})
 	})
+
+	t.Run("changed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports no moved file for a cold load", func(t *testing.T) {
+			t.Parallel()
+
+			_, cold, _ := loadTree(t, stdTree())
+			assert.Nil(t, cold.Moved, "a cold load compares no record")
+		})
+
+		t.Run("reports no moved file for a tree whose stats match the record", func(t *testing.T) {
+			t.Parallel()
+
+			_, cold, _ := loadTree(t, stdTree())
+			_, warm, _ := loadTree(t, stdTree(), func(cfg *load.Config) { cfg.Prior = priorOf(cold) })
+			assert.Empty(t, warm.Moved, "every record proves its file unchanged")
+		})
+
+		t.Run("reports a file whose modification time moved", func(t *testing.T) {
+			t.Parallel()
+
+			_, cold, _ := loadTree(t, stdTree())
+			tree := stdTree()
+			tree[apiFile].ModTime = time.Unix(1, 0)
+			_, warm, _ := loadTree(t, tree, func(cfg *load.Config) { cfg.Prior = priorOf(cold) })
+			assert.Equal(t, warm.Moved, []string{apiFile}, "the file's stat moved")
+		})
+
+		t.Run("reports an unclaimed file that the record lacks", func(t *testing.T) {
+			t.Parallel()
+
+			_, cold, _ := loadTree(t, stdTree())
+			tree := stdTree()
+			tree[readmeFile] = &fstest.MapFile{Data: []byte("# readme\n")}
+			_, warm, _ := loadTree(t, tree, func(cfg *load.Config) { cfg.Prior = priorOf(cold) })
+			assert.Equal(t, warm.Moved, []string{readmeFile}, "the file is new")
+		})
+
+		t.Run("lists the record of a file whose stat moved", func(t *testing.T) {
+			t.Parallel()
+
+			_, cold, _ := loadTree(t, stdTree())
+			tree := stdTree()
+			tree[apiFile].ModTime = time.Unix(1, 0)
+			_, warm, _ := loadTree(t, tree, func(cfg *load.Config) { cfg.Prior = priorOf(cold) })
+			assert.Equal(t, warm.Was, []load.FileRecord{recordOf(t, cold, apiFile)}, "the record before the edit")
+		})
+
+		t.Run("lists the record of a recorded file that the walk did not find", func(t *testing.T) {
+			t.Parallel()
+
+			tree := stdTree()
+			tree[readmeFile] = &fstest.MapFile{Data: []byte("# readme\n")}
+			_, cold, _ := loadTree(t, tree)
+			_, warm, _ := loadTree(t, stdTree(), func(cfg *load.Config) { cfg.Prior = priorOf(cold) })
+			assert.Equal(t, warm.Was, []load.FileRecord{recordOf(t, cold, readmeFile)}, "the record of the gone file")
+		})
+
+		t.Run("reports a recorded file that the walk did not find", func(t *testing.T) {
+			t.Parallel()
+
+			tree := stdTree()
+			tree[readmeFile] = &fstest.MapFile{Data: []byte("# readme\n")}
+			_, cold, _ := loadTree(t, tree)
+			_, warm, _ := loadTree(t, stdTree(), func(cfg *load.Config) { cfg.Prior = priorOf(cold) })
+			assert.Equal(t, warm.Vanished, []string{readmeFile}, "the file is gone")
+		})
+	})
 }
 
 // recordOf returns the gate's record of one path.

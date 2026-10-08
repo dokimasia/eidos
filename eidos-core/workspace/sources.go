@@ -9,6 +9,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"sync"
 
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
@@ -84,7 +85,8 @@ type packageKey struct {
 // when every field that is set matches it, and the zero value admits
 // every package. Build validates the fields, and each run binds them to
 // the frozen graph and its facts before the plan's first generator
-// runs.
+// runs. The bound scope decides each package the first time a reader
+// asks about it.
 //
 // The fields apply to every package of the graph. A dependency
 // package, whose files a store provides, lies in no workspace
@@ -140,11 +142,19 @@ func (s Sources) fold() string {
 }
 
 // bind returns the scope the sources admit over one run's frozen graph
-// and facts, nil for sources that admit every package. It decides each
-// package once, here, and the scope it returns costs one map probe per
-// question. A pattern Build would refuse names no directory, so a
-// graph a caller handed over without Build's validation is scoped by
-// the valid patterns alone.
+// and facts, nil for sources that admit every package. The scope decides
+// a package the first time a reader asks about it and keeps the verdict,
+// so a run decodes the regions and restores the facts of the packages
+// that its plan reads, and of no other. A question after the first costs
+// one map probe under a read lock. The run binds the scope after the
+// annotate phase, the last phase that stamps facts, so a verdict does not
+// depend on when a reader first asks. A pattern Build would refuse names
+// no directory, so a graph a caller handed over without Build's
+// validation is scoped by the valid patterns alone.
+//
+// The scope is safe for concurrent use, because the lanes of a phase call
+// use it from goroutines of their own. Lanes that ask about one new
+// package concurrently each decide it and come to one verdict.
 func (s Sources) bind(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) store.Scope {
 	if s.Lang == "" && len(s.Packages) == 0 && s.Module == "" {
 		return nil
@@ -155,30 +165,43 @@ func (s Sources) bind(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) stor
 			dirs = append(dirs, d)
 		}
 	}
-	admitted := map[packageKey]struct{}{}
-	for p := range g.Packages() {
-		if s.admits(p, dirs, facts, k) {
-			admitted[packageKey{lang: p.ID.Lang, pkg: p.ID.Package}] = struct{}{}
-		}
-	}
+	var mu sync.RWMutex
+	decided := map[packageKey]bool{}
 	return func(pkg symbol.Identity) bool {
-		_, in := admitted[packageKey{lang: pkg.Lang, pkg: pkg.Package}]
+		key := packageKey{lang: pkg.Lang, pkg: pkg.Package}
+		mu.RLock()
+		in, done := decided[key]
+		mu.RUnlock()
+		if done {
+			return in
+		}
+		in = s.admits(g, pkg.PackageIdentity(), dirs, facts, k)
+		mu.Lock()
+		decided[key] = in
+		mu.Unlock()
 		return in
 	}
 }
 
-// admits reports whether every field that is set matches one package.
-// dirs are the parsed patterns, and an empty list with patterns
-// declared admits no package, because none of them names a directory.
-func (s Sources) admits(p *node.Package, dirs []directory, facts *meta.Facts, k meta.KernelKeys) bool {
-	if s.Lang != "" && p.ID.Lang != s.Lang {
+// admits reports whether the graph contains a package and every field
+// that is set matches it. dirs are the parsed patterns, and an empty list
+// with patterns declared admits no package, because none of them names a
+// directory.
+func (s Sources) admits(
+	g *store.Graph, id symbol.Identity, dirs []directory, facts *meta.Facts, k meta.KernelKeys,
+) bool {
+	if s.Lang != "" && id.Lang != s.Lang {
+		return false
+	}
+	p, held := g.PackageOf(id)
+	if !held {
 		return false
 	}
 	if len(s.Packages) > 0 && !inDirectories(p, dirs) {
 		return false
 	}
 	if s.Module != "" {
-		module, named := meta.Get(facts, p.ID, k.Module)
+		module, named := meta.Get(facts, id, k.Module)
 		if !named || module != s.Module {
 			return false
 		}

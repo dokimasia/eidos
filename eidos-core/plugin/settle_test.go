@@ -30,11 +30,12 @@ const (
 	stampPlugin                 = "fixture"
 )
 
-// The documentation the name key registers with, and the name the
-// override cases write.
+// The documentation the name key registers with, the name the
+// override cases write, and the name a kept file settles row to.
 const (
 	nameDoc      = "a declaration's name in the test target"
 	overrideName = "Record"
+	keptRow      = "KeptRow"
 )
 
 // The store the allocation check and the benchmark settle, and the
@@ -48,6 +49,9 @@ const (
 	// and the plan of the names with the tables the references follow,
 	// each sized once to the store, 19 allocations.
 	keepingSettleAllocs = 224 + 19
+	// readLogAllocs is what SettleWith adds to a settle of a store whose
+	// units read nothing: the read log.
+	readLogAllocs = 1
 )
 
 // hookless is the backend without hooks: a name and a target, and
@@ -1089,15 +1093,167 @@ func TestSettle(t *testing.T) {
 			coretest.AssertCodes(t, sink, plugin.RefusedName)
 		})
 	})
+
+	t.Run("SettleWith", func(t *testing.T) {
+		t.Parallel()
+
+		rowOrigin := settleOrigin("row", symbol.KindStruct)
+		kept := keptNames{
+			{Package: "svc", Origin: rowOrigin, Kind: symbol.KindStruct, Emitted: "row", Settled: keptRow},
+		}
+		plain := &hookless{name: settleBackend}
+
+		t.Run("rewrites a bare reference to the settled name that others list", func(t *testing.T) {
+			t.Parallel()
+
+			holder := variableOf("holder", &emit.TypeRef{Spelling: "row"})
+			e := storeOf(t, settleUnit("svc", "svc/a.src", holder))
+			coretest.AssertCodes(t, settledWith(t, e, prefixing("p"), kept))
+			assert.Equal(t, holder.Type.Spelling, keptRow, "the reference follows the kept struct")
+		})
+
+		t.Run("reports AmbiguousReference when others settle a name apart from the store", func(t *testing.T) {
+			t.Parallel()
+
+			holder := variableOf("holder", &emit.TypeRef{Spelling: "row"})
+			e := storeOf(t, settleUnit("svc", "svc/a.src", &emit.Struct{Origin: rowOrigin, Name: "row"}, holder))
+			coretest.AssertReports(t, settledWith(t, e, prefixing("p"), kept), plugin.AmbiguousReference)
+		})
+
+		t.Run("rewrites a resolved reference to the settled name that others list for its origin", func(t *testing.T) {
+			t.Parallel()
+
+			holder := variableOf("holder", &emit.TypeRef{Spelling: "row", Target: rowOrigin})
+			e := storeOf(t, settleUnit("svc", "svc/a.src", holder))
+			coretest.AssertCodes(t, settledWith(t, e, prefixing("p"), kept))
+			assert.Equal(t, holder.Type.Spelling, keptRow, "the reference follows the kept declaration")
+		})
+
+		t.Run("returns a NameRead for a reference to the declaration of another unit", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t,
+				settleUnit("svc", "svc/a.src", &emit.Struct{Origin: rowOrigin, Name: "row"}),
+				settleUnit("svc", "svc/b.src", variableOf("holder", &emit.TypeRef{Spelling: "row"})),
+			)
+			assert.Equal(t, readsOf(t, e, prefixing("p"), nil).Read,
+				[]plugin.NameRead{{Unit: 1, Key: plugin.NameKey{Package: "svc", Emitted: "row"}}},
+				"the second unit reads the struct of the first unit")
+		})
+
+		t.Run("returns a NameRead for a reference that no unit declares", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src", variableOf("holder", &emit.TypeRef{Spelling: "int"})))
+			assert.Equal(t, readsOf(t, e, prefixing("p"), nil).Read,
+				[]plugin.NameRead{{Key: plugin.NameKey{Package: "svc", Emitted: "int"}}},
+				"the unit reads a name that nothing declares")
+		})
+
+		t.Run("returns no NameRead for a reference to a name of the same unit", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src", linkedRow(rowOrigin)))
+			assert.Empty(t, readsOf(t, e, prefixing("p"), nil).Read, "the field names the struct of its own unit")
+		})
+
+		t.Run("returns a NameRead for a reference to a name of the same unit that others list", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src", linkedRow(rowOrigin)))
+			assert.Equal(t, readsOf(t, e, prefixing("p"), kept).Read,
+				[]plugin.NameRead{{Key: plugin.NameKey{Package: "svc", Emitted: "row"}}},
+				"a kept file declares the name as well")
+		})
+
+		t.Run("numbers the unit of a read by its place in Units order", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t,
+				settleUnit("svc", "svc/b.src", variableOf("late", &emit.TypeRef{Spelling: "long"})),
+				settleUnit("svc", "svc/a.src", variableOf("early", &emit.TypeRef{Spelling: "int"})),
+			)
+			assert.Equal(t, readsOf(t, e, prefixing("p"), nil).Read, []plugin.NameRead{
+				{Unit: 0, Key: plugin.NameKey{Package: "svc", Emitted: "int"}},
+				{Unit: 1, Key: plugin.NameKey{Package: "svc", Emitted: "long"}},
+			}, "the unit of svc/a.src arrived second and sorts first")
+		})
+
+		t.Run("sorts the reads of one unit by key", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src",
+				variableOf("first", &emit.TypeRef{Spelling: "zeta"}),
+				variableOf("second", &emit.TypeRef{Spelling: "alpha"}),
+			))
+			assert.Equal(t, readsOf(t, e, prefixing("p"), nil).Read, []plugin.NameRead{
+				{Key: plugin.NameKey{Package: "svc", Emitted: "alpha"}},
+				{Key: plugin.NameKey{Package: "svc", Emitted: "zeta"}},
+			}, "alpha sorts before zeta")
+		})
+
+		t.Run("returns a FactRead of the name key for the origin of a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			facts, _ := nameFacts(t)
+			e := storeOf(t, settleUnit("svc", "svc/a.src", &emit.Struct{Origin: rowOrigin, Name: "row"}))
+			got, err := plugin.SettleWith(e, capitalizing(), facts, diag.NewSink(), nil)
+			assert.NoError(t, err, "the settle completes")
+			want := []plugin.FactRead{{Fact: meta.FactRef{Subject: rowOrigin, Key: settleTarget.NameKey()}}}
+			assert.Equal(t, got.Facts, want, "the settle reads the override of the struct's origin")
+		})
+
+		t.Run("returns no FactRead for a name key that the registry lacks", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src", &emit.Struct{Origin: rowOrigin, Name: "row"}))
+			got, err := plugin.SettleWith(e, capitalizing(), meta.NewFacts(meta.NewRegistry()), diag.NewSink(), nil)
+			assert.NoError(t, err, "the settle completes")
+			assert.Empty(t, got.Facts, "no claim can name an unregistered key")
+		})
+
+		t.Run("returns a NameRead for a bare reference when the backend has no respell hook", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src", variableOf("holder", &emit.TypeRef{Spelling: "row"})))
+			assert.Equal(t, readsOf(t, e, plain, nil).Read,
+				[]plugin.NameRead{{Key: plugin.NameKey{Package: "svc", Emitted: "row"}}},
+				"the layout resolves the bare reference")
+		})
+
+		t.Run("returns no NameRead for a resolved reference when the backend has no respell hook", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src",
+				variableOf("holder", &emit.TypeRef{Spelling: "row", Target: rowOrigin})))
+			assert.Empty(t, readsOf(t, e, plain, nil).Read, "a reference with a target reads no name")
+		})
+
+		t.Run("returns no NameRead for a qualified reference when the backend has no respell hook", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src",
+				variableOf("holder", &emit.TypeRef{Spelling: "box", Package: "elsewhere"})))
+			assert.Empty(t, readsOf(t, e, plain, nil).Read, "a reference into another package reads no name")
+		})
+
+		t.Run("returns the zero Settled for a nil store", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := plugin.SettleWith(nil, nil, nil, diag.NewSink(), nil)
+			assert.NoError(t, err, "nothing to settle is not a fault")
+			assert.Equal(t, got, plugin.Settled{}, "the settle reads nothing")
+		})
+	})
 }
 
 // A settle allocates nothing for a backend without hooks, and the
 // rebuilt index with the plan of the names for a respell hook, in the
-// ordinary run, which runs no benchmark. Each counted settle takes a
-// store of its own, built outside the count, and the count keeps the
-// first error of its settles, which cmp.Or returns without allocating.
-// The check runs alone, because the count includes every goroutine's
-// allocations.
+// ordinary run, which runs no benchmark. SettleWith adds its read log.
+// Each counted settle takes a store of its own, built outside the
+// count, and the count keeps the first error of its settles, which
+// cmp.Or returns without allocating. The check runs alone, because the
+// count includes every goroutine's allocations.
 func TestSettleAllocs(t *testing.T) {
 	for _, tt := range settleCases() {
 		sink := diag.NewSink()
@@ -1105,6 +1261,10 @@ func TestSettleAllocs(t *testing.T) {
 		assert.MaxAllocsWithSetup(t, func() *plugin.Emit { return settleStore(t) }, func(e *plugin.Emit) {
 			err = cmp.Or(err, plugin.Settle(e, tt.backend, nil, sink))
 		}, tt.allocs, "Settle through "+tt.name+" allocates what it rebuilds")
+		assert.MaxAllocsWithSetup(t, func() *plugin.Emit { return settleStore(t) }, func(e *plugin.Emit) {
+			_, werr := plugin.SettleWith(e, tt.backend, nil, sink, nil)
+			err = cmp.Or(err, werr)
+		}, tt.withAllocs, "SettleWith through "+tt.name+" adds its read log")
 		assert.NoError(t, err, "every settle through "+tt.name+" completes")
 		assert.Empty(t, messages(sink), "the settle reports nothing")
 	}
@@ -1127,6 +1287,27 @@ func BenchmarkSettle(b *testing.B) {
 				for c.Loop() {
 					c.Excluding(fresh)
 					err = plugin.Settle(e, tt.backend, nil, sink)
+				}
+				assert.NoError(b, err, "the store settles")
+				assert.True(b, e.Settled(), "the store is marked settled")
+			})
+		}
+	})
+
+	b.Run("SettleWith", func(b *testing.B) {
+		for _, tt := range settleCases() {
+			b.Run(tt.name, func(b *testing.B) {
+				var (
+					e    *plugin.Emit
+					sink *diag.Sink
+				)
+				fresh := func() { e, sink = settleStore(b), diag.NewSink() }
+				c := bench.Start(b).MaxAllocs(tt.withAllocs)
+				defer c.End()
+				var err error
+				for c.Loop() {
+					c.Excluding(fresh)
+					_, err = plugin.SettleWith(e, tt.backend, nil, sink, nil)
 				}
 				assert.NoError(b, err, "the store settles")
 				assert.True(b, e.Settled(), "the store is marked settled")
@@ -1169,6 +1350,35 @@ func settled(t *testing.T, e *plugin.Emit, b plugin.Backend) *diag.Sink {
 	sink := diag.NewSink()
 	assert.NoError(t, plugin.Settle(e, b, nil, sink), "the settle completes")
 	return sink
+}
+
+// settledWith settles a store under a backend without facts against
+// the names of kept files, and returns the sink the settle reported to.
+func settledWith(t *testing.T, e *plugin.Emit, b plugin.Backend, kept plugin.Names) *diag.Sink {
+	t.Helper()
+
+	sink := diag.NewSink()
+	_, err := plugin.SettleWith(e, b, nil, sink, kept)
+	assert.NoError(t, err, "the settle completes")
+	return sink
+}
+
+// readsOf settles a store under a backend without facts against the
+// names of kept files, and returns what the settle read.
+func readsOf(t *testing.T, e *plugin.Emit, b plugin.Backend, kept plugin.Names) plugin.Settled {
+	t.Helper()
+
+	got, err := plugin.SettleWith(e, b, nil, diag.NewSink(), kept)
+	assert.NoError(t, err, "the settle completes")
+	return got
+}
+
+// linkedRow returns a struct named row of an origin, whose field next
+// names the struct.
+func linkedRow(origin symbol.Identity) *emit.Struct {
+	row := &emit.Struct{Origin: origin, Name: "row"}
+	row.Fields.Append(&emit.Field{Name: "next", Type: &emit.TypeRef{Spelling: "row"}})
+	return row
 }
 
 // messages returns a sink's findings as their message text, in
@@ -1312,20 +1522,28 @@ func protectedBox() *emit.Struct {
 }
 
 // settleCases returns the backends the allocation check and the
-// benchmark settle through, with the allocations of one settle of
-// [settleStore].
+// benchmark settle through, with the allocations of one Settle and of
+// one SettleWith of [settleStore].
 func settleCases() []struct {
-	name    string
-	backend plugin.Backend
-	allocs  uint64
+	name       string
+	backend    plugin.Backend
+	allocs     uint64
+	withAllocs uint64
 } {
 	return []struct {
-		name    string
-		backend plugin.Backend
-		allocs  uint64
+		name       string
+		backend    plugin.Backend
+		allocs     uint64
+		withAllocs uint64
 	}{
-		{name: "a backend without hooks", backend: &hookless{name: "printer"}, allocs: 0},
-		{name: "a respell hook that keeps every name", backend: keeping(), allocs: keepingSettleAllocs},
+		{
+			name: "a backend without hooks", backend: &hookless{name: "printer"},
+			allocs: 0, withAllocs: readLogAllocs,
+		},
+		{
+			name: "a respell hook that keeps every name", backend: keeping(),
+			allocs: keepingSettleAllocs, withAllocs: keepingSettleAllocs + readLogAllocs,
+		},
 	}
 }
 

@@ -147,29 +147,73 @@ func (r *runReader) get(ctx context.Context, key []byte) (entry, bool, error) {
 	if err := r.load(ctx); err != nil {
 		return entry{}, false, err
 	}
-	// slices.BinarySearchFunc moves key to the heap. sort.Search keeps a
-	// caller's key on the stack.
-	at := sort.Search(len(r.index), func(i int) bool { return bytes.Compare(r.index[i].first, key) > 0 }) - 1
+	at := r.blockOf(key)
 	if at < 0 {
 		return entry{}, false, nil
 	}
-	r.mu.Lock()
-	block, kept := r.lastEntries, r.lastEntries != nil && r.last == at
-	r.mu.Unlock()
-	if !kept {
-		var err error
-		if block, err = r.block(ctx, r.index[at]); err != nil {
-			return entry{}, false, err
-		}
-		r.mu.Lock()
-		r.last, r.lastEntries = at, block
-		r.mu.Unlock()
+	block, err := r.entries(ctx, at)
+	if err != nil {
+		return entry{}, false, err
 	}
 	i := sort.Search(len(block), func(i int) bool { return bytes.Compare(block[i].key, key) >= 0 })
 	if i == len(block) || !bytes.Equal(block[i].key, key) {
 		return entry{}, false, nil
 	}
 	return block[i], true, nil
+}
+
+// scan returns every entry of the run whose key begins with prefix, in key
+// order. It reads the blocks in index order from the block that get would
+// read for prefix, and stops at the first key past the keys that begin
+// with prefix.
+func (r *runReader) scan(ctx context.Context, prefix []byte) ([]entry, error) {
+	if err := r.load(ctx); err != nil {
+		return nil, err
+	}
+	var out []entry
+	for at := max(r.blockOf(prefix), 0); at < len(r.index); at++ {
+		block, err := r.entries(ctx, at)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range block {
+			switch {
+			case bytes.HasPrefix(e.key, prefix):
+				out = append(out, e)
+			case bytes.Compare(e.key, prefix) > 0:
+				return out, nil
+			}
+		}
+	}
+	return out, nil
+}
+
+// blockOf returns the place in the index of the block whose first key is
+// the last at or before key, and -1 where every block starts after key.
+func (r *runReader) blockOf(key []byte) int {
+	// slices.BinarySearchFunc moves key to the heap. sort.Search keeps a
+	// caller's key on the stack.
+	return sort.Search(len(r.index), func(i int) bool { return bytes.Compare(r.index[i].first, key) > 0 }) - 1
+}
+
+// entries returns the entries of the block at a place in the index: the
+// block that the reader decoded last where it is that block, and the
+// block read from the ledger otherwise, which the reader then keeps.
+func (r *runReader) entries(ctx context.Context, at int) ([]entry, error) {
+	r.mu.Lock()
+	block, kept := r.lastEntries, r.lastEntries != nil && r.last == at
+	r.mu.Unlock()
+	if kept {
+		return block, nil
+	}
+	block, err := r.block(ctx, r.index[at])
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	r.last, r.lastEntries = at, block
+	r.mu.Unlock()
+	return block, nil
 }
 
 // all returns every entry of the run, in key order, through one read
@@ -244,6 +288,29 @@ func (t *tableReader) all(ctx context.Context) ([]entry, error) {
 		return nil, err
 	}
 	return slices.DeleteFunc(merged, func(e entry) bool { return e.dead }), nil
+}
+
+// scan returns every live row of the table whose key begins with prefix,
+// in key order: the runs' entries under the prefix merged, the newest
+// entry of each key deciding, and tombstones left out. The entries of the
+// first run with any are the merge's start, which no copy precedes.
+//
+// Error modes: an error wrapping [ErrDamaged] for a run that does not
+// read whole.
+func (t *tableReader) scan(ctx context.Context, prefix []byte) ([]entry, error) {
+	var out []entry
+	for _, r := range t.runs {
+		entries, err := r.scan(ctx, prefix)
+		if err != nil {
+			return nil, err
+		}
+		if len(out) == 0 {
+			out = entries
+			continue
+		}
+		out = mergeEntries(out, entries)
+	}
+	return slices.DeleteFunc(out, func(e entry) bool { return e.dead }), nil
 }
 
 // merged returns every key of the table with its newest entry, in key

@@ -172,13 +172,13 @@ func reconcile(changes []output.Change, records []output.Written) []output.Chang
 }
 
 // merged returns the run's record: per plan that commits, or would
-// under Dry, the files it routed and the stale outputs it kept because
-// they drifted or outlived a removal, per plan that does not, its
-// previous entries, and per plan the composition no longer declares,
-// the entries whose files the sweep did not remove. A path a committing
-// plan routes a file to takes that plan's entry whatever another plan's
-// previous entry listed there. It names the workspace the run records
-// under.
+// under Dry, the files it routed, the files a warm run kept, and the
+// stale outputs it kept because they drifted or outlived a removal, per
+// plan that does not, its previous entries, and per plan the composition
+// no longer declares, the entries whose files the sweep did not remove.
+// A path a committing plan routes a file to takes that plan's entry
+// whatever another plan's previous entry listed there. It names the
+// workspace the run records under.
 func merged(rec *record, runs []*planRun, sw *swept) manifest.Manifest {
 	entries := map[string]manifest.Entry{}
 	keep := func(es ...manifest.Entry) {
@@ -209,6 +209,7 @@ func merged(rec *record, runs []*planRun, sw *swept) manifest.Manifest {
 			continue
 		}
 		keep(survivors(slices.Collect(maps.Values(p.stale)), p.changes)...)
+		keep(p.kept...)
 		keep(p.entries()...)
 	}
 	files := slices.SortedFunc(maps.Values(entries), func(a, b manifest.Entry) int {

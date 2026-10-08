@@ -463,6 +463,23 @@ func TestPass(t *testing.T) {
 			assert.Equal(t, files[0].Path, storeFile, "its sibling renders whole")
 		})
 
+		t.Run("returns the findings about a rendered file in its Findings", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := runPass(t, language(), seeded(t, unspelt(), unitOf(emitter, userKey, betaName)))
+			assert.Length(t, files, 2, "both files render")
+			assert.Length(t, files[0].Findings, 1, "the unspelt method of the store file has a finding")
+			assert.Equal(t, files[0].Findings[0].Code, render.UnspeltKind, "the finding is the unspelt kind")
+		})
+
+		t.Run("returns no Findings for a rendered file without a finding", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := runPass(t, language(), seeded(t, unspelt(), unitOf(emitter, userKey, betaName)))
+			assert.Length(t, files, 2, "both files render")
+			assert.Empty(t, files[1].Findings, "the user file renders clean")
+		})
+
 		t.Run("reports findings in file order whatever order the workers finish in", func(t *testing.T) {
 			t.Parallel()
 

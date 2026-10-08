@@ -37,6 +37,9 @@ const (
 	// modulesAllocs is one list of the fixture's two modules: the list
 	// alone, because the set of two modules is on the stack.
 	modulesAllocs = 1
+	// modulesOfAllocs is one list of the two modules of a count: the list
+	// alone, sized from a first count.
+	modulesOfAllocs = 1
 )
 
 // A plan writes its files into the source tree, and a run reads that
@@ -161,6 +164,57 @@ func TestTree(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("ModulesOf", func(t *testing.T) {
+		t.Parallel()
+
+		cache := plugin.Module{Lang: coretest.Lang, Path: cacheModule, Root: cachePkg}
+		acme := plugin.Module{Lang: coretest.Lang, Path: acmeModule, Root: "."}
+		tests := []struct {
+			name string
+			give map[plugin.Module]int
+			want []plugin.Module
+		}{
+			{
+				name: "returns the modules innermost root first",
+				give: map[plugin.Module]int{acme: 2, cache: 1},
+				want: []plugin.Module{cache, acme},
+			},
+			{
+				name: "returns no module that no package names",
+				give: map[plugin.Module]int{acme: 1, cache: 0},
+				want: []plugin.Module{acme},
+			},
+			{
+				name: "returns no module rooted in a dependency store",
+				give: map[plugin.Module]int{
+					acme: 1, {Lang: coretest.Lang, Path: depModule, Root: "gomod://example.com/dep@v1.0.0"}: 1,
+				},
+				want: []plugin.Module{acme},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, layout.ModulesOf(tt.give), tt.want, "the modules")
+			})
+		}
+
+		t.Run("returns nil for a count without a module", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, layout.ModulesOf(nil), "no package names a module")
+		})
+
+		t.Run("returns the modules that Modules returns for the same packages", func(t *testing.T) {
+			t.Parallel()
+
+			f, k := facts(t, twoModules())
+			assert.Equal(t, layout.ModulesOf(map[plugin.Module]int{acme: 1, cache: 1}), layout.Modules(graph(t), f, k),
+				"the count reads as the walk does")
+		})
+	})
 }
 
 // The reads of the tree allocate their index and their list, over the
@@ -186,6 +240,10 @@ func TestTreeAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { modules = layout.Modules(corpus, none, keys) }, 0,
 		"Modules allocates nothing for a tree without a module")
 	assert.Empty(t, modules, "Modules lists no module")
+	counts := countedModules()
+	assert.MaxAllocs(t, func() { modules = layout.ModulesOf(counts) }, modulesOfAllocs,
+		"ModulesOf allocates its list")
+	assert.Length(t, modules, 2, "ModulesOf lists both modules")
 }
 
 // BenchmarkTree measures the reads of the source tree that a plan writes
@@ -240,6 +298,25 @@ func BenchmarkTree(b *testing.B) {
 			assert.Empty(b, got, "Modules lists no module")
 		})
 	})
+
+	b.Run("ModulesOf", func(b *testing.B) {
+		counts := countedModules()
+		c := bench.Start(b).MaxAllocs(modulesOfAllocs)
+		defer c.End()
+		var got []plugin.Module
+		for c.Loop() {
+			got = layout.ModulesOf(counts)
+		}
+		assert.Length(b, got, 2, "ModulesOf lists both modules")
+	})
+}
+
+// countedModules counts the packages of the fixture's two nested modules.
+func countedModules() map[plugin.Module]int {
+	return map[plugin.Module]int{
+		{Lang: coretest.Lang, Path: acmeModule, Root: "."}:       2,
+		{Lang: coretest.Lang, Path: cacheModule, Root: cachePkg}: 1,
+	}
 }
 
 // twoModules states the fixture's two nested modules.

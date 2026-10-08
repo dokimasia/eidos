@@ -430,7 +430,24 @@ func TestSealed(t *testing.T) {
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "which commits")
 		})
 
-		t.Run("runs again cold over a damaged run of a phase table", func(t *testing.T) {
+		t.Run("runs again cold over a damaged run of a phase table that the run reads", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := sealing(t, mem, "plan")
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			flipLastByte(t, mem)
+			widened := editedAfter(sealedTree(), fstest.MapFS{
+				sealedSource: {Data: []byte("package svc/store\n" + widerRow)},
+			})
+			report := sealedRun(t, w, workspace.Input{Tree: widened})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "started again cold", "a read of the phases finds the damage")
+			assert.True(t, report.Stats.Cold, "the report is the cold run's")
+		})
+
+		t.Run("keeps a damaged run of a phase table that no read of the run needs", func(t *testing.T) {
 			t.Parallel()
 
 			mem := ledger.NewMem()
@@ -438,14 +455,27 @@ func TestSealed(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			flipLastByte(t, mem)
 			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
-			cold := findings(report.Sink, workspace.ColdState)
-			assert.Length(t, cold, 1, "one ColdState states the damage")
-			assert.Contains(t, cold[0].Msg, "read the record of the phases",
-				"the warm run's first read of the phases finds the damage")
-			assert.True(t, report.Stats.Cold, "the report is the cold run's")
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "the run reads no row of the damaged run")
+			assert.False(t, report.Stats.Cold, "the run reads the sealed state")
 		})
 
-		t.Run("runs again cold over a damaged region", func(t *testing.T) {
+		t.Run("runs again cold over a damaged region that the run reads", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := built(t, planMirroring(t, mem))
+			sealedRun(t, w, workspace.Input{Tree: statsTree()})
+			truncate(t, mem, func(live int) bool { return live > 0 })
+			report := sealedRun(t, w, workspace.Input{Tree: editedStatsTree()})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "started again cold", "and the cold run")
+			g, err := state.Open(t.Context(), mem)
+			assert.NoError(t, err, "the cold run's generation opens")
+			assert.Equal(t, g.Header.Parent, "", "and has no parent")
+		})
+
+		t.Run("keeps a damaged region that no read of the run needs", func(t *testing.T) {
 			t.Parallel()
 
 			mem := ledger.NewMem()
@@ -453,12 +483,8 @@ func TestSealed(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			truncate(t, mem, func(live int) bool { return live > 0 })
 			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
-			cold := findings(report.Sink, workspace.ColdState)
-			assert.Length(t, cold, 1, "one ColdState states the damage")
-			assert.Contains(t, cold[0].Msg, "started again cold", "and the cold run")
-			g, err := state.Open(t.Context(), mem)
-			assert.NoError(t, err, "the cold run's generation opens")
-			assert.Equal(t, g.Header.Parent, "", "and has no parent")
+			assert.Empty(t, findings(report.Sink, workspace.ColdState), "the run decodes no region")
+			assert.False(t, report.Stats.Cold, "the run reads the sealed state")
 		})
 
 		t.Run("returns the error of a ledger that fails to read the state", func(t *testing.T) {
@@ -769,9 +795,8 @@ func truncate(t *testing.T, mem *ledger.Mem, pick func(live int) bool) {
 
 // flipLastByte inverts the last byte of the live generation's run
 // segment, which ends with the footer of the last table's run: a phase
-// table's, whose records follow the load's in table order. The load does
-// not read a phase table, so the warm run's first read of the phases
-// finds the damage.
+// table's, whose rows follow the load's in table order. The load does not
+// read a phase table, so a read of the phases finds the damage.
 func flipLastByte(t *testing.T, mem *ledger.Mem) {
 	t.Helper()
 

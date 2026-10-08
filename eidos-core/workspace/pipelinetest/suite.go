@@ -72,21 +72,22 @@ func first(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspa
 
 	assert.NotNil(tb, f.Tree, "the fixture states a tree")
 	assert.NoError(tb, os.CopyFS(root, f.Tree), "the fixture's tree copies into the run's directory")
-	return run(tb, f, root)
+	return run(tb, f, root, false)
 }
 
 // run composes the fixture's workspace over root and runs it over the
 // tree at root, reading the fixture's stores, and returns the workspace,
-// the report and the run's error. It stops the check where the fixture
-// states no composition, the workspace does not compose, or the
+// the report and the run's error. Where cold is set, the run ignores the
+// sealed state and executes every phase. It stops the check where the
+// fixture states no composition, the workspace does not compose, or the
 // composition runs other than one plan.
-func run(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspace.Report, error) {
+func run(tb assert.TB, f Fixture, root string, cold bool) (*workspace.Workspace, *workspace.Report, error) {
 	tb.Helper()
 
 	assert.NotNil(tb, f.Compose, "the fixture states a composition")
 	w, err := f.Compose(root)
 	assert.NoError(tb, err, "the fixture's workspace composes")
-	report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores})
+	report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: cold})
 	assert.Length(tb, report.Plans, 1, "the suite checks one plan, and the composition runs one")
 	return w, report, err
 }

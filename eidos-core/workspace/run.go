@@ -164,9 +164,19 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 
 	var src tree
 	if w.open != nil {
-		src = tree{residents: layout.Residents(g), modules: layout.Modules(g, facts, w.kernel)}
+		src = tree{residents: residentsOf(g, loaded), modules: layout.ModulesOf(out.modules)}
+		if out.modules == nil {
+			src.modules = layout.Modules(g, facts, w.kernel)
+		}
 	}
-	runs := w.generateAll(ctx, g, facts, out.table, src, sealed.recorder)
+	var ws *warmState
+	if phases != nil {
+		ws = &warmState{
+			phases: phases, dirty: out.dirty, candidates: out.candidates,
+			moved: loaded.Moved, vanished: loaded.Vanished, tree: in.Tree, previous: rec.byPlan,
+		}
+	}
+	runs := w.generateAll(ctx, g, facts, out.table, src, sealed.recorder, ws)
 	if !shared {
 		w.stageAll(ctx, runs, rec)
 	}
@@ -190,7 +200,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	}
 	broken := damaged(cmp.Or(g.Damaged(), facts.Damaged(), out.damaged()))
 	if broken == nil {
-		broken = sealed.recordPhases(ctx, g, facts, w.kernel)
+		broken = sealed.recordPhases(ctx, g, facts, w.kernel, out.modules)
 	}
 	blocked := shared || collided || unmet || checked || broken != nil
 
@@ -217,14 +227,6 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	}
 	errs = append(errs, ctx.Err(), failure(sink))
 	return report, errors.Join(errs...)
-}
-
-// tree is the source tree every plan of one run routes against, read
-// once from the frozen graph and the fact store: the files each
-// directory contains, and the toolchain modules the load resolved.
-type tree struct {
-	residents map[string][]plugin.Resident
-	modules   []plugin.Module
 }
 
 // record is the previous run's record as a run reads it: the ledger it
@@ -338,6 +340,15 @@ type shared struct {
 	// lazy is the table of a warm run, which reads each subject from the
 	// generation on first use. It is nil on a cold run.
 	lazy *validations
+	// dirty is the dirty set of a warm run, which lists the plans'
+	// invocations and groups that the run's changes make dirty, and
+	// candidates are the subjects whose matches may have changed, in
+	// identity order. modules counts the packages that name each module,
+	// the generation's count with the changes of the run. A cold run has
+	// none of them.
+	dirty      *dirtySet
+	candidates []symbol.Identity
+	modules    map[plugin.Module]int
 	// refused reports whether the stamp replay refused a stamp or met a
 	// dangling one. No record of the sealed state keeps such a finding.
 	refused bool
@@ -366,7 +377,7 @@ func (w *Workspace) annotateRun(
 	facts *meta.Facts, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) (shared, error) {
 	if phases != nil {
-		return w.warmShared(ctx, g, loaded.Changes, phases, facts, sink, stats, rec)
+		return w.warmShared(ctx, g, loaded, phases, facts, sink, stats, rec)
 	}
 	validated, count := w.validated(g, facts, sink, rec)
 	stats.Validated = count

@@ -158,7 +158,9 @@ type ExportDoc = core.ExportDoc
 //
 // A method attached to a receiver is keyed under the emitted name of
 // the type its receiver names: the settle rewrote the receiver's
-// spelling with the type, and the type's record maps it back. A receiver
+// spelling with the type, and the type's record maps it back. The files'
+// own declarations map it first, and then the kept names of the
+// package in others, nil for a plan that rendered every file. A receiver
 // that names a type no file declares keeps its spelling as the host.
 //
 // The walk visits names through [emit.RespellNames], with visitors that
@@ -174,9 +176,10 @@ type ExportDoc = core.ExportDoc
 //
 // NewExport allocates two slices: the result, sized from the count, and
 // the sorted file-level declarations. A host nested more than four deep
-// grows the stack onto the heap.
-func NewExport(plan string, files []File, settled *Emit) ExportDoc {
-	return core.NewExport(plan, files, settled)
+// grows the stack onto the heap. A receiver that maps back through others
+// allocates what others.InScope returns.
+func NewExport(plan string, files []File, settled *Emit, others Names) ExportDoc {
+	return core.NewExport(plan, files, settled, others)
 }
 
 // File is one output file a plan writes: where it is written, the
@@ -309,8 +312,8 @@ type ValidatedMap = core.ValidatedMap
 // dispatch needs is exactly what is here.
 //
 // An Index is safe for concurrent reads. [NewIndex] fixes every field,
-// the graph is frozen, and the validated table is safe for concurrent
-// use.
+// the graph is frozen, and the validated table and the scope are safe
+// for concurrent use.
 type Index = core.Index
 
 // NewIndex builds the routing surface for one run.
@@ -320,12 +323,12 @@ type Index = core.Index
 // results. validated is the run's table of validated directives. The
 // index reads it one subject at a time, when a directive gate or a skip
 // ruling routes that subject. A nil table contains no directive, and a
-// nil scope admits every declaration.
+// nil scope admits every declaration. NewIndex does not call the scope, so
+// the index reads only the packages that a route reads.
 //
 // # Allocation contract
 //
-// NewIndex allocates the index. With a scope, it also allocates the set
-// of packages that the scope admits.
+// NewIndex allocates the index, one allocation, with or without a scope.
 func NewIndex(g *store.Graph, f *meta.Facts, validated Validated, sc store.Scope) (*Index, error) {
 	return core.NewIndex(g, f, validated, sc)
 }
@@ -421,6 +424,72 @@ type Invocation = core.Invocation
 // phase call, one record at a time, so an implementation that serves one
 // call at a time needs no lock.
 type Journal = core.Journal
+
+// Names is the name table of the files that a warm run keeps without
+// generating them again. [SettleWith] resolves a reference that its store
+// does not declare against it, and the layout qualifies a reference into a
+// kept file of another package through it. A plan reads the kept names of a
+// collision scope through it.
+//
+// # Concurrency
+//
+// A run reads one Names from the goroutine of one plan, so an
+// implementation needs no lock for that use.
+type Names = core.Names
+
+// NameEntry is one file-level name of a plan's file: what the name
+// table of a kept file lists.
+//
+// # Concurrency
+//
+// A NameEntry is a value, and any number of goroutines may read one.
+type NameEntry = core.NameEntry
+
+// NameKey names one entry that a reference looks up: a bare reference's
+// package and emitted name, or a resolved reference's origin and emitted
+// name. Exactly one of Package and Origin is set.
+//
+// # Concurrency
+//
+// A NameKey is a value, and any number of goroutines may read one.
+type NameKey = core.NameKey
+
+// NameRead is one entry that a unit's references looked up during a
+// settle, whether a file declares the entry or not: a lookup that found
+// nothing is what makes the unit's file generate again when the name
+// appears. Unit is the unit's place in [Emit.Units] order.
+type NameRead = core.NameRead
+
+// FactRead is one fact that the settle read for a unit: the name
+// override of the origin of one of the unit's declarations, present or
+// not. Unit is the unit's place in [Emit.Units] order.
+type FactRead = core.FactRead
+
+// Settled is what one [SettleWith] call read for each unit of its store:
+// what makes the unit's file generate again when another file's names or
+// the overrides change. Each list is sorted by unit, then by key, and
+// lists a unit's read once.
+type Settled = core.Settled
+
+// NamesOf returns the file-level names of a plan's routed files, each
+// with the file that declares it, in file order and then in the order of
+// each file's declarations. settled is the store that the plan's settle
+// ran over, whose record supplies the name that each respelled
+// declaration was emitted under. A nil store reads every name as
+// emitted. A method's receiver maps back to the name that its type was
+// emitted under. The files' own declarations map it first, and others
+// map it second. A receiver whose type neither declares keeps its
+// spelling. Ambiguous is false on every entry, because the ambiguity of
+// a name depends on every file of the plan.
+//
+// # Allocation contract
+//
+// NamesOf allocates the result, sized from a count of the names, and the
+// sorted list of the files' file-level declarations. A receiver that maps
+// back through others allocates what others.InScope returns.
+func NamesOf(files []File, settled *Emit, others Names) []NameEntry {
+	return core.NamesOf(files, settled, others)
+}
 
 // ValidateOptions holds a plugin's options declaration to the tag
 // contract: a pointer to a struct, exported fields only, an opt
@@ -568,10 +637,11 @@ type RenderedFile = core.RenderedFile
 
 // Renderer renders one plan's emit into files as values.
 //
-// A problem with one file attaches to the context's sink and the
-// pass continues with the remaining files; a returned error is
-// fatal to the pass. Two calls over one store return the same
-// bytes, which the conformance suite checks every renderer for.
+// A problem with one file attaches to the context's sink and to the
+// file's [RenderedFile.Findings], and the pass continues with the
+// remaining files. A returned error is fatal to the pass. Two calls
+// over one store return the same bytes, which the conformance suite
+// checks every renderer for.
 type Renderer = core.Renderer
 
 // RenderContext is what one render call may touch.
@@ -720,7 +790,8 @@ type Respeller = core.Respeller
 // A declared name takes an override where facts contains one: a
 // value of the target's [Target.NameKey], such as golang.name, on
 // the declaration's origin, written at directive authority or above.
-// The override replaces the respell hook's spelling for the
+// The settle reads each override through a point read of the origin's
+// fact. The override replaces the respell hook's spelling for the
 // declaration that renders its origin, the one whose emitted name
 // the hook spells as it spells the origin's own name. A declaration
 // another one derives from its origin, such as a mock of an
@@ -746,6 +817,37 @@ type Respeller = core.Respeller
 // tables the references follow, each sized once to the store.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	return core.Settle(e, b, facts, sink)
+}
+
+// SettleWith settles a store that contains part of a plan's units: the
+// units of the files that a warm run generates again. It settles as
+// [Settle] does, and resolves each reference that the store does not
+// settle against others, the names of the plan's other files. A bare
+// reference that both declare under different settled names is
+// ambiguous, as it is where the store declares the plan whole. Names
+// collide only with the store's own names, so the plan places the units
+// of every file with a name in a changed scope into the store before it
+// settles. Settle is SettleWith with no others.
+//
+// SettleWith returns what each unit read. It lists every entry that the
+// unit's references looked up, whether a file declares the entry or not.
+// It also lists the name override of every origin that the unit's
+// declarations render. It leaves out a lookup that the unit's own
+// declarations settle with no entry in others, because the unit
+// generates again whenever its own names change. A backend without a
+// respell hook rewrites no reference, and SettleWith then lists the
+// lookups of the bare type references alone. The errors are the errors
+// of Settle.
+//
+// # Allocation contract
+//
+// SettleWith allocates what Settle allocates and its read log, which is
+// all it adds for a store whose units read nothing. The first read adds
+// the set that lists each unit's read once. The lists of reads grow by
+// doubling. The settle allocates each unit's place in [Emit.Units] order
+// once, and others adds what its methods allocate.
+func SettleWith(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others Names) (Settled, error) {
+	return core.SettleWith(e, b, facts, sink, others)
 }
 
 // ErrStoreAbsent reports a qualified path naming a store the load does

@@ -36,9 +36,11 @@ type ExportKey struct {
 	Name string
 }
 
-// compare orders keys by origin, then by plugin, tag, host and name:
-// the order an export lists its declarations in.
-func (k ExportKey) compare(o ExportKey) int {
+// Compare orders keys by origin, then by plugin, tag, host and name,
+// which is the order of an export's declarations. It returns a negative
+// number, zero or a positive number when k sorts before o, with o or
+// after o. It allocates nothing.
+func (k ExportKey) Compare(o ExportKey) int {
 	return cmp.Or(
 		k.Origin.Compare(o.Origin),
 		strings.Compare(string(k.Plugin), string(o.Plugin)),
@@ -97,7 +99,9 @@ type ExportDoc struct {
 //
 // A method attached to a receiver is keyed under the emitted name of
 // the type its receiver names: the settle rewrote the receiver's
-// spelling with the type, and the type's record maps it back. A receiver
+// spelling with the type, and the type's record maps it back. The files'
+// own declarations map it first, and then the kept names of the
+// package in others, nil for a plan that rendered every file. A receiver
 // that names a type no file declares keeps its spelling as the host.
 //
 // The walk visits names through [emit.RespellNames], with visitors that
@@ -113,16 +117,9 @@ type ExportDoc struct {
 //
 // NewExport allocates two slices: the result, sized from the count, and
 // the sorted file-level declarations. A host nested more than four deep
-// grows the stack onto the heap.
-func NewExport(plan string, files []File, settled *Emit) ExportDoc {
-	was := func(d symbol.Symbol, name string) string {
-		if settled != nil {
-			if emitted, respelled := settled.emitted[d]; respelled {
-				return emitted
-			}
-		}
-		return name
-	}
+// grows the stack onto the heap. A receiver that maps back through others
+// allocates what others.InScope returns.
+func NewExport(plan string, files []File, settled *Emit, others Names) ExportDoc {
 	decls, names := 0, 0
 	count := func(_, _ symbol.Symbol, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 		if listed(kind) {
@@ -138,17 +135,7 @@ func NewExport(plan string, files []File, settled *Emit) ExportDoc {
 			}
 		}
 	}
-	declared := make([]declaredName, 0, decls)
-	for _, f := range files {
-		for _, u := range f.Units {
-			for _, d := range u.Decls {
-				if name := emit.DeclaredName(d); name != "" {
-					declared = append(declared, declaredName{pkg: u.Pkg.Package, settled: name, emitted: was(d, name)})
-				}
-			}
-		}
-	}
-	slices.SortFunc(declared, declaredName.compare)
+	declared := declaredNames(files, settled, decls)
 	symbols := make([]ExportedSymbol, 0, names)
 	var entered [hostDepth]hostName
 	open := entered[:0]
@@ -158,7 +145,7 @@ func NewExport(plan string, files []File, settled *Emit) ExportDoc {
 		if !listed(kind) {
 			return name, nil
 		}
-		key := ExportKey{Plugin: unit.Plugin, Tag: unit.Tag, Name: was(carrier, name)}
+		key := ExportKey{Plugin: unit.Plugin, Tag: unit.Tag, Name: emittedName(settled, carrier, name)}
 		key.Origin, _ = emit.OriginOf(carrier)
 		for len(open) > 0 && open[len(open)-1].decl != host {
 			open = open[:len(open)-1]
@@ -166,7 +153,7 @@ func NewExport(plan string, files []File, settled *Emit) ExportDoc {
 		if len(open) > 0 {
 			key.Host = open[len(open)-1].name
 		} else if m, attached := carrier.(*emit.Method); attached && host == nil && m.Receives != nil {
-			key.Host = emittedOf(declared, unit.Pkg.Package, m.Receives.Spelling)
+			key.Host = hostOf(declared, others, unit.Pkg.Package, m.Receives.Spelling)
 		}
 		open = append(open, hostName{decl: carrier, name: key.Name})
 		symbols = append(symbols, ExportedSymbol{
@@ -184,7 +171,7 @@ func NewExport(plan string, files []File, settled *Emit) ExportDoc {
 		}
 	}
 	slices.SortFunc(symbols, func(a, b ExportedSymbol) int {
-		return cmp.Or(a.compare(b.ExportKey), strings.Compare(a.File, b.File))
+		return cmp.Or(a.Compare(b.ExportKey), strings.Compare(a.File, b.File))
 	})
 	return ExportDoc{Plan: plan, Symbols: symbols}
 }
@@ -198,7 +185,7 @@ func NewExport(plan string, files []File, settled *Emit) ExportDoc {
 // nothing.
 func (d ExportDoc) Find(k ExportKey) []ExportedSymbol {
 	lo, _ := slices.BinarySearchFunc(d.Symbols, k, func(s ExportedSymbol, k ExportKey) int {
-		return s.compare(k)
+		return s.Compare(k)
 	})
 	hi := lo
 	for hi < len(d.Symbols) && d.Symbols[hi].ExportKey == k {
@@ -212,21 +199,6 @@ func (d ExportDoc) Find(k ExportKey) []ExportedSymbol {
 // member, and one to spare.
 const hostDepth = 4
 
-// declaredName is one file-level declaration under the package its unit
-// declares it in, with the name the settle left it with and the name it
-// was emitted under: how a method's receiver spelling finds the emitted
-// name of the type it names.
-type declaredName struct {
-	pkg     string
-	settled string
-	emitted string
-}
-
-// compare orders declarations by package, then by settled name.
-func (d declaredName) compare(o declaredName) int {
-	return cmp.Or(strings.Compare(d.pkg, o.pkg), strings.Compare(d.settled, o.settled))
-}
-
 // hostName is one declaration the export's walk entered, with the name
 // it was emitted under: the host a member's key names.
 type hostName struct {
@@ -239,16 +211,4 @@ type hostName struct {
 // names from outside its callable.
 func listed(k symbol.Kind) bool {
 	return k != symbol.KindParam && k != symbol.KindReturn && k != symbol.KindTypeParam
-}
-
-// emittedOf returns the name a file-level declaration of a package was
-// emitted under, found by the name the settle left it with in declared,
-// which is sorted, and the settled name itself where no file of the
-// export declares it.
-func emittedOf(declared []declaredName, pkg, settled string) string {
-	at, found := slices.BinarySearchFunc(declared, declaredName{pkg: pkg, settled: settled}, declaredName.compare)
-	if !found {
-		return settled
-	}
-	return declared[at].emitted
 }

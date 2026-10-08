@@ -227,38 +227,35 @@ const (
 	parallelPipelineAllocs = 441_280 + 8*45
 	// treeRunAllocs is one cold run of the edge corpus's tree of 200,000
 	// declarations into a fresh memory ledger, its load and its record of
-	// the state included, 2,604,412 on average with a standard deviation
-	// of 41 over 24 fresh processes. A memory profile of one run
-	// attributes about 1,690,000 to the scripted frontend's parse of the
+	// the state included, 2,630,020 on average with a standard deviation
+	// of 52 over 24 fresh processes. The difference of the memory profiles
+	// of two runs of the benchmark, at two and at four iterations,
+	// attributes about 1,680,000 to the scripted frontend's parse of the
 	// tree, 199,000 to the phase calls' handlers, most of them the
-	// annotator's stamps, and 181,000 to the render's templates. The
-	// record of the phases allocates only to grow its buffers. The
-	// profile counts 2,231,387 and misses about 373,000 allocations below
-	// 16 bytes that share a block of the tiny allocator. The ceiling allows
-	// eight standard deviations above the mean.
-	treeRunAllocs = 2_604_412 + 8*41
+	// annotator's stamps, and 177,000 to the render's templates. The record
+	// of the plans' groups allocates about 21,000, and the record of the
+	// phases allocates only to grow its buffers. The ceiling allows eight
+	// standard deviations above the mean.
+	treeRunAllocs = 2_630_020 + 8*52
 	// warmTreeRunAllocs is one warm run over the edge corpus's tree of
 	// 200,000 declarations after an edit that widens one struct,
-	// 1,932,585 on average with a standard deviation of 31 over 24 fresh
-	// processes. A memory profile of four runs attributes these shares to
+	// 1,333,915 on average with a standard deviation of 13 over 24 fresh
+	// processes. The difference of the memory profiles of two runs of the
+	// benchmark, at two and at six iterations, attributes these shares to
 	// one run:
 	//
-	//   - The load keeps 999 of the 1,000 units. The run lists the
-	//     residents of every directory, which reads every package, and the
-	//     plans read every declaration, so the run decodes every region:
-	//     about 1,235,000.
-	//   - The plans' generators allocate about 291,000. About 142,000 of
-	//     them are the reads of the mark of every struct. The run restores
-	//     the bags of the 20,000 marked structs for those reads, and reads
-	//     the other structs absent through the recorded presence.
-	//   - The render allocates about 181,000, the manifest's documents
-	//     about 58,000, the commit of the phase record about 50,000 and the
-	//     load about 31,000.
+	//   - The membership reader of the first package read the declaration
+	//     of every struct, so the edit makes it dirty, and it enumerates
+	//     every struct again. The run decodes every region for that
+	//     enumeration: about 1,222,000.
+	//   - The manifest's documents allocate about 58,000, and the load
+	//     about 31,000.
+	//   - The rest, about 23,000, are spread over the phase calls of the
+	//     dirty groups, their render and the commit, each below one percent
+	//     of the run.
 	//
-	// The profile misses about 68,000 allocations below 16 bytes that share
-	// a block of the tiny allocator. The ceiling allows eight standard
-	// deviations above the mean.
-	warmTreeRunAllocs = 1_932_585 + 8*31
+	// The ceiling allows eight standard deviations above the mean.
+	warmTreeRunAllocs = 1_333_915 + 8*13
 )
 
 // dropping is a backend whose lowering hook returns a declaration

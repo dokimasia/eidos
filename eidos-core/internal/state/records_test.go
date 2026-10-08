@@ -31,6 +31,7 @@ const (
 	validationTag = 'v'
 	invocationTag = 'i'
 	checkTag      = 'c'
+	groupTag      = 'g'
 )
 
 // The ceilings of a lookup over the generation lookedUp records, each
@@ -60,6 +61,15 @@ const (
 	invocationsAllocs = 9
 	// readersAllocs is one edge's readers: the list of records.
 	readersAllocs = 1
+	// groupAllocs is one group's lookup: the decoder, the plan, the four
+	// lists of units, files, contributors and reads, the strings of the
+	// key unit and of the listed unit, the file's path, and the plugin and
+	// the subject strings of the contributor's match. A unit decodes five
+	// longer strings, and a subject four.
+	groupAllocs = 22
+	// groupsAllocs is the ceiling of Groups over one row. It adds the list
+	// of records to the allocations of one group's lookup.
+	groupsAllocs = 23
 )
 
 // The record cases' carrier and finding, and a host unit of the plan.
@@ -136,6 +146,27 @@ func TestRecords(t *testing.T) {
 			want := uint64(pinnedHash(spelledText([]byte{checkTag}, string(checkID))))
 			assert.Equal(t, state.CheckRef(checkID), state.RecordRef{Kind: state.RecordCheck, ID: want},
 				"a check's reference")
+		})
+	})
+
+	t.Run("GroupRef", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the hash of the tagged plan with the key unit", func(t *testing.T) {
+			t.Parallel()
+
+			spelling := spelledText([]byte{groupTag}, recordedPlan)
+			spelling = spelledText(spelledText(spelling, string(hostUnit.Plugin)), hostUnit.Tag)
+			spelling = spelledText(spelledIdentity(spelling, hostUnit.Pkg), hostUnit.Key)
+			assert.Equal(t, state.GroupRef(recordedPlan, hostUnit),
+				state.RecordRef{Kind: state.RecordGroup, ID: uint64(pinnedHash(spelling))}, "a group's reference")
+		})
+
+		t.Run("returns another reference for another plan", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, state.GroupRef(failedPlan, hostUnit), state.GroupRef(recordedPlan, hostUnit),
+				"the plan is a key field")
 		})
 	})
 
@@ -318,6 +349,7 @@ func TestRecords(t *testing.T) {
 				reads := sortedEdges(
 					state.FactEdge(recordedSubject, edgeKey),
 					state.DeclarationEdge(recordedSubject),
+					state.ExportEdge(failedPlan),
 					state.FindingsEdge,
 				)
 				assert.Equal(t, got, state.Invocation{
@@ -329,7 +361,7 @@ func TestRecords(t *testing.T) {
 					Hosts:    inv.Hosts,
 					Claimed:  inv.Claimed,
 					Findings: inv.Findings,
-				}, "the record adds the subject's edge and the findings edge to the journaled invocation")
+				}, "the record adds the edges of the subject, of the export and of the findings to the invocation")
 			})
 
 			t.Run("returns the record of a whole call without a subject's edge", func(t *testing.T) {
@@ -421,6 +453,72 @@ func TestRecords(t *testing.T) {
 				assert.NoError(t, err, "the shared row reads")
 				assert.True(t, held, "the check has an entry")
 				assert.Equal(t, got.Name, checkID, "the check's own entry is found")
+			})
+		})
+
+		t.Run("Group", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns the record of a group", func(t *testing.T) {
+				t.Parallel()
+
+				want := recordedGroup(hostUnit)
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Group(want)
+				})
+				got, held, err := g.Phases(t.Context()).Group(recordedPlan, hostUnit)
+				assert.NoError(t, err, "the groups table reads")
+				assert.True(t, held, "the group is recorded")
+				want.Plan, want.Reads = recordedPlan, sortedEdges(want.Reads...)
+				assert.Equal(t, got, want, "the record contains the units, files, contributors and reads")
+			})
+
+			t.Run("returns false for a group of another plan", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Group(recordedGroup(hostUnit))
+				})
+				_, held, err := g.Phases(t.Context()).Group(failedPlan, hostUnit)
+				assert.NoError(t, err, "the groups table reads")
+				assert.False(t, held, "the other plan recorded no group")
+			})
+
+			t.Run("returns ErrDamaged for an entry that does not decode", func(t *testing.T) {
+				t.Parallel()
+
+				g := putRows(t, state.TableGroups, state.Row{
+					Key: idKey(state.GroupRef(recordedPlan, hostUnit).ID), Value: []byte{1, 1, 0x80},
+				})
+				_, _, err := g.Phases(t.Context()).Group(recordedPlan, hostUnit)
+				assert.ErrorIs(t, err, state.ErrDamaged, "the entry's plan is cut short")
+			})
+		})
+
+		t.Run("Groups", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns the record of the reference's group", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Group(recordedGroup(hostUnit))
+				})
+				got, err := g.Phases(t.Context()).Groups(state.GroupRef(recordedPlan, hostUnit))
+				assert.NoError(t, err, "the groups table reads")
+				assert.Length(t, got, 1, "the row lists the group")
+				assert.Equal(t, got[0].Key, hostUnit, "the group of the reference's key")
+			})
+
+			t.Run("returns nothing for a reference that the table does not contain", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Group(recordedGroup(hostUnit))
+				})
+				got, err := g.Phases(t.Context()).Groups(state.GroupRef(failedPlan, hostUnit))
+				assert.NoError(t, err, "the groups table reads")
+				assert.Empty(t, got, "the other plan recorded no group")
 			})
 		})
 
@@ -678,6 +776,7 @@ func TestRecordsAllocs(t *testing.T) {
 		"ValidationRef allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.InvocationRef(recordedPlan, generated(recordedSubject)) }, 0,
 		"InvocationRef allocates nothing")
+	assert.MaxAllocs(t, func() { got = state.GroupRef(recordedPlan, hostUnit) }, 0, "GroupRef allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.CheckRef(checkID) }, 0, "CheckRef allocates nothing")
 	assert.Equal(t, got.Kind, state.RecordCheck, "the last reference is a check's")
 	other := state.ValidationRef(recordedSubject)
@@ -739,6 +838,22 @@ func TestRecordsAllocs(t *testing.T) {
 	}, readersAllocs, "Readers allocates the list of records")
 	assert.NoError(t, err, "the readers read")
 	assert.Length(t, readers, 2, "both readers of the subject")
+	assert.MaxAllocs(t, func() {
+		var gerr error
+		_, held, gerr = s.Group(recordedPlan, hostUnit)
+		err = cmp.Or(err, gerr)
+	}, groupAllocs, "Group allocates the decoder and the decoded record")
+	assert.NoError(t, err, "the group reads")
+	assert.True(t, held, "the group is recorded")
+	grouped := state.GroupRef(recordedPlan, hostUnit)
+	var groups []state.Group
+	assert.MaxAllocs(t, func() {
+		var gerr error
+		groups, gerr = s.Groups(grouped)
+		err = cmp.Or(err, gerr)
+	}, groupsAllocs, "Groups allocates the decoder and the decoded records")
+	assert.NoError(t, err, "the groups table reads")
+	assert.Length(t, groups, 1, "the row lists the plan's group")
 }
 
 // BenchmarkRecords measures each record's reference and their
@@ -754,6 +869,7 @@ func BenchmarkRecords(b *testing.B) {
 			return state.InvocationRef(recordedPlan, generated(recordedSubject))
 		}},
 		{name: "CheckRef", ref: func() state.RecordRef { return state.CheckRef(checkID) }},
+		{name: "GroupRef", ref: func() state.RecordRef { return state.GroupRef(recordedPlan, hostUnit) }},
 	}
 	for _, bb := range benches {
 		b.Run(bb.name, func(b *testing.B) {
@@ -868,6 +984,35 @@ func BenchmarkRecords(b *testing.B) {
 			assert.NoError(b, err, "the readers read")
 			assert.Length(b, got, 2, "the validation and the invocation read the subject")
 		})
+
+		b.Run("Group", func(b *testing.B) {
+			c := bench.Start(b).Warmup(1).MaxAllocs(groupAllocs)
+			defer c.End()
+			var (
+				got state.Group
+				err error
+			)
+			for c.Loop() {
+				got, _, err = s.Group(recordedPlan, hostUnit)
+			}
+			assert.NoError(b, err, "the group reads")
+			assert.Equal(b, got.Key, hostUnit, "Group returns the group of the key")
+		})
+
+		b.Run("Groups", func(b *testing.B) {
+			ref := state.GroupRef(recordedPlan, hostUnit)
+			c := bench.Start(b).Warmup(1).MaxAllocs(groupsAllocs)
+			defer c.End()
+			var (
+				got []state.Group
+				err error
+			)
+			for c.Loop() {
+				got, err = s.Groups(ref)
+			}
+			assert.NoError(b, err, "the groups table reads")
+			assert.Length(b, got, 1, "Groups returns the plan's group")
+		})
 	})
 }
 
@@ -880,7 +1025,7 @@ func lookedUp(tb testing.TB) *state.Generation {
 
 // recordLookedUp records into r one validation of the recorded subject,
 // one invocation of the plan's generator on it and one check, each of
-// which read one fact.
+// which read one fact, and the plan's group of the host unit.
 func recordLookedUp(tb testing.TB, r *state.Recorder) {
 	tb.Helper()
 
@@ -888,7 +1033,9 @@ func recordLookedUp(tb testing.TB, r *state.Recorder) {
 	shared := r.Lane("")
 	shared.Validation(recordedSubject, nil, reads, nil)
 	shared.Check(checkID, reads, nil)
-	r.Lane(recordedPlan).Invoked(plugin.Invocation{Match: generated(recordedSubject), Reads: reads})
+	plan := r.Lane(recordedPlan)
+	plan.Invoked(plugin.Invocation{Match: generated(recordedSubject), Reads: reads})
+	plan.Group(recordedGroup(hostUnit))
 }
 
 // validatedDirectives returns two validated directives whose values take

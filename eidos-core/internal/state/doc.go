@@ -39,27 +39,38 @@
 // # The record of the phases
 //
 // A [Recorder] collects what the phases after the load executed: each
-// validation, invocation and check with the edges it read, through one
-// [Lane] for each goroutine that records, and the audit's findings. A
-// lane leaves out a pure invocation, which read nothing and touched and
-// reported nothing. Such an invocation produced nothing, and a change to
-// its subject is the one change that can make it produce something. An
-// [EdgeHash] is the first eight bytes of the SHA-256 of an edge's
-// spelling, and a [RecordRef] names a record by the same hash of its kind
-// and its key fields. [RecordPhases] reads the prior record whole before
-// any plan commits, and [PhaseRecord.Commit] completes the record into
-// the commit once the plans have committed. It sorts the records by ID
-// and the reads by edge, and records only the rows that differ from the
-// prior record's. A plan that does not commit keeps its prior
-// invocations. [Generation.Phases] returns a generation's record, which
-// looks up a record by its key and the records that read an edge.
+// validation, invocation, check and group with the edges it read, and
+// each file that a plan generated, through one [Lane] for each goroutine
+// that records, and the audit's findings. A lane leaves out a pure
+// invocation, which read nothing and touched and reported nothing. Such
+// an invocation produced nothing, and a change to its subject is the one
+// change that can make it produce something. An [EdgeHash] is the first
+// eight bytes of the SHA-256 of an edge's spelling, and a [RecordRef]
+// names a record by the same hash of its kind and its key fields.
+// [RecordPhases] reads the prior record whole before any plan commits,
+// and [PhaseRecord.Commit] completes the record into the commit once the
+// plans have committed. It sorts the records by ID and the reads by edge,
+// and records only the rows that differ from the prior record's. A plan
+// that does not commit keeps its prior records and files, and the plans
+// table lists it. [Generation.Phases] returns a generation's record,
+// which looks up a record by its key and the records that read an edge.
+//
+// A file that a plan generated is an [Artifact] in the artifacts table,
+// under its path and under its path in lower case, which finds the paths
+// that one tree cannot contain beside a new path. The names table keeps
+// each file-level name that a plan's files declare, under its collision
+// scope and under its origin. [PhaseState.Names] reads it as the
+// [go.dokimi.dev/eidos/core/plugin.Names] of the files a warm run keeps.
 //
 // A warm run calls [Recorder.Keep], drops the record of each validation
 // and annotator invocation that it executes again or removes, and names
 // each subject whose claims it withdrew. The commit then keeps the other
-// shared records and bags of claims of the generation. A record that
-// reported a finding lists [FindingsEdge] among its reads, so the readers
-// table lists every record whose findings a warm run reports again.
+// shared records and bags of claims of the generation. A warm run that
+// executes part of a plan calls [Recorder.KeepPlan], and drops each of
+// the plan's invocations, groups and files that it executes again, so the
+// commit keeps the plan's other records. A record that reported a finding
+// lists [FindingsEdge] among its reads, so the readers table lists every
+// record whose findings a warm run reports again.
 //
 // # The parse memo
 //

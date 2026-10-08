@@ -295,6 +295,38 @@ func (g *gate) declare(pkg symbol.Identity, path string) {
 	}
 }
 
+// changed returns the walked files whose record did not prove them
+// unchanged, the recorded workspace files the walk did not find, and the
+// records of both that the record lists, each sorted by path. A record
+// proves a file unchanged where its stat matches. A cold load returns
+// none of them.
+func (g *gate) changed() (moved, vanished []string, was []FileRecord) {
+	if g.prior == nil {
+		return nil, nil, nil
+	}
+	for _, path := range g.walked {
+		rec, held := g.prior[path]
+		if held && g.unchanged(rec, g.files[path]) {
+			continue
+		}
+		moved = append(moved, path)
+		if held {
+			was = append(was, rec)
+		}
+	}
+	for path, rec := range g.prior {
+		_, _, stored := plugin.CutStorePath(path)
+		if _, walked := g.files[path]; !walked && !stored {
+			vanished = append(vanished, path)
+			was = append(was, rec)
+		}
+	}
+	slices.Sort(moved)
+	slices.Sort(vanished)
+	slices.SortFunc(was, func(a, b FileRecord) int { return strings.Compare(a.Path, b.Path) })
+	return moved, vanished, was
+}
+
 // records returns every record, sorted by path.
 func (g *gate) records() []FileRecord {
 	out := make([]FileRecord, 0, len(g.files))

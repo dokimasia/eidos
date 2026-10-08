@@ -115,6 +115,18 @@ type Report struct {
 	// units read.
 	Files []FileRecord
 
+	// Moved lists the workspace files whose record does not prove them
+	// unchanged, sorted by path: a file the record lacks, a file whose
+	// stat moved, and a racily clean file. Vanished lists the recorded
+	// workspace files that the walk did not find, sorted by path. Was
+	// lists the record's records of the moved files it lists and of the
+	// vanished files, sorted by path. All three are nil for a cold load. A
+	// warm run reads them to find the generated files that changed on disk
+	// since the commit that wrote them, and the directories and packages
+	// whose files changed.
+	Moved, Vanished []string
+	Was             []FileRecord
+
 	// Doors are each frontend's door records: its partition, then its
 	// dependency rounds in order.
 	Doors map[plugin.ID][]DoorRecord
@@ -336,6 +348,7 @@ func (l *loader) load() (*store.Graph, *Report, error) {
 		}
 	}
 	report.Files = l.gate.records()
+	report.Moved, report.Vanished, report.Was = l.gate.changed()
 	report.Statted, report.Hashed = l.gate.statted, l.gate.hashed
 	report.Reparsed = l.reparsed
 	return store.Sealed(newSource(l.history, units)), report, nil

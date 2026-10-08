@@ -17,14 +17,14 @@ import (
 // set reads the edge's readers from the readers table. Each validation
 // among them names a subject that the run validates again. Each annotator
 // invocation joins the pending records of its plugin, and the plugin's
-// phase call executes the invocation again or removes it. A plan's
-// invocation runs again with its plan, and a check runs again in Close,
-// so neither joins the set.
+// phase call executes the invocation again or removes it. Each plan's
+// invocation and group joins the dirty records of its plan, which the
+// plan executes again when it runs. A check runs again in Close, so it
+// does not join the set.
 //
-// A probe of a candidate routes the annotator invocations of the
-// candidate and leaves its declaration edge clean. The run withdraws the
-// claims of these invocations before the call evaluates the candidate
-// again.
+// A probe of a candidate routes the invocations of the candidate and
+// leaves its declaration edge clean. The run withdraws the claims of the
+// annotator invocations before the call evaluates the candidate again.
 //
 // Edges become dirty in the order of the run's phases. The load's
 // changes come first, then the subjects whose validated directives
@@ -52,8 +52,18 @@ type dirtySet struct {
 	// pending lists the recorded annotator invocations that a dirty edge
 	// or a probe routed, by plugin and then by match.
 	pending map[plugin.ID]map[plugin.MatchKey]state.Invocation
+	// plans lists the recorded invocations and groups of each plan that a
+	// dirty edge or a probe routed.
+	plans map[string]*planDirt
 	// probed lists the subjects whose invocations already joined pending.
 	probed map[symbol.Identity]struct{}
+}
+
+// planDirt is the dirty records of one plan that the shared phases
+// routed: its invocations by match, and its groups by key unit.
+type planDirt struct {
+	invocations map[plugin.MatchKey]state.Invocation
+	groups      map[plugin.UnitRef]state.Group
 }
 
 // newDirtySet returns an empty dirty set over a generation's record of
@@ -65,8 +75,23 @@ func newDirtySet(phases *state.PhaseState) *dirtySet {
 		routed:      map[state.RecordRef]struct{}{},
 		validations: map[symbol.Identity]struct{}{},
 		pending:     map[plugin.ID]map[plugin.MatchKey]state.Invocation{},
+		plans:       map[string]*planDirt{},
 		probed:      map[symbol.Identity]struct{}{},
 	}
+}
+
+// plan returns the dirty records of a plan, which it creates empty on
+// first use.
+func (d *dirtySet) plan(name string) *planDirt {
+	p := d.plans[name]
+	if p == nil {
+		p = &planDirt{
+			invocations: map[plugin.MatchKey]state.Invocation{},
+			groups:      map[plugin.UnitRef]state.Group{},
+		}
+		d.plans[name] = p
+	}
+	return p
 }
 
 // add makes an edge dirty and routes every record that read it. An edge
@@ -104,6 +129,14 @@ func (d *dirtySet) add(e state.EdgeHash) error {
 			}
 			for _, inv := range invs {
 				d.join(inv)
+			}
+		case state.RecordGroup:
+			groups, err := d.phases.Groups(ref)
+			if err != nil {
+				return err
+			}
+			for _, g := range groups {
+				d.plan(g.Plan).groups[g.Key] = g
 			}
 		}
 	}
@@ -155,9 +188,10 @@ func (d *dirtySet) probe(id symbol.Identity) error {
 }
 
 // join adds an annotator invocation to the pending records of its
-// plugin. It ignores the invocation of a plan.
+// plugin, and a plan's invocation to the dirty records of its plan.
 func (d *dirtySet) join(inv state.Invocation) {
 	if inv.Plan != "" {
+		d.plan(inv.Plan).invocations[inv.Match] = inv
 		return
 	}
 	byMatch := d.pending[inv.Match.Plugin]

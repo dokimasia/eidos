@@ -127,6 +127,7 @@ type fixture struct {
 	packager   plugin.Packager
 	residents  map[string][]plugin.Resident
 	modules    []plugin.Module
+	others     plugin.Names
 	// unregistered routes without a directive registry.
 	unregistered bool
 }
@@ -167,9 +168,12 @@ func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 		Packager:   f.packager,
 		Index:      ix,
 		Directives: registry(tb),
-		Residents:  f.residents,
 		Modules:    f.modules,
+		Others:     f.others,
 		Sink:       sink,
+	}
+	if f.residents != nil {
+		in.Residents = func(dir string) []plugin.Resident { return f.residents[dir] }
 	}
 	if f.unregistered {
 		in.Directives = nil
@@ -471,6 +475,17 @@ func TestRoute(t *testing.T) {
 				ImportBase: "example.com/gen",
 				BaseDir:    genDir,
 			}}, "the placement names the file, its origin, its directory's residents and the modules")
+		})
+
+		t.Run("hands the target no residents for an input without a residents function", func(t *testing.T) {
+			t.Parallel()
+
+			var seen []plugin.Placement
+			f := newFixture(stubOf(storeFile, storePkg, generated(storeID, "StoreStub")))
+			f.packager = recording{seen: &seen}
+			f.route(t)
+			assert.Length(t, seen, 1, "one file is placed")
+			assert.Empty(t, seen[0].Residents, "no directory has residents")
 		})
 
 		t.Run("hands the target no base directory for a plan without an import base", func(t *testing.T) {

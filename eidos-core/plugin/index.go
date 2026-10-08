@@ -66,19 +66,16 @@ func (m ValidatedMap) DirectivesOf(id symbol.Identity) []directive.Directive { r
 // dispatch needs is exactly what is here.
 //
 // An Index is safe for concurrent reads. [NewIndex] fixes every field,
-// the graph is frozen, and the validated table is safe for concurrent
-// use.
+// the graph is frozen, and the validated table and the scope are safe
+// for concurrent use.
 type Index struct {
 	graph     *store.Graph
 	facts     *meta.Facts
 	validated Validated
-	scope     store.Scope
-	// admitted is the set of packages the scope admits, keyed by the
-	// two identity fields ownership derives from. The scope runs
-	// once per package here, at construction, so no enumeration
-	// evaluates it per declaration. It is nil for a nil scope,
-	// which admits everything.
-	admitted map[pkgKey]struct{}
+	// scope decides which packages the index admits, and nil admits every
+	// package. An enumeration calls it once per run of declarations in one
+	// package, as a [store.Reader] does, and a lookup calls it once.
+	scope store.Scope
 }
 
 // pkgKey names a package by the identity fields a declaration
@@ -96,12 +93,12 @@ type pkgKey struct {
 // results. validated is the run's table of validated directives. The
 // index reads it one subject at a time, when a directive gate or a skip
 // ruling routes that subject. A nil table contains no directive, and a
-// nil scope admits every declaration.
+// nil scope admits every declaration. NewIndex does not call the scope, so
+// the index reads only the packages that a route reads.
 //
 // # Allocation contract
 //
-// NewIndex allocates the index. With a scope, it also allocates the set
-// of packages that the scope admits.
+// NewIndex allocates the index, one allocation, with or without a scope.
 func NewIndex(g *store.Graph, f *meta.Facts, validated Validated, sc store.Scope) (*Index, error) {
 	if g == nil {
 		return nil, errors.New("plugin: no graph to route over")
@@ -116,33 +113,7 @@ func NewIndex(g *store.Graph, f *meta.Facts, validated Validated, sc store.Scope
 			"plugin: the graph is not frozen, so routing would return partial results",
 		)
 	}
-	return &Index{
-		graph:     g,
-		facts:     f,
-		validated: validated,
-		scope:     sc,
-		admitted:  admittedOf(g, sc),
-	}, nil
-}
-
-// admittedOf evaluates the scope once per package in the graph, and
-// returns nil for a nil scope.
-func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
-	if sc == nil {
-		return nil
-	}
-	admitted := map[pkgKey]struct{}{}
-	for s := range g.ByKind(symbol.KindPackage) {
-		decl, names := s.(node.Declaration)
-		if !names {
-			continue
-		}
-		id := decl.Identity()
-		if sc(id) {
-			admitted[pkgKey{lang: id.Lang, pkg: id.Package}] = struct{}{}
-		}
-	}
-	return admitted
+	return &Index{graph: g, facts: f, validated: validated, scope: sc}, nil
 }
 
 // ByKind enumerates the declarations of one kind under the scope,
@@ -150,8 +121,9 @@ func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 //
 // # Allocation contract
 //
-// A range over the enumeration allocates nothing: the enumeration is a
-// call of a method that takes the loop's body, which does not keep it.
+// A range over the enumeration allocates nothing besides what the scope
+// allocates: the enumeration is a call of a method that takes the loop's
+// body, which does not keep it.
 func (ix *Index) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) { ix.eachOfKind(k, yield) }
 }
@@ -184,9 +156,10 @@ func (ix *Index) ByFactKey(id meta.KeyID) iter.Seq[symbol.Identity] {
 
 // Lookup returns one declaration under the scope, untracked: how a
 // fact-gated candidate resolves to its declaration and kind. A
-// declaration outside scope is not returned.
+// declaration outside scope is not returned. It allocates nothing besides
+// what the scope allocates.
 func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
-	if !ix.admits(id) {
+	if ix.scope != nil && !ix.scope(id.PackageIdentity()) {
 		return nil, false
 	}
 	return ix.graph.Lookup(id)
@@ -230,9 +203,10 @@ func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 
 // PackageOf returns the package that contains a declaration, under
 // the scope, untracked: how a flush resolves a unit's namespace once
-// per accumulator.
+// per accumulator. It allocates nothing besides what the scope
+// allocates.
 func (ix *Index) PackageOf(id symbol.Identity) (*node.Package, bool) {
-	if !ix.admits(id) {
+	if ix.scope != nil && !ix.scope(id.PackageIdentity()) {
 		return nil, false
 	}
 	return ix.graph.PackageOf(id)
@@ -247,24 +221,14 @@ func (ix *Index) Reader(reads *store.ReadSet) (*store.Reader, error) {
 	return ix.graph.Reader(reads, ix.scope)
 }
 
-// admits reports whether the scope admits a declaration, through
-// the package its identity names.
-func (ix *Index) admits(id symbol.Identity) bool {
-	if ix.admitted == nil {
-		return true
-	}
-	_, held := ix.admitted[pkgKey{lang: id.Lang, pkg: id.Package}]
-	return held
-}
-
 // eachOfKind calls yield with each declaration of one kind under the
 // scope, in identity order, until yield returns false. It ranges
 // over the graph's enumeration in place, so the compiler inlines it,
 // and it does not keep yield.
 func (ix *Index) eachOfKind(k symbol.Kind, yield func(symbol.Symbol) bool) {
-	var run packageRun
+	run := packageRun{scope: ix.scope}
 	for s := range ix.graph.ByKind(k) {
-		if run.admits(ix, s) && !yield(s) {
+		if run.admits(s) && !yield(s) {
 			return
 		}
 	}
@@ -274,9 +238,9 @@ func (ix *Index) eachOfKind(k symbol.Kind, yield func(symbol.Symbol) bool) {
 // of one spelling under the scope, in identity order, until yield
 // returns false, as [Index.eachOfKind] does.
 func (ix *Index) eachWithDirective(n directive.Name, yield func(symbol.Symbol) bool) {
-	var run packageRun
+	run := packageRun{scope: ix.scope}
 	for s := range ix.graph.ByDirective(n) {
-		if run.admits(ix, s) && !yield(s) {
+		if run.admits(s) && !yield(s) {
 			return
 		}
 	}
@@ -286,8 +250,9 @@ func (ix *Index) eachWithDirective(n directive.Name, yield func(symbol.Symbol) b
 // present under the scope, in identity order, until yield returns
 // false, as [Index.eachOfKind] does.
 func (ix *Index) eachWithKey(id meta.KeyID, yield func(symbol.Identity) bool) {
+	run := packageRun{scope: ix.scope}
 	for subject := range ix.facts.ByKey(id) {
-		if ix.admits(subject) && !yield(subject) {
+		if run.admitsPackage(subject) && !yield(subject) {
 			return
 		}
 	}
@@ -296,29 +261,37 @@ func (ix *Index) eachWithKey(id meta.KeyID, yield func(symbol.Identity) bool) {
 // packageRun is the scope's verdict on the package of the last
 // declaration an enumeration admitted or refused. The graph's indexes
 // group declarations by package, so consecutive candidates usually
-// share one verdict, and the scope's set is probed once per run of a
-// package. The zero packageRun has no verdict.
+// share one verdict, and the enumeration calls the scope once per run of
+// a package. A packageRun without a verdict calls the scope at its first
+// declaration.
 type packageRun struct {
+	scope    store.Scope
 	last     pkgKey
 	admitted bool
 	cached   bool
 }
 
-// admits reports whether the index's scope admits a declaration of an
-// enumeration, and refuses a symbol without an identity under a
-// scope. A nil scope admits every symbol without a probe.
-func (r *packageRun) admits(ix *Index, s symbol.Symbol) bool {
-	if ix.admitted == nil {
+// admits reports whether the scope admits a declaration of an
+// enumeration, and refuses a symbol without an identity under a scope. A
+// nil scope admits every symbol without a question.
+func (r *packageRun) admits(s symbol.Symbol) bool {
+	if r.scope == nil {
 		return true
 	}
 	decl, names := s.(node.Declaration)
-	if !names {
-		return false
+	return names && r.admitsPackage(decl.Identity())
+}
+
+// admitsPackage reports whether the scope admits the package that an
+// identity names. It calls the scope where the package differs from the
+// package of the last call, and a nil scope admits every package.
+func (r *packageRun) admitsPackage(id symbol.Identity) bool {
+	if r.scope == nil {
+		return true
 	}
-	id := decl.Identity()
 	key := pkgKey{lang: id.Lang, pkg: id.Package}
 	if !r.cached || key != r.last {
-		_, r.admitted = ix.admitted[key]
+		r.admitted = r.scope(id.PackageIdentity())
 		r.last, r.cached = key, true
 	}
 	return r.admitted

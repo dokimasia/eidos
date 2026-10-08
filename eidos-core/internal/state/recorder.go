@@ -35,8 +35,20 @@ const (
 )
 
 // recordKinds is how many kinds of record a lane keeps: validations,
-// invocations and checks, in [RecordKind] order.
-const recordKinds = 3
+// invocations, checks and groups, in [RecordKind] order.
+const recordKinds = 4
+
+// The lists of rows a lane keeps for the tables without readers, in the
+// order of [plainTables].
+const (
+	plainArtifacts = 0
+	plainNames     = 1
+	plainKinds     = 2
+)
+
+// plainTables are the tables without readers that a lane writes rows for,
+// in the order of the lane's lists.
+var plainTables = [plainKinds]Table{TableArtifacts, TableNames}
 
 // recordRow is one record that a commit writes into its table: its ID,
 // and its row, a row of the record's entry alone, from start to end in
@@ -45,6 +57,12 @@ type recordRow struct {
 	id         uint64
 	buf        int
 	start, end int
+}
+
+// plainRow is one row that a lane wrote for a table without readers: its
+// key from start to mid in the lane's buffer, and its row from mid to end.
+type plainRow struct {
+	start, mid, end int
 }
 
 // edgeRead is one edge a record read: the edge's hash and the record's
@@ -73,7 +91,8 @@ type edgeRead struct {
 // A record allocates only to grow the lane's buffers, which double when
 // they fill, and the sorted list of a grain that a read set keeps in
 // maps. A record that spells an identity or a key longer than 255 bytes
-// also allocates its spelling.
+// also allocates its spelling, and an artifact whose path has an
+// upper-case letter allocates the path in lower case.
 type Lane struct {
 	plan string
 	// at is the lane's place among its recorder's lanes, which each of its
@@ -81,11 +100,14 @@ type Lane struct {
 	at      int
 	buf     []byte
 	records [recordKinds][]recordRow
+	plain   [plainKinds][]plainRow
 	reads   []edgeRead
-	// edges is one record's read record, and entry its encoding before the
-	// lane frames it, both reused from record to record.
+	// edges is one record's read record, entry its encoding before the
+	// lane frames it, and key the key of a row of a table without readers,
+	// each reused from record to record.
 	edges []EdgeHash
 	entry []byte
+	key   []byte
 }
 
 var _ plugin.Journal = (*Lane)(nil)
@@ -108,10 +130,11 @@ func (l *Lane) Validation(
 
 // Invoked records one invocation of a phase call of the lane's plan: its
 // match, the edges it read, with its subject's declaration edge added
-// where it has a subject, and what it touched and reported. An
-// invocation that reported a finding also lists [FindingsEdge]. The run
-// records a phase call that journaled no invocation of its own the same
-// way, as one invocation under [plugin.WholeCall].
+// where it has a subject and the export edge of each plan whose export
+// it read, and what it touched and reported. An invocation that reported
+// a finding also lists [FindingsEdge]. The run records a phase call that
+// journaled no invocation of its own the same way, as one invocation
+// under [plugin.WholeCall].
 //
 // It records nothing for a pure invocation: one that read nothing,
 // touched nothing and reported nothing, of a match without a host and
@@ -130,6 +153,9 @@ func (l *Lane) Invoked(inv plugin.Invocation) {
 	l.edges = appendEdges(l.edges[:0], inv.Reads)
 	if !inv.Match.Subject.IsZero() {
 		l.edges = append(l.edges, DeclarationEdge(inv.Match.Subject))
+	}
+	for _, plan := range inv.Exports {
+		l.edges = append(l.edges, ExportEdge(plan))
 	}
 	l.edges = withFindings(l.edges, inv.Findings)
 	rec := Invocation{
@@ -163,6 +189,76 @@ func (l *Lane) Check(name plugin.ID, reads *store.ReadSet, findings []diag.Diag)
 	l.add(CheckRef(name), c.Reads)
 }
 
+// Group records one group of the lane's plan: its key unit, its units,
+// files and contributors, the edges it read beyond the reads of its
+// invocations, and the findings that the render reported for its files.
+// A group that reported a finding also lists [FindingsEdge]. The record
+// names the lane's plan, whatever plan g names.
+func (l *Lane) Group(g Group) {
+	if l == nil {
+		return
+	}
+	l.edges = withFindings(append(l.edges[:0], g.Reads...), g.Findings)
+	g.Plan, g.Reads = l.plan, readRecord(l.edges)
+	l.entry = appendGroup(grow.Room(l.entry[:0], entryRoom, entryRoom), &g)
+	l.add(GroupRef(l.plan, g.Key), g.Reads)
+}
+
+// Artifact records one file that the lane's plan generated: its row under
+// its path, its row under its path in lower case, and the row of each
+// name the file declares under the name's collision scope and, for a name
+// with an origin, under its origin. The rows name the lane's plan,
+// whatever plan a names. A name's row states the file's path and package.
+func (l *Lane) Artifact(a Artifact) {
+	if l == nil {
+		return
+	}
+	a.Entry.Plan = l.plan
+	l.entry = appendArtifact(grow.Room(l.entry[:0], entryRoom, entryRoom), &a)
+	l.put(plainArtifacts, append(l.key[:0], a.Entry.Path...))
+	l.entry = wire.AppendText(l.entry[:0], l.plan)
+	l.put(plainArtifacts, foldedKey(l.key[:0], a.Entry.Path))
+	for i := range a.Names {
+		n := a.Names[i]
+		n.File, n.FilePkg, n.Ambiguous = a.Entry.Path, a.Pkg, false
+		l.entry = appendNameRow(l.entry[:0], &n)
+		l.put(plainNames, scopeRowKey(l.key[:0], l.plan, &n))
+		if !n.Origin.IsZero() {
+			l.put(plainNames, originRowKey(l.key[:0], l.plan, &n))
+		}
+	}
+}
+
+// Reset drops every record and row of the lane and keeps its buffers,
+// for a plan that starts its generation again from a fresh store. Reset
+// on a nil Lane does nothing.
+func (l *Lane) Reset() {
+	if l == nil {
+		return
+	}
+	l.buf = l.buf[:0]
+	for k := range l.records {
+		l.records[k] = l.records[k][:0]
+	}
+	for k := range l.plain {
+		l.plain[k] = l.plain[k][:0]
+	}
+	l.reads = l.reads[:0]
+}
+
+// put copies a key and the entry the lane encoded last into the lane's
+// buffer, as one row of the table at a place in [plainTables].
+func (l *Lane) put(table int, key []byte) {
+	l.key = key
+	l.buf = grow.Room(l.buf, len(key)+len(l.entry), laneBytes)
+	start := len(l.buf)
+	l.buf = append(l.buf, key...)
+	mid := len(l.buf)
+	l.buf = append(l.buf, l.entry...)
+	rows := &l.plain[table]
+	*rows = append(grow.Room(*rows, 1, laneRecords), plainRow{start: start, mid: mid, end: len(l.buf)})
+}
+
 // withFindings appends [FindingsEdge] to the edges of a record that
 // reported a finding. It returns the edges of any other record unchanged.
 func withFindings(edges []EdgeHash, findings []diag.Diag) []EdgeHash {
@@ -189,16 +285,19 @@ func (l *Lane) add(ref RecordRef, reads []EdgeHash) {
 
 // Recorder collects what one run's phases after the load executed, for
 // [RecordPhases] to write into the run's commit: each validation, each
-// invocation but a pure one, and each check with the edges it read, and
-// the audit's findings. Each goroutine that records takes a [Lane] of its
-// own.
+// invocation but a pure one, each check and each group with the edges it
+// read, each file that a plan generated, and the audit's findings. Each
+// goroutine that records takes a [Lane] of its own.
 //
 // A warm run executes only part of the shared phases. It calls
 // [Recorder.Keep], and it drops the record of each validation and
 // annotator invocation that it executes again or removes. It also names
 // each subject whose claims it withdrew. The commit then keeps the other
 // shared records and bags of the generation, beside the records of the
-// lanes.
+// lanes. A warm run that executes part of a plan also calls
+// [Recorder.KeepPlan] for the plan, and drops each of the plan's records
+// that it executes again or removes: an invocation, a group, or a file
+// with its names.
 //
 // The zero Recorder is ready to record.
 //
@@ -210,7 +309,8 @@ func (l *Lane) add(ref RecordRef, reads []EdgeHash) {
 //
 // Lane allocates the lane, and grows the list of lanes, which doubles
 // when it fills. Audit allocates only to grow the list of findings. A
-// drop or a withdrawal allocates only to grow its set.
+// drop, a withdrawal or a kept plan allocates only to grow its set, and
+// the first drop of a plan's record allocates the plan's set.
 type Recorder struct {
 	mu     sync.Mutex
 	lanes  []*Lane
@@ -220,11 +320,18 @@ type Recorder struct {
 	// drop.
 	keep bool
 	// validations lists the dropped validations by subject, and
-	// invocations lists the dropped invocations by match. withdrew lists
-	// the subjects whose claims the run withdrew.
+	// invocations lists the dropped annotator invocations by match.
+	// withdrew lists the subjects whose claims the run withdrew.
 	validations map[symbol.Identity]struct{}
 	invocations map[plugin.MatchKey]struct{}
 	withdrew    map[symbol.Identity]struct{}
+	// plans lists the plans whose records the commit keeps where the run
+	// did not drop them. planInvocations and groups list the dropped
+	// invocations and groups of each plan, and files the dropped files.
+	plans           map[string]struct{}
+	planInvocations map[string]map[plugin.MatchKey]struct{}
+	groups          map[string]map[plugin.UnitRef]struct{}
+	files           map[string]struct{}
 }
 
 // Lane returns a new lane for one goroutine's records: a plan's generator
@@ -278,21 +385,90 @@ func (r *Recorder) DropValidation(subject symbol.Identity) {
 	r.validations[subject] = struct{}{}
 }
 
-// DropInvocation drops the generation's record of one annotator
-// invocation. A run calls it for each invocation that it runs again or
-// removes. A lane's record of the match replaces the dropped record when
-// the invocation ran and was not pure. DropInvocation on a nil Recorder
-// does nothing.
-func (r *Recorder) DropInvocation(m plugin.MatchKey) {
+// DropInvocation drops the generation's record of one invocation of a
+// plan, the empty plan for an annotator's. A run calls it for each
+// invocation that it runs again or removes. A lane's record of the match
+// replaces the dropped record when the invocation ran and was not pure.
+// The commit keeps the records of a plan that does not commit, whatever
+// the run dropped. DropInvocation on a nil Recorder does nothing.
+func (r *Recorder) DropInvocation(plan string, m plugin.MatchKey) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.invocations == nil {
-		r.invocations = map[plugin.MatchKey]struct{}{}
+	if plan == "" {
+		if r.invocations == nil {
+			r.invocations = map[plugin.MatchKey]struct{}{}
+		}
+		r.invocations[m] = struct{}{}
+		return
 	}
-	r.invocations[m] = struct{}{}
+	if r.planInvocations == nil {
+		r.planInvocations = map[string]map[plugin.MatchKey]struct{}{}
+	}
+	dropped := r.planInvocations[plan]
+	if dropped == nil {
+		dropped = map[plugin.MatchKey]struct{}{}
+		r.planInvocations[plan] = dropped
+	}
+	dropped[m] = struct{}{}
+}
+
+// KeepPlan makes the commit of a warm run keep a plan's records of the
+// generation that the run did not drop: its invocations, its groups, and
+// its files with their names. A run calls it for each plan that it
+// executes in part. Without KeepPlan, the lane of a plan that commits
+// replaces every record of the plan. KeepPlan on a nil Recorder does
+// nothing.
+func (r *Recorder) KeepPlan(plan string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.plans == nil {
+		r.plans = map[string]struct{}{}
+	}
+	r.plans[plan] = struct{}{}
+}
+
+// DropGroup drops the generation's record of a plan's group under its key
+// unit. A run calls it for each group that it executes again. A lane's
+// record of the group replaces the dropped record. DropGroup on a nil
+// Recorder does nothing.
+func (r *Recorder) DropGroup(plan string, key plugin.UnitRef) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.groups == nil {
+		r.groups = map[string]map[plugin.UnitRef]struct{}{}
+	}
+	dropped := r.groups[plan]
+	if dropped == nil {
+		dropped = map[plugin.UnitRef]struct{}{}
+		r.groups[plan] = dropped
+	}
+	dropped[key] = struct{}{}
+}
+
+// DropFile drops the generation's record of the file at a path: its
+// artifact, and the names it declares. A run calls it for each file of a
+// group that it executes again. A lane's record of the file replaces the
+// dropped record where the group still generates the file. DropFile on a
+// nil Recorder does nothing.
+func (r *Recorder) DropFile(path string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.files == nil {
+		r.files = map[string]struct{}{}
+	}
+	r.files[path] = struct{}{}
 }
 
 // Withdrew records that the run withdrew a claim on a subject. When the

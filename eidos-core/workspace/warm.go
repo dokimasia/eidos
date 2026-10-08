@@ -23,14 +23,16 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// warmRun is the state of the shared phases of one warm run. facts is the
-// run's fact store, which restores each bag from the generation on first
-// use. recorded is a second store over the same generation. No write
-// changes recorded, so it returns the winners of the generation. dirty
-// contains the dirty edges and the records that read them.
+// warmRun is the state of the shared phases of one warm run. loaded is
+// the load's report, and changes its changes. facts is the run's fact
+// store, which restores each bag from the generation on first use.
+// recorded is a second store over the same generation. No write changes
+// recorded, so it returns the winners of the generation. dirty contains
+// the dirty edges and the records that read them.
 type warmRun struct {
 	w        *Workspace
 	g        *store.Graph
+	loaded   *load.Report
 	changes  *load.Changes
 	phases   *state.PhaseState
 	facts    *meta.Facts
@@ -127,10 +129,19 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 //     change stops there, so no record that read the fact runs again.
 //  6. The run reports the findings of each validation and annotator
 //     invocation that it keeps.
+//  7. The run probes every candidate, so the dirty set lists each plan's
+//     recorded invocations of the candidate, which the plan executes
+//     again.
+//  8. The run counts the packages that name each module: the
+//     generation's count, with the count of each package whose module
+//     facts changed and of each package that the load removed taken again.
+//     Where the modules change, their edge is dirty.
 //
-// warmShared records into rec each validation and invocation that it
-// executes, and each record and claim that it drops. rec is nil when the
-// run does not record its phases.
+// warmShared returns the dirty set, the candidates in identity order and
+// the count of the modules, which the plans read. It records into rec
+// each validation and invocation that it executes, and each record and
+// claim that it drops. rec is nil when the run does not record its
+// phases.
 //
 // Error modes:
 //   - [damage] for a record of the generation that does not read whole.
@@ -138,13 +149,14 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 //   - the fact store's error for a drop or a withdrawal that it refuses
 //   - an annotator's returned error, wrapped with the annotator's role
 func (w *Workspace) warmShared(
-	ctx context.Context, g *store.Graph, changes *load.Changes, phases *state.PhaseState,
+	ctx context.Context, g *store.Graph, loaded *load.Report, phases *state.PhaseState,
 	facts *meta.Facts, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) (shared, error) {
 	r := &warmRun{
 		w:          w,
 		g:          g,
-		changes:    changes,
+		loaded:     loaded,
+		changes:    loaded.Changes,
 		phases:     phases,
 		facts:      facts,
 		recorded:   meta.Restore(w.keys, phases),
@@ -180,6 +192,16 @@ func (w *Workspace) warmShared(
 	if err == nil {
 		err = r.replay()
 	}
+	out.dirty = r.dirty
+	out.candidates = slices.SortedFunc(maps.Keys(r.candidates), symbol.Identity.Compare)
+	for _, id := range out.candidates {
+		if err == nil {
+			err = r.dirty.probe(id)
+		}
+	}
+	if err == nil {
+		out.modules, err = r.modules()
+	}
 	if err == nil {
 		err = cmp.Or(facts.Damaged(), r.recorded.Damaged(), r.table.Damaged())
 	}
@@ -192,13 +214,19 @@ func (w *Workspace) warmShared(
 // seed makes dirty the edges that the load changed. These are the
 // declaration edge of each declaration that appeared, disappeared or
 // changed, the kind edge of each declaration that appeared or
-// disappeared, the edge of each changed package, and the directive edge
-// of each spelling that a subject gained or lost. The declarations that
-// appeared or changed become the first candidates.
+// disappeared, the edge of each changed package, the directive edge of
+// each spelling that a subject gained or lost, and the edges of where the
+// layout places files, which [warmRun.placements] lists. The declarations
+// that appeared or changed become the first candidates.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a row of the
 // generation that does not read whole.
 func (r *warmRun) seed() error {
+	for _, e := range r.placements() {
+		if err := r.dirty.add(e); err != nil {
+			return err
+		}
+	}
 	c := r.changes
 	for _, id := range slices.Concat(c.Appeared, c.Disappeared) {
 		if err := cmp.Or(r.dirty.declaration(id), r.dirty.add(state.KindEdge(id.Kind))); err != nil {
@@ -556,7 +584,7 @@ func (r *warmRun) annotateSelected(ix *plugin.Index, s annEntry, counted *tally)
 // run executes again or removes.
 func (r *warmRun) drop(m plugin.MatchKey) {
 	r.dropped[m] = struct{}{}
-	r.rec.DropInvocation(m)
+	r.rec.DropInvocation("", m)
 }
 
 // settle compares the winner of each fact that the last step touched with
