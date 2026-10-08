@@ -93,6 +93,7 @@ func New(opts *Options) plugin.Frontend {
 		Resolve(resolve).
 		Options(opts).
 		Dependencies(f.dependencies).
+		Stores(Stores).
 		Build()
 }
 

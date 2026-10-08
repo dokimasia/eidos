@@ -101,6 +101,18 @@ func TestFrontend(t *testing.T) {
 			assert.Equal(t, op.Options(), any(&frontend.Options{}), "the newest release and no library")
 		})
 
+		t.Run("returns a frontend that locates its stores through Stores", func(t *testing.T) {
+			t.Parallel()
+
+			locator, locates := frontend.New(nil).(plugin.StoreLocator)
+			assert.True(t, locates, "the dependency rounds read ct.sym and the repositories of libraries")
+			unset := func(string) string { return "" }
+			_, want := frontend.Stores(unset)
+			assert.HasError(t, want, "Stores needs JAVA_HOME")
+			_, err := locator.Stores(unset)
+			assert.Equal(t, err, want, "the frontend returns the error of Stores")
+		})
+
 		t.Run("returns a frontend that reports a syntax error as JAVA-0001", func(t *testing.T) {
 			t.Parallel()
 

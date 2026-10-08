@@ -111,6 +111,7 @@ func New(opts *Options) plugin.Frontend {
 		Classify(markTests).
 		Resolve(resolve).
 		Dependencies(f.dependencies).
+		Stores(Stores).
 		Options(opts).
 		Build()
 }

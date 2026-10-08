@@ -91,6 +91,20 @@ func TestFrontend(t *testing.T) {
 			assert.True(t, dependent, "Go sources import packages outside the workspace")
 		})
 
+		t.Run("returns a frontend that locates the stores that Stores returns", func(t *testing.T) {
+			t.Parallel()
+
+			locator, locates := frontend.New(nil).(plugin.StoreLocator)
+			assert.True(t, locates, "the dependency rounds read the module cache and the standard library")
+			env := map[string]string{"GOMODCACHE": t.TempDir(), "GOROOT": t.TempDir()}
+			getenv := func(key string) string { return env[key] }
+			want, err := frontend.Stores(getenv)
+			assert.NoError(t, err, "the environment sets both roots")
+			got, err := locator.Stores(getenv)
+			assert.NoError(t, err, "the frontend finds both roots")
+			assert.Equal(t, got, want, "the frontend returns the stores of Stores")
+		})
+
 		t.Run("returns a frontend that parses past a syntax error", func(t *testing.T) {
 			t.Parallel()
 
