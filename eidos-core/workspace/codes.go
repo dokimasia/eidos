@@ -76,3 +76,29 @@ var ColdState = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  62,
 	Meaning: "the run ignored the sealed state and ran cold",
 })
+
+// StateLocked reports a run that found the lock of the state directory
+// taken, at the lock file, and names the holder: another run over the
+// same state directory, in this process or in another one. The run marks
+// every plan failed and writes nothing.
+var StateLocked = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  63,
+	Meaning: "another holder has the lock of the state directory, and the run writes nothing",
+})
+
+// OutOfDate reports a path that a run under [Input.Check] would create,
+// update or remove, or would refuse to write, at the path: the committed
+// output differs from what the run generates. The run writes nothing.
+var OutOfDate = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  64,
+	Meaning: "the committed output differs from what the run generates",
+})
+
+// UnusedSuppression reports a diag directive that removed no finding, at
+// the directive, as an Info: the declaration no longer causes the
+// finding, or a finding of the code has another position. A run that
+// skips a plan, and a cancelled run, report none.
+var UnusedSuppression = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  65,
+	Meaning: "a diag directive removed no finding",
+})

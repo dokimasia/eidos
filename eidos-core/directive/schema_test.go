@@ -72,7 +72,7 @@ func TestSchema(t *testing.T) {
 			assert.Equal(t, got, directive.ResolveNone, "the zero value is ResolveNone")
 		})
 
-		t.Run("declares eight distinct values", func(t *testing.T) {
+		t.Run("declares nine distinct values", func(t *testing.T) {
 			t.Parallel()
 
 			kinds := []directive.ResolutionKind{
@@ -80,6 +80,7 @@ func TestSchema(t *testing.T) {
 				directive.ResolvePackageVar, directive.ResolveValueField,
 				directive.ResolveHostParam, directive.ResolveMemberOnHandle,
 				directive.ResolveMetadataKey, directive.ResolveTypeInScope,
+				directive.ResolveDiagnosticCode,
 			}
 			assert.NoDuplicates(t, func() ([]directive.ResolutionKind, error) { return kinds, nil },
 				"each kind has its own value")
@@ -122,6 +123,10 @@ func TestSchema(t *testing.T) {
 			{
 				name: "returns the spelling of ResolveTypeInScope",
 				give: directive.ResolveTypeInScope, want: "a type in scope",
+			},
+			{
+				name: "returns the spelling of ResolveDiagnosticCode",
+				give: directive.ResolveDiagnosticCode, want: "a registered diagnostic code",
 			},
 			{
 				name: "returns the number of an undeclared kind",

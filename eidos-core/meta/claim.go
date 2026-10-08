@@ -5,6 +5,7 @@ package meta
 
 import (
 	"cmp"
+	"strconv"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/position"
@@ -30,6 +31,23 @@ const (
 	// script that outranks even the directives it rewrites.
 	AuthorityManual
 )
+
+// String returns the name of the authority in a report: plugin, directive
+// or manual. For a value outside the three authorities, it returns the
+// number in the form Authority(n). It allocates nothing for a declared
+// authority.
+func (a Authority) String() string {
+	switch a {
+	case AuthorityPlugin:
+		return "plugin"
+	case AuthorityDirective:
+		return "directive"
+	case AuthorityManual:
+		return "manual"
+	default:
+		return "Authority(" + strconv.Itoa(int(a)) + ")"
+	}
+}
 
 // Order is a claim's place among the claims of one plugin in one
 // bucket: the rule that made it, the subject of the invocation that made

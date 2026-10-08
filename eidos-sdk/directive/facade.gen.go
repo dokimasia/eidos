@@ -78,6 +78,12 @@ var (
 	// repeatable directive mix carriers in the tool-directive shape
 	// with other carriers, which a formatter may reorder.
 	MixedCarriers = core.MixedCarriers
+	// UnknownCode refuses a diagnostic code reference that does not
+	// parse as a code, or that names a code nothing registered.
+	UnknownCode = core.UnknownCode
+	// DeprecatedDirective warns where an instance uses a directive or a
+	// param that its schema deprecates, and states the schema's rewrite.
+	DeprecatedDirective = core.DeprecatedDirective
 )
 
 // Name is a directive's spelling: bare while one plugin claims it,
@@ -195,7 +201,7 @@ const (
 	// text in the source language.
 	KernelSample = core.KernelSample
 	// KernelWitness states a concrete type per type parameter of
-	// the declaration it sits on; its schema is open, one key per
+	// the declaration it annotates; its schema is open, one key per
 	// parameter.
 	KernelWitness = core.KernelWitness
 )
@@ -220,7 +226,7 @@ const (
 	SampleAlternate = core.SampleAlternate
 )
 
-// Kernel returns the kernel-owned schemas: meta, out, diag, skip,
+// Kernel returns the kernel's own schemas: meta, out, diag, skip,
 // sample and witness. Their semantics stay with their owners; what
 // registers here is the spelling and its validation.
 func Kernel() []Schema {
@@ -266,7 +272,8 @@ const (
 // against. This package declares the source kinds and binds none
 // of them: the projection machinery that resolves a source name is
 // outside it. The metadata kind binds at validation, against the
-// metadata key registry.
+// metadata key registry, and the diagnostic kind against the codes that
+// diag.MustRegister registered.
 type ResolutionKind = core.ResolutionKind
 
 const (
@@ -280,7 +287,7 @@ const (
 	ResolveValueField = core.ResolveValueField
 	// ResolveHostParam names a parameter of the host callable.
 	ResolveHostParam = core.ResolveHostParam
-	// ResolveMemberOnHandle names a member reached through a
+	// ResolveMemberOnHandle names a member accessed through a
 	// handle the directive's other params establish.
 	ResolveMemberOnHandle = core.ResolveMemberOnHandle
 	// ResolveMetadataKey resolves against the metadata registry: a
@@ -290,6 +297,11 @@ const (
 	// ResolveTypeInScope names a type the subject's file can see, a
 	// bare or qualified type spelling: what a witness names.
 	ResolveTypeInScope = core.ResolveTypeInScope
+	// ResolveDiagnosticCode names a registered diagnostic code in the
+	// spelling that diag.ParseCode reads, such as EID-0062: what a diag
+	// directive suppresses. A spelling that is no registered code is a
+	// validation Error under [UnknownCode].
+	ResolveDiagnosticCode = core.ResolveDiagnosticCode
 )
 
 // ParamKey is a param's spelling. A schema's owner declares its
@@ -355,13 +367,19 @@ type Resolver = core.Resolver
 // formatter that moves the shaped lines, as gofmt does, reorders the
 // instances and their numbering.
 //
-// keys resolves ResolveMetadataKey params. resolve binds every
-// other reference kind, and a nil resolver leaves those spellings
-// unbound. Validation of one subject is independent of every other,
-// so a caller validates subjects in parallel: the sink is safe for
-// concurrent use, and the resolver is called from every goroutine.
-// Validate refuses an unsealed registry outright, because that is a
-// defect in the composition, not in a carrier.
+// An instance of a directive that its schema deprecates, and an instance
+// that writes a param that its schema deprecates, reports a Warning under
+// [DeprecatedDirective] that states the schema's rewrite, and validates
+// as before.
+//
+// keys resolves ResolveMetadataKey params, and a ResolveDiagnosticCode
+// param resolves against the codes that [diag.MustRegister] registered.
+// resolve binds every other reference kind, and a nil resolver leaves
+// those spellings unbound. Validation of one subject is independent of
+// every other, so a caller validates subjects in parallel: the sink is
+// safe for concurrent use, and the resolver is called from every
+// goroutine. Validate refuses an unsealed registry outright, because that
+// is a defect in the composition, not in a carrier.
 //
 // # Allocation contract
 //

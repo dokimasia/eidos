@@ -284,6 +284,22 @@ func (s *PhaseState) Invocations(ref RecordRef) ([]Invocation, error) {
 	return out, err
 }
 
+// Checks returns every check call that the generation keeps under the ID
+// of a reference, in row order. A readers row names records by reference,
+// and Checks reads the checks that such a reference names. Records whose
+// IDs collide share one row, so the caller checks the name of each record.
+//
+// Error modes: an error wrapping [ErrDamaged] for a row that does not
+// read whole or does not decode.
+func (s *PhaseState) Checks(ref RecordRef) ([]Check, error) {
+	var out []Check
+	err := s.entries(TableChecks, ref.ID, func(d *decoder) {
+		name := plugin.ID(d.text())
+		out = append(out, Check{Name: name, Reads: d.edges(), Findings: d.findings()})
+	})
+	return out, err
+}
+
 // Readers returns the records whose read record lists an edge's hash,
 // sorted, and none for an edge nothing read.
 //

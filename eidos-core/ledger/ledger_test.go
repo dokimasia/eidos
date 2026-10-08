@@ -62,6 +62,16 @@ func TestLedger(t *testing.T) {
 			assert.Equal(t, ledger.ManifestPath(brand), ".acme/manifest", "the manifest's directory")
 		})
 	})
+
+	t.Run("LockPath", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the lock file inside the brand's state directory", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, ledger.LockPath(brand), ".acme/lock", "the lock file")
+		})
+	})
 }
 
 // The brand's paths allocate their spelling in the ordinary run, which

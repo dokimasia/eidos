@@ -25,9 +25,29 @@ import (
 // so growths stay fewer than the reports measured.
 const warmReports = 3
 
+// removedAllocs is one copy of the counts of one position: the outer map
+// and its group, and the clone of the position's counts and its group.
+const removedAllocs = 4
+
 // somewhere is a position for a finding whose location is beside the
 // point of the case reporting it.
 var somewhere = position.Pos{File: "svc/store.go", Line: 1, Col: 1}
+
+// elsewhere is a position that no suppression table of the cases lists.
+var elsewhere = position.Pos{File: "svc/store.go", Line: 9, Col: 1}
+
+// The codes of the suppression cases: a satellite's code, which the table
+// lists, another of its codes, which the table does not list, and a code
+// of the kernel's, which the table lists.
+var (
+	listedCode   = diag.Code{Prefix: "EIDGO", Number: 412}
+	unlistedCode = diag.Code{Prefix: "EIDGO", Number: 7}
+	kernelCode   = diag.Code{Prefix: diag.KernelPrefix, Number: 1}
+)
+
+// suppressing is the table of the suppression cases: at somewhere, the
+// satellite's listed code and the kernel's code.
+var suppressing = map[position.Pos][]diag.Code{somewhere: {listedCode, kernelCode}}
 
 // Every layer reports into the sink, so its order is a contract, and
 // frontends report into it from goroutines of their own.
@@ -165,6 +185,224 @@ func TestSink(t *testing.T) {
 		})
 	})
 
+	t.Run("Suppress", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("removes a finding that the sink contains at a listed position and code", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			s.Suppress(suppressing)
+			assert.Empty(t, collect(t, s), "the table removes the finding")
+		})
+
+		t.Run("removes a later finding at a listed position and code", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Suppress(suppressing)
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			assert.Empty(t, collect(t, s), "the table removes the finding")
+		})
+
+		removed := []struct {
+			name string
+			give diag.Diag
+		}{
+			{
+				name: "removes a kernel Warning at a listed position",
+				give: diag.Diag{Code: kernelCode, Severity: diag.SeverityWarning, Pos: somewhere},
+			},
+			{
+				name: "removes an Error under another prefix at a listed position",
+				give: diag.Diag{Code: listedCode, Severity: diag.SeverityError, Pos: somewhere},
+			},
+		}
+		for _, tt := range removed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s := diag.NewSink()
+				s.Suppress(suppressing)
+				s.Report(tt.give)
+				assert.Empty(t, collect(t, s), "the table removes the finding")
+			})
+		}
+
+		kept := []struct {
+			name string
+			give diag.Diag
+		}{
+			{
+				name: "keeps a finding at a position that the table does not list",
+				give: diag.Diag{Code: listedCode, Severity: diag.SeverityWarning, Pos: elsewhere},
+			},
+			{
+				name: "keeps a finding under a code that the table does not list",
+				give: diag.Diag{Code: unlistedCode, Severity: diag.SeverityWarning, Pos: somewhere},
+			},
+			{
+				name: "keeps a kernel Error at a listed position",
+				give: diag.Diag{Code: kernelCode, Severity: diag.SeverityError, Pos: somewhere},
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s := diag.NewSink()
+				s.Suppress(suppressing)
+				s.Report(tt.give)
+				assert.Equal(t, collect(t, s), []diag.Diag{tt.give}, "the table keeps the finding")
+			})
+		}
+
+		t.Run("keeps the remaining findings in report order", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Warnf(unlistedCode, somewhere, diag.PhaseAnnotate, "first")
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "removed")
+			s.Warnf(unlistedCode, somewhere, diag.PhaseAnnotate, "second")
+			s.Suppress(suppressing)
+			var got []string
+			for d := range s.All() {
+				got = append(got, d.Msg)
+			}
+			assert.Equal(t, got, []string{"first", "second"}, "the findings that remain keep their order")
+		})
+
+		t.Run("clears the failure of an Error that it removes", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Errorf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			s.Suppress(suppressing)
+			assert.False(t, s.Failed(), "the removed Error fails nothing")
+		})
+
+		t.Run("keeps the failure of an Error that the table does not list", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Errorf(listedCode, elsewhere, diag.PhaseAnnotate, "the field has no tag")
+			s.Suppress(suppressing)
+			assert.True(t, s.Failed(), "the remaining Error fails the run")
+		})
+
+		t.Run("removes a promoted Warning at a listed position", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Promote()
+			s.Warnf(kernelCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			s.Suppress(suppressing)
+			assert.Empty(t, collect(t, s), "the table decides on the severity that the finding was reported at")
+		})
+
+		t.Run("removes nothing after a nil table replaces the table", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Suppress(suppressing)
+			s.Suppress(nil)
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			assert.Length(t, collect(t, s), 1, "the sink keeps the finding")
+		})
+	})
+
+	t.Run("Removed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nil for a sink that removed nothing", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Suppress(suppressing)
+			s.Warnf(unlistedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			assert.Nil(t, s.Removed(), "the table removed no finding")
+		})
+
+		t.Run("counts the removed findings by position and code", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Suppress(suppressing)
+			for range 2 {
+				s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			}
+			s.Infof(kernelCode, somewhere, diag.PhaseAnnotate, "the field is generated")
+			assert.Equal(t, s.Removed(), map[position.Pos]map[diag.Code]int{
+				somewhere: {listedCode: 2, kernelCode: 1},
+			}, "the counts of each code at the position")
+		})
+
+		t.Run("returns counts that the caller changes without changing the sink", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Suppress(suppressing)
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			got := s.Removed()
+			got[somewhere][listedCode] = 99
+			assert.Equal(t, s.Removed()[somewhere][listedCode], 1, "the sink keeps its own count")
+		})
+	})
+
+	t.Run("Promote", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a Warning that the sink contains at Error", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			s.Promote()
+			got := collect(t, s)
+			assert.Length(t, got, 1, "the sink keeps the finding")
+			assert.Equal(t, got[0].Severity, diag.SeverityError, "at Error")
+		})
+
+		t.Run("fails a sink that contains a Warning", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			s.Promote()
+			assert.True(t, s.Failed(), "the promoted Warning fails the run")
+		})
+
+		t.Run("fails a sink at a later Warning", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Promote()
+			s.Warnf(listedCode, somewhere, diag.PhaseAnnotate, "the field has no tag")
+			assert.True(t, s.Failed(), "the promoted Warning fails the run")
+		})
+
+		t.Run("returns an Info at Info", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Promote()
+			s.Infof(listedCode, somewhere, diag.PhaseLoad, "loaded %d units", 4)
+			got := collect(t, s)
+			assert.Length(t, got, 1, "the sink keeps the finding")
+			assert.Equal(t, got[0].Severity, diag.SeverityInfo, "at Info")
+		})
+
+		t.Run("fails no sink that contains only Infos", func(t *testing.T) {
+			t.Parallel()
+
+			s := diag.NewSink()
+			s.Infof(listedCode, somewhere, diag.PhaseLoad, "loaded %d units", 4)
+			s.Promote()
+			assert.False(t, s.Failed(), "an Info fails nothing")
+		})
+	})
+
 	t.Run("Failed", func(t *testing.T) {
 		t.Parallel()
 
@@ -285,18 +523,54 @@ func TestSink(t *testing.T) {
 
 // A new sink allocates itself, a report allocates only to grow the
 // sink's storage, and a formatted report allocates its message besides.
-// The outcome reads without allocating, and an enumeration allocates
-// its snapshot. The check runs alone, because the count includes every
-// goroutine's allocations.
+// A report that the table removes allocates nothing once the table removed
+// a finding at its position, and the policies install without allocating.
+// The outcome reads without allocating, an enumeration allocates its
+// snapshot, and the counts of the removed findings allocate their copy.
+// The check runs alone, because the count includes every goroutine's
+// allocations.
 func TestSinkAllocs(t *testing.T) {
 	code := diag.Code{Prefix: diag.KernelPrefix, Number: 1}
 	d := diag.Diag{Code: code, Pos: somewhere, Origin: diag.PhaseLoad, Msg: "a finding"}
+	w := diag.Diag{
+		Code: listedCode, Severity: diag.SeverityWarning, Pos: somewhere, Origin: diag.PhaseAnnotate, Msg: "a finding",
+	}
+	keeping := map[position.Pos][]diag.Code{elsewhere: {code}}
 
 	var s *diag.Sink
 	assert.MaxAllocs(t, func() { s = diag.NewSink() }, 1, "NewSink allocates the sink")
 
 	s = warmSink(d)
 	assert.MaxAllocs(t, func() { s.Report(d) }, 0, "Report allocates only to grow the storage")
+
+	s = warmSink(d)
+	s.Suppress(keeping)
+	assert.MaxAllocs(t, func() { s.Report(d) }, 0,
+		"Report under a table that keeps the finding allocates only to grow the storage")
+
+	s = removedSink(w)
+	assert.MaxAllocs(t, func() { s.Report(w) }, 0,
+		"Report allocates nothing for a finding at a position where the table removed one before")
+	assert.Empty(t, slices.Collect(s.All()), "Report removes the finding that the table lists")
+
+	s = warmSink(w)
+	assert.MaxAllocs(t, func() { s.Suppress(keeping) }, 0,
+		"Suppress allocates nothing for a table that removes nothing")
+	assert.Length(t, slices.Collect(s.All()), warmReports, "Suppress keeps every finding that the table does not list")
+
+	var promoted *diag.Sink
+	assert.MaxAllocsWithSetup(t, func() *diag.Sink { return warmSink(w) }, func(s *diag.Sink) {
+		s.Promote()
+		promoted = s
+	}, 0, "Promote allocates nothing")
+	assert.True(t, promoted.Failed(), "Promote fails the sink of warnings")
+
+	s = removedSink(w)
+	var counts map[position.Pos]map[diag.Code]int
+	assert.MaxAllocs(t, func() { counts = s.Removed() }, removedAllocs,
+		"Removed allocates the copy of the counts of one position")
+	assert.Equal(t, counts, map[position.Pos]map[diag.Code]int{somewhere: {listedCode: 1}},
+		"Removed returns the count of the one removed finding")
 
 	s = warmSink(d)
 	assert.MaxAllocs(t, func() {
@@ -329,15 +603,21 @@ func TestSinkAllocs(t *testing.T) {
 	assert.Equal(t, seen, warmReports, "All returns every finding")
 }
 
-// BenchmarkSink measures a new sink, a report into the sink, a formatted
-// report at each severity, a read of the outcome, and an enumeration of
-// 1,024 findings of eight origins. BenchmarkSinkParallel measures
-// reports from many goroutines.
+// BenchmarkSink measures a new sink, a report into the sink without a
+// table and under a table that keeps or removes the finding, a formatted
+// report at each severity, the installation of each policy, a read of the
+// outcome, a copy of the counts of the removed findings, and an
+// enumeration of 1,024 findings of eight origins. BenchmarkSinkParallel
+// measures reports from many goroutines.
 func BenchmarkSink(b *testing.B) {
 	code := diag.Code{Prefix: diag.KernelPrefix, Number: 1}
 	d := diag.Diag{
 		Code: code, Severity: diag.SeverityWarning, Pos: somewhere, Origin: diag.PhaseLoad, Msg: "a finding",
 	}
+	listed := diag.Diag{
+		Code: listedCode, Severity: diag.SeverityWarning, Pos: somewhere, Origin: diag.PhaseAnnotate, Msg: "a finding",
+	}
+	keeping := map[position.Pos][]diag.Code{elsewhere: {code}}
 
 	b.Run("NewSink", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(1)
@@ -350,13 +630,67 @@ func BenchmarkSink(b *testing.B) {
 	})
 
 	b.Run("Report", func(b *testing.B) {
+		b.Run("a finding without a table", func(b *testing.B) {
+			s := warmSink(d)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				s.Report(d)
+			}
+			assert.False(b, s.Failed(), "a report below Error fails nothing")
+		})
+
+		b.Run("a finding that the table keeps", func(b *testing.B) {
+			s := warmSink(d)
+			s.Suppress(keeping)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				s.Report(d)
+			}
+			assert.False(b, s.Failed(), "a report below Error fails nothing")
+		})
+
+		b.Run("a finding that the table removes", func(b *testing.B) {
+			s := removedSink(listed)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				s.Report(listed)
+			}
+			assert.Empty(b, slices.Collect(s.All()), "the table removes every report")
+		})
+	})
+
+	b.Run("Suppress", func(b *testing.B) {
 		s := warmSink(d)
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		for c.Loop() {
-			s.Report(d)
+			s.Suppress(keeping)
 		}
-		assert.False(b, s.Failed(), "a report below Error fails nothing")
+		assert.Length(b, slices.Collect(s.All()), warmReports, "the table keeps every finding")
+	})
+
+	b.Run("Promote", func(b *testing.B) {
+		s := warmSink(d)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			s.Promote()
+		}
+		assert.True(b, s.Failed(), "the promoted warnings fail the sink")
+	})
+
+	b.Run("Removed", func(b *testing.B) {
+		s := removedSink(listed)
+		c := bench.Start(b).MaxAllocs(removedAllocs)
+		defer c.End()
+		var got map[position.Pos]map[diag.Code]int
+		for c.Loop() {
+			got = s.Removed()
+		}
+		assert.Equal(b, got[somewhere][listedCode], 1, "Removed counts the one removed finding")
 	})
 
 	b.Run("Errorf", func(b *testing.B) {
@@ -466,5 +800,14 @@ func warmSink(d diag.Diag) *diag.Sink {
 	for range warmReports {
 		s.Report(d)
 	}
+	return s
+}
+
+// removedSink returns a sink under a table that lists the position and the
+// code of d, which removed one copy of d.
+func removedSink(d diag.Diag) *diag.Sink {
+	s := diag.NewSink()
+	s.Suppress(map[position.Pos][]diag.Code{d.Pos: {d.Code}})
+	s.Report(d)
 	return s
 }

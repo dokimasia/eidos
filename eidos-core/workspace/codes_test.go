@@ -51,6 +51,22 @@ func TestCodes(t *testing.T) {
 			name: "FailedDependency", code: workspace.FailedDependency, spelt: "EID-0061",
 			meaning: "a plan or a check reads a plan that failed, and generates or checks nothing",
 		},
+		{
+			name: "ColdState", code: workspace.ColdState, spelt: "EID-0062",
+			meaning: "the run ignored the sealed state and ran cold",
+		},
+		{
+			name: "StateLocked", code: workspace.StateLocked, spelt: "EID-0063",
+			meaning: "another holder has the lock of the state directory, and the run writes nothing",
+		},
+		{
+			name: "OutOfDate", code: workspace.OutOfDate, spelt: "EID-0064",
+			meaning: "the committed output differs from what the run generates",
+		},
+		{
+			name: "UnusedSuppression", code: workspace.UnusedSuppression, spelt: "EID-0065",
+			meaning: "a diag directive removed no finding",
+		},
 	}
 	for _, tt := range codes {
 		t.Run(tt.name, func(t *testing.T) {

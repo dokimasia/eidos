@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 )
 
-// Prefix owns a range of codes: the kernel's, a satellite's, and a
+// Prefix marks a range of codes: the kernel's, a satellite's, and a
 // consumer's own registered when the workspace builds. Uppercase
 // letters, nothing else, so the spelled code splits back into its
 // prefix and number without escaping: a hyphen inside the prefix
@@ -32,7 +33,7 @@ func (p Prefix) Valid() bool {
 	return true
 }
 
-// KernelPrefix owns every code the kernel reports.
+// KernelPrefix is the prefix of every code the kernel reports.
 const KernelPrefix Prefix = "EID"
 
 // codeDigits is the width a code's number is padded to, so codes
@@ -47,6 +48,33 @@ type Code struct {
 	Number int
 }
 
+// ParseCode returns the code that a spelling names, in the form that
+// [Code.String] returns: the prefix, a hyphen, and the number in decimal
+// digits, padded with zeros to four digits, such as EID-0062 and
+// EID-12345. It allocates nothing for a spelling that it accepts.
+//
+// Error modes: a spelling without a hyphen, a prefix that is not
+// uppercase letters, a number in another form, such as EID-62 or
+// EID-00062, a number below 1, and a number too large for an int. The
+// error names the spelling.
+func ParseCode(s string) (Code, error) {
+	prefix, digits, _ := strings.Cut(s, "-")
+	if !Prefix(prefix).Valid() || !padded(digits) {
+		return Code{}, fmt.Errorf(
+			"diag: %q is not a code: a code is uppercase letters, a hyphen and a number "+
+				"of four digits at least, such as EID-0062", s,
+		)
+	}
+	n, err := strconv.Atoi(digits)
+	if err != nil {
+		return Code{}, fmt.Errorf("diag: %q is not a code: %w", s, err)
+	}
+	if n < 1 {
+		return Code{}, fmt.Errorf("diag: %q is not a code: a code's number counts from 1", s)
+	}
+	return Code{Prefix: Prefix(prefix), Number: n}, nil
+}
+
 // CodeSpec is what a registration declares.
 type CodeSpec struct {
 	// Number is unique within the prefix.
@@ -56,8 +84,7 @@ type CodeSpec struct {
 	Meaning string
 }
 
-// Registry holds every registered code and the meaning each one
-// carries.
+// Registry contains every registered code and its meaning.
 //
 // A Registry is not safe for concurrent use. Registration happens at
 // package initialization and when the workspace builds, both of
@@ -82,8 +109,8 @@ func NewRegistry() *Registry {
 func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
 	if !p.Valid() {
 		return Code{}, fmt.Errorf(
-			"diag: code %d claims prefix %q, which is not uppercase letters: "+
-				"a code belongs to whoever owns it, spelled so it splits back",
+			"diag: code %d claims prefix %q, which is not uppercase letters, "+
+				"so the code's spelling would not split back into its prefix and its number",
 			s.Number, p,
 		)
 	}
@@ -120,14 +147,14 @@ func MustRegister(p Prefix, s CodeSpec) Code {
 	return code
 }
 
-// kernel holds the codes packages declare at initialization.
+// kernel contains the codes that packages declare at initialization.
 var kernel = NewRegistry()
 
 // Kernel returns the registry [MustRegister] records into.
 func Kernel() *Registry { return kernel }
 
 // Meaning returns what a registered code means, and false for a code
-// this registry does not hold.
+// this registry does not contain.
 func (r *Registry) Meaning(c Code) (string, bool) {
 	meaning, known := r.meanings[c]
 	return meaning, known
@@ -169,4 +196,19 @@ func (c Code) String() string {
 		out = append(out, '0')
 	}
 	return string(append(out, number...))
+}
+
+// padded reports whether digits spell a number as [Code.String] spells
+// it: decimal digits alone, four of them at least, and a leading zero only
+// in a number of four digits.
+func padded(digits string) bool {
+	if len(digits) < codeDigits || len(digits) > codeDigits && digits[0] == '0' {
+		return false
+	}
+	for i := range len(digits) {
+		if digits[i] < '0' || digits[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

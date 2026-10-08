@@ -17,9 +17,10 @@ import (
 )
 
 // commitAll commits each plan that can, in the composition's commit
-// order, then the sweep, and records each plan's status and changes in
-// the report, in composition order. A blocked run commits nothing, and
-// neither does a dry one. A plan commits only where every plan it
+// order, then the sweep, and records each plan's status, changes and
+// withheld changes in the report, in composition order. A skipped plan
+// reports [PlanSkipped] and nothing else. A blocked run commits nothing,
+// and neither does a dry one. A plan commits only where every plan it
 // depends on commits, or would under Dry. One that does not fails, and
 // unless the whole run is blocked, the run reports one FailedDependency
 // for it at the failed plan's cause. A cancellation observed before a
@@ -40,6 +41,8 @@ func commitAll(
 			upstream = uncommitted(p, runs)
 		}
 		switch {
+		case p.skipped:
+			p.status = PlanSkipped
 		case p.cancelled:
 			p.status = PlanCancelled
 		case blocked:
@@ -60,9 +63,9 @@ func commitAll(
 			p.status = PlanCommitted
 		}
 		reached := p.finish()
-		pr := PlanReport{Name: p.plan.name, Status: p.status}
+		pr := PlanReport{Name: p.plan.name, Status: p.status, Refused: p.refused}
 		if reached || p.status == PlanPrepared {
-			pr.Changes = p.changes
+			pr.Changes, pr.Withheld = p.changes, p.withheld
 		}
 		plans[i] = pr
 	}
@@ -177,8 +180,10 @@ func reconcile(changes []output.Change, records []output.Written) []output.Chang
 // plan that does not, its previous entries, and per plan the composition
 // no longer declares, the entries whose files the sweep did not remove.
 // A path a committing plan routes a file to takes that plan's entry
-// whatever another plan's previous entry listed there. It names the
-// workspace the run records under.
+// whatever another plan's previous entry listed there. A path whose
+// change the run withheld keeps the previous record's entry, and has none
+// where the previous record has none. It names the workspace the run
+// records under.
 func merged(rec *record, runs []*planRun, sw *swept) manifest.Manifest {
 	entries := map[string]manifest.Entry{}
 	keep := func(es ...manifest.Entry) {
@@ -211,6 +216,13 @@ func merged(rec *record, runs []*planRun, sw *swept) manifest.Manifest {
 		keep(survivors(slices.Collect(maps.Values(p.stale)), p.changes)...)
 		keep(p.kept...)
 		keep(p.entries()...)
+		for _, c := range p.withheld {
+			if e, recorded := rec.byPath[c.Path]; recorded {
+				entries[c.Path] = e
+			} else {
+				delete(entries, c.Path)
+			}
+		}
 	}
 	files := slices.SortedFunc(maps.Values(entries), func(a, b manifest.Entry) int {
 		return cmp.Compare(a.Path, b.Path)

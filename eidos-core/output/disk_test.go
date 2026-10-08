@@ -16,6 +16,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/output"
@@ -106,6 +107,159 @@ func TestDisk(t *testing.T) {
 				assert.HasError(t, err, "the sink cannot prove ownership without a brand")
 			})
 		}
+	})
+
+	t.Run("Overwrite", func(t *testing.T) {
+		t.Parallel()
+
+		allowed := []struct {
+			name     string
+			existing func(t *testing.T) string
+			allow    []output.Found
+		}{
+			{
+				name:     "lets the commit write over the brand's drifted output",
+				existing: drifted,
+				allow:    []output.Found{output.FoundDrifted},
+			},
+			{
+				name:     "lets the commit write over a hand-written file",
+				existing: func(*testing.T) string { return firstBody },
+				allow:    []output.Found{output.FoundForeign},
+			},
+			{
+				name:     "lets the commit write over another brand's output",
+				existing: func(t *testing.T) string { t.Helper(); return stampedAs(t, rivalBrand, firstBody) },
+				allow:    []output.Found{output.FoundForeign},
+			},
+			{
+				name:     "lets the commit write over the brand's drifted output under both verdicts",
+				existing: drifted,
+				allow:    []output.Found{output.FoundDrifted, output.FoundForeign},
+			},
+		}
+		for _, tt := range allowed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				root := files.Workspace(t, files.Tree{storeFile: files.Text(tt.existing(t))})
+				d := opened(t, root, nil)
+				assert.NoError(t, d.Overwrite(tt.allow...), "the verdicts are allowed")
+				next := stampedAs(t, diskBrand, secondBody)
+				assert.NoError(t, d.Write(storeFile, []byte(next)), "the file stages")
+				got, err := d.Commit()
+				assert.NoError(t, err, "the commit writes over the file")
+				assert.Length(t, got, 1, "one record for the file")
+				expect.Equal(t, got[0].Action, output.ActionUpdated, "the commit updates the file")
+				files.HasContent(t, filepath.Join(root, storeFile), next, "the file has the staged bytes")
+			})
+		}
+
+		kept := []struct {
+			name     string
+			existing func(t *testing.T) string
+			allow    output.Found
+		}{
+			{
+				name:     "keeps refusing a hand-written file under the drifted verdict",
+				existing: func(*testing.T) string { return firstBody },
+				allow:    output.FoundDrifted,
+			},
+			{
+				name:     "keeps refusing the brand's drifted output under the foreign verdict",
+				existing: drifted,
+				allow:    output.FoundForeign,
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				existing := tt.existing(t)
+				root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
+				d := opened(t, root, nil)
+				assert.NoError(t, d.Overwrite(tt.allow), "the verdict is allowed")
+				assert.NoError(t, d.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
+				_, err := d.Commit()
+				assert.HasError(t, err, "the commit refuses the file")
+				files.HasContent(t, filepath.Join(root, storeFile), existing, "the file has its own bytes")
+			})
+		}
+
+		t.Run("returns an error from the commit for a directory at the staged path", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{storeFile: files.Dir()})
+			d := opened(t, root, nil)
+			assert.NoError(t, d.Overwrite(output.FoundForeign), "the foreign verdict is allowed")
+			assert.NoError(t, d.Write(storeFile, []byte(firstBody)), "the file stages")
+			_, err := d.Commit()
+			assert.HasError(t, err, "the commit does not write over a directory")
+			files.IsDir(t, filepath.Join(root, storeFile), "the directory remains")
+		})
+
+		t.Run("leaves the brand's drifted output that a removal names", func(t *testing.T) {
+			t.Parallel()
+
+			existing := drifted(t)
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
+			d := opened(t, root, nil)
+			assert.NoError(t, d.Overwrite(output.FoundDrifted, output.FoundForeign), "both verdicts are allowed")
+			assert.NoError(t, d.Delete(storeFile), "the removal stages")
+			got, err := d.Commit()
+			assert.NoError(t, err, "a kept file is no fault")
+			assert.Empty(t, got, "no record claims a removal")
+			files.HasContent(t, filepath.Join(root, storeFile), existing, "the file remains with its own bytes")
+		})
+
+		invalid := []struct {
+			name  string
+			found output.Found
+		}{
+			{name: "returns an error for FoundNothing", found: output.FoundNothing},
+			{name: "returns an error for FoundSame", found: output.FoundSame},
+			{name: "returns an error for FoundIntact", found: output.FoundIntact},
+			{name: "returns an error for the zero Found", found: 0},
+		}
+		for _, tt := range invalid {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.HasError(t, opened(t, t.TempDir(), nil).Overwrite(tt.found), "the verdict is refused")
+			})
+		}
+
+		t.Run("allows nothing for a list with a verdict it refuses", func(t *testing.T) {
+			t.Parallel()
+
+			existing := drifted(t)
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
+			d := opened(t, root, nil)
+			assert.HasError(t, d.Overwrite(output.FoundDrifted, output.FoundIntact), "the list is refused")
+			assert.NoError(t, d.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
+			_, err := d.Commit()
+			assert.HasError(t, err, "the commit refuses the drifted file")
+			files.HasContent(t, filepath.Join(root, storeFile), existing, "the file has its own bytes")
+		})
+
+		t.Run("returns an error after the preparation", func(t *testing.T) {
+			t.Parallel()
+
+			d := opened(t, t.TempDir(), nil)
+			_, err := d.Prepare()
+			assert.NoError(t, err, "the staging prepares")
+			assert.HasError(t, d.Overwrite(output.FoundDrifted), "a prepared staging is closed")
+			assert.NoError(t, d.Discard(), "the sink discards")
+		})
+
+		t.Run("returns ErrFinished after the commit", func(t *testing.T) {
+			t.Parallel()
+
+			d := opened(t, t.TempDir(), nil)
+			_, err := d.Commit()
+			assert.NoError(t, err, "the commit succeeds")
+			assert.ErrorIs(t, d.Overwrite(output.FoundDrifted), output.ErrFinished, "a sink serves one staging")
+		})
 	})
 
 	t.Run("Write", func(t *testing.T) {

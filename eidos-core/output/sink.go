@@ -153,29 +153,48 @@ type Sink interface {
 	// file, write-if-changed: identical bytes leave the file and
 	// its mtime untouched. A sink over a destination that has files
 	// of its own, such as [Disk], refuses to overwrite a file its
-	// brand did not write. It removes a staged removal's file only
-	// where the file is the brand's intact output, and leaves any
-	// other file in place without a record. Commit returns one record
-	// per file it wrote or removed, sorted by path, and keeps going
-	// past a file that fails, joining the errors.
+	// brand did not write, unless it implements [Overwriter] and
+	// Overwrite allowed the file's verdict. It removes a staged
+	// removal's file only where the file is the brand's intact output,
+	// and leaves any other file in place without a record. Commit
+	// returns one record per file it wrote or removed, sorted by path,
+	// and keeps going past a file that fails, joining the errors.
 	Commit() ([]Written, error)
 	// Discard drops the staged files without touching the
 	// destination.
 	Discard() error
 }
 
+// Overwriter is a sink whose commit can write over a file that its
+// brand did not write intact: a file edited since its stamp, and a file
+// without the brand's frame. [Disk], [Mem] and [Tee] implement it.
+type Overwriter interface {
+	// Overwrite lets Commit write over the files of the verdicts given,
+	// [FoundDrifted], [FoundForeign] or both. Commit never writes over a
+	// directory, which Prepare reports as foreign, and a staged removal
+	// still deletes only the brand's intact output.
+	//
+	// Error modes: a verdict other than FoundDrifted and FoundForeign,
+	// which allows nothing, a call after Prepare, and [ErrFinished] after
+	// Commit or Discard.
+	Overwrite(found ...Found) error
+}
+
 // staging is the bookkeeping every sink shares: the staged bytes and
-// removals, and the one-staging rule. Each sink decides how it reads
-// and writes its destination.
+// removals, the verdicts its commit writes over, and the one-staging
+// rule. Each sink decides how it reads and writes its destination.
 type staging struct {
 	files map[string][]byte
 	// removals are the paths staged for deletion.
 	removals map[string]struct{}
 	// tree contains the staged file paths, which a new path must fit
 	// beside.
-	tree     pathset.Set
-	prepared bool
-	finished bool
+	tree pathset.Set
+	// overwrite has the bit 1<<f of each verdict f whose files Commit
+	// writes over, and is zero where Overwrite allowed none.
+	overwrite uint8
+	prepared  bool
+	finished  bool
 }
 
 // stage records one file, refusing what no sink may take.
@@ -217,6 +236,27 @@ func (s *staging) remove(p string) error {
 		s.removals = map[string]struct{}{}
 	}
 	s.removals[p] = struct{}{}
+	return nil
+}
+
+// allow records the verdicts whose files Commit writes over, refusing
+// any other verdict, which allows nothing, and every call once the
+// staging is prepared or finished.
+func (s *staging) allow(found []Found) error {
+	switch {
+	case s.finished:
+		return ErrFinished
+	case s.prepared:
+		return errors.New("output: an overwrite arrives after the staging was prepared, which closed it")
+	}
+	var bits uint8
+	for _, f := range found {
+		if f != FoundDrifted && f != FoundForeign {
+			return fmt.Errorf("output: a commit writes over drifted and foreign files alone, and %v is neither", f)
+		}
+		bits |= 1 << f
+	}
+	s.overwrite |= bits
 	return nil
 }
 

@@ -31,6 +31,36 @@ func TestClaim(t *testing.T) {
 		expect.Nil(t, c.Derived, "derived from nothing")
 	})
 
+	t.Run("Authority", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("String", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				name string
+				give meta.Authority
+				want string
+			}{
+				{name: "returns plugin for AuthorityPlugin", give: meta.AuthorityPlugin, want: "plugin"},
+				{name: "returns directive for AuthorityDirective", give: meta.AuthorityDirective, want: "directive"},
+				{name: "returns manual for AuthorityManual", give: meta.AuthorityManual, want: "manual"},
+				{
+					name: "returns the number of an undeclared authority",
+					give: meta.AuthorityManual + 1,
+					want: "Authority(3)",
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					assert.Equal(t, tt.give.String(), tt.want, "String returns the name of the authority")
+				})
+			}
+		})
+	})
+
 	t.Run("Compare", func(t *testing.T) {
 		t.Parallel()
 

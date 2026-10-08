@@ -19,6 +19,16 @@
 // .<brand>/manifest/ab.json, and [ManifestPath] is the directory of the
 // manifest's documents. The first write creates the directory.
 //
+// # The lock
+//
+// A [Locker] admits one holder at a time. [Dir.Lock] takes the operating
+// system's lock on the directory's lock file, which ends with the
+// holder's process, and [Mem.Lock] takes a lock within the process. The
+// holder records itself as a [Holder] in lock.json beside the lock file
+// until its release, and a contender that finds the lock taken returns a
+// [LockedError] that names the holder. [LockPath] is the lock file of a
+// brand's state directory.
+//
 // # Durability
 //
 // [Ledger.Write] replaces a blob atomically and durably: the bytes go

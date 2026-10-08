@@ -4,11 +4,14 @@
 package ledger_test
 
 import (
+	"bufio"
 	"cmp"
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -149,6 +152,220 @@ func TestDir(t *testing.T) {
 			d, err := ledger.OpenAt(t.TempDir())
 			assert.NoError(t, err, "the directory opens")
 			assert.Equal(t, d.Workspace(), "", "no workspace")
+		})
+	})
+
+	t.Run("Lock", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records the holder beside the lock file", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			t.Cleanup(func() { assert.NoError(t, release(), "the lock is released") })
+			files.IsFile(t, onDisk(root, lockFile), "the lock file is in the state directory")
+			b, err := d.Read(t.Context(), holderFile)
+			assert.NoError(t, err, "the record reads")
+			var got ledger.Holder
+			assert.NoError(t, json.Unmarshal(b, &got), "the record decodes")
+			assert.Equal(t, got, fixtureHolder, "the record is the holder")
+		})
+
+		t.Run("returns a LockedError that names the holder to a second ledger over the directory", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			t.Cleanup(func() { assert.NoError(t, release(), "the lock is released") })
+			_, err = reopened(t, root).Lock(t.Context(), ledger.Holder{PID: 1})
+			locked := assert.ErrorAs[*ledger.LockedError](t, err, "the second lock is refused")
+			assert.Equal(t, locked.Holder, fixtureHolder, "the error names the first holder")
+		})
+
+		t.Run("returns ErrLocked to a second lock of the same ledger", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			t.Cleanup(func() { assert.NoError(t, release(), "the lock is released") })
+			_, err = d.Lock(t.Context(), fixtureHolder)
+			assert.ErrorIs(t, err, ledger.ErrLocked, "one ledger does not take its lock twice")
+		})
+
+		t.Run("returns the lock to the next holder after the release", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			assert.NoError(t, release(), "the lock is released")
+			again, err := reopened(t, root).Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the next holder takes the lock")
+			assert.NoError(t, again(), "and releases it")
+		})
+
+		t.Run("removes the record at the release", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			assert.NoError(t, release(), "the lock is released")
+			files.Absent(t, onDisk(root, holderFile), "the record is gone")
+			files.IsFile(t, onDisk(root, lockFile), "and the lock file remains")
+		})
+
+		t.Run("removes the record at the release after the context ends", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			release, err := d.Lock(ctx, fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			cancel()
+			assert.NoError(t, release(), "the lock is released")
+			files.Absent(t, onDisk(root, holderFile), "the record is gone")
+		})
+
+		t.Run("returns the error of the record's removal from the release", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			assert.NoError(t, os.Remove(onDisk(root, holderFile)), "the record is removed")
+			assert.NoError(t, os.MkdirAll(onDisk(root, path.Join(holderFile, "blocked")), 0o755),
+				"a directory with an entry takes the record's place")
+			assert.HasError(t, release(), "the release cannot remove the record")
+			assert.NoError(t, os.RemoveAll(onDisk(root, holderFile)), "the directory is removed")
+			again, err := reopened(t, root).Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the release closed the lock file all the same")
+			assert.NoError(t, again(), "and the next holder releases the lock")
+		})
+
+		t.Run("returns a release that fails on its second call", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			assert.NoError(t, release(), "the first release closes the lock file")
+			assert.HasError(t, release(), "the second release finds the file closed")
+		})
+
+		t.Run("returns a LockedError with the zero Holder for a record that does not read", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			t.Cleanup(func() { assert.NoError(t, release(), "the lock is released") })
+			assert.NoError(t, d.Remove(t.Context(), holderFile), "the record is removed")
+			_, err = reopened(t, root).Lock(t.Context(), fixtureHolder)
+			locked := assert.ErrorAs[*ledger.LockedError](t, err, "the second lock is refused")
+			assert.Equal(t, locked.Holder, ledger.Holder{}, "the error names no holder")
+		})
+
+		t.Run("returns a LockedError with the zero Holder for a record that does not decode", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			t.Cleanup(func() { assert.NoError(t, release(), "the lock is released") })
+			assert.NoError(t, d.Put(t.Context(), holderFile, []byte(`{"pid":"four"}`)), "the record is damaged")
+			_, err = reopened(t, root).Lock(t.Context(), fixtureHolder)
+			locked := assert.ErrorAs[*ledger.LockedError](t, err, "the second lock is refused")
+			assert.Equal(t, locked.Holder, ledger.Holder{}, "the error names no holder")
+		})
+
+		t.Run("returns the lock to the next holder after the holder's process is killed", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			child := lockedChild(t, root)
+			_, err := d.Lock(t.Context(), fixtureHolder)
+			locked := assert.ErrorAs[*ledger.LockedError](t, err, "the child has the lock")
+			assert.Equal(t, locked.Holder.PID, child.Process.Pid, "the error names the child")
+			assert.NoError(t, child.Process.Kill(), "the child is killed")
+			assert.HasError(t, child.Wait(), "the child exits on the signal")
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the operating system released the killed child's lock")
+			assert.NoError(t, release(), "and the next holder releases it")
+		})
+
+		t.Run("locks the directory of a ledger OpenAt returned", func(t *testing.T) {
+			t.Parallel()
+
+			dir := filepath.Join(t.TempDir(), "memo")
+			d, err := ledger.OpenAt(dir)
+			assert.NoError(t, err, "the directory opens")
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			assert.NoError(t, release(), "the lock is released")
+			files.IsFile(t, filepath.Join(dir, lockFile), "the lock file is in the directory itself")
+		})
+
+		t.Run("returns an error and keeps no lock for a holder whose record does not encode", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			unencodable := ledger.Holder{PID: 1, Since: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)}
+			_, err := d.Lock(t.Context(), unencodable)
+			assert.HasError(t, err, "a year past 9999 does not encode")
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the failed lock released its file")
+			assert.NoError(t, release(), "and the lock is released")
+		})
+
+		t.Run("returns an error and keeps no lock for a record that cannot be written", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.NoError(t, os.MkdirAll(onDisk(root, path.Join(holderFile, "blocked")), 0o755),
+				"a directory takes the record's place")
+			_, err := d.Lock(t.Context(), fixtureHolder)
+			assert.HasError(t, err, "the record is not written")
+			assert.ErrorIsNot(t, err, ledger.ErrLocked, "and the error is not a lock")
+			assert.NoError(t, os.RemoveAll(onDisk(root, holderFile)), "the directory is removed")
+			release, err := d.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the failed lock released its file")
+			assert.NoError(t, release(), "and the lock is released")
+		})
+
+		t.Run("returns an error for a lock file that is a directory", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.NoError(t, os.MkdirAll(onDisk(root, lockFile), 0o755), "a directory takes the lock file's place")
+			_, err := d.Lock(t.Context(), fixtureHolder)
+			assert.HasError(t, err, "the lock file does not open")
+			assert.ErrorIsNot(t, err, ledger.ErrLocked, "and the error is not a lock")
+		})
+
+		t.Run("returns an error for a state directory that is a file", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.NoError(t, os.WriteFile(filepath.Join(root, ledger.StateDir(brand)), nil, 0o600),
+				"a file takes the state directory's place")
+			_, err := d.Lock(t.Context(), fixtureHolder)
+			assert.HasError(t, err, "the state directory is not made")
+		})
+
+		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := d.Lock(ctx, fixtureHolder)
+				return err
+			}, "the cancellation is returned")
+			files.Absent(t, filepath.Join(root, ledger.StateDir(brand)), "and nothing is created")
 		})
 	})
 
@@ -686,9 +903,46 @@ func opened(tb testing.TB) (*ledger.Dir, string) {
 	tb.Helper()
 
 	root := tb.TempDir()
+	return reopened(tb, root), root
+}
+
+// reopened returns a second ledger over the state directory of a
+// workspace root, as another process opens it.
+func reopened(tb testing.TB, root string) *ledger.Dir {
+	tb.Helper()
+
 	d, err := ledger.OpenDir(root, brand)
 	assert.NoError(tb, err, "the ledger opens")
-	return d, root
+	return d
+}
+
+// lockedChild starts the test binary as a child that takes the lock of
+// the state directory under root, and returns it once the child reports
+// that it has the lock. The cleanup kills a child that the case left
+// running, under a deadline of its own.
+func lockedChild(t *testing.T, root string) *exec.Cmd {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), childDeadline)
+	t.Cleanup(cancel)
+	exe, err := os.Executable()
+	assert.NoError(t, err, "the test binary is found")
+	child := exec.CommandContext(ctx, exe)
+	child.Env = append(os.Environ(), lockChildEnv+"="+root)
+	stdin, err := child.StdinPipe()
+	assert.NoError(t, err, "the child's input is a pipe")
+	stdout, err := child.StdoutPipe()
+	assert.NoError(t, err, "the child's output is a pipe")
+	assert.NoError(t, child.Start(), "the child starts")
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		_ = child.Process.Kill()
+		_ = child.Wait()
+	})
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	assert.NoError(t, err, "the child reports")
+	assert.Equal(t, line, lockedLine+"\n", "the child has the lock")
+	return child
 }
 
 // onDisk returns the absolute path of a blob of a workspace root's

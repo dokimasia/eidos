@@ -32,14 +32,25 @@
 // plugin that registered the schema. A subject that sets and negates
 // one directive reports [Conflict], and neither instance survives.
 //
+// # Deprecation
+//
+// A schema states [Schema.Deprecated] to deprecate its directive, and
+// [ParamSpec.Deprecated] to deprecate one param, each with the rewrite
+// that replaces it. [Validate] types a deprecated instance as before and
+// reports a Warning under [DeprecatedDirective] that states the rewrite,
+// so a plugin renames a directive or a param across a release without
+// failing a run.
+//
 // # The kernel's names
 //
 // Six names belong to the kernel and register through [Kernel]:
 // meta, out, diag, skip, sample and witness. The packages that apply
 // them define their semantics, and this package defines the spelling
-// and its validation. The reserved keys [ReservedOut] and
-// [ReservedTag] are admitted on every directive, and no plugin
-// schema may claim them.
+// and its validation. The off param of diag resolves against the
+// diagnostic codes that packages registered, and a spelling that names
+// no registered code reports [UnknownCode]. The reserved keys
+// [ReservedOut] and [ReservedTag] are admitted on every directive, and
+// no plugin schema may claim them.
 //
 // # Failure semantics
 //

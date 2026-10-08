@@ -146,7 +146,7 @@ type Contract struct {
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 	if !b.Valid() {
 		return nil, fmt.Errorf(
-			"output: %q is not a brand: a lowercase letter, then lowercase letters, digits and hyphens",
+			"output: %q is not a brand: use a lowercase letter followed by lowercase letters, digits and hyphens",
 			string(b),
 		)
 	}

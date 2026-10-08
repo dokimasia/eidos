@@ -36,6 +36,10 @@ const (
 	dropPayload       = "meta drop=shape.role"
 )
 
+// unregisteredCode is a code in the kernel's prefix that no package
+// registers.
+const unregisteredCode = "EID-9999"
+
 // validateAllocs is what validating the benchmark's three instances
 // allocates: the returned slice, and per instance the params map, its
 // one group and each param's value, which the map keeps apart because a
@@ -297,6 +301,18 @@ func TestValidate(t *testing.T) {
 				want:     directive.UnknownMetadataKey,
 				naming:   "shape.role",
 			},
+			{
+				name:     "reports UnknownCode naming a code that does not parse",
+				payloads: []string{"diag off=sixty-two"},
+				want:     directive.UnknownCode,
+				naming:   "sixty-two",
+			},
+			{
+				name:     "reports UnknownCode naming a code that nothing registered",
+				payloads: []string{"diag off=" + unregisteredCode},
+				want:     directive.UnknownCode,
+				naming:   unregisteredCode,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -440,6 +456,18 @@ func TestValidate(t *testing.T) {
 			assert.False(t, sink.Failed(), "nothing is reported")
 		})
 
+		t.Run("resolves a diag directive naming a registered code", func(t *testing.T) {
+			t.Parallel()
+
+			spelled := directive.UnclaimedName.String()
+			got, sink := validate(t, "diag off="+spelled)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the instance is returned")
+			off, _ := got[0].Param(directive.DiagOff)
+			assert.Equal(t, off, directive.Value{Kind: directive.TypeReference, Ref: spelled},
+				"the code is kept as it was written")
+		})
+
 		t.Run("reports in one order whatever order the maps iterate in", func(t *testing.T) {
 			t.Parallel()
 
@@ -494,6 +522,77 @@ func TestValidate(t *testing.T) {
 			assert.Empty(t, got, "the instance is not returned")
 			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.TypeMismatch, directive.BadSpelling},
 				"only the two typing failures are reported")
+		})
+
+		retired := directive.Schema{
+			Plugin: "sizer", Name: "limit", Doc: "bounds a buffer",
+			Deprecated: "write sizer:bound in place of sizer:limit",
+		}
+		sizing := directive.Schema{
+			Plugin: "sizer", Name: "size", Doc: "sizes a buffer",
+			Positional: []directive.ParamSpec{{
+				Key: "unit", Type: directive.TypeString, Doc: "the size unit",
+				Deprecated: "write unit= in place of the positional unit",
+			}},
+			Params: []directive.ParamSpec{
+				{
+					Key: "limit", Type: directive.TypeInt, Doc: "the old bound",
+					Deprecated: "write bound= in place of limit=",
+				},
+				{Key: "bound", Type: directive.TypeInt, Doc: "the bound"},
+			},
+		}
+		deprecations := []struct {
+			name    string
+			payload string
+			naming  string
+		}{
+			{
+				name:    "reports DeprecatedDirective with the rewrite for a deprecated directive",
+				payload: "sizer:limit",
+				naming:  retired.Deprecated,
+			},
+			{
+				name:    "reports DeprecatedDirective with the rewrite for a deprecated keyed param",
+				payload: "sizer:size limit=3",
+				naming:  sizing.Params[0].Deprecated,
+			},
+			{
+				name:    "reports DeprecatedDirective with the rewrite for a deprecated positional param",
+				payload: "sizer:size kb",
+				naming:  sizing.Positional[0].Deprecated,
+			},
+		}
+		for _, tt := range deprecations {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, sink := validateRaws(t, []directive.Raw{parse(t, tt.payload, 1)}, retired, sizing)
+				got := onlyDiag(t, sink)
+				expect.Equal(t, got.Code, directive.DeprecatedDirective, "the finding is under its code")
+				expect.That(t, got.Msg).Contains(tt.naming, "and states the rewrite")
+			})
+		}
+
+		t.Run("reports DeprecatedDirective as a Warning", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validateRaws(t, []directive.Raw{parse(t, "sizer:limit", 1)}, retired, sizing)
+			assert.Equal(t, onlyDiag(t, sink).Severity, diag.SeverityWarning, "a deprecation fails nothing")
+		})
+
+		t.Run("returns the instance of a deprecated directive", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "sizer:limit", 1)}, retired, sizing)
+			assert.Length(t, got, 1, "the deprecated instance validates as before")
+		})
+
+		t.Run("reports nothing for an instance that writes no deprecated param", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validateRaws(t, []directive.Raw{parse(t, "sizer:size bound=3", 1)}, retired, sizing)
+			coretest.AssertCodes(t, sink)
 		})
 
 		t.Run("returns nil for no instances", func(t *testing.T) {

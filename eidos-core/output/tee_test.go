@@ -6,10 +6,12 @@ package output_test
 import (
 	"cmp"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/output"
 )
@@ -69,6 +71,32 @@ func TestTee(t *testing.T) {
 			for _, m := range sinks {
 				assert.Equal(t, string(m.Files()[storeFile]), firstBody, "every sink has the bytes")
 			}
+		})
+	})
+
+	t.Run("Overwrite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("lets every sink's commit write over a drifted file", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{storeFile: files.Text(drifted(t))})
+			m := output.NewMem()
+			tee := output.NewTee(opened(t, root, nil), m)
+			assert.NoError(t, tee.Overwrite(output.FoundDrifted), "the verdict is allowed in every sink")
+			next := stampedAs(t, diskBrand, secondBody)
+			assert.NoError(t, tee.Write(storeFile, []byte(next)), "the file stages")
+			_, err := tee.Commit()
+			assert.NoError(t, err, "the commit writes over the drifted file")
+			files.HasContent(t, filepath.Join(root, storeFile), next, "the disk has the staged bytes")
+			assert.Equal(t, string(m.Files()[storeFile]), next, "and so does the memory sink")
+		})
+
+		t.Run("returns an error for a sink that does not overwrite", func(t *testing.T) {
+			t.Parallel()
+
+			tee := output.NewTee(output.NewMem(), refusing{})
+			assert.HasError(t, tee.Overwrite(output.FoundDrifted), "the refusing sink would refuse the file")
 		})
 	})
 

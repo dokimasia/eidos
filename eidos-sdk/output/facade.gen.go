@@ -111,8 +111,9 @@ func HasTrailerKey(tail []byte) bool {
 // digest matches its body, which [Contract.Verify] checks the same
 // way. A hand-written file, another brand's output and an output
 // edited since it was stamped are refused, naming the path, and
-// remain as they are. A staged removal deletes only the brand's
-// intact output, and leaves any other file in place.
+// remain as they are, unless [Disk.Overwrite] allowed their verdict. A
+// staged removal deletes only the brand's intact output, and leaves any
+// other file in place.
 //
 // # Concurrency
 //
@@ -221,6 +222,11 @@ type Change = core.Change
 //
 // A Sink belongs to one goroutine and serves one staging.
 type Sink = core.Sink
+
+// Overwriter is a sink whose commit can write over a file that its
+// brand did not write intact: a file edited since its stamp, and a file
+// without the brand's frame. [Disk], [Mem] and [Tee] implement it.
+type Overwriter = core.Overwriter
 
 // Tee stages one set of files into several sinks at once: a disk
 // sink beside a memory sink is how a run writes and reports the

@@ -3,28 +3,48 @@
 
 package layout
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Policy is where a plan places a generated file by default.
 type Policy uint8
 
 const (
-	// PolicyInherit takes the policy of the enclosing scope: a
-	// refinement takes its plan's, and a plan takes PolicyAlongside.
+	// PolicyInherit uses the policy of the enclosing scope. A refinement
+	// uses the policy of its plan, and a plan uses PolicyAlongside.
 	PolicyInherit Policy = 0
-	// PolicyAlongside places a file in the directory of the source it
-	// derives from.
+	// PolicyAlongside places a file in the directory of its source.
 	PolicyAlongside Policy = 1
 	// PolicyCentralised places a file under the configured output
-	// directory, at its source package's workspace-relative directory.
+	// directory, in the same relative directory as its source package.
 	PolicyCentralised Policy = 2
 )
+
+// ParsePolicy returns the policy whose name is s. The names are the strings
+// that [Policy.String] returns: inherit, alongside-source and centralised.
+// The comparison is exact, so "Centralised" is not a policy. ParsePolicy
+// allocates nothing when s is the name of a policy.
+//
+// Error modes: an error that quotes s and lists the three names, when s is
+// not one of them.
+func ParsePolicy(s string) (Policy, error) {
+	for p := PolicyInherit; p.Valid(); p++ {
+		if p.String() == s {
+			return p, nil
+		}
+	}
+	return PolicyInherit, fmt.Errorf("layout: %q is not a layout policy: use %s, %s or %s",
+		s, PolicyInherit, PolicyAlongside, PolicyCentralised)
+}
 
 // Valid reports whether p is one of the three policies.
 func (p Policy) Valid() bool { return p <= PolicyCentralised }
 
-// String returns the policy's spelling in a configuration. A policy
-// outside the three returns its number.
+// String returns the name of the policy in a configuration, such as
+// "centralised". For a value outside the three policies, it returns the
+// number in the form Policy(n).
 func (p Policy) String() string {
 	switch p {
 	case PolicyInherit:
@@ -38,7 +58,7 @@ func (p Policy) String() string {
 	}
 }
 
-// or returns p, and fallback where p inherits.
+// or returns p, or fallback when p is PolicyInherit.
 func (p Policy) or(fallback Policy) Policy {
 	if p == PolicyInherit {
 		return fallback

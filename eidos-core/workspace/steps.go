@@ -4,7 +4,9 @@
 package workspace
 
 import (
+	"bytes"
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -616,8 +618,14 @@ func configure(
 	return encodings, faults
 }
 
-// populate sets one plugin's declared options from its config
-// section, key by key, sorted so the faults arrive in one order.
+// populate sets the declared options of one plugin from its config
+// section, key by key, in sorted order so the faults arrive in one order.
+// A value that the field cannot take as it is goes through the canonical
+// JSON encoding of options: populate encodes the value and decodes the
+// bytes into the type of the field. A decoder of a config file returns an
+// int and an []any, and the encoding turns them into an int64 and a
+// []string. A value that does not encode, or does not decode into the
+// field, is a fault.
 func populate(p plugin.Plugin, section map[string]any) []error {
 	op, held := p.(plugin.OptionsProvider)
 	if !held || op.Options() == nil {
@@ -642,20 +650,114 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 			continue
 		}
 		v := section[key]
-		if v == nil || !reflect.TypeOf(v).AssignableTo(f.Type) {
-			given := "nothing"
-			if v != nil {
-				given = reflect.TypeOf(v).String()
-			}
+		if v == nil {
 			faults = append(faults, fmt.Errorf(
-				"workspace: option %q of plugin %q takes %s, and the config has %s",
-				key, p.Name(), f.Type, given,
+				"workspace: option %q of plugin %q takes %s, and the config has nothing", key, p.Name(), f.Type,
 			))
 			continue
 		}
-		rv.FieldByIndex(f.Index).Set(reflect.ValueOf(v))
+		value, converted := reflect.ValueOf(v), true
+		if !value.Type().AssignableTo(f.Type) {
+			value, converted = convert(v, f.Type)
+		}
+		if !converted {
+			faults = append(faults, fmt.Errorf(
+				"workspace: option %q of plugin %q takes %s, and the config has %T", key, p.Name(), f.Type, v,
+			))
+			continue
+		}
+		rv.FieldByIndex(f.Index).Set(value)
 	}
 	return faults
+}
+
+// convert returns v as a value of type t through the JSON encoding, and
+// reports false when v does not encode or the bytes do not decode into t.
+// The decoder rejects a key that a struct of t does not declare.
+func convert(v any, t reflect.Type) (reflect.Value, bool) {
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		return reflect.Value{}, false
+	}
+	out := reflect.New(t)
+	dec := json.NewDecoder(bytes.NewReader(encoded))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(out.Interface()); err != nil {
+		return reflect.Value{}, false
+	}
+	return out.Elem(), true
+}
+
+// refine applies the plan refinements of the config to the declared plans
+// before Build compiles them. It leaves out each disabled plan, and replaces
+// the sources and the layout fields that a refinement sets. It refuses a
+// refinement of a plan that the composition does not declare, and a
+// disabled plan that an enabled plan depends on or that a check reads. Each
+// such error names both. A refused plan remains in the list, so the later
+// steps report no second error about it. refine copies each plan that it
+// refines, so the declared plans of the composition do not change.
+func refine(
+	declared []Plan, refinements map[string]PlanConfig, checks []plugin.WorkspaceCheck,
+) ([]Plan, []error) {
+	if len(refinements) == 0 {
+		return declared, nil
+	}
+	var faults []error
+	for _, name := range slices.Sorted(maps.Keys(refinements)) {
+		if !slices.ContainsFunc(declared, func(pl Plan) bool { return pl.Name == name }) {
+			faults = append(faults, fmt.Errorf(
+				"workspace: the config refines plan %q, which the composition does not declare", name,
+			))
+		}
+	}
+	needed := map[string]bool{}
+	for _, pl := range declared {
+		if refinements[pl.Name].Disabled {
+			continue
+		}
+		for _, dep := range pl.DependsOn {
+			if refinements[dep].Disabled {
+				faults = append(faults, fmt.Errorf(
+					"workspace: the config disables plan %q, and plan %q depends on it", dep, pl.Name,
+				))
+				needed[dep] = true
+			}
+		}
+	}
+	for _, c := range checks {
+		if c == nil {
+			continue
+		}
+		for _, name := range c.Reads() {
+			if refinements[name].Disabled {
+				faults = append(faults, fmt.Errorf(
+					"workspace: the config disables plan %q, and check %s reads it", name, c.Name(),
+				))
+				needed[name] = true
+			}
+		}
+	}
+	out := make([]Plan, 0, len(declared))
+	for _, pl := range declared {
+		r := refinements[pl.Name]
+		if r.Disabled && !needed[pl.Name] {
+			continue
+		}
+		if r.Sources != nil {
+			pl.Sources = *r.Sources
+		}
+		if r.Policy != layout.PolicyInherit {
+			pl.Layout.Policy = r.Policy
+		}
+		if r.Dir != "" {
+			pl.Layout.Dir = r.Dir
+		}
+		if r.ImportBase != "" {
+			pl.Layout.ImportBase = r.ImportBase
+		}
+		out = append(out, pl)
+	}
+	return out, faults
 }
 
 // compilePlans is the fifth and sixth step: every plan named once,

@@ -17,7 +17,7 @@ import (
 	core "go.dokimi.dev/eidos/core/diag"
 )
 
-// Prefix owns a range of codes: the kernel's, a satellite's, and a
+// Prefix marks a range of codes: the kernel's, a satellite's, and a
 // consumer's own registered when the workspace builds. Uppercase
 // letters, nothing else, so the spelled code splits back into its
 // prefix and number without escaping: a hyphen inside the prefix
@@ -25,7 +25,7 @@ import (
 // begins.
 type Prefix = core.Prefix
 
-// KernelPrefix owns every code the kernel reports.
+// KernelPrefix is the prefix of every code the kernel reports.
 const KernelPrefix = core.KernelPrefix
 
 // Code identifies a finding across releases.
@@ -33,11 +33,23 @@ const KernelPrefix = core.KernelPrefix
 // The zero Code names nothing and reports true from [Code.IsZero].
 type Code = core.Code
 
+// ParseCode returns the code that a spelling names, in the form that
+// [Code.String] returns: the prefix, a hyphen, and the number in decimal
+// digits, padded with zeros to four digits, such as EID-0062 and
+// EID-12345. It allocates nothing for a spelling that it accepts.
+//
+// Error modes: a spelling without a hyphen, a prefix that is not
+// uppercase letters, a number in another form, such as EID-62 or
+// EID-00062, a number below 1, and a number too large for an int. The
+// error names the spelling.
+func ParseCode(s string) (Code, error) {
+	return core.ParseCode(s)
+}
+
 // CodeSpec is what a registration declares.
 type CodeSpec = core.CodeSpec
 
-// Registry holds every registered code and the meaning each one
-// carries.
+// Registry contains every registered code and its meaning.
 //
 // A Registry is not safe for concurrent use. Registration happens at
 // package initialization and when the workspace builds, both of
@@ -126,6 +138,13 @@ const (
 
 // Sink collects the findings of one run.
 //
+// A sink applies two policies, which a run installs in the sinks that
+// decide an outcome. [Sink.Suppress] removes the findings that a table of
+// suppressions lists, and [Sink.Promote] reports every Warning as an
+// Error. The sink keeps each finding at the severity it was reported at,
+// so the table decides on that severity whatever order the two policies
+// arrive in.
+//
 // # Concurrency
 //
 // A Sink is safe for concurrent use: frontends, and annotators under
@@ -142,7 +161,9 @@ const (
 //
 // The sink keeps every finding in one slice, which grows by doubling.
 // A report allocates only to grow it, and a formatted report also
-// allocates its message. An enumeration allocates its snapshot.
+// allocates its message. A report that the table removes allocates the
+// counts of its position the first time the table removes a finding
+// there. An enumeration allocates its snapshot.
 type Sink = core.Sink
 
 // NewSink returns an empty sink.

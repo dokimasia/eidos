@@ -17,6 +17,9 @@
 // consults, once per run from the frozen graph and the fact store, so
 // every plan routes against one view of it.
 //
+// [ParsePolicy] parses the name of a [Policy] in a configuration, which is
+// the name that [Policy.String] returns.
+//
 // # Precedence
 //
 // Each decision takes the first input that states a value:

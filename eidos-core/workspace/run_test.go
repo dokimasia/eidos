@@ -23,6 +23,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
 	"go.dokimi.dev/assert/history"
 
@@ -51,6 +52,32 @@ import (
 
 // runCode is a code for the run fixtures' findings.
 var runCode = diag.Code{Prefix: "tst", Number: 7}
+
+// The lock fixtures: the caller a run records, the record of the lock's
+// holder beside the lock file, and the error of a release that fails.
+const (
+	lockCaller   = "acme run ./svc/..."
+	holderRecord = "lock.json"
+)
+
+// errUnlock is the error that the release of an [unlocking] ledger
+// returns.
+var errUnlock = errors.New("the release of the lock fails")
+
+// The plans of the selection cases over a tree, each of which mirrors
+// every struct into a file named after the plan, and the file of the
+// skipped plan in the store package.
+const (
+	selectedPlan = "selected"
+	skippedPlan  = "skipped"
+	skippedFile  = "svc/store/" + skippedPlan + ".txt"
+)
+
+// otherHolder is the holder of the lock in the cases where another run
+// has it.
+var otherHolder = ledger.Holder{
+	PID: 7, Host: "build-7", Caller: "another run", Since: time.Date(2026, time.October, 8, 9, 0, 0, 0, time.UTC),
+}
 
 // flagGroup is the fact group the fixture key registers into, so a
 // case can drop the group and not the key.
@@ -285,6 +312,38 @@ func (d *documentCounting) Write(ctx context.Context, name string, b []byte) err
 	return d.Mem.Write(ctx, name, b)
 }
 
+// unlockable is a ledger without a lock: it offers the blobs of the
+// ledger it wraps, and not its lock.
+type unlockable struct{ ledger.Ledger }
+
+// unlocking is a memory ledger whose lock's release fails with
+// [errUnlock] after it returns the lock.
+type unlocking struct{ *ledger.Mem }
+
+// Lock takes the memory ledger's lock, and returns a release that
+// returns the lock and then fails.
+func (u unlocking) Lock(ctx context.Context, h ledger.Holder) (func() error, error) {
+	release, err := u.Mem.Lock(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return func() error { return errors.Join(release(), errUnlock) }, nil
+}
+
+// recordingLock is a memory ledger that keeps the record of the last
+// holder that took its lock. One run at a time takes it.
+type recordingLock struct {
+	*ledger.Mem
+
+	held ledger.Holder
+}
+
+// Lock keeps the holder's record, and takes the memory ledger's lock.
+func (r *recordingLock) Lock(ctx context.Context, h ledger.Holder) (func() error, error) {
+	r.held = h
+	return r.Mem.Lock(ctx, h)
+}
+
 // annotateSeen is a hand-rolled annotator that records the worker
 // count its phase call hands it.
 type annotateSeen struct{ seen *atomic.Int64 }
@@ -501,6 +560,142 @@ func TestRun(t *testing.T) {
 			assert.Nil(t, report, "nothing ran")
 		})
 
+		refused := []struct {
+			name string
+			give workspace.Input
+		}{
+			{
+				name: "returns an error for an Input that sets Prune with Patterns",
+				give: workspace.Input{Prune: true, Patterns: []string{storePattern}},
+			},
+			{
+				name: "returns an error for an Input that sets Prune with Check",
+				give: workspace.Input{Prune: true, Check: true},
+			},
+			{
+				name: "returns an error for a pattern that names no directory",
+				give: workspace.Input{Patterns: []string{"../svc"}},
+			},
+			{
+				name: "returns an error for a plan that the composition does not declare",
+				give: workspace.Input{Plans: []string{"ghost"}},
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				w, err := valid().Build()
+				assert.NoError(t, err, "the fixture composition is valid")
+				in := tt.give
+				in.Graph, _ = alpha(t)
+				report, err := w.Run(t.Context(), in)
+				assert.HasError(t, err, "the input is refused")
+				assert.Nil(t, report, "nothing ran")
+			})
+		}
+
+		t.Run("reports PlanSkipped for a plan that Plans leaves out", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "first", centralised("a")),
+				diskPlan(t, "second", centralised("b"))))
+			report, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Plans: []string{"first"},
+			})
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanSkipped, "the second plan does not run")
+		})
+
+		t.Run("runs every plan that a plan Plans lists depends on, transitively", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "producer", centralised("a")),
+				dependentOn(t, "middle", "b", "producer"), dependentOn(t, "last", "c", "middle")))
+			report, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Plans: []string{"last"},
+			})
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the first producer runs and commits")
+		})
+
+		t.Run("leaves the files of a plan that Plans leaves out", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "first", centralised("a")),
+				diskPlan(t, "second", centralised("b"))))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			_, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.CachePath), Plans: []string{"first"},
+			})
+			assert.NoError(t, err, "the run is clean")
+			files.IsFile(t, filepath.Join(root, "b", storeGen), "the skipped plan's stale file remains")
+		})
+
+		t.Run("keeps the record's entries of a plan that Plans leaves out", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "first", centralised("a")),
+				diskPlan(t, "second", centralised("b"))))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			_, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.CachePath), Plans: []string{"first"},
+			})
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, paths(recorded(t, root)), []string{"a/" + cacheGen, "b/" + storeGen},
+				"the record lists the first plan's new file and the skipped plan's file")
+		})
+
+		t.Run("reports PlanSkipped for a plan that Plans leaves out of a run that the lock stops", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			lockedBy(t, root, otherHolder)
+			w := built(t, onDisk(t, root, diskPlan(t, "first", centralised("a")),
+				diskPlan(t, "second", centralised("b"))))
+			report, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Plans: []string{"first"},
+			})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the locked run fails")
+			assert.Equal(t, report.Plans, []workspace.PlanReport{
+				{Name: "first", Status: workspace.PlanFailed},
+				{Name: "second", Status: workspace.PlanSkipped},
+			}, "the selected plan fails and the other is skipped")
+		})
+
+		t.Run("writes no generation for a run that skips a plan", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			assert.NoError(t, os.CopyFS(root, roundsTree(rowLine, userLine)),
+				"the tree copies into the run's directory")
+			w := built(t, selectingOnDisk(t, root))
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			l, err := ledger.OpenDir(root, fixtureBrand)
+			assert.NoError(t, err, "the ledger opens")
+			first := liveGeneration(t, l)
+			grown(t, root)
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Plans: []string{selectedPlan}})
+			assert.Equal(t, liveGeneration(t, l), first, "the generation of the first run is still live")
+		})
+
+		t.Run("commits on the next run the changes of a plan that a run skipped", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			assert.NoError(t, os.CopyFS(root, roundsTree(rowLine, userLine)),
+				"the tree copies into the run's directory")
+			w := built(t, selectingOnDisk(t, root))
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			grown(t, root)
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Plans: []string{selectedPlan}})
+			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
+			assert.Contains(t, files.Read(t, filepath.Join(root, filepath.FromSlash(skippedFile))), mirroredCol,
+				"the skipped plan's file has the new mirror")
+		})
+
 		t.Run("stamps the key a plugin registers", func(t *testing.T) {
 			t.Parallel()
 
@@ -564,12 +759,12 @@ func TestRun(t *testing.T) {
 
 			report, s, flag, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
 				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{
-					rawDiag("tst-0007", 4),
+					rawDiag(suppressible, 4),
 					rawBareMeta(5),
 				}), "the instances attach before the seal")
 			})
 			assert.NoError(t, err, "neither instance is a fault")
-			coretest.AssertCodes(t, report.Sink)
+			coretest.AssertCodes(t, report.Sink, workspace.UnusedSuppression)
 			v, held := meta.Get(report.Facts, s, flag)
 			assert.True(t, held, "the diag instance and the bare meta instance remove nothing")
 			assert.True(t, v, "the fact keeps the plugin's value")
@@ -883,6 +1078,121 @@ func TestRun(t *testing.T) {
 			_, err := runOver(t, w, routedIn(t, coretest.StorePath))
 			assert.HasError(t, err, "the run fails")
 			assert.Contains(t, err.Error(), "returned (nil, nil)", "the error names the fault")
+		})
+
+		t.Run("reports StateLocked for a state directory that another holder has locked", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			lockedBy(t, root, otherHolder)
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			var (
+				report *workspace.Report
+				err    error
+			)
+			files.Unchanged(t, os.DirFS(root), func() { report, err = runOver(t, w, routedIn(t, coretest.StorePath)) },
+				"the locked run writes nothing")
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the locked run fails")
+			locked := findings(report.Sink, workspace.StateLocked)
+			assert.Length(t, locked, 1, "one finding states the lock")
+			expect.That(t, locked[0].Msg).Contains(otherHolder.String(), "the finding names the holder")
+			expect.Equal(t, locked[0].Pos, position.Pos{File: ledger.LockPath(fixtureBrand)}, "at the lock file")
+			expect.Equal(t, report.Plans, []workspace.PlanReport{{Name: "plan", Status: workspace.PlanFailed}},
+				"and no plan runs")
+		})
+
+		t.Run("reports StateLocked for a dry run over a state directory that another holder has locked",
+			func(t *testing.T) {
+				t.Parallel()
+
+				root := t.TempDir()
+				lockedBy(t, root, otherHolder)
+				w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+				report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Dry: true})
+				assert.ErrorIs(t, err, workspace.ErrRunFailed, "the locked dry run fails")
+				assert.Length(t, findings(report.Sink, workspace.StateLocked), 1, "one finding states the lock")
+			})
+
+		t.Run("returns the lock to the next holder when it returns", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			lockedBy(t, root, otherHolder)
+		})
+
+		t.Run("takes the lock for the caller of the Input", func(t *testing.T) {
+			t.Parallel()
+
+			l := &recordingLock{Mem: ledger.NewMem()}
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return l, nil }))
+			_, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Caller: lockCaller})
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, l.held.Caller, lockCaller, "the record names the caller")
+		})
+
+		t.Run("takes the lock for workspace.Run as the caller of an Input without one", func(t *testing.T) {
+			t.Parallel()
+
+			l := &recordingLock{Mem: ledger.NewMem()}
+			cleanRun(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return l, nil })), routedIn(t, coretest.StorePath))
+			assert.Equal(t, l.held.Caller, "workspace.Run", "the record names the kernel's entry point")
+		})
+
+		t.Run("takes the lock for the running process", func(t *testing.T) {
+			t.Parallel()
+
+			l := &recordingLock{Mem: ledger.NewMem()}
+			cleanRun(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return l, nil })), routedIn(t, coretest.StorePath))
+			assert.Equal(t, l.held.PID, os.Getpid(), "the record names this process")
+		})
+
+		t.Run("leaves no holder's record in the state directory", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			files.Absent(t, filepath.Join(root, ledger.StateDir(fixtureBrand), holderRecord), "the release removed it")
+		})
+
+		t.Run("runs over a ledger without a lock", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			release, err := mem.Lock(t.Context(), otherHolder)
+			assert.NoError(t, err, "another holder locks the wrapped ledger")
+			t.Cleanup(func() { assert.NoError(t, release(), "the other holder releases the lock") })
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return unlockable{mem}, nil }))
+			report := cleanRun(t, w, routedIn(t, coretest.StorePath))
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the run takes no lock")
+		})
+
+		t.Run("returns the release's error after the run", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return unlocking{ledger.NewMem()}, nil }))
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, errUnlock, "the release's error is returned")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "after the plan committed")
+		})
+
+		t.Run("returns the lock's error for a lock file that does not open", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{ledger.LockPath(fixtureBrand) + "/blocked": files.Text("")})
+			report, err := runOver(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{}))),
+				routedIn(t, coretest.StorePath))
+			assert.HasError(t, err, "the lock fails")
+			expect.That(t, err).ErrorIsNot(ledger.ErrLocked, "the error is not another holder's lock")
+			expect.Empty(t, findings(report.Sink, workspace.StateLocked), "and the run reports no lock")
+			expect.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "and no plan runs")
 		})
 
 		t.Run("returns an error for a tree without a frontend to load it", func(t *testing.T) {
@@ -1366,13 +1676,13 @@ func rawBareMeta(line int) directive.Raw {
 	}
 }
 
-// rawDiag returns a positioned kernel diag instance, which is a
-// validated directive the drop pass is not about.
-func rawDiag(code string, line int) directive.Raw {
+// rawDiag returns a positioned kernel diag instance that suppresses a
+// code, which is a validated directive the drop pass is not about.
+func rawDiag(code diag.Code, line int) directive.Raw {
 	return directive.Raw{
-		Name: "diag",
-		Args: []directive.RawArg{{Key: "off", Value: directive.RawValue{Text: code}}},
-		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+		Name: directive.KernelDiag,
+		Args: []directive.RawArg{{Key: string(directive.DiagOff), Value: directive.RawValue{Text: code.String()}}},
+		Pos:  position.Pos{File: alphaDirectiveFile, Line: line, Col: 1},
 	}
 }
 
@@ -2177,4 +2487,29 @@ func peakRSS() uint64 {
 		return kb * 1024
 	}
 	return 0
+}
+
+// selectingOnDisk returns the builder of a composition over the scripted
+// frontend with the two plans of the selection cases, with its output and
+// its ledger on disk under root.
+func selectingOnDisk(tb assert.TB, root string) *workspace.Builder {
+	tb.Helper()
+
+	return sealingPlans(nil,
+		sealedPlan(tb, selectedPlan, mirror(selectedPlan+"-mirror")),
+		sealedPlan(tb, skippedPlan, mirror(skippedPlan+"-mirror"))).
+		Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
+		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
+}
+
+// lockedBy takes the lock of the state directory under root for h, as
+// another run does, and releases it in the cleanup.
+func lockedBy(t *testing.T, root string, h ledger.Holder) {
+	t.Helper()
+
+	l, err := ledger.OpenDir(root, fixtureBrand)
+	assert.NoError(t, err, "the ledger opens")
+	release, err := l.Lock(t.Context(), h)
+	assert.NoError(t, err, "the other holder takes the lock")
+	t.Cleanup(func() { assert.NoError(t, release(), "the other holder releases the lock") })
 }

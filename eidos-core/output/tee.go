@@ -5,6 +5,7 @@ package output
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -26,7 +27,10 @@ type Tee struct {
 	sinks []Sink
 }
 
-var _ Sink = (*Tee)(nil)
+var (
+	_ Sink       = (*Tee)(nil)
+	_ Overwriter = (*Tee)(nil)
+)
 
 // NewTee fans out to first and every sink after it. The first is
 // the one of record: its Prepare and its Commit return what the
@@ -40,6 +44,22 @@ func NewTee(first Sink, rest ...Sink) *Tee {
 	sinks := make([]Sink, 0, 1+len(rest))
 	sinks = append(sinks, first)
 	return &Tee{sinks: append(sinks, rest...)}
+}
+
+// Overwrite lets the commit of every sink write over the files of the
+// verdicts given, as [Overwriter] states, joining what any of them
+// refused. It refuses a sink that does not implement [Overwriter],
+// because that sink's commit would refuse those files. It allocates what
+// the sinks allocate, and where a sink refused, the list of faults and
+// the joined error.
+func (t *Tee) Overwrite(found ...Found) error {
+	return t.each(func(s Sink) error {
+		o, overwrites := s.(Overwriter)
+		if !overwrites {
+			return fmt.Errorf("output: the tee's %T sink does not write over a drifted or foreign file", s)
+		}
+		return o.Overwrite(found...)
+	})
 }
 
 // Write stages into every sink, joining what any of them refused. It

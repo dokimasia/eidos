@@ -31,7 +31,8 @@ const (
 // against. This package declares the source kinds and binds none
 // of them: the projection machinery that resolves a source name is
 // outside it. The metadata kind binds at validation, against the
-// metadata key registry.
+// metadata key registry, and the diagnostic kind against the codes that
+// diag.MustRegister registered.
 type ResolutionKind uint8
 
 const (
@@ -45,7 +46,7 @@ const (
 	ResolveValueField
 	// ResolveHostParam names a parameter of the host callable.
 	ResolveHostParam
-	// ResolveMemberOnHandle names a member reached through a
+	// ResolveMemberOnHandle names a member accessed through a
 	// handle the directive's other params establish.
 	ResolveMemberOnHandle
 	// ResolveMetadataKey resolves against the metadata registry: a
@@ -55,6 +56,11 @@ const (
 	// ResolveTypeInScope names a type the subject's file can see, a
 	// bare or qualified type spelling: what a witness names.
 	ResolveTypeInScope
+	// ResolveDiagnosticCode names a registered diagnostic code in the
+	// spelling that diag.ParseCode reads, such as EID-0062: what a diag
+	// directive suppresses. A spelling that is no registered code is a
+	// validation Error under [UnknownCode].
+	ResolveDiagnosticCode
 )
 
 // String returns the kind's spelling, for a refusal.
@@ -76,6 +82,8 @@ func (k ResolutionKind) String() string {
 		return "a metadata key or group"
 	case ResolveTypeInScope:
 		return "a type in scope"
+	case ResolveDiagnosticCode:
+		return "a registered diagnostic code"
 	default:
 		return "resolution kind " + strconv.Itoa(int(k))
 	}
@@ -131,6 +139,11 @@ type ParamSpec struct {
 	// Doc states the param's meaning. Registration refuses an
 	// empty one.
 	Doc string
+	// Deprecated marks the param deprecated where it is not empty, and
+	// states the rewrite, such as "write bound= in place of limit=".
+	// Validation types the param as before, and reports each instance
+	// that writes it under [DeprecatedDirective].
+	Deprecated string
 }
 
 // Schema declares one directive: the closed contract between the
@@ -192,6 +205,11 @@ type Schema struct {
 	// Doc states the directive's meaning. Registration refuses an
 	// empty one.
 	Doc string
+	// Deprecated marks the directive deprecated where it is not empty,
+	// and states the rewrite, such as "write sizer:bound in place of
+	// sizer:limit". Validation types each instance as before, and reports
+	// it under [DeprecatedDirective].
+	Deprecated string
 }
 
 // Canonical returns the schema's canonical spelling: prefixed for

@@ -6,6 +6,7 @@ package ledger
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -37,13 +38,15 @@ const (
 // A Dir is safe for concurrent use, and so are two Dirs over one
 // directory in two processes. [Dir.Write] and [Dir.Put] stage each blob
 // in a file of their own and rename it over the name, so a reader sees
-// one writer's whole bytes.
+// one writer's whole bytes. [Dir.Lock] admits one holder of the
+// directory's lock at a time across every Dir over the directory.
 //
 // # Allocation contract
 //
 // Every call allocates for the root it opens and the path it resolves.
-// [Dir.Read] allocates the blob's bytes, and [Dir.List] one [Blob] per
-// file it lists.
+// [Dir.Read] allocates the blob's bytes, [Dir.List] one [Blob] per file
+// it lists, and [Dir.Lock] the lock file, the holder's record and the
+// release.
 type Dir struct {
 	// root is the absolute directory the jail opens: the workspace root
 	// for OpenDir, and the ledger's own directory for OpenAt.
@@ -59,7 +62,10 @@ type Dir struct {
 	workspace string
 }
 
-var _ Ledger = (*Dir)(nil)
+var (
+	_ Ledger = (*Dir)(nil)
+	_ Locker = (*Dir)(nil)
+)
 
 // OpenDir returns the ledger of the state directory .<brand>/ under
 // root, which the first write creates.
@@ -69,7 +75,7 @@ var _ Ledger = (*Dir)(nil)
 func OpenDir(root string, brand output.Brand) (*Dir, error) {
 	if !brand.Valid() {
 		return nil, fmt.Errorf(
-			"ledger: %q is not a brand: a lowercase letter, then lowercase letters, digits and hyphens",
+			"ledger: %q is not a brand: use a lowercase letter followed by lowercase letters, digits and hyphens",
 			string(brand),
 		)
 	}
@@ -113,6 +119,70 @@ func OpenAt(dir string) (*Dir, error) {
 // manifest that names no workspace is recorded under, and the empty
 // string for a ledger [OpenAt] returned.
 func (d *Dir) Workspace() string { return d.workspace }
+
+// Lock takes the lock of the ledger's directory for h. It opens the
+// directory's lock file, which the first call creates with the directory,
+// and takes the operating system's exclusive lock on it without waiting:
+// flock(2) on Linux, the BSDs, Darwin and illumos, and an open with a
+// share mode of zero on Windows. It then records h in lock.json beside
+// the lock file, which a contender reads to name the holder.
+//
+// The release removes lock.json, ends the lock and closes the lock file,
+// so the record exists while its holder has the lock, and the lock file
+// remains. It ends the lock before the close, because a child process
+// that a fork created holds a copy of the file's descriptor until its
+// exec, and that copy would keep the lock past a close alone. The release
+// ignores the cancellation of the context that Lock received.
+// The operating system also releases the lock when the process exits, so
+// a crash leaves no stale lock, and the next holder replaces the record
+// that the crash left. Another open file has the lock while it is open,
+// in this process or in another one, so two Dirs over one directory
+// exclude each other as two processes do.
+//
+// Error modes: a *[LockedError], which wraps [ErrLocked], where another
+// open file has the lock, with the zero [Holder] where lock.json does not
+// read; the context's error; an error wrapping [errors.ErrUnsupported] on
+// a platform without file locks; and the operating system's error where
+// the lock file cannot be created, opened or locked, or the record cannot
+// be written. The release returns the errors of the record's removal, of
+// the lock's end and of the lock file's close.
+func (d *Dir) Lock(ctx context.Context, h Holder) (func() error, error) {
+	r, at, err := d.resolve(ctx, lockName, true)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	if err = ensure(r, path.Dir(at), stagefile.Unsynced); err != nil {
+		return nil, fmt.Errorf("ledger: lock: %w", err)
+	}
+	f, err := lockFile(r, at, filepath.Join(d.root, filepath.FromSlash(at)))
+	if errors.Is(err, errBusy) {
+		return nil, &LockedError{Holder: d.holder(ctx)}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ledger: lock: %w", err)
+	}
+	// drop ends the lock and closes the lock file, on a failure below and
+	// at the release.
+	drop := func() error {
+		if unlocked := unlockFile(f); unlocked != nil {
+			return errors.Join(fmt.Errorf("ledger: unlock: %w", unlocked), f.Close())
+		}
+		if closed := f.Close(); closed != nil {
+			return fmt.Errorf("ledger: unlock: %w", closed)
+		}
+		return nil
+	}
+	record, err := json.Marshal(h)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("ledger: lock: %w", err), drop())
+	}
+	if err = d.Put(ctx, holderName, record); err != nil {
+		return nil, errors.Join(err, drop())
+	}
+	unlock := context.WithoutCancel(ctx)
+	return func() error { return errors.Join(d.Remove(unlock, holderName), drop()) }, nil
+}
 
 // Read returns the file a name maps to, whole.
 //
@@ -249,6 +319,21 @@ func (d *Dir) List(ctx context.Context, dir string) ([]Blob, error) {
 	}
 	slices.SortFunc(out, func(a, b Blob) int { return cmp.Compare(a.Name, b.Name) })
 	return out, nil
+}
+
+// holder returns the record of the lock's holder in lock.json, and the
+// zero [Holder] where the record does not read or decode, such as before
+// the holder wrote it.
+func (d *Dir) holder(ctx context.Context) Holder {
+	var h Holder
+	b, err := d.Read(ctx, holderName)
+	if err != nil {
+		return h
+	}
+	if err := json.Unmarshal(b, &h); err != nil {
+		return Holder{}
+	}
+	return h
 }
 
 // replace creates the directories a name's file needs and replaces the

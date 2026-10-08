@@ -10,15 +10,38 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
+
+// The values the refinement cases refine a plan with: an output
+// directory, an import base and a pattern.
+const (
+	refinedDir        = "gen"
+	refinedImportBase = "example.com/platform/gen"
+	refinedPattern    = "svc/..."
+)
+
+// convertedBound is a struct that an option of [convertedOptions] has.
+type convertedBound struct {
+	Files int `json:"files"`
+}
+
+// convertedOptions are options whose fields have types that a decoder of a
+// config file does not return.
+type convertedOptions struct {
+	Limit int64          `opt:"limit" doc:"the largest number of files"`
+	Tags  []string       `opt:"tags"  doc:"the tags of each file"`
+	Bound convertedBound `opt:"bound" doc:"the bounds of a file"`
+}
 
 // framing is a backend stating a comment syntax and rendering
 // nothing: what a writing composition refuses at Build.
@@ -259,6 +282,57 @@ func TestSteps(t *testing.T) {
 			assert.Equal(t, opts.Depth, 3, "the plugin's struct has the configured value")
 		})
 
+		t.Run("converts a value of another type through the JSON encoding", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &convertedOptions{}
+			_, err := sectioned("tuned", opts, map[string]any{
+				"limit": 3, "tags": []any{"api", "store"}, "bound": map[string]any{"files": 2},
+			}).Build()
+			assert.NoError(t, err, "each value decodes into its field")
+			expect.Equal(t, opts.Limit, int64(3), "an int fills an int64 field")
+			expect.Equal(t, opts.Tags, []string{"api", "store"}, "a list of strings fills a []string field")
+			expect.Equal(t, opts.Bound, convertedBound{Files: 2}, "a mapping fills a struct field")
+		})
+
+		faults := []struct {
+			name    string
+			give    any
+			markers []string
+		}{
+			{
+				name:    "returns an error naming a value that does not encode",
+				give:    map[any]any{1: "deep"},
+				markers: []string{`"depth"`, "takes int", "has map[interface {}]interface {}"},
+			},
+			{
+				name:    "returns an error for an option without a value",
+				give:    nil,
+				markers: []string{`"depth"`, "takes int", "has nothing"},
+			},
+		}
+		for _, tt := range faults {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := sectioned("tuned", &mirrorOptions{}, map[string]any{"depth": tt.give}).Build()
+				assert.HasError(t, err, "the option has no value of its type")
+				for _, marker := range tt.markers {
+					assert.Contains(t, err.Error(), marker, "the error names the option and both types")
+				}
+			})
+		}
+
+		t.Run("returns an error naming a mapping with a key that the struct does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := sectioned("tuned", &convertedOptions{}, map[string]any{
+				"bound": map[string]any{"filez": 2},
+			}).Build()
+			assert.HasError(t, err, "the decoder rejects the unknown key")
+			assert.Contains(t, err.Error(), `"bound"`, "the error names the option")
+		})
+
 		t.Run("skips populating options whose declaration fails", func(t *testing.T) {
 			t.Parallel()
 
@@ -304,6 +378,165 @@ func TestSteps(t *testing.T) {
 			assert.Contains(t, err.Error(), "declares no options", "the error names the fault")
 			assert.Contains(t, err.Error(), `"mirror"`, "the error names the plugin")
 		})
+	})
+
+	t.Run("refine", func(t *testing.T) {
+		t.Parallel()
+
+		dependent := func() *workspace.Builder {
+			bindings := planTo("bindings", "fixture", mirror("bindings-mirror"))
+			bindings.DependsOn = []string{"plan"}
+			return valid().Plans(bindings).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {Disabled: true}}})
+		}
+		read := func() *workspace.Builder {
+			return valid().Checks(&recordingCheck{name: "stubbed", reads: []string{"plan"}}).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {Disabled: true}}})
+		}
+
+		refused := []struct {
+			name    string
+			compose func() *workspace.Builder
+			want    string
+		}{
+			{
+				name: "returns an error naming a plan that the composition does not declare",
+				compose: func() *workspace.Builder {
+					return valid().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"absent": {}}})
+				},
+				want: `the config refines plan "absent", which the composition does not declare`,
+			},
+			{
+				name:    "returns an error naming a disabled plan that an enabled plan depends on",
+				compose: dependent,
+				want:    `the config disables plan "plan", and plan "bindings" depends on it`,
+			},
+			{
+				name:    "returns an error naming a disabled plan that a check reads",
+				compose: read,
+				want:    `the config disables plan "plan", and check stubbed reads it`,
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := tt.compose().Build()
+				assert.HasError(t, err, "the refinement is refused")
+				assert.Contains(t, err.Error(), tt.want, "the error names the plan")
+			})
+		}
+
+		kept := []struct {
+			name    string
+			compose func() *workspace.Builder
+			absent  string
+		}{
+			{
+				name:    "keeps a disabled plan that an enabled plan depends on",
+				compose: dependent,
+				absent:  `depends on "plan", which the composition does not declare`,
+			},
+			{
+				name:    "keeps a disabled plan that a check reads",
+				compose: read,
+				absent:  `reads plan "plan", which the composition does not declare`,
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := tt.compose().Build()
+				assert.HasError(t, err, "the refinement is refused")
+				assert.NotContains(t, err.Error(), tt.absent, "the steps after the refinement find the plan")
+			})
+		}
+
+		t.Run("returns an error for a nil check beside a plan refinement", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Checks(nil).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {}}}).
+				Build()
+			assert.HasError(t, err, "a nil check is refused")
+			assert.Contains(t, err.Error(), "check 1 of 1 is nil", "the roster reports the nil check")
+		})
+
+		t.Run("leaves a plan that the config disables out of the workspace", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, valid().Plans(planTo("bindings", "fixture", mirror("bindings-mirror"))).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"bindings": {Disabled: true}}}))
+			g, _ := alpha(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, report.Plans, []workspace.PlanReport{{Name: "plan", Status: workspace.PlanCommitted}},
+				"the run runs the enabled plan alone")
+		})
+
+		t.Run("leaves the declared plans as the composition states them", func(t *testing.T) {
+			t.Parallel()
+
+			b := valid().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {Dir: refinedDir}}})
+			_, err := b.Build()
+			assert.NoError(t, err, "the refined composition builds")
+			assert.Equal(t, built(t, b.Config(workspace.Config{})).Fingerprint(), built(t, valid()).Fingerprint(),
+				"a build without the refinement has the same fingerprint as the declared composition")
+		})
+
+		t.Run("leaves the fingerprint unchanged for a refinement that sets nothing", func(t *testing.T) {
+			t.Parallel()
+
+			got := built(t, valid().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {}}}))
+			assert.Equal(t, got.Fingerprint(), built(t, valid()).Fingerprint(),
+				"the refined composition has the same fingerprint as the declared one")
+		})
+
+		folded := []struct {
+			name    string
+			give    workspace.PlanConfig
+			declare func(p *workspace.Plan)
+		}{
+			{
+				name:    "folds a refined policy into the fingerprint as a declared one",
+				give:    workspace.PlanConfig{Policy: layout.PolicyAlongside},
+				declare: func(p *workspace.Plan) { p.Layout.Policy = layout.PolicyAlongside },
+			},
+			{
+				name:    "folds a refined directory into the fingerprint as a declared one",
+				give:    workspace.PlanConfig{Dir: refinedDir},
+				declare: func(p *workspace.Plan) { p.Layout.Dir = refinedDir },
+			},
+			{
+				name:    "folds a refined import base into the fingerprint as a declared one",
+				give:    workspace.PlanConfig{ImportBase: refinedImportBase},
+				declare: func(p *workspace.Plan) { p.Layout.ImportBase = refinedImportBase },
+			},
+			{
+				name: "folds refined sources into the fingerprint as declared ones",
+				give: workspace.PlanConfig{Sources: &workspace.Sources{Packages: []string{refinedPattern}}},
+				declare: func(p *workspace.Plan) {
+					p.Sources = workspace.Sources{Packages: []string{refinedPattern}}
+				},
+			},
+		}
+		for _, tt := range folded {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				declared := planTo("plan", "fixture", mirror("mirror"))
+				tt.declare(&declared)
+				want := built(t, workspace.New().
+					Brand(fixtureBrand).Annotators(stamper("noter", quiet)).Targets("fixture").Plans(declared))
+				assert.NotEqual(t, want.Fingerprint(), built(t, valid()).Fingerprint(),
+					"the fingerprint folds the declared field")
+				refined := workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": tt.give}}
+				got := built(t, valid().Config(refined))
+				assert.Equal(t, got.Fingerprint(), want.Fingerprint(),
+					"the refined composition has the same fingerprint as the composition that declares the field")
+			})
+		}
 	})
 
 	t.Run("stampable", func(t *testing.T) {

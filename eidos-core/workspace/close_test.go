@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
@@ -169,6 +170,37 @@ func TestClose(t *testing.T) {
 			assert.Length(t, findings(report.Sink, workspace.PlanCollision), 1, "one finding for the clash")
 		})
 
+		t.Run("reports PlanCollision for a file at the path of a skipped plan's file", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			left := diskPlan(t, "left", layout.Config{})
+			cleanRun(t, built(t, onDisk(t, root, left)), routedIn(t, coretest.StorePath))
+			w := built(t, onDisk(t, root, left, diskPlan(t, "right", layout.Config{})))
+			report, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Plans: []string{"right"},
+			})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the collision fails the run")
+			assert.Length(t, findings(report.Sink, workspace.PlanCollision), 1, "one finding names both plans")
+		})
+
+		t.Run("relates the PlanCollision of a warm run to the path of a skipped plan's file", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, casePlans(t, ledger.NewMem()))
+			before := roundsTree(rowLine, userLine)
+			sealedRun(t, w, workspace.Input{Tree: before})
+			report, err := w.Run(t.Context(), workspace.Input{
+				Tree: editedAfter(before, caseTree()), Plans: []string{"upper"},
+			})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the collision fails the run")
+			assert.False(t, report.Stats.Cold, "the run reads the sealed state")
+			collided := findings(report.Sink, workspace.PlanCollision)
+			assert.Length(t, collided, 1, "one finding names both plans")
+			assert.Equal(t, collided[0].Related, []position.Pos{{File: storeGenerated}},
+				"the skipped plan's file is related at its path")
+		})
+
 		t.Run("reports the PlanCollision of a new path that clashes with another plan's kept file", func(t *testing.T) {
 			t.Parallel()
 
@@ -270,6 +302,81 @@ func TestClose(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.marker, "the error names the step")
 			})
 		}
+
+		t.Run("reports OutOfDate for a file that a run would create under Check", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})))
+			report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Check: true})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check fails the run")
+			stale := findings(report.Sink, workspace.OutOfDate)
+			assert.Length(t, stale, 1, "one finding for the new file")
+			expect.Equal(t, stale[0].Pos, position.Pos{File: storeGen}, "at the file's path")
+			expect.Equal(t, stale[0].Severity, diag.SeverityError, "as an Error")
+		})
+
+		t.Run("writes nothing under Check", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			files.Unchanged(t, os.DirFS(root), func() {
+				_, _ = w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.CachePath), Check: true})
+			}, "the check writes nothing")
+		})
+
+		t.Run("reports no OutOfDate under Check for the files that a run leaves as they are", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Check: true})
+			assert.NoError(t, err, "the check passes")
+			assert.Empty(t, findings(report.Sink, workspace.OutOfDate), "no file is out of date")
+		})
+
+		t.Run("reports OutOfDate for a generated file edited since its stamp under Check", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
+			report, _ := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Check: true})
+			stale := findings(report.Sink, workspace.OutOfDate)
+			assert.Length(t, stale, 1, "one finding for the edited file")
+			assert.Equal(t, stale[0].Pos, position.Pos{File: storeGen}, "at the file's path")
+		})
+
+		t.Run("reports OutOfDate under Check for a file of a plan that the composition no longer declares",
+			func(t *testing.T) {
+				t.Parallel()
+
+				root := t.TempDir()
+				cleanRun(t, keptAndGone(t, root), routedIn(t, coretest.StorePath))
+				report, err := built(t, onDisk(t, root, diskPlan(t, "kept", centralised("a")))).
+					Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Check: true})
+				assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check fails the run")
+				stale := findings(report.Sink, workspace.OutOfDate)
+				assert.Length(t, stale, 1, "one finding for the removed plan's file")
+				expect.Equal(t, stale[0].Pos, position.Pos{File: "b/" + storeGen}, "at the file's path")
+				expect.That(t, stale[0].Msg).Contains(`plan "gone"`, "naming the plan that the composition dropped")
+			})
+
+		t.Run("reports OutOfDate under Check for the changes inside the patterns alone", func(t *testing.T) {
+			t.Parallel()
+
+			root, w, _ := onDiskRun(t)
+			grown(t, root)
+			report, err := w.Run(t.Context(), workspace.Input{
+				Tree: os.DirFS(root), Patterns: []string{storePattern}, Check: true,
+			})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check fails the run")
+			stale := findings(report.Sink, workspace.OutOfDate)
+			assert.Length(t, stale, 1, "one finding for the store package's file")
+			assert.Equal(t, stale[0].Pos, position.Pos{File: storeGenerated}, "at the file's path")
+		})
 
 		t.Run("returns an error for a removed plan's entry the sink refuses to remove", func(t *testing.T) {
 			t.Parallel()
@@ -559,6 +666,17 @@ func TestClose(t *testing.T) {
 				routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the failing plan fails the run")
 			assert.Length(t, c.called, 1, "the check over the clean plan runs")
+		})
+
+		t.Run("does not call a check that reads a skipped plan", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"b"}}
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "a", centralised("a")),
+				diskPlan(t, "b", centralised("b"))).Checks(c))
+			_, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Plans: []string{"a"}})
+			assert.NoError(t, err, "the run is clean")
+			assert.Empty(t, c.called, "the check does not run")
 		})
 
 		t.Run("reports no FailedDependency for a check whose plan returned an error alone", func(t *testing.T) {

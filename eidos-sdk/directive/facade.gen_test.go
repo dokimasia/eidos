@@ -211,6 +211,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("UnknownCode", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, directive.UnknownCode, core.UnknownCode, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("DeprecatedDirective", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, directive.DeprecatedDirective, core.DeprecatedDirective, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Name", func(t *testing.T) {
 		t.Parallel()
 
@@ -608,6 +628,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, directive.ResolveTypeInScope, core.ResolveTypeInScope, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("ResolveDiagnosticCode", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, directive.ResolveDiagnosticCode, core.ResolveDiagnosticCode, "the facade re-declares the kernel's value")
 		})
 	})
 

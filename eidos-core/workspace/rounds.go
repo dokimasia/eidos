@@ -170,7 +170,7 @@ func (wp *warmPlan) run(
 		return nil, err
 	}
 	for {
-		p.emit, p.sink, p.invoked = plugin.NewEmit(), diag.NewSink(), nil
+		p.emit, p.sink, p.invoked = plugin.NewEmit(), p.policy.sink(), nil
 		p.lane.Reset()
 		touches := &touchJournal{next: p.lane}
 		sel := wp.selection()

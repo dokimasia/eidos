@@ -18,7 +18,9 @@ import (
 // plan's outcome and the manifest it recorded.
 type Report struct {
 	// Sink has every finding of the run: the shared phases' first, then
-	// each plan's in composition order, then Close's.
+	// each plan's in composition order, then Close's. It has no finding
+	// that a diag directive removed, and under [Input.Strict] it returns
+	// every Warning at Error.
 	Sink *diag.Sink
 	// Facts are the arbitrated facts the plans read.
 	Facts *meta.Facts
@@ -38,6 +40,13 @@ type Report struct {
 	Emits map[string]*plugin.Emit
 	// Stats counts what the run executed.
 	Stats Stats
+	// Suppressed counts, for each code, the findings that a diag directive
+	// removed, and is nil where no directive removed a finding.
+	Suppressed map[diag.Code]int
+	// Suppressions lists each diag directive of the graph, with the number
+	// of findings that it removed, in position order. It is empty where the
+	// frame stopped before the plans ran.
+	Suppressions []Suppression
 }
 
 // PlanReport records one plan's status and the changes its commit
@@ -51,6 +60,17 @@ type PlanReport struct {
 	// would do under Dry, sorted by path. A path the commit refused is
 	// absent, and a plan that did not commit lists nothing.
 	Changes []output.Change
+	// Withheld lists the changes that the run left for a later run, sorted
+	// by path, as a preparation of their own found them: the changes
+	// outside [Input.Patterns], and every write of [Input.Prune]. As in
+	// Changes, a path whose file is current is unchanged. A plan that did
+	// not commit lists nothing.
+	Withheld []output.Change
+	// Refused lists the writes that the run refused, sorted by path. The
+	// path of such a write has a file that was edited since its stamp, or a
+	// file without the frame of the brand, and the run did not write over
+	// files of that kind. A plan that refuses a write fails.
+	Refused []output.Change
 }
 
 // PlanStatus is how one plan's run ended. The zero value names no
@@ -70,6 +90,9 @@ const (
 	// PlanPrepared reports a plan of a dry run, which prepared and
 	// committed nothing.
 	PlanPrepared PlanStatus = 4
+	// PlanSkipped reports a plan that [Input.Plans] left out: it did not
+	// run, and its files and records remain.
+	PlanSkipped PlanStatus = 5
 )
 
 // String returns the status's spelling for a report, and the status's
@@ -85,6 +108,8 @@ func (s PlanStatus) String() string {
 		return "cancelled"
 	case PlanPrepared:
 		return "prepared"
+	case PlanSkipped:
+		return "skipped"
 	default:
 		return "PlanStatus(" + strconv.Itoa(int(s)) + ")"
 	}

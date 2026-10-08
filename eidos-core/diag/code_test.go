@@ -26,6 +26,10 @@ var claimed atomic.Int64
 // benchmarks make: number 7, with its meaning.
 var firstSpec = diag.CodeSpec{Number: 7, Meaning: "a code the cases register"}
 
+// codeSpelling is the spelling of the kernel's code 7, which the
+// allocation checks and the benchmarks parse.
+const codeSpelling = "EID-0007"
+
 // The ceilings of a registry's construction and of its first
 // registration.
 const (
@@ -70,6 +74,68 @@ func TestCode(t *testing.T) {
 				t.Parallel()
 				assert.Equal(t, tt.code.String(), tt.want,
 					"the code spells its prefix and padded number")
+			})
+		}
+	})
+
+	t.Run("ParseCode", func(t *testing.T) {
+		t.Parallel()
+
+		parsed := []struct {
+			name string
+			give string
+			want diag.Code
+		}{
+			{
+				name: "returns the code of a padded number",
+				give: "EID-0062",
+				want: diag.Code{Prefix: diag.KernelPrefix, Number: 62},
+			},
+			{
+				name: "returns the code of a number of four digits",
+				give: "EIDGO-0412",
+				want: diag.Code{Prefix: "EIDGO", Number: 412},
+			},
+			{
+				name: "returns the code of a number wider than the padding",
+				give: "EID-12345",
+				want: diag.Code{Prefix: diag.KernelPrefix, Number: 12345},
+			},
+		}
+		for _, tt := range parsed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := diag.ParseCode(tt.give)
+				assert.NoError(t, err, "the spelling is a code")
+				assert.Equal(t, got, tt.want, "ParseCode returns the code that String spells so")
+			})
+		}
+
+		refused := []struct {
+			name string
+			give string
+		}{
+			{name: "returns an error for a spelling without a hyphen", give: "EID0062"},
+			{name: "returns an error for a lowercase prefix", give: "eid-0062"},
+			{name: "returns an error for an empty prefix", give: "-0062"},
+			{name: "returns an error for a number of three digits", give: "EID-062"},
+			{name: "returns an error for a number padded beyond four digits", give: "EID-00062"},
+			{name: "returns an error for a slash among the digits", give: "EID-00/2"},
+			{name: "returns an error for a colon among the digits", give: "EID-00:2"},
+			{name: "returns an error for a signed number", give: "EID-+062"},
+			{name: "returns an error for the number zero", give: "EID-0000"},
+			{name: "returns an error for a number too large for an int", give: "EID-99999999999999999999"},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := diag.ParseCode(tt.give)
+				assert.HasError(t, err, "the spelling is not a code")
+				assert.That(t, err.Error()).
+					HasPrefix("diag: ", "the error has the package prefix").
+					Contains(tt.give, "and names the spelling")
 			})
 		}
 	})
@@ -334,6 +400,11 @@ func TestCodeAllocs(t *testing.T) {
 	var spelt string
 	assert.MaxAllocs(t, func() { spelt = code.String() }, 1, "String allocates the string it returns")
 	assert.Equal(t, spelt, "EID-0007", "String spells the prefix and the padded number")
+	var parsed diag.Code
+	assert.MaxAllocs(t, func() { parsed, err = diag.ParseCode(codeSpelling) }, 0,
+		"ParseCode allocates nothing for a code")
+	assert.NoError(t, err, "ParseCode reads the spelling")
+	assert.Equal(t, parsed, code, "ParseCode returns the code that the spelling names")
 }
 
 // BenchmarkCode measures the registry and a code's spelling, which
@@ -437,7 +508,6 @@ func BenchmarkCode(b *testing.B) {
 	})
 
 	b.Run("String", func(b *testing.B) {
-		code := diag.Code{Prefix: diag.KernelPrefix, Number: 7}
 		c := bench.Start(b).MaxAllocs(1)
 		defer c.End()
 		var got string
@@ -445,6 +515,20 @@ func BenchmarkCode(b *testing.B) {
 			got = code.String()
 		}
 		assert.Equal(b, got, "EID-0007", "String spells the prefix and the padded number")
+	})
+
+	b.Run("ParseCode", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			got diag.Code
+			err error
+		)
+		for c.Loop() {
+			got, err = diag.ParseCode(codeSpelling)
+		}
+		assert.NoError(b, err, "ParseCode reads the spelling")
+		assert.Equal(b, got, code, "ParseCode returns the code that the spelling names")
 	})
 }
 

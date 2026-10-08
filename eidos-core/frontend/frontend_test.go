@@ -6,6 +6,8 @@ package frontend_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -32,6 +34,8 @@ const (
 	storeTestFile = "svc/store/row_test.zz"
 	depPath       = "svc/dep"
 	classified    = "classified"
+	// fakeRoot is the environment variable that the store case reads.
+	fakeRoot = "FAKEROOT"
 )
 
 // The ceilings of a declaration's steps.
@@ -64,6 +68,7 @@ func setters(inner *frontendtest.Scripted) []setter {
 	dependencies := frontendtest.NewScriptedDependent().Dependencies
 	exports := frontendtest.NewScriptedExporter().Exports
 	return []setter{
+		{name: "Stores", set: func(b *frontend.Builder) *frontend.Builder { return b.Stores(locate) }},
 		{name: "Version", set: func(b *frontend.Builder) *frontend.Builder { return b.Version("1") }},
 		{name: "Overloads", set: func(b *frontend.Builder) *frontend.Builder { return b.Overloads() }},
 		{name: "Units", set: func(b *frontend.Builder) *frontend.Builder { return b.Units(partition) }},
@@ -126,6 +131,7 @@ func TestFrontend(t *testing.T) {
 			options      bool
 			dependencies bool
 			exports      bool
+			stores       bool
 		}{
 			{name: "returns a frontend in no optional role for a declaration of none"},
 			{name: "returns a frontend in the options role alone", options: true},
@@ -141,8 +147,24 @@ func TestFrontend(t *testing.T) {
 				dependencies: true, exports: true,
 			},
 			{
-				name:    "returns a frontend in every optional role",
+				name:    "returns a frontend in the options, dependent and exporter roles",
 				options: true, dependencies: true, exports: true,
+			},
+			{
+				name:         "returns a frontend in the dependent role beside the store role",
+				dependencies: true, stores: true,
+			},
+			{
+				name:    "returns a frontend in the options, dependent and store roles",
+				options: true, dependencies: true, stores: true,
+			},
+			{
+				name:         "returns a frontend in the dependent, exporter and store roles",
+				dependencies: true, exports: true, stores: true,
+			},
+			{
+				name:    "returns a frontend in every optional role",
+				options: true, dependencies: true, exports: true, stores: true,
 			},
 		}
 		for _, tt := range roles {
@@ -161,12 +183,16 @@ func TestFrontend(t *testing.T) {
 				if tt.exports {
 					b.Exports(exporter.Exports)
 				}
+				if tt.stores {
+					b.Stores(locate)
+				}
 				built := b.Build()
 				_, optioned := built.(plugin.OptionsProvider)
 				_, depends := built.(plugin.Dependent)
 				_, exports := built.(plugin.Exporter)
-				assert.Equal(t, []bool{optioned, depends, exports},
-					[]bool{tt.options, tt.dependencies, tt.exports}, "exactly the declared roles")
+				_, locates := built.(plugin.StoreLocator)
+				assert.Equal(t, []bool{optioned, depends, exports, locates},
+					[]bool{tt.options, tt.dependencies, tt.exports, tt.stores}, "exactly the declared roles")
 			})
 		}
 
@@ -238,6 +264,10 @@ func TestFrontend(t *testing.T) {
 						Version("1").Match(anyScripted).
 						Units(inner.Partition).Parse(inner.Parse).Build()
 				},
+			},
+			{
+				name:  "panics on stores without dependency rounds",
+				build: func() { whole().Stores(locate).Build() },
 			},
 		}
 		for _, tt := range defects {
@@ -313,6 +343,30 @@ func TestFrontend(t *testing.T) {
 			assert.True(t, is, "the declaration states the role")
 			assert.Equal(t, exporter.Exports(plugin.ImportScope{}, kitName), published,
 				"the resolution step follows the declared function")
+		})
+	})
+
+	t.Run("Stores", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns what the declared function returns", func(t *testing.T) {
+			t.Parallel()
+
+			missing := errors.New("kitfake: set FAKEROOT")
+			inner := frontendtest.NewScriptedDependent()
+			f := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+				Dependencies(inner.Dependencies).
+				Stores(func(getenv func(string) string) (map[string]fs.FS, error) {
+					return nil, fmt.Errorf("%w for %s", missing, getenv(fakeRoot))
+				}).
+				Build()
+			locator, is := f.(plugin.StoreLocator)
+			assert.True(t, is, "the declaration states the role")
+			_, err := locator.Stores(func(key string) string { return key + "=unset" })
+			assert.ErrorIs(t, err, missing, "the frontend runs the declared function")
+			assert.Contains(t, err.Error(), fakeRoot+"=unset", "the function reads the environment of the caller")
 		})
 	})
 
@@ -577,7 +631,13 @@ func declaration(inner *frontendtest.Scripted, roles bool) *frontend.Builder {
 	if roles {
 		b.Options(inner.Opts).
 			Dependencies(frontendtest.NewScriptedDependent().Dependencies).
-			Exports(frontendtest.NewScriptedExporter().Exports)
+			Exports(frontendtest.NewScriptedExporter().Exports).
+			Stores(locate)
 	}
 	return b
+}
+
+// locate locates one empty store under the name of the scripted store.
+func locate(func(string) string) (map[string]fs.FS, error) {
+	return map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{}}, nil
 }

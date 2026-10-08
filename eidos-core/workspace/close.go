@@ -80,7 +80,8 @@ func collide(runs []*planRun, files [][]stagedFile, sink *diag.Sink) bool {
 // plan's routed and kept files in path order, as [collide] compares the
 // files of a cold run, each kept file at the position that its artifact
 // records. Otherwise it compares the routed files alone, because no kept
-// file then clashes with a file. It reports whether any plans collided.
+// file then clashes with a file. A skipped plan's files are those of
+// [routedFiles] either way. It reports whether any plans collided.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that does
 // not read whole.
@@ -109,11 +110,14 @@ scan:
 			}
 		}
 	}
+	files := routedFiles(runs)
 	if !clashed {
-		return collide(runs, routedFiles(runs), sink), nil
+		return collide(runs, files, sink), nil
 	}
-	files := make([][]stagedFile, len(runs))
 	for i, p := range runs {
+		if p.skipped {
+			continue
+		}
 		files[i] = slices.Clone(p.files)
 		for _, e := range p.kept {
 			a, _, err := phases.Artifact(e.Path)
@@ -128,11 +132,20 @@ scan:
 }
 
 // routedFiles returns the files that each plan of runs routed, at the
-// plan's index.
+// plan's index. A skipped plan routes the files of its previous entries,
+// each positioned at its path, so a plan of the run that routes a file
+// there collides with it.
 func routedFiles(runs []*planRun) [][]stagedFile {
 	out := make([][]stagedFile, len(runs))
 	for i, p := range runs {
 		out[i] = p.files
+		if p.skipped {
+			out[i] = make([]stagedFile, len(p.kept))
+			for j, e := range p.kept {
+				out[i][j] = stagedFile{path: e.Path, at: position.Pos{File: e.Path}}
+			}
+			slices.SortFunc(out[i], func(a, b stagedFile) int { return strings.Compare(a.path, b.path) })
+		}
 	}
 	return out
 }
@@ -196,6 +209,29 @@ func (w *Workspace) sweep(rec *record, runs []*planRun, sink *diag.Sink, blocked
 	}
 	sw.out = out
 	return sw, nil
+}
+
+// outOfDate reports each path whose output differs from what the run
+// generates as an Error under [OutOfDate] at the path: each change of a
+// plan that creates, updates or deletes a file, and each file of a plan
+// that the composition no longer declares that the sweep deletes. A
+// change that the narrowing withholds is not reported.
+func outOfDate(runs []*planRun, sw *swept, rec *record, sink *diag.Sink) {
+	for _, p := range runs {
+		for _, c := range p.changes {
+			if c.Action != output.ActionUnchanged {
+				sink.Errorf(OutOfDate, position.Pos{File: c.Path}, diag.PhaseClose,
+					"%s is out of date: plan %q would have %s it", c.Path, p.plan.name, c.Action)
+			}
+		}
+	}
+	for _, c := range sw.changes {
+		if c.Action == output.ActionDeleted {
+			sink.Errorf(OutOfDate, position.Pos{File: c.Path}, diag.PhaseClose,
+				"%s is out of date: the composition no longer declares plan %q, and the run would have deleted it",
+				c.Path, rec.generator(c.Path, ""))
+		}
+	}
 }
 
 // audit reports every declaration of a contract's kinds that lacks the
@@ -312,13 +348,13 @@ func (w *Workspace) auditWarm(
 // whether any of them reported an Error. Each check reads an index and
 // a reader over the whole graph, the facts, and the records of the
 // plans it reads: their manifest entries and their exports. A check
-// that reads a plan that failed or was cancelled does not run, and the
-// run reports one FailedDependency for it at the failed plan's cause,
-// where the plan has one. A check's findings arrive in the run's sink
-// in the order it reported them. A check's returned error stops the
-// step and returns, wrapped with the check's name. Every check it
-// calls counts into stats, and records its reader's reads and its
-// findings into a lane of rec, where rec is set.
+// that reads a plan that failed, was cancelled or was skipped does not
+// run, and the run reports one FailedDependency for it at the failed
+// plan's cause, where the plan has one. A check's findings arrive in
+// the run's sink in the order it reported them. A check's returned
+// error stops the step and returns, wrapped with the check's name.
+// Every check it calls counts into stats, and records its reader's
+// reads and its findings into a lane of rec, where rec is set.
 //
 // ws is the state of a warm run, and nil on a cold run. A warm run calls
 // a check only where [warmState.keptCheck] does not find a record to
@@ -407,11 +443,12 @@ func (w *Workspace) check(
 	return failed, nil
 }
 
-// blocking returns the first plan a check reads that failed or was
-// cancelled, and nil where every one of them staged cleanly.
+// blocking returns the first plan a check reads that failed, was
+// cancelled or was skipped, and nil where every one of them staged
+// cleanly.
 func blocking(c compiledCheck, runs []*planRun) *planRun {
 	for _, i := range c.reads {
-		if p := runs[i]; p.failed() || p.cancelled {
+		if p := runs[i]; p.failed() || p.cancelled || p.skipped {
 			return p
 		}
 	}

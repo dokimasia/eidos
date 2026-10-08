@@ -26,6 +26,63 @@ var listedDocs = []string{docName, "manifest/cd.json", "manifest/ef.json"}
 func TestMem(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Lock", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a LockedError that names the holder to a second lock", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			release, err := l.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			t.Cleanup(func() { assert.NoError(t, release(), "the lock is released") })
+			_, err = l.Lock(t.Context(), ledger.Holder{PID: 1})
+			locked := assert.ErrorAs[*ledger.LockedError](t, err, "the second lock is refused")
+			assert.Equal(t, locked.Holder, fixtureHolder, "the error names the first holder")
+		})
+
+		t.Run("returns the lock to the next holder after the release", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			release, err := l.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the lock is taken")
+			assert.NoError(t, release(), "the lock is released")
+			again, err := l.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the next holder takes the lock")
+			assert.NoError(t, again(), "and releases it")
+		})
+
+		t.Run("returns a release whose second call keeps the next holder's lock", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			first, err := l.Lock(t.Context(), ledger.Holder{PID: 1})
+			assert.NoError(t, err, "the first holder takes the lock")
+			assert.NoError(t, first(), "and releases it")
+			second, err := l.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "the second holder takes the lock")
+			t.Cleanup(func() { assert.NoError(t, second(), "the lock is released") })
+			assert.NoError(t, first(), "the first release runs again")
+			_, err = l.Lock(t.Context(), ledger.Holder{PID: 1})
+			locked := assert.ErrorAs[*ledger.LockedError](t, err, "the second holder keeps the lock")
+			assert.Equal(t, locked.Holder, fixtureHolder, "the error names the second holder")
+		})
+
+		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				_, err := l.Lock(ctx, fixtureHolder)
+				return err
+			}, "the cancellation is returned")
+			release, err := l.Lock(t.Context(), fixtureHolder)
+			assert.NoError(t, err, "and the lock remains free")
+			assert.NoError(t, release(), "and is released")
+		})
+	})
+
 	t.Run("Read", func(t *testing.T) {
 		t.Parallel()
 

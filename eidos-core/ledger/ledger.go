@@ -72,6 +72,10 @@ func StateDir(brand output.Brand) string { return "." + string(brand) }
 // .<brand>/manifest.
 func ManifestPath(brand output.Brand) string { return path.Join(StateDir(brand), manifestDir) }
 
+// LockPath returns the file that [Dir.Lock] locks in the brand's state
+// directory, workspace-relative and slash-separated: .<brand>/lock.
+func LockPath(brand output.Brand) string { return path.Join(StateDir(brand), lockName) }
+
 // checkName returns an error wrapping [fs.ErrInvalid] for a name that is
 // not slash-separated and relative, or that has an empty, "." or ".."
 // element, and nil for a name a ledger stores under.

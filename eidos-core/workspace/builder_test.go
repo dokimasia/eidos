@@ -121,6 +121,22 @@ func TestBuilder(t *testing.T) {
 		})
 	}
 
+	t.Run("BrandName", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the brand that Brand declared", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, workspace.New().Brand(fixtureBrand).BrandName(), fixtureBrand, "the declared brand")
+		})
+
+		t.Run("returns the empty brand before Brand", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, workspace.New().BrandName(), output.Brand(""), "no brand is declared")
+		})
+	})
+
 	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
 
@@ -177,7 +193,7 @@ func TestBuilder(t *testing.T) {
 				compose: func() *workspace.Builder {
 					return valid().Memo(workspace.Memo{Limit: -1})
 				},
-				markers: []string{"memo's limit -1", "negative"},
+				markers: []string{"memo limit -1", "negative"},
 			},
 			{
 				name: "returns an error naming two plugins with one name",
@@ -527,6 +543,11 @@ func TestBuilderAllocs(t *testing.T) {
 			tt.name+" allocates the list of a new builder")
 	}
 
+	branded := workspace.New().Brand(fixtureBrand)
+	var brand output.Brand
+	assert.MaxAllocs(t, func() { brand = branded.BrandName() }, 0, "BrandName allocates nothing")
+	assert.Equal(t, brand, fixtureBrand, "BrandName returns the declared brand")
+
 	var err error
 	assert.MaxAllocsWithSetup(t, composition(), func(b *workspace.Builder) {
 		_, berr := b.Build()
@@ -569,6 +590,17 @@ func BenchmarkBuilder(b *testing.B) {
 			assert.Equal(b, got, builder, "the method returns its builder", assert.ByIdentity())
 		})
 	}
+
+	b.Run("BrandName", func(b *testing.B) {
+		branded := workspace.New().Brand(fixtureBrand)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got output.Brand
+		for c.Loop() {
+			got = branded.BrandName()
+		}
+		assert.Equal(b, got, fixtureBrand, "BrandName returns the declared brand")
+	})
 
 	b.Run("Build", func(b *testing.B) {
 		compose := composition()

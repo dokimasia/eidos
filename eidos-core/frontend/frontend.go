@@ -5,6 +5,7 @@ package frontend
 
 import (
 	"context"
+	"io/fs"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/plugin"
@@ -43,6 +44,7 @@ type Builder struct {
 	hasOptions   bool
 	dependencies func(context.Context, *plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
 	exports      func(plugin.ImportScope, string) plugin.Candidates
+	stores       func(getenv func(key string) string) (map[string]fs.FS, error)
 }
 
 // New starts a frontend declaration for one language.
@@ -154,19 +156,30 @@ func (b *Builder) Exports(exports func(plugin.ImportScope, string) plugin.Candid
 	return b
 }
 
+// Stores declares the function that locates the stores that the
+// dependency units of the language read, such as a module cache. The
+// built frontend implements [plugin.StoreLocator] through the function. A
+// declaration with Stores also declares [Builder.Dependencies], because
+// only a dependency unit reads a store.
+func (b *Builder) Stores(locate func(getenv func(key string) string) (map[string]fs.FS, error)) *Builder {
+	b.stores = locate
+	return b
+}
+
 // Build freezes the declaration and returns the lowered frontend,
 // which implements [plugin.Frontend]. The conformance suite runs the
 // same checks over it that a hand-rolled frontend meets, because the
 // lowering adds nothing the role does not state. The frontend
 // implements an optional role exactly when the declaration states it:
 // [plugin.OptionsProvider] for [Builder.Options], [plugin.Dependent]
-// for [Builder.Dependencies], and [plugin.Exporter] for
-// [Builder.Exports].
+// for [Builder.Dependencies], [plugin.Exporter] for [Builder.Exports],
+// and [plugin.StoreLocator] for [Builder.Stores].
 //
 // Build panics on a declaration defect: an empty name or language,
-// no declared version, an empty claim, or a missing partition,
-// parse or resolve. A wrong declaration is a bug in the frontend's
-// own constructor and panics on the first Build in any test.
+// no declared version, an empty claim, a missing partition, parse or
+// resolve, or stores without dependency rounds. A wrong declaration is
+// a bug in the frontend's own constructor and panics on the first Build
+// in any test.
 func (b *Builder) Build() plugin.Frontend {
 	if b.name == "" {
 		panic("frontend: New with an empty name")
@@ -191,6 +204,9 @@ func (b *Builder) Build() plugin.Frontend {
 	if b.resolve == nil {
 		defects = append(defects, "declares no resolve")
 	}
+	if b.stores != nil && b.dependencies == nil {
+		defects = append(defects, "declares stores and no dependency rounds, which read them")
+	}
 	if len(defects) > 0 {
 		panic("frontend: " + name + " " + strings.Join(defects, ", and "))
 	}
@@ -209,7 +225,10 @@ func (b *Builder) Build() plugin.Frontend {
 	if b.exports != nil {
 		roles |= exporter
 	}
-	o, d, e := optionsRole{b.options}, dependentRole{b.dependencies}, exporterRole{b.exports}
+	if b.stores != nil {
+		roles |= locator
+	}
+	o, d, e, l := optionsRole{b.options}, dependentRole{b.dependencies}, exporterRole{b.exports}, locatorRole{b.stores}
 	switch roles {
 	case optioned:
 		return &struct {
@@ -251,6 +270,34 @@ func (b *Builder) Build() plugin.Frontend {
 			dependentRole
 			exporterRole
 		}{base, o, d, e}
+	case dependent | locator:
+		return &struct {
+			*builtFrontend
+			dependentRole
+			locatorRole
+		}{base, d, l}
+	case optioned | dependent | locator:
+		return &struct {
+			*builtFrontend
+			optionsRole
+			dependentRole
+			locatorRole
+		}{base, o, d, l}
+	case dependent | exporter | locator:
+		return &struct {
+			*builtFrontend
+			dependentRole
+			exporterRole
+			locatorRole
+		}{base, d, e, l}
+	case optioned | dependent | exporter | locator:
+		return &struct {
+			*builtFrontend
+			optionsRole
+			dependentRole
+			exporterRole
+			locatorRole
+		}{base, o, d, e, l}
 	default:
 		return base
 	}
@@ -261,11 +308,14 @@ func (b *Builder) Build() plugin.Frontend {
 type role uint8
 
 // The optional roles: the options a load keys on, the dependency
-// rounds, and the re-exports the resolution step follows.
+// rounds, the re-exports the resolution step follows, and the stores
+// that the dependency rounds read. Build refuses the store role without
+// the dependent role, so the switch of Build has no case for it.
 const (
 	optioned  role = 1
 	dependent role = 2
 	exporter  role = 4
+	locator   role = 8
 )
 
 // builtFrontend is a lowered frontend declaration: the facts as
@@ -367,4 +417,15 @@ type exporterRole struct {
 // Exports implements [plugin.Exporter] through the declared function.
 func (r exporterRole) Exports(scope plugin.ImportScope, name string) plugin.Candidates {
 	return r.exports(scope, name)
+}
+
+// locatorRole is the store role of a built frontend that declares the
+// stores of its dependency rounds.
+type locatorRole struct {
+	stores func(getenv func(key string) string) (map[string]fs.FS, error)
+}
+
+// Stores implements [plugin.StoreLocator] through the declared function.
+func (r locatorRole) Stores(getenv func(key string) string) (map[string]fs.FS, error) {
+	return r.stores(getenv)
 }

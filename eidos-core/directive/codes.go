@@ -100,4 +100,14 @@ var (
 	MixedCarriers = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 45, Meaning: "a repeatable directive mixes carriers a formatter may move with carriers it keeps",
 	})
+	// UnknownCode refuses a diagnostic code reference that does not
+	// parse as a code, or that names a code nothing registered.
+	UnknownCode = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 66, Meaning: "a directive names a diagnostic code nothing registered",
+	})
+	// DeprecatedDirective warns where an instance uses a directive or a
+	// param that its schema deprecates, and states the schema's rewrite.
+	DeprecatedDirective = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 67, Meaning: "a directive or a parameter that its schema deprecates is used",
+	})
 )

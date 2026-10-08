@@ -99,6 +99,14 @@ func TestCodes(t *testing.T) {
 			name: "MixedCarriers", code: directive.MixedCarriers, spelled: "EID-0045",
 			meaning: "a repeatable directive mixes carriers a formatter may move with carriers it keeps",
 		},
+		{
+			name: "UnknownCode", code: directive.UnknownCode, spelled: "EID-0066",
+			meaning: "a directive names a diagnostic code nothing registered",
+		},
+		{
+			name: "DeprecatedDirective", code: directive.DeprecatedDirective, spelled: "EID-0067",
+			meaning: "a directive or a parameter that its schema deprecates is used",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

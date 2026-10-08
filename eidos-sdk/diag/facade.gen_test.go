@@ -51,6 +51,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ParseCode", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(diag.ParseCode), reflect.TypeOf(core.ParseCode), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("CodeSpec", func(t *testing.T) {
 		t.Parallel()
 

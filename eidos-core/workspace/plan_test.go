@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
 
 	eidos "go.dokimi.dev/eidos/core"
@@ -91,6 +93,11 @@ func (f *faulty) Discard() error {
 	return f.discardErr
 }
 
+// plainSink is a sink that does not write over a drifted or foreign
+// file: it offers the methods of the sink it wraps that [output.Sink]
+// declares, and not Overwrite.
+type plainSink struct{ output.Sink }
+
 // errBroken is the error the broken plan's generator returns.
 var errBroken = errors.New("the generator is broken")
 
@@ -153,6 +160,21 @@ func TestPlan(t *testing.T) {
 			assert.Contains(t, drifted[0].Msg, `plan "plan"`, "naming the plan that generated it")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan commits nothing")
 			files.HasContent(t, filepath.Join(root, storeGen), changed, "the edit remains")
+		})
+
+		t.Run("lists a write over a drifted file in Refused", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
+
+			report, _ := runOver(t, w, routedIn(t, coretest.StorePath))
+			refused := report.Plans[0].Refused
+			assert.Length(t, refused, 1, "the run refuses one write")
+			expect.Equal(t, refused[0].Path, storeGen, "the change has the path of the edited file")
+			expect.Equal(t, refused[0].Found, output.FoundDrifted, "the change found the drifted file")
 		})
 
 		t.Run("names the plan the record lists for a drifted file", func(t *testing.T) {
@@ -246,6 +268,78 @@ func TestPlan(t *testing.T) {
 				ErrorIs(errNoDevice, "and so is the discard's")
 		})
 
+		t.Run("returns an error for an output that fails to open the sink of the withheld changes", func(t *testing.T) {
+			t.Parallel()
+
+			var opens atomic.Int64
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Output(func() (output.Sink, error) {
+					if opens.Add(1) > 1 {
+						return nil, errNoDevice
+					}
+					return output.NewMem(), nil
+				}))
+			report, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Patterns: []string{storePattern},
+			})
+			assert.ErrorIs(t, err, errNoDevice, "the open's error fails the run")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan fails")
+		})
+
+		t.Run("returns an error for a sink that fails to prepare the withheld changes", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Output(faultyOutput(func(f *faulty) { f.prepareErr = errDiskFull })))
+			_, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Patterns: []string{storePattern},
+			})
+			assert.ErrorIs(t, err, errDiskFull, "the preparation's error fails the run")
+			assert.Contains(t, err.Error(), "prepare the withheld changes", "the error names the step")
+		})
+
+		t.Run("returns an error for a sink that fails to discard the withheld changes", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Output(faultyOutput(func(f *faulty) { f.discardErr = errReadOnly })))
+			_, err := w.Run(t.Context(), workspace.Input{
+				Graph: routedIn(t, coretest.StorePath), Patterns: []string{storePattern},
+			})
+			assert.ErrorIs(t, err, errReadOnly, "the discard's error fails the run")
+			assert.Contains(t, err.Error(), "discard the withheld changes", "the error names the step")
+		})
+
+		t.Run("returns both errors for a sink that fails to stage a withheld change and to discard it",
+			func(t *testing.T) {
+				t.Parallel()
+
+				w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+					Output(faultyOutput(func(f *faulty) { f.writeErr, f.discardErr = errReadOnly, errNoDevice })))
+				_, err := w.Run(t.Context(), workspace.Input{
+					Graph: routedIn(t, coretest.StorePath), Patterns: []string{coretest.CachePath},
+				})
+				assert.That(t, err).
+					ErrorIs(errReadOnly, "the staging's error is returned").
+					ErrorIs(errNoDevice, "and so is the discard's")
+			})
+
+		t.Run("returns an error for a stale entry the sink refuses to stage among the withheld changes",
+			func(t *testing.T) {
+				t.Parallel()
+
+				entry := stageEntry("plan")
+				entry.Plugins = []plugin.ID{"plan-mirror"}
+				mem := recording(t, entry)
+				w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+					Ledger(func() (ledger.Ledger, error) { return mem, nil }))
+				_, err := w.Run(t.Context(), workspace.Input{
+					Graph: routedIn(t, coretest.StorePath), Patterns: []string{storePattern},
+				})
+				assert.HasError(t, err, "the run fails")
+				assert.Contains(t, err.Error(), "the removal of svc/old.txt.stage", "the error names the entry")
+			})
+
 		t.Run("returns an error for a stale entry the sink refuses to remove", func(t *testing.T) {
 			t.Parallel()
 
@@ -269,6 +363,90 @@ func TestPlan(t *testing.T) {
 			assert.Equal(t, foreign[0].Pos, alphaAt, "at the file's first declaration's origin")
 			assert.Contains(t, foreign[0].Msg, "Struct ForAlpha", "naming the declaration routed there by its kind")
 			files.HasContent(t, filepath.Join(root, storeGen), "written by hand\n", "the file remains")
+		})
+
+		t.Run("lists a write over a foreign file in Refused", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{storeGen: files.Text("written by hand\n")})
+			report, _ := runOver(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{}))),
+				routedIn(t, coretest.StorePath))
+			refused := report.Plans[0].Refused
+			assert.Length(t, refused, 1, "the run refuses one write")
+			expect.Equal(t, refused[0].Path, storeGen, "the change has the path of the hand-written file")
+			expect.Equal(t, refused[0].Found, output.FoundForeign, "the change found the foreign file")
+		})
+
+		t.Run("writes over a generated file edited since its stamp under OverwriteDrift", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			generated := files.Read(t, filepath.Join(root, storeGen))
+			place(t, root, storeGen, edited(generated))
+
+			in := workspace.Input{Graph: routedIn(t, coretest.StorePath), OverwriteDrift: true}
+			report, err := w.Run(t.Context(), in)
+			assert.NoError(t, err, "the run is clean")
+			expect.Empty(t, findings(report.Sink, workspace.DriftedOutput), "the run reports no drift")
+			expect.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the plan commits")
+			files.HasContent(t, filepath.Join(root, storeGen), generated, "the generated bytes replace the edit")
+		})
+
+		t.Run("writes over a hand-written file at a generated path under Adopt", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{storeGen: files.Text("written by hand\n")})
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Adopt: true})
+			assert.NoError(t, err, "the run is clean")
+			expect.Empty(t, findings(report.Sink, workspace.ForeignFile), "the run reports no foreign file")
+			expect.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the plan commits")
+			expect.That(t, files.Read(t, filepath.Join(root, storeGen))).
+				Contains("type ForAlpha struct{}", "the generated file replaces the hand-written one")
+		})
+
+		t.Run("reports ForeignFile for a hand-written file under OverwriteDrift", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{storeGen: files.Text("written by hand\n")})
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			in := workspace.Input{Graph: routedIn(t, coretest.StorePath), OverwriteDrift: true}
+			report, err := w.Run(t.Context(), in)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the foreign file fails the run")
+			assert.Length(t, findings(report.Sink, workspace.ForeignFile), 1, "the drift input adopts nothing")
+		})
+
+		t.Run("reports DriftedOutput under OverwriteDrift for a sink that does not overwrite", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).
+				Output(func() (output.Sink, error) {
+					d, err := output.NewDisk(root, fixtureBrand)
+					return plainSink{d}, err
+				}))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
+
+			in := workspace.Input{Graph: routedIn(t, coretest.StorePath), OverwriteDrift: true}
+			report, err := w.Run(t.Context(), in)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
+			assert.Length(t, findings(report.Sink, workspace.DriftedOutput), 1, "the sink refuses as before")
+		})
+
+		t.Run("returns the sink's error for an overwrite it refuses", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Output(func() (output.Sink, error) {
+					return output.NewTee(output.NewMem(), plainSink{output.NewMem()}), nil
+				}))
+			report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Adopt: true})
+			assert.HasError(t, err, "the tee refuses the overwrite")
+			expect.Contains(t, err.Error(), "does not write over", "the error names the refusal")
+			expect.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "and the plan fails")
 		})
 
 		t.Run("adopts a file with the staged bytes that no record lists", func(t *testing.T) {
@@ -528,17 +706,19 @@ func built(tb assert.TB, b *workspace.Builder) *workspace.Workspace {
 	return w
 }
 
-// routedIn returns an unfrozen graph declaring Alpha in a file of its
-// package's own directory.
-func routedIn(tb assert.TB, pkg string) *store.Graph {
+// routedIn returns an unfrozen graph that declares Alpha in each package
+// of pkgs, in a file of the package's own directory.
+func routedIn(tb assert.TB, pkgs ...string) *store.Graph {
 	tb.Helper()
 
-	s := coretest.Struct(pkg, "Alpha")
-	s.Pos = position.Pos{File: pkg + "/alpha.go", Line: 3, Col: 1}
-	p := coretest.Package(pkg, s)
-	p.Files[0].Path = pkg + "/alpha.go"
 	g := store.New()
-	assert.NoError(tb, g.AddPackage(p), "the fixture package is admitted")
+	for _, pkg := range pkgs {
+		s := coretest.Struct(pkg, "Alpha")
+		s.Pos = position.Pos{File: pkg + "/alpha.go", Line: 3, Col: 1}
+		p := coretest.Package(pkg, s)
+		p.Files[0].Path = pkg + "/alpha.go"
+		assert.NoError(tb, g.AddPackage(p), "the fixture package is admitted")
+	}
 	return g
 }
 

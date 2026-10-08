@@ -13,16 +13,23 @@
 // pass: the brand, the worker count, the memo's limit, the frontends,
 // the roster, the registries with the kernel's own keys and schemas
 // registered first and every registry sealed, the lowering into
-// priority buckets, the options and their canonical encoding, the plans
-// and their compiled schedule, with every generator that declares
-// templates serving its plan's target, each plan's [Sources] and
-// dependencies, the plans' dependency order, the plans each check
-// reads, and, where the composition declares output, the output
-// contract each plan writes through. Every step runs even when an
+// priority buckets, the options and their canonical encoding, the
+// config's refinements of the plans, the plans and their compiled
+// schedule, with every generator that declares templates serving its
+// plan's target, each plan's [Sources] and dependencies, the plans'
+// dependency order, the plans each check reads, and, where the
+// composition declares output, the output contract each plan writes
+// through. Every step runs even when an
 // earlier one found faults. Build returns either the [Workspace] or one
 // error joining everything found, so the composition's author reads
 // every fault at once. A Build that succeeds has resolved every
 // human-typed name in the composition. Nothing after it fails on a name.
+//
+// [Workspace.Describe] returns the composition as data. The description
+// contains the frontends, the schedule of each role with the bucket and the
+// version of each plugin, the sources, dependencies, backend and layout of
+// each plan, the commit order and the checks. Describe runs nothing, so a
+// command can print the composition without a run.
 //
 // # Plans that share a workspace
 //
@@ -34,6 +41,11 @@
 // only where each of them commits. Build refuses a cycle, naming every
 // plan in it. A [plugin.WorkspaceCheck] that [Builder.Checks] registers
 // runs at Close over the records of the plans it reads.
+//
+// [Config.Plans] refines a declared plan by its name before Build compiles
+// it. A [PlanConfig] leaves the plan out, or replaces its sources, its
+// layout policy, its output directory or its import base. The fingerprint
+// includes a refined plan as it includes a declared plan.
 //
 // # The brand
 //
@@ -70,6 +82,13 @@
 // A Workspace is safe for concurrent runs: nothing on it mutates after
 // Build, and every mutable structure a run touches, its sink included,
 // is created per call.
+//
+// A run takes the lock of the composition's ledger, where the ledger
+// implements [ledger.Locker], before it reads the previous record, and
+// releases it after the record, so one run at a time works in a state
+// directory. [Input.Caller] describes the run in the holder's record. A
+// run that finds the lock taken reports [StateLocked], marks every plan
+// failed and writes nothing.
 //
 // # The sealed state
 //
@@ -130,6 +149,9 @@
 //   - a run that cannot read its executable
 //   - a run whose stamp replay refused a stamp or met a dangling one,
 //     because no record of the sealed state keeps that finding
+//   - a run with patterns, a prune, and a run that skipped a plan, so the
+//     next run compares against the generation and finds every change
+//     that such a run left
 //
 // [Builder.Memo] keeps a parse memo: the region of every unit a run
 // parsed, stored under the unit's key and the executable's digest. The
@@ -153,7 +175,10 @@
 // that can commit opens a sink of its own, stages its files and the
 // removal of its stale outputs, and prepares. The preparation reports
 // what each staged path contains, and a drifted or foreign file where
-// the plan writes is an Error of that plan. Close then runs on one
+// the plan writes is an Error of that plan. [Input.OverwriteDrift] and
+// [Input.Adopt] let a sink that implements [output.Overwriter] write over
+// a drifted file and a foreign one, and the run then reports neither.
+// Close then runs on one
 // goroutine: two plans routing a file to one path are [PlanCollision],
 // the outputs of plans the composition no longer declares are swept,
 // every metadata completeness contract is audited, and the workspace
@@ -168,11 +193,67 @@
 // records nothing. A composition declaring no output stops after the
 // settle, and its plans' emit stores are the run's whole product.
 //
+// # Plan selection, patterns, the prune and the check
+//
+// [Input.Plans] runs the plans that it lists and every plan they depend
+// on, transitively. Every other plan reports [PlanSkipped]: it does not
+// run, and its files and record entries remain. A plan of the run that
+// routes a file to the path of one of its files collides with it, and a
+// workspace check that reads it does not run.
+//
+// [Input.Patterns] narrow the commit alone. The run generates every plan
+// whole and commits the changes inside the patterns. It stages every other
+// change into a sink of its own, which it prepares for
+// [PlanReport.Withheld] and discards, and a withheld change leaves the
+// record's entry of its path as it was. [Input.Prune] withholds every
+// write and commits the removals of stale files. The sweep of the plans
+// that the composition no longer declares commits under either input.
+//
+// [Input.Check] runs as a dry run does. It reports each path that the run
+// would create, update or remove, or would refuse to write, and each file
+// that the sweep would remove, as an Error under [OutOfDate] at the path.
+// A change that the patterns withhold is not reported.
+//
+// # Suppression and strict mode
+//
+// A diag directive on a declaration removes the findings of the code that
+// it names at the declaration's position, from the run's sink and from the
+// sink of every plan, so a removed Error fails no plan. A kernel Error is
+// never removed. The run reads its diag directives after validation. The
+// findings that a warm run reports again from its records pass through
+// the same table, because a record keeps every finding as it was
+// reported, so an edit of a directive changes what the next run reports.
+// [Report.Suppressions] lists each directive with the findings that it
+// removed. The run reports each directive that removed nothing as an Info
+// under [UnusedSuppression], except in a run that skips a plan and in a
+// cancelled run. [Input.Strict] reports every Warning that remains as an
+// Error.
+//
+// # Explaining a generation
+//
+// [Workspace.Explain] returns what the live generation of the ledger
+// records about a [Target]. A target is the path of a generated file, the
+// identity of a declaration, a key at a position, or a code at a position.
+// [Workspace.ParseTarget] parses a target from a command-line argument.
+// Explain reads the generation under the lock of the ledger and runs no
+// phase, so it describes the last run that wrote a generation. The
+// generation stores each read as a hash. Explain computes the hashes of the
+// edges that it can construct, and identifies the reads with those hashes.
+// Each [ExplainedRecord] contains the identified reads and the number of
+// the other reads. Explain returns [ErrNoGeneration] for a ledger without a
+// generation.
+//
 // # Failure semantics
 //
 // Build returns errors and collects them, and every registry beneath
-// it refuses a duplicate naming both claimants. Run refuses an input
-// that names neither or both of a tree and a graph with a plain error.
+// it refuses a duplicate naming both claimants. Run refuses these inputs
+// with a plain error:
+//
+//   - an input that sets neither or both of a tree and a graph
+//   - a plan that the composition does not declare
+//   - a pattern that names no directory of a workspace tree
+//   - Prune with Patterns or with Check
+//
 // A plan's own Error, and an error its generator, its sink or its
 // commit returns, fails that plan and every plan that depends on it, and
 // their previous files and record entries remain. A plan or a check
@@ -181,8 +262,9 @@
 // workspace check's included, commits nothing at all. Findings
 // arrive in the report's sink, and any Error among them classifies the
 // run under [ErrRunFailed]. A previous record that does not read is
-// [UnreadableRecord], and the run removes nothing. A ledger that fails
-// to read or write the sealed state is a returned error. A cancelled
+// [UnreadableRecord], and the run removes nothing. A lock that another
+// holder has is [StateLocked]. A ledger that fails to open, to lock, to
+// read or to write the sealed state is a returned error. A cancelled
 // context stops the run between units of work. A commit runs to its end
 // once begun. A cancellation observed before a plan's commit skips that
 // commit and the commit of every plan after it. The report states each

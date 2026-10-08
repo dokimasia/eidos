@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -24,6 +26,7 @@ import (
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
@@ -50,6 +53,64 @@ type Input struct {
 	// Cold runs the tree without reading the sealed state, and reports
 	// nothing for it. The run writes the next generation as any run does.
 	Cold bool
+	// Plans restricts the run to the plans that it lists and every plan
+	// they depend on, transitively. Empty runs every plan. A plan that the
+	// selection leaves out reports [PlanSkipped]: it does not run, and its
+	// files and records remain. Run refuses a name that the composition
+	// does not declare.
+	Plans []string
+	// Patterns restricts what the run commits to the changes inside them.
+	// A change is inside the patterns where its file derives from a
+	// declaration of a package that the patterns admit, as
+	// [Sources.Packages] admits packages, in the file that the run renders
+	// or in the previous record's entry. The removal of a stale file whose
+	// plugins left its plan is inside them too. The run loads, validates,
+	// annotates and generates as a run without patterns does, and reports
+	// every other change in [PlanReport.Withheld]. Run refuses a pattern
+	// that names no directory of a workspace tree.
+	Patterns []string
+	// OverwriteDrift lets a plan write over a generated file that was
+	// edited since its stamp, where the run otherwise reports
+	// [DriftedOutput]. The sink has to implement [output.Overwriter].
+	OverwriteDrift bool
+	// Adopt lets a plan write over a file without the brand's frame at a
+	// path that it routes a file to, where the run otherwise reports
+	// [ForeignFile]. The sink has to implement [output.Overwriter].
+	Adopt bool
+	// Strict reports every Warning as an Error, so a Warning fails the
+	// plan that reported it, and one of a phase every plan shares fails
+	// every plan. A diag directive removes a Warning that it suppresses
+	// before Strict promotes it.
+	Strict bool
+	// Check runs as Dry runs, and reports each path that the run would
+	// create, update or remove, or would refuse to write, as an Error
+	// under [OutOfDate], so a gate reads the run's error alone.
+	Check bool
+	// Prune runs every plan as a run without patterns does, and commits
+	// only the removal of stale files: [PlanReport.Withheld] lists every
+	// write. Run refuses Prune with Patterns or with Check.
+	Prune bool
+	// Caller describes the caller in the record of the lock's holder,
+	// such as the command line of the run. Empty records "workspace.Run".
+	Caller string
+}
+
+// defaultCaller is the caller that a run records in the lock's holder
+// record where [Input.Caller] is empty.
+const defaultCaller = "workspace.Run"
+
+// overwritten returns the verdicts whose files the input lets the plans
+// write over: [output.FoundDrifted] under OverwriteDrift, and
+// [output.FoundForeign] under Adopt.
+func (in Input) overwritten() []output.Found {
+	var found []output.Found
+	if in.OverwriteDrift {
+		found = append(found, output.FoundDrifted)
+	}
+	if in.Adopt {
+		found = append(found, output.FoundForeign)
+	}
+	return found
 }
 
 // Run takes the input through the frame and returns what happened:
@@ -69,8 +130,25 @@ type Input struct {
 // the frame, a generator's fails its plan, and a check's fails Close.
 // A cancelled context stops the run between units of work and returns
 // the context's error beside the report, which states each plan's
-// outcome. An input that sets neither or both of a tree and a graph is
-// the one refusal that returns a nil report.
+// outcome. Run returns an error and a nil report, and runs nothing, for
+// these inputs:
+//
+//   - neither or both of a tree and a graph
+//   - a plan that the composition does not declare
+//   - a pattern that names no directory of a workspace tree
+//   - Prune with Patterns or with Check
+//
+// A run under [Input.Patterns] or [Input.Prune] commits the changes that
+// they admit, prepares every other change in a sink of its own, which it
+// discards, and lists those changes in [PlanReport.Withheld]. A withheld
+// change leaves the record's entry of its path as it was. The sweep of
+// the plans that the composition no longer declares commits whatever the
+// patterns. Under [Input.Check], each change that the run prepared and
+// does not withhold is an Error under [OutOfDate] at its path.
+//
+// A diag directive removes the findings of its code at its declaration
+// from the run's sink and from every plan's sink, as the package states,
+// and [Input.Strict] reports every Warning that remains as an Error.
 //
 // The ledger records the run strictly after the last commit. The record
 // is the next generation of the sealed state, with each document of the
@@ -83,10 +161,21 @@ type Input struct {
 //   - a run that cannot read its executable
 //   - a run whose stamp replay refused a stamp or met a dangling one,
 //     because no record of the sealed state keeps that finding
+//   - a run with patterns, a prune, and a run that skipped a plan, so the
+//     next run compares against the generation and finds every change
+//     that such a run left
 //
 // The ledger records under a context without the run's cancellation,
 // because the record has to match the destination once a commit wrote to
 // it.
+//
+// Run takes the ledger's lock for the run, where the ledger implements
+// [ledger.Locker], before it reads the previous record, and releases it
+// after the record and after a second, cold attempt. A lock that another
+// holder has is reported under [StateLocked] at the state directory's
+// lock file: the run marks every plan failed, writes nothing and returns
+// [ErrRunFailed]. A ledger that fails to open or to lock, and a release
+// that fails, are returned errors.
 //
 // A run over a tree compares the tree with the live generation of the
 // sealed state. A warm run validates again only the subjects whose
@@ -104,31 +193,130 @@ func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
 	if (in.Tree == nil) == (in.Graph == nil) {
 		return nil, errors.New("workspace: Run needs exactly one of a tree to load and a graph")
 	}
-	report, err := w.run(ctx, in, nil)
+	if in.Prune && (len(in.Patterns) > 0 || in.Check) {
+		return nil, errors.New("workspace: a prune reconciles the whole workspace, and takes no patterns or check")
+	}
+	for _, p := range in.Patterns {
+		if _, valid := parsePattern(p); !valid {
+			return nil, fmt.Errorf("workspace: the pattern %q names no directory of a workspace tree", p)
+		}
+	}
+	selected, err := w.selected(in.Plans)
+	if err != nil {
+		return nil, err
+	}
+	in.Dry = in.Dry || in.Check
+	l, release, err := w.lock(ctx, in.Caller)
+	if err != nil {
+		report := &Report{Sink: diag.NewSink(), Facts: meta.NewFacts(w.keys), Emits: map[string]*plugin.Emit{}}
+		if locked, is := errors.AsType[*ledger.LockedError](err); is {
+			report.Sink.Errorf(StateLocked, position.Pos{File: ledger.LockPath(w.brand)}, diag.PhaseLoad,
+				"the state directory is locked by %v, and the run writes nothing", locked.Holder)
+			err = nil
+		}
+		return w.stopped(ctx, report, selected, err)
+	}
+	report, err := w.run(ctx, in, l, selected, nil)
 	if d, found := errors.AsType[*damage](err); found && !in.Cold {
 		in.Cold = true
-		return w.run(ctx, in, d)
+		report, err = w.run(ctx, in, l, selected, d)
 	}
-	return report, err
+	return report, errors.Join(err, release())
 }
 
-// run is one attempt at a run: the frame over the input, after which
-// [Workspace.Run] runs again cold where the attempt met damage. A cold
-// attempt after damage reports the damage first.
-func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, error) {
+// selected returns, for each plan of the composition, whether a run that
+// lists names runs it: a listed plan and every plan it depends on,
+// transitively. It returns nil for no names, which selects every plan.
+// One pass over the commit order backward selects the dependencies,
+// because the backward order puts each plan before the plans it depends
+// on.
+//
+// Error modes: a name that the composition does not declare.
+func (w *Workspace) selected(names []string) ([]bool, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	byName := make(map[string]int, len(w.plans))
+	for i := range w.plans {
+		byName[w.plans[i].name] = i
+	}
+	out := make([]bool, len(w.plans))
+	for _, name := range names {
+		i, declared := byName[name]
+		if !declared {
+			return nil, fmt.Errorf("workspace: Run selects the plan %q, which the composition does not declare", name)
+		}
+		out[i] = true
+	}
+	for _, i := range slices.Backward(w.order) {
+		for _, d := range w.plans[i].deps {
+			out[d] = out[d] || out[i]
+		}
+	}
+	return out, nil
+}
+
+// lock opens the composition's ledger and takes its lock for the run,
+// where the ledger implements [ledger.Locker]. It returns the ledger, nil
+// for a composition that declares no output or no ledger, and the function
+// that releases the lock, which does nothing where nothing was locked. The
+// holder's record names the process, the host, the caller, and the time
+// the run took the lock.
+//
+// Error modes: an open function that fails or returns no ledger, because
+// nothing in the source causes it, a *[ledger.LockedError] where another
+// holder has the lock, and the lock's own errors.
+func (w *Workspace) lock(ctx context.Context, caller string) (ledger.Ledger, func() error, error) {
+	unlocked := func() error { return nil }
+	if w.ledger == nil || w.open == nil {
+		return nil, unlocked, nil
+	}
+	l, err := w.ledger()
+	if err != nil {
+		return nil, nil, fmt.Errorf("workspace: open the ledger: %w", err)
+	}
+	if l == nil {
+		return nil, nil, errors.New("workspace: the ledger's open function returned (nil, nil)")
+	}
+	locker, locks := l.(ledger.Locker)
+	if !locks {
+		return l, unlocked, nil
+	}
+	// The record names no host where the operating system reports none.
+	host, _ := os.Hostname()
+	release, err := locker.Lock(ctx, ledger.Holder{
+		PID:    os.Getpid(),
+		Host:   host,
+		Caller: cmp.Or(caller, defaultCaller),
+		Since:  time.Now(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return l, release, nil
+}
+
+// run is one attempt at a run over the composition's ledger, nil where
+// the composition keeps none: the frame over the input, after which
+// [Workspace.Run] runs again cold where the attempt met damage. selected
+// is the selection of [Workspace.selected]. A cold attempt after damage
+// reports the damage first.
+func (w *Workspace) run(
+	ctx context.Context, in Input, l ledger.Ledger, selected []bool, after *damage,
+) (*Report, error) {
 	sink := diag.NewSink()
+	if in.Strict {
+		sink.Promote()
+	}
 	if after != nil {
 		w.coldState(sink, "the sealed state is damaged, and the run started again cold: %v", after.err)
 	}
 	facts := meta.NewFacts(w.keys)
 	report := &Report{Sink: sink, Facts: facts, Emits: map[string]*plugin.Emit{}}
 
-	rec, err := w.begin(ctx, sink)
-	if err == nil {
-		err = ctx.Err()
-	}
-	if err != nil {
-		return w.stopped(ctx, report, err)
+	rec := w.begin(ctx, sink, l)
+	if err := ctx.Err(); err != nil {
+		return w.stopped(ctx, report, selected, err)
 	}
 	report.Manifest = rec.previous
 	sealed, err := w.openSealed(ctx, rec, in, sink)
@@ -136,7 +324,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 		err = w.openMemo(ctx, rec, sealed)
 	}
 	if err != nil {
-		return w.stopped(ctx, report, err)
+		return w.stopped(ctx, report, selected, err)
 	}
 	g, loaded, err := w.load(ctx, in, sealed, sink)
 	report.Load = loaded
@@ -145,7 +333,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 		err = sealed.record(ctx, loaded)
 	}
 	if err != nil {
-		return w.stopped(ctx, report, err)
+		return w.stopped(ctx, report, selected, err)
 	}
 	var phases *state.PhaseState
 	if sealed.warm(loaded) {
@@ -158,8 +346,10 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 		sealed.commit, sealed.recorder = nil, nil
 	}
 	if err != nil {
-		return w.stopped(ctx, report, err)
+		return w.stopped(ctx, report, selected, err)
 	}
+	pol := policyOf(g, out.table, in.Strict)
+	sink.Suppress(pol.table)
 	shared := sink.Failed()
 
 	var src tree
@@ -176,9 +366,9 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 			moved: loaded.Moved, vanished: loaded.Vanished, tree: in.Tree, previous: rec.byPlan,
 		}
 	}
-	runs := w.generateAll(ctx, g, facts, out.table, src, sealed.recorder, ws)
+	runs := w.generateAll(ctx, g, facts, out.table, src, sealed.recorder, ws, selected, rec.byPlan, pol)
 	if !shared {
-		w.stageAll(ctx, runs, rec)
+		w.stageAll(ctx, runs, rec, in.overwritten(), w.narrowed(in, g, facts, rec))
 	}
 	// recordErr is the damage that the plans, the collisions, the audit and
 	// the checks met in the generation's records.
@@ -228,11 +418,19 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	blocked := shared || collided || unmet || checked || broken != nil
 
 	errs = append(errs, commitAll(ctx, runs, w.order, sw, blocked, in.Dry, report))
+	if in.Check {
+		outOfDate(runs, sw, rec, sink)
+	}
+	report.Suppressions, report.Suppressed = pol.counted(sink, runs)
+	if ctx.Err() == nil && !slices.Contains(selected, false) {
+		unused(sink, report.Suppressions)
+	}
 	if broken != nil {
 		return report, errors.Join(append(errs, broken)...)
 	}
 	report.Manifest = merged(rec, runs, sw)
-	if sealed.commit != nil {
+	partial := in.Prune || len(in.Patterns) > 0 || slices.Contains(selected, false)
+	if sealed.commit != nil && !partial {
 		errs = append(errs, sealed.write(ctx, report.Manifest, runs, &report.Stats))
 	} else {
 		errs = append(errs, commitRecord(ctx, rec, runs, sw, in.Dry, report.Manifest))
@@ -284,28 +482,20 @@ func (r *record) generator(path, fallback string) string {
 	return fallback
 }
 
-// begin opens the composition's ledger and reads the previous record:
-// the documents of its manifest, joined. A composition that declares no
-// output, or no ledger, reads the empty record. A record that does not
-// read is reported and read as empty, so the run removes nothing. A
-// ledger that fails to open is a returned error, because nothing in
-// the source causes it.
-func (w *Workspace) begin(ctx context.Context, sink *diag.Sink) (*record, error) {
+// begin reads the previous record from the composition's ledger, nil
+// where the composition keeps none: the documents of its manifest,
+// joined. A composition without a ledger reads the empty record. A record
+// that does not read is reported and read as empty, so the run removes
+// nothing.
+func (w *Workspace) begin(ctx context.Context, sink *diag.Sink, l ledger.Ledger) *record {
 	rec := &record{
 		previous:  manifest.Manifest{Version: manifest.Version},
 		byPlan:    map[string][]manifest.Entry{},
 		byPath:    map[string]manifest.Entry{},
 		workspace: w.id,
 	}
-	if w.ledger == nil || w.open == nil {
-		return rec, nil
-	}
-	l, err := w.ledger()
-	if err != nil {
-		return nil, fmt.Errorf("workspace: open the ledger: %w", err)
-	}
 	if l == nil {
-		return nil, errors.New("workspace: the ledger's open function returned (nil, nil)")
+		return rec
 	}
 	rec.ledger = l
 	if n, names := l.(named); names && rec.workspace == "" {
@@ -315,14 +505,14 @@ func (w *Workspace) begin(ctx context.Context, sink *diag.Sink) (*record, error)
 	if err != nil {
 		sink.Infof(UnreadableRecord, position.Pos{File: ledger.ManifestPath(w.brand)}, diag.PhaseLoad,
 			"the previous record does not read, so the run removes nothing: %v", err)
-		return rec, nil
+		return rec
 	}
 	rec.previous, rec.digests = previous, digests
 	for _, e := range previous.Files {
 		rec.byPlan[e.Plan] = append(rec.byPlan[e.Plan], e)
 		rec.byPath[e.Path] = e
 	}
-	return rec, nil
+	return rec
 }
 
 // load returns the graph the run works on, sealed: the caller's, or
@@ -418,15 +608,19 @@ func (w *Workspace) annotateRun(
 }
 
 // stopped returns the report of a frame that stopped before the plans
-// committed: every plan is cancelled where the context ended, and
-// failed otherwise.
-func (w *Workspace) stopped(ctx context.Context, report *Report, err error) (*Report, error) {
+// committed. A plan that selected leaves out is skipped. Every other plan
+// is cancelled where the context ended, and failed otherwise.
+func (w *Workspace) stopped(ctx context.Context, report *Report, selected []bool, err error) (*Report, error) {
 	status := PlanFailed
 	if ctx.Err() != nil {
 		status = PlanCancelled
 	}
 	for i := range w.plans {
-		report.Plans = append(report.Plans, PlanReport{Name: w.plans[i].name, Status: status})
+		pr := PlanReport{Name: w.plans[i].name, Status: status}
+		if len(selected) > 0 && !selected[i] {
+			pr.Status = PlanSkipped
+		}
+		report.Plans = append(report.Plans, pr)
 	}
 	return report, errors.Join(err, failure(report.Sink))
 }

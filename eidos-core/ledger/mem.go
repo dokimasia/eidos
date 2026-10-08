@@ -26,13 +26,15 @@ import (
 //
 // # Concurrency
 //
-// A Mem is safe for concurrent use.
+// A Mem is safe for concurrent use, and its lock admits one holder at a
+// time.
 //
 // # Allocation contract
 //
 // [Mem.Write] and [Mem.Put] copy the bytes they store, and [Mem.Read]
 // returns a copy, so neither the caller nor the run changes a blob after
-// it is stored. [Mem.List] allocates its result.
+// it is stored. [Mem.List] allocates its result, and [Mem.Lock] the
+// holder's record and the release.
 type Mem struct {
 	mu    sync.Mutex
 	blobs map[string]memBlob
@@ -40,6 +42,9 @@ type Mem struct {
 	clock int64
 	// writes counts the calls to Write and Put that stored a blob.
 	writes int
+	// holder is the record of the lock's holder, and nil while no holder
+	// has the lock.
+	holder *Holder
 }
 
 // memBlob is one stored blob and the tick it was last written or
@@ -49,10 +54,40 @@ type memBlob struct {
 	tick int64
 }
 
-var _ Ledger = (*Mem)(nil)
+var (
+	_ Ledger = (*Mem)(nil)
+	_ Locker = (*Mem)(nil)
+)
 
 // NewMem returns an empty ledger in memory.
 func NewMem() *Mem { return &Mem{blobs: map[string]memBlob{}} }
+
+// Lock takes the ledger's lock for h within the process, so a test
+// exercises two runs that contend for one record. The release returns the
+// lock once, and a second call of it does nothing.
+//
+// Error modes: a *[LockedError], which wraps [ErrLocked] and names the
+// holder, where another holder has the lock, and the context's error.
+func (l *Mem) Lock(ctx context.Context, h Holder) (func() error, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.holder != nil {
+		return nil, &LockedError{Holder: *l.holder}
+	}
+	taken := &h
+	l.holder = taken
+	return func() error {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if l.holder == taken {
+			l.holder = nil
+		}
+		return nil
+	}, nil
+}
 
 // Read returns a copy of a blob.
 //

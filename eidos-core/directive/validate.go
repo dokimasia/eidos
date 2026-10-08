@@ -47,13 +47,19 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 // formatter that moves the shaped lines, as gofmt does, reorders the
 // instances and their numbering.
 //
-// keys resolves ResolveMetadataKey params. resolve binds every
-// other reference kind, and a nil resolver leaves those spellings
-// unbound. Validation of one subject is independent of every other,
-// so a caller validates subjects in parallel: the sink is safe for
-// concurrent use, and the resolver is called from every goroutine.
-// Validate refuses an unsealed registry outright, because that is a
-// defect in the composition, not in a carrier.
+// An instance of a directive that its schema deprecates, and an instance
+// that writes a param that its schema deprecates, reports a Warning under
+// [DeprecatedDirective] that states the schema's rewrite, and validates
+// as before.
+//
+// keys resolves ResolveMetadataKey params, and a ResolveDiagnosticCode
+// param resolves against the codes that [diag.MustRegister] registered.
+// resolve binds every other reference kind, and a nil resolver leaves
+// those spellings unbound. Validation of one subject is independent of
+// every other, so a caller validates subjects in parallel: the sink is
+// safe for concurrent use, and the resolver is called from every
+// goroutine. Validate refuses an unsealed registry outright, because that
+// is a defect in the composition, not in a carrier.
 //
 // # Allocation contract
 //
@@ -253,6 +259,21 @@ func (v *validator) reportRelated(
 	})
 }
 
+// deprecated warns under [DeprecatedDirective] at the instance under
+// validation where its schema deprecates the directive name, for an empty
+// key, or the param key, and states the rewrite. It reports nothing for
+// an empty rewrite.
+func (v *validator) deprecated(name Name, key ParamKey, rewrite string) {
+	if rewrite == "" {
+		return
+	}
+	if key == "" {
+		v.sink.Warnf(DeprecatedDirective, v.at, diag.PhaseFreeze, "%s is deprecated: %s", name, rewrite)
+		return
+	}
+	v.sink.Warnf(DeprecatedDirective, v.at, diag.PhaseFreeze, "%s param %s is deprecated: %s", name, key, rewrite)
+}
+
 // mixedCarriers warns where the instances of one repeatable
 // directive mix carriers in the tool-directive shape with other
 // carriers. It reports once, at the first instance whose shape
@@ -297,6 +318,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			"%s does not accept the negated form: its schema declares no negation", canonical)
 		return Directive{}, Schema{}, false
 	}
+	v.deprecated(canonical, "", schema.Deprecated)
 
 	d := Directive{Name: canonical, Params: map[ParamKey]Value{}, Pos: raw.Pos, Negated: raw.Negated}
 	ok := true
@@ -318,6 +340,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 				ok = false
 				continue
 			}
+			v.deprecated(d.Name, spec.Key, spec.Deprecated)
 			d.Args = append(d.Args, value)
 			continue
 		}
@@ -360,6 +383,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			ok = false
 			continue
 		}
+		v.deprecated(d.Name, key, spec.Deprecated)
 		d.Params[key] = value
 	}
 
@@ -491,6 +515,9 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 			name, spec.Key, spellTrue, spellFalse, raw.Text)
 		return Value{}, false
 	case TypeReference:
+		if spec.Resolution == ResolveDiagnosticCode {
+			return v.code(name, spec, raw.Text)
+		}
 		if spec.Resolution == ResolveMetadataKey {
 			if !v.metadataResolves(raw.Text) {
 				v.report(UnknownMetadataKey, v.at,
@@ -514,6 +541,23 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 	}
 	v.report(TypeMismatch, v.at, "%s param %s has no type", name, spec.Key)
 	return Value{}, false
+}
+
+// code types a reference to a diagnostic code: a spelling that
+// diag.ParseCode reads, of a code that [diag.MustRegister] registered.
+// Any other spelling reports [UnknownCode] and fails the instance.
+func (v *validator) code(name Name, spec ParamSpec, spelling string) (Value, bool) {
+	c, err := diag.ParseCode(spelling)
+	if err != nil {
+		v.report(UnknownCode, v.at, "%s param %s names %q, which is not a diagnostic code: %v",
+			name, spec.Key, spelling, err)
+		return Value{}, false
+	}
+	if _, registered := diag.Kernel().Meaning(c); !registered {
+		v.report(UnknownCode, v.at, "%s param %s names %s, which no package registered", name, spec.Key, c)
+		return Value{}, false
+	}
+	return Value{Kind: TypeReference, Ref: spelling}, true
 }
 
 // metadataResolves reports whether a spelling names a registered

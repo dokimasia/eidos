@@ -82,6 +82,14 @@ func TestKernel(t *testing.T) {
 			assert.True(t, off.Required, "a suppression without a code suppresses nothing")
 		})
 
+		t.Run("returns a diag schema whose code resolves against the registered codes", func(t *testing.T) {
+			t.Parallel()
+
+			off := kernelSchema(t, directive.KernelDiag).Params[0]
+			assert.Equal(t, off.Resolution, directive.ResolveDiagnosticCode,
+				"resolved against the registered codes, so a typo is a validation Error")
+		})
+
 		t.Run("returns a skip schema of one instance per subject", func(t *testing.T) {
 			t.Parallel()
 
@@ -154,7 +162,7 @@ func BenchmarkKernel(b *testing.B) {
 	})
 }
 
-// kernelSchema returns the kernel schema carrying a name, and fails the
+// kernelSchema returns the kernel schema of a name, and fails the
 // test where none does.
 func kernelSchema(tb assert.TB, name directive.Name) directive.Schema {
 	tb.Helper()

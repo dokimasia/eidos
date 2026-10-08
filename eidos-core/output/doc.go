@@ -71,8 +71,12 @@
 // check [Contract.Verify] makes. It refuses a hand-written file,
 // another brand's output and an output edited since stamping, and
 // leaves each as it is, so a file that changed between Prepare and
-// Commit is refused at the commit. A staged removal deletes only the
-// brand's intact output and leaves any other file in place. The sink
+// Commit is refused at the commit. A sink that implements
+// [Overwriter], as the disk, memory and tee sinks do, writes over the
+// drifted files, the foreign files or both once [Overwriter.Overwrite]
+// allowed their verdicts, and never over a directory. A staged removal
+// deletes only the brand's intact output and leaves any other file in
+// place. The sink
 // resolves every path inside a root opened once, so a symlink
 // pointing out of the tree does not escape it: the jail is the
 // operating system's, and the path check at staging is only the

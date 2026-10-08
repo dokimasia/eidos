@@ -57,6 +57,37 @@ func TestMem(t *testing.T) {
 		})
 	})
 
+	t.Run("Overwrite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("leaves the commit into the empty destination a creation", func(t *testing.T) {
+			t.Parallel()
+
+			m := output.NewMem()
+			assert.NoError(t, m.Overwrite(output.FoundDrifted, output.FoundForeign), "both verdicts are allowed")
+			assert.NoError(t, m.Write(storeFile, []byte(firstBody)), "the file stages")
+			got, err := m.Commit()
+			assert.NoError(t, err, "the commit runs")
+			assert.Length(t, got, 1, "one record for the file")
+			assert.Equal(t, got[0].Action, output.ActionCreated, "the empty destination had no file")
+		})
+
+		t.Run("returns an error for FoundIntact", func(t *testing.T) {
+			t.Parallel()
+
+			assert.HasError(t, output.NewMem().Overwrite(output.FoundIntact), "the verdict is refused")
+		})
+
+		t.Run("returns ErrFinished after the commit", func(t *testing.T) {
+			t.Parallel()
+
+			m := output.NewMem()
+			_, err := m.Commit()
+			assert.NoError(t, err, "the commit runs")
+			assert.ErrorIs(t, m.Overwrite(output.FoundDrifted), output.ErrFinished, "a sink serves one staging")
+		})
+	})
+
 	t.Run("Commit", func(t *testing.T) {
 		t.Parallel()
 

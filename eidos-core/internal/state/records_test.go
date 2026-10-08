@@ -667,6 +667,59 @@ func TestRecords(t *testing.T) {
 			})
 		})
 
+		t.Run("Checks", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns the record of the reference's check", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, readsOf(t, []symbol.Identity{siblingSubject}), []diag.Diag{recordedDiag})
+				})
+				got, err := g.Phases(t.Context()).Checks(state.CheckRef(checkID))
+				assert.NoError(t, err, "the checks table reads")
+				assert.Equal(t, got, []state.Check{{
+					Name:     checkID,
+					Reads:    sortedEdges(state.DeclarationEdge(siblingSubject), state.FindingsEdge),
+					Findings: []diag.Diag{recordedDiag},
+				}}, "Checks returns the whole record")
+			})
+
+			t.Run("returns every entry of a shared row in row order", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.CheckRef(checkID)
+				shared := sharedRow(t, state.TableChecks, ref.ID,
+					func(r *state.Recorder) { r.Lane("").Check("other", nil, nil) },
+					func(r *state.Recorder) { r.Lane("").Check(checkID, nil, nil) })
+				got, err := shared.Phases(t.Context()).Checks(ref)
+				assert.NoError(t, err, "the shared row reads")
+				assert.Length(t, got, 2, "the row lists both entries")
+				expect.Equal(t, got[0].Name, plugin.ID("other"), "the other check's entry comes first")
+				expect.Equal(t, got[1].Name, checkID, "the check's entry comes second")
+			})
+
+			t.Run("returns nothing for a reference that the table does not contain", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, nil, nil)
+				})
+				got, err := g.Phases(t.Context()).Checks(state.CheckRef("other"))
+				assert.NoError(t, err, "the checks table reads")
+				assert.Empty(t, got, "no other check was called")
+			})
+
+			t.Run("returns ErrDamaged for an entry that does not decode", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.CheckRef(checkID)
+				g := putRows(t, state.TableChecks, state.Row{Key: idKey(ref.ID), Value: []byte{1, 1, 0x80}})
+				_, err := g.Phases(t.Context()).Checks(ref)
+				assert.ErrorIs(t, err, state.ErrDamaged, "the entry's name is cut short")
+			})
+		})
+
 		t.Run("Readers", func(t *testing.T) {
 			t.Parallel()
 

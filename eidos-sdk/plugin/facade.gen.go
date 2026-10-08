@@ -890,6 +890,11 @@ func ValidStoreName(name string) bool {
 // through it.
 type StoreFS = core.StoreFS
 
+// StoreLocator is a frontend that locates the stores that its dependency
+// units read, such as the module cache of Go. A command line passes the
+// stores of every locator of a composition to a run.
+type StoreLocator = core.StoreLocator
+
 // ReadFile returns the bytes of one file: a workspace path from the
 // tree itself, and a qualified path from the store it names, which the
 // tree provides as a [StoreFS]. A qualified path whose store the tree

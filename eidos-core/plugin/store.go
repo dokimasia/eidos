@@ -57,6 +57,19 @@ type StoreFS interface {
 	Store(name string) (fs.FS, bool)
 }
 
+// StoreLocator is a frontend that locates the stores that its dependency
+// units read, such as the module cache of Go. A command line passes the
+// stores of every locator of a composition to a run.
+type StoreLocator interface {
+	// Stores returns the stores of the frontend under their names, rooted
+	// where the toolchain of the language finds them. It reads the
+	// environment through getenv.
+	//
+	// Error modes: Stores returns an error for a root that neither the
+	// environment nor the rules of the toolchain locate.
+	Stores(getenv func(key string) string) (map[string]fs.FS, error)
+}
+
 // ReadFile returns the bytes of one file: a workspace path from the
 // tree itself, and a qualified path from the store it names, which the
 // tree provides as a [StoreFS]. A qualified path whose store the tree

@@ -32,8 +32,9 @@ const (
 // digest matches its body, which [Contract.Verify] checks the same
 // way. A hand-written file, another brand's output and an output
 // edited since it was stamped are refused, naming the path, and
-// remain as they are. A staged removal deletes only the brand's
-// intact output, and leaves any other file in place.
+// remain as they are, unless [Disk.Overwrite] allowed their verdict. A
+// staged removal deletes only the brand's intact output, and leaves any
+// other file in place.
 //
 // # Concurrency
 //
@@ -52,7 +53,10 @@ type Disk struct {
 	brand Brand
 }
 
-var _ Sink = (*Disk)(nil)
+var (
+	_ Sink       = (*Disk)(nil)
+	_ Overwriter = (*Disk)(nil)
+)
 
 // NewDisk opens a sink over an existing directory that writes as
 // one brand. It refuses a brand outside [Brand.Valid], because the
@@ -68,7 +72,7 @@ var _ Sink = (*Disk)(nil)
 func NewDisk(root string, brand Brand) (*Disk, error) {
 	if !brand.Valid() {
 		return nil, fmt.Errorf(
-			"output: %q is not a brand: a lowercase letter, then lowercase letters, digits and hyphens",
+			"output: %q is not a brand: use a lowercase letter followed by lowercase letters, digits and hyphens",
 			string(brand),
 		)
 	}
@@ -78,6 +82,12 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 	}
 	return &Disk{root: r, brand: brand}, nil
 }
+
+// Overwrite lets Commit write over the drifted files, the foreign files
+// or both, as [Overwriter] states, and allocates nothing.
+//
+// Error modes are the ones [Overwriter.Overwrite] lists.
+func (d *Disk) Overwrite(found ...Found) error { return d.allow(found) }
 
 // Write stages one file. Nothing is written to the tree until Commit.
 // It keeps body without copying it, so the caller leaves body unchanged
@@ -138,14 +148,16 @@ func (d *Disk) Prepare() ([]Change, error) {
 
 // Commit writes and removes every staged path, in path order:
 // identical bytes leave the file and its mtime untouched, a file the
-// brand cannot prove it wrote is refused, and anything else is written
-// to a staging file, synced, and renamed over the target, so a reader
-// sees the old file or the new one and never half of either. A
-// removal deletes the brand's intact output and leaves any other file.
-// A path that fails is one error and the rest still commit.
+// brand cannot prove it wrote is refused unless [Disk.Overwrite]
+// allowed its verdict, and anything else is written to a staging file,
+// synced, and renamed over the target, so a reader sees the old file or
+// the new one and never half of either. A removal deletes the brand's
+// intact output and leaves any other file. A path that fails is one
+// error and the rest still commit.
 //
-// Error modes: a file the brand cannot prove it wrote, a path it cannot
-// read, write or remove, each joined into the returned error, and
+// Error modes: a file the brand cannot prove it wrote whose verdict
+// Overwrite did not allow, a path it cannot read, write or remove, such
+// as a directory, each joined into the returned error, and
 // [ErrFinished] after Commit or Discard.
 //
 // # Allocation contract
@@ -201,7 +213,8 @@ func (d *Disk) commit(at string, body []byte) (Written, error) {
 	case err == nil && bytes.Equal(existing, body):
 		return Written{Path: at, Action: ActionUnchanged, Hash: digest(body)}, nil
 	case err == nil:
-		if _, refused := verify(existing, d.brand); refused != nil {
+		_, refused := verify(existing, d.brand)
+		if refused != nil && d.overwrite&(1<<ownership(existing, d.brand)) == 0 {
 			return Written{}, fmt.Errorf("output: refusing to overwrite %q: %w", at, refused)
 		}
 		action = ActionUpdated

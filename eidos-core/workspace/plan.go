@@ -30,8 +30,10 @@ type planRun struct {
 	plan *compiledPlan
 	emit *plugin.Emit
 	// sink takes the plan's own findings, which the run merges into
-	// the report's sink in composition order.
-	sink *diag.Sink
+	// the report's sink in composition order. It is under the run's
+	// policy, which is the policy of every sink the plan's run opens.
+	sink   *diag.Sink
+	policy policy
 	// done is closed when the plan's render ends, whatever its outcome.
 	done chan struct{}
 	// err is a returned error: a generator's, the settle's, the
@@ -39,6 +41,9 @@ type planRun struct {
 	err error
 	// cancelled reports a plan the run's cancellation stopped.
 	cancelled bool
+	// skipped reports a plan that [Input.Plans] left out, which does not
+	// run. Its kept are its previous entries, which the run keeps.
+	skipped bool
 	// upstream is the first plan this one depends on that failed
 	// before this one generated, nil where every one of them rendered.
 	// A plan with an upstream generates nothing.
@@ -75,6 +80,12 @@ type planRun struct {
 	out output.Sink
 	// changes are what the preparation found, in path order.
 	changes []output.Change
+	// withheld are the changes that the run's narrowing does not commit,
+	// as a preparation of their own found them, in path order.
+	withheld []output.Change
+	// refused are the writes that the run refused because the path has a
+	// drifted or a foreign file, in path order.
+	refused []output.Change
 	// stale are the previous entries the plan staged for removal, by
 	// path.
 	stale map[string]manifest.Entry
@@ -113,19 +124,28 @@ func (p *planRun) cause() (position.Pos, bool) {
 // its own, where rec is set. On a warm run, ws is what the plans read of
 // the run so far, and a plan that writes output executes the groups that
 // the run's changes make dirty, as [Workspace.runWarm] states. A cold run
-// passes a nil ws.
+// passes a nil ws. A plan that selected leaves out is skipped and keeps
+// its previous entries, and a nil selected runs every plan. Each plan's
+// findings arrive in a sink under pol.
 func (w *Workspace) generateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree,
-	rec *state.Recorder, ws *warmState,
+	rec *state.Recorder, ws *warmState, selected []bool, previous map[string][]manifest.Entry, pol policy,
 ) []*planRun {
 	runs := make([]*planRun, len(w.plans))
 	for i := range w.plans {
 		runs[i] = &planRun{
-			plan: &w.plans[i], emit: plugin.NewEmit(), sink: diag.NewSink(), done: make(chan struct{}),
+			plan: &w.plans[i], emit: plugin.NewEmit(), sink: pol.sink(), policy: pol, done: make(chan struct{}),
+		}
+		if len(selected) > 0 && !selected[i] {
+			runs[i].skipped, runs[i].kept = true, previous[w.plans[i].name]
+			close(runs[i].done)
 		}
 	}
 	var wg sync.WaitGroup
 	for _, p := range runs {
+		if p.skipped {
+			continue
+		}
 		wg.Go(func() {
 			defer close(p.done)
 			deps, ready := p.await(runs)
@@ -348,8 +368,13 @@ func (w *Workspace) generate(
 // of its own and prepares it. A plan removes only the stale paths no
 // plan routes a file to in this run and no plan keeps, so a file that
 // moved between plans is written by its new plan and never removed by
-// its old one.
-func (w *Workspace) stageAll(ctx context.Context, runs []*planRun, rec *record) {
+// its old one. Each sink that implements [output.Overwriter] writes over
+// the files of the allowed verdicts. A plan stages the changes that the
+// narrowing withholds into a second sink, which it prepares and discards.
+// A skipped plan stages nothing.
+func (w *Workspace) stageAll(
+	ctx context.Context, runs []*planRun, rec *record, allowed []output.Found, n narrowing,
+) {
 	routed := map[string]struct{}{}
 	for _, p := range runs {
 		for _, f := range p.files {
@@ -361,31 +386,59 @@ func (w *Workspace) stageAll(ctx context.Context, runs []*planRun, rec *record) 
 	}
 	var wg sync.WaitGroup
 	for _, p := range runs {
-		if p.failed() || p.cancelled || p.plan.contract == nil {
+		if p.failed() || p.cancelled || p.skipped || p.plan.contract == nil {
 			continue
 		}
-		wg.Go(func() { w.stage(ctx, p, rec, routed) })
+		wg.Go(func() { w.stage(ctx, p, rec, routed, allowed, n) })
 	}
 	wg.Wait()
 }
 
-// stage opens one plan's sink, writes every file the plan rendered,
-// stages the removal of its stale entries, prepares, and reports what
-// the preparation found. A plan whose sink refuses, a plan the
-// preparation fails, and a plan the run cancels before its preparation
-// discards its staging.
-func (w *Workspace) stage(ctx context.Context, p *planRun, rec *record, routed map[string]struct{}) {
+// stage opens one plan's sink, lets it write over the files of the
+// allowed verdicts where it implements [output.Overwriter], writes every
+// file the plan rendered, stages the removal of its stale entries,
+// prepares, and reports what the preparation found. Where the narrowing
+// withholds a change, it stages that change into a second sink instead,
+// which it prepares for the plan's withheld changes and discards. A plan
+// whose sink refuses, a plan the preparation fails, and a plan the run
+// cancels before its preparation discards its staging.
+func (w *Workspace) stage(
+	ctx context.Context, p *planRun, rec *record, routed map[string]struct{}, allowed []output.Found,
+	n narrowing,
+) {
 	out, err := w.openSink()
 	if err != nil {
 		p.err = err
 		return
 	}
-	if err = p.stageInto(out, rec.byPlan[p.plan.name], routed); err != nil {
-		p.err = discarding(out, err)
-		return
+	var overwritten []output.Found
+	if o, overwrites := out.(output.Overwriter); overwrites && len(allowed) > 0 {
+		if err = o.Overwrite(allowed...); err != nil {
+			p.err = discarding(out, fmt.Errorf("let the output write over drifted or foreign files: %w", err))
+			return
+		}
+		overwritten = allowed
 	}
-	if err = ctx.Err(); err != nil {
-		p.cancelled, p.err = true, discarding(out, err)
+	later, withholding := out, n.scope != nil || n.prune
+	if withholding {
+		if later, err = w.openSink(); err != nil {
+			p.err = discarding(out, err)
+			return
+		}
+	}
+	err = p.stageInto(out, later, rec.byPlan[p.plan.name], routed, n)
+	if err == nil {
+		err = ctx.Err()
+		p.cancelled = err != nil
+	}
+	switch {
+	case withholding && err != nil:
+		err = discarding(later, err)
+	case withholding:
+		err = p.withhold(later)
+	}
+	if err != nil {
+		p.err = discarding(out, err)
 		return
 	}
 	changes, err := out.Prepare()
@@ -394,7 +447,7 @@ func (w *Workspace) stage(ctx context.Context, p *planRun, rec *record, routed m
 		return
 	}
 	p.changes = changes
-	w.verdicts(p, rec)
+	w.verdicts(p, rec, overwritten)
 	if p.sink.Failed() {
 		if err := out.Discard(); err != nil {
 			p.err = fmt.Errorf("discard the output: %w", err)
@@ -406,15 +459,29 @@ func (w *Workspace) stage(ctx context.Context, p *planRun, rec *record, routed m
 
 // stageInto writes the plan's files into its sink and stages the
 // removal of every previous entry of the plan that no plan routes a
-// file to in this run.
-func (p *planRun) stageInto(out output.Sink, previous []manifest.Entry, routed map[string]struct{}) error {
+// file to in this run. A write and a removal that the narrowing
+// withholds go to later instead, which is out itself where the narrowing
+// withholds nothing.
+func (p *planRun) stageInto(
+	out, later output.Sink, previous []manifest.Entry, routed map[string]struct{}, n narrowing,
+) error {
 	for _, f := range p.files {
-		if err := out.Write(f.path, f.body); err != nil {
+		to := out
+		if !n.writes(f.path, f.sources) {
+			to = later
+		}
+		if err := to.Write(f.path, f.body); err != nil {
 			return fmt.Errorf("stage %s: %w", f.path, err)
 		}
 	}
 	for _, e := range previous {
 		if _, still := routed[e.Path]; still {
+			continue
+		}
+		if !n.removes(e, p.plan) {
+			if err := later.Delete(e.Path); err != nil {
+				return fmt.Errorf("stage the removal of %s: %w", e.Path, err)
+			}
 			continue
 		}
 		if err := out.Delete(e.Path); err != nil {
@@ -428,12 +495,31 @@ func (p *planRun) stageInto(out output.Sink, previous []manifest.Entry, routed m
 	return nil
 }
 
+// withhold prepares the sink of the changes that the narrowing withholds,
+// keeps what the preparation found as the plan's withheld changes, and
+// discards the sink.
+//
+// Error modes: the preparation's error and the discard's, wrapped.
+func (p *planRun) withhold(later output.Sink) error {
+	changes, err := later.Prepare()
+	if err != nil {
+		return discarding(later, fmt.Errorf("prepare the withheld changes: %w", err))
+	}
+	p.withheld = changes
+	if err := later.Discard(); err != nil {
+		return fmt.Errorf("discard the withheld changes: %w", err)
+	}
+	return nil
+}
+
 // verdicts reports what the preparation found on the plan's paths. A
-// drifted or foreign file where the plan writes fails the plan, and a
-// drifted or foreign file where it removes a stale output remains
-// under a warning. A drift finding names the plan the record lists for
-// the file, and the plan itself where the record lists no file there.
-func (w *Workspace) verdicts(p *planRun, rec *record) {
+// drifted or foreign file where the plan writes fails the plan, unless
+// the sink writes over the files of that verdict, and a drifted or
+// foreign file where it removes a stale output remains under a warning.
+// The plan keeps each write that it refuses in its refused changes. A
+// drift finding names the plan the record lists for the file, and the
+// plan itself where the record lists no file there.
+func (w *Workspace) verdicts(p *planRun, rec *record, overwritten []output.Found) {
 	written := make(map[string]*stagedFile, len(p.files))
 	for i := range p.files {
 		written[p.files[i].path] = &p.files[i]
@@ -441,11 +527,15 @@ func (w *Workspace) verdicts(p *planRun, rec *record) {
 	for _, c := range p.changes {
 		f, write := written[c.Path]
 		switch {
+		case write && slices.Contains(overwritten, c.Found):
+			// The sink writes over the file, which the run's input allowed.
 		case write && c.Found == output.FoundDrifted:
+			p.refused = append(p.refused, c)
 			p.sink.Errorf(DriftedOutput, f.at, diag.PhaseClose,
 				"%s was edited since plan %q generated it, and the run does not overwrite it: "+
 					"move the edit into the source, or revert it", c.Path, rec.generator(c.Path, p.plan.name))
 		case write && c.Found == output.FoundForeign:
+			p.refused = append(p.refused, c)
 			p.sink.Errorf(ForeignFile, f.at, diag.PhaseClose,
 				"%s is a file the %s brand did not write, and plan %q routes %s there",
 				c.Path, w.brand, p.plan.name, describe(f.first))

@@ -150,7 +150,7 @@ func TestStats(t *testing.T) {
 			t.Parallel()
 
 			report, _, _, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
-				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag("tst-0007", 4)}),
+				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag(suppressible, 4)}),
 					"the struct's instance attaches before the seal")
 				assert.NoError(t, g.AttachDirectives(coretest.PackageID(coretest.StorePath),
 					[]directive.Raw{rawBareMeta(9)}), "the package's instance attaches before the seal")
@@ -163,7 +163,7 @@ func TestStats(t *testing.T) {
 			t.Parallel()
 
 			report, _, _, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
-				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag("tst-0007", 4)}),
+				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag(suppressible, 4)}),
 					"the struct's instance attaches before the seal")
 				ghost := coretest.Struct("example.com/elsewhere", "Ghost")
 				assert.NoError(t, g.AttachDirectives(ghost.Identity(), []directive.Raw{rawBareMeta(9)}),

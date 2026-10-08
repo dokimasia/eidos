@@ -24,7 +24,7 @@ const (
 	// text in the source language.
 	KernelSample Name = "sample"
 	// KernelWitness states a concrete type per type parameter of
-	// the declaration it sits on; its schema is open, one key per
+	// the declaration it annotates; its schema is open, one key per
 	// parameter.
 	KernelWitness Name = "witness"
 )
@@ -57,7 +57,7 @@ const (
 // known.
 const openKey ParamKey = "<open>"
 
-// Kernel returns the kernel-owned schemas: meta, out, diag, skip,
+// Kernel returns the kernel's own schemas: meta, out, diag, skip,
 // sample and witness. Their semantics stay with their owners; what
 // registers here is the spelling and its validation.
 func Kernel() []Schema {
@@ -91,7 +91,7 @@ func Kernel() []Schema {
 			Name: KernelDiag,
 			Params: []ParamSpec{
 				{
-					Key: DiagOff, Type: TypeString, Required: true,
+					Key: DiagOff, Type: TypeReference, Resolution: ResolveDiagnosticCode, Required: true,
 					Doc: "the diagnostic code suppressed at this declaration",
 				},
 			},
