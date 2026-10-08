@@ -91,13 +91,16 @@ func TestRestore(t *testing.T) {
 		t.Run("returns the recorded winner of each key of a restored bag", func(t *testing.T) {
 			t.Parallel()
 
-			f, role, flag := restored(t, &recordedSource{claims: map[symbol.Identity][]meta.StoredClaim{
-				subject: {
-					{Key: "shape.role", Claim: by("beta", 1), Value: "reader"},
-					{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"},
-					{Key: "shape.comparable", Claim: by("alpha", 2), Value: true},
+			f, role, flag := restored(t, &recordedSource{
+				claims: map[symbol.Identity][]meta.StoredClaim{
+					subject: {
+						{Key: "shape.role", Claim: by("beta", 1), Value: "reader"},
+						{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"},
+						{Key: "shape.comparable", Claim: by("alpha", 2), Value: true},
+					},
 				},
-			}})
+				present: map[meta.KeyName][]symbol.Identity{"shape.role": {subject}, "shape.comparable": {subject}},
+			})
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the recorded fact reads present")
 			assert.Equal(t, got, "writer", "under the claim that ranks first")
@@ -175,12 +178,27 @@ func TestRestore(t *testing.T) {
 			assert.Empty(t, src.asked, "and the source is not asked for its presence")
 		})
 
-		t.Run("restores each bag once under concurrent readers", func(t *testing.T) {
+		t.Run("reads a fact absent without restoring a bag that the presence does not list", func(t *testing.T) {
 			t.Parallel()
 
 			src := &recordedSource{claims: map[symbol.Identity][]meta.StoredClaim{
-				subject: {{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"}},
+				subject: {{Key: "shape.role", Claim: dropBy("defaults", 1), Drop: true}},
 			}}
+			f, role, _ := restored(t, src)
+			_, held := meta.Get(f, subject, role)
+			assert.False(t, held, "the dropped fact reads absent")
+			assert.Empty(t, src.reads, "and no bag is read to read it")
+		})
+
+		t.Run("restores each bag once under concurrent readers", func(t *testing.T) {
+			t.Parallel()
+
+			src := &recordedSource{
+				claims: map[symbol.Identity][]meta.StoredClaim{
+					subject: {{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"}},
+				},
+				present: map[meta.KeyName][]symbol.Identity{"shape.role": {subject}},
+			}
 			f, role, _ := restored(t, src)
 			outcomes := history.Concurrently(8, time.Minute, func(int) (any, error) {
 				_, held := meta.Get(f, subject, role)
@@ -196,7 +214,10 @@ func TestRestore(t *testing.T) {
 		t.Run("reports Damaged for claims that do not read", func(t *testing.T) {
 			t.Parallel()
 
-			f, role, _ := restored(t, &recordedSource{claimsErr: errSegment})
+			f, role, _ := restored(t, &recordedSource{
+				claimsErr: errSegment,
+				present:   map[meta.KeyName][]symbol.Identity{"shape.role": {subject}},
+			})
 			_, held := meta.Get(f, subject, role)
 			assert.False(t, held, "the bag reads empty")
 			assert.ErrorIs(t, f.Damaged(), errSegment, "and the failure is kept")
@@ -213,12 +234,15 @@ func TestRestore(t *testing.T) {
 		t.Run("reports Damaged for a claim under a key nothing registered", func(t *testing.T) {
 			t.Parallel()
 
-			f, role, _ := restored(t, &recordedSource{claims: map[symbol.Identity][]meta.StoredClaim{
-				subject: {
-					{Key: "shape.gone", Claim: by("alpha", 1), Value: "writer"},
-					{Key: "shape.role", Claim: by("alpha", 2), Value: "reader"},
+			f, role, _ := restored(t, &recordedSource{
+				claims: map[symbol.Identity][]meta.StoredClaim{
+					subject: {
+						{Key: "shape.gone", Claim: by("alpha", 1), Value: "writer"},
+						{Key: "shape.role", Claim: by("alpha", 2), Value: "reader"},
+					},
 				},
-			}})
+				present: map[meta.KeyName][]symbol.Identity{"shape.role": {subject}},
+			})
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the claims that restore remain")
 			assert.Equal(t, got, "reader", "with their value")
@@ -228,9 +252,12 @@ func TestRestore(t *testing.T) {
 		t.Run("reports Damaged for a value of another type than its key's", func(t *testing.T) {
 			t.Parallel()
 
-			f, _, flag := restored(t, &recordedSource{claims: map[symbol.Identity][]meta.StoredClaim{
-				subject: {{Key: "shape.comparable", Claim: by("alpha", 1), Value: "true"}},
-			}})
+			f, _, flag := restored(t, &recordedSource{
+				claims: map[symbol.Identity][]meta.StoredClaim{
+					subject: {{Key: "shape.comparable", Claim: by("alpha", 1), Value: "true"}},
+				},
+				present: map[meta.KeyName][]symbol.Identity{"shape.comparable": {subject}},
+			})
 			_, held := meta.Get(f, subject, flag)
 			assert.False(t, held, "the claim does not restore")
 			assert.HasError(t, f.Damaged(), "and the store is damaged")
@@ -368,23 +395,29 @@ func TestRestore(t *testing.T) {
 			src := &recordedSource{claims: bagsOf(f), present: map[meta.KeyName][]symbol.Identity{}}
 			assert.Empty(t, bagsOf(meta.Restore(r, src)), "a restored store yields no bag before a touch")
 			again := meta.Restore(r, src)
-			_, _ = meta.Get(again, subject, role)
+			assert.NotEmpty(t, slices.Collect(again.Claims(subject, role.ID())), "the role's claims restore the bag")
 			assert.Equal(t, bagsOf(again), bagsOf(f), "a touched bag yields the claims it restored")
 		})
 	})
 }
 
 // A restored store is built without allocating more than an empty one
-// and its presence loader in the ordinary run, which runs no benchmark.
-// The check runs alone, because the count includes every goroutine's
-// allocations.
+// and its presence loader, and a read of a fact that the recorded
+// presence leaves out allocates nothing, in the ordinary run, which runs
+// no benchmark. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestRestoreAllocs(t *testing.T) {
-	r, _, _, _ := fixture(t)
+	r, _, role, _ := fixture(t)
 	src := &recordedSource{}
 	var f *meta.Facts
 	assert.MaxAllocs(t, func() { f = meta.Restore(r, src) }, restoreAllocs,
 		"Restore allocates the store, its key table and its presence loader")
 	assert.NoError(t, f.Damaged(), "Restore returns a store that is not damaged")
+	held := true
+	assert.MaxAllocs(t, func() { _, held = meta.Get(f, subject, role) }, 0,
+		"Get allocates nothing for a fact that the recorded presence leaves out")
+	assert.False(t, held, "the fact reads absent")
+	assert.Empty(t, src.reads, "and no bag is read to read it")
 
 	stamped := storeOfBags(t, bagStore)
 	n := 0

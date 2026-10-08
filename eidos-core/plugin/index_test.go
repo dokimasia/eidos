@@ -40,7 +40,8 @@ const (
 // TestIndexAllocs checks in the ordinary run and BenchmarkIndex in a
 // benchmark run.
 const (
-	// newIndexAllocs is the index of a run without a skip or a scope.
+	// newIndexAllocs is the ceiling of the index of a run without a scope.
+	// A validated table does not add an allocation.
 	newIndexAllocs = 1
 	// scopedIndexAllocs is the index of a run whose scope admits one
 	// package: the index and the set of admitted packages with its first
@@ -50,13 +51,44 @@ const (
 	readerAllocs = 1
 )
 
-// The index is the dispatcher's routing surface: untracked and
-// scope-filtered, with the validated directive table and the skip
-// table, and the source of the tracked readers handlers read
-// through. Its filters are the visibility rule, so every one is
-// contract.
+// The index is the dispatcher's routing surface. It enumerates the
+// declarations under the run's scope without tracking the reads, reads
+// the validated directive table and its skip rulings, and returns the
+// tracked readers that handlers read through. Its filters are the
+// visibility rule, so each filter is part of the contract.
 func TestIndex(t *testing.T) {
 	t.Parallel()
+
+	t.Run("ValidatedMap", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("DirectivesOf", func(t *testing.T) {
+			t.Parallel()
+
+			g, inStore, inCache := twoPackages(t)
+			want := []directive.Directive{{Name: "stub", Instance: 0}}
+			table := plugin.ValidatedMap{inStore.ID: want}
+
+			t.Run("returns the subject's instances", func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, table.DirectivesOf(inStore.ID), want, "the map returns the subject's instances")
+			})
+
+			t.Run("returns nil for a subject that the map does not contain", func(t *testing.T) {
+				t.Parallel()
+
+				assert.Nil(t, table.DirectivesOf(inCache.ID), "the subject has no instance")
+			})
+
+			t.Run("returns the subject's instances through an index", func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, index(t, g, table, nil).DirectivesOf(inStore.ID), want,
+					"the index reads the table that it received")
+			})
+		})
+	})
 
 	t.Run("NewIndex", func(t *testing.T) {
 		t.Parallel()
@@ -234,8 +266,15 @@ func TestIndex(t *testing.T) {
 				{Name: "stub", Instance: 0},
 				{Name: "stub", Instance: 1},
 			}
-			ix := index(t, g, map[symbol.Identity][]directive.Directive{inStore.ID: want}, nil)
+			ix := index(t, g, plugin.ValidatedMap{inStore.ID: want}, nil)
 			assert.Equal(t, ix.DirectivesOf(inStore.ID), want, "the instances are the validated table's")
+		})
+
+		t.Run("returns nil for an index without a validated table", func(t *testing.T) {
+			t.Parallel()
+
+			g, inStore, _ := twoPackages(t)
+			assert.Nil(t, index(t, g, nil, nil).DirectivesOf(inStore.ID), "no instance was validated")
 		})
 	})
 
@@ -246,7 +285,7 @@ func TestIndex(t *testing.T) {
 		negatedAt := coretest.Struct(coretest.StorePath, "Negated").ID
 		setAt := coretest.Struct(coretest.StorePath, "Set").ID
 		clean := coretest.Struct(coretest.StorePath, "Clean").ID
-		validated := map[symbol.Identity][]directive.Directive{
+		validated := plugin.ValidatedMap{
 			inStore.ID: {{Name: directive.KernelSkip}},
 			inCache.ID: {{
 				Name: directive.KernelSkip,
@@ -347,23 +386,26 @@ func TestIndex(t *testing.T) {
 	})
 }
 
-// The index allocates itself and the tables a run's skips and scope
-// need, a reader allocates its handle, and the enumerations and lookups
-// a phase call makes through the index allocate nothing, with a scope
-// and without one. The check runs alone, because the count includes
-// every goroutine's allocations.
+// The index allocates itself, and the set of packages for a run with a
+// scope. A reader allocates its handle. The enumerations, lookups and
+// skip rulings that a phase call reads through the index allocate
+// nothing, with or without a scope. The check runs alone, because the
+// count includes every goroutine's allocations.
 func TestIndexAllocs(t *testing.T) {
 	g, inStore, inCache := twoPackages(t)
 	facts, key := flagged(t, inStore.ID, inCache.ID)
-	validated := map[symbol.Identity][]directive.Directive{inStore.ID: {{Name: directive.KernelSkip}}}
+	validated := plugin.ValidatedMap{inStore.ID: {{Name: directive.KernelSkip}}}
 
 	var (
 		built *plugin.Index
 		err   error
 	)
 	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, nil, nil) }, newIndexAllocs,
-		"NewIndex allocates the index of a run without a skip or a scope")
+		"NewIndex allocates the index of a run without a scope")
 	assert.NoError(t, err, "the routing surface builds")
+	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, validated, nil) }, newIndexAllocs,
+		"NewIndex allocates the index alone for a run with a skip")
+	assert.NoError(t, err, "the routing surface builds with a validated table")
 	assert.MaxAllocs(t, func() { built, err = plugin.NewIndex(g, facts, nil, storeOnly) }, scopedIndexAllocs,
 		"NewIndex allocates the set of the packages a scope admits")
 	assert.NoError(t, err, "the scoped routing surface builds")
@@ -406,6 +448,9 @@ func TestIndexAllocs(t *testing.T) {
 	}, 0, "Skipped and DirectivesOf allocate nothing")
 	assert.True(t, held, "Skipped reports the store's struct")
 	assert.Length(t, directives, 1, "DirectivesOf returns its skip")
+	assert.MaxAllocs(t, func() { directives = validated.DirectivesOf(inStore.ID) }, 0,
+		"ValidatedMap.DirectivesOf allocates nothing")
+	assert.Length(t, directives, 1, "ValidatedMap.DirectivesOf returns the skip")
 
 	bare, err := plugin.NewIndex(g, facts, nil, nil)
 	assert.NoError(t, err, "the routing surface builds without a scope")
@@ -500,7 +545,7 @@ func BenchmarkIndex(b *testing.B) {
 	})
 
 	b.Run("Skipped", func(b *testing.B) {
-		validated := map[symbol.Identity][]directive.Directive{}
+		validated := plugin.ValidatedMap{}
 		for pkg := range benchPackages {
 			id := coretest.Struct(coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0").ID
 			validated[id] = []directive.Directive{{Name: directive.KernelSkip}}
@@ -587,7 +632,7 @@ func BenchmarkIndex(b *testing.B) {
 	})
 
 	b.Run("DirectivesOf", func(b *testing.B) {
-		validated := map[symbol.Identity][]directive.Directive{hit: {{Name: directive.KernelSkip}}}
+		validated := plugin.ValidatedMap{hit: {{Name: directive.KernelSkip}}}
 		ix, err := plugin.NewIndex(g, facts, validated, nil)
 		assert.NoError(b, err, "the routing surface builds")
 		c := bench.Start(b).MaxAllocs(0)
@@ -597,6 +642,19 @@ func BenchmarkIndex(b *testing.B) {
 			got = ix.DirectivesOf(hit)
 		}
 		assert.Length(b, got, 1, "DirectivesOf returns the subject's instance")
+	})
+
+	b.Run("ValidatedMap", func(b *testing.B) {
+		b.Run("DirectivesOf", func(b *testing.B) {
+			validated := plugin.ValidatedMap{hit: {{Name: directive.KernelSkip}}}
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got []directive.Directive
+			for c.Loop() {
+				got = validated.DirectivesOf(hit)
+			}
+			assert.Length(b, got, 1, "DirectivesOf returns the subject's instance")
+		})
 	})
 
 	b.Run("Reader", func(b *testing.B) {
@@ -642,10 +700,7 @@ func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 
 // index returns a routing surface over the fixture graph, no facts
 // stamped and no directives validated unless the case adds them.
-func index(
-	tb assert.TB, g *store.Graph,
-	validated map[symbol.Identity][]directive.Directive, sc store.Scope,
-) *plugin.Index {
+func index(tb assert.TB, g *store.Graph, validated plugin.Validated, sc store.Scope) *plugin.Index {
 	tb.Helper()
 
 	ix, err := plugin.NewIndex(g, meta.NewFacts(meta.NewRegistry()), validated, sc)

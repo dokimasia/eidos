@@ -177,13 +177,48 @@ func (s *PhaseState) Check(name plugin.ID) (Check, bool, error) {
 	return out, found, err
 }
 
+// Validations returns every validation that the generation keeps under
+// the ID of a reference, in row order. A readers row names records by
+// reference, and Validations reads the validations that such a reference
+// names. Records whose IDs collide share one row, so the caller checks
+// the subject of each record.
+//
+// Error modes: an error wrapping [ErrDamaged] for a row that does not
+// read whole or does not decode.
+func (s *PhaseState) Validations(ref RecordRef) ([]Validation, error) {
+	var out []Validation
+	err := s.entries(TableValidations, ref.ID, func(d *decoder) {
+		out = append(out, decodeValidation(d, d.identity()))
+	})
+	return out, err
+}
+
+// Invocations returns every invocation that the generation keeps under
+// the ID of a reference, in row order. A readers row names records by
+// reference, and Invocations reads the invocations that such a reference
+// names. Records whose IDs collide share one row, so the caller checks
+// the plan and the match of each record.
+//
+// Error modes: an error wrapping [ErrDamaged] for a row that does not
+// read whole or does not decode.
+func (s *PhaseState) Invocations(ref RecordRef) ([]Invocation, error) {
+	var out []Invocation
+	err := s.entries(TableInvocations, ref.ID, func(d *decoder) {
+		plan, m := d.text(), d.match()
+		out = append(out, decodeInvocation(d, plan, m))
+	})
+	return out, err
+}
+
 // Readers returns the records whose read record lists an edge's hash,
 // sorted, and none for an edge nothing read.
 //
 // Error modes: an error wrapping [ErrDamaged] for a row that does not
 // read whole or does not decode.
 func (s *PhaseState) Readers(h EdgeHash) ([]RecordRef, error) {
-	row, held, err := s.g.readers[TableReaders].get(s.ctx, binary.BigEndian.AppendUint64(nil, uint64(h)))
+	var key [8]byte
+	binary.BigEndian.PutUint64(key[:], uint64(h))
+	row, held, err := s.g.readers[TableReaders].get(s.ctx, key[:])
 	if err != nil || !held {
 		return nil, err
 	}
@@ -202,7 +237,9 @@ func (s *PhaseState) Readers(h EdgeHash) ([]RecordRef, error) {
 // Error modes: an error wrapping [ErrDamaged] for a row that does not
 // read whole or does not decode.
 func (s *PhaseState) lookup(t Table, ref RecordRef, match func(*decoder) bool) (bool, error) {
-	row, held, err := s.g.readers[t].get(s.ctx, binary.BigEndian.AppendUint64(nil, ref.ID))
+	var key [8]byte
+	binary.BigEndian.PutUint64(key[:], ref.ID)
+	row, held, err := s.g.readers[t].get(s.ctx, key[:])
 	if err != nil || !held {
 		return false, err
 	}
@@ -221,6 +258,33 @@ func (s *PhaseState) lookup(t Table, ref RecordRef, match func(*decoder) bool) (
 		return false, fmt.Errorf("%w: a %s row does not decode: %w", ErrDamaged, t, err)
 	}
 	return false, nil
+}
+
+// entries reads the row of one ID and passes a decoder over each entry to
+// decode, which decodes the whole entry. For an ID that the table does
+// not contain, entries decodes nothing.
+//
+// Error modes: an error wrapping [ErrDamaged] for a row that does not
+// read whole or does not decode.
+func (s *PhaseState) entries(t Table, id uint64, decode func(*decoder)) error {
+	var key [8]byte
+	binary.BigEndian.PutUint64(key[:], id)
+	row, held, err := s.g.readers[t].get(s.ctx, key[:])
+	if err != nil || !held {
+		return err
+	}
+	rows := newDecoder(row, nil)
+	for range rows.Count() {
+		d := newDecoder(rows.Bytes(), nil)
+		decode(d)
+		if err := d.Err(); err != nil {
+			return fmt.Errorf("%w: a %s row does not decode: %w", ErrDamaged, t, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("%w: a %s row does not decode: %w", ErrDamaged, t, err)
+	}
+	return nil
 }
 
 // appendReaders appends a readers row to dst: the number of records,

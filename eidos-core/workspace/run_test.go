@@ -174,6 +174,10 @@ const (
 	edgeStubbed  = "0"
 )
 
+// measurerID is the annotator of the edge corpus, which stamps the mark
+// and the width of every marked struct.
+const measurerID plugin.ID = "measurer"
+
 // The ceilings of [BenchmarkRun]. Each cold ceiling covers one run whose
 // pooled state the collector emptied before the run began.
 const (
@@ -233,6 +237,28 @@ const (
 	// 16 bytes that share a block of the tiny allocator. The ceiling allows
 	// eight standard deviations above the mean.
 	treeRunAllocs = 2_604_412 + 8*41
+	// warmTreeRunAllocs is one warm run over the edge corpus's tree of
+	// 200,000 declarations after an edit that widens one struct,
+	// 1,932,585 on average with a standard deviation of 31 over 24 fresh
+	// processes. A memory profile of four runs attributes these shares to
+	// one run:
+	//
+	//   - The load keeps 999 of the 1,000 units. The run lists the
+	//     residents of every directory, which reads every package, and the
+	//     plans read every declaration, so the run decodes every region:
+	//     about 1,235,000.
+	//   - The plans' generators allocate about 291,000. About 142,000 of
+	//     them are the reads of the mark of every struct. The run restores
+	//     the bags of the 20,000 marked structs for those reads, and reads
+	//     the other structs absent through the recorded presence.
+	//   - The render allocates about 181,000, the manifest's documents
+	//     about 58,000, the commit of the phase record about 50,000 and the
+	//     load about 31,000.
+	//
+	// The profile misses about 68,000 allocations below 16 bytes that share
+	// a block of the tiny allocator. The ceiling allows eight standard
+	// deviations above the mean.
+	warmTreeRunAllocs = 1_932_585 + 8*31
 )
 
 // dropping is a backend whose lowering hook returns a declaration
@@ -1227,7 +1253,9 @@ func TestRunAllocs(t *testing.T) {
 // alone. The tree case runs the edge corpus's composition over a tree,
 // its load inside the measurement, and records the state into a fresh
 // memory ledger on each run. It reports the bytes of the state for each
-// declaration.
+// declaration. The warm case runs the same composition over one ledger,
+// so each run reads the generation of the run before it, and reports the
+// invocations of the annotator.
 func BenchmarkRun(b *testing.B) {
 	builder, _ := flagged()
 	w, err := builder.Build()
@@ -1268,6 +1296,14 @@ func BenchmarkRun(b *testing.B) {
 			report := benchTree(b, recordedEdges(b, pipelinePackages), pipelineTree(pipelinePackages), treeRunAllocs)
 			assert.True(b, report.Stats.Generation, "the run writes a generation")
 			b.ReportMetric(float64(report.Stats.Size)/float64(pipelinePackages*pipelineStructs), "state-B/decl")
+			reportPeakRSS(b)
+		})
+
+		b.Run("a warm run over the tree of 200,000 declarations after one edit", func(b *testing.B) {
+			resetPeakRSS()
+			report := benchWarm(b, pipelinePackages, warmTreeRunAllocs)
+			assert.False(b, report.Stats.Cold, "the run reads the sealed state")
+			b.ReportMetric(float64(invoked(report, measurerID)), "annotator-invocations")
 			reportPeakRSS(b)
 		})
 	})
@@ -1795,7 +1831,7 @@ func recordedEdges(tb assert.TB, n int) *workspace.Workspace {
 // keys, and stamps the mark and the width on every struct whose name
 // opens with the marked prefix.
 func measuring(keys *corpusKeys) plugin.Annotator {
-	p, held := eidos.NewPlugin("measurer").
+	p, held := eidos.NewPlugin(measurerID).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("e2e"); err != nil {
 				return err
@@ -1975,6 +2011,40 @@ func benchTree(b *testing.B, w *workspace.Workspace, tree fs.FS, allocs uint64) 
 		report, err = w.Run(b.Context(), workspace.Input{Tree: tree})
 	}
 	assert.NoError(b, err, "the run is clean")
+	return report
+}
+
+// benchWarm measures the warm runs of the edge corpus's composition over
+// the tree of n packages against a ceiling of allocs per run, and returns
+// the report of the last run. A cold run before the measurement writes
+// the first generation into the memory ledger that every run records
+// into. The runs alternate between the tree with one widened struct and
+// the tree as it was, so each run reads the generation of the run before
+// it and finds one changed file. Each iteration empties the process's
+// pools outside the measurement, as a new process starts with them empty.
+func benchWarm(b *testing.B, n int, allocs uint64) *workspace.Report {
+	b.Helper()
+
+	mem := ledger.NewMem()
+	keys := &corpusKeys{}
+	w := built(b, edgeComposition(keys).
+		Plans(edgePlans(keys, n)...).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Ledger(func() (ledger.Ledger, error) { return mem, nil }))
+	path := pipelinePath(edgeEdited) + "/" + pipelineScript
+	trees := [2]fstest.MapFS{pipelineTree(n), pipelineTree(n)}
+	widened := strings.Replace(string(trees[1][path].Data), corpusLine(edgeMeasured), widenedLine(edgeMeasured), 1)
+	trees[1][path] = &fstest.MapFile{Data: []byte(widened), ModTime: warmEdit}
+	_, err := w.Run(b.Context(), workspace.Input{Tree: trees[0]})
+	assert.NoError(b, err, "the cold run is clean")
+	c := bench.Start(b).Warmup(1).MaxAllocs(allocs)
+	defer c.End()
+	var report *workspace.Report
+	for i := 1; c.Loop(); i++ {
+		c.Excluding(emptyPools)
+		report, err = w.Run(b.Context(), workspace.Input{Tree: trees[i%2]})
+	}
+	assert.NoError(b, err, "the warm runs are clean")
 	return report
 }
 

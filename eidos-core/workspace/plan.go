@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -20,7 +19,6 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
-	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // planRun is one plan's way through a run: its store and findings,
@@ -95,8 +93,7 @@ func (p *planRun) cause() (position.Pos, bool) {
 // either way. Each plan records its invocations into a lane of rec of
 // its own, where rec is set.
 func (w *Workspace) generateAll(
-	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, src tree, rec *state.Recorder,
+	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree, rec *state.Recorder,
 ) []*planRun {
 	runs := make([]*planRun, len(w.plans))
 	for i := range w.plans {
@@ -169,8 +166,7 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 // handed, the units its plugin flushed or appended into, and its
 // findings.
 func (w *Workspace) runPlan(
-	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, src tree, p *planRun,
+	ctx context.Context, g *store.Graph, facts *meta.Facts, table plugin.Validated, src tree, p *planRun,
 	exports map[string]plugin.ExportDoc, rec *state.Recorder,
 ) ([]stagedFile, []plugin.File, error) {
 	pl := p.plan

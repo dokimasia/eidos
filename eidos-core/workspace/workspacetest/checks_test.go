@@ -478,10 +478,10 @@ func TestChecks(t *testing.T) {
 		})
 
 		const (
-			files    = "the warm run leaves the cold run's files outside the state directory"
-			entries  = "the warm run records the cold run's entries"
-			findings = "the warm run reports the cold run's findings"
-			exports  = "the warm run hands the probe the cold run's exports"
+			files    = "the warm run writes the same files as the cold run outside the state directory"
+			entries  = "the warm run records the same entries as the cold run"
+			findings = "the warm run reports the same findings as the cold run"
+			exports  = "the probe reads the same exports in the warm run as in the cold run"
 		)
 		rejections := []struct {
 			name    string
@@ -489,19 +489,19 @@ func TestChecks(t *testing.T) {
 			want    []string
 		}{
 			{
-				name: "rejects a warm run whose files differ from the cold run's", fixture: renamedPerRun,
+				name: "rejects a warm run whose files differ from those of the cold run", fixture: renamedPerRun,
 				want: []string{files, entries, exports},
 			},
 			{
-				name: "rejects a warm run whose entries differ from the cold run's", fixture: recordedOtherCold,
+				name: "rejects a warm run whose entries differ from those of the cold run", fixture: recordedOtherCold,
 				want: []string{entries},
 			},
 			{
-				name: "rejects a warm run whose findings differ from the cold run's", fixture: notedPerRun,
+				name: "rejects a warm run whose findings differ from those of the cold run", fixture: notedPerRun,
 				want: []string{findings},
 			},
 			{
-				name: "rejects a warm run whose exports differ from the cold run's", fixture: packagedPerRun,
+				name: "rejects a warm run whose exports differ from those of the cold run", fixture: packagedPerRun,
 				want: []string{exports},
 			},
 		}

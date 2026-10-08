@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -71,19 +72,33 @@ type Input struct {
 // outcome. An input that sets neither or both of a tree and a graph is
 // the one refusal that returns a nil report.
 //
-// The ledger records the run strictly after the last commit: the next
-// generation of the sealed state, with the merged manifest's documents
-// that differ from the ledger's. A dry run records nothing. A run over a
-// caller's graph, a run whose previous record does not read, and a run
-// that cannot read its executable write no generation, and record the
-// manifest only where a plan or the sweep committed. The ledger records
-// under a context without the run's cancellation, because the record
-// has to match the destination once a commit wrote to it.
+// The ledger records the run strictly after the last commit. The record
+// is the next generation of the sealed state, with each document of the
+// merged manifest that differs from the ledger's. A dry run records
+// nothing. These runs do not write a generation, and they record the
+// manifest only where a plan or the sweep committed:
 //
-// A run over a tree compares the tree with the sealed state's live
-// generation. A run that finds the generation damaged, at the load, at
-// the record of the load, or at a region its graph decodes for a later
-// phase, discards what it derived before any plan commits, reports
+//   - a run over a caller's graph
+//   - a run whose previous record does not read
+//   - a run that cannot read its executable
+//   - a run whose stamp replay refused a stamp or met a dangling one,
+//     because no record of the sealed state keeps that finding
+//
+// The ledger records under a context without the run's cancellation,
+// because the record has to match the destination once a commit wrote to
+// it.
+//
+// A run over a tree compares the tree with the live generation of the
+// sealed state. A warm run validates again only the subjects whose
+// directives changed or whose validation read a declaration that changed.
+// It runs again only the annotator invocations whose subject changed or
+// that read a changed declaration, package or fact. An annotator that
+// implements its role directly runs whole when the load found any change.
+// The run reports the findings of every validation and annotator
+// invocation that it keeps. A run can find the generation
+// damaged at the load, at the record of the load, at a record of the
+// phases, or at a region that its graph decodes for a later phase. Such
+// a run discards what it derived before any plan commits, reports
 // [ColdState], and runs again cold over the same input.
 func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
 	if (in.Tree == nil) == (in.Graph == nil) {
@@ -132,7 +147,16 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
-	table, err := w.annotateRun(ctx, g, facts, sink, &report.Stats, sealed.recorder)
+	var phases *state.PhaseState
+	if sealed.warm(loaded) {
+		phases = sealed.gen.Phases(ctx)
+		facts = meta.Restore(w.keys, phases)
+		report.Facts = facts
+	}
+	out, err := w.annotateRun(ctx, g, loaded, phases, facts, sink, &report.Stats, sealed.recorder)
+	if out.refused {
+		sealed.commit, sealed.recorder = nil, nil
+	}
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
@@ -142,7 +166,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	if w.open != nil {
 		src = tree{residents: layout.Residents(g), modules: layout.Modules(g, facts, w.kernel)}
 	}
-	runs := w.generateAll(ctx, g, facts, table, src, sealed.recorder)
+	runs := w.generateAll(ctx, g, facts, out.table, src, sealed.recorder)
 	if !shared {
 		w.stageAll(ctx, runs, rec)
 	}
@@ -161,10 +185,10 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	unmet := w.audit(g, facts, loaded, sink, sealed.recorder)
 	checked := false
 	if !shared {
-		checked, err = w.check(g, facts, table, runs, sink, &report.Stats, sealed.recorder)
+		checked, err = w.check(g, facts, out.table, runs, sink, &report.Stats, sealed.recorder)
 		errs = append(errs, err)
 	}
-	broken := damaged(g.Damaged())
+	broken := damaged(cmp.Or(g.Damaged(), facts.Damaged(), out.damaged()))
 	if broken == nil {
 		broken = sealed.recordPhases(ctx, g, facts, w.kernel)
 	}
@@ -307,24 +331,53 @@ func (w *Workspace) load(
 	return g, loaded, ctx.Err()
 }
 
-// annotateRun runs the shared phases after the load: directive
+// shared is the result of the shared phases, which the plans and Close
+// read. table is the validated directive table that every route reads.
+type shared struct {
+	table plugin.Validated
+	// lazy is the table of a warm run, which reads each subject from the
+	// generation on first use. It is nil on a cold run.
+	lazy *validations
+	// refused reports whether the stamp replay refused a stamp or met a
+	// dangling one. No record of the sealed state keeps such a finding.
+	refused bool
+}
+
+// damaged returns the error of the first record that a warm run's table
+// could not read. It returns nil on a cold run.
+func (s shared) damaged() error {
+	if s.lazy == nil {
+		return nil
+	}
+	return s.lazy.Damaged()
+}
+
+// annotateRun runs the shared phases after the load, which are directive
 // validation, the stamp replay, the kernel meta drops and the annotate
-// schedule. It counts the subjects it validated into stats, and records
-// each validation and invocation into rec, nil for a run that records
-// none. An annotator's returned error stops the frame.
+// schedule. On a warm run, phases is the generation's record of the
+// phases, and the run executes again only the records that the load's
+// changes make dirty. A cold run passes nil phases and executes every
+// phase whole. annotateRun counts the validated subjects into stats. It
+// records each validation and invocation into rec, which is nil when the
+// run does not record its phases. An annotator's returned error stops the
+// frame.
 func (w *Workspace) annotateRun(
-	ctx context.Context, g *store.Graph, facts *meta.Facts, sink *diag.Sink, stats *Stats, rec *state.Recorder,
-) (map[symbol.Identity][]directive.Directive, error) {
-	table, validated := w.validated(g, facts, sink, rec)
-	stats.Validated = validated
-	applyStamps(g, facts, sink)
-	if err := w.applyDrops(table, facts); err != nil {
-		return nil, err
+	ctx context.Context, g *store.Graph, loaded *load.Report, phases *state.PhaseState,
+	facts *meta.Facts, sink *diag.Sink, stats *Stats, rec *state.Recorder,
+) (shared, error) {
+	if phases != nil {
+		return w.warmShared(ctx, g, loaded.Changes, phases, facts, sink, stats, rec)
+	}
+	validated, count := w.validated(g, facts, sink, rec)
+	stats.Validated = count
+	out := shared{table: plugin.ValidatedMap(validated), refused: applyStamps(g, facts, sink)}
+	if err := w.applyDrops(validated, facts); err != nil {
+		return out, err
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return out, err
 	}
-	return table, w.annotateAll(ctx, g, facts, table, sink, stats, rec)
+	return out, w.annotateAll(ctx, g, facts, out.table, sink, stats, rec)
 }
 
 // stopped returns the report of a frame that stopped before the plans
@@ -402,13 +455,7 @@ func (w *Workspace) validated(
 				}
 				s := subjects[i]
 				if !g.Holds(s.subject) {
-					d := diag.Diag{
-						Code:     directive.DanglingSubject,
-						Severity: diag.SeverityError,
-						Pos:      s.raws[0].Pos,
-						Msg:      fmt.Sprintf("directives on %s name a subject the graph does not contain", s.subject),
-						Origin:   diag.PhaseFreeze,
-					}
+					d := danglingDirectives(s.subject, s.raws[0].Pos)
 					local.Report(d)
 					lane.Validation(s.subject, nil, nil, []diag.Diag{d})
 					continue
@@ -500,37 +547,50 @@ func fileOf(reader *store.Reader, subject symbol.Identity) *node.File {
 	return nil
 }
 
-// applyStamps replays the load's classification stamps into the
-// fact store at plugin authority, before any drop or annotator
-// runs. Rank decides every winner, so a drop at directive authority
-// ranks above a stamp, whichever applied first. The order here exists
-// for the findings, not the outcome. A refusal reports under the
-// fact store's own code at the stamp's position, and the frame
-// continues. A stamp whose subject the graph does not contain is
-// reported and not filed, the way a dangling directive is: a fact
-// filed there would enumerate under a subject no reader can look up.
-func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
+// applyStamps replays the load's classification stamps into the fact
+// store at plugin authority, before any drop or annotator runs. It
+// reports whether it refused a stamp or met a dangling one. Rank decides
+// every winner, so a drop at directive authority ranks above a stamp,
+// whichever of the two the store received first. The replay order
+// affects only the order of the findings.
+func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) bool {
+	refused := false
 	for id, stamps := range g.Stamps() {
-		if !g.Holds(id) {
-			for _, s := range stamps {
-				sink.Errorf(directive.DanglingSubject, s.Pos, s.Origin,
-					"a %s stamp names %s, which the graph does not contain", s.Key, id)
-			}
-			continue
+		refused = stampSubject(g, facts, sink, id, stamps) || refused
+	}
+	return refused
+}
+
+// stampSubject files the classification stamps of one subject at plugin
+// authority, and ranks each stamp by its place among the subject's
+// stamps. It reports whether it refused a stamp or met a dangling
+// subject. A refusal is reported under the fact store's own code at the
+// stamp's position, and the frame continues. A stamp on a subject that
+// the graph does not contain is reported and not filed, as a dangling
+// directive is, because no reader can look up the subject of such a fact.
+func stampSubject(g *store.Graph, facts *meta.Facts, sink *diag.Sink, id symbol.Identity, stamps []meta.RawStamp) bool {
+	if !g.Holds(id) {
+		for _, s := range stamps {
+			sink.Errorf(directive.DanglingSubject, s.Pos, s.Origin,
+				"a %s stamp names %s, which the graph does not contain", s.Key, id)
 		}
-		for i, s := range stamps {
-			claim := meta.Claim{
-				Subject:   id,
-				Authority: meta.AuthorityPlugin,
-				Plugin:    s.Origin,
-				Order:     meta.Order{Subject: id, Instance: i},
-				Pos:       s.Pos,
-			}
-			if err := facts.StampRaw(s, claim); err != nil {
-				sink.Errorf(meta.RefusedStamp, s.Pos, s.Origin, "%v", err)
-			}
+		return len(stamps) > 0
+	}
+	refused := false
+	for i, s := range stamps {
+		claim := meta.Claim{
+			Subject:   id,
+			Authority: meta.AuthorityPlugin,
+			Plugin:    s.Origin,
+			Order:     meta.Order{Subject: id, Instance: i},
+			Pos:       s.Pos,
+		}
+		if err := facts.StampRaw(s, claim); err != nil {
+			sink.Errorf(meta.RefusedStamp, s.Pos, s.Origin, "%v", err)
+			refused = true
 		}
 	}
+	return refused
 }
 
 // applyDrops applies every validated meta instance's drop before
@@ -544,32 +604,60 @@ func (w *Workspace) applyDrops(
 ) error {
 	var errs []error
 	for _, id := range slices.SortedFunc(maps.Keys(table), symbol.Identity.Compare) {
-		for _, d := range table[id] {
-			if d.Name != directive.KernelMeta {
-				continue
-			}
-			v, held := d.Param(directive.MetaDrop)
-			if !held {
-				continue
-			}
-			claim := meta.Claim{
-				Subject:   id,
-				Authority: meta.AuthorityDirective,
-				Order:     meta.Order{Subject: id, Instance: d.Instance},
-				Pos:       d.Pos,
-			}
-			if key, registered := w.keys.Resolve(meta.KeyName(v.Ref)); registered {
-				if err := facts.DropKey(key, claim); err != nil {
-					errs = append(errs, err)
-				}
-				continue
-			}
-			if err := facts.DropGroup(meta.GroupName(v.Ref), claim); err != nil {
-				errs = append(errs, err)
-			}
-		}
+		_, err := w.drops(facts, id, table[id], false, nil)
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// drops files the drops of a subject's validated meta instances into the
+// fact store, or withdraws them when withdraw is set. A drop that
+// references a registered key is a key drop, and any other drop is a
+// group drop. Each
+// claim has directive authority and the position of its instance. drops
+// appends each fact that a drop covers to touched, including every member
+// of a dropped group. It returns the joined errors of the drops that the
+// store refused. A refusal is a defect, because validation resolved each
+// reference.
+func (w *Workspace) drops(
+	facts *meta.Facts, id symbol.Identity, ds []directive.Directive, withdraw bool, touched []meta.FactRef,
+) ([]meta.FactRef, error) {
+	var errs []error
+	for _, d := range ds {
+		if d.Name != directive.KernelMeta {
+			continue
+		}
+		v, held := d.Param(directive.MetaDrop)
+		if !held {
+			continue
+		}
+		claim := meta.Claim{
+			Subject:   id,
+			Authority: meta.AuthorityDirective,
+			Order:     meta.Order{Subject: id, Instance: d.Instance},
+			Pos:       d.Pos,
+		}
+		if key, registered := w.keys.Resolve(meta.KeyName(v.Ref)); registered {
+			touched = append(touched, meta.FactRef{Subject: id, Key: meta.KeyName(v.Ref)})
+			if withdraw {
+				errs = append(errs, facts.Withdraw(key, claim))
+				continue
+			}
+			errs = append(errs, facts.DropKey(key, claim))
+			continue
+		}
+		group := meta.GroupName(v.Ref)
+		for member := range w.keys.Group(group) {
+			spec, _ := w.keys.Spec(member)
+			touched = append(touched, meta.FactRef{Subject: id, Key: spec.Name})
+		}
+		if withdraw {
+			errs = append(errs, facts.WithdrawGroup(group, claim))
+			continue
+		}
+		errs = append(errs, facts.DropGroup(group, claim))
+	}
+	return touched, errors.Join(errs...)
 }
 
 // annotateAll runs the annotate schedule in bucket order over one
@@ -586,7 +674,7 @@ func (w *Workspace) applyDrops(
 // plugin claimed, and its findings.
 func (w *Workspace) annotateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, sink *diag.Sink, stats *Stats, rec *state.Recorder,
+	table plugin.Validated, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) error {
 	if len(w.annotate) == 0 {
 		return nil
@@ -603,48 +691,70 @@ func (w *Workspace) annotateAll(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		reads := store.NewReadSet()
-		reader, err := ix.Reader(reads)
-		if err != nil {
+		if err := w.annotateCall(ix, s, facts, sink, counted, counted, nil, true); err != nil {
 			return err
-		}
-		counted.count = 0
-		calls := sink
-		if counted.next != nil {
-			calls = diag.NewSink()
-		}
-		call := &plugin.AnnotatorContext{
-			Index:   ix,
-			Reader:  reader,
-			Facts:   facts,
-			Sink:    calls,
-			Rules:   w.rules,
-			Kernel:  w.kernel,
-			Plugin:  s.name,
-			Bucket:  s.bucket,
-			Workers: w.workers,
-			Journal: counted,
-		}
-		err = s.run.Annotate(call)
-		if counted.next != nil {
-			found := reported(calls, sink)
-			if counted.count == 0 {
-				counted.next.Invoked(plugin.Invocation{
-					Match:    plugin.MatchKey{Plugin: s.name, Rule: plugin.WholeCall},
-					Reads:    reads,
-					Claimed:  facts.ClaimedBy(s.name),
-					Findings: found,
-				})
-			}
-		}
-		if err != nil {
-			return fmt.Errorf(
-				"workspace: annotator %s in bucket %d: %w", s.name, s.bucket, err,
-			)
 		}
 		stats.Invoked = append(stats.Invoked, Invoked{
 			Plugin: s.name, Phase: plugin.PhaseAnnotate, Count: counted.count,
 		})
+	}
+	return nil
+}
+
+// annotateCall runs the phase call of one annotator over a whole-graph
+// index. The call receives a tracked reader of its own, its rank fields
+// and journal, which receives each invocation in canonical match order.
+// sel restricts the call to the matches that a warm run executes again,
+// and a nil sel runs every match. counted counts the invocations of the
+// call from zero, and journal passes each record on to counted. A
+// returned error stops the frame, and annotateCall wraps it with the role
+// that returned it.
+//
+// When counted passes its records to a lane, the call reports into a sink
+// of its own, and its findings then merge into the run's sink. When whole
+// is set and the call journals no invocation, annotateCall records the
+// call as one invocation under [plugin.WholeCall], with the reads of its
+// reader, the facts that its plugin claimed and its findings.
+func (w *Workspace) annotateCall(
+	ix *plugin.Index, s annEntry, facts *meta.Facts, sink *diag.Sink,
+	counted *tally, journal plugin.Journal, sel *plugin.Selection, whole bool,
+) error {
+	reads := store.NewReadSet()
+	reader, err := ix.Reader(reads)
+	if err != nil {
+		return err
+	}
+	counted.count = 0
+	calls := sink
+	if counted.next != nil {
+		calls = diag.NewSink()
+	}
+	err = s.run.Annotate(&plugin.AnnotatorContext{
+		Index:   ix,
+		Reader:  reader,
+		Facts:   facts,
+		Sink:    calls,
+		Rules:   w.rules,
+		Kernel:  w.kernel,
+		Plugin:  s.name,
+		Bucket:  s.bucket,
+		Workers: w.workers,
+		Select:  sel,
+		Journal: journal,
+	})
+	if counted.next != nil {
+		found := reported(calls, sink)
+		if whole && counted.count == 0 {
+			counted.next.Invoked(plugin.Invocation{
+				Match:    plugin.MatchKey{Plugin: s.name, Rule: plugin.WholeCall},
+				Reads:    reads,
+				Claimed:  facts.ClaimedBy(s.name),
+				Findings: found,
+			})
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("workspace: annotator %s in bucket %d: %w", s.name, s.bucket, err)
 	}
 	return nil
 }

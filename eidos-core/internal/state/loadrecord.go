@@ -64,11 +64,8 @@ type LoadState struct {
 	byFirst   map[string]int
 	unitsErr  error
 
-	// interned maps the bytes of each text a decode read to the one
-	// string the state's decodes share, nil before the first decode.
-	// interning serializes the decodes that read and fill it.
-	interning sync.Mutex
-	interned  map[string]string
+	// strings are the strings that the state's decodes share.
+	strings interner
 }
 
 // unitRow is one unit's row: its record, and where its region is.
@@ -148,7 +145,7 @@ func (s *LoadState) Doors(frontend plugin.ID) ([]load.DoorRecord, error) {
 	}
 	prefix := append([]byte(frontend), keySep)
 	var out []load.DoorRecord
-	if err := s.decodeInterned(func(interned map[string]string) error {
+	if err := s.strings.decode(func(interned map[string]string) error {
 		for _, e := range rows {
 			if !bytes.HasPrefix(e.key, prefix) {
 				continue
@@ -216,7 +213,7 @@ func (s *LoadState) readFiles() ([]load.FileRecord, error) {
 			return
 		}
 		s.files = make([]load.FileRecord, len(rows))
-		s.filesErr = s.decodeInterned(func(interned map[string]string) error {
+		s.filesErr = s.strings.decode(func(interned map[string]string) error {
 			for i, e := range rows {
 				var err error
 				if s.files[i], err = decodeFile(e.key, e.row, interned); err != nil {
@@ -240,7 +237,7 @@ func (s *LoadState) readUnits() ([]unitRow, error) {
 		}
 		s.units = make([]unitRow, len(rows))
 		s.byFirst = make(map[string]int, len(rows))
-		s.unitsErr = s.decodeInterned(func(interned map[string]string) error {
+		s.unitsErr = s.strings.decode(func(interned map[string]string) error {
 			for i, e := range rows {
 				var err error
 				if s.units[i], err = decodeUnit(e.row, interned); err != nil {
@@ -253,18 +250,6 @@ func (s *LoadState) readUnits() ([]unitRow, error) {
 		})
 	})
 	return s.units, s.unitsErr
-}
-
-// decodeInterned runs decode with the strings the state's decodes share,
-// created on the first decode, under the lock that makes those decodes
-// take turns, and returns decode's error.
-func (s *LoadState) decodeInterned(decode func(interned map[string]string) error) error {
-	s.interning.Lock()
-	defer s.interning.Unlock()
-	if s.interned == nil {
-		s.interned = map[string]string{}
-	}
-	return decode(s.interned)
 }
 
 // RecordLoad records a load in a commit: each file record that differs
@@ -565,24 +550,26 @@ func identityKey(dst []byte, id symbol.Identity) []byte {
 	return append(dst, id.Disc...)
 }
 
-// parseIdentityKey returns the identity a key [identityKey] appended
+// parseIdentityKey returns the identity that a key of [identityKey]
 // spells, and false for bytes that spell none: fewer than four parts
-// before the kind, or a kind without its separator.
-func parseIdentityKey(b []byte) (symbol.Identity, bool) {
+// before the kind, or a kind without its separator. It makes each part's
+// string through strings, as [intern] does, and a nil map makes a new
+// string of every part.
+func parseIdentityKey(b []byte, strings map[string]string) (symbol.Identity, bool) {
 	var parts [4]string
 	for i := range parts {
 		at := bytes.IndexByte(b, keySep)
 		if at < 0 {
 			return symbol.Identity{}, false
 		}
-		parts[i], b = string(b[:at]), b[at+1:]
+		parts[i], b = intern(strings, b[:at]), b[at+1:]
 	}
 	if len(b) < 2 || b[1] != keySep {
 		return symbol.Identity{}, false
 	}
 	return symbol.Identity{
 		Lang: symbol.Lang(parts[0]), Package: parts[1], Owner: parts[2], Name: parts[3],
-		Kind: symbol.Kind(b[0]), Disc: string(b[2:]),
+		Kind: symbol.Kind(b[0]), Disc: intern(strings, b[2:]),
 	}, true
 }
 
@@ -633,7 +620,7 @@ func decodeFile(key, row []byte, interned map[string]string) (load.FileRecord, e
 	d := newDecoder(row, nil)
 	d.interned = interned
 	f := load.FileRecord{
-		Path:    d.intern(key),
+		Path:    intern(interned, key),
 		Size:    d.Varint(),
 		ModTime: d.instant(),
 		Change:  d.instant(),

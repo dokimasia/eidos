@@ -14,11 +14,50 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Index is the dispatcher's routing surface over one frozen run:
-// untracked, scope-filtered enumeration, plus the validated
-// directive table and the skip table derived from it. Enumerating
-// it records nothing, because dispatch is not a plugin's read. A
-// plugin's own reads go through the [store.Reader] it is handed.
+// Validated is the table of validated directives that a run routes by.
+// It returns the typed instances of each subject in position order, as
+// validation returned them. A warm run does not load the whole table. It
+// reads the instances of a subject that it did not validate again from
+// the sealed state, the first time a route reads them.
+//
+// # Concurrency
+//
+// An implementation must be safe for concurrent use, because the lanes
+// of a phase call route concurrently.
+type Validated interface {
+	// DirectivesOf returns the validated instances of a subject in
+	// position order, and nil for a subject without instances. The caller
+	// must not modify the returned slice.
+	DirectivesOf(id symbol.Identity) []directive.Directive
+}
+
+// ValidatedMap is a table of validated directives that is kept whole in
+// memory, keyed by subject. A cold run's validation returns one, and a
+// test can pass one to [NewIndex].
+//
+// # Concurrency
+//
+// A ValidatedMap is safe for concurrent reads. The caller must not
+// modify it after passing it to [NewIndex].
+//
+// # Allocation contract
+//
+// DirectivesOf allocates nothing.
+type ValidatedMap map[symbol.Identity][]directive.Directive
+
+var _ Validated = ValidatedMap(nil)
+
+// DirectivesOf returns the instances of a subject, and nil for a subject
+// that the map does not contain. The returned slice shares the storage of
+// the map.
+func (m ValidatedMap) DirectivesOf(id symbol.Identity) []directive.Directive { return m[id] }
+
+// Index is the dispatcher's routing surface over one frozen run. It
+// enumerates the declarations under the run's scope without tracking the
+// reads, and it reads the validated directive table and the skip rulings
+// that the table states. An enumeration does not record its reads,
+// because dispatch is not a plugin's read. A plugin's own reads go
+// through the [store.Reader] that it receives.
 //
 // Index wraps the graph and does not expose it, for two reasons.
 // Nothing reachable from a phase context can make a structural
@@ -26,13 +65,13 @@ import (
 // reachable can read another plugin's raw directives either. What
 // dispatch needs is exactly what is here.
 //
-// An Index is safe for concurrent reads: [NewIndex] fixes every
-// field, and the graph beneath it is frozen.
+// An Index is safe for concurrent reads. [NewIndex] fixes every field,
+// the graph is frozen, and the validated table is safe for concurrent
+// use.
 type Index struct {
 	graph     *store.Graph
 	facts     *meta.Facts
-	validated map[symbol.Identity][]directive.Directive
-	skips     map[symbol.Identity]skipEntry
+	validated Validated
 	scope     store.Scope
 	// admitted is the set of packages the scope admits, keyed by the
 	// two identity fields ownership derives from. The scope runs
@@ -50,32 +89,20 @@ type pkgKey struct {
 	pkg  string
 }
 
-// skipEntry is one subject's skip ruling: every plugin, or a named
-// few.
-type skipEntry struct {
-	all     bool
-	plugins map[ID]struct{}
-}
-
 // NewIndex builds the routing surface for one run.
 //
 // It refuses a missing graph, a missing fact store and an unfrozen
 // graph, because routing over any of those would return partial
-// results. validated maps each subject to its typed instances in
-// position order, as validation returned them. The index keeps the
-// map, and the caller does not mutate it after handing it over. A
-// nil scope admits everything.
+// results. validated is the run's table of validated directives. The
+// index reads it one subject at a time, when a directive gate or a skip
+// ruling routes that subject. A nil table contains no directive, and a
+// nil scope admits every declaration.
 //
 // # Allocation contract
 //
-// NewIndex allocates the index. A run with a skip adds the skip table,
-// and a scope adds the set of packages it admits, each sized by what it
-// contains.
-func NewIndex(
-	g *store.Graph, f *meta.Facts,
-	validated map[symbol.Identity][]directive.Directive,
-	sc store.Scope,
-) (*Index, error) {
+// NewIndex allocates the index. With a scope, it also allocates the set
+// of packages that the scope admits.
+func NewIndex(g *store.Graph, f *meta.Facts, validated Validated, sc store.Scope) (*Index, error) {
 	if g == nil {
 		return nil, errors.New("plugin: no graph to route over")
 	}
@@ -93,7 +120,6 @@ func NewIndex(
 		graph:     g,
 		facts:     f,
 		validated: validated,
-		skips:     skipsOf(validated),
 		scope:     sc,
 		admitted:  admittedOf(g, sc),
 	}, nil
@@ -117,52 +143,6 @@ func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 		}
 	}
 	return admitted
-}
-
-// skipsOf derives the skip table once, so a match costs one probe of
-// a map of only the subjects that opt out of something. The table
-// combines the kernel skip directive with every negated instance: a
-// negated instance opts its subject out of the plugin that
-// registered its schema, as skip plugin=<that plugin> does. A run
-// without a skip has a nil table and allocates none.
-func skipsOf(
-	validated map[symbol.Identity][]directive.Directive,
-) map[symbol.Identity]skipEntry {
-	var skips map[symbol.Identity]skipEntry
-	for id, ds := range validated {
-		for _, d := range ds {
-			var plugin ID
-			switch {
-			case d.Negated:
-				plugin = ID(d.Name.Plugin())
-			case d.Name == directive.KernelSkip:
-				v, narrowed := d.Param(directive.SkipPlugin)
-				if narrowed {
-					plugin = ID(v.Str)
-					break
-				}
-				if skips == nil {
-					skips = map[symbol.Identity]skipEntry{}
-				}
-				entry := skips[id]
-				entry.all = true
-				skips[id] = entry
-				continue
-			default:
-				continue
-			}
-			if skips == nil {
-				skips = map[symbol.Identity]skipEntry{}
-			}
-			entry := skips[id]
-			if entry.plugins == nil {
-				entry.plugins = map[ID]struct{}{}
-			}
-			entry.plugins[plugin] = struct{}{}
-			skips[id] = entry
-		}
-	}
-	return skips
 }
 
 // ByKind enumerates the declarations of one kind under the scope,
@@ -216,30 +196,36 @@ func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 // order, and nil for a subject with none. This is the gate's read,
 // not a plugin's: a handler is handed only the one instance that
 // caused its call. The returned slice is the table's own storage.
-// Do not mutate it. It allocates nothing.
+// Do not mutate it. It allocates what the table's DirectivesOf
+// allocates, which is nothing for a [ValidatedMap].
 func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
-	return ix.validated[id]
+	if ix.validated == nil {
+		return nil
+	}
+	return ix.validated.DirectivesOf(id)
 }
 
-// Skipped reports whether a subject is excluded from a plugin's bare
-// and fact-gated rules: every plugin under a bare skip, the named
-// one under skip plugin=<name>, and the plugin that registered a
-// negated directive's schema. The table is computed once at
-// [NewIndex], so a match costs one probe of a map of only the
-// subjects that opt out of something.
+// Skipped reports whether a subject is excluded from the bare and
+// fact-gated rules of a plugin. A bare skip excludes the subject from
+// every plugin, and skip plugin=<name> excludes it from that plugin.
+// A negated directive excludes the subject from the plugin that
+// registered the directive's schema. Skipped reads the validated
+// instances of the subject once, and it allocates what
+// [Index.DirectivesOf] allocates.
 func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
-	if len(ix.skips) == 0 {
-		return false
+	for _, d := range ix.DirectivesOf(id) {
+		switch {
+		case d.Negated:
+			if ID(d.Name.Plugin()) == p {
+				return true
+			}
+		case d.Name == directive.KernelSkip:
+			if v, narrowed := d.Param(directive.SkipPlugin); !narrowed || ID(v.Str) == p {
+				return true
+			}
+		}
 	}
-	entry, held := ix.skips[id]
-	if !held {
-		return false
-	}
-	if entry.all {
-		return true
-	}
-	_, named := entry.plugins[p]
-	return named
+	return false
 }
 
 // PackageOf returns the package that contains a declaration, under

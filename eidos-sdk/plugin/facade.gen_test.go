@@ -341,6 +341,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Validated", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Validated](), reflect.TypeFor[core.Validated](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("ValidatedMap", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.ValidatedMap](), reflect.TypeFor[core.ValidatedMap](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("Index", func(t *testing.T) {
 		t.Parallel()
 

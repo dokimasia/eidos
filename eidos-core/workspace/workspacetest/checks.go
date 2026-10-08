@@ -270,21 +270,31 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 	expect.Equal(tb, read.Export.Plan, plans[0].Name, "the check reads the plan's export")
 }
 
-// AssertWarmEdited runs the fixture's plans cold in warm, an empty
-// directory, applies the fixture's edit there and runs the plans again,
-// warm. It copies the tree into cold, an empty directory, applies the
-// edit and runs the plans cold. Every run composes a probe plan that
-// depends on each of the fixture's plans, and returns no error, so every
-// plan commits in each.
+// AssertWarmEdited checks that a warm run after the fixture's edit
+// produces the same results as a cold run over the edited tree.
 //
-// It checks that the edit changes a file the first plan generates, and
-// that the run after the edit reads the sealed state. It then checks
-// that the warm run and the cold run leave the same files outside the
-// state directory, record the same entries, report the same findings and
-// hand the probe the same exports. The rest of the state directory is
-// each run's own record: the sealed state lists what the run read, and a
-// disk ledger names the workspace of each manifest document after its
-// directory.
+// It copies the fixture's tree into the directory warm, runs the plans,
+// applies the edit, and runs the plans again. The second run reads the
+// sealed state that the first run wrote, so it is a warm run. It then
+// copies the tree into the directory cold, applies the edit, and runs the
+// plans once. Both directories must be empty. Every run also composes a
+// probe plan that depends on each of the fixture's plans and returns no
+// error, so every plan commits.
+//
+// The check fails when the edit leaves the files of the first plan
+// unchanged, or when the run after the edit does not read the sealed
+// state. It then compares these results of the warm run with the results
+// of the cold run:
+//
+//   - the files outside the state directory
+//   - the entries of the record
+//   - the findings, which it sorts by position, code, message and origin
+//     before it compares them
+//   - the exports that the probe reads
+//
+// The rest of the state directory differs between the two runs. The
+// sealed state lists what each run read, and a disk ledger names the
+// workspace of each manifest document after its directory.
 func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 	tb.Helper()
 
@@ -304,12 +314,14 @@ func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 	assert.NoError(tb, f.Edit(cold), "the fixture's edit applies in the cold directory")
 	fresh := probed(tb, f, cold, true)
 	expect.Equal(tb, outside(tb, warm, after.brand), outside(tb, cold, fresh.brand),
-		"the warm run leaves the cold run's files outside the state directory")
+		"the warm run writes the same files as the cold run outside the state directory")
 	expect.Equal(tb, record.Files, rundir.Record(tb, cold, fresh.brand).Files,
-		"the warm run records the cold run's entries")
-	expect.Equal(tb, slices.Collect(after.report.Sink.All()), slices.Collect(fresh.report.Sink.All()),
-		"the warm run reports the cold run's findings")
-	expect.Equal(tb, after.exports, fresh.exports, "the warm run hands the probe the cold run's exports")
+		"the warm run records the same entries as the cold run")
+	expect.Equal(tb, slices.SortedStableFunc(after.report.Sink.All(), diag.Diag.Compare),
+		slices.SortedStableFunc(fresh.report.Sink.All(), diag.Diag.Compare),
+		"the warm run reports the same findings as the cold run")
+	expect.Equal(tb, after.exports, fresh.exports,
+		"the probe reads the same exports in the warm run as in the cold run")
 }
 
 // exportedIn checks one plan's export against the plan's record entries:

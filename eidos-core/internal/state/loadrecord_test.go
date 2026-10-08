@@ -74,14 +74,16 @@ const (
 	// units: the doors table, read whole, and the one door's reads and
 	// units. The door's paths reuse the strings of the units' decode.
 	doorsAllocs = 9
-	// probedAllocs is one lookup of a candidate a unit named: its key,
-	// the run read from the ledger, the block, the units' paths decoded,
-	// and the list of numbers.
-	probedAllocs = 6
-	// followedAllocs is one lookup of a package no reference followed:
-	// its key, the run read from the ledger, and the block the row would
-	// be in.
-	followedAllocs = 3
+	// probedAllocs is one lookup of a candidate that a unit named, after a
+	// lookup before it: the list of the units' paths, the path, and the
+	// list of numbers. The key is on the stack, and the run reader keeps
+	// the block that it decoded last.
+	probedAllocs = 3
+	// followedAllocs is one lookup of a package that no reference
+	// followed, after a lookup before it. The key is on the stack, and the
+	// block that the row would be in is the one that the run reader kept,
+	// so the lookup allocates nothing.
+	followedAllocs = 0
 	// recordLoadAllocs is one record of a cold load of the two units into
 	// a new commit: each region's encoding and the segment, each file's
 	// and unit's row, the door's row, and the probes.
@@ -387,14 +389,14 @@ func TestLoadStateAllocs(t *testing.T) {
 		var perr error
 		probed, perr = s.Probed(user)
 		err = cmp.Or(err, perr)
-	}, probedAllocs, "Probed allocates the key, the row and the numbers")
+	}, probedAllocs, "Probed allocates the decoded paths and numbers")
 	assert.NoError(t, err, "the probes read")
 	assert.Equal(t, probed, []int{1}, "the store unit named the user")
 	api := apiPackage()
 	assert.MaxAllocs(t, func() {
 		_, ferr := s.Followed(api)
 		err = cmp.Or(err, ferr)
-	}, followedAllocs, "Followed allocates the key and the block")
+	}, followedAllocs, "a later Followed allocates nothing")
 	assert.NoError(t, err, "the follows read")
 
 	assert.MaxAllocsWithSetup(t, func() *state.Commit { return state.NewCommit(nil, nil) },

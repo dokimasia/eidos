@@ -58,12 +58,14 @@ const (
 	// read from the ledger, its index, one list of its entries and the
 	// merged entries.
 	recordPhasesAllocs = 17
-	// phaseCommitAllocs is the record's completion into a commit over the
-	// generation, which changes no row: the list of buffers, the lists of
-	// each kind's records and of the reads, which grow as the lanes add
-	// to them, and for each table that has rows, the sorted records with
-	// the buckets' counts, then the keys and the rows.
-	phaseCommitAllocs = 23
+	// phaseCommitAllocs is the ceiling of the record's completion into a
+	// commit over the generation, which does not change a row. Commit
+	// allocates the list of buffers, one list for the records of each
+	// kind, and one list for the reads. For each of the four tables that
+	// have rows, it allocates the sorted records, the keys and the list of
+	// rows. The readers table also allocates the bytes of its rows. The
+	// bucket counts of so few records fit on the stack.
+	phaseCommitAllocs = 18
 )
 
 // phaseKeys are the keys the recorded fact stores claim: one of each
@@ -93,7 +95,9 @@ func (*bagSource) Present(meta.KeyName) ([]symbol.Identity, error) { return nil,
 // A run's phases are recorded whole on a cold run, and a warm run's
 // commit writes only what changed: a row it added or changed and a
 // tombstone for a row it lost, while a plan that does not commit keeps
-// the invocations of its previous run.
+// the invocations of its previous run. The commit of a warm run also
+// keeps each shared record and each bag of claims that the run did not
+// drop.
 func TestPhases(t *testing.T) {
 	t.Parallel()
 
@@ -187,9 +191,35 @@ func TestPhases(t *testing.T) {
 			facts := meta.Restore(r, &bagSource{claims: map[symbol.Identity][]meta.StoredClaim{
 				recordedSubject: {{Key: keys.role.Name(), Claim: claimBy("defaults", 1), Value: 1.5, Drop: true}},
 			}})
-			_, _ = meta.Get(facts, recordedSubject, keys.role)
+			assert.NotEmpty(t, slices.Collect(facts.Claims(recordedSubject, keys.role.ID())),
+				"the role's claims restore the subject's bag")
 			_, err := state.RecordPhases(t.Context(), nil, &state.Recorder{}, state.PhaseRun{Facts: facts})
 			assert.HasError(t, err, "a float is outside the vocabulary")
+		})
+
+		t.Run("keeps the generation's claims on a subject that a warm run did not touch", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			facts, keys := stampedFacts(t)
+			recordedPhases(t, l, facts, nil, func(*state.Recorder) {})
+			g := recordedPhases(t, l, siblingCounted(t, facts, keys), nil, func(r *state.Recorder) { r.Keep() })
+			got, err := g.Phases(t.Context()).Claims(recordedSubject)
+			assert.NoError(t, err, "the claims table reads")
+			assert.Equal(t, got, bagOf(facts, recordedSubject), "the subject keeps the generation's bag")
+		})
+
+		t.Run("replaces the generation's claims on a subject that a warm run claimed", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			facts, keys := stampedFacts(t)
+			recordedPhases(t, l, facts, nil, func(*state.Recorder) {})
+			run := siblingCounted(t, facts, keys)
+			g := recordedPhases(t, l, run, nil, func(r *state.Recorder) { r.Keep() })
+			got, err := g.Phases(t.Context()).Claims(siblingSubject)
+			assert.NoError(t, err, "the claims table reads")
+			assert.Equal(t, got, bagOf(run, siblingSubject), "the sibling has the run's bag")
 		})
 	})
 
@@ -354,6 +384,115 @@ func TestPhases(t *testing.T) {
 				_, held, err := g.Phases(t.Context()).Invocation("", annotated(recordedSubject))
 				assert.NoError(t, err, "the invocations table reads")
 				assert.True(t, held, "the shared phases advance whatever a plan's commit")
+			})
+
+			t.Run("keeps the annotator invocations of a warm run's generation", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Invoked(plugin.Invocation{Match: annotated(recordedSubject), Findings: reported})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.Lane("").Check(checkID, nil, nil)
+				})
+				_, held, err := g.Phases(t.Context()).Invocation("", annotated(recordedSubject))
+				assert.NoError(t, err, "the invocations table reads")
+				assert.True(t, held, "the commit keeps an invocation that no lane replaced")
+			})
+
+			t.Run("keeps no prior invocation of a plan that commits on a warm run", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{
+						Match: generated(recordedSubject), Findings: reported,
+					})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.Lane("").Check(checkID, nil, nil)
+				})
+				_, held, err := g.Phases(t.Context()).Invocation(recordedPlan, generated(recordedSubject))
+				assert.NoError(t, err, "the invocations table reads")
+				assert.False(t, held, "the lane of a plan that commits replaces the plan's prior invocations")
+			})
+
+			t.Run("keeps the readers rows of the records that a warm run kept", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, nil, readsOf(t, []symbol.Identity{siblingSubject}), nil)
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.Lane("").Check(checkID, nil, nil)
+				})
+				readers, err := g.Phases(t.Context()).Readers(state.DeclarationEdge(siblingSubject))
+				assert.NoError(t, err, "the readers table reads")
+				assert.Equal(t, readers, []state.RecordRef{state.ValidationRef(recordedSubject)},
+					"the kept validation still lists its read of the sibling")
+			})
+
+			t.Run("replaces a validation that a warm run dropped with the lane's record", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, nil, nil, []diag.Diag{recordedDiag})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.DropValidation(recordedSubject)
+					r.Lane("").Validation(recordedSubject, nil, nil, nil)
+				})
+				got, err := g.Phases(t.Context()).Validations(state.ValidationRef(recordedSubject))
+				assert.NoError(t, err, "the validations table reads")
+				assert.Length(t, got, 1, "the row contains one record of the subject")
+				assert.Empty(t, got[0].Findings, "the record is the lane's, which reported no finding")
+			})
+
+			t.Run("replaces an invocation that a warm run dropped with the lane's record", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Invoked(plugin.Invocation{Match: annotated(recordedSubject), Findings: reported})
+				})
+				fact := meta.FactRef{Subject: recordedSubject, Key: edgeKey}
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.DropInvocation(annotated(recordedSubject))
+					r.Lane("").Invoked(plugin.Invocation{
+						Match: annotated(recordedSubject), Claimed: []meta.FactRef{fact},
+					})
+				})
+				got, err := g.Phases(t.Context()).Invocations(state.InvocationRef("", annotated(recordedSubject)))
+				assert.NoError(t, err, "the invocations table reads")
+				assert.Length(t, got, 1, "the row contains one record of the match")
+				assert.Empty(t, got[0].Findings, "the record is the lane's, which reported no finding")
+			})
+
+			t.Run("keeps nothing of a prior validations row that does not decode on a warm run", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				parent := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, nil, nil, nil)
+				})
+				c := state.NewCommit(parent, nil)
+				c.Put(state.TableValidations, make([]byte, 8), []byte{1, 1, 0x80})
+				_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+				assert.NoError(t, err, "the damaged row is committed")
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) { r.Keep() })
+				rows, err := g.All(t.Context(), state.TableValidations)
+				assert.NoError(t, err, "the validations table reads")
+				assert.Length(t, rows, 1, "the commit drops the damaged row")
+				assert.Equal(t, rows[0].Key, idKey(state.ValidationRef(recordedSubject).ID),
+					"the commit keeps the validation that decodes")
 			})
 		})
 	})
@@ -532,6 +671,19 @@ func sortedRefs(refs ...state.RecordRef) []state.RecordRef {
 // emptyFacts returns a fact store over a registry with no key.
 func emptyFacts() *meta.Facts {
 	return meta.NewFacts(meta.NewRegistry())
+}
+
+// siblingCounted returns a fact store over the registry of facts with one
+// claim, the count of the sibling. The store models a warm run that
+// touched only the sibling's bag.
+func siblingCounted(tb testing.TB, facts *meta.Facts, keys phaseKeys) *meta.Facts {
+	tb.Helper()
+
+	run := meta.NewFacts(facts.Registry())
+	claim := claimBy("alpha", 1)
+	claim.Subject = siblingSubject
+	assert.NoError(tb, meta.Stamp(run, keys.count, int64(3), claim), "the sibling's count is stamped")
+	return run
 }
 
 // phaseRegistry returns a registry of the recorded keys and the keys.

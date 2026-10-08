@@ -22,12 +22,13 @@ import (
 const keySep = 0
 
 // claimsAllocs is one lookup of the recorded subject's seven claims in
-// the generation of stampedFacts: the key and its growth, the block and
-// its entries, the list of claims, and each claim's strings, its
-// envelope's identity, its reads and its value, which the decoder makes
-// anew for every claim. Every string the claims repeat counts once for
-// each claim.
-const claimsAllocs = 72
+// the generation of stampedFacts, after a lookup before it: the list of
+// claims, the reads of beta's claim, the list of tags, and the boxes of
+// the four values that Go boxes by allocating, which are the role, the
+// count -7, the tags and the target. The key is on the stack, the run
+// reader keeps the block that it decoded last, and every string is one
+// that an earlier decode of the state made.
+const claimsAllocs = 7
 
 // A fact store's claims and the facts that read present record whole, so
 // a store restored over the record reads, ranks and withdraws them as the
@@ -168,7 +169,7 @@ func TestFactsAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() {
 		got, cerr := s.Claims(recordedSubject)
 		n, err = len(got), cmp.Or(err, cerr)
-	}, claimsAllocs, "Claims allocates the key, the block and the decoded claims")
+	}, claimsAllocs, "Claims allocates the decoded claims")
 	assert.NoError(t, err, "the claims read")
 	assert.InRange(t, n, 1, math.Inf(1), "the subject has claims")
 	key := keys.flag.Name()

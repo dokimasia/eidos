@@ -30,16 +30,22 @@ const (
 // Error modes: an error wrapping [ErrDamaged] for a row that does not
 // read whole or does not decode.
 func (s *PhaseState) Claims(subject symbol.Identity) ([]meta.StoredClaim, error) {
-	row, held, err := s.g.readers[TableClaims].get(s.ctx, identityKey(nil, subject))
+	var spelling [spellingCap]byte
+	row, held, err := s.g.readers[TableClaims].get(s.ctx, identityKey(spelling[:0], subject))
 	if err != nil || !held {
 		return nil, err
 	}
-	d := newDecoder(row, nil)
-	out := make([]meta.StoredClaim, d.Count())
-	for i := range out {
-		out[i] = d.storedClaim(subject)
-	}
-	if err := d.Err(); err != nil {
+	var out []meta.StoredClaim
+	err = s.strings.decode(func(strings map[string]string) error {
+		d := newDecoder(row, nil)
+		d.interned = strings
+		out = make([]meta.StoredClaim, d.Count())
+		for i := range out {
+			out[i] = d.storedClaim(subject)
+		}
+		return d.Err()
+	})
+	if err != nil {
 		return nil, fmt.Errorf("%w: the claims row of %s does not decode: %w", ErrDamaged, subject, err)
 	}
 	return out, nil
@@ -61,16 +67,18 @@ func (s *PhaseState) Present(k meta.KeyName) ([]symbol.Identity, error) {
 			return
 		}
 		s.present = map[meta.KeyName][]symbol.Identity{}
-		for _, e := range rows {
-			key, rest, found := bytes.Cut(e.key, []byte{keySep})
-			subject, parsed := parseIdentityKey(rest)
-			if !found || !parsed {
-				s.presentErr = fmt.Errorf("%w: a present key does not decode", ErrDamaged)
-				return
+		s.presentErr = s.strings.decode(func(strings map[string]string) error {
+			for _, e := range rows {
+				key, rest, found := bytes.Cut(e.key, []byte{keySep})
+				subject, parsed := parseIdentityKey(rest, strings)
+				if !found || !parsed {
+					return fmt.Errorf("%w: a present key does not decode", ErrDamaged)
+				}
+				name := meta.KeyName(intern(strings, key))
+				s.present[name] = append(s.present[name], subject)
 			}
-			name := meta.KeyName(key)
-			s.present[name] = append(s.present[name], subject)
-		}
+			return nil
+		})
 	})
 	return s.present[k], s.presentErr
 }

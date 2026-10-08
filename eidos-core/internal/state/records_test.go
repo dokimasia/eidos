@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -33,26 +34,32 @@ const (
 )
 
 // The ceilings of a lookup over the generation lookedUp records, each
-// after one lookup read the run's index. Every lookup allocates the
-// row's key, the block it reads and the block's list of entries, and a
-// record's lookup the decoder its match reads the entry through. A
-// string of one byte, such as the subject's discriminator, allocates
-// nothing.
+// after a lookup before it. The key of a lookup is on the stack, and the
+// run reader keeps the block that it decoded last, so a lookup reads
+// nothing from the ledger. A record's lookup allocates the decoder that
+// its match reads the entry through. A string of one byte, such as the
+// subject's discriminator, allocates nothing.
 const (
-	// validationAllocs is one validation's lookup: the key, the block and
-	// its entries, the decoder, the subject's four longer strings, and the
-	// list of reads.
-	validationAllocs = 9
-	// invocationAllocs is one invocation's lookup: the key, the block and
-	// its entries, the decoder, the plan, the plugin, the subject's four
-	// longer strings, and the list of reads.
-	invocationAllocs = 11
-	// checkAllocs is one check's lookup: the key, the block and its
-	// entries, the decoder, the check's name, and the list of reads.
-	checkAllocs = 6
-	// readersAllocs is one edge's readers: the key, the block and its
-	// entries, and the list of records.
-	readersAllocs = 4
+	// validationAllocs is one validation's lookup: the decoder, the
+	// subject's four longer strings, and the list of reads.
+	validationAllocs = 6
+	// invocationAllocs is one invocation's lookup: the decoder, the plan,
+	// the plugin, the subject's four longer strings, and the list of
+	// reads.
+	invocationAllocs = 8
+	// checkAllocs is one check's lookup: the decoder, the check's name,
+	// and the list of reads.
+	checkAllocs = 3
+	// validationsAllocs is the ceiling of Validations over one row. It
+	// adds the list of records to the allocations of one validation's
+	// lookup.
+	validationsAllocs = 7
+	// invocationsAllocs is the ceiling of Invocations over one row. It
+	// adds the list of records to the allocations of one invocation's
+	// lookup.
+	invocationsAllocs = 9
+	// readersAllocs is one edge's readers: the list of records.
+	readersAllocs = 1
 )
 
 // The record cases' carrier and finding, and a host unit of the plan.
@@ -190,10 +197,12 @@ func TestRecords(t *testing.T) {
 					Subject:    recordedSubject,
 					Directives: ds,
 					Reads: sortedEdges(
-						state.DeclarationEdge(siblingSubject), state.DeclarationEdge(recordedSubject),
+						state.DeclarationEdge(siblingSubject),
+						state.DeclarationEdge(recordedSubject),
+						state.FindingsEdge,
 					),
 					Findings: []diag.Diag{recordedDiag},
-				}, "with its directives, its reads and its findings")
+				}, "the record contains the directives, the reads, the findings edge and the finding")
 			})
 
 			t.Run("returns false for a subject nothing validated", func(t *testing.T) {
@@ -306,7 +315,11 @@ func TestRecords(t *testing.T) {
 				got, held, err := g.Phases(t.Context()).Invocation(recordedPlan, m)
 				assert.NoError(t, err, "the invocations table reads")
 				assert.True(t, held, "the invocation is recorded")
-				reads := sortedEdges(state.FactEdge(recordedSubject, edgeKey), state.DeclarationEdge(recordedSubject))
+				reads := sortedEdges(
+					state.FactEdge(recordedSubject, edgeKey),
+					state.DeclarationEdge(recordedSubject),
+					state.FindingsEdge,
+				)
 				assert.Equal(t, got, state.Invocation{
 					Plan:     recordedPlan,
 					Match:    m,
@@ -316,7 +329,7 @@ func TestRecords(t *testing.T) {
 					Hosts:    inv.Hosts,
 					Claimed:  inv.Claimed,
 					Findings: inv.Findings,
-				}, "with its reads, its subject's edge added, and everything else as journaled")
+				}, "the record adds the subject's edge and the findings edge to the journaled invocation")
 			})
 
 			t.Run("returns the record of a whole call without a subject's edge", func(t *testing.T) {
@@ -382,9 +395,9 @@ func TestRecords(t *testing.T) {
 				assert.True(t, held, "the check is recorded")
 				assert.Equal(t, got, state.Check{
 					Name:     checkID,
-					Reads:    []state.EdgeHash{state.FactEdge(siblingSubject, edgeKey)},
+					Reads:    sortedEdges(state.FactEdge(siblingSubject, edgeKey), state.FindingsEdge),
 					Findings: []diag.Diag{recordedDiag},
-				}, "with its reader's reads and its findings")
+				}, "the record contains the reader's reads, the findings edge and the finding")
 			})
 
 			t.Run("returns false for a check nothing called", func(t *testing.T) {
@@ -408,6 +421,151 @@ func TestRecords(t *testing.T) {
 				assert.NoError(t, err, "the shared row reads")
 				assert.True(t, held, "the check has an entry")
 				assert.Equal(t, got.Name, checkID, "the check's own entry is found")
+			})
+		})
+
+		t.Run("Validations", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns the record of the reference's subject", func(t *testing.T) {
+				t.Parallel()
+
+				ds := validatedDirectives()
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, ds, nil, []diag.Diag{recordedDiag})
+				})
+				got, err := g.Phases(t.Context()).Validations(state.ValidationRef(recordedSubject))
+				assert.NoError(t, err, "the validations table reads")
+				assert.Equal(t, got, []state.Validation{{
+					Subject:    recordedSubject,
+					Directives: ds,
+					Reads:      sortedEdges(state.DeclarationEdge(recordedSubject), state.FindingsEdge),
+					Findings:   []diag.Diag{recordedDiag},
+				}}, "Validations returns the whole record")
+			})
+
+			t.Run("returns every entry of a shared row in row order", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.ValidationRef(recordedSubject)
+				shared := sharedRow(t, state.TableValidations, ref.ID,
+					func(r *state.Recorder) { r.Lane("").Validation(siblingSubject, nil, nil, nil) },
+					func(r *state.Recorder) { r.Lane("").Validation(recordedSubject, nil, nil, nil) })
+				got, err := shared.Phases(t.Context()).Validations(ref)
+				assert.NoError(t, err, "the shared row reads")
+				assert.Length(t, got, 2, "the row lists both entries")
+				expect.Equal(t, got[0].Subject, siblingSubject, "the sibling's entry comes first")
+				expect.Equal(t, got[1].Subject, recordedSubject, "the subject's entry comes second")
+			})
+
+			t.Run("returns nothing for a reference that the table does not contain", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, nil, nil, nil)
+				})
+				got, err := g.Phases(t.Context()).Validations(state.ValidationRef(siblingSubject))
+				assert.NoError(t, err, "the validations table reads")
+				assert.Empty(t, got, "the sibling validated nothing")
+			})
+
+			t.Run("returns ErrDamaged for an entry that does not decode", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.ValidationRef(recordedSubject)
+				g := putRows(t, state.TableValidations, state.Row{Key: idKey(ref.ID), Value: []byte{1, 1, 0x80}})
+				_, err := g.Phases(t.Context()).Validations(ref)
+				assert.ErrorIs(t, err, state.ErrDamaged, "the entry's subject is cut short")
+			})
+
+			t.Run("returns ErrDamaged for a row that does not decode", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.ValidationRef(recordedSubject)
+				g := putRows(t, state.TableValidations, state.Row{Key: idKey(ref.ID), Value: []byte{2}})
+				_, err := g.Phases(t.Context()).Validations(ref)
+				assert.ErrorIs(t, err, state.ErrDamaged, "the row counts more entries than it contains")
+			})
+
+			t.Run("returns ErrDamaged for a table that does not read whole", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, nil, nil, nil)
+				})
+				damageRun(t, l, func(int) int { return 3 })
+				_, err := g.Phases(t.Context()).Validations(state.ValidationRef(recordedSubject))
+				assert.ErrorIs(t, err, state.ErrDamaged, "the damaged block is found")
+			})
+		})
+
+		t.Run("Invocations", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns the record of the reference's match", func(t *testing.T) {
+				t.Parallel()
+
+				fact := meta.FactRef{Subject: recordedSubject, Key: edgeKey}
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Invoked(plugin.Invocation{
+						Match: annotated(recordedSubject), Claimed: []meta.FactRef{fact}, Findings: reported,
+					})
+				})
+				got, err := g.Phases(t.Context()).Invocations(state.InvocationRef("", annotated(recordedSubject)))
+				assert.NoError(t, err, "the invocations table reads")
+				assert.Equal(t, got, []state.Invocation{{
+					Match:    annotated(recordedSubject),
+					Reads:    sortedEdges(state.DeclarationEdge(recordedSubject), state.FindingsEdge),
+					Claimed:  []meta.FactRef{fact},
+					Findings: reported,
+				}}, "Invocations returns the whole record")
+			})
+
+			t.Run("returns every entry of a shared row in row order", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.InvocationRef(recordedPlan, generated(recordedSubject))
+				shared := sharedRow(t, state.TableInvocations, ref.ID,
+					func(r *state.Recorder) {
+						r.Lane(recordedPlan).Invoked(plugin.Invocation{
+							Match: generated(siblingSubject), Findings: reported,
+						})
+					},
+					func(r *state.Recorder) {
+						r.Lane(recordedPlan).Invoked(plugin.Invocation{
+							Match: generated(recordedSubject), Findings: reported,
+						})
+					})
+				got, err := shared.Phases(t.Context()).Invocations(ref)
+				assert.NoError(t, err, "the shared row reads")
+				assert.Length(t, got, 2, "the row lists both entries")
+				expect.Equal(t, got[0].Match, generated(siblingSubject), "the sibling's entry comes first")
+				expect.Equal(t, got[1].Match, generated(recordedSubject), "the subject's entry comes second")
+				expect.Equal(t, got[1].Plan, recordedPlan, "the subject's entry names the plan")
+			})
+
+			t.Run("returns nothing for a reference that the table does not contain", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane(recordedPlan).Invoked(plugin.Invocation{
+						Match: generated(recordedSubject), Findings: reported,
+					})
+				})
+				ref := state.InvocationRef(failedPlan, generated(recordedSubject))
+				got, err := g.Phases(t.Context()).Invocations(ref)
+				assert.NoError(t, err, "the invocations table reads")
+				assert.Empty(t, got, "the other plan ran no such invocation")
+			})
+
+			t.Run("returns ErrDamaged for an entry that does not decode", func(t *testing.T) {
+				t.Parallel()
+
+				ref := state.InvocationRef(recordedPlan, generated(recordedSubject))
+				g := putRows(t, state.TableInvocations, state.Row{Key: idKey(ref.ID), Value: []byte{1, 1, 0x80}})
+				_, err := g.Phases(t.Context()).Invocations(ref)
+				assert.ErrorIs(t, err, state.ErrDamaged, "the entry's plan is cut short")
 			})
 		})
 
@@ -450,6 +608,25 @@ func TestRecords(t *testing.T) {
 					assert.NoError(t, err, "the readers table reads")
 					assert.Equal(t, refs, []state.RecordRef{state.CheckRef(checkID)}, "the check read the edge")
 				}
+			})
+
+			t.Run("returns every record that reported a finding for the findings edge", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					shared := r.Lane("")
+					shared.Validation(recordedSubject, nil, nil, []diag.Diag{recordedDiag})
+					shared.Validation(siblingSubject, nil, nil, nil)
+					shared.Invoked(plugin.Invocation{Match: annotated(siblingSubject), Findings: reported})
+					shared.Check(checkID, nil, []diag.Diag{recordedDiag})
+				})
+				refs, err := g.Phases(t.Context()).Readers(state.FindingsEdge)
+				assert.NoError(t, err, "the readers table reads")
+				assert.Equal(t, refs, sortedRefs(
+					state.ValidationRef(recordedSubject),
+					state.InvocationRef("", annotated(siblingSubject)),
+					state.CheckRef(checkID),
+				), "the readers are the three records that reported a finding")
 			})
 
 			t.Run("returns ErrDamaged for a row whose length does not fit its count", func(t *testing.T) {
@@ -517,7 +694,7 @@ func TestRecordsAllocs(t *testing.T) {
 		var verr error
 		_, held, verr = s.Validation(recordedSubject)
 		err = cmp.Or(err, verr)
-	}, validationAllocs, "Validation allocates the key, the block and the decoded record")
+	}, validationAllocs, "Validation allocates the decoder and the decoded record")
 	assert.NoError(t, err, "the validation reads")
 	assert.True(t, held, "the subject's validation is recorded")
 	match := generated(recordedSubject)
@@ -525,30 +702,48 @@ func TestRecordsAllocs(t *testing.T) {
 		var ierr error
 		_, held, ierr = s.Invocation(recordedPlan, match)
 		err = cmp.Or(err, ierr)
-	}, invocationAllocs, "Invocation allocates the key, the block and the decoded record")
+	}, invocationAllocs, "Invocation allocates the decoder and the decoded record")
 	assert.NoError(t, err, "the invocation reads")
 	assert.True(t, held, "the invocation is recorded")
 	assert.MaxAllocs(t, func() {
 		var cerr error
 		_, held, cerr = s.Check(checkID)
 		err = cmp.Or(err, cerr)
-	}, checkAllocs, "Check allocates the key, the block and the decoded record")
+	}, checkAllocs, "Check allocates the decoder and the decoded record")
 	assert.NoError(t, err, "the check reads")
 	assert.True(t, held, "the check is recorded")
+	validated := state.ValidationRef(recordedSubject)
+	var validations []state.Validation
+	assert.MaxAllocs(t, func() {
+		var verr error
+		validations, verr = s.Validations(validated)
+		err = cmp.Or(err, verr)
+	}, validationsAllocs, "Validations allocates the decoder and the decoded records")
+	assert.NoError(t, err, "the validations table reads")
+	assert.Length(t, validations, 1, "the row lists the subject's validation")
+	invoked := state.InvocationRef(recordedPlan, match)
+	var invocations []state.Invocation
+	assert.MaxAllocs(t, func() {
+		var ierr error
+		invocations, ierr = s.Invocations(invoked)
+		err = cmp.Or(err, ierr)
+	}, invocationsAllocs, "Invocations allocates the decoder and the decoded records")
+	assert.NoError(t, err, "the invocations table reads")
+	assert.Length(t, invocations, 1, "the row lists the plan's invocation")
 	edge := state.DeclarationEdge(recordedSubject)
 	var readers []state.RecordRef
 	assert.MaxAllocs(t, func() {
 		var rerr error
 		readers, rerr = s.Readers(edge)
 		err = cmp.Or(err, rerr)
-	}, readersAllocs, "Readers allocates the key, the block and the list of records")
+	}, readersAllocs, "Readers allocates the list of records")
 	assert.NoError(t, err, "the readers read")
 	assert.Length(t, readers, 2, "both readers of the subject")
 }
 
 // BenchmarkRecords measures each record's reference and their
-// comparison, and each lookup over the generation lookedUp records,
-// after one lookup read the run's index.
+// comparison, and each lookup over the generation that lookedUp records,
+// after one lookup that the warm-up runs.
 func BenchmarkRecords(b *testing.B) {
 	benches := []struct {
 		name string
@@ -627,6 +822,36 @@ func BenchmarkRecords(b *testing.B) {
 			}
 			assert.NoError(b, err, "the check reads")
 			assert.Equal(b, got.Name, checkID, "Check returns the check's record")
+		})
+
+		b.Run("Validations", func(b *testing.B) {
+			ref := state.ValidationRef(recordedSubject)
+			c := bench.Start(b).Warmup(1).MaxAllocs(validationsAllocs)
+			defer c.End()
+			var (
+				got []state.Validation
+				err error
+			)
+			for c.Loop() {
+				got, err = s.Validations(ref)
+			}
+			assert.NoError(b, err, "the validations table reads")
+			assert.Length(b, got, 1, "Validations returns the subject's record")
+		})
+
+		b.Run("Invocations", func(b *testing.B) {
+			ref := state.InvocationRef(recordedPlan, generated(recordedSubject))
+			c := bench.Start(b).Warmup(1).MaxAllocs(invocationsAllocs)
+			defer c.End()
+			var (
+				got []state.Invocation
+				err error
+			)
+			for c.Loop() {
+				got, err = s.Invocations(ref)
+			}
+			assert.NoError(b, err, "the invocations table reads")
+			assert.Length(b, got, 1, "Invocations returns the plan's record")
 		})
 
 		b.Run("Readers", func(b *testing.B) {

@@ -120,7 +120,7 @@ type source struct {
 // the source declarations, and the routing inputs a case varies.
 type fixture struct {
 	units      []plugin.Unit
-	directives map[symbol.Identity][]directive.Directive
+	directives plugin.ValidatedMap
 	outputs    map[plugin.ID][]plugin.Output
 	config     layout.Config
 	speller    plugin.FileSpeller
@@ -136,7 +136,7 @@ type fixture struct {
 func newFixture(units ...plugin.Unit) *fixture {
 	return &fixture{
 		units:      units,
-		directives: map[symbol.Identity][]directive.Directive{},
+		directives: plugin.ValidatedMap{},
 		outputs:    families(),
 		speller:    spelling{},
 	}

@@ -54,6 +54,13 @@
 // invocations. [Generation.Phases] returns a generation's record, which
 // looks up a record by its key and the records that read an edge.
 //
+// A warm run calls [Recorder.Keep], drops the record of each validation
+// and annotator invocation that it executes again or removes, and names
+// each subject whose claims it withdrew. The commit then keeps the other
+// shared records and bags of claims of the generation. A record that
+// reported a finding lists [FindingsEdge] among its reads, so the readers
+// table lists every record whose findings a warm run reports again.
+//
 // # The parse memo
 //
 // A [Memo] keeps the region of every unit a run parsed under memo/, each

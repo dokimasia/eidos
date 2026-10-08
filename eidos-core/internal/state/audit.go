@@ -34,7 +34,7 @@ func (s *PhaseState) Audits() ([]Audit, error) {
 	out := make([]Audit, 0, len(rows))
 	for _, e := range rows {
 		key, rest, found := bytes.Cut(e.key, []byte{keySep})
-		subject, parsed := parseIdentityKey(rest)
+		subject, parsed := parseIdentityKey(rest, nil)
 		if !found || !parsed {
 			return nil, fmt.Errorf("%w: an audit key does not decode", ErrDamaged)
 		}

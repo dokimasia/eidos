@@ -324,6 +324,8 @@ func BenchmarkMemo(b *testing.B) {
 // memoAt returns a memo of this build over a ledger, at an instant,
 // under the test's context.
 func memoAt(tb testing.TB, l ledger.Ledger, limit int64, now time.Time) *state.Memo {
+	tb.Helper()
+
 	return state.NewMemo(tb.Context(), l, thisBuild, limit, now)
 }
 

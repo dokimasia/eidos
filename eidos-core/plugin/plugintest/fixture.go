@@ -224,13 +224,14 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
 
-// index seals the graph on first use and returns the routing
-// surface a phase call dispatches through.
+// index seals the graph on first use, and returns the routing surface
+// that a phase call dispatches through. The index reads the validated
+// table of the fixture.
 func (f *Fixture) index(tb assert.TB) *plugin.Index {
 	tb.Helper()
 
 	f.Graph.Freeze()
-	ix, err := plugin.NewIndex(f.Graph, f.Facts, f.Directives, f.Scope)
+	ix, err := plugin.NewIndex(f.Graph, f.Facts, plugin.ValidatedMap(f.Directives), f.Scope)
 	assert.NoError(tb, err, "the routing surface builds")
 	return ix
 }

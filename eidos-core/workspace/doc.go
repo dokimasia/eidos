@@ -82,6 +82,15 @@
 // whose inputs are unchanged from the generation, whose region the
 // graph decodes on first read.
 //
+// A warm run restores its fact store from the generation, and executes
+// again only the validations and annotator invocations that read what
+// the load changed. It also runs an annotator invocation again when the
+// invocation's subject changed, or when a fact of the subject has another
+// winner than in the generation. The propagation stops at a fact whose
+// winner did not change, so no record that read the fact runs again. The
+// run reports the findings of every validation and annotator invocation
+// that it keeps. The plans and Close run whole.
+//
 // Each generation records the SHA-256 of [Workspace.Fingerprint] and of
 // the template trees the plans render through, as the run reads them,
 // and the digest of the executable that wrote it. A generation of another
@@ -89,9 +98,15 @@
 // reported under [ColdState], and the run runs cold. A run that meets a
 // damaged record or region discards what it derived before any plan
 // commits. It then reports [ColdState] and runs again cold. [Input.Cold]
-// ignores the sealed state and reports nothing for it. A dry run, a run
-// over a caller's graph, a run whose previous record does not read and
-// a run that cannot read its executable do not write a generation.
+// ignores the sealed state and reports nothing for it. These runs do not
+// write a generation:
+//
+//   - a dry run
+//   - a run over a caller's graph
+//   - a run whose previous record does not read
+//   - a run that cannot read its executable
+//   - a run whose stamp replay refused a stamp or met a dangling one,
+//     because no record of the sealed state keeps that finding
 //
 // [Builder.Memo] keeps a parse memo: the region of every unit a run
 // parsed, stored under the unit's key and the executable's digest. The
@@ -104,8 +119,9 @@
 // [Report.Stats] counts what the run executed: the files the gate
 // statted and hashed, the units the load parsed, restored, kept and
 // parsed again to link, the regions the run decoded, the subjects it
-// validated, the files the plans rendered, the checks it called, and the
-// generation and the bytes the commit wrote.
+// validated, the invocations of each phase call, the files the plans
+// rendered, the checks it called, and the generation and the bytes the
+// commit wrote.
 //
 // # The output
 //

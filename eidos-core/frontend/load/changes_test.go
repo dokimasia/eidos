@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -26,6 +27,21 @@ var (
 	rowFieldID = symbol.Identity{
 		Lang: frontendtest.ScriptedLang, Package: storePath, Owner: rowName, Name: "f0", Kind: symbol.KindField,
 	}
+)
+
+// The directives that the change cases attach to the row. usersTable is
+// the row's directive in the standard tree, rowsTable has its spelling
+// with another value, and viewMark has a second spelling.
+const (
+	usersTable = "+gen:table name=users"
+	rowsTable  = "+gen:table name=rows"
+	viewMark   = "+gen:view"
+)
+
+// The spellings of the row's two directives.
+const (
+	tableSpelling directive.Name = "gen:table"
+	viewSpelling  directive.Name = "gen:view"
 )
 
 // A load states what it changed by identity, which the warm run's dirty
@@ -107,5 +123,52 @@ func TestChanges(t *testing.T) {
 			assert.Empty(t, warm.report.Changes.Changed, "no declaration moved")
 			assert.Equal(t, warm.report.Changes.Packages, []symbol.Identity{shared}, "and the package's name changed")
 		})
+
+		t.Run("reports a subject whose directives an edit changed as directed", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody(rowsTable)))
+			assert.Equal(t, warm.report.Changes.Directed, []symbol.Identity{rowID()}, "the row's directive changed")
+		})
+
+		t.Run("reports no spelling for an edit that keeps every spelling", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody(rowsTable)))
+			assert.Empty(t, warm.report.Changes.Spellings, "the row still has one gen:table instance")
+		})
+
+		t.Run("reports a spelling that a subject gained", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody(usersTable, viewMark)))
+			assert.Equal(t, warm.report.Changes.Spellings, []directive.Name{viewSpelling},
+				"the row gained a gen:view instance")
+		})
+
+		t.Run("reports a spelling that a subject lost", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, stdTree(), stdTreeWith(storeFile, storeBody()))
+			assert.Equal(t, warm.report.Changes.Spellings, []directive.Name{tableSpelling},
+				"the row lost its gen:table instance")
+		})
+
+		t.Run("reports a file whose stamps an edit changed as restamped", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, stdTree(), withAPI("package svc/api\ntype User string\nstamp fake.testFile yes\n"))
+			assert.Equal(t, warm.report.Changes.Restamped, []symbol.Identity{apiFileID}, "the API file has a new stamp")
+		})
 	})
+}
+
+// storeBody returns the body of the standard tree's store file with the
+// row's directive lines replaced by directives, one line each.
+func storeBody(directives ...string) string {
+	var lines string
+	for _, d := range directives {
+		lines += d + "\n"
+	}
+	return "package svc/store\nimport api svc/api\ntype Row api.User int\n" + lines + "const rowmax\n"
 }

@@ -10,8 +10,8 @@
 //
 // # Dependency position
 //
-// sdk/plugin imports core/plugin, sdk/diag, sdk/directive,
-// sdk/meta, sdk/store, sdk/symbol and the Go stdlib.
+// sdk/plugin imports core/plugin, sdk/diag, sdk/meta, sdk/store
+// and the Go stdlib.
 package plugin
 
 import (
@@ -19,10 +19,8 @@ import (
 
 	core "go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/sdk/diag"
-	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/store"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // Target names a rendering target. It is a registered name: the
@@ -271,11 +269,38 @@ type FileReader = core.FileReader
 // kernel that fixed one shape would fix one language's.
 type ImportScope = core.ImportScope
 
-// Index is the dispatcher's routing surface over one frozen run:
-// untracked, scope-filtered enumeration, plus the validated
-// directive table and the skip table derived from it. Enumerating
-// it records nothing, because dispatch is not a plugin's read. A
-// plugin's own reads go through the [store.Reader] it is handed.
+// Validated is the table of validated directives that a run routes by.
+// It returns the typed instances of each subject in position order, as
+// validation returned them. A warm run does not load the whole table. It
+// reads the instances of a subject that it did not validate again from
+// the sealed state, the first time a route reads them.
+//
+// # Concurrency
+//
+// An implementation must be safe for concurrent use, because the lanes
+// of a phase call route concurrently.
+type Validated = core.Validated
+
+// ValidatedMap is a table of validated directives that is kept whole in
+// memory, keyed by subject. A cold run's validation returns one, and a
+// test can pass one to [NewIndex].
+//
+// # Concurrency
+//
+// A ValidatedMap is safe for concurrent reads. The caller must not
+// modify it after passing it to [NewIndex].
+//
+// # Allocation contract
+//
+// DirectivesOf allocates nothing.
+type ValidatedMap = core.ValidatedMap
+
+// Index is the dispatcher's routing surface over one frozen run. It
+// enumerates the declarations under the run's scope without tracking the
+// reads, and it reads the validated directive table and the skip rulings
+// that the table states. An enumeration does not record its reads,
+// because dispatch is not a plugin's read. A plugin's own reads go
+// through the [store.Reader] that it receives.
 //
 // Index wraps the graph and does not expose it, for two reasons.
 // Nothing reachable from a phase context can make a structural
@@ -283,25 +308,25 @@ type ImportScope = core.ImportScope
 // reachable can read another plugin's raw directives either. What
 // dispatch needs is exactly what is here.
 //
-// An Index is safe for concurrent reads: [NewIndex] fixes every
-// field, and the graph beneath it is frozen.
+// An Index is safe for concurrent reads. [NewIndex] fixes every field,
+// the graph is frozen, and the validated table is safe for concurrent
+// use.
 type Index = core.Index
 
 // NewIndex builds the routing surface for one run.
 //
 // It refuses a missing graph, a missing fact store and an unfrozen
 // graph, because routing over any of those would return partial
-// results. validated maps each subject to its typed instances in
-// position order, as validation returned them. The index keeps the
-// map, and the caller does not mutate it after handing it over. A
-// nil scope admits everything.
+// results. validated is the run's table of validated directives. The
+// index reads it one subject at a time, when a directive gate or a skip
+// ruling routes that subject. A nil table contains no directive, and a
+// nil scope admits every declaration.
 //
 // # Allocation contract
 //
-// NewIndex allocates the index. A run with a skip adds the skip table,
-// and a scope adds the set of packages it admits, each sized by what it
-// contains.
-func NewIndex(g *store.Graph, f *meta.Facts, validated map[symbol.Identity][]directive.Directive, sc store.Scope) (*Index, error) {
+// NewIndex allocates the index. With a scope, it also allocates the set
+// of packages that the scope admits.
+func NewIndex(g *store.Graph, f *meta.Facts, validated Validated, sc store.Scope) (*Index, error) {
 	return core.NewIndex(g, f, validated, sc)
 }
 

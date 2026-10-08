@@ -42,9 +42,12 @@ const (
 	auditAllocs = 2
 )
 
-// A lane records each validation, invocation and check with the edges it
-// read, a subject's own declaration edge added, and the recorder hands
-// every lane's records to the commit.
+// A lane records each validation, invocation and check with the edges
+// that it read. The lane adds the declaration edge of the record's
+// subject, and the findings edge for a record that reported a finding.
+// The recorder passes the records of every lane to the commit. On a warm
+// run, the commit also keeps the records of the generation that the run
+// did not drop.
 func TestRecorder(t *testing.T) {
 	t.Parallel()
 
@@ -81,9 +84,9 @@ func TestRecorder(t *testing.T) {
 				})
 				assert.Equal(t, got, state.Validation{
 					Subject:  recordedSubject,
-					Reads:    []state.EdgeHash{state.DeclarationEdge(recordedSubject)},
+					Reads:    sortedEdges(state.DeclarationEdge(recordedSubject), pinnedHash([]byte{findingsTag})),
 					Findings: []diag.Diag{recordedDiag},
-				}, "no directive, the subject's own edge, and the finding")
+				}, "the record lists the subject's own edge, the findings edge and the finding")
 			})
 		})
 
@@ -110,12 +113,22 @@ func TestRecorder(t *testing.T) {
 					"a run that records no phases journals into a nil lane")
 			})
 
+			t.Run("adds the findings edge to the reads of an invocation that reported a finding", func(t *testing.T) {
+				t.Parallel()
+
+				got := invocationOf(t, generated(recordedSubject), func(l *state.Lane) {
+					l.Invoked(plugin.Invocation{Match: generated(recordedSubject), Findings: reported})
+				})
+				assert.Equal(t, got.Reads, sortedEdges(state.DeclarationEdge(recordedSubject), state.FindingsEdge),
+					"the reads list the subject's edge and the findings edge")
+			})
+
 			t.Run("adds no edge for a match without a subject", func(t *testing.T) {
 				t.Parallel()
 
 				graphWide := plugin.MatchKey{Plugin: generatorID, Rule: structRule}
 				got := invocationOf(t, graphWide, func(l *state.Lane) {
-					l.Invoked(plugin.Invocation{Match: graphWide, Findings: reported})
+					l.Invoked(plugin.Invocation{Match: graphWide, Exports: []string{failedPlan}})
 				})
 				assert.Empty(t, got.Reads, "a graph-wide match reads no subject")
 			})
@@ -222,6 +235,18 @@ func TestRecorder(t *testing.T) {
 				assert.Equal(t, got.Reads, []state.EdgeHash{state.DeclarationEdge(siblingSubject)},
 					"the declaration the check looked up")
 			})
+
+			t.Run("adds the findings edge to the reads of a check that reported a finding", func(t *testing.T) {
+				t.Parallel()
+
+				g := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, nil, []diag.Diag{recordedDiag})
+				})
+				got, held, err := g.Phases(t.Context()).Check(checkID)
+				assert.NoError(t, err, "the checks table reads")
+				assert.True(t, held, "the check is recorded")
+				assert.Equal(t, got.Reads, []state.EdgeHash{state.FindingsEdge}, "the reads list the findings edge")
+			})
 		})
 	})
 
@@ -259,13 +284,140 @@ func TestRecorder(t *testing.T) {
 					"the one finding")
 			})
 		})
+
+		t.Run("Keep", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("makes the commit keep the generation's validations", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Validation(recordedSubject, nil, nil, []diag.Diag{recordedDiag})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.Lane("").Check(checkID, nil, nil)
+				})
+				_, held, err := g.Phases(t.Context()).Validation(recordedSubject)
+				assert.NoError(t, err, "the validations table reads")
+				assert.True(t, held, "the commit keeps a validation that no lane replaced")
+			})
+
+			t.Run("does nothing on a nil recorder", func(t *testing.T) {
+				t.Parallel()
+
+				var r *state.Recorder
+				assert.NotPanics(t, r.Keep, "a run that records no phases calls Keep on a nil recorder")
+			})
+		})
+
+		t.Run("DropValidation", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("leaves the subject's validation out of a kept commit", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					shared := r.Lane("")
+					shared.Validation(recordedSubject, nil, nil, nil)
+					shared.Validation(siblingSubject, nil, nil, nil)
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.DropValidation(recordedSubject)
+				})
+				s := g.Phases(t.Context())
+				_, held, err := s.Validation(recordedSubject)
+				assert.NoError(t, err, "the validations table reads")
+				assert.False(t, held, "the commit leaves out the dropped validation")
+				_, held, err = s.Validation(siblingSubject)
+				assert.NoError(t, err, "the validations table reads")
+				assert.True(t, held, "the commit keeps the sibling's validation")
+			})
+
+			t.Run("does nothing on a nil recorder", func(t *testing.T) {
+				t.Parallel()
+
+				var r *state.Recorder
+				assert.NotPanics(t, func() { r.DropValidation(recordedSubject) },
+					"a run that records no phases calls DropValidation on a nil recorder")
+			})
+		})
+
+		t.Run("DropInvocation", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("leaves the match's invocation out of a kept commit", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					shared := r.Lane("")
+					shared.Invoked(plugin.Invocation{Match: annotated(recordedSubject), Findings: reported})
+					shared.Invoked(plugin.Invocation{Match: annotated(siblingSubject), Findings: reported})
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.DropInvocation(annotated(recordedSubject))
+				})
+				s := g.Phases(t.Context())
+				_, held, err := s.Invocation("", annotated(recordedSubject))
+				assert.NoError(t, err, "the invocations table reads")
+				assert.False(t, held, "the commit leaves out the dropped invocation")
+				_, held, err = s.Invocation("", annotated(siblingSubject))
+				assert.NoError(t, err, "the invocations table reads")
+				assert.True(t, held, "the commit keeps the sibling's invocation")
+			})
+
+			t.Run("does nothing on a nil recorder", func(t *testing.T) {
+				t.Parallel()
+
+				var r *state.Recorder
+				assert.NotPanics(t, func() { r.DropInvocation(annotated(recordedSubject)) },
+					"a run that records no phases calls DropInvocation on a nil recorder")
+			})
+		})
+
+		t.Run("Withdrew", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("drops the bag of a subject that the run left without a claim", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				facts, _ := stampedFacts(t)
+				recordedPhases(t, l, facts, nil, func(*state.Recorder) {})
+				g := recordedPhases(t, l, meta.NewFacts(facts.Registry()), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.Withdrew(recordedSubject)
+				})
+				s := g.Phases(t.Context())
+				got, err := s.Claims(recordedSubject)
+				assert.NoError(t, err, "the claims table reads")
+				assert.Empty(t, got, "the commit drops the subject's bag")
+				got, err = s.Claims(siblingSubject)
+				assert.NoError(t, err, "the claims table reads")
+				assert.Equal(t, got, bagOf(facts, siblingSubject), "the commit keeps the sibling's bag")
+			})
+
+			t.Run("does nothing on a nil recorder", func(t *testing.T) {
+				t.Parallel()
+
+				var r *state.Recorder
+				assert.NotPanics(t, func() { r.Withdrew(recordedSubject) },
+					"a run that records no phases calls Withdrew on a nil recorder")
+			})
+		})
 	})
 }
 
-// A lane allocates only to grow its buffers, which double when they fill,
-// and a recorder only its lanes and the lists it keeps, in the ordinary
-// run, which runs no benchmark. The check runs alone, because the count
-// includes every goroutine's allocations.
+// A lane allocates only to grow its buffers, which double when they fill.
+// A recorder allocates only its lanes, lists and sets, so a repeated drop
+// or withdrawal does not allocate. The ordinary run checks these
+// ceilings, because it does not run benchmarks. The check runs alone,
+// because the count includes every goroutine's allocations.
 func TestRecorderAllocs(t *testing.T) {
 	reads := readsOf(t, nil, meta.FactRef{Subject: recordedSubject, Key: edgeKey})
 	inv := plugin.Invocation{Match: generated(recordedSubject), Reads: reads}
@@ -287,11 +439,22 @@ func TestRecorderAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { (&state.Recorder{}).Audit(edgeKey, recordedSubject, recordedDiag) }, auditAllocs,
 		"Audit allocates the recorder's list of findings")
 	assert.NotNil(t, lane, "the lane records")
+	r := droppedRecorder()
+	match := generated(recordedSubject)
+	assert.MaxAllocs(t, r.Keep, 0, "Keep allocates nothing")
+	assert.MaxAllocs(t, func() { r.DropValidation(recordedSubject) }, 0,
+		"DropValidation allocates nothing for a subject that it dropped before")
+	assert.MaxAllocs(t, func() { r.DropInvocation(match) }, 0,
+		"DropInvocation allocates nothing for a match that it dropped before")
+	assert.MaxAllocs(t, func() { r.Withdrew(recordedSubject) }, 0,
+		"Withdrew allocates nothing for a subject that it recorded before")
 }
 
 // BenchmarkRecorder measures a lane's record of each kind, of one fact
-// read, its buffers grown before the measurement, and a new recorder's
-// first lane and first finding.
+// read, with the lane's buffers grown before the measurement. It also
+// measures the first lane and the first finding of a new recorder, and
+// the calls that a warm run makes on a recorder that received each call
+// before.
 func BenchmarkRecorder(b *testing.B) {
 	reads := readsOf(b, nil, meta.FactRef{Subject: recordedSubject, Key: edgeKey})
 	inv := plugin.Invocation{Match: generated(recordedSubject), Reads: reads}
@@ -361,7 +524,41 @@ func BenchmarkRecorder(b *testing.B) {
 			}
 			assert.NotNil(b, r, "the recorder keeps the finding")
 		})
+
+		r := droppedRecorder()
+		match := generated(recordedSubject)
+		benches := []struct {
+			name string
+			call func()
+		}{
+			{name: "Keep", call: r.Keep},
+			{name: "DropValidation", call: func() { r.DropValidation(recordedSubject) }},
+			{name: "DropInvocation", call: func() { r.DropInvocation(match) }},
+			{name: "Withdrew", call: func() { r.Withdrew(recordedSubject) }},
+		}
+		for _, bb := range benches {
+			b.Run(bb.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				for c.Loop() {
+					bb.call()
+				}
+				assert.NotNil(b, r, "the recorder keeps its sets")
+			})
+		}
 	})
+}
+
+// droppedRecorder returns a recorder that already dropped the validation
+// of the recorded subject and the invocation of its plan, and that
+// recorded a withdrawal from the subject. A repeated call of each method
+// adds nothing to its set.
+func droppedRecorder() *state.Recorder {
+	r := &state.Recorder{}
+	r.DropValidation(recordedSubject)
+	r.DropInvocation(generated(recordedSubject))
+	r.Withdrew(recordedSubject)
+	return r
 }
 
 // validationOf records the validation build makes into a shared lane, and

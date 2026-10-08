@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/internal/pathset"
 	"go.dokimi.dev/eidos/core/internal/state"
@@ -209,7 +208,7 @@ func (w *Workspace) audit(
 // calls counts into stats, and records its reader's reads and its
 // findings into a lane of rec, where rec is set.
 func (w *Workspace) check(
-	g *store.Graph, facts *meta.Facts, table map[symbol.Identity][]directive.Directive,
+	g *store.Graph, facts *meta.Facts, table plugin.Validated,
 	runs []*planRun, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) (bool, error) {
 	if len(w.checks) == 0 {

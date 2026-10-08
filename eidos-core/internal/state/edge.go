@@ -15,15 +15,24 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The tag an edge's spelling opens with, one for each grain, so two
-// edges of different grains never spell alike.
+// The tags that open the spellings of edges. Each grain has its own tag,
+// and so does the findings edge, so two edges of different grains never
+// have the same spelling.
 const (
 	edgeDeclaration = 'd'
 	edgePackage     = 'p'
 	edgeKind        = 'k'
 	edgeDirective   = 'r'
 	edgeFact        = 'f'
+	edgeFindings    = 'x'
 )
+
+// FindingsEdge is an edge that a record lists among its reads when the
+// record reported a finding. No edit makes this edge dirty. Its readers
+// row lists every validation, invocation and check that reported a
+// finding, so a warm run can report the findings of each record that it
+// keeps.
+var FindingsEdge = hashOf([]byte{edgeFindings})
 
 // spellingCap is the capacity of the stack buffer an edge or a record's
 // key is spelled in, so a spelling allocates only where it is longer.

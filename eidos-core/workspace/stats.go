@@ -20,7 +20,9 @@ type Invoked struct {
 	Phase  plugin.Phase
 	// Count is the number of invocations the call handed its journal. A
 	// plugin that implements its role directly and journals nothing
-	// counts zero.
+	// counts zero. On a warm run, an annotator's count includes only the
+	// invocations that the run executed again, and an annotator that did
+	// not run counts zero.
 	Count int
 }
 
@@ -39,7 +41,8 @@ type Stats struct {
 	// Decoded counts the regions the run decoded.
 	Decoded int
 	// Validated counts the subjects whose directives the run validated. A
-	// subject the graph does not contain is reported and not validated.
+	// subject the graph does not contain is reported and not validated. A
+	// warm run counts only the subjects that it validated again.
 	Validated int
 	// Invoked counts the invocations each phase call ran.
 	Invoked []Invoked

@@ -412,12 +412,12 @@ func gatedStruct(tb assert.TB, n int) (*store.Graph, *node.Struct) {
 
 // repeated returns the validated table with n instances of a
 // repeatable directive on one subject, in instance order.
-func repeated(subject symbol.Identity, schema directive.Schema, n int) map[symbol.Identity][]directive.Directive {
+func repeated(subject symbol.Identity, schema directive.Schema, n int) plugin.ValidatedMap {
 	ds := make([]directive.Directive, n)
 	for i := range ds {
 		ds[i] = directive.Directive{Name: schema.Canonical(), Instance: i}
 	}
-	return map[symbol.Identity][]directive.Directive{subject: ds}
+	return plugin.ValidatedMap{subject: ds}
 }
 
 // on returns the generator context with its worker count set.

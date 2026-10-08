@@ -440,7 +440,8 @@ func TestSealed(t *testing.T) {
 			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			cold := findings(report.Sink, workspace.ColdState)
 			assert.Length(t, cold, 1, "one ColdState states the damage")
-			assert.Contains(t, cold[0].Msg, "record the phases", "which the record of the phases met")
+			assert.Contains(t, cold[0].Msg, "read the record of the phases",
+				"the warm run's first read of the phases finds the damage")
 			assert.True(t, report.Stats.Cold, "the report is the cold run's")
 		})
 
@@ -549,8 +550,8 @@ func TestSealed(t *testing.T) {
 			annotated, held, err := s.Invocation("", plugin.MatchKey{Plugin: modulerID, Rule: plugin.WholeCall})
 			assert.NoError(t, err, "the invocations table reads")
 			assert.True(t, held, "the annotator's call is one whole call")
-			assert.Equal(t, annotated.Reads, []state.EdgeHash{state.DeclarationEdge(rowID)},
-				"which read what its reader read")
+			assert.Permutation(t, annotated.Reads, []state.EdgeHash{state.DeclarationEdge(rowID), state.FindingsEdge},
+				"the record lists the reads of its reader and the findings edge")
 			assert.Equal(t, annotated.Claimed, []meta.FactRef{
 				{Subject: storePackage, Key: meta.ModuleKey}, {Subject: storePackage, Key: meta.ModuleRootKey},
 			}, "and claimed the module facts")
@@ -768,8 +769,9 @@ func truncate(t *testing.T, mem *ledger.Mem, pick func(live int) bool) {
 
 // flipLastByte inverts the last byte of the live generation's run
 // segment, which ends with the footer of the last table's run: a phase
-// table's, whose records follow the load's in table order. The load
-// reads no phase table, so the record of the phases meets the damage.
+// table's, whose records follow the load's in table order. The load does
+// not read a phase table, so the warm run's first read of the phases
+// finds the damage.
 func flipLastByte(t *testing.T, mem *ledger.Mem) {
 	t.Helper()
 

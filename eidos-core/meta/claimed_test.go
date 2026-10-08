@@ -105,9 +105,12 @@ func TestClaimed(t *testing.T) {
 			t.Parallel()
 
 			r, _, role, _ := fixture(t)
-			src := &recordedSource{claims: map[symbol.Identity][]meta.StoredClaim{
-				subject: {{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"}},
-			}}
+			src := &recordedSource{
+				claims: map[symbol.Identity][]meta.StoredClaim{
+					subject: {{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"}},
+				},
+				present: map[meta.KeyName][]symbol.Identity{"shape.role": {subject}},
+			}
 			f := meta.Restore(r, src)
 			_, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the restored claim reads present")

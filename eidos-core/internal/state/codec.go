@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"time"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -199,9 +200,9 @@ func (e *encoder) value(v any) error {
 type decoder struct {
 	wire.Decoder
 	t *node.StringTable
-	// interned maps the bytes of each inline string the decoders of one
-	// load state read to the one string they make of them, and is nil
-	// for a decoder that makes a new string of every inline string.
+	// interned maps the bytes of each inline string that the decoders of
+	// one state read to the one string that they make of the bytes. It is
+	// nil for a decoder that makes a new string of every inline string.
 	interned map[string]string
 }
 
@@ -214,7 +215,7 @@ func newDecoder(b []byte, t *node.StringTable) *decoder {
 // text reads a string.
 func (d *decoder) text() string {
 	if d.t == nil {
-		return d.intern(d.Bytes())
+		return intern(d.interned, d.Bytes())
 	}
 	i := d.Uvarint()
 	s, held := d.t.At(i)
@@ -222,22 +223,6 @@ func (d *decoder) text() string {
 		d.Fail(fmt.Errorf("%w: the table numbers %d strings, and the record names string %d",
 			wire.ErrMalformed, d.t.Len(), i))
 	}
-	return s
-}
-
-// intern returns b as a string. A decoder without an intern map returns
-// a new string. A decoder with one returns the string it made of the
-// same bytes before, which the map lookup finds without allocating, and
-// otherwise adds a new string to the map.
-func (d *decoder) intern(b []byte) string {
-	if d.interned == nil {
-		return string(b)
-	}
-	if s, held := d.interned[string(b)]; held {
-		return s
-	}
-	s := string(b)
-	d.interned[s] = s
 	return s
 }
 
@@ -381,9 +366,51 @@ func (d *decoder) value() any {
 	}
 }
 
+// interner is the map of strings that the decodes of one state share, so
+// a text that many records repeat decodes to one string.
+//
+// # Concurrency
+//
+// An interner is safe for concurrent use. Its lock makes the decodes that
+// read and fill the map take turns.
+//
+// # Allocation contract
+//
+// The map grows by doubling, and each new text allocates its string once.
+type interner struct {
+	mu      sync.Mutex
+	strings map[string]string
+}
+
+// decode runs decode with the shared strings under the lock, and returns
+// the error of decode. The first decode creates the map.
+func (i *interner) decode(decode func(strings map[string]string) error) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.strings == nil {
+		i.strings = map[string]string{}
+	}
+	return decode(i.strings)
+}
+
 // uvarintLen returns how many bytes the unsigned varint of v takes, as
 // [binary.AppendUvarint] writes it. It allocates nothing.
 func uvarintLen(v uint64) int {
 	var b [binary.MaxVarintLen64]byte
 	return binary.PutUvarint(b[:], v)
+}
+
+// intern returns b as a string. A nil map returns a new string. Any other
+// map returns the string that it keeps for the same bytes, which the
+// lookup finds without allocating, and otherwise keeps a new string.
+func intern(strings map[string]string, b []byte) string {
+	if strings == nil {
+		return string(b)
+	}
+	if s, kept := strings[string(b)]; kept {
+		return s
+	}
+	s := string(b)
+	strings[s] = s
+	return s
 }

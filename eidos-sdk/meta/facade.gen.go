@@ -90,7 +90,9 @@ var RefusedStamp = core.RefusedStamp
 // the boxed value of each new claim, and the containers that grow with
 // the claims. Each method states its count. In a store [Restore]
 // returned, the first touch of a subject also allocates the bag and the
-// claims the source restores into it.
+// claims the source restores into it. A read of a fact that the source's
+// presence leaves out, on a subject the run has not touched, allocates
+// nothing.
 type Facts = core.Facts
 
 // NewFacts returns an empty fact store reading specs from r.
@@ -347,9 +349,13 @@ type StoredClaim = core.StoredClaim
 // Restore returns a fact store over r that restores bags from src on
 // first use: a read, a write or a withdrawal of a subject loads the
 // subject's recorded claims before it proceeds, and [Facts.ByKey]
-// merges the recorded presence with the transitions of the run. A
-// restored claim ranks against the run's own claims exactly as it did
-// when it was made, because its envelope is recorded whole.
+// merges the recorded presence with the transitions of the run. A read
+// of a fact through [Get] or [Fact] on a subject that the run has not
+// restored or written does not load the subject's claims where the
+// recorded presence of the key leaves the subject out, and reads the fact
+// absent. A restored
+// claim ranks against the run's own claims exactly as it did when it was
+// made, because its envelope is recorded whole.
 //
 // A failure of the source is not returned by the read that met it: the
 // bag reads as empty, and [Facts.Damaged] returns the failure, so the

@@ -18,13 +18,16 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The tag each edge's spelling opens with, pinned: a byte for each grain.
+// The tags that open the spellings of edges, pinned. Each grain has a tag
+// of one byte, and findingsTag is the whole spelling of the findings
+// edge.
 const (
 	declarationTag = 'd'
 	packageTag     = 'p'
 	kindTag        = 'k'
 	directiveTag   = 'r'
 	factTag        = 'f'
+	findingsTag    = 'x'
 )
 
 // The cases hash the edges of a struct of the API package, of the package

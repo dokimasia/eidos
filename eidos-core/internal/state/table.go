@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strconv"
 	"sync"
 
@@ -85,12 +86,16 @@ type runRef struct {
 }
 
 // runReader reads one stored run: its index once, and each block it
-// needs through [ledger.Ledger.ReadAt].
+// needs through [ledger.Ledger.ReadAt]. It keeps the block that it
+// decoded last, so a lookup in the same block as the lookup before it
+// reads nothing from the ledger. Lookups in key order, such as a pass
+// over the subjects of a graph, read each block once.
 //
 // # Concurrency
 //
 // A runReader is safe for concurrent use: the index loads under a
-// [sync.Once], and each read of a block is its own.
+// [sync.Once], and a mutex guards the kept block. A decoded block is
+// never written, so a lookup reads its entries after the lock is free.
 type runReader struct {
 	ref    runRef
 	ledger ledger.Ledger
@@ -98,6 +103,12 @@ type runReader struct {
 	index  []blockRef
 	limit  int
 	err    error
+	// last is the place in the index of the block that the reader decoded
+	// last, and lastEntries lists that block's entries, nil before the
+	// first read. mu guards both.
+	mu          sync.Mutex
+	last        int
+	lastEntries []entry
 }
 
 // load reads the run's footer and index once.
@@ -130,28 +141,32 @@ func (r *runReader) load(ctx context.Context) error {
 
 // get returns one key's entry, and false where the run does not contain
 // the key. It reads the one block whose first key is the last at or
-// before the key.
+// before the key, from the ledger unless the reader decoded that block
+// last.
 func (r *runReader) get(ctx context.Context, key []byte) (entry, bool, error) {
 	if err := r.load(ctx); err != nil {
 		return entry{}, false, err
 	}
-	at, exact := slices.BinarySearchFunc(r.index, key, func(b blockRef, k []byte) int {
-		return bytes.Compare(b.first, k)
-	})
-	if !exact {
-		at--
-	}
+	// slices.BinarySearchFunc moves key to the heap. sort.Search keeps a
+	// caller's key on the stack.
+	at := sort.Search(len(r.index), func(i int) bool { return bytes.Compare(r.index[i].first, key) > 0 }) - 1
 	if at < 0 {
 		return entry{}, false, nil
 	}
-	block, err := r.block(ctx, r.index[at])
-	if err != nil {
-		return entry{}, false, err
+	r.mu.Lock()
+	block, kept := r.lastEntries, r.lastEntries != nil && r.last == at
+	r.mu.Unlock()
+	if !kept {
+		var err error
+		if block, err = r.block(ctx, r.index[at]); err != nil {
+			return entry{}, false, err
+		}
+		r.mu.Lock()
+		r.last, r.lastEntries = at, block
+		r.mu.Unlock()
 	}
-	i, found := slices.BinarySearchFunc(block, key, func(e entry, k []byte) int {
-		return bytes.Compare(e.key, k)
-	})
-	if !found {
+	i := sort.Search(len(block), func(i int) bool { return bytes.Compare(block[i].key, key) >= 0 })
+	if i == len(block) || !bytes.Equal(block[i].key, key) {
 		return entry{}, false, nil
 	}
 	return block[i], true, nil

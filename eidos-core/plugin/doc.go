@@ -22,12 +22,13 @@
 // # Two read surfaces
 //
 // Every context has two, split by rule. [Index] is the dispatcher's
-// routing surface: untracked, scope-filtered, built over the
-// validated directive table and the skip table, and the source of
-// the tracked readers. The [store.Reader] is the plugin's own path,
-// recording every read. The index wraps the graph and does not
-// expose it, so nothing reachable from a context can make a
-// structural write or read another plugin's raw directives.
+// routing surface. It enumerates the declarations under the scope
+// without tracking the reads, and it reads the [Validated] directive
+// table and the skip rulings that the table states. It also returns the
+// tracked readers. The [store.Reader] is the plugin's own path, recording
+// every read. The index wraps the graph and does not expose it, so nothing
+// reachable from a context can make a structural write or read another
+// plugin's raw directives.
 //
 // # Invocations
 //

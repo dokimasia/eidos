@@ -17,19 +17,32 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Changes is what a load changed against the record it read, by
-// identity: the declarations only the load declares, the ones only the
-// record declared, and the ones both declare with another subtree,
-// position, reference target, directive or stamp, each sorted, and the
-// packages that contain one of them or whose own fields, directives or
-// stamps changed, sorted. A declaration's subtree covers its members,
-// so a changed member changes the declarations that contain it, its
-// file among them.
+// Changes lists what a load changed against the record of the previous
+// load, by identity. A declaration's subtree covers its members, so a
+// changed member also changes the declarations that contain it,
+// including its file. The lists of identities are in identity order, and
+// Spellings is in name order.
 type Changes struct {
-	Appeared    []symbol.Identity
+	// Appeared lists the declarations that only the load declares.
+	Appeared []symbol.Identity
+	// Disappeared lists the declarations that only the record declares.
 	Disappeared []symbol.Identity
-	Changed     []symbol.Identity
-	Packages    []symbol.Identity
+	// Changed lists the declarations that the load and the record both
+	// declare with a different subtree, position, reference target,
+	// directive or stamp.
+	Changed []symbol.Identity
+	// Packages lists the packages that contain a declaration that
+	// appeared, disappeared or changed, and the packages whose own fields,
+	// directives or stamps changed.
+	Packages []symbol.Identity
+	// Directed lists the subjects whose raw directives differ. The list
+	// includes packages, and subjects that the graph does not contain.
+	Directed []symbol.Identity
+	// Spellings lists the directive spellings that a subject gained or
+	// lost. An enumeration by directive reads these spellings.
+	Spellings []directive.Name
+	// Restamped lists the subjects whose classification stamps differ.
+	Restamped []symbol.Identity
 }
 
 // fingerprint is what a change of one declaration compares: the digest
@@ -47,25 +60,40 @@ func (f fingerprint) equal(o fingerprint) bool {
 		reflect.DeepEqual(f.directives, o.directives) && reflect.DeepEqual(f.stamps, o.stamps)
 }
 
-// side is one side of a load's comparison: the fingerprint of each
-// declaration, and of each package's own fields in each unit that
-// contributes to it, in the order the units were added.
+// side is one side of a load's comparison. It contains the fingerprint of
+// each declaration, and one fingerprint of a package's own fields for
+// each unit that contributes to the package. It also contains the raw
+// directives and stamps that the units attach to each subject. Each list
+// keeps the order in which the units were added.
 type side struct {
-	decls    map[symbol.Identity]fingerprint
-	packages map[symbol.Identity][]fingerprint
+	decls      map[symbol.Identity]fingerprint
+	packages   map[symbol.Identity][]fingerprint
+	directives map[symbol.Identity][]directive.Raw
+	stamps     map[symbol.Identity][]meta.RawStamp
 }
 
 // newSide returns an empty side.
 func newSide() *side {
-	return &side{decls: map[symbol.Identity]fingerprint{}, packages: map[symbol.Identity][]fingerprint{}}
+	return &side{
+		decls:      map[symbol.Identity]fingerprint{},
+		packages:   map[symbol.Identity][]fingerprint{},
+		directives: map[symbol.Identity][]directive.Raw{},
+		stamps:     map[symbol.Identity][]meta.RawStamp{},
+	}
 }
 
-// add takes the fingerprints of a region's declarations and of its
-// parts of packages.
+// add adds the fingerprints of a region's declarations and package parts,
+// and the raw directives and stamps that the region attaches.
 //
 // Error modes: the error of [node.AppendBinary] for a symbol the model
 // does not declare.
 func (s *side) add(r *store.Region) error {
+	for id, raws := range r.Directives {
+		s.directives[id] = append(s.directives[id], raws...)
+	}
+	for id, stamps := range r.Stamps {
+		s.stamps[id] = append(s.stamps[id], stamps...)
+	}
 	for _, p := range r.Packages {
 		own := *p
 		own.Files = nil
@@ -194,7 +222,52 @@ func compare(before, after *side) *Changes {
 	slices.SortFunc(c.Disappeared, symbol.Identity.Compare)
 	slices.SortFunc(c.Changed, symbol.Identity.Compare)
 	c.Packages = slices.SortedFunc(maps.Keys(packages), symbol.Identity.Compare)
+	c.Directed = differing(before.directives, after.directives)
+	c.Restamped = differing(before.stamps, after.stamps)
+	spellings := map[directive.Name]bool{}
+	for _, id := range c.Directed {
+		had, has := spelled(before.directives[id]), spelled(after.directives[id])
+		for n := range had {
+			spellings[n] = spellings[n] || !has[n]
+		}
+		for n := range has {
+			spellings[n] = spellings[n] || !had[n]
+		}
+	}
+	for n, moved := range spellings {
+		if moved {
+			c.Spellings = append(c.Spellings, n)
+		}
+	}
+	slices.Sort(c.Spellings)
 	return c
+}
+
+// differing returns the subjects whose lists differ between two sides, in
+// identity order. A subject that only one side lists is one of them.
+func differing[T any](before, after map[symbol.Identity][]T) []symbol.Identity {
+	var out []symbol.Identity
+	for id, now := range after {
+		if !reflect.DeepEqual(before[id], now) {
+			out = append(out, id)
+		}
+	}
+	for id := range before {
+		if _, held := after[id]; !held {
+			out = append(out, id)
+		}
+	}
+	slices.SortFunc(out, symbol.Identity.Compare)
+	return out
+}
+
+// spelled returns the set of spellings that the raw instances use.
+func spelled(raws []directive.Raw) map[directive.Name]bool {
+	out := make(map[directive.Name]bool, len(raws))
+	for _, r := range raws {
+		out[r.Name] = true
+	}
+	return out
 }
 
 // delta returns the bare identities of the declarations a type position

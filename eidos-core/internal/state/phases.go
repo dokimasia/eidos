@@ -42,12 +42,14 @@ const (
 // its first change.
 const minChanges = 64
 
-// keptInvocations are the prior invocations of the plans that do not
-// commit: each framed as a row of its entry alone, back to back in buf,
-// with the edges each read.
-type keptInvocations struct {
+// keptRecords lists the prior records that a commit keeps. These are the
+// invocations of the plans that do not commit, and on a warm run the
+// shared records that the run did not drop. buf contains each record as a
+// row of its own entry. rows lists the records by kind, and reads lists
+// the edges that each record read.
+type keptRecords struct {
 	buf   []byte
-	rows  []recordRow
+	rows  [recordKinds][]recordRow
 	reads []edgeRead
 }
 
@@ -61,9 +63,10 @@ type keptInvocations struct {
 //
 // # Concurrency
 //
-// A PhaseState is safe for concurrent use: it reads through the
-// generation, which is, and the present table loads once under a
-// [sync.Once].
+// A PhaseState is safe for concurrent use. It reads through the
+// generation, which is safe for concurrent use, and the present table
+// loads once under a [sync.Once]. The decodes that share strings take
+// turns under a lock.
 type PhaseState struct {
 	ctx context.Context
 	g   *Generation
@@ -71,6 +74,11 @@ type PhaseState struct {
 	presentOnce sync.Once
 	present     map[meta.KeyName][]symbol.Identity
 	presentErr  error
+
+	// strings are the strings that the decodes of the claims and of the
+	// present table share, so the texts that many claims repeat, such as
+	// a key, a plugin or a file, decode to one string each.
+	strings interner
 }
 
 var _ meta.BagSource = (*PhaseState)(nil)
@@ -87,15 +95,23 @@ type PhaseRun struct {
 	Modules map[plugin.Module]int
 }
 
-// PhaseRecord is a run's record of its phases, prepared before any plan
-// commits: the prior record of a warm run, read whole, the recorder's
-// lanes, and the rows of the tables that no plan's commit decides.
-// [PhaseRecord.Commit] completes it into the run's commit once each plan's
-// commit has run.
+// PhaseRecord is a run's record of its phases, which the run prepares
+// before any plan commits. It contains the prior record of a warm run,
+// read whole, the lanes of the recorder, the shared records that a warm
+// run dropped, and the rows of the tables that no plan's commit decides.
+// [PhaseRecord.Commit] completes the record into the run's commit after
+// each plan's commit has run.
 type PhaseRecord struct {
 	prior [tableCount][]entry
 	rows  [tableCount][]entry
 	lanes []*Lane
+	// keep reports whether the record is a warm run's. Such a record keeps
+	// the prior shared records that the run did not drop. validations
+	// lists the dropped validations by subject, and invocations lists the
+	// dropped annotator invocations by match.
+	keep        bool
+	validations map[symbol.Identity]struct{}
+	invocations map[plugin.MatchKey]struct{}
 }
 
 // RecordPhases prepares a run's record of its phases, after the run's
@@ -103,13 +119,19 @@ type PhaseRecord struct {
 // prior record discards the run with nothing written. It reads every
 // row of the phase tables of g, the generation the run opened and nil for
 // a cold run, and encodes the fact store's claims and the facts that read
-// present, the audit's findings and the modules' package counts.
+// present, the audit's findings and the modules' package counts. On a
+// warm run, the claims rows start from the prior rows. The row of each
+// bag that the run touched replaces the prior row of its subject. A prior
+// row is dropped when the run withdrew claims from its subject and left
+// the subject without a claim.
 //
 // Error modes: an error wrapping [ErrDamaged] for a prior table that does
 // not read whole, and the error of a claim whose value is outside the
 // fact vocabulary.
 func RecordPhases(ctx context.Context, g *Generation, r *Recorder, run PhaseRun) (*PhaseRecord, error) {
-	p := &PhaseRecord{lanes: r.lanes}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p := &PhaseRecord{lanes: r.lanes, keep: r.keep && g != nil, validations: r.validations, invocations: r.invocations}
 	if g != nil {
 		for _, t := range phaseTables {
 			rows, err := g.readers[t].all(ctx)
@@ -123,6 +145,9 @@ func RecordPhases(ctx context.Context, g *Generation, r *Recorder, run PhaseRun)
 	if err != nil {
 		return nil, err
 	}
+	if p.keep {
+		claims = overlaidClaims(p.prior[TableClaims], claims, r.withdrew)
+	}
 	p.rows[TableClaims] = claims
 	p.rows[TablePresent] = presentRows(run.Facts)
 	p.rows[TableAudit] = auditRows(r.audits)
@@ -130,72 +155,155 @@ func RecordPhases(ctx context.Context, g *Generation, r *Recorder, run PhaseRun)
 	return p, nil
 }
 
-// Commit completes the record into the run's commit, once each plan's
-// commit has run: every record the recorder's lanes collected, except the
-// invocations of the plans in uncommitted, which do not commit and keep
-// the prior record's, and the records that read each edge those records
-// read. It compares each table's rows with the prior record's, and
-// records the rows that are new or changed and a tombstone for each prior
-// row the run no longer has, so a run that changed nothing changes no
-// row. Commit cannot fail: a prior invocations row that does not decode
-// keeps nothing, so a later run executes its invocations again.
+// Commit completes the record into the run's commit after each plan's
+// commit has run. The commit receives every record that the lanes of the
+// recorder collected, except the invocations of the plans in
+// uncommitted. Those plans keep their prior invocations instead. On a
+// warm run, the commit also receives the prior shared records that the
+// run kept. The readers table lists the records that read each edge.
+//
+// Commit compares the rows of each table with the prior rows. It writes
+// each row that is new or changed, and a tombstone for each prior row
+// that the run no longer has, so the commit of an unchanged run is empty.
+// Commit cannot fail. A prior row that does not decode is not kept, and a
+// later run executes its records again.
 func (p *PhaseRecord) Commit(c *Commit, uncommitted []string) {
-	kept := planInvocations(p.prior[TableInvocations], uncommitted, len(p.lanes))
+	kept := p.keptRecords(uncommitted)
 	recordRows(&p.rows, p.lanes, &kept, uncommitted)
 	for _, t := range phaseTables {
 		c.sorted[t] = diff(p.prior[t], p.rows[t])
 	}
 }
 
-// planInvocations returns the prior invocations of the plans in
-// uncommitted, each framed as a row of its entry alone into a buffer the
-// commit gathers at index at, and nothing where every plan commits. A
-// row that does not decode, and an entry whose key fields or reads do not
-// decode, keep nothing.
-func planInvocations(rows []entry, uncommitted []string, at int) keptInvocations {
-	var out keptInvocations
-	if len(uncommitted) == 0 {
+// keptRecords returns the prior records that the commit keeps. These are
+// the invocations of the plans in uncommitted, and on a warm run each
+// validation and annotator invocation that the run did not drop. It
+// frames each record as a row of its own entry, in a buffer that the
+// commit places after the buffers of the lanes. A row that does not
+// decode is not kept, and neither is an entry whose key fields or reads
+// do not decode. The plan of an invocation decides first, from its bytes,
+// so an invocation of a plan that commits decodes nothing more.
+func (p *PhaseRecord) keptRecords(uncommitted []string) keptRecords {
+	var out keptRecords
+	at := len(p.lanes)
+	if p.keep {
+		eachEntry(p.prior[TableValidations], func(id uint64, b []byte, d *decoder) {
+			subject := d.identity()
+			if _, dropped := p.validations[subject]; dropped {
+				return
+			}
+			v := decodeValidation(d, subject)
+			if d.Err() == nil {
+				out.add(RecordRef{Kind: RecordValidation, ID: id}, b, v.Reads, at)
+			}
+		})
+	}
+	if !p.keep && len(uncommitted) == 0 {
 		return out
 	}
+	eachEntry(p.prior[TableInvocations], func(id uint64, b []byte, d *decoder) {
+		plan := d.Bytes()
+		failed := slices.ContainsFunc(uncommitted, func(name string) bool { return name == string(plan) })
+		if !failed && (len(plan) > 0 || !p.keep) {
+			return
+		}
+		if _, dropped := p.invocations[d.match()]; dropped && !failed {
+			return
+		}
+		if reads := d.edges(); d.Err() == nil {
+			out.add(RecordRef{Kind: RecordInvocation, ID: id}, b, reads, at)
+		}
+	})
+	return out
+}
+
+// add frames one prior entry as a row of its own in the kept buffer,
+// which the commit gathers at index at. It lists the record under ref,
+// and lists each edge that the record read.
+func (k *keptRecords) add(ref RecordRef, entry []byte, reads []EdgeHash, at int) {
+	start := len(k.buf)
+	k.buf = wire.AppendBytes(append(k.buf, singleEntry), entry)
+	k.rows[ref.Kind-1] = append(k.rows[ref.Kind-1], recordRow{id: ref.ID, buf: at, start: start, end: len(k.buf)})
+	for _, h := range reads {
+		k.reads = append(k.reads, edgeRead{edge: h, ref: ref})
+	}
+}
+
+// eachEntry calls visit once for each entry in the rows of a record
+// table. visit receives the row's ID, the entry's bytes and a decoder
+// over those bytes, which is valid until visit returns. A row whose key
+// is not an ID visits nothing. A row whose framing does not decode visits
+// only the entries before the fault. It allocates one decoder, which
+// every visit reuses.
+func eachEntry(rows []entry, visit func(id uint64, b []byte, d *decoder)) {
+	d := &decoder{}
 	for _, e := range rows {
 		if len(e.key) != 8 {
 			continue
 		}
-		ref := RecordRef{Kind: RecordInvocation, ID: binary.BigEndian.Uint64(e.key)}
-		row := newDecoder(e.row, nil)
+		id := binary.BigEndian.Uint64(e.key)
+		row := decoder{Decoder: wire.NewDecoder(e.row)}
 		for range row.Count() {
 			b := row.Bytes()
-			d := newDecoder(b, nil)
-			if plan := d.text(); row.Err() != nil || !slices.Contains(uncommitted, plan) {
-				continue
+			if row.Err() != nil {
+				break
 			}
-			d.match()
-			reads := d.edges()
-			if d.Err() != nil {
-				continue
-			}
-			start := len(out.buf)
-			out.buf = wire.AppendBytes(append(out.buf, singleEntry), b)
-			out.rows = append(out.rows, recordRow{id: ref.ID, buf: at, start: start, end: len(out.buf)})
-			for _, h := range reads {
-				out.reads = append(out.reads, edgeRead{edge: h, ref: ref})
-			}
+			*d = decoder{Decoder: wire.NewDecoder(b)}
+			visit(id, b, d)
 		}
+	}
+}
+
+// overlaidClaims returns the claims rows of a warm run, sorted by key. It
+// starts from the prior rows. The run's row of a subject replaces the
+// prior row of that subject, and the run's rows of other subjects are
+// added. A prior row is dropped when its subject is in withdrew and the
+// run has no row for the subject. Both inputs are sorted by key.
+func overlaidClaims(prior, fresh []entry, withdrew map[symbol.Identity]struct{}) []entry {
+	emptied := make(map[string]struct{}, len(withdrew))
+	for id := range withdrew {
+		emptied[string(identityKey(nil, id))] = struct{}{}
+	}
+	out := make([]entry, 0, len(prior)+len(fresh))
+	i, j := 0, 0
+	for i < len(prior) || j < len(fresh) {
+		order := 1
+		switch {
+		case j == len(fresh):
+			order = -1
+		case i < len(prior):
+			order = bytes.Compare(prior[i].key, fresh[j].key)
+		}
+		if order < 0 {
+			if _, gone := emptied[string(prior[i].key)]; !gone {
+				out = append(out, prior[i])
+			}
+			i++
+			continue
+		}
+		out = append(out, fresh[j])
+		if order == 0 {
+			i++
+		}
+		j++
 	}
 	return out
 }
 
 // recordRows fills the rows of the four record tables, each sorted by
-// key: each validation, invocation and check under its ID, where the
-// records that share an ID share a row, and each edge's readers under the
-// edge's hash. The lanes of the plans in uncommitted are left out, and
-// kept contains those plans' prior invocations.
-func recordRows(rows *[tableCount][]entry, lanes []*Lane, kept *keptInvocations, uncommitted []string) {
+// key. Each validation, invocation and check is a row under its ID, and
+// records that share an ID share a row. The readers of each edge are a
+// row under the edge's hash. recordRows leaves out the lanes of the plans
+// in uncommitted, and kept contains the prior records that the commit
+// keeps. It makes each list of records and reads once, at the size that
+// the lanes and kept need.
+func recordRows(rows *[tableCount][]entry, lanes []*Lane, kept *keptRecords, uncommitted []string) {
 	bufs := make([][]byte, len(lanes)+1)
-	var (
-		records [recordKinds][][]recordRow
-		reads   [][]edgeRead
-	)
+	var records [recordKinds][][]recordRow
+	for k := range records {
+		records[k] = make([][]recordRow, 0, len(lanes)+1)
+	}
+	reads := make([][]edgeRead, 0, len(lanes)+1)
 	for i, l := range lanes {
 		bufs[i] = l.buf
 		if l.plan != "" && slices.Contains(uncommitted, l.plan) {
@@ -207,7 +315,9 @@ func recordRows(rows *[tableCount][]entry, lanes []*Lane, kept *keptInvocations,
 		reads = append(reads, l.reads)
 	}
 	bufs[len(lanes)] = kept.buf
-	records[RecordInvocation-1] = append(records[RecordInvocation-1], kept.rows)
+	for k := range records {
+		records[k] = append(records[k], kept.rows[k])
+	}
 	reads = append(reads, kept.reads)
 	compare := func(a, b recordRow) int {
 		if a.id != b.id {

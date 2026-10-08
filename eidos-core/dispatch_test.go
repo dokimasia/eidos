@@ -1455,8 +1455,7 @@ func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 
 // genContext returns a generator context over the fixture graph.
 func genContext(
-	tb assert.TB, g *store.Graph, facts *meta.Facts,
-	validated map[symbol.Identity][]directive.Directive,
+	tb assert.TB, g *store.Graph, facts *meta.Facts, validated plugin.ValidatedMap,
 ) *plugin.GeneratorContext {
 	tb.Helper()
 
@@ -1752,8 +1751,7 @@ func benchDispatch(b *testing.B, r dispatchRun) {
 // dispatchContext returns a generator context over g in the first
 // bucket, running as name, with its own sink and the emit store e.
 func dispatchContext(
-	tb assert.TB, g *store.Graph, facts *meta.Facts,
-	validated map[symbol.Identity][]directive.Directive, e *plugin.Emit, name plugin.ID,
+	tb assert.TB, g *store.Graph, facts *meta.Facts, validated plugin.ValidatedMap, e *plugin.Emit, name plugin.ID,
 ) *plugin.GeneratorContext {
 	tb.Helper()
 

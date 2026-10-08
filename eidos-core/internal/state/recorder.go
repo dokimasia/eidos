@@ -92,14 +92,15 @@ var _ plugin.Journal = (*Lane)(nil)
 
 // Validation records the validation of one subject's directives: the
 // directives that passed, the edges the validation read, with the
-// subject's own declaration edge added, and the findings it reported.
+// subject's own declaration edge added, and the findings it reported. A
+// validation that reported a finding also lists [FindingsEdge].
 func (l *Lane) Validation(
 	subject symbol.Identity, ds []directive.Directive, reads *store.ReadSet, findings []diag.Diag,
 ) {
 	if l == nil {
 		return
 	}
-	l.edges = append(appendEdges(l.edges[:0], reads), DeclarationEdge(subject))
+	l.edges = withFindings(append(appendEdges(l.edges[:0], reads), DeclarationEdge(subject)), findings)
 	v := Validation{Subject: subject, Directives: ds, Reads: readRecord(l.edges), Findings: findings}
 	l.entry = appendValidation(grow.Room(l.entry[:0], entryRoom, entryRoom), &v)
 	l.add(ValidationRef(subject), v.Reads)
@@ -107,7 +108,8 @@ func (l *Lane) Validation(
 
 // Invoked records one invocation of a phase call of the lane's plan: its
 // match, the edges it read, with its subject's declaration edge added
-// where it has a subject, and what it touched and reported. The run
+// where it has a subject, and what it touched and reported. An
+// invocation that reported a finding also lists [FindingsEdge]. The run
 // records a phase call that journaled no invocation of its own the same
 // way, as one invocation under [plugin.WholeCall].
 //
@@ -129,6 +131,7 @@ func (l *Lane) Invoked(inv plugin.Invocation) {
 	if !inv.Match.Subject.IsZero() {
 		l.edges = append(l.edges, DeclarationEdge(inv.Match.Subject))
 	}
+	l.edges = withFindings(l.edges, inv.Findings)
 	rec := Invocation{
 		Plan:     l.plan,
 		Match:    inv.Match,
@@ -148,15 +151,25 @@ func (l *Lane) Invoked(inv plugin.Invocation) {
 func (*Lane) Evaluated(symbol.Identity, []plugin.MatchKey) {}
 
 // Check records one call of a workspace check: the edges its reader read
-// and the findings it reported.
+// and the findings it reported. A call that reported a finding also lists
+// [FindingsEdge].
 func (l *Lane) Check(name plugin.ID, reads *store.ReadSet, findings []diag.Diag) {
 	if l == nil {
 		return
 	}
-	l.edges = appendEdges(l.edges[:0], reads)
+	l.edges = withFindings(appendEdges(l.edges[:0], reads), findings)
 	c := Check{Name: name, Reads: readRecord(l.edges), Findings: findings}
 	l.entry = appendCheck(grow.Room(l.entry[:0], entryRoom, entryRoom), &c)
 	l.add(CheckRef(name), c.Reads)
+}
+
+// withFindings appends [FindingsEdge] to the edges of a record that
+// reported a finding. It returns the edges of any other record unchanged.
+func withFindings(edges []EdgeHash, findings []diag.Diag) []EdgeHash {
+	if len(findings) == 0 {
+		return edges
+	}
+	return append(edges, FindingsEdge)
 }
 
 // add frames the entry the lane encoded last into its buffer, as a row of
@@ -180,20 +193,38 @@ func (l *Lane) add(ref RecordRef, reads []EdgeHash) {
 // the audit's findings. Each goroutine that records takes a [Lane] of its
 // own.
 //
+// A warm run executes only part of the shared phases. It calls
+// [Recorder.Keep], and it drops the record of each validation and
+// annotator invocation that it executes again or removes. It also names
+// each subject whose claims it withdrew. The commit then keeps the other
+// shared records and bags of the generation, beside the records of the
+// lanes.
+//
 // The zero Recorder is ready to record.
 //
 // # Concurrency
 //
-// A Recorder is safe for concurrent use: Lane and Audit take its lock.
+// A Recorder is safe for concurrent use: every method takes its lock.
 //
 // # Allocation contract
 //
 // Lane allocates the lane, and grows the list of lanes, which doubles
-// when it fills. Audit allocates only to grow the list of findings.
+// when it fills. Audit allocates only to grow the list of findings. A
+// drop or a withdrawal allocates only to grow its set.
 type Recorder struct {
 	mu     sync.Mutex
 	lanes  []*Lane
 	audits []Audit
+	// keep reports whether the record is a warm run's. The commit of such
+	// a record keeps the shared records and bags that the run did not
+	// drop.
+	keep bool
+	// validations lists the dropped validations by subject, and
+	// invocations lists the dropped invocations by match. withdrew lists
+	// the subjects whose claims the run withdrew.
+	validations map[symbol.Identity]struct{}
+	invocations map[plugin.MatchKey]struct{}
+	withdrew    map[symbol.Identity]struct{}
 }
 
 // Lane returns a new lane for one goroutine's records: a plan's generator
@@ -214,4 +245,67 @@ func (r *Recorder) Audit(key meta.KeyName, subject symbol.Identity, finding diag
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.audits = append(r.audits, Audit{Key: key, Subject: subject, Finding: finding})
+}
+
+// Keep marks the record as a warm run's record. The commit then keeps
+// each validation and annotator invocation of the opened generation that
+// the run did not drop, with the edges that each record read. It also
+// keeps each recorded bag of claims that the run did not empty. Without
+// Keep, the records of the lanes replace the shared records of the
+// generation. Keep on a nil Recorder does nothing.
+func (r *Recorder) Keep() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.keep = true
+}
+
+// DropValidation drops the generation's record of a subject's
+// validation. A run calls it for each subject that it validates again or
+// removes. A lane's record of the subject replaces the dropped record.
+// DropValidation on a nil Recorder does nothing.
+func (r *Recorder) DropValidation(subject symbol.Identity) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.validations == nil {
+		r.validations = map[symbol.Identity]struct{}{}
+	}
+	r.validations[subject] = struct{}{}
+}
+
+// DropInvocation drops the generation's record of one annotator
+// invocation. A run calls it for each invocation that it runs again or
+// removes. A lane's record of the match replaces the dropped record when
+// the invocation ran and was not pure. DropInvocation on a nil Recorder
+// does nothing.
+func (r *Recorder) DropInvocation(m plugin.MatchKey) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.invocations == nil {
+		r.invocations = map[plugin.MatchKey]struct{}{}
+	}
+	r.invocations[m] = struct{}{}
+}
+
+// Withdrew records that the run withdrew a claim on a subject. When the
+// run leaves the subject without a claim, the commit drops the recorded
+// bag of the subject. Withdrew on a nil Recorder does nothing.
+func (r *Recorder) Withdrew(subject symbol.Identity) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.withdrew == nil {
+		r.withdrew = map[symbol.Identity]struct{}{}
+	}
+	r.withdrew[subject] = struct{}{}
 }

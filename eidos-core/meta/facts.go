@@ -38,7 +38,9 @@ type keyEntry struct {
 // the boxed value of each new claim, and the containers that grow with
 // the claims. Each method states its count. In a store [Restore]
 // returned, the first touch of a subject also allocates the bag and the
-// claims the source restores into it.
+// claims the source restores into it. A read of a fact that the source's
+// presence leaves out, on a subject the run has not touched, allocates
+// nothing.
 type Facts struct {
 	registry *Registry
 	// keys is each key's group and kind restriction by id, copied from
@@ -440,8 +442,19 @@ func (f *Facts) admitLocked(
 }
 
 // lookup returns the winning value for (subject, key), and false
-// where the winner is a drop or nothing was stamped.
+// where the winner is a drop or nothing was stamped. In a store [Restore]
+// returned, a subject that the run has not restored or written reads the
+// key absent without a restore where the source's presence of the key
+// does not list the subject.
 func (f *Facts) lookup(id symbol.Identity, k KeyID) (any, bool) {
+	if f.source != nil {
+		if _, touched := f.bags.Load(id); !touched {
+			_, present := slices.BinarySearchFunc(f.index.recorded(k), id, symbol.Identity.Compare)
+			if !present {
+				return nil, false
+			}
+		}
+	}
 	b, held := f.peek(id)
 	if !held {
 		return nil, false

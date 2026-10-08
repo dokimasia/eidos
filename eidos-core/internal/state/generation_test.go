@@ -36,9 +36,10 @@ const (
 	// decoded header, segments and tables, 2 for the table readers, and
 	// the generation.
 	openAllocs = 13
-	// getAllocs is one lookup of a row: the block read from the ledger,
-	// and the list of the block's two rows, decoded.
-	getAllocs = 2
+	// getAllocs is one lookup of a row after a lookup before it. The run
+	// reader keeps the block that it decoded last, so the lookup reads
+	// nothing from the ledger and allocates nothing.
+	getAllocs = 0
 	// allAllocs is one read of the table: the run read from the ledger,
 	// its index, one list of the entries of its blocks, the merged
 	// entries and the rows.
@@ -233,7 +234,7 @@ func TestGenerationAllocs(t *testing.T) {
 		var gerr error
 		_, held, gerr = g.Get(t.Context(), state.TableChecks, key)
 		err = cmp.Or(err, gerr)
-	}, getAllocs, "Get allocates the run and the block it reads")
+	}, getAllocs, "a later Get allocates nothing")
 	assert.NoError(t, err, "the row reads")
 	assert.True(t, held, "the key has a row")
 	var rows int

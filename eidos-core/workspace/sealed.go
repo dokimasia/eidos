@@ -49,6 +49,13 @@ type sealedState struct {
 	memo     *state.Memo
 }
 
+// warm reports whether the run is warm. A run is warm when it opened a
+// usable generation and its load compared the tree with the generation's
+// record.
+func (s *sealedState) warm(loaded *load.Report) bool {
+	return s.gen != nil && loaded != nil && loaded.Changes != nil
+}
+
 // loadPrior returns the record a warm load reads, and nil for a cold
 // run.
 func (s *sealedState) loadPrior() load.Prior {
