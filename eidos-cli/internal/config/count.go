@@ -3,10 +3,16 @@
 
 package config
 
-import "go.yaml.in/yaml/v3"
+import (
+	"go.yaml.in/yaml/v3"
+
+	"go.dokimi.dev/eidos/core/jsonschema"
+)
 
 // Count is a whole number of 0 or more, such as the number of workers.
 type Count int
+
+var _ jsonschema.Schemer = Count(0)
 
 // UnmarshalYAML decodes a count from n.
 //
@@ -25,8 +31,8 @@ func (c *Count) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-// schema returns the JSON Schema of a count. The schema allows an integer
-// of 0 or more.
-func (Count) schema() map[string]any {
+// JSONSchema returns the JSON Schema of a count, a new map on each call.
+// The schema allows an integer of 0 or more.
+func (Count) JSONSchema() map[string]any {
 	return map[string]any{"type": "integer", "minimum": 0}
 }

@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"go.dokimi.dev/eidos/core/jsonschema"
 )
 
 // The YAML decoder starts a syntax error with "yaml: line N: ", and each
@@ -34,9 +36,11 @@ type Version int
 // Current is the version of the file format that this package decodes.
 const Current Version = 1
 
-// schema returns the JSON Schema of the version field. The schema allows
-// only [Current].
-func (Version) schema() map[string]any {
+var _ jsonschema.Schemer = Current
+
+// JSONSchema returns the JSON Schema of the version field, a new map on
+// each call. The schema allows only [Current].
+func (Version) JSONSchema() map[string]any {
 	return map[string]any{"type": "integer", "const": int(Current)}
 }
 

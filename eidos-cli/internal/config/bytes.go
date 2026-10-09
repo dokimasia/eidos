@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"go.dokimi.dev/eidos/core/jsonschema"
 )
 
 // A size in a config file has one of these two YAML tags.
@@ -31,6 +33,8 @@ var units = [...]struct {
 // Bytes is a size in bytes. In a config file, a size is a number, or a
 // number followed by KiB, MiB or GiB, such as 512MiB.
 type Bytes int64
+
+var _ jsonschema.Schemer = Bytes(0)
 
 // UnmarshalYAML decodes a size from n.
 //
@@ -65,9 +69,10 @@ func (b *Bytes) UnmarshalYAML(n *yaml.Node) error {
 	return refused
 }
 
-// schema returns the JSON Schema of a size. The schema allows a
-// non-negative integer, and a string of digits followed by KiB, MiB or GiB.
-func (Bytes) schema() map[string]any {
+// JSONSchema returns the JSON Schema of a size, a new map on each call. The
+// schema allows a non-negative integer, and a string of digits followed by
+// KiB, MiB or GiB.
+func (Bytes) JSONSchema() map[string]any {
 	return map[string]any{"oneOf": []any{
 		map[string]any{"type": "integer", "minimum": 0},
 		map[string]any{"type": "string", "pattern": "^[0-9]+(KiB|MiB|GiB)$"},

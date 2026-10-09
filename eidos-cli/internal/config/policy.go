@@ -6,6 +6,7 @@ package config
 import (
 	"go.yaml.in/yaml/v3"
 
+	"go.dokimi.dev/eidos/core/jsonschema"
 	"go.dokimi.dev/eidos/core/layout"
 )
 
@@ -13,6 +14,8 @@ import (
 // that [layout.Policy.String] returns: inherit, alongside-source or
 // centralised.
 type Policy layout.Policy
+
+var _ jsonschema.Schemer = Policy(0)
 
 // UnmarshalYAML decodes a policy from n with [layout.ParsePolicy].
 //
@@ -27,9 +30,9 @@ func (p *Policy) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-// schema returns the JSON Schema of a policy. The schema allows the name of
-// each policy.
-func (Policy) schema() map[string]any {
+// JSONSchema returns the JSON Schema of a policy, a new map on each call.
+// The schema allows the name of each policy.
+func (Policy) JSONSchema() map[string]any {
 	var names []any
 	for q := layout.PolicyInherit; q.Valid(); q++ {
 		names = append(names, q.String())

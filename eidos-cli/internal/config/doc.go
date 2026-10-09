@@ -21,5 +21,6 @@
 // # Dependency position
 //
 // cli/internal/config imports core/workspace, core/layout, core/ledger,
-// core/directive, core/symbol, go.yaml.in/yaml/v3 and the Go stdlib.
+// core/directive, core/symbol, core/jsonschema, go.yaml.in/yaml/v3 and the
+// Go stdlib.
 package config
