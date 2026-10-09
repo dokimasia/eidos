@@ -2,7 +2,7 @@
 rfc: 0021
 title: The command kernels, the config file and the run lock
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-08
 updated: 2026-10-08
 discussion: none
