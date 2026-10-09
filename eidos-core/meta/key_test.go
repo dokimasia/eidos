@@ -20,6 +20,9 @@ import (
 const namespaceIsFirstSegment = "Namespace must return the segment before a name's first dot, " +
 	"and a name without a dot whole"
 
+// roleName is the name of the key that [registered] registers.
+const roleName meta.KeyName = "shape.role"
+
 // A key's spelling resolves at the boundary and its handle fixes the
 // value type, so the namespace a name spells and what a handle reports
 // are contract.
@@ -51,6 +54,22 @@ func TestKey(t *testing.T) {
 			t.Parallel()
 
 			prop.ForAll(t, namespaceIsFirstSegment, namespacesFirstSegment)
+		})
+	})
+
+	t.Run("Named", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a handle with the name", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, meta.Named[string](roleName).Name(), roleName, "the handle has the name")
+		})
+
+		t.Run("returns a handle without an id", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, meta.Named[string](roleName).ID(), meta.KeyID(0), "a name has no id before a read")
 		})
 	})
 
@@ -96,6 +115,12 @@ func TestKey(t *testing.T) {
 			var unregistered meta.Key[string]
 			assert.True(t, unregistered.IsZero(), "the key names nothing")
 		})
+
+		t.Run("reports false for a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, meta.Named[string](roleName).IsZero(), "the handle has a name")
+		})
 	})
 }
 
@@ -119,6 +144,10 @@ func TestKeyZeroAlloc(t *testing.T) {
 	zero := true
 	assert.MaxAllocs(t, func() { zero = key.IsZero() }, 0, "IsZero allocates nothing")
 	assert.False(t, zero, "IsZero reports false for a registered key")
+
+	var named meta.Key[string]
+	assert.MaxAllocs(t, func() { named = meta.Named[string](name) }, 0, "Named allocates nothing")
+	assert.Equal(t, named.Name(), name, "Named returns a handle with the name")
 }
 
 // BenchmarkKey measures what a name and a handle report: every directive
@@ -136,6 +165,16 @@ func BenchmarkKey(b *testing.B) {
 			got = name.Namespace()
 		}
 		assert.Equal(b, got, "shape", "Namespace returns the first segment")
+	})
+
+	b.Run("Named", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got meta.Key[string]
+		for c.Loop() {
+			got = meta.Named[string](roleName)
+		}
+		assert.Equal(b, got.Name(), roleName, "Named returns a handle with the name")
 	})
 
 	b.Run("Name", func(b *testing.B) {

@@ -98,6 +98,41 @@ func (b *built) TemplateFuncs(t plugin.Target) template.FuncMap {
 // the target's overrides replace, sorted, and nil where none.
 func (b *built) Overrides(t plugin.Target) []string { return b.pres.overrides[t] }
 
+// BindKeys implements [plugin.KeyBinder]: it binds each gate on a named
+// handle to the id of its name in r, and lowers the subscriptions again
+// with the bound ids. It returns one error for each name that r does not
+// contain under the handle's value type, and the gate of such a name
+// remains unbound. A plugin without a named handle changes nothing. A
+// plugin instance with one binds into one workspace, the last that bound
+// it, and two workspaces that build at once must not share the instance.
+func (b *built) BindKeys(r *meta.Registry) error {
+	var errs []error
+	named := false
+	refused := map[meta.KeyName]bool{}
+	for i := range b.rules {
+		for j := range b.rules[i].preds {
+			p := &b.rules[i].preds[j]
+			if p.bind == nil {
+				continue
+			}
+			named = true
+			id, err := p.bind(r, b.name)
+			if err != nil {
+				if !refused[p.name] {
+					refused[p.name] = true
+					errs = append(errs, err)
+				}
+				continue
+			}
+			p.id = id
+		}
+	}
+	if named {
+		b.subs = subscriptionsFor(b.rules)
+	}
+	return errors.Join(errs...)
+}
+
 // Directives returns the schemas the Directive wrappers declared,
 // for registration at composition.
 func (b *built) Directives() []directive.Schema { return b.schemas }

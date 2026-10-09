@@ -38,16 +38,23 @@ type ResolutionKind uint8
 const (
 	// ResolveNone marks a non-reference param.
 	ResolveNone ResolutionKind = iota
-	// ResolveCallableInScope names a callable the subject can see.
+	// ResolveCallableInScope names a callable the subject can see: for
+	// a method, a method of the type it belongs to before a function in
+	// scope.
 	ResolveCallableInScope
 	// ResolvePackageVar names a package-level variable.
 	ResolvePackageVar
-	// ResolveValueField names a field on the subject's own type.
+	// ResolveValueField names a field of the subject's value: the
+	// subject's own type for a type, the type a field belongs to, and
+	// for a callable the type of its first value return, then the type
+	// of each input parameter.
 	ResolveValueField
 	// ResolveHostParam names a parameter of the host callable.
 	ResolveHostParam
-	// ResolveMemberOnHandle names a member accessed through a
-	// handle the directive's other params establish.
+	// ResolveMemberOnHandle names a field or a method of the subject's
+	// handle: the subject's own type for a type, the type a field
+	// belongs to, and for a callable the type of its first value
+	// return.
 	ResolveMemberOnHandle
 	// ResolveMetadataKey resolves against the metadata registry: a
 	// key's boundary spelling or a fact group's name. A typo is a
@@ -73,11 +80,11 @@ func (k ResolutionKind) String() string {
 	case ResolvePackageVar:
 		return "a package variable"
 	case ResolveValueField:
-		return "a field on the subject's type"
+		return "a field of the subject's value"
 	case ResolveHostParam:
 		return "a parameter of the host callable"
 	case ResolveMemberOnHandle:
-		return "a member on a handle"
+		return "a member of the subject's handle"
 	case ResolveMetadataKey:
 		return "a metadata key or group"
 	case ResolveTypeInScope:
@@ -146,6 +153,34 @@ type ParamSpec struct {
 	Deprecated string
 }
 
+// Variant is one variant of a schema, such as writer in shape writer. The
+// first positional argument of an instance selects it. Its params join the
+// schema's, and its roles apply in place of the schema's.
+//
+// A variant is data, checked whole with its schema at registration: a name
+// the grammar cannot spell, a name declared twice, an empty doc, and a
+// param with the key of a schema param are refused there, and its params
+// and roles are checked as a schema's are.
+type Variant struct {
+	// Name is the spelling of the first positional argument.
+	Name string
+	// Params declares the keyed params of the variant, beside the
+	// schema's Params, which apply to every variant.
+	Params []ParamSpec
+	// Roles is the closed set of values the role key accepts on an
+	// instance of the variant.
+	Roles []string
+	// RolesRequired refuses an instance of the variant that writes no
+	// role.
+	RolesRequired bool
+	// Doc states the variant's meaning. Registration refuses an empty one.
+	Doc string
+	// Deprecated marks the variant deprecated where it is not empty, and
+	// states the rewrite. Validation types each instance as before, and
+	// reports it under [DeprecatedDirective].
+	Deprecated string
+}
+
 // Schema declares one directive: the closed contract between the
 // author who writes an instance in source and the plugin whose
 // handler receives it.
@@ -186,7 +221,14 @@ type Schema struct {
 	// bare instance is admitted, and what it means is the schema's
 	// documented semantic.
 	RolesRequired bool
-	// Repeatable admits more than one instance per subject.
+	// Variants declares the closed set of variants. Where it is not
+	// empty, the first positional argument of every instance is the name
+	// of a variant, and Positional declares the positional arguments
+	// after it. A schema with variants declares no Roles, because each
+	// variant declares its own.
+	Variants []Variant
+	// Repeatable admits more than one instance per subject, and one
+	// instance of each variant of a schema with variants.
 	// Single-instance is the default: a second instance is a
 	// contradiction, reported naming both positions.
 	Repeatable bool
@@ -195,6 +237,13 @@ type Schema struct {
 	// a negated instance with a positioned Error. Registration
 	// refuses a negatable kernel schema.
 	Negatable bool
+	// Overrides marks an override schema. A valid instance withdraws its
+	// subject from the bare and fact-gated rules of the plugin, as a
+	// negated instance does, and the rules that a directive gates still
+	// run. A plugin declares one where an author's statement replaces
+	// what its own rules derive. Registration refuses an override kernel
+	// schema.
+	Overrides bool
 	// Requires and ConflictsWith constrain the subject's full
 	// directive list. They resolve to schemas at the registry's
 	// seal, and are met or violated by canonical schema, whatever

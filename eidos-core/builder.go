@@ -178,8 +178,9 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 // registration, a presentation defect, a directive name in two
 // wrappers, a [Gated] name that is not a kernel directive, a rule
 // gating on two directives, a gate wrapped around a graph rule, a
-// zero predicate, and a gate on a key the declaration never
-// registered. A presentation defect is a nil tree or helper map,
+// zero predicate, and a gate on the zero key. A gate on a named handle
+// binds when the workspace builds, through [plugin.KeyBinder]. A
+// presentation defect is a nil tree or helper map,
 // two trees or one helper name twice at one level, a helper
 // text/template refuses, the zero option, and a [Builder.For]
 // naming the zero target, naming a target twice or declaring no
@@ -306,9 +307,9 @@ func flatten(
 			if p.test == nil {
 				panic("eidos: " + name + " gates on a zero predicate")
 			}
-			if p.id == 0 {
-				panic("eidos: " + name + " gates on an unregistered key;" +
-					" a gate reads its key when the rule is declared")
+			if p.id == 0 && p.bind == nil {
+				panic("eidos: " + name + " gates on the zero key;" +
+					" a gate takes a registered handle when the rule is declared, or a named handle")
 			}
 		}
 		if r.leaf.graph && (sch != nil || on != "" || len(held) > 0) {

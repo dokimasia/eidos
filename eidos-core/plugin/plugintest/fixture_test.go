@@ -78,6 +78,26 @@ func TestFixture(t *testing.T) {
 				{Plugin: "t", Subject: alpha.ID}, {Plugin: "t", Subject: beta.ID},
 			}, "the journal receives both invocations")
 		})
+
+		t.Run("binds a gate on a named handle in the fixture's registry", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, _ := twoStructs(t)
+			key := plugintest.Key[bool](t, f, "t.flag", "marks a subject")
+			plugintest.Stamp(t, f, key, alpha.ID, true)
+
+			var visited []string
+			p := eidos.NewPlugin("t").
+				Handle(eidos.Where(eidos.HasKey(meta.Named[bool](key.Name())),
+					eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
+						visited = append(visited, m.Struct.Name)
+						return nil
+					}))).
+				Build()
+
+			assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
+			assert.Equal(t, visited, []string{"Alpha"}, "the gate admits the stamped subject through the name")
+		})
 	})
 
 	t.Run("Generate", func(t *testing.T) {

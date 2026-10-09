@@ -477,6 +477,65 @@ func lower(roster []plugin.Plugin) ([]annEntry, []genEntry, []error) {
 	return ann, gen, faults
 }
 
+// bindKeys is the binding step. Each plugin that implements
+// [plugin.KeyBinder] binds its gates on named key handles in the sealed
+// key registry. An annotator that gates on a key that another annotator
+// registers runs in a later bucket than that annotator, so the gate reads
+// the registrant's stamps whole. The step refuses a gate in an earlier
+// bucket once per annotator and key, and the message of the error
+// contains the capabilities that order the two annotators. The claimant
+// of a key's namespace is the key's registrant.
+func bindKeys(roster []plugin.Plugin, ann []annEntry, keys *meta.Registry) []error {
+	var faults []error
+	for _, p := range roster {
+		if kb, binds := p.(plugin.KeyBinder); binds {
+			if err := kb.BindKeys(keys); err != nil {
+				faults = append(faults, err)
+			}
+		}
+	}
+	for _, a := range ann {
+		subscribed, declares := a.run.(plugin.Subscribed)
+		if !declares {
+			continue
+		}
+		refused := map[meta.KeyID]bool{}
+		for _, s := range subscribed.Subscriptions() {
+			spec, registered := keys.Spec(s.FactKey)
+			if !registered || refused[s.FactKey] {
+				continue
+			}
+			claimant, _ := keys.Claimant(spec.Name.Namespace())
+			at := slices.IndexFunc(ann, func(e annEntry) bool { return e.name == plugin.ID(claimant) })
+			if at < 0 || ann[at].name == a.name || ann[at].bucket < a.bucket {
+				continue
+			}
+			registrant := ann[at]
+			refused[s.FactKey] = true
+			faults = append(faults, fmt.Errorf(
+				"workspace: annotator %s gates on %s, which annotator %s registers, and %s does not run after %s: %s",
+				a.name, spec.Name, registrant.name, a.name, registrant.name, requirable(registrant)))
+		}
+	}
+	return faults
+}
+
+// requirable returns the text of what an annotator requires to run after
+// a registrant. The text lists the capabilities of the registrant, or
+// reports that the registrant provides none.
+func requirable(registrant annEntry) string {
+	var labels []string
+	if cp, provides := registrant.run.(plugin.CapabilityProvider); provides {
+		for _, c := range cp.Provides() {
+			labels = append(labels, strconv.Quote(string(c)))
+		}
+	}
+	if len(labels) == 0 {
+		return fmt.Sprintf("%s provides no capability to require", registrant.name)
+	}
+	return "require " + strings.Join(labels, " or ")
+}
+
 // order sorts one role's members into schedule order: priority
 // ascending, capability topology inside one priority, names
 // breaking what remains open.

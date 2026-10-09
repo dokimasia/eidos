@@ -227,6 +227,16 @@ func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
 	return Key[T]{id: id, name: name}, true
 }
 
+// Claimant returns the registrant that claimed a namespace: a plugin's
+// name, or the empty name for the composition. It reports false for a
+// namespace that nothing claimed. Every key of a namespace registers
+// through its claimant, so the claimant is the registrant of each key of
+// the namespace. It allocates nothing.
+func (r *Registry) Claimant(ns string) (string, bool) {
+	registrant, claimed := r.namespaces[ns]
+	return registrant, claimed
+}
+
 // Resolve returns the id a boundary spelling names, and false for a
 // spelling nothing registered. It allocates nothing.
 func (r *Registry) Resolve(name KeyName) (KeyID, bool) {

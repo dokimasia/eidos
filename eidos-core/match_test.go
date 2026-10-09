@@ -92,6 +92,28 @@ func TestMatch(t *testing.T) {
 				"the phase call passes")
 			assert.True(t, ran, "the handler ran")
 		})
+
+		t.Run("returns a sibling's stamped value through a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+				"the sibling's fact stamps")
+
+			var got, held bool
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+					got, held = eidos.FactOf(m, alpha.ID, meta.Named[bool](key.Name()))
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
+				"the phase call passes")
+			assert.True(t, held, "the name resolves in the registry of the fact store")
+			assert.True(t, got, "the value is the stamped one")
+		})
 	})
 
 	t.Run("Errorf", func(t *testing.T) {

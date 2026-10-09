@@ -342,6 +342,7 @@ func (b *Builder) Build() (*Workspace, error) {
 	faults = append(faults, rerr...)
 	ann, gens, lerr := lower(roster)
 	faults = append(faults, lerr...)
+	faults = append(faults, bindKeys(roster, ann, reg.keys)...)
 	options, cerr := configure(roster, byName, b.config)
 	faults = append(faults, cerr...)
 	refined, refineFaults := refine(b.plans, b.config.Plans, b.checks)

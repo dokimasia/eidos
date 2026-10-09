@@ -1092,12 +1092,14 @@ func recordLookedUp(tb testing.TB, r *state.Recorder) {
 }
 
 // validatedDirectives returns two validated directives whose values take
-// every param type, a keyed list among them.
+// every param type, a keyed list among them. The first has a variant and
+// a schema that overrides.
 func validatedDirectives() []directive.Directive {
 	return []directive.Directive{
 		{
-			Name: "shape:mirror",
-			Args: []directive.Value{{Kind: directive.TypeString, Str: "User"}},
+			Name:    "shape:mirror",
+			Variant: "writer",
+			Args:    []directive.Value{{Kind: directive.TypeString, Str: "User"}},
 			Params: map[directive.ParamKey]directive.Value{
 				"count": {Kind: directive.TypeInt, Int: -3},
 				"flag":  {Kind: directive.TypeBool, Bool: true},
@@ -1106,9 +1108,10 @@ func validatedDirectives() []directive.Directive {
 				}},
 				"to": {Kind: directive.TypeReference, Ref: "Account", Target: siblingSubject},
 			},
-			Role:     "reader",
-			Pos:      recordedPos,
-			Instance: 1,
+			Role:      "reader",
+			Pos:       recordedPos,
+			Instance:  1,
+			Overrides: true,
 		},
 		{Name: "stub", Params: map[directive.ParamKey]directive.Value{}, Pos: recordedPos, Negated: true},
 	}

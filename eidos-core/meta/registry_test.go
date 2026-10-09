@@ -310,6 +310,35 @@ func TestRegistry(t *testing.T) {
 		})
 	})
 
+	t.Run("Claimant", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the plugin that claimed a namespace", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, r.For(shapePlugin).ClaimNamespace(shapeNamespace), "the plugin claims its namespace")
+			got, held := r.Claimant(shapeNamespace)
+			assert.True(t, held, "the namespace is claimed")
+			assert.Equal(t, got, shapePlugin, "the claimant is the plugin")
+		})
+
+		t.Run("returns the empty name for a namespace that the composition claimed", func(t *testing.T) {
+			t.Parallel()
+
+			got, held := claimed(t).Claimant(shapeNamespace)
+			assert.True(t, held, "the namespace is claimed")
+			assert.Equal(t, got, "", "the composition has the empty name")
+		})
+
+		t.Run("reports false for a namespace nothing claimed", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := unclaimed(t).Claimant(shapeNamespace)
+			assert.False(t, held, "nothing claimed the namespace")
+		})
+	})
+
 	t.Run("Resolve", func(t *testing.T) {
 		t.Parallel()
 
@@ -519,6 +548,9 @@ func TestRegistryAllocs(t *testing.T) {
 	var id meta.KeyID
 	assert.MaxAllocs(t, func() { id, _ = r.Resolve("shape.role") }, 0, "Resolve allocates nothing")
 	assert.Equal(t, id, role.ID(), "Resolve returns the key's id")
+	claimant := true
+	assert.MaxAllocs(t, func() { _, claimant = r.Claimant(shapeNamespace) }, 0, "Claimant allocates nothing")
+	assert.True(t, claimant, "Claimant finds the claimed namespace")
 	var handle meta.Key[string]
 	assert.MaxAllocs(t, func() { handle, _ = meta.Lookup[string](r, "shape.role") }, 0, "Lookup allocates nothing")
 	assert.Equal(t, handle.ID(), role.ID(), "Lookup returns the key's handle")
@@ -634,6 +666,16 @@ func BenchmarkRegistry(b *testing.B) {
 	})
 
 	r, role := grouped(b)
+
+	b.Run("Claimant", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			_, held = r.Claimant(shapeNamespace)
+		}
+		assert.True(b, held, "Claimant finds the claimed namespace")
+	})
 
 	b.Run("Resolve", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(0)

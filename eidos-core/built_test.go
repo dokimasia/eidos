@@ -4,13 +4,17 @@
 package eidos_test
 
 import (
+	"strings"
 	"testing"
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The declared-surface fixture's values: the plugin, its version,
@@ -23,6 +27,9 @@ const (
 	providedLabel    = plugin.Capability("registry")
 	requiredLabel    = plugin.Capability("classified")
 )
+
+// ghostKeyName is a key name that no fixture registers.
+const ghostKeyName meta.KeyName = "t.ghost"
 
 // registryOutput is the one family the full declaration states.
 var registryOutput = plugin.Output{Per: plugin.PerPlan, Word: "registry"}
@@ -206,6 +213,64 @@ func TestBuilt(t *testing.T) {
 			assert.Empty(t, tp.Overrides(stubTarget), "no override is declared")
 		})
 	})
+
+	t.Run("BindKeys", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("binds a gate on a named handle to the id of its name", func(t *testing.T) {
+			t.Parallel()
+
+			key, facts := boolKey(t)
+			p := gatedPlugin(eidos.HasKey(meta.Named[bool](key.Name())))
+			assert.NoError(t, binderOf(t, p).BindKeys(facts.Registry()), "the name binds")
+			assert.Equal(t, subscribedKeys(t, p), []meta.KeyID{key.ID()}, "the subscription has the id of the name")
+		})
+
+		t.Run("returns nil for a plugin without a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			key, facts := boolKey(t)
+			p := gatedPlugin(eidos.HasKey(key))
+			assert.NoError(t, binderOf(t, p).BindKeys(facts.Registry()), "nothing binds")
+			assert.Equal(t, subscribedKeys(t, p), []meta.KeyID{key.ID()}, "the subscription keeps the id of its key")
+		})
+
+		t.Run("returns an error naming the plugin and the key of a name that nothing registers", func(t *testing.T) {
+			t.Parallel()
+
+			_, facts := boolKey(t)
+			err := binderOf(t, gatedPlugin(eidos.HasKey(meta.Named[bool](ghostKeyName)))).BindKeys(facts.Registry())
+			assert.HasError(t, err, "the name binds to nothing")
+			expect.That(t, err.Error()).
+				Contains(string(plannerPlugin), "the error names the plugin").
+				Contains(string(ghostKeyName), "the error names the key").
+				Contains("nothing registers", "the error states the cause")
+		})
+
+		t.Run("returns an error for a name that the registry has under another value type", func(t *testing.T) {
+			t.Parallel()
+
+			key, facts := boolKey(t)
+			err := binderOf(t, gatedPlugin(eidos.HasKey(meta.Named[string](key.Name())))).BindKeys(facts.Registry())
+			assert.HasError(t, err, "the name has another value type")
+			assert.Contains(t, err.Error(), "another value type than string", "the error states the type of the handle")
+		})
+
+		t.Run("returns one error for a name that two rules gate on", func(t *testing.T) {
+			t.Parallel()
+
+			_, facts := boolKey(t)
+			p := eidos.NewPlugin(plannerPlugin).
+				Handle(eidos.Where(eidos.HasKey(meta.Named[bool](ghostKeyName)),
+					eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }),
+					eidos.OnEmit(symbol.KindMethod, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }),
+				)).
+				Build()
+			err := binderOf(t, p).BindKeys(facts.Registry())
+			assert.HasError(t, err, "the name binds to nothing")
+			assert.Equal(t, strings.Count(err.Error(), string(ghostKeyName)), 1, "the name is refused once")
+		})
+	})
 }
 
 // declared builds a plugin stating every provider surface, with opts
@@ -230,4 +295,36 @@ func capabilities(tb assert.TB) plugin.CapabilityProvider {
 	caps, held := declared(&plannerOptions{}).(plugin.CapabilityProvider)
 	assert.True(tb, held, "the capabilities are returned")
 	return caps
+}
+
+// gatedPlugin builds a plugin with one emit rule under a gate on pred.
+func gatedPlugin(pred eidos.Pred) plugin.Plugin {
+	return eidos.NewPlugin(plannerPlugin).
+		Handle(eidos.Where(pred,
+			eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
+		Build()
+}
+
+// binderOf returns a built plugin as a [plugin.KeyBinder], and fails the
+// test where the plugin does not implement it.
+func binderOf(tb assert.TB, p plugin.Plugin) plugin.KeyBinder {
+	tb.Helper()
+
+	binder, binds := p.(plugin.KeyBinder)
+	assert.True(tb, binds, "a built plugin binds its gates")
+	return binder
+}
+
+// subscribedKeys returns the fact keys of a built plugin's
+// subscriptions, in subscription order.
+func subscribedKeys(tb assert.TB, p plugin.Plugin) []meta.KeyID {
+	tb.Helper()
+
+	subscribed, declares := p.(plugin.Subscribed)
+	assert.True(tb, declares, "a built plugin declares its gates")
+	var out []meta.KeyID
+	for _, s := range subscribed.Subscriptions() {
+		out = append(out, s.FactKey)
+	}
+	return out
 }

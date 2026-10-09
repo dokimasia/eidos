@@ -585,11 +585,13 @@ func (e *encoder) edges(hs []EdgeHash) {
 	}
 }
 
-// directive writes one validated directive: its name, its positional
-// values, its keyed values sorted by key, its role, its position, its
-// instance and whether it is negated.
+// directive writes one validated directive: its name, its variant, its
+// positional values, its keyed values sorted by key, its role, its
+// position, its instance, whether it is negated and whether its schema
+// overrides.
 func (e *encoder) directive(d *directive.Directive) {
 	e.text(string(d.Name))
+	e.text(d.Variant)
 	e.uvarint(uint64(len(d.Args)))
 	for _, v := range d.Args {
 		e.param(v)
@@ -603,6 +605,7 @@ func (e *encoder) directive(d *directive.Directive) {
 	e.pos(d.Pos)
 	e.varint(int64(d.Instance))
 	e.boolean(d.Negated)
+	e.boolean(d.Overrides)
 }
 
 // param writes one validated value whole: its type and every field, a
@@ -661,7 +664,7 @@ func (d *decoder) unitRef() plugin.UnitRef {
 // directive reads one validated directive. A directive written with no
 // keyed value reads with an empty map, as validation builds one.
 func (d *decoder) directive() directive.Directive {
-	out := directive.Directive{Name: directive.Name(d.text())}
+	out := directive.Directive{Name: directive.Name(d.text()), Variant: d.text()}
 	if n := d.Count(); n > 0 {
 		out.Args = make([]directive.Value, n)
 		for i := range out.Args {
@@ -678,6 +681,7 @@ func (d *decoder) directive() directive.Directive {
 	out.Pos = d.pos()
 	out.Instance = int(d.Varint())
 	out.Negated = d.Bool()
+	out.Overrides = d.Bool()
 	return out
 }
 

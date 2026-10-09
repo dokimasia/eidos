@@ -10,9 +10,11 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -95,11 +97,36 @@ func TestStamper(t *testing.T) {
 			assert.Equal(t, claim.Plugin, plugin.ID("classify"), "the claim has the context's plugin")
 			assert.Equal(t, claim.Bucket, 1, "the claim has the context's bucket")
 			assert.Equal(t, claim.Authority, meta.AuthorityPlugin, "the claim has plugin authority")
+			assert.Equal(t, claim.Pos, position.Pos{}, "a claim without a gating instance has no position")
 			assert.Equal(t, claim.Order, meta.Order{Subject: alpha.ID},
 				"the claim's order is the first rule and the subject, without a gating instance")
 			assert.Equal(t, claim.Derived, []meta.Read{{
 				Subject: alpha.ID, Key: key.Name(),
 			}}, "the derivation names the invocation's reads, the miss included")
+		})
+
+		t.Run("records the claim at directive authority in a match that a directive gates", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha := gatedStruct(t, 1)
+			key, facts := boolKey(t)
+			schema := stubSchema(gateName)
+			carrier := position.Pos{File: alpha.Pos.File, Line: alpha.Pos.Line, Col: alpha.Pos.Col + 1}
+			validated := plugin.ValidatedMap{alpha.ID: {{Name: schema.Canonical(), Pos: carrier}}}
+			ix, err := plugin.NewIndex(g, facts, validated, nil)
+			assert.NoError(t, err, "the routing surface builds")
+			p := eidos.NewPlugin("classify").
+				Handle(eidos.Directive(schema, eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+					eidos.Stamp(st, key, true)
+					return nil
+				}))).
+				Build()
+			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)), "the phase call passes")
+
+			views := slices.Collect(facts.Claims(alpha.ID, key.ID()))
+			assert.Length(t, views, 1, "the gating instance makes one claim")
+			expect.Equal(t, views[0].Claim.Authority, meta.AuthorityDirective, "the claim has directive authority")
+			expect.Equal(t, views[0].Claim.Pos, carrier, "the claim has the position of the gating instance")
 		})
 
 		t.Run("derives each claim from its own invocation alone", func(t *testing.T) {
@@ -241,6 +268,27 @@ func TestStamper(t *testing.T) {
 			_, visited, _, err := refusingRun(t)
 			assert.NoError(t, err, "the refused stamp does not stop the phase")
 			assert.Equal(t, visited, 2, "both subjects run")
+		})
+
+		t.Run("reports RefusedStamp for a stamp through a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+			named := meta.Named[bool](key.Name())
+			p := eidos.NewPlugin("classify").
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+					eidos.Stamp(st, named, true)
+					return nil
+				})).
+				Build()
+			ctx := annContext(t, facts, ix)
+			assert.NoError(t, annotatorOf(t, p).Annotate(ctx), "the refused stamp does not stop the phase")
+			assert.Contains(t, coretest.Codes(ctx.Sink), eidos.RefusedStamp, "the stamp is refused")
+			_, held := meta.Get(facts, alpha.ID, key)
+			assert.False(t, held, "a named handle writes nothing")
 		})
 	})
 

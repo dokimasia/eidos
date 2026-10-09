@@ -56,11 +56,17 @@
 // [Facts.ByKey] enumerates the subjects on which a key reads
 // present, in identity order, maintained at stamp time.
 //
+// A plugin that reads a key of another registrant takes a handle from
+// [Named], which has the key's name and no id. [Get] and [Fact] resolve
+// the name in the store's registry, and a name that the registry does
+// not contain under the handle's value type reads absent.
+//
 // # Failure semantics
 //
-// A write returns an error for a key nothing registered, a subject
-// kind the key does not admit, and a false boolean: absence is the
-// negative, so false is never stamped. Nothing here panics.
+// A write returns an error for a key nothing registered, a named
+// handle, a subject kind the key does not admit, and a false boolean:
+// absence is the negative, so false is never stamped. Nothing here
+// panics.
 //
 // # Dependency position
 //

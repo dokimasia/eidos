@@ -65,7 +65,7 @@ func TestCodes(t *testing.T) {
 		},
 		{
 			name: "DuplicateInstance", code: directive.DuplicateInstance, spelled: "EID-0014",
-			meaning: "a single-instance directive appears twice on one subject",
+			meaning: "a directive appears on one subject more often than its schema admits",
 		},
 		{
 			name: "RequirementUnmet", code: directive.RequirementUnmet, spelled: "EID-0015",
@@ -106,6 +106,10 @@ func TestCodes(t *testing.T) {
 		{
 			name: "DeprecatedDirective", code: directive.DeprecatedDirective, spelled: "EID-0067",
 			meaning: "a directive or a parameter that its schema deprecates is used",
+		},
+		{
+			name: "UnknownVariant", code: directive.UnknownVariant, spelled: "EID-0068",
+			meaning: "a directive has no variant, or a name that no variant of its schema has",
 		},
 	}
 	for _, tt := range tests {

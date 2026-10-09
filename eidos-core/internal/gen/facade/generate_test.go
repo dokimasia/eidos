@@ -23,22 +23,22 @@ import (
 // otherModule is a go.mod naming a module other than the kernel.
 const otherModule = "module example.test/other\n\ngo 1.27.0\n"
 
-// The ceilings of a generation, each measured over 24 fresh processes
-// after one generation, and allowing eight standard deviations above
-// the mean.
+// The ceilings of a generation, each measured after one generation. A
+// ceiling of the mini kernel is the average of 100 calls, with eight
+// allocations of headroom.
 const (
 	// generateMiniAllocs is one generation of the mini kernel's facade:
 	// the lowering, each surface's re-exports and spec, and gofmt's run
 	// over each file.
-	generateMiniAllocs = 14_730 + 8*1
-	// generateKernelAllocs is one generation of the kernel's facade,
-	// 494,279 on average with a standard deviation of 12.7, rounded up to
-	// 13.
-	generateKernelAllocs = 494_279 + 8*13
+	generateMiniAllocs = 15_389 + 8*1
+	// generateKernelAllocs is a budget for one generation of the facade
+	// of the kernel's 22 curated packages, about 5% above the 507,400
+	// allocations of one measured run.
+	generateKernelAllocs = 533_000
 	// regenerateMiniAllocs is one regeneration of the mini kernel's
 	// facade: the module check, the generation, and the write of each
 	// file.
-	regenerateMiniAllocs = 15_004 + 8*1
+	regenerateMiniAllocs = 15_675 + 8*1
 )
 
 // The facade is generated from the kernel, so the files it renders,

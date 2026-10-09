@@ -15,6 +15,12 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The names of the fixture callables.
+const (
+	fetchName = "Fetch"
+	getName   = "Get"
+)
+
 // roles overrides the scripted language's classification the way a
 // language with a context type and a last-return error model does.
 type roles struct {
@@ -78,11 +84,26 @@ func TestCallable(t *testing.T) {
 			assert.Equal(t, c.Returns[1].Name, "err", "the model's return name")
 		})
 
+		t.Run("returns the name of a function", func(t *testing.T) {
+			t.Parallel()
+
+			c, _ := rules.NewBound(roles{scripted()}, viewOnly(t), nil).CallableOf(fetch())
+			assert.Equal(t, c.Name, fetchName, "the declared name")
+		})
+
+		t.Run("returns the name of a method", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			c, _ := b.CallableOf(coretest.Method(svcPath, rowName, getName))
+			assert.Equal(t, c.Name, getName, "the declared name")
+		})
+
 		t.Run("returns the receiver of an instance method", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			m := coretest.Method(svcPath, rowName, "Get")
+			m := coretest.Method(svcPath, rowName, getName)
 			m.Receiver = &node.Param{Name: "r", Type: named(svcPath, rowName, symbol.KindStruct)}
 			c, is := b.CallableOf(m)
 			assert.True(t, is, "a method maps")
@@ -93,7 +114,7 @@ func TestCallable(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			m := coretest.Method(svcPath, rowName, "Get")
+			m := coretest.Method(svcPath, rowName, getName)
 			m.Receiver = &node.Param{Name: "r", Type: named(svcPath, rowName, symbol.KindStruct)}
 			m.Level = symbol.LevelType
 			c, is := b.CallableOf(m)
@@ -163,7 +184,7 @@ func TestCallable(t *testing.T) {
 // fetch returns an asynchronous function of a context and a variadic
 // int, returning a string and a named error.
 func fetch() *node.Function {
-	fn := coretest.Function(svcPath, "Fetch")
+	fn := coretest.Function(svcPath, fetchName)
 	fn.Params = []*node.Param{
 		{Name: "ctx", Type: builtin("Context")},
 		{Name: "rest", Type: builtin(intSpelling), Variadic: symbol.VariadicPositional},

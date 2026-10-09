@@ -52,9 +52,10 @@ var (
 		Number: 13, Meaning: "a directive omits the role its schema demands",
 	})
 	// DuplicateInstance refuses a second instance of a
-	// single-instance schema.
+	// single-instance schema, and a second instance of one variant of
+	// a repeatable schema.
 	DuplicateInstance = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 14, Meaning: "a single-instance directive appears twice on one subject",
+		Number: 14, Meaning: "a directive appears on one subject more often than its schema admits",
 	})
 	// RequirementUnmet refuses an instance whose schema requires a
 	// directive the subject does not have.
@@ -109,5 +110,11 @@ var (
 	// param that its schema deprecates, and states the schema's rewrite.
 	DeprecatedDirective = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 67, Meaning: "a directive or a parameter that its schema deprecates is used",
+	})
+	// UnknownVariant refuses an instance of a schema with variants that
+	// has no variant, or that has a name that no variant of the schema
+	// has.
+	UnknownVariant = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 68, Meaning: "a directive has no variant, or a name that no variant of its schema has",
 	})
 )

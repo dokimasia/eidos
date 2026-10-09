@@ -27,12 +27,14 @@ func stamperInto(m *match) *Stamper {
 	return &m.st
 }
 
-// Stamp records v under k with the envelope pre-bound: plugin
-// authority, the phase call's bucket and plugin, the invocation's
-// place in canonical match order, meaning the rule, the subject and the
-// gating instance, and the invocation's point reads so far as the
-// claim's derivation. A write the fact store refuses reports an Error
-// at the subject's position under [RefusedStamp], and the phase
+// Stamp records v under k on the subject of the match. The claim has the
+// phase call's bucket and plugin, and the invocation's place in
+// canonical match order, which is the rule, the subject and the gating
+// instance. The invocation's point reads so far are the claim's
+// derivation. In a match that a directive gates, the claim has directive
+// authority and the gating instance's position. In every other match,
+// it has plugin authority. A write that the fact store refuses reports
+// an Error at the subject's position under [RefusedStamp], and the phase
 // continues.
 //
 // # Allocation contract
@@ -69,17 +71,22 @@ func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T]
 
 // stamp records v under k on target with the invocation's
 // envelope, and reports a refusal under [RefusedStamp] at the
-// subject's position. A call that journals notes each accepted claim
-// in the invocation's record.
+// subject's position. A match that a directive gates claims at
+// directive authority and the gating instance's position. A call that
+// journals notes each accepted claim in the invocation's record.
 func stamp[T meta.FactValue](m *match, target symbol.Identity, k meta.Key[T], v T) {
-	err := meta.Stamp(m.rs.facts, k, v, meta.Claim{
+	claim := meta.Claim{
 		Subject:   target,
 		Authority: meta.AuthorityPlugin,
 		Bucket:    m.rs.bucket,
 		Plugin:    m.rs.plugin,
 		Order:     m.order(),
 		Derived:   m.derived(),
-	})
+	}
+	if m.gate != nil {
+		claim.Authority, claim.Pos = meta.AuthorityDirective, m.gate.Pos
+	}
+	err := meta.Stamp(m.rs.facts, k, v, claim)
 	if err != nil {
 		m.rs.reportf(m.seq, RefusedStamp, diag.SeverityError, m.pos, "%v", err)
 		return

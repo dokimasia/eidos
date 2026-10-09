@@ -92,6 +92,8 @@ func NewFacts(r *Registry) *Facts {
 //
 // Error modes:
 //   - a key nothing registered;
+//   - a named handle, because a registrant writes through the handle
+//     that [Register] returned;
 //   - a subject kind the key does not admit;
 //   - a false boolean. Absence is the negative, so a fact turns false
 //     only through a drop or a withdrawal;
@@ -113,6 +115,10 @@ func NewFacts(r *Registry) *Facts {
 // present adds the subject to the key's index, whose map grows by
 // doubling.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
+	if k.ID() == 0 && k.Name() != "" {
+		return fmt.Errorf("meta: %s is a named handle, and a write goes through the handle that registration returns",
+			k.Name())
+	}
 	spec, err := f.spec(k.ID())
 	if err != nil {
 		return err
@@ -266,7 +272,9 @@ func (f *Facts) Damaged() error {
 
 // Get returns the winning value, untracked, and false where the
 // winner is a drop or nothing was stamped. A list is copied out, so a
-// caller cannot write into a bag.
+// caller cannot write into a bag. A named handle resolves in the store's
+// registry, and reads absent where the registry has no key of its name
+// and type.
 //
 // # Allocation contract
 //
@@ -274,6 +282,10 @@ func (f *Facts) Damaged() error {
 // list: the copy and its box.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	var zero T
+	k, registered := k.resolved(f.registry)
+	if !registered {
+		return zero, false
+	}
 	value, held := f.lookup(id, k.ID())
 	if !held {
 		return zero, false
@@ -289,19 +301,22 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 // into rec. It records a miss as well, so the reader runs again when the
 // fact appears. A subject of a kind the key does not admit reads absent
 // and records nothing, because [Stamp] refuses every claim on it. Every
-// plugin reads through Fact. [Get] is the kernel's untracked path.
+// plugin reads through Fact. [Get] is the kernel's untracked path. A
+// named handle resolves as Get resolves it, and a name that the registry
+// does not contain reads absent and records the read by its name.
 //
 // # Allocation contract
 //
 // Fact allocates what [Get] does, and what rec allocates to record the
 // read.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool) {
-	if !f.admits(k.ID(), id.Kind) {
+	bound, _ := k.resolved(f.registry)
+	if !f.admits(bound.ID(), id.Kind) {
 		var zero T
 		return zero, false
 	}
 	rec.RecordFact(id, k.Name())
-	return Get(f, id, k)
+	return Get(f, id, bound)
 }
 
 // Recorder records fact reads. The store's read set implements it,

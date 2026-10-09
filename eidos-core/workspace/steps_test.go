@@ -30,6 +30,17 @@ const (
 	refinedPattern    = "svc/..."
 )
 
+// The binding fixture beside [flaggerID], the annotator that registers
+// and stamps the flag key: the annotator that gates on the key through a
+// named handle, the capability that orders the two, the key, and a name
+// that nothing registers.
+const (
+	auditID       plugin.ID         = "audit"
+	flagsCap      plugin.Capability = "flags"
+	flagKeyName   meta.KeyName      = "flag.marked"
+	ghostFlagName meta.KeyName      = "flag.ghost"
+)
+
 // convertedBound is a struct that an option of [convertedOptions] has.
 type convertedBound struct {
 	Files int `json:"files"`
@@ -661,6 +672,84 @@ func TestSteps(t *testing.T) {
 		})
 	})
 
+	t.Run("bindKeys", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("runs a gate on a named handle over the stamps of the key's registrant", func(t *testing.T) {
+			t.Parallel()
+
+			var visited []string
+			w, err := valid().Annotators(
+				flagger(caps(flagsCap)),
+				auditing(eidos.HasKey(meta.Named[bool](flagKeyName)), caps(flagsCap), &visited),
+			).Build()
+			assert.NoError(t, err, "the composition builds")
+			g, _ := alpha(t)
+			_, err = w.Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the composition runs")
+			assert.Equal(t, visited, []string{"Alpha"}, "the gate admits the struct that the registrant flagged")
+		})
+
+		refused := []struct {
+			name    string
+			flagger plugin.Annotator
+			gate    eidos.Pred
+			markers []string
+		}{
+			{
+				name:    "returns an error naming the plugin and the key of a name that nothing registers",
+				flagger: flagger(caps(flagsCap)),
+				gate:    eidos.HasKey(meta.Named[bool](ghostFlagName)),
+				markers: []string{string(auditID), string(ghostFlagName), "nothing registers"},
+			},
+			{
+				name:    "returns an error naming the plugin and the key of a name with another value type",
+				flagger: flagger(caps(flagsCap)),
+				gate:    eidos.KeyEquals(meta.Named[string](flagKeyName), "yes"),
+				markers: []string{string(auditID), string(flagKeyName), "another value type than string"},
+			},
+			{
+				name:    "returns an error naming the capability of a registrant that runs after the gate",
+				flagger: flagger(caps(flagsCap)),
+				gate:    eidos.HasKey(meta.Named[bool](flagKeyName)),
+				markers: []string{string(auditID), string(flagKeyName), string(flaggerID), `require "flags"`},
+			},
+			{
+				name:    "returns an error stating that a registrant after the gate provides no capability",
+				flagger: flagger(nil),
+				gate:    eidos.HasKey(meta.Named[bool](flagKeyName)),
+				markers: []string{string(auditID), "flagger provides no capability to require"},
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var visited []string
+				_, err := valid().Annotators(tt.flagger, auditing(tt.gate, nil, &visited)).Build()
+				assert.HasError(t, err, "the composition fails")
+				for _, marker := range tt.markers {
+					assert.Contains(t, err.Error(), marker, "the error names the fault")
+				}
+			})
+		}
+
+		t.Run("returns one error for a key that two rules of an annotator gate on", func(t *testing.T) {
+			t.Parallel()
+
+			twice, held := eidos.NewPlugin(auditID).
+				Handle(eidos.Where(eidos.HasKey(meta.Named[bool](flagKeyName)),
+					eidos.OnStruct(quiet),
+					eidos.OnInterface(func(*eidos.InterfaceMatch, *eidos.Stamper) error { return nil }),
+				)).
+				Build().(plugin.Annotator)
+			assert.True(t, held, "a stamper rule lowers to the annotator role")
+			_, err := valid().Annotators(flagger(caps(flagsCap)), twice).Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Equal(t, strings.Count(err.Error(), string(flagKeyName)), 1, "the gate on the key is refused once")
+		})
+	})
+
 	t.Run("compilePlans", func(t *testing.T) {
 		t.Parallel()
 
@@ -866,6 +955,47 @@ func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 // inline.
 func capable(name plugin.ID, provides, requires []plugin.Capability) plugin.Annotator {
 	return &declaring{name: name, provides: provides, requires: requires}
+}
+
+// flagger returns an annotator that provides the capabilities provides,
+// registers the flag key and stamps it on every struct.
+func flagger(provides []plugin.Capability) plugin.Annotator {
+	var flag meta.Key[bool]
+	p, held := eidos.NewPlugin(flaggerID).
+		Provides(provides...).
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace(flagKeyName.Namespace()); err != nil {
+				return err
+			}
+			k, err := meta.Register[bool](r, meta.KeySpec{Name: flagKeyName, Doc: "a struct that the flagger flagged"})
+			flag = k
+			return err
+		}).
+		Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+			eidos.Stamp(st, flag, true)
+			return nil
+		})).
+		Build().(plugin.Annotator)
+	if !held {
+		panic("workspace_test: a stamper rule lowers to the annotator role")
+	}
+	return p
+}
+
+// auditing returns an annotator that requires the capabilities requires,
+// and that appends the name of each struct that gate admits to visited.
+func auditing(gate eidos.Pred, requires []plugin.Capability, visited *[]string) plugin.Annotator {
+	p, held := eidos.NewPlugin(auditID).
+		Requires(requires...).
+		Handle(eidos.Where(gate, eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
+			*visited = append(*visited, m.Struct.Name)
+			return nil
+		}))).
+		Build().(plugin.Annotator)
+	if !held {
+		panic("workspace_test: a stamper rule lowers to the annotator role")
+	}
+	return p
 }
 
 // keyed returns an annotator whose key provider runs register.

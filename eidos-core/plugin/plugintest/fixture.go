@@ -171,13 +171,15 @@ type Result struct {
 	Err  error
 }
 
-// Annotate runs one plugin's annotate phase over the fixture. A
+// Annotate runs one plugin's annotate phase over the fixture. It binds
+// the plugin's gates on named handles in the fixture's registry first. A
 // plugin that does not implement [plugin.Annotator] fails the test.
 func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
 	ann, implemented := p.(plugin.Annotator)
 	assert.True(tb, implemented, "the plugin implements the annotator role")
+	f.bind(tb, p)
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	err := ann.Annotate(&plugin.AnnotatorContext{
@@ -196,7 +198,8 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
 
-// Generate runs one plugin's generate phase over the fixture. A
+// Generate runs one plugin's generate phase over the fixture. It binds
+// the plugin's gates on named handles in the fixture's registry first. A
 // plugin that does not implement [plugin.Generator] fails the test.
 // The emit store persists across calls, so successive Generate calls
 // see earlier flushes the way later buckets do.
@@ -205,6 +208,7 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 
 	gen, implemented := p.(plugin.Generator)
 	assert.True(tb, implemented, "the plugin implements the generator role")
+	f.bind(tb, p)
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	err := gen.Generate(&plugin.GeneratorContext{
@@ -222,6 +226,17 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 		Journal: f.Journal,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
+}
+
+// bind binds the gates of a plugin that implements [plugin.KeyBinder] in
+// the fixture's registry, as a workspace binds them when it builds. A
+// name that the registry does not contain fails the test.
+func (f *Fixture) bind(tb assert.TB, p plugin.Plugin) {
+	tb.Helper()
+
+	if kb, binds := p.(plugin.KeyBinder); binds {
+		assert.NoError(tb, kb.BindKeys(f.Keys), "the plugin's gates on named handles bind")
+	}
 }
 
 // index seals the graph on first use, and returns the routing surface

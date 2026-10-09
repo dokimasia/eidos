@@ -181,14 +181,14 @@ func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
 // Skipped reports whether a subject is excluded from the bare and
 // fact-gated rules of a plugin. A bare skip excludes the subject from
 // every plugin, and skip plugin=<name> excludes it from that plugin.
-// A negated directive excludes the subject from the plugin that
-// registered the directive's schema. Skipped reads the validated
-// instances of the subject once, and it allocates what
-// [Index.DirectivesOf] allocates.
+// A negated directive, and an instance of an override schema, exclude
+// the subject from the plugin that registered the directive's schema.
+// Skipped reads the validated instances of the subject once, and it
+// allocates what [Index.DirectivesOf] allocates.
 func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 	for _, d := range ix.DirectivesOf(id) {
 		switch {
-		case d.Negated:
+		case d.Negated || d.Overrides:
 			if ID(d.Name.Plugin()) == p {
 				return true
 			}

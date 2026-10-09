@@ -5,11 +5,13 @@ package authored_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/authored"
@@ -157,6 +159,21 @@ func TestSample(t *testing.T) {
 			alt, held := meta.Get(report.Facts, f.item.ID, w.Kernel().Alternate)
 			assert.True(t, held, "the alternate is stamped")
 			assert.Equal(t, alt, "2", "the alternate arrives as the text the author wrote")
+		})
+
+		t.Run("stamps the value at directive authority", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.item.ID, 4, directive.KernelSample, "value=1")
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.NoError(t, err, "the run is clean")
+			views := slices.Collect(report.Facts.Claims(f.item.ID, w.Kernel().Sample.ID()))
+			assert.Length(t, views, 1, "the instance makes one claim")
+			expect.Equal(t, views[0].Claim.Authority, meta.AuthorityDirective, "the claim has directive authority")
+			expect.Equal(t, views[0].Claim.Pos, position.Pos{File: fixtureFile, Line: 4, Col: 1},
+				"the claim has the position of the instance")
 		})
 
 		t.Run("leaves the alternate absent where none was stated", func(t *testing.T) {

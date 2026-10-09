@@ -53,22 +53,48 @@ type FactValue interface {
 // gate predicates all go through it, so the compiler checks the
 // value type.
 //
-// The zero Key names nothing: every handle comes from [Register].
+// A handle comes from [Register], or from [Named] for a key that another
+// registrant registers. A named handle has the name alone, and a read
+// resolves it in the registry of the store that it reads. The zero Key
+// has neither an id nor a name.
 type Key[T FactValue] struct {
 	id   KeyID
 	name KeyName
+}
+
+// Named returns a handle on the key with the name name, for a plugin whose
+// predicates or handlers read a key that another plugin registers. The
+// handle has no id. A gate on it binds when the workspace builds, and a
+// read resolves the name in the registry of the store that it reads. A
+// read of a name that nothing registered under T finds no fact. A write
+// through the handle is refused, because a registrant writes through the
+// handle that [Register] returned. Named allocates nothing.
+func Named[T FactValue](name KeyName) Key[T] {
+	return Key[T]{name: name}
 }
 
 // Name returns the key's boundary spelling, empty for the zero Key. It
 // allocates nothing.
 func (k Key[T]) Name() KeyName { return k.name }
 
-// ID returns the key's dense id, zero for the zero Key. It allocates
-// nothing.
+// ID returns the key's dense id, zero for the zero Key and for a named
+// handle. It allocates nothing.
 func (k Key[T]) ID() KeyID { return k.id }
 
-// IsZero reports whether the key names nothing. It allocates nothing.
-func (k Key[T]) IsZero() bool { return k.id == 0 }
+// IsZero reports whether the key is the zero Key, which has neither an id
+// nor a name. A named handle is not zero. It allocates nothing.
+func (k Key[T]) IsZero() bool { return k.id == 0 && k.name == "" }
+
+// resolved returns the handle that a read uses. That handle is k where k
+// has an id or is the zero Key, and otherwise the handle that r registered
+// under the name of k. It reports false for a name that r did not
+// register under T. It allocates nothing.
+func (k Key[T]) resolved(r *Registry) (Key[T], bool) {
+	if k.id != 0 || k.name == "" {
+		return k, true
+	}
+	return Lookup[T](r, k.name)
+}
 
 // GroupName names a fact group: a bundle a writer declares, such as
 // every key its classification stamps. The name is public API, and

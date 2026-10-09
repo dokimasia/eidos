@@ -38,7 +38,9 @@
 // one generated constructor per subject kind such as [OnInterface],
 // plus [OnGraph] and [OnEmit]. Gates are declarative: [Directive]
 // binds a schema and [Where] binds fact predicates, never a filter
-// inside the handler. The handler's second parameter picks its
+// inside the handler. A predicate on a key of another plugin takes a
+// handle from [meta.Named], which the workspace binds when it builds,
+// through [plugin.KeyBinder]. The handler's second parameter picks its
 // effect, [Emitter] to generate or [Stamper] to annotate, and
 // [Builder.Build] lowers every rule set to the SPI roles in
 // [go.dokimi.dev/eidos/core/plugin], which remain public for what

@@ -310,6 +310,7 @@ func TestIndex(t *testing.T) {
 
 		g, inStore, inCache := twoPackages(t)
 		negatedAt := coretest.Struct(coretest.StorePath, "Negated").ID
+		overriddenAt := coretest.Struct(coretest.StorePath, "Overridden").ID
 		setAt := coretest.Struct(coretest.StorePath, "Set").ID
 		clean := coretest.Struct(coretest.StorePath, "Clean").ID
 		validated := plugin.ValidatedMap{
@@ -320,8 +321,9 @@ func TestIndex(t *testing.T) {
 					directive.SkipPlugin: {Kind: directive.TypeString, Str: string(skippedPlugin)},
 				},
 			}},
-			negatedAt: {{Name: directive.Name(string(skippedPlugin) + ":stub"), Negated: true}},
-			setAt:     {{Name: directive.Name(string(skippedPlugin) + ":stub")}},
+			negatedAt:    {{Name: directive.Name(string(skippedPlugin) + ":stub"), Negated: true}},
+			overriddenAt: {{Name: directive.Name(string(skippedPlugin) + ":stub"), Overrides: true}},
+			setAt:        {{Name: directive.Name(string(skippedPlugin) + ":stub")}},
 		}
 		ix := index(t, g, validated, nil)
 
@@ -350,6 +352,14 @@ func TestIndex(t *testing.T) {
 			{
 				name:    "reports false for another plugin under a negated directive",
 				subject: negatedAt, plugin: otherPlugin,
+			},
+			{
+				name:    "reports true for the plugin that registered the override schema of an instance",
+				subject: overriddenAt, plugin: skippedPlugin, want: true,
+			},
+			{
+				name:    "reports false for another plugin under an instance of an override schema",
+				subject: overriddenAt, plugin: otherPlugin,
 			},
 			{
 				name:    "reports false for the plugin of a set directive",

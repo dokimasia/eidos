@@ -205,6 +205,16 @@ const (
 // and the width of every marked struct.
 const measurerID plugin.ID = "measurer"
 
+// The namespace and the keys that the measuring annotator registers. The
+// mark selects a struct for mirroring, and the width counts the fields of
+// the struct. The readers plan's generator reads both keys through named
+// handles.
+const (
+	corpusNamespace              = "e2e"
+	corpusMark      meta.KeyName = "e2e.mark"
+	corpusWidth     meta.KeyName = "e2e.width"
+)
+
 // documentDir opens the ledger name of every manifest document.
 const documentDir = "manifest/"
 
@@ -429,16 +439,6 @@ func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.V
 
 // TypeName returns the scripted rules' type name.
 func (native) TypeName(word, base string) string { return rulestest.Scripted().TypeName(word, base) }
-
-// corpusKeys are the handles of the two keys the measuring annotator
-// registers. The mark selects a struct for mirroring, and the width
-// counts the struct's fields. Each Build sets both handles, and the
-// readers plan's generator reads them through the pointer after the
-// Build of its run.
-type corpusKeys struct {
-	mark  meta.Key[bool]
-	width meta.Key[int64]
-}
 
 // Run is the frame: it loads or takes a graph, seals it, validates the
 // directives, applies the drops, annotates, and runs each plan through
@@ -2117,41 +2117,41 @@ func corpusEdit(p int, from, to string) func(root string) error {
 // the pipeline corpus's tree: the measuring annotator, a readers plan
 // that mirrors every marked struct and documents what the referencing
 // structs read through each edge kind, a stubs plan that stubs every
-// tenth plain struct, and the edit. Every plan and every composition
-// reads the keys the fixture's one corpusKeys records.
+// tenth plain struct, and the edit. Each composition has a measuring
+// annotator of its own, and each plan reads the keys through named
+// handles, so the suite's checks build the fixture in parallel.
 func edgeFixture(edit func(root string) error) workspacetest.Fixture {
-	keys := &corpusKeys{}
 	return workspacetest.Fixture{
 		Tree: pipelineTree(pipelineTestPackages),
 		Compose: func(root string) *workspace.Builder {
-			return edgeComposition(keys).
+			return edgeComposition().
 				Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
 				Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
 		},
-		Plans: func() []workspace.Plan { return edgePlans(keys, pipelineTestPackages) },
+		Plans: func() []workspace.Plan { return edgePlans(pipelineTestPackages) },
 		Edit:  edit,
 	}
 }
 
 // edgeComposition returns the edge corpus's composition without its plans,
-// its output and its ledger: the scripted frontend and the measuring
-// annotator, which registers the corpus's keys into keys.
-func edgeComposition(keys *corpusKeys) *workspace.Builder {
+// its output and its ledger: the scripted frontend and a new measuring
+// annotator, which registers the corpus's keys.
+func edgeComposition() *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
 		Frontends(frontendtest.NewScripted()).
-		Annotators(measuring(keys)).
+		Annotators(measuring()).
 		Targets("fixture")
 }
 
 // edgePlans returns the edge corpus's plans over a corpus of n packages:
 // the readers plan, which mirrors every marked struct and documents what
 // the referencing structs read, and the stubs plan.
-func edgePlans(keys *corpusKeys, n int) []workspace.Plan {
+func edgePlans(n int) []workspace.Plan {
 	return []workspace.Plan{
 		{
 			Name:       "readers",
-			Generators: []plugin.Generator{reading(keys, n)},
+			Generators: []plugin.Generator{reading(n)},
 			Backend:    documenting("readers-printer"),
 		},
 		{
@@ -2172,9 +2172,8 @@ func edgePlans(keys *corpusKeys, n int) []workspace.Plan {
 func widenedRun(t *testing.T, l *documentCounting) *workspace.Report {
 	t.Helper()
 
-	keys := &corpusKeys{}
-	w := built(t, edgeComposition(keys).
-		Plans(edgePlans(keys, pipelineTestPackages)...).
+	w := built(t, edgeComposition().
+		Plans(edgePlans(pipelineTestPackages)...).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil }))
 	sealedRun(t, w, workspace.Input{Tree: pipelineTree(pipelineTestPackages)})
@@ -2194,38 +2193,42 @@ func widenedRun(t *testing.T, l *documentCounting) *workspace.Report {
 func recordedEdges(tb assert.TB, n int) *workspace.Workspace {
 	tb.Helper()
 
-	keys := &corpusKeys{}
-	return built(tb, edgeComposition(keys).
-		Plans(edgePlans(keys, n)...).
+	return built(tb, edgeComposition().
+		Plans(edgePlans(n)...).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil }))
 }
 
-// measuring returns the annotator that registers the corpus's keys into
-// keys, and stamps the mark and the width on every struct whose name
-// opens with the marked prefix.
-func measuring(keys *corpusKeys) plugin.Annotator {
+// measuring returns a new annotator that registers the corpus's keys,
+// and stamps the mark and the width on every struct whose name opens
+// with the marked prefix. The Build of a workspace sets the handles of
+// the annotator, so one annotator builds into one workspace at a time.
+func measuring() plugin.Annotator {
+	var (
+		mark  meta.Key[bool]
+		width meta.Key[int64]
+	)
 	p, held := eidos.NewPlugin(measurerID).
 		Keys(func(r *meta.Registry) error {
-			if err := r.ClaimNamespace("e2e"); err != nil {
+			if err := r.ClaimNamespace(corpusNamespace); err != nil {
 				return err
 			}
-			mark, err := meta.Register[bool](r, meta.KeySpec{
-				Name: "e2e.mark", Doc: "marks a corpus subject for mirroring",
+			var err error
+			mark, err = meta.Register[bool](r, meta.KeySpec{
+				Name: corpusMark, Doc: "marks a corpus subject for mirroring",
 			})
 			if err != nil {
 				return err
 			}
-			width, err := meta.Register[int64](r, meta.KeySpec{
-				Name: "e2e.width", Doc: "counts the fields of a marked corpus subject",
+			width, err = meta.Register[int64](r, meta.KeySpec{
+				Name: corpusWidth, Doc: "counts the fields of a marked corpus subject",
 			})
-			keys.mark, keys.width = mark, width
 			return err
 		}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 			if strings.HasPrefix(m.Struct.Name, pipelineMarkedPrefix) {
-				eidos.Stamp(st, keys.mark, true)
-				eidos.Stamp(st, keys.width, int64(len(m.Struct.Fields)))
+				eidos.Stamp(st, mark, true)
+				eidos.Stamp(st, width, int64(len(m.Struct.Fields)))
 			}
 			return nil
 		})).Build().(plugin.Annotator)
@@ -2238,9 +2241,11 @@ func measuring(keys *corpusKeys) plugin.Annotator {
 // reading returns the readers plan's generator over a corpus of n
 // packages: per marked struct, a mirror in the gen family, documented
 // with what the struct reads of another package through its edge kind.
-func reading(keys *corpusKeys, n int) plugin.Generator {
+// It reads the measuring annotator's keys through named handles.
+func reading(n int) plugin.Generator {
+	mark, width := meta.Named[bool](corpusMark), meta.Named[int64](corpusWidth)
 	return generator("reader", func(m *eidos.StructMatch, e *eidos.Emitter) error {
-		if _, marked := eidos.Fact(m, keys.mark); !marked {
+		if _, marked := eidos.Fact(m, mark); !marked {
 			return nil
 		}
 		p, err := strconv.Atoi(strings.TrimPrefix(m.Struct.Identity().Package, pipelinePathPrefix))
@@ -2250,7 +2255,7 @@ func reading(keys *corpusKeys, n int) plugin.Generator {
 		e.PackageFile().Append(&emit.Struct{
 			Origin: m.Struct.Identity(),
 			Name:   "for" + m.Struct.Name,
-			Doc:    edgeRead(m, keys, p, n),
+			Doc:    edgeRead(m, width, p, n),
 		})
 		return nil
 	})
@@ -2259,7 +2264,8 @@ func reading(keys *corpusKeys, n int) plugin.Generator {
 // edgeRead returns what a referencing struct of the package with index
 // p reads of another package of a corpus of n packages through its edge
 // kind, as a line of documentation, and nothing for any other struct.
-func edgeRead(m *eidos.StructMatch, keys *corpusKeys, p, n int) []string {
+// width is the handle of the key that the fact edge reads.
+func edgeRead(m *eidos.StructMatch, width meta.Key[int64], p, n int) []string {
 	other := func(q int, name string) symbol.Identity {
 		id := m.Struct.Identity()
 		id.Package, id.Name = pipelinePath(q%n), name
@@ -2270,7 +2276,7 @@ func edgeRead(m *eidos.StructMatch, keys *corpusKeys, p, n int) []string {
 		s, _ := m.Reader().Lookup(other(p+1, edgeLookedUp))
 		return []string{fmt.Sprintf(lookupDoc, edgeLookedUp, fieldCount(s))}
 	case m.Struct.Name == edgeFact:
-		w, _ := eidos.FactOf(m, other(p+1, edgeMeasured), keys.width)
+		w, _ := eidos.FactOf(m, other(p+1, edgeMeasured), width)
 		return []string{fmt.Sprintf(factDoc, edgeMeasured, w)}
 	case m.Struct.Name == edgeMembership && p == 0:
 		count := 0
@@ -2400,9 +2406,8 @@ func benchWarm(b *testing.B, n int, allocs uint64) *workspace.Report {
 	b.Helper()
 
 	mem := ledger.NewMem()
-	keys := &corpusKeys{}
-	w := built(b, edgeComposition(keys).
-		Plans(edgePlans(keys, n)...).
+	w := built(b, edgeComposition().
+		Plans(edgePlans(n)...).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return mem, nil }))
 	path := pipelinePath(edgeEdited) + "/" + pipelineScript

@@ -13,7 +13,8 @@
 // pass: the brand, the worker count, the memo's limit, the frontends,
 // the roster, the registries with the kernel's own keys and schemas
 // registered first and every registry sealed, the lowering into
-// priority buckets, the options and their canonical encoding, the
+// priority buckets, the binding of the gates on named key handles, the
+// options and their canonical encoding, the
 // config's refinements of the plans, the plans and their compiled
 // schedule, with every generator that declares templates serving its
 // plan's target, each plan's [Sources] and dependencies, the plans'
@@ -63,6 +64,16 @@
 // its name, and registers keys only into its own namespaces. The
 // builder's own registrations bind to the composition. A plugin's
 // directive schemas name the plugin that provides them.
+//
+// A plugin that gates on a key of another registrant declares the gate
+// on a named handle, which has the key's name alone. After the key
+// registry seals, Build binds each such gate through
+// [plugin.KeyBinder], and refuses a name that the registry does not
+// contain under the handle's value type. An annotator that gates on a
+// key that another annotator registers runs in a later bucket than that
+// annotator. Build refuses the composition otherwise, and the message of
+// the error contains the capabilities that the gating annotator can
+// require.
 //
 // # The run
 //

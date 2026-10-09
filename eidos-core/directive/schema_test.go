@@ -106,7 +106,7 @@ func TestSchema(t *testing.T) {
 			},
 			{
 				name: "returns the spelling of ResolveValueField",
-				give: directive.ResolveValueField, want: "a field on the subject's type",
+				give: directive.ResolveValueField, want: "a field of the subject's value",
 			},
 			{
 				name: "returns the spelling of ResolveHostParam",
@@ -114,7 +114,7 @@ func TestSchema(t *testing.T) {
 			},
 			{
 				name: "returns the spelling of ResolveMemberOnHandle",
-				give: directive.ResolveMemberOnHandle, want: "a member on a handle",
+				give: directive.ResolveMemberOnHandle, want: "a member of the subject's handle",
 			},
 			{
 				name: "returns the spelling of ResolveMetadataKey",

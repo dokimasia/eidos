@@ -46,8 +46,11 @@ type Directive struct {
 	// Name is the schema's canonical spelling, whatever the author
 	// wrote: prefixed for a plugin's, bare for the kernel's.
 	Name Name
-	// Args contains the positional values, typed per the schema's
-	// positional specs, in source order.
+	// Variant is the name of the variant that the instance selects, and
+	// empty for a schema without variants.
+	Variant string
+	// Args contains the positional values after the variant, typed per
+	// the schema's positional specs, in source order.
 	Args []Value
 	// Params contains the keyed values, typed per the schema, the
 	// reserved routing keys included.
@@ -63,6 +66,11 @@ type Directive struct {
 	// gates no rule, and dispatch excludes its subject from the bare
 	// and fact-gated rules of the plugin that registered the schema.
 	Negated bool
+	// Overrides reports an instance of a schema that states
+	// [Schema.Overrides]. It gates rules as any instance does, and
+	// dispatch excludes its subject from the bare and fact-gated rules of
+	// the plugin that registered the schema.
+	Overrides bool
 }
 
 // Param returns a keyed value and whether the instance has it, the

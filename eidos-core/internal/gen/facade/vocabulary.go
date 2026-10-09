@@ -82,6 +82,7 @@ var Surfaces = []Surface{
 	{Rel: "rules/rulestest", Name: "rulestest"},
 	{Rel: "authored", Name: "authored"},
 	{Rel: "toolchain", Name: "toolchain"},
+	{Rel: "jsonschema", Name: "jsonschema"},
 }
 
 // OwnedDirs are the repository-relative directories the generator

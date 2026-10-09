@@ -52,6 +52,13 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 // [DeprecatedDirective] that states the schema's rewrite, and validates
 // as before.
 //
+// An instance of a schema with variants selects its variant with its
+// first positional argument. The variant's params join the schema's, and
+// the variant's roles apply. An instance without a variant, or with a
+// name that no variant has, reports [UnknownVariant] with the names of
+// the variants. A repeatable schema admits one instance of each variant
+// on a subject, and reports a second one under [DuplicateInstance].
+//
 // keys resolves ResolveMetadataKey params, and a ResolveDiagnosticCode
 // param resolves against the codes that [diag.MustRegister] registered.
 // resolve binds every other reference kind, and a nil resolver leaves
@@ -63,13 +70,14 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 //
 // # Allocation contract
 //
-// Validate allocates what it returns: the slice of instances, and per
-// instance its params map with the map's one group, each param's value,
-// which the map stores apart from the group because a [Value] is larger
-// than 128 bytes, the positional arguments, and each list. A subject
-// with more than four instances, and an instance with more than eight
-// params, grow the working storage onto the heap. A finding allocates
-// what the sink does.
+// Validate allocates the instances that it returns. The slice of the
+// instances is one allocation. Each instance allocates its params map, the
+// one group of the map, and each param's value, which the map stores apart
+// from the group because a [Value] is larger than 128 bytes. Each instance
+// also allocates its positional arguments and each list. A subject with
+// more than four instances, and an instance with more than eight params,
+// grow the working storage onto the heap. A finding allocates what the
+// sink does.
 func Validate(
 	subject symbol.Identity, ds []Raw,
 	r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink,
@@ -139,6 +147,7 @@ func Validate(
 			}
 			if typed[indexes[0]].schema.Repeatable {
 				v.mixedCarriers(typed, indexes, canonical)
+				v.duplicateVariants(typed, indexes, canonical, dropped)
 				continue
 			}
 			first := typed[indexes[0]].instance.Pos
@@ -291,6 +300,31 @@ func (v *validator) mixedCarriers(typed []checked, indexes []int, canonical Name
 	}
 }
 
+// duplicateVariants refuses a second instance of one variant of a
+// repeatable schema. It reports [DuplicateInstance] at each later
+// instance of the variant, related to the first, and drops every instance
+// of the variant. The instances of a schema without variants have no
+// variant, and it drops none of them.
+func (v *validator) duplicateVariants(typed []checked, indexes []int, canonical Name, dropped []bool) {
+	for n, i := range indexes {
+		variant := typed[i].instance.Variant
+		if variant == "" || slices.ContainsFunc(indexes[:n], func(j int) bool {
+			return typed[j].instance.Variant == variant
+		}) {
+			continue
+		}
+		for _, j := range indexes[n+1:] {
+			if typed[j].instance.Variant != variant {
+				continue
+			}
+			v.reportRelated(diag.SeverityError, DuplicateInstance, typed[j].instance.Pos, typed[i].instance.Pos,
+				"%s %s appears twice on %s: the schema admits one instance of each variant",
+				canonical, variant, v.subject)
+			dropped[i], dropped[j] = true, true
+		}
+	}
+}
+
 // instance types one raw instance against its schema. It reports
 // false when it reported a violation, and the instance drops.
 func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
@@ -298,7 +332,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	schema, canonical, held := v.registry.lookup(raw.Name)
 	if !held {
 		// An ambiguous spelling reports even where an ignore covers
-		// it: the registry refuses such an ignore, and a claimed name
+		// it. The registry refuses such an ignore, and a claimed name
 		// is never a foreign tool's.
 		if candidates := v.registry.Candidates(raw.Name); len(candidates) > 1 {
 			v.report(AmbiguousName, raw.Pos,
@@ -306,7 +340,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			return Directive{}, Schema{}, false
 		}
 		if v.registry.Ignored(raw.Name) {
-			// The workspace opted out: a foreign tool's carrier drops
+			// The workspace opted out, so a foreign tool's carrier drops
 			// without a finding.
 			return Directive{}, Schema{}, false
 		}
@@ -320,15 +354,45 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	}
 	v.deprecated(canonical, "", schema.Deprecated)
 
-	d := Directive{Name: canonical, Params: map[ParamKey]Value{}, Pos: raw.Pos, Negated: raw.Negated}
+	// The params and the roles that apply depend on the variant, so the
+	// validator reads the variant before any other argument. variantAt is
+	// the index of the argument with the name of the variant, and -1 for a
+	// schema without variants.
+	var variant Variant
+	variantAt := -1
+	roles, rolesRequired := schema.Roles, schema.RolesRequired
+	if len(schema.Variants) > 0 {
+		var selected bool
+		variant, variantAt, selected = v.variant(canonical, schema.Variants, raw.Args)
+		if !selected {
+			return Directive{}, Schema{}, false
+		}
+		roles, rolesRequired = variant.Roles, variant.RolesRequired
+	}
+
+	d := Directive{
+		Name: canonical, Variant: variant.Name, Params: map[ParamKey]Value{}, Pos: raw.Pos,
+		Negated: raw.Negated, Overrides: schema.Overrides,
+	}
 	ok := true
 	positional := 0
 	seen := map[ParamKey]int{}
-	for _, arg := range raw.Args {
+	for i, arg := range raw.Args {
+		if i == variantAt {
+			continue
+		}
 		if arg.Key == "" {
+			if positional >= len(schema.Positional) && len(schema.Variants) > 0 {
+				v.report(ExtraPositional, raw.Pos,
+					"%s takes %d positional arguments after its variant, and %q at offset %d is one too many: "+
+						"write a param as key=value, and a second variant in a directive of its own",
+					d.Name, len(schema.Positional), rawSpelling(arg.Value), arg.Col)
+				ok = false
+				continue
+			}
 			if positional >= len(schema.Positional) {
 				v.report(ExtraPositional, raw.Pos,
-					"%s takes %d positional arguments, and %q at offset %d is one too many",
+					"%s takes %d positional arguments, and %q at offset %d is one too many: write a param as key=value",
 					d.Name, len(schema.Positional), rawSpelling(arg.Value), arg.Col)
 				ok = false
 				continue
@@ -355,7 +419,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		seen[key] = arg.Col
 
 		if key == roleKey {
-			role, roleOK := v.role(d.Name, schema, arg)
+			role, roleOK := v.role(d.Name, roles, arg)
 			if !roleOK {
 				ok = false
 				continue
@@ -363,7 +427,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			d.Role = role
 			continue
 		}
-		spec, declared := findParam(schema, key)
+		spec, declared := findParam(schema, variant, key)
 		reserved := key == ReservedOut || key == ReservedTag
 		switch {
 		case declared:
@@ -374,7 +438,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			spec.Key = key
 		default:
 			v.report(UnknownKey, raw.Pos,
-				"%s does not accept %s", d.Name, key)
+				"%s does not accept %s: %s", d.Name, key, acceptedKeys(schema, variant, roles))
 			ok = false
 			continue
 		}
@@ -390,9 +454,9 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	// The role gates which params were legal and which are owed,
 	// so its checks run after every argument is read. Keys check in
 	// key order, so the findings arrive in one order.
-	if schema.RolesRequired && d.Role == "" {
+	if rolesRequired && d.Role == "" {
 		v.report(MissingRole, raw.Pos,
-			"%s demands a role, one of %s", d.Name, strings.Join(schema.Roles, ", "))
+			"%s demands a role, one of %s", d.Name, strings.Join(roles, ", "))
 		ok = false
 	}
 	var keysScratch [paramScratch]ParamKey
@@ -402,7 +466,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	}
 	slices.Sort(keys)
 	for _, key := range keys {
-		spec, declared := findParam(schema, key)
+		spec, declared := findParam(schema, variant, key)
 		if !declared && schema.Open != nil && key != ReservedOut && key != ReservedTag {
 			spec, declared = *schema.Open, true
 		}
@@ -425,12 +489,14 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			ok = false
 		}
 	}
-	for _, spec := range schema.Params {
-		_, given := seen[spec.Key]
-		if spec.Required && !given && roleAdmits(spec.Roles, d.Role) {
-			v.report(MissingParam, raw.Pos,
-				"%s omits %s, which its schema requires", d.Name, spec.Key)
-			ok = false
+	for _, specs := range [2][]ParamSpec{schema.Params, variant.Params} {
+		for _, spec := range specs {
+			_, given := seen[spec.Key]
+			if spec.Required && !given && roleAdmits(spec.Roles, d.Role) {
+				v.report(MissingParam, raw.Pos,
+					"%s omits %s, which its schema requires", d.Name, spec.Key)
+				ok = false
+			}
 		}
 	}
 
@@ -440,10 +506,42 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	return d, schema, true
 }
 
-// role validates the role argument against the schema's declared
-// set.
-func (v *validator) role(name Name, schema Schema, arg RawArg) (string, bool) {
-	if len(schema.Roles) == 0 {
+// variant returns the variant that an instance selects with its first
+// positional argument, wherever the author wrote it, and the index of
+// that argument. It reports [UnknownVariant] with the names of the
+// variants for an instance without a positional argument and for a name
+// that no variant has, and [TypeMismatch] for a list. It warns under
+// [DeprecatedDirective] for a variant that the schema deprecates.
+func (v *validator) variant(name Name, variants []Variant, args []RawArg) (Variant, int, bool) {
+	at := slices.IndexFunc(args, func(arg RawArg) bool { return arg.Key == "" })
+	if at < 0 {
+		v.report(UnknownVariant, v.at, "%s has no variant: write one of %s", name, variantNames(variants))
+		return Variant{}, 0, false
+	}
+	value := args[at].Value
+	if value.List != nil {
+		v.report(TypeMismatch, v.at, "%s takes the name of one variant, not a list", name)
+		return Variant{}, 0, false
+	}
+	i := slices.IndexFunc(variants, func(variant Variant) bool { return variant.Name == value.Text })
+	if i < 0 {
+		v.report(UnknownVariant, v.at, "%s has no variant %q: write one of %s",
+			name, value.Text, variantNames(variants))
+		return Variant{}, 0, false
+	}
+	selected := variants[i]
+	if selected.Deprecated != "" {
+		v.sink.Warnf(DeprecatedDirective, v.at, diag.PhaseFreeze,
+			"%s variant %s is deprecated: %s", name, selected.Name, selected.Deprecated)
+	}
+	return selected, at, true
+}
+
+// role validates the role argument against the declared roles. They are
+// the roles of the variant that the instance selects, or the roles of the
+// schema for a schema without variants.
+func (v *validator) role(name Name, roles []string, arg RawArg) (string, bool) {
+	if len(roles) == 0 {
 		v.report(UnknownKey, v.at,
 			"%s declares no roles, so it does not accept %s", name, roleKey)
 		return "", false
@@ -453,10 +551,10 @@ func (v *validator) role(name Name, schema Schema, arg RawArg) (string, bool) {
 		return "", false
 	}
 	role := arg.Value.Text
-	if !slices.Contains(schema.Roles, role) {
+	if !slices.Contains(roles, role) {
 		v.report(UnknownRole, v.at,
 			"%s does not declare role %q: one of %s",
-			name, role, strings.Join(schema.Roles, ", "))
+			name, role, strings.Join(roles, ", "))
 		return "", false
 	}
 	return role, true
@@ -543,9 +641,10 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 	return Value{}, false
 }
 
-// code types a reference to a diagnostic code: a spelling that
-// diag.ParseCode reads, of a code that [diag.MustRegister] registered.
-// Any other spelling reports [UnknownCode] and fails the instance.
+// code types a reference to a diagnostic code. The spelling must be one
+// that diag.ParseCode reads, of a code that [diag.MustRegister]
+// registered. Any other spelling reports [UnknownCode] and fails the
+// instance.
 func (v *validator) code(name Name, spec ParamSpec, spelling string) (Value, bool) {
 	c, err := diag.ParseCode(spelling)
 	if err != nil {
@@ -582,11 +681,14 @@ func (v *validator) metadataCandidates() string {
 	return strings.Join(out, ", ")
 }
 
-// findParam returns a schema's keyed spec.
-func findParam(s Schema, key ParamKey) (ParamSpec, bool) {
-	for _, spec := range s.Params {
-		if spec.Key == key {
-			return spec, true
+// findParam returns the keyed spec of a schema or of the variant that an
+// instance selects. The zero Variant has no params.
+func findParam(s Schema, variant Variant, key ParamKey) (ParamSpec, bool) {
+	for _, specs := range [2][]ParamSpec{s.Params, variant.Params} {
+		for _, spec := range specs {
+			if spec.Key == key {
+				return spec, true
+			}
 		}
 	}
 	return ParamSpec{}, false
@@ -597,6 +699,36 @@ func findParam(s Schema, key ParamKey) (ParamSpec, bool) {
 // included.
 func roleAdmits(scope []string, role string) bool {
 	return len(scope) == 0 || role != "" && slices.Contains(scope, role)
+}
+
+// acceptedKeys returns the advice at the end of an [UnknownKey] refusal.
+// It lists the param keys of the schema, then the param keys of the
+// variant that the instance selects, then the role key when the instance
+// has roles. It leaves out the reserved keys. For an empty list it
+// returns "it takes no keyed param".
+func acceptedKeys(s Schema, variant Variant, roles []string) string {
+	var keys []string
+	for _, specs := range [2][]ParamSpec{s.Params, variant.Params} {
+		for _, spec := range specs {
+			keys = append(keys, string(spec.Key))
+		}
+	}
+	if len(roles) > 0 {
+		keys = append(keys, string(roleKey))
+	}
+	if len(keys) == 0 {
+		return "it takes no keyed param"
+	}
+	return "write one of " + strings.Join(keys, ", ")
+}
+
+// variantNames spells the names of a schema's variants for a refusal.
+func variantNames(variants []Variant) string {
+	names := make([]string, 0, len(variants))
+	for _, variant := range variants {
+		names = append(names, variant.Name)
+	}
+	return strings.Join(names, ", ")
 }
 
 // nameList spells candidate names for a refusal.

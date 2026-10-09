@@ -1178,6 +1178,43 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, *visited, []string{"Alpha"}, "the negated subject is not visited")
 		})
 
+		t.Run("skips a subject with an instance of the plugin's override schema under a bare rule", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			p, visited := visitingStructs(contextPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, overriddenOn(beta.ID))),
+				"the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the overridden subject is not visited")
+		})
+
+		t.Run("runs a directive-gated rule for an instance of an override schema", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: gateName}}),
+				"the gating instance attaches")
+			g.Freeze()
+
+			schema := stubSchema(gateName)
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {{Name: schema.Canonical(), Overrides: true}},
+			}
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, validated)
+			ctx.Plugin = plugin.ID(schema.Plugin)
+
+			p, visited := visitingStructs(ctx.Plugin, func(h emitHandler) eidos.Rule {
+				return eidos.Directive(schema, eidos.OnStruct(h))
+			})
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the override instance gates the rule")
+		})
+
 		t.Run("visits a subject with another plugin's negated directive", func(t *testing.T) {
 			t.Parallel()
 
@@ -1554,6 +1591,14 @@ func visitingStructs(name plugin.ID, rule func(emitHandler) eidos.Rule) (plugin.
 func negatedOn(subject symbol.Identity) map[symbol.Identity][]directive.Directive {
 	return map[symbol.Identity][]directive.Directive{
 		subject: {{Name: directive.Name(string(contextPlugin) + ":stub"), Negated: true}},
+	}
+}
+
+// overriddenOn returns a validated table in which one subject has an
+// instance of an override schema of the context plugin.
+func overriddenOn(subject symbol.Identity) map[symbol.Identity][]directive.Directive {
+	return map[symbol.Identity][]directive.Directive{
+		subject: {{Name: directive.Name(string(contextPlugin) + ":stub"), Overrides: true}},
 	}
 }
 

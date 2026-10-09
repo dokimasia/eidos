@@ -41,6 +41,9 @@ const (
 	whereAllocs = 2
 	// predAllocs is a predicate: its test's closure over the key.
 	predAllocs = 1
+	// namedPredAllocs is a predicate on a named handle: its test's
+	// closure over the key and the closure that binds the name.
+	namedPredAllocs = 2
 )
 
 // ruleCall is one construction of a wrapper or a predicate, named as
@@ -164,6 +167,19 @@ func TestRule(t *testing.T) {
 			visited := gatedVisits(t, g, facts, eidos.HasKey(key))
 			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "the unflagged subject is not visited")
 		})
+
+		t.Run("visits only a subject on which the key of a named handle reads present", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+				"one subject is flagged")
+
+			visited := gatedVisits(t, g, facts, eidos.HasKey(meta.Named[bool](key.Name())))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "the bound gate visits the flagged subject")
+		})
 	})
 
 	t.Run("KeyEquals", func(t *testing.T) {
@@ -211,18 +227,48 @@ func TestRule(t *testing.T) {
 			visited := gatedVisits(t, g, facts, eidos.KeyEquals(key, wantedRank))
 			assert.Empty(t, visited, "nothing is visited")
 		})
+
+		t.Run("visits only the subject whose value matches through a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := rankKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, wantedRank, meta.Claim{Subject: alpha.ID}),
+				"the matching subject is stamped with the wanted value")
+			assert.NoError(t,
+				meta.Stamp(facts, key, otherRank, meta.Claim{Subject: beta.ID}),
+				"the other subject is stamped with another value")
+
+			visited := gatedVisits(t, g, facts, eidos.KeyEquals(meta.Named[string](key.Name()), wantedRank))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "only the equal value is visited")
+		})
 	})
 }
 
 // Each wrapper allocates its lists, and each predicate its test, in the
-// ordinary run, which runs no benchmark. The check runs alone, because
-// the count includes every goroutine's allocations.
+// ordinary run, which runs no benchmark. A predicate on a named handle
+// also allocates its bind. The check runs alone, because the count
+// includes every goroutine's allocations.
 func TestRuleAllocs(t *testing.T) {
 	for _, tt := range ruleCalls(t) {
 		msg := tt.name + " allocates its rule"
 		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
 		tt.check(t)
 	}
+
+	leaf := eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })
+	flag := meta.Named[bool]("t.flag")
+	rank := meta.Named[string]("t.rank")
+	var p eidos.Pred
+	assert.MaxAllocs(t, func() { p = eidos.HasKey(flag) }, namedPredAllocs,
+		"HasKey allocates the test and the bind of a named handle")
+	assert.Equal(t, subscriptionsOf(t, eidos.Where(p, leaf))[0].FactKey, meta.KeyID(0),
+		"HasKey returns a gate that waits for the workspace to bind it")
+	assert.MaxAllocs(t, func() { p = eidos.KeyEquals(rank, wantedRank) }, namedPredAllocs,
+		"KeyEquals allocates the test and the bind of a named handle")
+	assert.Equal(t, subscriptionsOf(t, eidos.Where(p, leaf))[0].FactKey, meta.KeyID(0),
+		"KeyEquals returns a gate that waits for the workspace to bind it")
 }
 
 // BenchmarkRule measures each scoping wrapper around one rule and each
@@ -313,7 +359,8 @@ func subscriptionsOf(tb assert.TB, rules ...eidos.Rule) []plugin.Subscription {
 }
 
 // gatedVisits returns the subjects a struct rule under pred visited,
-// in visit order.
+// in visit order. The plugin binds its gates in the registry of the
+// fact store first, as a workspace binds them when it builds.
 func gatedVisits(
 	tb assert.TB, g *store.Graph, facts *meta.Facts, pred eidos.Pred,
 ) []symbol.Identity {
@@ -327,6 +374,9 @@ func gatedVisits(
 				return nil
 			}))).
 		Build()
+	binder, binds := p.(plugin.KeyBinder)
+	assert.True(tb, binds, "a built plugin binds its gates")
+	assert.NoError(tb, binder.BindKeys(facts.Registry()), "the gates bind")
 	assert.NoError(tb, generatorOf(tb, p).Generate(genContext(tb, g, facts, nil)),
 		"the phase call passes")
 	return visited

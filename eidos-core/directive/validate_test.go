@@ -21,31 +21,41 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The validation fixture: a subject, a metadata registry with one
-// key and one group, and a schema exercising every param shape.
+// validationSubject is the struct Store, the subject of every validation
+// case.
 var validationSubject = symbol.Identity{
 	Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct,
 }
 
-// The validation benchmark's instances: an index with a positional, a
-// list and three params under a role, a second plugin's index, and a
-// drop of a metadata key.
+// The instances of the validation benchmark. fullIndexPayload is an index
+// with a positional, a list and three params under a role.
+// otherIndexPayload is the index of a second plugin, dropPayload drops a
+// metadata key, and writerPayload selects a variant with a list.
 const (
 	fullIndexPayload  = `indexer:index btree fields=[a, b] depth=3 unique=true role=server shard=id`
 	otherIndexPayload = "stubgen:index mode=fast"
 	dropPayload       = "meta drop=shape.role"
+	writerPayload     = "shaper:shape writer reads=[a, b]"
+)
+
+// The variants of the variant fixture: writer, which requires the fields
+// it reads, and tx, which demands a role.
+const (
+	writerVariant = "writer"
+	txVariant     = "tx"
 )
 
 // unregisteredCode is a code in the kernel's prefix that no package
 // registers.
 const unregisteredCode = "EID-9999"
 
-// validateAllocs is what validating the benchmark's three instances
-// allocates: the returned slice, and per instance the params map, its
-// one group and each param's value, which the map keeps apart because a
-// Value is larger than 128 bytes. The index also allocates its
-// positional and its list.
-const validateAllocs = 1 + (2 + 4 + 2) + (2 + 1) + (2 + 1)
+// validateAllocs is the number of allocations of a validation of the four
+// instances of the benchmark. The returned slice is one allocation. Each
+// instance allocates its params map, the one group of the map, and each
+// param's value, which the map keeps apart because a Value is larger than
+// 128 bytes. The index also allocates its positional and its list, and the
+// variant allocates its list.
+const validateAllocs = 1 + (2 + 4 + 2) + (2 + 1) + (2 + 1) + (2 + 1 + 1)
 
 // Validate is the one gate between a carrier and a handler, so every
 // check it runs and every finding it reports is pinned.
@@ -200,6 +210,18 @@ func TestValidate(t *testing.T) {
 				naming:   "nonkey",
 			},
 			{
+				name:     "reports UnknownKey with the keys that the schema accepts",
+				payloads: []string{"indexer:index btree nonkey=v"},
+				want:     directive.UnknownKey,
+				naming:   "write one of fields, depth, unique, shard, role",
+			},
+			{
+				name:     "reports ExtraPositional with the advice to write a param as key=value",
+				payloads: []string{"indexer:index btree extra"},
+				want:     directive.ExtraPositional,
+				naming:   "write a param as key=value",
+			},
+			{
 				name:     "reports DuplicateKey naming a key written twice",
 				payloads: []string{"indexer:index btree depth=1 depth=2"},
 				want:     directive.DuplicateKey,
@@ -313,6 +335,72 @@ func TestValidate(t *testing.T) {
 				want:     directive.UnknownCode,
 				naming:   unregisteredCode,
 			},
+			{
+				name:     "reports UnknownVariant naming the variants for an instance without a variant",
+				payloads: []string{"shaper:shape id=a"},
+				want:     directive.UnknownVariant,
+				naming:   "writer, tx, getter",
+			},
+			{
+				name:     "reports UnknownVariant naming the variants for a name that no variant has",
+				payloads: []string{"shaper:shape wrtier"},
+				want:     directive.UnknownVariant,
+				naming:   "writer, tx, getter",
+			},
+			{
+				name:     "reports TypeMismatch for a variant written as a list",
+				payloads: []string{"shaper:shape [writer]"},
+				want:     directive.TypeMismatch,
+				naming:   "variant",
+			},
+			{
+				name:     "reports MissingParam for an omitted param that the variant requires",
+				payloads: []string{"shaper:shape writer"},
+				want:     directive.MissingParam,
+				naming:   "reads",
+			},
+			{
+				name:     "reports UnknownKey for a param of another variant",
+				payloads: []string{"shaper:shape tx role=begin reads=[a]"},
+				want:     directive.UnknownKey,
+				naming:   "reads",
+			},
+			{
+				name:     "reports MissingRole naming the roles of a variant that demands one",
+				payloads: []string{"shaper:shape tx"},
+				want:     directive.MissingRole,
+				naming:   "begin, commit",
+			},
+			{
+				name:     "reports UnknownRole naming the roles of the variant",
+				payloads: []string{"shaper:shape tx role=end"},
+				want:     directive.UnknownRole,
+				naming:   "begin, commit",
+			},
+			{
+				name:     "reports UnknownKey for a role on a variant that declares none",
+				payloads: []string{"shaper:shape writer reads=[a] role=begin"},
+				want:     directive.UnknownKey,
+				naming:   "role",
+			},
+			{
+				name:     "reports ExtraPositional for a positional after the variant",
+				payloads: []string{"shaper:shape writer reads=[a] extra"},
+				want:     directive.ExtraPositional,
+				naming:   "extra",
+			},
+			{
+				name:     "reports ExtraPositional with the advice to write a second variant in its own directive",
+				payloads: []string{"shaper:shape writer reads=[a] tx"},
+				want:     directive.ExtraPositional,
+				naming:   "a second variant in a directive of its own",
+			},
+			{
+				name:     "reports UnknownKey with the keys of the selected variant",
+				payloads: []string{"shaper:shape tx role=begin reads=[a]"},
+				want:     directive.UnknownKey,
+				naming:   "write one of id, role",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -376,6 +464,134 @@ func TestValidate(t *testing.T) {
 			assert.Empty(t, got, "neither instance is returned")
 			coretest.AssertReports(t, sink, directive.DuplicateInstance)
 			assert.NotEmpty(t, related(sink), "the finding names the other position")
+		})
+
+		t.Run("returns an instance that overrides for an override schema", func(t *testing.T) {
+			t.Parallel()
+
+			overriding := wellFormed("mockgen", "stub")
+			overriding.Overrides = true
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "mockgen:stub", 1)}, overriding)
+			assert.Length(t, got, 1, "one instance is returned")
+			assert.True(t, got[0].Overrides, "the instance has the override of its schema")
+		})
+
+		t.Run("returns an instance that does not override for a schema that does not", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "mockgen:stub", 1)}, wellFormed("mockgen", "stub"))
+			assert.Length(t, got, 1, "one instance is returned")
+			assert.False(t, got[0].Overrides, "the instance has no override")
+		})
+
+		t.Run("returns the variant that an instance selects", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t, "shaper:shape writer reads=[a]")
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "one instance is returned")
+			assert.Equal(t, got[0].Variant, writerVariant, "the instance has the variant of its first positional")
+		})
+
+		t.Run("returns the variant that a positional after a keyed argument selects", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t, "shaper:shape reads=[a] writer")
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "one instance is returned")
+			assert.Equal(t, got[0].Variant, writerVariant, "the first positional is the variant wherever it is")
+		})
+
+		t.Run("types the params of the selected variant", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validate(t, "shaper:shape writer reads=[a]")
+			assert.Length(t, got, 1, "one instance is returned")
+			reads, _ := got[0].Param("reads")
+			assert.Equal(t, reads, directive.Value{
+				Kind: directive.TypeList, List: []directive.Value{{Kind: directive.TypeString, Str: "a"}},
+			}, "the variant's param types as the variant declares")
+		})
+
+		t.Run("types the params of the schema on an instance of a variant", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validate(t, "shaper:shape tx role=begin id=a")
+			assert.Length(t, got, 1, "one instance is returned")
+			id, _ := got[0].Param("id")
+			assert.Equal(t, id, directive.Value{Kind: directive.TypeString, Str: "a"},
+				"the schema's param applies to every variant")
+		})
+
+		t.Run("types the role of the selected variant", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validate(t, "shaper:shape tx role=commit")
+			assert.Length(t, got, 1, "one instance is returned")
+			assert.Equal(t, got[0].Role, "commit", "the role is one of the variant's")
+		})
+
+		t.Run("returns the positional arguments after the variant", func(t *testing.T) {
+			t.Parallel()
+
+			targeted := variantSchema()
+			targeted.Positional = []directive.ParamSpec{
+				{Key: "target", Type: directive.TypeString, Doc: "the classified target"},
+			}
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "shaper:shape writer reads=[a] main", 1)}, targeted)
+			assert.Length(t, got, 1, "one instance is returned")
+			assert.Equal(t, got[0].Args, []directive.Value{{Kind: directive.TypeString, Str: "main"}},
+				"the variant is not among the positional arguments")
+		})
+
+		t.Run("returns one instance of each variant of a repeatable schema", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t,
+				"shaper:shape writer reads=[a]",
+				"shaper:shape tx role=begin")
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 2, "both instances are returned")
+			expect.Equal(t, got[0].Variant, writerVariant, "the first by position is the writer")
+			expect.Equal(t, got[1].Instance, 1, "the instances are numbered across the variants")
+		})
+
+		t.Run("reports DuplicateInstance for one variant of a repeatable schema written twice", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t,
+				"shaper:shape writer reads=[a]",
+				"shaper:shape writer reads=[b]")
+			assert.Empty(t, got, "neither instance is returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.DuplicateInstance},
+				"DuplicateInstance is reported")
+			assert.Equal(t, related(sink), []position.Pos{{File: "svc/store.go", Line: 1, Col: 1}},
+				"the finding names the first instance of the variant")
+		})
+
+		t.Run("returns the other variants beside a variant written twice", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validate(t,
+				"shaper:shape writer reads=[a]",
+				"shaper:shape tx role=begin",
+				"shaper:shape writer reads=[b]")
+			assert.Length(t, got, 1, "the instance of the other variant is returned")
+			assert.Equal(t, got[0].Variant, txVariant, "the returned instance is the transaction")
+		})
+
+		t.Run("reports DuplicateInstance for two variants of a single-instance schema", func(t *testing.T) {
+			t.Parallel()
+
+			single := variantSchema()
+			single.Repeatable = false
+			got, sink := validateRaws(t, []directive.Raw{
+				parse(t, "shaper:shape writer reads=[a]", 1),
+				parse(t, "shaper:shape tx role=begin", 2),
+			}, single)
+			assert.Empty(t, got, "neither instance is returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.DuplicateInstance},
+				"DuplicateInstance is reported")
 		})
 
 		t.Run("returns both instances when a requirement is met", func(t *testing.T) {
@@ -562,12 +778,17 @@ func TestValidate(t *testing.T) {
 				payload: "sizer:size kb",
 				naming:  sizing.Positional[0].Deprecated,
 			},
+			{
+				name:    "reports DeprecatedDirective with the rewrite for a deprecated variant",
+				payload: "shaper:shape getter",
+				naming:  variantSchema().Variants[2].Deprecated,
+			},
 		}
 		for _, tt := range deprecations {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, sink := validateRaws(t, []directive.Raw{parse(t, tt.payload, 1)}, retired, sizing)
+				_, sink := validateRaws(t, []directive.Raw{parse(t, tt.payload, 1)}, retired, sizing, variantSchema())
 				got := onlyDiag(t, sink)
 				expect.Equal(t, got.Code, directive.DeprecatedDirective, "the finding is under its code")
 				expect.That(t, got.Msg).Contains(tt.naming, "and states the rewrite")
@@ -734,6 +955,17 @@ func TestValidate(t *testing.T) {
 			coretest.AssertReports(t, sink, directive.UnknownKey)
 		})
 
+		t.Run("reports UnknownKey with the advice for a schema without params", func(t *testing.T) {
+			t.Parallel()
+
+			bare := directive.Schema{Plugin: "closed", Name: "mark", Doc: "marks a subject"}
+			_, sink := validateRaws(t, []directive.Raw{parse(t, "closed:mark T=1", 1)}, bare)
+			got := onlyDiag(t, sink)
+			expect.Equal(t, got.Code, directive.UnknownKey, "the finding is under its code")
+			expect.That(t, got.Msg).
+				Contains("it takes no keyed param", "and states that the schema takes no keyed param")
+		})
+
 		field := func(name string) symbol.Identity {
 			return symbol.Identity{Lang: "golang", Package: "svc/store", Name: name, Kind: symbol.KindField}
 		}
@@ -773,7 +1005,7 @@ func TestValidate(t *testing.T) {
 			assert.Empty(t, got, "the instance is not returned")
 			f := onlyDiag(t, sink)
 			assert.Equal(t, f.Code, directive.UnresolvedReference, "UnresolvedReference is reported")
-			assert.Contains(t, f.Msg, "a field on the subject's type", "the finding names the kind")
+			assert.Contains(t, f.Msg, directive.ResolveValueField.String(), "the finding names the kind")
 			assert.Contains(t, f.Msg, "no field named ghost", "the finding names the resolver's reason")
 		})
 
@@ -960,8 +1192,9 @@ func validationBench(tb assert.TB) (*directive.Registry, *meta.Registry, []direc
 		parse(tb, fullIndexPayload, 1),
 		parse(tb, otherIndexPayload, 2),
 		parse(tb, dropPayload, 3),
+		parse(tb, writerPayload, 4),
 	}
-	return sealed(tb, fullSchema(), wellFormed("stubgen", "index")), keyed(tb), raws
+	return sealed(tb, fullSchema(), wellFormed("stubgen", "index"), variantSchema()), keyed(tb), raws
 }
 
 // keyed returns a metadata registry with shape.role in the group
@@ -1002,6 +1235,35 @@ func fullSchema() directive.Schema {
 		Roles:      []string{"client", "server"},
 		Repeatable: true,
 		Doc:        "declares an index over members",
+	}
+}
+
+// variantSchema returns a repeatable schema with a param for every
+// variant and three variants: writer, which requires the fields it reads;
+// tx, which demands one of two roles; and getter, which is deprecated.
+func variantSchema() directive.Schema {
+	return directive.Schema{
+		Plugin: "shaper",
+		Name:   "shape",
+		Params: []directive.ParamSpec{
+			{Key: "id", Type: directive.TypeString, Doc: "separates two instances of one protocol"},
+		},
+		Variants: []directive.Variant{
+			{
+				Name: writerVariant,
+				Params: []directive.ParamSpec{
+					{
+						Key: "reads", Type: directive.TypeList, ListOf: directive.TypeString, Required: true,
+						Doc: "the fields that the writer reads",
+					},
+				},
+				Doc: "writes a value",
+			},
+			{Name: txVariant, Roles: []string{"begin", "commit"}, RolesRequired: true, Doc: "a transaction"},
+			{Name: "getter", Doc: "reads a value", Deprecated: "write shaper:shape reader in place of getter"},
+		},
+		Repeatable: true,
+		Doc:        "classifies a callable",
 	}
 }
 
@@ -1060,7 +1322,7 @@ func mixedIndexes(tb assert.TB) ([]directive.Directive, *diag.Sink) {
 func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Sink) {
 	tb.Helper()
 
-	r := sealed(tb, fullSchema(), wellFormed("stubgen", "index"))
+	r := sealed(tb, fullSchema(), wellFormed("stubgen", "index"), variantSchema())
 	sink := diag.NewSink()
 	raws := make([]directive.Raw, 0, len(payloads))
 	for i, payload := range payloads {

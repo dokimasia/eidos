@@ -4,6 +4,8 @@
 package eidos
 
 import (
+	"fmt"
+
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -111,6 +113,11 @@ type Pred struct {
 	id   meta.KeyID
 	name meta.KeyName
 	test func(f *meta.Facts, subject symbol.Identity) bool
+	// bind returns the id that a named handle's name has in a registry.
+	// For a name that the registry does not contain under the handle's
+	// value type, it returns an error whose message contains the plugin p
+	// and the key. It is nil for a registered handle.
+	bind func(r *meta.Registry, p plugin.ID) (meta.KeyID, error)
 }
 
 // HasKey admits a subject on which k reads present.
@@ -119,8 +126,12 @@ type Pred struct {
 // subscription record carries it as data. A handle a composition
 // assigns later is still zero at this point and the gate would
 // watch nothing, so Build panics on it: a handler may read such a
-// handle through its closure, a gate may not. HasKey allocates the
-// test's closure over the key, one allocation.
+// handle through its closure, a gate may not. A handle from
+// [meta.Named] has the name of another registrant's key and no id. The
+// workspace binds the gate when it builds, and refuses a name that the
+// registry does not contain under T. HasKey allocates the test's closure
+// over the key, one allocation, and for a named handle the closure that
+// binds it, two allocations.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return Pred{
 		id:   k.ID(),
@@ -129,6 +140,7 @@ func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 			_, held := meta.Get(f, subject, k)
 			return held
 		},
+		bind: bindName(k),
 	}
 }
 
@@ -140,9 +152,11 @@ type Equatable interface {
 }
 
 // KeyEquals admits a subject on which the value arbitration selects
-// for k equals v. The key is read when the gate is declared, as
-// [HasKey] states. KeyEquals allocates the test's closure over the key
-// and the value, one allocation.
+// for k equals v. The key is read when the gate is declared, and a named
+// handle binds when the workspace builds, as [HasKey] states. KeyEquals
+// allocates the test's closure over the key and the value, one
+// allocation, and for a named handle the closure that binds it, two
+// allocations.
 func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return Pred{
 		id:   k.ID(),
@@ -151,5 +165,33 @@ func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 			got, held := meta.Get(f, subject, k)
 			return held && got == v
 		},
+		bind: bindName(k),
+	}
+}
+
+// bindName returns the bind of a predicate on k: nil for a registered
+// handle and for the zero Key, and for a named handle a function that
+// returns the id of its name in a registry. The function returns an
+// error for a name that the registry does not contain, and for a name
+// that the registry contains under another value type than T. The message
+// of the error contains the plugin of the gate and the key.
+func bindName[T meta.FactValue](k meta.Key[T]) func(r *meta.Registry, p plugin.ID) (meta.KeyID, error) {
+	if k.ID() != 0 || k.Name() == "" {
+		return nil
+	}
+	return func(r *meta.Registry, p plugin.ID) (meta.KeyID, error) {
+		if bound, registered := meta.Lookup[T](r, k.Name()); registered {
+			return bound.ID(), nil
+		}
+		if _, registered := r.Resolve(k.Name()); registered {
+			var want T
+			return 0, fmt.Errorf(
+				"eidos: %s gates on %s, and the registration of the key has another value type than %T",
+				p,
+				k.Name(),
+				want,
+			)
+		}
+		return 0, fmt.Errorf("eidos: %s gates on %s, and nothing registers the key", p, k.Name())
 	}
 }

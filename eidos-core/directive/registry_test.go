@@ -153,6 +153,11 @@ func TestRegistry(t *testing.T) {
 				want:   "negatable",
 			},
 			{
+				name:   "returns an error for an override kernel schema",
+				schema: directive.Schema{Name: directive.KernelMeta, Overrides: true, Doc: "overrides metadata"},
+				want:   "override schema",
+			},
+			{
 				name: "returns an error for a reserved key among the params",
 				schema: directive.Schema{
 					Plugin: "mockgen", Name: "stub", Doc: "claims a reserved key",
@@ -352,6 +357,79 @@ func TestRegistry(t *testing.T) {
 				}),
 				want: "ghost",
 			},
+			{
+				name: "returns an error for roles beside variants",
+				schema: directive.Schema{
+					Plugin: "shaper", Name: "shape", Doc: "classifies a callable",
+					Roles:    []string{"client"},
+					Variants: []directive.Variant{{Name: "writer", Doc: "writes a value"}},
+				},
+				want: "variants",
+			},
+			{
+				name:   "returns an error for a variant name no carrier can spell",
+				schema: varied(directive.Variant{Name: "wri.ter", Doc: "writes a value"}),
+				want:   "wri.ter",
+			},
+			{
+				name: "returns an error for a variant declared twice",
+				schema: varied(
+					directive.Variant{Name: "writer", Doc: "writes a value"},
+					directive.Variant{Name: "writer", Doc: "writes another value"},
+				),
+				want: "writer",
+			},
+			{
+				name:   "returns an error for a variant without documentation",
+				schema: varied(directive.Variant{Name: "writer"}),
+				want:   "writer",
+			},
+			{
+				name:   "returns an error for a variant role requirement without roles",
+				schema: varied(directive.Variant{Name: "tx", RolesRequired: true, Doc: "a transaction"}),
+				want:   "tx",
+			},
+			{
+				name: "returns an error for a variant role declared twice",
+				schema: varied(directive.Variant{
+					Name: "tx", Roles: []string{"begin", "begin"}, Doc: "a transaction",
+				}),
+				want: "begin",
+			},
+			{
+				name: "returns an error for a variant param key no carrier can spell",
+				schema: varied(directive.Variant{
+					Name: "writer", Doc: "writes a value",
+					Params: []directive.ParamSpec{{Key: "re.ads", Type: directive.TypeString, Doc: "the read fields"}},
+				}),
+				want: "re.ads",
+			},
+			{
+				name: "returns an error for a variant param with the key of a schema param",
+				schema: varied(directive.Variant{
+					Name: "writer", Doc: "writes a value",
+					Params: []directive.ParamSpec{{Key: "mode", Type: directive.TypeString, Doc: "the write mode"}},
+				}),
+				want: "mode",
+			},
+			{
+				name: "returns an error for a variant param without documentation",
+				schema: varied(directive.Variant{
+					Name: "writer", Doc: "writes a value",
+					Params: []directive.ParamSpec{{Key: "reads", Type: directive.TypeString}},
+				}),
+				want: "reads",
+			},
+			{
+				name: "returns an error for a variant param scoped to a role that the variant does not declare",
+				schema: varied(directive.Variant{
+					Name: "tx", Roles: []string{"begin"}, Doc: "a transaction",
+					Params: []directive.ParamSpec{
+						{Key: "until", Type: directive.TypeString, Roles: []string{"commit"}, Doc: "the deadline"},
+					},
+				}),
+				want: "commit",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -396,12 +474,30 @@ func TestRegistry(t *testing.T) {
 			assert.NoError(t, directive.NewRegistry().Register(negatable), "the schema registers")
 		})
 
+		t.Run("registers an override plugin schema", func(t *testing.T) {
+			t.Parallel()
+
+			overriding := wellFormed("mockgen", "stub")
+			overriding.Overrides = true
+			assert.NoError(t, directive.NewRegistry().Register(overriding), "the schema registers")
+		})
+
 		t.Run("registers an open spec that names no key", func(t *testing.T) {
 			t.Parallel()
 
 			assert.NoError(t, directive.NewRegistry().Register(open(directive.ParamSpec{
 				Type: directive.TypeReference, Resolution: directive.ResolveTypeInScope, Doc: "a witness",
 			})), "the schema registers")
+		})
+
+		t.Run("registers one param key in two variants", func(t *testing.T) {
+			t.Parallel()
+
+			reads := []directive.ParamSpec{{Key: "reads", Type: directive.TypeString, Doc: "the read fields"}}
+			assert.NoError(t, directive.NewRegistry().Register(varied(
+				directive.Variant{Name: "writer", Params: reads, Doc: "writes a value"},
+				directive.Variant{Name: "deleter", Params: reads, Doc: "deletes a value"},
+			)), "each variant has keys of its own")
 		})
 
 		t.Run("returns an error after the seal", func(t *testing.T) {
@@ -751,5 +847,12 @@ func negatableKernel() directive.Schema {
 func open(spec directive.ParamSpec) directive.Schema {
 	s := wellFormed("witnessy", "bind")
 	s.Open = &spec
+	return s
+}
+
+// varied returns a well-formed schema with the given variants.
+func varied(variants ...directive.Variant) directive.Schema {
+	s := wellFormed("shaper", "shape")
+	s.Variants = variants
 	return s
 }

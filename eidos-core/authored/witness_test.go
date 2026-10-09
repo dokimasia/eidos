@@ -4,10 +4,12 @@
 package authored_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/authored"
 	"go.dokimi.dev/eidos/core/diag"
@@ -15,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -46,6 +49,21 @@ func TestWitness(t *testing.T) {
 			got, held := meta.Get(report.Facts, f.box.TypeParams[0].ID, w.Kernel().Witness)
 			assert.True(t, held, "the witness is on the type parameter")
 			assert.Equal(t, got, f.alpha.ID, "as the identity the resolver bound")
+		})
+
+		t.Run("stamps the witness at directive authority", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.box.ID, 2, directive.KernelWitness, "T="+alphaName)
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.NoError(t, err, "the run is clean")
+			views := slices.Collect(report.Facts.Claims(f.box.TypeParams[0].ID, w.Kernel().Witness.ID()))
+			assert.Length(t, views, 1, "the instance makes one claim")
+			expect.Equal(t, views[0].Claim.Authority, meta.AuthorityDirective, "the claim has directive authority")
+			expect.Equal(t, views[0].Claim.Pos, position.Pos{File: fixtureFile, Line: 2, Col: 1},
+				"the claim has the position of the instance")
 		})
 
 		t.Run("reports UnknownWitnessParam for a key naming no parameter", func(t *testing.T) {

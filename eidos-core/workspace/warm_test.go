@@ -46,6 +46,14 @@ const (
 // struct with its directive.
 const copierID plugin.ID = "copier"
 
+// labelerID is the annotator that stamps the width of each struct with its
+// directive, at the directive's authority.
+const labelerID plugin.ID = "labeler"
+
+// labelLine attaches the labeler's directive to the struct on the line
+// before it.
+const labelLine = "+labeler:label\n"
+
 // copyLine attaches the copier's directive to the struct on the line
 // before it.
 const copyLine = "+copier:copy\n"
@@ -84,6 +92,12 @@ var copySchema = directive.Schema{
 	Plugin: string(copierID), Name: "copy", Doc: "copies the width of the row onto the struct",
 }
 
+// labelSchema is the labeler's directive. The labeler's one rule runs on
+// each struct with the directive.
+var labelSchema = directive.Schema{
+	Plugin: string(labelerID), Name: "label", Doc: "stamps the width of the struct",
+}
+
 // The structs of the warm tree besides the row.
 var (
 	colID = symbol.Identity{
@@ -97,8 +111,9 @@ var (
 // warmKeys are the handles of the keys of the warm composition. Each
 // Build sets them, and the handlers read them through the pointer.
 type warmKeys struct {
-	width meta.Key[int64]
-	seen  meta.Key[int64]
+	width   meta.Key[int64]
+	seen    meta.Key[int64]
+	labeled meta.Key[int64]
 }
 
 // counter is an annotator that implements its role directly. It counts
@@ -181,6 +196,19 @@ func TestWarm(t *testing.T) {
 			assert.NoError(t, err, "the run is clean")
 			expect.Equal(t, generatedBy(report, copierID), 1, "the copier runs on the reader again")
 			expect.Equal(t, report.Stats.Rendered, 1, "the run renders the copier's file")
+		})
+
+		t.Run("withdraws the claim of an invocation that a directive gates and that runs again", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys, labeler(t, keys)))
+			report, err := warmAfter(t, w, warmTree(rowLine, labelLine, colLine, readerLine),
+				warmTree(widerRow, labelLine, colLine, readerLine))
+			assert.NoError(t, err, "the run is clean")
+			labeled, held := meta.Get(report.Facts, rowID, keys.labeled)
+			assert.True(t, held, "the labeler stamps the row again")
+			assert.Equal(t, labeled, int64(3), "the stamp has the width of the edited row")
 		})
 
 		t.Run("withdraws the claims on a struct that the edit removed", func(t *testing.T) {
@@ -428,6 +456,31 @@ func copying(tb assert.TB, keys *warmKeys) workspace.Plan {
 	return sealedPlan(tb, "copies", copier)
 }
 
+// labeler returns the annotator of the label directive. On each struct
+// with the directive, it stamps the width of the struct under
+// label.width, which has the directive's authority.
+func labeler(tb assert.TB, keys *warmKeys) plugin.Annotator {
+	tb.Helper()
+
+	p, held := eidos.NewPlugin(labelerID).
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace("label"); err != nil {
+				return err
+			}
+			k, err := meta.Register[int64](r, meta.KeySpec{
+				Name: "label.width", Doc: "counts the fields of a labeled struct",
+			})
+			keys.labeled = k
+			return err
+		}).
+		Handle(eidos.Directive(labelSchema, eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+			eidos.Stamp(st, keys.labeled, int64(len(m.Struct.Fields)))
+			return nil
+		}))).Build().(plugin.Annotator)
+	assert.True(tb, held, "the labeler lowers to the annotator role")
+	return p
+}
+
 // warner returns an annotator that reports a warning on the row.
 func warner() plugin.Annotator {
 	return stamper(warnerID, func(m *eidos.StructMatch, _ *eidos.Stamper) error {
@@ -444,16 +497,19 @@ func warmTree(lines ...string) fstest.MapFS {
 	return fstest.MapFS{warmSource: {Data: []byte("package svc/store\n" + strings.Join(lines, ""))}}
 }
 
-// editedAfter sets warmEdit as the modification time of each file of
-// after whose bytes differ from the same file of before, and returns
-// after.
+// editedAfter returns a copy of after in which each file whose bytes
+// differ from the same file of before has warmEdit as its modification
+// time. It changes neither tree, so parallel tests can share both.
 func editedAfter(before, after fstest.MapFS) fstest.MapFS {
+	edited := make(fstest.MapFS, len(after))
 	for path, f := range after {
-		if was, held := before[path]; !held || string(was.Data) != string(f.Data) {
-			f.ModTime = warmEdit
+		file := *f
+		if was, found := before[path]; !found || string(was.Data) != string(file.Data) {
+			file.ModTime = warmEdit
 		}
+		edited[path] = &file
 	}
-	return after
+	return edited
 }
 
 // warmAfter runs w over the tree before, and then over the tree after,

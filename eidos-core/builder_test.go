@@ -123,6 +123,16 @@ func TestBuilder(t *testing.T) {
 			assert.Equal(t, provider.Directives(), []directive.Schema{s}, "the schema is returned once")
 		})
 
+		t.Run("returns a plugin whose gate on a named handle waits for the workspace to bind it", func(t *testing.T) {
+			t.Parallel()
+
+			p := eidos.NewPlugin("t").
+				Handle(eidos.Where(eidos.HasKey(meta.Named[bool]("t.flag")),
+					eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
+				Build()
+			assert.Equal(t, subscribedKeys(t, p), []meta.KeyID{0}, "the gate has no id before the binding")
+		})
+
 		t.Run("returns a key provider that runs the declared registrations in order", func(t *testing.T) {
 			t.Parallel()
 

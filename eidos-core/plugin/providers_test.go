@@ -24,6 +24,8 @@ func (declared) Directives() []directive.Schema {
 
 func (declared) Keys(*meta.Registry) error { return nil }
 
+func (declared) BindKeys(*meta.Registry) error { return nil }
+
 func (declared) Outputs() []plugin.Output {
 	return []plugin.Output{{Per: plugin.PerPlan, Word: "registry"}}
 }
@@ -47,6 +49,8 @@ func TestProviders(t *testing.T) {
 		assert.True(t, directives, "the directive surface asserts")
 		_, keys := p.(plugin.KeyProvider)
 		assert.True(t, keys, "the key surface asserts")
+		_, binds := p.(plugin.KeyBinder)
+		assert.True(t, binds, "the binding surface asserts")
 		_, outputs := p.(plugin.OutputProvider)
 		assert.True(t, outputs, "the output surface asserts")
 		_, options := p.(plugin.OptionsProvider)
@@ -70,6 +74,8 @@ func TestProviders(t *testing.T) {
 		assert.False(t, directives, "a plugin that declares nothing asserts nothing")
 		_, keys := p.(plugin.KeyProvider)
 		assert.False(t, keys, "the key surface is opt-in")
+		_, binds := p.(plugin.KeyBinder)
+		assert.False(t, binds, "the binding surface is opt-in")
 		_, versioned := p.(plugin.Versioned)
 		assert.False(t, versioned, "the version surface is opt-in")
 	})

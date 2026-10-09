@@ -15,7 +15,8 @@
 // handler. A plugin that skips it reads as one implicit
 // subscription to everything in scope. The provider interfaces,
 // [KeyProvider] among them, are what the composition asserts to
-// learn the rest of the declaration, and [ValidateOptions] is the
+// learn the rest of the declaration. [KeyBinder] binds a plugin's gates
+// on named key handles once the key registry seals. [ValidateOptions] is the
 // one check an options struct passes, at composition and in the
 // conformance suite alike.
 //

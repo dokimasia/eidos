@@ -86,18 +86,24 @@ func (r *Registry) Ignored(n Name) bool {
 //   - a registration after the seal;
 //   - a kernel name claimed by a plugin, and an empty Plugin on any
 //     name outside the kernel's six;
-//   - a negatable kernel schema, because a negated instance opts a
-//     subject out of one plugin's rules and the kernel is no plugin;
+//   - a negatable or override kernel schema, because a negated instance
+//     and an override instance opt a subject out of one plugin's rules
+//     and the kernel is no plugin;
 //   - a name, plugin prefix or param key the grammar cannot spell;
 //   - a reserved key among the params, and a param key or role
 //     declared twice;
 //   - a positional param with Roles, an undeclared role on a param,
 //     and a role requirement on a schema that declares no roles;
+//   - roles beside variants, a variant name the grammar cannot spell
+//     or that the schema declares twice, and a variant param with the
+//     key of a schema param;
 //   - a list of lists, a list without an element type, and a
 //     reference without a resolution kind;
 //   - an untyped param, and an empty doc anywhere;
 //   - a canonical spelling registered twice, with an error naming
 //     both docs.
+//
+// A variant's params and roles are checked as a schema's are.
 //
 // Two plugins that claim one bare name both register, and the bare
 // spelling becomes ambiguous.
@@ -236,6 +242,11 @@ func admissible(s Schema) error {
 			"directive: %s is a kernel schema, and only a plugin's schema is negatable", s.Name,
 		)
 	}
+	if s.Plugin == "" && s.Overrides {
+		return fmt.Errorf(
+			"directive: %s is a kernel schema, and only a plugin's schema is an override schema", s.Name,
+		)
+	}
 	// A carrier writes the name, the prefix and every key through the
 	// grammar's ident, so a spelling outside it registers a schema no
 	// author can address.
@@ -261,17 +272,17 @@ func admissible(s Schema) error {
 			"directive: %s demands a role and declares none to choose from", s.Name,
 		)
 	}
+	if len(s.Roles) > 0 && len(s.Variants) > 0 {
+		return fmt.Errorf("directive: %s declares roles beside variants, and only a variant declares roles", s.Name)
+	}
 	roles := map[string]struct{}{}
-	for _, role := range s.Roles {
-		if _, taken := roles[role]; taken {
-			return fmt.Errorf("directive: %s declares role %q twice", s.Name, role)
-		}
-		roles[role] = struct{}{}
+	if err := declareRoles(string(s.Name), s.Roles, roles); err != nil {
+		return err
 	}
 
 	keys := map[ParamKey]struct{}{}
 	for _, spec := range s.Positional {
-		if err := admissibleParam(s, spec, keys, roles); err != nil {
+		if err := admissibleParam(s, string(s.Name), spec, keys, roles); err != nil {
 			return err
 		}
 		if len(spec.Roles) > 0 {
@@ -282,12 +293,69 @@ func admissible(s Schema) error {
 		}
 	}
 	for _, spec := range s.Params {
-		if err := admissibleParam(s, spec, keys, roles); err != nil {
+		if err := admissibleParam(s, string(s.Name), spec, keys, roles); err != nil {
+			return err
+		}
+	}
+	names := map[string]struct{}{}
+	for _, v := range s.Variants {
+		if err := admissibleVariant(s, v, keys, names); err != nil {
 			return err
 		}
 	}
 	if s.Open != nil {
 		return admissibleOpen(s, *s.Open, roles)
+	}
+	return nil
+}
+
+// admissibleVariant checks one variant's declaration and claims its
+// name in names. The variant's params join the schema's on an instance,
+// so schemaKeys contains the keys that no variant param may have.
+func admissibleVariant(s Schema, v Variant, schemaKeys map[ParamKey]struct{}, names map[string]struct{}) error {
+	if !isIdentifier(v.Name) {
+		return fmt.Errorf("directive: %s variant %q is no name a carrier can spell", s.Name, v.Name)
+	}
+	if _, taken := names[v.Name]; taken {
+		return fmt.Errorf("directive: %s declares variant %s twice", s.Name, v.Name)
+	}
+	names[v.Name] = struct{}{}
+	owner := string(s.Name) + " variant " + v.Name
+	if v.Doc == "" {
+		return fmt.Errorf("directive: %s states no semantics", owner)
+	}
+	if v.RolesRequired && len(v.Roles) == 0 {
+		return fmt.Errorf("directive: %s demands a role and declares none to choose from", owner)
+	}
+	roles := map[string]struct{}{}
+	if err := declareRoles(owner, v.Roles, roles); err != nil {
+		return err
+	}
+	keys := map[ParamKey]struct{}{}
+	for _, spec := range v.Params {
+		if !isIdentifier(string(spec.Key)) {
+			return fmt.Errorf("directive: %s param %q is no key a carrier can spell", owner, spec.Key)
+		}
+		if _, taken := schemaKeys[spec.Key]; taken {
+			return fmt.Errorf("directive: %s declares param %q, which the schema declares for every variant",
+				owner, spec.Key)
+		}
+		if err := admissibleParam(s, owner, spec, keys, roles); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declareRoles adds each role of a schema or a variant to roles. owner
+// is the schema or the variant that an error states. It returns an error
+// for a role declared twice.
+func declareRoles(owner string, declared []string, roles map[string]struct{}) error {
+	for _, role := range declared {
+		if _, taken := roles[role]; taken {
+			return fmt.Errorf("directive: %s declares role %q twice", owner, role)
+		}
+		roles[role] = struct{}{}
 	}
 	return nil
 }
@@ -303,51 +371,52 @@ func admissibleOpen(s Schema, spec ParamSpec, roles map[string]struct{}) error {
 		)
 	}
 	spec.Key = openKey
-	return admissibleParam(s, spec, map[ParamKey]struct{}{}, roles)
+	return admissibleParam(s, string(s.Name), spec, map[ParamKey]struct{}{}, roles)
 }
 
-// admissibleParam checks one param's declaration and claims its
-// key.
+// admissibleParam checks one param's declaration and claims its key.
+// owner is the schema or the variant that declares the param, as its
+// errors state it, and roles contains the roles of the owner.
 func admissibleParam(
-	s Schema, spec ParamSpec, keys map[ParamKey]struct{}, roles map[string]struct{},
+	s Schema, owner string, spec ParamSpec, keys map[ParamKey]struct{}, roles map[string]struct{},
 ) error {
 	if spec.Key == roleKey {
 		return fmt.Errorf("directive: %s claims the reserved key %q: declaring Roles is what reserves it",
-			s.Name, spec.Key)
+			owner, spec.Key)
 	}
 	// The reserved routing keys belong to the kernel: its own
 	// schemas may declare them, a plugin's may not.
 	if s.Plugin != "" && (spec.Key == ReservedOut || spec.Key == ReservedTag) {
-		return fmt.Errorf("directive: %s claims the reserved key %q", s.Name, spec.Key)
+		return fmt.Errorf("directive: %s claims the reserved key %q", owner, spec.Key)
 	}
 	if spec.Type == 0 {
-		return fmt.Errorf("directive: %s param %q states no type", s.Name, spec.Key)
+		return fmt.Errorf("directive: %s param %q states no type", owner, spec.Key)
 	}
 	if spec.Doc == "" {
-		return fmt.Errorf("directive: %s param %q states no semantics", s.Name, spec.Key)
+		return fmt.Errorf("directive: %s param %q states no semantics", owner, spec.Key)
 	}
 	if spec.Type == TypeList && spec.ListOf == TypeList {
 		return fmt.Errorf(
 			"directive: %s param %q nests a list in a list: a directive that "+
-				"needs structure splits in two", s.Name, spec.Key,
+				"needs structure splits in two", owner, spec.Key,
 		)
 	}
 	if spec.Type == TypeList && spec.ListOf == 0 {
-		return fmt.Errorf("directive: %s param %q states no element type for its list", s.Name, spec.Key)
+		return fmt.Errorf("directive: %s param %q states no element type for its list", owner, spec.Key)
 	}
 	references := spec.Type == TypeReference || spec.Type == TypeList && spec.ListOf == TypeReference
 	if references && spec.Resolution == ResolveNone {
-		return fmt.Errorf("directive: %s param %q references and states no resolution kind", s.Name, spec.Key)
+		return fmt.Errorf("directive: %s param %q references and states no resolution kind", owner, spec.Key)
 	}
 	if _, taken := keys[spec.Key]; taken {
-		return fmt.Errorf("directive: %s declares param %q twice", s.Name, spec.Key)
+		return fmt.Errorf("directive: %s declares param %q twice", owner, spec.Key)
 	}
 	keys[spec.Key] = struct{}{}
 	for _, role := range spec.Roles {
 		if _, declared := roles[role]; !declared {
 			return fmt.Errorf(
-				"directive: %s param %q is scoped to role %q, which the schema does not declare",
-				s.Name, spec.Key, role,
+				"directive: %s scopes param %q to role %q, which it does not declare",
+				owner, spec.Key, role,
 			)
 		}
 	}

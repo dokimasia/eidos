@@ -145,6 +145,15 @@ func TestFacts(t *testing.T) {
 			assert.HasPrefix(t, err.Error(), "meta: ", "under the package prefix")
 		})
 
+		t.Run("returns an error for a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			err := meta.Stamp(f, meta.Named[string](role.Name()), "writer", by("shape", 1))
+			assert.HasError(t, err, "a named handle writes nothing")
+			assert.Contains(t, err.Error(), "named handle", "the error states that the handle is named")
+		})
+
 		t.Run("returns an error for a kind the key does not admit", func(t *testing.T) {
 			t.Parallel()
 
@@ -430,6 +439,33 @@ func TestFacts(t *testing.T) {
 			assert.False(t, held, "a fact nobody wrote reads absent, and absence is legitimate")
 			assert.Equal(t, got, "", "with the zero value")
 		})
+
+		t.Run("returns the value of a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the fact stamps")
+			got, held := meta.Get(f, subject, meta.Named[string](role.Name()))
+			assert.True(t, held, "the name resolves to the registered key")
+			assert.Equal(t, got, "writer", "the handle reads the stamped value")
+		})
+
+		t.Run("reports false for a named handle that nothing registered", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, _, _ := fixture(t)
+			_, held := meta.Get(f, subject, meta.Named[string]("shape.ghost"))
+			assert.False(t, held, "a name that the registry does not contain reads absent")
+		})
+
+		t.Run("reports false for a named handle of another value type", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the fact stamps")
+			_, held := meta.Get(f, subject, meta.Named[bool](role.Name()))
+			assert.False(t, held, "the registry has the name under another value type")
+		})
 	})
 
 	t.Run("Fact", func(t *testing.T) {
@@ -468,6 +504,37 @@ func TestFacts(t *testing.T) {
 			_, held := meta.Fact(f, rec, function, role)
 			assert.False(t, held, "the fact is absent, because Stamp refuses the kind")
 			assert.Empty(t, rec.reads, "and no read records, because the fact can never appear")
+		})
+
+		t.Run("returns the value of a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the fact stamps")
+			got, held := meta.Fact(f, &recorder{}, subject, meta.Named[string](role.Name()))
+			assert.True(t, held, "the name resolves to the registered key")
+			assert.Equal(t, got, "writer", "the handle reads the stamped value")
+		})
+
+		t.Run("records nothing for a named handle on a kind the key does not admit", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			rec := &recorder{}
+			_, held := meta.Fact(f, rec, function, meta.Named[string](role.Name()))
+			assert.False(t, held, "the fact is absent, because Stamp refuses the kind")
+			assert.Empty(t, rec.reads, "the kinds of the registered key apply to the name")
+		})
+
+		t.Run("records the read of a named handle that nothing registered under its name", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, _, _ := fixture(t)
+			rec := &recorder{}
+			_, held := meta.Fact(f, rec, subject, meta.Named[string]("shape.ghost"))
+			assert.False(t, held, "a name that the registry does not contain reads absent")
+			assert.Equal(t, rec.reads, []meta.Read{{Subject: subject, Key: "shape.ghost"}},
+				"the read records under the name of the handle")
 		})
 	})
 }
@@ -559,6 +626,11 @@ func TestFactsAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { _, held = meta.Get(f, absent[0], role) }, 0,
 		"Get allocates nothing for a subject nothing claimed")
 	assert.False(t, held, "Get finds nothing on a subject nothing claimed")
+
+	named := meta.Named[string](role.Name())
+	assert.MaxAllocs(t, func() { _, held = meta.Get(f, subjects[800], named) }, 0,
+		"Get allocates nothing for a named handle")
+	assert.True(t, held, "Get finds a stamped fact through a named handle")
 
 	var reads counter
 	assert.MaxAllocs(t, func() { _, held = meta.Fact(f, &reads, subjects[800], role) }, 0,
@@ -797,6 +869,19 @@ func BenchmarkFacts(b *testing.B) {
 				next++
 			}
 			assert.Equal(b, got, "writer", "Get returns the stamped value")
+		})
+
+		b.Run("a stamped fact through a named handle", func(b *testing.B) {
+			f, role, _ := stamped(b, subjects)
+			named := meta.Named[string](role.Name())
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			got, next := "", 0
+			for c.Loop() {
+				got, _ = meta.Get(f, subjects[next%len(subjects)], named)
+				next++
+			}
+			assert.Equal(b, got, "writer", "Get returns the stamped value through the name")
 		})
 	})
 

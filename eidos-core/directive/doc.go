@@ -32,9 +32,34 @@
 // plugin that registered the schema. A subject that sets and negates
 // one directive reports [Conflict], and neither instance survives.
 //
+// # Overrides
+//
+// A schema states [Schema.Overrides] where an author's statement replaces
+// what the plugin's own rules derive. Validation marks each instance with
+// [Directive.Overrides]. Dispatch excludes the subject of such an instance
+// from the bare and fact-gated rules of the plugin that registered the
+// schema, as it does for a negated instance. The rules that a directive
+// gates still run, so the plugin's handler of the directive receives the
+// instance. Registration refuses an override kernel schema.
+//
+// # Variants
+//
+// A schema states [Schema.Variants] to cover a closed set of names under
+// one directive, such as the classifications of one plugin. The first
+// positional argument of an instance selects its [Variant], and
+// [Directive.Variant] is its name. The variant's params join the
+// schema's, and the variant's roles apply in place of the schema's.
+// [Validate] reports an instance without a variant, or with a name that no
+// variant has, under [UnknownVariant], and the message of the finding
+// contains the names of the variants.
+// A single-instance schema admits one instance on a subject, whatever its
+// variant, and a repeatable schema admits one instance of each variant.
+// Requirements and conflicts apply to the schema, whatever the variant.
+//
 // # Deprecation
 //
-// A schema states [Schema.Deprecated] to deprecate its directive, and
+// A schema states [Schema.Deprecated] to deprecate its directive,
+// [Variant.Deprecated] to deprecate one variant, and
 // [ParamSpec.Deprecated] to deprecate one param, each with the rewrite
 // that replaces it. [Validate] types a deprecated instance as before and
 // reports a Warning under [DeprecatedDirective] that states the rewrite,

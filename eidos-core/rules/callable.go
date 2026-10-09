@@ -13,6 +13,7 @@ import (
 // returns it. Params is nil for a signature without parameters, and
 // Returns for one without returns.
 type Callable struct {
+	Name     string       // the declared name of the function or the method
 	Receiver *ParamView   // nil for a free function or a type-level member
 	Params   []ParamView  // in declaration order, without nil entries
 	Returns  []ReturnView // in declaration order, without nil entries
@@ -46,23 +47,23 @@ type ReturnView struct {
 func (b Bound) callableOf(sym symbol.Symbol) (Callable, bool) {
 	switch d := sym.(type) {
 	case *node.Function:
-		return b.callable(nil, symbol.LevelInstance, d.Params, d.Returns, d.Async), true
+		return b.callable(d.Name, nil, symbol.LevelInstance, d.Params, d.Returns, d.Async), true
 	case *node.Method:
-		return b.callable(d.Receiver, d.Level, d.Params, d.Returns, d.Async), true
+		return b.callable(d.Name, d.Receiver, d.Level, d.Params, d.Returns, d.Async), true
 	default:
 		return Callable{}, false
 	}
 }
 
-// callable assembles the view from the signature's parts. It skips a
-// nil parameter and a nil return, and gives a return the language left
-// without a role [ReturnValue]. It allocates the receiver's view at
+// callable assembles the view from the name and the signature's parts. It
+// skips a nil parameter and a nil return, and gives a return the language
+// left without a role [ReturnValue]. It allocates the receiver's view at
 // instance level, and the parameter list and the return list where the
 // signature has entries.
 func (b Bound) callable(
-	receiver *node.Param, level symbol.Level, params []*node.Param, returns []*node.Return, async bool,
+	name string, receiver *node.Param, level symbol.Level, params []*node.Param, returns []*node.Return, async bool,
 ) Callable {
-	c := Callable{Async: async}
+	c := Callable{Name: name, Async: async}
 	if receiver != nil && level == symbol.LevelInstance {
 		c.Receiver = &ParamView{Name: receiver.Name, Ref: receiver.Type}
 	}

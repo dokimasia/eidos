@@ -23,17 +23,16 @@ var (
 	nestedSurface = facade.Surface{Rel: "backend/render", Name: "render"}
 )
 
-// The ceilings of a lowering, each measured over 24 fresh processes
-// after one lowering, and allowing eight standard deviations above the
-// mean.
+// The ceilings of a lowering, each measured after one lowering.
 const (
 	// lowerMiniAllocs is one lowering of the mini kernel: the go.mod
-	// check, and the parse of each curated package's files.
-	lowerMiniAllocs = 1_621 + 8*1
-	// lowerKernelAllocs is one lowering of the kernel's curated
-	// packages, 311,002 on average with a standard deviation of 4.8,
-	// rounded up to 5.
-	lowerKernelAllocs = 311_002 + 8*5
+	// check, and the parse of each curated package's files. It is the
+	// average of 100 calls, with eight allocations of headroom.
+	lowerMiniAllocs = 1_698 + 8*1
+	// lowerKernelAllocs is a budget for one lowering of the kernel's 22
+	// curated packages, about 5% above the 319,050 allocations of one
+	// measured run.
+	lowerKernelAllocs = 335_000
 )
 
 // A lowering establishes what the renderer assumes. The curated

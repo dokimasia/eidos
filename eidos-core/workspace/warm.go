@@ -567,6 +567,7 @@ func (r *warmRun) annotateSelected(ix *plugin.Index, s annEntry, counted *tally)
 	for _, inv := range listed {
 		keys = append(keys, inv.Match)
 		r.drop(inv.Match)
+		order := meta.Order{Rule: int(inv.Match.Rule), Subject: inv.Match.Subject, Instance: inv.Match.Instance}
 		for _, f := range inv.Claimed {
 			key, registered := r.w.keys.Resolve(f.Key)
 			if !registered {
@@ -574,17 +575,16 @@ func (r *warmRun) annotateSelected(ix *plugin.Index, s annEntry, counted *tally)
 			}
 			touched = append(touched, f)
 			r.rec.Withdrew(f.Subject)
-			err := r.facts.Withdraw(key, meta.Claim{
-				Subject:   f.Subject,
-				Authority: meta.AuthorityPlugin,
-				Bucket:    s.bucket,
-				Plugin:    s.name,
-				Order: meta.Order{
-					Rule: int(inv.Match.Rule), Subject: inv.Match.Subject, Instance: inv.Match.Instance,
-				},
-			})
-			if err != nil {
-				return touched, true, err
+			// The invocation claimed at plugin authority, or at directive
+			// authority where a directive gated it, so the withdrawal finds
+			// its claims by their bucket, plugin and order.
+			for v := range r.facts.Claims(f.Subject, key) {
+				if v.Claim.Plugin != s.name || v.Claim.Bucket != s.bucket || v.Claim.Order != order {
+					continue
+				}
+				if err := r.facts.Withdraw(key, v.Claim); err != nil {
+					return touched, true, err
+				}
 			}
 		}
 	}
