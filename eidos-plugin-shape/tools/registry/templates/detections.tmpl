@@ -1,0 +1,6 @@
+{{- use "go.dokimi.dev/eidos/plugin/shape"}}{{use "go.dokimi.dev/eidos/plugin/shape/detectors" -}}
+return []shape.Detection{
+{{- range .Data.Detections}}
+	{Shape: shape.{{.Const}}, Detect: detectors.{{.Func}}},
+{{- end}}
+}

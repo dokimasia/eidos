@@ -1,0 +1,8 @@
+name: declared
+form: shape
+claim: >
+  A directive declares the shape, and no detector reports it.
+observation: a check reads the directive
+falsifiability: a callable without the directive has no shape
+counterexamples:
+  refused: a callable that a detector reports

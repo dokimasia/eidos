@@ -1,0 +1,74 @@
+{{- use "go.dokimi.dev/eidos/sdk/directive" -}}
+return []Spec{
+{{- range .Data.Specs}}
+	{
+		Name:  {{printf "%q" .Name}},
+		Form:  {{.Form}},
+		Doc:   {{printf "%q" .Doc}},
+		Group: {{printf "%q" .Group}},
+		Key:   {{printf "%q" .Key}},
+{{- if .ID}}
+		ID: {{printf "%q" .ID}},
+{{- end}}
+{{- if .Detected}}
+		Detected: true,
+{{- end}}
+{{- if .Documentary}}
+		Documentary: true,
+{{- end}}
+{{- if .Params}}
+		Params: []Param{
+{{- range .Params}}
+			{
+				ParamSpec: directive.ParamSpec{
+					Key:  {{.Const}},
+					Type: directive.{{.Type}},
+{{- if .Resolution}}
+					Resolution: directive.{{.Resolution}},
+{{- end}}
+{{- if .Required}}
+					Required: true,
+{{- end}}
+{{- if .Roles}}
+					Roles: []string{ {{- range $i, $r := .Roles}}{{if $i}}, {{end}}string({{$r}}){{end -}} },
+{{- end}}
+{{- if .Counterexample}}
+					Counterexample: true,
+{{- end}}
+					Doc: {{printf "%q" .Doc}},
+				},
+				Fact: {{printf "%q" .Fact}},
+{{- if .HasMinimum}}
+				Minimum:    {{.Minimum}},
+				HasMinimum: true,
+{{- end}}
+{{- if .Excludes}}
+				Excludes: []directive.ParamKey{ {{- range $i, $x := .Excludes}}{{if $i}}, {{end}}{{$x}}{{end -}} },
+{{- end}}
+{{- if .AlsoOn}}
+				AlsoOn: []directive.ParamKey{ {{- range $i, $o := .AlsoOn}}{{if $i}}, {{end}}{{$o}}{{end -}} },
+{{- end}}
+			},
+{{- end}}
+		},
+{{- end}}
+{{- if .Bindings}}
+		Bindings: []Binding{
+{{- range .Bindings}}
+			{Key: {{.Const}}, Fact: {{printf "%q" .Fact}}, From: {{.From}}, Index: {{.Index}}, Doc: {{printf "%q" .Doc}}},
+{{- end}}
+		},
+{{- end}}
+{{- if .Roles}}
+		Roles: []RoleSpec{
+{{- range .Roles}}
+			{Name: {{.Const}}, Arity: {{.Arity}}},
+{{- end}}
+		},
+{{- end}}
+{{- if .YieldsTo}}
+		YieldsTo: []Shape{ {{- range $i, $y := .YieldsTo}}{{if $i}}, {{end}}{{$y}}{{end -}} },
+{{- end}}
+	},
+{{- end}}
+}

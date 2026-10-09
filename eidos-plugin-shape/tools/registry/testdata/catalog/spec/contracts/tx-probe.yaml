@@ -1,0 +1,16 @@
+name: tx-probe
+form: contract
+documentary: true
+claim: >
+  The group begins and commits a transaction, and any number of callables
+  abort it.
+observation: a check begins, commits and aborts
+params:
+  - {key: closed, type: reference, resolve: package-var, roles: [commit], doc: the error of a finished transaction}
+roles:
+  begin: {arity: one}
+  commit: {arity: many}
+  abort: {arity: any}
+falsifiability: a commit without a begin fails
+counterexamples:
+  edge: an empty transaction

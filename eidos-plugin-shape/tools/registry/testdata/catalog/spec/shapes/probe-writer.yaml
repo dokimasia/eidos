@@ -1,0 +1,13 @@
+name: probe-writer
+form: shape
+detected: true
+claim: >
+  The callable persists one value.
+observation: a check reads the value back
+params:
+  - {key: sample, type: string, counterexample: true, doc: a value that the check writes}
+bindings:
+  value: {from: input, index: 0, doc: the parameter of the value}
+falsifiability: a writer that drops the value turns the check red
+counterexamples:
+  invalid: a value that the subject refuses

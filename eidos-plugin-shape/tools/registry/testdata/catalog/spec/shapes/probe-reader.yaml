@@ -1,0 +1,16 @@
+name: probe-reader
+form: shape
+detected: true
+claim: >
+  The callable reads one value by its key.
+observation: a check reads the value back
+params:
+  - {key: reads, type: reference, resolve: callable-in-scope, doc: the reader that observes the value}
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the value}
+falsifiability: a reader that returns another value turns the check red
+counterexamples:
+  edge: an empty key
+precedence:
+  yields_to: [probe-writer]

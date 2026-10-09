@@ -1,0 +1,13 @@
+name: xss-safe
+form: mixin
+claim: >
+  The callable escapes what it writes into a page.
+observation: a check writes a script and reads the page
+params:
+  - {key: limit, type: int, minimum: 2, required: true, doc: the number of writes that a check makes}
+  - {key: mode, type: string, excludes: [limit], doc: the mode of the escape}
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader of the page}
+  - {key: axis, type: reference, resolve: host-param, also_on: [read], doc: the parameter that selects the page}
+falsifiability: a callable that writes the script unescaped turns the check red
+counterexamples:
+  unsafe: a script tag
