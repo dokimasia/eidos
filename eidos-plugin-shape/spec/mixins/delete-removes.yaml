@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: delete-removes
+form: mixin
+claim: >
+  A delete removes the entity, so a later read of it reports that it is not
+  found.
+observation: >
+  A check deletes an entity, reads it through the reader that the read
+  param refers to, and expects the error that the sentinel param refers
+  to.
+params:
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader whose result proves the removal}
+  - {key: sentinel, type: reference, resolve: package-var, doc: the error that the reader reports after the delete}
+falsifiability: >
+  A delete that only marks the entity leaves it readable, and the check
+  turns red.
+counterexamples:
+  edge: a delete of an entity that does not exist

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: batch-writer
+form: contract
+claim: >
+  The writer takes a batch of records, and treats a partial failure of the
+  batch by the mode that the mode param states, such as all-or-nothing or
+  best-effort.
+observation: >
+  A check writes a batch that contains the declared record that the
+  refused param refers to, and observes through the reader which records
+  of the batch were stored. The reader and the refused record are what
+  make all-or-nothing checkable.
+params:
+  - {key: mode, type: string, doc: "the behaviour of a partial batch, such as all-or-nothing or best-effort"}
+  - {key: refused, type: reference, resolve: package-var, counterexample: true, roles: [writer], doc: a declared record that the writer refuses}
+roles:
+  writer: {arity: many}
+  reader: {arity: optional}
+falsifiability: >
+  A writer that stores the records before the refused one, under the mode
+  all-or-nothing, leaves them observable through the reader, and the check
+  turns red.
+counterexamples:
+  invalid: the declared record that the refused param refers to
+  edge: an empty batch

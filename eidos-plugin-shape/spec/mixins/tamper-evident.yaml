@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: tamper-evident
+form: mixin
+claim: >
+  A change to data that the callable accepted is detectable, and never
+  silent.
+observation: >
+  A check changes accepted data through the callable that the tamper param
+  refers to, and expects the callable that the verify param refers to to
+  report the change.
+params:
+  - {key: tamper, type: reference, resolve: callable-in-scope, doc: the callable that changes accepted data}
+  - {key: verify, type: reference, resolve: callable-in-scope, doc: the callable that detects the change}
+falsifiability: >
+  A subject without its integrity check verifies the changed data, and the
+  check turns red.
+counterexamples:
+  unsafe: a change of one bit of the accepted data

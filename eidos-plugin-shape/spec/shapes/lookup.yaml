@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: lookup
+form: shape
+detected: true
+claim: >
+  The callable takes one key, and returns the key's value, a second value
+  that describes the first, and a truth value that reports whether the key
+  has a value.
+observation: >
+  A check stores a value under a key, looks the key up, and expects the
+  truth value to be true and the value to be the stored one. It then
+  looks up a key without a value and expects false.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the key's value}
+  meta: {from: result, index: 1, doc: the return of the value that describes the key's value}
+falsifiability: >
+  Deleting the subject's lookup reports every key as absent, and the check
+  of a stored key turns red.
+counterexamples:
+  edge: a key that has no value, for which the truth value is false
+  refused: a callable that reports the absence of a key through an error

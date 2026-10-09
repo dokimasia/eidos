@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: windowed
+form: mixin
+claim: >
+  The callable's result covers a bounded window of recent input, and not
+  the whole history.
+observation: >
+  A check records observations through the callable that the incr param
+  refers to, advances a controlled clock past the interval that the window
+  param states, and expects the total that the count param's callable
+  reports to drop.
+params:
+  - {key: incr, type: reference, resolve: callable-in-scope, doc: the callable that records an observation}
+  - {key: count, type: reference, resolve: callable-in-scope, doc: the callable that reports the total of the window}
+  - {key: window, type: string, doc: the interval of the window}
+falsifiability: >
+  A subject that counts the whole history keeps its total after the
+  window passes, and the check turns red.
+counterexamples:
+  edge: an observation at exactly the start of the window

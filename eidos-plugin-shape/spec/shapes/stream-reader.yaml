@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: stream-reader
+form: shape
+detected: true
+claim: >
+  The callable returns exactly one stream of values, and takes at most one
+  input, which selects the values of the stream.
+observation: >
+  A check stores values through a sibling writer, drains the stream, and
+  compares the drained values with the stored ones. An element of a
+  stream of pairs is a key and a value.
+bindings:
+  key: {from: input, index: 0, doc: the parameter that selects the values}
+  value: {from: result, index: 0, doc: the return that is the stream}
+falsifiability: >
+  Deleting the subject's iteration leaves the stream empty, and the check
+  finds none of the stored values.
+counterexamples:
+  edge: a selection that matches no value, whose stream ends at once
+  refused: a callable that returns an error beside the stream, which reads its values before it returns

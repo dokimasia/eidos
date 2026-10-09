@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: no-duplicates
+form: mixin
+claim: >
+  One drain of the callable's stream yields each element at most once,
+  whatever the order of the elements.
+observation: >
+  A check drains the stream once and counts each element.
+falsifiability: >
+  A subject that yields an element twice counts it twice, and the check
+  turns red.
+counterexamples:
+  edge: a source that contains equal elements under two keys

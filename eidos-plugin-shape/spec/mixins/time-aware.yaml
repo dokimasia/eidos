@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: time-aware
+form: mixin
+claim: >
+  The callable's result depends on the current time, so a check controls
+  the clock.
+observation: >
+  A check calls the subject at two controlled times and expects the results
+  that each time determines.
+falsifiability: >
+  A subject that reads the wall clock ignores the controlled time, and the
+  check of the second time turns red.
+counterexamples:
+  edge: a time at the boundary of a period, such as midnight

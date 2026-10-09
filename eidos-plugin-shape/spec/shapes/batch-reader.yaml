@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: batch-reader
+form: shape
+detected: true
+claim: >
+  The callable takes a variadic list of keys, and returns the values of the
+  keys as one list beside its error.
+observation: >
+  A check stores values under several keys, reads them in one call, and
+  compares the returned list with the stored values.
+bindings:
+  key: {from: input, index: 0, doc: the variadic parameter of the keys}
+  value: {from: result, index: 0, doc: the return that is the list of values}
+falsifiability: >
+  Deleting the subject's lookup returns an empty list, and the check finds
+  none of the stored values.
+counterexamples:
+  edge: a call without keys, which returns an empty list
+  invalid: a key that has no value

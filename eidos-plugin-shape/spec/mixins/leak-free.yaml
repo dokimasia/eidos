@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: leak-free
+form: mixin
+claim: >
+  The callable releases every resource that it acquires, on the paths of a
+  failure as well.
+observation: >
+  A check counts the resources through the callables that the open and
+  close params refer to, makes the subject fail at each step, and compares
+  the counts of acquired and released resources.
+params:
+  - {key: open, type: reference, resolve: callable-in-scope, doc: the callable that acquires a resource}
+  - {key: close, type: reference, resolve: callable-in-scope, doc: the callable that releases a resource}
+falsifiability: >
+  A subject that returns early without a release leaves an acquired
+  resource, and the check of that failure path turns red.
+counterexamples:
+  unsafe: a failure between the acquisition and the release

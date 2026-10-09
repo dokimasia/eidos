@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: stable-order
+form: mixin
+claim: >
+  Repeated iterations of the callable's result yield the same order, so a
+  check compares the results as sequences.
+observation: >
+  A check iterates the result twice without a write between the two, and
+  compares the two sequences.
+falsifiability: >
+  A subject that iterates a map in random order gives two orders, and the
+  check turns red.
+counterexamples:
+  edge: a result of one element

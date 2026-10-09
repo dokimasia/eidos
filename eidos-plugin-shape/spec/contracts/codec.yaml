@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: codec
+form: contract
+claim: >
+  The inverse callable undoes the forward callable, so the inverse of the
+  forward of a value equals the value, by the equality that the fidelity
+  param states.
+observation: >
+  A check encodes a value, decodes the result, and compares the decoded
+  value with the original by the fidelity, which is exact where the param
+  is absent and lossy where a lossy encoding drops a part of the value.
+params:
+  - {key: fidelity, type: string, doc: "the equality that the round trip keeps, exact or lossy"}
+roles:
+  forward: {arity: one}
+  inverse: {arity: one}
+falsifiability: >
+  A forward that drops a part of the value gives a decoded value that
+  differs, and the check turns red.
+counterexamples:
+  edge: the zero value
+  invalid: an input of the inverse that no forward produced

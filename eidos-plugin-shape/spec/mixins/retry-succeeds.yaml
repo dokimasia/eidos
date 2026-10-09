@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: retry-succeeds
+form: mixin
+claim: >
+  A transient failure followed by a retry converges to success. Of the
+  number of attempts that the attempts param states, the calls before the
+  last may fail, and the last succeeds.
+observation: >
+  A check injects transient failures into all but the last attempt and
+  expects the last attempt to succeed. Without the attempts param the
+  mixin classifies the callable and licenses no count.
+params:
+  - {key: attempts, type: int, minimum: 2, doc: the number of attempts after which a call succeeds}
+falsifiability: >
+  A subject that gives up after the first failure reports the failure, and
+  the check turns red.
+counterexamples:
+  invalid: one attempt, which is no retry
+  edge: failures in exactly all but the last attempt

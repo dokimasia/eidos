@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: associative
+form: mixin
+claim: >
+  Combining results in any grouping gives the same value, so a caller may
+  fold a batch in any shape of grouping.
+observation: >
+  A check combines three results in both groupings and compares the two
+  values.
+falsifiability: >
+  A combination that depends on the grouping gives two values for the two
+  groupings, and the check turns red.
+counterexamples:
+  edge: a grouping in which one of the three results is the identity value

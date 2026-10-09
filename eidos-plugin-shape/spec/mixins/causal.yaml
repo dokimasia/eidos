@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: causal
+form: mixin
+claim: >
+  Effects are observed in an order consistent with the causal order in
+  which they were produced.
+observation: >
+  A check reads the ordering stamp of each observed effect from the field
+  that the version param refers to, and compares the order of the stamps
+  with the causal order of the writes.
+params:
+  - {key: version, type: reference, resolve: value-field, doc: the field of the value that contains the ordering stamp}
+falsifiability: >
+  A subject that reorders two causally related effects shows a stamp out
+  of order, and the check turns red.
+counterexamples:
+  edge: two concurrent effects, which have no causal order

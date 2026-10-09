@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: closer
+form: shape
+detected: true
+claim: >
+  The callable takes nothing, returns only its error, and releases the
+  resources of its receiver. Its name is one of the verbs close, shutdown,
+  stop, disconnect and terminate.
+observation: >
+  A check closes the receiver, and then calls a sibling of the receiver to
+  see that the sibling refuses the call or reports that the receiver is
+  closed.
+falsifiability: >
+  Deleting the subject's release leaves the receiver usable after the
+  close, and the check of a call after the close turns red.
+counterexamples:
+  edge: a second close of a closed receiver
+  refused: a close that takes a context, which is a lifecycle step

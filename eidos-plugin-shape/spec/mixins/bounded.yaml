@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: bounded
+form: mixin
+claim: >
+  The callable's use of a resource, such as memory, the depth of a queue or
+  a fan-out, remains between a declared floor and a declared ceiling.
+observation: >
+  A check drives the subject to the ceiling that the limit param states,
+  and measures the resource. The min param states the floor, because zero
+  is right for a count and wrong for a signed value.
+params:
+  - {key: min, type: string, doc: the floor of the resource}
+  - {key: limit, type: string, doc: the ceiling of the resource}
+falsifiability: >
+  A subject that uses more than the limit shows the excess in the
+  measurement, and the check turns red.
+counterexamples:
+  edge: a load at the ceiling, which the subject admits
+  invalid: a load above the ceiling, which the subject refuses or sheds

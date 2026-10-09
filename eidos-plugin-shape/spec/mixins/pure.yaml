@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: pure
+form: mixin
+claim: >
+  The callable is deterministic and free of side effects. Equal inputs give
+  equal results, and a call changes no state that a caller can observe.
+observation: >
+  A check calls the subject twice with equal inputs, compares the results,
+  and observes that the state of the receiver and the inputs is unchanged.
+falsifiability: >
+  A subject that reads a clock or a global, or writes a state, gives two
+  results or changes the state, and the check turns red.
+counterexamples:
+  edge: a call with the zero value of each input
+  refused: a callable that reads the current time, which is time-aware

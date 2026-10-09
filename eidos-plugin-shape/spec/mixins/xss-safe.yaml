@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: xss-safe
+form: mixin
+claim: >
+  Output that contains untrusted input is escaped for an HTML context
+  before it leaves the callable.
+observation: >
+  A check passes the declared markup that the unsafe param refers to, and
+  expects the output to contain it escaped.
+params:
+  - {key: unsafe, type: reference, resolve: package-var, counterexample: true, doc: declared markup that does not survive the escaping}
+falsifiability: >
+  A subject that writes the input unescaped outputs the markup, and the
+  check turns red.
+counterexamples:
+  unsafe: the declared markup that the unsafe param refers to

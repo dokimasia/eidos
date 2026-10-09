@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: concurrent
+form: mixin
+claim: >
+  The callable is safe to call from many threads of execution at once,
+  without synchronization by the caller.
+observation: >
+  A check calls the subject from several threads at once and checks the
+  history of the calls against a sequential model of the subject.
+falsifiability: >
+  A subject with a data race produces a history that no sequential order
+  explains, or fails the race detector, and the check turns red.
+counterexamples:
+  unsafe: two calls that write the same state at once

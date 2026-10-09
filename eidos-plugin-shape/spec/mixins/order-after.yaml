@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: order-after
+form: mixin
+claim: >
+  The callable's effect is observable only after the sibling that the fn
+  param refers to has run. A call before it reports the error that the
+  unready param refers to.
+observation: >
+  A check calls the subject before the sibling and expects the unready
+  error, and calls it after the sibling and expects the effect. Without
+  the unready error, an early call is checkable only as some error, so
+  both params are required.
+params:
+  - {key: fn, type: reference, resolve: callable-in-scope, required: true, doc: the sibling that runs before the callable}
+  - {key: unready, type: reference, resolve: package-var, required: true, doc: the error that a call before the sibling reports}
+falsifiability: >
+  A subject that runs its effect before the sibling returns no unready
+  error, and the check of the early call turns red.
+counterexamples:
+  edge: a call right after the sibling returned

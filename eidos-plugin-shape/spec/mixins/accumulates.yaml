@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: accumulates
+form: mixin
+claim: >
+  Repeated calls compound. N calls have N observable effects, and a subject
+  that coalesces them is wrong.
+observation: >
+  A check counts the effects of the calls through the reader that the
+  observe param refers to. Without it, a check that only calls twice
+  passes against a subject that drops the second call.
+params:
+  - {key: observe, type: reference, resolve: callable-in-scope, doc: the reader through which a check counts the effects}
+falsifiability: >
+  A subject that applies the first of two equal calls and drops the second
+  shows one effect through the reader, and the check turns red.
+counterexamples:
+  edge: two calls with the same input, which have two effects
+  refused: a callable whose repeated calls have one effect, which is idempotent

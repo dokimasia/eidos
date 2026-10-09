@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: ttl
+form: mixin
+claim: >
+  An entry stops being readable once its time to live has passed. The
+  duration param states one lifetime for every entry, and the lifetime
+  param refers to the field of an entry that states its own lifetime.
+observation: >
+  A check stores an entry through the callable that the put param refers
+  to, advances a controlled clock past the lifetime, and reads the entry
+  through the callable that the read param refers to. It expects the error
+  that the not-found param refers to, and the read's own not-found
+  sentinel where the param is absent.
+params:
+  - {key: duration, type: string, excludes: [lifetime], doc: the one lifetime of every entry}
+  - {key: lifetime, type: reference, resolve: value-field, excludes: [duration], doc: the field of an entry that states its lifetime}
+  - {key: put, type: reference, resolve: callable-in-scope, doc: the callable that stores an entry}
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the callable that reads an entry back}
+  - {key: not-found, type: reference, resolve: package-var, doc: the error that a read of an expired entry reports}
+falsifiability: >
+  A subject that never expires its entries returns the entry after the
+  lifetime, and the check turns red.
+counterexamples:
+  edge: a read at exactly the end of the lifetime
+  invalid: both a duration and a lifetime, which leave open which one governs

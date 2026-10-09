@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: pointer-reader
+form: shape
+detected: true
+claim: >
+  The callable takes one key, and returns the key's value as a value that
+  can be absent, without an error.
+observation: >
+  A check stores a value under a key and reads the key, then reads a key
+  without a value and expects the absent value.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the value that can be absent}
+falsifiability: >
+  Deleting the subject's read returns the absent value for every key, and
+  the check of a stored key turns red.
+counterexamples:
+  edge: a key that has no value, for which the subject returns the absent value
+  refused: a callable that reports the absence of a key through an error, which is a reader
+precedence:
+  yields_to: [computation]

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: outbox
+form: contract
+claim: >
+  A local append records a message, and the subscribe callable delivers
+  each appended message at least once.
+observation: >
+  A check appends messages, subscribes, and expects every appended message
+  among the delivered ones, a duplicate admitted.
+roles:
+  append: {arity: many}
+  subscribe: {arity: optional}
+falsifiability: >
+  An outbox that drops a message after its append never delivers it, and
+  the check turns red.
+counterexamples:
+  unsafe: a failure between the append and the delivery

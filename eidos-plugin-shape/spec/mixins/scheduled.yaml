@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: scheduled
+form: mixin
+claim: >
+  A task registered for a future time has run once the clock passes the
+  time.
+observation: >
+  A check registers a task through the callable that the schedule param
+  refers to, advances a controlled clock past its time, and compares the
+  count that the runs param's callable reports before and after.
+params:
+  - {key: schedule, type: reference, resolve: callable-in-scope, doc: the callable that registers a task}
+  - {key: runs, type: reference, resolve: callable-in-scope, doc: the callable that reports how many tasks have run}
+falsifiability: >
+  A subject that never runs the task leaves the count unchanged after the
+  advance, and the check turns red.
+counterexamples:
+  edge: an advance to exactly the time of the task

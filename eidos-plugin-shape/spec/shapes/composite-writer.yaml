@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: composite-writer
+form: shape
+detected: true
+claim: >
+  The callable takes a key and a value, stores the value under the key, and
+  returns only its error.
+observation: >
+  A check stores a value under a key through the subject, and reads the key
+  through a sibling reader.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: input, index: 1, doc: the parameter of the stored value}
+falsifiability: >
+  Deleting the subject's write path leaves the key without the value, and
+  the check of the reader turns red.
+counterexamples:
+  invalid: a key that the subject refuses
+  edge: a second value under one key, which replaces the first

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: timeout
+form: mixin
+claim: >
+  The callable respects a deadline, and returns promptly when its context
+  ends. The claim differs from a time to live, which bounds the life of a
+  stored entry.
+observation: >
+  A check calls the subject with a context that ends after the duration
+  that the duration param states, and measures how long the call takes to
+  return after the end.
+params:
+  - {key: duration, type: string, doc: "the expected timeout, in the spelling of the caller's duration"}
+falsifiability: >
+  A subject that ignores its context returns long after the deadline, and
+  the check turns red.
+counterexamples:
+  edge: a context that ended before the call

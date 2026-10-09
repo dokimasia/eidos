@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: cas
+form: contract
+claim: >
+  The writer applies its write only where the field that the version param
+  refers to matches the version that the caller expects, and reports the
+  error that the mismatch param refers to otherwise.
+observation: >
+  A check writes with the current version and expects success, then writes
+  with the old version and expects the mismatch error and an unchanged
+  value.
+params:
+  - {key: version, type: reference, resolve: value-field, doc: the field that the writer compares before the write}
+  - {key: mismatch, type: reference, resolve: package-var, doc: the error that a losing writer reports}
+roles:
+  writer: {arity: many}
+falsifiability: >
+  A writer that ignores the version applies the stale write, and the check
+  turns red.
+counterexamples:
+  unsafe: two concurrent writers with one expected version, of which one succeeds

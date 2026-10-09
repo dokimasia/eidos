@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: publisher
+form: contract
+claim: >
+  A publish callable emits events, and the subscribe callable delivers
+  them by the guarantee that the mode param states. The optional
+  redeliver callable delivers an event again.
+observation: >
+  A check publishes events, subscribes, and counts the deliveries of each
+  event against the mode. An absent mode states no guarantee, and is no
+  default.
+params:
+  - {key: mode, type: string, doc: "the delivery guarantee, at-least-once, at-most-once or exactly-once"}
+roles:
+  publish: {arity: many}
+  subscribe: {arity: optional}
+  redeliver: {arity: optional}
+falsifiability: >
+  A publisher that delivers an event twice under exactly-once counts two
+  deliveries, and the check turns red.
+counterexamples:
+  unsafe: a subscriber that fails during a delivery

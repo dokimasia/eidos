@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: integration-only
+form: mixin
+claim: >
+  A check of the callable runs against the integration target, and never
+  against a double of the target.
+observation: >
+  A check runs where the integration target is available, and skips with a
+  reason elsewhere.
+falsifiability: >
+  A check that runs against a double passes for a subject that fails
+  against the target, which the mixin forbids.
+counterexamples:
+  refused: a check that replaces the target with a double

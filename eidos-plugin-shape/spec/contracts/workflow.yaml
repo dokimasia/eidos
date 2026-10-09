@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: workflow
+form: contract
+claim: >
+  The callable follows the state-transition graph that the variable of the
+  transitions param declares, and the observe param refers to the read of
+  the current state.
+observation: >
+  A check drives the callable through each transition of the graph, reads
+  the state after each, and tries a transition that the graph does not
+  contain.
+params:
+  - {key: observe, type: reference, resolve: callable-in-scope, doc: the read of the current state}
+  - {key: transitions, type: reference, resolve: package-var, doc: the variable that declares the transition graph}
+roles:
+  fn: {arity: many}
+falsifiability: >
+  A callable that admits a transition outside the graph enters a state
+  that the graph forbids, and the check turns red.
+counterexamples:
+  invalid: a transition that the graph does not contain

@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: if-match
+form: contract
+claim: >
+  The writer succeeds only where the existing record matches a predicate.
+  The pred param states the predicate as text, or a callable in the role
+  match decides it, and the field param refers to the field that the
+  predicate judges.
+observation: >
+  A check writes once with a record that matches and once with a record
+  that does not, and compares the stored values after each.
+params:
+  - {key: field, type: reference, resolve: value-field, doc: the field that the predicate judges}
+  - {key: pred, type: string, doc: the predicate as an expression}
+roles:
+  writer: {arity: many}
+  match: {arity: optional}
+falsifiability: >
+  A writer that ignores the predicate applies the write to a record that
+  does not match, and the check turns red.
+counterexamples:
+  edge: a record that the predicate's field leaves at its zero value

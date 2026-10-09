@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: eventually
+form: mixin
+claim: >
+  The callable's effect becomes observable eventually, and not at the
+  return of the call.
+observation: >
+  A check calls the subject, drives convergence through the callable that
+  the settle param refers to, and then observes the effect through the
+  reader that the observe param refers to. The sync param refers to the
+  callable that reports whether the state converged.
+params:
+  - {key: observe, type: reference, resolve: callable-in-scope, doc: the reader that observes the effect}
+  - {key: settle, type: reference, resolve: callable-in-scope, doc: the callable that drives convergence}
+  - {key: sync, type: reference, resolve: callable-in-scope, doc: the callable that reports whether the state converged}
+falsifiability: >
+  A subject whose effect never converges remains unobservable after the
+  settle, and the check turns red.
+counterexamples:
+  edge: a read before the settle, which may miss the effect

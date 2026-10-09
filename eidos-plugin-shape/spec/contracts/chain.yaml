@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: chain
+form: contract
+claim: >
+  The group is an append-only log whose history the replay callable reads
+  back, and whose tampering the optional verify callable detects.
+observation: >
+  A check appends entries, replays the log and compares the entries, then
+  changes an entry and expects the verify callable to report it.
+roles:
+  append: {arity: one}
+  replay: {arity: one}
+  verify: {arity: optional}
+falsifiability: >
+  A log that drops an entry replays fewer entries, and the check turns red.
+counterexamples:
+  edge: the replay of an empty log
+  unsafe: a change of an entry in the middle of the log

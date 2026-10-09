@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: indexed
+form: mixin
+claim: >
+  The callable's integer inputs are positions in a collection, whose size
+  the callable that the by param refers to reports.
+observation: >
+  A check reads the size through the by param's callable at run time, and
+  calls the subject at the first and the last position and at the size.
+  The mixin applies to every integer input of the callable.
+params:
+  - {key: by, type: reference, resolve: callable-in-scope, doc: the callable that reports the size of the collection}
+falsifiability: >
+  A subject that admits the position equal to the size, or refuses the
+  last position, turns the check of that boundary red.
+counterexamples:
+  edge: an empty collection, whose size is zero
+  invalid: the position equal to the size

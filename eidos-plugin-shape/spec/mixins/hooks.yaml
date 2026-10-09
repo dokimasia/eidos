@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: hooks
+form: mixin
+claim: >
+  The callable runs the hooks that a caller registers before and after its
+  work, and a check exercises them.
+observation: >
+  A check registers a hook through the callable that the register param
+  refers to, calls the subject, and observes that the hook ran.
+params:
+  - {key: register, type: reference, resolve: callable-in-scope, doc: the callable through which a caller registers a hook}
+falsifiability: >
+  A subject that skips its hooks leaves the registered hook unrun, and the
+  check turns red.
+counterexamples:
+  edge: a call without a registered hook
+  unsafe: a hook that fails, whose failure the subject reports

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: predicate
+form: shape
+detected: true
+claim: >
+  The callable takes nothing and returns one truth value about the state of
+  its receiver.
+observation: >
+  A check puts the receiver into a state where the truth value is true and
+  into a state where it is false, and reads the truth value in each.
+bindings:
+  value: {from: result, index: 0, doc: the return of the truth value}
+falsifiability: >
+  Deleting the subject's test returns one constant truth value, and the
+  check of one of the two states turns red.
+counterexamples:
+  edge: a receiver in its initial state
+  refused: a truth value computed from an input, which is a computation

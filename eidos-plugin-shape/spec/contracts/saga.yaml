@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: saga
+form: contract
+claim: >
+  A step is paired with the compensation that reverses it. One instance is
+  one pair, and an id separates the pairs of a saga in one package, so no
+  compensation serves two steps.
+observation: >
+  A check runs the step, runs its compensation, and compares the state
+  with the state before the step.
+roles:
+  step: {arity: one}
+  compensate: {arity: one}
+falsifiability: >
+  A compensation that does not reverse its step leaves the step's effect,
+  and the check turns red.
+counterexamples:
+  edge: a compensation of a step that failed
+  refused: one compensation for two steps, which two instances cannot state

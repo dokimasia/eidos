@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: cacheable
+form: mixin
+claim: >
+  The result for an input is stable over time, so a caller may cache it
+  without a bound on its age.
+observation: >
+  A check calls the subject twice with one input, with time and other calls
+  between the two, and compares the results.
+falsifiability: >
+  A result that changes over time differs between the two calls, and the
+  check turns red.
+counterexamples:
+  edge: a call before and after a change of an unrelated part of the state

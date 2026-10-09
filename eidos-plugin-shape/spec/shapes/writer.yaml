@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: writer
+form: shape
+detected: true
+claim: >
+  The callable persists exactly one input value and returns success
+  solely through its error model.
+observation: >
+  A check sees the persisted value through a sibling reader. The reads
+  param refers to the reader where no reader shape is stamped on the
+  callable's type.
+params:
+  - {key: reads, type: reference, resolve: callable-in-scope, doc: the reader that observes the write}
+  - {key: sample, type: string, counterexample: true, doc: a value that the check writes}
+bindings:
+  value: {from: input, index: 0, doc: the parameter whose value the callable persists}
+falsifiability: >
+  Deleting the subject's write path turns the generated round-trip check
+  red, because the sample written through the subject is no longer
+  observable through the reader.
+counterexamples:
+  invalid: a value that the subject refuses
+  unsafe: a value that the reader never returns unescaped
+  refused: a callable that returns a value beside the error, which is an answering writer
+precedence:
+  yields_to: [deleter]

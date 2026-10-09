@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: scope
+form: mixin
+documentary: true
+claim: >
+  The effects of the callable belong to a scope, such as a request, a
+  session or a tenant. The name param states the word of the scope, and
+  the axis param refers to the parameter that selects the scope. The mixin
+  makes no claim about authorization.
+observation: >
+  Nothing. The mixin documents the callable and licenses no check. The
+  partition mixin is the checkable form of a scope.
+params:
+  - {key: name, type: string, doc: "the word of the scope, such as tenant"}
+  - {key: axis, type: reference, resolve: host-param, doc: the parameter of the callable that selects the scope}
+falsifiability: >
+  Nothing turns red, because the mixin licenses no check.
+counterexamples:
+  refused: a check generated from the mixin, which licenses none

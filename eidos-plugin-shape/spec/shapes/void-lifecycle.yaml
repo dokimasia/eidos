@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: void-lifecycle
+form: shape
+detected: true
+claim: >
+  The callable takes nothing and returns nothing. It moves its receiver to
+  another phase of its lifecycle, such as starting, resetting or flushing
+  it.
+observation: >
+  A check calls the subject, and observes the receiver's phase through a
+  sibling, such as a predicate or a reader of the receiver's state.
+falsifiability: >
+  Deleting the subject's effect leaves the receiver in its phase, and the
+  check of the sibling turns red.
+counterexamples:
+  edge: a second call in the phase that the first call entered
+  refused: a callable that reports a failure, which is a lifecycle step with an error

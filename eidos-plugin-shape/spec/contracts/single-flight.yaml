@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: single-flight
+form: contract
+claim: >
+  Concurrent calls with one key share one computation of its result.
+observation: >
+  A check makes concurrent calls with one key, and counts the computations
+  that the calls cause.
+roles:
+  fn: {arity: many}
+falsifiability: >
+  A callable without the sharing computes once per call, and the check
+  turns red.
+counterexamples:
+  edge: a call that arrives after the shared computation finished

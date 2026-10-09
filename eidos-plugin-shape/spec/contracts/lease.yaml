@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: lease
+form: contract
+claim: >
+  An acquire callable takes a lease and a release callable returns it, and
+  every acquire is balanced by exactly one release. A second acquire of a
+  taken lease reports the error that the taken param refers to.
+observation: >
+  A check acquires, acquires again to see the taken error, releases, and
+  acquires again to see success. The timeout param states how long a lease
+  lasts.
+params:
+  - {key: taken, type: reference, resolve: package-var, doc: the error that an acquire of a taken lease reports}
+  - {key: timeout, type: string, doc: how long a lease lasts}
+roles:
+  acquire: {arity: one}
+  release: {arity: one}
+falsifiability: >
+  A lease that grants a second acquire succeeds where the check expects
+  the taken error, and the check turns red.
+counterexamples:
+  edge: an acquire after the timeout of an unreleased lease

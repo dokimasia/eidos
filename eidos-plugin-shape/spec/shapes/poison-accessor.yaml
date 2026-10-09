@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: poison-accessor
+form: shape
+detected: true
+claim: >
+  The callable takes nothing and returns only an error, which reports a
+  sticky failure state of its receiver.
+observation: >
+  A check induces a failure of the receiver, and expects every later call
+  of the subject to report it until the receiver is reset.
+falsifiability: >
+  Deleting the subject's report of the failure state returns no error after
+  the induced failure, and the check turns red.
+counterexamples:
+  edge: a receiver that has not failed, for which the subject reports no error
+  refused: a callable named as a release, which is a closer
+precedence:
+  yields_to: [closer]

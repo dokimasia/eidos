@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: atomic
+form: mixin
+claim: >
+  The callable either completes fully or has no observable side effect.
+observation: >
+  A partial state is refutable only where a check can observe it. The
+  read param refers to the reader through which the check inspects the
+  state after a failed call.
+params:
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader that inspects the state after a failed call}
+falsifiability: >
+  A failure injected mid-effect turns the check red when any partial
+  state is visible through the reader.
+counterexamples:
+  edge: a call without effect, which is atomic and passes
+  unsafe: a failure between the effect and its acknowledgement

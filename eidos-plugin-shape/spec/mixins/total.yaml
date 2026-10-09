@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: total
+form: mixin
+claim: >
+  The callable gives a defined result for every input in the domain that
+  the domain param describes.
+observation: >
+  A check calls the subject across the domain, the declared boundary input
+  that the edge param refers to included, and expects a result without a
+  crash for each.
+params:
+  - {key: domain, type: string, doc: the description of the domain for a reader}
+  - {key: edge, type: reference, resolve: package-var, counterexample: true, doc: a declared input at the boundary of the domain}
+falsifiability: >
+  A subject that crashes or hangs at the boundary input turns the check
+  red.
+counterexamples:
+  edge: the declared input that the edge param refers to

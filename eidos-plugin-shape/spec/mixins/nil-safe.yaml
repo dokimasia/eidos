@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: nil-safe
+form: mixin
+claim: >
+  An absent input gives a defined result, typically the zero value beside a
+  sentinel error, and never a crash.
+observation: >
+  A check calls the subject with the absent value for each input that can
+  be absent, and expects a result without a crash.
+falsifiability: >
+  A subject that dereferences an absent input crashes, and the check turns
+  red.
+counterexamples:
+  edge: the absent value in every input at once

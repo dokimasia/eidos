@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: stream-reflects-mutations
+form: mixin
+claim: >
+  A stream that is already iterating observes the mutations that are made
+  to its source while it iterates.
+observation: >
+  A check starts an iteration, mutates the source through the callable that
+  the mutate param refers to and removes an entry through the callable that
+  the delete param refers to, and expects the rest of the iteration to
+  reflect both.
+params:
+  - {key: mutate, type: reference, resolve: callable-in-scope, doc: the write that the stream observes}
+  - {key: delete, type: reference, resolve: callable-in-scope, doc: the callable that removes an entry during the iteration}
+falsifiability: >
+  A subject that iterates a copy of the source misses the mutation, and the
+  check turns red.
+counterexamples:
+  edge: a mutation of an entry that the iteration already yielded

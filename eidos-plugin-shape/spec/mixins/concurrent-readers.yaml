@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: concurrent-readers
+form: mixin
+claim: >
+  The callable is safe for concurrent readers, even where the writers of
+  its state are not safe to call beside them.
+observation: >
+  A check calls the subject from several threads at once, without a
+  concurrent write, and compares each result with a single-threaded read.
+falsifiability: >
+  A subject whose reads mutate shared state without synchronization gives
+  an inconsistent result or fails the race detector, and the check turns
+  red.
+counterexamples:
+  refused: a write that runs beside the reads, which the claim does not cover

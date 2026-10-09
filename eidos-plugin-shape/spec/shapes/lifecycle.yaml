@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: lifecycle
+form: shape
+detected: true
+claim: >
+  The callable takes only a context and returns only its error. It moves
+  its receiver from one phase of its lifecycle to the next, such as
+  starting or stopping it.
+observation: >
+  A check calls the subject, observes the receiver's phase through a
+  sibling, and cancels the context to see that the subject returns
+  promptly.
+falsifiability: >
+  Deleting the subject's transition leaves the receiver in its phase, and
+  the check of the sibling turns red.
+counterexamples:
+  edge: a call with a context that ended before the call
+  refused: a callable without a context, which is a closer or a poison accessor

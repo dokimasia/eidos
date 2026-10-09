@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: multi-reader
+form: shape
+detected: true
+claim: >
+  The callable takes one key, and returns two or more values of the key
+  beside its error.
+observation: >
+  A check stores the values of a key, reads the key, and compares each
+  returned value with the stored one.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the first value}
+falsifiability: >
+  Deleting the subject's read returns zero values, and the check of a
+  stored key turns red.
+counterexamples:
+  edge: a key that has no value
+  refused: a callable that returns one value, which is a reader

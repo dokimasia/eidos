@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: if-absent
+form: contract
+claim: >
+  The writer succeeds only where no record has the key, and reports the
+  error that the conflict param refers to where one has.
+observation: >
+  A check writes a new key and expects success, then writes the key again
+  and expects the conflict error and the first value.
+params:
+  - {key: conflict, type: reference, resolve: package-var, doc: the error that a write of a taken key reports}
+roles:
+  writer: {arity: many}
+falsifiability: >
+  A writer that overwrites a taken key replaces the first value, and the
+  check turns red.
+counterexamples:
+  unsafe: two concurrent writes of one new key, of which one succeeds

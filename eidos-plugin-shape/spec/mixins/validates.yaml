@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: validates
+form: mixin
+claim: >
+  The validator that the fn param refers to screens the callable's inputs
+  before any of its logic runs.
+observation: >
+  A check calls the subject with the declared invalid value that the
+  invalid param refers to, and expects the validator's refusal and no
+  effect. The declared value is what lets the check fail, because no
+  derivation invents an input that the validator refuses.
+params:
+  - {key: fn, type: reference, resolve: callable-in-scope, doc: the validator}
+  - {key: invalid, type: reference, resolve: package-var, counterexample: true, doc: a declared value that the validator refuses}
+falsifiability: >
+  A subject that skips its validator accepts the invalid value, and the
+  check turns red.
+counterexamples:
+  invalid: the declared value that the invalid param refers to

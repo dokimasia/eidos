@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: circuit-breaker
+form: contract
+claim: >
+  The callable wraps a downstream operation and fails fast after repeated
+  failures of the operation.
+observation: >
+  A check makes the downstream operation fail repeatedly, and expects the
+  callable to refuse the next call without calling the operation.
+roles:
+  fn: {arity: many}
+falsifiability: >
+  A callable without its breaker keeps calling the failing operation, and
+  the check turns red.
+counterexamples:
+  edge: the call after the breaker's reset interval

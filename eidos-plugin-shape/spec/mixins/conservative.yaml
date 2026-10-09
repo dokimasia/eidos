@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: conservative
+form: mixin
+claim: >
+  The callable neither creates nor destroys the quantity that the field
+  param names. It only moves the quantity between subjects.
+observation: >
+  A check sums the quantity over every subject before and after the call,
+  and compares the two sums.
+params:
+  - {key: field, type: string, doc: the name of the conserved quantity}
+falsifiability: >
+  A subject that loses or invents a part of the quantity changes the sum,
+  and the check turns red.
+counterexamples:
+  edge: a move of the whole quantity of one subject
+  invalid: a move of more than the source subject has

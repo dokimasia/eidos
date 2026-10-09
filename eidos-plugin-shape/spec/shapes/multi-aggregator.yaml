@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: multi-aggregator
+form: shape
+detected: true
+claim: >
+  The callable takes no input, and returns two or more values computed over
+  its whole collection beside its error.
+observation: >
+  A check fills the collection through a sibling writer, and compares each
+  returned value with the value that it computes over the stored records.
+bindings:
+  value: {from: result, index: 0, doc: the return of the first value}
+falsifiability: >
+  Deleting the subject's aggregation returns zero values, and the check of
+  a filled collection turns red.
+counterexamples:
+  edge: an empty collection
+  refused: a callable that returns one value, which is an aggregator

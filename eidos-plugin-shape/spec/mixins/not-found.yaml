@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: not-found
+form: mixin
+claim: >
+  A read of an absent key reports the sentinel error that the sentinel
+  param refers to, and never the zero value alone.
+observation: >
+  A check reads a key without a value and expects the sentinel. A bare
+  not-found could only check that some error came back, so the sentinel
+  param is required. A condition with a sentinel of its own, such as the
+  expiry of a ttl, states that sentinel on its own mixin.
+params:
+  - {key: sentinel, type: reference, resolve: package-var, required: true, doc: the error that a read of an absent key reports}
+falsifiability: >
+  A subject that returns the zero value and no error for an absent key
+  turns the check red.
+counterexamples:
+  edge: a key that was present and was deleted

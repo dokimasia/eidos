@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: pool
+form: contract
+claim: >
+  A get callable takes an object from the pool and a put callable returns
+  it, and every get is balanced by one put. The optional stats callable
+  reports the pool's accounting.
+observation: >
+  A check gets and puts objects in balanced and unbalanced sequences, and
+  compares the accounting that stats reports with the sequence.
+roles:
+  get: {arity: one}
+  put: {arity: one}
+  stats: {arity: optional}
+falsifiability: >
+  A pool that loses a returned object reports a count that differs from
+  the sequence, and the check turns red.
+counterexamples:
+  edge: a get from an empty pool
+  invalid: a put of an object that no get returned

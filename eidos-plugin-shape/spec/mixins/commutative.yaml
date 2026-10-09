@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: commutative
+form: mixin
+claim: >
+  Combining results in any order gives the same value, so concurrent
+  contributions need no arbitration.
+observation: >
+  A check combines two results in both orders and compares the two values.
+falsifiability: >
+  A combination that depends on the order gives two values for the two
+  orders, and the check turns red.
+counterexamples:
+  edge: a combination of a result with itself

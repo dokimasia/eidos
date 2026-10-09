@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: watcher
+form: contract
+claim: >
+  A watch callable returns a subscription to updates, which the trigger
+  callable causes. The next and stop params name the methods of the
+  returned subscription.
+observation: >
+  A check watches, triggers an update, reads it through the subscription's
+  next method, and ends the subscription through its stop method.
+params:
+  - {key: next, type: reference, resolve: member-on-handle, doc: the method of the subscription that reads the next update}
+  - {key: stop, type: reference, resolve: member-on-handle, doc: the method of the subscription that ends it}
+roles:
+  watch: {arity: many}
+  trigger: {arity: optional}
+falsifiability: >
+  A watch that misses a triggered update never returns it from next, and
+  the check turns red.
+counterexamples:
+  edge: an update triggered before the watch started

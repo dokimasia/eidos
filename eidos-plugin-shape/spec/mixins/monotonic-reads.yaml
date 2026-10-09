@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: monotonic-reads
+form: mixin
+claim: >
+  Successive reads by one client never observe a value older than a value
+  that the client has seen.
+observation: >
+  A check reads the version of each observed value from the field that the
+  version param refers to, and compares each version with the versions
+  that the client observed before.
+params:
+  - {key: version, type: reference, resolve: value-field, doc: the field of the value that contains its version}
+falsifiability: >
+  A subject that serves a client from a stale replica returns an older
+  version, and the check turns red.
+counterexamples:
+  edge: two reads of one value without a write between them

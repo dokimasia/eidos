@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: idempotent
+form: mixin
+claim: >
+  N calls with the same input have the same observable effect as one call.
+observation: >
+  A check calls the subject once and records the state, calls it again with
+  the same input, and compares the two states.
+falsifiability: >
+  A subject whose second call has a further effect changes the state, and
+  the check turns red.
+counterexamples:
+  edge: a second call after a failed first call
+  refused: a callable whose repeated calls compound, which accumulates

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: poisonable
+form: mixin
+claim: >
+  The callable reports a sticky failure state of its receiver, which the
+  callable that the induce param refers to causes.
+observation: >
+  A check causes the failure through the induce param's callable, and
+  expects every later call of the subject to report it.
+params:
+  - {key: induce, type: reference, resolve: callable-in-scope, doc: the callable that puts the receiver into its failure state}
+falsifiability: >
+  A subject that forgets the failure after one report returns no error on
+  a later call, and the check turns red.
+counterexamples:
+  edge: a call before any failure, which reports none

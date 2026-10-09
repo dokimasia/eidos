@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: permutation
+form: mixin
+claim: >
+  The callable yields every element exactly once, in an unspecified order,
+  so a check compares the result as a set.
+observation: >
+  A check drains the result and compares it with the expected elements
+  without regard to their order.
+falsifiability: >
+  A subject that drops or repeats an element changes the set, and the
+  check turns red.
+counterexamples:
+  edge: a source of one element

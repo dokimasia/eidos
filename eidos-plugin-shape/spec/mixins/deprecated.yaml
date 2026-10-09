@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: deprecated
+form: mixin
+documentary: true
+claim: >
+  The callable is scheduled for removal. A generator of checks may skip it
+  or warn about it.
+observation: >
+  Nothing. The mixin documents the callable and licenses no check.
+falsifiability: >
+  Nothing turns red, because the mixin licenses no check.
+counterexamples:
+  refused: a check generated from the mixin, which licenses none

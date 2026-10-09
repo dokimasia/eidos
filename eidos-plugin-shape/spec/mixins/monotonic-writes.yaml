@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: monotonic-writes
+form: mixin
+claim: >
+  The writes of one client apply in the order in which the client issued
+  them.
+observation: >
+  A check issues a sequence of writes from one client, and compares the
+  versions of the applied values, read from the field that the version
+  param refers to, with the order of the writes.
+params:
+  - {key: version, type: reference, resolve: value-field, doc: the field of the value that contains its version}
+falsifiability: >
+  A subject that applies a later write before an earlier one shows the
+  versions out of order, and the check turns red.
+counterexamples:
+  edge: two writes of one client to two keys

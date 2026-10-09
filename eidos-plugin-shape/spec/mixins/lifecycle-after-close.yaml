@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: lifecycle-after-close
+form: mixin
+claim: >
+  A call after its receiver is closed behaves correctly, typically by
+  returning a sentinel error, and never by a crash or a hang.
+observation: >
+  A check closes the receiver through the callable that the close param
+  refers to, calls the subject, and expects the error that the sentinel
+  param refers to.
+params:
+  - {key: close, type: reference, resolve: callable-in-scope, doc: the callable that closes the receiver}
+  - {key: sentinel, type: reference, resolve: package-var, doc: the error that the subject returns after the close}
+falsifiability: >
+  A subject that uses released resources after the close crashes or
+  returns another error, and the check turns red.
+counterexamples:
+  edge: a call during the close

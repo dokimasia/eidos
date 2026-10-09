@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: multi-arg-writer
+form: shape
+detected: true
+claim: >
+  The callable takes three or more inputs, persists one record built from
+  them, and returns only its error.
+observation: >
+  A check writes a record through the subject, and reads it back through a
+  sibling reader to compare each input with the stored record.
+falsifiability: >
+  Deleting the subject's write path leaves no record for the reader, and
+  the check turns red.
+counterexamples:
+  invalid: a combination of inputs that the subject refuses
+  refused: a callable that returns a value beside the error

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: computation
+form: shape
+detected: true
+claim: >
+  The callable returns one value computed from its inputs, and takes no
+  context and returns no error.
+observation: >
+  A check calls the subject with inputs whose result it knows, and compares
+  the result with the known one.
+bindings:
+  value: {from: result, index: 0, doc: the return of the computed value}
+falsifiability: >
+  Deleting the subject's computation returns a constant, and the check of
+  an input whose result differs from the constant turns red.
+counterexamples:
+  edge: the inputs at the boundary of the computation's domain
+  refused: a callable that takes a context or reports a failure, which is a reader or an aggregator
+precedence:
+  yields_to: [stream-reader, predicate]

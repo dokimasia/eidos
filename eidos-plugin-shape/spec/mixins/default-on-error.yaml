@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: default-on-error
+form: mixin
+claim: >
+  A failed read returns the zero value of its type beside the error,
+  rather than a value that is undefined.
+observation: >
+  A check makes a read fail, and compares the returned value with the zero
+  value of its type.
+falsifiability: >
+  A subject that returns a partial value beside the error differs from the
+  zero value, and the check turns red.
+counterexamples:
+  edge: a read that fails after it decoded a part of the value

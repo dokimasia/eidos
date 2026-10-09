@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: point-in-time
+form: mixin
+claim: >
+  Two reads of one key within one iteration agree, even where a write runs
+  between them.
+observation: >
+  A check reads a key, writes it through the writer that the write param
+  refers to, reads it again within the iteration, and compares the two
+  reads.
+params:
+  - {key: write, type: reference, resolve: callable-in-scope, doc: the write that the two reads straddle}
+falsifiability: >
+  A subject that reads the live state returns the new value on the second
+  read, and the check turns red.
+counterexamples:
+  edge: a write that deletes the key

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: pagination
+form: contract
+claim: >
+  The reader pages through a collection, and a page resumes from the field
+  of the returned page that the cursor param refers to.
+observation: >
+  A check reads every page by the cursor of the page before it, and
+  compares the concatenated pages with the collection.
+params:
+  - {key: cursor, type: reference, resolve: value-field, doc: the field of the returned page that the next page resumes from}
+roles:
+  reader: {arity: many}
+falsifiability: >
+  A reader that repeats or skips an element across a page boundary changes
+  the concatenation, and the check turns red.
+counterexamples:
+  edge: a collection whose size is a multiple of the page size

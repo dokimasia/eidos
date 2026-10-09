@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: sticky
+form: mixin
+claim: >
+  Inputs that share a value of the parameter that the key param names are
+  served by one instance, while that instance is healthy.
+observation: >
+  A check calls the subject several times with one value of the key
+  parameter, and compares the instance that serves each call.
+params:
+  - {key: key, type: reference, resolve: host-param, doc: the parameter whose value selects the instance}
+falsifiability: >
+  A subject that balances each call independently serves one key from two
+  instances, and the check turns red.
+counterexamples:
+  edge: an instance that fails, after which another instance serves the key

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: sample
+form: mixin
+claim: >
+  A check of the callable uses sampled inputs rather than an exhaustive
+  enumeration, and the callable that the builder param refers to produces
+  an input that the callable accepts.
+observation: >
+  A check builds its inputs through the builder param's callable, and
+  calls the subject with them.
+params:
+  - {key: builder, type: reference, resolve: callable-in-scope, doc: the callable that produces an input that the callable accepts}
+falsifiability: >
+  A builder that produces an input the subject refuses fails every check,
+  which shows the builder and the subject disagree.
+counterexamples:
+  edge: the first input that the builder produces

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: snapshot-isolation
+form: mixin
+claim: >
+  Each transaction sees one consistent snapshot, so no dirty write, dirty
+  read or read skew is observable. Write skew is permitted.
+observation: >
+  A check runs transactions concurrently, observes their reads through
+  the reader that the read param refers to, and checks the history for
+  the anomalies that the claim forbids. A check for cycles of
+  anti-dependencies is wrong against this claim.
+params:
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader through which a check observes a snapshot}
+falsifiability: >
+  A subject whose transaction reads a value that another transaction has
+  not committed turns the check red.
+counterexamples:
+  edge: write skew between two transactions, which the claim permits

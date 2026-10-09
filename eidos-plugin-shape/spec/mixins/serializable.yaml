@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: serializable
+form: mixin
+claim: >
+  Concurrent transactions of the callable are equivalent to some serial
+  order of them, so no anomaly is observable. The claim is a sibling of
+  snapshot isolation and no level of it, and a tx contract states the
+  transaction boundaries.
+observation: >
+  A check runs transactions concurrently, observes their results through
+  the reader that the read param refers to, and searches for a serial
+  order that explains the history.
+params:
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader through which a check observes the state}
+falsifiability: >
+  A subject that admits write skew produces a history that no serial order
+  explains, and the check turns red.
+counterexamples:
+  unsafe: two transactions that each read what the other writes

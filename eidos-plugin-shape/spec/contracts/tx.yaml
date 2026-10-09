@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: tx
+form: contract
+claim: >
+  The group provides begin, commit and rollback over one resource.
+  Effects between begin and commit are observable only after commit, and
+  never after rollback.
+observation: >
+  A check watches the resource from outside the transaction, through a
+  reader of the resource, and calls commit or rollback once the
+  transaction is finished to see the closed sentinel.
+params:
+  - {key: closed, type: reference, resolve: package-var, doc: the error that commit or rollback reports once the transaction is finished}
+roles:
+  begin: {arity: one}
+  commit: {arity: one}
+  rollback: {arity: one}
+falsifiability: >
+  A commit without a begin fails, and work done before a rollback is not
+  observable after it.
+counterexamples:
+  invalid: an operation sequenced outside begin and commit
+  edge: an empty transaction, a begin and then a commit without work
+  refused: two callables in one role of one instance

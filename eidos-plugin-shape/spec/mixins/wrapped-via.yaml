@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: wrapped-via
+form: mixin
+claim: >
+  The callable delegates to the sibling that the fn param refers to, and
+  adds a cross-cutting concern, such as logging or metrics, around it.
+observation: >
+  A check calls the subject and the sibling with one input, and compares
+  their results.
+params:
+  - {key: fn, type: reference, resolve: callable-in-scope, doc: the sibling that the callable delegates to}
+falsifiability: >
+  A subject that stops delegating gives a result that differs from the
+  sibling's, and the check turns red.
+counterexamples:
+  unsafe: a failure of the sibling, which the subject reports unchanged

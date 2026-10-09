@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: read-after-write
+form: mixin
+claim: >
+  Right after a write through the writer that the write param refers to, a
+  read through the callable returns the written value.
+observation: >
+  A check writes a value through the write param's callable, reads it at
+  once through the subject, and compares the two values. The claim is about
+  one write and the read right after it, and read-your-writes is about the
+  whole trace of a client.
+params:
+  - {key: write, type: reference, resolve: callable-in-scope, doc: the writer whose value the read returns}
+falsifiability: >
+  A subject that reads a stale replica returns an older value right after
+  the write, and the check turns red.
+counterexamples:
+  edge: a write of the value that the key had before

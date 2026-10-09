@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: errors
+form: mixin
+documentary: true
+claim: >
+  The callable's error returns are part of its contract, and a caller is
+  expected to handle each of them. The mixin maps no condition to a
+  sentinel, which a mixin of each condition, such as not-found, does.
+observation: >
+  Nothing. The mixin documents the callable and licenses no check, and a
+  generator of checks does not report it as a gap.
+falsifiability: >
+  Nothing turns red, because the mixin licenses no check.
+counterexamples:
+  refused: a check generated from the mixin, which licenses none

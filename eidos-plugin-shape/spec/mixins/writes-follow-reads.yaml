@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: writes-follow-reads
+form: mixin
+claim: >
+  A write that a client issues after a read is ordered after the write
+  that the read observed.
+observation: >
+  A check reads a value, writes after the read, and compares the version
+  of the applied write, from the field that the version param refers to,
+  with the version that the read observed.
+params:
+  - {key: version, type: reference, resolve: value-field, doc: the field of the value that contains its version}
+falsifiability: >
+  A subject that applies the write before the observed one shows the
+  versions out of order, and the check turns red.
+counterexamples:
+  edge: a read of a value that no write produced

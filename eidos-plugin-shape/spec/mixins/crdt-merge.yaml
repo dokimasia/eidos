@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: crdt-merge
+form: mixin
+claim: >
+  The callable merges the state of two replicas deterministically and
+  without conflict, the way a conflict-free replicated data type merges.
+observation: >
+  A check makes two replicas diverge through the writer that the write
+  param refers to, merges them in both orders, and compares the merged
+  states through the reader that the read param refers to.
+params:
+  - {key: write, type: reference, resolve: callable-in-scope, doc: the callable that adds an element to one replica}
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader of the merged state}
+falsifiability: >
+  A merge that depends on the order of the replicas gives two states for
+  the two orders, and the check turns red.
+counterexamples:
+  edge: a merge of a replica with itself

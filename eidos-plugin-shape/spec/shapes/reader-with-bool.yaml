@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: reader-with-bool
+form: shape
+detected: true
+claim: >
+  The callable takes one key, and returns the key's value and a truth value
+  that reports whether the key has one.
+observation: >
+  A check stores a value under a key, reads the key, and expects the truth
+  value to be true and the value to be the stored one. It then reads a key
+  without a value and expects false.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the key's value}
+falsifiability: >
+  Deleting the subject's read reports every key as absent, and the check of
+  a stored key turns red.
+counterexamples:
+  edge: a key that has no value, for which the truth value is false
+  refused: a callable that reports the absence of a key through an error

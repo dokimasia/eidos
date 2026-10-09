@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: monotonic
+form: mixin
+claim: >
+  Successive calls observe a value that never decreases, such as a counter,
+  a version number or a high-water mark.
+observation: >
+  A check calls the subject repeatedly, with writes between the calls, and
+  compares each value with the one before it.
+falsifiability: >
+  A subject that returns a smaller value after a larger one breaks the
+  order, and the check turns red.
+counterexamples:
+  edge: two calls without a write between them, which observe equal values

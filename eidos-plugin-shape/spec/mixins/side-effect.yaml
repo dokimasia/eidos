@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: side-effect
+form: mixin
+claim: >
+  The callable has an observable effect beyond its return value.
+observation: >
+  A check reads the result of the callable that the observe param refers
+  to before and after a call of the subject, and expects the result to
+  change.
+params:
+  - {key: observe, type: reference, resolve: callable-in-scope, doc: the callable whose result changes across a call}
+falsifiability: >
+  A subject without its effect leaves the observed result unchanged, and
+  the check turns red.
+counterexamples:
+  edge: a call whose effect restores the state before it

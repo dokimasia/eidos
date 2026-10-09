@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: upserter
+form: contract
+claim: >
+  A writer inserts an entity or updates it, the last write applying, and a
+  reader fetches the result.
+observation: >
+  A check writes a new entity, writes it again with another value, and
+  reads it through the reader after each write.
+roles:
+  writer: {arity: many}
+  reader: {arity: one}
+falsifiability: >
+  A writer that refuses the second write of a key leaves the first value,
+  and the check turns red.
+counterexamples:
+  edge: two writes of one value

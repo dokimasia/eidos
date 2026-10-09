@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: transaction
+form: contract
+claim: >
+  The callable runs inside a transactional scope or opens one. The write
+  and read params refer to the pair that checks a rollback, and the
+  not-found param refers to the error that the read reports for a rolled
+  back write.
+observation: >
+  A check writes through the write param's callable inside the scope,
+  makes the scope fail, and reads through the read param's callable to see
+  the not-found error.
+params:
+  - {key: not-found, type: reference, resolve: package-var, doc: the error that the read reports for a rolled back write}
+  - {key: read, type: reference, resolve: callable-in-scope, roles: [fn], doc: the reader that checks a rollback}
+  - {key: write, type: reference, resolve: callable-in-scope, roles: [fn], doc: the writer whose effect a rollback undoes}
+roles:
+  fn: {arity: many}
+falsifiability: >
+  A scope that commits a failed write leaves the value readable, and the
+  check turns red.
+counterexamples:
+  edge: a scope without a write

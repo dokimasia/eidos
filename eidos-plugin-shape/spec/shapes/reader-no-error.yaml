@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: reader-no-error
+form: shape
+detected: true
+claim: >
+  The callable takes one key, which is not variadic, and returns the key's
+  value without an error.
+observation: >
+  A check stores a value under a key through a sibling writer, reads the
+  key, and compares the returned value with the stored one.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the key's value}
+falsifiability: >
+  Deleting the subject's read returns a zero value for a stored key, and
+  the check turns red.
+counterexamples:
+  edge: a key that has no value, for which the subject returns a zero value
+  refused: a callable that reports a failure through an error, which is a reader
+precedence:
+  yields_to: [stream-reader, pointer-reader, computation]

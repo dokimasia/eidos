@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: injection-safe
+form: mixin
+claim: >
+  The callable passes untrusted input to an interpreter, such as a query
+  engine or a shell, as data and never as syntax.
+observation: >
+  A check passes the payload that the unsafe param refers to, and reads
+  the stored value back through the reader that the read param refers to.
+  The round trip is the evidence, because no derivation can invent a
+  payload that would be syntax.
+params:
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader that returns the stored value}
+  - {key: unsafe, type: reference, resolve: package-var, counterexample: true, doc: a declared payload that an interpreter would read as syntax}
+falsifiability: >
+  A subject that splices the payload into the interpreter's syntax changes
+  what the reader returns, and the check turns red.
+counterexamples:
+  unsafe: the declared payload that the unsafe param refers to

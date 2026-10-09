@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: updater
+form: contract
+claim: >
+  A writer updates an entity, and a reader fetches the updated entity to
+  confirm the write.
+observation: >
+  A check updates an entity through the writer, reads it through the
+  reader, and compares the two.
+roles:
+  writer: {arity: many}
+  reader: {arity: optional}
+falsifiability: >
+  A writer that drops the update leaves the reader with the old entity,
+  and the check turns red.
+counterexamples:
+  edge: an update that changes nothing
+  invalid: an update of an entity that does not exist

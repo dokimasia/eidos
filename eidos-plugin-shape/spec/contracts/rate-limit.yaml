@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: rate-limit
+form: contract
+claim: >
+  The callable is bounded by the rate that the rate param states and the
+  burst that the burst param states, and refuses a call beyond them with
+  the error that the limited param refers to.
+observation: >
+  A check calls the subject faster than the rate under a controlled clock,
+  and counts the calls that succeed and the calls that report the limited
+  error.
+params:
+  - {key: burst, type: string, doc: the number of calls that the callable admits at once}
+  - {key: limited, type: reference, resolve: package-var, doc: the error that a refused call reports}
+  - {key: rate, type: string, doc: the number of calls that the callable admits in an interval}
+roles:
+  fn: {arity: many}
+falsifiability: >
+  A callable without its limiter admits every call, and the check turns
+  red.
+counterexamples:
+  edge: a burst of exactly the admitted size

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: leader-election
+form: contract
+claim: >
+  A campaign callable makes its caller the leader, a resign callable gives
+  the leadership up, and an is-leader callable reports whether the caller
+  leads. At most one caller leads at a time.
+observation: >
+  A check runs two campaigns, and compares what is-leader reports for each
+  caller before and after one resigns.
+roles:
+  campaign: {arity: one}
+  resign: {arity: one}
+  is-leader: {arity: one}
+falsifiability: >
+  An election that grants two campaigns at once makes is-leader report two
+  leaders, and the check turns red.
+counterexamples:
+  unsafe: two campaigns at once
+  edge: a resign of a caller that does not lead

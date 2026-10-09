@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: appender
+form: contract
+claim: >
+  The callable's effect is purely additive. It appends, and it neither
+  overwrites nor deletes.
+observation: >
+  A check appends twice, and reads the collection to see both elements and
+  every element that was there before.
+roles:
+  fn: {arity: many}
+falsifiability: >
+  A subject that overwrites an earlier element loses it, and the check
+  turns red.
+counterexamples:
+  edge: an append of an element equal to an existing one

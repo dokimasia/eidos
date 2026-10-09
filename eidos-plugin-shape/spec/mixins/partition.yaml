@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: partition
+form: mixin
+claim: >
+  The callable observes a partition boundary, such as a tenant or a shard,
+  and never serves data of another partition.
+observation: >
+  A check varies the parameter that the axis param names while it keeps
+  the other inputs, and reads each partition back through the reader that
+  the read param refers to. The reader takes the same parameter, so a
+  check can name one partition on both callables.
+params:
+  - {key: read, type: reference, resolve: callable-in-scope, doc: the reader of one partition}
+  - {key: axis, type: reference, resolve: host-param, also_on: [read], doc: the parameter of the callable that selects the partition}
+falsifiability: >
+  A subject that ignores the axis serves a value of one partition to a
+  read of another, and the check turns red.
+counterexamples:
+  unsafe: two partitions that store values under one key

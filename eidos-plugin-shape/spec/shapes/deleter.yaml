@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: deleter
+form: shape
+detected: true
+claim: >
+  The callable removes the value that its one input identifies, and
+  returns success solely through its error model. Its name is one of the
+  removal verbs delete, remove, del, evict and purge.
+observation: >
+  A check sees the absence through a sibling reader, which the reads
+  param refers to.
+params:
+  - {key: reads, type: reference, resolve: callable-in-scope, doc: the reader that observes the removal}
+bindings:
+  key: {from: input, index: 0, doc: the parameter that identifies the removed value}
+falsifiability: >
+  Deleting the subject's removal path leaves the value observable through
+  the reader, and the generated check turns red.
+counterexamples:
+  edge: a removal of a value that does not exist
+  refused: a removal that returns the removed value

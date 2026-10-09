@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "doc": {
+                "description": "The meaning of the binding.",
+                "type": "string"
+              },
+              "from": {
+                "description": "The list that the index counts in: input, the input parameters, or result, the returns that are values or streams.",
+                "enum": [
+                  "input",
+                  "result"
+                ],
+                "type": "string"
+              },
+              "index": {
+                "description": "The position in the list, from 0.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "from",
+              "doc"
+            ],
+            "type": "object"
+          },
+          "description": "The positions of the callable that fill the parts of the shape, by the name of the part.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "claim": {
+          "description": "The assertion of the classification, in neutral vocabulary.",
+          "type": "string"
+        },
+        "counterexamples": {
+          "additionalProperties": false,
+          "description": "The inputs that a check covers.",
+          "properties": {
+            "edge": {
+              "description": "An input at a boundary of the claim.",
+              "type": "string"
+            },
+            "invalid": {
+              "description": "An input that the subject refuses.",
+              "type": "string"
+            },
+            "refused": {
+              "description": "A callable or a use that the classification excludes.",
+              "type": "string"
+            },
+            "unsafe": {
+              "description": "An input that does not pass through the subject unchanged.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "detected": {
+          "description": "When true, a detector classifies callables as the shape.",
+          "type": "boolean"
+        },
+        "falsifiability": {
+          "description": "What turns red when someone deletes the subject's handling.",
+          "type": "string"
+        },
+        "form": {
+          "const": "shape",
+          "description": "The form of the spec, shape.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name of the shape, in lowercase words joined by hyphens.",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+          "type": "string"
+        },
+        "observation": {
+          "description": "What a check observes to check the claim.",
+          "type": "string"
+        },
+        "params": {
+          "description": "The params of the shape's variant of the shape directive.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "also_on": {
+                "description": "The callable params of the spec whose callables also declare the parameter that this host-param reference refers to.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "counterexample": {
+                "description": "When true, the value is an input that no derivation could invent.",
+                "type": "boolean"
+              },
+              "doc": {
+                "description": "The meaning of the param.",
+                "type": "string"
+              },
+              "excludes": {
+                "description": "The params of the spec that an instance does not write beside this one.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "key": {
+                "description": "The key of the param in the directive, in lowercase words joined by hyphens.",
+                "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                "type": "string"
+              },
+              "minimum": {
+                "description": "The least value of an int param.",
+                "type": "integer"
+              },
+              "required": {
+                "description": "When true, an instance of the directive writes the param.",
+                "type": "boolean"
+              },
+              "resolve": {
+                "description": "The kind of declaration that a reference refers to. A reference requires it.",
+                "enum": [
+                  "callable-in-scope",
+                  "package-var",
+                  "value-field",
+                  "host-param",
+                  "member-on-handle",
+                  "type-in-scope"
+                ],
+                "type": "string"
+              },
+              "roles": {
+                "description": "The roles of a contract under which the param applies.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": {
+                "description": "The type of the value: string, int or reference.",
+                "enum": [
+                  "string",
+                  "int",
+                  "reference"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "type",
+              "doc"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "precedence": {
+          "additionalProperties": false,
+          "description": "The detected shapes that rank before this one.",
+          "properties": {
+            "yields_to": {
+              "description": "The detected shapes that rank before this one.",
+              "items": {
+                "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "yields_to"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "form",
+        "claim",
+        "observation",
+        "falsifiability",
+        "counterexamples"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "description": "The assertion of the classification, in neutral vocabulary.",
+          "type": "string"
+        },
+        "counterexamples": {
+          "additionalProperties": false,
+          "description": "The inputs that a check covers.",
+          "properties": {
+            "edge": {
+              "description": "An input at a boundary of the claim.",
+              "type": "string"
+            },
+            "invalid": {
+              "description": "An input that the subject refuses.",
+              "type": "string"
+            },
+            "refused": {
+              "description": "A callable or a use that the classification excludes.",
+              "type": "string"
+            },
+            "unsafe": {
+              "description": "An input that does not pass through the subject unchanged.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "documentary": {
+          "description": "When true, the mixin documents the callable and licenses no check.",
+          "type": "boolean"
+        },
+        "falsifiability": {
+          "description": "What turns red when someone deletes the subject's handling.",
+          "type": "string"
+        },
+        "form": {
+          "const": "mixin",
+          "description": "The form of the spec, mixin.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name of the mixin, in lowercase words joined by hyphens.",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+          "type": "string"
+        },
+        "observation": {
+          "description": "What a check observes to check the claim.",
+          "type": "string"
+        },
+        "params": {
+          "description": "The params of the mixin's variant of the mixin directive.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "also_on": {
+                "description": "The callable params of the spec whose callables also declare the parameter that this host-param reference refers to.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "counterexample": {
+                "description": "When true, the value is an input that no derivation could invent.",
+                "type": "boolean"
+              },
+              "doc": {
+                "description": "The meaning of the param.",
+                "type": "string"
+              },
+              "excludes": {
+                "description": "The params of the spec that an instance does not write beside this one.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "key": {
+                "description": "The key of the param in the directive, in lowercase words joined by hyphens.",
+                "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                "type": "string"
+              },
+              "minimum": {
+                "description": "The least value of an int param.",
+                "type": "integer"
+              },
+              "required": {
+                "description": "When true, an instance of the directive writes the param.",
+                "type": "boolean"
+              },
+              "resolve": {
+                "description": "The kind of declaration that a reference refers to. A reference requires it.",
+                "enum": [
+                  "callable-in-scope",
+                  "package-var",
+                  "value-field",
+                  "host-param",
+                  "member-on-handle",
+                  "type-in-scope"
+                ],
+                "type": "string"
+              },
+              "roles": {
+                "description": "The roles of a contract under which the param applies.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": {
+                "description": "The type of the value: string, int or reference.",
+                "enum": [
+                  "string",
+                  "int",
+                  "reference"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "type",
+              "doc"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "form",
+        "claim",
+        "observation",
+        "falsifiability",
+        "counterexamples"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "description": "The assertion of the classification, in neutral vocabulary.",
+          "type": "string"
+        },
+        "counterexamples": {
+          "additionalProperties": false,
+          "description": "The inputs that a check covers.",
+          "properties": {
+            "edge": {
+              "description": "An input at a boundary of the claim.",
+              "type": "string"
+            },
+            "invalid": {
+              "description": "An input that the subject refuses.",
+              "type": "string"
+            },
+            "refused": {
+              "description": "A callable or a use that the classification excludes.",
+              "type": "string"
+            },
+            "unsafe": {
+              "description": "An input that does not pass through the subject unchanged.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "documentary": {
+          "description": "When true, the contract documents its callables and licenses no check.",
+          "type": "boolean"
+        },
+        "falsifiability": {
+          "description": "What turns red when someone deletes the subject's handling.",
+          "type": "string"
+        },
+        "form": {
+          "const": "contract",
+          "description": "The form of the spec, contract.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name of the contract, in lowercase words joined by hyphens.",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+          "type": "string"
+        },
+        "observation": {
+          "description": "What a check observes to check the claim.",
+          "type": "string"
+        },
+        "params": {
+          "description": "The params of the contract's variant of the contract directive.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "also_on": {
+                "description": "The callable params of the spec whose callables also declare the parameter that this host-param reference refers to.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "counterexample": {
+                "description": "When true, the value is an input that no derivation could invent.",
+                "type": "boolean"
+              },
+              "doc": {
+                "description": "The meaning of the param.",
+                "type": "string"
+              },
+              "excludes": {
+                "description": "The params of the spec that an instance does not write beside this one.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "key": {
+                "description": "The key of the param in the directive, in lowercase words joined by hyphens.",
+                "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                "type": "string"
+              },
+              "minimum": {
+                "description": "The least value of an int param.",
+                "type": "integer"
+              },
+              "required": {
+                "description": "When true, an instance of the directive writes the param.",
+                "type": "boolean"
+              },
+              "resolve": {
+                "description": "The kind of declaration that a reference refers to. A reference requires it.",
+                "enum": [
+                  "callable-in-scope",
+                  "package-var",
+                  "value-field",
+                  "host-param",
+                  "member-on-handle",
+                  "type-in-scope"
+                ],
+                "type": "string"
+              },
+              "roles": {
+                "description": "The roles of a contract under which the param applies.",
+                "items": {
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": {
+                "description": "The type of the value: string, int or reference.",
+                "enum": [
+                  "string",
+                  "int",
+                  "reference"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "type",
+              "doc"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "roles": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "arity": {
+                "description": "The number of callables of the role in one instance: one, optional, many or any.",
+                "enum": [
+                  "one",
+                  "optional",
+                  "many",
+                  "any"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "arity"
+            ],
+            "type": "object"
+          },
+          "description": "The roles of the protocol, with their arity.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*$",
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "form",
+        "claim",
+        "observation",
+        "roles",
+        "falsifiability",
+        "counterexamples"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "A spec of the shape catalog: a shape, a mixin or a contract"
+}

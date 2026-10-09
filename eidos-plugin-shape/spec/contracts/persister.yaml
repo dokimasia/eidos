@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: persister
+form: contract
+claim: >
+  A writer persists a value, and a reader fetches what the writer saved.
+observation: >
+  A check writes a value through the writer, reads it through the reader,
+  and compares the two. A writer without a reader classifies and licenses
+  no round trip.
+roles:
+  writer: {arity: many}
+  reader: {arity: optional}
+falsifiability: >
+  A writer that drops the value leaves the reader without it, and the check
+  turns red.
+counterexamples:
+  edge: a write of the zero value

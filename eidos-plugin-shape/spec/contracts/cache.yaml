@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: cache
+form: contract
+claim: >
+  The cache callable serves a value from its cache, and sends each miss to
+  the backing callable, whose value it stores.
+observation: >
+  A check reads a key through the cache twice, and counts the calls of the
+  backing callable to see one miss and one hit.
+roles:
+  cache: {arity: one}
+  backing: {arity: one}
+falsifiability: >
+  A cache that sends every read to the backing callable counts two calls,
+  and the check turns red.
+counterexamples:
+  edge: a key that the backing callable does not have

@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: reader
+form: shape
+detected: true
+claim: >
+  The callable takes one key, and returns the key's value beside its error.
+  The key is a single value, and no list, map, function or inline
+  interface.
+observation: >
+  A check stores a value under a key through a sibling writer, reads the
+  key, and compares the returned value with the stored one.
+bindings:
+  key: {from: input, index: 0, doc: the parameter of the key}
+  value: {from: result, index: 0, doc: the return of the key's value}
+falsifiability: >
+  Deleting the subject's read returns a zero value or an error for a stored
+  key, and the check turns red.
+counterexamples:
+  edge: a key that has no value
+  refused: a callable whose input is a list of keys, which is a batch reader
+precedence:
+  yields_to: [batch-reader, stream-consumer, answering-writer]

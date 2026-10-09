@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: mutator
+form: shape
+detected: true
+claim: >
+  The callable takes one input and returns nothing. It changes the state
+  that the input refers to, or the state of its receiver.
+observation: >
+  A check calls the subject, and observes the changed state through the
+  input or through a sibling reader of the receiver.
+bindings:
+  value: {from: input, index: 0, doc: the parameter whose state the callable changes}
+falsifiability: >
+  Deleting the subject's change leaves the state as it was, and the check
+  turns red.
+counterexamples:
+  edge: an input whose state the change leaves equal
+  refused: a callable that reports a failure through an error, which is a writer

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: stream-consumer
+form: shape
+detected: true
+claim: >
+  The callable takes a context and one stream, which it reads to the end,
+  and returns one value beside its error.
+observation: >
+  A check passes a stream of known elements, and compares the returned
+  value with the value that it computes over the elements.
+bindings:
+  stream: {from: input, index: 0, doc: the parameter of the stream}
+  value: {from: result, index: 0, doc: the return of the computed value}
+falsifiability: >
+  Deleting the subject's reads returns a value computed over no element,
+  and the check of a stream with elements turns red.
+counterexamples:
+  edge: an empty stream
+  unsafe: a stream that fails after some elements
+precedence:
+  yields_to: [batch-reader]

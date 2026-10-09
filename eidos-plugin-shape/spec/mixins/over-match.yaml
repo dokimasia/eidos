@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: over-match
+form: mixin
+claim: >
+  An iteration of the callable may yield more elements than the query
+  selected, so a check asserts containment and not equality.
+observation: >
+  A check drains the result and expects every selected element in it.
+falsifiability: >
+  A subject that drops a selected element misses it, and the check turns
+  red.
+counterexamples:
+  edge: a query that selects no element

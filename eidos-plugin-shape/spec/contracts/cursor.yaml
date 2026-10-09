@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: cursor
+form: contract
+claim: >
+  A next callable reads the next element of a cursor, and a close callable
+  releases it. Either the two are callables of one package, or an open
+  callable returns a handle, and the next-method and close-method params
+  refer to the methods of the handle.
+observation: >
+  A check reads every element, closes the cursor, and calls next again to
+  see the error that the sentinel param refers to.
+params:
+  - {key: sentinel, type: reference, resolve: package-var, doc: the error that next reports after the close}
+  - {key: next-method, type: reference, resolve: member-on-handle, required: true, roles: [open], doc: the method of the returned handle that reads the next element}
+  - {key: close-method, type: reference, resolve: member-on-handle, roles: [open], doc: the method of the returned handle that releases the cursor}
+roles:
+  next: {arity: optional}
+  close: {arity: optional}
+  open: {arity: optional}
+falsifiability: >
+  A cursor that keeps reading after the close returns an element instead of
+  the sentinel, and the check turns red.
+counterexamples:
+  edge: a cursor over no element

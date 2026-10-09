@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../spec.schema.json
+name: answering-writer
+form: shape
+detected: true
+claim: >
+  The callable takes one value, persists it, and returns a value of the
+  same declared type beside its error, such as the stored value with the
+  fields that the store sets.
+observation: >
+  A check writes a value through the subject, and compares the returned
+  value and the value that a sibling reader returns with the written one.
+bindings:
+  value: {from: input, index: 0, doc: the parameter whose value the callable persists}
+  stored: {from: result, index: 0, doc: the return of the stored value}
+falsifiability: >
+  Deleting the subject's write path leaves the reader without the value,
+  and the check turns red.
+counterexamples:
+  invalid: a value that the subject refuses
+  refused: a callable that returns a value of another type, which is a reader
+precedence:
+  yields_to: [stream-consumer]
