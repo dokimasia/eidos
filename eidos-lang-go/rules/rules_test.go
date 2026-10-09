@@ -23,11 +23,13 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The fixture's packages and files.
+// The fixture's packages and files, and the type whose methods the
+// callable cases resolve from.
 const (
-	fxPath  = "fx"
-	depPath = "fx/dep"
-	fxFile  = "fx/a.go"
+	fxPath    = "fx"
+	depPath   = "fx/dep"
+	fxFile    = "fx/a.go"
+	storeName = "Store"
 )
 
 // The imports the signature cases name: the standard library's
@@ -38,13 +40,13 @@ const (
 	foreignContext = "example.test/context"
 )
 
-// rulesAllocs is one projection pass over the fixture tree: 160 at the
-// default benchtime. A memory profile attributes 78 to TypeOf, 41 to
-// SamplesOf, 15 to MembersOf, 11 to CallableOf and 3 to the fresh view
+// rulesAllocs is one projection pass over the fixture tree: 189 at the
+// default benchtime. A memory profile attributes 96 to TypeOf, 43 to
+// SamplesOf, 17 to CallableOf, 16 to MembersOf and 3 to the fresh view
 // and its binding, and it samples the tiny allocations of the rest only
 // in part. The 2 more are for the runtime's own allocations in a run of
 // one iteration: 300 fresh processes counted 0 or 1.
-const rulesAllocs = 160 + 2
+const rulesAllocs = 189 + 2
 
 // The allocations of a signature's classification and a derived name.
 const (
@@ -85,6 +87,14 @@ func loaded(tb assert.TB) *fixture {
 	tb.Helper()
 
 	_, f := setup(tb)
+	return viewOver(tb, f, id(fxPath, "Row", symbol.KindStruct), fxFile)
+}
+
+// viewOver returns a loaded tree with a tracked view over it, and with the
+// file at a path of the package that declares in.
+func viewOver(tb assert.TB, f *rulestest.Fixture, in symbol.Identity, path string) *fixture {
+	tb.Helper()
+
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
 	assert.NoError(tb, err, "the sealed graph hands out a reader")
@@ -92,14 +102,14 @@ func loaded(tb assert.TB) *fixture {
 		Fixture: f, reader: reader, reads: reads,
 		view: rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys},
 	}
-	pkg, held := f.Graph.PackageOf(id(fxPath, "Row", symbol.KindStruct))
-	assert.True(tb, held, "the fixture package loaded")
+	pkg, held := f.Graph.PackageOf(in)
+	assert.True(tb, held, "the package of "+in.String()+" loaded")
 	for _, file := range pkg.Files {
-		if file.Path == fxFile {
+		if file.Path == path {
 			fx.file = file
 		}
 	}
-	assert.NotNil(tb, fx.file, "the fixture file loaded")
+	assert.NotNil(tb, fx.file, "the file "+path+" loaded")
 	return fx
 }
 
@@ -239,6 +249,33 @@ func TestRules(t *testing.T) {
 
 			assert.Equal(t, gorules.New().ParamRole(&node.Param{}, rules.View{}), rules.ParamInput, "nothing to read")
 		})
+
+		t.Run("classifies a parameter of an alias of context.Context as the context", func(t *testing.T) {
+			t.Parallel()
+
+			v := visible(t)
+			ping, _ := v.decl(t, id(visPath, "Ping", symbol.KindFunction)).(*node.Function)
+			c, _ := v.bound().CallableOf(ping)
+			assert.Equal(t, c.Params[0].Role, rules.ParamContext, "Ctx is an alias of context.Context")
+		})
+
+		t.Run("classifies a parameter of a type defined over context.Context as input", func(t *testing.T) {
+			t.Parallel()
+
+			v := visible(t)
+			wait, _ := v.decl(t, id(visPath, "Wait", symbol.KindFunction)).(*node.Function)
+			c, _ := v.bound().CallableOf(wait)
+			assert.Equal(t, c.Params[0].Role, rules.ParamInput, "Scope is a type of its own")
+		})
+
+		t.Run("classifies a parameter of a cycle of aliases as input", func(t *testing.T) {
+			t.Parallel()
+
+			v := visible(t)
+			spin, _ := v.decl(t, id(visPath, "Spin", symbol.KindFunction)).(*node.Function)
+			c, _ := v.bound().CallableOf(spin)
+			assert.Equal(t, c.Params[0].Role, rules.ParamInput, "the walk over Loop1 and Loop2 ends")
+		})
 	})
 
 	t.Run("ReturnRoles", func(t *testing.T) {
@@ -259,6 +296,15 @@ func TestRules(t *testing.T) {
 			find, _ := f.decl(t, id(fxPath, "Find", symbol.KindFunction)).(*node.Function)
 			c, _ := f.bound().CallableOf(find)
 			assert.Equal(t, c.Returns[1].Role, rules.ReturnOkBool, "the second of two returns, a bool, is ok")
+		})
+
+		t.Run("classifies a last return of an alias of error as the error", func(t *testing.T) {
+			t.Parallel()
+
+			v := visible(t)
+			ping, _ := v.decl(t, id(visPath, "Ping", symbol.KindFunction)).(*node.Function)
+			c, _ := v.bound().CallableOf(ping)
+			assert.Equal(t, c.Returns[0].Role, rules.ReturnError, "Fault is an alias of error")
 		})
 
 		t.Run("reports no error model for a callable without an error return", func(t *testing.T) {
@@ -572,6 +618,13 @@ func All() iter.Seq[Row] { return nil }
 
 func (r Row) Rename(name string) Row { return r }
 
+// Store keeps rows, and its fields are no row's.
+type Store struct{ Size int }
+
+func (s *Store) Put(r *Row) error { return nil }
+
+func (s *Store) Get(id int) (*Row, error) { return nil, nil }
+
 var Registry map[string]Row
 
 const Limit = 16
@@ -595,6 +648,12 @@ func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 // id returns a top-level identity in one fixture package.
 func id(path, name string, kind symbol.Kind) symbol.Identity {
 	return symbol.Identity{Lang: golang.Lang, Package: path, Name: name, Kind: kind}
+}
+
+// method returns the identity of a method of a type in the fixture
+// package.
+func method(host, name string) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: fxPath, Owner: host, Name: name, Kind: symbol.KindMethod}
 }
 
 // ref returns a resolved reference to a fixture type.

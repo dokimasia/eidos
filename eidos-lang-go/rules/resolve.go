@@ -29,26 +29,58 @@ var typeKinds = []symbol.Kind{
 	symbol.KindStruct, symbol.KindInterface, symbol.KindAlias, symbol.KindEnum, symbol.KindSum,
 }
 
+// through names the types whose members a member reference of a
+// callable subject resolves among.
+type through uint8
+
+const (
+	// throughValue is the callable's value: the type of its first value
+	// return, then the type of each input parameter.
+	throughValue through = 1
+	// throughHandle is the handle the callable returns: the type of its
+	// first value return.
+	throughHandle through = 2
+)
+
 // Resolve returns the declaration a directive's spelling names from
-// a subject, the way Go scopes it. A callable, a package variable and
-// a type in scope resolve through the probe of the subject's file,
-// [golang.Scope.Candidates]: the first candidate the view declares at
-// one of the kinds is the declaration. A value field resolves through
-// the member walk over the subject's type, a host parameter on the
-// subject's own signature, and a member on a handle through the type
-// the subject belongs to. A predeclared type resolves to a stand-in
-// naming itself with no package, and a type whose qualifier binds a
-// package the view does not contain to a stand-in naming the import
-// path. A spelling that is not a Go name, bare or qualified, refuses:
-// []Row names no declaration, and probing Row would name another type.
+// a subject, the way Go scopes it:
+//
+//   - A callable resolves among the methods of the type a method
+//     subject belongs to, which the method calls through its receiver,
+//     and then through the probe of the subject's file,
+//     [golang.Scope.Candidates], to a function.
+//   - A package variable and a type in scope resolve through the probe:
+//     the first candidate the view declares at one of the kinds is the
+//     declaration.
+//   - A value field resolves among the fields of the subject's value:
+//     the subject itself for a type, the type a field belongs to, and
+//     for a callable the type of its first value return, then the type
+//     of each input parameter.
+//   - A member on a handle resolves among the fields and the methods of
+//     the subject's handle: the subject itself for a type, the type a
+//     field belongs to, and for a callable the type of its first value
+//     return.
+//   - A host parameter resolves on the subject's own signature.
+//
+// A member resolves only where Go code of the subject's package can use
+// it, so an unexported member of a type of another package does not
+// resolve. A pointer counts as the type it points to. A predeclared type
+// resolves to a stand-in with the name of the type and no package. A
+// type whose qualifier binds a package that the view does not contain
+// resolves to a stand-in with the import path as its package. Resolve
+// refuses a spelling that is not a Go name, bare or qualified: []Row is
+// the name of no declaration, and a probe of Row would find another
+// type.
 //
 // # Allocation contract
 //
 // A resolution through the probe allocates the scope of the subject's
 // file and the list of candidates: four allocations for a file without
-// a dot import. A member resolution allocates the binding the member
-// walk runs on and what the walk allocates. A stand-in and a refusal
-// allocate themselves.
+// a dot import. A member resolution allocates the list of the types it
+// searches, the binding the member walk runs on, and what the walk
+// allocates. A callable of a method subject resolves among the members
+// first, and through the probe where no member has the name. A
+// stand-in and a refusal allocate themselves.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -58,20 +90,44 @@ func (r Rules) Resolve(
 	}
 	switch kind {
 	case directive.ResolveCallableInScope:
-		return inScope(scope, name, v, symbol.KindFunction)
+		return r.callable(scope, name, v)
 	case directive.ResolvePackageVar:
 		return inScope(scope, name, v, symbol.KindVariable, symbol.KindConstant)
 	case directive.ResolveValueField:
-		return r.member(scope, name, v, symbol.KindField)
+		return r.member(scope, name, v, throughValue, symbol.KindField)
 	case directive.ResolveHostParam:
 		return hostParam(scope, name, v)
 	case directive.ResolveMemberOnHandle:
-		return r.member(scope, name, v, symbol.KindField, symbol.KindMethod)
+		return r.member(scope, name, v, throughHandle, symbol.KindField, symbol.KindMethod)
 	case directive.ResolveTypeInScope:
 		return typeInScope(scope, name, v)
 	default:
 		return nil, refuse("%s is not a resolution Go performs", kind)
 	}
+}
+
+// callable resolves a callable from a subject: a method of the type a
+// method subject belongs to, which the method calls through its
+// receiver, before a function the probe of the subject's file finds.
+// Every other subject resolves a function through the probe alone.
+func (r Rules) callable(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
+	sym, _ := v.Lookup(scope.Subject)
+	method, isMethod := sym.(*node.Method)
+	if !isMethod {
+		return inScope(scope, name, v, symbol.KindFunction)
+	}
+	owner, _ := v.Lookup(method.Host)
+	if host, isType := owner.(node.Declaration); isType {
+		b := rules.NewBound(r, v, nil)
+		if sibling, found := memberNamed(b, host, name, scope.Subject.Package, symbol.KindMethod); found {
+			return sibling, nil
+		}
+	}
+	if fn, err := inScope(scope, name, v, symbol.KindFunction); err == nil {
+		return fn, nil
+	}
+	return nil, refuse("%s has no method named %s, and no function named %s is in scope of %s",
+		method.Host, name, name, scope.Subject)
 }
 
 // inScope resolves a Go name to the first top-level declaration of
@@ -129,31 +185,123 @@ func firstDeclared(
 	return nil, refuse("no %s named %s is in scope of %s", kindList(kinds), name, scope.Subject)
 }
 
-// member resolves a name among the effective members of the type
-// the subject belongs to: the subject itself for a type, its host
-// for a field or a method.
+// member resolves a name among the effective members of the types that
+// [Rules.holders] returns for the subject, the first type that has a
+// member of the name and one of the kinds deciding.
 func (r Rules) member(
-	scope rules.Scope, name string, v rules.View, kinds ...symbol.Kind,
+	scope rules.Scope, name string, v rules.View, via through, kinds ...symbol.Kind,
 ) (symbol.Symbol, error) {
-	host, err := hostType(scope.Subject, v)
+	types, err := r.holders(scope.Subject, v, via)
 	if err != nil {
 		return nil, err
 	}
-	set, is := rules.NewBound(r, v, nil).MembersOf(host)
-	if !is {
-		return nil, refuse("%s has no members to resolve %s in", scope.Subject, name)
+	b := rules.NewBound(r, v, nil)
+	for _, t := range types {
+		if m, found := memberNamed(b, t, name, scope.Subject.Package, kinds...); found {
+			return m, nil
+		}
 	}
+	searched := make([]string, 0, len(types))
+	for _, t := range types {
+		searched = append(searched, t.Identity().String())
+	}
+	return nil, refuse("%s has no %s member named %s that the package %s can use",
+		strings.Join(searched, " or "), kindList(kinds), name, scope.Subject.Package)
+}
+
+// holders returns the types whose members a member reference of a
+// subject resolves among: the subject itself for a type, the type a
+// field belongs to, and for a callable the types of its value under
+// via, in the order [Rules.valueTypes] gives. It refuses a subject, or
+// the type of a field, that the view does not declare.
+func (r Rules) holders(subject symbol.Identity, v rules.View, via through) ([]node.Declaration, error) {
+	sym, _ := v.Lookup(subject)
+	if field, isField := sym.(*node.Field); isField {
+		sym, _ = v.Lookup(field.Host)
+	}
+	switch s := sym.(type) {
+	case *node.Struct, *node.Interface, *node.Enum, *node.Sum:
+		decl, _ := sym.(node.Declaration)
+		return []node.Declaration{decl}, nil
+	case *node.Function:
+		return r.valueTypes(subject, s.Params, s.Returns, v, via)
+	case *node.Method:
+		return r.valueTypes(subject, s.Params, s.Returns, v, via)
+	default:
+		return nil, refuse("%s belongs to no type the view declares", subject)
+	}
+}
+
+// valueTypes returns the declarations of a callable's value: the type
+// of its first value return, then, through the value, the type of each
+// input parameter, in order. A pointer counts as the type it points to.
+// A reference without a declaration in the view, such as a predeclared
+// type, has no members and is left out. A callable whose value has no
+// declaration refuses.
+func (r Rules) valueTypes(
+	subject symbol.Identity, params []*node.Param, returns []*node.Return, v rules.View, via through,
+) ([]node.Declaration, error) {
+	var out []node.Declaration
+	roles, _ := r.ReturnRoles(returns, v)
+	for i, ret := range returns {
+		if ret != nil && roles[i] == rules.ReturnValue {
+			out = appendDeclared(out, ret.Type, v)
+			break
+		}
+	}
+	if via == throughValue {
+		for _, p := range params {
+			if p != nil && r.ParamRole(p, v) == rules.ParamInput {
+				out = appendDeclared(out, p.Type, v)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, refuse("%s has no value of a type the view declares", subject)
+	}
+	return out, nil
+}
+
+// appendDeclared appends the declaration a reference names to out, a
+// pointer counting as the type it points to, and returns out unchanged
+// for a reference without a declaration in the view.
+func appendDeclared(out []node.Declaration, ref *node.TypeRef, v rules.View) []node.Declaration {
+	for ref != nil && ref.Form == symbol.FormOptional && len(ref.Elems) == 1 {
+		ref = ref.Elems[0]
+	}
+	// A structural reference and an unresolved name have the zero
+	// target, which the view looks up as nothing.
+	var target symbol.Identity
+	if ref != nil {
+		target = ref.Target
+	}
+	sym, held := v.Lookup(target)
+	decl, names := sym.(node.Declaration)
+	if !held || !names {
+		return out
+	}
+	return append(out, decl)
+}
+
+// memberNamed returns the effective member of a type with a name and one
+// of the kinds that Go code of the package from can use, and false where
+// the type has none. An unexported member is usable only in the package
+// that declares it. A symbol that is no type has no members.
+func memberNamed(
+	b rules.Bound, host node.Declaration, name, from string, kinds ...symbol.Kind,
+) (symbol.Symbol, bool) {
+	set, _ := b.MembersOf(host)
 	for _, m := range set.Members {
-		decl, names := m.Symbol.(node.Declaration)
-		if !names {
-			continue
+		var id symbol.Identity
+		if decl, names := m.Symbol.(node.Declaration); names {
+			id = decl.Identity()
 		}
-		id := decl.Identity()
-		if id.Name == name && slices.Contains(kinds, id.Kind) {
-			return m.Symbol, nil
+		usable := token.IsExported(id.Name) || id.Package == from
+		if id.Name == name && slices.Contains(kinds, id.Kind) && usable {
+			return m.Symbol, true
 		}
 	}
-	return nil, refuse("%s has no %s member named %s", host.Identity(), kindList(kinds), name)
+	return nil, false
 }
 
 // hostParam resolves a parameter on the subject's own signature.
@@ -177,39 +325,6 @@ func hostParam(scope rules.Scope, name string, v rules.View) (symbol.Symbol, err
 		}
 	}
 	return nil, refuse("%s declares no parameter named %s", scope.Subject, name)
-}
-
-// hostType returns the type a subject belongs to: the subject
-// itself where it is a type, and its host where it is a member.
-func hostType(subject symbol.Identity, v rules.View) (node.Declaration, error) {
-	sym, held := v.Lookup(subject)
-	if !held {
-		return nil, refuse("%s is outside the view", subject)
-	}
-	var host symbol.Identity
-	switch m := sym.(type) {
-	case *node.Struct, *node.Interface, *node.Enum, *node.Sum:
-		decl, names := sym.(node.Declaration)
-		if !names {
-			return nil, refuse("%s has no identity", subject)
-		}
-		return decl, nil
-	case *node.Field:
-		host = m.Host
-	case *node.Method:
-		host = m.Host
-	default:
-		return nil, refuse("%s belongs to no type", subject)
-	}
-	owner, held := v.Lookup(host)
-	if !held {
-		return nil, refuse("%s, the type %s belongs to, is outside the view", host, subject)
-	}
-	decl, names := owner.(node.Declaration)
-	if !names {
-		return nil, refuse("%s has no identity", host)
-	}
-	return decl, nil
 }
 
 // scopeOf returns the scope a file's imports bind, and the zero
@@ -250,17 +365,13 @@ func packageIdentity(path string) symbol.Identity {
 // declarations and nothing nested inside them.
 func declared(pkg *node.Package, name string, kinds ...symbol.Kind) symbol.Symbol {
 	for _, f := range pkg.Files {
-		if f == nil {
-			continue
-		}
 		for _, sym := range f.Decls {
-			decl, names := sym.(node.Declaration)
-			if !names {
-				continue
+			var id symbol.Identity
+			if decl, names := sym.(node.Declaration); names {
+				id = decl.Identity()
 			}
-			id := decl.Identity()
 			if id.Owner == "" && id.Name == name && slices.Contains(kinds, id.Kind) {
-				return decl
+				return sym
 			}
 		}
 	}

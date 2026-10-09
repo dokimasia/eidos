@@ -24,6 +24,11 @@ const (
 	contextName    = "Context"
 )
 
+// aliasDepth is the longest chain of transparent aliases that the
+// signature rules follow. Go refuses a cycle of aliases, so the bound
+// only ends a walk over a damaged graph.
+const aliasDepth = 8
+
 // The types a signature's parameters and returns classify by.
 var (
 	boolType    = typeName{name: boolSpelling}
@@ -75,9 +80,10 @@ func (Rules) Members() rules.MemberPolicy {
 // and every other as input. Go states the context first by
 // convention, and a context anywhere in the list reads as one. The
 // package the reference's import names and the name decide, so an
-// aliased import of context classifies too. It allocates nothing.
-func (Rules) ParamRole(p *node.Param, _ rules.View) rules.ParamRole {
-	if p != nil && p.Type != nil && nameOf(p.Type) == contextType {
+// aliased import of context classifies too, and so does a transparent
+// alias of context.Context that the view declares. It allocates nothing.
+func (Rules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
+	if p != nil && p.Type != nil && nameOf(unaliased(p.Type, v)) == contextType {
 		return rules.ParamContext
 	}
 	return rules.ParamInput
@@ -87,16 +93,18 @@ func (Rules) ParamRole(p *node.Param, _ rules.View) rules.ParamRole {
 // type error is the error under the last-return model, the second
 // of two returns of type bool is the ok flag, an iter.Seq or
 // iter.Seq2 return is a stream, under any alias of the import, and
-// the rest are values. A callable without an error return reports no
-// error model. It allocates the list of roles, one allocation.
-func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
+// the rest are values. It classifies a transparent alias that the view
+// declares as the target of the alias. A callable without an error
+// return reports no error model. It allocates the list of roles, one
+// allocation.
+func (Rules) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	roles := make([]rules.ReturnRole, len(rs))
 	model := rules.ErrorsNone
 	for i, r := range rs {
 		if r == nil || r.Type == nil {
 			continue
 		}
-		switch t := nameOf(r.Type); {
+		switch t := nameOf(unaliased(r.Type, v)); {
 		case i == len(rs)-1 && t == errorType:
 			roles[i] = rules.ReturnError
 			model = rules.ErrorsLastReturn
@@ -120,6 +128,25 @@ func (Rules) TypeName(word, base string) string {
 		return naming.Pascal(word) + base
 	}
 	return naming.Camel(word) + naming.Pascal(base)
+}
+
+// unaliased returns the target of a transparent alias, after it follows a
+// chain of aliases that the view declares, and the reference itself for
+// any other. A defined type is a type of its own, so the walk stops at
+// one. It reads each alias through the view, and allocates nothing.
+func unaliased(ref *node.TypeRef, v rules.View) *node.TypeRef {
+	for range aliasDepth {
+		if ref.Target.Kind != symbol.KindAlias {
+			return ref
+		}
+		sym, _ := v.Lookup(ref.Target)
+		alias, isAlias := sym.(*node.Alias)
+		if !isAlias || alias.Defined || alias.Target == nil {
+			return ref
+		}
+		ref = alias.Target
+	}
+	return ref
 }
 
 // named returns the spelling a reference names, its whitespace
