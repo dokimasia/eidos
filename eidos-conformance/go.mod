@@ -11,6 +11,7 @@ require (
 	go.dokimi.dev/eidos/lang/protobuf v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/rust v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/typescript v0.0.0-00010101000000-000000000000
+	go.dokimi.dev/eidos/plugin/shape v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/sdk v0.0.0-00010101000000-000000000000
 )
 
@@ -44,5 +45,7 @@ replace go.dokimi.dev/eidos/lang/protobuf => ../eidos-lang-protobuf
 replace go.dokimi.dev/eidos/lang/rust => ../eidos-lang-rust
 
 replace go.dokimi.dev/eidos/lang/typescript => ../eidos-lang-typescript
+
+replace go.dokimi.dev/eidos/plugin/shape => ../eidos-plugin-shape
 
 replace go.dokimi.dev/eidos/sdk => ../eidos-sdk
