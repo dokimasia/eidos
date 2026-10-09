@@ -61,9 +61,9 @@ linters:
         # Plugin modules import the SDK facade alone, and the kernel
         # arrives transitively through go.dokimi.dev/eidos/sdk, so a
         # regrouping of the kernel moves no plugin's import path.
-        # eidos-reference is not listed: a reference composition is
-        # host side and composes the workspace, which the facade does
-        # not re-export.
+        # eidos-reference and the tools module of the shape catalog are
+        # not listed: each is host side and composes the workspace,
+        # which the facade does not re-export.
         plugin-modules:
           files:
             - "**/eidos-lang/**"
@@ -75,9 +75,22 @@ linters:
             - "**/eidos-lang-rust/**"
             - "**/eidos-lang-typescript/**"
             - "**/eidos-plugin-shape/**"
+            - "!**/eidos-plugin-shape/tools/**"
           deny:
             - pkg: go.dokimi.dev/eidos/core
               desc: plugin source speaks the facade; import go.dokimi.dev/eidos/sdk instead
+
+        # The shape catalog is language-neutral: a detector reads the
+        # projection of a callable, and a composition supplies the
+        # language. The tools module composes the Go backend, so it is
+        # not listed.
+        shape-catalog:
+          files:
+            - "**/eidos-plugin-shape/**"
+            - "!**/eidos-plugin-shape/tools/**"
+          deny:
+            - pkg: go.dokimi.dev/eidos/lang
+              desc: the catalog reads the projection of the SDK facade; a composition supplies the language
 
         # The read side parses source into the graph and never
         # renders: core/frontend reaches the store and the node

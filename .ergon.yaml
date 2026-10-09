@@ -74,11 +74,12 @@ checks:
         line: 90
       - path: eidos-lang-typescript/...
         line: 85
+      - path: eidos-plugin-shape/...
+        line: 100
       # The remaining modules hold a package comment and no
       # declarations, so their coverage is 0 of 0 statements and any
       # floor fails them. Each takes an entry when it holds code:
-      # eidos-lang-kotlin, eidos-lang-php, eidos-plugin-shape,
-      # eidos-reference.
+      # eidos-lang-kotlin, eidos-lang-php, eidos-reference.
     top_n: 10
 
   mutation:

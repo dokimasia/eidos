@@ -17,6 +17,7 @@ use (
 	./eidos-lang-rust
 	./eidos-lang-typescript
 	./eidos-plugin-shape
+	./eidos-plugin-shape/tools
 	./eidos-reference
 	./eidos-sdk
 )
