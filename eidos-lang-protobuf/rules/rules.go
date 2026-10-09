@@ -130,6 +130,9 @@ func (Rules) TypeName(word, base string) string {
 //     [directive.ResolveMemberOnHandle] resolve among the fields of
 //     the message the subject belongs to, the members of its oneofs
 //     included, because a oneof member is a field of the message.
+//     From an rpc, a value field resolves among the fields of its
+//     response message and then of its request message, and a member
+//     on a handle among the fields of its response message.
 //   - [directive.ResolveHostParam] resolves on the subject's own rpc.
 //   - [directive.ResolveTypeInScope] resolves a message, an enum or
 //     a oneof; [directive.ResolveCallableInScope] resolves a service
@@ -159,8 +162,10 @@ func (Rules) Resolve(
 		return nil, fmt.Errorf("protobuf: nothing to resolve")
 	}
 	switch kind {
-	case directive.ResolveValueField, directive.ResolveMemberOnHandle:
-		return member(scope, name, v)
+	case directive.ResolveValueField:
+		return member(scope, name, v, throughValue)
+	case directive.ResolveMemberOnHandle:
+		return member(scope, name, v, throughHandle)
 	case directive.ResolveHostParam:
 		return hostParam(scope, name, v)
 	case directive.ResolveTypeInScope:
@@ -289,9 +294,28 @@ func enclosingMessage(subject symbol.Identity, v rules.View) *node.Struct {
 	return nil
 }
 
-// member resolves a name among the fields of the message a subject
-// belongs to, the members of its oneofs included.
-func member(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
+// through names the messages whose fields a reference from an rpc
+// resolves among.
+type through uint8
+
+const (
+	// throughValue is the rpc's value: its response message, then its
+	// request message.
+	throughValue through = 1
+	// throughHandle is the handle the rpc returns: its response message.
+	throughHandle through = 2
+)
+
+// member resolves a name among the fields of the message of a subject, the
+// members of its oneofs included. For an rpc, [rpcField] resolves the name
+// among the messages of its value or its handle, which via selects. For
+// any other subject, the message is the message that the subject belongs
+// to.
+func member(scope rules.Scope, name string, v rules.View, via through) (symbol.Symbol, error) {
+	sym, _ := v.Lookup(scope.Subject)
+	if rpc, isRPC := sym.(*node.Method); isRPC {
+		return rpcField(rpc, name, v, via)
+	}
 	msg := enclosingMessage(scope.Subject, v)
 	if msg == nil {
 		if _, known := v.Lookup(scope.Subject); !known {
@@ -303,6 +327,38 @@ func member(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error)
 		return f, nil
 	}
 	return nil, fmt.Errorf("protobuf: no field of %s is named %s", msg.ID, name)
+}
+
+// rpcField resolves a name among the fields of an rpc's messages: its
+// response, then, through the value, its request. A stream counts as
+// the message of its elements, and a message that the view does not
+// contain is left out.
+func rpcField(rpc *node.Method, name string, v rules.View, via through) (symbol.Symbol, error) {
+	refs := make([]*node.TypeRef, 0, 2)
+	for _, r := range rpc.Returns {
+		refs = append(refs, r.Type)
+	}
+	if via == throughValue {
+		for _, p := range rpc.Params {
+			refs = append(refs, p.Type)
+		}
+	}
+	for _, ref := range refs {
+		for ref != nil && ref.Form == symbol.FormStream && len(ref.Elems) == 1 {
+			ref = ref.Elems[0]
+		}
+		var target symbol.Identity
+		if ref != nil {
+			target = ref.Target
+		}
+		sym, _ := v.Lookup(target)
+		if msg, isMessage := sym.(*node.Struct); isMessage {
+			if f := fieldNamed(msg, name); f != nil {
+				return f, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("protobuf: no field of the messages of %s is named %s", rpc.ID, name)
 }
 
 // fieldNamed returns a message's field of one name, a oneof

@@ -42,4 +42,5 @@ service Store {
   // Get reads one row.
   rpc Get(Row) returns (Row);
   rpc Watch(Row) returns (stream Row);
+  rpc Lookup(Row.Key) returns (Empty);
 }

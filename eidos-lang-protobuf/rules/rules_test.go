@@ -28,13 +28,13 @@ const (
 	depPkg = "dep"
 )
 
-// rulesAllocs is one projection pass over the schema tree: 75 at the
-// default benchtime. A memory profile attributes about 28 to SamplesOf,
-// 27 to TypeOf, 5 to CallableOf, 4 to MembersOf and 3 to the fresh view
+// rulesAllocs is one projection pass over the schema tree: 80 at the
+// default benchtime. A memory profile attributes about 30 to SamplesOf,
+// 27 to TypeOf, 6 to CallableOf, 4 to MembersOf and 3 to the fresh view
 // and its binding, and it samples the tiny allocations of the rest only
 // in part. The 2 more are for the runtime's own allocations in a run of
 // one iteration: 300 fresh processes counted 0 or 1.
-const rulesAllocs = 75 + 2
+const rulesAllocs = 80 + 2
 
 // The allocations of a signature's classification, a derived name and
 // a resolution.
@@ -442,6 +442,49 @@ func TestRules(t *testing.T) {
 			_, err := protorules.New().Resolve(scope, "ghost", directive.ResolveHostParam, f.view)
 			assert.HasError(t, err, "the rpc declares one parameter")
 			assert.Contains(t, err.Error(), "declares no parameter", "the error states why")
+		})
+
+		rpcs := []struct {
+			name  string
+			index int
+			give  string
+			kind  directive.ResolutionKind
+			want  symbol.Identity
+		}{
+			{
+				name: "returns a field of the response message of an rpc",
+				give: "name", kind: directive.ResolveValueField, want: nameID,
+			},
+			{
+				name:  "returns a field of the message of a response stream",
+				index: 1, give: "name", kind: directive.ResolveMemberOnHandle, want: nameID,
+			},
+			{
+				name:  "returns a field of the request message where the response has none",
+				index: 2, give: "id", kind: directive.ResolveValueField,
+				want: member(svcPkg, "Row.Key", "id", symbol.KindField),
+			},
+		}
+		for _, tt := range rpcs {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				scope := rules.Scope{Subject: f.rpc(t, tt.index).ID}
+				got, err := protorules.New().Resolve(scope, tt.give, tt.kind, f.view)
+				assert.NoError(t, err, "the field resolves from the rpc")
+				assert.Equal(t, identityOf(t, got), tt.want, "to the field")
+			})
+		}
+
+		t.Run("returns an error for a member of a handle that only the request declares", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			scope := rules.Scope{Subject: f.rpc(t, 2).ID}
+			_, err := protorules.New().Resolve(scope, "id", directive.ResolveMemberOnHandle, f.view)
+			assert.HasError(t, err, "Empty, the response, has no field")
+			assert.Contains(t, err.Error(), "no field of the messages", "the error states why")
 		})
 	})
 }
