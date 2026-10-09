@@ -48,7 +48,8 @@ var (
 	// a role.
 	MissingRole = core.MissingRole
 	// DuplicateInstance refuses a second instance of a
-	// single-instance schema.
+	// single-instance schema, and a second instance of one variant of
+	// a repeatable schema.
 	DuplicateInstance = core.DuplicateInstance
 	// RequirementUnmet refuses an instance whose schema requires a
 	// directive the subject does not have.
@@ -84,6 +85,10 @@ var (
 	// DeprecatedDirective warns where an instance uses a directive or a
 	// param that its schema deprecates, and states the schema's rewrite.
 	DeprecatedDirective = core.DeprecatedDirective
+	// UnknownVariant refuses an instance of a schema with variants that
+	// has no variant, or that has a name that no variant of the schema
+	// has.
+	UnknownVariant = core.UnknownVariant
 )
 
 // Name is a directive's spelling: bare while one plugin claims it,
@@ -279,16 +284,23 @@ type ResolutionKind = core.ResolutionKind
 const (
 	// ResolveNone marks a non-reference param.
 	ResolveNone = core.ResolveNone
-	// ResolveCallableInScope names a callable the subject can see.
+	// ResolveCallableInScope names a callable the subject can see: for
+	// a method, a method of the type it belongs to before a function in
+	// scope.
 	ResolveCallableInScope = core.ResolveCallableInScope
 	// ResolvePackageVar names a package-level variable.
 	ResolvePackageVar = core.ResolvePackageVar
-	// ResolveValueField names a field on the subject's own type.
+	// ResolveValueField names a field of the subject's value: the
+	// subject's own type for a type, the type a field belongs to, and
+	// for a callable the type of its first value return, then the type
+	// of each input parameter.
 	ResolveValueField = core.ResolveValueField
 	// ResolveHostParam names a parameter of the host callable.
 	ResolveHostParam = core.ResolveHostParam
-	// ResolveMemberOnHandle names a member accessed through a
-	// handle the directive's other params establish.
+	// ResolveMemberOnHandle names a field or a method of the subject's
+	// handle: the subject's own type for a type, the type a field
+	// belongs to, and for a callable the type of its first value
+	// return.
 	ResolveMemberOnHandle = core.ResolveMemberOnHandle
 	// ResolveMetadataKey resolves against the metadata registry: a
 	// key's boundary spelling or a fact group's name. A typo is a
@@ -327,6 +339,16 @@ const (
 // lists are all refused there, so validation never meets a
 // malformed spec.
 type ParamSpec = core.ParamSpec
+
+// Variant is one variant of a schema, such as writer in shape writer. The
+// first positional argument of an instance selects it. Its params join the
+// schema's, and its roles apply in place of the schema's.
+//
+// A variant is data, checked whole with its schema at registration: a name
+// the grammar cannot spell, a name declared twice, an empty doc, and a
+// param with the key of a schema param are refused there, and its params
+// and roles are checked as a schema's are.
+type Variant = core.Variant
 
 // Schema declares one directive: the closed contract between the
 // author who writes an instance in source and the plugin whose
@@ -372,6 +394,13 @@ type Resolver = core.Resolver
 // [DeprecatedDirective] that states the schema's rewrite, and validates
 // as before.
 //
+// An instance of a schema with variants selects its variant with its
+// first positional argument. The variant's params join the schema's, and
+// the variant's roles apply. An instance without a variant, or with a
+// name that no variant has, reports [UnknownVariant] with the names of
+// the variants. A repeatable schema admits one instance of each variant
+// on a subject, and reports a second one under [DuplicateInstance].
+//
 // keys resolves ResolveMetadataKey params, and a ResolveDiagnosticCode
 // param resolves against the codes that [diag.MustRegister] registered.
 // resolve binds every other reference kind, and a nil resolver leaves
@@ -383,13 +412,14 @@ type Resolver = core.Resolver
 //
 // # Allocation contract
 //
-// Validate allocates what it returns: the slice of instances, and per
-// instance its params map with the map's one group, each param's value,
-// which the map stores apart from the group because a [Value] is larger
-// than 128 bytes, the positional arguments, and each list. A subject
-// with more than four instances, and an instance with more than eight
-// params, grow the working storage onto the heap. A finding allocates
-// what the sink does.
+// Validate allocates the instances that it returns. The slice of the
+// instances is one allocation. Each instance allocates its params map, the
+// one group of the map, and each param's value, which the map stores apart
+// from the group because a [Value] is larger than 128 bytes. Each instance
+// also allocates its positional arguments and each list. A subject with
+// more than four instances, and an instance with more than eight params,
+// grow the working storage onto the heap. A finding allocates what the
+// sink does.
 func Validate(subject symbol.Identity, ds []Raw, r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink) []Directive {
 	return core.Validate(subject, ds, r, keys, resolve, sink)
 }

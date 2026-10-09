@@ -375,8 +375,12 @@ type Pred = core.Pred
 // subscription record carries it as data. A handle a composition
 // assigns later is still zero at this point and the gate would
 // watch nothing, so Build panics on it: a handler may read such a
-// handle through its closure, a gate may not. HasKey allocates the
-// test's closure over the key, one allocation.
+// handle through its closure, a gate may not. A handle from
+// [meta.Named] has the name of another registrant's key and no id. The
+// workspace binds the gate when it builds, and refuses a name that the
+// registry does not contain under T. HasKey allocates the test's closure
+// over the key, one allocation, and for a named handle the closure that
+// binds it, two allocations.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return core.HasKey[T](k)
 }
@@ -386,9 +390,11 @@ func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 type Equatable = core.Equatable
 
 // KeyEquals admits a subject on which the value arbitration selects
-// for k equals v. The key is read when the gate is declared, as
-// [HasKey] states. KeyEquals allocates the test's closure over the key
-// and the value, one allocation.
+// for k equals v. The key is read when the gate is declared, and a named
+// handle binds when the workspace builds, as [HasKey] states. KeyEquals
+// allocates the test's closure over the key and the value, one
+// allocation, and for a named handle the closure that binds it, two
+// allocations.
 func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return core.KeyEquals[T](k, v)
 }
@@ -402,12 +408,14 @@ func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 // invalidation edges and audit output analyzable.
 type Stamper = core.Stamper
 
-// Stamp records v under k with the envelope pre-bound: plugin
-// authority, the phase call's bucket and plugin, the invocation's
-// place in canonical match order, meaning the rule, the subject and the
-// gating instance, and the invocation's point reads so far as the
-// claim's derivation. A write the fact store refuses reports an Error
-// at the subject's position under [RefusedStamp], and the phase
+// Stamp records v under k on the subject of the match. The claim has the
+// phase call's bucket and plugin, and the invocation's place in
+// canonical match order, which is the rule, the subject and the gating
+// instance. The invocation's point reads so far are the claim's
+// derivation. In a match that a directive gates, the claim has directive
+// authority and the gating instance's position. In every other match,
+// it has plugin authority. A write that the fact store refuses reports
+// an Error at the subject's position under [RefusedStamp], and the phase
 // continues.
 //
 // # Allocation contract

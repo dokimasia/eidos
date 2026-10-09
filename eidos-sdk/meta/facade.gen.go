@@ -117,6 +117,8 @@ func NewFacts(r *Registry) *Facts {
 //
 // Error modes:
 //   - a key nothing registered;
+//   - a named handle, because a registrant writes through the handle
+//     that [Register] returned;
 //   - a subject kind the key does not admit;
 //   - a false boolean. Absence is the negative, so a fact turns false
 //     only through a drop or a withdrawal;
@@ -143,7 +145,9 @@ func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 
 // Get returns the winning value, untracked, and false where the
 // winner is a drop or nothing was stamped. A list is copied out, so a
-// caller cannot write into a bag.
+// caller cannot write into a bag. A named handle resolves in the store's
+// registry, and reads absent where the registry has no key of its name
+// and type.
 //
 // # Allocation contract
 //
@@ -157,7 +161,9 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 // into rec. It records a miss as well, so the reader runs again when the
 // fact appears. A subject of a kind the key does not admit reads absent
 // and records nothing, because [Stamp] refuses every claim on it. Every
-// plugin reads through Fact. [Get] is the kernel's untracked path.
+// plugin reads through Fact. [Get] is the kernel's untracked path. A
+// named handle resolves as Get resolves it, and a name that the registry
+// does not contain reads absent and records the read by its name.
 //
 // # Allocation contract
 //
@@ -253,8 +259,22 @@ type FactValue = core.FactValue
 // gate predicates all go through it, so the compiler checks the
 // value type.
 //
-// The zero Key names nothing: every handle comes from [Register].
+// A handle comes from [Register], or from [Named] for a key that another
+// registrant registers. A named handle has the name alone, and a read
+// resolves it in the registry of the store that it reads. The zero Key
+// has neither an id nor a name.
 type Key[T FactValue] = core.Key[T]
+
+// Named returns a handle on the key with the name name, for a plugin whose
+// predicates or handlers read a key that another plugin registers. The
+// handle has no id. A gate on it binds when the workspace builds, and a
+// read resolves the name in the registry of the store that it reads. A
+// read of a name that nothing registered under T finds no fact. A write
+// through the handle is refused, because a registrant writes through the
+// handle that [Register] returned. Named allocates nothing.
+func Named[T FactValue](name KeyName) Key[T] {
+	return core.Named[T](name)
+}
 
 // GroupName names a fact group: a bundle a writer declares, such as
 // every key its classification stamps. The name is public API, and

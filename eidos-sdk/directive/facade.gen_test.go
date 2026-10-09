@@ -231,6 +231,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("UnknownVariant", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, directive.UnknownVariant, core.UnknownVariant, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Name", func(t *testing.T) {
 		t.Parallel()
 
@@ -678,6 +688,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[directive.ParamSpec](), reflect.TypeFor[core.ParamSpec](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Variant", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[directive.Variant](), reflect.TypeFor[core.Variant](), "the facade aliases the kernel's type")
 		})
 	})
 

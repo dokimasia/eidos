@@ -609,6 +609,14 @@ type DirectiveProvider = core.DirectiveProvider
 // collection.
 type KeyProvider = core.KeyProvider
 
+// KeyBinder binds the plugin's predicates on named key handles, the
+// handles with the name of a key of another registrant. The workspace
+// calls BindKeys once, after it seals the key registry and before the
+// first phase call. The message of the error contains the plugin and each
+// key that the registry does not contain under the handle's value type,
+// and the workspace collects the error as a fault of the composition.
+type KeyBinder = core.KeyBinder
+
 // OutputProvider declares the file families a generator emits.
 type OutputProvider = core.OutputProvider
 
