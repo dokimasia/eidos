@@ -83,7 +83,9 @@ var UnformattedFile = core.UnformattedFile
 
 // RefusedTemplate reports a template that exists and still failed
 // at execute time, naming the emitting plugin: the declaration is
-// skipped and the file renders without it.
+// skipped and the file renders without it. A reference template that
+// reads a key that a map of its data does not contain fails at execute
+// time.
 var RefusedTemplate = core.RefusedTemplate
 
 // UnspeltValue reports a scaffold value the target language has no
@@ -122,6 +124,12 @@ var DroppedSlots = core.DroppedSlots
 // declares no template for: the cluster's declarations are
 // skipped and the file renders without them.
 var UnknownGroup = core.UnknownGroup
+
+// MixedClaim reports a file that mixes the units of a family that claims
+// its files with units of another family: the file has no one template
+// to write it, so the pass withholds it. Two families meet in one file
+// where a layout refinement routes both to one filename.
+var MixedClaim = core.MixedClaim
 
 // HelperCollision reports two plugins registering one template
 // helper name outside the shared vocabulary: the first registration

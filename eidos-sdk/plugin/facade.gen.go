@@ -164,7 +164,9 @@ type ExportDoc = core.ExportDoc
 // NewExport returns a plan's export: every declaration of the units of
 // files, and every name the settle visits inside them except
 // parameters, results and type parameters, so a type's fields and
-// methods and an enum's values are listed beside the type. Each is keyed
+// methods and an enum's values are listed beside the type. The records
+// of a family that claims its files declare nothing that a dependent can
+// name, so the export lists none of them. Each is keyed
 // by its origin, its unit's plugin and tag, and the names it and its
 // host were emitted under, and it is spelled as the settle left it, at
 // its file's path and package. files are the files the plan rendered.
@@ -496,7 +498,9 @@ type Settled = core.Settled
 // emitted under. The files' own declarations map it first, and others
 // map it second. A receiver whose type neither declares keeps its
 // spelling. Ambiguous is false on every entry, because the ambiguity of
-// a name depends on every file of the plan.
+// a name depends on every file of the plan. A unit of a family that
+// claims its files contains records, which declare no name of the file,
+// so NamesOf lists none of them.
 //
 // # Allocation contract
 //
@@ -896,6 +900,11 @@ type Respeller = core.Respeller
 // settle does not apply an override where the fact store is nil, where
 // the composition did not register the name key, or where the backend
 // has no respell hook.
+//
+// The settle respells the records of a family that claims its files,
+// whose units have a [Unit.Template], so their template reads the
+// target's names. A record declares no name of its file, so the settle
+// checks no record for a collision, and no reference follows a record.
 //
 // The settle records whether a declaration that renders has a type
 // reference whose target is a declaration of another language than the
