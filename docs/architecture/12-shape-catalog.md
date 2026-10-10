@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # The shape catalog (eidos-plugin-shape)
 
 *Builds on: [03](03-projection.md) (Callable and Resolve),

@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Diagnostics
 
 *Builds on: [05](05-directives.md) (the diag directive). Feeds:

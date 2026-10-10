@@ -8,6 +8,11 @@ superseded-by: none
 rfc: RFC-0020
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # ADR-0013: The parse memo is keyed by the executable and can be shared
 
 ## Status

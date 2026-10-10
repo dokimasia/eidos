@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Plugins
 
 *Builds on: [04](04-metadata.md), [05](05-directives.md). Feeds:

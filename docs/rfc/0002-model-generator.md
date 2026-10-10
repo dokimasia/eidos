@@ -11,6 +11,11 @@ superseded-by: none
 produces-adr: ADR-0004, ADR-0005
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # RFC-0002: The model generator (internal/gen/model)
 
 ## Summary

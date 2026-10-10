@@ -8,6 +8,11 @@ superseded-by: none
 rfc: RFC-0019
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # ADR-0010: An export entry has a five-part key and no signature
 
 ## Status

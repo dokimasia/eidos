@@ -10,6 +10,11 @@ prd: none
 rfc: none
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0003: Emit renders to deterministic Go and TypeScript
 
 ## Goal

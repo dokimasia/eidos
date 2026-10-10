@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Workspaces and plans
 
 *Builds on: [06](06-plugins.md), [07](07-rendering.md). Feeds:

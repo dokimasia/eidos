@@ -11,6 +11,11 @@ superseded-by: none
 produces-adr: tbd
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # RFC-0017: The end-to-end run, its manifest and its commit
 
 ## Summary

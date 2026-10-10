@@ -10,6 +10,11 @@ prd: none
 rfc: 0016, 0017, 0018
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0005: A single plan runs end to end
 
 ## Goal

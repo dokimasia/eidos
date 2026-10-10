@@ -10,6 +10,11 @@ prd: none
 rfc: 0019
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0006: Several plans run in one workspace
 
 ## Goal

@@ -11,6 +11,11 @@ superseded-by: none
 produces-adr: tbd
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # RFC-0009: The render pass and the backend kit
 
 ## Summary

@@ -10,6 +10,11 @@ prd: none
 rfc: RFC-0003, RFC-0004, RFC-0005, RFC-0006, RFC-0007
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0002: A typed plugin runs over a hand-built graph
 
 ## Goal

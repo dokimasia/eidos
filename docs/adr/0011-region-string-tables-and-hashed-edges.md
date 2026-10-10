@@ -8,6 +8,11 @@ superseded-by: none
 rfc: RFC-0020
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # ADR-0011: Each region has its own string table, and edges are hashed
 
 ## Status

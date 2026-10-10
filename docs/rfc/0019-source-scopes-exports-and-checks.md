@@ -11,6 +11,11 @@ superseded-by: none
 produces-adr: ADR-0010
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # RFC-0019: Source scopes, plan exports and workspace checks
 
 ## Summary

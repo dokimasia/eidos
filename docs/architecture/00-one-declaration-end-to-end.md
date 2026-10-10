@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # One declaration, end to end
 
 *The on-ramp. Every mechanism below has its own document with the

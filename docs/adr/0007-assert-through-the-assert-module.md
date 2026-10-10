@@ -7,6 +7,11 @@ supersedes: none
 superseded-by: ADR-0008
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # ADR-0007: Test code asserts through the assert module
 
 ## Status

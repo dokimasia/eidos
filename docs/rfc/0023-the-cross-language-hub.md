@@ -11,6 +11,11 @@ superseded-by: none
 produces-adr: tbd
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # RFC-0023: The cross-language hub and the TypeScript satellite
 
 ## Summary

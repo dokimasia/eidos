@@ -10,6 +10,11 @@ prd: none
 rfc: 0020
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0007: A warm run redoes only what changed
 
 ## Goal

@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Benchmarking
 
 *Builds on: [09](09-incrementality.md) (the claims under test).

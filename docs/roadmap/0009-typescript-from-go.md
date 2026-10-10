@@ -10,6 +10,11 @@ prd: none
 rfc: 0023
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0009: TypeScript comes out of a Go workspace
 
 ## Goal

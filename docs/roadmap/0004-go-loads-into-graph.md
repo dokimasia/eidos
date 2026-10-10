@@ -10,6 +10,11 @@ prd: none
 rfc: none
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0004: Go source loads into the symbol graph
 
 ## Goal

@@ -10,6 +10,11 @@ prd: none
 rfc: 0021
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0008: A consumer binary gets the full command surface
 
 ## Goal

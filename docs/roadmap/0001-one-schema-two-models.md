@@ -10,6 +10,11 @@ prd: none
 rfc: RFC-0001, RFC-0002
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0001: One schema generates both models
 
 ## Goal

@@ -8,6 +8,11 @@ superseded-by: none
 rfc: RFC-0024
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # ADR-0014: The protobuf frontend resolves the four features it applies
 
 ## Status

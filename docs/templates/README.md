@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Document templates
 
 Put an `ADR.md`, `RFC.md` or `PRD.md` here to override the template the

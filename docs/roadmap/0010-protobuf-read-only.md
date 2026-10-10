@@ -10,6 +10,11 @@ prd: none
 rfc: 0024
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0010: protobuf schemas drive generation
 
 ## Goal

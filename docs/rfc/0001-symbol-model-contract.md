@@ -11,6 +11,11 @@ superseded-by: none
 produces-adr: ADR-0002, ADR-0003
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # RFC-0001: The symbol schema and its contract
 
 ## Summary

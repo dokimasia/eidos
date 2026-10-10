@@ -8,6 +8,11 @@ superseded-by: none
 rfc: none
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # ADR-0008: Pin the assert module by version
 
 ## Status

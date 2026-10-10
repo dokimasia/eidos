@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Rendering
 
 *Builds on: [02](02-symbol-model.md) (slot declarations),

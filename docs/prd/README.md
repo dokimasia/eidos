@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Product requirements documents
 
 A PRD argues that a problem is real before anyone designs a solution. It says

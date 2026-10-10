@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Distribution and the CLI
 
 *Builds on: [06](06-plugins.md) (the declarative host),

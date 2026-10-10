@@ -10,6 +10,11 @@ prd: none
 rfc: 0022
 ---
 
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Milestone 0011: The shape catalog classifies callables
 
 ## Goal
