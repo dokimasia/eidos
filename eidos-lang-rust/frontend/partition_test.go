@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -11,7 +11,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
@@ -119,9 +119,10 @@ func partitioned(tb testing.TB, tree fstest.MapFS) [][]plugin.SourceRef {
 func unitsOf(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
-	var out [][]string
-	for _, unit := range partitioned(tb, tree) {
-		var members []string
+	units := partitioned(tb, tree)
+	out := make([][]string, 0, len(units))
+	for _, unit := range units {
+		members := make([]string, 0, len(unit))
 		for _, ref := range unit {
 			members = append(members, ref.Path)
 		}

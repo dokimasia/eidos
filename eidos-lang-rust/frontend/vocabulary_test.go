@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -35,8 +35,9 @@ func TestVocabulary(t *testing.T) {
 		t.Run("lowers every item kind to its declaration kind", func(t *testing.T) {
 			t.Parallel()
 
-			var kinds []symbol.Kind
-			for _, d := range declsOf(t, everyItem) {
+			decls := declsOf(t, everyItem)
+			kinds := make([]symbol.Kind, 0, len(decls))
+			for _, d := range decls {
 				kinds = append(kinds, d.Kind())
 			}
 			assert.Equal(t, kinds, []symbol.Kind{

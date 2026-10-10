@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rust_test
@@ -10,7 +10,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
-	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/sdk/meta"
 )
 

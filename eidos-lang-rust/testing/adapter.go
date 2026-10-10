@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package testing
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/sdk/symbol"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
@@ -98,7 +98,7 @@ func (adapter) Available() (bool, string) {
 func (adapter) Layout(g toolchain.Generated) (string, error) {
 	dir, err := os.MkdirTemp("", "eidos-rust-*")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("testing: %w", err)
 	}
 	for path, body := range g.Files {
 		if err := write(dir, path, body); err != nil {
@@ -185,29 +185,34 @@ func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) 
 	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the crate does not check, so nothing can be asked of it: %w", err)
 	}
-	root, err := crateRoot(dir)
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		return false, fmt.Errorf("testing: %w", err)
+	}
+	defer r.Close()
+	root, err := crateRoot(r)
 	if err != nil {
 		return false, err
 	}
-	original, err := os.ReadFile(root)
+	original, err := r.ReadFile(root)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("testing: %w", err)
 	}
 	probe := filepath.Join(filepath.Dir(root), probeModule+rust.Extension)
 	source := "#![allow(dead_code, unused_imports)]\nuse super::*;\n\n" +
 		"fn eidos_probe<T: ?Sized + " + contract + ">() {}\n\n" +
 		"fn eidos_probe_check() {\n    eidos_probe::<" + typeName + ">();\n}\n"
-	err = os.WriteFile(probe, []byte(source), filePerm)
+	err = r.WriteFile(probe, []byte(source), filePerm)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("testing: %w", err)
 	}
-	defer func() { _ = os.Remove(probe) }()
+	defer func() { _ = r.Remove(probe) }()
 	declared := slices.Concat(original, []byte("\nmod "+probeModule+";\n"))
-	err = os.WriteFile(root, declared, filePerm)
+	err = r.WriteFile(root, declared, filePerm)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("testing: %w", err)
 	}
-	defer func() { _ = os.WriteFile(root, original, filePerm) }()
+	defer func() { _ = r.WriteFile(root, original, filePerm) }()
 
 	out, err := cargo(ctx, dir, "check")
 	if err == nil {
@@ -219,14 +224,14 @@ func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) 
 	return false, fmt.Errorf("the probe does not check for a reason other than the trait: %w", err)
 }
 
-// crateRoot returns the file that declares the crate's top-level
-// modules: the library root, or the binary root where the crate has
-// no library. A crate with neither returns an error.
-func crateRoot(dir string) (string, error) {
+// crateRoot returns the name of the file in r that declares the crate's
+// top-level modules: the library root, or the binary root where the
+// crate has no library. A crate with neither returns an error.
+func crateRoot(r *os.Root) (string, error) {
 	for _, candidate := range []string{libRoot, binRoot} {
-		root := filepath.Join(dir, filepath.FromSlash(candidate))
-		if _, err := os.Stat(root); err == nil {
-			return root, nil
+		name := filepath.FromSlash(candidate)
+		if _, err := r.Stat(name); err == nil {
+			return name, nil
 		}
 	}
 	return "", errors.New("testing: the laid-out crate has no src/lib.rs or src/main.rs to probe from")
@@ -238,15 +243,18 @@ func write(dir, path string, body []byte) error {
 	target := filepath.Join(dir, filepath.FromSlash(path))
 	rel, err := filepath.Rel(dir, target)
 	if err != nil {
-		return err
+		return fmt.Errorf("testing: %w", err)
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("the generated path %q climbs out of the scratch project", path)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-		return err
+		return fmt.Errorf("testing: %w", err)
 	}
-	return os.WriteFile(target, body, filePerm)
+	if err := os.WriteFile(target, body, filePerm); err != nil {
+		return fmt.Errorf("testing: %w", err)
+	}
+	return nil
 }
 
 // cargo runs one cargo command over the crate under ctx, offline and

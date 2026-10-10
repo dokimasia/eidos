@@ -1,6 +1,9 @@
+// Copyright Dokimasia B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
 module go.dokimi.dev/eidos/lang/rust
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/BurntSushi/toml v1.6.0

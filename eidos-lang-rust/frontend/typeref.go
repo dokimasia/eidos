@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -146,8 +146,12 @@ func (l *lowering) funcRef(n treesitter.Node) *node.TypeRef {
 
 // typeArgs lowers a type argument list, every argument in order.
 func (l *lowering) typeArgs(args treesitter.Node) []*node.TypeRef {
-	var out []*node.TypeRef
-	for _, arg := range l.children(args) {
+	children := l.children(args)
+	if len(children) == 0 {
+		return nil
+	}
+	out := make([]*node.TypeRef, 0, len(children))
+	for _, arg := range children {
 		out = append(out, l.typeRef(arg))
 	}
 	return out

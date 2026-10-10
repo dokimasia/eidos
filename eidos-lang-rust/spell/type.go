@@ -1,14 +1,15 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package spell
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/spoke"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -140,10 +141,10 @@ func rustType(s rules.TypeShape) (*emit.TypeRef, error) {
 	case symbol.FormFunc:
 		return function(s)
 	case symbol.FormBorrow:
-		return nil, fmt.Errorf("a borrow of another language has no lifetime, and a Rust borrow needs one")
+		return nil, errors.New("a borrow of another language has no lifetime, and a Rust borrow needs one")
 	case symbol.FormWildcard:
 		if len(s.Elems) == 0 || s.Variance == symbol.VarianceIn {
-			return nil, fmt.Errorf("a wildcard without an upper bound has no Rust spelling")
+			return nil, errors.New("a wildcard without an upper bound has no Rust spelling")
 		}
 		return spoke.Child(s.Elems[0], rustType)
 	case symbol.FormReference, symbol.FormSum:
@@ -155,12 +156,14 @@ func rustType(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // scalar spells a scalar as the primitive of its class and width.
 func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
-	widths := rustFloats
+	var widths map[int]string
 	switch s.Class {
 	case rules.ScalarInt:
 		widths = rustInts
 	case rules.ScalarUint:
 		widths = rustUints
+	default:
+		widths = rustFloats
 	}
 	name, held := widths[s.Bits]
 	switch {
@@ -179,7 +182,7 @@ func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
 func container(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch {
 	case s.Form == symbol.FormArray && s.Length == 0:
-		return nil, fmt.Errorf("an array of an unstated length has no Rust spelling")
+		return nil, errors.New("an array of an unstated length has no Rust spelling")
 	case len(s.Elems) != 1:
 		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
 	}

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -99,6 +99,10 @@ const (
 
 // pathSep separates the segments of a Rust path.
 const pathSep = "::"
+
+// asyncKeyword marks an asynchronous function, with the space that
+// follows it.
+const asyncKeyword = "async "
 
 // unstatedType is the reason a reference that states no type
 // refuses.
@@ -702,7 +706,7 @@ func FnMods(f *emit.Function) (string, error) {
 		return "", err
 	}
 	if f.Async {
-		part += "async "
+		part += asyncKeyword
 	}
 	return part, nil
 }
@@ -729,7 +733,7 @@ func TraitFn(m *emit.Method) (string, error) {
 		return "", refuse("a method overrides nothing, and %s states it", m.Name)
 	}
 	if m.Async {
-		return "async ", nil
+		return asyncKeyword, nil
 	}
 	return "", nil
 }
@@ -755,7 +759,7 @@ func ImplFn(m *emit.Method) (string, error) {
 		return "", err
 	}
 	if m.Async {
-		part += "async "
+		part += asyncKeyword
 	}
 	return part, nil
 }

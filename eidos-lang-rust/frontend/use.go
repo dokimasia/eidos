@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -95,6 +95,7 @@ func (l *lowering) record(list treesitter.Node, c container) {
 		attrs = nil
 		if k != l.v.modItem && k != l.v.useDeclaration && k != l.v.externCrateDeclaration ||
 			l.attributes(outer).excluded != "" {
+
 			continue
 		}
 		switch k {
@@ -135,8 +136,9 @@ func (l *lowering) record(list treesitter.Node, c container) {
 func (l *lowering) useTree(n treesitter.Node, prefix []string) []useEntry {
 	switch n.Kind() {
 	case l.v.useList:
-		var out []useEntry
-		for _, child := range l.children(n) {
+		children := l.children(n)
+		out := make([]useEntry, 0, len(children))
+		for _, child := range children {
 			out = append(out, l.useTree(child, prefix)...)
 		}
 		return out

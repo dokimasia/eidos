@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -27,8 +27,9 @@ type imported struct {
 func importsIn(tb testing.TB, src string) []imported {
 	tb.Helper()
 
-	var out []imported
-	for _, imp := range fileIn(tb, mustParse(tb, src), crateName).Imports {
+	imports := fileIn(tb, mustParse(tb, src), crateName).Imports
+	out := make([]imported, 0, len(imports))
+	for _, imp := range imports {
 		names := bindingsOf(imp.Names)
 		out = append(out, imported{path: imp.Path, names: names, alias: imp.Alias, wildcard: imp.Wildcard})
 	}
@@ -40,8 +41,9 @@ func importsIn(tb testing.TB, src string) []imported {
 func exportsIn(tb testing.TB, src string) []imported {
 	tb.Helper()
 
-	var out []imported
-	for _, ex := range fileIn(tb, mustParse(tb, src), crateName).Exports {
+	exports := fileIn(tb, mustParse(tb, src), crateName).Exports
+	out := make([]imported, 0, len(exports))
+	for _, ex := range exports {
 		out = append(out, imported{path: ex.Path, names: bindingsOf(ex.Names), wildcard: ex.Wildcard})
 	}
 	return out
@@ -216,9 +218,13 @@ func mustParse(tb testing.TB, src string) *plugin.GraphBuilder {
 	return gb
 }
 
-// bindingsOf returns bindings as name and alias pairs, in order.
+// bindingsOf returns bindings as name and alias pairs, in order, and nil
+// for none.
 func bindingsOf(bs []*node.Binding) [][2]string {
-	var out [][2]string
+	if len(bs) == 0 {
+		return nil
+	}
+	out := make([][2]string, 0, len(bs))
 	for _, b := range bs {
 		out = append(out, [2]string{b.Name, b.Alias})
 	}

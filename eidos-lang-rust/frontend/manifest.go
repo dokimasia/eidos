@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
 
 import (
+	"fmt"
 	"maps"
 	"path"
 	"slices"
@@ -85,7 +86,7 @@ type manifest struct {
 func parseManifest(data []byte) (*manifest, error) {
 	var m manifest
 	if err := toml.Unmarshal(data, &m); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("frontend: %w", err)
 	}
 	return &m, nil
 }

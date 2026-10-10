@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -15,7 +15,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
-	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
@@ -548,8 +548,9 @@ func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 // packagesOf returns the paths of a builder's packages, in first-touch
 // order.
 func packagesOf(gb *plugin.GraphBuilder) []string {
-	var out []string
-	for _, p := range gb.Packages() {
+	pkgs := gb.Packages()
+	out := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
 		out = append(out, p.ID.Package)
 	}
 	return out
