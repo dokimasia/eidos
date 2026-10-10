@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -99,6 +100,16 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.New().Target(), golang.Target, "the rendering target")
+		})
+
+		t.Run("returns a backend whose spoke spells a type of another language", func(t *testing.T) {
+			t.Parallel()
+
+			speller, spells := backend.New().(plugin.TypeSpeller)
+			assert.True(t, spells, "the backend serves the spoke")
+			got, err := speller.SpellType(rules.Leaf(symbol.FormText, "String"), plugin.Policy{})
+			assert.NoError(t, err, "the spoke spells text")
+			assert.Equal(t, got.Spelling, "string", "the backend's spoke is spell.Type")
 		})
 
 		t.Run("returns a backend whose files stamp under the module's contract", func(t *testing.T) {

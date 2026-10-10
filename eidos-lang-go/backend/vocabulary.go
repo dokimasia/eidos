@@ -592,14 +592,16 @@ func qualifiesInside(spelling string) bool {
 	return qualified
 }
 
-// packageOf returns the import path of the package a named reference
-// names, and empty where it names none or its target is another
-// language's declaration. A reference without a target must spell a
-// Go type name, and a qualified one must record its package.
+// packageOf returns the import path of the package of a named reference,
+// and the empty path for a reference without a package. For a reference
+// whose target is a declaration of another language, it returns the
+// package that the layout recorded. The spelling of a reference without
+// a target must be a Go type name, and a qualified spelling must have a
+// recorded package.
 func packageOf(t *emit.TypeRef) (string, error) {
 	switch {
 	case !t.Target.IsZero() && t.Target.Lang != golang.Lang:
-		return "", nil
+		return t.Package, nil
 	case !t.Target.IsZero():
 		return t.Target.Package, nil
 	case strings.Count(t.Spelling, qualifierSep) > 1:

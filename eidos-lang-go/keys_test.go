@@ -28,8 +28,9 @@ const (
 const registerAllocs = 11 + 17
 
 // One namespace claim serves both stamping roles. The registration is
-// pinned: every key resolves, the handles return typed, and a second
-// claim fails.
+// pinned: every key resolves, the handles return typed, a second
+// registration of one registrant repeats the first, and a claim of
+// another registrant fails.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -98,12 +99,20 @@ func TestKeys(t *testing.T) {
 	t.Run("Keys", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns an error for a second registration", func(t *testing.T) {
+		t.Run("returns no error for a second registration of one registrant", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry().For(string(golang.Name))
+			assert.NoError(t, golang.Keys(r), "the first registration succeeds")
+			assert.NoError(t, golang.Keys(r), "the registrant repeats its registration")
+		})
+
+		t.Run("returns an error for a registration of another registrant", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
-			assert.NoError(t, golang.Keys(r), "the first registration succeeds")
-			assert.HasError(t, golang.Keys(r), "the namespace is claimed once")
+			assert.NoError(t, golang.Keys(r.For(string(golang.Name))), "the first registration succeeds")
+			assert.HasError(t, golang.Keys(r.For(rivalPlugin)), "the namespace has one registrant")
 		})
 	})
 }

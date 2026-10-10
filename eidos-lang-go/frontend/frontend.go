@@ -64,18 +64,14 @@ type Options struct {
 	Tags []string
 }
 
-// Keys registers every golang key: the satellite root's one
-// registration, re-exported here, where the corpus and the suite
-// fixtures use it.
-var Keys = golang.Keys
-
 // New builds the Go frontend through the kit. A nil options value
-// loads with no build tags satisfied.
+// loads with no build tags satisfied. The frontend registers every
+// golang key through its role, under the language's spelling.
 //
 // # Allocation contract
 //
 // New allocates the frontend's state and its three hooks, the syntax,
-// two allocations, and the kit's four: ten allocations, and eleven
+// two allocations, and the kit's five: eleven allocations, and twelve
 // with the empty options that nil options take.
 func New(opts *Options) plugin.Frontend {
 	if opts == nil {
@@ -94,6 +90,7 @@ func New(opts *Options) plugin.Frontend {
 		Options(opts).
 		Dependencies(f.dependencies).
 		Stores(Stores).
+		Keys(golang.Keys).
 		Build()
 }
 

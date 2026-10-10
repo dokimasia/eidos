@@ -225,15 +225,27 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, set.Paths(), []string{storePkg}, "the package is imported")
 		})
 
-		t.Run("writes a target of another language as written", func(t *testing.T) {
+		t.Run("qualifies a target of another language through its recorded package", func(t *testing.T) {
 			t.Parallel()
 
 			s, set := speller()
 			target := &emit.TypeRef{
-				Spelling: "svc.Row", Package: "svc/row.proto",
+				Spelling: rowName, Package: storePkg,
 				Target: symbol.Identity{Lang: protoLang, Package: "svc", Name: rowName, Kind: symbol.KindStruct},
 			}
-			assert.Equal(t, spelled(t, s, target), "svc.Row", "the spelling as written")
+			assert.Equal(t, spelled(t, s, target), qualifiedRow, "the referent's file is in another package")
+			assert.Equal(t, set.Paths(), []string{storePkg}, "the package of the referent's file is imported")
+		})
+
+		t.Run("writes a target of another language without a recorded package bare", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			target := &emit.TypeRef{
+				Spelling: rowName,
+				Target:   symbol.Identity{Lang: protoLang, Package: "svc", Name: rowName, Kind: symbol.KindStruct},
+			}
+			assert.Equal(t, spelled(t, s, target), rowName, "the referent is in the file's own package")
 			assert.Equal(t, set.Len(), 0, "no import of another language's package")
 		})
 

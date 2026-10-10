@@ -14,8 +14,9 @@ import (
 
 // New returns the Go rendering backend: the module's declared
 // pieces composed through the kernel's kit, implementing
-// [plugin.Backend] and [plugin.Renderer] both. Rendered files
-// finalise through go/format, so a file that does not parse is
+// [plugin.Backend] and [plugin.Renderer] both. Its spoke is
+// [spell.Type], which spells a type of another language in Go. Rendered
+// files finalise through go/format, so a file that does not parse is
 // withheld and reported instead of written, and the bytes that
 // remain are the bytes gofmt leaves.
 //
@@ -32,6 +33,7 @@ func New() plugin.Backend {
 		Naming(spell.Filename).
 		Packages(spell.Package).
 		Respell(spell.Name).
+		Types(spell.Type).
 		Lower(Lower).
 		Scaffold(Scaffold).
 		Imports(Imports).

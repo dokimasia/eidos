@@ -457,7 +457,7 @@ func BenchmarkResolve(b *testing.B) {
 func visible(tb assert.TB) *fixture {
 	tb.Helper()
 
-	f := rulestest.Loaded(tb, gofrontend.New(nil), visibilityTree(), golang.Keys)
+	f := rulestest.Loaded(tb, gofrontend.New(nil), visibilityTree())
 	return viewOver(tb, f, id(visPath, "Row", symbol.KindStruct), visFile)
 }
 

@@ -642,7 +642,7 @@ type Target struct{ V int }
 // setup is the suite's entry: the Go rules over the loaded tree.
 func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 	tb.Helper()
-	return gorules.New(), rulestest.Loaded(tb, gofrontend.New(nil), tree(), golang.Keys)
+	return gorules.New(), rulestest.Loaded(tb, gofrontend.New(nil), tree())
 }
 
 // id returns a top-level identity in one fixture package.

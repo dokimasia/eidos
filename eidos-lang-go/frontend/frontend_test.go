@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rulestest"
@@ -35,8 +36,8 @@ const unparsedCode = "GOLANG-0001"
 
 // newAllocs is the frontend New returns for nil options: the empty
 // options, the frontend's state and its three hooks, the syntax's two,
-// and the kit's four.
-const newAllocs = 1 + 1 + 3 + 2 + 4
+// and the kit's five, its list of key registrations included.
+const newAllocs = 1 + 1 + 3 + 2 + 5
 
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
@@ -72,6 +73,17 @@ func TestFrontend(t *testing.T) {
 			frontendtest.RunFrontendSuite(t, setup)
 		})
 
+		t.Run("returns a frontend that registers the golang keys through its role", func(t *testing.T) {
+			t.Parallel()
+
+			provider, provides := frontend.New(nil).(plugin.KeyProvider)
+			assert.True(t, provides, "the frontend registers keys")
+			r := meta.NewRegistry()
+			assert.NoError(t, provider.Keys(r.For(string(frontend.Lang))), "the keys register")
+			_, held := r.Resolve(golang.TestFileKey)
+			assert.True(t, held, "the test file key is registered")
+		})
+
 		t.Run("returns a frontend that passes the conformance suite with its stores", func(t *testing.T) {
 			t.Parallel()
 
@@ -79,7 +91,6 @@ func TestFrontend(t *testing.T) {
 				return frontend.New(nil), &frontendtest.Fixture{
 					Sources: depWorkspace(),
 					Stores:  depStores(),
-					Keys:    frontend.Keys,
 				}
 			})
 		})
@@ -146,7 +157,7 @@ func TestFrontend(t *testing.T) {
 				"store/row.go": {Data: []byte("package store\n\ntype Row struct{}\n")},
 				"store/owner.go": {Data: []byte("package store\n\nimport \"example.test/fix/api\"\n\n" +
 					"func (r *Row) Owner(u api.User) {}\n")},
-			}, frontend.Keys)
+			})
 			row, found := fx.Graph.Lookup(symbol.Identity{
 				Lang: frontend.Lang, Package: "example.test/fix/store", Name: "Row", Kind: symbol.KindStruct,
 			})
@@ -165,7 +176,7 @@ func TestFrontend(t *testing.T) {
 				"go.mod":                        {Data: []byte("module example.test/fix\n")},
 				"api/user.go":                   {Data: []byte("package api\n\ntype User struct{}\n")},
 				"vendor/example.com/lib/lib.go": {Data: []byte("package lib\n\ntype L struct{}\n")},
-			}, frontend.Keys)
+			})
 			pkg := func(path string) bool {
 				id := symbol.Identity{Lang: frontend.Lang, Package: path, Kind: symbol.KindPackage}
 				_, held := fx.Graph.PackageOf(id)
@@ -297,7 +308,6 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    frontend.Keys,
 	}
 }
 
