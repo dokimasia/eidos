@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -9,7 +9,7 @@ import (
 	"github.com/bufbuild/protocompile/experimental/ast"
 	"github.com/bufbuild/protocompile/experimental/seq"
 
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"

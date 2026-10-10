@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -7,7 +7,7 @@ import (
 	"math"
 	"slices"
 
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -76,6 +76,7 @@ func (Rules) EnumOf(e *node.Enum, v rules.View) rules.EnumInfo {
 		}
 		if !variant.ID.IsZero() && variant.ID.Package != e.ID.Package &&
 			!slices.Contains(info.Foreign, variant.ID.Package) {
+
 			info.Foreign = append(info.Foreign, variant.ID.Package)
 		}
 		n, valid := enumNumber(variant)

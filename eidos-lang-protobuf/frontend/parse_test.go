@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -18,7 +18,7 @@ import (
 	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"
 
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
@@ -810,8 +810,9 @@ message Row {
 //tool:mark on
 `)
 			assert.False(t, sink.Failed(), "a tool directive is no authored directive, so nothing reports")
-			var names []string
-			for _, a := range onlyFile(t, gb).Annotations {
+			annotations := onlyFile(t, gb).Annotations
+			names := make([]string, 0, len(annotations))
+			for _, a := range annotations {
 				names = append(names, a.Name)
 			}
 			assert.Contains(t, strings.Join(names, " "), "tool:mark",
@@ -913,7 +914,7 @@ message Req {}
 			row, is := declOf(t, file, "Row").(*node.Struct)
 			assert.True(t, is, "a message is a struct")
 
-			var fields []string
+			fields := make([]string, 0, len(row.Fields))
 			for _, f := range row.Fields {
 				fields = append(fields, f.Name)
 			}

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -168,8 +168,9 @@ message Row { //+fixture:gen:table name=rows
 			assert.False(t, sink.Failed(), "every carrier has a subject")
 			file := onlyFile(t, gb)
 			row, _ := declOf(t, file, "Row").(*node.Struct)
-			var subjects []symbol.Symbol
-			for _, a := range gb.Attachments() {
+			attachments := gb.Attachments()
+			subjects := make([]symbol.Symbol, 0, len(attachments))
+			for _, a := range attachments {
 				subjects = append(subjects, a.Subject)
 			}
 			assert.Length(t, subjects, 3, "three carriers attach")
@@ -262,7 +263,7 @@ enum Wide {
 `)
 			assert.False(t, sink.Failed(), "every number the grammar admits loads")
 			wide, _ := declOf(t, onlyFile(t, gb), "Wide").(*node.Enum)
-			var values []string
+			values := make([]string, 0, len(wide.Variants))
 			for _, v := range wide.Variants {
 				values = append(values, v.Value)
 			}

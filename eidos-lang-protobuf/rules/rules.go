@@ -1,14 +1,15 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/naming"
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -159,7 +160,7 @@ func (Rules) Resolve(
 ) (symbol.Symbol, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf("protobuf: nothing to resolve")
+		return nil, errors.New("protobuf: nothing to resolve")
 	}
 	switch kind {
 	case directive.ResolveValueField:

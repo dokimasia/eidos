@@ -1,6 +1,9 @@
+// Copyright Dokimasia B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
 module go.dokimi.dev/eidos/lang/protobuf
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9

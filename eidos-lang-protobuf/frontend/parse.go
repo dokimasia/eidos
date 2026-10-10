@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -16,7 +16,7 @@ import (
 	"github.com/bufbuild/protocompile/experimental/token"
 	"github.com/bufbuild/protocompile/experimental/token/keyword"
 
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -189,6 +189,7 @@ func (l *lowered) reportErrors(r *report.Report, statement ast.DeclSyntax) {
 		at := d.Primary()
 		if d.Level() != report.ICE && d.Level() != report.Error ||
 			!stated.IsZero() && at.Start >= stated.Start && at.End <= stated.End {
+
 			continue
 		}
 		if reported == maxSyntaxFindings {
@@ -277,6 +278,9 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 				file.Decls = make([]symbol.Symbol, 0, decls.Len()-i)
 			}
 			file.Decls = append(file.Decls, out)
+		default:
+			// The syntax statement and the other declarations of a file load
+			// nothing.
 		}
 	}
 
@@ -417,6 +421,9 @@ func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, neste
 			l.unit.Errorf(RefusedExtension, l.at(first.LeafSpan()),
 				"%s extends %s inside %s, so the frontend does not load the block",
 				l.path, d.AsExtend().Extendee.Canonicalized(), s.Name)
+		default:
+			// An option of the message loads as a stamp, and no other
+			// definition is a member of a message.
 		}
 	}
 	gb := l.unit.Graph()
@@ -666,6 +673,9 @@ func (l *lowered) oneof(def ast.DeclDef, outer features) (*node.Sum, []symbol.Sy
 			field, group := l.group(d, scope, true)
 			s.Variants = append(s.Variants, variantOf(field))
 			groups = append(groups, group)
+		default:
+			// An option of the oneof loads as a stamp, and no other
+			// definition is a variant of a oneof.
 		}
 	}
 	l.unit.Graph().Stamp(s, meta.RawStamp{

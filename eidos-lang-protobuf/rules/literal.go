@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -39,13 +39,13 @@ const (
 // literal is one scanned protobuf literal.
 type literal struct {
 	kind literalKind
+	// integer reports whether a number is written as an integer.
+	integer bool
 	// text is a truth value's spelling, a string's content, or an
 	// identifier.
 	text string
-	// number is a number's exact value, and integer reports whether
-	// it is written as an integer.
-	number  constant.Value
-	integer bool
+	// number is a number's exact value.
+	number constant.Value
 }
 
 // scanLiteral reads one literal in protoc's grammar: true or false, a

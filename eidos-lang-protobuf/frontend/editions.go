@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -156,6 +156,9 @@ func (f features) local(stated keyword.Keyword, nested bool) bool {
 		return true
 	case keyword.Export:
 		return false
+	default:
+		// A declaration that states neither keyword takes the default
+		// visibility of its features below.
 	}
 	switch f.visibility {
 	case visibilityExportTopLevel:

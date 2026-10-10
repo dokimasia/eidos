@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/lang/numeric"
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -477,6 +477,8 @@ func (lit literal) typed(t literalType) (emit.Value, bool) {
 			return emit.Value{}, false
 		}
 		return emit.Literal(emit.LiteralString, lit.text), true
+	default:
+		// Any other shape takes the literal as its own kind below.
 	}
 	return lit.untyped()
 }
