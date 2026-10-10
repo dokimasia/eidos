@@ -1,10 +1,11 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package scaffold
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -218,7 +219,7 @@ func Expr(b *bytes.Buffer, e emit.Expr, t Target) error {
 	switch e.Kind {
 	case emit.ExprName:
 		if e.Name == "" {
-			return fmt.Errorf("scaffold: a name expression spells nothing")
+			return errors.New("scaffold: a name expression spells nothing")
 		}
 		b.WriteString(e.Name)
 		return nil
@@ -234,10 +235,10 @@ func Expr(b *bytes.Buffer, e emit.Expr, t Target) error {
 // value writes the value an expression contains through the target.
 func value(b *bytes.Buffer, e emit.Expr, t Target) error {
 	if e.Val == nil {
-		return fmt.Errorf("scaffold: a value expression has no value")
+		return errors.New("scaffold: a value expression has no value")
 	}
 	if t == nil {
-		return fmt.Errorf("scaffold: a value expression needs a target to spell it")
+		return errors.New("scaffold: a value expression needs a target to spell it")
 	}
 	spelled, err := Value(t, *e.Val)
 	if err != nil {
@@ -250,7 +251,7 @@ func value(b *bytes.Buffer, e emit.Expr, t Target) error {
 // call writes an application of one expression to its arguments.
 func call(b *bytes.Buffer, e emit.Expr, t Target) error {
 	if e.Fn == nil {
-		return fmt.Errorf("scaffold: a call applies no function")
+		return errors.New("scaffold: a call applies no function")
 	}
 	if err := Expr(b, *e.Fn, t); err != nil {
 		return err

@@ -1,6 +1,9 @@
+// Copyright Dokimasia B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
 module go.dokimi.dev/eidos/lang
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package naming_test
@@ -44,7 +44,7 @@ func TestIdentifier(t *testing.T) {
 
 // The predicate allocates nothing in the ordinary run, which runs no
 // benchmark.
-func TestIdentifierZeroAlloc(t *testing.T) {
+func TestIdentifierAllocs(t *testing.T) {
 	var got bool
 	assert.MaxAllocs(t, func() { got = naming.IsIdentifier("content_type") }, 0, "IsIdentifier allocates nothing")
 	assert.True(t, got, "IsIdentifier reports true for an identifier")

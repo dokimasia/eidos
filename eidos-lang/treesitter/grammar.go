@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package treesitter
@@ -211,5 +211,5 @@ func moduleVersion(module string) (name, version string) {
 		}
 		return path.Base(module), version
 	}
-	panic(fmt.Sprintf("treesitter: the binary's build information does not list %s", module))
+	panic("treesitter: the binary's build information does not list " + module)
 }

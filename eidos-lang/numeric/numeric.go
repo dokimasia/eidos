@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package numeric
@@ -135,6 +135,7 @@ func Decimal(f float64, bits int) string {
 		narrow := float32(abs)
 		if bits == widest && (abs < smallestPositional || abs >= largestPositional) ||
 			bits == single && (narrow < smallestPositional || narrow >= largestPositional) {
+
 			format = 'e'
 		}
 	}

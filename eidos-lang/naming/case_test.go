@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package naming_test
@@ -297,7 +297,12 @@ func runShared(
 // inputs returns every string of up to n runes drawn from alphabet,
 // the empty string included.
 func inputs(alphabet []string, n int) []string {
-	out, level := []string{""}, []string{""}
+	total, width := 1, 1
+	for range n {
+		width *= len(alphabet)
+		total += width
+	}
+	out, level := make([]string, 1, total), []string{""}
 	for range n {
 		next := make([]string, 0, len(level)*len(alphabet))
 		for _, prefix := range level {

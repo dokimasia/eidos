@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package treesitter_test
@@ -125,7 +125,7 @@ func TestTree(t *testing.T) {
 // A tree's root, its error walk and its release allocate nothing on the
 // Go heap. The ordinary run, which runs no benchmark, checks that here.
 // Each Close takes a tree parsed outside the count.
-func TestTreeZeroAlloc(t *testing.T) {
+func TestTreeAllocs(t *testing.T) {
 	checkAllocs(t, treeCalls(t))
 	var last *treesitter.Tree
 	assert.MaxAllocsWithSetup(t, func() *treesitter.Tree { return parse(t, cleanJava) }, func(tree *treesitter.Tree) {

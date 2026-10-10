@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package scaffold_test
@@ -143,22 +143,22 @@ type unspelling struct{ scripted }
 
 // Callee returns an error: the target has no callee form.
 func (unspelling) Callee(symbol.Identity) (string, error) {
-	return "", fmt.Errorf("scripted: no callee form")
+	return "", errors.New("scripted: no callee form")
 }
 
 // Conversion returns an error: the target has no conversion form.
 func (unspelling) Conversion(*emit.TypeRef, string, string) (string, error) {
-	return "", fmt.Errorf("scripted: no conversion form")
+	return "", errors.New("scripted: no conversion form")
 }
 
 // Composite returns an error: the target has no composite form.
 func (unspelling) Composite(*emit.TypeRef, string, []scaffold.Entry) (string, error) {
-	return "", fmt.Errorf("scripted: no composite form")
+	return "", errors.New("scripted: no composite form")
 }
 
 // Address returns an error: the target has no address form.
 func (unspelling) Address(emit.Value, string) (string, error) {
-	return "", fmt.Errorf("scripted: no address form")
+	return "", errors.New("scripted: no address form")
 }
 
 // passthrough is a target that composes nothing: each method returns a
