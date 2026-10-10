@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang_test
@@ -147,9 +147,9 @@ func TestAcceptance(t *testing.T) {
 			t.Run("returns one line that ends with a full stop", func(t *testing.T) {
 				t.Parallel()
 
-				synopsis := golang.Crash{}.Synopsis()
-				expect.HasSuffix(t, synopsis, ".", "the synopsis ends with a full stop")
-				expect.NotContains(t, synopsis, "\n", "the synopsis has one line")
+				expect.That(t, golang.Crash{}.Synopsis()).
+					HasSuffix(".", "the synopsis ends with a full stop").
+					NotContains("\n", "the synopsis has one line")
 			})
 		})
 

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package conformance
@@ -244,8 +244,9 @@ func AssertCoveredInventory(tb assert.TB, c Corpus) {
 		allowed, rule = []Verdict{Refuses, Projects, ProjectsPartly, Opaque},
 			"a corpus with rules states projects, projects partly, opaque or refuses"
 	}
-	var ids []string
-	for _, f := range Inventory() {
+	inventory := Inventory()
+	ids := make([]string, 0, len(inventory))
+	for _, f := range inventory {
 		ids = append(ids, f.ID)
 		expect.Contains(tb, c.Coverage, f.ID, fmt.Sprintf("the coverage states a verdict for %s: "+
 			"silence on a capability is the gap this list exists to close", f.ID))
@@ -317,7 +318,7 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 	for pkg := range g.Packages() {
 		expect.NotContains(tb, occupied, pkg.ID.Package,
-			fmt.Sprintf("%s is refused, so the load contains no package it occupies, wherever the spelling is", f.ID))
+			f.ID+" is refused, so the load contains no package it occupies, wherever the spelling is")
 	}
 }
 

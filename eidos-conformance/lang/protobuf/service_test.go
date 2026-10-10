@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package protobuf_test
@@ -20,7 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	tstesting "go.dokimi.dev/eidos/lang/typescript/testing"
 	eidos "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
@@ -190,10 +190,10 @@ func TestService(t *testing.T) {
 			root := serviceRoot(t, baseVersion)
 			editSchema(t, root, stateOpens, phaseCarrier+stateOpens)
 			cleanRun(t, root, workspace.Config{})
-			client := files.Read(t, filepath.Join(root, filepath.FromSlash(clientPath)))
-			expect.Contains(t, client, phaseEnum, "the directive names the enum")
-			expect.Contains(t, client, phaseState, "a reference to the enum follows the name")
-			expect.NotContains(t, client, stateEnum, "the enum is not named after its flat name")
+			expect.That(t, files.Read(t, filepath.Join(root, filepath.FromSlash(clientPath)))).
+				Contains(phaseEnum, "the directive names the enum").
+				Contains(phaseState, "a reference to the enum follows the name").
+				NotContains(stateEnum, "the enum is not named after its flat name")
 		})
 
 		t.Run("explains the name of Session.State with the directive's claim first", func(t *testing.T) {

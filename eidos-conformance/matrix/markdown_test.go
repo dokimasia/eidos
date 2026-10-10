@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package matrix_test
@@ -174,8 +174,9 @@ func TestMarkdown(t *testing.T) {
 			backend := coveredBackend{refused: map[symbol.Kind]string{symbol.KindFunction: refusalReason}}
 			doc, err := matrix.Markdown([]matrix.Entry{{Corpus: gocorpus.Corpus(nil), Backend: backend}})
 			assert.NoError(t, err, "the matrix of a refusing backend renders")
-			expect.Contains(t, doc, refusedRow, "the backend refuses functions")
-			expect.Contains(t, doc, renderedRow, "the backend renders methods")
+			expect.That(t, doc).
+				Contains(refusedRow, "the backend refuses functions").
+				Contains(renderedRow, "the backend renders methods")
 		})
 		t.Run("escapes a pipe inside a cell", func(t *testing.T) {
 			t.Parallel()

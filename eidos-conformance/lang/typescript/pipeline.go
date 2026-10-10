@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package typescript
@@ -6,7 +6,7 @@ package typescript
 import (
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/workspace"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	tsfrontend "go.dokimi.dev/eidos/lang/typescript/frontend"
 	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"

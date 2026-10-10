@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package conformance
@@ -10,6 +10,17 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The names of the declarations that two or more entries of the inventory
+// name, as a declaration or as the owner of one.
+const (
+	pointName  = "Point"
+	storeName  = "Store"
+	boxName    = "Box"
+	targetName = "Target"
+	holderName = "Holder"
+	tableName  = "Table"
 )
 
 // Inventory returns the neutral feature list, in corpus order.
@@ -25,26 +36,26 @@ func Inventory() []Feature {
 			ID:  "struct_fields",
 			Doc: "a record type with typed fields",
 			Declares: []Decl{
-				{Name: "Point", Kind: symbol.KindStruct},
-				{Owner: "Point", Name: "f0", Kind: symbol.KindField},
-				{Owner: "Point", Name: "f1", Kind: symbol.KindField},
+				{Name: pointName, Kind: symbol.KindStruct},
+				{Owner: pointName, Name: "f0", Kind: symbol.KindField},
+				{Owner: pointName, Name: "f1", Kind: symbol.KindField},
 			},
 		},
 		{
 			ID:  "struct_methods",
 			Doc: "a member callable on a record type",
 			Declares: []Decl{
-				{Name: "Store", Kind: symbol.KindStruct},
-				{Owner: "Store", Name: "Get", Kind: symbol.KindMethod, Disc: "int"},
+				{Name: storeName, Kind: symbol.KindStruct},
+				{Owner: storeName, Name: "Get", Kind: symbol.KindMethod, Disc: "int"},
 			},
 		},
 		{
 			ID:  "method_overloads",
 			Doc: "two callables sharing a name, told apart by their parameters",
 			Declares: []Decl{
-				{Name: "Box", Kind: symbol.KindStruct},
-				{Owner: "Box", Name: "Fill", Kind: symbol.KindMethod, Disc: "int"},
-				{Owner: "Box", Name: "Fill", Kind: symbol.KindMethod},
+				{Name: boxName, Kind: symbol.KindStruct},
+				{Owner: boxName, Name: "Fill", Kind: symbol.KindMethod, Disc: "int"},
+				{Owner: boxName, Name: "Fill", Kind: symbol.KindMethod},
 			},
 		},
 		{
@@ -58,16 +69,16 @@ func Inventory() []Feature {
 			ID:  "cross_package_ref",
 			Doc: "a reference resolving into a sibling package",
 			Declares: []Decl{
-				{Sub: "dep", Name: "Target", Kind: symbol.KindStruct},
+				{Sub: "dep", Name: targetName, Kind: symbol.KindStruct},
 				{
-					Name: "Holder", Kind: symbol.KindStruct,
+					Name: holderName, Kind: symbol.KindStruct,
 					Check: func(tb assert.TB, c *Ctx) {
 						holder, is := c.Decl.(*node.Struct)
 						assert.True(tb, is, "the holder loads as a struct")
 						assert.Length(tb, holder.Fields, 1, "with its one field")
 						assert.Equal(tb, holder.Fields[0].Type.Target, symbol.Identity{
 							Lang: c.Lang, Package: c.Pkg("dep"),
-							Name: "Target", Kind: symbol.KindStruct,
+							Name: targetName, Kind: symbol.KindStruct,
 						}, "the reference targets the sibling's declaration")
 					},
 				},
@@ -77,16 +88,16 @@ func Inventory() []Feature {
 			ID:  "composite_refs",
 			Doc: "references inside composites resolve to the named types they mention",
 			Declares: []Decl{
-				{Sub: "dep", Name: "Target", Kind: symbol.KindStruct},
+				{Sub: "dep", Name: targetName, Kind: symbol.KindStruct},
 				{
-					Name: "Holder", Kind: symbol.KindStruct,
+					Name: holderName, Kind: symbol.KindStruct,
 					Check: func(tb assert.TB, c *Ctx) {
 						holder, is := c.Decl.(*node.Struct)
 						assert.True(tb, is, "the holder loads as a struct")
 						assert.Length(tb, holder.Fields, 3, "with its three fields")
 						target := symbol.Identity{
 							Lang: c.Lang, Package: c.Pkg("dep"),
-							Name: "Target", Kind: symbol.KindStruct,
+							Name: targetName, Kind: symbol.KindStruct,
 						}
 						for _, field := range holder.Fields {
 							expect.Contains(tb, targetsBelowRoot(field.Type), target,
@@ -117,7 +128,7 @@ func Inventory() []Feature {
 			Doc: "a canonical directive attached to its subject",
 			Declares: []Decl{
 				{
-					Name: "Table", Kind: symbol.KindStruct,
+					Name: tableName, Kind: symbol.KindStruct,
 					Check: func(tb assert.TB, c *Ctx) {
 						decl, names := c.Decl.(node.Declaration)
 						assert.True(tb, names, "the subject names itself")
@@ -160,7 +171,7 @@ func Inventory() []Feature {
 			Doc: "a marker in the language's own syntax for metadata, lowered to a canonical directive",
 			Declares: []Decl{
 				{
-					Name: "Table", Kind: symbol.KindStruct,
+					Name: tableName, Kind: symbol.KindStruct,
 					Check: func(tb assert.TB, c *Ctx) {
 						decl, is := c.Decl.(node.Declaration)
 						assert.True(tb, is, "the subject is a declaration")

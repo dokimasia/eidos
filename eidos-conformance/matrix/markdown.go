@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package matrix
@@ -123,14 +123,14 @@ func Markdown(entries []Entry) ([]byte, error) {
 
 // readSide writes the section of the read side.
 func readSide(b *strings.Builder, entries []Entry) {
-	header := []string{featureHeader}
+	header := append(make([]string, 0, 1+len(entries)), featureHeader)
 	for _, e := range entries {
 		header = append(header, string(e.Corpus.Frontend.Lang()))
 	}
 	inventory := conformance.Inventory()
 	rows := make([][]string, 0, len(inventory))
 	for _, f := range inventory {
-		row := []string{f.ID}
+		row := append(make([]string, 0, 1+len(entries)), f.ID)
 		for _, e := range entries {
 			row = append(row, e.Corpus.Coverage[f.ID].String())
 		}
@@ -158,14 +158,14 @@ func renderSide(b *strings.Builder, entries []Entry) {
 	facts := symbol.Facts()
 	rows := make([][]string, 0, len(facts)+len(renderKinds))
 	for _, f := range facts {
-		row := []string{f.String()}
+		row := append(make([]string, 0, 1+len(coverages)), f.String())
 		for _, c := range coverages {
 			row = append(row, factCell(c, f))
 		}
 		rows = append(rows, row)
 	}
 	for _, k := range renderKinds {
-		row := []string{k.String()}
+		row := append(make([]string, 0, 1+len(refused)), k.String())
 		for _, r := range refused {
 			cell := rendersWord
 			if _, refuses := r[k]; refuses {
@@ -193,7 +193,7 @@ func factCell(c render.Coverage, f symbol.Fact) string {
 			kindsOf[v] = append(kindsOf[v], k.String())
 		}
 	}
-	verdicts := []string{verdictWords[base]}
+	verdicts := append(make([]string, 0, 1+len(kindsOf)), verdictWords[base])
 	for _, v := range slices.Sorted(maps.Keys(kindsOf)) {
 		verdicts = append(verdicts, verdictWords[v]+exceptOn+strings.Join(kindsOf[v], kindSep))
 	}

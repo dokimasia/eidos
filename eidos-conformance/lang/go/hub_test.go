@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang_test
@@ -19,7 +19,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	tstesting "go.dokimi.dev/eidos/lang/typescript/testing"
 	eidos "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
@@ -158,9 +158,9 @@ func TestHub(t *testing.T) {
 		t.Run("writes a 64-bit integer as a number under a directive on the field", func(t *testing.T) {
 			t.Parallel()
 
-			client := cleanClient(t, hubRoot(t, expiresLine, asNumber), workspace.Config{})
-			expect.Contains(t, client, expiresNumber, "the directive overrides the policy of the field")
-			expect.Contains(t, client, idString, "every other member keeps its spelling")
+			expect.That(t, cleanClient(t, hubRoot(t, expiresLine, asNumber), workspace.Config{})).
+				Contains(expiresNumber, "the directive overrides the policy of the field").
+				Contains(idString, "every other member keeps its spelling")
 		})
 
 		t.Run("writes after an edit of the directive what a cold run over the edited tree writes", func(t *testing.T) {
@@ -204,11 +204,11 @@ func TestHub(t *testing.T) {
 		t.Run("leaves out the unexported members of a struct and an interface", func(t *testing.T) {
 			t.Parallel()
 
-			client := cleanClientWith(t, unexported)
-			expect.Contains(t, client, tokenValue, "the exported field is a property")
-			expect.Contains(t, client, tokenSign, "the exported method is an async method")
-			expect.NotContains(t, client, secret, "the unexported field is left out")
-			expect.NotContains(t, client, rotate, "the unexported method is left out")
+			expect.That(t, cleanClientWith(t, unexported)).
+				Contains(tokenValue, "the exported field is a property").
+				Contains(tokenSign, "the exported method is an async method").
+				NotContains(secret, "the unexported field is left out").
+				NotContains(rotate, "the unexported method is left out")
 		})
 
 		refusals := []struct {
@@ -227,8 +227,9 @@ func TestHub(t *testing.T) {
 				appendStore(t, root, channels)
 				report, err := hubRun(t, hubBuild(t, root, workspace.Config{}), root)
 				assert.ErrorIs(t, err, workspace.ErrRunFailed, "a refused type fails the plan")
-				var lines []int
-				for _, d := range findingsOf(report, eidos.RefusedType) {
+				refused := findingsOf(report, eidos.RefusedType)
+				lines := make([]int, 0, len(refused))
+				for _, d := range refused {
 					expect.Equal(t, d.Pos.File, storeFile, "the refusal is in the store")
 					lines = append(lines, d.Pos.Line)
 				}
@@ -239,9 +240,9 @@ func TestHub(t *testing.T) {
 		t.Run("writes the name of a directive on Put", func(t *testing.T) {
 			t.Parallel()
 
-			client := cleanClient(t, hubRoot(t, putLine, putAsSave), workspace.Config{})
-			expect.Contains(t, client, saveMethod, "the directive names the method save")
-			expect.NotContains(t, client, putMethod, "the method is not named put")
+			expect.That(t, cleanClient(t, hubRoot(t, putLine, putAsSave), workspace.Config{})).
+				Contains(saveMethod, "the directive names the method save").
+				NotContains(putMethod, "the method is not named put")
 		})
 
 		t.Run("explains the name of Put with the directive's claim first", func(t *testing.T) {

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package protobuf
@@ -16,7 +16,7 @@ import (
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	eidos "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -112,22 +112,30 @@ func ServicePlans() []workspace.Plan {
 // The struct of go-server and the interface of ts-client change, and the
 // export of go-server does not, because the export lists the names of the
 // declarations and their members and not their types. It reads and writes
-// the one file.
+// the one file through an [os.Root] of root.
 //
-// Error modes: the error of a file that does not read or write, and an
-// error for a schema that does not declare the field size with the type
-// int64.
+// Error modes: the error of a root or a file that does not open, read or
+// write, and an error for a schema that does not declare the field size
+// with the type int64.
 func EditService(root string) error {
-	target := filepath.Join(root, filepath.FromSlash(schemaFile))
-	b, err := os.ReadFile(target)
+	r, err := os.OpenRoot(root)
 	if err != nil {
-		return err
+		return fmt.Errorf("protobuf: %w", err)
+	}
+	defer r.Close()
+	name := filepath.FromSlash(schemaFile)
+	b, err := r.ReadFile(name)
+	if err != nil {
+		return fmt.Errorf("protobuf: %w", err)
 	}
 	src := string(b)
 	if !strings.Contains(src, wideSize) {
 		return fmt.Errorf("protobuf: %s declares no field %q to narrow", schemaFile, wideSize)
 	}
-	return os.WriteFile(target, []byte(strings.Replace(src, wideSize, narrowSize, 1)), schemaMode)
+	if err := r.WriteFile(name, []byte(strings.Replace(src, wideSize, narrowSize, 1)), schemaMode); err != nil {
+		return fmt.Errorf("protobuf: %w", err)
+	}
+	return nil
 }
 
 // servergen returns the service fixture's server generator. It writes a

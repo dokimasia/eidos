@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package conformance_test
@@ -36,8 +36,9 @@ func TestInventory(t *testing.T) {
 			t.Parallel()
 
 			assert.NoDuplicates(t, func() ([]string, error) {
-				var ids []string
-				for _, f := range conformance.Inventory() {
+				inventory := conformance.Inventory()
+				ids := make([]string, 0, len(inventory))
+				for _, f := range inventory {
 					ids = append(ids, f.ID)
 				}
 				return ids, nil

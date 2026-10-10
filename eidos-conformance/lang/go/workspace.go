@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang
@@ -157,21 +157,30 @@ func EditWorkspace(root string) error {
 
 // rename replaces the first occurrence of from with to in the file at the
 // slash-separated path under root, the way a person edits a source file.
-// It keeps the file's mode.
+// It opens the file through an [os.Root] of root, so a path that leaves
+// root fails. It keeps the file's mode.
 //
-// Error modes: the error of a file that does not read or write, and an
-// error for a file without from.
+// Error modes: the error of a root or a file that does not open, read or
+// write, and an error for a file without from.
 func rename(root, path, from, to string) error {
-	target := filepath.Join(root, filepath.FromSlash(path))
-	b, err := os.ReadFile(target)
+	r, err := os.OpenRoot(root)
 	if err != nil {
-		return err
+		return fmt.Errorf("golang: %w", err)
+	}
+	defer r.Close()
+	name := filepath.FromSlash(path)
+	b, err := r.ReadFile(name)
+	if err != nil {
+		return fmt.Errorf("golang: %w", err)
 	}
 	src := string(b)
 	if !strings.Contains(src, from) {
 		return fmt.Errorf("golang: %s declares no %s to rename", path, from)
 	}
-	return os.WriteFile(target, []byte(strings.Replace(src, from, to, 1)), sourceMode)
+	if err := r.WriteFile(name, []byte(strings.Replace(src, from, to, 1)), sourceMode); err != nil {
+		return fmt.Errorf("golang: %w", err)
+	}
+	return nil
 }
 
 // doubles returns the workspace fixture's stub generator: per interface

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package matrix_test
@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/lang/rust"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -28,8 +28,9 @@ func TestEntries(t *testing.T) {
 		t.Run("returns the satellites in the order Go, TypeScript, Java, Rust and protobuf", func(t *testing.T) {
 			t.Parallel()
 
-			var langs []symbol.Lang
-			for _, e := range matrix.Entries() {
+			entries := matrix.Entries()
+			langs := make([]symbol.Lang, 0, len(entries))
+			for _, e := range entries {
 				langs = append(langs, e.Corpus.Frontend.Lang())
 			}
 			assert.Equal(t, langs, []symbol.Lang{golang.Lang, typescript.Lang, java.Lang, rust.Lang, protobuf.Lang},
@@ -38,8 +39,9 @@ func TestEntries(t *testing.T) {
 		t.Run("returns a backend of the language's target for each satellite but protobuf", func(t *testing.T) {
 			t.Parallel()
 
-			var targets []plugin.Target
-			for _, e := range matrix.Entries() {
+			entries := matrix.Entries()
+			targets := make([]plugin.Target, 0, len(entries))
+			for _, e := range entries {
 				var target plugin.Target
 				if e.Backend != nil {
 					target = e.Backend.Target()

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang
@@ -11,7 +11,7 @@ import (
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	eidos "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"

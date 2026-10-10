@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang_test
@@ -362,8 +362,9 @@ func document(t *testing.T, path string) manifest.Shard {
 func recordedPaths(t *testing.T, root string) []string {
 	t.Helper()
 
-	var out []string
-	for _, e := range recorded(t, root).Files {
+	files := recorded(t, root).Files
+	out := make([]string, 0, len(files))
+	for _, e := range files {
 		out = append(out, e.Path)
 	}
 	return out

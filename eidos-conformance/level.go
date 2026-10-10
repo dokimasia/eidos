@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package conformance
@@ -56,7 +56,7 @@ type callable struct {
 func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdict Verdict) {
 	tb.Helper()
 
-	assert.True(tb, verdict.projected(), fmt.Sprintf("%s states projects, projects partly or opaque", f.ID))
+	assert.True(tb, verdict.projected(), f.ID+" states projects, projects partly or opaque")
 	assert.NotNil(tb, c.Rules, fmt.Sprintf("%s states %s under a corpus whose rules evaluate it", f.ID, verdict))
 	reads := store.NewReadSet()
 	reader, err := fx.Graph.Reader(reads, nil)
@@ -73,12 +73,12 @@ func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdi
 	switch verdict {
 	case Projects:
 		expect.Equal(tb, p.opaque, 0,
-			fmt.Sprintf("%s projects, so no reference it reaches folds to Opaque or Inline", f.ID))
-		expect.Equal(tb, p.gaps, 0, fmt.Sprintf("%s projects, so no member set it declares has a gap", f.ID))
+			f.ID+" projects, so no reference it reaches folds to Opaque or Inline")
+		expect.Equal(tb, p.gaps, 0, f.ID+" projects, so no member set it declares has a gap")
 		for _, call := range p.callables {
 			expect.True(tb, call.projects, fmt.Sprintf("%s projects, as every callable of %s does", call.id, f.ID))
 		}
-		expect.Empty(tb, remainder, fmt.Sprintf("%s projects, and a whole projection leaves no remainder", f.ID))
+		expect.Empty(tb, remainder, f.ID+" projects, and a whole projection leaves no remainder")
 	case ProjectsPartly:
 		refused := slices.ContainsFunc(p.callables, func(call callable) bool { return !call.projects })
 		expect.False(tb, p.opaque == 0 && p.gaps == 0 && !refused, fmt.Sprintf("%s projects partly, so a "+
@@ -86,7 +86,10 @@ func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdi
 			"nobody tested", f.ID))
 	case Opaque:
 		expect.NotEqual(tb, p.declaredOpaque, 0,
-			fmt.Sprintf("%s is opaque, so an alias it declares has a target that folds to Opaque or Inline", f.ID))
+			f.ID+" is opaque, so an alias it declares has a target that folds to Opaque or Inline")
+	case Loads, Refuses:
+		// The first assertion stops the check at a verdict that is no
+		// projection level.
 	}
 }
 
@@ -125,8 +128,7 @@ func measure(tb assert.TB, c Corpus, g *store.Graph, f Feature, b rules.Bound) p
 		if set, is := b.MembersOf(decl); is {
 			p.gaps += len(set.Gaps)
 		}
-		switch id.Kind {
-		case symbol.KindFunction, symbol.KindMethod:
+		if id.Kind == symbol.KindFunction || id.Kind == symbol.KindMethod {
 			_, projects := b.CallableOf(decl)
 			p.callables = append(p.callables, callable{id: id, projects: projects})
 		}
@@ -170,10 +172,11 @@ func identityOf(c Corpus, f Feature, d Decl) symbol.Identity {
 }
 
 // stampKeys returns the keys of the stamps the load made on a subject,
-// in the seal's order, and nil for a subject it stamped nothing on.
+// in the seal's order.
 func stampKeys(g *store.Graph, id symbol.Identity) []meta.KeyName {
-	var keys []meta.KeyName
-	for _, s := range g.StampsOf(id) {
+	stamps := g.StampsOf(id)
+	keys := make([]meta.KeyName, 0, len(stamps))
+	for _, s := range stamps {
 		keys = append(keys, s.Key)
 	}
 	return keys

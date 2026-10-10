@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package typescript_test
@@ -54,8 +54,9 @@ func TestMirror(t *testing.T) {
 			assert.NoError(t, err, "the run is clean")
 			b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rowMirror)))
 			assert.NoError(t, err, "the plan writes the struct beside the module")
-			expect.Contains(t, b, mirroredName, "a string property is a Go string")
-			expect.Contains(t, b, mirroredSize, "a number property is a Go float64")
+			expect.That(t, b).
+				Contains(mirroredName, "a string property is a Go string").
+				Contains(mirroredSize, "a number property is a Go float64")
 		})
 
 		t.Run("reports RefusedType at a property of a union", func(t *testing.T) {
