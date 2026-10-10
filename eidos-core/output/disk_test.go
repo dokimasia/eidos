@@ -144,7 +144,7 @@ func TestDisk(t *testing.T) {
 				t.Parallel()
 
 				root := files.Workspace(t, files.Tree{storeFile: files.Text(tt.existing(t))})
-				d := opened(t, root, nil)
+				d := disk(t, root)
 				assert.NoError(t, d.Overwrite(tt.allow...), "the verdicts are allowed")
 				next := stampedAs(t, diskBrand, secondBody)
 				assert.NoError(t, d.Write(storeFile, []byte(next)), "the file stages")
@@ -178,7 +178,7 @@ func TestDisk(t *testing.T) {
 
 				existing := tt.existing(t)
 				root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
-				d := opened(t, root, nil)
+				d := disk(t, root)
 				assert.NoError(t, d.Overwrite(tt.allow), "the verdict is allowed")
 				assert.NoError(t, d.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
 				_, err := d.Commit()
@@ -191,7 +191,7 @@ func TestDisk(t *testing.T) {
 			t.Parallel()
 
 			root := files.Workspace(t, files.Tree{storeFile: files.Dir()})
-			d := opened(t, root, nil)
+			d := disk(t, root)
 			assert.NoError(t, d.Overwrite(output.FoundForeign), "the foreign verdict is allowed")
 			assert.NoError(t, d.Write(storeFile, []byte(firstBody)), "the file stages")
 			_, err := d.Commit()
@@ -204,7 +204,7 @@ func TestDisk(t *testing.T) {
 
 			existing := drifted(t)
 			root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
-			d := opened(t, root, nil)
+			d := disk(t, root)
 			assert.NoError(t, d.Overwrite(output.FoundDrifted, output.FoundForeign), "both verdicts are allowed")
 			assert.NoError(t, d.Delete(storeFile), "the removal stages")
 			got, err := d.Commit()
@@ -226,7 +226,7 @@ func TestDisk(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.HasError(t, opened(t, t.TempDir(), nil).Overwrite(tt.found), "the verdict is refused")
+				assert.HasError(t, disk(t, t.TempDir()).Overwrite(tt.found), "the verdict is refused")
 			})
 		}
 
@@ -235,7 +235,7 @@ func TestDisk(t *testing.T) {
 
 			existing := drifted(t)
 			root := files.Workspace(t, files.Tree{storeFile: files.Text(existing)})
-			d := opened(t, root, nil)
+			d := disk(t, root)
 			assert.HasError(t, d.Overwrite(output.FoundDrifted, output.FoundIntact), "the list is refused")
 			assert.NoError(t, d.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
 			_, err := d.Commit()
@@ -246,7 +246,7 @@ func TestDisk(t *testing.T) {
 		t.Run("returns an error after the preparation", func(t *testing.T) {
 			t.Parallel()
 
-			d := opened(t, t.TempDir(), nil)
+			d := disk(t, t.TempDir())
 			_, err := d.Prepare()
 			assert.NoError(t, err, "the staging prepares")
 			assert.HasError(t, d.Overwrite(output.FoundDrifted), "a prepared staging is closed")
@@ -256,7 +256,7 @@ func TestDisk(t *testing.T) {
 		t.Run("returns ErrFinished after the commit", func(t *testing.T) {
 			t.Parallel()
 
-			d := opened(t, t.TempDir(), nil)
+			d := disk(t, t.TempDir())
 			_, err := d.Commit()
 			assert.NoError(t, err, "the commit succeeds")
 			assert.ErrorIs(t, d.Overwrite(output.FoundDrifted), output.ErrFinished, "a sink serves one staging")
@@ -887,7 +887,7 @@ func benchStaged(b *testing.B, root string, body []byte, allocs uint64, call fun
 // test where it cannot. The cleanup of t discards the sink where the
 // case did not finish it, because Windows does not remove a directory
 // while a root over it is open.
-func disk(t *testing.T, root string) output.Sink {
+func disk(t *testing.T, root string) *output.Disk {
 	t.Helper()
 
 	d, err := output.NewDisk(root, diskBrand)
@@ -960,7 +960,10 @@ func refusedOverwrite(t *testing.T, existing string) (string, error) {
 }
 
 // opened opens a disk sink over root with body staged at storeFile, or
-// with nothing staged for a nil body.
+// with nothing staged for a nil body. It does not register a cleanup, so
+// its caller finishes or discards the sink. The allocation test and the
+// benchmarks open a sink for each measured call and discard it
+// themselves.
 func opened(tb assert.TB, root string, body []byte) *output.Disk {
 	tb.Helper()
 

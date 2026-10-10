@@ -82,7 +82,7 @@ func TestTee(t *testing.T) {
 
 			root := files.Workspace(t, files.Tree{storeFile: files.Text(drifted(t))})
 			m := output.NewMem()
-			tee := output.NewTee(opened(t, root, nil), m)
+			tee := output.NewTee(disk(t, root), m)
 			assert.NoError(t, tee.Overwrite(output.FoundDrifted), "the verdict is allowed in every sink")
 			next := stampedAs(t, diskBrand, secondBody)
 			assert.NoError(t, tee.Write(storeFile, []byte(next)), "the file stages")
