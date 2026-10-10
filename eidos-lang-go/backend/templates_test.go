@@ -26,8 +26,8 @@ const (
 	nestedStub  = "NESTED "
 )
 
-// templateMapAllocs is a map of kinds onto templates or reasons: the
-// map and its one group.
+// templateMapAllocs is a map of kinds onto templates: the map and its
+// one group.
 const templateMapAllocs = 2
 
 // Each kind template is pinned byte for byte over a declaration
@@ -207,6 +207,35 @@ func TestTemplates(t *testing.T) {
 				"func (s *Store) Close() {\n"+bodyStub+"}\n", "the method's shape")
 		})
 
+		empties := []struct {
+			name string
+			kind symbol.Kind
+			give symbol.Symbol
+			want string
+		}{
+			{
+				name: "writes the empty body of a function as braces on its line",
+				kind: symbol.KindFunction, give: &emit.Function{Name: "Boot"}, want: "func Boot() {}\n",
+			},
+			{
+				name: "writes the empty body of a method as braces on its line",
+				kind: symbol.KindMethod,
+				give: &emit.Method{Name: "isShape", Receiver: &emit.Param{Type: ref("*ShapeCircle")}},
+				want: "func (*ShapeCircle) isShape() {}\n",
+			},
+		}
+		for _, tt := range empties {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				tmpl := parsed(t, kind(tt.kind), &render.ImportSet{}).
+					Funcs(template.FuncMap{render.BuiltinBody: func(any) string { return "" }})
+				var b strings.Builder
+				assert.NoError(t, tmpl.Execute(&b, tt.give), "the template executes")
+				assert.Equal(t, b.String(), tt.want, "the braces of an empty body are on the signature's line")
+			})
+		}
+
 		t.Run("writes a transparent alias with an equals sign", func(t *testing.T) {
 			t.Parallel()
 
@@ -358,42 +387,20 @@ func TestTemplates(t *testing.T) {
 				"the shape gofmt leaves")
 		})
 	})
-
-	t.Run("RefusedKinds", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns the sum kind alone", func(t *testing.T) {
-			t.Parallel()
-
-			refused := backend.RefusedKinds()
-			assert.Length(t, refused, 1, "one kind Go cannot spell")
-			assert.NotEqual(t, refused[symbol.KindSum], "", "the sum, with its reason")
-		})
-
-		t.Run("returns no kind the templates spell", func(t *testing.T) {
-			t.Parallel()
-
-			kinds := backend.KindTemplates()
-			for k := range backend.RefusedKinds() {
-				assert.NotContains(t, kinds, k, "a kind is spelt or refused: "+k.String())
-			}
-		})
-	})
 }
 
-// Each map allocates itself. The ordinary run, which runs no benchmark,
-// checks those ceilings here.
+// The map allocates itself. The ordinary run, which runs no benchmark,
+// checks that ceiling here.
 func TestTemplatesAllocs(t *testing.T) {
 	checkAllocs(t, templatesCalls())
 }
 
-// BenchmarkTemplates measures the maps the backend reads once per
-// build.
+// BenchmarkTemplates measures the map the backend reads once per build.
 func BenchmarkTemplates(b *testing.B) {
 	benchCalls(b, templatesCalls())
 }
 
-// templatesCalls returns a call of KindTemplates and of RefusedKinds.
+// templatesCalls returns a call of KindTemplates.
 func templatesCalls() []allocCall {
 	var kinds map[symbol.Kind]string
 	return []allocCall{
@@ -401,11 +408,6 @@ func templatesCalls() []allocCall {
 			name: "KindTemplates", allocs: templateMapAllocs,
 			call:  func() { kinds = backend.KindTemplates() },
 			check: func(tb assert.TB) { assert.Length(tb, kinds, 7, "KindTemplates returns seven templates") },
-		},
-		{
-			name: "RefusedKinds", allocs: templateMapAllocs,
-			call:  func() { kinds = backend.RefusedKinds() },
-			check: func(tb assert.TB) { assert.Length(tb, kinds, 1, "RefusedKinds returns the sum") },
 		},
 	}
 }

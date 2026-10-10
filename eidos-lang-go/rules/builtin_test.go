@@ -101,7 +101,7 @@ func TestBuiltin(t *testing.T) {
 			},
 			{name: "classifies bool as a boolean leaf", give: "bool", form: symbol.FormBool},
 			{name: "classifies string as a text leaf", give: "string", form: symbol.FormText},
-			{name: "classifies any as opaque", give: "any", form: symbol.FormOpaque},
+			{name: "classifies any as the top type", give: "any", form: symbol.FormDynamic},
 			{name: "classifies error as opaque", give: "error", form: symbol.FormOpaque},
 			{name: "classifies comparable as opaque", give: "comparable", form: symbol.FormOpaque},
 			{name: "classifies complex128 as opaque", give: "complex128", form: symbol.FormOpaque},

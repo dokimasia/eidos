@@ -9,10 +9,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -34,25 +36,39 @@ const (
 // alone evaluates to zero.
 const iotaName = "iota"
 
-// Lower reshapes the constructs Go states in other declarations:
-// an enum becomes a defined type and its constants, and a callable
-// announcing failure types gains an error return, in place. Both
-// consume their fact, so a second settle changes nothing.
-// Everything else passes through unchanged, a sum included, which
-// the backend declares refused.
+// markerPrefix opens the name of a sum's marker method, and the sum's
+// name follows it.
+const markerPrefix = "is"
+
+// The brackets of the type arguments that a variant's receiver restates.
+const (
+	argsOpen  = "["
+	argsClose = "]"
+)
+
+// Lower reshapes the constructs Go states in other declarations: an
+// enum becomes a defined type and its constants, a sum becomes an
+// interface and one struct for each variant, and a callable announcing
+// failure types gains an error return, in place. Each consumes its
+// fact, so a second settle does not change the result. Everything else
+// passes through unchanged.
 //
 // # Allocation contract
 //
 // A declaration that passes through allocates nothing. An enum
 // allocates the list of outputs, the defined type and its target, and
 // per variant the constant, its type and its joined name's two. A
-// callable that announces failures allocates the error return, its
-// type and the grown list of returns, and a struct allocates the
-// receiver of each method it fills. A refusal allocates its error.
+// variant name without a lower-case letter adds its lower-cased form. A sum
+// allocates what [lowerSum] states. A callable that announces failures
+// allocates the error return, its type and the grown list of returns,
+// and a struct allocates the receiver of each method it fills. A refusal
+// allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Enum:
 		return lowerEnum(d)
+	case *emit.Sum:
+		return lowerSum(d)
 	case *emit.Function:
 		d.Returns, d.Throws = thrown(d.Returns, d.Throws), nil
 	case *emit.Method:
@@ -136,16 +152,22 @@ func freeName(returns []*emit.Return, base string) string {
 // lowerEnum reshapes an enum into a defined type and one typed
 // constant per variant: the type keeps the enum's name, each
 // constant joins the type's name and its variant's in the neutral
-// camel form, and its type references the defined type. A constant
-// declared alone cannot count through iota, so each value is
-// spelled the way a Go constant group evaluates it: a variant
-// stating no value repeats the last stated value, a variant before
-// any stated value takes its ordinal, and every iota in a value is
-// the variant's position. Every output names the enum's origin, and
-// none restates the enum.
+// camel form, and its type references the defined type. Before the
+// join, the lowering lower-cases a variant name without a lower-case
+// letter. The join then title-cases each word, so the protobuf variant
+// UNSPECIFIED of the enum phase becomes the constant phaseUnspecified.
 //
-// An enum with fields or methods refuses: a constant group has no
-// members, and Go declares no other closed value set.
+// A constant declared alone cannot count through iota, so the lowering
+// spells each value the way a Go constant group evaluates it:
+//
+//   - A variant without a stated value repeats the last stated value.
+//   - A variant before any stated value takes its ordinal.
+//   - Every iota in a value becomes the variant's position.
+//
+// Every output has the enum's origin, and the outputs replace the enum.
+// The lowering refuses an enum with fields or methods, because a
+// constant group has no members and Go does not declare another closed
+// value set.
 func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return nil, refuse("a constant group has no members, and %s states some", e.Name)
@@ -174,11 +196,17 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 			value = strconv.Itoa(i)
 		}
 		value = atPosition(value, i)
+		name := v.Name
+		if !strings.ContainsFunc(name, unicode.IsLower) {
+			// naming.Pascal returns an upper-case identifier unchanged, so
+			// the join lowers it first and Pascal title-cases each word.
+			name = strings.ToLower(name)
+		}
 		out = append(out, &emit.Constant{
 			Origin:      e.Origin,
 			Doc:         v.Doc,
 			Comment:     v.Comment,
-			Name:        e.Name + naming.Pascal(v.Name),
+			Name:        e.Name + naming.Pascal(name),
 			Visibility:  e.Visibility,
 			Type:        &emit.TypeRef{Spelling: e.Name},
 			Value:       value,
@@ -216,4 +244,104 @@ func atPosition(expr string, position int) string {
 	}
 	b.WriteString(expr[from:])
 	return b.String()
+}
+
+// lowerSum reshapes a sum into an interface and one struct for each
+// variant, as protobuf-go generates a oneof. The interface keeps the
+// sum's name, documentation, annotations and type parameters. Its one
+// method is the marker: an unexported method named is and the sum's
+// name, without parameters or results. A type of another package cannot
+// declare that method, so only the variant structs and the types that
+// embed one of them implement the interface.
+//
+// Each variant becomes a struct whose name joins the sum's name and the
+// variant's name in the neutral camel form. The struct has the variant's
+// documentation, annotations and fields. It also has a copy of the sum's
+// type parameters. It implements the marker with an empty body and a
+// pointer receiver. The receiver restates the type parameters as
+// arguments. Its type references the sum's origin, so the settle
+// respells the receiver with the struct. Every output has the sum's
+// origin, and the outputs replace the sum.
+//
+// The lowering refuses a sum with methods, because no variant struct has
+// a body for them. It refuses a variant field without a name, because a
+// Go struct field has a name.
+//
+// # Allocation contract
+//
+// lowerSum allocates six times for the sum: the list of outputs, the
+// interface, its marker method, the method's list and the two steps of
+// the marker's name. Each variant adds ten: its struct, the two steps of
+// its name, the marker method and its list, the receiver, the receiver's
+// pointer type, the type's list of one element, the element and the
+// pointer's spelling. A variant with fields adds the list of its fields.
+// A sum of two variants, one of them with a field, allocates 27 times. A
+// generic sum of n type parameters adds 2n+3 for each variant: the
+// copied list of parameters and each copy with its bounds, the list of
+// the receiver's arguments and each argument, and the spelling of the
+// arguments. A refusal allocates its error.
+func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
+	if s.Methods.Len() > 0 {
+		return nil, refuse("a variant struct has no body for a sum's methods, and %s states some", s.Name)
+	}
+	marker := markerPrefix + naming.Pascal(s.Name)
+	variants := s.Variants.Items()
+	out := make([]symbol.Symbol, 0, 1+len(variants))
+	iface := &emit.Interface{
+		Origin:      s.Origin,
+		Doc:         s.Doc,
+		Comment:     s.Comment,
+		Name:        s.Name,
+		Visibility:  s.Visibility,
+		TypeParams:  s.TypeParams,
+		Annotations: s.Annotations,
+	}
+	iface.Methods.Append(&emit.Method{Name: marker, Visibility: symbol.VisibilityPackage})
+	out = append(out, iface)
+	for _, v := range variants {
+		st, err := variantStruct(s, v, marker)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, st)
+	}
+	return out, nil
+}
+
+// variantStruct builds the struct of one variant of a sum, with the
+// marker method named marker.
+func variantStruct(s *emit.Sum, v *emit.SumVariant, marker string) (*emit.Struct, error) {
+	fields := v.Fields.Items()
+	for _, f := range fields {
+		if f.Name == "" {
+			return nil, refuse("a struct field has a name, and a payload entry in %s states none", v.Name)
+		}
+	}
+	st := &emit.Struct{
+		Origin:      s.Origin,
+		Doc:         v.Doc,
+		Comment:     v.Comment,
+		Name:        s.Name + naming.Pascal(v.Name),
+		Visibility:  s.Visibility,
+		TypeParams:  lowering.CopyTypeParams(s.TypeParams),
+		Annotations: v.Annotations,
+	}
+	st.Fields.Append(fields...)
+	host := &emit.TypeRef{Target: s.Origin, Spelling: st.Name}
+	if len(s.TypeParams) > 0 {
+		host.Args = make([]*emit.TypeRef, 0, len(s.TypeParams))
+		for _, p := range s.TypeParams {
+			host.Args = append(host.Args, &emit.TypeRef{Spelling: p.Name})
+		}
+	}
+	st.Methods.Append(&emit.Method{
+		Name:       marker,
+		Visibility: symbol.VisibilityPackage,
+		Receiver: &emit.Param{Type: &emit.TypeRef{
+			Spelling: pointerMark + spellref.Spell(host, argsOpen, argsClose, Anonymous),
+			Form:     symbol.FormOptional,
+			Elems:    []*emit.TypeRef{host},
+		}},
+	})
+	return st, nil
 }

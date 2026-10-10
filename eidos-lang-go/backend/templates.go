@@ -64,19 +64,22 @@ const (
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// FunctionTemplate spells a function, its type parameters
-	// behind the name, and places its body, under the guard.
+	// behind the name, and places its body, under the guard. An empty
+	// body is the pair of braces on the signature's line.
 	FunctionTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}func {{.Name}}{{typeparams .TypeParams}}" +
-		"({{params .Params}}){{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
+		"({{params .Params}}){{results .Returns}} {{with body .}}{\n{{.}}}{{else}}{}{{end}}" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 
 	// MethodTemplate spells a method: Go states one at the package
 	// level with a receiver, never inside the type it attaches to.
 	// The method's own type parameters spell behind its name, the
 	// form Go accepts since 1.27; the receiver's spell inside the
-	// receiver's reference. The guard refuses what Go states
-	// nowhere.
+	// receiver's reference. An empty body is the pair of braces on
+	// the signature's line, as a sum's marker method is. The guard
+	// refuses what Go states nowhere.
 	MethodTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}func ({{receiver .}}) " +
 		"{{.Name}}{{typeparams .TypeParams}}({{params .Params}})" +
-		"{{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
+		"{{results .Returns}} {{with body .}}{\n{{.}}}{{else}}{}{{end}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate spells a type alias or a defined type, its
 	// type parameters behind the name, under the guard: the equals
@@ -101,9 +104,9 @@ const (
 
 // KindTemplates maps each emit kind to the template that spells
 // it. A file-level kind absent from the map is one the lowering
-// reshapes, as it does an enum, or one [RefusedKinds] refuses. It
-// builds the map on every call, which the caller keeps: the map and its
-// one group, two allocations.
+// reshapes, as it does an enum and a sum. It builds the map on every
+// call, which the caller keeps: the map and its one group, two
+// allocations.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -113,15 +116,5 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
 		symbol.KindVariable:  VariableTemplate,
-	}
-}
-
-// RefusedKinds maps each emit kind Go declares no spelling for to
-// the reason, which the render reports beside every declaration of
-// the kind it skips. It builds the map on every call, which the caller
-// keeps: the map and its one group, two allocations.
-func RefusedKinds() map[symbol.Kind]string {
-	return map[symbol.Kind]string{
-		symbol.KindSum: "Go has no sum type, and an interface leaves its implementations open",
 	}
 }

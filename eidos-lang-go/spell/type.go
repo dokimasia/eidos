@@ -55,6 +55,16 @@ const (
 	durationType = "time.Duration"
 )
 
+// The spelling of the well-known empty value, and the iterator over pairs
+// of an element and an error that an asynchronous stream takes, with its
+// package.
+const (
+	emptyStruct = "struct{}"
+	iterPackage = "iter"
+	iterType    = "iter.Seq2"
+	errorType   = "error"
+)
+
 // ints and uints are Go's integer types by width in bits, 0 for the
 // platform's width, and floats are Go's floating-point types.
 var (
@@ -69,25 +79,34 @@ var (
 //
 //   - a scalar as the predeclared type of its class and width, and int
 //     and uint for the platform's width;
-//   - Bool, Text and Bytes as bool, string and []byte;
+//   - Bool, Text and Bytes as bool, string and []byte, and the top type as
+//     any;
 //   - an optional as a pointer, a list as a slice, an array as an array
-//     of its length, a map as a map, a function as a function type, and
-//     a synchronous stream as a channel;
+//     of its length, a map as a map, a function as a function type, a
+//     synchronous stream as a channel, and an asynchronous stream as
+//     iter.Seq2[T, error], with the import of iter;
+//   - an optional of a list, bytes, a map, a function type, a stream, the
+//     top type or a sum as the type itself, because the nil value of its
+//     Go spelling is the absent value;
 //   - a wildcard as its upper bound, and as any where it has no bound;
 //   - the well-known timestamp and duration as time.Time and
-//     time.Duration, with the import of time;
+//     time.Duration, with the import of time, and the well-known empty
+//     value as struct{};
 //   - every other reference and sum as a translated reference with the
-//     referent's declared name, the shape's target and the translated
-//     type arguments, which Go writes in brackets.
+//     referent's flat name, the shape's target and the translated type
+//     arguments, which Go writes in brackets.
 //
-// Type refuses a tuple, a union, an intersection, an asynchronous
-// stream, a borrow, a wildcard with a lower bound, an inline type and an
-// opaque type, because Go has no spelling of them. A Go pointer aliases
-// and a Go value copies, so neither is a borrow. Type refuses a scalar
-// of another width and an array of an unstated length. It refuses a map
-// key of a list, a map, a function type and bytes, because Go does not
-// compare their values. It refuses a form whose child it refuses, and
-// the error contains the source spelling of the child.
+// A consumer ranges over the iterator of an asynchronous stream, and the
+// stream ends with the first pair whose error is not nil.
+//
+// Type refuses a tuple, a union, an intersection, a borrow, a wildcard
+// with a lower bound, an inline type and an opaque type, because Go has
+// no spelling of them. A Go pointer aliases and a Go value copies, so
+// neither is a borrow. Type refuses a scalar of another width and an
+// array of an unstated length. It refuses a map key of a list, a map, a
+// function type and bytes, because Go does not compare their values. It
+// refuses a form whose child it refuses, and the error contains the
+// source spelling of the child.
 //
 // # Allocation contract
 //
@@ -113,6 +132,8 @@ func goType(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: boolType}, nil
 	case symbol.FormText:
 		return &emit.TypeRef{Spelling: stringType}, nil
+	case symbol.FormDynamic:
+		return &emit.TypeRef{Spelling: anyType}, nil
 	case symbol.FormBytes:
 		return &emit.TypeRef{
 			Spelling: sliceMark + byteType, Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: byteType}},
@@ -152,22 +173,30 @@ func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
 	}
 }
 
-// container spells a form of one child: an optional as a pointer, a list
-// as a slice, an array as an array of its length, and a synchronous
-// stream as a channel. It refuses an array of an unstated length and an
-// asynchronous stream.
+// container spells a form of one child: an optional as a pointer, or as
+// the child itself where Go's nil value of the child is the absent value,
+// a list as a slice, an array as an array of its length, a synchronous
+// stream as a channel, and an asynchronous stream as an iterator over
+// pairs of an element and an error. It refuses an array of an unstated
+// length.
 func container(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch {
 	case s.Form == symbol.FormArray && s.Length == 0:
 		return nil, fmt.Errorf("an array of an unstated length has no Go spelling")
-	case s.Form == symbol.FormStream && s.Async:
-		return nil, fmt.Errorf("%s has no Go spelling", spoke.Describe(s))
 	case len(s.Elems) != 1:
 		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
 	}
 	elems, err := spoke.Children(s.Elems, goType)
 	if err != nil {
 		return nil, err
+	}
+	switch {
+	case s.Form == symbol.FormOptional && nilable(s.Elems[0]):
+		return elems[0], nil
+	case s.Form == symbol.FormStream && s.Async:
+		return &emit.TypeRef{
+			Spelling: iterType, Package: iterPackage, Args: []*emit.TypeRef{elems[0], {Spelling: errorType}},
+		}, nil
 	}
 	inner := spellref.Spell(elems[0], argsOpener, argsCloser, anyType)
 	t := &emit.TypeRef{Form: s.Form, Elems: elems}
@@ -244,18 +273,33 @@ func wildcard(s rules.TypeShape) (*emit.TypeRef, error) {
 }
 
 // reference spells a reference or a sum: a well-known type as Go's time
-// type, and every other referent as a translated reference with its
-// translated arguments.
+// type or as the empty struct, and every other referent as a translated
+// reference under its flat name, with its translated arguments.
 func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: timeType, Package: timePackage}, nil
 	case rules.WellKnownDuration:
 		return &emit.TypeRef{Spelling: durationType, Package: timePackage}, nil
+	case rules.WellKnownEmpty:
+		return &emit.TypeRef{Spelling: emptyStruct, Form: symbol.FormInline}, nil
 	}
 	args, err := spoke.Children(s.Args, goType)
 	if err != nil {
 		return nil, err
 	}
-	return &emit.TypeRef{Spelling: s.Ref.Name, Target: s.Ref, Args: args}, nil
+	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
+}
+
+// nilable reports whether the nil value of Go's spelling of s is the
+// absent value: a slice, bytes, a map, a function, a channel, an iterator,
+// any and the interface of a sum.
+func nilable(s rules.TypeShape) bool {
+	switch s.Form {
+	case symbol.FormList, symbol.FormBytes, symbol.FormMap, symbol.FormFunc, symbol.FormStream,
+		symbol.FormDynamic, symbol.FormSum:
+		return true
+	default:
+		return false
+	}
 }

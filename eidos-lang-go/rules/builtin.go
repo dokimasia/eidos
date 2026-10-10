@@ -70,12 +70,12 @@ func nameOf(ref *node.TypeRef) typeName {
 // Builtin classifies a named reference the resolution step left
 // without a target: the integer and float spellings as scalars with
 // their widths, byte and rune through the widths they alias, bool and
-// string as their leaves, time.Time and time.Duration through the
-// well-known registry, and every other reference, any, error and
-// comparable included, as Opaque. A predeclared spelling classifies
-// only where no import qualifies it, and the two time types by the
-// package their import names and their name, under any alias. It
-// allocates nothing.
+// string as their leaves, any as the top type, time.Time and
+// time.Duration through the well-known registry, and every other
+// reference, error and comparable included, as Opaque. A predeclared
+// spelling classifies only where no import qualifies it, and the two
+// time types by the package their import names and their name, under
+// any alias. It allocates nothing.
 func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	if ref == nil {
 		return rules.Opaque(nil)
@@ -109,6 +109,8 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 		return rules.Leaf(symbol.FormBool, ref.Spelling)
 	case typeName{name: spellString}:
 		return rules.Leaf(symbol.FormText, ref.Spelling)
+	case anyType:
+		return rules.Leaf(symbol.FormDynamic, ref.Spelling)
 	case timeType:
 		return rules.Reference(ref.Spelling, rules.WellKnownTimestamp)
 	case durationType:

@@ -45,21 +45,18 @@ const (
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the seven kind templates.
-	newAllocs = 1_574
-	// renderAllocs is one render of the scaled corpus: text/template's
-	// reflective calls, about half of its allocations, go/format's parse
-	// and print of every file, about four in ten, and the vocabulary's
-	// spellings. The count varies between processes: 13 fresh processes,
-	// three of them with the collector off, counted 15,968,783 to
-	// 15,968,987. The ceiling allows 256 above the lowest.
-	renderAllocs = 15_968_783 + 256
-	// settleAllocs is one settle of the scaled corpus. With the collector
-	// off a settle allocates 956,825 times: the respelling of every name,
-	// about half of them, the lowering of enums and receivers, about four
-	// in ten, and the reindex. The collections that run during a settle
-	// add more: 10 fresh processes counted up to 6 more. The ceiling
-	// allows 32 more.
-	settleAllocs = 956_825 + 32
+	newAllocs = 1_602
+	// renderAllocs is one render of the scaled corpus of 200,000
+	// declarations: text/template's reflective calls, about half of its
+	// allocations, go/format's parse and print of every file, about four
+	// in ten, and the vocabulary's spellings. One run counted 20,763,550,
+	// and the budget is a round number about 5% above it.
+	renderAllocs = 21_800_000
+	// settleAllocs is one settle of the scaled corpus of 200,000
+	// declarations: the lowering of sums, enums and receivers, the
+	// respelling of every name, and the reindex. One run counted
+	// 1,817,925, and the budget is a round number about 5% above it.
+	settleAllocs = 1_910_000
 )
 
 // allocCall is one call that an allocation test and a benchmark share:
@@ -328,7 +325,8 @@ func benchCall(b *testing.B, tt allocCall) {
 
 // setup builds the backend over the kernel's canonical fixture,
 // which emits every file-level kind: the backend spells each, lowers
-// the enum into a defined type and constants, and refuses the sum.
+// the enum into a defined type and constants, and lowers the sum into
+// an interface and its variant structs.
 func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
@@ -337,14 +335,14 @@ func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	return r, backendtest.CanonicalFixture(tb)
 }
 
-// benchSetup builds the backend over the suite's scaled corpus,
-// without the kinds the backend refuses.
+// benchSetup builds the backend over the suite's scaled corpus of every
+// canonical kind, because the backend refuses none.
 func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.ScaledFixture(tb, backend.RefusedKinds())
+	return r, backendtest.ScaledFixture(tb, nil)
 }
 
 // structOf returns a struct of svcPkg named name.

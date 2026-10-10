@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/go/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -58,12 +59,55 @@ const (
 	phaseClosed = "phaseClosed"
 )
 
+// The variant names in upper case and in mixed case that the join
+// cases lower, and the constants that they join to.
+const (
+	upperOpen         = "OPEN"
+	upperStatus       = "STATUS_ACTIVE"
+	upperUserID       = "USER_ID"
+	mixedName         = "OpenNow"
+	phaseStatusActive = "phaseStatusActive"
+	phaseUserID       = "phaseUserID"
+	phaseOpenNow      = "phaseOpenNow"
+)
+
+// The cases lower a sum of a circle with a radius and an empty
+// variant, and pin the marker method, the variant structs and their
+// receivers that it lowers to.
+const (
+	circleName      = "circle"
+	emptyName       = "empty"
+	radiusName      = "radius"
+	shapeMarker     = "isShape"
+	shapeCircle     = "shapeCircle"
+	shapeEmpty      = "shapeEmpty"
+	circleReceiver  = "*shapeCircle"
+	genericReceiver = "*shapeCircle[K, V]"
+)
+
 // The allocations of a lowering.
 const (
 	// enumLowerAllocs is an enum of three variants without values: the
 	// list of outputs, the defined type and its target, and per variant
 	// the constant, its type, and its joined name's two.
 	enumLowerAllocs = 1 + 2 + 3*4
+	// upperEnumLowerAllocs is an enum of two variant names in upper case.
+	// Each variant adds its lower-cased name to what a variant of
+	// enumLowerAllocs allocates.
+	upperEnumLowerAllocs = 1 + 2 + 2*5
+	// sumLowerAllocs is a sum of a variant with one field and a variant
+	// without fields: the list of outputs, the interface, its marker
+	// method, the method's list and the marker's name's two, and per
+	// variant the struct, its joined name's two, the marker method and its
+	// list, the receiver, its pointer type, the type's list of one element,
+	// the element and the pointer's spelling. The variant with a field
+	// adds its list of fields.
+	sumLowerAllocs = 6 + 2*10 + 1
+	// genericSumLowerAllocs is the same sum over two type parameters. Each
+	// variant adds the copied list of parameters and each copy, the list
+	// of the receiver's arguments and each argument, and the spelling of
+	// the arguments.
+	genericSumLowerAllocs = sumLowerAllocs + 2*(3+3+1)
 	// throwsAllocs is a function announcing one failure: the error
 	// return, its type, and the grown list of returns.
 	throwsAllocs = 1 + 1 + 1
@@ -155,6 +199,34 @@ func TestLower(t *testing.T) {
 
 				assert.Equal(t, constantValues(t, enumOf(tt.give...)), tt.want,
 					"the value a constant group evaluates to")
+			})
+		}
+
+		names := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "joins a variant name in upper case as a word in title case", give: upperOpen, want: phaseOpen},
+			{
+				name: "joins each word of a variant name in upper case in title case",
+				give: upperStatus, want: phaseStatusActive,
+			},
+			{name: "keeps an initialism of a variant name in upper case", give: upperUserID, want: phaseUserID},
+			{name: "keeps a variant name in mixed case as written", give: mixedName, want: phaseOpenNow},
+		}
+		for _, tt := range names {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				e := &emit.Enum{Name: phaseName}
+				e.Variants.Append(&emit.EnumVariant{Name: tt.give})
+				out, err := backend.Lower(e)
+				assert.NoError(t, err, "the enum lowers")
+				assert.Length(t, out, 2, "one defined type and one constant")
+				constant, isConstant := out[1].(*emit.Constant)
+				assert.True(t, isConstant, "the variant becomes a constant")
+				assert.Equal(t, constant.Name, tt.want, "the constant joins the type's name and the variant's words")
 			})
 		}
 
@@ -288,20 +360,113 @@ func TestLower(t *testing.T) {
 			assert.Equal(t, f.Returns[1].Name, nextErrorName, "the next free name")
 		})
 
-		passes := []struct {
-			name string
-			give symbol.Symbol
-		}{
-			{name: "passes a struct through unchanged", give: &emit.Struct{Name: rowName}},
-			{name: "passes a sum through unchanged", give: &emit.Sum{Name: shapeName}},
-		}
-		for _, tt := range passes {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("passes a struct through unchanged", func(t *testing.T) {
+			t.Parallel()
 
-				lowered(t, tt.give)
-			})
-		}
+			lowered(t, &emit.Struct{Name: rowName})
+		})
+
+		t.Run("reshapes a sum into an interface followed by one struct per variant", func(t *testing.T) {
+			t.Parallel()
+
+			s := shapeSum()
+			out, err := backend.Lower(s)
+			assert.NoError(t, err, "the sum lowers")
+			assert.Length(t, out, 3, "one interface and one struct per variant")
+
+			iface, isInterface := out[0].(*emit.Interface)
+			assert.True(t, isInterface, "the principal output is the interface")
+			expect.Equal(t, iface.Name, shapeName, "the interface keeps the sum's name")
+			expect.Equal(t, iface.Doc, s.Doc, "the interface keeps the sum's documentation")
+			expect.Equal(t, iface.Origin, s.Origin, "the interface has the sum's origin")
+
+			circle, isStruct := out[1].(*emit.Struct)
+			assert.True(t, isStruct, "the first variant becomes a struct")
+			expect.Equal(t, circle.Name, shapeCircle, "the struct joins the sum's name and the variant's")
+			expect.Equal(t, circle.Doc, s.Variants.Items()[0].Doc, "the struct keeps the variant's documentation")
+			expect.Equal(t, circle.Origin, s.Origin, "the struct has the sum's origin")
+
+			empty, isStruct := out[2].(*emit.Struct)
+			assert.True(t, isStruct, "the second variant becomes a struct")
+			expect.Equal(t, empty.Name, shapeEmpty, "the second struct follows the first")
+		})
+
+		t.Run("declares the marker as the one method of the interface", func(t *testing.T) {
+			t.Parallel()
+
+			out, err := backend.Lower(shapeSum())
+			assert.NoError(t, err, "the sum lowers")
+			methods := out[0].(*emit.Interface).Methods.Items()
+			assert.Length(t, methods, 1, "the interface declares the marker alone")
+			expect.Equal(t, methods[0].Name, shapeMarker, "the marker joins is and the sum's name")
+			expect.Equal(t, methods[0].Visibility, symbol.VisibilityPackage,
+				"the marker is unexported, so a type of another package cannot declare it")
+		})
+
+		t.Run("implements the marker on each struct through a pointer receiver", func(t *testing.T) {
+			t.Parallel()
+
+			s := shapeSum()
+			out, err := backend.Lower(s)
+			assert.NoError(t, err, "the sum lowers")
+			methods := out[1].(*emit.Struct).Methods.Items()
+			assert.Length(t, methods, 1, "the struct declares the marker alone")
+			m := methods[0]
+			expect.Equal(t, m.Name, shapeMarker, "the struct's method is the interface's marker")
+			expect.True(t, m.Body.IsZero(), "the marker's body is empty")
+			assert.NotNil(t, m.Receiver, "the marker states its receiver")
+			expect.Equal(t, m.Receiver.Name, "", "the receiver has no name, because the empty body reads none")
+			expect.Equal(t, m.Receiver.Type, &emit.TypeRef{
+				Spelling: circleReceiver, Form: symbol.FormOptional,
+				Elems: []*emit.TypeRef{{Spelling: shapeCircle, Target: s.Origin}},
+			}, "the receiver points at the struct through the sum's origin, so the settle respells both")
+		})
+
+		t.Run("gives each struct the fields of its variant", func(t *testing.T) {
+			t.Parallel()
+
+			s := shapeSum()
+			out, err := backend.Lower(s)
+			assert.NoError(t, err, "the sum lowers")
+			expect.Equal(t, out[1].(*emit.Struct).Fields.Items(), s.Variants.Items()[0].Fields.Items(),
+				"the circle's struct has the radius")
+			expect.Empty(t, out[2].(*emit.Struct).Fields.Items(), "the empty variant's struct has no fields")
+		})
+
+		t.Run("restates a generic sum's parameters on each variant's receiver", func(t *testing.T) {
+			t.Parallel()
+
+			s := shapeSum()
+			s.TypeParams = []*emit.TypeParam{{Name: keyParam}, {Name: valueParam}}
+			out, err := backend.Lower(s)
+			assert.NoError(t, err, "the generic sum lowers")
+			expect.Equal(t, out[0].(*emit.Interface).TypeParams, s.TypeParams,
+				"the interface keeps the sum's parameters")
+			circle := out[1].(*emit.Struct)
+			expect.Equal(t, circle.TypeParams, s.TypeParams, "the struct declares the sum's parameters")
+			expect.NotEqual(t, circle.TypeParams[0], s.TypeParams[0],
+				"the struct declares a copy, so a respell of one output leaves the others", assert.ByIdentity())
+			expect.Equal(t, circle.Methods.Items()[0].Receiver.Type.Spelling, genericReceiver,
+				"the receiver restates the parameters as arguments")
+		})
+
+		t.Run("returns an error for a sum with methods", func(t *testing.T) {
+			t.Parallel()
+
+			s := shapeSum()
+			s.Methods.Append(&emit.Method{Name: getName})
+			_, err := backend.Lower(s)
+			assert.HasError(t, err, "no variant struct has a body for the sum's methods")
+		})
+
+		t.Run("returns an error for a variant field without a name", func(t *testing.T) {
+			t.Parallel()
+
+			s := shapeSum()
+			s.Variants.Items()[0].Fields.Append(&emit.Field{Type: &emit.TypeRef{Spelling: intResultType}})
+			_, err := backend.Lower(s)
+			assert.HasError(t, err, "a Go struct field has a name")
+		})
 	})
 }
 
@@ -363,10 +528,16 @@ func BenchmarkLower(b *testing.B) {
 }
 
 // lowerCalls returns a call of Lower over a declaration Go states as
-// it is, and over an enum.
+// it is, over an enum, over an enum of variant names in upper case, over
+// a sum and over a generic sum.
 func lowerCalls() []allocCall {
 	constant := &emit.Constant{Name: countName, Value: closedValue}
 	phase := enumOf("", "", "")
+	upper := &emit.Enum{Name: phaseName}
+	upper.Variants.Append(&emit.EnumVariant{Name: upperOpen}, &emit.EnumVariant{Name: upperStatus})
+	shape := shapeSum()
+	generic := shapeSum()
+	generic.TypeParams = []*emit.TypeParam{{Name: keyParam}, {Name: valueParam}}
 	var (
 		out []symbol.Symbol
 		err error
@@ -388,7 +559,45 @@ func lowerCalls() []allocCall {
 				assert.Length(tb, out, 4, "Lower returns the type and three constants")
 			},
 		},
+		{
+			name: "Lower", caseName: "an enum of variant names in upper case", allocs: upperEnumLowerAllocs,
+			call: func() { out, err = backend.Lower(upper) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Lower reshapes the enum")
+				assert.Length(tb, out, 3, "Lower returns the type and two constants")
+			},
+		},
+		{
+			name: "Lower", caseName: "a sum", allocs: sumLowerAllocs,
+			call: func() { out, err = backend.Lower(shape) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Lower reshapes the sum")
+				assert.Length(tb, out, 3, "Lower returns the interface and two structs")
+			},
+		},
+		{
+			name: "Lower", caseName: "a generic sum", allocs: genericSumLowerAllocs,
+			call: func() { out, err = backend.Lower(generic) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Lower reshapes the generic sum")
+				assert.Length(tb, out, 3, "Lower returns the interface and two generic structs")
+			},
+		},
 	}
+}
+
+// shapeSum returns a sum of a circle with a radius and an empty
+// variant, each documented.
+func shapeSum() *emit.Sum {
+	s := &emit.Sum{
+		Origin: symbol.Identity{Lang: protoLang, Package: svcPkg, Name: shapeName, Kind: symbol.KindSum},
+		Doc:    []string{"shape is one closed figure."},
+		Name:   shapeName,
+	}
+	circle := &emit.SumVariant{Doc: []string{"circle bounds by a radius."}, Name: circleName}
+	circle.Fields.Append(&emit.Field{Name: radiusName, Type: &emit.TypeRef{Spelling: intResultType}})
+	s.Variants.Append(circle, &emit.SumVariant{Name: emptyName})
+	return s
 }
 
 // enumOf returns an enum whose variants state the given values, in

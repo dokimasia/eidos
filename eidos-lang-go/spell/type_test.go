@@ -46,13 +46,21 @@ const (
 	// its list of children, the two children's references and the map's
 	// spelling.
 	mapAllocs = 5
+	// streamAllocs is an asynchronous stream of a predeclared type: the
+	// list of children, the element's reference, the iterator's reference,
+	// its list of arguments and the reference of error.
+	streamAllocs = 5
 )
 
-// The declarations of the source language that the cases reference.
+// The declarations of the source language that the cases reference. state
+// is a type that session declares.
 var (
 	session = symbol.Identity{Lang: sourceLang, Package: "svc/store", Name: sessionName, Kind: symbol.KindInterface}
 	page    = symbol.Identity{Lang: sourceLang, Package: "svc/store", Name: pageName, Kind: symbol.KindInterface}
 	result  = symbol.Identity{Lang: sourceLang, Package: "svc/store", Name: resultName, Kind: symbol.KindSum}
+	state   = symbol.Identity{
+		Lang: sourceLang, Package: "svc/store", Owner: sessionName, Name: "State", Kind: symbol.KindEnum,
+	}
 )
 
 // The cases compose text, a float of 64 bits, a reference to session,
@@ -164,6 +172,78 @@ func TestType(t *testing.T) {
 				},
 			},
 			{
+				name: "returns a slice for an optional of a list",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "string[] | undefined",
+					Elems: []rules.TypeShape{
+						{Form: symbol.FormList, Spelling: "string[]", Elems: []rules.TypeShape{text}},
+					},
+				},
+				want: &emit.TypeRef{
+					Spelling: "[]string", Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: "string"}},
+				},
+			},
+			{
+				name: "returns a slice of byte for an optional of bytes",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Uint8Array | undefined",
+					Elems: []rules.TypeShape{rules.Leaf(symbol.FormBytes, "Uint8Array")},
+				},
+				want: &emit.TypeRef{
+					Spelling: "[]byte", Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: "byte"}},
+				},
+			},
+			{
+				name: "returns a map for an optional of a map",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Record<string, number> | undefined",
+					Elems: []rules.TypeShape{{
+						Form: symbol.FormMap, Spelling: "Record<string, number>",
+						Elems: []rules.TypeShape{text, number},
+					}},
+				},
+				want: &emit.TypeRef{
+					Spelling: "map[string]float64", Form: symbol.FormMap,
+					Elems: []*emit.TypeRef{{Spelling: "string"}, {Spelling: "float64"}},
+				},
+			},
+			{
+				name: "returns a function type for an optional of a function type",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "(() => void) | undefined",
+					Elems: []rules.TypeShape{{Form: symbol.FormFunc, Spelling: "() => void"}},
+				},
+				want: &emit.TypeRef{Spelling: "func()", Form: symbol.FormFunc},
+			},
+			{
+				name: "returns a channel for an optional of a synchronous stream",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Iterator<number> | undefined",
+					Elems: []rules.TypeShape{
+						{Form: symbol.FormStream, Spelling: "Iterator<number>", Elems: []rules.TypeShape{number}},
+					},
+				},
+				want: &emit.TypeRef{
+					Spelling: "chan float64", Form: symbol.FormStream, Elems: []*emit.TypeRef{{Spelling: "float64"}},
+				},
+			},
+			{
+				name: "returns any for an optional of the top type",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "unknown",
+					Elems: []rules.TypeShape{rules.Leaf(symbol.FormDynamic, "unknown")},
+				},
+				want: &emit.TypeRef{Spelling: "any"},
+			},
+			{
+				name: "returns the translated reference for an optional of a sum",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Result | undefined",
+					Elems: []rules.TypeShape{{Form: symbol.FormSum, Spelling: resultName, Ref: result}},
+				},
+				want: &emit.TypeRef{Spelling: resultName, Target: result},
+			},
+			{
 				name: "returns a slice of a translated reference for a list",
 				give: rules.TypeShape{
 					Form:     symbol.FormList,
@@ -240,6 +320,22 @@ func TestType(t *testing.T) {
 				},
 			},
 			{
+				name: "returns an iterator over pairs of an element and an error for an asynchronous stream",
+				give: rules.TypeShape{
+					Form: symbol.FormStream, Spelling: "AsyncIterable<number>", Async: true,
+					Elems: []rules.TypeShape{number},
+				},
+				want: &emit.TypeRef{
+					Spelling: "iter.Seq2", Package: "iter",
+					Args: []*emit.TypeRef{{Spelling: "float64"}, {Spelling: "error"}},
+				},
+			},
+			{
+				name: "returns any for the top type",
+				give: rules.Leaf(symbol.FormDynamic, "unknown"),
+				want: &emit.TypeRef{Spelling: "any"},
+			},
+			{
 				name: "returns the upper bound of a wildcard",
 				give: rules.TypeShape{
 					Form: symbol.FormWildcard, Spelling: "? extends Session", Variance: symbol.VarianceOut,
@@ -290,6 +386,16 @@ func TestType(t *testing.T) {
 				give: rules.Reference("Duration", rules.WellKnownDuration),
 				want: &emit.TypeRef{Spelling: "time.Duration", Package: "time"},
 			},
+			{
+				name: "returns struct{} for the well-known empty value",
+				give: rules.Reference("google.protobuf.Empty", rules.WellKnownEmpty),
+				want: &emit.TypeRef{Spelling: "struct{}", Form: symbol.FormInline},
+			},
+			{
+				name: "returns the flat name for a reference to a nested type",
+				give: rules.Reference("Session.State", state),
+				want: &emit.TypeRef{Spelling: "SessionState", Target: state},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -327,16 +433,6 @@ func TestType(t *testing.T) {
 					Elems:    []rules.TypeShape{sessionTo, sessionTo},
 				},
 				want: "golang: an intersection has no Go spelling",
-			},
-			{
-				name: "returns an error for an asynchronous stream",
-				give: rules.TypeShape{
-					Form:     symbol.FormStream,
-					Spelling: "AsyncIterable<number>",
-					Async:    true,
-					Elems:    []rules.TypeShape{number},
-				},
-				want: "golang: an asynchronous stream has no Go spelling",
 			},
 			{
 				name: "returns an error for a borrow",
@@ -550,6 +646,15 @@ func typeCalls() []typeCall {
 				Form:     symbol.FormMap,
 				Spelling: "Record<string, number>",
 				Elems:    []rules.TypeShape{text, number},
+			},
+		},
+		{
+			name:   "an asynchronous stream",
+			allocs: streamAllocs,
+			want:   "iter.Seq2",
+			give: rules.TypeShape{
+				Form: symbol.FormStream, Spelling: "AsyncIterable<number>", Async: true,
+				Elems: []rules.TypeShape{number},
 			},
 		},
 	}
