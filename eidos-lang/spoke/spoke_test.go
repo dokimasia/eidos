@@ -126,6 +126,10 @@ func TestSpoke(t *testing.T) {
 				give: rules.Opaque(nil), want: "a type that the rules of its language do not classify",
 			},
 			{
+				name: "returns the top type for the dynamic form",
+				give: rules.Leaf(symbol.FormDynamic, "unknown"), want: "the top type",
+			},
+			{
 				name: "returns the number of a form that the vocabulary does not declare",
 				give: rules.TypeShape{Form: symbol.TypeForm(200)}, want: "the form 200",
 			},

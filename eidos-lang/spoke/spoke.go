@@ -33,6 +33,7 @@ var forms = map[symbol.TypeForm]string{
 	symbol.FormReference:    "a reference",
 	symbol.FormSum:          "a sum",
 	symbol.FormOpaque:       "a type that the rules of its language do not classify",
+	symbol.FormDynamic:      "the top type",
 }
 
 // The noun phrases that [Describe] returns for the two streams, and the
