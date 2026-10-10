@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -510,6 +511,9 @@ func TestDisk(t *testing.T) {
 		t.Run("returns an error for the brand's output it cannot remove", func(t *testing.T) {
 			t.Parallel()
 
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows removes a file from a directory whatever the mode of the directory")
+			}
 			root := files.Workspace(t, files.Tree{"svc/" + storeFile: files.Text(stampedAs(t, diskBrand, firstBody))})
 			dir := filepath.Join(root, "svc")
 			assert.NoError(t, os.Chmod(dir, 0o555), "the directory refuses a removal")
@@ -633,6 +637,9 @@ func TestDisk(t *testing.T) {
 			// A FIFO at the staging path opens for writing while a
 			// reader has it open. It accepts the written bytes, and
 			// the sync that follows fails on it.
+			if runtime.GOOS != "linux" {
+				t.Skip("the sync of a FIFO fails on Linux alone")
+			}
 			root := t.TempDir()
 			stage := filepath.Join(root, storeFile+".stage")
 			out, err := exec.CommandContext(t.Context(), "mkfifo", stage).CombinedOutput()
@@ -690,8 +697,12 @@ func TestDisk(t *testing.T) {
 // and the test discards every sink no call finished. Each count keeps
 // the first error of its calls, which cmp.Or returns without
 // allocating. The check runs alone, because the count includes every
-// goroutine's allocations.
+// goroutine's allocations. Darwin and Windows allocate more in their file
+// system calls, so the test runs on Linux alone.
 func TestDiskAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	same := []byte(stampedAs(t, diskBrand, firstBody))
 	other := []byte(stampedAs(t, diskBrand, secondBody))
 	root := files.Workspace(t, files.Tree{storeFile: files.Bytes(same)})
@@ -873,12 +884,15 @@ func benchStaged(b *testing.B, root string, body []byte, allocs uint64, call fun
 }
 
 // disk opens a sink over root under the fixture brand, failing the
-// test where it cannot.
+// test where it cannot. The cleanup of t discards the sink where the
+// case did not finish it, because Windows does not remove a directory
+// while a root over it is open.
 func disk(t *testing.T, root string) output.Sink {
 	t.Helper()
 
 	d, err := output.NewDisk(root, diskBrand)
 	assert.NoError(t, err, "the root opens")
+	t.Cleanup(func() { discarded(t, d) })
 	return d
 }
 
@@ -958,8 +972,8 @@ func opened(tb assert.TB, root string, body []byte) *output.Disk {
 	return d
 }
 
-// discarded closes a sink a benchmark opened, where it opened one and
-// no call finished it.
+// discarded closes a sink that a test or a benchmark opened, where it
+// opened one and no call finished it.
 func discarded(tb assert.TB, d *output.Disk) {
 	tb.Helper()
 

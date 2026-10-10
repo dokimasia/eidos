@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -120,6 +121,9 @@ func TestDir(t *testing.T) {
 		t.Run("returns an error for a path whose parent does not stat", func(t *testing.T) {
 			t.Parallel()
 
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows reports a path below a file as missing, so only the first write fails")
+			}
 			dir := files.Workspace(t, files.Tree{"file": files.Text("")})
 			_, err := ledger.OpenAt(filepath.Join(dir, "file", "below"))
 			assert.HasError(t, err, "a path below a file is refused")
@@ -699,8 +703,13 @@ func TestDir(t *testing.T) {
 // run, which runs no benchmark. Each removal removes a blob of its own,
 // put outside the count, and each count keeps the first error of its
 // calls, which cmp.Or returns without allocating. The check runs alone,
-// because the count includes every goroutine's allocations.
+// because the count includes every goroutine's allocations. Darwin and
+// Windows allocate more in their file system calls, so the test runs on
+// Linux alone.
 func TestDirAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	ctx, body, p := t.Context(), []byte(docBody), make([]byte, 5)
 	d, root := documented(t)
 	var err error

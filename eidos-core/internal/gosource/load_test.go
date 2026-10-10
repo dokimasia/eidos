@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -202,8 +203,12 @@ func TestLoad(t *testing.T) {
 // ceilings in the ordinary run, which runs no benchmark. Each count
 // keeps the first error of its calls, which cmp.Or returns without
 // allocating. The check runs alone, because the count includes every
-// goroutine's allocations.
+// goroutine's allocations. Darwin and Windows allocate more in their file
+// system calls, so the test runs on Linux alone.
 func TestLoadAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	modRoot := fixtureRoot(t)
 	var (
 		parsed []*ast.File

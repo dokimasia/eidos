@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,8 +204,13 @@ func TestStagefile(t *testing.T) {
 
 // A replacement allocates within its ceiling in the ordinary run,
 // which runs no benchmark. Each count keeps the first error of its
-// calls, which cmp.Or returns without allocating.
+// calls, which cmp.Or returns without allocating. Darwin and Windows
+// allocate more in their file system calls, so the test runs on Linux
+// alone.
 func TestStagefileAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	dir, r := rooted(t, nil)
 	data := []byte(body)
 	var err error

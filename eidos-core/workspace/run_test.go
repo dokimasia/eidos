@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -352,6 +353,21 @@ type recordingLock struct {
 func (r *recordingLock) Lock(ctx context.Context, h ledger.Holder) (func() error, error) {
 	r.held = h
 	return r.Mem.Lock(ctx, h)
+}
+
+// lockHidden is a workspace root as a file system whose listings leave
+// out the lock file of the fixture's state directory. Windows does not let
+// another handle open the lock file while the lock is taken, so a check
+// that reads the whole tree during a lock reads it through lockHidden.
+type lockHidden struct{ fs.FS }
+
+// ReadDir returns the entries of a directory of the root without the
+// lock file.
+func (h lockHidden) ReadDir(name string) ([]fs.DirEntry, error) {
+	entries, err := fs.ReadDir(h.FS, name)
+	return slices.DeleteFunc(entries, func(e fs.DirEntry) bool {
+		return filepath.ToSlash(filepath.Join(name, e.Name())) == ledger.LockPath(fixtureBrand)
+	}), err
 }
 
 // annotateSeen is a hand-rolled annotator that records the worker
@@ -1090,7 +1106,8 @@ func TestRun(t *testing.T) {
 				report *workspace.Report
 				err    error
 			)
-			files.Unchanged(t, os.DirFS(root), func() { report, err = runOver(t, w, routedIn(t, coretest.StorePath)) },
+			files.Unchanged(t, lockHidden{os.DirFS(root)},
+				func() { report, err = runOver(t, w, routedIn(t, coretest.StorePath)) },
 				"the locked run writes nothing")
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the locked run fails")
 			locked := findings(report.Sink, workspace.StateLocked)

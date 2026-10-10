@@ -389,7 +389,9 @@ func BenchmarkSink(b *testing.B) {
 
 // every returns one constructor per shipped sink, so the rules
 // they share are checked against each of them, not against
-// whichever one was convenient.
+// whichever one was convenient. The cleanup of t discards each disk
+// sink that its case did not finish, because Windows does not remove a
+// directory while a root over it is open.
 func every(t *testing.T) map[string]func() output.Sink {
 	t.Helper()
 
@@ -398,6 +400,7 @@ func every(t *testing.T) map[string]func() output.Sink {
 		"disk": func() output.Sink {
 			d, err := output.NewDisk(t.TempDir(), diskBrand)
 			assert.NoError(t, err, "the fixture root opens")
+			t.Cleanup(func() { discarded(t, d) })
 			return d
 		},
 	}

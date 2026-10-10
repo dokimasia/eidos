@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -175,7 +176,12 @@ func TestGenerate(t *testing.T) {
 // [BenchmarkGenerate] checks its ceiling. Each count keeps the first
 // error of its calls, which cmp.Or returns without allocating. The check
 // runs alone, because the count includes every goroutine's allocations.
+// Darwin and Windows allocate more in their file system calls, so the
+// test runs on Linux alone.
 func TestGenerateAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	root := mini(t)
 	var (
 		set genfile.Set

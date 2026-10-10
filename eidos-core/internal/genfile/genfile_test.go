@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -265,6 +266,9 @@ func TestGenfile(t *testing.T) {
 			if os.Geteuid() == 0 {
 				t.Skip("root reads a directory whatever its mode")
 			}
+			if runtime.GOOS == "windows" {
+				t.Skip("Windows lists a directory whatever its mode")
+			}
 			root := files.Workspace(t, files.Tree{ownedDir + "/locked": files.Dir()})
 			locked := filepath.Join(root, ownedDir, "locked")
 			assert.NoError(t, os.Chmod(locked, 0o000), "the directory is closed to the scan")
@@ -346,8 +350,13 @@ func TestGenfile(t *testing.T) {
 // The plumbing allocates within its ceilings in the ordinary run, which
 // runs no benchmark. Each count keeps the first error of its calls,
 // which cmp.Or returns without allocating. The check runs alone, because
-// the count includes every goroutine's allocations.
+// the count includes every goroutine's allocations. Darwin and Windows
+// allocate more in their file system calls, so the test runs on Linux
+// alone.
 func TestGenfileAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	var header string
 	assert.MaxAllocs(t, func() { header = genfile.Header("model") }, 1, "Header allocates the preamble")
 	assert.NotEmpty(t, header, "Header returns the preamble")

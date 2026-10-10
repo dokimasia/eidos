@@ -58,19 +58,23 @@ func TestMain(t *testing.T) {
 	})
 }
 
-// wrapper builds the command and returns the binary, so a case can
-// run it from a directory of its choosing the way `go generate`
-// runs it from the package it annotates.
+// wrapper builds the command into a directory of its own and returns
+// the binary, so a case can run it from a directory of its choosing the
+// way `go generate` runs it from the package it annotates. go build names
+// the binary after the package's directory, with the suffix .exe on
+// Windows, which exec.LookPath adds.
 func wrapper(t *testing.T) string {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(t.Context(), generateTimeout)
 	defer cancel()
 
-	bin := filepath.Join(t.TempDir(), "wrapper")
-	build := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
+	dir := t.TempDir()
+	build := exec.CommandContext(ctx, "go", "build", "-o", dir, ".")
 	out, err := build.CombinedOutput()
 	assert.NoError(t, err, "the wrapper builds: "+string(out))
+	bin, err := exec.LookPath(filepath.Join(dir, "cmd"))
+	assert.NoError(t, err, "the build writes the wrapper")
 	return bin
 }
 
