@@ -19,10 +19,6 @@ const Lang = rust.Lang
 // out.
 const targetDir = "target"
 
-// Keys registers every rust key: the satellite root's one registration,
-// restated here, where the corpus and the suite fixtures use it.
-var Keys = rust.Keys
-
 // UnparsedFile reports a syntax error, positioned at it: the source's
 // problem, and the load continues with every item the parser still
 // recovered.
@@ -77,6 +73,15 @@ var ExcludedFile = diag.MustRegister(rust.CodePrefix, diag.CodeSpec{
 	Meaning: "a cfg predicate keeps a file's module out of the load",
 })
 
+// BadMarker reports an attribute of the brand that is not a valid
+// directive. Either its path is not the brand followed by a name, or by
+// a plugin and a name, or an argument is not a literal or a name. The
+// attribute attaches nothing and remains an annotation.
+var BadMarker = diag.MustRegister(rust.CodePrefix, diag.CodeSpec{
+	Number:  8,
+	Meaning: "an attribute of the brand is not a valid directive",
+})
+
 // Options is the frontend's declared configuration: the cfg predicates
 // one load satisfies. A cfg set is in every unit key by the kit's
 // contract, because it changes the graph without changing a read.
@@ -100,13 +105,15 @@ type rustFrontend struct {
 // New builds the Rust frontend through the kit. A nil options value
 // loads with no feature enabled and no cfg option set. It implements
 // the exporter role, so a reference through a pub use resolves to the
-// declaration it publishes, and its version folds the grammar's.
+// declaration it publishes, and its version folds the grammar's. The
+// frontend registers every rust key through its role, under the
+// language's spelling.
 //
 // # Allocation contract
 //
 // New allocates the frontend's state with its vocabulary and its parse
-// hook, the version, the syntax, two allocations, and the kit's three:
-// nine allocations, and ten with the empty options that nil options
+// hook, the version, the syntax, two allocations, and the kit's four:
+// ten allocations, and eleven with the empty options that nil options
 // take.
 func New(opts *Options) plugin.Frontend {
 	if opts == nil {
@@ -121,5 +128,6 @@ func New(opts *Options) plugin.Frontend {
 		Resolve(resolve).
 		Exports(exports).
 		Options(opts).
+		Keys(rust.Keys).
 		Build()
 }

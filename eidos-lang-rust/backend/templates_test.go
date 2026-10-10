@@ -426,12 +426,13 @@ func run(t *testing.T, src string, data any) (string, *render.ImportSet, error) 
 	tmpl, err := template.New("kind").
 		Funcs(backend.Funcs(set)).
 		Funcs(template.FuncMap{
-			render.BuiltinBody:    func(any) string { return bodyStub },
-			render.BuiltinUse:     func(string) string { return "" },
-			render.BuiltinImports: func() string { return importsStub },
-			render.BuiltinDecls:   func() string { return declsStub },
-			render.BuiltinSlots:   func() string { return "" },
-			render.BuiltinSlot:    func(string) string { return "" },
+			render.BuiltinBody:       func(any) string { return bodyStub },
+			render.BuiltinMemberBody: func(any) string { return bodyStub },
+			render.BuiltinUse:        func(string) string { return "" },
+			render.BuiltinImports:    func() string { return importsStub },
+			render.BuiltinDecls:      func() string { return declsStub },
+			render.BuiltinSlots:      func() string { return "" },
+			render.BuiltinSlot:       func(string) string { return "" },
 		}).
 		Parse(src)
 	assert.NoError(t, err, "the template parses")

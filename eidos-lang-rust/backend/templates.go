@@ -42,7 +42,7 @@ const (
 		"{{if .Methods.Len}}\nimpl{{implparams .TypeParams}} {{.Name}}{{typenames .TypeParams}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{implfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
-		"{{results .Returns}} {\n{{body .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{results .Returns}} {\n{{memberbody .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n{{end}}"
 
 	// InterfaceTemplate spells a trait, its visibility and type
@@ -59,7 +59,7 @@ const (
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{traitfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
-		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{results .Returns}}{{if .HasDefault}} {\n{{memberbody .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// FunctionTemplate spells a free function: attribute lines

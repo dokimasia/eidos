@@ -38,6 +38,17 @@ func refuseCarriers(u *plugin.SourceUnit, cs []plugin.Carrier, what string) {
 	}
 }
 
+// refuseMarkers reports every marker of the brand on a subject the model
+// cannot address under [UnaddressedCarrier], with its path as the author
+// wrote it, so an authored directive never vanishes into silence.
+func refuseMarkers(u *plugin.SourceUnit, sugars []plugin.Sugar, what string) {
+	for _, s := range sugars {
+		u.Errorf(UnaddressedCarrier, s.Pos,
+			"the marker %s is on %s, which the model cannot address. Move it to a declaration",
+			strings.Join(s.Path, pathSeparator), what)
+	}
+}
+
 // leading returns the comments directly above an item, in source order:
 // the run of comments that ends on the line above it, or on its own
 // line, with no blank line inside the run. The outer attributes between
@@ -146,12 +157,13 @@ func (l *lowering) skip(n treesitter.Node) {
 	l.taken[n.Pos()] = true
 }
 
-// refuse reports the carriers of a node's leading and trailing comments
-// under [UnaddressedCarrier], naming what the node is: a subject the
-// model cannot address.
-func (l *lowering) refuse(n treesitter.Node, what string) {
+// refuse reports the carriers of a node's leading and trailing comments,
+// and the markers among its attributes a, under [UnaddressedCarrier]. what
+// describes the node, a subject that the model cannot address.
+func (l *lowering) refuse(n treesitter.Node, a attributes, what string) {
 	parts, _ := l.declParts(n, attributes{})
 	refuseCarriers(l.w.u, parts.Carriers, what)
+	refuseMarkers(l.w.u, a.sugars, what)
 }
 
 // sweep refuses the carriers of every comment no declaration took,

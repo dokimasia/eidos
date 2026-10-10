@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/lang/rust/frontend"
 	rustgrammar "go.dokimi.dev/eidos/lang/treesitter/rust"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -38,8 +39,9 @@ const (
 
 // newAllocs is the frontend New returns for nil options: the empty
 // options, the frontend's state with its vocabulary and its parse hook,
-// the version, the syntax's two, and the kit's three.
-const newAllocs = 1 + 3 + 1 + 2 + 3
+// the version, the syntax's two, and the kit's four, its list of key
+// registrations included.
+const newAllocs = 1 + 3 + 1 + 2 + 4
 
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
@@ -65,6 +67,17 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, setup)
+		})
+
+		t.Run("returns a frontend that registers the rust keys through its role", func(t *testing.T) {
+			t.Parallel()
+
+			provider, provides := frontend.New(nil).(plugin.KeyProvider)
+			assert.True(t, provides, "the frontend registers keys")
+			r := meta.NewRegistry()
+			assert.NoError(t, provider.Keys(r.For(string(frontend.Lang))), "the keys register")
+			_, held := r.Resolve(rust.TestKey)
+			assert.True(t, held, "the test key is registered")
 		})
 
 		t.Run("returns a frontend in the exporter role", func(t *testing.T) {
@@ -235,7 +248,6 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 			{Lang: frontend.Lang, Package: depCrate, Name: hiddenName, Kind: symbol.KindFunction},
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    frontend.Keys,
 		Reexported: []symbol.Identity{
 			{Lang: frontend.Lang, Package: personPackage, Name: personName, Kind: symbol.KindStruct},
 		},

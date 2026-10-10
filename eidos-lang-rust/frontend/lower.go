@@ -84,8 +84,9 @@ func (l *lowering) container(pkg, dir string, inline bool, at position.Pos) cont
 // that keeps every item of the module out, empty where the module
 // loads. A module that loads takes the documentation and the carriers
 // of its inner doc comments and #![doc] attributes onto its package,
-// and its inner attributes as its File node's annotations, and
-// #![cfg(test)] stamps the package rust.test.
+// with the directives of its inner markers, and its inner attributes as
+// its File node's annotations, and #![cfg(test)] stamps the package
+// rust.test.
 func (l *lowering) header(list treesitter.Node, c container) string {
 	var attrs, docs []treesitter.Node
 	for child := range list.NamedChildren() {
@@ -105,6 +106,9 @@ func (l *lowering) header(list treesitter.Node, c container) string {
 	parts := l.parts(docs)
 	p.Doc = append(append(p.Doc, parts.Docs...), a.docs...)
 	l.w.u.AttachCarriers(p, parts.Carriers, BadCarrier)
+	for _, s := range a.sugars {
+		l.w.u.AttachSugar(p, s, BadMarker)
+	}
 	c.file.Annotations = append(c.file.Annotations, a.annotations...)
 	if a.test {
 		l.w.stamp(p, rust.TestKey, true, c.file.Pos)
@@ -138,7 +142,8 @@ func (l *lowering) items(list treesitter.Node, c container) {
 // item lowers one item. An item a cfg predicate outside the load's set
 // keeps out declares nothing and takes its comments with it, and the
 // predicate stamps the file. A use or an extern crate declaration lowers
-// nothing here, because the module boundary is read before the items.
+// nothing here, because the module boundary is read before the items,
+// and a marker on one, or on an extern block, is refused.
 func (l *lowering) item(n treesitter.Node, c container, attrs []treesitter.Node) {
 	a := l.attributes(attrs)
 	if a.excluded != "" {
@@ -157,7 +162,7 @@ func (l *lowering) item(n treesitter.Node, c container, attrs []treesitter.Node)
 	case l.v.traitItem:
 		l.traitItem(n, c, a)
 	case l.v.implItem:
-		l.implItem(n, c)
+		l.implItem(n, c, a)
 	case l.v.functionItem, l.v.functionSignatureItem:
 		l.function(n, c, a)
 	case l.v.constItem:
@@ -169,10 +174,12 @@ func (l *lowering) item(n treesitter.Node, c container, attrs []treesitter.Node)
 	case l.v.modItem:
 		l.module(n, c, a)
 	case l.v.foreignModItem:
+		refuseMarkers(l.w.u, a.sugars, "an extern block")
 		l.items(n.Child(l.v.fieldBody), c)
 	case l.v.useDeclaration, l.v.externCrateDeclaration:
+		refuseMarkers(l.w.u, a.sugars, "a use or an extern crate declaration")
 	default:
-		l.refuse(n, "an item the model does not contain, such as a macro")
+		l.refuse(n, a, "an item the model does not contain, such as a macro")
 	}
 }
 
@@ -196,8 +203,9 @@ func (l *lowering) exclude(n treesitter.Node, c container, a attributes) {
 // file's directory, or relative to the inline module's directory inside
 // an inline block, and otherwise <name>.rs, or <name>/mod.rs, in the
 // container's directory. The documentation above the item is the
-// module's, and so are its carriers. A module loads at every depth,
-// because a pub use can publish the pub items of a private module.
+// module's, and so are its carriers and the directives of its markers. A
+// module loads at every depth, because a pub use can publish the pub
+// items of a private module.
 func (l *lowering) module(n treesitter.Node, c container, a attributes) {
 	name := n.Child(l.v.fieldName).Text()
 	pkg := join(c.pkg, name)
@@ -205,6 +213,9 @@ func (l *lowering) module(n treesitter.Node, c container, a attributes) {
 	p := l.w.packageAt(pkg)
 	p.Doc = append(p.Doc, parts.Docs...)
 	l.w.u.AttachCarriers(p, parts.Carriers, BadCarrier)
+	for _, s := range a.sugars {
+		l.w.u.AttachSugar(p, s, BadMarker)
+	}
 	if a.test {
 		l.w.stamp(p, rust.TestKey, true, n.Pos())
 	}

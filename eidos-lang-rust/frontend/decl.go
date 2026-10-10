@@ -239,7 +239,7 @@ func (l *lowering) traitItem(n treesitter.Node, c container, a attributes) {
 		case l.v.constItem:
 			it.Types = append(it.Types, l.constantOf(item, ia, symbol.VisibilityPublic, ""))
 		default:
-			l.refuse(item, "an item the model does not contain, such as a macro")
+			l.refuse(item, ia, "an item the model does not contain, such as a macro")
 		}
 	}
 	l.declare(c, it, parts, spelled, a)
@@ -347,7 +347,7 @@ func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver 
 			l.skip(p)
 			continue
 		}
-		l.refuse(p, "a parameter")
+		l.refuse(p, a, "a parameter")
 		param := &node.Param{Pos: p.Pos(), Annotations: a.annotations}
 		pattern := p.Child(l.v.fieldPattern)
 		switch {

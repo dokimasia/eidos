@@ -119,6 +119,20 @@
 // kernel grammar refuses under [BadCarrier]. The comments in a function
 // body belong to its statements, which the model does not contain.
 //
+// # Markers
+//
+// An attribute whose path starts with the brand is a marker of a
+// directive, as #[acme::stub(tag = "test")] and #[acme::gen::table] are.
+// The frontend lifts its arguments from the syntax: key = value as a
+// keyed argument, and a literal or a name as a positional one. A literal
+// is a string, an integer or a float with at most one minus sign, true
+// or false, and a number lifts as its decimal text. The marker attaches
+// its directive to the item, field, variant or module that it marks, and
+// it remains an annotation. A marker whose path is not a directive name,
+// or whose argument does not lift, reports under [BadMarker]. A marker
+// on an item that the model does not contain reports under
+// [UnaddressedCarrier].
+//
 // # Classification
 //
 // rust.test stamps every file of an integration test and of a shared
@@ -134,8 +148,8 @@
 // # Dependency position
 //
 // lang/rust/frontend imports the sdk facade, the satellite root,
-// lang/treesitter and its Rust grammar, github.com/BurntSushi/toml for
-// the manifest, and the Go stdlib. It runs no tool and reads nothing
+// lang/treesitter and its Rust grammar, lang/numeric,
+// github.com/BurntSushi/toml for the manifest, and the Go stdlib. It runs no tool and reads nothing
 // outside its units' doors. The conformance corpus and a composition
 // import it.
 package frontend

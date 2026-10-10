@@ -4,11 +4,16 @@
 package frontend
 
 import (
+	"fmt"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/lang/numeric"
 	"go.dokimi.dev/eidos/lang/treesitter"
+	"go.dokimi.dev/eidos/sdk/directive"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -35,24 +40,55 @@ const (
 	cfgTest      = "test"
 )
 
+// The parts of a numeric literal of Rust that a marker's argument lifts:
+// the minus sign before it, the separator between its digits, the zero
+// that opens the prefix of another radix, the bit that an ASCII letter
+// sets in lower case, and the letters of the radix prefixes.
+const (
+	minusSign  = "-"
+	separator  = "_"
+	zeroDigit  = '0'
+	caseBit    = 0x20
+	hexRadix   = 'x'
+	octalRadix = 'o'
+	binRadix   = 'b'
+	numberBits = 64
+)
+
+// The type suffixes of Rust's integer and float literals.
+var (
+	integerSuffixes = []string{
+		"u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
+	}
+	floatSuffixes = []string{"f32", "f64"}
+)
+
 // attributes is what an item's outer attributes, or a module's inner
-// ones, state: the annotations they lower to, the documentation #[doc]
-// attributes add, a module's path attribute, whether #[test] or
-// #[cfg(test)] marks the item, and the first cfg predicate the load's
-// set does not satisfy, empty where it satisfies every one.
+// ones, contain. Its fields are:
+//
+//   - the annotations that the attributes lower to;
+//   - the documentation that #[doc] attributes add;
+//   - a module's path attribute;
+//   - whether #[test] or #[cfg(test)] marks the item;
+//   - the first cfg predicate that the load's set does not satisfy, and
+//     the empty predicate where the set satisfies them all;
+//   - the markers of the brand among the attributes.
 type attributes struct {
 	annotations symbol.Annotations
 	docs        []string
 	path        string
 	test        bool
 	excluded    string
+	sugars      []plugin.Sugar
 }
 
 // attributes reads an item's outer attributes, or a module's inner
 // ones. Each is an annotation of its name and its arguments verbatim,
 // except a #[doc] attribute that assigns a string literal, whose text
 // is documentation, one line per line of the text. A #[cfg] attribute
-// is evaluated as well.
+// is evaluated as well. An attribute whose path starts with the unit's
+// brand is a marker of a directive as well, which [lowering.marker]
+// lifts.
 func (l *lowering) attributes(items []treesitter.Node) attributes {
 	var a attributes
 	for _, item := range items {
@@ -76,6 +112,9 @@ func (l *lowering) attributes(items []treesitter.Node) attributes {
 				a.excluded = l.contents(args)
 			}
 		}
+		if head, _, _ := strings.Cut(name, pathSeparator); head == l.w.u.Brand() {
+			a.sugars = append(a.sugars, l.marker(item, name, args, value))
+		}
 		annotation := symbol.Annotation{Name: name}
 		switch {
 		case !value.IsZero():
@@ -88,6 +127,69 @@ func (l *lowering) attributes(items []treesitter.Node) attributes {
 		a.annotations = append(a.annotations, annotation)
 	}
 	return a
+}
+
+// marker returns the marker of an attribute of the brand. Its path is the
+// attribute's path split at ::, and its arguments are the arguments of
+// the attribute's token tree, lifted from the syntax. An argument
+// key = value lifts as a keyed argument, and any other argument as a
+// positional one, by [lowering.argument]. The marker's Refusal describes
+// the first argument that does not lift, and an attribute that assigns a
+// value, which is not the form of a marker.
+func (l *lowering) marker(item treesitter.Node, name string, args, value treesitter.Node) plugin.Sugar {
+	s := plugin.Sugar{Path: strings.Split(name, pathSeparator), Pos: item.Pos()}
+	if !value.IsZero() {
+		s.Refusal = fmt.Sprintf("the attribute assigns %s, and a marker takes its arguments in parentheses",
+			value.Text())
+		return s
+	}
+	for _, arg := range l.predicates(args) {
+		key := ""
+		if len(arg) > 2 && arg[0].Kind() == l.v.identifier && !arg[1].Named() && arg[1].Text() == cfgAssign {
+			key, arg = arg[0].Text(), arg[2:]
+		}
+		v, refusal := l.argument(arg)
+		if refusal != "" {
+			s.Refusal = refusal
+			return s
+		}
+		s.Args = append(s.Args, directive.RawArg{Key: key, Value: v})
+	}
+	return s
+}
+
+// argument lifts the tokens of one argument of a marker into a directive
+// value:
+//
+//   - a string literal to its content, as [lowering.literal] reads it;
+//   - an integer or a float literal, with at most one minus sign, to its
+//     decimal text, as [number] writes it;
+//   - true, false and a name as written.
+//
+// argument returns the reason that an argument does not lift, or the
+// empty string when it lifts.
+func (l *lowering) argument(tokens []treesitter.Node) (directive.RawValue, string) {
+	sign, operand := "", tokens
+	if len(tokens) == 2 && !tokens[0].Named() && tokens[0].Text() == minusSign {
+		sign, operand = minusSign, tokens[1:]
+	}
+	if len(operand) == 1 {
+		t := operand[0]
+		switch k := t.Kind(); {
+		case sign == "" && (k == l.v.stringLiteral || k == l.v.rawStringLiteral):
+			if s, ok := l.literal(t); ok {
+				return directive.RawValue{Text: s, Quoted: true}, ""
+			}
+		case k == l.v.integerLiteral || k == l.v.floatLiteral:
+			if s, ok := number(t.Text(), k == l.v.floatLiteral); ok {
+				return directive.RawValue{Text: sign + s}, ""
+			}
+		case sign == "" && (k == l.v.booleanLiteral || k == l.v.identifier):
+			return directive.RawValue{Text: t.Text()}, ""
+		}
+	}
+	return directive.RawValue{}, fmt.Sprintf("the argument %s is not a literal or a name",
+		tokens[0].TextThrough(tokens[len(tokens)-1]))
 }
 
 // literal returns the value a string literal states: the literal
@@ -192,4 +294,48 @@ func (l *lowering) satisfied(pred []treesitter.Node) bool {
 		return name == cfgTest || slices.Contains(l.w.opts.Cfg, name)
 	}
 	return false
+}
+
+// number returns the decimal text of an integer or a float literal of
+// Rust, with its separators and its type suffix dropped. An integer of
+// another radix is converted, and an integer beyond 64 bits keeps every
+// digit. A float is the shortest decimal text that parses back to its
+// double. number reports false for a float beyond the range of a double.
+func number(text string, float bool) (string, bool) {
+	digits := strings.ReplaceAll(text, separator, "")
+	if float {
+		for _, suffix := range floatSuffixes {
+			digits = strings.TrimSuffix(digits, suffix)
+		}
+		f, err := strconv.ParseFloat(digits, numberBits)
+		if err != nil {
+			return "", false
+		}
+		return numeric.Decimal(f, numberBits), true
+	}
+	for _, suffix := range integerSuffixes {
+		if trimmed, cut := strings.CutSuffix(digits, suffix); cut {
+			digits = trimmed
+			break
+		}
+	}
+	base := 10
+	if len(digits) > 2 && digits[0] == zeroDigit {
+		switch digits[1] | caseBit {
+		case hexRadix:
+			base, digits = 16, digits[2:]
+		case octalRadix:
+			base, digits = 8, digits[2:]
+		case binRadix:
+			base, digits = 2, digits[2:]
+		}
+	}
+	if u, err := strconv.ParseUint(digits, base, numberBits); err == nil {
+		return strconv.FormatUint(u, 10), true
+	}
+	n, ok := new(big.Int).SetString(digits, base)
+	if !ok {
+		return "", false
+	}
+	return n.String(), true
 }

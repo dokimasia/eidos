@@ -31,12 +31,12 @@ const Extension = ".rs"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds beside the grammar's version:
 // bump it with any change to the graph a parse produces.
-const FrontendVersion = "0.3.0"
+const FrontendVersion = "0.4.0"
 
 // Syntax returns Rust's comment forms, declared once and shared: the
 // plain line form, which is canonical, the outer and inner doc line

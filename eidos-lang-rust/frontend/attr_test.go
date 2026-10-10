@@ -7,17 +7,28 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/frontend"
+	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // cfgOptions is the cfg set the evaluation cases load under: the feature
 // x, the option unix, and the key target_os set to linux.
 var cfgOptions = &frontend.Options{Features: []string{"x"}, Cfg: []string{"unix", "target_os=\"linux\""}}
+
+// The markers that the sugar cases write. stubMarker opens an attribute
+// of the brand, and stubName is the directive that it attaches.
+const (
+	stubMarker = "#[" + brand + "::stub"
+	stubName   = directive.Name("stub")
+)
 
 // Attributes are an item's annotations, documentation and cfg gate, so
 // what each attribute lowers to, and how a cfg predicate evaluates, is
@@ -130,6 +141,291 @@ func TestAttr(t *testing.T) {
 
 			named[*node.Struct](t, declsOf(t, "#[cfg]\npub struct A;\n"), "A")
 		})
+	})
+
+	t.Run("marker", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("attaches the directive of an attribute of the brand to its struct", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedSource(t, stubMarker+"]\npub struct A;\n")
+			assert.Empty(t, found, "the marker lifts")
+			a := named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "A")
+			attached := gb.Attachments()
+			assert.Length(t, attached, 1, "the marker attaches one directive")
+			expect.Equal(t, attached[0].Subject, symbol.Symbol(a), "the directive is on the struct",
+				assert.ByIdentity())
+			want := directive.Raw{Name: stubName, Pos: position.Pos{File: libRoot, Line: 1, Col: 1}}
+			expect.Equal(t, attached[0].Raw, want, "the directive has the attribute's position and no arguments")
+		})
+
+		t.Run("keeps an attribute of the brand as an annotation", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, structOf(t, stubMarker+"]\npub struct A;\n", "A").Annotations,
+				symbol.Annotations{{Name: brand + "::stub"}}, "the struct has the attribute as an annotation")
+		})
+
+		t.Run("attaches the prefixed directive of an attribute with a plugin", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "#["+brand+"::gen::table]\npub struct A;\n")
+			attached := gb.Attachments()
+			assert.Length(t, attached, 1, "the marker attaches one directive")
+			assert.Equal(t, attached[0].Raw.Name, directive.Name("gen:table"), "the name has the plugin's prefix")
+		})
+
+		t.Run("attaches nothing for an attribute outside the brand", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedSource(t, "#[serde(rename = f())]\npub struct A;\n")
+			expect.Empty(t, found, "an attribute outside the brand is metadata, whatever its arguments are")
+			expect.Empty(t, gb.Attachments(), "an attribute outside the brand attaches no directive")
+		})
+
+		subjects := []struct {
+			name    string
+			give    string
+			subject func(tb testing.TB, gb *plugin.GraphBuilder) symbol.Symbol
+		}{
+			{
+				name: "attaches the directive of a marker of a field to the field",
+				give: "pub struct A {\n    " + stubMarker + "]\n    pub f: i32,\n}\n",
+				subject: func(tb testing.TB, gb *plugin.GraphBuilder) symbol.Symbol {
+					tb.Helper()
+
+					return named[*node.Struct](tb, fileIn(tb, gb, crateName).Decls, "A").Fields[0]
+				},
+			},
+			{
+				name: "attaches the directive of a marker of a variant to the variant",
+				give: "pub enum E {\n    " + stubMarker + "]\n    V,\n}\n",
+				subject: func(tb testing.TB, gb *plugin.GraphBuilder) symbol.Symbol {
+					tb.Helper()
+
+					return named[*node.Enum](tb, fileIn(tb, gb, crateName).Decls, "E").Variants[0]
+				},
+			},
+			{
+				name: "attaches the directive of a marker of a trait method to the method",
+				give: "pub trait T {\n    " + stubMarker + "]\n    fn run(&self);\n}\n",
+				subject: func(tb testing.TB, gb *plugin.GraphBuilder) symbol.Symbol {
+					tb.Helper()
+
+					return named[*node.Interface](tb, fileIn(tb, gb, crateName).Decls, "T").Methods[0]
+				},
+			},
+			{
+				name: "attaches the directive of a marker of a mod item to its package",
+				give: stubMarker + "]\npub mod inner {}\n",
+				subject: func(tb testing.TB, gb *plugin.GraphBuilder) symbol.Symbol {
+					tb.Helper()
+
+					return packageIn(tb, gb, crateName+"/inner")
+				},
+			},
+			{
+				name: "attaches the directive of an inner marker to its module's package",
+				give: "#![" + brand + "::stub]\npub struct A;\n",
+				subject: func(tb testing.TB, gb *plugin.GraphBuilder) symbol.Symbol {
+					tb.Helper()
+
+					return packageIn(tb, gb, crateName)
+				},
+			},
+		}
+		for _, tt := range subjects {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, tt.give)
+				assert.Empty(t, found, "the marker lifts")
+				attached := gb.Attachments()
+				assert.Length(t, attached, 1, "the marker attaches one directive")
+				expect.Equal(t, attached[0].Raw.Name, stubName, "the directive has the marker's name")
+				expect.Equal(t, attached[0].Subject, tt.subject(t, gb), "the directive is on the marked subject",
+					assert.ByIdentity())
+			})
+		}
+
+		lifts := []struct {
+			name string
+			give string
+			want []directive.RawArg
+		}{
+			{
+				name: "lifts a key with a string as a keyed argument", give: `(tag = "test")`,
+				want: []directive.RawArg{{Key: "tag", Value: directive.RawValue{Text: "test", Quoted: true}}},
+			},
+			{
+				name: "lifts a name as a positional argument", give: "(writer)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "writer"}}},
+			},
+			{
+				name: "lifts a raw string as its content", give: `(r"a\n")`,
+				want: []directive.RawArg{{Value: directive.RawValue{Text: `a\n`, Quoted: true}}},
+			},
+			{
+				name: "lifts a number with a minus sign as negative decimal text", give: "(n = -2)",
+				want: []directive.RawArg{{Key: "n", Value: directive.RawValue{Text: "-2"}}},
+			},
+			{
+				name: "lifts a hexadecimal integer as its decimal text", give: "(0x10)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "16"}}},
+			},
+			{
+				name: "lifts an octal integer as its decimal text", give: "(0o17)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "15"}}},
+			},
+			{
+				name: "lifts a binary integer as its decimal text", give: "(0b101)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "5"}}},
+			},
+			{
+				name: "lifts an integer without its separators and its type suffix", give: "(1_000u32)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "1000"}}},
+			},
+			{
+				name: "lifts an integer beyond 64 bits with every digit", give: "(18446744073709551616)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "18446744073709551616"}}},
+			},
+			{
+				name: "lifts a float without its type suffix as its shortest decimal text", give: "(1.50f32)",
+				want: []directive.RawArg{{Value: directive.RawValue{Text: "1.5"}}},
+			},
+			{
+				name: "lifts true as written", give: "(ok = true)",
+				want: []directive.RawArg{{Key: "ok", Value: directive.RawValue{Text: "true"}}},
+			},
+			{
+				name: "lifts two arguments in order", give: `("x", n = 1)`,
+				want: []directive.RawArg{
+					{Value: directive.RawValue{Text: "x", Quoted: true}},
+					{Key: "n", Value: directive.RawValue{Text: "1"}},
+				},
+			},
+		}
+		for _, tt := range lifts {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, stubMarker+tt.give+"]\npub struct A;\n")
+				assert.Empty(t, found, "the arguments lift")
+				attached := gb.Attachments()
+				assert.Length(t, attached, 1, "the marker attaches one directive")
+				assert.Equal(t, attached[0].Raw.Args, tt.want, "the directive has the lifted arguments")
+			})
+		}
+
+		refusals := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "reports BadMarker for a call", give: "(f())", want: "the argument f() is not a literal or a name"},
+			{
+				name: "reports BadMarker for an array", give: "([1, 2])",
+				want: "the argument [1, 2] is not a literal or a name",
+			},
+			{
+				name: "reports BadMarker for a character", give: "('c')",
+				want: "the argument 'c' is not a literal or a name",
+			},
+			{
+				name: "reports BadMarker for a minus sign before a string", give: `(-"x")`,
+				want: `the argument -"x" is not a literal or a name`,
+			},
+			{
+				name: "reports BadMarker for a float beyond the largest double", give: "(1e400)",
+				want: "the argument 1e400 is not a literal or a name",
+			},
+			{
+				name: "reports BadMarker for an integer of separators alone", give: "(0x_)",
+				want: "the argument 0x_ is not a literal or a name",
+			},
+			{
+				name: "reports BadMarker for an attribute that assigns a value", give: ` = "x"`,
+				want: `the attribute assigns "x", and a marker takes its arguments in parentheses`,
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, stubMarker+tt.give+"]\npub struct A;\n")
+				assert.Equal(t, codesOf(found), []diag.Code{frontend.BadMarker},
+					"the frontend reports the marker under BadMarker")
+				expect.Contains(t, found[0].Msg, tt.want, "the finding describes the argument")
+				expect.Equal(t, found[0].Pos, position.Pos{File: libRoot, Line: 1, Col: 1},
+					"the finding is at the attribute")
+				expect.Empty(t, gb.Attachments(), "the marker attaches nothing")
+			})
+		}
+
+		t.Run("reports BadMarker for an attribute of the brand alone", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedSource(t, "#["+brand+"]\npub struct A;\n")
+			expect.Equal(t, codesOf(found), []diag.Code{frontend.BadMarker}, "the brand alone is not a directive name")
+			expect.Empty(t, gb.Attachments(), "the marker attaches nothing")
+		})
+
+		unaddressed := []struct {
+			name string
+			give string
+		}{
+			{
+				name: "reports UnaddressedCarrier for a marker on a use declaration",
+				give: stubMarker + "]\nuse std::fmt;\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on an extern block",
+				give: stubMarker + "]\nextern \"C\" {}\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on an impl block",
+				give: "pub struct A;\n" + stubMarker + "]\nimpl A {}\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on an item of a trait impl",
+				give: "pub struct A;\nimpl Clone for A {\n    " + stubMarker + "]\n    fn clone(&self) -> A { A }\n}\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on a macro",
+				give: stubMarker + "]\nmacro_rules! m { () => {} }\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on a parameter",
+				give: "pub fn f(" + stubMarker + "] a: i32) {}\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on a macro of a trait",
+				give: "pub trait T {\n    " + stubMarker + "]\n    m!();\n}\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a marker on a macro of an impl block",
+				give: "pub struct A;\nimpl A {\n    " + stubMarker + "]\n    m!();\n}\n",
+			},
+		}
+		for _, tt := range unaddressed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, tt.give)
+				assert.Contains(t, codesOf(found), frontend.UnaddressedCarrier, "the marker attaches nowhere")
+				expect.Empty(t, gb.Attachments(), "the marker attaches nothing")
+			})
+		}
+
+		t.Run("reports UnaddressedCarrier for a marker on an associated constant of an absent type",
+			func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, "impl Missing {\n    "+stubMarker+"]\n    pub const N: i32 = 1;\n}\n")
+				assert.Contains(t, codesOf(found), frontend.UnaddressedCarrier, "the constant has no home")
+				expect.Empty(t, gb.Attachments(), "the marker attaches nothing")
+			})
 	})
 
 	t.Run("literal", func(t *testing.T) {

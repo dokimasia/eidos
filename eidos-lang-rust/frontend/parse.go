@@ -184,10 +184,14 @@ func (w *crate) addType(pkg, name string, decl symbol.Symbol) {
 	}
 }
 
-// mark attaches a declaration's carriers, and stamps its restricted
-// visibility's spelling and its test mark.
+// mark attaches a declaration's carriers and the directives of its
+// markers, and stamps its restricted visibility's spelling and its test
+// mark.
 func (w *crate) mark(decl symbol.Symbol, parts plugin.CommentParts, spelled string, a attributes) {
 	w.u.AttachCarriers(decl, parts.Carriers, BadCarrier)
+	for _, s := range a.sugars {
+		w.u.AttachSugar(decl, s, BadMarker)
+	}
 	if spelled != "" {
 		w.stamp(decl, rust.VisibilityKey, spelled, decl.Position())
 	}

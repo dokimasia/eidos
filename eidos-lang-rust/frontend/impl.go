@@ -34,22 +34,27 @@ type pendingImpl struct {
 	consts  []pendingConst
 }
 
-// implItem lowers an impl block. A trait impl records its trait, and its
-// items declare nothing, because the trait declares them, so a carrier
-// on one is refused. An inherent impl lowers its methods, a function
-// without self at the type level, and its associated constants as
-// fields of the type level that are immutable. Signature depth leaves
-// out an item that is not public. A carrier on the block itself is
-// refused.
-func (l *lowering) implItem(n treesitter.Node, c container) {
-	l.refuse(n, "an impl block")
+// implItem lowers an impl block, whose own attributes are a. A trait
+// impl records its trait, and its items declare nothing, because the
+// trait declares them, so a carrier or a marker on one is refused. An
+// inherent impl lowers its methods, a function without self at the type
+// level, and its associated constants as fields of the type level that
+// are immutable. Signature depth leaves out an item that is not public.
+// A carrier or a marker on the block itself is refused.
+func (l *lowering) implItem(n treesitter.Node, c container, a attributes) {
+	l.refuse(n, a, "an impl block")
 	impl := pendingImpl{scope: c.scope, file: c.file, self: l.typeRef(n.Child(l.v.fieldType))}
 	body := n.Child(l.v.fieldBody)
 	if trait := n.Child(l.v.fieldTrait); !trait.IsZero() {
 		impl.trait = l.typeRef(trait)
+		var attrs []treesitter.Node
 		for item := range body.NamedChildren() {
-			if item.Kind() != l.v.attributeItem && !l.comment(item) {
-				l.refuse(item, "an item of a trait impl, which the trait declares")
+			switch {
+			case item.Kind() == l.v.attributeItem:
+				attrs = append(attrs, item)
+			case !l.comment(item):
+				l.refuse(item, l.attributes(attrs), "an item of a trait impl, which the trait declares")
+				attrs = nil
 			}
 		}
 		l.w.impls = append(l.w.impls, impl)
@@ -90,7 +95,7 @@ func (l *lowering) implItem(n treesitter.Node, c container) {
 				parts: parts, spelled: spelled, a: a,
 			})
 		default:
-			l.refuse(item, "an item the model does not contain, such as a macro")
+			l.refuse(item, a, "an item the model does not contain, such as a macro")
 		}
 	}
 	l.w.impls = append(l.w.impls, impl)
@@ -162,10 +167,11 @@ func (w *crate) placed(consts []pendingConst) []*node.Field {
 }
 
 // unmodeled reports each associated constant the model has no home for,
-// at its position, and refuses its carriers.
+// at its position, and refuses its carriers and its markers.
 func (w *crate) unmodeled(consts []pendingConst, why string) {
 	for _, k := range consts {
 		w.u.Infof(UnmodeledItem, k.field.Pos, "the associated constant %s is not in the model: %s", k.field.Name, why)
 		refuseCarriers(w.u, k.parts.Carriers, "an associated constant the model does not contain")
+		refuseMarkers(w.u, k.a.sugars, "an associated constant the model does not contain")
 	}
 }

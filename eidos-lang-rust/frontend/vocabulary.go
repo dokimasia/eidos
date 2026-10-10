@@ -41,7 +41,7 @@ type vocabulary struct {
 	scopedUseList, useList, useAsClause, useWildcard treesitter.Kind
 
 	// Literals.
-	stringLiteral, rawStringLiteral treesitter.Kind
+	stringLiteral, rawStringLiteral, integerLiteral, floatLiteral, booleanLiteral treesitter.Kind
 
 	// The fields the lowering reads children by.
 	fieldName, fieldBody, fieldType, fieldTypeParameters, fieldParameters, fieldReturnType,
@@ -121,6 +121,9 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 
 		stringLiteral:    g.Kind("string_literal"),
 		rawStringLiteral: g.Kind("raw_string_literal"),
+		integerLiteral:   g.Kind("integer_literal"),
+		floatLiteral:     g.Kind("float_literal"),
+		booleanLiteral:   g.Kind("boolean_literal"),
 
 		fieldName:           g.Field("name"),
 		fieldBody:           g.Field("body"),
