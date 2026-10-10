@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/cli/internal/config"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/plugin"
 )
 
 // fileName is the file name that each case passes to Decode.
@@ -34,6 +35,10 @@ plans:
         layout: {policy: centralised, dir: gen, importBase: example.com/platform/gen}
     go-mocks:
         enabled: false
+    ts-client:
+        policies: {typescript.absent: "null"}
+policies:
+    typescript.int64: string
 options:
     stubgen: {suffix: _stub}
 `
@@ -76,9 +81,11 @@ func TestFile(t *testing.T) {
 							ImportBase: "example.com/platform/gen",
 						},
 					},
-					"go-mocks": {Enabled: new(false)},
+					"go-mocks":  {Enabled: new(false)},
+					"ts-client": {Policies: map[plugin.PolicyKey]plugin.Choice{"typescript.absent": "null"}},
 				},
-				Options: map[string]map[string]any{"stubgen": {"suffix": "_stub"}},
+				Policies: map[plugin.PolicyKey]plugin.Choice{"typescript.int64": "string"},
+				Options:  map[string]map[string]any{"stubgen": {"suffix": "_stub"}},
 			}, "the document has the value of each key")
 		})
 

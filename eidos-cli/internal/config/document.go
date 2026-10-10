@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
@@ -39,15 +40,16 @@ type Layout struct {
 type Plan struct {
 	// Enabled is nil when the file does not set it. The plan runs when
 	// Enabled is nil or true.
-	Enabled *bool    `yaml:"enabled" doc:"When false, the composition leaves the plan out, and the next run removes the files of the plan. The default is true."`
-	Sources *Sources `yaml:"sources" doc:"The source packages of the plan. They replace the sources that the plan declares."`
-	Layout  *Layout  `yaml:"layout"  doc:"The policy, the output directory and the import base of the plan. Each value that the file sets replaces the value of the plan."`
+	Enabled  *bool                              `yaml:"enabled"  doc:"When false, the composition leaves the plan out, and the next run removes the files of the plan. The default is true."`
+	Sources  *Sources                           `yaml:"sources"  doc:"The source packages of the plan. They replace the sources that the plan declares."`
+	Layout   *Layout                            `yaml:"layout"   doc:"The policy, the output directory and the import base of the plan. Each value that the file sets replaces the value of the plan."`
+	Policies map[plugin.PolicyKey]plugin.Choice `yaml:"policies" doc:"The choices of the lowering policies of the plan's backend. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice replaces the choice of the same key at the top level for the plan. Quote a choice that YAML reads as another type, such as \"null\"."`
 }
 
 // refinement converts the plan into the [workspace.PlanConfig] that Build
 // applies.
 func (p Plan) refinement() workspace.PlanConfig {
-	out := workspace.PlanConfig{Disabled: p.Enabled != nil && !*p.Enabled}
+	out := workspace.PlanConfig{Disabled: p.Enabled != nil && !*p.Enabled, Policies: p.Policies}
 	if p.Sources != nil {
 		out.Sources = &workspace.Sources{Lang: p.Sources.Lang, Packages: p.Sources.Packages, Module: p.Sources.Module}
 	}
@@ -69,9 +71,10 @@ type Document struct {
 	Ignore  []directive.Name `yaml:"ignore"  doc:"The directive names that the load does not report as unclaimed. A name is a full directive name, or a plugin prefix that ends with a colon."`
 	// Memo is nil when the file does not set it. The composition then keeps
 	// its own memo.
-	Memo    *Memo                     `yaml:"memo"    doc:"The parse memo. It stores the regions of each unit that a run parsed."`
-	Plans   map[string]Plan           `yaml:"plans"   doc:"The refinements of the plans of the binary. Each key is the name of a plan."`
-	Options map[string]map[string]any `yaml:"options" doc:"The option values of the plugins. Each key is the name of a plugin, and each nested key is the key of an option."`
+	Memo     *Memo                              `yaml:"memo"     doc:"The parse memo. It stores the regions of each unit that a run parsed."`
+	Plans    map[string]Plan                    `yaml:"plans"    doc:"The refinements of the plans of the binary. Each key is the name of a plan."`
+	Policies map[plugin.PolicyKey]plugin.Choice `yaml:"policies" doc:"The choices of the lowering policies. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice applies to every plan whose backend declares the key. Quote a choice that YAML reads as another type, such as \"null\"."`
+	Options  map[string]map[string]any          `yaml:"options"  doc:"The option values of the plugins. Each key is the name of a plugin, and each nested key is the key of an option."`
 }
 
 // Apply sets the values of the document on b. root is the workspace root of
@@ -86,7 +89,7 @@ type Document struct {
 //     of the composition. Apply joins a relative memo directory to root, and
 //     the workspace opens the memo ledger in that directory with
 //     [ledger.OpenAt].
-//   - Apply passes plans and options to one call of
+//   - Apply passes plans, policies and options to one call of
 //     [workspace.Builder.Config], which replaces the config of the
 //     composition.
 func (d *Document) Apply(b *workspace.Builder, root string) {
@@ -110,10 +113,10 @@ func (d *Document) Apply(b *workspace.Builder, root string) {
 		}
 		b.Memo(m)
 	}
-	if len(d.Plans) == 0 && len(d.Options) == 0 {
+	if len(d.Plans) == 0 && len(d.Policies) == 0 && len(d.Options) == 0 {
 		return
 	}
-	cfg := workspace.Config{Options: d.Options}
+	cfg := workspace.Config{Options: d.Options, Policies: d.Policies}
 	if len(d.Plans) > 0 {
 		cfg.Plans = make(map[string]workspace.PlanConfig, len(d.Plans))
 		for name, p := range d.Plans {

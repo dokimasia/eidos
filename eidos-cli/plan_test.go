@@ -38,8 +38,17 @@ const refinedConfig = "version: 1\nplans:\n    mirrors:\n" +
 	"        sources: {lang: fake, packages: [./svc/...], module: example.test/svc}\n" +
 	"        layout: {policy: centralised, dir: gen, importBase: example.test/gen}\n"
 
+// widthConfig selects the choice wide of the width policy, which the
+// printer of the policed composition declares.
+const widthConfig = "version: 1\npolicies:\n    text.width: wide\n"
+
 // storeID is the struct Store of the package svc, which the lister looks up.
 var storeID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc", Name: "Store", Kind: symbol.KindStruct}
+
+// widthPolicy is a lowering policy of the text target.
+var widthPolicy = plugin.PolicySpec{
+	Key: "text.width", Choices: []plugin.Choice{"narrow", "wide"}, Default: "narrow", Doc: "the width of a line",
+}
 
 // lister is a workspace check that reads the plan of the mirror. It looks
 // the store up and ranges over the structs, so its record reads the
@@ -147,6 +156,23 @@ func TestPlan(t *testing.T) {
 				"the event has the refined fields")
 		})
 
+		t.Run("writes the choice of each policy of a plan's backend", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(widthConfig)})
+			_, stdout, _ := invoke(t, policed, cmdPlan, root)
+			assert.Contains(t, stdout, "  policies: text.width wide\n", "the plan has the choice of the config")
+		})
+
+		t.Run("writes the choice of each policy into the plan event", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(widthConfig)})
+			_, stdout, _ := invoke(t, policed, cmdPlan, root, jsonFlag)
+			assert.Contains(t, stdout, `"layout":{"policy":"inherit"},"policies":{"text.width":"wide"}}`+"\n",
+				"the event has the choice of the config")
+		})
+
 		t.Run("writes the name of the member into each event of a list", func(t *testing.T) {
 			t.Parallel()
 
@@ -212,4 +238,14 @@ func described() *workspace.Builder {
 			},
 		).
 		Checks(lister{})
+}
+
+// policed returns the fixture composition with a printer that declares the
+// width policy.
+func policed() *workspace.Builder {
+	return workspace.New().
+		Brand(brand).
+		Frontends(frontendtest.NewScripted()).
+		Targets(target).
+		Plans(workspace.Plan{Name: planName, Generators: []plugin.Generator{mirror()}, Backend: printer(widthPolicy)})
 }

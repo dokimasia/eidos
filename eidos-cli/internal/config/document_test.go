@@ -31,9 +31,14 @@ const (
 	suffix                 = "_stub"
 	// memoLimit is a memo size that keeps every entry of a fixture run.
 	memoLimit config.Bytes = 1048576
+	// widthKey is a policy key that the fixture's backend does not
+	// declare, and narrow is a choice of it.
+	widthKey plugin.PolicyKey = "stub.width"
+	narrow   plugin.Choice    = "narrow"
 )
 
-// stubBackend is the backend of the fixture plan. It renders nothing.
+// stubBackend is the backend of the fixture plan. It does not implement a
+// renderer.
 type stubBackend struct{}
 
 // Name returns the name of the backend.
@@ -101,6 +106,18 @@ func TestDocument(t *testing.T) {
 				name:    "passes the plans to Config",
 				give:    config.Document{Plans: map[string]config.Plan{"ghost": {}}},
 				markers: []string{`"ghost"`},
+			},
+			{
+				name:    "passes the policies to Config",
+				give:    config.Document{Policies: map[plugin.PolicyKey]plugin.Choice{widthKey: narrow}},
+				markers: []string{string(widthKey), "no plan's backend declares a policy"},
+			},
+			{
+				name: "passes the policies of a plan to Config",
+				give: config.Document{Plans: map[string]config.Plan{
+					planName: {Policies: map[plugin.PolicyKey]plugin.Choice{widthKey: narrow}},
+				}},
+				markers: []string{`"` + planName + `"`, string(widthKey)},
 			},
 		}
 		for _, tt := range tests {

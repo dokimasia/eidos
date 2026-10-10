@@ -377,8 +377,9 @@ func mirror() plugin.Generator {
 }
 
 // printer returns the backend of the fixture plans. It renders each struct
-// as one line into the text file whose name is the word of the unit.
-func printer() plugin.Backend {
+// as one line into the text file whose name is the word of the unit, and it
+// declares the lowering policies policies.
+func printer(policies ...plugin.PolicySpec) plugin.Backend {
 	coverage := map[symbol.Fact]render.Verdict{}
 	for _, f := range symbol.Facts() {
 		coverage[f] = render.Renders
@@ -392,6 +393,7 @@ func printer() plugin.Backend {
 		Imports(func(*render.ImportSet) string { return "" }).
 		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
 		Coverage(render.Coverage{Facts: coverage}).
+		Policies(policies...).
 		Build()
 }
 

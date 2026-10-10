@@ -75,6 +75,13 @@
                 },
                 "type": "object"
               },
+              "policies": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "The choices of the lowering policies of the plan's backend. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice replaces the choice of the same key at the top level for the plan. Quote a choice that YAML reads as another type, such as \"null\".",
+                "type": "object"
+              },
               "sources": {
                 "additionalProperties": false,
                 "description": "The source packages of the plan. They replace the sources that the plan declares.",
@@ -101,6 +108,13 @@
             "type": "object"
           },
           "description": "The refinements of the plans of the binary. Each key is the name of a plan.",
+          "type": "object"
+        },
+        "policies": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The choices of the lowering policies. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice applies to every plan whose backend declares the key. Quote a choice that YAML reads as another type, such as \"null\".",
           "type": "object"
         },
         "version": {

@@ -8,9 +8,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -48,16 +50,18 @@ type layoutOf struct {
 }
 
 // planOf is the JSON form of one plan of a composition. Order is the place
-// of the plan in the commit order, and the first plan has 1.
+// of the plan in the commit order, and the first plan has 1. Policies has
+// the choice of each lowering policy of the backend.
 type planOf struct {
-	Name      string      `json:"name"`
-	Order     int         `json:"order"`
-	Sources   sources     `json:"sources"`
-	DependsOn []string    `json:"dependsOn,omitempty"`
-	Generate  []component `json:"generate"`
-	Backend   component   `json:"backend"`
-	Target    string      `json:"target"`
-	Layout    layoutOf    `json:"layout"`
+	Name      string                             `json:"name"`
+	Order     int                                `json:"order"`
+	Sources   sources                            `json:"sources"`
+	DependsOn []string                           `json:"dependsOn,omitempty"`
+	Generate  []component                        `json:"generate"`
+	Backend   component                          `json:"backend"`
+	Target    string                             `json:"target"`
+	Layout    layoutOf                           `json:"layout"`
+	Policies  map[plugin.PolicyKey]plugin.Choice `json:"policies,omitempty"`
 }
 
 // planCommand returns the command plan, which prints the composition of
@@ -150,6 +154,13 @@ func (x *invocation) planEvent(p workspace.PlanDescription, order int) {
 	lines = append(lines, "  layout: "+fields(
 		"policy", p.Layout.Policy.String(), "dir", p.Layout.Dir, "import base", p.Layout.ImportBase,
 	))
+	if len(p.Policies) > 0 {
+		pairs := make([]string, 0, 2*len(p.Policies))
+		for _, k := range slices.Sorted(maps.Keys(p.Policies)) {
+			pairs = append(pairs, string(k), string(p.Policies[k]))
+		}
+		lines = append(lines, "  policies: "+fields(pairs...))
+	}
 	x.r.Event(eventPlan, &planOf{
 		Name:  p.Name,
 		Order: order,
@@ -163,5 +174,6 @@ func (x *invocation) planEvent(p workspace.PlanDescription, order int) {
 		Layout: layoutOf{
 			Policy: p.Layout.Policy.String(), Dir: p.Layout.Dir, ImportBase: p.Layout.ImportBase,
 		},
+		Policies: p.Policies,
 	}, strings.Join(lines, "\n"))
 }
