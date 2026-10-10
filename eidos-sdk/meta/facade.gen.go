@@ -157,6 +157,20 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	return core.Get[T](f, id, k)
 }
 
+// GetAtLeast returns what [Get] returns where the claim that ranks first
+// has authority floor or above, and false otherwise. A drop that ranks
+// first reads absent, as it does for Get. A reader of an override uses
+// it, because a stamp at a lower authority on the same key is not an
+// override.
+//
+// # Allocation contract
+//
+// GetAtLeast allocates what Get allocates: nothing for a scalar value
+// and two allocations for a list.
+func GetAtLeast[T FactValue](f *Facts, id symbol.Identity, k Key[T], floor Authority) (T, bool) {
+	return core.GetAtLeast[T](f, id, k, floor)
+}
+
 // Fact returns what [Get] does and records the read at (subject, key)
 // into rec. It records a miss as well, so the reader runs again when the
 // fact appears. A subject of a kind the key does not admit reads absent
@@ -221,9 +235,10 @@ type KernelKeys = core.KernelKeys
 
 // Kernel claims the kernel namespace as [KernelOwner] and registers
 // the kernel's keys through that registrant's handle, whichever
-// handle it is given. It refuses, with the registry's own errors, a
-// namespace already claimed and a key already registered, which is
-// what a composition registering it twice reads.
+// handle it is given. A second call on one registry repeats the
+// registration and returns the same handles. It refuses, with the
+// registry's own error, a kernel namespace that another registrant
+// claimed.
 //
 // # Allocation contract
 //
@@ -292,7 +307,10 @@ type ClaimView = core.ClaimView
 // registrations. A namespace belongs to the registrant whose handle
 // claimed it, and a key registers only into a namespace its own
 // registrant claimed, so no plugin registers keys under another
-// plugin's namespace or the kernel's.
+// plugin's namespace or the kernel's. A registrant that claims its
+// namespace again, or registers a key again under an equal spec,
+// repeats its registration, so the parts of one language register the
+// language's keys independently.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, which is single-threaded.
@@ -319,15 +337,18 @@ type KeySpec = core.KeySpec
 // declaration of these kinds by the end of the named phase.
 type Completeness = core.Completeness
 
-// Register records a key and returns its typed handle.
+// Register records a key and returns its typed handle. A key that the
+// registrant registered before, under the same value type and an equal
+// spec, returns the handle of that registration and changes nothing.
 //
 // It refuses the following, with an error naming both claimants
 // where two exist:
 //   - a registration after [Registry.Seal];
 //   - a name without a claimed namespace or without a local part;
 //   - a name in a namespace another registrant claimed;
-//   - a name registered twice;
 //   - a spec without documentation;
+//   - a name registered again under another value type or another
+//     spec, with an error that contains the first difference;
 //   - a key and a group with one spelling, in either registration
 //     order. A meta drop names a key or a group by its spelling, so
 //     one spelling must name one of them.
@@ -341,7 +362,7 @@ type Completeness = core.Completeness
 // list, the type list and the name map, and for a key in a group the
 // growth of the group map and of the group's member list. The first key
 // of a registry allocates three times outside a group and five times in
-// one.
+// one. A repeated registration of an equal spec allocates nothing.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	return core.Register[T](r, s)
 }

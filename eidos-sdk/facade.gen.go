@@ -61,6 +61,11 @@ func NewPlugin(name plugin.ID) *Builder {
 // store, because the classification path reports it too.
 var RefusedStamp = core.RefusedStamp
 
+// RefusedType reports a type of another language without a spelling in
+// the plan's target. The finding is at the declaration with the type.
+// [Emitter.Type] reports it as an Error, so the plan fails.
+var RefusedType = core.RefusedType
+
 // Tag selects a declared output family; the zero value is the
 // primary. Addressing a family the plugin never declared panics:
 // the family set is the plugin's own declaration, so the mismatch

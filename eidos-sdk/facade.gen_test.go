@@ -51,6 +51,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("RefusedType", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, sdk.RefusedType, core.RefusedType, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Tag", func(t *testing.T) {
 		t.Parallel()
 

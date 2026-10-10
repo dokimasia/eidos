@@ -44,12 +44,12 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 
 // AssertClassified checks the claim: every selected file
 // either declares into the graph or has a finding naming it, so
-// nothing drops in silence. A fixture declaring classification keys
-// is stamped by the load, and the recorded stamps apply cleanly
-// under those keys, the way the workspace run applies them. A load
-// that stamps under a fixture declaring no keys fails, because
-// nothing could apply its stamps, and so does a fixture declaring keys
-// over a load that stamps nothing.
+// nothing drops in silence. The recorded stamps apply cleanly under
+// the keys that the frontend registers through its role and the keys
+// that the fixture declares, the way the workspace run applies them. A
+// stamp under a key that neither registers fails, because nothing could
+// apply it, and so does a fixture declaring keys over a load that stamps
+// nothing.
 func AssertClassified(tb assert.TB, setup Setup) {
 	core.AssertClassified(tb, setup)
 }

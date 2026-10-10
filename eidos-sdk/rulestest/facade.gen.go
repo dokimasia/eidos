@@ -47,11 +47,14 @@ func BenchRules(b *testing.B, setup Setup, budget Budget) {
 
 // Loaded loads a source tree through one frontend into a fixture:
 // the sealed graph, and a fact store with the load's classification
-// stamps under the kernel's keys and every key the registrations
-// add. The load runs under [frontendtest.Brand], so a fixture tree
-// writes its carriers the way the frontend suite reads them. A load
-// that reports an Error fails the test, because a tree the language
-// refuses proves nothing about its rules.
+// stamps under the kernel's keys, the keys that the frontend registers
+// through its role, and every key the registrations add. The frontend
+// registers under its language's spelling and the registrations under
+// the handle of the composition, as a workspace registers them. The
+// load runs under [frontendtest.Brand], so a fixture tree writes its
+// carriers the way the frontend suite reads them. A load that reports
+// an Error fails the test, because a tree the language refuses proves
+// nothing about its rules.
 func Loaded(tb assert.TB, f plugin.Frontend, sources fs.FS, keys ...func(*meta.Registry) error) *Fixture {
 	return core.Loaded(tb, f, sources, keys...)
 }

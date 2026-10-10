@@ -51,6 +51,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("BuiltinMemberBody", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.BuiltinMemberBody, core.BuiltinMemberBody, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("BuiltinUse", func(t *testing.T) {
 		t.Parallel()
 

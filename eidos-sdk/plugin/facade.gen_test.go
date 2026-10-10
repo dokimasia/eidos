@@ -21,6 +21,16 @@ import (
 func TestFacade(t *testing.T) {
 	t.Parallel()
 
+	t.Run("NameParam", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.NameParam, core.NameParam, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Target", func(t *testing.T) {
 		t.Parallel()
 
@@ -38,6 +48,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.Backend](), reflect.TypeFor[core.Backend](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("TypeSpeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.TypeSpeller](), reflect.TypeFor[core.TypeSpeller](), "the facade aliases the kernel's type")
 		})
 	})
 
@@ -651,6 +671,56 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("PolicyKey", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.PolicyKey](), reflect.TypeFor[core.PolicyKey](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Choice", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Choice](), reflect.TypeFor[core.Choice](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("PolicySpec", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.PolicySpec](), reflect.TypeFor[core.PolicySpec](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Policy", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Policy](), reflect.TypeFor[core.Policy](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NewPolicy", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.NewPolicy), reflect.TypeOf(core.NewPolicy), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("DirectiveProvider", func(t *testing.T) {
 		t.Parallel()
 
@@ -688,6 +758,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.OutputProvider](), reflect.TypeFor[core.OutputProvider](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("PolicyProvider", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.PolicyProvider](), reflect.TypeFor[core.PolicyProvider](), "the facade aliases the kernel's type")
 		})
 	})
 
@@ -1158,6 +1238,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.Carrier](), reflect.TypeFor[core.Carrier](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Sugar", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Sugar](), reflect.TypeFor[core.Sugar](), "the facade aliases the kernel's type")
 		})
 	})
 

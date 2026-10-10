@@ -23,6 +23,11 @@ import (
 	"go.dokimi.dev/eidos/sdk/store"
 )
 
+// NameParam is the param of a target's directive that overrides the
+// name of one declaration in the target, as in typescript
+// name=fetchSession. No policy takes it as its name.
+const NameParam = core.NameParam
+
 // Target names a rendering target. It is a registered name: the
 // composition declares the targets it recognises, and a plan whose
 // backend names anything else is a composition fault. The zero
@@ -36,6 +41,17 @@ type Target = core.Target
 // validates both, so a plan is whole before anything arrives on
 // disk.
 type Backend = core.Backend
+
+// TypeSpeller is the role of a backend that spells the canonical shape
+// of a type of another language in its target. It is the spoke of the
+// cross-language hub. The workspace passes it to each generator of a
+// plan that renders through the backend.
+//
+// # Concurrency
+//
+// The plans of a run call one TypeSpeller concurrently, so an
+// implementation is safe for concurrent use.
+type TypeSpeller = core.TypeSpeller
 
 // ContinuedCarrier refuses a carrier that continues onto the next
 // line while its own line has the tool-directive shape. A formatter
@@ -595,6 +611,64 @@ const (
 // priority bucket.
 type Capability = core.Capability
 
+// PolicyKey is the key of one lowering policy of a target. It is the
+// target's spelling, a dot and the policy's name, as in
+// typescript.int64. The param of the target's directive with the
+// policy's name overrides the policy for one declaration, as in
+// typescript int64=string. The override is a fact under the metadata key
+// with the same spelling as the PolicyKey.
+type PolicyKey = core.PolicyKey
+
+// Choice is one value that a policy takes, such as bigint.
+type Choice = core.Choice
+
+// PolicySpec declares one lowering policy. Default is the choice that
+// applies where nothing selects one.
+type PolicySpec = core.PolicySpec
+
+// Policy is a resolved lowering policy: one choice for every key that a
+// target declares. The zero Policy has no keys.
+//
+// # Concurrency
+//
+// A Policy is immutable after [NewPolicy] returns it, so the plans of a
+// run read one policy concurrently. A copy that [Policy.Overridden]
+// returns is as safe for concurrent use as its override function.
+//
+// # Allocation contract
+//
+// [Policy.Choice] and [Policy.Overridden] do not allocate. A call of the
+// override function allocates what the function allocates.
+type Policy = core.Policy
+
+// NewPolicy returns the resolved policy of the target t. A key takes the
+// choice that chosen selects for it, and the default of its spec where
+// chosen selects none. NewPolicy checks each spec as the backend kit's
+// Build checks it.
+//
+// Error modes, one error for each fault, joined:
+//   - a spec with an empty key, a key outside t's namespace, or a key
+//     that another spec declares;
+//   - a policy name that is not a valid param key of a directive, and the
+//     policy name name, which the target's directive keeps for a
+//     declaration's name;
+//   - a spec without choices, a spec with an empty or a repeated choice,
+//     and a spec whose default is not one of its choices;
+//   - a spec without documentation;
+//   - a key of chosen that no spec declares, with an error that contains
+//     the declared keys where t declares any;
+//   - a choice outside its key's choices, with an error that contains
+//     them.
+//
+// # Allocation contract
+//
+// NewPolicy allocates the policy's sorted copy of the specs and its list
+// of choices, and the sorted keys of chosen where chosen has a key. Each
+// fault allocates its error.
+func NewPolicy(t Target, specs []PolicySpec, chosen map[PolicyKey]Choice) (Policy, error) {
+	return core.NewPolicy(t, specs, chosen)
+}
+
 // DirectiveProvider declares the schemas a plugin owns, for
 // registration at composition.
 type DirectiveProvider = core.DirectiveProvider
@@ -619,6 +693,12 @@ type KeyBinder = core.KeyBinder
 
 // OutputProvider declares the file families a generator emits.
 type OutputProvider = core.OutputProvider
+
+// PolicyProvider declares the lowering policies that a backend's spoke
+// reads. The workspace resolves them for each plan of the backend, and
+// derives the target's policy keys and the params of the target's
+// directive from them.
+type PolicyProvider = core.PolicyProvider
 
 // CapabilityProvider orders a plugin: a priority per role,
 // plus the capability topology inside one priority bucket.
@@ -814,6 +894,10 @@ type Respeller = core.Respeller
 // fact store, a name key the composition did not register and a
 // backend without the hook apply no override.
 //
+// The settle records whether a declaration that renders has a type
+// reference whose target is a declaration of another language than the
+// backend's target, which [Emit.Translates] reports.
+//
 // Findings attach to the sink under the backend's name: a refused
 // construct or name withholds its declaration, colliding names
 // keep their emitted spellings, and an ambiguous reference is left
@@ -997,6 +1081,11 @@ func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyn
 // Carrier is one directive payload and its line, marker stripped,
 // ready for the kernel grammar, and the mark it opened with.
 type Carrier = core.Carrier
+
+// Sugar is one marker that a frontend reads from the language's own
+// syntax for metadata, such as a TypeScript decorator, a Rust attribute
+// or a Java annotation.
+type Sugar = core.Sugar
 
 // CommentParts is one raw comment taken apart three ways: the
 // documentation lines, the carrier lines, and the tool-directive

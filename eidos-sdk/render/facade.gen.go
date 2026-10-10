@@ -33,6 +33,12 @@ const (
 	// BuiltinBody places a callable's content; a kind template
 	// calls it with the declaration under render.
 	BuiltinBody = core.BuiltinBody
+	// BuiltinMemberBody places a member's content as [BuiltinBody]
+	// does, with every line that is not blank behind the language's
+	// [Language.MemberIndent]. A host's template calls it with the
+	// member under render, so the member's statements are one level
+	// deeper than the member.
+	BuiltinMemberBody = core.BuiltinMemberBody
 	// BuiltinUse records one import path into the file under
 	// render.
 	BuiltinUse = core.BuiltinUse
