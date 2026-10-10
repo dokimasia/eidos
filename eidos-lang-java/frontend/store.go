@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // The stores the Java frontend reads dependency units from, under the
@@ -33,12 +34,21 @@ const (
 	GradleStore = "gradle"
 )
 
-// The variables Stores reads: the JDK's home, the user's home, and
-// Gradle's home.
+// Stores reads the JDK's home, the user's home and Gradle's home from
+// these variables. The user's home is in the variable that os.UserHomeDir
+// reads on each platform.
 const (
-	envJavaHome   = "JAVA_HOME"
-	envHome       = "HOME"
-	envGradleHome = "GRADLE_USER_HOME"
+	envJavaHome    = "JAVA_HOME"
+	envHome        = "HOME"
+	envUserProfile = "USERPROFILE"
+	envPlan9Home   = "home"
+	envGradleHome  = "GRADLE_USER_HOME"
+)
+
+// The platforms whose home directory is not HOME.
+const (
+	goosWindows = "windows"
+	goosPlan9   = "plan9"
 )
 
 // The slash paths under the roots Stores resolves: ct.sym under the
@@ -58,9 +68,11 @@ const (
 //
 // ct.sym is lib/ct.sym under JAVA_HOME, read into memory whole, because a
 // store has no Close that would release an open file. The local
-// repository is .m2/repository under HOME. The module cache is
-// caches/modules-2/files-2.1 under GRADLE_USER_HOME, which defaults to
-// .gradle under HOME.
+// repository is .m2/repository under the user's home directory. The
+// module cache is caches/modules-2/files-2.1 under GRADLE_USER_HOME,
+// which defaults to .gradle under the home directory. Stores reads the
+// home directory from USERPROFILE on Windows, from home on Plan 9 and
+// from HOME elsewhere, as os.UserHomeDir does.
 //
 // Stores returns an error naming the variable to set for a root it
 // cannot resolve, and an error for a ct.sym that does not read or open
@@ -77,9 +89,11 @@ func Stores(getenv func(string) string) (map[string]fs.FS, error) {
 	if javaHome == "" {
 		return nil, errors.New("frontend: set JAVA_HOME, the JDK whose lib/ct.sym the Java frontend reads")
 	}
-	home := getenv(envHome)
+	homeName := homeVar()
+	home := getenv(homeName)
 	if home == "" {
-		return nil, errors.New("frontend: set HOME, the directory the Maven repository and the Gradle home are under")
+		return nil, fmt.Errorf("frontend: set %s, the directory the Maven repository and the Gradle home are under",
+			homeName)
 	}
 	ctSym := filepath.Join(javaHome, filepath.FromSlash(ctSymPath))
 	data, err := os.ReadFile(ctSym)
@@ -99,4 +113,18 @@ func Stores(getenv func(string) string) (map[string]fs.FS, error) {
 		MavenStore:  os.DirFS(filepath.Join(home, filepath.FromSlash(m2Repository))),
 		GradleStore: os.DirFS(filepath.Join(gradleHome, filepath.FromSlash(gradleCache))),
 	}, nil
+}
+
+// homeVar returns the name of the variable of the user's home directory,
+// which os.UserHomeDir reads: USERPROFILE on Windows, home on Plan 9, and
+// HOME elsewhere. Maven and Gradle resolve their homes under the same
+// directory.
+func homeVar() string {
+	switch runtime.GOOS {
+	case goosWindows:
+		return envUserProfile
+	case goosPlan9:
+		return envPlan9Home
+	}
+	return envHome
 }

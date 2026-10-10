@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"testing/fstest"
 
@@ -19,10 +20,18 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
+// homeVar is the variable of the user's home directory that Stores reads
+// on the systems that CI runs: USERPROFILE on Windows, and HOME elsewhere.
+var homeVar = func() string {
+	if runtime.GOOS == "windows" {
+		return "USERPROFILE"
+	}
+	return "HOME"
+}()
+
 // The variables Stores reads, and the paths it resolves under them.
 const (
 	envJavaHome   = "JAVA_HOME"
-	envHome       = "HOME"
 	envGradleHome = "GRADLE_USER_HOME"
 	ctSymFile     = "lib/ct.sym"
 	m2Dir         = ".m2/repository"
@@ -75,18 +84,18 @@ func TestStore(t *testing.T) {
 			assert.Contains(t, err.Error(), envJavaHome, "the variable to set")
 		})
 
-		t.Run("returns an error naming HOME for an unset HOME", func(t *testing.T) {
+		t.Run("returns an error naming the home variable for an unset home", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t)}))
-			assert.HasError(t, err, "an unset HOME resolves no store")
-			assert.Contains(t, err.Error(), envHome, "the variable to set")
+			assert.HasError(t, err, "an unset home resolves no store")
+			assert.Contains(t, err.Error(), homeVar, "the variable to set")
 		})
 
 		t.Run("returns an error for a JDK without ct.sym", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := frontend.Stores(env(map[string]string{envJavaHome: t.TempDir(), envHome: t.TempDir()}))
+			_, err := frontend.Stores(env(map[string]string{envJavaHome: t.TempDir(), homeVar: t.TempDir()}))
 			assert.ErrorIs(t, err, fs.ErrNotExist, "lib/ct.sym is missing")
 		})
 
@@ -95,25 +104,25 @@ func TestStore(t *testing.T) {
 
 			home := t.TempDir()
 			writeFile(t, home, ctSymFile, []byte("junk"))
-			_, err := frontend.Stores(env(map[string]string{envJavaHome: home, envHome: t.TempDir()}))
+			_, err := frontend.Stores(env(map[string]string{envJavaHome: home, homeVar: t.TempDir()}))
 			assert.HasError(t, err, "the file does not open")
 		})
 
 		t.Run("opens ct.sym as the JDK store", func(t *testing.T) {
 			t.Parallel()
 
-			stores, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t), envHome: t.TempDir()}))
+			stores, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t), homeVar: t.TempDir()}))
 			assert.NoError(t, err, "the stores resolve")
 			_, err = fs.ReadFile(stores[frontend.JDKStore], lang9To25)
 			assert.NoError(t, err, "the entry reads")
 		})
 
-		t.Run("roots the Maven store at .m2/repository under HOME", func(t *testing.T) {
+		t.Run("roots the Maven store at .m2/repository under the home directory", func(t *testing.T) {
 			t.Parallel()
 
 			home := t.TempDir()
 			writeFile(t, home, filepath.Join(m2Dir, probeFile), nil)
-			stores, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t), envHome: home}))
+			stores, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t), homeVar: home}))
 			assert.NoError(t, err, "the stores resolve")
 			_, err = fs.ReadFile(stores[frontend.MavenStore], probeFile)
 			assert.NoError(t, err, "the repository's file reads")
@@ -125,19 +134,19 @@ func TestStore(t *testing.T) {
 			gradle := t.TempDir()
 			writeFile(t, gradle, filepath.Join(gradleDir, probeFile), nil)
 			stores, err := frontend.Stores(env(map[string]string{
-				envJavaHome: jdkHome(t), envHome: t.TempDir(), envGradleHome: gradle,
+				envJavaHome: jdkHome(t), homeVar: t.TempDir(), envGradleHome: gradle,
 			}))
 			assert.NoError(t, err, "the stores resolve")
 			_, err = fs.ReadFile(stores[frontend.GradleStore], probeFile)
 			assert.NoError(t, err, "the module cache's file reads")
 		})
 
-		t.Run("roots the Gradle store under .gradle in HOME by default", func(t *testing.T) {
+		t.Run("roots the Gradle store under .gradle in the home directory by default", func(t *testing.T) {
 			t.Parallel()
 
 			home := t.TempDir()
 			writeFile(t, home, filepath.Join(defaultGradle, gradleDir, probeFile), nil)
-			stores, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t), envHome: home}))
+			stores, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t), homeVar: home}))
 			assert.NoError(t, err, "the stores resolve")
 			_, err = fs.ReadFile(stores[frontend.GradleStore], probeFile)
 			assert.NoError(t, err, "the module cache's file reads")
@@ -161,7 +170,12 @@ func TestStore(t *testing.T) {
 
 // The stores allocate ct.sym's read and index, the paths and the map.
 // The ordinary run, which runs no benchmark, checks those ceilings here.
+// Darwin and Windows allocate more in their file system calls and path
+// functions, so the test runs on Linux alone.
 func TestStoreAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	checkAllocs(t, storeCalls(t))
 }
 
@@ -177,8 +191,8 @@ func storeCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
 	jdk := jdkHome(tb)
-	byDefault := env(map[string]string{envJavaHome: jdk, envHome: userHome})
-	named := env(map[string]string{envJavaHome: jdk, envHome: userHome, envGradleHome: gradleHome})
+	byDefault := env(map[string]string{envJavaHome: jdk, homeVar: userHome})
+	named := env(map[string]string{envJavaHome: jdk, homeVar: userHome, envGradleHome: gradleHome})
 	var (
 		stores map[string]fs.FS
 		err    error
