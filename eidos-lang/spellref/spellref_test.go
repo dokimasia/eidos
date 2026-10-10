@@ -177,14 +177,15 @@ func TestSpellRef(t *testing.T) {
 			assert.Equal(t, spellref.PackageOf(ref, lang), targetPkg, "the declaring package")
 		})
 
-		t.Run("returns nothing for a target of another language", func(t *testing.T) {
+		t.Run("returns the recorded package of a target of another language", func(t *testing.T) {
 			t.Parallel()
 
 			ref := &emit.TypeRef{
 				Spelling: rowName, Package: modulePkg,
 				Target: symbol.Identity{Lang: otherLang, Package: targetPkg, Name: rowName},
 			}
-			assert.Equal(t, spellref.PackageOf(ref, lang), "", "no import of this language names it")
+			assert.Equal(t, spellref.PackageOf(ref, lang), modulePkg,
+				"the layout records the package of the file that declares a translated reference's referent")
 		})
 	})
 }

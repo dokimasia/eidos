@@ -169,19 +169,16 @@ func write(b *strings.Builder, s string) {
 	}
 }
 
-// PackageOf returns the package a named reference names for a backend
-// of one language: its target's package where the target is a
-// declaration of that language, nothing where the target is another
-// language's, whose package no import of this language names, and
-// the package the reference records where it has no target. It
-// allocates nothing.
+// PackageOf returns the package of a named reference for a backend of
+// the language lang. It returns the target's package where the target is
+// a declaration of lang, and the package that the reference records
+// otherwise. A reference without a target records the package of its
+// source. A translated reference has a target in another language, and
+// the layout records the package of the file that declares its referent.
+// PackageOf allocates nothing.
 func PackageOf(t *emit.TypeRef, lang symbol.Lang) string {
-	switch {
-	case t.Target.IsZero():
-		return t.Package
-	case t.Target.Lang == lang:
+	if !t.Target.IsZero() && t.Target.Lang == lang {
 		return t.Target.Package
-	default:
-		return ""
 	}
+	return t.Package
 }
