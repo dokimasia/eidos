@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package catalog_test
@@ -135,10 +135,12 @@ func TestRegistryWiring(t *testing.T) {
 		t.Run("lists every detected shape once", func(t *testing.T) {
 			t.Parallel()
 
-			var got, want []shape.Shape
-			for _, d := range catalog.Detections() {
+			detections := catalog.Detections()
+			got := make([]shape.Shape, 0, len(detections))
+			for _, d := range detections {
 				got = append(got, d.Shape)
 			}
+			var want []shape.Shape
 			for _, s := range shape.Specs() {
 				if s.Detected {
 					want = append(want, shape.Shape(s.Name))
@@ -167,8 +169,9 @@ func TestRegistryWiring(t *testing.T) {
 					}
 				}
 			}
-			var wired []string
-			for _, d := range catalog.Detections() {
+			detections := catalog.Detections()
+			wired := make([]string, 0, len(detections))
+			for _, d := range detections {
 				wired = append(wired, runtime.FuncForPC(reflect.ValueOf(d.Detect).Pointer()).Name())
 			}
 			assert.Permutation(t, wired, exported, "the wiring lists each exported function of package detectors")

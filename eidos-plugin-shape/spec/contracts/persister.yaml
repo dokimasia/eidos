@@ -1,3 +1,6 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
 # yaml-language-server: $schema=../../spec.schema.json
 name: persister
 form: contract

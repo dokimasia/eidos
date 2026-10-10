@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package specfront
@@ -215,6 +215,8 @@ func (d *decoding) required(n *yaml.Node, t reflect.Type) {
 				d.required(n.Content[i], t.Elem())
 			}
 		}
+	default:
+		// A value of another kind contains no section.
 	}
 }
 
@@ -226,10 +228,9 @@ func (d *decoding) entries(err error) {
 	if typed, is := errors.AsType[*yaml.TypeError](err); is {
 		entries = typed.Errors
 	}
-	for _, entry := range entries {
+	for _, msg := range entries {
 		at := position.Pos{File: d.file}
-		msg := entry
-		if rest, numbered := strings.CutPrefix(entry, linePrefix); numbered {
+		if rest, numbered := strings.CutPrefix(msg, linePrefix); numbered {
 			digits, text, _ := strings.Cut(rest, lineEnd)
 			if line, err := strconv.Atoi(digits); err == nil {
 				at.Line, msg = line, text

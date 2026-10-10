@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package registry
@@ -72,11 +72,11 @@ type paramEntry struct {
 	key            string
 	typ            string
 	resolve        string
+	minimum        int64
+	hasMinimum     bool
 	required       bool
 	counterexample bool
 	applies        []string
-	minimum        int64
-	hasMinimum     bool
 	excludes       []string
 	alsoOn         []string
 	doc            string

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package detectors_test
@@ -127,8 +127,9 @@ func TestLifecycle(t *testing.T) {
 	t.Run("Closer", func(t *testing.T) {
 		t.Parallel()
 
-		var tests []detection
-		for _, verb := range []string{closeName, shutdownName, stopName, disconnectName, terminateName} {
+		verbs := []string{closeName, shutdownName, stopName, disconnectName, terminateName}
+		tests := make([]detection, 0, len(verbs)+2)
+		for _, verb := range verbs {
 			tests = append(tests, detection{
 				name: "reports a poison accessor named " + verb,
 				give: callable(verb, nil, failure),

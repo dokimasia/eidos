@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package shape
@@ -129,9 +129,9 @@ type Spec struct {
 	// Name is the name of the spec, and the value of the constant that the
 	// package declares for it.
 	Name string
-	Form Form
 	// Doc is the claim of the spec on one line.
-	Doc string
+	Doc  string
+	Form Form
 	// Detected is true for a shape that a detector classifies callables
 	// as.
 	Detected bool

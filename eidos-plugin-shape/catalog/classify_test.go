@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package catalog_test
@@ -649,7 +649,10 @@ func stampsOf(t *testing.T, r *shapetest.Run) (map[string]stamps, []diag.Diag) {
 // codesOf returns the codes of the findings, in order, and nil for no
 // finding.
 func codesOf(findings []diag.Diag) []diag.Code {
-	var out []diag.Code
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]diag.Code, 0, len(findings))
 	for _, d := range findings {
 		out = append(out, d.Code)
 	}

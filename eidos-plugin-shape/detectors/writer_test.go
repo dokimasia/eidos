@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package detectors_test
@@ -93,8 +93,9 @@ func TestWriter(t *testing.T) {
 	t.Run("Deleter", func(t *testing.T) {
 		t.Parallel()
 
-		var tests []detection
-		for _, verb := range []string{deleteName, removeName, delName, evictName, purgeName} {
+		verbs := []string{deleteName, removeName, delName, evictName, purgeName}
+		tests := make([]detection, 0, len(verbs)+2)
+		for _, verb := range verbs {
 			tests = append(tests, detection{
 				name: "reports a writer named " + verb,
 				give: callable(verb, []rules.ParamView{key}, failure),

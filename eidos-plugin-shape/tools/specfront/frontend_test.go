@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package specfront_test
@@ -97,7 +97,7 @@ func parse(tb testing.TB, files map[string]string) unit {
 	tb.Helper()
 
 	fsys := fstest.MapFS{}
-	var refs []plugin.SourceRef
+	refs := make([]plugin.SourceRef, 0, len(files))
 	for _, path := range slices.Sorted(maps.Keys(files)) {
 		fsys[path] = &fstest.MapFile{Data: []byte(files[path])}
 		refs = append(refs, plugin.SourceRef{Path: path})

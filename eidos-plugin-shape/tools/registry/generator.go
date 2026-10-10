@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package registry
@@ -99,11 +99,11 @@ type paramData struct {
 	Fact           string
 	Type           string
 	Resolution     string
+	Minimum        int64
+	HasMinimum     bool
 	Required       bool
 	Counterexample bool
 	Roles          []string
-	Minimum        int64
-	HasMinimum     bool
 	Excludes       []string
 	AlsoOn         []string
 	Doc            string

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package shapetest
@@ -62,7 +62,7 @@ func Function(name string, params []*node.TypeRef, returns ...*node.TypeRef) *no
 // members have the owner, one for each reference, named by their
 // positions.
 func signature(owner string, params, returns []*node.TypeRef) ([]*node.Param, []*node.Return) {
-	var ps []*node.Param
+	ps := make([]*node.Param, 0, len(params))
 	for i, ref := range params {
 		name := paramPrefix + strconv.Itoa(i)
 		ps = append(ps, &node.Param{
@@ -71,7 +71,7 @@ func signature(owner string, params, returns []*node.TypeRef) ([]*node.Param, []
 			Type: ref,
 		})
 	}
-	var rs []*node.Return
+	rs := make([]*node.Return, 0, len(returns))
 	for i, ref := range returns {
 		name := returnPrefix + strconv.Itoa(i)
 		rs = append(rs, &node.Return{

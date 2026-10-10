@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package registry_test
@@ -134,7 +134,7 @@ func TestDeclare(t *testing.T) {
 					continue
 				}
 				for _, c := range group.List {
-					expect.True(t, len(c.Text) <= docLine, "the line fits the width: "+c.Text)
+					expect.InRange(t, len(c.Text), 0, float64(docLine), "the line fits the width: "+c.Text)
 				}
 			}
 		})

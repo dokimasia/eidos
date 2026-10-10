@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package shapetest_test
@@ -60,8 +60,9 @@ func TestRun(t *testing.T) {
 				shapetest.Instance{Contract: shape.Tx, Role: shape.TxCommit})
 			directives, provides := catalog.Annotators()[0].(plugin.DirectiveProvider)
 			assert.True(t, provides, "the plugin shape declares its directives")
-			var want []directive.Name
-			for _, s := range directives.Directives() {
+			specs := directives.Directives()
+			want := make([]directive.Name, 0, len(specs))
+			for _, s := range specs {
 				want = append(want, s.Canonical())
 			}
 			assert.Length(t, got, 3, "the run records the three instances")
