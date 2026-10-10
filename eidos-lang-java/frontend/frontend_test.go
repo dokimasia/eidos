@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/lang/java/frontend"
 	javagrammar "go.dokimi.dev/eidos/lang/treesitter/java"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -37,8 +38,9 @@ const release = 21
 
 // newAllocs is the frontend New returns for nil options: the empty
 // options, the frontend's state with its vocabulary and two hooks, the
-// version, the syntax's two, and the kit's four.
-const newAllocs = 1 + 4 + 1 + 2 + 4
+// version, the syntax's two, and the kit's five, its list of key
+// registrations included.
+const newAllocs = 1 + 4 + 1 + 2 + 5
 
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
@@ -64,6 +66,17 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, setup)
+		})
+
+		t.Run("returns a frontend that registers the java keys through its role", func(t *testing.T) {
+			t.Parallel()
+
+			provider, provides := frontend.New(nil).(plugin.KeyProvider)
+			assert.True(t, provides, "the frontend registers keys")
+			r := meta.NewRegistry()
+			assert.NoError(t, provider.Keys(r.For(string(frontend.Lang))), "the keys register")
+			_, held := r.Resolve(java.TestFileKey)
+			assert.True(t, held, "the test file key is registered")
 		})
 
 		t.Run("returns a frontend whose language overloads", func(t *testing.T) {
@@ -221,7 +234,6 @@ func setup(tb assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 			frontend.JDKStore: fstest.MapFS{lang9To25: {Data: fixtureClass(tb, circleName)}},
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    frontend.Keys,
 	}
 }
 

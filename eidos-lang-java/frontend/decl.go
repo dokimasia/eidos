@@ -101,7 +101,7 @@ func (l *lowering) typeDecl(n treesitter.Node, in hostKind) symbol.Symbol {
 	default:
 		decl = l.record(n, h, in)
 	}
-	l.u.AttachCarriers(decl, parts.Carriers, BadCarrier)
+	l.attach(decl, parts.Carriers, m.sugars)
 	return decl
 }
 
@@ -175,11 +175,12 @@ func (l *lowering) enum(n treesitter.Node, h header) *node.Enum {
 func (l *lowering) variant(n treesitter.Node) *node.EnumVariant {
 	parts, comment := l.declParts(n)
 	name := n.Child(l.v.fieldName)
+	m := l.modifiersOf(n)
 	v := &node.EnumVariant{
 		Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment,
-		Value: l.inner(n.Child(l.v.fieldArguments)), Annotations: l.modifiersOf(n).annotations,
+		Value: l.inner(n.Child(l.v.fieldArguments)), Annotations: m.annotations,
 	}
-	l.u.AttachCarriers(v, parts.Carriers, BadCarrier)
+	l.attach(v, parts.Carriers, m.sugars)
 	return v
 }
 

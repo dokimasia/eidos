@@ -53,11 +53,13 @@ const (
 	modDefault   modifier = 128
 )
 
-// modifiers is what a declaration's modifiers state: the keywords, and
-// the annotations, each its name as written and its arguments verbatim.
+// modifiers is what a declaration's modifiers state: the keywords, the
+// annotations, each its name as written and its arguments verbatim, and
+// the markers of the brand among the annotations.
 type modifiers struct {
 	words       modifier
 	annotations symbol.Annotations
+	sugars      []plugin.Sugar
 }
 
 // has reports whether the modifiers state a keyword.
@@ -119,8 +121,9 @@ func (l *lowering) lower(root treesitter.Node) *node.Package {
 	if path.Base(l.path) == packageInfoFile && !clause.IsZero() {
 		parts, _ := l.declParts(clause)
 		p.Doc = append(p.Doc, parts.Docs...)
-		l.u.AttachCarriers(p, parts.Carriers, BadCarrier)
-		l.file.Annotations = append(l.file.Annotations, l.annotationsIn(clause)...)
+		annotations, sugars := l.annotationsIn(clause)
+		l.attach(p, parts.Carriers, sugars)
+		l.file.Annotations = append(l.file.Annotations, annotations...)
 	}
 	for child := range root.NamedChildren() {
 		if child.Kind() == l.v.importDeclaration {
@@ -178,34 +181,52 @@ func (l *lowering) importDecl(n treesitter.Node) {
 }
 
 // modifiersOf reads a declaration's modifiers: the keywords and the
-// annotations its modifiers node states. An annotation's or a comment's
-// text is no keyword, so only the keyword tokens set bits.
+// annotations of its modifiers node, with the markers among the
+// annotations. An annotation's or a comment's text is not a keyword, so
+// only the keyword tokens set bits.
 func (l *lowering) modifiersOf(n treesitter.Node) modifiers {
 	var m modifiers
 	mods := l.firstOf(n, l.v.modifiers)
 	for child := range mods.AllChildren() {
 		m.words |= modifierWords[child.Text()]
 	}
-	m.annotations = l.annotationsIn(mods)
+	m.annotations, m.sugars = l.annotationsIn(mods)
 	return m
 }
 
 // annotationsIn returns the annotations among a node's children: each
 // its name as written and its arguments verbatim, one per argument in
-// source order.
-func (l *lowering) annotationsIn(n treesitter.Node) symbol.Annotations {
-	var out symbol.Annotations
+// source order. It also returns the markers of the annotations whose
+// name starts with the unit's brand, which [lowering.marker] lifts.
+func (l *lowering) annotationsIn(n treesitter.Node) (symbol.Annotations, []plugin.Sugar) {
+	var (
+		out    symbol.Annotations
+		sugars []plugin.Sugar
+	)
 	for child := range n.NamedChildren() {
 		if k := child.Kind(); k != l.v.annotation && k != l.v.markerAnnotation {
 			continue
 		}
-		a := symbol.Annotation{Name: child.Child(l.v.fieldName).Compact()}
+		name := child.Child(l.v.fieldName).Compact()
+		a := symbol.Annotation{Name: name}
 		for _, arg := range l.children(child.Child(l.v.fieldArguments)) {
 			a.Args = append(a.Args, arg.Text())
 		}
 		out = append(out, a)
+		if head, _, _ := strings.Cut(name, nameSeparator); head == l.u.Brand() {
+			sugars = append(sugars, l.marker(child, name))
+		}
 	}
-	return out
+	return out, sugars
+}
+
+// attach attaches a declaration's carriers and the directives of its
+// markers.
+func (l *lowering) attach(subject symbol.Symbol, carriers []plugin.Carrier, sugars []plugin.Sugar) {
+	l.u.AttachCarriers(subject, carriers, BadCarrier)
+	for _, s := range sugars {
+		l.u.AttachSugar(subject, s, BadMarker)
+	}
 }
 
 // kept reports whether a load at the unit's depth keeps a declaration of

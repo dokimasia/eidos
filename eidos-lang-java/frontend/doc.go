@@ -96,6 +96,22 @@
 // kernel grammar refuses under [BadCarrier]. The comments in a method's
 // or a constructor's body belong to its statements.
 //
+// # Markers
+//
+// An annotation whose name starts with the brand is a marker of a
+// directive, as @acme.stub(tag = "test") and @acme.gen.table are. The
+// frontend lifts its element values from the syntax: an element-value
+// pair as a keyed argument, and the single element of the single-element
+// form as a positional one. A value is a string, a number with at most
+// one minus sign, true, false or an array of them. A number lifts as the
+// decimal text of its value, so the int 0xFFFFFFFF lifts as -1. The
+// marker attaches its directive to the type, field, method, constructor,
+// enum constant, annotation type element or package that it annotates,
+// and it remains an annotation. A marker whose name is not a directive
+// name, or whose value does not lift, reports under [BadMarker]. A text
+// block does not lift. A marker on a parameter, or on a type that an
+// enum declares, reports under [UnaddressedCarrier].
+//
 // # Classification
 //
 // java.testFile stamps a file under a src/test/ directory, the layout
@@ -160,8 +176,8 @@
 // # Dependency position
 //
 // lang/java/frontend imports the sdk facade, the satellite root,
-// lang/treesitter and its Java grammar, its classfile package, and the
-// Go stdlib. It runs no tool. [Stores] reads ct.sym when a composition
+// lang/treesitter and its Java grammar, lang/numeric, its classfile
+// package, and the Go stdlib. It runs no tool. [Stores] reads ct.sym when a composition
 // calls it, and a load reads nothing outside its units' doors and its
 // rounds' readers. The conformance corpus and a composition import it.
 package frontend

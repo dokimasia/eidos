@@ -31,12 +31,12 @@ const Extension = ".java"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds beside the grammar's version:
 // bump it with any change to the graph a parse produces.
-const FrontendVersion = "0.1.0"
+const FrontendVersion = "0.2.0"
 
 // Syntax returns Java's comment forms, declared once and shared: the
 // line form, the block form, and the doc-block form with the star

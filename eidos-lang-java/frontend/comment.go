@@ -127,12 +127,18 @@ func (l *lowering) skip(n treesitter.Node) {
 	l.taken[n.Pos()] = true
 }
 
-// refuse reports the carriers of a node's leading and trailing comments
-// under [UnaddressedCarrier], naming what the node is: a subject the
-// model cannot address.
+// refuse reports the carriers of a node's leading and trailing comments,
+// and the markers of its modifiers, under [UnaddressedCarrier]. what
+// describes the node, a subject that the model cannot address.
 func (l *lowering) refuse(n treesitter.Node, what string) {
 	parts, _ := l.declParts(n)
 	refuseCarriers(l.u, parts.Carriers, what)
+	_, sugars := l.annotationsIn(l.firstOf(n, l.v.modifiers))
+	for _, s := range sugars {
+		l.u.Errorf(UnaddressedCarrier, s.Pos,
+			"the marker %s is on %s, which the model cannot address. Move it to a declaration",
+			strings.Join(s.Path, nameSeparator), what)
+	}
 }
 
 // sweep refuses the carriers of every comment no declaration took,

@@ -29,6 +29,16 @@ type vocabulary struct {
 	// Modifiers and annotations.
 	modifiers, annotation, markerAnnotation treesitter.Kind
 
+	// The element values of an annotation that a marker lifts.
+	elementValuePair, elementValueArrayInitializer, stringLiteral, stringFragment, escapeSequence,
+	decimalIntegerLiteral, hexIntegerLiteral, octalIntegerLiteral, binaryIntegerLiteral,
+	decimalFloatingPointLiteral, hexFloatingPointLiteral, trueNode, falseNode,
+	unaryExpression treesitter.Kind
+
+	// numbers lists the kinds of the number literals among the element
+	// values.
+	numbers [6]treesitter.Kind
+
 	// Parameters and the bodies the sweep passes over.
 	formalParameter, spreadParameter, receiverParameter, typeParameter, typeBound, block,
 	constructorBody treesitter.Kind
@@ -43,14 +53,14 @@ type vocabulary struct {
 	// The fields the lowering reads children by.
 	fieldName, fieldBody, fieldType, fieldTypeParameters, fieldParameters, fieldSuperclass,
 	fieldInterfaces, fieldPermits, fieldValue, fieldDimensions, fieldArguments,
-	fieldElement, fieldDeclarator treesitter.Field
+	fieldElement, fieldDeclarator, fieldKey, fieldOperator, fieldOperand treesitter.Field
 }
 
 // newVocabulary resolves the vocabulary from the Java grammar. It
 // panics on a kind or field the grammar does not declare, through
 // [treesitter.Grammar.Kind] and [treesitter.Grammar.Field].
 func newVocabulary(g *treesitter.Grammar) *vocabulary {
-	return &vocabulary{
+	v := &vocabulary{
 		grammar: g,
 
 		lineComment:        g.Kind("line_comment"),
@@ -80,6 +90,21 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		modifiers:        g.Kind("modifiers"),
 		annotation:       g.Kind("annotation"),
 		markerAnnotation: g.Kind("marker_annotation"),
+
+		elementValuePair:             g.Kind("element_value_pair"),
+		elementValueArrayInitializer: g.Kind("element_value_array_initializer"),
+		stringLiteral:                g.Kind("string_literal"),
+		stringFragment:               g.Kind("string_fragment"),
+		escapeSequence:               g.Kind("escape_sequence"),
+		decimalIntegerLiteral:        g.Kind("decimal_integer_literal"),
+		hexIntegerLiteral:            g.Kind("hex_integer_literal"),
+		octalIntegerLiteral:          g.Kind("octal_integer_literal"),
+		binaryIntegerLiteral:         g.Kind("binary_integer_literal"),
+		decimalFloatingPointLiteral:  g.Kind("decimal_floating_point_literal"),
+		hexFloatingPointLiteral:      g.Kind("hex_floating_point_literal"),
+		trueNode:                     g.Kind("true"),
+		falseNode:                    g.Kind("false"),
+		unaryExpression:              g.Kind("unary_expression"),
 
 		formalParameter:   g.Kind("formal_parameter"),
 		spreadParameter:   g.Kind("spread_parameter"),
@@ -118,5 +143,13 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		fieldArguments:      g.Field("arguments"),
 		fieldElement:        g.Field("element"),
 		fieldDeclarator:     g.Field("declarator"),
+		fieldKey:            g.Field("key"),
+		fieldOperator:       g.Field("operator"),
+		fieldOperand:        g.Field("operand"),
 	}
+	v.numbers = [...]treesitter.Kind{
+		v.decimalIntegerLiteral, v.hexIntegerLiteral, v.octalIntegerLiteral, v.binaryIntegerLiteral,
+		v.decimalFloatingPointLiteral, v.hexFloatingPointLiteral,
+	}
+	return v
 }

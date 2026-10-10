@@ -15,10 +15,6 @@ import (
 // satellite root's constant, restated for the frontend's callers.
 const Lang = java.Lang
 
-// Keys registers every java key: the satellite root's one registration,
-// restated here, where the corpus and the suite fixtures use it.
-var Keys = java.Keys
-
 // UnparsedFile reports a syntax error, positioned at it: the source's
 // problem, and the load continues with every declaration the parser
 // still recovered.
@@ -66,6 +62,16 @@ var BadClassFile = diag.MustRegister(java.CodePrefix, diag.CodeSpec{
 	Meaning: "a class file or a JAR does not decode",
 })
 
+// BadMarker reports an annotation of the brand that is not a valid
+// directive. Either its name is not the brand followed by a name, or by
+// a plugin and a name, or an element value is not a literal or an array
+// of literals. The annotation attaches nothing and remains an
+// annotation of its declaration.
+var BadMarker = diag.MustRegister(java.CodePrefix, diag.CodeSpec{
+	Number:  7,
+	Meaning: "an annotation of the brand is not a valid directive",
+})
+
 // Options is the frontend's declared configuration, which every unit key
 // folds.
 type Options struct {
@@ -89,13 +95,15 @@ type javaFrontend struct {
 // New builds the Java frontend through the kit. A nil options value
 // reads the newest release and no library. It declares that the
 // language overloads, so a callable's discriminator spells its
-// parameters' types, and its version folds the grammar's.
+// parameters' types, and its version folds the grammar's. The frontend
+// registers every java key through its role, under the language's
+// spelling.
 //
 // # Allocation contract
 //
 // New allocates the frontend's state with its vocabulary and two
-// hooks, the version, the syntax, two allocations, and the kit's four:
-// eleven allocations, and twelve with the empty options that nil
+// hooks, the version, the syntax, two allocations, and the kit's five:
+// twelve allocations, and thirteen with the empty options that nil
 // options take.
 func New(opts *Options) plugin.Frontend {
 	if opts == nil {
@@ -113,5 +121,6 @@ func New(opts *Options) plugin.Frontend {
 		Dependencies(f.dependencies).
 		Stores(Stores).
 		Options(opts).
+		Keys(java.Keys).
 		Build()
 }

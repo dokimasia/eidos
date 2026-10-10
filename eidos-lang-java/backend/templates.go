@@ -43,7 +43,7 @@ const (
 		"{{if .Override}}    @Override\n{{end}}" +
 		"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
-		"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{if .Abstract}};{{else}} {\n{{memberbody .}}    }{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
@@ -65,7 +65,7 @@ const (
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"    {{sigmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
-		"{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{if .HasDefault}} {\n{{memberbody .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Types.Items}}\n{{membertype .}}{{nested \"    \" .}}\n{{- end}}\n}" +
 		"{{with .Comment}} // {{.}}{{end}}\n"
@@ -90,7 +90,7 @@ const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 	"{{if .Override}}    @Override\n{{end}}" +
 	"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 	"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
-	"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+	"{{if .Abstract}};{{else}} {\n{{memberbody .}}    }{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 // KindTemplates maps each emit kind to the template that spells

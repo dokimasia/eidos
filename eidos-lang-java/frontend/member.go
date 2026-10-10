@@ -84,7 +84,7 @@ func (l *lowering) fields(n treesitter.Node, h *host) {
 			Level: level, Mutability: mutability, Value: d.Child(l.v.fieldValue).Text(),
 			Type: l.dimensioned(n.Child(l.v.fieldType), d.Child(l.v.fieldDimensions)), Annotations: m.annotations,
 		}
-		l.u.AttachCarriers(f, parts.Carriers, BadCarrier)
+		l.attach(f, parts.Carriers, m.sugars)
 		*h.fields = append(*h.fields, f)
 	}
 }
@@ -120,7 +120,7 @@ func (l *lowering) method(n treesitter.Node, h *host) {
 		ref := l.dimensioned(typ, n.Child(l.v.fieldDimensions))
 		md.Returns = []*node.Return{{Pos: ref.Pos, Type: ref}}
 	}
-	l.u.AttachCarriers(md, parts.Carriers, BadCarrier)
+	l.attach(md, parts.Carriers, m.sugars)
 	*h.methods = append(*h.methods, md)
 }
 
@@ -152,7 +152,7 @@ func (l *lowering) constructor(n treesitter.Node, h *host) {
 		Constructs: true, TypeParams: l.typeParams(n), Params: params,
 		Throws: l.typesOf(l.firstOf(n, l.v.throws)), Annotations: m.annotations,
 	}
-	l.u.AttachCarriers(md, parts.Carriers, BadCarrier)
+	l.attach(md, parts.Carriers, m.sugars)
 	*h.methods = append(*h.methods, md)
 }
 
@@ -162,12 +162,13 @@ func (l *lowering) element(n treesitter.Node, h *host) {
 	parts, comment := l.declParts(n)
 	name := n.Child(l.v.fieldName)
 	ref := l.dimensioned(n.Child(l.v.fieldType), n.Child(l.v.fieldDimensions))
+	m := l.modifiersOf(n)
 	md := &node.Method{
 		Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment,
 		Visibility: symbol.VisibilityPublic, Abstract: true, Returns: []*node.Return{{Pos: ref.Pos, Type: ref}},
-		Annotations: l.modifiersOf(n).annotations,
+		Annotations: m.annotations,
 	}
-	l.u.AttachCarriers(md, parts.Carriers, BadCarrier)
+	l.attach(md, parts.Carriers, m.sugars)
 	*h.methods = append(*h.methods, md)
 }
 

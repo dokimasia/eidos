@@ -29,7 +29,8 @@ const keysAllocs = 3 + 8
 
 // The frontend stamps these keys, and a composition registers them
 // once. The registration is pinned: every key resolves, the namespace
-// is the satellite's, and a second claim fails.
+// is the satellite's, a second registration of one registrant repeats
+// the first, and a claim of another registrant fails.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -61,12 +62,20 @@ func TestKeys(t *testing.T) {
 			assert.HasError(t, err, "another plugin registers no key under the namespace")
 		})
 
-		t.Run("returns an error for a second registration", func(t *testing.T) {
+		t.Run("returns no error for a second registration of one registrant", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry().For(string(java.Name))
+			assert.NoError(t, java.Keys(r), "the first registration succeeds")
+			assert.NoError(t, java.Keys(r), "the registrant repeats its registration")
+		})
+
+		t.Run("returns an error for a registration of another registrant", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
-			assert.NoError(t, java.Keys(r), "the first registration succeeds")
-			assert.HasError(t, java.Keys(r), "the namespace is claimed once")
+			assert.NoError(t, java.Keys(r.For(string(java.Name))), "the first registration succeeds")
+			assert.HasError(t, java.Keys(r.For(rivalPlugin)), "the namespace has one registrant")
 		})
 	})
 }
