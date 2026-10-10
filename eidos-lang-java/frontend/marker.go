@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -54,10 +54,10 @@ var escapes = map[byte]string{
 // that does not lift.
 func (l *lowering) marker(n treesitter.Node, name string) plugin.Sugar {
 	s := plugin.Sugar{Path: strings.Split(name, nameSeparator), Pos: n.Pos()}
-	for _, arg := range l.children(n.Child(l.v.fieldArguments)) {
-		key, value := "", arg
-		if arg.Kind() == l.v.elementValuePair {
-			key, value = arg.Child(l.v.fieldKey).Text(), arg.Child(l.v.fieldValue)
+	for _, value := range l.children(n.Child(l.v.fieldArguments)) {
+		key := ""
+		if value.Kind() == l.v.elementValuePair {
+			key, value = value.Child(l.v.fieldKey).Text(), value.Child(l.v.fieldValue)
 		}
 		v, refusal := l.elementValue(value)
 		if refusal != "" {

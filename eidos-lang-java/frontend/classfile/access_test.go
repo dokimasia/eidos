@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package classfile_test
@@ -36,7 +36,7 @@ func TestAccess(t *testing.T) {
 }
 
 // Has allocates nothing in the ordinary run, which runs no benchmark.
-func TestAccessZeroAlloc(t *testing.T) {
+func TestAccessAllocs(t *testing.T) {
 	set := classfile.AccPublic | classfile.AccStatic | classfile.AccFinal
 	var got bool
 	assert.MaxAllocs(t, func() { got = set.Has(classfile.AccPublic | classfile.AccFinal) }, 0,

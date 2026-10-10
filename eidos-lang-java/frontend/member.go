@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -243,8 +243,12 @@ func (l *lowering) typesOf(clause treesitter.Node) []*node.TypeRef {
 	if list := l.firstOf(clause, l.v.typeList); !list.IsZero() {
 		clause = list
 	}
-	var out []*node.TypeRef
-	for _, t := range l.children(clause) {
+	children := l.children(clause)
+	if len(children) == 0 {
+		return nil
+	}
+	out := make([]*node.TypeRef, 0, len(children))
+	for _, t := range children {
 		out = append(out, l.typeRef(t))
 	}
 	return out

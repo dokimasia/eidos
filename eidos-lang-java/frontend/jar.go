@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"path"
@@ -162,6 +163,7 @@ func multiRelease(zr *zip.Reader) (bool, error) {
 		name, value, _ := strings.Cut(line, headerSeparator)
 		if strings.EqualFold(strings.TrimSpace(name), multiReleaseName) &&
 			strings.EqualFold(strings.TrimSpace(value), multiReleaseValue) {
+
 			return true, nil
 		}
 	}
@@ -176,10 +178,14 @@ func readEntry(f *zip.File) ([]byte, error) {
 	}
 	rc, err := f.Open()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("frontend: %w", err)
 	}
 	defer rc.Close()
-	return io.ReadAll(rc)
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("frontend: %w", err)
+	}
+	return data, nil
 }
 
 // classPos returns the position findings about a class file, a JAR or one

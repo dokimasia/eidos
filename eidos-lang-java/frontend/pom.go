@@ -1,9 +1,12 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+	"fmt"
+)
 
 // coordinateSeparator joins a module's group and artifact, as in
 // com.acme:store.
@@ -24,7 +27,7 @@ type pom struct {
 func parsePOM(data []byte) (*pom, error) {
 	var p pom
 	if err := xml.Unmarshal(data, &p); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("frontend: %w", err)
 	}
 	return &p, nil
 }

@@ -1,10 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
 
 import (
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	javagrammar "go.dokimi.dev/eidos/lang/treesitter/java"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontend"

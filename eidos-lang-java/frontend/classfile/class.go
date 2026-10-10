@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package classfile
@@ -46,6 +46,10 @@ type Class struct {
 	// are in the InnerClasses entry that names it.
 	Access Access
 
+	// Record reports a Record attribute, whose components are
+	// Components.
+	Record bool
+
 	// Name is the class's binary name in internal form, as in
 	// java/util/Map$Entry, and module-info for a module declaration.
 	Name string
@@ -73,9 +77,8 @@ type Class struct {
 	// class's entry names no declaring class.
 	Inner []InnerClass
 
-	// Record reports a Record attribute, whose components are
-	// Components.
-	Record     bool
+	// Components are the components of a Record attribute, and nil for
+	// a class that is not a record.
 	Components []Component
 
 	// Permitted are the binary names a PermittedSubclasses attribute

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -408,7 +408,10 @@ func jarDecls(tb testing.TB, data []byte, release int) node.Symbols {
 // declNames returns the names of declarations, in order, and nil for
 // none.
 func declNames(decls node.Symbols) []string {
-	var out []string
+	if len(decls) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(decls))
 	for _, d := range decls {
 		out = append(out, nameOf(d))
 	}

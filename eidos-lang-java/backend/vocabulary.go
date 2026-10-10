@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -78,6 +78,19 @@ const (
 	packageKeyword = "package "
 	packageEnd     = ";\n\n"
 	pathSep        = "/"
+)
+
+// The modifiers Java writes before a declaration, each with the space
+// that follows it.
+const (
+	publicKeyword    = "public "
+	privateKeyword   = "private "
+	protectedKeyword = "protected "
+	abstractKeyword  = "abstract "
+	staticKeyword    = "static "
+	finalKeyword     = "final "
+	sealedKeyword    = "sealed "
+	defaultKeyword   = "default "
 )
 
 // unnamedParam is the name an unnamed parameter takes, behind its
@@ -429,16 +442,16 @@ func TypeMods(d symbol.Symbol) (string, error) {
 			return "", err
 		}
 		if t.Abstract {
-			part += "abstract "
+			part += abstractKeyword
 		}
 		if t.Level == symbol.LevelType {
-			part += "static "
+			part += staticKeyword
 		}
 		if t.Final {
-			part += "final "
+			part += finalKeyword
 		}
 		if t.Sealed {
-			part += "sealed "
+			part += sealedKeyword
 		}
 		return part, nil
 	case *emit.Interface:
@@ -447,7 +460,7 @@ func TypeMods(d symbol.Symbol) (string, error) {
 			return "", err
 		}
 		if t.Sealed {
-			part += "sealed "
+			part += sealedKeyword
 		}
 		return part, nil
 	case *emit.Enum:
@@ -503,10 +516,10 @@ func FieldMods(f *emit.Field) (string, error) {
 		return "", err
 	}
 	if f.Level == symbol.LevelType {
-		part += "static "
+		part += staticKeyword
 	}
 	if f.Mutability == symbol.MutabilityImmutable {
-		part += "final "
+		part += finalKeyword
 	}
 	return part, nil
 }
@@ -551,13 +564,13 @@ func MethodMods(m *emit.Method) (string, error) {
 		return "", err
 	}
 	if m.Level == symbol.LevelType {
-		part += "static "
+		part += staticKeyword
 	}
 	if m.Abstract {
-		part += "abstract "
+		part += abstractKeyword
 	}
 	if m.Final {
-		part += "final "
+		part += finalKeyword
 	}
 	return part, nil
 }
@@ -591,7 +604,7 @@ func SigMods(m *emit.Method) (string, error) {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
 		part = ""
 	case symbol.VisibilityPrivate:
-		part = "private "
+		part = privateKeyword
 	default:
 		return "", refuse("an interface method is public or private, and %s states another scope",
 			m.Name)
@@ -602,9 +615,9 @@ func SigMods(m *emit.Method) (string, error) {
 		return "", refuse("a private or a static interface method states its body, and %s states none",
 			m.Name)
 	case m.Level == symbol.LevelType:
-		part += "static "
+		part += staticKeyword
 	case !private && m.HasDefault:
-		part = "default "
+		part = defaultKeyword
 	}
 	return part, nil
 }
@@ -629,13 +642,13 @@ func javaPackage(path string) string { return strings.ReplaceAll(path, pathSep, 
 func access(v symbol.Visibility, name string) (string, error) {
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
-		return "public ", nil
+		return publicKeyword, nil
 	case symbol.VisibilityPackage:
 		return "", nil
 	case symbol.VisibilityPrivate:
-		return "private ", nil
+		return privateKeyword, nil
 	case symbol.VisibilityProtected:
-		return "protected ", nil
+		return protectedKeyword, nil
 	default:
 		return "", refuse("no access keyword spells the scope %s states", name)
 	}

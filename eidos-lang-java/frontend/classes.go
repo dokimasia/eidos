@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/java/frontend/classfile"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -426,7 +426,10 @@ func (d *classDecl) methods(h classHeader, iface bool) []*node.Method {
 // outer, the descriptor states first.
 func (d *classDecl) params(m classfile.Method, innerCtor bool, outer string) []*node.Param {
 	implicit, types := sourceParams(m, innerCtor, outer)
-	var out []*node.Param
+	if len(types) == 0 {
+		return nil
+	}
+	out := make([]*node.Param, 0, len(types))
 	for i, t := range types {
 		at := implicit + i
 		p := &node.Param{Pos: d.pos, Type: d.ref(t)}
@@ -448,7 +451,10 @@ func (d *classDecl) params(m classfile.Method, innerCtor bool, outer string) []*
 // the Object bound a class file states for a parameter source bounds by
 // nothing.
 func (d *classDecl) typeParams(params []classfile.TypeParam) []*node.TypeParam {
-	var out []*node.TypeParam
+	if len(params) == 0 {
+		return nil
+	}
+	out := make([]*node.TypeParam, 0, len(params))
 	for _, p := range params {
 		tp := &node.TypeParam{Name: p.Name, Pos: d.pos}
 		bounds := p.Bounds
@@ -477,7 +483,10 @@ func (d *classDecl) nested() node.Symbols {
 
 // refs lowers types into references.
 func (d *classDecl) refs(types []classfile.Type) []*node.TypeRef {
-	var out []*node.TypeRef
+	if len(types) == 0 {
+		return nil
+	}
+	out := make([]*node.TypeRef, 0, len(types))
 	for _, t := range types {
 		out = append(out, d.ref(t))
 	}
@@ -502,6 +511,8 @@ func (d *classDecl) ref(t classfile.Type) *node.TypeRef {
 		return &node.TypeRef{Spelling: t.Var, Pos: d.pos}
 	case classfile.KindArray:
 		return listOf(d.ref(*t.Elem))
+	case classfile.KindClass:
+		// A class type is Named by its binary name below.
 	}
 	binary := t.BinaryName()
 	ref := &node.TypeRef{Spelling: dotted(binary), Pos: d.pos, Package: packagePath(binary)}
@@ -642,7 +653,10 @@ func accessVisibility(access classfile.Access) symbol.Visibility {
 // binary name in dotted form, with one argument per element-value pair,
 // the element's name and its value as source spells it.
 func annotationsOf(list []classfile.Annotation) symbol.Annotations {
-	var out symbol.Annotations
+	if len(list) == 0 {
+		return nil
+	}
+	out := make(symbol.Annotations, 0, len(list))
 	for _, a := range list {
 		s := symbol.Annotation{Name: dotted(a.Type)}
 		for _, e := range a.Elements {

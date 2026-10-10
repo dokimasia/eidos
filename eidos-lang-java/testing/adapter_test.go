@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package testing_test
@@ -13,7 +13,7 @@ import (
 	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	javatesting "go.dokimi.dev/eidos/lang/java/testing"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )

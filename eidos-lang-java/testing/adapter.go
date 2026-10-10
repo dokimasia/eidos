@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package testing
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/sdk/symbol"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
@@ -149,7 +149,7 @@ func (adapter) Available() (bool, string) {
 func (adapter) Layout(g toolchain.Generated) (string, error) {
 	dir, err := os.MkdirTemp("", "eidos-java-*")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("testing: %w", err)
 	}
 	for path, body := range g.Files {
 		if err := write(dir, path, body); err != nil {
@@ -207,11 +207,12 @@ func (a adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport
 	err := filepath.WalkDir(classes, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, testSuffix+classExt) ||
 			strings.Contains(d.Name(), nestedMark) {
+
 			return err
 		}
 		rel, err := filepath.Rel(classes, strings.TrimSuffix(path, classExt))
 		if err != nil {
-			return err
+			return fmt.Errorf("testing: %w", err)
 		}
 		tests = append(tests, strings.ReplaceAll(filepath.ToSlash(rel), "/", "."))
 		return nil
@@ -305,15 +306,18 @@ func write(dir, path string, body []byte) error {
 	target := filepath.Join(dir, filepath.FromSlash(path))
 	rel, err := filepath.Rel(dir, target)
 	if err != nil {
-		return err
+		return fmt.Errorf("testing: %w", err)
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("the generated path %q climbs out of the scratch project", path)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-		return err
+		return fmt.Errorf("testing: %w", err)
 	}
-	return os.WriteFile(target, body, filePerm)
+	if err := os.WriteFile(target, body, filePerm); err != nil {
+		return fmt.Errorf("testing: %w", err)
+	}
+	return nil
 }
 
 // run runs one toolchain binary in dir under ctx and returns its

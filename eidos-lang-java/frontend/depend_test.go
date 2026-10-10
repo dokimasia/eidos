@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -640,8 +640,9 @@ func rounds(
 func placed(tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string) [][]string {
 	tb.Helper()
 
-	var out [][]string
-	for _, unit := range rounds(tb, opts, stores, number, needs...) {
+	units := rounds(tb, opts, stores, number, needs...)
+	out := make([][]string, 0, len(units))
+	for _, unit := range units {
 		var members []string
 		for _, ref := range unit {
 			members = append(members, ref.Path)

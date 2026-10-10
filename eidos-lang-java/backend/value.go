@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/scaffold"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -148,6 +148,8 @@ func (t target) Composite(
 			parts = append(parts, e.Key, e.Value)
 		}
 		return class + factory + strings.Join(parts, ", ") + ")", nil
+	default:
+		// Every other form takes a constructor call below.
 	}
 	for _, e := range entries {
 		switch {

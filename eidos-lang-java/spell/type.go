@@ -1,12 +1,13 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package spell
 
 import (
+	"errors"
 	"fmt"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/spoke"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -25,6 +26,11 @@ const (
 	boxedBoolean  = "Boolean"
 	stringType    = "String"
 	byteType      = "byte"
+	shortType     = "short"
+	intType       = "int"
+	longType      = "long"
+	floatType     = "float"
+	doubleType    = "double"
 	objectType    = "Object"
 	listType      = "List"
 	mapType       = "Map"
@@ -53,15 +59,15 @@ const (
 // results. Java represents an unsigned integer by the signed type of its
 // width.
 var (
-	javaInts   = map[int]string{0: "long", 8: "byte", 16: "short", 32: "int", 64: "long"}
-	javaFloats = map[int]string{32: "float", 64: "double"}
+	javaInts   = map[int]string{0: longType, 8: byteType, 16: shortType, 32: intType, 64: longType}
+	javaFloats = map[int]string{32: floatType, 64: doubleType}
 	javaBoxes  = map[string]string{
-		"byte":   "Byte",
-		"short":  "Short",
-		"int":    "Integer",
-		"long":   "Long",
-		"float":  "Float",
-		"double": "Double",
+		byteType:   "Byte",
+		shortType:  "Short",
+		intType:    "Integer",
+		longType:   "Long",
+		floatType:  "Float",
+		doubleType: "Double",
 	}
 	javaFuncs = map[[2]int]string{
 		{0, 1}: "Supplier",
@@ -205,6 +211,9 @@ func container(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
 			Spelling: spellref.Spell(elem, argsOpener, argsCloser, objectType) + arrayMark,
 			Form:     symbol.FormArray, Elems: []*emit.TypeRef{elem},
 		}, nil
+	default:
+		// The spoke writes an optional as its boxed child below, and a
+		// list as a List of it.
 	}
 	args, err := spoke.Children(s.Elems, func(c rules.TypeShape) (*emit.TypeRef, error) { return javaType(c, true) })
 	if err != nil {
@@ -270,7 +279,7 @@ func reference(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef,
 	case rules.WellKnownDuration:
 		return &emit.TypeRef{Spelling: durationType, Package: timePackage}, nil
 	case rules.WellKnownEmpty:
-		return nil, fmt.Errorf("the well-known empty value has no Java spelling")
+		return nil, errors.New("the well-known empty value has no Java spelling")
 	}
 	args, err := spoke.Children(s.Args, argument)
 	if err != nil {

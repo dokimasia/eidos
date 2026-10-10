@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -16,7 +16,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/java/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -166,7 +166,7 @@ func TestClasses(t *testing.T) {
 
 			names := []string{boxClass, nestedClass, innerClass, callbackClass}
 			tree := classTree(t, classesDir, names...)
-			var paths []string
+			paths := make([]string, 0, len(names))
 			for _, n := range names {
 				paths = append(paths, path.Join(libDir, n+classSuffix))
 			}
@@ -1035,7 +1035,7 @@ func libDecls(tb testing.TB) node.Symbols {
 
 	entries, err := os.ReadDir(path.Join(classesDir, libDir))
 	assert.NoError(tb, err, "the fixtures are on disk")
-	var names []string
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		names = append(names, strings.TrimSuffix(e.Name(), classSuffix))
 	}

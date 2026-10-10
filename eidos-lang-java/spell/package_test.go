@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package spell_test
@@ -9,7 +9,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
-	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/java/spell"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -42,7 +42,7 @@ func TestPackage(t *testing.T) {
 
 // Package returns the origin's package without allocating in the
 // ordinary run, which runs no benchmark.
-func TestPackageZeroAlloc(t *testing.T) {
+func TestPackageAllocs(t *testing.T) {
 	placement := stubPlacement()
 	var (
 		got symbol.Identity
