@@ -43,7 +43,7 @@ flowchart LR
 | 6 | [0006](0006-multi-plan-workspace.md) Several plans run in one workspace | Done | 0005 | unscheduled |
 | 7 | [0007](0007-warm-equals-cold.md) A warm run redoes only what changed | Done | 0006 | unscheduled |
 | 8 | [0008](0008-command-kernels.md) A consumer binary gets the full command surface | Done | 0007 | unscheduled |
-| 9 | [0009](0009-typescript-from-go.md) TypeScript comes out of a Go workspace | Planned | 0006 | unscheduled |
+| 9 | [0009](0009-typescript-from-go.md) TypeScript comes out of a Go workspace | Done | 0006 | unscheduled |
 | 10 | [0010](0010-protobuf-read-only.md) protobuf schemas drive generation | In progress | 0009 | unscheduled |
 | 11 | [0011](0011-shape-catalog.md) The shape catalog classifies callables | Done | 0005 | unscheduled |
 | 12 | [0012](0012-declarative-plugins.md) A plugin runs from files alone | Planned | 0005 | unscheduled |

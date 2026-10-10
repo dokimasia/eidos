@@ -1,13 +1,13 @@
 ---
 milestone: 0009
 title: TypeScript comes out of a Go workspace
-status: Planned
+status: Done
 depends-on: 0006
 ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: 0023
 ---
 
 # Milestone 0009: TypeScript comes out of a Go workspace
@@ -21,24 +21,24 @@ shape the target cannot spell is refused with a positioned code.
 
 ## Done when
 
-- [ ] eidos-lang-typescript contains the full satellite anatomy.
-- [ ] The end-to-end path completes: the fixture from
+- [x] eidos-lang-typescript contains the full satellite anatomy.
+- [x] The end-to-end path completes: the fixture from
       [00-one-declaration-end-to-end.md](../architecture/00-one-declaration-end-to-end.md)
       produces `store_stub_test.go` and `store.ts` in one run.
-- [ ] Policy works per
+- [x] Policy works per
       [10-cross-language.md](../architecture/10-cross-language.md):
       `typescript.int64` registers with `bigint`, `string` and `number`,
       config selects one, a directive overrides one declaration, and
       the `Policy` a lowering receives is total.
-- [ ] Naming annotators register automatically for every targeted
+- [x] Naming annotators register automatically for every targeted
       language, and `explain` traces a `typescript.name` stamp to its
       origin.
-- [ ] Refusal is fully supported: `chan int` into the TypeScript plan and
+- [x] Refusal is fully supported: `chan int` into the TypeScript plan and
       a TypeScript union into a Go plan each report a stable
       positioned code, and neither guesses.
-- [ ] TypeScript decorators lower as native sugar to canonical
+- [x] TypeScript decorators lower as native sugar to canonical
       directives.
-- [ ] pipelinetest passes for the satellite, and the support matrix
+- [x] pipelinetest passes for the satellite, and the support matrix
       generates as a CI artifact.
 
 ## Why now
@@ -69,6 +69,8 @@ No risk that moves another milestone is recorded.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-09 | Ticked every bullet and set the milestone to Done | The conformance fixture of a Go plan and a TypeScript plan writes `svc/store_stub_test.go` and `svc/store.ts` in one run, passes the workspace suite and the warm suite, and tsc type-checks the client. `svc/store.ts` declares `expires: bigint` without a selection, `expires: string` under `typescript.int64: string` in config, and `expires: number` under `//+acme:typescript int64=number` on the field. A choice outside the key's choices fails Build, and in a directive it reports `BadSpelling` at the carrier. The explanation of `typescript.name` on `Put` lists the directive's claim first and the claim of `typescript-lowering` with the value `put`. A Go field `Events chan int` reports `RefusedType` at the field in the TypeScript plan, and a TypeScript union reports `RefusedType` at the property in a Go plan. The TypeScript, Rust and Java corpora lower a marker of the brand to its directive. The TypeScript pipeline fixture passes `pipelinetest.RunPipelineSuite`, and tsc type-checks its stub. The matrix test writes the support matrix, and the CI job uploads it with `-artifacts`. The gate passes, and the race detector passes over every touched module |
+| 2026-10-09 | Linked RFC-0023 and set the milestone to In progress | The RFC describes the hub, the policies, the target names, native sugar and the TypeScript satellite that the bullets need |
 | 2026-09-30 | Moved the tree-sitter bindings bullet, the frontend and corpus checks, the wazero note and the cgo risk to milestone 0004 | Milestone 0004's widening of 2026-09-01 pulled the tree-sitter platform and the TypeScript frontend forward, and this file still scheduled them |
 | 2026-09-30 | The TypeScript keys are spelled `typescript.*` | A satellite claims the namespace its language identity spells, and the identity is `typescript` |
 | 2026-08-31 | Moved the TypeScript-formatter risk to milestone 0003 | It belongs with the backend, which moved there on 2026-08-30; the row had stayed behind |
