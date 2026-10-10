@@ -880,19 +880,22 @@ type Respeller = core.Respeller
 // settled store settles to itself, so a second call changes
 // nothing.
 //
-// A declared name takes an override where facts contains one: a
-// value of the target's [Target.NameKey], such as golang.name, on
-// the declaration's origin, written at directive authority or above.
-// The settle reads each override through a point read of the origin's
-// fact. The override replaces the respell hook's spelling for the
-// declaration that renders its origin, the one whose emitted name
-// the hook spells as it spells the origin's own name. A declaration
-// another one derives from its origin, such as a mock of an
-// interface, keeps the hook's spelling. A name the hook refuses is
-// withheld, override or not. A plugin's stamp on the key is no
-// override, because the hook spells the target's convention. A nil
-// fact store, a name key the composition did not register and a
-// backend without the hook apply no override.
+// A declared name takes an override where facts contains one. An
+// override is a value of the target's [Target.NameKey], such as
+// golang.name, on the declaration's origin, written at directive
+// authority or above. The settle reads each override through a point
+// read of the origin's fact. The override replaces the respell hook's
+// spelling for the declaration that renders the origin. The hook spells
+// the emitted name of that declaration the same way as the origin's own
+// name. A file-level declaration renders a nested origin under the
+// origin's flat name, [symbol.Identity.FlatName]. Another declaration
+// with the same origin, such as a mock of an interface, keeps the hook's
+// spelling. The settle withholds a name that the hook refuses, also
+// where the origin has an override. A plugin's stamp on the key is not
+// an override, because the hook spells the target's convention. The
+// settle does not apply an override where the fact store is nil, where
+// the composition did not register the name key, or where the backend
+// has no respell hook.
 //
 // The settle records whether a declaration that renders has a type
 // reference whose target is a declaration of another language than the

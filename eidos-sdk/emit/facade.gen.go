@@ -478,6 +478,11 @@ type Alias = core.Alias
 // array length written as a literal, and 0 where the length is an
 // expression the spelling keeps.
 //
+// Async marks a Stream whose elements arrive asynchronously, such as a
+// protobuf stream, which delivers its messages over a connection. A
+// frontend sets it from the language's syntax, and the projection's fold
+// copies it into the stream's shape. It is false on every other form.
+//
 // Fields and Methods are an Inline reference's members: the
 // properties and methods of a TypeScript object type, and the fields
 // of a Go inline struct and the methods of a Go inline interface.

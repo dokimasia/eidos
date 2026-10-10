@@ -671,6 +671,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("PresenceRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.PresenceRules](), reflect.TypeFor[core.PresenceRules](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("EqualityRules", func(t *testing.T) {
 		t.Parallel()
 
@@ -788,6 +798,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, rules.WellKnownDuration, core.WellKnownDuration, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("WellKnownEmpty", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.WellKnownEmpty, core.WellKnownEmpty, "the facade re-declares the kernel's value")
 		})
 	})
 

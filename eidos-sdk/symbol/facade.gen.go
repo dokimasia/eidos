@@ -95,6 +95,10 @@ func Facts() []Fact {
 // durable stores them, the way nothing durable stores a [Kind].
 type Fact = core.Fact
 
+// OwnerSep separates the names of an owner chain. A type that the type
+// Middle declares inside the type Outer has the owner Outer.Middle.
+const OwnerSep = core.OwnerSep
+
 // Lang is the source-language name as identities, metadata
 // namespaces and the sealed state store it. It is a registered
 // name: workspace Build validates every spelling against the
@@ -232,9 +236,9 @@ const (
 // Accessor says whether a callable is a property accessor rather
 // than an ordinary method.
 //
-// The zero value is [AccessorNone], which every ordinary method
-// carries. TypeScript, C# and Kotlin state accessors in syntax;
-// languages spelling properties as conventions never set it.
+// The zero value is [AccessorNone], which every ordinary method has.
+// TypeScript, C# and Kotlin state accessors in syntax. A language that
+// spells properties as a convention never sets it.
 type Accessor = core.Accessor
 
 const (
@@ -248,8 +252,8 @@ const (
 
 // Variance is the variance of a type parameter.
 //
-// The zero value is [VarianceInvariant], which Go and Rust always
-// carry. Kotlin, C# and Java wildcards carry the other two.
+// The zero value is [VarianceInvariant], which every Go and Rust type
+// parameter has. Kotlin, C# and Java wildcards have the other two.
 type Variance = core.Variance
 
 const (
@@ -267,13 +271,13 @@ const (
 // The zero value is [MutabilityUnknown], because a language that
 // does not distinguish the two has not returned immutable. Kotlin
 // val against var, TypeScript readonly and Java final are the
-// distinction; a Kotlin const val is a Constant instead, since it
+// distinction. A Kotlin const val is a Constant instead, because it
 // is fixed at compile time.
 type Mutability = core.Mutability
 
 const (
-	// MutabilityUnknown means the language draws no distinction, or
-	// no frontend has returned.
+	// MutabilityUnknown means the language does not distinguish the
+	// two, or no frontend has returned.
 	MutabilityUnknown = core.MutabilityUnknown
 	// MutabilityMutable may be reassigned.
 	MutabilityMutable = core.MutabilityMutable
@@ -330,7 +334,7 @@ const (
 	// object body, whose members the reference records as its fields
 	// and methods.
 	FormInline = core.FormInline
-	// FormScalar is a number; the shape carries its class and
+	// FormScalar is a number. The shape contains its class and
 	// width.
 	FormScalar = core.FormScalar
 	// FormBool is a truth value.
@@ -343,9 +347,15 @@ const (
 	FormReference = core.FormReference
 	// FormSum names a Sum declaration.
 	FormSum = core.FormSum
-	// FormOpaque is representable and not projectable; the shape
-	// carries the spelling.
+	// FormOpaque is representable and not projectable. The shape
+	// contains the spelling.
 	FormOpaque = core.FormOpaque
+	// FormDynamic is a value whose type is decided at run time: Go's
+	// any, TypeScript's unknown, Java's Object and protobuf's Value. It
+	// has no children, and the fold returns it for a language's builtin.
+	// It follows FormOpaque, so the stored values of the other forms
+	// remain.
+	FormDynamic = core.FormDynamic
 )
 
 // Variadic says how a parameter accepts a variable number of

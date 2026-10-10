@@ -329,6 +329,13 @@ const (
 // incomplete and does not write a partial builder.
 type PromotionRules = core.PromotionRules
 
+// PresenceRules reports presence that a field's type does not contain. A
+// field has presence when a reader can tell a field that is not set from
+// a field that is set to the zero value of its type. protobuf implements
+// it, because a proto3 field of a message type has presence through the
+// message, which only the linked graph shows.
+type PresenceRules = core.PresenceRules
+
 // EqualityRules reports whether a type works where the language
 // demands equality, and which member references break it.
 type EqualityRules = core.EqualityRules
@@ -370,7 +377,7 @@ func Scalar(spelling string, class ScalarClass, bits int) TypeShape {
 	return core.Scalar(spelling, class, bits)
 }
 
-// Leaf returns a childless leaf shape: Bool, Text or Bytes. It
+// Leaf returns a childless leaf shape: Bool, Text, Bytes or Dynamic. It
 // allocates nothing.
 func Leaf(form symbol.TypeForm, spelling string) TypeShape {
 	return core.Leaf(form, spelling)
@@ -387,12 +394,15 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 // A language's Builtin maps its own spelling of a well-known type onto
 // one of these blessed reference identities, so a Go time.Time and a
 // proto Timestamp project to one shape. The registry contains these
-// two, and growing it only adds entries.
+// three, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = core.WellKnownTimestamp
 	// WellKnownDuration is a span of time.
 	WellKnownDuration = core.WellKnownDuration
+	// WellKnownEmpty is a value that contains no data, such as protobuf's
+	// Empty.
+	WellKnownEmpty = core.WellKnownEmpty
 )
 
 // IsWellKnown reports whether an identity is one the registry

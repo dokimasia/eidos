@@ -451,6 +451,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("OwnerSep", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.OwnerSep, core.OwnerSep, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Lang", func(t *testing.T) {
 		t.Parallel()
 
@@ -1158,6 +1168,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.FormOpaque, core.FormOpaque, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("FormDynamic", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FormDynamic, core.FormDynamic, "the facade re-declares the kernel's value")
 		})
 	})
 
