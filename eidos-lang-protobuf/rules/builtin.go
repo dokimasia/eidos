@@ -15,7 +15,7 @@ import (
 const wellKnownPrefix = protobuf.WellKnownPackage + protobuf.NameSep
 
 // The well-known types with a shape of their own, by their
-// fully-qualified names.
+// fully-qualified names. NullValue is the one well-known enum.
 const (
 	wellKnownTimestamp = wellKnownPrefix + "Timestamp"
 	wellKnownDuration  = wellKnownPrefix + "Duration"
@@ -24,6 +24,8 @@ const (
 	wellKnownStruct    = wellKnownPrefix + "Struct"
 	wellKnownValue     = wellKnownPrefix + "Value"
 	wellKnownListValue = wellKnownPrefix + "ListValue"
+	wellKnownAny       = wellKnownPrefix + "Any"
+	wellKnownNullValue = wellKnownPrefix + "NullValue"
 )
 
 // wrappers maps each well-known type that wraps one scalar to give it
@@ -123,13 +125,13 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 // wellKnownShape projects a well-known type as the shape it
 // represents, not as a message the workspace may not declare.
 //
-// Timestamp and Duration are the kernel registry's. A wrapper is its
-// scalar under the optional form, which is the presence it exists to
-// give. Empty is the empty record, FieldMask the list of paths it
-// contains, ListValue a list and Struct a map, both onto values
-// decided at run time. Any, Value and NullValue are decided at run
-// time too, so the projection keeps them opaque and a consumer reads
-// the spelling.
+// Timestamp, Duration and Empty are the kernel registry's. A wrapper is
+// its scalar under the optional form, which is the presence it exists
+// to give. Value and Any are the top type, because their content is
+// decided at run time. ListValue is a list of the top type, Struct a
+// map from strings onto the top type, and FieldMask the list of paths
+// it contains. NullValue, an enum of one value, remains opaque, and a
+// consumer reads the spelling.
 func wellKnownShape(ref *node.TypeRef, name string) rules.TypeShape {
 	if wrapped, wraps := wrappers[name]; wraps {
 		inner := Rules{}.Builtin(&node.TypeRef{Spelling: wrapped}, rules.View{})
@@ -139,14 +141,16 @@ func wellKnownShape(ref *node.TypeRef, name string) rules.TypeShape {
 			Elems:    []rules.TypeShape{inner},
 		}
 	}
-	dynamic := rules.Opaque(&node.TypeRef{Spelling: wellKnownValue})
+	dynamic := rules.Leaf(symbol.FormDynamic, wellKnownValue)
 	switch name {
 	case wellKnownTimestamp:
 		return rules.Reference(ref.Spelling, rules.WellKnownTimestamp)
 	case wellKnownDuration:
 		return rules.Reference(ref.Spelling, rules.WellKnownDuration)
 	case wellKnownEmpty:
-		return rules.TypeShape{Form: symbol.FormInline, Spelling: ref.Spelling}
+		return rules.Reference(ref.Spelling, rules.WellKnownEmpty)
+	case wellKnownValue, wellKnownAny:
+		return rules.Leaf(symbol.FormDynamic, ref.Spelling)
 	case wellKnownFieldMask:
 		return rules.TypeShape{
 			Form:     symbol.FormList,

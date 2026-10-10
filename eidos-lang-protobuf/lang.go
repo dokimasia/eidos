@@ -35,7 +35,7 @@ const Extension = ".proto"
 // bump it when a load would put something different in the graph,
 // which invalidates every unit loaded under the old value and keeps
 // a warm run equal to a cold one.
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 // Syntax returns protobuf's comment forms, which the frontend
 // strips documentation with and the render side would spell

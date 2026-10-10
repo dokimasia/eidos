@@ -83,10 +83,28 @@ const (
 	// extensions declared elsewhere.
 	ExtensionsKey meta.KeyName = "protobuf.extensions"
 
-	// ImportKey is a file's imports as written, public and weak
-	// marked, because a public import re-exports what it imports and
-	// a weak one may be absent at run time.
+	// ImportKey is a file's imports as written, public, weak and option
+	// marked, because a public import re-exports what it imports, a weak
+	// one may be absent at run time, and an option import imports custom
+	// options and no types.
 	ImportKey meta.KeyName = "protobuf.import"
+
+	// ClosedKey marks an enum whose resolved enum_type is CLOSED, as
+	// every proto2 enum is. A field of the enum keeps a number that the
+	// enum does not declare as an unknown field. The value is CLOSED.
+	ClosedKey meta.KeyName = "protobuf.closed"
+
+	// DelimitedKey marks a field whose message is encoded delimited, as
+	// a proto2 group and a field with message_encoding DELIMITED are.
+	// The value is DELIMITED. The frontend does not resolve a field's
+	// type, so a field of an enum type under an inherited DELIMITED has
+	// the mark as well.
+	DelimitedKey meta.KeyName = "protobuf.delimited"
+
+	// LocalKey marks a message or an enum that another file cannot
+	// reference, through the keyword local or the default visibility of
+	// the edition. The value is local.
+	LocalKey meta.KeyName = "protobuf.local"
 )
 
 // Keys claims the protobuf metadata namespace for the handle's
@@ -102,9 +120,9 @@ const (
 //
 // # Allocation contract
 //
-// Keys allocates the eleven kind lists of the keys, and the registry
+// Keys allocates the fourteen kind lists of the keys, and the registry
 // allocates its namespace claim and the growth of its lists and maps to
-// thirteen keys: 26 allocations into a fresh registry.
+// sixteen keys: 31 allocations into a fresh registry.
 func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err
@@ -169,7 +187,19 @@ func Keys(r *meta.Registry) error {
 		},
 		{
 			Name: ImportKey, Kinds: file,
-			Doc: "a file's imports as written, public and weak marked",
+			Doc: "a file's imports as written, public, weak and option marked",
+		},
+		{
+			Name: ClosedKey, Kinds: []symbol.Kind{symbol.KindEnum},
+			Doc: "marks an enum that keeps an undeclared number as an unknown field",
+		},
+		{
+			Name: DelimitedKey, Kinds: []symbol.Kind{symbol.KindField},
+			Doc: "marks a field whose message is encoded delimited",
+		},
+		{
+			Name: LocalKey, Kinds: []symbol.Kind{symbol.KindStruct, symbol.KindEnum},
+			Doc: "marks a message or an enum that another file cannot reference",
 		},
 	} {
 		if _, err := meta.Register[string](r, spec); err != nil {

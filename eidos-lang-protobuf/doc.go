@@ -33,22 +33,29 @@
 //     marks a field written as a map.
 //   - [ReservedKey] is the reserved ranges and names,
 //     [ExtensionsKey] the extension ranges with their options.
-//   - [OptionsKey] is the options a declaration states, at every
-//     level that states them. [FeaturesKey] is the edition features,
-//     stamped apart because they decide what an absent value means.
+//   - [OptionsKey] is the options that a declaration states.
+//     [FeaturesKey] is the edition features. The frontend stamps them
+//     apart from the other options, because they define what an absent
+//     value means.
 //   - [SyntaxKey] is the syntax or edition, [PackageKey] the proto
-//     package, [ImportKey] the imports with public and weak marked,
-//     [OneofKey] the oneof a sum projected from, [StreamKey] which
-//     side of an rpc streams.
+//     package, [ImportKey] the imports with public, weak and option
+//     marked, [OneofKey] the oneof a sum projected from, [StreamKey]
+//     which side of an rpc streams.
+//   - [ClosedKey] marks a closed enum, [DelimitedKey] a field whose
+//     message is encoded delimited, and [LocalKey] a message or an enum
+//     that another file cannot reference.
 //
 // # Editions
 //
-// The edition and every features option are stamped as written at
-// each level that states them. The frontend resolves
-// features.field_presence from the field up through its messages to
-// the file and then the edition's default, which is explicit
-// presence, and projects a singular field's presence as its form.
-// Resolving any other feature is the consumer's.
+// The frontend loads proto2, proto3 and the editions 2023, 2024 and
+// 2026. It stamps the version, and every features option on the
+// declaration that states it. The frontend resolves four features from
+// the version's default through the declarations that enclose a field,
+// an enum or a message: field_presence, enum_type, message_encoding and
+// default_symbol_visibility. It projects a singular field's presence as
+// its form, and marks a closed enum, a delimited field and a local
+// declaration. The other features apply to the wire format, the JSON
+// mapping and the checks of protoc.
 //
 // # Dependency position
 //

@@ -15,10 +15,24 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// enumAllocs is an enum of its own package's variants: the list of its
-// variants, and the out-of-range value, which is the enum's reference
-// and the conversion over the number.
-const enumAllocs = 1 + 2
+// enumAllocs is an open enum of its own package's variants: the list of
+// its variants, and the out-of-range value, which is the enum's
+// reference and the conversion over the number. closedEnumAllocs is a
+// closed one, which has no out-of-range value.
+const (
+	enumAllocs       = 1 + 2
+	closedEnumAllocs = 1
+)
+
+// closedSource declares an enum of proto2, which is closed.
+const closedSource = `syntax = "proto2";
+
+package svc.c;
+
+enum Closed {
+  CLOSED_ZERO = 0;
+}
+`
 
 // An enum projects from the numbers the schema declares, so the zero,
 // the alias, the foreign variant and the out-of-range value are each
@@ -116,6 +130,13 @@ func TestEnum(t *testing.T) {
 				"no int32 lies past the maximum")
 		})
 
+		t.Run("returns no out-of-range value for a closed enum", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, closedInfo(t).OutOfRange, emit.Value{},
+				"a field of a closed enum keeps an undeclared number as an unknown field")
+		})
+
 		t.Run("returns no out-of-range value for an enum that spans every int32", func(t *testing.T) {
 			t.Parallel()
 
@@ -170,21 +191,39 @@ func BenchmarkEnum(b *testing.B) {
 	benchCalls(b, enumCalls(b))
 }
 
-// enumCalls returns a call of EnumOf over the fixture's Colour.
+// enumCalls returns a call of EnumOf over the fixture's Colour, which is
+// open, and over a closed enum.
 func enumCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
 	f := loaded(tb)
 	r := enumRules(tb)
 	colour, _ := f.decl(tb, id(svcPkg, "Colour", symbol.KindEnum)).(*node.Enum)
+	c := loadedFrom(tb, map[string]string{"svc/c.proto": closedSource})
+	closed, _ := c.decl(tb, id("svc.c", "Closed", symbol.KindEnum)).(*node.Enum)
 	var info rules.EnumInfo
 	return []allocCall{
 		{
-			name: "EnumOf", allocs: enumAllocs,
+			name: "EnumOf", caseName: "an open enum", allocs: enumAllocs,
 			call:  func() { info = r.EnumOf(colour, f.view) },
 			check: func(tb assert.TB) { assert.Length(tb, info.Variants, 2, "EnumOf returns the two variants") },
 		},
+		{
+			name: "EnumOf", caseName: "a closed enum", allocs: closedEnumAllocs,
+			call:  func() { info = r.EnumOf(closed, c.view) },
+			check: func(tb assert.TB) { assert.Length(tb, info.Variants, 1, "EnumOf returns the one variant") },
+		},
 	}
+}
+
+// closedInfo returns the projection of a closed enum of proto2.
+func closedInfo(tb assert.TB) rules.EnumInfo {
+	tb.Helper()
+
+	f := loadedFrom(tb, map[string]string{"svc/c.proto": closedSource})
+	closed, is := f.decl(tb, id("svc.c", "Closed", symbol.KindEnum)).(*node.Enum)
+	assert.True(tb, is, "Closed is an enum")
+	return enumRules(tb).EnumOf(closed, f.view)
 }
 
 // enumRules returns protobuf's rules as the enum capability.

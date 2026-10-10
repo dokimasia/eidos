@@ -6,7 +6,8 @@ package frontend
 import (
 	"strings"
 
-	"github.com/bufbuild/protocompile/ast"
+	"github.com/bufbuild/protocompile/experimental/ast"
+	"github.com/bufbuild/protocompile/experimental/seq"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -19,9 +20,6 @@ const (
 	// featuresPrefix opens an edition feature, which is stamped apart
 	// from the other options.
 	featuresPrefix = "features."
-	// featurePresence is the edition feature that decides whether a
-	// singular field has presence.
-	featurePresence = featuresPrefix + "field_presence"
 	// jsonNameOption is the field option that renames a field in
 	// JSON, which decides its spelling there and nothing about its
 	// type.
@@ -33,60 +31,47 @@ const (
 	optionAssign = "="
 )
 
-// The field presence values the lowering matches. The third value an
-// edition states, IMPLICIT, gives a singular field no presence, the
-// way a plain proto3 field has none, so the field's type is the type
-// itself.
-const (
-	// presenceExplicit gives a singular field presence, which the
-	// optional form projects. It is the edition default.
-	presenceExplicit = "EXPLICIT"
-	// presenceLegacyRequired makes a field required, the way proto2's
-	// required label does.
-	presenceLegacyRequired = "LEGACY_REQUIRED"
-)
-
 // option is one option as written: its name and its value, each
-// read once, and the node the value came from.
+// read once, and the expression the value came from.
 type option struct {
 	name  string
 	value string
-	val   ast.ValueNode
+	val   ast.ExprAny
 }
 
-// optionList reads a list of option nodes into their names and
-// values, skipping a nil entry.
-func (l *lowered) optionList(nodes []*ast.OptionNode) []option {
-	out := make([]option, 0, len(nodes))
-	for _, o := range nodes {
-		if o == nil {
-			continue
-		}
-		out = append(out, option{name: l.text(o.Name), value: l.text(o.Val), val: o.Val})
-	}
-	return out
-}
-
-// statementOptions collects the option statements of a body: a
-// message, a oneof, an enum, a service and an rpc state their options
-// as statements, not as a compact list.
-func statementOptions[E any](decls []E) []*ast.OptionNode {
-	var out []*ast.OptionNode
-	for _, decl := range decls {
-		if o, is := any(decl).(*ast.OptionNode); is {
-			out = append(out, o)
-		}
-	}
-	return out
-}
-
-// compact returns the options of a compact list, which a field, an
-// enum value and an extension range state in brackets.
-func compact(o *ast.CompactOptionsNode) []*ast.OptionNode {
-	if o == nil {
+// compactOptions reads the options of a compact list, which a field, an
+// enum value and an extension range state in brackets, into their names
+// and values. It skips an option without a name.
+func compactOptions(o ast.CompactOptions) []option {
+	if o.IsZero() {
 		return nil
 	}
-	return o.Options
+	entries := o.Entries()
+	out := make([]option, 0, entries.Len())
+	for i := range entries.Len() {
+		if e := entries.At(i); !e.Path.IsZero() {
+			out = append(out, option{name: e.Path.Span().Text(), value: e.Value.Span().Text(), val: e.Value})
+		}
+	}
+	return out
+}
+
+// statementOptions reads the option statements among a body's
+// declarations into their names and values: a file, a message, a oneof,
+// an enum, a service and an rpc state their options as statements, not
+// as a compact list. It skips an option without a name.
+func statementOptions(decls seq.Inserter[ast.DeclAny]) []option {
+	var out []option
+	for i := range decls.Len() {
+		def := decls.At(i).AsDef()
+		if def.Classify() != ast.DefKindOption {
+			continue
+		}
+		if o := def.AsOption().Option; !o.Path.IsZero() {
+			out = append(out, option{name: o.Path.Span().Text(), value: o.Value.Span().Text(), val: o.Value})
+		}
+	}
+	return out
 }
 
 // named returns the option a list states under one name, and false
@@ -100,11 +85,12 @@ func named(opts []option, name string) (option, bool) {
 	return option{}, false
 }
 
-// stringValue returns an option's value with its quotes removed,
-// for an option whose value is a string.
+// stringValue returns an option's value with its quotes removed, for
+// an option whose value is a string, and the value as written for
+// every other option.
 func (o option) stringValue() string {
-	if s, is := o.val.(ast.StringValueNode); is {
-		return s.AsString()
+	if s := o.val.AsLiteral().AsString(); !s.IsZero() {
+		return s.Text()
 	}
 	return o.value
 }
@@ -148,13 +134,4 @@ func withoutCarried(opts []option) []option {
 		}
 	}
 	return out
-}
-
-// presenceOf returns the field presence an option list states, and
-// the inherited presence where it states none.
-func presenceOf(opts []option, inherited string) string {
-	if o, stated := named(opts, featurePresence); stated {
-		return o.value
-	}
-	return inherited
 }

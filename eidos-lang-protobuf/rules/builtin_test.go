@@ -202,11 +202,11 @@ func TestBuiltin(t *testing.T) {
 			})
 		}
 
-		t.Run("classifies Empty as the empty record", func(t *testing.T) {
+		t.Run("maps Empty onto the well-known empty value", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, protorules.New().Builtin(builtin(emptyType), rules.View{}),
-				rules.TypeShape{Form: symbol.FormInline, Spelling: emptyType}, "a record without fields")
+				rules.Reference(emptyType, rules.WellKnownEmpty), "the registry's value without data")
 		})
 
 		t.Run("classifies FieldMask as a list of strings", func(t *testing.T) {
@@ -219,23 +219,25 @@ func TestBuiltin(t *testing.T) {
 				}, "the list of paths the mask contains")
 		})
 
-		t.Run("classifies ListValue as a list of opaque values", func(t *testing.T) {
+		t.Run("classifies ListValue as a list of the top type", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, protorules.New().Builtin(builtin(listValueType), rules.View{}),
 				rules.TypeShape{
 					Form: symbol.FormList, Spelling: listValueType,
-					Elems: []rules.TypeShape{rules.Opaque(builtin(valueType))},
+					Elems: []rules.TypeShape{rules.Leaf(symbol.FormDynamic, valueType)},
 				}, "each element decided at run time")
 		})
 
-		t.Run("classifies Struct as a map from strings onto opaque values", func(t *testing.T) {
+		t.Run("classifies Struct as a map from strings onto the top type", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, protorules.New().Builtin(builtin(structType), rules.View{}),
 				rules.TypeShape{
 					Form: symbol.FormMap, Spelling: structType,
-					Elems: []rules.TypeShape{rules.Leaf(symbol.FormText, "string"), rules.Opaque(builtin(valueType))},
+					Elems: []rules.TypeShape{
+						rules.Leaf(symbol.FormText, "string"), rules.Leaf(symbol.FormDynamic, valueType),
+					},
 				}, "each value decided at run time")
 		})
 
@@ -243,18 +245,32 @@ func TestBuiltin(t *testing.T) {
 			name string
 			give string
 		}{
-			{name: "classifies Any as opaque", give: "google.protobuf.Any"},
-			{name: "classifies Value as opaque", give: valueType},
-			{name: "classifies NullValue as opaque", give: "google.protobuf.NullValue"},
-			{name: "classifies SourceContext as opaque", give: "google.protobuf.SourceContext"},
+			{name: "classifies Any as the top type", give: "google.protobuf.Any"},
+			{name: "classifies Value as the top type", give: valueType},
 		}
 		for _, tt := range dynamic {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
+				assert.Equal(t, protorules.New().Builtin(builtin(tt.give), rules.View{}),
+					rules.Leaf(symbol.FormDynamic, tt.give), "the content is decided at run time")
+			})
+		}
+
+		opaque := []struct {
+			name string
+			give string
+		}{
+			{name: "classifies NullValue as opaque", give: "google.protobuf.NullValue"},
+			{name: "classifies SourceContext as opaque", give: "google.protobuf.SourceContext"},
+		}
+		for _, tt := range opaque {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
 				ref := builtin(tt.give)
 				assert.Equal(t, protorules.New().Builtin(ref, rules.View{}), rules.Opaque(ref),
-					"the content is decided at run time, so the projection keeps the spelling")
+					"the projection keeps the spelling for a consumer to read")
 			})
 		}
 

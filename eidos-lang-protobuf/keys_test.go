@@ -25,11 +25,11 @@ const (
 	rivalKey    meta.KeyName = "protobuf.rival"
 )
 
-// keysAllocs is a registration into a fresh registry: the eleven kind
-// lists of the keys, and fifteen allocations of the registry, its
+// keysAllocs is a registration into a fresh registry: the fourteen kind
+// lists of the keys, and seventeen allocations of the registry, its
 // namespace claim and the growth of its spec list, type list and name
-// map to thirteen keys.
-const keysAllocs = 11 + 15
+// map to sixteen keys.
+const keysAllocs = 14 + 17
 
 // A consumer reads the residue through these keys. Their spellings,
 // their value type, the kinds each admits and the namespace claim are
@@ -129,6 +129,12 @@ func TestKeys(t *testing.T) {
 				symbol.KindFile, symbol.KindStruct, symbol.KindField, symbol.KindSum,
 				symbol.KindEnum, symbol.KindEnumVariant, symbol.KindInterface, symbol.KindMethod,
 			}, "features are stamped on every level an edition lets a schema state them")
+			assert.Equal(t, spec(protobuf.ClosedKey).Kinds, []symbol.Kind{symbol.KindEnum},
+				"the closed mark is stamped on an enum")
+			assert.Equal(t, spec(protobuf.DelimitedKey).Kinds, []symbol.Kind{symbol.KindField},
+				"the delimited mark is stamped on a field")
+			assert.Equal(t, spec(protobuf.LocalKey).Kinds, []symbol.Kind{symbol.KindStruct, symbol.KindEnum},
+				"the local mark is stamped on a message and an enum")
 		})
 	})
 }
@@ -169,6 +175,7 @@ func every() []meta.KeyName {
 		protobuf.SyntaxKey, protobuf.PackageKey, protobuf.OneofKey,
 		protobuf.StreamKey, protobuf.MapEntryKey, protobuf.FeaturesKey,
 		protobuf.LabelKey, protobuf.JSONNameKey, protobuf.ExtensionsKey,
-		protobuf.ImportKey,
+		protobuf.ImportKey, protobuf.ClosedKey, protobuf.DelimitedKey,
+		protobuf.LocalKey,
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 
+	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -30,25 +31,30 @@ import (
 //   - OutOfRange is a number no variant declares, converted to the
 //     enum type at the wire's thirty-two bits: one past the largest
 //     number, or one below the smallest where the largest is the
-//     int32 maximum.
+//     int32 maximum. A closed enum, which the load marks with
+//     [protobuf.ClosedKey], has none, because a field of a closed enum
+//     keeps an undeclared number as an unknown field and not as a
+//     value.
 //   - Foreign lists, sorted, the packages declaring a variant outside
 //     the enum's own.
 //
-// A nil enum returns the zero info. The view is unread, because
-// every number is on the declaration.
+// A nil enum returns the zero info. EnumOf reads the closed mark through
+// v, so the caller's read set records it. Every number is on the
+// declaration.
 //
 // # Allocation contract
 //
-// EnumOf allocates three for an enum of at most eight numbered
+// EnumOf allocates three for an open enum of at most eight numbered
 // variants of its own package: the list of variants, and the
 // out-of-range value, which is the enum's reference and the conversion
-// over the number. Each of these allocates more:
+// over the number. A closed enum allocates the list of variants alone.
+// Each of these allocates more:
 //
 //   - The out-of-range number's text, for a number outside 0 to 99.
 //   - The text of a number written with white space, compacted.
 //   - The list of foreign packages, as it grows.
 //   - The map that finds a duplicate, past eight numbered variants.
-func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
+func (Rules) EnumOf(e *node.Enum, v rules.View) rules.EnumInfo {
 	info := rules.EnumInfo{Form: rules.EnumIdentifier}
 	if e == nil {
 		return info
@@ -90,7 +96,7 @@ func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 		numbered = true
 	}
 	slices.Sort(info.Foreign)
-	if numbered {
+	if numbered && !stamped(v, e.ID, protobuf.ClosedKey) {
 		t := rules.EmitRef(&node.TypeRef{Spelling: e.Name, Target: e.ID})
 		switch {
 		case largest < math.MaxInt32:

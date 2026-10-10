@@ -32,9 +32,9 @@ var (
 // The zero value is ready and is the only value. Every method reads
 // through the [rules.View] it is handed and caches nothing.
 //
-// It satisfies [rules.EnumRules] and no other optional capability:
-// protobuf states no generics, no promotion, no struct tags and no
-// user-defined equality.
+// It implements [rules.EnumRules] and [rules.PresenceRules] and no other
+// optional capability, because protobuf has no generics, no member
+// promotion, no struct tags and no user-defined equality.
 //
 // # Concurrency
 //
@@ -49,8 +49,8 @@ type Rules struct{}
 
 // New returns the protobuf rules as the [rules.SourceRules] a
 // composition registers. The value is [Rules], so a caller that needs
-// the enum capability asserts [rules.EnumRules] on it. It allocates
-// nothing.
+// the enum or the presence capability asserts [rules.EnumRules] or
+// [rules.PresenceRules] on it. It allocates nothing.
 func New() rules.SourceRules { return Rules{} }
 
 // Lang returns [protobuf.Lang], the language a composition keys

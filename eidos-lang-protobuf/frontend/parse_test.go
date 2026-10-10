@@ -16,6 +16,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
@@ -34,12 +35,12 @@ const (
 	brand       = string(frontendtest.Brand)
 )
 
-// The syntax errors the cap case writes, and the cap the frontend
-// reports up to.
+// The syntax errors the cap case writes, one for each line, and the cap
+// the frontend reports up to.
 const (
 	badFields    = 15
 	syntaxCap    = 10
-	badFieldLine = "message M { string x = ; }\n"
+	badFieldLine = "message M { string x = 1 }\n"
 )
 
 // unparsedCode pins the code a syntax error reports under: the
@@ -54,13 +55,12 @@ const (
 	benchDecls    = 20
 )
 
-// parseAllocs is one parse of the canonical corpus. With the collector
-// off a parse allocates 6,840,016 times: protocompile's syntax trees,
-// about three quarters of them, and the lowering's nodes, stamps and
-// type references. The collections that run during a parse move the
-// count: 20 fresh processes counted 3 to 15 more at one iteration, and
-// the default benchtime averaged 5 fewer. The ceiling allows 32 more.
-const parseAllocs = 6_840_016 + 32
+// parseAllocs is the budget of one parse of the canonical corpus of
+// 200,000 declarations. One run counted 4,990,008 allocations. protocompile's lexer, parser and
+// legalizer make about 3.1 million of them, and the lowering about 1.5
+// million: two for the declaration list of each body, and its nodes,
+// stamps and type references. The budget is about 5% above the count.
+const parseAllocs = 5_250_000
 
 // The files that declare the well-known types the package cases
 // name.
@@ -90,6 +90,36 @@ message Other {}
 
 service Store {
   rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+`
+
+// serviceSource declares a service of one rpc of each streaming form.
+const serviceSource = `syntax = "proto3";
+
+package svc.store;
+
+message Req {}
+message Res {}
+
+// Store reads and writes rows.
+service Store {
+  // Get reads one row.
+  rpc Get(Req) returns (Res);
+  rpc Watch(Req) returns (stream Res);
+  rpc Send(stream Req) returns (Res);
+  rpc Chat(stream Req) returns (stream Res);
+}
+`
+
+// groupSource declares a proto2 group inside a message.
+const groupSource = `syntax = "proto2";
+
+package svc.store;
+
+message Row {
+  optional group Inner = 1 {
+    optional string v = 2;
+  }
 }
 `
 
@@ -291,22 +321,7 @@ enum Colour {
 		t.Run("loads a service as an interface of rpc methods", func(t *testing.T) {
 			t.Parallel()
 
-			gb, sink := parsed(t, `syntax = "proto3";
-
-package svc.store;
-
-message Req {}
-message Res {}
-
-// Store reads and writes rows.
-service Store {
-  // Get reads one row.
-  rpc Get(Req) returns (Res);
-  rpc Watch(Req) returns (stream Res);
-  rpc Send(stream Req) returns (Res);
-  rpc Chat(stream Req) returns (stream Res);
-}
-`)
+			gb, sink := parsed(t, serviceSource)
 			assert.False(t, sink.Failed(), "the schema loads clean")
 			store, is := declOf(t, onlyFile(t, gb), "Store").(*node.Interface)
 			assert.True(t, is, "a service is an interface")
@@ -331,6 +346,26 @@ service Store {
 				[]string{"request"}, "either side")
 			assert.Equal(t, stampsOn(gb, store.Methods[3], string(protobuf.StreamKey)),
 				[]string{"both"}, "or both")
+		})
+
+		t.Run("loads each streaming side of an rpc as an asynchronous stream", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, serviceSource)
+			store, _ := declOf(t, onlyFile(t, gb), "Store").(*node.Interface)
+			expect.True(t, store.Methods[1].Returns[0].Type.Async, "a streaming response arrives over a connection")
+			expect.True(t, store.Methods[2].Params[0].Type.Async, "and so does a streaming request")
+			expect.False(t, store.Methods[0].Returns[0].Type.Async, "a single message is no stream")
+		})
+
+		t.Run("loads an rpc whose response is not a stream as asynchronous", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, serviceSource)
+			store, _ := declOf(t, onlyFile(t, gb), "Store").(*node.Interface)
+			expect.True(t, store.Methods[0].Async, "the caller of a unary rpc awaits the one response")
+			expect.True(t, store.Methods[2].Async, "and the caller of a client stream awaits it too")
+			expect.False(t, store.Methods[1].Async, "a server stream delivers its messages through the stream")
 		})
 
 		t.Run("nests the types a message declares under the message", func(t *testing.T) {
@@ -668,7 +703,45 @@ message Row {
 				"a oneof's own options are stamped, the way every other level's are")
 		})
 
-		t.Run("reports RefusedGroup for a group in a oneof", func(t *testing.T) {
+		t.Run("loads a group as a field named after the group in lower case", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, groupSource)
+			assert.False(t, sink.Failed(), "a group loads")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Length(t, row.Fields, 1, "the group declares one field")
+			inner := row.Fields[0]
+			expect.Equal(t, inner.Name, "inner", "protoc names the field after the group in lower case")
+			expect.Equal(t, inner.Type.Form, symbol.FormOptional, "the field has the group's optional label")
+			expect.Equal(t, inner.Type.Elems[0].Spelling, "Inner", "over the group's message")
+			expect.Equal(t, stampsOn(gb, inner, string(protobuf.FieldKey)), []string{"1"},
+				"the field has the group's number")
+		})
+
+		t.Run("loads a group's members as a message of the group's name", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, groupSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Length(t, row.Types, 1, "the group declares one nested message")
+			message, is := row.Types[0].(*node.Struct)
+			assert.True(t, is, "the group's message is a struct")
+			expect.Equal(t, message.Name, "Inner", "with the group's name")
+			expect.Equal(t, message.Pos, row.Fields[0].Pos, "at the group's position, as its field is")
+			assert.Length(t, message.Fields, 1, "with the group's members")
+			expect.Equal(t, message.Fields[0].Name, "v", "in source order")
+		})
+
+		t.Run("marks a group's field as delimited", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, groupSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, stampsOn(gb, row.Fields[0], string(protobuf.DelimitedKey)), []string{"DELIMITED"},
+				"a group's message is encoded delimited")
+		})
+
+		t.Run("loads a group in a oneof as a variant of the oneof", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto2";
@@ -684,35 +757,15 @@ message Row {
   }
 }
 `)
-			assert.True(t, sink.Failed(), "a group inside a oneof is a group like any other")
-			assert.Contains(
-				t,
-				codesOf(sink),
-				protofrontend.RefusedGroup,
-				"the group reports under the refusal's own code",
-			)
+			assert.False(t, sink.Failed(), "a group inside a oneof loads")
 			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Length(t, row.Types, 2, "the oneof and the group's message nest under the message")
 			sum, _ := row.Types[0].(*node.Sum)
-			assert.Length(t, sum.Variants, 1, "the field loads, and the group loads as nothing")
-		})
-
-		t.Run("reports RefusedGroup for a group in a message", func(t *testing.T) {
-			t.Parallel()
-
-			gb, sink := parsed(t, `syntax = "proto2";
-
-package svc.store;
-
-message Row {
-  optional group Inner = 1 {
-    optional string v = 2;
-  }
-}
-`)
-			assert.True(t, sink.Failed(), "a group is one declaration the model represents as two")
-			assert.Contains(t, codesOf(sink), protofrontend.RefusedGroup, "under the refusal's own code")
-			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
-			assert.Empty(t, row.Fields, "and the group loads as nothing")
+			assert.Length(t, sum.Variants, 2, "the group's field is a member of the oneof")
+			expect.Equal(t, sum.Variants[1].Fields[0].Type.Spelling, "Inner",
+				"the member's type is the group's message, without the optional form")
+			message, _ := row.Types[1].(*node.Struct)
+			expect.Equal(t, message.Name, "Inner", "the oneof's message declares the group's message")
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier no declaration takes", func(t *testing.T) {
@@ -865,8 +918,8 @@ message Req {}
 				fields = append(fields, f.Name)
 			}
 			assert.Equal(t, fields,
-				[]string{"required_field", "defaulted", "repeated_field", "map_field"},
-				"every field form loads, in source order")
+				[]string{"required_field", "defaulted", "repeated_field", "map_field", "grouped"},
+				"every field form loads, a group's field included, in source order")
 
 			var nested []string
 			for _, ty := range row.Types {
@@ -879,8 +932,9 @@ message Req {}
 					nested = append(nested, "enum:"+d.Name)
 				}
 			}
-			assert.Equal(t, nested, []string{"sum:body", "message:Nested", "enum:NestedEnum"},
-				"a oneof, a nested message and a nested enum each load as their own kind")
+			assert.Equal(t, nested, []string{
+				"sum:body", "message:OneofGroup", "message:Nested", "enum:NestedEnum", "message:Grouped",
+			}, "a oneof, a group's message, a nested message and a nested enum each load as their own kind")
 
 			_, isEnum := declOf(t, file, "Colour").(*node.Enum)
 			assert.True(t, isEnum, "a file-level enum loads")
@@ -898,7 +952,7 @@ message Req {}
 			colour, _ := declOf(t, file, "Colour").(*node.Enum)
 			store, _ := declOf(t, file, "Store").(*node.Interface)
 			sum, _ := row.Types[0].(*node.Sum)
-			nestedEnum, _ := row.Types[2].(*node.Enum)
+			nestedEnum, _ := row.Types[3].(*node.Enum)
 
 			for _, tt := range []struct {
 				what    string
@@ -931,29 +985,19 @@ message Req {}
 				"a default is on the field the model gives it to")
 		})
 
-		t.Run("reports every proto2 construct the model has no shape for", func(t *testing.T) {
+		t.Run("reports every proto2 extension, which the model has no shape for", func(t *testing.T) {
 			t.Parallel()
 
 			_, sink := grammar(t, "proto2.proto")
-			var refusals []string
+			var refusals []diag.Diag
 			for d := range sink.All() {
-				refusals = append(refusals, d.Msg)
-				assert.InRange(t, d.Pos.Line, 1, math.Inf(1), "every refusal is positioned")
+				refusals = append(refusals, d)
 			}
-			assert.Length(t, refusals, 4,
-				"two extend blocks and two groups each report, and none is dropped")
-
-			var groups, extends int
-			for _, msg := range refusals {
-				switch {
-				case strings.Contains(msg, "group"):
-					groups++
-				case strings.Contains(msg, "extends"):
-					extends++
-				}
+			assert.Length(t, refusals, 2, "the extend inside the message and the one beside it report")
+			for _, d := range refusals {
+				expect.Equal(t, d.Code, protofrontend.RefusedExtension, "each refusal is an extension's")
+				expect.InRange(t, d.Pos.Line, 1, math.Inf(1), "each refusal is positioned")
 			}
-			assert.Equal(t, groups, 2, "the group in the message and the one in the oneof report")
-			assert.Equal(t, extends, 2, "the extend inside the message and the one beside it report")
 		})
 
 		t.Run("returns the context's error for a cancelled load", func(t *testing.T) {
@@ -997,8 +1041,8 @@ message Req {}
 // partition and the comment syntax settled before the loop, so the
 // number measures protocompile's parse and the lowering, and fails
 // above parseAllocs. Only -bench checks the ceiling. One parse takes
-// about 0.41 s on four cores, and the 101 calls of an allocation check
-// would take 41 s.
+// about one second, and the 101 calls of an allocation check would take
+// 100 s.
 func BenchmarkParse(b *testing.B) {
 	tree := scaledProto()
 	f := protofrontend.New()

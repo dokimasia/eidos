@@ -46,17 +46,17 @@ var RefusedExtension = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Meaning: "a proto file extends a message it does not declare",
 })
 
-// RefusedGroup reports a proto2 group, positioned at the
-// declaration.
+// UnknownEdition reports a syntax or an edition that the frontend's
+// table of versions does not contain, such as the edition 2025, which
+// protobuf never released, or UNSTABLE, which protoc reserves for
+// features in development. The finding is at the statement. The file
+// does not load any declaration, because the defaults that define
+// presence and the openness of enums are unknown.
 //
-// Severity is Error. A group states a message and a field at once,
-// and the model represents those as two declarations, so the group
-// contributes nothing and neither is invented. A group inside a
-// message and one inside a oneof each report, naming the
-// declaration that contains it.
-var RefusedGroup = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
-	Number:  5,
-	Meaning: "a proto file declares a group, which is one declaration the model represents as two",
+// Severity is Error. The satellite does not reuse the number 5.
+var UnknownEdition = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
+	Number:  6,
+	Meaning: "a proto file has a syntax or an edition that the frontend does not know",
 })
 
 // BadCarrier reports a directive carrier the kernel grammar
@@ -93,12 +93,12 @@ var UnaddressedCarrier = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 // Parse once per unit and does so concurrently, and each call writes
 // only through the unit it is handed.
 //
-// A schema's own problem never returns an error. A syntax error
-// reports under [UnparsedFile], a refused construct under
-// [RefusedExtension] or [RefusedGroup], and the load continues. A
-// returned error means the load itself failed, such as a unit naming
-// a file the tree does not contain, and it ends the load for every
-// frontend.
+// The frontend does not return an error for a problem of a schema. It
+// reports a syntax error under [UnparsedFile], an extension under
+// [RefusedExtension] and a version that it does not know under
+// [UnknownEdition], and the load continues. A returned error means that
+// the load itself failed, for example because the tree does not contain
+// the file of a unit. Such an error ends the load for every frontend.
 //
 // New allocates nothing: the frontend has no state.
 func New() plugin.Frontend { return protoFrontend{} }
