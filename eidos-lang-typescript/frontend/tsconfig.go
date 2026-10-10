@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -63,6 +63,7 @@ func (r resolution) substitutions(specifier string) []string {
 		}
 		if len(specifier) < len(p.prefix)+len(p.suffix) ||
 			!strings.HasPrefix(specifier, p.prefix) || !strings.HasSuffix(specifier, p.suffix) {
+
 			continue
 		}
 		if best == nil || len(p.prefix) > len(best.prefix) {

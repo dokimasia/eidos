@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -10,7 +10,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/numeric"
 	"go.dokimi.dev/eidos/lang/treesitter"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -47,7 +47,10 @@ func (l *lowering) decoratorsOf(n treesitter.Node) []treesitter.Node {
 // argument does not lift. A decorator of the brand is an annotation as
 // well.
 func (l *lowering) decorate(subject symbol.Symbol, decorators []treesitter.Node) symbol.Annotations {
-	var out symbol.Annotations
+	if len(decorators) == 0 {
+		return nil
+	}
+	out := make(symbol.Annotations, 0, len(decorators))
 	for _, d := range decorators {
 		out = append(out, l.decorator(d))
 		if marker, named := l.marker(d); named {

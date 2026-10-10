@@ -1,11 +1,11 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
 
 import (
 	"go.dokimi.dev/eidos/lang/textfmt"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/backend"
 	"go.dokimi.dev/eidos/sdk/plugin"

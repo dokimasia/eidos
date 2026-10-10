@@ -1,15 +1,16 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"slices"
 	"strings"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -132,7 +133,7 @@ func (r Rules) Resolve(
 ) (symbol.Symbol, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf(refusalPrefix + "nothing to resolve")
+		return nil, errors.New(refusalPrefix + "nothing to resolve")
 	}
 	switch kind {
 	case directive.ResolveCallableInScope:
@@ -323,6 +324,7 @@ func binding(file *node.File, local string) (string, string, bool) {
 func moduleOf(specifier, from string) (string, bool) {
 	if !strings.HasPrefix(specifier, currentDir) && !strings.HasPrefix(specifier, parentDir) &&
 		specifier != currentDirName && specifier != parentDirName {
+
 		return specifier, false
 	}
 	return typescript.ModulePath(path.Join(path.Dir(from), specifier)), true
@@ -612,6 +614,7 @@ func memberNamed(
 		}
 		if vis == symbol.VisibilityPublic || vis == symbol.VisibilityUnknown ||
 			ownType && (vis == symbol.VisibilityProtected || m.Owner == own) {
+
 			return m.Symbol, true
 		}
 	}

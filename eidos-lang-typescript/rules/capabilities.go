@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -61,6 +61,7 @@ func (r Rules) Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*n
 		for i, p := range params {
 			if p != nil && args[i] != nil &&
 				(!ref.Target.IsZero() && ref.Target == p.ID || ref.Target.IsZero() && ref.Spelling == p.Name) {
+
 				c := *args[i]
 				return &c
 			}
@@ -216,6 +217,7 @@ func (r Rules) Properties(s *node.Struct, v rules.View) []rules.Property {
 			setter, isMethod := other.Symbol.(*node.Method)
 			if isMethod && setter.Accessor == symbol.AccessorSet && setter.Level == symbol.LevelInstance &&
 				setter.Name == get.Name {
+
 				p.Setter = setter
 				break
 			}

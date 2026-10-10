@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package typescript_test
@@ -9,7 +9,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 )
 
 // A file's module path is its package. The frontend that loads a module
@@ -89,7 +89,7 @@ func TestModulePath(t *testing.T) {
 // A module path is a part of the path, and the declaration check reads
 // the path's suffix, so neither allocates. The ordinary run, which runs
 // no benchmark, checks that here.
-func TestModulePathZeroAlloc(t *testing.T) {
+func TestModulePathAllocs(t *testing.T) {
 	var (
 		module   string
 		declares bool

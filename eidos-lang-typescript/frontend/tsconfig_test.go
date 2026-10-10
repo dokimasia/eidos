@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -255,7 +255,7 @@ func withConfigs(configs map[string]string) fstest.MapFS {
 func sharedOf(tb testing.TB, tree fstest.MapFS) []string {
 	tb.Helper()
 
-	var claimed []plugin.SourceRef
+	claimed := make([]plugin.SourceRef, 0, len(tree))
 	for p := range tree {
 		claimed = append(claimed, plugin.SourceRef{Path: p})
 	}

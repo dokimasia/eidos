@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
@@ -12,7 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -86,6 +86,13 @@ const (
 const (
 	constBinding = "const"
 	letBinding   = "let"
+)
+
+// The modifiers of a class member that TypeScript writes before its name,
+// each with the space that follows it.
+const (
+	staticKeyword   = "static "
+	readonlyKeyword = "readonly "
 )
 
 // annotationSep, promiseOpen and promiseClose are the spellings an
@@ -474,6 +481,7 @@ func (s Speller) qualify(typeOnly bool) spellref.Qualify {
 func (s Speller) specifier(t *emit.TypeRef, module string) string {
 	if t.Target.IsZero() ||
 		t.Target.Lang == typescript.Lang && t.Package != "" && kindOf(t.Package) == packageSpecifier {
+
 		return t.Package
 	}
 	return relativeTo(s.set.Home(), module)
@@ -741,10 +749,10 @@ func MemberMods(d symbol.Symbol) (string, error) {
 			return "", err
 		}
 		if t.Level == symbol.LevelType {
-			part += "static "
+			part += staticKeyword
 		}
 		if t.Mutability == symbol.MutabilityImmutable {
-			part += "readonly "
+			part += readonlyKeyword
 		}
 		return part, nil
 	case *emit.Method:
@@ -764,7 +772,7 @@ func MemberMods(d symbol.Symbol) (string, error) {
 			return "", err
 		}
 		if t.Level == symbol.LevelType {
-			part += "static "
+			part += staticKeyword
 		}
 		if t.Abstract {
 			part += "abstract "
@@ -804,7 +812,7 @@ func IndexMods(m *emit.Method) (string, error) {
 		return "", refuse("decorators mark no index signature, and %s states annotations", m.Name)
 	}
 	if m.Level == symbol.LevelType {
-		return "static ", nil
+		return staticKeyword, nil
 	}
 	return "", nil
 }
@@ -856,7 +864,7 @@ func PropMods(f *emit.Field) (string, error) {
 		return "", refuse("an interface property takes no initializer, and %s states one", f.Name)
 	}
 	if f.Mutability == symbol.MutabilityImmutable {
-		return "readonly ", nil
+		return readonlyKeyword, nil
 	}
 	return "", nil
 }

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -35,6 +35,7 @@ func (l *lowering) leading(n treesitter.Node) []treesitter.Node {
 		}
 		if before := prev.PrevNamedSibling(); !before.IsZero() && before.Kind() != l.v.comment &&
 			before.End().Line == prev.Pos().Line {
+
 			break
 		}
 		group = append(group, prev)

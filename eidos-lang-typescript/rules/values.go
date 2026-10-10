@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/numeric"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -258,6 +258,8 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 		return r.mapPair(rules.EmitRef(ref), ref.Args[0], ref.Args[1], hint, v, depth)
 	case symbol.FormStream:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
+	default:
+		// Every other form takes the pair of its spelling below.
 	}
 	switch {
 	case ref.Package == "" && ref.Spelling == spellBigInt:
@@ -321,6 +323,7 @@ func (r Rules) objectPair(
 			f, isField := m.Symbol.(*node.Field)
 			if !isField || f.Type == nil || f.Name == "" || f.Optional != optional ||
 				f.Level == symbol.LevelType || f.Visibility != symbol.VisibilityPublic {
+
 				continue
 			}
 			sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1)
@@ -388,6 +391,8 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		return emit.Literal(emit.LiteralString, ""), true
 	case symbol.FormList:
 		return emit.Composite(rules.EmitRef(ref)), true
+	default:
+		// Every other form takes the zero of its spelling below.
 	}
 	if ref.Package == "" && ref.Spelling == spellBigInt {
 		return emit.Raw(typescript.Lang, zeroNumber+bigintMark), true
@@ -516,6 +521,8 @@ func (r Rules) typedBuiltin(lit literal, ref *node.TypeRef, v rules.View) (emit.
 		takes = literalString
 	case symbol.FormDynamic:
 		return lit.value()
+	default:
+		// Every other form takes the kind of its spelling below.
 	}
 	switch {
 	case takes != 0:

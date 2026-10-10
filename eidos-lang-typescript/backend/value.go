@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/scaffold"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -75,6 +75,7 @@ func (t target) Composite(
 	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray || ref.Form == symbol.FormTuple ||
 		ref.Form == symbol.FormNamed && ref.Target.IsZero() && ref.Package == "" &&
 			(ref.Spelling == arrayType || ref.Spelling == readonlyArrayType)) {
+
 		parts := make([]string, 0, len(entries))
 		for _, e := range entries {
 			if e.Name != "" || e.Key != "" {

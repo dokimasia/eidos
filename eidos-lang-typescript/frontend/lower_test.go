@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -10,7 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -372,8 +372,9 @@ func TestLower(t *testing.T) {
 // packagePaths returns the paths of a builder's packages, in first
 // touch order.
 func packagePaths(gb *plugin.GraphBuilder) []string {
-	var out []string
-	for _, p := range gb.Packages() {
+	pkgs := gb.Packages()
+	out := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
 		out = append(out, p.ID.Package)
 	}
 	return out

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -7,7 +7,7 @@ import (
 	"math"
 	"slices"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 )
 
 // shiftMask keeps the low five bits of a shift count, which are the bits

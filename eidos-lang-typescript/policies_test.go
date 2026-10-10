@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package typescript_test
@@ -9,7 +9,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 

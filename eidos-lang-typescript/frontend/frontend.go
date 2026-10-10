@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	tsgrammar "go.dokimi.dev/eidos/lang/treesitter/typescript"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"

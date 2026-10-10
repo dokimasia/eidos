@@ -1,6 +1,9 @@
+// Copyright Dokimasia B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
 module go.dokimi.dev/eidos/lang/typescript
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f

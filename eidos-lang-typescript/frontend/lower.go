@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/treesitter"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -445,10 +445,9 @@ func (l *lowering) visibility(c container, exported bool, name string) symbol.Vi
 // implementation that follows them is left out.
 func (l *lowering) overloaded(list treesitter.Node) map[string]bool {
 	out := map[string]bool{}
-	for stmt := range list.NamedChildren() {
-		decl := stmt
-		if stmt.Kind() == l.v.exportStatement {
-			decl = stmt.Child(l.v.fieldDeclaration)
+	for decl := range list.NamedChildren() {
+		if decl.Kind() == l.v.exportStatement {
+			decl = decl.Child(l.v.fieldDeclaration)
 		}
 		if decl.Kind() == l.v.ambientDeclaration {
 			decl = l.firstOf(decl, l.v.functionSignature)

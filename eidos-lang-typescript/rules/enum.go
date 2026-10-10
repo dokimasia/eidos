@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -95,6 +95,7 @@ func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 	for _, variant := range e.Variants {
 		if variant != nil && !variant.ID.IsZero() && variant.ID.Package != e.ID.Package &&
 			!slices.Contains(info.Foreign, variant.ID.Package) {
+
 			info.Foreign = append(info.Foreign, variant.ID.Package)
 		}
 	}

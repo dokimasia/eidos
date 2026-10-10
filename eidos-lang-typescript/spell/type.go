@@ -1,16 +1,17 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package spell
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/spoke"
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -192,6 +193,9 @@ func container(
 		return &emit.TypeRef{
 			Spelling: grouped(child) + listMark, Form: symbol.FormList, Elems: []*emit.TypeRef{child},
 		}, nil
+	default:
+		// The spoke writes an optional as a union of its child and the
+		// absent type below.
 	}
 	absent := &emit.TypeRef{Spelling: string(p.Choice(typescript.Absent))}
 	return &emit.TypeRef{
@@ -205,7 +209,7 @@ func container(
 func tuple(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
 	switch {
 	case s.Length == 0:
-		return nil, fmt.Errorf("an array of an unstated length has no TypeScript spelling")
+		return nil, errors.New("an array of an unstated length has no TypeScript spelling")
 	case len(s.Elems) != 1:
 		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
 	}
@@ -299,7 +303,7 @@ func wildcard(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 	case len(s.Elems) == 0:
 		return &emit.TypeRef{Spelling: unknownType}, nil
 	case s.Variance == symbol.VarianceIn:
-		return nil, fmt.Errorf("a wildcard with a lower bound has no TypeScript spelling")
+		return nil, errors.New("a wildcard with a lower bound has no TypeScript spelling")
 	}
 	return spoke.Child(s.Elems[0], spell)
 }

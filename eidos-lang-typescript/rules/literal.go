@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 )
 
 // The keywords of TypeScript's literals.
@@ -169,6 +169,7 @@ func (l *lexer) number(start int) token {
 		c := t[i]
 		if unicode.IsLetter(rune(c)) || unicode.IsDigit(rune(c)) || strings.IndexByte(numberMarks, c) >= 0 ||
 			!hex && strings.IndexByte(signs, c) >= 0 && strings.IndexByte(exponentMarks, t[i-1]) >= 0 {
+
 			i++
 			continue
 		}
@@ -318,6 +319,7 @@ func scanName(l *lexer, first token) (literal, bool) {
 			name := l.next()
 			if dot.kind != tokenOperator || dot.text != pathSep || dot.end != end+len(pathSep) ||
 				name.kind != tokenName || name.end != dot.end+len(name.text) {
+
 				return literal{}, false
 			}
 			end = name.end

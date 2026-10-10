@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package spell_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -37,7 +38,11 @@ func TestName(t *testing.T) {
 			give string
 			want string
 		}
-		tests := []spelling{
+		// The kinds of member whose name TypeScript writes as a key, and the
+		// words that TypeScript reserves in some contexts alone.
+		memberKinds := []symbol.Kind{symbol.KindField, symbol.KindMethod, symbol.KindEnumVariant, symbol.KindParam}
+		contextual := []string{"await", "eval", "arguments"}
+		tests := slices.Grow([]spelling{
 			{
 				name: "returns the Pascal-case spelling of a class name",
 				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HTTPRow",
@@ -70,16 +75,14 @@ func TestName(t *testing.T) {
 				host: symbol.KindStruct, kind: symbol.KindField, vis: symbol.VisibilityUnknown,
 				give: "string", want: "string",
 			},
-		}
-		for _, kind := range []symbol.Kind{
-			symbol.KindField, symbol.KindMethod, symbol.KindEnumVariant, symbol.KindParam,
-		} {
+		}, len(memberKinds)+len(contextual))
+		for _, kind := range memberKinds {
 			tests = append(tests, spelling{
 				name: "returns a non-identifier name of a " + kind.String() + " unchanged",
 				host: symbol.KindStruct, kind: kind, give: wireName, want: wireName,
 			})
 		}
-		for _, word := range []string{"await", "eval", "arguments"} {
+		for _, word := range contextual {
 			tests = append(tests, spelling{
 				name: "returns the member key " + word + " unchanged",
 				host: symbol.KindStruct, kind: symbol.KindField, give: word, want: word,
@@ -100,7 +103,13 @@ func TestName(t *testing.T) {
 			kind symbol.Kind
 			give string
 		}
-		refusals := []refusal{
+		// The kinds of declaration for which Name refuses a non-identifier
+		// name.
+		declarationKinds := []symbol.Kind{
+			symbol.KindStruct, symbol.KindInterface, symbol.KindFunction,
+			symbol.KindAlias, symbol.KindConstant, symbol.KindVariable,
+		}
+		refusals := slices.Grow([]refusal{
 			{
 				name: "returns an error for a function named after a reserved word",
 				kind: symbol.KindFunction,
@@ -111,16 +120,13 @@ func TestName(t *testing.T) {
 				name: "returns an error for a type parameter named after a predefined type",
 				kind: symbol.KindTypeParam, give: "string",
 			},
-		}
-		for _, kind := range []symbol.Kind{
-			symbol.KindStruct, symbol.KindInterface, symbol.KindFunction,
-			symbol.KindAlias, symbol.KindConstant, symbol.KindVariable,
-		} {
+		}, len(declarationKinds)+len(contextual))
+		for _, kind := range declarationKinds {
 			refusals = append(refusals, refusal{
 				name: "returns an error for a non-identifier name of a " + kind.String(), kind: kind, give: wireName,
 			})
 		}
-		for _, word := range []string{"await", "eval", "arguments"} {
+		for _, word := range contextual {
 			refusals = append(refusals, refusal{
 				name: "returns an error for a variable named " + word, kind: symbol.KindVariable, give: word,
 			})

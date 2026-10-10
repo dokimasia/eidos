@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -32,8 +32,9 @@ func TestVocabulary(t *testing.T) {
 
 			kinds := func(path, pkg string) []string {
 				gb, _ := parsedTree(t, fstest.MapFS{path: {Data: []byte(everyForm)}}, path, plugin.DepthFull)
-				var out []string
-				for _, d := range fileIn(t, gb, pkg).Decls {
+				decls := fileIn(t, gb, pkg).Decls
+				out := make([]string, 0, len(decls))
+				for _, d := range decls {
 					out = append(out, d.Kind().String())
 				}
 				return out

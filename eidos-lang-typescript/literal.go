@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package typescript
@@ -143,6 +143,7 @@ func Unquote(text string) (string, bool) {
 	}
 	if strings.IndexByte(body, escapeMark) < 0 &&
 		(quote != templateQuote || strings.IndexByte(body, carriageReturn) < 0) {
+
 		return body, true
 	}
 	var b strings.Builder
@@ -253,6 +254,7 @@ func numeral(text string, bigint bool) (int, string, bool) {
 	for i := range len(body) {
 		if body[i] == separator &&
 			(i == 0 || i == len(body)-1 || digitValue(body[i-1]) >= base || digitValue(body[i+1]) >= base) {
+
 			return 0, "", false
 		}
 	}
@@ -382,7 +384,7 @@ func codePoint(s string) (rune, int, bool) {
 	if len(s) < 1+fixedDigits {
 		return 0, 0, false
 	}
-	v, err := strconv.ParseUint(s[1:1+fixedDigits], 16, 32)
+	v, err := strconv.ParseUint(s[1:1+fixedDigits], 16, 16)
 	if err != nil {
 		return 0, 0, false
 	}

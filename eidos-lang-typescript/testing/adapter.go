@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package testing
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/symbol"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
@@ -116,7 +116,7 @@ func (adapter) Available() (bool, string) {
 func (adapter) Layout(g toolchain.Generated) (string, error) {
 	dir, err := os.MkdirTemp("", "eidos-ts-*")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("testing: %w", err)
 	}
 	for path, body := range g.Files {
 		if err := write(dir, path, body); err != nil {
@@ -217,7 +217,7 @@ func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) 
 	probe := filepath.Join(dir, probeFile)
 	source := "export const eidosProbe: " + contract + " = undefined as unknown as " + typeName + ";\n"
 	if err := os.WriteFile(probe, []byte(source), filePerm); err != nil {
-		return false, err
+		return false, fmt.Errorf("testing: %w", err)
 	}
 	defer func() { _ = os.Remove(probe) }()
 
@@ -288,15 +288,18 @@ func write(dir, path string, body []byte) error {
 	target := filepath.Join(dir, filepath.FromSlash(path))
 	rel, err := filepath.Rel(dir, target)
 	if err != nil {
-		return err
+		return fmt.Errorf("testing: %w", err)
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("the generated path %q climbs out of the scratch project", path)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-		return err
+		return fmt.Errorf("testing: %w", err)
 	}
-	return os.WriteFile(target, body, filePerm)
+	if err := os.WriteFile(target, body, filePerm); err != nil {
+		return fmt.Errorf("testing: %w", err)
+	}
+	return nil
 }
 
 // run runs one toolchain binary in dir under ctx and returns its
