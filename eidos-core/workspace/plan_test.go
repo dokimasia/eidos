@@ -118,6 +118,24 @@ func (r *exportReader) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
+// contextReader is a generator recording the target, the spoke and the
+// policy that its context handed over.
+type contextReader struct {
+	name   plugin.ID
+	target plugin.Target
+	types  plugin.TypeSpeller
+	policy plugin.Policy
+}
+
+// Name returns the reader's name.
+func (r *contextReader) Name() plugin.ID { return r.name }
+
+// Generate records the target, the spoke and the policy.
+func (r *contextReader) Generate(ctx *plugin.GeneratorContext) error {
+	r.target, r.types, r.policy = ctx.Target, ctx.Types, ctx.Policy
+	return nil
+}
+
 // A plan stages its files and the removal of its stale outputs into a
 // sink of its own, and what the destination contains decides whether
 // the plan may commit.
@@ -126,6 +144,33 @@ func TestPlan(t *testing.T) {
 
 	t.Run("Run", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("passes the target, the spoke and the policy of the plan to each generator", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &contextReader{name: "reader"}
+			printer := lowerBackend(t, clientBackend, lowerTarget, camel, widthPolicy)
+			w := built(t, workspace.New().Brand(fixtureBrand).Targets(lowerTarget).Plans(workspace.Plan{
+				Name: clientPlan, Generators: []plugin.Generator{reader}, Backend: printer,
+			}))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			expect.Equal(t, reader.target, lowerTarget, "the generator reads the plan's target")
+			expect.Equal(t, reader.types, printer.(plugin.TypeSpeller), "the generator reads the backend's spoke",
+				assert.ByIdentity())
+			expect.Equal(t, reader.policy.Choice(widthKey), narrow, "the generator reads the plan's policy")
+		})
+
+		t.Run("passes a nil spoke for a backend without the spoke role", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &contextReader{name: "reader"}
+			printer := fakeBackend{name: "printer", target: "fixture"}
+			w := built(t, workspace.New().Brand(fixtureBrand).Targets("fixture").Plans(workspace.Plan{
+				Name: "plan", Generators: []plugin.Generator{reader}, Backend: printer,
+			}))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			assert.Nil(t, reader.types, "the generator does not receive a spoke")
+		})
 
 		t.Run("commits a plan's file beside its source", func(t *testing.T) {
 			t.Parallel()

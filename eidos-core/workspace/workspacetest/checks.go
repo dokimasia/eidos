@@ -29,8 +29,10 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/internal/rundir"
 )
 
-// The key the audit check promises, in a namespace of the suite's own,
-// and the documentation it registers with.
+// The key the audit check promises, and the documentation it registers
+// with. The suite claims the key's namespace under a registrant of the
+// namespace's name, so a composition that claims the namespace fails
+// Build.
 const (
 	auditNamespace              = "workspacetest"
 	auditKey       meta.KeyName = "workspacetest.audited"
@@ -221,10 +223,11 @@ func AssertAudited(tb assert.TB, f Fixture, root string) {
 	id, found := firstOrigin(report.Emits[plans[0].Name])
 	assert.True(tb, found, "the fixture's first plan emits a unit that derives from a source declaration")
 	promise := func(r *meta.Registry) error {
-		if err := r.ClaimNamespace(auditNamespace); err != nil {
+		suite := r.For(auditNamespace)
+		if err := suite.ClaimNamespace(auditNamespace); err != nil {
 			return err
 		}
-		_, err := meta.Register[bool](r, meta.KeySpec{
+		_, err := meta.Register[bool](suite, meta.KeySpec{
 			Name: auditKey,
 			Contract: &meta.Completeness{
 				On: []symbol.Kind{id.Kind}, By: diag.PhaseAnnotate, Severity: diag.SeverityWarning,

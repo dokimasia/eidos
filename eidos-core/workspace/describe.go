@@ -17,7 +17,7 @@ type Component struct {
 	// Name is the name of the plugin.
 	Name plugin.ID
 	// Version is the version that the plugin declares. It is empty for a
-	// plugin that declares no version.
+	// plugin that does not declare a version.
 	Version string
 	// Bucket is the position of an annotator or a generator in the schedule
 	// of its role, counted from one. Every claim and every unit of the plugin
@@ -54,6 +54,10 @@ type PlanDescription struct {
 	Target  plugin.Target
 	// Layout is the routing configuration of the plan.
 	Layout layout.Config
+	// Policies contains the choice of each lowering policy that the
+	// backend declares, as the plan's resolved policy selects it. It is nil
+	// for a backend that does not declare a policy.
+	Policies map[plugin.PolicyKey]plugin.Choice
 }
 
 // CheckDescription is one workspace check in a [Description].
@@ -66,7 +70,7 @@ type CheckDescription struct {
 
 // Description is a composition as data. [Workspace.Describe] returns it,
 // and a command prints it without running the composition. A Description
-// shares no memory with the workspace, so a caller may change it.
+// does not share memory with the workspace, so a caller may change it.
 type Description struct {
 	// Brand is the brand of the composition. Name is the name of the
 	// workspace, and it is empty when the composition lets the ledger name
@@ -78,7 +82,8 @@ type Description struct {
 	Fingerprint []byte
 	// Frontends lists the frontends in load order.
 	Frontends []Component
-	// Annotate lists the annotators in bucket order.
+	// Annotate lists the annotators in bucket order. The lowering entries
+	// of the targets come first, without a version.
 	Annotate []Component
 	// Plans lists the plans in composition order.
 	Plans []PlanDescription
@@ -94,9 +99,10 @@ type Description struct {
 // brand, the name of the workspace, the fingerprint, the frontends, the
 // annotate schedule, the commit order and the checks. For each plan, it
 // contains the sources, the dependencies, the generate schedule, the
-// backend and the layout. Describe runs nothing, reads nothing outside the
-// workspace and cannot fail. Each call returns a new description. Describe
-// is safe to call concurrently with every other method of the workspace.
+// backend, the layout and the choice of each lowering policy. Describe
+// does not run the composition or read outside the workspace, and it
+// cannot fail. Each call returns a new description. Describe is safe to
+// call concurrently with every other method of the workspace.
 func (w *Workspace) Describe() Description {
 	d := Description{
 		Brand:       w.brand,
@@ -133,6 +139,12 @@ func (w *Workspace) Describe() Description {
 		}
 		for _, g := range p.entries {
 			plan.Generate = append(plan.Generate, component(g.name, g.run, g.bucket))
+		}
+		if specs := policiesOf(p.backend); len(specs) > 0 {
+			plan.Policies = make(map[plugin.PolicyKey]plugin.Choice, len(specs))
+			for _, s := range specs {
+				plan.Policies[s.Key] = p.policy.Choice(s.Key)
+			}
 		}
 		d.Plans = append(d.Plans, plan)
 	}

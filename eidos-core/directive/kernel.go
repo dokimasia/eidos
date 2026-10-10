@@ -29,7 +29,9 @@ const (
 	KernelWitness Name = "witness"
 )
 
-// kernelNames lists the reserved names for the registry's check.
+// kernelNames lists the reserved names for the registry's check. A
+// registry adds the name of each target's directive that
+// [Registry.RegisterTarget] records.
 var kernelNames = []Name{KernelMeta, KernelOut, KernelDiag, KernelSkip, KernelSample, KernelWitness}
 
 // The kernel schemas' param keys, declared beside their schemas so

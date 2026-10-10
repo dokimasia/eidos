@@ -75,13 +75,30 @@ func TestDescribe(t *testing.T) {
 			assert.Equal(t, w.Describe(), want, "the description lists the composition", assert.EquateEmpty())
 		})
 
+		t.Run("returns the choice of each policy that a plan's backend declares", func(t *testing.T) {
+			t.Parallel()
+
+			b, _ := policyPlans(t)
+			plans := built(t, b.Config(workspace.Config{
+				Policies: map[plugin.PolicyKey]plugin.Choice{widthKey: wide},
+				Plans: map[string]workspace.PlanConfig{
+					clientPlan: {Policies: map[plugin.PolicyKey]plugin.Choice{widthKey: full}},
+				},
+			})).Describe().Plans
+			assert.Length(t, plans, 2, "the composition has the client plan and the server plan")
+			expect.Equal(t, plans[0].Policies, map[plugin.PolicyKey]plugin.Choice{widthKey: full},
+				"the client plan has its own selection")
+			expect.Equal(t, plans[1].Policies, map[plugin.PolicyKey]plugin.Choice{widthKey: wide},
+				"the server plan has the selection of the config")
+		})
+
 		t.Run("returns an empty name for a composition that leaves the name to the ledger", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, built(t, valid()).Describe().Name, "", "the composition names no workspace")
+			assert.Equal(t, built(t, valid()).Describe().Name, "", "the composition does not set a workspace name")
 		})
 
-		t.Run("returns a description that shares no memory with the workspace", func(t *testing.T) {
+		t.Run("returns a description that does not share memory with the workspace", func(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, described())

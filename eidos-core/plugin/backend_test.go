@@ -4,13 +4,17 @@
 package plugin_test
 
 import (
+	"errors"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The target the fixture backend renders to, and the name key of the
@@ -28,6 +32,22 @@ type renderless struct {
 
 // Target returns the fixture's target.
 func (renderless) Target() plugin.Target { return fixtureTarget }
+
+// textSpelling is the spelling of a text shape, in the source and in the
+// fixture spoke's target.
+const textSpelling = "string"
+
+// speller is a fixture spoke. It spells a text shape as string under
+// every policy, and it refuses every other shape.
+type speller struct{}
+
+// SpellType spells a text shape and refuses the rest.
+func (speller) SpellType(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
+	if s.Form != symbol.FormText {
+		return nil, errors.New("fixture: the spoke spells text alone")
+	}
+	return &emit.TypeRef{Spelling: textSpelling}, nil
+}
 
 // A backend is a plugin with the target name its plan resolves at
 // composition, so the contract asserts like every other surface and
@@ -64,6 +84,27 @@ func TestBackend(t *testing.T) {
 
 			assert.Equal(t, plugin.Target("golang").NameKey(), golangNameKey,
 				"the key a Go name override is stamped under")
+		})
+	})
+
+	t.Run("TypeSpeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the spelling of a text shape", func(t *testing.T) {
+			t.Parallel()
+
+			var spoke plugin.TypeSpeller = speller{}
+			got, err := spoke.SpellType(rules.Leaf(symbol.FormText, textSpelling), plugin.Policy{})
+			assert.NoError(t, err, "the spoke spells text")
+			assert.Equal(t, got.Spelling, textSpelling, "the spelling is the spelling of the target")
+		})
+
+		t.Run("returns an error for a shape that is not text", func(t *testing.T) {
+			t.Parallel()
+
+			var spoke plugin.TypeSpeller = speller{}
+			_, err := spoke.SpellType(rules.Leaf(symbol.FormBool, "bool"), plugin.Policy{})
+			assert.HasError(t, err, "the spoke refuses a bool")
 		})
 	})
 }

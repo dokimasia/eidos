@@ -9,6 +9,14 @@
 // adds nothing the roles do not state, so a kit backend and a
 // hand-rolled pass over the same language return the same bytes.
 //
+// # The hub
+//
+// [Builder.Types] declares the target's spoke of the cross-language
+// hub, which the built backend serves as [plugin.TypeSpeller], and
+// [Builder.Policies] declares the lowering policies the spoke reads,
+// served as [plugin.PolicyProvider]. A backend without a spoke refuses
+// every shape of another language.
+//
 // # Failure semantics
 //
 // A declaration defect panics at [Builder.Build], before any run
@@ -19,6 +27,6 @@
 // # Dependency position
 //
 // core/backend imports core/backend/render, core/emit,
-// core/plugin, core/symbol and the Go stdlib. Nothing beneath it
-// imports it back.
+// core/plugin, core/rules, core/symbol and the Go stdlib. Nothing
+// beneath it imports it back.
 package backend

@@ -16,8 +16,13 @@
 // for a registrant, and every handle shares one set of
 // registrations. A namespace belongs to the registrant whose handle
 // claimed it, and a key registers only into a namespace its own
-// registrant claimed. A namespace claimed twice and a key registered
-// twice are errors that name both claimants. [Kernel] claims
+// registrant claimed. A namespace that two registrants claim is an
+// error that contains both. A registrant that claims its namespace again,
+// or registers a key again under the same value type and an equal
+// spec, repeats its registration and gets the same handle, so each part
+// of one language registers the language's keys under the language's
+// name. A key registered again under another type or another spec is an
+// error that contains the difference. [Kernel] claims
 // [KernelNamespace] as [KernelOwner], so no plugin registers a key
 // under it.
 //
@@ -51,8 +56,11 @@
 // # Reading
 //
 // [Get] returns the winning value untracked, which is the kernel's
-// own path. [Fact] records the read at (subject, key) into a
-// [Recorder], a miss included, and is the read every plugin makes.
+// own path. [GetAtLeast] returns it where the claim that ranks first has
+// an authority at or above a floor, so a reader of an override skips a
+// plugin's stamp on the same key. [Fact] records the read at (subject,
+// key) into a [Recorder], a miss included, and is the read every plugin
+// makes.
 // [Facts.ByKey] enumerates the subjects on which a key reads
 // present, in identity order, maintained at stamp time.
 //

@@ -107,12 +107,12 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 
 // AssertClassified checks the claim: every selected file
 // either declares into the graph or has a finding naming it, so
-// nothing drops in silence. A fixture declaring classification keys
-// is stamped by the load, and the recorded stamps apply cleanly
-// under those keys, the way the workspace run applies them. A load
-// that stamps under a fixture declaring no keys fails, because
-// nothing could apply its stamps, and so does a fixture declaring keys
-// over a load that stamps nothing.
+// nothing drops in silence. The recorded stamps apply cleanly under
+// the keys that the frontend registers through its role and the keys
+// that the fixture declares, the way the workspace run applies them. A
+// stamp under a key that neither registers fails, because nothing could
+// apply it, and so does a fixture declaring keys over a load that stamps
+// nothing.
 func AssertClassified(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -135,22 +135,11 @@ func AssertClassified(tb assert.TB, setup Setup) {
 			path+" declares into the graph or a finding names it: nothing drops in silence")
 	}
 
-	stamped := false
-	for range got.graph.Stamps() {
-		stamped = true
-		break
+	if fx.Keys != nil {
+		assert.True(tb, stampsAny(got.graph),
+			"the load stamps where the fixture declares classification keys to apply the stamps under")
 	}
-	assert.Equal(tb, stamped, fx.Keys != nil,
-		"the load stamps where the fixture declares classification keys to apply the stamps under, "+
-			"and nowhere else")
-	if !stamped {
-		return
-	}
-	registry := meta.NewRegistry()
-	_, err := meta.Kernel(registry)
-	assert.NoError(tb, err, "the kernel's own keys register, as the workspace registers them")
-	assert.NoError(tb, fx.Keys(registry), "the fixture's keys register")
-	facts := meta.NewFacts(registry)
+	facts := meta.NewFacts(keyRegistry(tb, f, fx))
 	for id, stamps := range got.graph.Stamps() {
 		for i, s := range stamps {
 			err := facts.StampRaw(s, meta.Claim{
@@ -160,9 +149,29 @@ func AssertClassified(tb assert.TB, setup Setup) {
 				Order:     meta.Order{Subject: id, Instance: i},
 				Pos:       s.Pos,
 			})
-			expect.NoError(tb, err, "a recorded stamp applies under the fixture's keys")
+			expect.NoError(tb, err, "a recorded stamp applies under the keys of the frontend and the fixture")
 		}
 	}
+}
+
+// keyRegistry returns the key registry that a workspace builds for the
+// frontend and the fixture. It registers the kernel's keys, then the
+// keys that the frontend registers through its role under its
+// language's spelling, and then the fixture's keys under the handle of
+// the composition.
+func keyRegistry(tb assert.TB, f plugin.Frontend, fx *Fixture) *meta.Registry {
+	tb.Helper()
+
+	registry := meta.NewRegistry()
+	_, err := meta.Kernel(registry)
+	assert.NoError(tb, err, "the kernel's own keys register, as the workspace registers them")
+	if kp, provides := f.(plugin.KeyProvider); provides {
+		assert.NoError(tb, kp.Keys(registry.For(string(f.Lang()))), "the frontend's keys register")
+	}
+	if fx.Keys != nil {
+		assert.NoError(tb, fx.Keys(registry), "the fixture's keys register")
+	}
+	return registry
 }
 
 // AssertOwnedExcluded checks the one exclusion the kernel makes: a
@@ -524,10 +533,7 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 		names[s.Name] = true
 	}
 	assert.Empty(tb, registry.Seal(), "the fixture's registry seals")
-	keys := meta.NewRegistry()
-	if fx.Keys != nil {
-		assert.NoError(tb, fx.Keys(keys), "the fixture's keys register")
-	}
+	keys := keyRegistry(tb, f, fx)
 
 	attached := 0
 	for id, raws := range got.graph.Directives() {

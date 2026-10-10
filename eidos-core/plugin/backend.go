@@ -3,11 +3,21 @@
 
 package plugin
 
-import "go.dokimi.dev/eidos/core/meta"
+import (
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/rules"
+)
 
 // nameKeySuffix follows a target's spelling in the key a name
 // override is stamped under.
 const nameKeySuffix = ".name"
+
+// NameParam is the param of a target's directive that overrides the
+// name of one declaration in the target, as in typescript
+// name=fetchSession. No policy takes it as its name.
+const NameParam directive.ParamKey = "name"
 
 // Target names a rendering target. It is a registered name: the
 // composition declares the targets it recognises, and a plan whose
@@ -33,4 +43,21 @@ func (t Target) NameKey() meta.KeyName {
 type Backend interface {
 	Plugin
 	Target() Target
+}
+
+// TypeSpeller is the role of a backend that spells the canonical shape
+// of a type of another language in its target. It is the spoke of the
+// cross-language hub. The workspace passes it to each generator of a
+// plan that renders through the backend.
+//
+// # Concurrency
+//
+// The plans of a run call one TypeSpeller concurrently, so an
+// implementation is safe for concurrent use.
+type TypeSpeller interface {
+	// SpellType returns the target's reference for s under the policy p.
+	// For a shape without a spelling in the target, it returns an error
+	// with the reason. The error has no position, because the caller
+	// positions the refusal at the declaration with the type.
+	SpellType(s rules.TypeShape, p Policy) (*emit.TypeRef, error)
 }

@@ -102,6 +102,12 @@ type Language struct {
 	// statement the language cannot spell returns an error, and the
 	// declaration is skipped under the execute-time code.
 	Scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
+	// MemberIndent is the indentation of a member's statements in the
+	// body of its type, relative to the statements that Scaffold
+	// writes. The memberbody builtin writes it before every line of a
+	// member's content that is not blank. A language whose templates
+	// call only the body builtin, such as Go, leaves it empty.
+	MemberIndent string
 	// Imports renders one file's collected set as the block the
 	// language's own formatter would leave: grouping and sorting
 	// are language facts.

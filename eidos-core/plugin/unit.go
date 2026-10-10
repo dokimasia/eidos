@@ -102,6 +102,12 @@ func (u *SourceUnit) Read(path string) ([]byte, error) {
 // one code path signature-only loading shares with the full one.
 func (u *SourceUnit) Depth() Depth { return u.depth }
 
+// Brand returns the composition's brand, which opens every carrier and
+// every marker of a directive. A frontend compares the first name of a
+// marker's path with it before it lifts the marker's arguments, so a
+// marker outside the brand allocates nothing. Brand allocates nothing.
+func (u *SourceUnit) Brand() string { return u.brand }
+
 // Graph returns the unit's write handle into the node model.
 func (u *SourceUnit) Graph() *GraphBuilder { return u.graph }
 
@@ -123,6 +129,25 @@ type Carrier struct {
 
 // Negated reports whether the carrier opened with the negated mark.
 func (c Carrier) Negated() bool { return strings.HasPrefix(c.Mark, carrierNegated) }
+
+// Sugar is one marker that a frontend reads from the language's own
+// syntax for metadata, such as a TypeScript decorator, a Rust attribute
+// or a Java annotation.
+type Sugar struct {
+	// Path is the marker's name, split at the language's separators.
+	// The decorator @acme.stub has the path acme, stub.
+	Path []string
+	// Args are the marker's literal arguments in source order. An
+	// argument is keyed where the language gives it a name, and
+	// positional otherwise.
+	Args []directive.RawArg
+	// Refusal is the reason that the frontend could not lift an argument
+	// of the marker, such as an argument that is not a literal. It is
+	// empty when the frontend lifted every argument.
+	Refusal string
+	// Pos is the position of the marker.
+	Pos position.Pos
+}
 
 // CommentParts is one raw comment taken apart three ways: the
 // documentation lines, the carrier lines, and the tool-directive
@@ -245,6 +270,68 @@ func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused
 		raw.DirectiveShaped = c.DirectiveShaped
 		u.graph.Attach(subject, raw)
 	}
+}
+
+// AttachSugar attaches the directive of a marker to subject, and reports
+// whether the marker is a directive. A marker whose path does not start
+// with the unit's brand is ordinary metadata, and AttachSugar reports
+// false for it, whatever its arguments are.
+//
+// The path of a directive is the brand followed by a name, or by a
+// plugin and a name. The first form gives the bare directive name, and
+// the second form gives the name with the plugin's prefix. AttachSugar
+// reports a marker of the brand under refused, at the marker's
+// position, in these cases:
+//
+//   - the path has another form;
+//   - the name is not a valid directive name;
+//   - the frontend could not lift an argument, so the marker's Refusal
+//     is set.
+//
+// Such a marker attaches nothing, and AttachSugar reports true for it.
+// An attached directive has the marker's arguments and position. It is
+// set, because a marker has no negated form. A nil subject with a marker
+// of the brand is a frontend defect, and AttachSugar panics, as
+// [GraphBuilder.Attach] does.
+//
+// # Allocation contract
+//
+// AttachSugar allocates the prefixed name of a marker with a plugin, and
+// the growth of the unit's attachment list. A marker outside the brand
+// allocates nothing.
+func (u *SourceUnit) AttachSugar(subject symbol.Symbol, s Sugar, refused diag.Code) bool {
+	if len(s.Path) == 0 || s.Path[0] != u.brand {
+		return false
+	}
+	var name directive.Name
+	switch len(s.Path) {
+	case 2:
+		name = directive.Name(s.Path[1])
+	case 3:
+		// The canonical name of a schema without a plugin is bare, so an
+		// empty plugin leaves the name empty. The empty name is not valid.
+		if s.Path[1] != "" {
+			name = directive.Schema{Plugin: s.Path[1], Name: directive.Name(s.Path[2])}.Canonical()
+		}
+	default:
+		u.Errorf(refused, s.Pos,
+			"a marker of the brand %s has %d names after the brand, but a directive has a name, "+
+				"or a plugin and a name", u.brand, len(s.Path)-1)
+		return true
+	}
+	if !name.Valid() {
+		u.Errorf(refused, s.Pos,
+			"a marker of the brand %s has the name %q, but a directive name is a letter followed by letters, "+
+				"digits, hyphens and underscores", u.brand, strings.Join(s.Path[1:], " "))
+		return true
+	}
+	if s.Refusal != "" {
+		u.Errorf(refused, s.Pos,
+			"the marker of the directive %s has an argument that is not a directive value: %s", name, s.Refusal)
+		return true
+	}
+	u.graph.Attach(subject, directive.Raw{Name: name, Args: s.Args, Pos: s.Pos})
+	return true
 }
 
 // DocLines filters lines the author already has clean: the

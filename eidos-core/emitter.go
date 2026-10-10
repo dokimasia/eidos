@@ -13,8 +13,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -129,6 +132,75 @@ func (*Emitter) JoinName(word, base string) string {
 // keeps, one allocation.
 func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 	return &emit.TemplateRef{Name: name, Data: data, Owner: e.rs.plugin}
+}
+
+// Type returns the reference of the plan's target for ref. owner is the
+// declaration with ref, such as the field whose type the generator
+// mirrors. Type reports false for a type without a spelling in the
+// target, after it reports the refusal. A nil ref returns nil and true.
+//
+// A reference in the language of the plan's target translates as
+// written, through [rules.EmitRef]. A reference to a type parameter
+// translates to a reference that has the parameter's name and no target.
+// Every other reference folds into its shape under the rules of owner's
+// language, over the invocation's view, so each declaration that the
+// fold reads records on the invocation. The plan's spoke spells the
+// shape under the plan's policy. When the spoke reads the choice of a
+// policy key, the policy first reads the key's value at directive
+// authority on owner, then on the match's subject, and then on owner's
+// package. The first value that it finds is the choice. Each of these
+// reads records on the invocation, so the invocation records the
+// overrides of the keys that the type depends on and no others.
+//
+// A refusal reports an Error under [RefusedType] at owner's position.
+// The message contains the target, the source spelling and the spoke's
+// reason. A plan whose backend does not implement a spoke refuses every
+// reference of another language.
+//
+// # Allocation contract
+//
+// Type allocates what [rules.EmitRef] allocates for a reference in the
+// target's language, and one reference for a type parameter. For any
+// other reference it allocates what the fold allocates and the reference
+// that the spoke returns. The fold allocates the binding's memo on the
+// invocation's first fold in the subject's language, and on every call
+// where owner's language is not the subject's. A refusal allocates its
+// message. The match makes its reader of overrides on its first
+// translation in a phase call, one allocation, and an override read
+// allocates only where the invocation's read set grows.
+func (e *Emitter) Type(owner symbol.Identity, ref *node.TypeRef) (*emit.TypeRef, bool) {
+	if ref == nil {
+		return nil, true
+	}
+	rs, m := e.rs, e.m
+	if owner.Lang == symbol.Lang(rs.target) {
+		return rules.EmitRef(ref), true
+	}
+	if ref.Target.Kind == symbol.KindTypeParam {
+		return &emit.TypeRef{Spelling: ref.Spelling}, true
+	}
+	if rs.types == nil {
+		rs.reportf(m.seq, RefusedType, diag.SeverityError, rs.positionOf(owner),
+			"the %s target cannot spell the %s type %s: the plan's backend does not implement a type spoke",
+			rs.target, owner.Lang, ref.Spelling)
+		return nil, false
+	}
+	var b rules.Bound
+	if owner.Lang == m.subject.Lang {
+		b = m.Rules()
+	} else {
+		b = m.RulesFor(owner.Lang)
+	}
+	shape := b.TypeOf(ref)
+	m.translating = owner
+	spelled, err := rs.types.SpellType(shape, rs.policy.Overridden(m.overrides()))
+	m.translating = symbol.Identity{}
+	if err != nil {
+		rs.reportf(m.seq, RefusedType, diag.SeverityError, rs.positionOf(owner),
+			"the %s target cannot spell the %s type %s: %v", rs.target, owner.Lang, ref.Spelling, err)
+		return nil, false
+	}
+	return spelled, true
 }
 
 // out resolves the family, buffers the accumulator's touch, and

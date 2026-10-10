@@ -319,6 +319,63 @@ func TestSettle(t *testing.T) {
 			assert.Equal(t, count.Name, "count", "the name is the emitted one")
 		})
 
+		// row is a declaration of the fixture language, which is another
+		// language than the backends' target.
+		row := settleOrigin("row", symbol.KindStruct)
+		translations := []struct {
+			name    string
+			backend plugin.Backend
+			give    *emit.TypeRef
+			want    bool
+		}{
+			{
+				name: "records a translated reference under a backend with a respell hook", backend: keeping(),
+				give: &emit.TypeRef{Spelling: "row", Target: row}, want: true,
+			},
+			{
+				name:    "records a translated reference under a backend with a lowering hook alone",
+				backend: lowering(func(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }),
+				give:    &emit.TypeRef{Spelling: "row", Target: row}, want: true,
+			},
+			{
+				name: "records a translated reference under a backend without hooks", backend: &hookless{},
+				give: &emit.TypeRef{Spelling: "row", Target: row}, want: true,
+			},
+			{
+				name: "records no translated reference for a target of the backend's language", backend: keeping(),
+				give: &emit.TypeRef{Spelling: "row", Target: symbol.Identity{Lang: symbol.Lang(settleTarget)}},
+				want: false,
+			},
+			{
+				name: "records no translated reference for a bare reference", backend: &hookless{},
+				give: &emit.TypeRef{Spelling: "row"}, want: false,
+			},
+		}
+		for _, tt := range translations {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				holder := &emit.Struct{Origin: settleOrigin("holder", symbol.KindStruct), Name: "holder"}
+				holder.Fields.Append(&emit.Field{Name: "next", Type: tt.give})
+				e := storeOf(t, settleUnit("svc", "svc/a.src", holder))
+				settled(t, e, tt.backend)
+				assert.Equal(t, e.Translates(), tt.want, "the store records whether a reference translates")
+			})
+		}
+
+		t.Run("records no translated reference of a withheld declaration", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &emit.Struct{Origin: settleOrigin("holder", symbol.KindStruct), Name: "holder"}
+			holder.Fields.Append(&emit.Field{Name: "next", Type: &emit.TypeRef{Spelling: "row", Target: row}})
+			e := storeOf(t, settleUnit("svc", "svc/a.src", holder))
+			refusing := respelling(func(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+				return "", errors.New("plugin_test: the target refuses " + name)
+			})
+			coretest.AssertCodes(t, settled(t, e, refusing), plugin.RefusedName)
+			assert.False(t, e.Translates(), "a withheld declaration renders no reference")
+		})
+
 		t.Run("lowers a construct into the target's shapes", func(t *testing.T) {
 			t.Parallel()
 
@@ -961,6 +1018,19 @@ func TestSettle(t *testing.T) {
 
 			assert.Equal(t, overridden(t, overrideName, meta.AuthorityPlugin), "Row",
 				"the hook spells the target's convention")
+		})
+
+		t.Run("replaces the hook's spelling with an override that ranks above a plugin's stamp", func(t *testing.T) {
+			t.Parallel()
+
+			origin := settleOrigin("row", symbol.KindStruct)
+			row := &emit.Struct{Origin: origin, Name: "row"}
+			facts, key := nameFacts(t)
+			stampName(t, facts, key, origin, "Row", meta.AuthorityPlugin)
+			stampName(t, facts, key, origin, overrideName, meta.AuthorityDirective)
+			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+			assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
+			assert.Equal(t, row.Name, overrideName, "the directive's name ranks above the stamp of the lowering entry")
 		})
 
 		t.Run("ignores an empty override", func(t *testing.T) {

@@ -592,6 +592,12 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 	}
 	switch t {
 	case TypeString:
+		if len(spec.Choices) > 0 && !slices.Contains(spec.Choices, raw.Text) {
+			v.report(BadSpelling, v.at,
+				"%s param %s takes one of %s, not %q",
+				name, spec.Key, strings.Join(spec.Choices, ", "), raw.Text)
+			return Value{}, false
+		}
 		return Value{Kind: TypeString, Str: raw.Text}, true
 	case TypeInt:
 		parsed, err := strconv.ParseInt(raw.Text, 10, 64)

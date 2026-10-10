@@ -53,6 +53,9 @@ type Pass struct {
 	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
 	coverage Coverage
+	// memberIndent is the language's [Language.MemberIndent], which the
+	// memberbody builtin writes before each line of a member's content.
+	memberIndent string
 }
 
 // Coverage returns the language's declared fact coverage, so a
@@ -161,7 +164,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		groups: groups, file: file, shared: shared,
 		vocab: l.Funcs, spell: l.Naming, split: l.Split, cluster: l.Cluster,
 		scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
-		coverage: l.Coverage,
+		coverage: l.Coverage, memberIndent: l.MemberIndent,
 	}, nil
 }
 
@@ -373,11 +376,12 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		f.vocab = p.vocab(&f.set)
 	}
 	builtins := template.FuncMap{
-		BuiltinBody:    f.body,
-		BuiltinUse:     f.use,
-		BuiltinImports: f.importsBlock,
-		BuiltinDecls:   f.decls,
-		BuiltinNested:  f.nested,
+		BuiltinBody:       f.body,
+		BuiltinMemberBody: f.memberBody,
+		BuiltinUse:        f.use,
+		BuiltinImports:    f.importsBlock,
+		BuiltinDecls:      f.decls,
+		BuiltinNested:     f.nested,
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(p.kinds))
 	for k, t := range p.kinds {

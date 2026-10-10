@@ -245,6 +245,30 @@ func (d *dirtySet) probe(id symbol.Identity) error {
 	return nil
 }
 
+// list adds an annotator's match to the pending records of its plugin,
+// so the plugin's phase call runs the match again where its gates admit
+// it. The pending record is the generation's record of the match where
+// the generation has one, and a record without reads or claims
+// otherwise. A match whose record is pending already leaves the pending
+// records as they are.
+//
+// Error modes: an error wrapping [state.ErrDamaged] for a record of the
+// generation that does not read whole.
+func (d *dirtySet) list(m plugin.MatchKey) error {
+	if _, pending := d.pending[m.Plugin][m]; pending {
+		return nil
+	}
+	inv, recorded, err := d.phases.Invocation("", m)
+	if err != nil {
+		return err
+	}
+	if !recorded {
+		inv = state.Invocation{Match: m}
+	}
+	d.join(inv)
+	return nil
+}
+
 // join adds an annotator invocation to the pending records of its
 // plugin, and a plan's invocation to the dirty records of its plan.
 func (d *dirtySet) join(inv state.Invocation) {

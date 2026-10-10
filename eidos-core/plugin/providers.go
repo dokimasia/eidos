@@ -45,6 +45,14 @@ type OutputProvider interface {
 	Outputs() []Output
 }
 
+// PolicyProvider declares the lowering policies that a backend's spoke
+// reads. The workspace resolves them for each plan of the backend, and
+// derives the target's policy keys and the params of the target's
+// directive from them.
+type PolicyProvider interface {
+	Policies() []PolicySpec
+}
+
 // CapabilityProvider orders a plugin: a priority per role,
 // plus the capability topology inside one priority bucket.
 type CapabilityProvider interface {

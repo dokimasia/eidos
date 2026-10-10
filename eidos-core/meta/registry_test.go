@@ -112,6 +112,17 @@ func TestRegistry(t *testing.T) {
 			assert.Contains(t, err.Error(), compositionName, "the error names the composition")
 		})
 
+		t.Run("returns nil for a namespace that its registrant claims again", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, r.For(shapePlugin).ClaimNamespace(shapeNamespace), "the first claim succeeds")
+			assert.NoError(t, r.For(shapePlugin).ClaimNamespace(shapeNamespace), "the repeated claim succeeds")
+			got, held := r.Claimant(shapeNamespace)
+			assert.True(t, held, "the namespace remains claimed")
+			assert.Equal(t, got, shapePlugin, "the registrant remains the claimant")
+		})
+
 		t.Run("returns an error for the empty namespace", func(t *testing.T) {
 			t.Parallel()
 
@@ -207,6 +218,86 @@ func TestRegistry(t *testing.T) {
 			assert.Contains(t, err.Error(), "the first claimant", "the error names the first spec")
 			assert.Contains(t, err.Error(), "the second claimant", "the error names the second spec")
 		})
+
+		t.Run("returns the handle of the first registration for an equal spec registered again", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			first, err := meta.Register[string](r, contractedRoleSpec(diag.SeverityError))
+			assert.NoError(t, err, "the first registration succeeds")
+			again, err := meta.Register[string](r, contractedRoleSpec(diag.SeverityError))
+			assert.NoError(t, err, "the repeated registration succeeds")
+			assert.Equal(t, again, first, "the repeated registration returns the first handle")
+			assert.Length(t, slices.Collect(r.Keys()), 1, "the registry keeps one key")
+			assert.Length(t, slices.Collect(r.Group("shape.writer")), 1, "the group keeps one member")
+		})
+
+		repeats := []struct {
+			name   string
+			first  meta.KeySpec
+			again  func(r *meta.Registry) error
+			marker string
+		}{
+			{
+				name:  "returns an error naming both value types for a key registered again under another type",
+				first: roleSpec(),
+				again: func(r *meta.Registry) error {
+					_, err := meta.Register[int64](r, roleSpec())
+					return err
+				},
+				marker: "the value types string and int64",
+			},
+			{
+				name:  "returns an error naming both kind lists for a key registered again with other kinds",
+				first: roleSpec(),
+				again: func(r *meta.Registry) error {
+					spec := roleSpec()
+					spec.Kinds = []symbol.Kind{symbol.KindStruct}
+					_, err := meta.Register[string](r, spec)
+					return err
+				},
+				marker: "the kinds [] and [" + symbol.KindStruct.String() + "]",
+			},
+			{
+				name:  "returns an error naming both groups for a key registered again into another group",
+				first: roleSpec(),
+				again: func(r *meta.Registry) error {
+					_, err := meta.Register[string](r, groupedRoleSpec())
+					return err
+				},
+				marker: `the groups "" and "shape.writer"`,
+			},
+			{
+				name:  "returns an error for a key registered again with a contract that the first lacks",
+				first: groupedRoleSpec(),
+				again: func(r *meta.Registry) error {
+					_, err := meta.Register[string](r, contractedRoleSpec(diag.SeverityError))
+					return err
+				},
+				marker: "two different completeness contracts",
+			},
+			{
+				name:  "returns an error for a key registered again with a contract of another severity",
+				first: contractedRoleSpec(diag.SeverityError),
+				again: func(r *meta.Registry) error {
+					_, err := meta.Register[string](r, contractedRoleSpec(diag.SeverityWarning))
+					return err
+				},
+				marker: "two different completeness contracts",
+			},
+		}
+		for _, tt := range repeats {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				r := claimed(t)
+				_, err := meta.Register[string](r, tt.first)
+				assert.NoError(t, err, "the first registration succeeds")
+				err = tt.again(r)
+				assert.HasError(t, err, "the repeated registration fails")
+				assert.Contains(t, err.Error(), tt.marker, "the error contains the difference")
+			})
+		}
 
 		t.Run("returns an error for a namespace nothing claimed", func(t *testing.T) {
 			t.Parallel()
@@ -529,6 +620,11 @@ func TestRegistryAllocs(t *testing.T) {
 	}, 0, "ClaimNamespace allocates nothing for a second namespace")
 	assert.NoError(t, err, "every second namespace is claimed")
 
+	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return claimed(t) }, func(r *meta.Registry) {
+		err = cmp.Or(err, r.ClaimNamespace(shapeNamespace))
+	}, 0, "ClaimNamespace allocates nothing for a namespace that its registrant claimed")
+	assert.NoError(t, err, "every repeated claim succeeds")
+
 	register := func(spec meta.KeySpec) func(*meta.Registry) {
 		return func(r *meta.Registry) {
 			_, rerr := meta.Register[string](r, spec)
@@ -541,6 +637,9 @@ func TestRegistryAllocs(t *testing.T) {
 	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return claimed(t) }, register(groupedRoleSpec()),
 		firstGroupedKeyAllocs, "Register allocates the group's entry and its member list beside the key's")
 	assert.NoError(t, err, "every grouped key registers")
+	assert.MaxAllocsWithSetup(t, func() *meta.Registry { return roleRegistered(t) }, register(roleSpec()),
+		0, "Register allocates nothing for an equal spec registered again")
+	assert.NoError(t, err, "every repeated registration succeeds")
 
 	assert.MaxAllocs(t, func() { built.Seal() }, 0, "Seal allocates nothing")
 
@@ -608,6 +707,7 @@ func BenchmarkRegistry(b *testing.B) {
 	}{
 		{name: "a first namespace", fresh: unclaimed, allocs: firstNamespaceAllocs},
 		{name: "a second namespace", fresh: claimedGen, allocs: 0},
+		{name: "a namespace that its registrant claimed", fresh: claimed, allocs: 0},
 	}
 	b.Run("ClaimNamespace", func(b *testing.B) {
 		for _, tt := range claims {
@@ -628,17 +728,19 @@ func BenchmarkRegistry(b *testing.B) {
 
 	registrations := []struct {
 		name   string
+		fresh  func(assert.TB) *meta.Registry
 		spec   meta.KeySpec
 		allocs uint64
 	}{
-		{name: "a first key", spec: roleSpec(), allocs: firstKeyAllocs},
-		{name: "a first key in a group", spec: groupedRoleSpec(), allocs: firstGroupedKeyAllocs},
+		{name: "a first key", fresh: claimed, spec: roleSpec(), allocs: firstKeyAllocs},
+		{name: "a first key in a group", fresh: claimed, spec: groupedRoleSpec(), allocs: firstGroupedKeyAllocs},
+		{name: "an equal spec registered again", fresh: roleRegistered, spec: roleSpec(), allocs: 0},
 	}
 	b.Run("Register", func(b *testing.B) {
 		for _, tt := range registrations {
 			b.Run(tt.name, func(b *testing.B) {
 				var r *meta.Registry
-				fresh := func() { r = claimed(b) }
+				fresh := func() { r = tt.fresh(b) }
 				c := bench.Start(b).MaxAllocs(tt.allocs)
 				defer c.End()
 				var (
@@ -753,6 +855,18 @@ func claimed(tb assert.TB) *meta.Registry {
 	return r
 }
 
+// roleRegistered returns the composition's handle on a registry in
+// which the composition claimed the shape and gen namespaces and
+// registered the role key outside a group.
+func roleRegistered(tb assert.TB) *meta.Registry {
+	tb.Helper()
+
+	r := claimed(tb)
+	_, err := meta.Register[string](r, roleSpec())
+	assert.NoError(tb, err, "the role key registers")
+	return r
+}
+
 // claimedGen returns the composition's handle on a registry in which
 // the composition claimed the gen namespace alone.
 func claimedGen(tb assert.TB) *meta.Registry {
@@ -783,4 +897,16 @@ func roleSpec() meta.KeySpec {
 // groupedRoleSpec returns the spec of the role key in the writer group.
 func groupedRoleSpec() meta.KeySpec {
 	return meta.KeySpec{Name: "shape.role", Group: "shape.writer", Doc: "the classified role"}
+}
+
+// contractedRoleSpec returns the spec of the role key in the writer
+// group, with a completeness contract of severity on every function by
+// the end of the annotate phase. Each call allocates its own contract,
+// so two specs compare by value.
+func contractedRoleSpec(severity diag.Severity) meta.KeySpec {
+	spec := groupedRoleSpec()
+	spec.Contract = &meta.Completeness{
+		On: []symbol.Kind{symbol.KindFunction}, By: diag.PhaseAnnotate, Severity: severity,
+	}
+	return spec
 }

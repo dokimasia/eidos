@@ -114,6 +114,12 @@ const (
 // it: listing Roles is what reserves it.
 const roleKey ParamKey = "role"
 
+// Valid reports whether the key is one whole identifier of the grammar.
+// An identifier is a letter followed by letters, digits, hyphens and
+// underscores. Registration refuses a schema with a key that is not
+// valid. Valid does not allocate.
+func (k ParamKey) Valid() bool { return isIdentifier(string(k)) }
+
 // ParamSpec declares one param a schema accepts: its spelling, its
 // type, and the conditions under which an instance must or may
 // write it.
@@ -139,6 +145,12 @@ type ParamSpec struct {
 	// for the param itself or for every element of a reference
 	// list.
 	Resolution ResolutionKind
+	// Choices closes a string param to the spellings it lists.
+	// Validation refuses another value under [BadSpelling], and the
+	// message lists the choices. Registration refuses choices on a
+	// param of another type, an empty choice and a repeated choice.
+	// Empty admits every string.
+	Choices []string
 	// Counterexample marks a param whose value names an input no
 	// derivation could invent. The kernel records the mark and
 	// reads nothing from it.

@@ -51,6 +51,10 @@ func TestCodes(t *testing.T) {
 			name: "UnderivedPackage", code: layout.UnderivedPackage, spelt: "EID-0054",
 			meaning: "a reference needs the package of a routed file, and none derives",
 		},
+		{
+			name: "UntranslatedReference", code: layout.UntranslatedReference, spelt: "EID-0070",
+			meaning: "a translated reference refers to a declaration that the plan does not emit",
+		},
 	}
 	for _, tt := range codes {
 		t.Run(tt.name, func(t *testing.T) {

@@ -27,7 +27,10 @@ const compositionName = "the composition"
 // registrations. A namespace belongs to the registrant whose handle
 // claimed it, and a key registers only into a namespace its own
 // registrant claimed, so no plugin registers keys under another
-// plugin's namespace or the kernel's.
+// plugin's namespace or the kernel's. A registrant that claims its
+// namespace again, or registers a key again under an equal spec,
+// repeats its registration, so the parts of one language register the
+// language's keys independently.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, which is single-threaded.
@@ -113,18 +116,20 @@ type Completeness struct {
 
 // ClaimNamespace claims a namespace for the handle's registrant.
 //
-// A namespace claimed twice is an error naming both registrants.
-// Every key registers into a claimed namespace, so a typo in a key's
-// namespace fails at registration and never reads as a new
-// namespace.
+// A namespace that two registrants claim is an error that contains both.
+// A claim of a namespace that the handle's registrant already claimed
+// returns nil and leaves the registry as it is. Every key registers into
+// a claimed namespace, so a typo in a key's namespace fails at
+// registration and never reads as a new namespace.
 //
 // Error modes: a claim after [Registry.Seal], the empty namespace, and
-// a namespace another claim took.
+// a namespace that another registrant claimed.
 //
 // # Allocation contract
 //
 // ClaimNamespace allocates only where the namespace map grows. The
-// registry's first claim allocates once.
+// registry's first claim allocates once, and a repeated claim allocates
+// nothing.
 func (r *Registry) ClaimNamespace(ns string) error {
 	if r.sealed {
 		return fmt.Errorf("meta: namespace %q is claimed after the seal: registration ends there", ns)
@@ -133,6 +138,9 @@ func (r *Registry) ClaimNamespace(ns string) error {
 		return errors.New("meta: the empty namespace names nothing to claim")
 	}
 	if held, taken := r.namespaces[ns]; taken {
+		if held == r.registrant {
+			return nil
+		}
 		return fmt.Errorf("meta: namespace %q is claimed twice: by %s and by %s",
 			ns, registrantName(held), registrantName(r.registrant))
 	}
@@ -140,15 +148,18 @@ func (r *Registry) ClaimNamespace(ns string) error {
 	return nil
 }
 
-// Register records a key and returns its typed handle.
+// Register records a key and returns its typed handle. A key that the
+// registrant registered before, under the same value type and an equal
+// spec, returns the handle of that registration and changes nothing.
 //
 // It refuses the following, with an error naming both claimants
 // where two exist:
 //   - a registration after [Registry.Seal];
 //   - a name without a claimed namespace or without a local part;
 //   - a name in a namespace another registrant claimed;
-//   - a name registered twice;
 //   - a spec without documentation;
+//   - a name registered again under another value type or another
+//     spec, with an error that contains the first difference;
 //   - a key and a group with one spelling, in either registration
 //     order. A meta drop names a key or a group by its spelling, so
 //     one spelling must name one of them.
@@ -162,7 +173,7 @@ func (r *Registry) ClaimNamespace(ns string) error {
 // list, the type list and the name map, and for a key in a group the
 // growth of the group map and of the group's member list. The first key
 // of a registry allocates three times outside a group and five times in
-// one.
+// one. A repeated registration of an equal spec allocates nothing.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	if r.sealed {
 		return Key[T]{}, fmt.Errorf("meta: key %q registers after the seal: registration ends there", s.Name)
@@ -192,8 +203,10 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 		)
 	}
 	if held, taken := r.byName[s.Name]; taken {
-		return Key[T]{}, fmt.Errorf("meta: key %q is registered twice: %q and %q",
-			s.Name, r.specs[held-1].Doc, s.Doc)
+		if difference := specDifference(r.types[held-1], r.specs[held-1], reflect.TypeFor[T](), s); difference != "" {
+			return Key[T]{}, fmt.Errorf("meta: key %q is registered twice with %s", s.Name, difference)
+		}
+		return Key[T]{id: held, name: s.Name}, nil
 	}
 	if _, grouped := r.groups[GroupName(s.Name)]; grouped {
 		return Key[T]{}, fmt.Errorf("meta: key %q spells a registered group", s.Name)
@@ -304,4 +317,37 @@ func registrantName(registrant string) string {
 		return compositionName
 	}
 	return strconv.Quote(registrant)
+}
+
+// specDifference returns the first difference of a repeated
+// registration from the kept registration. It compares the docs, the
+// value types, the kinds, the groups and the completeness contracts, in
+// that order. It returns the empty string for an equal registration,
+// and allocates only the text of a difference.
+func specDifference(heldType reflect.Type, held KeySpec, t reflect.Type, s KeySpec) string {
+	if held.Doc != s.Doc {
+		return fmt.Sprintf("the docs %q and %q", held.Doc, s.Doc)
+	}
+	if heldType != t {
+		return fmt.Sprintf("the value types %s and %s", heldType, t)
+	}
+	if !slices.Equal(held.Kinds, s.Kinds) {
+		return fmt.Sprintf("the kinds %v and %v", held.Kinds, s.Kinds)
+	}
+	if held.Group != s.Group {
+		return fmt.Sprintf("the groups %q and %q", held.Group, s.Group)
+	}
+	if !sameContract(held.Contract, s.Contract) {
+		return "two different completeness contracts"
+	}
+	return ""
+}
+
+// sameContract reports whether two completeness contracts are equal:
+// both absent, or both present with the same kinds, phase and severity.
+func sameContract(a, b *Completeness) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return slices.Equal(a.On, b.On) && a.By == b.By && a.Severity == b.Severity
 }

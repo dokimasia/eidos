@@ -129,13 +129,15 @@ func TestKernel(t *testing.T) {
 			assert.Contains(t, err.Error(), meta.KernelOwner, "the error names the kernel")
 		})
 
-		t.Run("returns an error naming the kernel for a second registration", func(t *testing.T) {
+		t.Run("returns the handles of the first registration for a second registration", func(t *testing.T) {
 			t.Parallel()
 
-			r, _, _ := kernelFixture(t)
-			_, err := meta.Kernel(r)
-			assert.HasError(t, err, "the second registration fails")
-			assert.Contains(t, err.Error(), meta.KernelOwner, "the error names the kernel")
+			r := meta.NewRegistry()
+			first, err := meta.Kernel(r)
+			assert.NoError(t, err, "the first registration succeeds")
+			again, err := meta.Kernel(r)
+			assert.NoError(t, err, "the second registration succeeds")
+			assert.Equal(t, again, first, "the second registration returns the same handles")
 		})
 
 		t.Run("returns an error naming the plugin that claimed the kernel namespace", func(t *testing.T) {

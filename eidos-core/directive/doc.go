@@ -77,6 +77,17 @@
 // [ReservedOut] and [ReservedTag] are admitted on every directive, and
 // no plugin schema may claim them.
 //
+// The directive of each rendering target belongs to the kernel too.
+// [Registry.RegisterTarget] records it under the target's spelling,
+// such as typescript, and the registry then treats that spelling as a
+// kernel name.
+//
+// # Closed choices
+//
+// A string param with [ParamSpec.Choices] admits the spellings in the
+// list and no other. [Validate] reports another value under
+// [BadSpelling], and the message lists the choices.
+//
 // # Failure semantics
 //
 // [Parse] and [Registry.Register] return errors: their callers are

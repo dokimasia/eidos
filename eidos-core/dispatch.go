@@ -87,6 +87,12 @@ type phaseCall struct {
 	// on, keyed by plan name, which every lane reads and none writes. An
 	// annotator's phase call has none.
 	exports map[string]plugin.ExportDoc
+	// target, types and policy are the target of a generator's plan, the
+	// spoke of the plan's backend and the plan's resolved policy, which
+	// [Emitter.Type] translates with. An annotator's phase call has none.
+	target plugin.Target
+	types  plugin.TypeSpeller
+	policy plugin.Policy
 	// journal receives the call's records once its effects apply, and is
 	// nil for a call that keeps none.
 	journal plugin.Journal

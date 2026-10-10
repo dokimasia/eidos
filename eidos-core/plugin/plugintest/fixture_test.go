@@ -14,10 +14,20 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/plugin/plugintest"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The target of the translation cases, the key of its one policy, and
+// the policy's choices.
+const (
+	tsxTarget plugin.Target    = "tsx"
+	widthKey  plugin.PolicyKey = "tsx.width"
+	narrow    plugin.Choice    = "narrow"
+	wide      plugin.Choice    = "wide"
 )
 
 // keyRecorder is a journal that keeps the match key of every
@@ -29,6 +39,17 @@ func (r *keyRecorder) Invoked(inv plugin.Invocation) { r.keys = append(r.keys, i
 
 // Evaluated keeps nothing: the cases name no candidate.
 func (*keyRecorder) Evaluated(symbol.Identity, []plugin.MatchKey) {}
+
+// choiceSpoke is a spoke that spells every shape as the choice of
+// widthKey under the policy that it receives.
+type choiceSpoke struct{}
+
+var _ plugin.TypeSpeller = choiceSpoke{}
+
+// SpellType spells the shape as the policy's choice of widthKey.
+func (choiceSpoke) SpellType(_ rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	return &emit.TypeRef{Spelling: string(p.Choice(widthKey))}, nil
+}
 
 // The fixture is the run's read side built by hand, so what a
 // phase call sees through it is contract: loaded packages,
@@ -222,6 +243,49 @@ func TestFixture(t *testing.T) {
 			assert.Equal(t, kernel.Module.Name(), meta.ModuleKey, "under the kernel's own names")
 			assert.Empty(t, slices.Collect(r.Sink.All()),
 				"a registered language binds without the absent-rules warning")
+		})
+
+		// translated runs a generator over f whose handler translates a
+		// reference to beta on alpha, and returns what the translation
+		// returned.
+		translated := func(tb assert.TB, f *plugintest.Fixture, alpha, beta symbol.Identity) *emit.TypeRef {
+			tb.Helper()
+
+			var got *emit.TypeRef
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					if m.Struct.ID == alpha {
+						got, _ = e.Type(alpha, &node.TypeRef{Spelling: beta.Name, Target: beta})
+					}
+					return nil
+				})).
+				Build()
+			assert.NoError(tb, f.Generate(tb, p).Err, "the phase call passes")
+			return got
+		}
+
+		t.Run("hands the call the fixture's target", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, beta := twoStructs(t)
+			f.Target = plugin.Target(coretest.Lang)
+			got := translated(t, f, alpha.ID, beta.ID)
+			assert.Equal(t, got, &emit.TypeRef{Spelling: beta.Name, Target: beta.ID},
+				"a plan of the fixture's language translates its references as written")
+		})
+
+		t.Run("hands the call the fixture's spoke under the fixture's policy", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, beta := twoStructs(t)
+			policy, err := plugin.NewPolicy(tsxTarget, []plugin.PolicySpec{{
+				Key: widthKey, Choices: []plugin.Choice{narrow, wide}, Default: wide, Doc: "the width of an integer",
+			}}, nil)
+			assert.NoError(t, err, "the policy resolves")
+			f.Target, f.Types, f.Policy = tsxTarget, choiceSpoke{}, policy
+			got := translated(t, f, alpha.ID, beta.ID)
+			assert.NotNil(t, got, "the spoke spells the reference")
+			assert.Equal(t, got.Spelling, string(wide), "the spoke reads the policy's choice")
 		})
 
 		t.Run("refuses a plugin without the role", func(t *testing.T) {

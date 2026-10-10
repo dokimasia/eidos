@@ -11,6 +11,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// lineBreak ends a line. One more line break before a declaration that
+// follows another puts a blank line between them.
+const lineBreak = '\n'
+
 // declRun renders one unit's declarations: what the language's
 // Cluster gathers renders through the group templates, each
 // cluster at the position of its first member, and the rest
@@ -76,7 +80,7 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) bool {
 			d.Kind(), u.Plugin, err)
 		return false
 	}
-	f.out.Write(f.scratch.Bytes())
+	f.adopt()
 	return true
 }
 
@@ -118,8 +122,20 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) bool {
 			c.Group, u.Plugin, err)
 		return false
 	}
-	f.out.Write(f.scratch.Bytes())
+	f.adopt()
 	return true
+}
+
+// adopt writes the declaration that scratch contains into the file. A
+// declaration that follows another starts after a blank line, so the
+// declarations of a file are separated by one blank line. A formatter
+// that collapses blank lines keeps one, and the language's own printer
+// decides where it prints its own.
+func (f *frame) adopt() {
+	if f.out.Len() > 0 {
+		f.out.WriteByte(lineBreak)
+	}
+	f.out.Write(f.scratch.Bytes())
 }
 
 // guard reports the stated facts the declared coverage refuses or
@@ -168,27 +184,30 @@ func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	if err := t.Execute(&out, s); err != nil {
 		return "", err
 	}
-	return indented(out.String(), indent), nil
+	return strings.TrimSuffix(indented(out.String(), indent), string(lineBreak)), nil
 }
 
-// indented prefixes every non-empty line and drops the trailing
-// line break, keeping blank lines bare, so an indented block has
-// no trailing spaces.
+// indented prefixes every line of text that is not blank with indent,
+// and keeps the line breaks, so a blank line has no trailing spaces. It
+// allocates the indented text once, and nothing for an empty indent or
+// a text without a line that is not blank.
 func indented(text, indent string) string {
-	text = strings.TrimSuffix(text, "\n")
-	if text == "" {
-		return ""
+	lines := 0
+	for line := range strings.Lines(text) {
+		if line != string(lineBreak) {
+			lines++
+		}
 	}
-	lines := strings.Split(text, "\n")
+	if lines == 0 || indent == "" {
+		return text
+	}
 	var b strings.Builder
-	for i, line := range lines {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		if line != "" {
+	b.Grow(len(text) + lines*len(indent))
+	for line := range strings.Lines(text) {
+		if line != string(lineBreak) {
 			b.WriteString(indent)
-			b.WriteString(line)
 		}
+		b.WriteString(line)
 	}
 	return b.String()
 }

@@ -472,6 +472,9 @@ func (r *warmRun) annotate(ctx context.Context) error {
 			return err
 		}
 		whole, direct, err := r.phases.Invocation("", plugin.MatchKey{Plugin: s.name, Rule: plugin.WholeCall})
+		if err == nil {
+			err = r.listPackages(s)
+		}
 		if err != nil {
 			return err
 		}
@@ -592,6 +595,28 @@ func (r *warmRun) annotateSelected(ix *plugin.Index, s annEntry, counted *tally)
 	sel := &plugin.Selection{Matches: keys, Candidates: candidates}
 	err := r.w.annotateCall(ix, s, r.facts, r.sink, counted, journal, sel, false)
 	return append(touched, journal.facts...), true, err
+}
+
+// listPackages lists the package match of a lowering entry for each
+// package that the load changed: a package with a member that appeared,
+// disappeared or changed, and a package whose own fields, directives or
+// stamps changed. The entry's call then stamps the names of each such
+// package again, where a plan of the entry's target admits the package.
+// The match of a package that the generation did not record lists a
+// record without reads or claims. A plugin's annotator lists nothing.
+//
+// Error modes: an error wrapping [state.ErrDamaged] for a record of the
+// generation that does not read whole.
+func (r *warmRun) listPackages(s annEntry) error {
+	if _, lowers := s.run.(*lowering); !lowers {
+		return nil
+	}
+	for _, p := range r.changes.Packages {
+		if err := r.dirty.list(plugin.MatchKey{Plugin: s.name, Rule: rulePackage, Subject: p}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // drop drops the generation's record of an annotator invocation that the

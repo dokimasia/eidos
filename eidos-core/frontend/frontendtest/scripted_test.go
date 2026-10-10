@@ -333,13 +333,26 @@ func TestScripted(t *testing.T) {
 			assert.True(t, held, "the key has the name the stamps write")
 		})
 
-		t.Run("returns an error naming a namespace claimed twice", func(t *testing.T) {
+		t.Run("registers again through the same registrant", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
 			assert.NoError(t, frontendtest.ScriptedKeys(r), "the first registration succeeds")
-			err := frontendtest.ScriptedKeys(r)
-			assert.HasError(t, err, "the second registration fails")
+			first, held := r.Resolve(frontendtest.ScriptedTestKey)
+			assert.True(t, held, "the first registration registers the key")
+			assert.NoError(t, frontendtest.ScriptedKeys(r), "the repeated registration succeeds")
+			again, held := r.Resolve(frontendtest.ScriptedTestKey)
+			assert.True(t, held, "the key remains registered")
+			assert.Equal(t, again, first, "the repeated registration keeps the key's id")
+		})
+
+		t.Run("returns an error naming the namespace for a claim of another registrant", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, frontendtest.ScriptedKeys(r), "the composition's registration succeeds")
+			err := frontendtest.ScriptedKeys(r.For("rival"))
+			assert.HasError(t, err, "the rival's registration fails")
 			assert.Contains(t, err.Error(), "fake", "the error names the namespace")
 		})
 	})

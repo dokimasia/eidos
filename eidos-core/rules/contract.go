@@ -49,7 +49,9 @@ type SourceRules interface {
 	// Builtin projects a named reference the resolution step left
 	// without a target: a builtin, a well-known type, an external.
 	// It returns [symbol.FormOpaque] for a spelling it cannot
-	// classify.
+	// classify. Where it returns a structural form without children
+	// for a reference with type arguments, the kernel's fold takes the
+	// folded arguments as the form's children.
 	Builtin(ref *node.TypeRef, v View) TypeShape
 
 	// Resolve returns the declaration a human's spelling names in a

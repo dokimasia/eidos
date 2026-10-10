@@ -125,9 +125,12 @@ func IsWellKnown(id symbol.Identity) bool {
 // same form with its children folded, a named reference to a type
 // parameter folds to Opaque, a named reference with a target the
 // view contains classifies by the declaration it names, and a named
-// reference without a target goes to the language's Builtin. It is
-// total and never panics. A reference in the memo returns its shape and
-// allocates nothing. A first fold allocates as [Bound.TypeOf] states.
+// reference without a target goes to the language's Builtin. Where the
+// Builtin returns a structural form without children for a reference
+// with type arguments, the folded arguments become the form's children.
+// It is total and never panics. A reference in the memo returns its
+// shape and allocates nothing. A first fold allocates what the
+// allocation contract of [Bound.TypeOf] lists.
 func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 	if ref == nil {
 		return Opaque(nil)
@@ -148,23 +151,10 @@ func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 // list of its children, and Bytes allocates none.
 func (b Bound) fold(ref *node.TypeRef) TypeShape {
 	if ref.Form.Structural() && ref.Form != symbol.FormNamed {
-		if ref.Form == symbol.FormList && len(ref.Elems) == 1 && isByte(b.typeOf(ref.Elems[0])) {
-			// A list of eight-bit unsigned scalars folds to Bytes, the
-			// one rule beyond structure, so Go's []byte, Java's byte[]
-			// and Rust's Vec<u8> project alike.
-			return TypeShape{Form: symbol.FormBytes, Spelling: ref.Spelling}
-		}
-		s := TypeShape{
+		return b.children(TypeShape{
 			Form: ref.Form, Spelling: ref.Spelling,
 			Length: ref.Length, Split: ref.Split, Variance: ref.Variance,
-		}
-		if len(ref.Elems) > 0 {
-			s.Elems = make([]TypeShape, 0, len(ref.Elems))
-			for _, child := range ref.Elems {
-				s.Elems = append(s.Elems, b.typeOf(child))
-			}
-		}
-		return s
+		}, ref.Elems)
 	}
 	if ref.Target.Kind == symbol.KindTypeParam {
 		// A type parameter's shape is its argument's, which a use of
@@ -179,7 +169,32 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		// one the graph never contained, and the read is recorded.
 		return Opaque(ref)
 	}
-	return b.source.Builtin(ref, b.view)
+	s := b.source.Builtin(ref, b.view)
+	if len(ref.Args) == 0 || len(s.Elems) > 0 || !s.Form.Structural() {
+		return s
+	}
+	if !takes(s.Form, len(ref.Args)) {
+		return Opaque(ref)
+	}
+	return b.children(s, ref.Args)
+}
+
+// children returns s with each of refs folded as its children, in order.
+// A list whose one child folds to the eight-bit unsigned scalar folds to
+// Bytes, the one rule beyond structure, so Go's []byte, Java's byte[] and
+// Rust's Vec<u8> project alike. A shape without refs has no list of
+// children.
+func (b Bound) children(s TypeShape, refs []*node.TypeRef) TypeShape {
+	if s.Form == symbol.FormList && len(refs) == 1 && isByte(b.typeOf(refs[0])) {
+		return TypeShape{Form: symbol.FormBytes, Spelling: s.Spelling}
+	}
+	if len(refs) > 0 {
+		s.Elems = make([]TypeShape, 0, len(refs))
+		for _, child := range refs {
+			s.Elems = append(s.Elems, b.typeOf(child))
+		}
+	}
+	return s
 }
 
 // classify returns the shape of a reference to a declaration the
@@ -202,4 +217,22 @@ func (b Bound) classify(ref *node.TypeRef, decl symbol.Symbol) TypeShape {
 // isByte reports whether a shape is the eight-bit unsigned scalar.
 func isByte(s TypeShape) bool {
 	return s.Form == symbol.FormScalar && s.Class == ScalarUint && s.Bits == 8
+}
+
+// takes reports whether a structural form takes n type arguments as its
+// children. An optional, a list, an array, a stream and a borrow take
+// one, and a map takes two. A tuple, a union and an intersection take
+// every argument as a member. A function, a wildcard, an inline form and
+// a named form take none.
+func takes(f symbol.TypeForm, n int) bool {
+	switch f {
+	case symbol.FormOptional, symbol.FormList, symbol.FormArray, symbol.FormStream, symbol.FormBorrow:
+		return n == 1
+	case symbol.FormMap:
+		return n == 2
+	case symbol.FormTuple, symbol.FormUnion, symbol.FormIntersection:
+		return true
+	default:
+		return false
+	}
 }

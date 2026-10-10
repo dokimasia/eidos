@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
@@ -44,6 +45,45 @@ func (b bytesLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 		return rules.Scalar(ref.Spelling, rules.ScalarUint, 8)
 	}
 	return b.SourceRules.Builtin(ref, v)
+}
+
+// The library types of genericLang, each of which takes type arguments.
+const (
+	arraySpelling   = "Array"
+	recordSpelling  = "Record"
+	pairSpelling    = "Pair"
+	fnSpelling      = "Fn"
+	wrappedSpelling = "Wrapped"
+)
+
+// genericLang classifies library types that take type arguments, as a
+// language's Builtin classifies TypeScript's Array and Record. It returns
+// Array as a list, Record as a map, Pair as a tuple and Fn as a function,
+// each without children, and Wrapped as an optional with a child of text.
+// It hands every other spelling to the rules that it wraps.
+type genericLang struct {
+	rules.SourceRules
+}
+
+// Builtin classifies the library types and hands the rest on.
+func (g genericLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	switch ref.Spelling {
+	case arraySpelling:
+		return rules.TypeShape{Form: symbol.FormList, Spelling: ref.Spelling}
+	case recordSpelling:
+		return rules.TypeShape{Form: symbol.FormMap, Spelling: ref.Spelling}
+	case pairSpelling:
+		return rules.TypeShape{Form: symbol.FormTuple, Spelling: ref.Spelling}
+	case fnSpelling:
+		return rules.TypeShape{Form: symbol.FormFunc, Spelling: ref.Spelling}
+	case wrappedSpelling:
+		return rules.TypeShape{
+			Form: symbol.FormOptional, Spelling: ref.Spelling,
+			Elems: []rules.TypeShape{rules.Leaf(symbol.FormText, strSpelling)},
+		}
+	default:
+		return g.SourceRules.Builtin(ref, v)
+	}
 }
 
 // counting counts how often the language's Builtin is asked.
@@ -165,6 +205,87 @@ func TestShape(t *testing.T) {
 			assert.Equal(t, b.TypeOf(builtin(unknownName)).Form, symbol.FormOpaque, "an unknown spelling is opaque")
 			assert.Equal(t, b.TypeOf(builtin(unknownName)).Spelling, unknownName, "with its spelling")
 		})
+
+		generics := []struct {
+			name     string
+			give     *node.TypeRef
+			form     symbol.TypeForm
+			children []symbol.TypeForm
+		}{
+			{
+				name: "folds the type argument of a builtin list into its child",
+				give: &node.TypeRef{Spelling: arraySpelling, Args: []*node.TypeRef{builtin(intSpelling)}},
+				form: symbol.FormList, children: []symbol.TypeForm{symbol.FormScalar},
+			},
+			{
+				name: "folds the type arguments of a builtin map into its key and its value",
+				give: &node.TypeRef{
+					Spelling: recordSpelling, Args: []*node.TypeRef{builtin(strSpelling), builtin(intSpelling)},
+				},
+				form: symbol.FormMap, children: []symbol.TypeForm{symbol.FormText, symbol.FormScalar},
+			},
+			{
+				name: "folds every type argument of a builtin tuple into a member",
+				give: &node.TypeRef{
+					Spelling: pairSpelling,
+					Args:     []*node.TypeRef{builtin(intSpelling), builtin(strSpelling), builtin(boolSpelling)},
+				},
+				form:     symbol.FormTuple,
+				children: []symbol.TypeForm{symbol.FormScalar, symbol.FormText, symbol.FormBool},
+			},
+			{
+				name: "folds a builtin list of the eight-bit unsigned scalar to bytes",
+				give: &node.TypeRef{Spelling: arraySpelling, Args: []*node.TypeRef{builtin("byte")}},
+				form: symbol.FormBytes,
+			},
+			{
+				name: "folds a builtin list with two type arguments to opaque",
+				give: &node.TypeRef{
+					Spelling: arraySpelling, Args: []*node.TypeRef{builtin(intSpelling), builtin(intSpelling)},
+				},
+				form: symbol.FormOpaque,
+			},
+			{
+				name: "folds a builtin map with one type argument to opaque",
+				give: &node.TypeRef{Spelling: recordSpelling, Args: []*node.TypeRef{builtin(strSpelling)}},
+				form: symbol.FormOpaque,
+			},
+			{
+				name: "folds a builtin function with a type argument to opaque",
+				give: &node.TypeRef{Spelling: fnSpelling, Args: []*node.TypeRef{builtin(intSpelling)}},
+				form: symbol.FormOpaque,
+			},
+			{
+				name: "keeps the children of a builtin shape that has them",
+				give: &node.TypeRef{Spelling: wrappedSpelling, Args: []*node.TypeRef{builtin(intSpelling)}},
+				form: symbol.FormOptional, children: []symbol.TypeForm{symbol.FormText},
+			},
+			{
+				name: "keeps a builtin leaf for a reference with type arguments",
+				give: &node.TypeRef{Spelling: intSpelling, Args: []*node.TypeRef{builtin(strSpelling)}},
+				form: symbol.FormScalar,
+			},
+			{
+				name: "returns the builtin shape of a reference without type arguments",
+				give: builtin(arraySpelling),
+				form: symbol.FormList,
+			},
+		}
+		for _, tt := range generics {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				b := rules.NewBound(genericLang{bytesLang{scripted()}}, viewOnly(t), nil)
+				s := b.TypeOf(tt.give)
+				var children []symbol.TypeForm
+				for _, child := range s.Elems {
+					children = append(children, child.Form)
+				}
+				expect.Equal(t, s.Form, tt.form, "the form is the language's, or opaque for a count it does not take")
+				expect.Equal(t, children, tt.children, "the children are the folded arguments")
+				expect.Equal(t, s.Spelling, tt.give.Spelling, "the shape keeps the reference's spelling")
+			})
+		}
 
 		t.Run("folds a nil reference to opaque", func(t *testing.T) {
 			t.Parallel()

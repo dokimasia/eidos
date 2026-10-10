@@ -30,6 +30,13 @@ const (
 	rowSource = "package svc/store\nimport api svc/api\ntype Row api.User int string\nmethod Put int\nconst rowmax\n"
 )
 
+// keyedScripted is the scripted frontend that registers its
+// classification keys through its own role.
+type keyedScripted struct{ *frontendtest.Scripted }
+
+// Keys registers the scripted classification keys.
+func (keyedScripted) Keys(r *meta.Registry) error { return frontendtest.ScriptedKeys(r) }
+
 // The loaded fixture is the suite's entry for a satellite: a tree
 // through its frontend, the kernel's keys and the load's stamps.
 func TestLoaded(t *testing.T) {
@@ -53,12 +60,21 @@ func TestLoaded(t *testing.T) {
 			assert.False(t, f.Keys.IsZero(), "the kernel's keys are registered")
 		})
 
-		t.Run("registers the language's keys", func(t *testing.T) {
+		t.Run("registers the fixture's keys", func(t *testing.T) {
 			t.Parallel()
 
 			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), frontendtest.ScriptedKeys)
 			_, held := f.Facts.Registry().Resolve(frontendtest.ScriptedTestKey)
 			assert.True(t, held, "the language's key is registered")
+		})
+
+		t.Run("registers the frontend's keys under its language's spelling", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, keyedScripted{frontendtest.NewScripted()}, scriptedTree())
+			claimant, claimed := f.Facts.Registry().Claimant(frontendtest.ScriptedTestKey.Namespace())
+			assert.True(t, claimed, "the frontend claims its namespace")
+			assert.Equal(t, claimant, string(frontendtest.ScriptedLang), "the language's spelling claims the namespace")
 		})
 
 		t.Run("reads a carrier written under the suite's brand", func(t *testing.T) {

@@ -71,9 +71,10 @@ func sampled() []symbol.Kind {
 
 // Kernel claims the kernel namespace as [KernelOwner] and registers
 // the kernel's keys through that registrant's handle, whichever
-// handle it is given. It refuses, with the registry's own errors, a
-// namespace already claimed and a key already registered, which is
-// what a composition registering it twice reads.
+// handle it is given. A second call on one registry repeats the
+// registration and returns the same handles. It refuses, with the
+// registry's own error, a kernel namespace that another registrant
+// claimed.
 //
 // # Allocation contract
 //

@@ -100,6 +100,29 @@ func TestFingerprint(t *testing.T) {
 			assert.NotEqual(t, w2.Fingerprint(), w1.Fingerprint(), "two compositions never read one generation")
 		})
 
+		// selecting returns the fingerprint of the policy composition with
+		// the config's selection.
+		selecting := func(t *testing.T, selection map[plugin.PolicyKey]plugin.Choice) []byte {
+			t.Helper()
+
+			b, _ := policyPlans(t)
+			return built(t, b.Config(workspace.Config{Policies: selection})).Fingerprint()
+		}
+
+		t.Run("returns other bytes for another policy selection", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, selecting(t, map[plugin.PolicyKey]plugin.Choice{widthKey: wide}), selecting(t, nil),
+				"a changed selection runs cold")
+		})
+
+		t.Run("returns the same bytes for a selection of a policy's default", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, selecting(t, map[plugin.PolicyKey]plugin.Choice{widthKey: narrow}), selecting(t, nil),
+				"the resolved policy is unchanged")
+		})
+
 		// edited returns the fingerprint of the valid composition with a
 		// second plan the edit changes, and the checks.
 		edited := func(t *testing.T, edit func(*workspace.Plan), checks ...plugin.WorkspaceCheck) []byte {

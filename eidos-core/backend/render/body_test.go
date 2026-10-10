@@ -48,8 +48,18 @@ const (
 	// firstName and secondName name the functions two plugins emit.
 	firstName  = "First"
 	secondName = "Second"
-	// verbatim is a verbatim body's text.
-	verbatim = "\treturn nil\n"
+	// verbatim is a verbatim body's text, openVerbatim is one without
+	// its trailing line break, and splitVerbatim is two of them with a
+	// blank line between.
+	verbatim      = "\treturn nil\n"
+	openVerbatim  = "\treturn nil"
+	splitVerbatim = verbatim + "\n" + verbatim
+	// memberIndent is the member indent of the member language, which
+	// the memberbody builtin writes before each line of a member's
+	// content, and memberOpen the start of a method that the member
+	// language renders.
+	memberIndent = "\t"
+	memberOpen   = "func (r) " + handleName + "() {\n"
 )
 
 // A declaration renders with its whole body or not at all, so the
@@ -100,6 +110,106 @@ func TestBody(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Contains(t, string(files[0].Body), verbatim, "the text arrives unchanged")
 		})
+
+		// member is the fixture language with a member indent and a
+		// method template that places its content through the memberbody
+		// builtin, as a host's template does for a member.
+		member := func() render.Language {
+			l := language()
+			l.MemberIndent = memberIndent
+			l.Kinds[symbol.KindMethod] = memberOpen + action(render.BuiltinMemberBody, ".") + "}\n"
+			return l
+		}
+
+		t.Run("renders each line of a member's body behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, member(), seeded(t,
+				method(storeKey, handleName, emit.Body{Stmts: []emit.Stmt{call(contentCall)}})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), memberOpen+memberIndent+stmt(contentCall)+"}\n",
+				"the statement is one level deeper")
+		})
+
+		t.Run("renders each line of a member's body in its fixed composition behind the member indent",
+			func(t *testing.T) {
+				t.Parallel()
+
+				body := emit.Body{Stmts: []emit.Stmt{call(contentCall)}}
+				body.Prologue.Append(call(proCall))
+				files, sink := runPass(t, member(), seeded(t, method(storeKey, handleName, body)))
+				coretest.AssertCodes(t, sink)
+				assert.Equal(t, string(files[0].Body),
+					memberOpen+memberIndent+stmt(proCall)+memberIndent+stmt(contentCall)+"}\n",
+					"each statement is one level deeper")
+			})
+
+		t.Run("renders a blank line of a member's body without the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, member(), seeded(t,
+				method(storeKey, handleName, emit.Body{Verbatim: splitVerbatim})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), memberOpen+memberIndent+verbatim+"\n"+memberIndent+verbatim+"}\n",
+				"the blank line has no trailing spaces")
+		})
+
+		t.Run("renders an empty member body as nothing", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, member(), seeded(t, method(storeKey, handleName, emit.Body{})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), memberOpen+"}\n", "the member indent adds no line")
+		})
+
+		t.Run("renders a member body without a trailing line break without one", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, member(), seeded(t,
+				method(storeKey, handleName, emit.Body{Verbatim: openVerbatim})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), memberOpen+memberIndent+openVerbatim+"}\n",
+				"the member indent adds no line break")
+		})
+
+		t.Run("renders a member body as the body in a language without a member indent", func(t *testing.T) {
+			t.Parallel()
+
+			l := member()
+			l.MemberIndent = ""
+			files, sink := runPass(t, l, seeded(t,
+				method(storeKey, handleName, emit.Body{Stmts: []emit.Stmt{call(contentCall)}})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), memberOpen+stmt(contentCall)+"}\n",
+				"the statement keeps the scaffold's depth")
+		})
+
+		t.Run("renders a reference template of a member's body behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			e := seeded(t, method(storeKey, handleName, refBody()))
+			pass, err := render.New(passName, member())
+			assert.NoError(t, err, "the language composes")
+			sink := diag.NewSink()
+			files, err := pass.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, pass), Trees: refTree(stmt(midCall) + slots),
+				Sink: sink, Plugin: passName,
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), memberOpen+memberIndent+stmt(midCall)+"}\n",
+				"the template's statement is one level deeper")
+		})
+
+		t.Run("reports RefusedTemplate for a member body placed on a declaration that is not a method",
+			func(t *testing.T) {
+				t.Parallel()
+
+				l := member()
+				l.Kinds[symbol.KindStruct] = structTpl + action(render.BuiltinMemberBody, ".")
+				_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+				coretest.AssertCodes(t, sink, render.RefusedTemplate)
+			})
 
 		twoForms := func() emit.Body {
 			var body emit.Body
@@ -251,6 +361,7 @@ func TestBody(t *testing.T) {
 			assert.Length(t, files, 1, "both units share one file")
 			assert.Equal(t, string(files[0].Body),
 				"func "+firstName+"() {\n"+stmt(earlyCall)+"}\n"+
+					"\n"+
 					"func "+secondName+"() {\n"+stmt(lateCall)+"}\n",
 				"each body renders its own emitter's template")
 		})

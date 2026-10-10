@@ -34,6 +34,7 @@ func (declared) Provides() []plugin.Capability { return []plugin.Capability{"a"}
 func (declared) Requires() []plugin.Capability { return []plugin.Capability{"b"} }
 func (declared) Options() any                  { return nil }
 func (declared) Version() string               { return "1.0.0" }
+func (declared) Policies() []plugin.PolicySpec { return policySpecs() }
 
 // The providers are how the composition learns what a plugin
 // declared, so their shapes are contract: each returns data, and a
@@ -64,6 +65,10 @@ func TestProviders(t *testing.T) {
 		versioned, ok := p.(plugin.Versioned)
 		assert.True(t, ok, "the version surface asserts")
 		assert.Equal(t, versioned.Version(), "1.0.0", "returning what was declared")
+
+		policies, ok := p.(plugin.PolicyProvider)
+		assert.True(t, ok, "the policy surface asserts")
+		assert.Equal(t, policies.Policies(), policySpecs(), "returning the declared specs")
 	})
 
 	t.Run("a bare plugin satisfies none of them", func(t *testing.T) {
@@ -78,5 +83,7 @@ func TestProviders(t *testing.T) {
 		assert.False(t, binds, "the binding surface is opt-in")
 		_, versioned := p.(plugin.Versioned)
 		assert.False(t, versioned, "the version surface is opt-in")
+		_, policies := p.(plugin.PolicyProvider)
+		assert.False(t, policies, "the policy surface is opt-in")
 	})
 }

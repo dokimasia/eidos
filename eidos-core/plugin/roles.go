@@ -133,6 +133,13 @@ type GeneratorContext struct {
 	// of a plan reads the same values, so a generator does not mutate
 	// them.
 	Exports map[string]ExportDoc
+	// Target is the target of the plan's backend. Types is the backend's
+	// spoke, and nil for a backend that does not implement
+	// [TypeSpeller]. Policy is the plan's resolved lowering policy, which
+	// Build fixes.
+	Target Target
+	Types  TypeSpeller
+	Policy Policy
 }
 
 // PlanRecord is one plan's record as Close reads it: what the plan's

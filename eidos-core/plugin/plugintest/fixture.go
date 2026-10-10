@@ -58,6 +58,13 @@ type Fixture struct {
 	Select *plugin.Selection
 	// Journal receives each phase call's records, and nil keeps none.
 	Journal plugin.Journal
+	// Target is the target of the plan of a generator's phase call.
+	// Types is the spoke of the plan's backend, and Policy is the plan's
+	// resolved policy. A fixture without a spoke refuses every type of
+	// another language that a generator translates.
+	Target plugin.Target
+	Types  plugin.TypeSpeller
+	Policy plugin.Policy
 
 	emit    *plugin.Emit
 	claimed map[string]bool
@@ -202,7 +209,8 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 // the plugin's gates on named handles in the fixture's registry first. A
 // plugin that does not implement [plugin.Generator] fails the test.
 // The emit store persists across calls, so successive Generate calls
-// see earlier flushes the way later buckets do.
+// see earlier flushes the way later buckets do. The call translates
+// types with the fixture's target, spoke and policy.
 func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
@@ -224,6 +232,9 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 		Workers: f.Workers,
 		Select:  f.Select,
 		Journal: f.Journal,
+		Target:  f.Target,
+		Types:   f.Types,
+		Policy:  f.Policy,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }

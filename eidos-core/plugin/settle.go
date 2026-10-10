@@ -112,6 +112,10 @@ type Respeller interface {
 // fact store, a name key the composition did not register and a
 // backend without the hook apply no override.
 //
+// The settle records whether a declaration that renders has a type
+// reference whose target is a declaration of another language than the
+// backend's target, which [Emit.Translates] reports.
+//
 // Findings attach to the sink under the backend's name: a refused
 // construct or name withholds its declaration, colliding names
 // keep their emitted spellings, and an ambiguous reference is left
@@ -175,6 +179,7 @@ func settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others Names
 	if !lowers && !respells {
 		reads.typeRefs(e)
 		reads.finish()
+		e.translates = b != nil && translates(e, b.Target())
 		e.settled = true
 		return nil
 	}
@@ -188,9 +193,10 @@ func settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others Names
 		}
 	}
 	if respells {
-		respellAll(e, r, overridesFor(facts, b.Target()), others, by, sink, reads)
+		respellAll(e, r, b.Target(), overridesFor(facts, b.Target()), others, by, sink, reads)
 	} else {
 		reads.typeRefs(e)
+		e.translates = translates(e, b.Target())
 	}
 	reads.finish()
 	e.reindex()
@@ -198,56 +204,65 @@ func settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others Names
 	return nil
 }
 
+// translates reports whether a declaration of the store has a type
+// reference whose target is a declaration of another language than the
+// target t. It visits every node of the store, and allocates nothing.
+func translates(e *Emit, t Target) bool {
+	lang := symbol.Lang(t)
+	for i := range e.units {
+		for _, d := range e.units[i].Decls {
+			for s := range emit.All(d) {
+				if ref, is := s.(*emit.TypeRef); is && !ref.Target.IsZero() && ref.Target.Lang != lang {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // overrides reads one target's name overrides: the name written on an
-// origin at directive authority or above. It lists once the subjects
-// that the name key reads present on, in identity order, and reads the
-// claims of an origin that the list names. A store that a run restores
-// does not restore the bag of an origin without an override. The zero
-// value, for a nil fact store or a name key the composition did not
-// register, reads none.
+// origin at directive authority or above. It reads each origin with one
+// point read of the claim that ranks first, so a stamp of the name at
+// plugin authority, which a lowering entry writes on every declaration
+// that a plan of the target renders, costs the settle nothing. A store
+// that a run restores does not restore the bag of an origin on which
+// the name key is absent. The zero value, for a nil fact store or a
+// name key the composition did not register, reads none.
 type overrides struct {
-	facts   *meta.Facts
-	key     meta.KeyID
-	name    meta.KeyName
-	present []symbol.Identity
+	facts *meta.Facts
+	key   meta.Key[string]
+	name  meta.KeyName
 }
 
 // overridesFor returns the reader of a target's name overrides in one
-// fact store. It allocates the list of the subjects that the key reads
-// present on, and nothing where the key reads present on none.
+// fact store. It allocates the spelling of the target's name key.
 func overridesFor(facts *meta.Facts, t Target) overrides {
 	if facts == nil {
 		return overrides{}
 	}
-	key, registered := meta.Lookup[string](facts.Registry(), t.NameKey())
+	name := t.NameKey()
+	key, registered := meta.Lookup[string](facts.Registry(), name)
 	if !registered {
 		return overrides{}
 	}
-	return overrides{
-		facts: facts, key: key.ID(), name: t.NameKey(), present: slices.Collect(facts.ByKey(key.ID())),
-	}
+	return overrides{facts: facts, key: key, name: name}
 }
 
 // on returns the override written on one origin: the value of the claim
-// that ranks first, which [meta.Facts.Claims] returns first. It reports
-// false for a reader of no store, for the zero identity, which no
-// declaration renders, for an origin on which the key does not read
-// present, for a claim below directive authority and for an empty value.
+// that ranks first, where that claim has directive authority or above.
+// It reports false for a reader of no store, for the zero identity,
+// which no declaration renders, for an origin without a claim at that
+// authority and for an empty value. It allocates nothing.
 func (o overrides) on(id symbol.Identity) (string, bool) {
 	if o.facts == nil || id.IsZero() {
 		return "", false
 	}
-	if _, present := slices.BinarySearchFunc(o.present, id, symbol.Identity.Compare); !present {
+	name, written := meta.GetAtLeast(o.facts, id, o.key, meta.AuthorityDirective)
+	if !written || name == "" {
 		return "", false
 	}
-	for c := range o.facts.Claims(id, o.key) {
-		name, _ := c.Value.(string)
-		if name == "" || c.Claim.Authority < meta.AuthorityDirective {
-			return "", false
-		}
-		return name, true
-	}
-	return "", false
+	return name, true
 }
 
 // unitPos positions a settle finding: an emit declaration has no
@@ -310,15 +325,19 @@ type planned struct {
 // follow, against the store's names and then against others.
 // Withheld declarations leave their units last, because every pass
 // before that addresses a plan by the declaration index it was made
-// under. reads records each unit's override reads and lookups.
+// under. reads records each unit's override reads and lookups. The
+// reference pass records whether a reference has a target of another
+// language than the target t.
 func respellAll(
-	e *Emit, r Respeller, over overrides, others Names, by diag.Origin, sink *diag.Sink, reads *readLog,
+	e *Emit, r Respeller, t Target, over overrides, others Names, by diag.Origin, sink *diag.Sink, reads *readLog,
 ) {
 	plans := planNames(e, r, over, reads)
 	table, byOrigin := resolveTop(e, plans, by, sink)
 	resolveMembers(e, plans, by, sink)
 	applyNames(e, plans, by, sink)
-	res := &resolver{table: table, byOrigin: byOrigin, others: others, by: by, sink: sink, reads: reads}
+	res := &resolver{
+		table: table, byOrigin: byOrigin, others: others, by: by, sink: sink, reads: reads, lang: symbol.Lang(t),
+	}
 	res.rewriteRefs(e, plans)
 	dropWithheld(e)
 }
@@ -770,6 +789,9 @@ type resolver struct {
 	unit int
 	pkg  string
 	at   position.Pos
+	// lang is the language of the backend's target, which tells a
+	// translated reference apart.
+	lang symbol.Lang
 }
 
 // rewriteRefs follows the settled names through the store's
@@ -778,7 +800,9 @@ type resolver struct {
 // follows its own package's table, a structural reference's spelling
 // follows the names beneath it, and structured body names follow
 // locals first, then the package. A composite spelling without
-// elements, verbatim bodies and template text are left as written.
+// elements, verbatim bodies and template text are left as written. The
+// pass marks the store where a reference of a declaration that renders
+// has a target of another language than the resolver's.
 func (r *resolver) rewriteRefs(e *Emit, plans *plan) {
 	for i := range e.units {
 		u := &e.units[i]
@@ -792,6 +816,9 @@ func (r *resolver) rewriteRefs(e *Emit, plans *plan) {
 			for s := range emit.All(d) {
 				switch t := s.(type) {
 				case *emit.TypeRef:
+					if !t.Target.IsZero() && t.Target.Lang != r.lang {
+						e.translates = true
+					}
 					r.rewriteRef(t)
 				case *emit.Function:
 					r.rewriteBody(&t.Body, maps.Clone(renames[t]))

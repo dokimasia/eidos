@@ -1100,6 +1100,36 @@ func TestValidate(t *testing.T) {
 				"DuplicateInstance is reported")
 		})
 
+		choosy := directive.Schema{
+			Plugin: "speller", Name: "spell", Doc: "spells a type",
+			Params: []directive.ParamSpec{{
+				Key: "int64", Type: directive.TypeString, Choices: []string{"bigint", "string", "number"},
+				Doc: "the spelling of a 64-bit integer",
+			}},
+		}
+
+		t.Run("types a string among its param's choices", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "speller:spell int64=string", 1)}, choosy)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the instance is returned")
+			v, held := got[0].Param("int64")
+			assert.True(t, held, "the param is typed")
+			assert.Equal(t, v, directive.Value{Kind: directive.TypeString, Str: "string"}, "the value is the choice")
+		})
+
+		t.Run("reports BadSpelling with the choices for a string outside them", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "speller:spell int64=long", 1)}, choosy)
+			assert.Empty(t, got, "the instance is not returned")
+			d := onlyDiag(t, sink)
+			expect.Equal(t, d.Code, directive.BadSpelling, "BadSpelling is reported")
+			expect.Contains(t, d.Msg, "bigint, string, number", "the message lists the choices")
+			expect.Contains(t, d.Msg, `"long"`, "the message contains the value")
+		})
+
 		t.Run("skips the requirements a negated instance's schema declares", func(t *testing.T) {
 			t.Parallel()
 

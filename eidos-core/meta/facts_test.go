@@ -468,6 +468,88 @@ func TestFacts(t *testing.T) {
 		})
 	})
 
+	t.Run("GetAtLeast", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value of a claim at the floor's authority", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the plugin stamps")
+			got, held := meta.GetAtLeast(f, subject, role, meta.AuthorityPlugin)
+			assert.True(t, held, "a plugin's claim reads present at the floor of plugin authority")
+			assert.Equal(t, got, "writer", "with the claimed value")
+		})
+
+		t.Run("reports false for a claim below the floor's authority", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the plugin stamps")
+			got, held := meta.GetAtLeast(f, subject, role, meta.AuthorityDirective)
+			assert.False(t, held, "a plugin's claim is not an override")
+			assert.Equal(t, got, "", "with the zero value")
+		})
+
+		t.Run("returns the value of a directive claim that ranks above a plugin's claim", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the plugin stamps")
+			override := by("author", 1)
+			override.Authority = meta.AuthorityDirective
+			assert.NoError(t, meta.Stamp(f, role, "reader", override), "the directive stamps")
+			got, held := meta.GetAtLeast(f, subject, role, meta.AuthorityDirective)
+			assert.True(t, held, "the directive's claim reads present")
+			assert.Equal(t, got, "reader", "with the directive's value")
+		})
+
+		t.Run("reports false where a drop ranks first", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the plugin stamps")
+			assert.NoError(t, f.DropKey(role.ID(), dropBy("defaults", 1)), "the directive drops the fact")
+			_, held := meta.GetAtLeast(f, subject, role, meta.AuthorityPlugin)
+			assert.False(t, held, "a dropped fact reads absent")
+		})
+
+		t.Run("reports false for a fact never stamped", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			_, held := meta.GetAtLeast(f, subject, role, meta.AuthorityPlugin)
+			assert.False(t, held, "a fact nobody wrote reads absent")
+		})
+
+		t.Run("returns the value of a named handle", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the fact stamps")
+			got, held := meta.GetAtLeast(f, subject, meta.Named[string](role.Name()), meta.AuthorityPlugin)
+			assert.True(t, held, "the name resolves to the registered key")
+			assert.Equal(t, got, "writer", "the handle reads the stamped value")
+		})
+
+		t.Run("reports false for a named handle that nothing registered", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, _, _ := fixture(t)
+			_, held := meta.GetAtLeast(f, subject, meta.Named[string]("shape.ghost"), meta.AuthorityPlugin)
+			assert.False(t, held, "a name that the registry does not contain reads absent")
+		})
+
+		t.Run("reports false for a named handle of another value type", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the fact stamps")
+			_, held := meta.GetAtLeast(f, subject, meta.Named[bool](role.Name()), meta.AuthorityPlugin)
+			assert.False(t, held, "the registry has the name under another value type")
+		})
+	})
+
 	t.Run("Fact", func(t *testing.T) {
 		t.Parallel()
 
@@ -631,6 +713,14 @@ func TestFactsAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { _, held = meta.Get(f, subjects[800], named) }, 0,
 		"Get allocates nothing for a named handle")
 	assert.True(t, held, "Get finds a stamped fact through a named handle")
+
+	assert.MaxAllocs(t, func() { _, held = meta.GetAtLeast(f, subjects[800], role, meta.AuthorityPlugin) }, 0,
+		"GetAtLeast allocates nothing for a stamped string at the floor's authority")
+	assert.True(t, held, "GetAtLeast finds a stamped fact at the floor's authority")
+
+	assert.MaxAllocs(t, func() { _, held = meta.GetAtLeast(f, subjects[800], role, meta.AuthorityDirective) }, 0,
+		"GetAtLeast allocates nothing for a stamped string below the floor's authority")
+	assert.False(t, held, "GetAtLeast skips a stamped fact below the floor's authority")
 
 	var reads counter
 	assert.MaxAllocs(t, func() { _, held = meta.Fact(f, &reads, subjects[800], role) }, 0,
@@ -883,6 +973,31 @@ func BenchmarkFacts(b *testing.B) {
 			}
 			assert.Equal(b, got, "writer", "Get returns the stamped value through the name")
 		})
+	})
+
+	b.Run("GetAtLeast", func(b *testing.B) {
+		floors := []struct {
+			name  string
+			floor meta.Authority
+			want  bool
+		}{
+			{name: "a stamped fact at the floor's authority", floor: meta.AuthorityPlugin, want: true},
+			{name: "a stamped fact below the floor's authority", floor: meta.AuthorityDirective, want: false},
+		}
+		for _, tt := range floors {
+			b.Run(tt.name, func(b *testing.B) {
+				f, role, _ := stamped(b, subjects)
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				held, next := false, 0
+				for c.Loop() {
+					_, held = meta.GetAtLeast(f, subjects[next%len(subjects)], role, tt.floor)
+					next++
+				}
+				assert.Equal(b, held, tt.want,
+					"GetAtLeast reports the fact where its claim has the floor's authority or a higher one")
+			})
+		}
 	})
 
 	b.Run("Fact", func(b *testing.B) {

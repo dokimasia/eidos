@@ -39,15 +39,25 @@
 // file: a trailing slash, "." or ".." names a directory, and otherwise
 // the last element is the filename.
 //
+// # References
+//
+// Route sets the package of a reference that crosses into a file of
+// another package, so the target imports the file. A bare reference has
+// neither a target nor a package. It refers to a declaration of its
+// unit's package by the declaration's settled name. A translated
+// reference has a target of another language than the plan's
+// [Input.Target]. It refers to the declaration of the plan whose origin
+// is its target and whose settled name is its spelling.
+//
 // # Findings
 //
 // Route reports every routing problem as a positioned Error under
 // [diag.PhaseLayout], and leaves the refused declarations out of the
 // files it returns: [UndeclaredFamily], [UnknownTag],
 // [AmbiguousOverride], [NoDestination], [EscapingPath],
-// [PathCollision] and [UnderivedPackage]. A contradiction in the
-// configuration is a fault [Config.Check] returns at Build, and never a
-// finding.
+// [PathCollision], [UnderivedPackage] and [UntranslatedReference]. A
+// contradiction in the configuration is a fault [Config.Check] returns
+// at Build, and never a finding.
 //
 // # Dependency position
 //

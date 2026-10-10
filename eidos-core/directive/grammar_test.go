@@ -54,6 +54,32 @@ func TestGrammar(t *testing.T) {
 		}
 	})
 
+	t.Run("Valid", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give directive.Name
+			want bool
+		}{
+			{name: "reports true for a bare name", give: "stub", want: true},
+			{name: "reports true for a prefixed name", give: "mockgen:stub", want: true},
+			{name: "reports true for a name with hyphens", give: "k8s:deepcopy-gen", want: true},
+			{name: "reports false for the empty name", give: "", want: false},
+			{name: "reports false for a name with a dollar sign", give: "$stub", want: false},
+			{name: "reports false for an empty plugin", give: ":stub", want: false},
+			{name: "reports false for an empty name after the plugin", give: "mockgen:", want: false},
+			{name: "reports false for a name with two colons", give: "a:b:c", want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.Valid(), tt.want, "the verdict follows the grammar's identifier")
+			})
+		}
+	})
+
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
@@ -356,6 +382,9 @@ func TestGrammarAllocs(t *testing.T) {
 	var plugin string
 	assert.MaxAllocs(t, func() { plugin = name.Plugin() }, 0, "Plugin allocates nothing")
 	assert.Equal(t, plugin, "mockgen", "Plugin returns the prefix")
+	var valid bool
+	assert.MaxAllocs(t, func() { valid = name.Valid() }, 0, "Valid allocates nothing")
+	assert.True(t, valid, "Valid accepts a prefixed name")
 	var err error
 	for _, tt := range []struct {
 		payload string
@@ -396,6 +425,17 @@ func BenchmarkGrammar(b *testing.B) {
 			got = name.Plugin()
 		}
 		assert.Equal(b, got, "mockgen", "Plugin returns the prefix")
+	})
+
+	b.Run("Name.Valid", func(b *testing.B) {
+		name := directive.Name("mockgen:stub")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = name.Valid()
+		}
+		assert.True(b, got, "Valid accepts a prefixed name")
 	})
 
 	b.Run("Parse", func(b *testing.B) {

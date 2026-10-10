@@ -65,6 +65,18 @@
 // backend spells the result in the target's case when the plan
 // settles.
 //
+// # Translation
+//
+// [Emitter.Type] spells a type of another language in the plan's
+// target. The kit folds the reference into its canonical shape under
+// the rules of the language that declares it, and the spoke of the
+// plan's backend spells the shape under the plan's lowering policy. A
+// value of a policy's key at directive authority overrides the policy's
+// choice. The kit reads it on the declaration with the type, then on the
+// match's subject, and then on the declaration's package. A shape
+// without a spelling in the target reports [RefusedType] at the
+// declaration with the type, and the plan fails.
+//
 // # Dispatch
 //
 // Dispatch is indexed: a directive-gated rule visits its carriers,

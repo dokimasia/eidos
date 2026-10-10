@@ -14,9 +14,13 @@
 //   - the stores that its dependency rounds read, through
 //     [Builder.Stores]
 //
-// The built frontend implements exactly the roles the declaration states. The kit adds nothing the
-// roles do not state, so a kit-built frontend and a hand-rolled one
-// meet the same conformance checks.
+// The built frontend implements exactly the roles of the declaration,
+// and [plugin.KeyProvider] always. Its KeyProvider role runs the
+// language's registrations that [Builder.Keys] declares, and none for a
+// declaration without them. The workspace calls it under the
+// language's spelling, so every part of a language registers into one
+// namespace. The kit adds nothing the roles do not state, so a kit-built
+// frontend and a hand-rolled one meet the same conformance checks.
 //
 // # Failure semantics
 //
@@ -26,6 +30,6 @@
 //
 // # Dependency position
 //
-// core/frontend imports core/plugin, core/symbol and the Go
-// stdlib. Nothing beneath it imports it back.
+// core/frontend imports core/meta, core/plugin, core/symbol and the
+// Go stdlib. Nothing beneath it imports it back.
 package frontend

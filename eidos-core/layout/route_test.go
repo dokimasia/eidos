@@ -128,6 +128,9 @@ type fixture struct {
 	residents  map[string][]plugin.Resident
 	modules    []plugin.Module
 	others     plugin.Names
+	// target is the plan's target, and zero for a plan that translates
+	// no reference.
+	target plugin.Target
 	// unregistered routes without a directive registry.
 	unregistered bool
 }
@@ -159,7 +162,11 @@ func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 	e := plugin.NewEmit()
 	assert.Total(tb, e.Add, f.units, "the fixture unit arrives")
 	sink := diag.NewSink()
-	assert.NoError(tb, plugin.Settle(e, nil, nil, sink), "a store without a backend settles as emitted")
+	var settler plugin.Backend
+	if f.target != "" {
+		settler = targeting{target: f.target}
+	}
+	assert.NoError(tb, plugin.Settle(e, settler, nil, sink), "a store without hooks settles as emitted")
 	in := layout.Input{
 		Emit:       e,
 		Config:     f.config,
@@ -170,6 +177,7 @@ func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 		Directives: registry(tb),
 		Modules:    f.modules,
 		Others:     f.others,
+		Target:     f.target,
 		Sink:       sink,
 	}
 	if f.residents != nil {
@@ -272,6 +280,18 @@ func (d directories) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 	}
 	return symbol.Identity{Lang: coretest.Lang, Package: dir, Name: path.Base(dir), Kind: symbol.KindPackage}, nil
 }
+
+// targeting is a backend of one target without a hook, which settles a
+// store as emitted and records whether the store translates.
+type targeting struct{ target plugin.Target }
+
+var _ plugin.Backend = targeting{}
+
+// Name returns the backend's name.
+func (targeting) Name() plugin.ID { return "targeting" }
+
+// Target returns the backend's target.
+func (b targeting) Target() plugin.Target { return b.target }
 
 // recording is a target whose package half records each placement it
 // is handed and returns the origin.

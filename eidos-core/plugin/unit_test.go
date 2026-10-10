@@ -49,6 +49,14 @@ const (
 	carrierLine   = 7
 )
 
+// stubName is the directive name of the markers in the sugar cases.
+// sugarRefusal is the reason that a frontend gives for a marker whose
+// arguments it could not lift.
+const (
+	stubName     = directive.Name("stub")
+	sugarRefusal = "the argument f() is a call, and a directive value is a literal"
+)
+
 // carrierAt is the position the attachment cases state for their
 // carriers.
 var carrierAt = position.Pos{File: "svc/store/row.go", Line: carrierLine}
@@ -98,6 +106,13 @@ const (
 	// attachCarriersAllocs is a unit's first attached carrier: the
 	// parsed instance's parameters and the list of attachments.
 	attachCarriersAllocs = 2
+	// attachSugarAllocs is a unit's first attached marker of the brand
+	// and a name: the list of attachments.
+	attachSugarAllocs = 1
+	// attachPrefixedSugarAllocs is a unit's first attached marker of the
+	// brand, a plugin and a name: the prefixed name and the list of
+	// attachments.
+	attachPrefixedSugarAllocs = 2
 	// firstPackageAllocs is a unit's first package: the path's segments,
 	// the package, the map's first group and the list of paths.
 	firstPackageAllocs = 4
@@ -240,6 +255,16 @@ func TestSourceUnit(t *testing.T) {
 				assert.Equal(t, u.Depth(), tt.give, "the depth is the constructed one")
 			})
 		}
+	})
+
+	t.Run("Brand", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the brand that the unit was built with", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, unitOf(t, unitTree()).Brand(), unitBrand, "the brand is the constructed one")
+		})
 	})
 
 	t.Run("Comment", func(t *testing.T) {
@@ -672,6 +697,124 @@ func TestSourceUnit(t *testing.T) {
 		})
 	})
 
+	t.Run("AttachSugar", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("attaches the bare directive of a path of the brand and a name", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			row := &node.Struct{Name: "Row"}
+			args := []directive.RawArg{{Key: "tag", Value: directive.RawValue{Text: "test", Quoted: true}}}
+			marker := plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Args: args, Pos: carrierAt}
+			assert.True(t, u.AttachSugar(row, marker, unitCode), "the marker is a directive")
+			coretest.AssertCodes(t, sink)
+			attached := u.Graph().Attachments()
+			assert.Length(t, attached, 1, "the marker attaches")
+			expect.Equal(t, attached[0].Subject, symbol.Symbol(row), "the subject is the one passed in",
+				assert.ByIdentity())
+			expect.Equal(t, attached[0].Raw, directive.Raw{Name: stubName, Args: args, Pos: carrierAt},
+				"the instance is set, with the marker's name, arguments and position")
+		})
+
+		t.Run("attaches the prefixed directive of a path of the brand, a plugin and a name", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			marker := plugin.Sugar{Path: []string{unitBrand, "stubgen", string(stubName)}, Pos: carrierAt}
+			assert.True(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode), "the marker is a directive")
+			attached := u.Graph().Attachments()
+			assert.Length(t, attached, 1, "the marker attaches")
+			assert.Equal(t, attached[0].Raw.Name, directive.Name("stubgen:stub"), "the name has the plugin's prefix")
+		})
+
+		t.Run("reports false for a marker outside the brand", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			marker := plugin.Sugar{Path: []string{"log"}, Pos: carrierAt}
+			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode), "the marker is metadata")
+			coretest.AssertCodes(t, sink)
+			assert.Empty(t, u.Graph().Attachments(), "the marker attaches nothing")
+		})
+
+		t.Run("reports false for a marker without a path", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, plugin.Sugar{}, unitCode),
+				"a marker without a name is not a directive")
+		})
+
+		t.Run("reports false for a marker outside the brand whose arguments did not lift", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			marker := plugin.Sugar{Path: []string{"log"}, Refusal: sugarRefusal, Pos: carrierAt}
+			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode), "the marker is metadata")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports the refusal of a marker of the brand whose arguments did not lift", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			marker := plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Refusal: sugarRefusal, Pos: carrierAt}
+			assert.True(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode),
+				"a marker of the brand is a directive")
+			coretest.AssertCodes(t, sink, unitCode)
+			got := reported(sink)
+			expect.Equal(t, got[0].Pos, carrierAt, "the finding is at the marker")
+			expect.Contains(t, got[0].Msg, sugarRefusal, "the finding contains the frontend's refusal")
+			expect.Contains(t, got[0].Msg, string(stubName), "the finding contains the directive's name")
+			expect.Empty(t, u.Graph().Attachments(), "the marker attaches nothing")
+		})
+
+		refusals := []struct {
+			name string
+			path []string
+			want string
+		}{
+			{name: "reports a marker of the brand alone", path: []string{unitBrand}, want: "has 0 names"},
+			{
+				name: "reports a marker of three names after the brand",
+				path: []string{unitBrand, "a", "b", "c"}, want: "has 3 names",
+			},
+			{
+				name: "reports a name that is not a valid directive name",
+				path: []string{unitBrand, "$stub"}, want: `the name "$stub"`,
+			},
+			{
+				name: "reports a marker with an empty plugin",
+				path: []string{unitBrand, "", string(stubName)}, want: `the name " stub"`,
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				u, sink := reporting(t, unitTree())
+				marker := plugin.Sugar{Path: tt.path, Pos: carrierAt}
+				assert.True(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode),
+					"a marker of the brand is a directive")
+				coretest.AssertCodes(t, sink, unitCode)
+				got := reported(sink)
+				expect.Equal(t, got[0].Pos, carrierAt, "the finding is at the marker")
+				expect.Contains(t, got[0].Msg, tt.want, "the finding describes the fault")
+				expect.Empty(t, u.Graph().Attachments(), "the marker attaches nothing")
+			})
+		}
+
+		t.Run("panics on a nil subject with a marker of the brand", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			marker := plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt}
+			assert.Panics(t, func() { u.AttachSugar(nil, marker, unitCode) },
+				"a marker on no subject is the frontend's defect")
+		})
+	})
+
 	at := position.Pos{File: "svc/store/row.go", Line: 4, Col: 2}
 	severities := []struct {
 		method string
@@ -1008,12 +1151,15 @@ func TestSourceUnitAllocs(t *testing.T) {
 		members int
 		depth   plugin.Depth
 		graph   *plugin.GraphBuilder
+		brand   string
 	)
-	assert.MaxAllocs(t, func() { members, depth, graph = len(u.Files()), u.Depth(), u.Graph() }, 0,
-		"Files, Depth and Graph allocate nothing")
+	assert.MaxAllocs(t, func() {
+		members, depth, graph, brand = len(u.Files()), u.Depth(), u.Graph(), u.Brand()
+	}, 0, "Files, Depth, Graph and Brand allocate nothing")
 	expect.Equal(t, members, 1, "Files returns the unit's one member")
 	expect.Equal(t, depth, plugin.DepthFull, "Depth returns the unit's depth")
 	expect.NotNil(t, graph, "Graph returns the unit's builder")
+	expect.Equal(t, brand, unitBrand, "Brand returns the unit's brand")
 
 	read := unitRead(u)
 	var err error
@@ -1029,6 +1175,18 @@ func TestSourceUnitAllocs(t *testing.T) {
 	assert.MaxAllocsWithSetup(t, fresh,
 		func(fu *plugin.SourceUnit) { fu.AttachCarriers(recordSubject, carriers, unitCode) },
 		attachCarriersAllocs, "AttachCarriers allocates the parsed instance and the list of attachments")
+	bare := plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt}
+	assert.MaxAllocsWithSetup(t, fresh,
+		func(fu *plugin.SourceUnit) { fu.AttachSugar(recordSubject, bare, unitCode) },
+		attachSugarAllocs, "AttachSugar allocates the list of attachments for a bare marker")
+	prefixed := plugin.Sugar{Path: []string{unitBrand, "stubgen", string(stubName)}, Pos: carrierAt}
+	assert.MaxAllocsWithSetup(t, fresh,
+		func(fu *plugin.SourceUnit) { fu.AttachSugar(recordSubject, prefixed, unitCode) },
+		attachPrefixedSugarAllocs, "AttachSugar allocates the prefixed name and the list of attachments")
+	foreign := plugin.Sugar{Path: []string{"log"}, Pos: carrierAt}
+	assert.MaxAllocs(t, func() { held = u.AttachSugar(recordSubject, foreign, unitCode) }, 0,
+		"AttachSugar allocates nothing for a marker outside the brand")
+	assert.False(t, held, "AttachSugar reports a marker outside the brand as metadata")
 
 	assert.MaxAllocsWithSetup(t, fresh, func(fu *plugin.SourceUnit) { fu.Graph().Package("svc/store") },
 		firstPackageAllocs, "Package allocates a unit's first package")
@@ -1158,6 +1316,16 @@ func BenchmarkSourceUnit(b *testing.B) {
 		assert.Equal(b, got, plugin.DepthFull, "Depth returns the unit's depth")
 	})
 
+	b.Run("Brand", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = u.Brand()
+		}
+		assert.Equal(b, got, unitBrand, "Brand returns the unit's brand")
+	})
+
 	b.Run("Graph", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
@@ -1203,6 +1371,38 @@ func BenchmarkSourceUnit(b *testing.B) {
 			}
 			assert.Length(b, unit.Graph().Attachments(), 1, "the carrier is attached")
 		})
+	})
+
+	b.Run("AttachSugar", func(b *testing.B) {
+		markers := []struct {
+			name   string
+			marker plugin.Sugar
+			allocs uint64
+		}{
+			{
+				name:   "a unit's first marker of the brand and a name",
+				marker: plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt},
+				allocs: attachSugarAllocs,
+			},
+			{
+				name:   "a unit's first marker of the brand, a plugin and a name",
+				marker: plugin.Sugar{Path: []string{unitBrand, "stubgen", string(stubName)}, Pos: carrierAt},
+				allocs: attachPrefixedSugarAllocs,
+			},
+		}
+		for _, tt := range markers {
+			b.Run(tt.name, func(b *testing.B) {
+				var unit *plugin.SourceUnit
+				fresh := func() { unit = unitOf(b, unitTree()) }
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				for c.Loop() {
+					c.Excluding(fresh)
+					unit.AttachSugar(recordSubject, tt.marker, unitCode)
+				}
+				assert.Length(b, unit.Graph().Attachments(), 1, "the marker is attached")
+			})
+		}
 	})
 
 	b.Run("Package", func(b *testing.B) {

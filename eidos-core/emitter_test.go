@@ -4,6 +4,7 @@
 package eidos_test
 
 import (
+	"errors"
 	"slices"
 	"strconv"
 	"testing"
@@ -13,10 +14,15 @@ import (
 	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -67,7 +73,148 @@ const (
 	slotAppendAllocs = orderAllocs + invocationStructs + 4 + 1
 	// joinNameAllocs is the joined name of a word and a base.
 	joinNameAllocs = 1
+	// typeAllocs is a call whose invocations each translate a builtin of
+	// another language. Each invocation allocates the binding's memo, the
+	// memo's first group, the folded shape and the reference that the
+	// spoke returns. Once per call, the lane creates its tracked reader,
+	// and the match makes its resolver of other languages and its reader
+	// of policy overrides.
+	typeAllocs = 4*invocationStructs + 3
 )
+
+// The translation fixture's target, the key of its one lowering policy,
+// and the key's two choices.
+const (
+	tsxTarget plugin.Target    = "tsx"
+	widthKey  plugin.PolicyKey = "tsx.width"
+	narrow    plugin.Choice    = "narrow"
+	wide      plugin.Choice    = "wide"
+)
+
+// The spellings of the translation fixture: two builtins of the scripted
+// language, the spoke's spelling of text, a stream of the source
+// language, and a type parameter.
+const (
+	intSpelling    = "int"
+	stringSpelling = "string"
+	textSpelling   = "text"
+	streamSpelling = "chan int"
+	paramSpelling  = "T"
+)
+
+// The names of the translation fixture's struct and of its field.
+const (
+	sessionName = "Session"
+	expiresName = "Expires"
+)
+
+// errUnspelled is the reason of the translation fixture's spoke for a
+// form that it has no spelling of.
+var errUnspelled = errors.New("eidos_test: the tsx target has no spelling of the form")
+
+// tsxSpoke is the translation fixture's spoke. It spells a scalar as the
+// choice of widthKey, text as textSpelling and a reference as the name of
+// its referent, and it refuses every other form with errUnspelled. It
+// records the shape of its last call.
+type tsxSpoke struct{ last rules.TypeShape }
+
+var _ plugin.TypeSpeller = (*tsxSpoke)(nil)
+
+// SpellType spells s under p, and records s.
+func (sp *tsxSpoke) SpellType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	sp.last = s
+	switch s.Form {
+	case symbol.FormScalar:
+		return &emit.TypeRef{Spelling: string(p.Choice(widthKey))}, nil
+	case symbol.FormText:
+		return &emit.TypeRef{Spelling: textSpelling}, nil
+	case symbol.FormReference:
+		return &emit.TypeRef{Spelling: s.Ref.Name, Target: s.Ref}, nil
+	default:
+		return nil, errUnspelled
+	}
+}
+
+// translationFixture is a generator context over a session struct of
+// the fixture's language, whose expires field the cases translate types
+// for. The context's plan targets tsx through spoke, under the default
+// choice of the width policy. width is the handle that an override
+// stamps through.
+type translationFixture struct {
+	ctx     *plugin.GeneratorContext
+	width   meta.Key[string]
+	session *node.Struct
+	expires *node.Field
+	spoke   *tsxSpoke
+}
+
+// newTranslationFixture returns the translation fixture, with the rules
+// of the scripted language registered for the fixture's language.
+func newTranslationFixture(tb assert.TB) translationFixture {
+	tb.Helper()
+
+	session := coretest.Struct(coretest.StorePath, sessionName)
+	session.Pos = position.Pos{File: "session.go", Line: 3, Col: 6}
+	expires := coretest.Field(coretest.StorePath, sessionName, expiresName)
+	expires.Pos = position.Pos{File: "session.go", Line: 5, Col: 2}
+	session.Fields = []*node.Field{expires}
+	g := coretest.Frozen(tb, coretest.Package(coretest.StorePath, session))
+	reg := meta.NewRegistry()
+	target := reg.For(string(tsxTarget))
+	assert.NoError(tb, target.ClaimNamespace(string(tsxTarget)), "the target claims its namespace")
+	width, err := meta.Register[string](target, meta.KeySpec{
+		Name: meta.KeyName(widthKey), Doc: "the width of an integer in tsx",
+	})
+	assert.NoError(tb, err, "the policy's key registers")
+	facts := meta.NewFacts(reg)
+	policy, err := plugin.NewPolicy(tsxTarget, []plugin.PolicySpec{{
+		Key: widthKey, Choices: []plugin.Choice{narrow, wide}, Default: narrow, Doc: "the width of an integer in tsx",
+	}}, nil)
+	assert.NoError(tb, err, "the policy resolves")
+	ix, err := plugin.NewIndex(g, facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	registry := rules.NewRegistry()
+	assert.NoError(tb, registry.Register(fixtureLanguage{rulestest.Scripted()}), "the fixture language registers")
+	spoke := &tsxSpoke{}
+	return translationFixture{
+		ctx: &plugin.GeneratorContext{
+			Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(), Rules: registry,
+			Plugin: contextPlugin, Bucket: 2, Target: tsxTarget, Types: spoke, Policy: policy,
+		},
+		width: width, session: session, expires: expires, spoke: spoke,
+	}
+}
+
+// override stamps choice under the width key on subject, at authority.
+func (f translationFixture) override(tb assert.TB, subject symbol.Identity, choice plugin.Choice, a meta.Authority) {
+	tb.Helper()
+
+	claim := meta.Claim{Subject: subject, Authority: a}
+	assert.NoError(tb, meta.Stamp(f.ctx.Facts, f.width, string(choice), claim), "the override stamps")
+}
+
+// translate runs one phase call over the fixture. Its handler translates
+// ref with owner as the declaration of the type, on the session struct.
+// It returns what the translation returned.
+func (f translationFixture) translate(tb assert.TB, owner symbol.Identity, ref *node.TypeRef) (*emit.TypeRef, bool) {
+	tb.Helper()
+
+	var (
+		got *emit.TypeRef
+		ok  bool
+		ran bool
+	)
+	p := eidos.NewPlugin(contextPlugin).
+		Handle(eidos.OnStruct(func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+			got, ok = e.Type(owner, ref)
+			ran = true
+			return nil
+		})).
+		Build()
+	assert.NoError(tb, generatorOf(tb, p).Generate(f.ctx), "the phase call passes")
+	assert.True(tb, ran, "the handler ran")
+	return got, ok
+}
 
 // The emitter is the handler's write surface: family misuse is a
 // defect that panics, every family has its own handle, an empty
@@ -409,6 +556,238 @@ func TestEmitter(t *testing.T) {
 		})
 	})
 
+	t.Run("Type", func(t *testing.T) {
+		t.Parallel()
+
+		// stream is a synchronous stream of the scripted language, which
+		// the fixture's spoke refuses. The cases only read it.
+		stream := &node.TypeRef{
+			Spelling: streamSpelling, Form: symbol.FormStream, Elems: []*node.TypeRef{{Spelling: intSpelling}},
+		}
+
+		t.Run("returns nil for a nil reference", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := f.translate(t, f.expires.ID, nil)
+			assert.True(t, ok, "a nil reference has nothing to refuse")
+			assert.Nil(t, got, "the translation of a nil reference is nil")
+		})
+
+		t.Run("returns the reference as written in the target's language", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			owner := symbol.Identity{
+				Lang:    symbol.Lang(tsxTarget),
+				Package: "svc/store",
+				Name:    "Row",
+				Kind:    symbol.KindField,
+			}
+			ref := &node.TypeRef{
+				Spelling: sessionName, Package: "./session",
+				Target: symbol.Identity{Lang: symbol.Lang(tsxTarget), Package: "svc/session", Name: sessionName},
+			}
+			got, ok := f.translate(t, owner, ref)
+			assert.True(t, ok, "the target spells its own language's references")
+			assert.Equal(t, got, rules.EmitRef(ref), "the reference is the one that EmitRef restates")
+		})
+
+		t.Run("returns the parameter's name for a reference to a type parameter", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			param := coretest.MemberID(coretest.StorePath, sessionName, paramSpelling, symbol.KindTypeParam)
+			got, ok := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: paramSpelling, Target: param})
+			assert.True(t, ok, "a type parameter translates")
+			assert.Equal(t, got, &emit.TypeRef{Spelling: paramSpelling}, "the reference has the name and no target")
+		})
+
+		t.Run("returns the spoke's spelling of a reference of another language", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: stringSpelling})
+			assert.True(t, ok, "the spoke spells text")
+			assert.Equal(t, got.Spelling, textSpelling, "the spelling is the spoke's")
+		})
+
+		t.Run("passes the spoke the shape that the rules of owner's language fold", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.translate(t, f.expires.ID, &node.TypeRef{Spelling: sessionName, Target: f.session.ID})
+			assert.Equal(t, f.spoke.last.Form, symbol.FormReference, "a declaration folds to a Reference")
+			assert.Equal(t, f.spoke.last.Ref, f.session.ID, "the shape refers to the declaration")
+		})
+
+		t.Run("binds the rules of owner's language on a graph match", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			var ok bool
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnGraph(func(_ *eidos.GraphMatch, e *eidos.Emitter) error {
+					_, ok = e.Type(f.expires.ID, &node.TypeRef{Spelling: intSpelling})
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(f.ctx), "the phase call passes")
+			assert.True(t, ok, "the spoke spells the scalar")
+			assert.Equal(t, f.spoke.last.Form, symbol.FormScalar, "the builtin folds under the scripted rules")
+		})
+
+		t.Run("spells a choice of the plan's policy without an override", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, _ := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: intSpelling})
+			assert.Equal(t, got.Spelling, string(narrow), "the policy's default applies")
+		})
+
+		overrides := []struct {
+			name    string
+			subject func(f translationFixture) symbol.Identity
+		}{
+			{
+				name:    "reads an override on owner",
+				subject: func(f translationFixture) symbol.Identity { return f.expires.ID },
+			},
+			{
+				name:    "reads an override on the match's subject",
+				subject: func(f translationFixture) symbol.Identity { return f.session.ID },
+			},
+			{
+				name:    "reads an override on owner's package",
+				subject: func(translationFixture) symbol.Identity { return coretest.PackageID(coretest.StorePath) },
+			},
+		}
+		for _, tt := range overrides {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newTranslationFixture(t)
+				f.override(t, tt.subject(f), wide, meta.AuthorityDirective)
+				got, _ := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: intSpelling})
+				assert.Equal(t, got.Spelling, string(wide), "the override replaces the policy's choice")
+			})
+		}
+
+		t.Run("prefers an override on owner to one on the match's subject", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.override(t, f.expires.ID, narrow, meta.AuthorityDirective)
+			f.override(t, f.session.ID, wide, meta.AuthorityDirective)
+			got, _ := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: intSpelling})
+			assert.Equal(t, got.Spelling, string(narrow), "the declaration with the type decides first")
+		})
+
+		t.Run("ignores a value below directive authority", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.override(t, f.expires.ID, wide, meta.AuthorityPlugin)
+			got, _ := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: intSpelling})
+			assert.Equal(t, got.Spelling, string(narrow), "a stamp of a plugin does not override the policy")
+		})
+
+		widthReads := func(tb assert.TB, rec *recorder) []symbol.Identity {
+			tb.Helper()
+
+			assert.Length(tb, rec.invoked, 1, "the session's invocation journals")
+			var read []symbol.Identity
+			for _, r := range rec.invoked[0].facts {
+				if r.Key == meta.KeyName(widthKey) {
+					read = append(read, r.Subject)
+				}
+			}
+			return read
+		}
+
+		t.Run("records the read of each override that it looks for", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+					e.Type(f.expires.ID, &node.TypeRef{Spelling: intSpelling})
+					return nil
+				})).
+				Build()
+			read := widthReads(t, journaledGenerate(t, f.ctx, p))
+			assert.Permutation(t, read,
+				[]symbol.Identity{f.expires.ID, f.session.ID, coretest.PackageID(coretest.StorePath)},
+				"a missing override is a read, so a new override runs the invocation again")
+		})
+
+		t.Run("does not record an override read for a type that no policy decides", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+					e.Type(f.expires.ID, &node.TypeRef{Spelling: stringSpelling})
+					return nil
+				})).
+				Build()
+			assert.Empty(t, widthReads(t, journaledGenerate(t, f.ctx, p)),
+				"an override of a key that the spoke does not read changes nothing")
+		})
+
+		t.Run("reads the override on an owner that is the match's subject once", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.Type(m.Struct.ID, &node.TypeRef{Spelling: intSpelling})
+					return nil
+				})).
+				Build()
+			read := widthReads(t, journaledGenerate(t, f.ctx, p))
+			assert.Permutation(t, read, []symbol.Identity{f.session.ID, coretest.PackageID(coretest.StorePath)},
+				"the invocation reads the subject and the package, each once")
+		})
+
+		t.Run("returns false for a shape that the spoke refuses", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := f.translate(t, f.expires.ID, stream)
+			assert.False(t, ok, "the spoke refuses a stream")
+			assert.Nil(t, got, "a refusal returns no reference")
+		})
+
+		t.Run("reports RefusedType at owner's position", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.translate(t, f.expires.ID, stream)
+			one := onlyFinding(t, f.ctx.Sink)
+			expect.Equal(t, one.Code, eidos.RefusedType, "the refusal reports under the code of a refused type")
+			expect.Equal(t, one.Severity, diag.SeverityError, "the refusal fails the plan")
+			expect.Equal(t, one.Pos, f.expires.Pos, "the finding is at the declaration with the type")
+			expect.Equal(t, one.Msg,
+				"the tsx target cannot spell the golang type chan int: "+errUnspelled.Error(),
+				"the message contains the target, the source type and the spoke's reason")
+		})
+
+		t.Run("reports RefusedType for every reference of another language without a spoke", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.ctx.Types = nil
+			got, ok := f.translate(t, f.expires.ID, &node.TypeRef{Spelling: stringSpelling})
+			assert.False(t, ok, "a plan without a spoke does not spell a type of another language")
+			assert.Nil(t, got, "a refusal returns no reference")
+			assert.Equal(t, onlyFinding(t, f.ctx.Sink).Msg,
+				"the tsx target cannot spell the golang type string: "+
+					"the plan's backend does not implement a type spoke",
+				"the message is about the missing spoke")
+		})
+	})
+
 	t.Run("Slot", func(t *testing.T) {
 		t.Parallel()
 
@@ -610,6 +989,17 @@ func emitterCases(tb assert.TB) []phaseCase {
 	declaration := &emit.Struct{Name: "Appended"}
 	var ref *emit.TemplateRef
 	field := &emit.Field{Name: "audited"}
+	policy, err := plugin.NewPolicy(tsxTarget, []plugin.PolicySpec{{
+		Key: widthKey, Choices: []plugin.Choice{narrow, wide}, Default: narrow, Doc: "the width of an integer in tsx",
+	}}, nil)
+	assert.NoError(tb, err, "the policy resolves")
+	translating := func() *plugin.GeneratorContext {
+		ctx := fresh()
+		ctx.Target, ctx.Types, ctx.Policy = tsxTarget, &tsxSpoke{}, policy
+		return ctx
+	}
+	scalar := &node.TypeRef{Spelling: intSpelling}
+	var typed *emit.TypeRef
 	return []phaseCase{
 		{
 			name: "File", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerSource, 0),
@@ -633,6 +1023,14 @@ func emitterCases(tb assert.TB) []phaseCase {
 			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { ref = e.Ref(refTemplate, refPayload) }),
 			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
 				assert.Equal(tb, ref.Owner, ctx.Plugin, "the reference names the plugin the call runs as")
+			},
+		},
+		{
+			name: "Type", allocs: typeAllocs, fresh: translating,
+			gen: families(func(m *eidos.StructMatch, e *eidos.Emitter) { typed, _ = e.Type(m.Struct.ID, scalar) }),
+			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
+				assert.Equal(tb, typed.Spelling, string(narrow), "the spoke spells the scalar under the policy")
+				assert.False(tb, ctx.Sink.Failed(), "no translation is refused")
 			},
 		},
 		{

@@ -29,7 +29,10 @@ type Registry struct {
 	// as canonical spellings. The seal fills it, so validation
 	// resolves nothing per instance.
 	constraints map[Name]resolved
-	sealed      bool
+	// targets records the names of the targets' directives, which the
+	// registry treats as kernel names. RegisterTarget creates it.
+	targets map[Name]bool
+	sealed  bool
 }
 
 // resolved is one schema's constraints as canonical spellings.
@@ -62,7 +65,7 @@ func (r *Registry) Ignore(n Name) error {
 	if n == "" || n == Name(prefixSep) {
 		return errors.New("directive: an empty spelling ignores nothing")
 	}
-	if slices.Contains(kernelNames, n) {
+	if slices.Contains(kernelNames, n) || r.targets[n] {
 		return fmt.Errorf("directive: %s is a kernel name, which no workspace ignores", n)
 	}
 	if err := r.claimedIgnore(n); err != nil {
@@ -85,7 +88,8 @@ func (r *Registry) Ignored(n Name) bool {
 // Register records one schema. It returns an error for:
 //   - a registration after the seal;
 //   - a kernel name claimed by a plugin, and an empty Plugin on any
-//     name outside the kernel's six;
+//     name outside the kernel's six. A target's name that
+//     [Registry.RegisterTarget] recorded is a kernel name;
 //   - a negatable or override kernel schema, because a negated instance
 //     and an override instance opt a subject out of one plugin's rules
 //     and the kernel is no plugin;
@@ -99,6 +103,8 @@ func (r *Registry) Ignored(n Name) bool {
 //     key of a schema param;
 //   - a list of lists, a list without an element type, and a
 //     reference without a resolution kind;
+//   - choices on a param that is not a string, an empty choice, and a
+//     choice declared twice;
 //   - an untyped param, and an empty doc anywhere;
 //   - a canonical spelling registered twice, with an error naming
 //     both docs.
@@ -111,7 +117,7 @@ func (r *Registry) Register(s Schema) error {
 	if r.sealed {
 		return fmt.Errorf("directive: %s registers after the seal: registration ends there", s.Name)
 	}
-	if err := admissible(s); err != nil {
+	if err := r.admissible(s); err != nil {
 		return err
 	}
 
@@ -122,6 +128,48 @@ func (r *Registry) Register(s Schema) error {
 	}
 	r.byCanonical[canonical] = s
 	r.claimants[s.Name] = append(r.claimants[s.Name], canonical)
+	return nil
+}
+
+// RegisterTarget records the directive of one rendering target. The
+// schema has no plugin, and its name is the target's spelling, such as
+// typescript. The kernel's lowering entry reads its instances. From the
+// registration on, the registry treats the name as a kernel name, so it
+// refuses a plugin's schema of the name and an ignore of it. The
+// workspace registers each target's directive after the kernel's
+// schemas and before any plugin's.
+//
+// Error modes: a registration after the seal, a schema with a plugin, a
+// target registered twice, one of the kernel's six names, a name that a
+// registered schema claims, and every refusal of the schema's own
+// declaration that [Registry.Register] makes.
+func (r *Registry) RegisterTarget(s Schema) error {
+	if r.sealed {
+		return fmt.Errorf("directive: target %s registers after the seal: registration ends there", s.Name)
+	}
+	if s.Plugin != "" {
+		return fmt.Errorf("directive: target %s has the plugin %q, and the directive of a target has no plugin",
+			s.Name, s.Plugin)
+	}
+	if r.targets[s.Name] {
+		return fmt.Errorf("directive: target %s is registered twice", s.Name)
+	}
+	if slices.Contains(kernelNames, s.Name) {
+		return fmt.Errorf("directive: target %s is a kernel name, which no target takes", s.Name)
+	}
+	if claimants := r.claimants[s.Name]; len(claimants) > 0 {
+		return fmt.Errorf("directive: target %s is a name that %s claims", s.Name, claimants[0])
+	}
+	if r.targets == nil {
+		r.targets = map[Name]bool{}
+	}
+	r.targets[s.Name] = true
+	if err := r.admissible(s); err != nil {
+		delete(r.targets, s.Name)
+		return err
+	}
+	r.byCanonical[s.Name] = s
+	r.claimants[s.Name] = append(r.claimants[s.Name], s.Name)
 	return nil
 }
 
@@ -226,9 +274,11 @@ func (r *Registry) claimedIgnore(n Name) error {
 	return nil
 }
 
-// admissible checks one schema's own declaration.
-func admissible(s Schema) error {
-	kernel := slices.Contains(kernelNames, s.Name)
+// admissible checks one schema's own declaration. A name of the kernel
+// is one of its six names or a target's name that RegisterTarget
+// recorded.
+func (r *Registry) admissible(s Schema) error {
+	kernel := slices.Contains(kernelNames, s.Name) || r.targets[s.Name]
 	if s.Plugin == "" && !kernel {
 		return fmt.Errorf(
 			"directive: %s names no plugin, and only the kernel's own schemas may", s.Name,
@@ -394,6 +444,18 @@ func admissibleParam(
 	}
 	if spec.Doc == "" {
 		return fmt.Errorf("directive: %s param %q states no semantics", owner, spec.Key)
+	}
+	if len(spec.Choices) > 0 && spec.Type != TypeString {
+		return fmt.Errorf("directive: %s param %q declares choices, and only a string param takes them",
+			owner, spec.Key)
+	}
+	for i, choice := range spec.Choices {
+		if choice == "" {
+			return fmt.Errorf("directive: %s param %q declares an empty choice", owner, spec.Key)
+		}
+		if slices.Contains(spec.Choices[:i], choice) {
+			return fmt.Errorf("directive: %s param %q declares choice %q twice", owner, spec.Key, choice)
+		}
 	}
 	if spec.Type == TypeList && spec.ListOf == TypeList {
 		return fmt.Errorf(

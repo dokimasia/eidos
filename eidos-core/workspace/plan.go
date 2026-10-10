@@ -340,6 +340,9 @@ func (w *Workspace) generate(
 			Exports: exports,
 			Select:  sel,
 			Journal: counted,
+			Target:  pl.backend.Target(),
+			Types:   pl.types,
+			Policy:  pl.policy,
 		}
 		err = s.run.Generate(call)
 		if next != nil {

@@ -150,6 +150,29 @@ func TestSchema(t *testing.T) {
 
 			assert.NotEqual(t, directive.ReservedOut, directive.ReservedTag, "the keys differ")
 		})
+
+		t.Run("Valid", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				name string
+				give directive.ParamKey
+				want bool
+			}{
+				{name: "reports true for a word", give: "int64", want: true},
+				{name: "reports true for a word with hyphens and underscores", give: "max-depth_2", want: true},
+				{name: "reports false for the empty key", give: "", want: false},
+				{name: "reports false for a key that opens with a digit", give: "64bit", want: false},
+				{name: "reports false for a key with a dot", give: "typescript.int64", want: false},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					assert.Equal(t, tt.give.Valid(), tt.want, "the verdict follows the grammar's identifier")
+				})
+			}
+		})
 	})
 }
 
@@ -168,6 +191,10 @@ func TestSchemaAllocs(t *testing.T) {
 	assert.Equal(t, name, directive.Name("mockgen:stub"), "Canonical prefixes the plugin")
 	assert.MaxAllocs(t, func() { name = kernel.Canonical() }, 0, "Canonical allocates nothing for a kernel schema")
 	assert.Equal(t, name, directive.KernelMeta, "Canonical leaves a kernel name bare")
+	key := directive.ParamKey("int64")
+	var valid bool
+	assert.MaxAllocs(t, func() { valid = key.Valid() }, 0, "Valid allocates nothing")
+	assert.True(t, valid, "Valid accepts a word")
 }
 
 // BenchmarkSchema measures a resolution kind's spelling and a schema's
@@ -205,6 +232,19 @@ func BenchmarkSchema(b *testing.B) {
 				got = s.Canonical()
 			}
 			assert.Equal(b, got, directive.KernelMeta, "Canonical leaves a kernel name bare")
+		})
+	})
+
+	b.Run("ParamKey", func(b *testing.B) {
+		b.Run("Valid", func(b *testing.B) {
+			key := directive.ParamKey("int64")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got bool
+			for c.Loop() {
+				got = key.Valid()
+			}
+			assert.True(b, got, "Valid accepts a word")
 		})
 	})
 }

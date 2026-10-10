@@ -27,4 +27,15 @@ func TestCodes(t *testing.T) {
 		assert.Equal(t, meaning, "a stamp was refused",
 			"the meaning anchors the published index")
 	})
+
+	t.Run("RefusedType", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, eidos.RefusedType.String(), "EID-0069",
+			"the code spells its prefix and padded number")
+		meaning, held := diag.Kernel().Meaning(eidos.RefusedType)
+		assert.True(t, held, "the code registered at initialization")
+		assert.Equal(t, meaning, "the plan's target cannot spell a type of another language",
+			"the meaning anchors the published index")
+	})
 }

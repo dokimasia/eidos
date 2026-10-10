@@ -9,7 +9,9 @@
 // a plan's layout routed through the fixed steps: render declarations
 // through the kind templates in the canonical order the flush fixed,
 // finalise each file through the language formatter, and return files
-// as values. The layout groups units into those files through the
+// as values. A blank line separates the declarations of a file, and
+// the formatter keeps it or replaces it with the language's own
+// spacing. The layout groups units into those files through the
 // language's [Naming] and [Split], which the pass serves as
 // [Pass.FileName] and [Pass.SplitUnit]. Nothing arrives on disk:
 // staging, headers and trailers belong to the output contract that

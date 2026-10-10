@@ -627,6 +627,7 @@ func TestPass(t *testing.T) {
 			assert.Equal(t, string(files[0].Body),
 				"use "+storePkg+" as "+storeLocal2+"\n"+
 					"type "+alphaName+" "+storeLocal2+"."+rowName+"\n"+
+					"\n"+
 					"type "+storeLocal+" "+storeLocal2+"."+rowName+"\n",
 				"the import binds around the struct a later unit declares")
 		})
@@ -657,12 +658,12 @@ const (
 	// refusedKindsAllocs is one copy of a refusal map of one entry: the
 	// map and its group.
 	refusedKindsAllocs = 2
-	// renderOneAllocs is one Render of one file of one struct: 24 for
-	// the clone of the parsed templates that binds them to the file's
-	// import set, about 22 for the worker, its frame and its import set,
-	// and about 23 for the file: the template's run through reflection,
-	// its buffers and the rendered bytes.
-	renderOneAllocs = 69
+	// renderOneAllocs is one Render of one file of one struct: 25 for
+	// the clone of the parsed templates and the builtins that bind them
+	// to the file's import set, about 22 for the worker, its frame and
+	// its import set, and about 23 for the file: the template's run
+	// through reflection, its buffers and the rendered bytes.
+	renderOneAllocs = 70
 	// renderStructsAllocs is one render of 1,000 files of 200 structs:
 	// 613,293 on average with a standard deviation of 6. Each struct's
 	// template run through reflection allocates 3, and each file about

@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
 )
@@ -19,6 +20,10 @@ const (
 	foreignPrefix directive.Name = "k8s:"
 	foreignName   directive.Name = "k8s:deepcopy-gen"
 )
+
+// targetName is the spelling of the target whose directive the target
+// cases register.
+const targetName directive.Name = "typescript"
 
 // The ceilings of the registry's construction and of its writes.
 const (
@@ -31,6 +36,12 @@ const (
 	// because a Schema is larger than 128 bytes; and the claimant map's
 	// first group and the claimant list.
 	registerAllocs = 5
+	// registerTargetAllocs is one registration of a target's schema into
+	// an empty registry: the set of targets and its first group; the
+	// schema map's first group and the schema it stores apart; and the
+	// claimant map's first group and the claimant list. A target's
+	// canonical spelling is its name, so it does not allocate a spelling.
+	registerTargetAllocs = 6
 	// sealAllocs is one seal of the kernel's six schemas: the sorted
 	// canonical spellings, and the first group of the constraint table.
 	sealAllocs = 2
@@ -430,6 +441,28 @@ func TestRegistry(t *testing.T) {
 				}),
 				want: "commit",
 			},
+			{
+				name: "returns an error for choices on a param that is not a string",
+				schema: choosing(directive.ParamSpec{
+					Key: "depth", Type: directive.TypeInt, Choices: []string{"1", "2"}, Doc: "the depth",
+				}),
+				want: "only a string param takes them",
+			},
+			{
+				name: "returns an error for an empty choice",
+				schema: choosing(directive.ParamSpec{
+					Key: "int64", Type: directive.TypeString, Choices: []string{"bigint", ""}, Doc: "the spelling",
+				}),
+				want: "an empty choice",
+			},
+			{
+				name: "returns an error naming a choice declared twice",
+				schema: choosing(directive.ParamSpec{
+					Key: "int64", Type: directive.TypeString, Doc: "the spelling",
+					Choices: []string{"bigint", "bigint"},
+				}),
+				want: `choice "bigint" twice`,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -500,10 +533,122 @@ func TestRegistry(t *testing.T) {
 			)), "each variant has keys of its own")
 		})
 
+		t.Run("registers a string param with choices", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, directive.NewRegistry().Register(choosing(directive.ParamSpec{
+				Key: "int64", Type: directive.TypeString, Choices: []string{"bigint", "string"}, Doc: "the spelling",
+			})), "the schema registers")
+		})
+
+		t.Run("returns an error for a plugin's schema of a target's name", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.RegisterTarget(target(targetName)), "the target's directive registers")
+			err := r.Register(wellFormed("mockgen", targetName))
+			assert.HasError(t, err, "the plugin's schema fails")
+			assert.Contains(t, err.Error(), "kernel name", "the error is about a kernel name")
+		})
+
 		t.Run("returns an error after the seal", func(t *testing.T) {
 			t.Parallel()
 
 			assert.HasError(t, sealed(t).Register(wellFormed("mockgen", "stub")), "the registration fails")
+		})
+	})
+
+	t.Run("RegisterTarget", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("registers a schema that the target's bare name addresses", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.RegisterTarget(target(targetName)), "the target's directive registers")
+			s, held := r.ResolveName(targetName)
+			assert.True(t, held, "the bare name resolves")
+			expect.Equal(t, s.Canonical(), targetName, "the canonical spelling is the bare name")
+			expect.Equal(t, s.Plugin, "", "the schema has no plugin")
+		})
+
+		t.Run("returns an error for an ignore of a target's name", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.RegisterTarget(target(targetName)), "the target's directive registers")
+			err := r.Ignore(targetName)
+			assert.HasError(t, err, "the ignore fails")
+			assert.Contains(t, err.Error(), "kernel name", "the error is about a kernel name")
+		})
+
+		tests := []struct {
+			name    string
+			prepare func(r *directive.Registry) error
+			schema  directive.Schema
+			want    string
+		}{
+			{
+				name:   "returns an error for a schema with a plugin",
+				schema: wellFormed("typescript", targetName),
+				want:   `plugin "typescript"`,
+			},
+			{
+				name:    "returns an error for a target registered twice",
+				prepare: func(r *directive.Registry) error { return r.RegisterTarget(target(targetName)) },
+				schema:  target(targetName),
+				want:    "registered twice",
+			},
+			{
+				name:   "returns an error for one of the kernel's names",
+				schema: target(directive.KernelSkip),
+				want:   "kernel name",
+			},
+			{
+				name:    "returns an error with the plugin's schema that claims the name",
+				prepare: func(r *directive.Registry) error { return r.Register(wellFormed("mockgen", targetName)) },
+				schema:  target(targetName),
+				want:    "mockgen:" + string(targetName),
+			},
+			{
+				name: "returns an error for a negatable schema",
+				schema: func() directive.Schema {
+					s := target(targetName)
+					s.Negatable = true
+					return s
+				}(),
+				want: "negatable",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				r := directive.NewRegistry()
+				if tt.prepare != nil {
+					assert.NoError(t, tt.prepare(r), "the registry is prepared")
+				}
+				err := r.RegisterTarget(tt.schema)
+				assert.HasError(t, err, "the registration fails")
+				assert.Contains(t, err.Error(), tt.want, "the error is about the fault")
+				assert.HasPrefix(t, err.Error(), "directive: ", "the error has the package prefix")
+			})
+		}
+
+		t.Run("leaves the name free after a refused schema", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			refused := target(targetName)
+			refused.Negatable = true
+			assert.HasError(t, r.RegisterTarget(refused), "the negatable schema fails")
+			assert.NoError(t, r.Ignore(targetName), "the name is not a kernel name")
+		})
+
+		t.Run("returns an error after the seal", func(t *testing.T) {
+			t.Parallel()
+
+			assert.HasError(t, sealed(t).RegisterTarget(target(targetName)), "the registration fails")
 		})
 	})
 
@@ -641,6 +786,12 @@ func TestRegistryAllocs(t *testing.T) {
 		registerAllocs, "Register allocates the schema's entries")
 	assert.NoError(t, err, "every registration is admitted")
 
+	typescript := target(targetName)
+	assert.MaxAllocsWithSetup(t, directive.NewRegistry,
+		func(r *directive.Registry) { err = cmp.Or(err, r.RegisterTarget(typescript)) },
+		registerTargetAllocs, "RegisterTarget allocates the set of targets and the schema's entries")
+	assert.NoError(t, err, "every target's registration is admitted")
+
 	var faults []error
 	assert.MaxAllocsWithSetup(t, func() *directive.Registry { return openRegistry(t, directive.Kernel()...) },
 		func(r *directive.Registry) { faults = append(faults, r.Seal()...) },
@@ -726,6 +877,23 @@ func BenchmarkRegistry(b *testing.B) {
 		})
 	})
 
+	b.Run("RegisterTarget", func(b *testing.B) {
+		b.Run("a target's schema into a new registry", func(b *testing.B) {
+			typescript := target(targetName)
+			c := bench.Start(b).MaxAllocs(registerTargetAllocs)
+			defer c.End()
+			var (
+				r   *directive.Registry
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(func() { r = directive.NewRegistry() })
+				err = r.RegisterTarget(typescript)
+			}
+			assert.NoError(b, err, "the target's schema registers")
+		})
+	})
+
 	b.Run("Seal", func(b *testing.B) {
 		b.Run("the kernel's six schemas", func(b *testing.B) {
 			c := bench.Start(b).MaxAllocs(sealAllocs)
@@ -795,6 +963,27 @@ func openRegistry(tb assert.TB, schemas ...directive.Schema) *directive.Registry
 	r := directive.NewRegistry()
 	assert.Total(tb, r.Register, schemas, "the schema registers")
 	return r
+}
+
+// target returns the directive of a target named name: a schema without
+// a plugin whose name param and closed int64 param pass registration.
+func target(name directive.Name) directive.Schema {
+	return directive.Schema{
+		Name: name,
+		Params: []directive.ParamSpec{
+			{Key: "name", Type: directive.TypeString, Doc: "the declaration's name in the target"},
+			{
+				Key: "int64", Type: directive.TypeString, Choices: []string{"bigint", "string", "number"},
+				Doc: "the spelling of a 64-bit integer",
+			},
+		},
+		Doc: "overrides how the target spells the declaration",
+	}
+}
+
+// choosing returns a plugin's schema with spec as its one keyed param.
+func choosing(spec directive.ParamSpec) directive.Schema {
+	return directive.Schema{Plugin: "speller", Name: "spell", Params: []directive.ParamSpec{spec}, Doc: "spells a type"}
 }
 
 // wellFormed returns a schema that passes registration, for cases

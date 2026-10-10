@@ -133,6 +133,7 @@ func TestLanguage(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, string(files[0].Body),
 				"types (\n\t"+alphaName+"\n\t"+betaName+"\n)\n"+
+					"\n"+
 					"func "+handleName+"() {\n\treturn\n}\n",
 				"the cluster at its first member's position, the singleton through its kind template")
 		})
@@ -179,7 +180,7 @@ func TestLanguage(t *testing.T) {
 			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, string(files[0].Body),
-				"type "+alphaName+" struct{}\ntype "+betaName+" struct{}\n",
+				"type "+alphaName+" struct{}\n\ntype "+betaName+" struct{}\n",
 				"every declaration renders as the singleton it remained")
 		})
 
@@ -195,7 +196,7 @@ func TestLanguage(t *testing.T) {
 			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, string(files[0].Body),
-				string(firstGroup)+"(\n\t"+alphaName+"\n)\ntype "+betaName+" struct{}\n",
+				string(firstGroup)+"(\n\t"+alphaName+"\n)\n\ntype "+betaName+" struct{}\n",
 				"the first cluster renders it, and the second renders nothing")
 		})
 

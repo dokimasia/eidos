@@ -26,6 +26,12 @@ const (
 	// BuiltinBody places a callable's content; a kind template
 	// calls it with the declaration under render.
 	BuiltinBody = "body"
+	// BuiltinMemberBody places a member's content as [BuiltinBody]
+	// does, with every line that is not blank behind the language's
+	// [Language.MemberIndent]. A host's template calls it with the
+	// member under render, so the member's statements are one level
+	// deeper than the member.
+	BuiltinMemberBody = "memberbody"
 	// BuiltinUse records one import path into the file under
 	// render.
 	BuiltinUse = "use"
@@ -55,7 +61,7 @@ const (
 // which no vocabulary may claim.
 func reserved(name string) bool {
 	switch name {
-	case BuiltinBody, BuiltinUse, BuiltinImports, BuiltinDecls,
+	case BuiltinBody, BuiltinMemberBody, BuiltinUse, BuiltinImports, BuiltinDecls,
 		BuiltinSlots, BuiltinSlot, BuiltinNested:
 		return true
 	}
@@ -68,12 +74,14 @@ func unbound() template.FuncMap {
 	refuse := func() (string, error) {
 		return "", errors.New("render: the builtin is unbound")
 	}
+	body := func(any) (string, error) { return refuse() }
 	return template.FuncMap{
-		BuiltinBody:    func(any) (string, error) { return refuse() },
-		BuiltinUse:     func(string, ...string) (string, error) { return refuse() },
-		BuiltinImports: refuse,
-		BuiltinDecls:   refuse,
-		BuiltinNested:  func(string, symbol.Symbol) (string, error) { return refuse() },
+		BuiltinBody:       body,
+		BuiltinMemberBody: body,
+		BuiltinUse:        func(string, ...string) (string, error) { return refuse() },
+		BuiltinImports:    refuse,
+		BuiltinDecls:      refuse,
+		BuiltinNested:     func(string, symbol.Symbol) (string, error) { return refuse() },
 	}
 }
 

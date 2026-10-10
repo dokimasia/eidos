@@ -52,6 +52,12 @@ type Input struct {
 	// plan. A bare reference to a name of a kept file qualifies with the
 	// package of that file.
 	Others plugin.Names
+	// Target is the plan's target, the target of the backend that settled
+	// Emit. A type reference whose target is a declaration of another
+	// language is a translated reference, which takes the package of the
+	// file that declares its referent. Route treats a reference as a
+	// translated one only where Target is set.
+	Target plugin.Target
 	// Sink takes the routing findings.
 	Sink *diag.Sink
 }
@@ -81,8 +87,9 @@ func (in Input) check() error {
 // from every file, and a file left with no declaration is absent too.
 //
 // Route reports routing problems to the sink under [diag.PhaseLayout],
-// each an Error, and sets the package of every bare reference that
-// crosses into a file of another package, in place. It returns an
+// each an Error. It sets the package of every bare reference and every
+// translated reference that crosses into a file of another package, in
+// place. It returns an
 // error only for a defect in its inputs: a nil store, an unsettled
 // store, a missing speller, index or sink, a speller whose parts do not
 // contain the declarations of the unit it split, and a filename that is

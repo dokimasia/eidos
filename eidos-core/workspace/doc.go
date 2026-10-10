@@ -11,16 +11,16 @@
 // output, the ledger, the parse memo, the workspace's name, the worker
 // count and the config. [Builder.Build] runs its validation steps in one
 // pass: the brand, the worker count, the memo's limit, the frontends,
-// the roster, the registries with the kernel's own keys and schemas
-// registered first and every registry sealed, the lowering into
-// priority buckets, the binding of the gates on named key handles, the
-// options and their canonical encoding, the
-// config's refinements of the plans, the plans and their compiled
-// schedule, with every generator that declares templates serving its
-// plan's target, each plan's [Sources] and dependencies, the plans'
-// dependency order, the plans each check reads, and, where the
-// composition declares output, the output contract each plan writes
-// through. Every step runs even when an
+// the roster, the config's refinements of the plans, each plan's
+// lowering policy, the targets' lowering entries, the registries with
+// the kernel's own keys and schemas registered first and every registry
+// sealed, the schedule of priority buckets, the binding of each
+// predicate on a named key handle, the options and their canonical
+// encoding, the plans and their compiled schedule, with every generator
+// that declares templates serving its plan's target, each plan's
+// [Sources] and dependencies, the plans' dependency order, the plans
+// each check reads, and, where the composition declares output, the
+// output contract each plan writes through. Every step runs even when an
 // earlier one found faults. Build returns either the [Workspace] or one
 // error joining everything found, so the composition's author reads
 // every fault at once. A Build that succeeds has resolved every
@@ -48,6 +48,35 @@
 // layout policy, its output directory or its import base. The fingerprint
 // includes a refined plan as it includes a declared plan.
 //
+// # Targets
+//
+// A plan renders through the backend of one target. Where the backend of
+// an enabled plan respells names or declares lowering policies, Build
+// registers the target's keys under the target's spelling. These are the
+// target's name key, such as typescript.name, where the backend
+// respells, and the key of each policy. Build also registers the
+// target's directive, a kernel schema whose name is the target's
+// spelling. The directive has a name param where the backend respells,
+// and one param for each policy, closed to the policy's choices. Build
+// refuses two backends of such a target among the enabled plans.
+//
+// Build schedules the target's lowering entry before every annotator of
+// the composition. The entry's name is the target's spelling followed by
+// -lowering. On each declaration of another language that a plan of the
+// target admits, the entry stamps the backend's respell of the name at
+// plugin authority. On the subject of each instance of the target's
+// directive, it stamps the instance's values at directive authority. A
+// warm run stamps the names of each package that the load changed again,
+// and the values of each instance that changed.
+//
+// [Config.Policies] selects a choice of a lowering policy for every plan
+// whose backend declares the policy, and [PlanConfig.Policies] selects
+// one for a single plan. Build resolves one [plugin.Policy] for each
+// plan. Each generator of the plan receives the policy with the plan's
+// target and the backend's [plugin.TypeSpeller]. The fingerprint
+// includes each plan's resolved policy, so a run after a changed
+// selection runs cold.
+//
 // # The brand
 //
 // [Builder.Brand] declares the composition's brand, and Build
@@ -59,10 +88,13 @@
 //
 // # Registration
 //
-// Every registration binds to its registrant. A plugin claims
-// metadata namespaces and registers keys through a handle bound to
-// its name, and registers keys only into its own namespaces. The
-// builder's own registrations bind to the composition. A plugin's
+// Every registration binds to its registrant. A frontend registers its
+// language's keys through a handle bound to the language's spelling.
+// Build registers a target's keys through a handle bound to the
+// target's spelling, so the parts of one language are one registrant. A
+// plugin claims metadata namespaces and registers keys through a handle
+// bound to its name, and registers keys only into its own namespaces.
+// The builder's own registrations bind to the composition. A plugin's
 // directive schemas name the plugin that provides them.
 //
 // A plugin that gates on a key of another registrant declares the gate

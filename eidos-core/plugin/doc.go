@@ -48,7 +48,10 @@
 // # The read side
 //
 // [Frontend] loads one language into the node graph through a
-// [SourceUnit], the one door bytes enter a parse by. Three optional
+// [SourceUnit], the one door bytes enter a parse by. A frontend attaches
+// the carriers of a comment through [SourceUnit.AttachCarriers]. A
+// [Sugar] is a marker of metadata in the language's own syntax, and a
+// frontend attaches it through [SourceUnit.AttachSugar]. Three optional
 // roles widen what a frontend does: [Importer] names a file's import
 // of another file, [Exporter] names what a file publishes and does not
 // declare, and [Dependent] returns the dependency units the load
@@ -75,6 +78,19 @@
 // package a file at a routed path declares, from a [Placement] the
 // run derives from the graph and the fact store. The render pass
 // renders the routed files it receives in [RenderContext.Files].
+//
+// # The hub
+//
+// A backend that spells the types of other languages in its target
+// implements [TypeSpeller], the spoke of the cross-language hub. The
+// spoke spells a canonical [rules.TypeShape] under a resolved [Policy].
+// The backend declares the lowering policies that its spoke reads
+// through [PolicyProvider]. Each policy is a [PolicySpec] of a
+// [PolicyKey] and its [Choice] values. [NewPolicy] resolves the policy
+// of one plan, and the result is total. Every declared key has a
+// choice, and [Policy.Choice] panics for a key that the backend does
+// not declare. [NameParam] is the param of a target's directive that
+// overrides the name of one declaration.
 //
 // # Exports
 //

@@ -23,6 +23,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -67,6 +68,11 @@ const (
 	// kitReason is the reason the fixture states for a kind it
 	// refuses.
 	kitReason = "the fixture language declares no such construct"
+	// kitIndent is the member indent that the member case declares, and
+	// memberMethod a method template that places its content through the
+	// memberbody builtin.
+	kitIndent    = "\t"
+	memberMethod = "func {{.Name}}() {\n{{memberbody .}}}\n"
 )
 
 // The ceilings of a declaration's steps.
@@ -93,7 +99,32 @@ const (
 	// buildSeamsAllocs is one Build of the fixture declaration with both
 	// settle seams: Build's, and the backend that composes the seams.
 	buildSeamsAllocs = buildAllocs + 1
+	// policiesAllocs is one Policies of one spec into a new declaration:
+	// the list of specs.
+	policiesAllocs = 1
 )
+
+// kitText is the spelling that the fixture's spoke gives a text shape.
+const kitText = "text"
+
+// kitTextRef is the reference that the fixture's spoke returns without
+// allocating, and widthPolicy is the one policy of the fixture's target.
+var (
+	kitTextRef  = &emit.TypeRef{Spelling: kitText}
+	widthPolicy = plugin.PolicySpec{
+		Key: "stub.width", Choices: []plugin.Choice{"narrow", "wide"}, Default: "narrow",
+		Doc: "the width at which the fixture target spells a number",
+	}
+)
+
+// kitSpoke spells a text shape as the fixture's text reference, and
+// refuses every other shape.
+func kitSpoke(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
+	if s.Form != symbol.FormText {
+		return nil, errors.New("the fixture spells text alone")
+	}
+	return kitTextRef, nil
+}
 
 // setter is one field setter of a declaration, called through a
 // function made before any measurement.
@@ -116,10 +147,12 @@ const kitFile = "// {{.Name}}\n{{imports}}{{decls}}"
 
 // kitBody is the file the full fixture declaration renders: the
 // skeleton's comment, the scaffold's import, the struct through the
-// shared helper and the function around its scaffolded body.
+// shared helper and, after a blank line, the function around its
+// scaffolded body.
 var kitBody = "// " + kitWord + kitExt + "\n" +
 	"import (" + runtimePkg + ")\n" +
 	"type " + strings.ToUpper(rowName) + " struct{}\n" +
+	"\n" +
 	"func " + loadName + "() {\n\treturn\n}\n"
 
 // The backend kit is the write side's authoring builder: the
@@ -236,6 +269,14 @@ func TestBackend(t *testing.T) {
 							return nil
 						}).
 						Build()
+				},
+			},
+			{
+				name: "panics for a policy outside the target's namespace",
+				build: func() {
+					stray := widthPolicy
+					stray.Key = "golang.width"
+					kitBackend(kitName, kitTarget).Policies(stray).Build()
 				},
 			},
 		}
@@ -451,6 +492,41 @@ func TestBackend(t *testing.T) {
 			c, held := kitBackend(plainName, kitTarget).Build().(render.Coverer)
 			assert.True(t, held, "an undeclared coverage still reads")
 			assert.False(t, c.Coverage().Declared(), "as undeclared")
+		})
+	})
+
+	t.Run("MemberIndent", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend that writes the indent before each line of a member's content", func(t *testing.T) {
+			t.Parallel()
+
+			b := backend.New(kitName, kitTarget, kitSyntax()).
+				FileTemplate(kitFile).
+				KindTemplates(map[symbol.Kind]string{symbol.KindMethod: memberMethod}).
+				Naming(kitNaming).
+				Scaffold(kitScaffold).
+				MemberIndent(kitIndent).
+				Imports(kitImports).
+				Finalise(kitFinalise).
+				Build()
+			m := &emit.Method{Origin: coretest.Struct(coretest.StorePath, loadName).ID, Name: loadName}
+			m.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(plugin.Unit{
+				Plugin: kitEmitter, Per: plugin.PerPlan, Word: kitWord, Decls: []symbol.Symbol{m},
+			}), "the unit of one method is added")
+			r, renders := b.(plugin.Renderer)
+			assert.True(t, renders, "a kit backend renders")
+			sink := diag.NewSink()
+			files, err := r.Render(&plugin.RenderContext{
+				Emit: e, Files: kitFiles(t, b, e), Sink: sink, Plugin: kitName,
+			})
+			assert.NoError(t, err, "the pass renders the method")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the method's unit assembles one file")
+			assert.Contains(t, string(files[0].Body), "func "+loadName+"() {\n"+kitIndent+"\treturn\n}\n",
+				"the scaffolded return is one level deeper")
 		})
 	})
 
@@ -713,6 +789,63 @@ func TestBackend(t *testing.T) {
 			}, "every declared name renders through the convention")
 		})
 	})
+
+	t.Run("SpellType", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the declared spoke's spelling", func(t *testing.T) {
+			t.Parallel()
+
+			spoke, held := kitBackend(kitName, kitTarget).Types(kitSpoke).Build().(plugin.TypeSpeller)
+			assert.True(t, held, "a kit backend has the spoke role")
+			got, err := spoke.SpellType(rules.Leaf(symbol.FormText, "string"), plugin.Policy{})
+			assert.NoError(t, err, "the spoke spells text")
+			assert.Equal(t, got, kitTextRef, "the reference is the declared spoke's", assert.ByIdentity())
+		})
+
+		t.Run("returns the declared spoke's refusal", func(t *testing.T) {
+			t.Parallel()
+
+			spoke, held := kitBackend(kitName, kitTarget).Types(kitSpoke).Build().(plugin.TypeSpeller)
+			assert.True(t, held, "a kit backend has the spoke role")
+			_, err := spoke.SpellType(rules.Leaf(symbol.FormBool, "bool"), plugin.Policy{})
+			assert.HasError(t, err, "the spoke refuses a bool")
+		})
+
+		t.Run("returns an error with the target for a backend without a spoke", func(t *testing.T) {
+			t.Parallel()
+
+			spoke, held := kitBackend(kitName, kitTarget).Build().(plugin.TypeSpeller)
+			assert.True(t, held, "every kit backend has the spoke role")
+			_, err := spoke.SpellType(rules.Leaf(symbol.FormText, "string"), plugin.Policy{})
+			assert.HasError(t, err, "the backend refuses every shape")
+			assert.Contains(t, err.Error(), "target "+string(kitTarget)+" does not spell the types",
+				"the error contains the target")
+		})
+	})
+
+	t.Run("Policies", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the declared specs in declaration order", func(t *testing.T) {
+			t.Parallel()
+
+			depth := widthPolicy
+			depth.Key = "stub.depth"
+			provider, held := kitBackend(kitName, kitTarget).Policies(widthPolicy).Policies(depth).Build().(plugin.PolicyProvider)
+			assert.True(t, held, "a kit backend has the policy role")
+			assert.Equal(t, provider.Policies(), []plugin.PolicySpec{widthPolicy, depth},
+				"the specs accumulate in order")
+		})
+
+		t.Run("returns no specs for a backend without a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			provider, held := kitBackend(kitName, kitTarget).Build().(plugin.PolicyProvider)
+			assert.True(t, held, "every kit backend has the policy role")
+			assert.Empty(t, provider.Policies(), "the backend does not declare a policy")
+		})
+	})
 }
 
 // A declaration allocates its builder, each merge of a map, each
@@ -750,6 +883,24 @@ func TestBackendAllocs(t *testing.T) {
 		"Build allocates the composition of both seams besides")
 	_, lowers := built.(plugin.Lowerer)
 	assert.True(t, lowers, "the lowered backend has the construct seam")
+
+	spoken := kitBackend(kitName, kitTarget).Types(kitSpoke).Policies(widthPolicy).Build()
+	spoke, held := spoken.(plugin.TypeSpeller)
+	assert.True(t, held, "the lowered backend has the spoke role")
+	text := rules.Leaf(symbol.FormText, "string")
+	var (
+		ref *emit.TypeRef
+		err error
+	)
+	assert.MaxAllocs(t, func() { ref, err = spoke.SpellType(text, plugin.Policy{}) }, 0,
+		"SpellType allocates what the declared spoke allocates")
+	assert.NoError(t, err, "the spoke spells text")
+	assert.Equal(t, ref, kitTextRef, "SpellType returns the spoke's reference", assert.ByIdentity())
+	provider, held := spoken.(plugin.PolicyProvider)
+	assert.True(t, held, "the lowered backend has the policy role")
+	var specs []plugin.PolicySpec
+	assert.MaxAllocs(t, func() { specs = provider.Policies() }, 0, "Policies allocates nothing")
+	assert.Length(t, specs, 1, "Policies returns the declared spec")
 }
 
 // BenchmarkBackend measures each step of a declaration: the builder,
@@ -825,6 +976,33 @@ func BenchmarkBackend(b *testing.B) {
 			_, lowers := got.(plugin.Lowerer)
 			assert.True(b, lowers, "the lowered backend has the construct seam")
 		})
+	})
+
+	spoken := kitBackend(kitName, kitTarget).Types(kitSpoke).Policies(widthPolicy).Build()
+
+	b.Run("SpellType", func(b *testing.B) {
+		spoke, held := spoken.(plugin.TypeSpeller)
+		assert.True(b, held, "the lowered backend has the spoke role")
+		text := rules.Leaf(symbol.FormText, "string")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var ref *emit.TypeRef
+		for c.Loop() {
+			ref, _ = spoke.SpellType(text, plugin.Policy{})
+		}
+		assert.Equal(b, ref, kitTextRef, "SpellType returns the spoke's reference", assert.ByIdentity())
+	})
+
+	b.Run("Policies", func(b *testing.B) {
+		provider, held := spoken.(plugin.PolicyProvider)
+		assert.True(b, held, "the lowered backend has the policy role")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var specs []plugin.PolicySpec
+		for c.Loop() {
+			specs = provider.Policies()
+		}
+		assert.Length(b, specs, 1, "Policies returns the declared spec")
 	})
 }
 
@@ -1058,6 +1236,8 @@ func setters() []setter {
 		{name: "Coverage", set: func(b *backend.Builder) *backend.Builder { return b.Coverage(render.Coverage{}) }},
 		{name: "Lower", set: func(b *backend.Builder) *backend.Builder { return b.Lower(kitLower) }},
 		{name: "Respell", set: func(b *backend.Builder) *backend.Builder { return b.Respell(kitRespell) }},
+		{name: "Types", set: func(b *backend.Builder) *backend.Builder { return b.Types(kitSpoke) }},
+		{name: "MemberIndent", set: func(b *backend.Builder) *backend.Builder { return b.MemberIndent(kitIndent) }},
 	}
 }
 
@@ -1083,6 +1263,10 @@ func merges() []merge {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			set: func(b *backend.Builder) *backend.Builder { return b.Funcs(kitFuncs) },
+		},
+		{
+			name: "Policies", allocs: policiesAllocs,
+			set: func(b *backend.Builder) *backend.Builder { return b.Policies(widthPolicy) },
 		},
 	}
 }

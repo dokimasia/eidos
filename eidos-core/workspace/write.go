@@ -73,6 +73,7 @@ func (w *Workspace) write(
 		Directives: w.directives,
 		Modules:    src.modules,
 		Others:     others,
+		Target:     pl.backend.Target(),
 		Sink:       sink,
 	}
 	files, err := layout.Route(in)

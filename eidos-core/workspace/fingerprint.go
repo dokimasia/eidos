@@ -111,9 +111,9 @@ func pluginEntry(name plugin.ID, run any, encoded []byte) string {
 
 // fingerprint folds the composition's brand, workspace name, frontends
 // with their options' encodings, ignored spellings, scheduled plugins,
-// plans and checks, each plugin with its options' encoding, and every key
-// of the registry with the kinds it may be stamped on, its group and its
-// contract.
+// plans and checks, each plugin with its options' encoding, each plan's
+// resolved lowering policy, and every key of the registry with the kinds
+// it may be stamped on, its group and its contract.
 func (b *Builder) fingerprint(
 	annotate []annEntry, plans []compiledPlan, checks []compiledCheck, options map[plugin.ID][]byte,
 	fronts [][]byte, keys *meta.Registry,
@@ -170,6 +170,12 @@ func (b *Builder) fingerprint(
 		}
 		sb.WriteString("backend\x00")
 		sb.WriteString(pluginEntry(p.backend.Name(), p.backend, options[p.backend.Name()]))
+		for _, s := range policiesOf(p.backend) {
+			sb.WriteByte(0)
+			sb.WriteString(string(s.Key))
+			sb.WriteByte('=')
+			sb.WriteString(string(p.policy.Choice(s.Key)))
+		}
 		entries = append(entries, sb.String())
 	}
 	for _, c := range checks {
@@ -194,10 +200,11 @@ func (b *Builder) fingerprint(
 // brand and the workspace's name; each frontend in load order with its
 // name, version, canonical options and selection; every scheduled
 // annotator, generator and backend with its version and canonical
-// options; each plan's name, sources, dependencies and layout
-// configuration; each workspace check with the plans it reads; the
-// ignored directive spellings; and every registered key with the kinds it
-// may be stamped on, its group and its contract, folded in sorted order.
+// options, and every lowering entry; each plan's name, sources,
+// dependencies, layout configuration and resolved lowering policy; each
+// workspace check with the plans it reads; the ignored directive
+// spellings; and every registered key with the kinds it may be stamped
+// on, its group and its contract, folded in sorted order.
 //
 // Each generation of the sealed state records the SHA-256 of the
 // fingerprint and of each template tree the plans render through, file

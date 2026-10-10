@@ -28,6 +28,11 @@ type Config struct {
 	// plan, and Build returns an error for a name that the composition does
 	// not declare.
 	Plans map[string]PlanConfig
+	// Policies selects a choice for a policy key. The choice applies to
+	// every plan whose backend declares the key. Build returns an error for
+	// a key that no plan's backend declares, and for a choice outside the
+	// key's choices.
+	Policies map[plugin.PolicyKey]plugin.Choice
 }
 
 // PlanConfig is the refinement of one plan. Build applies it before it
@@ -51,6 +56,11 @@ type PlanConfig struct {
 	Policy     layout.Policy
 	Dir        string
 	ImportBase string
+	// Policies selects a choice for a policy key of the plan's backend,
+	// and replaces the selection of Config.Policies for the plan. Build
+	// returns an error for a key that the backend does not declare, and
+	// for a choice outside the key's choices.
+	Policies map[plugin.PolicyKey]plugin.Choice
 }
 
 // Plan is one write side of the composition. A plan is a value, not a
@@ -155,9 +165,10 @@ func (b *Builder) BrandName() output.Brand { return b.brand }
 //     full, because the fingerprint and each unit key include every option
 //
 // The frontend and the backend of one language can have the name of the
-// language, as both Go plugins report under golang. The first call
-// allocates the list of frontends, and a later call allocates only to grow
-// it.
+// language, as both Go plugins report under golang. A frontend that
+// implements [plugin.KeyProvider] registers its language's keys under the
+// language's spelling, in load order. The first call allocates the list of
+// frontends, and a later call allocates only to grow it.
 func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder {
 	b.frontends = append(b.frontends, fs...)
 	return b
@@ -253,10 +264,12 @@ func (b *Builder) Targets(ts ...plugin.Target) *Builder {
 
 // Keys registers metadata keys that belong to the composition and to no
 // plugin, such as the keys of a consumer or of a test fixture. Build runs
-// the registrations in
-// declaration order, through the handle of the composition on the
-// registry. The first call allocates the list of registrations, and a later
-// call allocates only to grow it.
+// the registrations in declaration order, through the handle of the
+// composition on the registry, after every frontend, target and plugin
+// registered. The keys of a composed language belong to the language, so
+// Build refuses the composition's own claim of the language's namespace.
+// The first call allocates the list of registrations, and a later call
+// allocates only to grow it.
 func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder {
 	b.keys = append(b.keys, register...)
 	return b
@@ -317,9 +330,10 @@ func (b *Builder) Memo(m Memo) *Builder {
 // # Allocation contract
 //
 // Build allocates in proportion to the composition. It allocates the
-// registries, the roster, the capability order, the compiled plans and
-// checks, the workspace and the fingerprint. A composition of 64
-// annotators and 8 plans of 4 generators allocates 934 times.
+// registries, the roster, the capability order, the plans' policies, the
+// compiled plans and checks, the workspace and the fingerprint. A
+// composition of 64 annotators and 8 plans of 4 generators allocates 935
+// times.
 func (b *Builder) Build() (*Workspace, error) {
 	faults := b.brandFaults()
 	if b.workers < 0 {
@@ -338,16 +352,20 @@ func (b *Builder) Build() (*Workspace, error) {
 	faults = append(faults, ferr...)
 	roster, byName, afaults := b.assemble()
 	faults = append(faults, afaults...)
-	reg, rerr := b.register(roster)
+	refined, refineFaults := refine(b.plans, b.config.Plans, b.checks)
+	faults = append(faults, refineFaults...)
+	policies, broken, pfaults := resolvePolicies(refined, b.config)
+	faults = append(faults, pfaults...)
+	entries, efaults := lowerings(refined, byName, broken)
+	faults = append(faults, efaults...)
+	reg, rerr := b.register(roster, entries)
 	faults = append(faults, rerr...)
-	ann, gens, lerr := lower(roster)
+	ann, gens, lerr := lower(roster, entries)
 	faults = append(faults, lerr...)
 	faults = append(faults, bindKeys(roster, ann, reg.keys)...)
 	options, cerr := configure(roster, byName, b.config)
 	faults = append(faults, cerr...)
-	refined, refineFaults := refine(b.plans, b.config.Plans, b.checks)
-	faults = append(faults, refineFaults...)
-	plans, perr := compilePlans(refined, gens, reg.targets, languages(b.frontends, reg.rules))
+	plans, perr := compilePlans(refined, gens, reg.targets, languages(b.frontends, reg.rules), policies)
 	faults = append(faults, perr...)
 	order, oerr := orderPlans(plans)
 	faults = append(faults, oerr...)

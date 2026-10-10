@@ -160,6 +160,31 @@ func TestEmit(t *testing.T) {
 		})
 	})
 
+	t.Run("Translates", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports false before the settle", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, plugin.NewEmit().Translates(), "a new store has not settled")
+		})
+
+		t.Run("reports false after a settle without a backend", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			foreign := &emit.Struct{Name: "Row"}
+			foreign.Fields.Append(&emit.Field{Name: "next", Type: &emit.TypeRef{
+				Spelling: "Row", Target: symbol.Identity{Lang: "other", Package: "svc", Name: "Row"},
+			}})
+			assert.NoError(t, e.Add(plugin.Unit{
+				Plugin: "gen", Per: plugin.PerSource, Word: "gen", Key: "a.go", Decls: []symbol.Symbol{foreign},
+			}), "the unit arrives")
+			assert.NoError(t, plugin.Settle(e, nil, nil, nil), "a store without a backend settles")
+			assert.False(t, e.Translates(), "a settle without a backend has no target to compare with")
+		})
+	})
+
 	t.Run("Add", func(t *testing.T) {
 		t.Parallel()
 
@@ -593,6 +618,9 @@ func TestEmitAllocs(t *testing.T) {
 	settled := false
 	assert.MaxAllocs(t, func() { settled = e.Settled() }, 0, "Settled allocates nothing")
 	assert.False(t, settled, "Settled reports false before the settle")
+	translates := true
+	assert.MaxAllocs(t, func() { translates = e.Translates() }, 0, "Translates allocates nothing")
+	assert.False(t, translates, "Translates reports false before the settle")
 	var key, spelling string
 	assert.MaxAllocs(t, func() { key, spelling = u.FileKey(), plugin.PerSource.String() }, 0,
 		"FileKey and String allocate nothing")
@@ -754,6 +782,17 @@ func BenchmarkEmit(b *testing.B) {
 			settled = e.Settled()
 		}
 		assert.False(b, settled, "Settled reports false before the settle")
+	})
+
+	b.Run("Translates", func(b *testing.B) {
+		e := plugin.NewEmit()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		translates := true
+		for c.Loop() {
+			translates = e.Translates()
+		}
+		assert.False(b, translates, "Translates reports false before the settle")
 	})
 
 	b.Run("Contribute", func(b *testing.B) {

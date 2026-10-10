@@ -922,7 +922,10 @@ func (w *Workspace) annotateAll(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := w.annotateCall(ix, s, facts, sink, counted, counted, nil, true); err != nil {
+		// A lowering entry journals every invocation it runs, so a call
+		// that journals none ran none.
+		_, lowers := s.run.(*lowering)
+		if err := w.annotateCall(ix, s, facts, sink, counted, counted, nil, !lowers); err != nil {
 			return err
 		}
 		stats.Invoked = append(stats.Invoked, Invoked{

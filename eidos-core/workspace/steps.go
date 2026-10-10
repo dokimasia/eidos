@@ -58,6 +58,11 @@ type compiledPlan struct {
 	exported bool
 	entries  []genEntry
 	backend  plugin.Backend
+	// types is the backend's spoke, nil for a backend that does not
+	// implement [plugin.TypeSpeller], and policy the plan's resolved
+	// lowering policy. Each generator of the plan receives both.
+	types  plugin.TypeSpeller
+	policy plugin.Policy
 	// routing is the plan's validated layout, and outputs the
 	// families each of its generators declares.
 	routing layout.Config
@@ -239,24 +244,30 @@ func sameProvider(seated, p plugin.Plugin) bool {
 	return v.Comparable() && v.Equal(reflect.ValueOf(p))
 }
 
-// register is the second step: the kernel's directive schemas
-// first, because validation of the skip and meta instances reads
-// them, then every plugin's keys and the builder's own
-// registrations, the key registry's seal, every plugin's schemas,
-// and the directive seal that resolves constraints.
-// Capability labels and target names collect here too, because
-// both are registries in everything but shape.
+// register is the register step. The kernel's keys and directive
+// schemas register first, because validation of the skip and meta
+// instances reads the schemas. The keys of each frontend follow in load
+// order, then the keys of each lowering entry's target, then every
+// plugin's keys in roster order and the builder's own registrations,
+// and then the key registry's seal. Each target's directive registers
+// after the kernel's schemas, and every plugin's schemas and the
+// directive seal that resolves constraints follow it. Capability labels
+// and target names collect here too, because both are registries in
+// everything but shape.
 //
-// Every registration binds to its registrant. A plugin registers its
-// keys through a handle bound to its name, so it claims namespaces
-// for itself and registers only into its own. The builder's
-// registrations bind to the composition. A plugin's schema names the
-// plugin that provides it, and a schema naming another plugin is
-// refused. The kernel's own keys and schemas register first, so an
-// impersonation is a plain duplicate by the time it arrives. The
-// ignores register last, so one covering a registered name is
-// refused naming it.
-func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
+// Every registration binds to its registrant. A frontend registers its
+// language's keys through a handle bound to the language's spelling.
+// The workspace registers a target's keys through a handle bound to the
+// target's spelling, so the parts of one language are one registrant. A
+// plugin registers its keys through a handle bound to its name, so it
+// claims namespaces for itself and registers only into its own. The
+// builder's registrations bind to the composition. The schema of a
+// plugin has the plugin that provides it, and a schema of another plugin
+// is refused. The kernel's own keys and schemas register first, so an
+// impersonation is a plain duplicate by the time it arrives. The ignores
+// register last, so an ignore that covers a registered name is refused
+// with that name.
+func (b *Builder) register(roster []plugin.Plugin, entries []*lowering) (registries, []error) {
 	var faults []error
 	keys := meta.NewRegistry()
 	kernel, err := meta.Kernel(keys)
@@ -268,6 +279,21 @@ func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
 		if err := dirs.Register(s); err != nil {
 			faults = append(faults, err)
 		}
+	}
+	for _, l := range entries {
+		if err := dirs.RegisterTarget(l.schema()); err != nil {
+			faults = append(faults, err)
+		}
+	}
+	for _, f := range b.frontends {
+		if kp, held := f.(plugin.KeyProvider); held {
+			if err := kp.Keys(keys.For(string(f.Lang()))); err != nil {
+				faults = append(faults, err)
+			}
+		}
+	}
+	for _, l := range entries {
+		faults = append(faults, l.register(keys)...)
 	}
 	for _, p := range roster {
 		if kp, held := p.(plugin.KeyProvider); held {
@@ -445,22 +471,27 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 	return out
 }
 
-// lower is the third step: each role's members sort by priority,
-// then by capability topology inside one priority, then by name,
-// and a member's bucket number is its position in the result.
-func lower(roster []plugin.Plugin) ([]annEntry, []genEntry, []error) {
+// lower is the schedule step: each role's members sort by priority,
+// then by capability topology inside one priority, then by name, and a
+// member's bucket number is its position in the result. The lowering
+// entries run before every annotator, in the order of their names, so
+// each annotator reads every target name.
+func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry, []error) {
 	var faults []error
 
 	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
 	faults = append(faults, aerr...)
-	ann := make([]annEntry, 0, len(annotators))
-	for i, m := range annotators {
+	ann := make([]annEntry, 0, len(entries)+len(annotators))
+	for _, l := range entries {
+		ann = append(ann, annEntry{bucket: len(ann) + 1, name: l.Name(), run: l})
+	}
+	for _, m := range annotators {
 		run, held := m.p.(plugin.Annotator)
 		if !held {
 			continue // membersOf admitted it, so the plugin implements the role
 		}
-		ann = append(ann, annEntry{bucket: i + 1, name: m.name, run: run})
+		ann = append(ann, annEntry{bucket: len(ann) + 1, name: m.name, run: run})
 	}
 
 	generators, gerr := order("generator", membersOf(roster, plugin.RoleGenerator,
@@ -819,16 +850,17 @@ func refine(
 	return out, faults
 }
 
-// compilePlans is the fifth and sixth step: every plan named once,
-// at least one generator, exactly one backend against a registered
-// target, every generator that declares templates serving that
-// target, a layout the plan's generators' families admit, sources in
-// the languages langs contains, dependencies on declared plans, and
-// the roles fixed in bucket order, which is the schedule the run
-// executes as data. A plan that another plan depends on is marked
-// exported.
+// compilePlans is the plan step: every plan named once, at least one
+// generator, exactly one backend against a registered target, every
+// generator that declares templates serving that target, a layout the
+// plan's generators' families admit, sources in the languages langs
+// contains, dependencies on declared plans, and the roles fixed in
+// bucket order, which is the schedule the run executes as data. Each
+// plan takes its backend's spoke and the policy of policies at its
+// index. A plan that another plan depends on is marked exported.
 func compilePlans(
 	declared []Plan, gens []genEntry, targets map[plugin.Target]bool, langs map[symbol.Lang]bool,
+	policies []plugin.Policy,
 ) ([]compiledPlan, []error) {
 	var faults []error
 	seatOf := map[plugin.ID]genEntry{}
@@ -843,7 +875,7 @@ func compilePlans(
 	}
 	names := map[string]bool{}
 	out := make([]compiledPlan, 0, len(declared))
-	for _, pl := range declared {
+	for i, pl := range declared {
 		switch {
 		case pl.Name == "":
 			faults = append(faults,
@@ -903,9 +935,10 @@ func compilePlans(
 		faults = append(faults, pl.Sources.check(pl.Name, langs)...)
 		deps, dfaults := dependencies(pl, at)
 		faults = append(faults, dfaults...)
+		types, _ := pl.Backend.(plugin.TypeSpeller)
 		out = append(out, compiledPlan{
 			name: pl.Name, sources: pl.Sources, deps: deps, entries: roles,
-			backend: pl.Backend, routing: pl.Layout, outputs: outputs,
+			backend: pl.Backend, types: types, policy: policies[i], routing: pl.Layout, outputs: outputs,
 		})
 	}
 	for i := range out {

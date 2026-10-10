@@ -5,9 +5,12 @@ package frontend
 
 import (
 	"context"
+	"errors"
 	"io/fs"
+	"slices"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -45,6 +48,7 @@ type Builder struct {
 	dependencies func(context.Context, *plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
 	exports      func(plugin.ImportScope, string) plugin.Candidates
 	stores       func(getenv func(key string) string) (map[string]fs.FS, error)
+	keys         []func(r *meta.Registry) error
 }
 
 // New starts a frontend declaration for one language.
@@ -166,20 +170,33 @@ func (b *Builder) Stores(locate func(getenv func(key string) string) (map[string
 	return b
 }
 
+// Keys declares the language's key registrations: the keys that the
+// frontend and its classifiers stamp, and the keys of the language that
+// its other parts stamp. The built frontend runs them as
+// [plugin.KeyProvider], and the workspace calls it under the language's
+// spelling, so the namespace belongs to the language. Repeated calls
+// append, and the registrations run in declaration order.
+func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder {
+	b.keys = append(b.keys, register...)
+	return b
+}
+
 // Build freezes the declaration and returns the lowered frontend,
-// which implements [plugin.Frontend]. The conformance suite runs the
-// same checks over it that a hand-rolled frontend meets, because the
-// lowering adds nothing the role does not state. The frontend
-// implements an optional role exactly when the declaration states it:
+// which implements [plugin.Frontend] and [plugin.KeyProvider]. The
+// conformance suite runs the same checks over it that a hand-rolled
+// frontend meets, because the lowering adds nothing the role does not
+// state. Its [plugin.KeyProvider] role registers the declared
+// registrations, and none for a declaration without them. The frontend
+// implements another optional role exactly when the declaration has it:
 // [plugin.OptionsProvider] for [Builder.Options], [plugin.Dependent]
 // for [Builder.Dependencies], [plugin.Exporter] for [Builder.Exports],
 // and [plugin.StoreLocator] for [Builder.Stores].
 //
 // Build panics on a declaration defect: an empty name or language,
 // no declared version, an empty claim, a missing partition, parse or
-// resolve, or stores without dependency rounds. A wrong declaration is
-// a bug in the frontend's own constructor and panics on the first Build
-// in any test.
+// resolve, a nil key registration, or stores without dependency
+// rounds. A wrong declaration is a bug in the frontend's own
+// constructor and panics on the first Build in any test.
 func (b *Builder) Build() plugin.Frontend {
 	if b.name == "" {
 		panic("frontend: New with an empty name")
@@ -207,13 +224,16 @@ func (b *Builder) Build() plugin.Frontend {
 	if b.stores != nil && b.dependencies == nil {
 		defects = append(defects, "declares stores and no dependency rounds, which read them")
 	}
+	if slices.ContainsFunc(b.keys, func(register func(*meta.Registry) error) bool { return register == nil }) {
+		defects = append(defects, "declares a nil key registration")
+	}
 	if len(defects) > 0 {
 		panic("frontend: " + name + " " + strings.Join(defects, ", and "))
 	}
 	base := &builtFrontend{
 		name: b.name, lang: b.lang, syntax: b.syntax, overloads: b.overloads, version: b.version,
 		selection: b.selection, partition: b.partition, parse: b.parse,
-		resolve: b.resolve, classifiers: b.classifiers,
+		resolve: b.resolve, classifiers: b.classifiers, keys: b.keys,
 	}
 	var roles role
 	if b.hasOptions {
@@ -331,6 +351,7 @@ type builtFrontend struct {
 	parse       func(context.Context, *plugin.SourceUnit) error
 	resolve     func(plugin.ImportScope, string) plugin.Candidates
 	classifiers []Classifier
+	keys        []func(r *meta.Registry) error
 }
 
 // Name returns the frontend's one identity.
@@ -382,6 +403,19 @@ func (f *builtFrontend) Resolve(
 	scope plugin.ImportScope, spelling string,
 ) plugin.Candidates {
 	return f.resolve(scope, spelling)
+}
+
+// Keys implements [plugin.KeyProvider]: the declared registrations run
+// in declaration order, and their faults join, so the composition reads
+// every fault at once. It allocates what the registrations allocate.
+func (f *builtFrontend) Keys(r *meta.Registry) error {
+	var errs []error
+	for _, register := range f.keys {
+		if err := register(r); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // optionsRole is the options role of a built frontend that declares

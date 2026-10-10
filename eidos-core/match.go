@@ -5,6 +5,7 @@ package eidos
 
 import (
 	"fmt"
+	"slices"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -56,6 +57,12 @@ type match struct {
 	// the match makes it on its first binding and keeps it for every
 	// invocation it is reused for.
 	resolve func(symbol.Lang) rules.SourceRules
+	// override reads the policy overrides of the translation that runs on
+	// the match, whose owner is translating. The match makes it on its
+	// first translation and keeps it for every invocation it is reused
+	// for, as it keeps resolve. translating is zero outside a translation.
+	override    func(plugin.PolicyKey) (plugin.Choice, bool)
+	translating symbol.Identity
 	// derivation is the snapshot derived last returned, current
 	// while the read set has derivedAt edges. The set only grows
 	// within an invocation, so an unchanged size means unchanged
@@ -102,7 +109,7 @@ func newMatch(inv invocation) match {
 // runs. On the rule's first invocation in the call it takes a match of
 // type M that the lane's earlier call released, and allocates one only
 // where the lane keeps none. The rebound base keeps the match's
-// resolver of other languages.
+// resolver of other languages and its reader of policy overrides.
 func bindMatch[M any, P interface {
 	*M
 	Matcher
@@ -113,9 +120,9 @@ func bindMatch[M any, P interface {
 		inv.keep(p)
 	}
 	b := p.base()
-	resolve := b.resolve
+	resolve, override := b.resolve, b.override
 	*b = newMatch(inv)
-	b.resolve = resolve
+	b.resolve, b.override = resolve, override
 	return p
 }
 
@@ -301,6 +308,40 @@ func (m *match) bind(lang symbol.Lang) rules.Bound {
 		m.resolve = func(other symbol.Lang) rules.SourceRules { return m.rs.rulesFor(other, m.seq, m.pos) }
 	}
 	return rules.NewBound(m.rs.rulesFor(lang, m.seq, m.pos), view, m.resolve)
+}
+
+// overrides returns the match's reader of policy overrides, which the
+// match makes on its first translation. For a key, the reader reads the
+// key's value at directive authority on the owner of the running
+// translation, then on the match's subject, and then on the owner's
+// package. It returns the first value that it finds as the choice. It
+// records each read into the invocation's read set, a miss included, and
+// reads an identity that it read before, or the zero identity, once at
+// most.
+func (m *match) overrides() func(plugin.PolicyKey) (plugin.Choice, bool) {
+	if m.override != nil {
+		return m.override
+	}
+	m.override = func(k plugin.PolicyKey) (plugin.Choice, bool) {
+		name := meta.KeyName(k)
+		key := meta.Named[string](name)
+		reads := m.readset()
+		on := [3]symbol.Identity{m.translating, m.subject}
+		if !m.translating.IsZero() {
+			on[2] = m.translating.PackageIdentity()
+		}
+		for i, id := range on {
+			if id.IsZero() || slices.Contains(on[:i], id) {
+				continue
+			}
+			reads.RecordFact(id, name)
+			if v, held := meta.GetAtLeast(m.rs.facts, id, key, meta.AuthorityDirective); held {
+				return plugin.Choice(v), true
+			}
+		}
+		return "", false
+	}
+	return m.override
 }
 
 // readset returns the invocation's read set, the lane's own, and notes

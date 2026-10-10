@@ -52,9 +52,9 @@ type Fixture struct {
 	// workspace's place.
 	Schemas []directive.Schema
 
-	// Keys registers the classification keys the fixture's stamps
-	// write, for the stamp application the suite runs in the
-	// workspace's place.
+	// Keys registers the classification keys of the fixture's stamps
+	// that the frontend does not register through its own role, for the
+	// stamp application the suite runs in the workspace's place.
 	Keys func(*meta.Registry) error
 
 	// Stores are the named trees outside the workspace the load reads
@@ -102,9 +102,9 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertClassified(t, setup)
 	})
-	if fx.Keys == nil {
+	if !stampsAny(survey.graph) {
 		t.Run("applies classification stamps", func(t *testing.T) {
-			t.Skip("the fixture declares no classification keys")
+			t.Skip("the fixture's load stamps nothing")
 		})
 	}
 	t.Run("refuses its own outputs", func(t *testing.T) {
@@ -169,6 +169,14 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 		}
 		AssertReexports(t, setup)
 	})
+}
+
+// stampsAny reports whether a load recorded a classification stamp.
+func stampsAny(g *store.Graph) bool {
+	for range g.Stamps() {
+		return true
+	}
+	return false
 }
 
 // packagesOf counts the packages a graph declares.

@@ -48,6 +48,14 @@ func TestDecls(t *testing.T) {
 				"the flush fixed the unit's order")
 		})
 
+		t.Run("separates the declarations of a file with a blank line", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := runPass(t, language(), seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" struct{}\n\ntype "+betaName+" struct{}\n",
+				"a blank line follows each declaration but the last")
+		})
+
 		t.Run("reports UnspeltKind for a declaration kind without a template", func(t *testing.T) {
 			t.Parallel()
 
@@ -147,6 +155,7 @@ func TestDecls(t *testing.T) {
 				"use "+legacyPkg+" as "+rowName+"\n"+
 					"use "+storePkg+" as "+rowName2+"\n"+
 					"type "+alphaName+" struct{}\n"+
+					"\n"+
 					"type "+betaName+" struct{}\n",
 				"the declaration the skipped one imported binds as if it never had")
 		})

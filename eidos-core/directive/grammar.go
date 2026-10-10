@@ -32,6 +32,18 @@ func (n Name) Plugin() string {
 	return plugin
 }
 
+// Valid reports whether the name is one identifier of the grammar, or
+// the identifier of a plugin, a colon and an identifier. An identifier
+// is a letter followed by letters, digits, hyphens and underscores.
+// Valid does not allocate.
+func (n Name) Valid() bool {
+	plugin, bare, prefixed := strings.Cut(string(n), string(prefixSep))
+	if !prefixed {
+		return isIdentifier(string(n))
+	}
+	return isIdentifier(plugin) && isIdentifier(bare)
+}
+
 // The grammar's punctuation. The spellings are defined here once,
 // so the parser and its refusals agree on every byte.
 const (

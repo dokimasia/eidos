@@ -113,6 +113,15 @@ func (s *ImportSet) Reserve(names ...string) {
 	}
 }
 
+// Reserved reports whether a declaration of the file took name through
+// [ImportSet.Reserve]. A language with global names checks it before it
+// writes a global name without an import, because a declaration of the
+// file with that name hides the global. Reserved allocates nothing.
+func (s *ImportSet) Reserved(name string) bool {
+	b, held := s.locals[name]
+	return held && b.reserved
+}
+
 // Bind imports a whole package and returns the name the file refers
 // to it by: name where no other binding and no declaration of the
 // file takes it, and otherwise name with the lowest free numeric

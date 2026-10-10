@@ -14,6 +14,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
@@ -40,6 +41,26 @@ const (
 	flagKeyName   meta.KeyName      = "flag.marked"
 	ghostFlagName meta.KeyName      = "flag.ghost"
 )
+
+// The language of [keyedFrontend] and the key that it registers.
+const (
+	keyedLang symbol.Lang  = "kv"
+	keyedKey  meta.KeyName = "kv.flag"
+)
+
+// keyedFrontend is the scripted frontend under another language, which
+// registers its language's keys through register.
+type keyedFrontend struct {
+	*frontendtest.Scripted
+	lang     symbol.Lang
+	register func(*meta.Registry) error
+}
+
+// Lang returns the declared language.
+func (f keyedFrontend) Lang() symbol.Lang { return f.lang }
+
+// Keys registers the language's keys through the declared function.
+func (f keyedFrontend) Keys(r *meta.Registry) error { return f.register(r) }
 
 // convertedBound is a struct that an option of [convertedOptions] has.
 type convertedBound struct {
@@ -213,6 +234,40 @@ func TestSteps(t *testing.T) {
 			assert.HasError(t, err, "the composition fails")
 			assert.Contains(t, err.Error(), "impostor", "the error names the declaring plugin")
 			assert.Contains(t, err.Error(), `"picky"`, "the error names the borrowed name")
+		})
+
+		t.Run("registers a frontend's keys under its language's spelling", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, valid().Frontends(keyedFrontend{
+				Scripted: frontendtest.NewScripted(), lang: keyedLang, register: keyedKeys,
+			}))
+			target, err := w.ParseTarget(string(keyedKey) + "@svc/store/row.zz:1")
+			assert.NoError(t, err, "the frontend's key is registered")
+			assert.Equal(t, target.Key, keyedKey, "the target has the frontend's key")
+		})
+
+		t.Run("returns a frontend's key registration error", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Frontends(keyedFrontend{
+				Scripted: frontendtest.NewScripted(), lang: keyedLang,
+				register: func(*meta.Registry) error { return errors.New("the kv namespace is taken") },
+			}).Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Contains(t, err.Error(), "the kv namespace is taken", "the error has the frontend's cause")
+		})
+
+		t.Run("returns an error for the composition's claim of a frontend's namespace", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().
+				Frontends(keyedFrontend{Scripted: frontendtest.NewScripted(), lang: keyedLang, register: keyedKeys}).
+				Keys(func(r *meta.Registry) error { return r.ClaimNamespace(string(keyedLang)) }).
+				Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Contains(t, err.Error(), `namespace "kv" is claimed twice: by "kv" and by the composition`,
+				"the error contains the language and the composition")
 		})
 
 		sealedRegistry := func(t *testing.T) *meta.Registry {
@@ -1007,6 +1062,16 @@ func keyed(name plugin.ID, register func(*meta.Registry) error) plugin.Annotator
 		panic("workspace_test: a stamper rule lowers to the annotator role")
 	}
 	return p
+}
+
+// keyedKeys claims the namespace of [keyedLang] and registers
+// [keyedKey], as a frontend registers its language's keys.
+func keyedKeys(r *meta.Registry) error {
+	if err := r.ClaimNamespace(string(keyedLang)); err != nil {
+		return err
+	}
+	_, err := meta.Register[bool](r, meta.KeySpec{Name: keyedKey, Doc: "marks a flagged declaration"})
+	return err
 }
 
 // schemad returns a generator declaring s, so the registration step

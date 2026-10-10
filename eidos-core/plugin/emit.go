@@ -156,6 +156,10 @@ type Emit struct {
 	// lowering seams ran, and the declarations the readers see are
 	// the ones that render.
 	settled bool
+	// translates reports that the settle found a type reference whose
+	// target is a declaration of another language than the backend's
+	// target.
+	translates bool
 	// emitted maps each declaration whose name the settle changed to the
 	// name it was emitted under, which [NewExport] keys an export on. The
 	// settle allocates it at its first change, so a store whose names all
@@ -178,6 +182,14 @@ func NewEmit() *Emit {
 // the first render instead of writing the wrong bytes. It allocates
 // nothing.
 func (e *Emit) Settled() bool { return e.settled }
+
+// Translates reports whether a declaration of the settled store has a
+// translated reference: a type reference whose target is a declaration of
+// another language than the target of the backend that settled the store.
+// The layout qualifies such a reference by the file that declares its
+// referent. An unsettled store, and a store that a settle without a
+// backend settled, report false. It allocates nothing.
+func (e *Emit) Translates() bool { return e.translates }
 
 // Add records one unit and indexes its tree.
 //

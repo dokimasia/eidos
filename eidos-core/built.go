@@ -169,7 +169,8 @@ func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 // accumulators into the plan's store after every rule ran, which keeps
 // a plugin's own emit invisible to its own emit rules. It hands the
 // context's journal its records once the flush has added the units.
-// Every handler reads the context's exports through its match. The
+// A handler reads the context's exports through its match, and
+// translates a type with the context's target, spoke and policy. The
 // call's state returns to the shared pool when the call returns,
 // whatever it returns.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
@@ -177,6 +178,7 @@ func generate(b *built, ctx *plugin.GeneratorContext) error {
 		ctx.Workers)
 	defer c.release()
 	c.exports = ctx.Exports
+	c.target, c.types, c.policy = ctx.Target, ctx.Types, ctx.Policy
 	c.journal = ctx.Journal
 	c.restrict(ctx.Select)
 	if err := c.run(plugin.PhaseGenerate, plugin.PhaseEmit); err != nil {

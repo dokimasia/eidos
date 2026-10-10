@@ -119,6 +119,33 @@ func TestImportSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Reserved", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for a name that a declaration of the file took", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(rowName)
+			assert.True(t, s.Reserved(rowName), "the file declares the name")
+		})
+
+		t.Run("reports false for a name that an import binds", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.BindItem(storePkg, rowName, false)
+			assert.False(t, s.Reserved(rowName), "an import is not a declaration of the file")
+		})
+
+		t.Run("reports false for a free name", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			assert.False(t, s.Reserved(rowName), "nothing took the name")
+		})
+	})
+
 	t.Run("Bind", func(t *testing.T) {
 		t.Parallel()
 
@@ -538,6 +565,9 @@ func TestImportSetAllocs(t *testing.T) {
 	var home string
 	assert.MaxAllocs(t, func() { home = full.Home() }, 0, "Home allocates nothing")
 	assert.Equal(t, home, storePkg, "Home returns the file's own package")
+	var reserved bool
+	assert.MaxAllocs(t, func() { reserved = full.Reserved(storeName) }, 0, "Reserved allocates nothing")
+	assert.True(t, reserved, "Reserved reports the file's own declaration")
 	var paths []string
 	assert.MaxAllocs(t, func() { paths = full.Paths() }, 1, "Paths allocates the list it returns")
 	assert.Length(t, paths, filledPaths, "Paths returns every distinct path")
@@ -582,6 +612,16 @@ func BenchmarkImportSet(b *testing.B) {
 			got = full.Home()
 		}
 		assert.Equal(b, got, storePkg, "Home returns the file's own package")
+	})
+
+	b.Run("Reserved", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = full.Reserved(storeName)
+		}
+		assert.True(b, got, "Reserved reports the file's own declaration")
 	})
 
 	b.Run("Paths", func(b *testing.B) {
@@ -678,11 +718,13 @@ func grownSet() *render.ImportSet {
 	return s
 }
 
-// filledSet returns a set for the file of storePkg holding
-// [filledEntries] entries over [filledPaths] paths.
+// filledSet returns a set for the file of storePkg with [filledEntries]
+// entries over [filledPaths] paths, and a declaration of the file named
+// storeName.
 func filledSet() *render.ImportSet {
 	s := &render.ImportSet{}
 	s.SetHome(storePkg)
+	s.Reserve(storeName)
 	s.Add(sidePkg)
 	s.AddNamed(auditPkg, rowName)
 	s.AddType(auditPkg, storeName)

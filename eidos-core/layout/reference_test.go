@@ -21,6 +21,18 @@ import (
 // fakesDir is the directory the reference cases move RowStub into.
 const fakesDir = "svc/store/fakes"
 
+// tsxTarget is the target of the plans that translate the fixture's
+// declarations, a language other than the fixture's.
+const tsxTarget plugin.Target = "tsx"
+
+// The names in the translation cases: the settled name of the referent,
+// and the declared name of its origin. The plan does not emit a
+// declaration under the second name.
+const (
+	rowStubName = "RowStub"
+	rowName     = "Row"
+)
+
 // keptFiles is the name table of kept files over a list of entries: what
 // a warm run hands the layout of part of a plan.
 type keptFiles []plugin.NameEntry
@@ -177,6 +189,154 @@ func TestReference(t *testing.T) {
 			files, sink := f.route(t)
 			assert.Empty(t, files, "the referencing declaration is refused")
 			coretest.AssertCodes(t, sink, layout.UnderivedPackage)
+		})
+
+		translations := []struct {
+			name   string
+			give   *emit.TypeRef
+			out    string
+			target plugin.Target
+			want   string
+		}{
+			{
+				name: "qualifies a translated reference into a file of another package",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID}, out: "fakes/", target: tsxTarget,
+				want: fakesDir,
+			},
+			{
+				name: "leaves a translated reference within one package without a package",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID}, target: tsxTarget, want: "",
+			},
+			{
+				name:   "clears the package that the source of a translated reference recorded",
+				give:   &emit.TypeRef{Spelling: rowStubName, Target: rowID, Package: "example.com/row"},
+				target: tsxTarget, want: "",
+			},
+			{
+				name: "leaves a reference to a declaration of the target's language as written",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID}, out: "fakes/",
+				target: plugin.Target(coretest.Lang), want: "",
+			},
+			{
+				name:   "leaves a reference of the target's language within one package as written",
+				give:   &emit.TypeRef{Spelling: rowStubName, Target: rowID, Package: storePkg},
+				target: plugin.Target(coretest.Lang), want: storePkg,
+			},
+		}
+		for _, tt := range translations {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(tt.give), rowStub())
+				if tt.out != "" {
+					f.on(rowID, written(stubDirective, 1, keyOut, tt.out))
+				}
+				f.packager = directories{}
+				f.target = tt.target
+				_, sink := f.route(t)
+				assert.Equal(t, tt.give.Package, tt.want, "the reference's package")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		untranslated := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "reports UntranslatedReference for a referent of an origin without an emitted declaration",
+				give: &emit.TypeRef{Spelling: "CacheStub", Target: cacheID},
+			},
+			{
+				name: "reports UntranslatedReference for a referent that the plan emits under another name",
+				give: &emit.TypeRef{Spelling: rowName, Target: rowID},
+			},
+		}
+		for _, tt := range untranslated {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(tt.give), rowStub())
+				f.target = tsxTarget
+				files, sink := f.route(t)
+				assert.Equal(t, layoutOf(files), []string{"svc/store/row_stub.go: RowStub"},
+					"the referencing declaration is refused")
+				coretest.AssertCodes(t, sink, layout.UntranslatedReference)
+				for d := range sink.All() {
+					assert.Equal(t, d.Pos, at(storeFile), "the finding is at the referencing declaration's origin")
+				}
+			})
+		}
+
+		t.Run("reports UntranslatedReference for a referent that is a method", func(t *testing.T) {
+			t.Parallel()
+
+			method := &emit.Method{Origin: rowID, Name: rowStubName}
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName, Target: rowID}),
+				stubOf(rowFile, storePkg, method))
+			f.target = tsxTarget
+			_, sink := f.route(t)
+			coretest.AssertCodes(t, sink, layout.UntranslatedReference)
+		})
+
+		t.Run("reports UnderivedPackage for a translated reference into a file whose package derives none",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName, Target: rowID}), rowStub()).
+					on(rowID, written(stubDirective, 1, keyOut, "fakes/"))
+				f.packager = directories{refuse: fakesDir}
+				f.target = tsxTarget
+				files, sink := f.route(t)
+				assert.Equal(t, layoutOf(files), []string{"svc/store/fakes/row_stub.go: RowStub"},
+					"the referencing declaration is refused")
+				coretest.AssertCodes(t, sink, layout.UnderivedPackage)
+			})
+
+		kept := []struct {
+			name  string
+			entry func() plugin.NameEntry
+		}{
+			{
+				name:  "qualifies a translated reference into a kept file of another package",
+				entry: func() plugin.NameEntry { return keptRowStub(fakesDir) },
+			},
+			{
+				name: "qualifies a translated reference into a kept file of a unit without a package",
+				entry: func() plugin.NameEntry {
+					e := keptRowStub(fakesDir)
+					e.Package = ""
+					return e
+				},
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				ref := &emit.TypeRef{Spelling: rowStubName, Target: rowID}
+				f := newFixture(referring(ref))
+				f.packager = directories{}
+				f.others = keptFiles{tt.entry()}
+				f.target = tsxTarget
+				_, sink := f.route(t)
+				assert.Equal(t, ref.Package, fakesDir, "the reference takes the package of the kept file")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		t.Run("reports UntranslatedReference for a kept name of another origin", func(t *testing.T) {
+			t.Parallel()
+
+			entry := keptRowStub(fakesDir)
+			entry.Origin = cacheID
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName, Target: rowID}))
+			f.packager = directories{}
+			f.others = keptFiles{entry}
+			f.target = tsxTarget
+			files, sink := f.route(t)
+			assert.Empty(t, files, "the referencing declaration is refused")
+			coretest.AssertCodes(t, sink, layout.UntranslatedReference)
 		})
 	})
 }

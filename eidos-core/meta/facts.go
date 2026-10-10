@@ -286,8 +286,35 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	if !registered {
 		return zero, false
 	}
-	value, held := f.lookup(id, k.ID())
+	value, _, held := f.lookup(id, k.ID())
 	if !held {
+		return zero, false
+	}
+	typed, isT := cloneValue(value).(T)
+	if !isT {
+		return zero, false
+	}
+	return typed, true
+}
+
+// GetAtLeast returns what [Get] returns where the claim that ranks first
+// has authority floor or above, and false otherwise. A drop that ranks
+// first reads absent, as it does for Get. A reader of an override uses
+// it, because a stamp at a lower authority on the same key is not an
+// override.
+//
+// # Allocation contract
+//
+// GetAtLeast allocates what Get allocates: nothing for a scalar value
+// and two allocations for a list.
+func GetAtLeast[T FactValue](f *Facts, id symbol.Identity, k Key[T], floor Authority) (T, bool) {
+	var zero T
+	k, registered := k.resolved(f.registry)
+	if !registered {
+		return zero, false
+	}
+	value, authority, held := f.lookup(id, k.ID())
+	if !held || authority < floor {
 		return zero, false
 	}
 	typed, isT := cloneValue(value).(T)
@@ -456,32 +483,33 @@ func (f *Facts) admitLocked(
 	return nil
 }
 
-// lookup returns the winning value for (subject, key), and false
-// where the winner is a drop or nothing was stamped. In a store [Restore]
-// returned, a subject that the run has not restored or written reads the
-// key absent without a restore where the source's presence of the key
-// does not list the subject.
-func (f *Facts) lookup(id symbol.Identity, k KeyID) (any, bool) {
+// lookup returns the value of the claim that ranks first on (subject,
+// key) and that claim's authority, and false where a drop ranks first or
+// nothing was stamped. In a store [Restore] returned, a subject that the run has not
+// restored or written reads the key absent without a restore where the
+// source's presence of the key does not list the subject.
+func (f *Facts) lookup(id symbol.Identity, k KeyID) (any, Authority, bool) {
 	if f.source != nil {
 		if _, touched := f.bags.Load(id); !touched {
 			_, present := slices.BinarySearchFunc(f.index.recorded(k), id, symbol.Identity.Compare)
 			if !present {
-				return nil, false
+				return nil, 0, false
 			}
 		}
 	}
 	b, held := f.peek(id)
 	if !held {
-		return nil, false
+		return nil, 0, false
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	if !b.presentLocked(f.group(k), k) {
-		return nil, false
+		return nil, 0, false
 	}
 	state, _ := b.state(k)
-	return state.claims[state.winner].value, true
+	won := &state.claims[state.winner]
+	return won.value, won.claim.Authority, true
 }
 
 // kindAdmitted reports whether a key's kind restriction admits a

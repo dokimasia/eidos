@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontend"
@@ -122,6 +124,21 @@ func TestFrontend(t *testing.T) {
 
 			_, is := kitFake().(plugin.OptionsProvider)
 			assert.True(t, is, "the declared configuration folds into the keys")
+		})
+
+		t.Run("returns a key provider that registers nothing without a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			inner := frontendtest.NewScripted()
+			bare := frontend.New("bare", frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+				Build()
+			keyed, is := bare.(plugin.KeyProvider)
+			assert.True(t, is, "every built frontend has the key role")
+			r := meta.NewRegistry()
+			assert.NoError(t, keyed.Keys(r), "the registration succeeds")
+			assert.Empty(t, slices.Collect(r.Keys()), "the registration registers nothing")
 		})
 
 		dependent := frontendtest.NewScriptedDependent()
@@ -269,6 +286,10 @@ func TestFrontend(t *testing.T) {
 				name:  "panics on stores without dependency rounds",
 				build: func() { whole().Stores(locate).Build() },
 			},
+			{
+				name:  "panics on a nil key registration",
+				build: func() { whole().Keys(frontendtest.ScriptedKeys, nil).Build() },
+			},
 		}
 		for _, tt := range defects {
 			t.Run(tt.name, func(t *testing.T) {
@@ -370,6 +391,61 @@ func TestFrontend(t *testing.T) {
 		})
 	})
 
+	t.Run("Keys", func(t *testing.T) {
+		t.Parallel()
+
+		inner := frontendtest.NewScripted()
+		declared := func(register ...func(*meta.Registry) error) plugin.KeyProvider {
+			built := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+				Keys(register...).
+				Build()
+			keyed, is := built.(plugin.KeyProvider)
+			assert.True(t, is, "every built frontend has the key role")
+			return keyed
+		}
+
+		t.Run("runs the declared registrations in declaration order", func(t *testing.T) {
+			t.Parallel()
+
+			var order []string
+			first := func(*meta.Registry) error {
+				order = append(order, "first")
+				return nil
+			}
+			second := func(*meta.Registry) error {
+				order = append(order, "second")
+				return nil
+			}
+			assert.NoError(t, declared(first, second).Keys(meta.NewRegistry()), "the registrations succeed")
+			assert.Equal(t, order, []string{"first", "second"}, "the registrations run in declaration order")
+		})
+
+		t.Run("registers the keys of the declared registration", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, declared(frontendtest.ScriptedKeys).Keys(r.For(string(frontendtest.ScriptedLang))),
+				"the registration succeeds")
+			_, held := r.Resolve(frontendtest.ScriptedTestKey)
+			assert.True(t, held, "the scripted key is registered")
+		})
+
+		t.Run("returns the faults of every registration joined", func(t *testing.T) {
+			t.Parallel()
+
+			early, late := errors.New("kitfake: the early registration fails"),
+				errors.New("kitfake: the late registration fails")
+			err := declared(
+				func(*meta.Registry) error { return early },
+				func(*meta.Registry) error { return late },
+			).Keys(meta.NewRegistry())
+			expect.ErrorIs(t, err, early, "the error has the first fault")
+			expect.ErrorIs(t, err, late, "the error has the second fault")
+		})
+	})
+
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
@@ -451,6 +527,10 @@ func TestFrontendAllocs(t *testing.T) {
 	assert.MaxAllocsWithSetup(t, fresh, func(b *frontend.Builder) { appended = b.Classify(classify) },
 		appendAllocs, "Classify allocates the classifier list of a new declaration")
 	assert.NotNil(t, appended, "Classify returns its builder")
+	register := frontendtest.ScriptedKeys
+	assert.MaxAllocsWithSetup(t, fresh, func(b *frontend.Builder) { appended = b.Keys(register) },
+		appendAllocs, "Keys allocates the registration list of a new declaration")
+	assert.NotNil(t, appended, "Keys returns its builder")
 
 	var built plugin.Frontend
 	assert.MaxAllocsWithSetup(t, func() *frontend.Builder { return declaration(inner, false) },
@@ -519,6 +599,20 @@ func BenchmarkFrontend(b *testing.B) {
 				builder.Classify(classify)
 			}
 			assert.NotNil(b, builder, "the classifier is declared")
+		})
+	})
+
+	b.Run("Keys", func(b *testing.B) {
+		b.Run("a new declaration's first registration", func(b *testing.B) {
+			register := frontendtest.ScriptedKeys
+			c := bench.Start(b).MaxAllocs(appendAllocs)
+			defer c.End()
+			var builder *frontend.Builder
+			for c.Loop() {
+				c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
+				builder.Keys(register)
+			}
+			assert.NotNil(b, builder, "the registration is declared")
 		})
 	})
 

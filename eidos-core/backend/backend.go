@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -37,6 +38,8 @@ type Builder struct {
 	lower    plugin.Lower
 	respell  plugin.Respell
 	packages plugin.PackageRule
+	types    func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	policies []plugin.PolicySpec
 	defects  []string
 }
 
@@ -118,6 +121,15 @@ func (b *Builder) Scaffold(
 	f func(s emit.Stmt, set *render.ImportSet) ([]byte, error),
 ) *Builder {
 	b.lang.Scaffold = f
+	return b
+}
+
+// MemberIndent sets the indentation of a member's statements in the
+// body of its type, which the memberbody builtin writes before each
+// line of a member's content. A language that leaves it unset places
+// members through the body builtin alone.
+func (b *Builder) MemberIndent(indent string) *Builder {
+	b.lang.MemberIndent = indent
 	return b
 }
 
@@ -236,12 +248,30 @@ func (b *Builder) Respell(r plugin.Respell) *Builder {
 	return b
 }
 
+// Types declares the target's spoke, which the built backend serves as
+// [plugin.TypeSpeller]: the spelling of the canonical shape of a type
+// that another language declares, under a plan's resolved policy.
+func (b *Builder) Types(spell func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)) *Builder {
+	b.types = spell
+	return b
+}
+
+// Policies declares the target's lowering policies, which the built
+// backend serves as [plugin.PolicyProvider]. It is repeatable, and the
+// specs accumulate. Build checks them as [plugin.NewPolicy] does.
+func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
+	b.policies = append(b.policies, specs...)
+	return b
+}
+
 // Build freezes the declaration and returns the lowered backend,
 // which implements [plugin.Backend], [plugin.Renderer],
-// [plugin.FileSpeller] and [plugin.Packager]. Its Render is the render
-// pass over the declared language and nothing more, so a kit backend
-// and a hand-rolled pass over the same language return the same
-// bytes.
+// [plugin.FileSpeller], [plugin.Packager], [plugin.TypeSpeller] and
+// [plugin.PolicyProvider]. Its Render is the render pass over the
+// declared language and nothing more, so a kit backend and a
+// hand-rolled pass over the same language return the same bytes. A
+// backend without a declared spoke refuses every shape, and one without
+// declared policies serves none.
 //
 // Build panics on a declaration defect, because a wrong declaration
 // is a bug in the backend's own constructor, and the panic comes on
@@ -253,6 +283,7 @@ func (b *Builder) Respell(r plugin.Respell) *Builder {
 //   - a zero target;
 //   - a kind spelt twice, a kind refused twice, a group spelt twice,
 //     a helper declared twice and a nil vocabulary part;
+//   - every defect of a policy spec that [plugin.NewPolicy] reports;
 //   - every fault [render.New] joins, such as an empty kind-template
 //     set, a kind both spelt and refused, a template that does not
 //     parse and a missing formatter.
@@ -267,6 +298,9 @@ func (b *Builder) Build() plugin.Backend {
 	if len(b.defects) > 0 {
 		panic("backend: " + name + " " + strings.Join(b.defects, ", and "))
 	}
+	if _, err := plugin.NewPolicy(b.target, b.policies, nil); err != nil {
+		panic("backend: " + name + " declares a defective policy:\n" + err.Error())
+	}
 	b.lang.Funcs = vocabulary(b.vocab)
 	pass, err := render.New(b.name, b.lang)
 	if err != nil {
@@ -277,6 +311,7 @@ func (b *Builder) Build() plugin.Backend {
 		name: b.name, target: b.target, syntax: b.syntax,
 		version: b.version, pass: pass, packages: b.packages,
 		seams: b.lower != nil || b.respell != nil,
+		types: b.types, policies: b.policies,
 	}
 	switch {
 	case b.lower != nil && b.respell != nil:
@@ -304,6 +339,11 @@ type builtBackend struct {
 	// seams reports whether the backend declares a lowering or a
 	// respell seam. Render refuses an unsettled store when it does.
 	seams bool
+	// types is the declared spoke, nil where the backend declares none.
+	types func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	// policies are the declared lowering policies, in declaration
+	// order.
+	policies []plugin.PolicySpec
 }
 
 // Name returns the backend's one identity.
@@ -337,6 +377,20 @@ func (b *builtBackend) SplitUnit(u plugin.Unit) []plugin.Unit { return b.pass.Sp
 // FileName implements [plugin.FileSpeller] through the declared
 // Naming.
 func (b *builtBackend) FileName(u plugin.Unit) string { return b.pass.FileName(u) }
+
+// SpellType implements [plugin.TypeSpeller] through the declared spoke.
+// A backend without a spoke refuses every shape. Its error reports that
+// the target does not spell the types of other languages.
+func (b *builtBackend) SpellType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	if b.types == nil {
+		return nil, errors.New("backend: target " + string(b.target) + " does not spell the types of other languages")
+	}
+	return b.types(s, p)
+}
+
+// Policies implements [plugin.PolicyProvider]: the declared specs, and
+// nil where the backend declares none.
+func (b *builtBackend) Policies() []plugin.PolicySpec { return b.policies }
 
 // PackageAt implements [plugin.Packager] through the declared package
 // rule, and returns the file's origin package where the backend

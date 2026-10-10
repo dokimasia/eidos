@@ -4,6 +4,7 @@
 package render
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,18 +27,29 @@ func (f *frame) body(d any) (string, error) {
 	default:
 		return "", fmt.Errorf("render: a %T has no body", d)
 	}
-	return f.renderBody(d, b)
+	return f.renderBody(d, b, "")
 }
 
-// renderBody composes one body. For the template form the
-// emitter's own template drives the layout, placing slots through
-// its markers; every other form takes the fixed composition:
-// prologue, content, named slots in declaration order, epilogue.
-// A two-form body reports and keeps its slots, an unresolved
-// reference reports and falls back to them, and a statement the
-// language cannot spell fails the declaration under the
-// execute-time code.
-func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
+// memberBody is the builtin a host's template places a member's content
+// with. It returns the content that body returns, with every line that
+// is not blank behind the language's member indent, so the member's
+// statements are one level deeper than the scaffold writes them. The
+// content keeps its line breaks. It takes a method, so text/template
+// passes its argument without an interface conversion.
+func (f *frame) memberBody(m *emit.Method) (string, error) {
+	return f.renderBody(m, &m.Body, f.pass.memberIndent)
+}
+
+// renderBody composes one body, with every line that is not blank
+// behind indent. For the template form the emitter's own template
+// drives the layout, placing slots through its markers; every other
+// form takes the fixed composition: prologue, content, named slots in
+// declaration order, epilogue. A two-form body reports and keeps its
+// slots, an unresolved reference reports and falls back to them, and a
+// statement the language cannot spell fails the declaration under the
+// execute-time code. The fixed composition writes the indent as it
+// writes the lines, so an indent does not allocate on its own.
+func (f *frame) renderBody(d any, b *emit.Body, indent string) (string, error) {
 	form, err := b.Form()
 	if err != nil {
 		f.sink.Errorf(BodyConflict, f.at, f.origin,
@@ -45,11 +57,11 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 	}
 	if form == emit.FormTemplate {
 		if out, resolved := f.reference(d, b); resolved {
-			return out, nil
+			return indented(out, indent), nil
 		}
 		form = emit.FormDefault
 	}
-	var out strings.Builder
+	out := lines{indent: indent}
 	if err := f.stmts(&out, b.Prologue.Items()); err != nil {
 		return "", err
 	}
@@ -170,7 +182,7 @@ type placement struct {
 // prologue, named slots in declaration order, epilogue. It is the
 // slots builtin.
 func (pl *placement) all() (string, error) {
-	var out strings.Builder
+	var out lines
 	if !pl.std[0] {
 		pl.std[0] = true
 		if err := pl.frame.stmts(&out, pl.body.Prologue.Items()); err != nil {
@@ -208,7 +220,7 @@ func (pl *placement) one(name string) (string, error) {
 		pl.std[1], std = true, &pl.body.Epilogue
 	}
 	if std != nil {
-		var out strings.Builder
+		var out lines
 		if err := pl.frame.stmts(&out, std.Items()); err != nil {
 			return "", err
 		}
@@ -219,7 +231,7 @@ func (pl *placement) one(name string) (string, error) {
 			continue
 		}
 		pl.named[i] = true
-		var out strings.Builder
+		var out lines
 		if err := pl.frame.stmts(&out, named.Slot.Items()); err != nil {
 			return "", err
 		}
@@ -247,7 +259,7 @@ func (pl *placement) pending() int {
 
 // stmts spells a statement run through the language's printer,
 // each spelling recording into the file's import set.
-func (f *frame) stmts(out *strings.Builder, items []emit.Stmt) error {
+func (f *frame) stmts(out *lines, items []emit.Stmt) error {
 	for _, s := range items {
 		txt, err := f.pass.scaffold(s, &f.set)
 		if err != nil {
@@ -256,4 +268,57 @@ func (f *frame) stmts(out *strings.Builder, items []emit.Stmt) error {
 		out.Write(txt)
 	}
 	return nil
+}
+
+// lines is a text under construction whose lines that are not blank
+// start with indent. The zero value writes text as it is.
+//
+// # Allocation contract
+//
+// A write allocates what the growth of the text allocates, and the
+// indent adds none of its own.
+type lines struct {
+	b      strings.Builder
+	indent string
+	// mid reports that the text ends inside a line, so the next write
+	// continues that line.
+	mid bool
+}
+
+// Write appends p, and writes the indent before each line of p that is
+// not blank and starts a line of the text.
+func (l *lines) Write(p []byte) {
+	if l.indent == "" {
+		l.b.Write(p)
+		return
+	}
+	for line := range bytes.Lines(p) {
+		if !l.mid && (len(line) > 1 || line[0] != lineBreak) {
+			l.b.Grow(len(l.indent) + len(line))
+			l.b.WriteString(l.indent)
+		}
+		l.b.Write(line)
+		l.mid = line[len(line)-1] != lineBreak
+	}
+}
+
+// WriteString appends s as Write appends its bytes.
+func (l *lines) WriteString(s string) {
+	if l.indent == "" {
+		l.b.WriteString(s)
+		return
+	}
+	for line := range strings.Lines(s) {
+		if !l.mid && line != string(lineBreak) {
+			l.b.Grow(len(l.indent) + len(line))
+			l.b.WriteString(l.indent)
+		}
+		l.b.WriteString(line)
+		l.mid = !strings.HasSuffix(line, string(lineBreak))
+	}
+}
+
+// String returns the text.
+func (l *lines) String() string {
+	return l.b.String()
 }

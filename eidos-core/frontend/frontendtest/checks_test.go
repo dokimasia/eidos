@@ -41,6 +41,13 @@ const (
 	linksNothing = "the fixture's in-graph spellings resolve: a Resolve that returns no candidate links nothing"
 )
 
+// keyedScripted is the scripted frontend that registers its
+// classification keys through its own role.
+type keyedScripted struct{ *frontendtest.Scripted }
+
+// Keys registers the scripted classification keys.
+func (keyedScripted) Keys(r *meta.Registry) error { return frontendtest.ScriptedKeys(r) }
+
 // The checks exist to catch broken frontends, so the broken ones
 // are simulated and each check's own failure is asserted.
 func TestChecks(t *testing.T) {
@@ -113,39 +120,41 @@ func TestChecks(t *testing.T) {
 				"nothing drops in silence", "the rejection names the dropped file")
 		})
 
-		classified := []struct {
-			name string
-			give func() *frontendtest.Fixture
-		}{
-			{
-				name: "rejects a stamping fixture without keys",
-				give: func() *frontendtest.Fixture {
-					keyless := fixture()
-					keyless.Keys = nil
-					return keyless
-				},
-			},
-			{
-				name: "rejects keys declared over a load that stamps nothing",
-				give: func() *frontendtest.Fixture {
-					unstamped := plainFixture()
-					unstamped.Keys = frontendtest.ScriptedKeys
-					return unstamped
-				},
-			},
-		}
-		for _, tt := range classified {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("rejects a stamp under a key that neither the frontend nor the fixture registers", func(t *testing.T) {
+			t.Parallel()
 
-				got := assert.Rejects(t, "stamps without keys, or keys without stamps", func(tb assert.TB) {
-					frontendtest.AssertClassified(tb, setupOver(tt.give()))
-				})
-				assert.Equal(t, coretest.Contracts(got), []string{"the load stamps where the fixture declares " +
-					"classification keys to apply the stamps under, and nowhere else"},
-					"the rejection names what the fixture and the load owe each other")
+			keyless := fixture()
+			keyless.Keys = nil
+			got := assert.Rejects(t, "stamps without keys", func(tb assert.TB) {
+				frontendtest.AssertClassified(tb, setupOver(keyless))
 			})
-		}
+			assert.NotEmpty(t, got, "the check fails")
+			assert.Equal(t, got[0].Contract, "a recorded stamp applies under the keys of the frontend and the fixture",
+				"the rejection is about the stamp that nothing could apply")
+		})
+
+		t.Run("rejects keys declared over a load that stamps nothing", func(t *testing.T) {
+			t.Parallel()
+
+			unstamped := plainFixture()
+			unstamped.Keys = frontendtest.ScriptedKeys
+			got := assert.Rejects(t, "keys without stamps", func(tb assert.TB) {
+				frontendtest.AssertClassified(tb, setupOver(unstamped))
+			})
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{"the load stamps where the fixture declares classification keys to apply the stamps under"},
+				"the rejection is about the contract between the fixture and the load")
+		})
+
+		t.Run("applies the stamps of a frontend that registers its keys through its role", func(t *testing.T) {
+			t.Parallel()
+
+			keyless := fixture()
+			keyless.Keys = nil
+			frontendtest.AssertClassified(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return keyedScripted{frontendtest.NewScripted()}, keyless
+			})
+		})
 	})
 
 	t.Run("AssertOwnedExcluded", func(t *testing.T) {

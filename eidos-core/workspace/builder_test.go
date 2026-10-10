@@ -34,14 +34,14 @@ const (
 	// a new builder: the list it appends to.
 	listAllocs = 1
 	// buildAllocs is the build of the composition of 64 annotators and 8
-	// plans of 4 generators: 934 allocations for the registries, the
-	// roster, the capability order, the compiled plans and the
-	// fingerprint, whose fold spells every registered key. The 8 more are
-	// for the runtime's type-assertion caches. An interface assertion that
-	// misses its call site's cache builds a new cache about once in 1,024
-	// misses, so a run of one iteration counts some of these builds: 12
-	// fresh processes counted 0 to 3.
-	buildAllocs = 934 + 8
+	// plans of 4 generators: 935 allocations for the registries, the
+	// roster, the capability order, the plans' policies, the compiled
+	// plans and the fingerprint, whose fold spells every registered key.
+	// The 8 more are for the runtime's type-assertion caches. An interface
+	// assertion that misses its call site's cache builds a new cache about
+	// once in 1,024 misses, so a run of one iteration counts some of these
+	// builds: 12 fresh processes counted 0 to 3.
+	buildAllocs = 935 + 8
 )
 
 // mirrorOptions is a valid options struct for the config cases.
@@ -247,12 +247,17 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`plan "second"`, "indexer", "states none"},
 			},
 			{
-				name: "returns an error naming a namespace the composition claims twice",
+				name: "returns an error naming a namespace that a plugin and the composition both claim",
 				compose: func() *workspace.Builder {
 					claim := func(r *meta.Registry) error { return r.ClaimNamespace("shape") }
-					return valid().Keys(claim).Keys(claim)
+					claimer, held := eidos.NewPlugin("claimer").Keys(claim).
+						Handle(eidos.OnStruct(quiet)).Build().(plugin.Annotator)
+					if !held {
+						panic("workspace_test: a stamper rule lowers to the annotator role")
+					}
+					return valid().Annotators(claimer).Keys(claim)
 				},
-				markers: []string{"claimed twice", `"shape"`},
+				markers: []string{"claimed twice", `"shape"`, `"claimer"`},
 			},
 			{
 				name: "returns an error for a nil key registration",

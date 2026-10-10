@@ -237,15 +237,19 @@ func (s Sources) admits(
 		return false
 	}
 	p, held := g.PackageOf(id)
-	if !held {
-		return false
-	}
+	return held && s.contains(p, dirs, facts, k)
+}
+
+// contains reports whether the patterns and the module that are set
+// match a package of the graph, whatever its language. dirs are the
+// parsed patterns, as for [Sources.admits].
+func (s Sources) contains(p *node.Package, dirs []directory, facts *meta.Facts, k meta.KernelKeys) bool {
 	var (
 		module string
 		named  bool
 	)
 	if s.Module != "" {
-		module, named = meta.Get(facts, id, k.Module)
+		module, named = meta.Get(facts, p.ID, k.Module)
 	}
 	return s.placed(p.Files, module, named, dirs)
 }
