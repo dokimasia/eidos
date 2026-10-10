@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "directives": {
+      "description": "The directives of the plugin. A rule with a directive runs only for the subjects that have an instance of the directive.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "deprecated": {
+            "description": "The rewrite of a deprecated directive, such as write trace in place of audit. A run reports each instance of a deprecated directive.",
+            "type": "string"
+          },
+          "doc": {
+            "description": "The meaning of the directive.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name of the directive. A source file writes it after the mark of the brand, as in +acme:audit. A name is a letter followed by letters, digits, hyphens and underscores.",
+            "type": "string"
+          },
+          "params": {
+            "description": "The keyed params of the directive.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "choices": {
+                  "description": "The spellings that a string param accepts. A string param without choices accepts every string.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "deprecated": {
+                  "description": "The rewrite of a deprecated param, such as write sink= in place of target=. A run reports each instance that writes the param.",
+                  "type": "string"
+                },
+                "doc": {
+                  "description": "The meaning of the param.",
+                  "type": "string"
+                },
+                "key": {
+                  "description": "The key of the param. A source file writes it before an equals sign, as in level=info.",
+                  "type": "string"
+                },
+                "of": {
+                  "description": "The type of the elements of a list: string, int, bool or reference.",
+                  "enum": [
+                    "string",
+                    "int",
+                    "bool",
+                    "reference"
+                  ],
+                  "type": "string"
+                },
+                "required": {
+                  "description": "When true, validation refuses an instance without the param.",
+                  "type": "boolean"
+                },
+                "resolve": {
+                  "description": "How validation resolves a reference, or each reference of a list: callable-in-scope, package-var, value-field, host-param, member-on-handle or type-in-scope.",
+                  "enum": [
+                    "callable-in-scope",
+                    "package-var",
+                    "value-field",
+                    "host-param",
+                    "member-on-handle",
+                    "type-in-scope"
+                  ],
+                  "type": "string"
+                },
+                "type": {
+                  "description": "The type of the value: string, int, bool, list or reference.",
+                  "enum": [
+                    "string",
+                    "int",
+                    "bool",
+                    "list",
+                    "reference"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "type",
+                "doc"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "doc"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": 1,
+      "description": "The format of the manifest. It must be 1.",
+      "type": "integer"
+    },
+    "name": {
+      "description": "The name of the plugin. A config file sets the options of the plugin under this name. A source file writes it before the name of a directive that two plugins declare, as in +acme:acme-audit:audit. A name is a letter followed by letters, digits, hyphens and underscores.",
+      "type": "string"
+    },
+    "options": {
+      "description": "The options of the plugin. A config file sets them under options and the name of the plugin.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "description": "The default value of the option, a value of its type. An option without a default has the zero value of its type.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "string",
+              "integer",
+              "boolean",
+              "array"
+            ]
+          },
+          "doc": {
+            "description": "The meaning of the option.",
+            "type": "string"
+          },
+          "key": {
+            "description": "The key of the option. A config file sets the option under this key, in the section of the plugin. A key is a lower-case letter followed by letters and digits.",
+            "type": "string"
+          },
+          "type": {
+            "description": "The type of the option: string, int, bool, or list for a list of strings.",
+            "enum": [
+              "string",
+              "int",
+              "bool",
+              "list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "doc"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "outputs": {
+      "description": "The output families of the plugin. Each rule emits into one family.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "per": {
+            "description": "The cardinality of the family: source for one file for each source file, package for one file for each package, or plan for one file for the plan.",
+            "enum": [
+              "source",
+              "package",
+              "plan"
+            ],
+            "type": "string"
+          },
+          "tag": {
+            "description": "The tag of the family. A rule writes the tag under output to emit into the family. The default is the empty tag of the primary family. Each target joins a tag to the name of a file after the word, as in ledger_audit_test.go and ledger.audit.test.ts for the tag test.",
+            "type": "string"
+          },
+          "template": {
+            "description": "The path of the file template inside each template tree, with slashes. A family with a file template claims its files. The template writes each file from the records that the rules emit into the family, and the kind templates of the target write none of them.",
+            "type": "string"
+          },
+          "word": {
+            "description": "The word of the family. Each target joins it to the name of a file, as in ledger_audit.go and ledger.audit.ts. The plugin joins it to the name of each declaration, as in LedgerAudit.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "per",
+          "word"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "priority": {
+      "description": "The priority of the plugin among the generators of a plan. A generator with a lower priority runs first. The default is 0.",
+      "type": "integer"
+    },
+    "provides": {
+      "description": "The capability labels that the plugin provides to the generators that require them.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "requires": {
+      "description": "The capability labels of the generators that run before the plugin.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "rules": {
+      "description": "The rules of the plugin. A rule emits one declaration for each subject that it matches.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "directive": {
+            "description": "The name of the directive of the manifest that gates the rule. A rule without a directive runs for every subject of its kind in the sources of the plan.",
+            "type": "string"
+          },
+          "emit": {
+            "description": "What the rule emits for each subject: mirror, or implementation on an interface. The template of the rule renders the bodies of a function mirror and of an implementation.",
+            "enum": [
+              "mirror",
+              "implementation"
+            ],
+            "type": "string"
+          },
+          "on": {
+            "description": "The kind of the subjects of the rule: function, interface or struct.",
+            "enum": [
+              "function",
+              "interface",
+              "struct"
+            ],
+            "type": "string"
+          },
+          "output": {
+            "description": "The tag of the family that receives the declarations of the rule. The default is the empty tag of the primary family.",
+            "type": "string"
+          },
+          "template": {
+            "description": "The path of the template file inside each template tree, with slashes. It renders the body of each function and method that the rule emits.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "on",
+          "emit"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "version": {
+      "description": "The version of the plugin. The loader appends a plus sign and the SHA-256 of the manifest and the template files. An edit of either makes the next run a cold run.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format",
+    "name",
+    "version",
+    "outputs",
+    "rules"
+  ],
+  "title": "The manifest of a declarative plugin of eidos",
+  "type": "object"
+}

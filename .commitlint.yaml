@@ -42,6 +42,7 @@ settings:
       - cli
       - conformance
       - core
+      - declarative
       - lang
       - go
       - java

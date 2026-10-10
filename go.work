@@ -11,6 +11,7 @@ use (
 	./eidos-cli
 	./eidos-conformance
 	./eidos-core
+	./eidos-declarative
 	./eidos-lang
 	./eidos-lang-go
 	./eidos-lang-java
