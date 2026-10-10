@@ -6,7 +6,8 @@
 // A config file configures one workspace or lists workspaces.
 // [Decode] decodes a file into a [File]. It returns an [Error] with a line
 // number for each fault in the file. [Document.Apply] sets the values of a
-// document on a [workspace.Builder]. [Schema] returns the JSON Schema of the
+// document on a [workspace.Builder], and loads the declarative plugins that
+// the plans of the document list. [Schema] returns the JSON Schema of the
 // format.
 //
 // # The format
@@ -21,6 +22,6 @@
 // # Dependency position
 //
 // cli/internal/config imports core/workspace, core/layout, core/ledger,
-// core/directive, core/plugin, core/symbol, core/jsonschema,
+// core/directive, core/plugin, core/symbol, core/jsonschema, declarative,
 // go.yaml.in/yaml/v3 and the Go stdlib.
 package config

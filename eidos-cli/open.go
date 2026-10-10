@@ -71,8 +71,9 @@ type workspaces struct {
 // Error modes: every error is a config error, which a command reports with
 // [StatusUsage]. The error joins the faults of every member. Open returns an
 // error for a working directory that does not resolve, for a file that does
-// not read or decode, for a fault of Build, for a root of a list that does
-// not exist, and for two roots of a list that nest.
+// not read or decode, for a plugin directory of the file that does not load,
+// for a fault of Build, for a root of a list that does not exist, and for two
+// roots of a list that nest.
 func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
 	found, err := open(stdio, f, compose)
 	if err != nil {
@@ -226,7 +227,9 @@ func entryConfig(root, dir, name, given string) (string, *config.Document, error
 func member(compose Compose, brand output.Brand, name, root, file string, doc *config.Document) (Member, error) {
 	b := compose()
 	if doc != nil {
-		doc.Apply(b, root)
+		if err := doc.Apply(b, root); err != nil {
+			return Member{}, err
+		}
 	}
 	// A run reads the sink and the ledger only when the error is nil.
 	b.Output(func() (output.Sink, error) { return output.NewDisk(root, brand) })

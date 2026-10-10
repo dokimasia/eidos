@@ -4,7 +4,10 @@
 package config
 
 import (
+	"errors"
+	"maps"
 	"path/filepath"
+	"slices"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/layout"
@@ -12,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
+	"go.dokimi.dev/eidos/declarative"
 )
 
 // Memo configures the parse memo.
@@ -44,6 +48,7 @@ type Plan struct {
 	Sources  *Sources                           `yaml:"sources"  doc:"The source packages of the plan. They replace the sources that the plan declares."`
 	Layout   *Layout                            `yaml:"layout"   doc:"The policy, the output directory and the import base of the plan. Each value that the file sets replaces the value of the plan."`
 	Policies map[plugin.PolicyKey]plugin.Choice `yaml:"policies" doc:"The choices of the lowering policies of the plan's backend. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice replaces the choice of the same key at the top level for the plan. Quote a choice that YAML reads as another type, such as \"null\"."`
+	Plugins  []string                           `yaml:"plugins"  doc:"The directories of the declarative plugins that the plan runs after the generators of the binary. A directory is absolute or relative to the workspace root, and uses slashes. Build refuses plugins for a plan that the binary does not mark extensible."`
 }
 
 // refinement converts the plan into the [workspace.PlanConfig] that Build
@@ -92,7 +97,16 @@ type Document struct {
 //   - Apply passes plans, policies and options to one call of
 //     [workspace.Builder.Config], which replaces the config of the
 //     composition.
-func (d *Document) Apply(b *workspace.Builder, root string) {
+//   - Apply loads the plugin directories of each plan with
+//     [declarative.Load], and passes the generators to the plan as its
+//     [workspace.PlanConfig.Generators]. Apply joins a relative directory to
+//     root. It loads each directory once, so a directory in two plans is one
+//     plugin in both plans.
+//
+// Error modes: Apply returns an error that joins the errors of the loads, in
+// the order of the plan names, and nil when every directory loads. It sets
+// the other values on b in both cases.
+func (d *Document) Apply(b *workspace.Builder, root string) error {
 	if d.Workspace != "" {
 		b.Workspace(d.Workspace)
 	}
@@ -114,14 +128,37 @@ func (d *Document) Apply(b *workspace.Builder, root string) {
 		b.Memo(m)
 	}
 	if len(d.Plans) == 0 && len(d.Policies) == 0 && len(d.Options) == 0 {
-		return
+		return nil
 	}
 	cfg := workspace.Config{Options: d.Options, Policies: d.Policies}
+	var errs []error
 	if len(d.Plans) > 0 {
 		cfg.Plans = make(map[string]workspace.PlanConfig, len(d.Plans))
-		for name, p := range d.Plans {
-			cfg.Plans[name] = p.refinement()
+		loaded := make(map[string]plugin.Generator)
+		for _, name := range slices.Sorted(maps.Keys(d.Plans)) {
+			p := d.Plans[name]
+			pc := p.refinement()
+			for _, dir := range p.Plugins {
+				dir = filepath.FromSlash(dir)
+				if !filepath.IsAbs(dir) {
+					dir = filepath.Join(root, dir)
+				}
+				dir = filepath.Clean(dir)
+				g, seen := loaded[dir]
+				if !seen {
+					var err error
+					if g, err = declarative.Load(dir); err != nil {
+						errs = append(errs, err)
+					}
+					loaded[dir] = g
+				}
+				if g != nil {
+					pc.Generators = append(pc.Generators, g)
+				}
+			}
+			cfg.Plans[name] = pc
 		}
 	}
 	b.Config(cfg)
+	return errors.Join(errs...)
 }

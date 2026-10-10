@@ -197,6 +197,16 @@ func TestOpen(t *testing.T) {
 			assert.Contains(t, err.Error(), `"ghost"`, "the error names the plan that the composition lacks")
 		})
 
+		t.Run("returns the faults of a plugin directory that does not load", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{
+				confName: files.Text("version: 1\nplans: {" + planName + ": {plugins: [plugins/acme-audit]}}\n"),
+			})
+			err := refused(t, root, cli.Flags{})
+			assert.Contains(t, err.Error(), "the directory has no plugin.yaml", "the error is the fault of the plugin")
+		})
+
 		t.Run("returns the fault of Build for a composition without a valid brand", func(t *testing.T) {
 			t.Parallel()
 

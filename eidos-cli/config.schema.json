@@ -75,6 +75,13 @@
                 },
                 "type": "object"
               },
+              "plugins": {
+                "description": "The directories of the declarative plugins that the plan runs after the generators of the binary. A directory is absolute or relative to the workspace root, and uses slashes. Build refuses plugins for a plan that the binary does not mark extensible.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "policies": {
                 "additionalProperties": {
                   "type": "string"
