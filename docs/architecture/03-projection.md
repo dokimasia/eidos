@@ -81,8 +81,8 @@ type SourceRules interface {
 ```
 
 A handler reaches the kernel's walks through the bound `Rules()` on
-its match: `CallableOf`, `TypeOf`, `MembersOf`, `SamplesOf`,
-`ZeroValue`, `LiteralFor`, `Witnesses` and `TypeName`, over the
+its match: `CallableOf`, `TypeOf`, `FieldTypeOf`, `MembersOf`,
+`SamplesOf`, `ZeroValue`, `LiteralFor`, `Witnesses` and `TypeName`, over the
 invocation's tracked view. Every read a projection makes records on
 that invocation, and a value is safe for concurrent use because it
 holds nothing of its own.
@@ -127,7 +127,7 @@ in fixed child order, and the kernel's fold adds the leaves:
 structural   Named   Optional   List   Array   Map   Func   Tuple
              Union   Intersection   Stream   Borrow   Wildcard   Inline
 leaves       Scalar{class: Int|Uint|Float, bits}   Bool   Text   Bytes
-             Reference{symbol, typeArgs}   Sum{ref}   Opaque
+             Reference{symbol, typeArgs}   Sum{ref}   Opaque   Dynamic
 ```
 
 Adding a form is a kernel change.
@@ -143,6 +143,22 @@ the type.
 Kotlin `T?` and Python `None` all project without any one language's
 spelling leaking into the vocabulary.
 
+A field can have presence that its type does not contain: a
+TypeScript property with a question mark, or a proto3 message field.
+`FieldTypeOf` folds a field's type inside an optional where
+`node.Field.Optional` is set or the language's `PresenceRules` reports
+presence. It returns an optional or Dynamic unchanged, because both
+contain the absent value.
+
+**Dynamic** is the top type, a value whose type is decided at run time:
+Go's `any`, TypeScript's `unknown` and `any`, Java's `Object`, and
+protobuf's `Value` and `Any`. It has no children.
+
+**Stream** has a flag for elements that arrive asynchronously, such as
+the elements of a protobuf stream or of a TypeScript `AsyncIterable`.
+A frontend sets the flag on the reference. The fold copies it into the
+shape.
+
 **Union and Sum stay separate.** Conflating them is how a lowering
 ends up guessing, and proto `oneof` alongside TypeScript unions
 forces both shapes on day one.
@@ -153,21 +169,20 @@ type over its trait bounds. The spelling keeps the `&`, the `dyn` or
 the `impl`.
 
 **Wildcard** has the bound as its one child and records the variance.
-An unbounded wildcard, Java's `?`, has no child, because each language
-spells its top type differently, as Java's `Object` and Kotlin's
-`Any?` do.
+An unbounded wildcard, Java's `?`, has no child. It is not the top
+type, because Java's `?` is a type only inside a type argument.
 
 An **Inline** reference has no children and records the members of an
 inline struct, interface or object body as its fields and methods,
 without identities ([02-symbol-model.md](02-symbol-model.md)).
 
 **Well-known types are not shapes.** They are blessed `Reference`
-identities in a small kernel registry, holding `timestamp` and
-`duration` and nothing else until a second consumer needs an entry.
-A frontend maps its spelling in, so `time.Time` becomes `timestamp`.
-A lowering spells it out as `Date`. A semantic type nobody mapped
-stays an ordinary Reference. The registry is public API, and growing
-it only adds.
+identities in a small kernel registry, which has three entries:
+`timestamp`, `duration` and `empty`, a value without data. A frontend
+maps its spelling in, so `time.Time` becomes `timestamp` and
+protobuf's `Empty` becomes `empty`. A lowering spells it out, as `Date`
+or as `struct{}`. A semantic type nobody mapped remains an ordinary
+Reference. The registry is public API, and growing it only adds.
 
 Java's unannotated references are nullability-unknown. That does not
 become a third Optional state. The frontend stamps
@@ -294,6 +309,9 @@ type PromotionRules interface {
 type EqualityRules interface {
     Comparable(ref *node.TypeRef, v View) (ok bool, problems []*node.TypeRef)
 }
+type PresenceRules interface {
+    Presence(f *node.Field, v View) bool                // presence that the field's type does not contain
+}
 ```
 
 Annotations need no capability: every declaration kind carries
@@ -312,6 +330,7 @@ field is the projection.
 | `OwnershipRules` | by-value, borrow or mutable borrow on parameters | Rust only |
 | `PromotionRules` | settable members, including promotion and embedding | Go embeds |
 | `EqualityRules` | whether a type works where the language demands equality (a map key, a switch, deduplication), and which member refs break it | Go comparability, where slices, maps and funcs break it; Java equals and hashCode; Python hashability |
+| `PresenceRules` | whether a field has presence that its type does not contain, decided by what the type resolves to | protobuf message fields |
 
 ## Tier 3: the language sdk
 

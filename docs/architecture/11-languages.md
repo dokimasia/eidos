@@ -47,13 +47,17 @@ eidos-lang-<lang>/
 **A read-only language ships `frontend/` and `rules/` and stops.**
 `eidos-lang-protobuf` is a complete satellite of the read-only
 shape, and the anatomy says so structurally. It also ships the
-well-known-type canonical mappings as policy defaults: Timestamp
-and Duration map onto the kernel's registry, every wrapper projects
-as its scalar under the optional form, which is the presence a
-wrapper exists to give, Empty is the empty record, FieldMask the
-list of paths it contains, ListValue a list and Struct a map onto
-values decided at run time. Any, Value and NullValue project as
-opaque, because the projection claims nothing about their content.
+well-known-type canonical mappings as policy defaults:
+
+- Timestamp, Duration and Empty map onto the kernel's registry.
+- Every wrapper projects as its scalar under the optional form, which
+  is the presence a wrapper exists to give.
+- FieldMask projects as the list of paths it contains.
+- Any and Value project as the top type, Dynamic, because their
+  content is decided at run time. ListValue projects as a list of the
+  top type, and Struct as a map from text onto the top type.
+- NullValue projects as opaque.
+
 A well-known type never resolves against the graph, spelled with or
 without its leading dot. Its mapping therefore does not depend on
 whether the workspace loads its declaration.
@@ -61,17 +65,34 @@ whether the workspace loads its declaration.
 What protobuf states and the projection has no form for is stamped
 as declared residue: a field's wire number, a required label and a
 json_name, a message's reserved and extension ranges, a file's
-imports with public and weak marked, its syntax or edition, its
-package, and the options every declaration level states. Edition
+imports with public, weak and option marked, its syntax or edition,
+its package, and the options every declaration level states. Edition
 features are stamped apart from the other options, because editions
-replaced the syntax keyword with them. The frontend resolves one of
-them itself: `features.field_presence`, read from the field up
-through its messages to the file and then the edition default,
-projects a singular field with explicit presence as the optional
-form, the way proto2's and proto3's optional label does. A group
-and an extend block are refused positioned: a group is one
-declaration the model represents as two, and an extend block
-changes a declaration the file does not declare.
+replaced the syntax keyword with them.
+
+The frontend loads proto2, proto3 and the editions 2023, 2024 and
+2026, and it reports `UnknownEdition` for any other syntax or edition.
+The frontend resolves four features from the version's defaults
+through the file, each message, a oneof and the declaration's own
+options:
+
+- `field_presence` projects a singular field with explicit presence as
+  the optional form, as proto2's and proto3's optional label does.
+- An enum whose `enum_type` is CLOSED has the marker `protobuf.closed`,
+  and the rules derive no value of it outside its declared set.
+- A field whose message is encoded delimited has the marker
+  `protobuf.delimited`.
+- A message or an enum that another file cannot reference, through the
+  keyword `local` or the edition's `default_symbol_visibility`, has
+  the marker `protobuf.local`.
+
+A message field has presence in every version. Its presence depends on
+the declaration that the field's type resolves to, so the rules report
+it through `PresenceRules`. A group loads as a nested message of the
+group's name and a field of that name in lower case. The field has the
+marker `protobuf.delimited`. The frontend refuses an extend block at its
+position, because the block changes a declaration that the file does
+not declare.
 
 The frontend attributes comments the way protoc's source info
 attributes them, so a schema documented for protoc documents the
@@ -319,7 +340,7 @@ the parser deviation invisible downstream:
 |---|---|---|
 | Go | stdlib `go/parser` | the reference grammar as a zero-dependency pure-Go library, with exact positions and comment attachment |
 | TypeScript | tree-sitter | proven in the current satellite. The native TS 7 compiler is written in Go but ships internal packages only, so there is nothing importable to pin |
-| protobuf | `bufbuild/protocompile` | pure Go, declarative, proven |
+| protobuf | the experimental parser of `bufbuild/protocompile`, pinned to a commit | pure Go and declarative. The released parser stops at Edition 2023, and a file of Edition 2026, whose grammar is Edition 2024's, parses as Edition 2024 |
 | Rust | tree-sitter-rust | no production pure-Go Rust parser exists, and the grammar is org-maintained |
 | Python | tree-sitter-python | the same, and docstrings enter through the kit's `Doc` and `DocLines` door |
 | Java | tree-sitter-java plus the class-file reader (D31) | a mature grammar, and JARs supply signature-only dependencies |

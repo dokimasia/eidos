@@ -82,11 +82,12 @@ all that. Resolution has four steps, and after Build there is no
 fifth:
 
 1. **Register.** A target satellite registers each policy key with
-   its typed choices and a default: `typescript.int64` accepts
-   `bigint|string|number` and defaults to `bigint`;
+   its typed choices and a default. `typescript.int64` accepts
+   `bigint|string|number` and defaults to `bigint`, `typescript.duration`
+   accepts `string|number` and defaults to `string`, and
    `java.nullabilityUnknown` accepts `nullable|nonnull`. Keys and
-   choices export as generated constants, and the spellings above
-   are what a human types.
+   choices export as generated constants, and the spellings above are
+   what a human types.
 2. **Select.** Workspace config picks a choice per key. Build checks
    every selection against the registered keys, and an unknown key
    or an invalid choice is a Build error naming the candidates.
@@ -116,8 +117,10 @@ type Policy interface {
 A lowering that cannot spell a shape refuses, with a stable
 diagnostic code, at the declaration that forced it. Go `chan T` has
 no TypeScript spelling. A Union has no Go spelling. It never
-guesses. This is level 4 of the degradation scale, and the
-completeness check tests it per language.
+guesses. Rust refuses the top type, because Rust has no type of every
+value. Java refuses the well-known `empty`, because Java has no type of
+a value without data outside a declaration. This is level 4 of the
+degradation scale, and the completeness check tests it per language.
 
 ## Names across the boundary
 
@@ -127,6 +130,15 @@ result is stamped as target-namespace metadata on the source symbol,
 such as `golang.name`, at `plugin` authority. A consumer can therefore
 override any single name at the declaration with a directive, and
 `explain` shows where every spelling came from.
+
+A nested declaration crosses under its flat name. `Identity.FlatName`
+joins the parts of the declaration's owner chain and its name, and
+writes the first letter of each part after the first in upper case, so
+the nested `State` of the message `Session` is `SessionState` in every
+target. Each spoke spells a translated reference with the referent's
+flat name. A generator that mirrors a nested declaration emits it in
+the file under that name, and the naming annotator stamps the respell
+of that name on the nested declaration.
 
 The timing matters. The stamps arrive during **Annotate**, written by
 a naming annotator that each target language provides and the
