@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/output"
@@ -185,11 +184,11 @@ func assign(dir string, members []Member, args []string) ([][]string, error) {
 		at := resolve(dir, arg)
 		placed := false
 		for i, m := range members {
-			if !inside(m.Root, at) {
+			rel, isBelow := below(m.Root, at)
+			if !isBelow {
 				continue
 			}
-			rel, _ := filepath.Rel(m.Root, at)
-			out[i] = append(out[i], filepath.ToSlash(rel))
+			out[i] = append(out[i], rel)
 			placed = true
 		}
 		if !placed {

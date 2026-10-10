@@ -8,7 +8,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -282,12 +281,11 @@ func relocate(t *workspace.Target, dir, root string) bool {
 		if *p == "" {
 			continue
 		}
-		at := resolve(dir, *p)
-		if !inside(root, at) {
+		rel, isBelow := below(root, resolve(dir, *p))
+		if !isBelow {
 			return false
 		}
-		rel, _ := filepath.Rel(root, at)
-		*p = filepath.ToSlash(rel)
+		*p = rel
 	}
 	return true
 }

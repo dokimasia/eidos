@@ -258,6 +258,17 @@ func TestRun(t *testing.T) {
 			files.Absent(t, filepath.Join(root, "svc", "b", "mirror.txt"), "the run withholds svc/b")
 		})
 
+		t.Run("reads an absolute pattern through a symbolic link to the root", func(t *testing.T) {
+			t.Parallel()
+
+			root := packages(t)
+			alias := filepath.Join(t.TempDir(), "alias")
+			assert.NoError(t, os.Symlink(root, alias), "the alias of the root is created")
+			ran(t, root, filepath.Join(alias, "svc", "a"))
+			files.IsFile(t, filepath.Join(root, "svc", "a", "mirror.txt"), "the pattern through the alias names svc/a")
+			files.Absent(t, filepath.Join(root, "svc", "b", "mirror.txt"), "the run withholds svc/b")
+		})
+
 		t.Run("commits the package of the working directory for the pattern of a go:generate line", func(t *testing.T) {
 			t.Parallel()
 

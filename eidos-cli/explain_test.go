@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -209,6 +210,18 @@ func TestExplain(t *testing.T) {
 			_, stdout, _ := invoke(t, described, cmdExplain, filepath.Join(root, "svc"), "mirror.txt", jsonFlag)
 			got := decoded[explainedFileEvent](t, stdout, eventExplainFile)
 			assert.Length(t, got, 1, "the path is the path of the mirror")
+			assert.Equal(t, got[0].Path, mirrorPath, "the path is relative to the root")
+		})
+
+		t.Run("reads an absolute path through a symbolic link to the root", func(t *testing.T) {
+			t.Parallel()
+
+			root := explained(t, source)
+			alias := filepath.Join(t.TempDir(), "alias")
+			assert.NoError(t, os.Symlink(root, alias), "the alias of the root is created")
+			_, stdout, _ := invoke(t, described, cmdExplain, root, filepath.Join(alias, mirrorPath), jsonFlag)
+			got := decoded[explainedFileEvent](t, stdout, eventExplainFile)
+			assert.Length(t, got, 1, "the path through the alias is the path of the mirror")
 			assert.Equal(t, got[0].Path, mirrorPath, "the path is relative to the root")
 		})
 

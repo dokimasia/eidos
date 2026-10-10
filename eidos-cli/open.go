@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -262,4 +263,30 @@ func marked(dir string) bool {
 func inside(dir, p string) bool {
 	sep := string(filepath.Separator)
 	return p == dir || strings.HasPrefix(p, strings.TrimSuffix(dir, sep)+sep)
+}
+
+// below returns the clean absolute path at relative to the directory root
+// in slash form, and reports whether at is root or a path below it. It
+// looks for root among the directories above at by file identity, so a
+// path to root through a symbolic link, in another case on a file system
+// that ignores case, or through a short name on Windows relates to root.
+// below keeps the elements of at below root as written. They need not
+// exist, so a pattern can end in its wildcard.
+func below(root, at string) (string, bool) {
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return "", false
+	}
+	rest := ""
+	for p := at; ; {
+		if info, err := os.Stat(p); err == nil && os.SameFile(rootInfo, info) {
+			return filepath.ToSlash(cmp.Or(rest, ".")), true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return "", false
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+		p = parent
+	}
 }
