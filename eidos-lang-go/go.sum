@@ -1,5 +1,3 @@
-go.dokimi.dev/assert v0.0.0-20261006224851-603d74892a28 h1:B1WuOo6BC+vZq1D8vnQkm+ZJ2r/9+z9iFxeJa6JjWjM=
-go.dokimi.dev/assert v0.0.0-20261006224851-603d74892a28/go.mod h1:Mr2lGt+AMXUIuqxAk7aGgGpTbdvFjuCd1qmUt0r091k=
 go.dokimi.dev/assert v0.0.0-20261007133442-6f235714117b h1:sXlKSw/O7L2olNwVtbx0gsCpc0lxe/cLFV5Fbpco/04=
 go.dokimi.dev/assert v0.0.0-20261007133442-6f235714117b/go.mod h1:Mr2lGt+AMXUIuqxAk7aGgGpTbdvFjuCd1qmUt0r091k=
 golang.org/x/mod v0.41.0 h1:qJmnOUb4YB+FsEuM3HcWucdZASCPGhsX6uljO6pog0c=
