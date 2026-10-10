@@ -27,3 +27,7 @@ way.
 | [0011](0011-region-string-tables-and-hashed-edges.md) | Each region has its own string table, and edges are hashed | Accepted |
 | [0012](0012-package-reads-depend-on-every-member.md) | A package read whole depends on every member | Accepted |
 | [0013](0013-the-parse-memo-is-keyed-by-the-executable.md) | The parse memo is keyed by the executable and can be shared | Accepted |
+| [0014](0014-the-protobuf-frontend-resolves-four-features.md) | The protobuf frontend resolves the four features it applies | Accepted |
+| [0015](0015-the-delimited-mark-is-stamped-at-the-parse.md) | The delimited mark is stamped at the parse | Accepted |
+| [0016](0016-the-proto2-schema-marks-message-fields-optional.md) | The proto2 service schema marks its message fields optional | Accepted |
+| [0017](0017-the-service-fixture-edit-narrows-a-field.md) | The service fixture's edit narrows a field | Accepted |
