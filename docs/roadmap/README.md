@@ -44,7 +44,7 @@ flowchart LR
 | 7 | [0007](0007-warm-equals-cold.md) A warm run redoes only what changed | Done | 0006 | unscheduled |
 | 8 | [0008](0008-command-kernels.md) A consumer binary gets the full command surface | Done | 0007 | unscheduled |
 | 9 | [0009](0009-typescript-from-go.md) TypeScript comes out of a Go workspace | Done | 0006 | unscheduled |
-| 10 | [0010](0010-protobuf-read-only.md) protobuf schemas drive generation | In progress | 0009 | unscheduled |
+| 10 | [0010](0010-protobuf-read-only.md) protobuf schemas drive generation | Done | 0009 | unscheduled |
 | 11 | [0011](0011-shape-catalog.md) The shape catalog classifies callables | Done | 0005 | unscheduled |
 | 12 | [0012](0012-declarative-plugins.md) A plugin runs from files alone | Planned | 0005 | unscheduled |
 | 13 | [0013](0013-regressions-block-tag.md) Regressions block the tag | Planned | 0007, 0008, 0009 | unscheduled |
