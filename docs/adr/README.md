@@ -36,3 +36,5 @@ way.
 | [0015](0015-the-delimited-mark-is-stamped-at-the-parse.md) | The delimited mark is stamped at the parse | Accepted |
 | [0016](0016-the-proto2-schema-marks-message-fields-optional.md) | The proto2 service schema marks its message fields optional | Accepted |
 | [0017](0017-the-service-fixture-edit-narrows-a-field.md) | The service fixture's edit narrows a field | Accepted |
+| [0018](0018-the-declarative-host-is-a-module.md) | The declarative host is a module of its own | Accepted |
+| [0019](0019-a-family-claims-its-files-through-a-template.md) | A family claims its files through a file template | Accepted |
