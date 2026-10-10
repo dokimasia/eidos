@@ -78,7 +78,8 @@ var (
 //
 //   - a scalar as the primitive of its width, long for the platform's
 //     width, and an unsigned integer as the signed type of its width;
-//   - Bool, Text and Bytes as boolean, String and byte[];
+//   - Bool, Text and Bytes as boolean, String and byte[], and the top type
+//     as Object;
 //   - an optional as the boxed class of its type, because a Java
 //     reference can be null;
 //   - a list as java.util.List, a map as java.util.Map, and an array of
@@ -90,8 +91,8 @@ var (
 //   - the well-known timestamp and duration as java.time.Instant and
 //     java.time.Duration;
 //   - every other reference and sum as a translated reference with the
-//     referent's declared name, the shape's target and the translated
-//     type arguments, which Java writes in angle brackets.
+//     referent's flat name, the shape's target and the translated type
+//     arguments, which Java writes in angle brackets.
 //
 // In a type argument and in a wildcard's bound, the spoke writes the
 // boxed class of a primitive, so a list of a 32-bit integer is
@@ -99,9 +100,11 @@ var (
 //
 // Type refuses a tuple, a union, an intersection, a stream, an inline
 // type and an opaque type, because Java has no spelling of them. It
-// refuses a function type of more than two parameters or more than one
-// result, and a scalar of another width. It refuses a form whose child
-// it refuses, and the error contains the source spelling of the child.
+// refuses the well-known empty value, because Java does not have a type
+// of a value without data outside a declaration. It refuses a function
+// type of more than two parameters or more than one result, and a scalar
+// of another width. It refuses a form whose child it refuses, and the
+// error contains the source spelling of the child.
 //
 // # Allocation contract
 //
@@ -132,6 +135,8 @@ func javaType(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: booleanType}, nil
 	case symbol.FormText:
 		return &emit.TypeRef{Spelling: stringType}, nil
+	case symbol.FormDynamic:
+		return &emit.TypeRef{Spelling: objectType}, nil
 	case symbol.FormBytes:
 		return &emit.TypeRef{
 			Spelling: byteType + arrayMark, Form: symbol.FormArray, Elems: []*emit.TypeRef{{Spelling: byteType}},
@@ -254,19 +259,22 @@ func wildcard(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, 
 	}, nil
 }
 
-// reference spells a reference or a sum: a well-known type as the class
-// of java.time, and every other referent as a translated reference with
-// its translated arguments.
+// reference spells a reference or a sum: the well-known timestamp and
+// duration as the classes of java.time, and every other referent as a
+// translated reference under its flat name, with its translated
+// arguments. It refuses the well-known empty value.
 func reference(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: instantType, Package: timePackage}, nil
 	case rules.WellKnownDuration:
 		return &emit.TypeRef{Spelling: durationType, Package: timePackage}, nil
+	case rules.WellKnownEmpty:
+		return nil, fmt.Errorf("the well-known empty value has no Java spelling")
 	}
 	args, err := spoke.Children(s.Args, argument)
 	if err != nil {
 		return nil, err
 	}
-	return &emit.TypeRef{Spelling: s.Ref.Name, Target: s.Ref, Args: args}, nil
+	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
 }
