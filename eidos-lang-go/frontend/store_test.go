@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,17 +20,29 @@ import (
 // store is rooted at by reading through the store.
 const markerFile = "marker"
 
-// The variables the cases set, as the go command spells them.
+// The variables the cases set, as the go command spells them, and the
+// variables of the home and the configuration directory on Windows.
 const (
-	varGoEnv    = "GOENV"
-	varModCache = "GOMODCACHE"
-	varGoPath   = "GOPATH"
-	varGoRoot   = "GOROOT"
-	varPath     = "PATH"
-	varHome     = "HOME"
-	varXDG      = "XDG_CONFIG_HOME"
-	goEnvOff    = "off"
+	varGoEnv       = "GOENV"
+	varModCache    = "GOMODCACHE"
+	varGoPath      = "GOPATH"
+	varGoRoot      = "GOROOT"
+	varPath        = "PATH"
+	varHome        = "HOME"
+	varXDG         = "XDG_CONFIG_HOME"
+	varUserProfile = "USERPROFILE"
+	varAppData     = "AppData"
+	goEnvOff       = "off"
 )
+
+// goName is the file name of the go binary that Stores looks for on
+// PATH. Windows runs a file with the suffix .exe alone.
+var goName = func() string {
+	if runtime.GOOS == "windows" {
+		return "go.exe"
+	}
+	return "go"
+}()
 
 // The roots the allocation cases name. Stores reads no directory where
 // the environment names both roots, so neither has to exist.
@@ -104,7 +117,7 @@ func TestStore(t *testing.T) {
 			assert.NoError(t, os.MkdirAll(filepath.Join(home, "go", "pkg"), 0o755), "go/pkg is created")
 			assert.NoError(t, os.Symlink(modCache, filepath.Join(home, "go", "pkg", "mod")), "go/pkg/mod links")
 			stores, err := frontend.Stores(envOf(map[string]string{
-				varHome: home, varGoRoot: goRootDir(t), varGoEnv: goEnvOff,
+				varHome: home, varUserProfile: home, varGoRoot: goRootDir(t), varGoEnv: goEnvOff,
 			}))
 			assert.NoError(t, err, "both roots resolve")
 			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), modCache, "the default GOPATH is ~/go")
@@ -170,7 +183,7 @@ func TestStore(t *testing.T) {
 
 			root := goRootDir(t)
 			links := t.TempDir()
-			assert.NoError(t, os.Symlink(filepath.Join(root, "bin", "go"), filepath.Join(links, "go")),
+			assert.NoError(t, os.Symlink(filepath.Join(root, "bin", goName), filepath.Join(links, goName)),
 				"the link is created")
 			stores, err := frontend.Stores(envOf(map[string]string{
 				varModCache: markedDir(t), varGoEnv: goEnvOff, varPath: links,
@@ -180,12 +193,29 @@ func TestStore(t *testing.T) {
 				"the root is above the binary the link names")
 		})
 
+		t.Run("roots the standard library above a go binary on PATH that links outside the root", func(t *testing.T) {
+			t.Parallel()
+
+			root := goRootDir(t)
+			elsewhere := filepath.Join(t.TempDir(), goName)
+			assert.NoError(t, os.WriteFile(elsewhere, nil, 0o755), "the binary outside the root is written")
+			binary := filepath.Join(root, "bin", goName)
+			assert.NoError(t, os.Remove(binary), "the binary of the root is removed")
+			assert.NoError(t, os.Symlink(elsewhere, binary), "a link to the binary outside takes its place")
+			stores, err := frontend.Stores(envOf(map[string]string{
+				varModCache: markedDir(t), varGoEnv: goEnvOff, varPath: filepath.Join(root, "bin"),
+			}))
+			assert.NoError(t, err, "both roots resolve")
+			assert.Equal(t, rootOf(t, stores, frontend.GoRootStore), filepath.Join(root, "src"),
+				"the root is above the link, not above its target")
+		})
+
 		t.Run("passes over a directory named go on PATH", func(t *testing.T) {
 			t.Parallel()
 
 			root := goRootDir(t)
 			decoy := t.TempDir()
-			assert.NoError(t, os.Mkdir(filepath.Join(decoy, "go"), 0o755), "the decoy directory is created")
+			assert.NoError(t, os.Mkdir(filepath.Join(decoy, goName), 0o755), "the decoy directory is created")
 			stores, err := frontend.Stores(envOf(map[string]string{
 				varModCache: markedDir(t), varGoEnv: goEnvOff,
 				varPath: decoy + string(filepath.ListSeparator) + filepath.Join(root, "bin"),
@@ -221,7 +251,7 @@ func TestStore(t *testing.T) {
 			t.Parallel()
 
 			links := t.TempDir()
-			assert.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "gone"), filepath.Join(links, "go")),
+			assert.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "gone"), filepath.Join(links, goName)),
 				"the dangling link is created")
 			_, err := frontend.Stores(envOf(map[string]string{
 				varModCache: markedDir(t), varGoEnv: goEnvOff, varPath: links,
@@ -243,50 +273,6 @@ func TestStore(t *testing.T) {
 			assert.HasError(t, err, "the env file is off, and nothing else roots the module cache")
 		})
 
-		t.Run("reads the go env file under XDG_CONFIG_HOME", func(t *testing.T) {
-			t.Parallel()
-
-			modCache := markedDir(t)
-			config := t.TempDir()
-			assert.NoError(t, os.MkdirAll(filepath.Join(config, "go"), 0o755), "go is created")
-			assert.NoError(t, os.WriteFile(filepath.Join(config, "go", "env"),
-				[]byte(varModCache+"="+modCache+"\n"), 0o644), "the env file is written")
-			stores, err := frontend.Stores(envOf(map[string]string{varXDG: config, varGoRoot: goRootDir(t)}))
-			assert.NoError(t, err, "both roots resolve")
-			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), modCache, "the configuration directory's file")
-		})
-
-		t.Run("reads the go env file under .config in the home directory", func(t *testing.T) {
-			t.Parallel()
-
-			modCache := markedDir(t)
-			home := t.TempDir()
-			assert.NoError(t, os.MkdirAll(filepath.Join(home, ".config", "go"), 0o755), ".config/go is created")
-			assert.NoError(t, os.WriteFile(filepath.Join(home, ".config", "go", "env"),
-				[]byte(varModCache+"="+modCache+"\n"), 0o644), "the env file is written")
-			stores, err := frontend.Stores(envOf(map[string]string{varHome: home, varGoRoot: goRootDir(t)}))
-			assert.NoError(t, err, "both roots resolve")
-			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), modCache, "the default configuration directory")
-		})
-
-		t.Run("ignores the go env file under a relative XDG_CONFIG_HOME", func(t *testing.T) {
-			t.Parallel()
-
-			home := t.TempDir()
-			assert.NoError(t, os.MkdirAll(filepath.Join(home, ".config", "go"), 0o755), ".config/go is created")
-			assert.NoError(t, os.WriteFile(filepath.Join(home, ".config", "go", "env"),
-				[]byte(varModCache+"="+markedDir(t)+"\n"), 0o644), "a decoy env file is written")
-			defaultCache := markedDir(t)
-			assert.NoError(t, os.MkdirAll(filepath.Join(home, "go", "pkg"), 0o755), "go/pkg is created")
-			assert.NoError(t, os.Symlink(defaultCache, filepath.Join(home, "go", "pkg", "mod")), "go/pkg/mod links")
-			stores, err := frontend.Stores(envOf(map[string]string{
-				varXDG: "relative", varHome: home, varGoRoot: goRootDir(t),
-			}))
-			assert.NoError(t, err, "both roots resolve")
-			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), defaultCache,
-				"a relative XDG_CONFIG_HOME names no configuration directory, not even .config under HOME")
-		})
-
 		t.Run("ignores a go env file line without a value", func(t *testing.T) {
 			t.Parallel()
 
@@ -300,10 +286,75 @@ func TestStore(t *testing.T) {
 	})
 }
 
+// The go command reads its env file under os.UserConfigDir, whose rule
+// differs per platform. Stores reads the file where os.UserConfigDir
+// finds it for each setting of XDG_CONFIG_HOME. Where os.UserConfigDir
+// does not find a directory, Stores does not read an env file. A decoy
+// env file under .config in the home directory contains the module cache
+// that a wrong fallback would read. The cases set the environment of the
+// process, so the test runs alone.
+func TestStoreEnv(t *testing.T) {
+	t.Run("Stores", func(t *testing.T) {
+		tests := []struct {
+			name string
+			// give returns XDG_CONFIG_HOME for a home directory.
+			give func(home string) string
+		}{
+			{
+				name: "reads the go env file that os.UserConfigDir finds for an absolute XDG_CONFIG_HOME",
+				give: func(home string) string { return filepath.Join(home, "config") },
+			},
+			{
+				name: "reads the go env file that os.UserConfigDir finds without XDG_CONFIG_HOME",
+				give: func(string) string { return "" },
+			},
+			{
+				name: "reads the go env file that os.UserConfigDir finds for a relative XDG_CONFIG_HOME",
+				give: func(string) string { return "relative" },
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				home := t.TempDir()
+				for _, v := range []string{varGoEnv, varModCache, varGoPath} {
+					t.Setenv(v, "")
+				}
+				t.Setenv(varHome, home)
+				t.Setenv(varUserProfile, home)
+				t.Setenv(varAppData, filepath.Join(home, "AppData"))
+				t.Setenv(varXDG, tt.give(home))
+				t.Setenv(varGoRoot, goRootDir(t))
+				decoy := filepath.Join(home, ".config", "go")
+				assert.NoError(t, os.MkdirAll(decoy, 0o755), ".config/go is created")
+				assert.NoError(t, os.WriteFile(filepath.Join(decoy, "env"),
+					[]byte(varModCache+"="+markedDir(t)+"\n"), 0o644), "a decoy env file is written")
+				want := filepath.Join(home, "go", "pkg", "mod")
+				assert.NoError(t, os.MkdirAll(want, 0o755), "the default module cache is created")
+				assert.NoError(t, os.WriteFile(filepath.Join(want, markerFile), []byte(want), 0o644),
+					"the marker of the default module cache is written")
+				if config, err := os.UserConfigDir(); err == nil {
+					want = markedDir(t)
+					assert.NoError(t, os.MkdirAll(filepath.Join(config, "go"), 0o755), "go is created")
+					assert.NoError(t, os.WriteFile(filepath.Join(config, "go", "env"),
+						[]byte(varModCache+"="+want+"\n"), 0o644), "the env file is written")
+				}
+				stores, err := frontend.Stores(os.Getenv)
+				assert.NoError(t, err, "both roots resolve")
+				assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), want,
+					"Stores follows os.UserConfigDir to the env file")
+			})
+		}
+	})
+}
+
 // The stores allocate the map and its two roots, and a go env file
 // allocates its read. The ordinary run, which runs no benchmark, checks
-// those ceilings here.
+// those ceilings here. Darwin and Windows allocate more in their file
+// system calls and path functions, so the test runs on Linux alone.
 func TestStoreAllocs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the ceilings count the allocations of Linux's file system calls")
+	}
 	checkAllocs(t, storeCalls(t))
 }
 
@@ -362,8 +413,9 @@ func markedDir(tb testing.TB, parts ...string) string {
 	return dir
 }
 
-// goRootDir creates a GOROOT under a test's temporary directory: a
-// bin/go file, src/runtime, and the marker in src.
+// goRootDir creates a GOROOT under a test's temporary directory. The
+// GOROOT has a file named goName in bin, the directory src/runtime, and
+// the marker in src.
 func goRootDir(tb testing.TB) string {
 	tb.Helper()
 
@@ -372,7 +424,7 @@ func goRootDir(tb testing.TB) string {
 	assert.NoError(tb, os.MkdirAll(filepath.Join(src, "runtime"), 0o755), "src/runtime is created")
 	assert.NoError(tb, os.WriteFile(filepath.Join(src, markerFile), []byte(src), 0o644), "the marker is written")
 	assert.NoError(tb, os.MkdirAll(filepath.Join(root, "bin"), 0o755), "bin is created")
-	assert.NoError(tb, os.WriteFile(filepath.Join(root, "bin", "go"), nil, 0o755), "the go binary is created")
+	assert.NoError(tb, os.WriteFile(filepath.Join(root, "bin", goName), nil, 0o755), "the go binary is created")
 	return root
 }
 

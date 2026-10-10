@@ -84,10 +84,11 @@ const (
 // then pkg/mod under the first entry of GOPATH. GOPATH is the
 // environment's, then the go env file's, then go under the home
 // directory. GOROOT is the environment's, then the go env file's,
-// then the directory two levels above the first go binary on PATH,
-// symbolic links resolved, where that directory contains src/runtime.
-// The go command finds its own root above its executable the same
-// way. The go env file is GOENV, or go/env under the user
+// then the directory two levels above the first go binary on PATH
+// where that directory contains src/runtime. Where it does not, GOROOT
+// is the directory two levels above the binary with its symbolic links
+// resolved. The go command finds its own root above its executable the
+// same way. The go env file is GOENV, or go/env under the user
 // configuration directory, and GOENV=off turns it off.
 //
 // Stores returns an error naming the variable to set for a root it
@@ -161,16 +162,26 @@ func (e goEnv) goRoot() (string, error) {
 	if !found {
 		return "", errors.New("frontend: set GOROOT, because no go binary is on PATH")
 	}
+	if root := filepath.Dir(filepath.Dir(binary)); hasRuntime(root) {
+		return root, nil
+	}
 	resolved, err := filepath.EvalSymlinks(binary)
 	if err != nil {
 		return "", fmt.Errorf("frontend: set GOROOT, because the go binary on PATH does not resolve: %w", err)
 	}
 	root := filepath.Dir(filepath.Dir(resolved))
-	if info, err := os.Stat(filepath.Join(root, filepath.FromSlash(runtimeDir))); err != nil || !info.IsDir() {
+	if !hasRuntime(root) {
 		return "", fmt.Errorf("frontend: set GOROOT, because %s, two levels above the go binary on PATH, "+
 			"has no %s", root, runtimeDir)
 	}
 	return root, nil
+}
+
+// hasRuntime reports whether root contains the directory src/runtime, as
+// a GOROOT does.
+func hasRuntime(root string) bool {
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(runtimeDir)))
+	return err == nil && info.IsDir()
 }
 
 // onPath returns the first regular file of a name in the directories a
