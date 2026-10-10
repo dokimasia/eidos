@@ -150,7 +150,6 @@ func TestFrontend(t *testing.T) {
 				mixinPath:    {Data: []byte(mixinBase)},
 				contractPath: {Data: []byte(contractBase)},
 			},
-			Keys: specfront.Keys,
 		}
 	}
 

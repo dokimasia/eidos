@@ -16,8 +16,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The handles of the keys that the spec frontend stamps. The composition
-// registers the keys through [specfront.Keys].
+// The handles of the keys that the spec frontend stamps. The spec frontend
+// registers the keys through its role, with [specfront.Keys].
 var (
 	formKey           = meta.Named[string](specfront.KeyForm)
 	detectedKey       = meta.Named[bool](specfront.KeyDetected)

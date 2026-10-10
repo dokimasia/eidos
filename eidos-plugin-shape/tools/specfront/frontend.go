@@ -46,10 +46,11 @@ const (
 //     binding's doc.
 //
 // The frontend stamps the values of a spec that the declarations do not
-// state under the keys of [Keys]. A spec refers to nothing outside
-// itself, so the frontend's resolution returns no candidate. Each fault
-// of a spec is an Error under [SpecInvalid] at its position, and a spec
-// with a fault declares no struct.
+// state under the keys of [Keys], which it registers through its role. A
+// spec refers to nothing outside itself, so the frontend's resolution
+// returns no candidate. Each fault of a spec is an Error under
+// [SpecInvalid] at its position, and a spec with a fault declares no
+// struct.
 func New() plugin.Frontend {
 	return frontend.New(ID, Lang, plugin.CommentSyntax{Line: []string{commentOpener}}).
 		Version(version).
@@ -57,6 +58,7 @@ func New() plugin.Frontend {
 		Units(partition).
 		Parse(parse).
 		Resolve(func(plugin.ImportScope, string) plugin.Candidates { return plugin.Candidates{} }).
+		Keys(Keys).
 		Build()
 }
 

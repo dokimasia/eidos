@@ -13,8 +13,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 )
 
-// keyspace is the namespace of the keys of the spec frontend.
-const keyspace = "shapespec"
+// keyspace is the namespace of the keys of the spec frontend, and rival
+// is a registrant that claims it before the frontend.
+const (
+	keyspace = "shapespec"
+	rival    = "rival"
+)
 
 // Keys registers every key that the spec frontend stamps, each with the
 // type of its value.
@@ -63,11 +67,19 @@ func TestKeys(t *testing.T) {
 			}
 		})
 
+		t.Run("returns no error for a second registration of one registrant", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, specfront.Keys(r), "the first registration succeeds")
+			assert.NoError(t, specfront.Keys(r), "the registrant repeats its registration")
+		})
+
 		t.Run("returns the error of a namespace that another registrant claimed", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
-			assert.NoError(t, r.ClaimNamespace(keyspace), "another registrant claims the namespace")
+			assert.NoError(t, r.For(rival).ClaimNamespace(keyspace), "another registrant claims the namespace")
 			assert.HasError(t, specfront.Keys(r), "the frontend cannot register into the namespace of another")
 		})
 	})

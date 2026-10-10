@@ -134,9 +134,11 @@ func TestClassify(t *testing.T) {
 
 			r := meta.NewRegistry()
 			assert.NoError(t, r.ClaimNamespace(shape.KeyShape.Namespace()), "another registrant claims the namespace")
-			keys, provides := catalog.Annotators()[0].(plugin.KeyProvider)
+			annotator := catalog.Annotators()[0]
+			keys, provides := annotator.(plugin.KeyProvider)
 			assert.True(t, provides, "the plugin shape registers keys")
-			assert.HasError(t, keys.Keys(r), "the plugin shape cannot register into the namespace of another")
+			assert.HasError(t, keys.Keys(r.For(string(annotator.Name()))),
+				"the plugin shape cannot register into the namespace of another")
 		})
 	})
 

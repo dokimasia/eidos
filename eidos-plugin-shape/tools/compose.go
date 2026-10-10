@@ -34,12 +34,13 @@ const (
 )
 
 // Compose returns the composition that generates the catalog's registry
-// from its specs. It composes the spec frontend and its keys, the absent
-// rules of the language of the specs, and the plan [Plan] of the registry
-// generator toward the Go backend. The plan writes registry.gen.go into the
-// root of the catalog module and registry_wiring.gen.go into its directory
-// catalog. The run loads no Go file, so the Go backend takes the path of
-// each package from the import base [registry.CatalogPath].
+// from its specs. It composes the spec frontend, which registers its keys,
+// the absent rules of the language of the specs, and the plan [Plan] of
+// the registry generator toward the Go backend. The plan writes
+// registry.gen.go into the root of the catalog module and
+// registry_wiring.gen.go into its directory catalog. The run loads no Go
+// file, so the Go backend takes the path of each package from the import
+// base [registry.CatalogPath].
 //
 // The caller sets the output and runs the composition over the catalog
 // module's directory. Each call returns new plugins, because a plugin
@@ -49,7 +50,6 @@ func Compose() *workspace.Builder {
 		Brand(Brand).
 		Frontends(specfront.New()).
 		Rules(rules.Absent(specfront.Lang)).
-		Keys(specfront.Keys).
 		Targets(golang.Target).
 		Plans(workspace.Plan{
 			Name:       Plan,

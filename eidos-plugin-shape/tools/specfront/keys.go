@@ -60,8 +60,8 @@ const (
 )
 
 // Keys claims the namespace shapespec and registers every key that the
-// spec frontend stamps. A composition passes it to the Keys of the
-// workspace, because a frontend registers no keys of its own.
+// spec frontend stamps. The spec frontend registers the keys through its
+// role, under the language's spelling.
 //
 // Error modes: the error of the claim of the namespace, such as a
 // namespace that another registrant claimed, and otherwise the errors of
