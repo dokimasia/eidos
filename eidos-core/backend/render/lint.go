@@ -10,21 +10,29 @@ import (
 	"slices"
 	"text/template"
 	"text/template/parse"
+
+	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Lint holds one plugin's template tree to the static half of the
-// template rules, against this pass's target: every template parses
-// with the merged vocabulary, so an unknown function fails here
-// rather than at execute time; every template carries a slots or
-// slot marker, because a body-claiming template that dropped them
-// strands contributions at render; a helper shadowing a shared
-// name without a declared override is refused the way the render
-// refuses it; and a declared override must replace something
-// shared. It returns one error per finding and nothing for a
-// valid tree. What the lint cannot see is a reference's payload
-// and everything inside verbatim, which is the cost those
-// carry.
-func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []error {
+// Lint checks the template tree of one plugin against the static half of
+// the template rules, for the target of the pass. It returns one error for
+// each finding, and nothing for a valid tree:
+//
+//   - A template that does not parse with the merged vocabulary, so an
+//     unknown function fails here and not at execute time.
+//   - A body template without a slots or slot marker, because the render
+//     would strand a pending contribution.
+//   - A helper that shadows a shared name without a declared override,
+//     which the render refuses too.
+//   - A declared override that replaces no shared name.
+//
+// files are the paths of the file templates of the tree, from the
+// [plugin.Output.Template] fields of the plugin. A file template parses
+// with the builtins of a file template and needs no marker, because it
+// places the body of a record through the body builtin. The lint does
+// not see the payload of a reference or the text inside verbatim.
+func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides, files []string) []error {
 	var findings []error
 
 	declared := map[string]bool{}
@@ -63,11 +71,23 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []er
 		func(string) (string, error) { return "", nil },
 		func(string, ...string) (string, error) { return "", nil },
 	)
+	fileStubs := fileBuiltins(
+		func(any) (string, error) { return "", nil },
+		func(*emit.Method) (string, error) { return "", nil },
+		func(string, ...string) (string, error) { return "", nil },
+		func(string, symbol.Symbol) (string, error) { return "", nil },
+	)
 
 	walk := func(name string) error {
 		src, err := fs.ReadFile(tree, name)
 		if err != nil {
 			return fmt.Errorf("render: reading %s: %w", name, err)
+		}
+		if slices.Contains(files, name) {
+			if _, perr := template.New(name).Funcs(fileStubs).Funcs(vocabulary).Parse(string(src)); perr != nil {
+				return fmt.Errorf("render: %w", perr)
+			}
+			return nil
 		}
 		t, err := template.New(name).Funcs(stubs).Funcs(vocabulary).Parse(string(src))
 		if err != nil {

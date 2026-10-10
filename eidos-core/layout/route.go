@@ -179,17 +179,20 @@ type destination struct {
 	tag    string
 	per    plugin.Cardinality
 	word   string
-	key    string
-	pkg    symbol.Identity
-	dir    string
-	file   string
+	// template is the file template of the family, and empty for a
+	// family that does not claim its files.
+	template string
+	key      string
+	pkg      symbol.Identity
+	dir      string
+	file     string
 }
 
 // index returns the fields that tell two destinations apart: a
-// family's cardinality and word follow from its plugin and tag, and a
-// unit's package from its language and path. The key is under the
-// size a map stores inline, so creating a bucket allocates nothing for
-// its key.
+// family's cardinality, word and file template follow from its plugin
+// and tag, and a unit's package from its language and path. The key is
+// under the size a map stores inline, so creating a bucket allocates
+// nothing for its key.
 func (d destination) index() destKey {
 	return destKey{
 		plugin: d.plugin, tag: d.tag, key: d.key,
@@ -368,7 +371,7 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 	}
 	conf := r.in.Config.resolve(Family{Plugin: u.Plugin, Tag: fam.Tag})
 	dest := destination{
-		plugin: u.Plugin, tag: fam.Tag, per: fam.Per, word: fam.Word,
+		plugin: u.Plugin, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template,
 		key: key, pkg: pkg, file: conf.file,
 	}
 	base, found := r.originDir(origin)
@@ -407,7 +410,7 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 func (r *router) target(p plugin.ID, fam plugin.Output, key string, pkg symbol.Identity) (destination, bool) {
 	conf := r.in.Config.resolve(Family{Plugin: p, Tag: fam.Tag})
 	dest := destination{
-		plugin: p, tag: fam.Tag, per: fam.Per, word: fam.Word,
+		plugin: p, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template,
 		key: key, pkg: pkg, file: conf.file,
 	}
 	if fam.Per == plugin.PerPlan {
@@ -489,7 +492,7 @@ func (r *router) name() error {
 		u := plugin.Unit{
 			Plugin: b.dest.plugin, Tag: b.dest.tag, Per: b.dest.per, Word: b.dest.word,
 			Key: b.dest.key, Pkg: b.dest.pkg, Decls: b.decls, Origins: r.originsOf(b),
-			Contributors: r.contributorsOf(b),
+			Contributors: r.contributorsOf(b), Template: b.dest.template, Data: r.dataOf(b),
 		}
 		parts := r.in.Speller.SplitUnit(u)
 		if kept := declsOf(parts); kept != len(u.Decls) {
@@ -731,6 +734,33 @@ func (r *router) contributorsOf(b *bucket) []plugin.ID {
 	}
 	slices.Sort(contributors)
 	return slices.Compact(contributors)
+}
+
+// dataOf returns the data of the records of a bucket by origin. For a
+// bucket of one unit it returns the data of that unit. For a bucket of
+// several units it merges their data, and where two units have data for
+// one origin, the data of the earlier unit applies. It returns nil where
+// no contributing unit has data, and it allocates the merged map alone.
+func (r *router) dataOf(b *bucket) map[symbol.Identity]any {
+	if len(b.more) == 0 {
+		return r.units[b.first].Data
+	}
+	var out map[symbol.Identity]any
+	merge := func(unit int) {
+		for origin, v := range r.units[unit].Data {
+			if out == nil {
+				out = make(map[symbol.Identity]any, len(r.units[unit].Data))
+			}
+			if _, set := out[origin]; !set {
+				out[origin] = v
+			}
+		}
+	}
+	merge(b.first)
+	for _, unit := range b.more {
+		merge(unit)
+	}
+	return out
 }
 
 // positionOf returns where a finding about a declaration is

@@ -174,7 +174,8 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 //
 // Build panics on a declaration defect: an empty name, no rules, a
 // wrapper around no rules, a duplicate output tag, an empty output
-// word, a zero cardinality, an empty capability label, a nil key
+// word, a zero cardinality, a family template that is no
+// slash-separated path inside a tree, an empty capability label, a nil key
 // registration, a presentation defect, a directive name in two
 // wrappers, a [Gated] name that is not a kernel directive, a rule
 // gating on two directives, a gate wrapped around a graph rule, a
@@ -211,6 +212,10 @@ func (b *Builder) Build() plugin.Plugin {
 		}
 		if o.Word == "" {
 			panic("eidos: " + name + " declares a family with no word")
+		}
+		if o.Template != "" && !fs.ValidPath(o.Template) {
+			panic("eidos: " + name + " declares the family template " + strconv.Quote(o.Template) +
+				", which is no slash-separated path inside a tree")
 		}
 		if _, taken := outByTag[Tag(o.Tag)]; taken {
 			panic("eidos: " + name + " declares output tag " +

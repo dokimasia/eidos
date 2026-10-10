@@ -30,7 +30,9 @@ var UnformattedFile = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 
 // RefusedTemplate reports a template that exists and still failed
 // at execute time, naming the emitting plugin: the declaration is
-// skipped and the file renders without it.
+// skipped and the file renders without it. A reference template that
+// reads a key that a map of its data does not contain fails at execute
+// time.
 var RefusedTemplate = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 23, Meaning: "a template refused a declaration at execute time",
 })
@@ -82,6 +84,14 @@ var DroppedSlots = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 // skipped and the file renders without them.
 var UnknownGroup = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 28, Meaning: "a cluster names a group the target language declares no template for",
+})
+
+// MixedClaim reports a file that mixes the units of a family that claims
+// its files with units of another family: the file has no one template
+// to write it, so the pass withholds it. Two families meet in one file
+// where a layout refinement routes both to one filename.
+var MixedClaim = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 71, Meaning: "a file mixes the units of a family that claims its files with other units",
 })
 
 // HelperCollision reports two plugins registering one template

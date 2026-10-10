@@ -44,9 +44,13 @@
 // runs at Close over the records of the plans it reads.
 //
 // [Config.Plans] refines a declared plan by its name before Build compiles
-// it. A [PlanConfig] leaves the plan out, or replaces its sources, its
-// layout policy, its output directory or its import base. The fingerprint
-// includes a refined plan as it includes a declared plan.
+// it. Build leaves the plan out, or replaces its sources, its layout
+// policy, its output directory or its import base, as its [PlanConfig]
+// sets them. Build appends the generators of [PlanConfig.Generators] to a
+// plan whose [Plan.Extensible] is true, and returns an error for the
+// generators of any other plan. So the author of a binary decides which
+// plans its users can extend. The fingerprint includes a refined plan as
+// it includes a declared plan.
 //
 // # Targets
 //

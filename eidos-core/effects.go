@@ -24,8 +24,8 @@ type effectKind uint8
 const (
 	// effectTouch touches an accumulator through an accessor call.
 	effectTouch effectKind = 1
-	// effectPlace places one [Out.Append] call's declarations into the
-	// accumulator its handle touched.
+	// effectPlace places the declarations of one [Out.Append] or
+	// [Out.Record] call into the accumulator its handle touched.
 	effectPlace effectKind = 2
 	// effectSlot appends one [SlotView.Append] call's values into a
 	// slot.
@@ -57,7 +57,8 @@ type effects struct {
 	stream []effect
 	// touches are the accessor calls, one per call.
 	touches []touch
-	// places are the [Out.Append] calls, each a range of decls.
+	// places are the [Out.Append] and [Out.Record] calls, each a range of
+	// decls.
 	places []place
 	decls  []symbol.Symbol
 	// slotted are the [SlotView.Append] calls, each an index into the
@@ -89,11 +90,13 @@ type touch struct {
 	acc *accumulator
 }
 
-// place is one [Out.Append] call: the touch of the handle it went
-// through, and its declarations' range in the lane's decls.
+// place is one [Out.Append] or [Out.Record] call: the touch of the
+// handle it went through, its declarations' range in the lane's decls,
+// and the data of a Record call, which is nil for an Append call.
 type place struct {
 	touch    int
 	from, to int
+	data     any
 }
 
 // slotted is one [SlotView.Append] call: the lane's typed buffer of
@@ -156,12 +159,14 @@ func (fx *effects) touch(seq int, t touch) int {
 }
 
 // place buffers one append call's declarations, in order, under the
-// touch of the handle the call went through.
-func (fx *effects) place(seq, touch int, decls []symbol.Symbol) {
+// touch of the handle the call went through, with the data of a record
+// call, nil for an append.
+func (fx *effects) place(seq, touch int, decls []symbol.Symbol, data any) {
 	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: len(fx.places), kind: effectPlace})
 	from := len(fx.decls)
 	fx.decls = append(grow.Room(fx.decls, len(decls), minGrowth), decls...)
-	fx.places = append(grow.Room(fx.places, 1, minGrowth), place{touch: touch, from: from, to: len(fx.decls)})
+	p := place{touch: touch, from: from, to: len(fx.decls), data: data}
+	fx.places = append(grow.Room(fx.places, 1, minGrowth), p)
 }
 
 // report buffers one finding.
@@ -187,6 +192,7 @@ func (fx *effects) contribute(seq int, host symbol.Symbol) {
 // zeroes each element that refers into the run.
 func (fx *effects) reset() {
 	clear(fx.touches)
+	clear(fx.places)
 	clear(fx.decls)
 	clear(fx.slotted)
 	clear(fx.found)
@@ -311,6 +317,7 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 				instance: t.instance,
 				seq:      len(t.acc.places),
 				decl:     d,
+				data:     p.data,
 			})
 		}
 	case effectSlot:

@@ -169,9 +169,12 @@ func contractsOf(keys *meta.Registry) []contract {
 
 // assemble is the first step: the plugin universe, deduplicated by
 // name, one name one plugin. The roster's order is the declaration
-// order, annotators first, then each plan's generators and backend,
-// then the checks, and it is the registration order every later step
-// depends on for determinism.
+// order, annotators first, then for each plan its generators, the
+// generators that the config adds to it and its backend, then the
+// checks. Every later step registers in this order, so the order makes
+// the composition deterministic. The roster contains the generators
+// that the config adds to a plan that refine refuses, so the configure
+// step populates their options and reports no second error about them.
 func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []error) {
 	var roster []plugin.Plugin
 	var faults []error
@@ -210,11 +213,13 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 		admit(a)
 	}
 	for _, pl := range b.plans {
-		for _, g := range pl.Generators {
-			if g == nil {
-				continue // the plan step reports it, naming the plan
+		for _, gens := range [...][]plugin.Generator{pl.Generators, b.config.Plans[pl.Name].Generators} {
+			for _, g := range gens {
+				if g == nil {
+					continue // the plan step reports it, naming the plan
+				}
+				admit(g)
 			}
-			admit(g)
 		}
 		if pl.Backend != nil {
 			admit(pl.Backend)
@@ -776,10 +781,17 @@ func convert(v any, t reflect.Type) (reflect.Value, bool) {
 
 // refine applies the plan refinements of the config to the declared plans
 // before Build compiles them. It leaves out each disabled plan, and replaces
-// the sources and the layout fields that a refinement sets. It refuses a
-// refinement of a plan that the composition does not declare, and a
-// disabled plan that an enabled plan depends on or that a check reads. Each
-// such error names both. A refused plan remains in the list, so the later
+// the sources and the layout fields that a refinement sets. It appends the
+// generators that a refinement adds to a plan whose Extensible is true.
+//
+// refine returns an error for each of these refinements:
+//
+//   - a refinement of a plan that the composition does not declare
+//   - a disabled plan that an enabled plan depends on or that a check
+//     reads, with the names of both
+//   - generators for a plan that is not extensible
+//
+// A disabled plan that refine refuses remains in the list, so the later
 // steps report no second error about it. refine copies each plan that it
 // refines, so the declared plans of the composition do not change.
 func refine(
@@ -826,6 +838,15 @@ func refine(
 	out := make([]Plan, 0, len(declared))
 	for _, pl := range declared {
 		r := refinements[pl.Name]
+		if len(r.Generators) > 0 {
+			if pl.Extensible {
+				pl.Generators = slices.Concat(pl.Generators, r.Generators)
+			} else {
+				faults = append(faults, fmt.Errorf(
+					"workspace: the config adds generators to plan %q, which is not extensible", pl.Name,
+				))
+			}
+		}
 		if r.Disabled && !needed[pl.Name] {
 			continue
 		}

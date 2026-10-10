@@ -37,8 +37,8 @@ type Config struct {
 
 // PlanConfig is the refinement of one plan. Build applies it before it
 // compiles the plan, so the fingerprint of the composition includes the
-// refined sources and layout. Build leaves the plan unchanged for the zero
-// PlanConfig.
+// refined sources, layout and generators. Build leaves the plan unchanged
+// for the zero PlanConfig.
 type PlanConfig struct {
 	// Build replaces the sources of the plan with Sources when Sources is
 	// not nil.
@@ -61,6 +61,13 @@ type PlanConfig struct {
 	// returns an error for a key that the backend does not declare, and
 	// for a choice outside the key's choices.
 	Policies map[plugin.PolicyKey]plugin.Choice
+	// Generators are the generators that the config adds to the plan.
+	// Build appends them to the generators that the plan declares when
+	// [Plan.Extensible] is true. For a plan that is not extensible, Build
+	// returns an error that contains the name of the plan, also when the
+	// config disables the plan. A generator in the Generators of two plans
+	// is one plugin that serves both plans.
+	Generators []plugin.Generator
 }
 
 // Plan is one write side of the composition. A plan is a value, not a
@@ -83,6 +90,11 @@ type Plan struct {
 	// The generators of the plan run in bucket order. Their order in the
 	// list does not matter.
 	Generators []plugin.Generator
+	// When Extensible is true, Build appends the generators of the plan's
+	// [PlanConfig.Generators] to Generators, so the users of a binary can
+	// add plugins to the plan through the config. A plan that is not
+	// extensible runs the generators of the composition alone.
+	Extensible bool
 	// Backend renders the settled store of the plan. Each plan has exactly
 	// one backend, and its target must be registered.
 	Backend plugin.Backend

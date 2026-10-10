@@ -115,6 +115,11 @@ type Respeller interface {
 // the composition did not register the name key, or where the backend
 // has no respell hook.
 //
+// The settle respells the records of a family that claims its files,
+// whose units have a [Unit.Template], so their template reads the
+// target's names. A record declares no name of its file, so the settle
+// checks no record for a collision, and no reference follows a record.
+//
 // The settle records whether a declaration that renders has a type
 // reference whose target is a declaration of another language than the
 // backend's target, which [Emit.Translates] reports.
@@ -510,15 +515,19 @@ type originName struct {
 // receiver, because two types declare one method name legally
 // everywhere. byOrigin records the same decisions keyed by origin
 // identity, for resolved references. Both record the unit that
-// declares each name. The clean path allocates per name and never
-// per group: group storage exists only where a second occupant
-// arrives.
+// declares each name. The records of a claimed family declare no
+// name of their file, so they join no scope and no table. The clean
+// path allocates per name and never per group: group storage exists
+// only where a second occupant arrives.
 func resolveTop(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
 ) (map[pkgName]tableEntry, map[originName]originEntry) {
 	first := make(map[scopeName]*planned, len(plans.spans))
 	var groups map[scopeName][]*planned
 	for i := range e.units {
+		if e.units[i].Template != "" {
+			continue
+		}
 		pkg := e.units[i].Pkg.Package
 		for j, d := range e.units[i].Decls {
 			key := scopeKey(pkg, d)
@@ -567,6 +576,9 @@ func resolveTop(
 	table := make(map[pkgName]tableEntry, len(plans.spans))
 	byOrigin := make(map[originName]originEntry, len(plans.spans))
 	for i := range e.units {
+		if e.units[i].Template != "" {
+			continue
+		}
 		pkg := e.units[i].Pkg.Package
 		for j, d := range e.units[i].Decls {
 			origin, known := emit.OriginOf(d)
@@ -628,12 +640,16 @@ func scopeKey(pkg string, d symbol.Symbol) string {
 // their emitted spellings under one finding. Members sharing one
 // emitted name are overloads, or duplicates the language's own
 // lowering refuses, and the respell did not bring them together.
-// Plans are short, so the scan compares pairs and allocates only
-// where a collision exists.
+// The members of a record declare nothing, so the scan leaves the
+// units of a claimed family out. Plans are short, so the scan
+// compares pairs and allocates only where a collision exists.
 func resolveMembers(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
 ) {
 	for i := range e.units {
+		if e.units[i].Template != "" {
+			continue
+		}
 		for j := range e.units[i].Decls {
 			list := plans.of(i, j)
 			for a := range list {

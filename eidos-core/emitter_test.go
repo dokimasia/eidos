@@ -36,6 +36,13 @@ const (
 	refPayload  = "payload"
 )
 
+// The record fixture: the plugin that records each struct into a family
+// that claims its files, and the family's file template.
+const (
+	recordPlugin  plugin.ID = "recorder"
+	claimTemplate string    = "test.tmpl"
+)
+
 // The tags of the invocation fixture's families beside its primary
 // per-source family.
 const (
@@ -405,6 +412,74 @@ func TestEmitter(t *testing.T) {
 			}
 			assert.Equal(t, names, []string{"A0", "B0", "A1", "B1"},
 				"each instance's declarations precede the next instance's, in rule order")
+		})
+	})
+
+	t.Run("Record", func(t *testing.T) {
+		t.Parallel()
+
+		// recorded runs a plugin whose handler records each struct of
+		// the fixture graph through record into a family that claims its
+		// files, and returns the plugin's one unit.
+		recorded := func(t *testing.T, record func(m *eidos.StructMatch, out *eidos.Out)) plugin.Unit {
+			t.Helper()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			p := eidos.NewPlugin(recordPlugin).
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "test", Template: claimTemplate}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					record(m, e.PlanFile())
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			units := slices.Collect(ctx.Emit.Units())
+			assert.Length(t, units, 1, "the plugin flushes one unit of the plan")
+			return units[0]
+		}
+		recordName := func(m *eidos.StructMatch, out *eidos.Out) {
+			out.Record(m.Struct.Name, &emit.Struct{Origin: m.Struct.Identity(), Name: "Test" + m.Struct.Name})
+		}
+
+		t.Run("attaches the data to the origin of each declaration", func(t *testing.T) {
+			t.Parallel()
+
+			_, alpha, beta := fixtureGraph(t)
+			assert.Equal(t, recorded(t, recordName).Data, map[symbol.Identity]any{
+				alpha.ID: alpha.Name, beta.ID: beta.Name,
+			}, "each origin has the data of its record")
+		})
+
+		t.Run("places the declarations as Append does", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Length(t, recorded(t, recordName).Decls, 2, "the unit has a record of each struct")
+		})
+
+		t.Run("copies the template of the family to the unit", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, recorded(t, recordName).Template, claimTemplate, "the unit has the family's template")
+		})
+
+		t.Run("keeps the data of the first record of an origin", func(t *testing.T) {
+			t.Parallel()
+
+			_, alpha, _ := fixtureGraph(t)
+			twice := func(m *eidos.StructMatch, out *eidos.Out) {
+				out.Record("first", &emit.Struct{Origin: m.Struct.Identity(), Name: "First" + m.Struct.Name})
+				out.Record("second", &emit.Struct{Origin: m.Struct.Identity(), Name: "Second" + m.Struct.Name})
+			}
+			assert.Equal(t, recorded(t, twice).Data[alpha.ID], "first", "the first record of the origin applies")
+		})
+
+		t.Run("records no data for no declarations", func(t *testing.T) {
+			t.Parallel()
+
+			empty := func(m *eidos.StructMatch, out *eidos.Out) { out.Record(m.Struct.Name) }
+			assert.Nil(t, recorded(t, empty).Data, "a record without a declaration attaches nothing")
 		})
 	})
 

@@ -326,6 +326,15 @@ type frame struct {
 	// builtins are bound to this frame and write into the body under
 	// execution.
 	refCache map[refKey]*template.Template
+	// fileCache contains the file templates of claimed files that this
+	// frame parsed, keyed as refCache is. Their builtins are bound to
+	// this frame.
+	fileCache map[refKey]*template.Template
+	// claiming reports that a claimed file's template is executing, and
+	// placed contains the record bodies that it placed so far, which
+	// the check of stranded slot content reads.
+	claiming bool
+	placed   map[*emit.Body]bool
 	// place is the placement of the body a reference template is
 	// executing for, nil between executions.
 	place   *placement
@@ -442,37 +451,51 @@ func (f *frame) decls() (string, error) {
 
 // file renders one routed file into the frame's shared buffer: every
 // unit's declarations in the order the flush fixed, then the
-// formatter. The file's package is the import home, so a reference
-// into it spells bare and every other package it names is imported.
-// A false result means the file is withheld, and the findings that
-// explain it are on the sink: the skeleton or the formatter refused
-// the file, or every declaration of it was skipped, which leaves no
-// content to stamp. The buffer is reset per file and its bytes are
-// copied out, so a formatter that returns its input, as a
-// pass-through one does, never aliases storage a following file
-// overwrites.
+// formatter. A file that a family claims renders through the family's
+// file template instead. The file's package is the import home, so a
+// reference into it spells bare and every other package it names is
+// imported. A false result means the file is withheld, and the findings
+// that explain it are on the sink: the skeleton, the formatter or the
+// claimed file's template refused the file, the file mixes the units of
+// a claimed family with other units, or every declaration of it was
+// skipped, which leaves no content to stamp. The buffer is reset per
+// file and its bytes are copied out, so a formatter that returns its
+// input, as a pass-through one does, never aliases storage a following
+// file overwrites.
 func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 	f.out.Reset()
 	f.fileOut.Reset()
 	f.set.Reset()
 	f.set.SetHome(g.Pkg.Package)
-	// The file's own declarations take their names before anything
-	// renders, so no import binds a name the file declares.
-	declared := 0
-	for _, u := range g.Units {
-		declared += len(u.Decls)
-		for _, d := range u.Decls {
-			f.set.Reserve(emit.DeclaredName(d))
-		}
-	}
 	f.at = position.Pos{File: g.Path}
-	spelt := false
-	for _, u := range g.Units {
-		f.plugin = u.Plugin
-		spelt = f.declRun(u, b) || spelt
-	}
-	if declared > 0 && !spelt {
+	c, claimed, mixed := claimOf(g)
+	switch {
+	case mixed:
+		f.sink.Errorf(MixedClaim, f.at, f.origin,
+			"%s mixes the units of a family that claims its files with other units, and is withheld", g.Path)
 		return nil, false
+	case claimed:
+		if !f.claimed(g, c) {
+			return nil, false
+		}
+	default:
+		// The file's own declarations take their names before anything
+		// renders, so no import binds a name the file declares.
+		declared := 0
+		for _, u := range g.Units {
+			declared += len(u.Decls)
+			for _, d := range u.Decls {
+				f.set.Reserve(emit.DeclaredName(d))
+			}
+		}
+		spelt := false
+		for _, u := range g.Units {
+			f.plugin = u.Plugin
+			spelt = f.declRun(u, b) || spelt
+		}
+		if declared > 0 && !spelt {
+			return nil, false
+		}
 	}
 	name := path.Base(g.Path)
 	if err := b.file.Execute(&f.fileOut, fileView{Name: name, Pkg: g.Pkg}); err != nil {

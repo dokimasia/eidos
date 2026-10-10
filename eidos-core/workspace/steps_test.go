@@ -459,6 +459,19 @@ func TestSteps(t *testing.T) {
 			return valid().Checks(&recordingCheck{name: "stubbed", reads: []string{"plan"}}).
 				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {Disabled: true}}})
 		}
+		closed := func(r workspace.PlanConfig) func() *workspace.Builder {
+			return func() *workspace.Builder {
+				return valid().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": r}})
+			}
+		}
+		extensible := func() *workspace.Builder {
+			pl := planTo("plan", "fixture", mirror("mirror"))
+			pl.Extensible = true
+			return workspace.New().Brand(fixtureBrand).Annotators(stamper("noter", quiet)).Targets("fixture").Plans(pl)
+		}
+		extended := func(gens ...plugin.Generator) *workspace.Builder {
+			return extensible().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {Generators: gens}}})
+		}
 
 		refused := []struct {
 			name    string
@@ -481,6 +494,23 @@ func TestSteps(t *testing.T) {
 				name:    "returns an error naming a disabled plan that a check reads",
 				compose: read,
 				want:    `the config disables plan "plan", and check stubbed reads it`,
+			},
+			{
+				name:    "returns an error naming a plan that is not extensible for the generators of the config",
+				compose: closed(workspace.PlanConfig{Generators: []plugin.Generator{mirror("added")}}),
+				want:    `the config adds generators to plan "plan", which is not extensible`,
+			},
+			{
+				name: "returns an error naming a disabled plan that is not extensible for the generators of the config",
+				compose: closed(workspace.PlanConfig{
+					Disabled: true, Generators: []plugin.Generator{mirror("added")},
+				}),
+				want: `the config adds generators to plan "plan", which is not extensible`,
+			},
+			{
+				name:    "returns an error naming the plan of a nil generator of the config",
+				compose: func() *workspace.Builder { return extended(nil) },
+				want:    `plan "plan" lists a nil generator`,
 			},
 		}
 		for _, tt := range refused {
@@ -603,6 +633,60 @@ func TestSteps(t *testing.T) {
 					"the refined composition has the same fingerprint as the composition that declares the field")
 			})
 		}
+
+		t.Run("appends the generators of the config to an extensible plan", func(t *testing.T) {
+			t.Parallel()
+
+			plans := built(t, extended(mirror("added"))).Describe().Plans
+			assert.Length(t, plans, 1, "the composition has one plan")
+			assert.Equal(t, plans[0].Generate,
+				[]workspace.Component{{Name: "added", Bucket: 1}, {Name: "mirror", Bucket: 2}},
+				"the plan runs the generator that it declares and the generator of the config")
+		})
+
+		t.Run("schedules a generator that the config adds to two plans once", func(t *testing.T) {
+			t.Parallel()
+
+			added := mirror("added")
+			first := planTo("first", "fixture", mirror("first-mirror"))
+			second := planTo("second", "fixture", mirror("second-mirror"))
+			first.Extensible, second.Extensible = true, true
+			b := workspace.New().Brand(fixtureBrand).Annotators(stamper("noter", quiet)).Targets("fixture")
+			plans := built(t, b.Plans(first, second).Config(workspace.Config{Plans: map[string]workspace.PlanConfig{
+				"first":  {Generators: []plugin.Generator{added}},
+				"second": {Generators: []plugin.Generator{added}},
+			}})).Describe().Plans
+			assert.Length(t, plans, 2, "the composition has two plans")
+			expect.Contains(t, plans[0].Generate, workspace.Component{Name: "added", Bucket: 1},
+				"the first plan runs the generator in the first bucket")
+			expect.Contains(t, plans[1].Generate, workspace.Component{Name: "added", Bucket: 1},
+				"the second plan runs the generator in the same bucket as the first plan")
+		})
+
+		t.Run("populates the options of a generator of the config", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &mirrorOptions{Depth: 1}
+			_, err := extensible().Config(workspace.Config{
+				Options: map[string]map[string]any{"tuned": {"depth": 3}},
+				Plans: map[string]workspace.PlanConfig{"plan": {
+					Generators: []plugin.Generator{tuned("tuned", opts)},
+				}},
+			}).Build()
+			assert.NoError(t, err, "the composition contains the generator of the config")
+			assert.Equal(t, opts.Depth, 3, "the options struct of the generator has the configured value")
+		})
+
+		t.Run("folds the generators of the config into the fingerprint as declared ones", func(t *testing.T) {
+			t.Parallel()
+
+			want := built(t, workspace.New().Brand(fixtureBrand).Annotators(stamper("noter", quiet)).Targets("fixture").
+				Plans(planTo("plan", "fixture", mirror("mirror"), mirror("added"))))
+			assert.NotEqual(t, want.Fingerprint(), built(t, valid()).Fingerprint(),
+				"the fingerprint folds the declared generator")
+			assert.Equal(t, built(t, extended(mirror("added"))).Fingerprint(), want.Fingerprint(),
+				"the extended composition has the same fingerprint as the composition that declares the generator")
+		})
 	})
 
 	t.Run("stampable", func(t *testing.T) {

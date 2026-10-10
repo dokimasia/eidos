@@ -199,6 +199,16 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 	p, f := setup(tb)
 	tp, held := p.(plugin.TemplateProvider)
 	assert.True(tb, held, "the plugin declares templates, so the check proves something")
+	// The file templates of the families that claim their files parse
+	// with the builtins of a file template.
+	var files []string
+	if op, declares := p.(plugin.OutputProvider); declares {
+		for _, o := range op.Outputs() {
+			if o.Template != "" {
+				files = append(files, o.Template)
+			}
+		}
+	}
 	linted := 0
 	for _, target := range slices.Sorted(maps.Keys(f.Languages)) {
 		tree, declared := tp.Templates(target)
@@ -208,7 +218,7 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 		linted++
 		pass, err := render.New("lint", f.Languages[target])
 		assert.NoError(tb, err, "the fixture language composes")
-		for _, finding := range pass.Lint(tree, tp.TemplateFuncs(target), tp.Overrides(target)) {
+		for _, finding := range pass.Lint(tree, tp.TemplateFuncs(target), tp.Overrides(target), files) {
 			expect.NoError(tb, finding, "the tree meets the template rules")
 		}
 	}

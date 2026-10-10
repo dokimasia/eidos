@@ -226,6 +226,14 @@ func TestBuilder(t *testing.T) {
 				},
 			},
 			{
+				name: "panics on a family template that is no path inside a tree",
+				build: func() {
+					eidos.NewPlugin("t").
+						Output(plugin.Output{Per: plugin.PerPlan, Word: "a", Template: "../test.tmpl"}).
+						Handle(emitNothing()).Build()
+				},
+			},
+			{
 				name: "panics on an empty capability label",
 				build: func() {
 					eidos.NewPlugin("t").Provides("").Handle(emitNothing()).Build()

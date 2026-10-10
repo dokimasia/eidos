@@ -53,6 +53,14 @@ const (
 	wordPart     = "part"
 )
 
+// The file template of a family that claims its files, and the data of
+// two records.
+const (
+	claimTemplate = "test.tmpl"
+	storeData     = "store"
+	rowData       = "row"
+)
+
 // The fixture workspace: two packages in two directories, a package
 // whose files span two directories, and one package of a dependency
 // store.
@@ -581,6 +589,44 @@ func TestRoute(t *testing.T) {
 			assert.Length(t, files, 1, "both units route to the package's file")
 			assert.Equal(t, files[0].Units[0].Contributors, []plugin.ID{auditor, weaver},
 				"the attribution joins both units'")
+		})
+
+		t.Run("returns the file template of a family that claims its files", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(unitOf(stubgen, families()[stubgen][1], storeFile, coretest.PackageID(storePkg),
+				generated(storeID, "StoreStub")))
+			f.outputs[stubgen][1].Template = claimTemplate
+			files, _ := f.route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.Equal(t, files[0].Units[0].Template, claimTemplate, "the unit has the template of its family")
+		})
+
+		t.Run("returns a unit's data for a file that contains the whole unit", func(t *testing.T) {
+			t.Parallel()
+
+			u := stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))
+			u.Data = map[symbol.Identity]any{storeID: storeData}
+			files, _ := newFixture(u).route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.Equal(t, files[0].Units[0].Data, map[symbol.Identity]any{storeID: storeData},
+				"the data of the record is kept")
+		})
+
+		t.Run("returns the source units' data for a file of two whole units", func(t *testing.T) {
+			t.Parallel()
+
+			row := stubOf(rowFile, storePkg, generated(rowID, "RowStub"))
+			row.Data = map[symbol.Identity]any{rowID: rowData}
+			suite := unitOf(stubgen, families()[stubgen][2], storePkg, coretest.PackageID(storePkg),
+				generated(storeID, "StoreSuite"))
+			suite.Data = map[symbol.Identity]any{storeID: storeData, rowID: storeData}
+			f := newFixture(row, suite).
+				on(rowID, written(stubDirective, 1, string(directive.ReservedTag), tagPkg))
+			files, _ := f.route(t)
+			assert.Length(t, files, 1, "both units route to the package's file")
+			assert.Equal(t, files[0].Units[0].Data, map[symbol.Identity]any{rowID: rowData, storeID: storeData},
+				"the data joins both units', and the entry of the earlier unit is kept")
 		})
 
 		t.Run("returns no origins for a unit whose declarations have none", func(t *testing.T) {

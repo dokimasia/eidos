@@ -89,7 +89,9 @@ type ExportDoc struct {
 // NewExport returns a plan's export: every declaration of the units of
 // files, and every name the settle visits inside them except
 // parameters, results and type parameters, so a type's fields and
-// methods and an enum's values are listed beside the type. Each is keyed
+// methods and an enum's values are listed beside the type. The records
+// of a family that claims its files declare nothing that a dependent can
+// name, so the export lists none of them. Each is keyed
 // by its origin, its unit's plugin and tag, and the names it and its
 // host were emitted under, and it is spelled as the settle left it, at
 // its file's path and package. files are the files the plan rendered.
@@ -129,6 +131,9 @@ func NewExport(plan string, files []File, settled *Emit, others Names) ExportDoc
 	}
 	for _, f := range files {
 		for _, u := range f.Units {
+			if u.Template != "" {
+				continue
+			}
 			decls += len(u.Decls)
 			for _, d := range u.Decls {
 				_ = emit.RespellNames(d, count)
@@ -165,6 +170,9 @@ func NewExport(plan string, files []File, settled *Emit, others Names) ExportDoc
 		file = &files[i]
 		for j := range file.Units {
 			unit = &file.Units[j]
+			if unit.Template != "" {
+				continue
+			}
 			for _, d := range unit.Decls {
 				_ = emit.RespellNames(d, visit)
 			}

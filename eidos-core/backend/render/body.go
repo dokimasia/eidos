@@ -14,6 +14,12 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 )
 
+// missingKeyError is the option of text/template under which the
+// execution of a reference template fails on a key that a map of its data
+// does not contain. Without it, the execution writes the text <no value>
+// into the generated source.
+const missingKeyError = "missingkey=error"
+
 // body is the builtin a callable's kind template places its
 // content with: the standard slots, the owner's named slots and
 // the one content form, composed in the fixed order.
@@ -48,8 +54,15 @@ func (f *frame) memberBody(m *emit.Method) (string, error) {
 // slots, an unresolved reference reports and falls back to them, and a
 // statement the language cannot spell fails the declaration under the
 // execute-time code. The fixed composition writes the indent as it
-// writes the lines, so an indent does not allocate on its own.
+// writes the lines, so an indent does not allocate on its own. Under a
+// claimed file's template, the frame records the body as placed.
 func (f *frame) renderBody(d any, b *emit.Body, indent string) (string, error) {
+	if f.claiming {
+		if f.placed == nil {
+			f.placed = map[*emit.Body]bool{}
+		}
+		f.placed[b] = true
+	}
 	form, err := b.Form()
 	if err != nil {
 		f.sink.Errorf(BodyConflict, f.at, f.origin,
@@ -93,8 +106,9 @@ func (f *frame) renderBody(d any, b *emit.Body, indent string) (string, error) {
 // rule checked behind it. Each frame reads and parses a template
 // once per owner and name. Its builtins are bound to the frame and
 // write into the body under execution, so an execution copies no
-// template. A refusal withdraws the imports the execution recorded,
-// because its output is dropped.
+// template. The execution fails under [RefusedTemplate] on a key that
+// a map of the data does not contain. A refusal withdraws the imports
+// the execution recorded, because its output is dropped.
 func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 	owner := b.Ref.Owner
 	if owner == "" {
@@ -118,6 +132,7 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 			return "", false
 		}
 		parsed, err = template.New(b.Ref.Name).
+			Option(missingKeyError).
 			Funcs(f.vocab).Funcs(f.merged).
 			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use)).
 			Parse(string(src))

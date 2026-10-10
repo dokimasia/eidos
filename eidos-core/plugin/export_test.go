@@ -48,6 +48,14 @@ func TestExport(t *testing.T) {
 			assert.Equal(t, doc.Plan, exportPlan, "the export's plan")
 		})
 
+		t.Run("lists no record of a family that claims its files", func(t *testing.T) {
+			t.Parallel()
+
+			record := settleUnit("svc", "svc/a.src", boxWithItem())
+			record.Tag, record.Template = claimTag, claimTemplate
+			assert.Empty(t, exportOf(t, capitalizing(), record).Symbols, "the export lists no symbol of a record")
+		})
+
 		t.Run("keys a file-level declaration by its emitted name", func(t *testing.T) {
 			t.Parallel()
 

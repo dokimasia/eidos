@@ -169,6 +169,15 @@ func TestNames(t *testing.T) {
 			assert.Equal(t, got[0].Receiver, exportForeign, "no file declares the type")
 		})
 
+		t.Run("returns no NameEntry for a record of a family that claims its files", func(t *testing.T) {
+			t.Parallel()
+
+			record := settleUnit("svc", "svc/a.src", boxWithItem())
+			record.Tag, record.Template = claimTag, claimTemplate
+			in := []plugin.File{{Path: exportFile, Pkg: exportPkg, Units: []plugin.Unit{record}}}
+			assert.Empty(t, plugin.NamesOf(in, nil, nil), "a record declares no name of its file")
+		})
+
 		t.Run("sets Emitted to the declared name for a nil store", func(t *testing.T) {
 			t.Parallel()
 

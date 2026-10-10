@@ -134,7 +134,9 @@ type Settled struct {
 // emitted under. The files' own declarations map it first, and others
 // map it second. A receiver whose type neither declares keeps its
 // spelling. Ambiguous is false on every entry, because the ambiguity of
-// a name depends on every file of the plan.
+// a name depends on every file of the plan. A unit of a family that
+// claims its files contains records, which declare no name of the file,
+// so NamesOf lists none of them.
 //
 // # Allocation contract
 //
@@ -173,6 +175,9 @@ func NamesOf(files []File, settled *Emit, others Names) []NameEntry {
 		file = &files[i]
 		for j := range file.Units {
 			unit = &file.Units[j]
+			if unit.Template != "" {
+				continue
+			}
 			for _, d := range unit.Decls {
 				_ = emit.RespellNames(d, visit)
 			}
@@ -199,11 +204,15 @@ func (d declaredName) compare(o declaredName) int {
 // declaredNames returns the file-level declarations of files that have a
 // declared name, each under the package of its unit, sorted by package
 // and then by settled name: how a method's receiver finds the name that
-// its type was emitted under. n sizes the list.
+// its type was emitted under. A record of a claimed family declares no
+// name, so the list leaves its unit out. n sizes the list.
 func declaredNames(files []File, settled *Emit, n int) []declaredName {
 	declared := make([]declaredName, 0, n)
 	for _, f := range files {
 		for _, u := range f.Units {
+			if u.Template != "" {
+				continue
+			}
 			for _, d := range u.Decls {
 				if name := emit.DeclaredName(d); name != "" {
 					declared = append(declared, declaredName{

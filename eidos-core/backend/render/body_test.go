@@ -40,6 +40,8 @@ const (
 	firstSlot  = "first"
 	secondSlot = "second"
 	ghostSlot  = "ghost"
+	// ghostKey is a key that the data of a reference does not contain.
+	ghostKey = "absent"
 	// otherPlugin emits nothing, and its tree names the template.
 	otherPlugin plugin.ID = "other"
 	// otherTpl is a template the emitter's tree contains instead of
@@ -253,6 +255,15 @@ func TestBody(t *testing.T) {
 			assert.ContainsInOrder(t, body,
 				[]string{refCall + "(" + markData + ") for " + handleName, proCall},
 				"the content where the template places it, then the marker's slots")
+		})
+
+		t.Run("reports RefusedTemplate for a reference template that reads a missing key", func(t *testing.T) {
+			t.Parallel()
+
+			b := withPrologue()
+			b.Ref.Data = map[string]any{markKey: markData}
+			_, sink := renderRef(t, language(), refTree("\t"+refCall+"({{.Data."+ghostKey+"}})\n"+slots), b)
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), ghostKey, "the finding names the missing key")
 		})
 
 		t.Run("places a named slot at its marker", func(t *testing.T) {

@@ -63,6 +63,13 @@ type Output struct {
 	Per Cardinality
 	// Word is the family's word, e.g. "stub".
 	Word string
+	// Template is the slash-separated path of the file template that
+	// writes each file of the family, in the plugin's template tree for
+	// the plan's target. A family with a template claims its files: the
+	// template writes the declarations of each file, and the target's
+	// kind templates write none of them. The empty Template leaves the
+	// files to the kind templates.
+	Template string
 }
 
 // Unit is one accumulated output entity: everything one plugin
@@ -102,6 +109,16 @@ type Unit struct {
 	// unit's own plugin: the attribution a weaver gets in the file's
 	// frame and its manifest entry beside the unit's plugin.
 	Contributors []ID
+	// Template is the file template of the unit's family, from its
+	// [Output.Template], and empty for a family that claims no file. The
+	// declarations of a unit with a template are records: data for the
+	// template, which the settle respells and no reference, collision
+	// check or export reads as a declaration of the file.
+	Template string
+	// Data contains the data that the unit's plugin attached to the
+	// declarations of each origin, which the file template reads beside
+	// each record. It is nil for a unit whose plugin attached none.
+	Data map[symbol.Identity]any
 }
 
 // FileKey returns the routing key a unit's filename takes its stem

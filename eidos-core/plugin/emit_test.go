@@ -17,6 +17,13 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The family of the cases that claims its files: its tag and its file
+// template.
+const (
+	claimTag      = "test"
+	claimTemplate = "test.tmpl"
+)
+
 // The shape of the units the benchmarks add: how many a store holds
 // before the measured add, and the structs and methods of each.
 const (

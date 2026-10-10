@@ -577,6 +577,43 @@ func TestSettle(t *testing.T) {
 			coretest.AssertCodes(t, settled(t, e, respelling(same)), plugin.CollidingNames)
 		})
 
+		// claimedRecord returns a unit of a family that claims its
+		// files, with one constant of the name as its record.
+		claimedRecord := func(name string) (plugin.Unit, *emit.Constant) {
+			c := &emit.Constant{Origin: settleOrigin(name, symbol.KindConstant), Name: name, Value: "2"}
+			u := settleUnit("svc", "svc/a.src", c)
+			u.Tag, u.Template = claimTag, claimTemplate
+			return u, c
+		}
+
+		t.Run("reports no CollidingNames for a record of a claimed family", func(t *testing.T) {
+			t.Parallel()
+
+			declared := settleUnit("svc", "svc/a.src",
+				&emit.Constant{Origin: settleOrigin("alpha", symbol.KindConstant), Name: "alpha", Value: "1"})
+			record, _ := claimedRecord("beta")
+			coretest.AssertCodes(t, settled(t, storeOf(t, declared, record), respelling(same)))
+		})
+
+		t.Run("respells a record of a claimed family", func(t *testing.T) {
+			t.Parallel()
+
+			record, c := claimedRecord("beta")
+			settled(t, storeOf(t, record), capitalizing())
+			assert.Equal(t, c.Name, "Beta", "the template reads the target's name")
+		})
+
+		t.Run("leaves a bare reference to the name of a record as written", func(t *testing.T) {
+			t.Parallel()
+
+			record, _ := claimedRecord("beta")
+			holder := &emit.Variable{
+				Origin: settleOrigin("ref", symbol.KindVariable), Name: "ref", Type: &emit.TypeRef{Spelling: "beta"},
+			}
+			settled(t, storeOf(t, record, settleUnit("svc", "svc/a.src", holder)), capitalizing())
+			assert.Equal(t, holder.Type.Spelling, "beta", "a record declares no name that a reference follows")
+		})
+
 		t.Run("keeps the emitted names of a package collision", func(t *testing.T) {
 			t.Parallel()
 

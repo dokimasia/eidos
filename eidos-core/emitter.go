@@ -297,7 +297,23 @@ func (o *Out) Append(decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
 	}
-	o.rs.fx.place(o.seq, o.touch, decls)
+	o.rs.fx.place(o.seq, o.touch, decls, nil)
+}
+
+// Record places emit declarations under the handle's subject as
+// [Out.Append] does, and attaches data to the origin of each of them,
+// for a family that claims its files through [plugin.Output.Template].
+// The family's file template reads each declaration as a record, with
+// the data of its origin beside it. Where two calls attach data to one
+// origin of a unit, the data of the first call in canonical match order
+// applies. With no declaration Record is a no-op and records nothing.
+// It buffers as Append does, and the flush allocates the unit's map of
+// data.
+func (o *Out) Record(data any, decls ...symbol.Symbol) {
+	if len(decls) == 0 {
+		return
+	}
+	o.rs.fx.place(o.seq, o.touch, decls, data)
 }
 
 // SlotView is one invocation's write access to one slot, returned by
@@ -349,12 +365,14 @@ type accumulator struct {
 	places []placed
 }
 
-// placed is one appended declaration and its ordering key.
+// placed is one appended declaration, its ordering key, and the data
+// that a [Out.Record] call attached to it, nil for [Out.Append].
 type placed struct {
 	origin   symbol.Identity
 	instance int
 	seq      int
 	decl     symbol.Symbol
+	data     any
 }
 
 // originsOf returns the distinct nonzero origins of places sorted
@@ -452,19 +470,32 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 			return cmp.Compare(a.seq, b.seq)
 		})
 		decls := make([]symbol.Symbol, 0, len(acc.places))
+		var data map[symbol.Identity]any
 		for _, p := range acc.places {
 			decls = append(decls, p.decl)
+			if p.data == nil {
+				continue
+			}
+			origin, _ := emit.OriginOf(p.decl)
+			if _, attached := data[origin]; !attached {
+				if data == nil {
+					data = map[symbol.Identity]any{}
+				}
+				data[origin] = p.data
+			}
 		}
 		origins := originsOf(acc.places)
 		err := into.Add(plugin.Unit{
-			Plugin:  c.plugin,
-			Tag:     string(k.tag),
-			Per:     k.per,
-			Word:    acc.out.Word,
-			Key:     acc.key,
-			Pkg:     acc.pkg,
-			Decls:   decls,
-			Origins: origins,
+			Plugin:   c.plugin,
+			Tag:      string(k.tag),
+			Per:      k.per,
+			Word:     acc.out.Word,
+			Key:      acc.key,
+			Pkg:      acc.pkg,
+			Decls:    decls,
+			Origins:  origins,
+			Template: acc.out.Template,
+			Data:     data,
 		})
 		if err != nil {
 			return fmt.Errorf("eidos: %s flush: %w", c.plugin, err)
