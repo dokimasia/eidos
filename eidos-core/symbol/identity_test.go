@@ -44,6 +44,12 @@ var boundary = symbol.Identity{
 // boundarySize is the length of boundary's spelling.
 const boundarySize = 33
 
+// nestedState is a type that another type declares: the enum State of the
+// message Session.
+var nestedState = symbol.Identity{
+	Lang: "protobuf", Package: "acme.svc", Owner: "Session", Name: "State", Kind: symbol.KindEnum,
+}
+
 // parsesClosed is the property [FuzzParse] and its ForAll twin in
 // [TestIdentity] state.
 const parsesClosed = "Parse must return on any spelling, name nothing where it refuses, " +
@@ -212,6 +218,63 @@ func TestIdentity(t *testing.T) {
 		}
 	})
 
+	t.Run("FlatName", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give symbol.Identity
+			want string
+		}{
+			{
+				name: "returns the name of a type without an owner",
+				give: symbol.Identity{Lang: "protobuf", Package: "acme.svc", Name: "Session", Kind: symbol.KindStruct},
+				want: "Session",
+			},
+			{
+				name: "joins the owner and the name",
+				give: nestedState,
+				want: "SessionState",
+			},
+			{
+				name: "joins every part of an owner chain",
+				give: symbol.Identity{
+					Lang: "protobuf", Package: "acme.svc",
+					Owner: "Outer.Middle", Name: "Inner", Kind: symbol.KindStruct,
+				},
+				want: "OuterMiddleInner",
+			},
+			{
+				name: "writes the first letter of a later part in upper case",
+				give: symbol.Identity{
+					Lang: "protobuf", Package: "acme.svc", Owner: "Session", Name: "credential", Kind: symbol.KindSum,
+				},
+				want: "SessionCredential",
+			},
+			{
+				name: "keeps the first part as written",
+				give: symbol.Identity{
+					Lang: "protobuf", Package: "acme.svc", Owner: "session", Name: "state", Kind: symbol.KindEnum,
+				},
+				want: "sessionState",
+			},
+			{
+				name: "writes a first letter outside ASCII in upper case",
+				give: symbol.Identity{
+					Lang: "protobuf", Package: "acme.svc", Owner: "Sitzung", Name: "änderung", Kind: symbol.KindStruct,
+				},
+				want: "SitzungÄnderung",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.FlatName(), tt.want, "the name of the type in a language without nested types")
+			})
+		}
+	})
+
 	t.Run("Compare", func(t *testing.T) {
 		t.Parallel()
 
@@ -331,6 +394,13 @@ func TestIdentityAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { zero = method.PackageIdentity().IsZero() }, 0,
 		"PackageIdentity and IsZero allocate nothing")
 	assert.False(t, zero, "PackageIdentity returns the method's package")
+	topLevel := symbol.Identity{Lang: "protobuf", Package: "acme.svc", Name: "Session", Kind: symbol.KindStruct}
+	assert.MaxAllocs(t, func() { got = topLevel.FlatName() }, 0,
+		"FlatName of a type without an owner allocates nothing")
+	assert.Equal(t, got, "Session", "FlatName returns the name of a type without an owner")
+	assert.MaxAllocs(t, func() { got = nestedState.FlatName() }, 1,
+		"FlatName allocates the joined name of a nested type")
+	assert.Equal(t, got, "SessionState", "FlatName joins the owner and the name")
 }
 
 // FuzzParse checks [parsesClosed] on spellings nothing in this
@@ -437,6 +507,29 @@ func BenchmarkIdentity(b *testing.B) {
 			got = method.PackageIdentity()
 		}
 		assert.Equal(b, got.Package, method.Package, "the package of the method")
+	})
+
+	b.Run("FlatName", func(b *testing.B) {
+		b.Run("a type without an owner", func(b *testing.B) {
+			topLevel := symbol.Identity{Lang: "protobuf", Package: "acme.svc", Name: "Session", Kind: symbol.KindStruct}
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = topLevel.FlatName()
+			}
+			assert.Equal(b, got, "Session", "the name of the type")
+		})
+
+		b.Run("a nested type", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = nestedState.FlatName()
+			}
+			assert.Equal(b, got, "SessionState", "the joined name of the type")
+		})
 	})
 }
 

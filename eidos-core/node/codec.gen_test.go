@@ -679,6 +679,7 @@ func populated() []symbol.Symbol {
 		subject.Split = -8
 		subject.Length = -9
 		subject.Variance = 10
+		subject.Async = true
 		subject.Elems = append(subject.Elems, &TypeRef{})
 		subject.Args = append(subject.Args, &TypeRef{})
 		subject.Fields = append(subject.Fields, &Field{})

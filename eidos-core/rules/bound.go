@@ -88,6 +88,39 @@ func (b Bound) CallableOf(sym symbol.Symbol) (Callable, bool) { return b.callabl
 // group and the shape.
 func (b Bound) TypeOf(ref *node.TypeRef) TypeShape { return b.typeOf(ref) }
 
+// FieldTypeOf folds the type of a field with the field's presence: the
+// shape that TypeOf returns for f.Type, inside an optional where f has
+// presence. f has presence where f.Optional is set, as on a TypeScript
+// property with a question mark, or where the bound language implements
+// [PresenceRules] and reports it. FieldTypeOf returns the shape unchanged
+// where it is an optional or [symbol.FormDynamic], because both contain
+// the absent value. A nil field folds to Opaque.
+//
+// # Allocation contract
+//
+// FieldTypeOf allocates what TypeOf allocates and what the language's
+// Presence allocates, and the list of the one child where it adds the
+// optional.
+func (b Bound) FieldTypeOf(f *node.Field) TypeShape {
+	if f == nil {
+		return Opaque(nil)
+	}
+	s := b.typeOf(f.Type)
+	if s.Form == symbol.FormOptional || s.Form == symbol.FormDynamic {
+		return s
+	}
+	present := f.Optional
+	if !present {
+		if p, has := b.source.(PresenceRules); has {
+			present = p.Presence(f, b.view)
+		}
+	}
+	if !present {
+		return s
+	}
+	return TypeShape{Form: symbol.FormOptional, Spelling: s.Spelling, Elems: []TypeShape{s}}
+}
+
 // MembersOf walks a type's effective member set under the language's
 // [MemberPolicy], and reports false for a symbol that is not a type.
 //

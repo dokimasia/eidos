@@ -98,19 +98,22 @@ type Respeller interface {
 // settled store settles to itself, so a second call changes
 // nothing.
 //
-// A declared name takes an override where facts contains one: a
-// value of the target's [Target.NameKey], such as golang.name, on
-// the declaration's origin, written at directive authority or above.
-// The settle reads each override through a point read of the origin's
-// fact. The override replaces the respell hook's spelling for the
-// declaration that renders its origin, the one whose emitted name
-// the hook spells as it spells the origin's own name. A declaration
-// another one derives from its origin, such as a mock of an
-// interface, keeps the hook's spelling. A name the hook refuses is
-// withheld, override or not. A plugin's stamp on the key is no
-// override, because the hook spells the target's convention. A nil
-// fact store, a name key the composition did not register and a
-// backend without the hook apply no override.
+// A declared name takes an override where facts contains one. An
+// override is a value of the target's [Target.NameKey], such as
+// golang.name, on the declaration's origin, written at directive
+// authority or above. The settle reads each override through a point
+// read of the origin's fact. The override replaces the respell hook's
+// spelling for the declaration that renders the origin. The hook spells
+// the emitted name of that declaration the same way as the origin's own
+// name. A file-level declaration renders a nested origin under the
+// origin's flat name, [symbol.Identity.FlatName]. Another declaration
+// with the same origin, such as a mock of an interface, keeps the hook's
+// spelling. The settle withholds a name that the hook refuses, also
+// where the origin has an override. A plugin's stamp on the key is not
+// an override, because the hook spells the target's convention. The
+// settle does not apply an override where the fact store is nil, where
+// the composition did not register the name key, or where the backend
+// has no respell hook.
 //
 // The settle records whether a declaration that renders has a type
 // reference whose target is a declaration of another language than the
@@ -429,9 +432,13 @@ func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 // overrideOf returns the override of a carrier of origin that renders
 // the origin: an override is written on the origin, and the carrier
 // renders it where the hook spells the origin's own name as it
-// spelled the carrier's, settled. An origin without an override, a
-// name the hook refuses and a name the hook spells apart from the
-// origin's report false.
+// spelled the carrier's, settled. A file-level carrier renders a nested
+// origin under the origin's flat name, [symbol.Identity.FlatName],
+// because a target without nested types declares the origin in the
+// file. An origin without an override, a name the hook refuses and a
+// name the hook spells apart from the origin's report false. It
+// allocates the flat name of a nested origin that has an override, and
+// nothing otherwise.
 func overrideOf(
 	r Respeller, over overrides, host symbol.Symbol, origin symbol.Identity,
 	kind symbol.Kind, v symbol.Visibility, settled string,
@@ -440,7 +447,11 @@ func overrideOf(
 	if !written {
 		return "", false
 	}
-	own, err := r.Respell(hostKind(host), kind, v, origin.Name)
+	name := origin.Name
+	if host == nil {
+		name = origin.FlatName()
+	}
+	own, err := r.Respell(hostKind(host), kind, v, name)
 	if err != nil || own != settled {
 		return "", false
 	}

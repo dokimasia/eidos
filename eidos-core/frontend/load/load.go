@@ -182,6 +182,11 @@ type UnitReport struct {
 	Round int
 	// From states where the load took the unit's region from.
 	From From
+	// Restorable reports whether a parse memo can restore the unit. It is
+	// false for a unit of a frontend that implements [plugin.Importer],
+	// because the unit's references need its parse to import their
+	// targets.
+	Restorable bool
 	// Region is the unit's region where the load built or changed it:
 	// every unit it parsed or restored from the memo, and every kept
 	// unit whose references it selected again into other targets. It is
@@ -488,14 +493,16 @@ func (l *loader) replay(u *unit) {
 // report returns a unit's record in the load's report. A kept unit the
 // load did not relink reports no region.
 func (u *unit) report() UnitReport {
+	_, imports := u.frontend.(plugin.Importer)
 	r := UnitReport{
-		Frontend: u.frontend.Name(),
-		Files:    u.files,
-		Depth:    u.depth,
-		Key:      u.key,
-		Round:    u.round,
-		From:     u.from,
-		Imports:  u.importList(),
+		Frontend:   u.frontend.Name(),
+		Files:      u.files,
+		Depth:      u.depth,
+		Key:        u.key,
+		Round:      u.round,
+		From:       u.from,
+		Restorable: !imports,
+		Imports:    u.importList(),
 	}
 	if u.from != FromGeneration || u.relinked {
 		r.Region = u.region

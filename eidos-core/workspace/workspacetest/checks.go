@@ -19,6 +19,7 @@ import (
 	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -427,8 +428,11 @@ func AssertDamaged(tb assert.TB, f Fixture, root string) {
 // AssertRestored composes the fixture with a parse memo and runs the
 // fixture's plans in root, an empty directory. It applies the fixture's
 // edit and runs again, then writes the fixture's tree back over the edit
-// and runs once more. It checks that the last run parses no unit and
-// restores from the memo each unit that the run after the edit parsed.
+// and runs once more. Of the units that the run after the edit parsed,
+// it checks that the last run restores from the memo each unit that the
+// load reports restorable, and parses each other unit again. A unit of a
+// frontend that implements [plugin.Importer] is not restorable, because
+// its references need its parse to import their targets.
 func AssertRestored(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
@@ -442,12 +446,20 @@ func AssertRestored(tb assert.TB, f Fixture, root string) {
 	edited, err := ran(f, w, root)
 	assert.NoError(tb, err, "the run after the edit is clean")
 	assert.InRange(tb, edited.Stats.Parsed, 1, math.Inf(1), "the run after the edit parses the edited units")
+	assert.NotNil(tb, edited.Load, "the run after the edit loads the tree")
+	restorable := 0
+	for _, u := range edited.Load.Units {
+		if u.From == load.FromParse && u.Restorable {
+			restorable++
+		}
+	}
 	files.Write(tb, root, treeOf(tb, f))
 	report, err := ran(f, w, root)
 	assert.NoError(tb, err, "the run after the revert is clean")
-	expect.Equal(tb, report.Stats.Parsed, 0, "the run after the revert parses no unit")
-	expect.Equal(tb, report.Stats.Restored, edited.Stats.Parsed,
-		"the run after the revert restores each unit that the edit made the run parse")
+	expect.Equal(tb, report.Stats.Restored, restorable,
+		"the run after the revert restores each restorable unit that the edit made the run parse")
+	expect.Equal(tb, report.Stats.Parsed, edited.Stats.Parsed-restorable,
+		"the run after the revert parses again each unit that the memo cannot restore")
 }
 
 // AssertExportCutoff runs the fixture's plans in root, an empty

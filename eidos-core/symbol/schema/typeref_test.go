@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/gen/model"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/symbol/schema"
 )
@@ -52,6 +53,18 @@ func TestTyperef(t *testing.T) {
 
 		assert.True(t, annotation(t, reflect.TypeFor[schema.TypeRef](), "Args").walk,
 			"the type arguments are inside the reference, so the walk descends")
+	})
+
+	t.Run("declares the asynchrony of a stream on both sides", func(t *testing.T) {
+		t.Parallel()
+
+		// A frontend states it from syntax, the fold reads it on the node
+		// side, and a spoke writes it on the emit side.
+		async, held := reflect.TypeFor[schema.TypeRef]().FieldByName("Async")
+		assert.True(t, held, "a reference states whether its stream is asynchronous")
+		assert.Equal(t, async.Type.String(), reflect.TypeFor[bool]().String(), "as a flag")
+		assert.Equal(t, annotation(t, reflect.TypeFor[schema.TypeRef](), "Async").side, model.SideBothToken,
+			"on both models")
 	})
 
 	t.Run("declares an embed's host as an identity", func(t *testing.T) {

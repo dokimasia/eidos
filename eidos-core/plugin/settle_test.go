@@ -38,6 +38,10 @@ const (
 	keptRow      = "KeptRow"
 )
 
+// nestedState is the enum state that the struct box declares. Its flat
+// name is boxState.
+var nestedState = symbol.Identity{Lang: "fixture", Package: "svc", Owner: "box", Name: "state", Kind: symbol.KindEnum}
+
 // The store the allocation check and the benchmark settle, and the
 // allocations of one settle of it through a respell hook that keeps
 // every name.
@@ -1131,6 +1135,28 @@ func TestSettle(t *testing.T) {
 			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
 			assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
 			assert.Equal(t, row.Fields.Items()[0].Name, overrideName, "the field takes its override")
+		})
+
+		t.Run("applies the override of a nested origin to its declaration under the flat name", func(t *testing.T) {
+			t.Parallel()
+
+			state := &emit.Enum{Origin: nestedState, Name: nestedState.FlatName()}
+			facts, key := nameFacts(t)
+			stampName(t, facts, key, nestedState, overrideName, meta.AuthorityDirective)
+			e := storeOf(t, settleUnit("svc", "svc/a.src", state))
+			assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
+			assert.Equal(t, state.Name, overrideName, "the file-level declaration takes the override")
+		})
+
+		t.Run("ignores the override of a nested origin for a declaration under its own name", func(t *testing.T) {
+			t.Parallel()
+
+			state := &emit.Enum{Origin: nestedState, Name: nestedState.Name}
+			facts, key := nameFacts(t)
+			stampName(t, facts, key, nestedState, overrideName, meta.AuthorityDirective)
+			e := storeOf(t, settleUnit("svc", "svc/a.src", state))
+			assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
+			assert.Equal(t, state.Name, "State", "the declaration keeps the hook's spelling")
 		})
 
 		t.Run("rewrites a reference to an overridden declaration", func(t *testing.T) {

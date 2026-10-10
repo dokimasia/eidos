@@ -464,12 +464,13 @@ func embedName(ref *node.TypeRef) string {
 	return name
 }
 
-// childOwner extends the dotted owner chain by one type name.
+// childOwner extends the dotted owner chain by one type name, joined with
+// [symbol.OwnerSep].
 func childOwner(owner, name string) string {
 	if owner == "" {
 		return name
 	}
-	return owner + "." + name
+	return owner + symbol.OwnerSep + name
 }
 
 // disc spells a callable's discriminator. In a language that

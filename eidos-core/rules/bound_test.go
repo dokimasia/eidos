@@ -41,6 +41,13 @@ const (
 // promotedMethods is how many methods the base of [promoted] declares.
 const promotedMethods = 20
 
+// presentField is the field that [presenceLang] reports presence for, and
+// dynamicSpelling the builtin it folds to the top type.
+const (
+	presentField    = "present"
+	dynamicSpelling = "any"
+)
+
 // The allocations of the methods of a binding over the walk fixture,
 // which TestBoundAllocs checks in the ordinary run and BenchmarkBound in
 // a benchmark run. A method without a constant allocates nothing.
@@ -65,6 +72,9 @@ const (
 	membersAllocs = 2
 	// typeNameAllocs is the joined name.
 	typeNameAllocs = 1
+	// fieldTypeOfAllocs is the list of the one child of the optional that
+	// wraps the type of a field with presence.
+	fieldTypeOfAllocs = 1
 	// witnessesAllocs is the list of one parameter's witness, and the
 	// reference the scripted language derives.
 	witnessesAllocs = 2
@@ -167,6 +177,25 @@ func (n nongeneric) LiteralFor(f *node.File, ref *node.TypeRef, text string, v r
 // TypeName returns the inner rules' join of a word onto a base.
 func (n nongeneric) TypeName(word, base string) string { return n.inner.TypeName(word, base) }
 
+// presenceLang is the scripted rules with presence beyond the type: the
+// field named [presentField] has presence, and [dynamicSpelling] folds to
+// the top type.
+type presenceLang struct {
+	rules.SourceRules
+}
+
+// Builtin folds dynamicSpelling to the top type, and every other spelling
+// as the scripted language folds it.
+func (p presenceLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	if ref.Spelling == dynamicSpelling {
+		return rules.Leaf(symbol.FormDynamic, ref.Spelling)
+	}
+	return p.SourceRules.Builtin(ref, v)
+}
+
+// Presence reports presence for the field named presentField.
+func (presenceLang) Presence(f *node.Field, _ rules.View) bool { return f.Name == presentField }
+
 // allocCall is one call of a function or a method: the method, which
 // names its benchmark, the case it measures where the method has more
 // than one call, the allocations the call makes, and the check of what
@@ -227,6 +256,81 @@ func TestBound(t *testing.T) {
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			assert.Equal(t, b.Lang(), coretest.Lang, "the fixture's language")
+		})
+	})
+
+	t.Run("FieldTypeOf", func(t *testing.T) {
+		t.Parallel()
+
+		scalar := rules.Scalar(intSpelling, rules.ScalarInt, 0)
+		optional := rules.TypeShape{Form: symbol.FormOptional, Spelling: intSpelling, Elems: []rules.TypeShape{scalar}}
+		optionalRef := &node.TypeRef{
+			Spelling: "int?", Form: symbol.FormOptional, Elems: []*node.TypeRef{builtin(intSpelling)},
+		}
+		marked := func(typ *node.TypeRef) *node.Field {
+			f := field(svcPath, rowName, countField, typ)
+			f.Optional = true
+			return f
+		}
+		tests := []struct {
+			name   string
+			source rules.SourceRules
+			give   *node.Field
+			want   rules.TypeShape
+		}{
+			{
+				name:   "returns the shape of the type of a field without presence",
+				source: presenceLang{scripted()},
+				give:   field(svcPath, rowName, countField, builtin(intSpelling)),
+				want:   scalar,
+			},
+			{
+				name:   "wraps the type of a field with the optional mark in an optional",
+				source: presenceLang{scripted()},
+				give:   marked(builtin(intSpelling)),
+				want:   optional,
+			},
+			{
+				name:   "wraps the type of a field that the language's rule gives presence in an optional",
+				source: presenceLang{scripted()},
+				give:   field(svcPath, rowName, presentField, builtin(intSpelling)),
+				want:   optional,
+			},
+			{
+				name:   "returns an optional type unchanged",
+				source: presenceLang{scripted()},
+				give:   marked(optionalRef),
+				want: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: optionalRef.Spelling, Elems: []rules.TypeShape{scalar},
+				},
+			},
+			{
+				name:   "returns the top type unchanged",
+				source: presenceLang{scripted()},
+				give:   marked(builtin(dynamicSpelling)),
+				want:   rules.Leaf(symbol.FormDynamic, dynamicSpelling),
+			},
+			{
+				name:   "reads presence from the optional mark alone in a language without the rule",
+				source: scripted(),
+				give:   field(svcPath, rowName, presentField, builtin(intSpelling)),
+				want:   scalar,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got := rules.NewBound(tt.source, viewOnly(t), nil).FieldTypeOf(tt.give)
+				assert.Equal(t, got, tt.want, "the shape of the field's type with the field's presence")
+			})
+		}
+
+		t.Run("folds a nil field to Opaque", func(t *testing.T) {
+			t.Parallel()
+
+			got := rules.NewBound(presenceLang{scripted()}, viewOnly(t), nil).FieldTypeOf(nil)
+			assert.Equal(t, got, rules.Opaque(nil), "a nil field has no type to fold")
 		})
 	})
 
@@ -452,6 +556,10 @@ func boundCalls(tb assert.TB) []allocCall {
 	source, view := scripted(), b.View()
 	intRef, strRef := builtin(intSpelling), builtin(strSpelling)
 	b.TypeOf(intRef)
+	present := rules.NewBound(presenceLang{source}, view, nil)
+	present.TypeOf(intRef)
+	plainField := field(svcPath, rowName, countField, intRef)
+	withPresence := field(svcPath, rowName, presentField, intRef)
 	get := method(svcPath, rowName, "Get")
 	count := rowField(countField)
 	params := []*node.TypeParam{{ID: coretest.MemberID(svcPath, "Box", "T", symbol.KindTypeParam), Name: "T"}}
@@ -467,6 +575,7 @@ func boundCalls(tb assert.TB) []allocCall {
 		sample    rules.Sample
 		name      string
 		witnesses []*node.TypeRef
+		shape     rules.TypeShape
 	)
 	return []allocCall{
 		{
@@ -528,6 +637,20 @@ func boundCalls(tb assert.TB) []allocCall {
 		{
 			name: "Witnesses", allocs: witnessesAllocs, call: func() { witnesses = b.Witnesses(params) },
 			check: func(tb assert.TB) { assert.Length(tb, witnesses, 1, "Witnesses derives one reference") },
+		},
+		{
+			name: "FieldTypeOf", caseName: "a field without presence",
+			call: func() { shape = present.FieldTypeOf(plainField) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, shape.Form, symbol.FormScalar, "FieldTypeOf returns the folded type of the field")
+			},
+		},
+		{
+			name: "FieldTypeOf", caseName: "a field with presence", allocs: fieldTypeOfAllocs,
+			call: func() { shape = present.FieldTypeOf(withPresence) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, shape.Form, symbol.FormOptional, "FieldTypeOf wraps the field's type in an optional")
+			},
 		},
 	}
 }

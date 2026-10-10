@@ -102,10 +102,11 @@ const (
 	paramSpelling  = "T"
 )
 
-// The names of the translation fixture's struct and of its field.
+// The names of the translation fixture's struct and of its fields.
 const (
 	sessionName = "Session"
 	expiresName = "Expires"
+	noteName    = "Note"
 )
 
 // errUnspelled is the reason of the translation fixture's spoke for a
@@ -137,14 +138,15 @@ func (sp *tsxSpoke) SpellType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef
 
 // translationFixture is a generator context over a session struct of
 // the fixture's language, whose expires field the cases translate types
-// for. The context's plan targets tsx through spoke, under the default
-// choice of the width policy. width is the handle that an override
-// stamps through.
+// for. Its note field is a string with the optional mark. The context's
+// plan targets tsx through spoke, under the default choice of the width
+// policy. width is the handle that an override stamps through.
 type translationFixture struct {
 	ctx     *plugin.GeneratorContext
 	width   meta.Key[string]
 	session *node.Struct
 	expires *node.Field
+	note    *node.Field
 	spoke   *tsxSpoke
 }
 
@@ -157,7 +159,9 @@ func newTranslationFixture(tb assert.TB) translationFixture {
 	session.Pos = position.Pos{File: "session.go", Line: 3, Col: 6}
 	expires := coretest.Field(coretest.StorePath, sessionName, expiresName)
 	expires.Pos = position.Pos{File: "session.go", Line: 5, Col: 2}
-	session.Fields = []*node.Field{expires}
+	note := coretest.Field(coretest.StorePath, sessionName, noteName)
+	note.Type, note.Optional = &node.TypeRef{Spelling: stringSpelling}, true
+	session.Fields = []*node.Field{expires, note}
 	g := coretest.Frozen(tb, coretest.Package(coretest.StorePath, session))
 	reg := meta.NewRegistry()
 	target := reg.For(string(tsxTarget))
@@ -181,7 +185,7 @@ func newTranslationFixture(tb assert.TB) translationFixture {
 			Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(), Rules: registry,
 			Plugin: contextPlugin, Bucket: 2, Target: tsxTarget, Types: spoke, Policy: policy,
 		},
-		width: width, session: session, expires: expires, spoke: spoke,
+		width: width, session: session, expires: expires, note: note, spoke: spoke,
 	}
 }
 
@@ -619,6 +623,35 @@ func TestEmitter(t *testing.T) {
 			f.translate(t, f.expires.ID, &node.TypeRef{Spelling: sessionName, Target: f.session.ID})
 			assert.Equal(t, f.spoke.last.Form, symbol.FormReference, "a declaration folds to a Reference")
 			assert.Equal(t, f.spoke.last.Ref, f.session.ID, "the shape refers to the declaration")
+		})
+
+		t.Run("passes the spoke the type of a field with presence as an optional", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.translate(t, f.note.ID, f.note.Type)
+			assert.Equal(t, f.spoke.last.Form, symbol.FormOptional, "the field's optional mark becomes an optional")
+			assert.Length(t, f.spoke.last.Elems, 1, "of one type")
+			assert.Equal(t, f.spoke.last.Elems[0].Form, symbol.FormText, "the field's own type")
+		})
+
+		t.Run("passes the spoke a reference other than the field's type without presence", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := f.translate(t, f.note.ID, &node.TypeRef{Spelling: stringSpelling})
+			assert.True(t, ok, "the spoke spells text")
+			assert.Equal(t, got.Spelling, textSpelling, "the reference translates as itself")
+		})
+
+		t.Run("passes the spoke the type of a field outside the graph without presence", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			missing := coretest.MemberID(coretest.StorePath, sessionName, "Missing", symbol.KindField)
+			got, ok := f.translate(t, missing, &node.TypeRef{Spelling: stringSpelling})
+			assert.True(t, ok, "the spoke spells text")
+			assert.Equal(t, got.Spelling, textSpelling, "the reference translates as itself")
 		})
 
 		t.Run("binds the rules of owner's language on a graph match", func(t *testing.T) {

@@ -151,6 +151,29 @@ func TestShape(t *testing.T) {
 				"an inline body has no children")
 		})
 
+		t.Run("keeps the asynchrony of a stream", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			async := &node.TypeRef{
+				Spelling: "stream Row", Form: symbol.FormStream, Async: true,
+				Elems: []*node.TypeRef{named(svcPath, rowName, symbol.KindStruct)},
+			}
+			s := b.TypeOf(async)
+			assert.True(t, s.Async, "an asynchronous stream folds to an asynchronous stream")
+			assert.Equal(t, s.Elems[0].Ref, coretest.ID(svcPath, rowName, symbol.KindStruct), "of its element")
+		})
+
+		t.Run("folds a stream without the mark to a synchronous stream", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			channel := &node.TypeRef{
+				Spelling: "chan int", Form: symbol.FormStream, Elems: []*node.TypeRef{builtin(intSpelling)},
+			}
+			assert.False(t, b.TypeOf(channel).Async, "a channel is a synchronous stream")
+		})
+
 		t.Run("folds a list of eight-bit unsigned scalars to bytes", func(t *testing.T) {
 			t.Parallel()
 
@@ -411,6 +434,7 @@ func TestShape(t *testing.T) {
 		}{
 			{name: "reports true for WellKnownTimestamp", give: rules.WellKnownTimestamp, want: true},
 			{name: "reports true for WellKnownDuration", give: rules.WellKnownDuration, want: true},
+			{name: "reports true for WellKnownEmpty", give: rules.WellKnownEmpty, want: true},
 			{
 				name: "reports false for a declaration",
 				give: coretest.ID(svcPath, rowName, symbol.KindStruct),

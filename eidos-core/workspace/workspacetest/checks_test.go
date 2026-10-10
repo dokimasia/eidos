@@ -79,6 +79,15 @@ var runCode = diag.MustRegister(diag.Prefix("WSWARM"), diag.CodeSpec{
 	Meaning: "a warm-check fixture reports the run its generator runs in",
 })
 
+// importing is the scripted language in the importer role, whose units a
+// parse memo does not restore. Its import of a file is the file's path.
+type importing struct {
+	*frontendtest.Scripted
+}
+
+// ImportOf returns the file's path.
+func (*importing) ImportOf(_ plugin.ImportScope, file string) string { return file }
+
 // The checks exist to catch compositions that break the workspace
 // frame, so the broken ones are composed and each check's own failure is
 // asserted.
@@ -611,6 +620,21 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Equal(t, coretest.Contracts(records), []string{"the run after the edit parses the edited units"},
 				"the rejection names the edit that changes nothing")
+		})
+
+		t.Run("passes a fixture whose frontend imports by parsing its reverted units again", func(t *testing.T) {
+			t.Parallel()
+
+			importer := fixture(t)
+			importer.Compose = func(root string) *workspace.Builder {
+				return workspace.New().
+					Brand(fixtureBrand).
+					Frontends(&importing{frontendtest.NewScripted()}).
+					Targets(fixtureTarget).
+					Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
+					Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
+			}
+			workspacetest.AssertRestored(t, importer, t.TempDir())
 		})
 	})
 

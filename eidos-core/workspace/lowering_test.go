@@ -440,14 +440,15 @@ func TestLowering(t *testing.T) {
 			report := cleanRun(t, w, coretest.Frozen(t, everyNamedKind()))
 			want := map[string]string{
 				"Row": "row", "Row.Column": "column", "Row.Scan": "scan", "Row.Close": "close",
-				"Cell.Width": "width", "Reader": "reader", "Reader.Label": "label", "Reader.Scan": "scan",
-				"Shade.Tone": "tone", "Status": "status", "Status.StatusOpen": "statusOpen", "Status.Code": "code",
+				"Row.Cell": "rowCell", "Row.Cell.Width": "width", "Reader": "reader", "Reader.Label": "label",
+				"Reader.Scan": "scan", "Reader.Shade": "readerShade", "Reader.Shade.Tone": "tone",
+				"Status": "status", "Status.StatusOpen": "statusOpen", "Status.Code": "code",
 				"Status.Describe": "describe", "Result": "result", "Result.ResultOk": "resultOk",
 				"ResultOk.Value": "value", "Result.Unwrap": "unwrap", "RowID": "rowID", "Load": "load",
 				"Registry": "registry", "Version": "version",
 			}
 			assert.Equal(t, targetFacts(t, report.Facts, lowerName), want,
-				"each declaration, field, method and variant has its name, and a nested type has none")
+				"each declaration, field, method and variant has its name, and a nested type has its flat name")
 		})
 	})
 
@@ -692,11 +693,13 @@ func everyNamedKind() *node.Package {
 		switch x := d.(type) {
 		case *node.Struct:
 			cell := coretest.Struct(path, "Cell")
-			cell.Fields = []*node.Field{coretest.Field(path, "Cell", "Width")}
+			cell.ID = coretest.MemberID(path, coretest.StructName, "Cell", symbol.KindStruct)
+			cell.Fields = []*node.Field{coretest.Field(path, coretest.StructName+symbol.OwnerSep+"Cell", "Width")}
 			x.Types = node.Symbols{cell}
 		case *node.Interface:
 			shade := coretest.Struct(path, "Shade")
-			shade.Fields = []*node.Field{coretest.Field(path, "Shade", "Tone")}
+			shade.ID = coretest.MemberID(path, coretest.InterfaceName, "Shade", symbol.KindStruct)
+			shade.Fields = []*node.Field{coretest.Field(path, coretest.InterfaceName+symbol.OwnerSep+"Shade", "Tone")}
 			x.Types = node.Symbols{shade}
 			x.Fields = []*node.Field{coretest.Field(path, coretest.InterfaceName, "Label")}
 		case *node.Enum:

@@ -49,7 +49,10 @@ const (
 //     is the backend's respell of the declared name at the declaration's
 //     own kind and visibility. The claim has plugin authority, the
 //     package as the subject of its order, and the declaration as its
-//     derivation. A nested type has no stamp, and its members have one.
+//     derivation. A target without nested types declares a nested type
+//     in the file, so the value of a nested type is the respell of its
+//     flat name, [symbol.Identity.FlatName], at the kind and the
+//     visibility of a declaration of the file.
 //   - Rule 1 stamps the values of each instance of the target's
 //     directive on the instance's subject. The name param stamps the
 //     name key, and each policy param stamps the key of its policy. The
@@ -448,8 +451,9 @@ func (c *lowerCall) pkg(id symbol.Identity) (bool, error) {
 
 // collect adds the stamps that rule 0 makes in one declaration of a
 // file: the stamps of its fields, methods and variants, each under its
-// host's kind, and its own stamp where the declaration is not nested in
-// a type. A symbol of another kind adds none.
+// host's kind, and its own stamp. A nested type takes the stamp of its
+// flat name at the kind of a declaration of the file. A symbol of another
+// kind adds none.
 func (c *lowerCall) collect(host symbol.Kind, s symbol.Symbol, nested bool) {
 	var (
 		id   symbol.Identity
@@ -494,9 +498,11 @@ func (c *lowerCall) collect(host symbol.Kind, s symbol.Symbol, nested bool) {
 	case *node.Variable:
 		id, kind, v, name = x.ID, symbol.KindVariable, x.Visibility, x.Name
 	}
-	if !nested {
-		c.add(host, id, kind, v, name)
+	if nested {
+		c.add(symbol.KindInvalid, id, kind, v, id.FlatName())
+		return
 	}
+	c.add(host, id, kind, v, name)
 }
 
 // members adds the stamps of the fields and the methods of one host.

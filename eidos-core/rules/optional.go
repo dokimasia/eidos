@@ -162,6 +162,18 @@ type PromotionRules interface {
 	Settable(s *node.Struct, v View) MemberSet
 }
 
+// PresenceRules reports presence that a field's type does not contain. A
+// field has presence when a reader can tell a field that is not set from
+// a field that is set to the zero value of its type. protobuf implements
+// it, because a proto3 field of a message type has presence through the
+// message, which only the linked graph shows.
+type PresenceRules interface {
+	// Presence reports whether f has presence that its type does not
+	// contain. It reads the declaration that the type of f resolves to
+	// through v, so the caller's read set records the dependency.
+	Presence(f *node.Field, v View) bool
+}
+
 // EqualityRules reports whether a type works where the language
 // demands equality, and which member references break it.
 type EqualityRules interface {

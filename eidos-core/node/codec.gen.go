@@ -1262,6 +1262,7 @@ func (w *binaryWriter) encodeTypeRef(x *TypeRef) {
 	w.integer(x.Split)
 	w.integer(x.Length)
 	w.unsigned(uint64(x.Variance))
+	w.boolean(x.Async)
 	w.unsigned(uint64(len(x.Args)))
 	for _, child := range x.Args {
 		w.encodeTypeRef(child)
@@ -1295,6 +1296,7 @@ func (r *binaryReader) decodeTypeRef() *TypeRef {
 	x.Split = r.integer()
 	x.Length = r.integer()
 	x.Variance = symbol.Variance(r.unsigned())
+	x.Async = r.boolean()
 	if n := r.count(); n > 0 {
 		x.Args = make([]*TypeRef, n)
 		for i := range x.Args {

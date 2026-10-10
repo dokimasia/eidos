@@ -7,7 +7,13 @@ import (
 	"cmp"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
+
+// OwnerSep separates the names of an owner chain. A type that the type
+// Middle declares inside the type Outer has the owner Outer.Middle.
+const OwnerSep = "."
 
 // Lang is the source-language name as identities, metadata
 // namespaces and the sealed state store it. It is a registered
@@ -40,6 +46,32 @@ func (id Identity) IsZero() bool { return id == Identity{} }
 // returns itself.
 func (id Identity) PackageIdentity() Identity {
 	return Identity{Lang: id.Lang, Package: id.Package, Kind: KindPackage}
+}
+
+// FlatName returns the name of a type in a language without nested
+// types: the parts of the owner chain and the name, joined with the first
+// letter of each part after the first in upper case. The type State inside
+// the type Session has the flat name SessionState, and a type Inner inside
+// Session.Middle has the flat name SessionMiddleInner. A type without an
+// owner returns its name.
+//
+// FlatName allocates the joined name of a nested type, one allocation, and
+// nothing for a type without an owner.
+func (id Identity) FlatName() string {
+	if id.Owner == "" {
+		return id.Name
+	}
+	var b strings.Builder
+	b.Grow(len(id.Owner) + len(id.Name))
+	head, rest, nested := strings.Cut(id.Owner, OwnerSep)
+	b.WriteString(head)
+	for nested {
+		var part string
+		part, rest, nested = strings.Cut(rest, OwnerSep)
+		writeTitled(&b, part)
+	}
+	writeTitled(&b, id.Name)
+	return b.String()
 }
 
 // String renders the identity in the canonical grammar:
@@ -176,6 +208,17 @@ func Parse(s string) (Identity, error) {
 		id.Kind = KindFunction
 	}
 	return id, nil
+}
+
+// writeTitled writes part to b with its first letter in upper case, and
+// writes nothing for an empty part.
+func writeTitled(b *strings.Builder, part string) {
+	r, size := utf8.DecodeRuneInString(part)
+	if size == 0 {
+		return
+	}
+	b.WriteRune(unicode.ToUpper(r))
+	b.WriteString(part[size:])
 }
 
 // splitName cuts a path at the first '.' after the last '/': the

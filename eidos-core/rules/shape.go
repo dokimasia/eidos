@@ -78,7 +78,7 @@ func Scalar(spelling string, class ScalarClass, bits int) TypeShape {
 	return TypeShape{Form: symbol.FormScalar, Spelling: spelling, Class: class, Bits: bits}
 }
 
-// Leaf returns a childless leaf shape: Bool, Text or Bytes. It
+// Leaf returns a childless leaf shape: Bool, Text, Bytes or Dynamic. It
 // allocates nothing.
 func Leaf(form symbol.TypeForm, spelling string) TypeShape {
 	return TypeShape{Form: form, Spelling: spelling}
@@ -95,12 +95,15 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 // A language's Builtin maps its own spelling of a well-known type onto
 // one of these blessed reference identities, so a Go time.Time and a
 // proto Timestamp project to one shape. The registry contains these
-// two, and growing it only adds entries.
+// three, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = wellKnown("timestamp")
 	// WellKnownDuration is a span of time.
 	WellKnownDuration = wellKnown("duration")
+	// WellKnownEmpty is a value that contains no data, such as protobuf's
+	// Empty.
+	WellKnownEmpty = wellKnown("empty")
 )
 
 // No frontend declares the registry's own language and package, so no
@@ -118,19 +121,23 @@ func wellKnown(name string) symbol.Identity {
 // IsWellKnown reports whether an identity is one the registry
 // blesses. It allocates nothing.
 func IsWellKnown(id symbol.Identity) bool {
-	return id == WellKnownTimestamp || id == WellKnownDuration
+	return id == WellKnownTimestamp || id == WellKnownDuration || id == WellKnownEmpty
 }
 
-// typeOf is the kernel's fold: a structural form folds into the
-// same form with its children folded, a named reference to a type
-// parameter folds to Opaque, a named reference with a target the
-// view contains classifies by the declaration it names, and a named
-// reference without a target goes to the language's Builtin. Where the
-// Builtin returns a structural form without children for a reference
-// with type arguments, the folded arguments become the form's children.
-// It is total and never panics. A reference in the memo returns its
-// shape and allocates nothing. A first fold allocates what the
-// allocation contract of [Bound.TypeOf] lists.
+// typeOf is the kernel's fold. A structural form folds into the same
+// form with its children folded, and the fold copies the asynchrony of a
+// stream. The fold of a named reference depends on its target:
+//
+//   - A reference to a type parameter folds to Opaque.
+//   - A reference whose target the view contains folds by the
+//     declaration that it references.
+//   - A reference without a target folds through the language's Builtin.
+//
+// Where the Builtin returns a structural form without children for a
+// reference with type arguments, the folded arguments become the form's
+// children. It is total and never panics. A reference in the memo
+// returns its shape and allocates nothing. A first fold allocates what
+// the allocation contract of [Bound.TypeOf] lists.
 func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 	if ref == nil {
 		return Opaque(nil)
@@ -153,7 +160,7 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 	if ref.Form.Structural() && ref.Form != symbol.FormNamed {
 		return b.children(TypeShape{
 			Form: ref.Form, Spelling: ref.Spelling,
-			Length: ref.Length, Split: ref.Split, Variance: ref.Variance,
+			Length: ref.Length, Split: ref.Split, Variance: ref.Variance, Async: ref.Async,
 		}, ref.Elems)
 	}
 	if ref.Target.Kind == symbol.KindTypeParam {

@@ -929,6 +929,11 @@ func (x *Alias) Docs() []string { return x.Doc }
 // array length written as a literal, and 0 where the length is an
 // expression the spelling keeps.
 //
+// Async marks a Stream whose elements arrive asynchronously, such as a
+// protobuf stream, which delivers its messages over a connection. A
+// frontend sets it from the language's syntax, and the projection's fold
+// copies it into the stream's shape. It is false on every other form.
+//
 // Fields and Methods are an Inline reference's members: the
 // properties and methods of a TypeScript object type, and the fields
 // of a Go inline struct and the methods of a Go inline interface.
@@ -948,6 +953,7 @@ type TypeRef struct {
 	Split    int             `json:"split,omitzero"`    // FormFunc: the index in Elems where the returns begin
 	Length   int             `json:"length,omitzero"`   // FormArray: the literal length; 0 when the spelling keeps an expression
 	Variance symbol.Variance `json:"variance,omitzero"` // FormWildcard: In for a lower bound, Out for an upper one
+	Async    bool            `json:"async,omitzero"`    // FormStream: the elements arrive asynchronously
 	Args     []*TypeRef      `json:"args,omitzero"`     // the type arguments of an instantiation
 }
 

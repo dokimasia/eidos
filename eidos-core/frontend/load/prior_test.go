@@ -144,6 +144,26 @@ func TestPrior(t *testing.T) {
 				assert.Equal(t, u.From, load.FromParse, "each unit parses for its imports")
 			}
 		})
+
+		t.Run("reports a unit of an importing language as not restorable", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, stdTree(), with(&importing{frontendtest.NewScripted()}))
+			assert.NotEmpty(t, report.Units, "the tree loads units")
+			for _, u := range report.Units {
+				expect.False(t, u.Restorable, "a memo cannot restore a unit whose references need its parse")
+			}
+		})
+
+		t.Run("reports a unit of a language without the importer role as restorable", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, stdTree())
+			assert.NotEmpty(t, report.Units, "the tree loads units")
+			for _, u := range report.Units {
+				expect.True(t, u.Restorable, "a memo can restore the unit")
+			}
+		})
 	})
 }
 

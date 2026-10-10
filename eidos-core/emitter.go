@@ -144,8 +144,10 @@ func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 // translates to a reference that has the parameter's name and no target.
 // Every other reference folds into its shape under the rules of owner's
 // language, over the invocation's view, so each declaration that the
-// fold reads records on the invocation. The plan's spoke spells the
-// shape under the plan's policy. When the spoke reads the choice of a
+// fold reads records on the invocation. Where owner is a field of the
+// graph and ref is that field's type, the fold is [rules.Bound.FieldTypeOf],
+// so the field's presence translates as an optional. The plan's spoke
+// spells the shape under the plan's policy. When the spoke reads the choice of a
 // policy key, the policy first reads the key's value at directive
 // authority on owner, then on the match's subject, and then on owner's
 // package. The first value that it finds is the choice. Each of these
@@ -162,7 +164,8 @@ func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 // Type allocates what [rules.EmitRef] allocates for a reference in the
 // target's language, and one reference for a type parameter. For any
 // other reference it allocates what the fold allocates and the reference
-// that the spoke returns. The fold allocates the binding's memo on the
+// that the spoke returns. The lookup of a field owner allocates only where
+// the invocation's read set grows. The fold allocates the binding's memo on the
 // invocation's first fold in the subject's language, and on every call
 // where owner's language is not the subject's. A refusal allocates its
 // message. The match makes its reader of overrides on its first
@@ -191,7 +194,12 @@ func (e *Emitter) Type(owner symbol.Identity, ref *node.TypeRef) (*emit.TypeRef,
 	} else {
 		b = m.RulesFor(owner.Lang)
 	}
-	shape := b.TypeOf(ref)
+	var shape rules.TypeShape
+	if f, field := fieldOf(b.View(), owner); field && f.Type == ref {
+		shape = b.FieldTypeOf(f)
+	} else {
+		shape = b.TypeOf(ref)
+	}
 	m.translating = owner
 	spelled, err := rs.types.SpellType(shape, rs.policy.Overridden(m.overrides()))
 	m.translating = symbol.Identity{}
@@ -232,6 +240,22 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 		return h
 	}
 	return &Out{rs: e.rs, seq: e.m.seq, touch: at}
+}
+
+// fieldOf returns the field that owner identifies, read through the
+// invocation's view v so the read records, and false for an owner of
+// another kind and for one that the view does not contain. It allocates
+// only where the read set grows.
+func fieldOf(v rules.View, owner symbol.Identity) (*node.Field, bool) {
+	if owner.Kind != symbol.KindField {
+		return nil, false
+	}
+	decl, held := v.Lookup(owner)
+	if !held {
+		return nil, false
+	}
+	f, is := decl.(*node.Field)
+	return f, is
 }
 
 // oneTag returns the selected family: none means the primary, and

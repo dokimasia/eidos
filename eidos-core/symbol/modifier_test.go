@@ -51,7 +51,7 @@ func TestModifier(t *testing.T) {
 
 			var got symbol.Variance
 			assert.Equal(t, got, symbol.VarianceInvariant,
-				"the zero Variance is what Go and Rust always carry")
+				"the zero Variance is the variance of every Go and Rust type parameter")
 		})
 	})
 
@@ -100,6 +100,7 @@ func TestModifier(t *testing.T) {
 			{name: "reports true for FormInline", give: symbol.FormInline, want: true},
 			{name: "reports false for FormScalar", give: symbol.FormScalar, want: false},
 			{name: "reports false for FormOpaque", give: symbol.FormOpaque, want: false},
+			{name: "reports false for FormDynamic", give: symbol.FormDynamic, want: false},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

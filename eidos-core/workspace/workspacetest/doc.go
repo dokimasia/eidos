@@ -43,8 +43,8 @@
 //     and parses nothing.
 //   - [AssertDamaged]: a damaged sealed state runs the run again cold, with
 //     one ColdState at Info.
-//   - [AssertRestored]: a parse memo restores the units of a reverted edit
-//     without a parse.
+//   - [AssertRestored]: a parse memo restores the restorable units of a
+//     reverted edit without a parse, and the load parses the others again.
 //   - [AssertWarmEdited]: a warm run after the edit leaves the files, the
 //     record entries, the findings and the exports that a cold run over
 //     the edited tree leaves.
@@ -59,9 +59,9 @@
 // # Dependency position
 //
 // core/workspace/workspacetest imports core/workspace,
-// core/workspace/internal/rundir, core/plugin, core/output,
-// core/ledger, core/manifest, core/meta, core/diag, core/position,
-// core/symbol, the assert module and the Go stdlib. It drives the whole
-// run, so it is above core/workspace, and no package of the kernel
-// imports it.
+// core/workspace/internal/rundir, core/frontend/load, core/plugin,
+// core/output, core/ledger, core/manifest, core/meta, core/diag,
+// core/position, core/symbol, the assert module and the Go stdlib. It
+// drives the whole run, so it is above core/workspace, and no package of
+// the kernel imports it.
 package workspacetest
