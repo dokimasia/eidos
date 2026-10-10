@@ -41,3 +41,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0022](0022-the-shape-catalog.md) | The shape catalog, its specs and its generated registries | Draft |
 | [0023](0023-the-cross-language-hub.md) | The cross-language hub and the TypeScript satellite | Draft |
 | [0024](0024-protobuf-editions-and-services.md) | Protobuf editions and a service in Go and TypeScript | Accepted |
+| [0025](0025-declarative-plugins.md) | Declarative plugins and their manifest | Accepted |
