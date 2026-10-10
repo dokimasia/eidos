@@ -52,5 +52,5 @@ func TestIOProcess(t *testing.T) {
 	t.Chdir(dir)
 	assert.NoError(t, os.Remove(dir), "the test removes the working directory")
 	_, err := cli.ProcessIO()
-	assert.HasError(t, err, "ProcessIO returns the error of os.Getwd")
+	assert.HasError(t, err, "ProcessIO returns an error for a removed working directory")
 }

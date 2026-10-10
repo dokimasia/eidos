@@ -29,9 +29,14 @@ type IO struct {
 // [os.Stderr], the working directory and [os.Getenv]. It sets Terminal when
 // os.Stderr is a character device.
 //
-// Error modes: ProcessIO returns the error of [os.Getwd].
+// Error modes: ProcessIO returns the error of [os.Getwd], and the error of
+// [os.Stat] for a working directory that no longer exists. On macOS,
+// os.Getwd returns the former path of a removed working directory.
 func ProcessIO() (IO, error) {
 	dir, err := os.Getwd()
+	if err == nil {
+		_, err = os.Stat(dir)
+	}
 	if err != nil {
 		return IO{}, fmt.Errorf("cli: find the working directory: %w", err)
 	}
