@@ -1,5 +1,5 @@
 {
-  "ergon": "0.8.3",
+  "ergon": "0.8.4",
   "files": [
     {
       "path": ".commitlint.yaml",
@@ -61,7 +61,7 @@
       "path": ".github/workflows/ci.yml",
       "producer": "github",
       "local": "c614e483c7af56e8e5566c6d4cffee8479911a9a66c318c3c7d98cf11f4e64b2",
-      "sha256": "b6ac1b148ea0ec81c3b8852f8cbf3dd9652f39e77d403e0f8dd8b4b68cf20389"
+      "sha256": "734a769d08c6edaab4ff70fb05cbe99dcfde59bdbee707a708662490eea44023"
     },
     {
       "path": ".github/workflows/codeql.yml",
@@ -81,7 +81,7 @@
     {
       "path": ".github/workflows/security.yml",
       "producer": "github",
-      "sha256": "623fd26152fc68d822fcf30ffb781d146bd8efb3a94d3ec0ed709b5c2a67f45b"
+      "sha256": "6f5ab9ac31581ecc7923c8430dc4b719d28dfcd8c1626ca2f31138132df62daf"
     },
     {
       "path": ".github/workflows/version.yml",

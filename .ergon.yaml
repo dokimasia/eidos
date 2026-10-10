@@ -314,4 +314,4 @@ go:
         run:
           - rustup toolchain install stable --profile minimal --component rustfmt
           - rustup default stable
-    timeout: 30
+    timeout: 60

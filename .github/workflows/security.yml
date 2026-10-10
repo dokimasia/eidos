@@ -67,4 +67,4 @@ jobs:
       language: go
       build-mode: autobuild
       files: go.work
-      timeout: 30
+      timeout: 60
