@@ -113,13 +113,14 @@ func (l *lowering) class(n treesitter.Node, name string, vis symbol.Visibility, 
 ) *node.Struct {
 	st := &node.Struct{
 		Name: name, Pos: l.namePos(n), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Abstract:    n.Kind() == l.v.abstractClassDeclaration,
-		TypeParams:  l.typeParams(n.Child(l.v.fieldTypeParameters)),
-		Annotations: l.decorators(n),
+		Abstract:   n.Kind() == l.v.abstractClassDeclaration,
+		TypeParams: l.typeParams(n.Child(l.v.fieldTypeParameters)),
 	}
+	decorators := l.decoratorsOf(n)
 	if outermost.Kind() == l.v.exportStatement {
-		st.Annotations = append(l.decorators(outermost), st.Annotations...)
+		decorators = append(l.decoratorsOf(outermost), decorators...)
 	}
+	st.Annotations = l.decorate(st, decorators)
 	if heritage := l.firstOf(n, l.v.classHeritage); !heritage.IsZero() {
 		for clause := range heritage.NamedChildren() {
 			switch clause.Kind() {
@@ -267,20 +268,22 @@ func (l *lowering) alias(n treesitter.Node, name string, vis symbol.Visibility, 
 	return a
 }
 
-// function lowers a function or one overload signature: async where the
-// declaration states it, its type parameters, parameters and return
-// type. A generator function, which its * declares, is stamped
-// typescript.generator.
+// function lowers a function or one overload signature with its type
+// parameters, its parameters and its result, which [lowering.result]
+// lowers. The function is async when the declaration has the async
+// keyword or returns a promise. A generator function, which has a *, is
+// stamped typescript.generator.
 func (l *lowering) function(n treesitter.Node, name string, vis symbol.Visibility, parts plugin.CommentParts,
 	comment string,
 ) *node.Function {
 	params, _ := l.params(n.Child(l.v.fieldParameters))
+	returns, promised := l.result(n.Child(l.v.fieldReturnType), true, l.namePos(n))
 	fn := &node.Function{
 		Name: name, Pos: l.namePos(n), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Async:      l.token(n, keywordAsync),
+		Async:      promised || l.token(n, keywordAsync),
 		TypeParams: l.typeParams(n.Child(l.v.fieldTypeParameters)),
 		Params:     params,
-		Returns:    l.returns(n.Child(l.v.fieldReturnType)),
+		Returns:    returns,
 	}
 	if l.token(n, keywordStar) {
 		l.mark(fn, typescript.GeneratorKey, n.Pos())
@@ -344,37 +347,6 @@ func (l *lowering) variables(n treesitter.Node, c container, exported bool, oute
 		}
 	}
 	l.u.AttachCarriers(first, parts.Carriers, BadCarrier)
-}
-
-// decorators lowers the decorators a node states as its children, in
-// source order.
-func (l *lowering) decorators(n treesitter.Node) symbol.Annotations {
-	var out symbol.Annotations
-	for child := range n.NamedChildren() {
-		if child.Kind() == l.v.decorator {
-			out = append(out, l.decorator(child))
-		}
-	}
-	return out
-}
-
-// decorator lowers one decorator: the name it calls or names, without
-// its @, and a call's arguments verbatim, one per argument.
-func (l *lowering) decorator(d treesitter.Node) symbol.Annotation {
-	var expr treesitter.Node
-	for child := range d.NamedChildren() {
-		expr = child
-	}
-	if expr.Kind() != l.v.callExpression {
-		return symbol.Annotation{Name: expr.Compact()}
-	}
-	a := symbol.Annotation{Name: expr.Child(l.v.fieldFunction).Compact()}
-	for arg := range expr.Child(l.v.fieldArguments).NamedChildren() {
-		if arg.Kind() != l.v.comment {
-			a.Args = append(a.Args, arg.Text())
-		}
-	}
-	return a
 }
 
 // namePos returns where a declaration's name is written, and where the

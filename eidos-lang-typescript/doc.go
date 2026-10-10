@@ -20,19 +20,31 @@
 // backend names a written file's package by. [DeclarationFile]
 // reports a file whose every declaration is implemented elsewhere.
 //
+// [Policies] returns the target's lowering policies. Their keys are
+// [Int64], [Absent], [Timestamp] and [Bytes], and each choice is a
+// constant, such as [BigInt].
+//
+// [Unquote], [ParseNumber] and [ParseBigInt] decode TypeScript's string,
+// numeric and bigint literals. The frontend decodes the arguments of a
+// decorator with them. The rules decode the literal of a directive and
+// the value of an enum member with them.
+//
 // # Packages
 //
 // The module covers TypeScript as a source and as a target:
 //
 //   - frontend loads TypeScript source into the node graph.
-//   - spell spells filenames and declared names.
+//   - rules projects TypeScript's declarations for the kernel's walks.
+//   - spell spells filenames, declared names and the types of other
+//     languages.
 //   - backend renders emit values as TypeScript source.
 //   - testing runs tsc and node over generated output.
 //
 // # Dependency position
 //
 // The root package imports the sdk's diag, meta, plugin and symbol
-// facades and the Go stdlib. The module's other packages import the
-// kernel's SPI through the sdk facade, the shared helpers of eidos-lang,
-// the TypeScript grammar of lang/treesitter, and the Go stdlib.
+// facades and the Go stdlib, math/big among it. The module's other
+// packages import the kernel's SPI through the sdk facade, the shared
+// helpers of eidos-lang, the TypeScript grammar of lang/treesitter, and
+// the Go stdlib.
 package typescript

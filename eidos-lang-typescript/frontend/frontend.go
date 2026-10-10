@@ -17,11 +17,6 @@ import (
 // satellite root's constant, restated for the frontend's callers.
 const Lang = typescript.Lang
 
-// Keys registers every typescript key: the satellite root's one
-// registration, restated here, where the corpus and the suite
-// fixtures use it.
-var Keys = typescript.Keys
-
 // UnparsedFile reports a syntax error, positioned at it: the source's
 // problem, and the load continues with every declaration the parser
 // still recovered.
@@ -53,6 +48,15 @@ var BadConfig = diag.MustRegister(typescript.CodePrefix, diag.CodeSpec{
 	Meaning: "a tsconfig.json does not parse",
 })
 
+// BadMarker reports a decorator of the brand that is not a valid
+// directive. Either its path is not the brand followed by a name, or by
+// a plugin and a name, or an argument is not a literal that the frontend
+// lifts. The decorator attaches nothing and remains an annotation.
+var BadMarker = diag.MustRegister(typescript.CodePrefix, diag.CodeSpec{
+	Number:  5,
+	Meaning: "a decorator of the brand is not a valid directive",
+})
+
 // nodeModules is the directory a package manager installs packages
 // into, which the claim leaves out.
 const nodeModules = "node_modules"
@@ -62,13 +66,14 @@ const nodeModules = "node_modules"
 // TSX, which parses with the TSX grammar. It declares that the language
 // overloads and implements the exporter role, so a reference through a
 // re-export resolves to the declaration it publishes. Its version folds
-// the grammar's, so an upgrade of the grammar re-keys every unit.
+// the grammar's, so an upgrade of the grammar re-keys every unit. The
+// kit registers every typescript key as the frontend's key provider.
 //
 // # Allocation contract
 //
 // New allocates the frontend's state with its two vocabularies and its
 // parse hook, the version, the syntax, two allocations, and the kit's
-// four: eleven allocations.
+// five: twelve allocations.
 func New() plugin.Frontend {
 	f := &tsFrontend{
 		ts:  newVocabulary(tsgrammar.TypeScript),
@@ -85,6 +90,7 @@ func New() plugin.Frontend {
 		Classify(markTests).
 		Resolve(resolve).
 		Exports(exports).
+		Keys(typescript.Keys).
 		Build()
 }
 

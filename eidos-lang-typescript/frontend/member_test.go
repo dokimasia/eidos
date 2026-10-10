@@ -336,6 +336,13 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, m.Returns[0].Type.Spelling, ifaceName, "what it constructs")
 		})
 
+		t.Run("lowers no result for a construct signature without a type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, ifaceOf(t, "  new (a: number);\n").Methods[0].Returns,
+				"a construct signature without a type has no result")
+		})
+
 		t.Run("stamps an interface's call signatures as written", func(t *testing.T) {
 			t.Parallel()
 

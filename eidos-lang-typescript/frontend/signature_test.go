@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
@@ -159,21 +160,92 @@ func TestSignature(t *testing.T) {
 		})
 	})
 
-	t.Run("returns", func(t *testing.T) {
+	t.Run("result", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("lowers the return type as one result", func(t *testing.T) {
 			t.Parallel()
 
-			fn := functionOf(t, "(): Promise<number>")
-			assert.Length(t, fn.Returns, 1, "one result")
-			assert.Equal(t, fn.Returns[0].Type.Spelling, "Promise", "the type as written")
+			fn := functionOf(t, "(): Set<number>")
+			assert.Length(t, fn.Returns, 1, "the function has one result")
+			assert.Equal(t, fn.Returns[0].Type.Spelling, "Set", "the result has the type as written")
 		})
 
-		t.Run("lowers no result for a function that states no return type", func(t *testing.T) {
+		t.Run("records the argument of a returned promise as the result", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Empty(t, functionOf(t, "()").Returns, "the source states none")
+			fn := functionOf(t, "(): Promise<number>")
+			assert.Length(t, fn.Returns, 1, "the function has one result")
+			expect.Equal(t, fn.Returns[0].Type.Spelling, "number", "the result is the value of the promise")
+			expect.True(t, fn.Async, "the function is async")
+		})
+
+		t.Run("records no result for a returned promise of void", func(t *testing.T) {
+			t.Parallel()
+
+			fn := functionOf(t, "(): Promise<void>")
+			expect.Empty(t, fn.Returns, "a promise of void has no result")
+			expect.True(t, fn.Async, "the function is async")
+		})
+
+		t.Run("records no result for void", func(t *testing.T) {
+			t.Parallel()
+
+			fn := functionOf(t, "(): void")
+			expect.Empty(t, fn.Returns, "the function returns nothing")
+			expect.False(t, fn.Async, "the function is not async")
+		})
+
+		t.Run("records one result without a type for a function without a return type", func(t *testing.T) {
+			t.Parallel()
+
+			fn := functionOf(t, "()")
+			assert.Length(t, fn.Returns, 1, "the function has one result")
+			expect.Nil(t, fn.Returns[0].Type, "the result has no type")
+			expect.Equal(t, fn.Returns[0].Pos.Line, 1, "the result is at the function")
+		})
+
+		t.Run("keeps a Promise that an import binds as the one result", func(t *testing.T) {
+			t.Parallel()
+
+			fn := named[*node.Function](t, declsOf(t, "import { Promise } from './p';\n\nexport function "+fnName+
+				"(): Promise<number> {}\n"), fnName)
+			assert.Length(t, fn.Returns, 1, "the function has one result")
+			expect.Equal(t, fn.Returns[0].Type.Spelling, "Promise", "the result has the imported type as written")
+			expect.False(t, fn.Async, "the function does not return the global Promise")
+		})
+
+		t.Run("records the argument of a promise that an async function returns as the result", func(t *testing.T) {
+			t.Parallel()
+
+			fn := named[*node.Function](t, declsOf(t, "export async function "+fnName+"(): Promise<number> {}\n"),
+				fnName)
+			assert.Length(t, fn.Returns, 1, "the function has one result")
+			expect.Equal(t, fn.Returns[0].Type.Spelling, "number", "the result is the value of the promise")
+			expect.True(t, fn.Async, "the function is async")
+		})
+
+		t.Run("records no result for a constructor without a return type", func(t *testing.T) {
+			t.Parallel()
+
+			ctor := classOf(t, "  constructor(a: string) {}\n").Methods[0]
+			assert.Empty(t, ctor.Returns, "a constructor without an annotation has no result")
+		})
+
+		t.Run("records no result for a setter without a return type", func(t *testing.T) {
+			t.Parallel()
+
+			setter := classOf(t, "  set x(v: number) {}\n").Methods[0]
+			assert.Empty(t, setter.Returns, "a setter returns nothing")
+		})
+
+		t.Run("records the argument of a promise that a method returns as the result", func(t *testing.T) {
+			t.Parallel()
+
+			m := ifaceOf(t, "  get(key: string): Promise<Session>;\n").Methods[0]
+			assert.Length(t, m.Returns, 1, "the method has one result")
+			expect.Equal(t, m.Returns[0].Type.Spelling, "Session", "the result is the value of the promise")
+			expect.True(t, m.Async, "the method is async")
 		})
 
 		t.Run("lowers a type predicate as a Named result", func(t *testing.T) {

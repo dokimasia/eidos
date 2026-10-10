@@ -29,6 +29,17 @@ const (
 	baseName = "Base"
 	// memberPath is a member inside rowName.
 	memberPath = ".Key"
+	// storePath is the module path of a module of the workspace, and
+	// reactModule is the bare specifier of an ambient module.
+	storePath   = "svc/store"
+	reactModule = "react"
+	// goLang and goPackage are the language and the package of the
+	// declaration that a translated reference refers to.
+	goLang    = symbol.Lang("go")
+	goPackage = "svc"
+	// promiseType and dateType are global types of TypeScript.
+	promiseType = "Promise"
+	dateType    = "Date"
 )
 
 // The declarations, the spellings and the keywords the allocation cases
@@ -141,16 +152,129 @@ func TestVocabulary(t *testing.T) {
 			}, "a type-only import")
 		})
 
-		t.Run("imports a target of the language from its module", func(t *testing.T) {
+		relatives := []struct {
+			name   string
+			home   string
+			module string
+			want   string
+		}{
+			{
+				name: "imports a target of the language from a module beside the file",
+				home: "svc/client", module: storePath, want: "./store",
+			},
+			{
+				name: "imports a target of the language from a module below the directory of the file",
+				home: "svc/client", module: "svc/store/v2", want: "./store/v2",
+			},
+			{
+				name: "imports a target of the language from a module of another directory",
+				home: "api/client", module: storePath, want: "../svc/store",
+			},
+			{
+				name: "imports a target of the language from a module one directory up",
+				home: "a/b/client", module: "a/store", want: "../store",
+			},
+			{
+				name: "imports a target of the language from a module two directories up",
+				home: "a/b/client", module: "store", want: "../../store",
+			},
+			{
+				name: "imports a target of the language from a module named as the directory of the file",
+				home: "svc/client", module: "svc", want: "../svc",
+			},
+			{
+				name: "imports a target of the language from a directory that shares the start of a name",
+				home: "svc/client", module: "svcx/store", want: "../svcx/store",
+			},
+			{
+				name: "imports a target of the language for a file at the root",
+				home: "client", module: storePath, want: "./svc/store",
+			},
+		}
+		for _, tt := range relatives {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, set := speller()
+				set.SetHome(tt.home)
+				target := &emit.TypeRef{
+					Spelling: rowName,
+					Target:   symbol.Identity{Lang: typescript.Lang, Package: tt.module, Name: rowName},
+				}
+				assert.Equal(t, spelled(t, s, target), rowName, "the exported name")
+				assert.Equal(t, set.Paths(), []string{tt.want}, "the specifier is relative to the file")
+			})
+		}
+
+		t.Run("imports a target of the language through the bare specifier that its source wrote", func(t *testing.T) {
 			t.Parallel()
 
 			s, set := speller()
+			set.SetHome(storePath)
 			target := &emit.TypeRef{
-				Spelling: rowName,
-				Target:   symbol.Identity{Lang: typescript.Lang, Package: storeModule, Name: rowName},
+				Spelling: rowName, Package: reactModule,
+				Target: symbol.Identity{Lang: typescript.Lang, Package: reactModule, Name: rowName},
 			}
 			assert.Equal(t, spelled(t, s, target), rowName, "the exported name")
-			assert.Equal(t, set.Paths(), []string{storeModule}, "imported from the declaring module")
+			assert.Equal(t, set.Paths(), []string{reactModule}, "the specifier as the source wrote it")
+		})
+
+		t.Run("imports a target of the language through a relative specifier of the file's own", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetHome("api/client")
+			target := &emit.TypeRef{
+				Spelling: rowName, Package: storeModule,
+				Target: symbol.Identity{Lang: typescript.Lang, Package: storePath, Name: rowName},
+			}
+			assert.Equal(t, spelled(t, s, target), rowName, "the exported name")
+			assert.Equal(t, set.Paths(), []string{"../svc/store"},
+				"the specifier is relative to the file and not to the source")
+		})
+
+		t.Run("imports a translated reference from the module path that the layout recorded", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetHome("svc/client")
+			translated := &emit.TypeRef{
+				Spelling: rowName, Package: storePath,
+				Target: symbol.Identity{Lang: goLang, Package: goPackage, Name: rowName, Kind: symbol.KindStruct},
+			}
+			assert.Equal(t, spelled(t, s, translated), rowName, "the translated name")
+			assert.Equal(t, set.Paths(), []string{"./store"}, "the specifier is relative to the file")
+		})
+
+		t.Run("imports nothing for a target of the file's own module", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetHome(storePath)
+			target := &emit.TypeRef{
+				Spelling: rowName + memberPath,
+				Target:   symbol.Identity{Lang: typescript.Lang, Package: storePath, Name: rowName},
+			}
+			assert.Equal(t, spelled(t, s, target), rowName+memberPath, "the spelling as written")
+			assert.Equal(t, set.Len(), 0, "the file imports nothing of its own")
+		})
+
+		t.Run("returns a global type as written", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			assert.Equal(t, spelled(t, s, ref(dateType)), dateType, "the global type needs no import")
+			assert.Equal(t, set.Len(), 0, "no import")
+		})
+
+		t.Run("returns an error for a global type that a declaration of the file hides", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.Reserve(dateType)
+			_, err := s.Spell(ref(dateType))
+			assert.HasError(t, err, "the file's Date hides the global one")
+			assert.Contains(t, err.Error(), "hides the global type "+dateType, "the refusal contains the hidden type")
 		})
 
 		t.Run("renames a declaration another import binds", func(t *testing.T) {
@@ -599,6 +723,17 @@ func TestVocabulary(t *testing.T) {
 			_, err := s.Returns(load)
 			assert.HasError(t, err, "the result's refusal is the annotation's")
 		})
+
+		t.Run("returns an error for an async callable in a file that declares Promise", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.Reserve(promiseType)
+			_, err := s.Returns(&emit.Function{Name: "load", Async: true})
+			assert.HasError(t, err, "the file's Promise hides the global one")
+			assert.Contains(t, err.Error(), "hides the global type "+promiseType,
+				"the refusal contains the hidden type")
+		})
 	})
 
 	t.Run("Results", func(t *testing.T) {
@@ -961,6 +1096,16 @@ func TestVocabulary(t *testing.T) {
 				want: "abstract ",
 			},
 			{
+				name: "leaves out async for an async abstract method",
+				give: &emit.Method{Name: "load", Abstract: true, Async: true},
+				want: "abstract ",
+			},
+			{
+				name: "leaves out async for an async getter",
+				give: &emit.Method{Name: sizeName, Accessor: symbol.AccessorGet, Async: true},
+				want: "",
+			},
+			{
 				name: "writes static for a type-level method",
 				give: &emit.Method{Name: makeName, Level: symbol.LevelType},
 				want: "static ",
@@ -1168,11 +1313,27 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, got, "", "no keyword")
 		})
 
+		t.Run("returns nothing for an async method signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.SigMods(&emit.Method{Name: "load", Async: true})
+			assert.NoError(t, err, "the promise of the annotation has the asynchrony")
+			assert.Equal(t, got, "", "no keyword")
+		})
+
 		tests := []struct {
 			name string
 			give *emit.Method
 		}{
-			{name: "returns an error for a stated modifier", give: &emit.Method{Name: "load", Async: true}},
+			{name: "returns an error for a stated modifier", give: &emit.Method{Name: "load", Override: true}},
+			{
+				name: "returns an error for an async index signature",
+				give: &emit.Method{Name: indexName, Indexer: true, Async: true},
+			},
+			{
+				name: "returns an error for an async construct signature",
+				give: &emit.Method{Name: makeName, Constructs: true, Async: true},
+			},
 			{
 				name: "returns an error for a body",
 				give: &emit.Method{Name: "load", Body: emit.Body{Verbatim: "return 1;"}},
@@ -1271,6 +1432,11 @@ func BenchmarkVocabulary(b *testing.B) {
 func vocabularyCalls() []allocCall {
 	s, set := speller()
 	bare, row := ref(numberType), imported(storeModule, rowName)
+	beside, besideSet := speller()
+	besideSet.SetHome("svc/client")
+	module := &emit.TypeRef{
+		Spelling: rowName, Target: symbol.Identity{Lang: typescript.Lang, Package: storePath, Name: rowName},
+	}
 	instance := &emit.TypeRef{Spelling: "Map", Args: []*emit.TypeRef{ref(stringType), bare}}
 	index := indexer()
 	params := []*emit.TypeParam{
@@ -1329,6 +1495,11 @@ func vocabularyCalls() []allocCall {
 			caseName: "an imported declaration",
 			call:     func() { out, err = s.Spell(row) },
 			check:    spells(rowName),
+		},
+		{
+			name: "Spell", caseName: "a declaration of a module beside the file", allocs: textAllocs,
+			call:  func() { out, err = beside.Spell(module) },
+			check: spells(rowName),
 		},
 		{
 			name: "Spell", caseName: "an instantiation", allocs: textAllocs,

@@ -16,13 +16,22 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The value fixture: the modules the values name and a function of
-// one of them.
+// The values of the cases refer to the modules units and time, which a
+// file at the root imports as ./units and ./time. unix is a function of
+// time, and Weight is a type of units.
 const (
-	unitsModule = "./units"
-	timeModule  = "./time"
-	unixName    = "unix"
-	weightName  = "Weight"
+	unitsModule    = "units"
+	timeModule     = "time"
+	unitsSpecifier = "./units"
+	timeSpecifier  = "./time"
+	unixName       = "unix"
+	weightName     = "Weight"
+)
+
+// The global array types, whose values are array literals.
+const (
+	arrayType         = "Array"
+	readonlyArrayType = "ReadonlyArray"
 )
 
 // lineSeparator is U+2028, which the quoting escapes.
@@ -64,7 +73,13 @@ func TestValue(t *testing.T) {
 			},
 			{
 				name: "writes a record as an object literal",
-				give: emit.Composite(valueRef(rowName, storeModule, rowName),
+				give: emit.Composite(valueRef(rowName, storePath, rowName),
+					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
+				want: "{id: 1}",
+			},
+			{
+				name: "writes a declared type named Array as an object literal",
+				give: emit.Composite(valueRef(arrayType, storePath, arrayType),
 					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
 				want: "{id: 1}",
 			},
@@ -77,6 +92,25 @@ func TestValue(t *testing.T) {
 			{
 				name: "writes a list as an array literal",
 				give: emit.Composite(&emit.TypeRef{Spelling: "number[]", Form: symbol.FormList},
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				want: "[2]",
+			},
+			{
+				name: "writes a tuple as an array literal",
+				give: emit.Composite(&emit.TypeRef{Spelling: "[string, number]", Form: symbol.FormTuple},
+					emit.Element(emit.Literal(emit.LiteralString, "a")),
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				want: "['a', 2]",
+			},
+			{
+				name: "writes an Array as an array literal",
+				give: emit.Composite(&emit.TypeRef{Spelling: arrayType, Args: []*emit.TypeRef{{Spelling: "number"}}},
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				want: "[2]",
+			},
+			{
+				name: "writes a ReadonlyArray as an array literal",
+				give: emit.Composite(&emit.TypeRef{Spelling: readonlyArrayType},
 					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
 				want: "[2]",
 			},
@@ -104,7 +138,7 @@ func TestValue(t *testing.T) {
 			},
 			{
 				name: "returns a value error for a positional element in an object literal",
-				give: emit.Composite(valueRef(rowName, storeModule, rowName),
+				give: emit.Composite(valueRef(rowName, storePath, rowName),
 					emit.Element(emit.Literal(emit.LiteralInt, "1"))),
 				want:    "names every entry",
 				wantErr: true,
@@ -139,7 +173,7 @@ func TestValue(t *testing.T) {
 			_, set, err := returned(t, emit.Conversion(
 				valueRef(weightName, unitsModule, weightName), emit.Literal(emit.LiteralInt, "1")))
 			assert.NoError(t, err, "the value spells")
-			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsModule, Name: weightName, TypeOnly: true}},
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsSpecifier, Name: weightName, TypeOnly: true}},
 				"a type-only import")
 		})
 
@@ -148,8 +182,21 @@ func TestValue(t *testing.T) {
 
 			_, set, err := returned(t, emit.Call(valueFn(timeModule, unixName)))
 			assert.NoError(t, err, "the value spells")
-			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeModule, Name: unixName}},
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeSpecifier, Name: unixName}},
 				"a call needs the function at run time")
+		})
+
+		t.Run("calls a function of the file's own module without an import", func(t *testing.T) {
+			t.Parallel()
+
+			set := &render.ImportSet{}
+			set.SetHome(timeModule)
+			out, err := backend.Scaffold(emit.Stmt{
+				Kind: emit.StmtReturn, Value: emit.ValueExpr(emit.Call(valueFn(timeModule, unixName))),
+			}, set)
+			assert.NoError(t, err, "the value spells")
+			assert.Contains(t, string(out), unixName+"()", "the call has the function's own name")
+			assert.Equal(t, set.Len(), 0, "the file imports nothing of its own")
 		})
 
 		t.Run("renames a callee another import binds", func(t *testing.T) {

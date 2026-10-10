@@ -14,6 +14,7 @@ import (
 	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -33,8 +34,8 @@ const (
 
 // newAllocs is the frontend New returns: the frontend's state with its
 // two vocabularies and its parse hook, the version, the syntax's two,
-// and the kit's four.
-const newAllocs = 4 + 1 + 2 + 4
+// and the kit's five, its list of key registrations included.
+const newAllocs = 4 + 1 + 2 + 5
 
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
@@ -60,6 +61,17 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, setup)
+		})
+
+		t.Run("returns a frontend that registers the typescript keys as its key provider", func(t *testing.T) {
+			t.Parallel()
+
+			provider, provides := frontend.New().(plugin.KeyProvider)
+			assert.True(t, provides, "the frontend is a key provider")
+			r := meta.NewRegistry()
+			assert.NoError(t, provider.Keys(r.For(string(frontend.Lang))), "the registration succeeds")
+			_, held := r.Resolve(typescript.TestFileKey)
+			assert.True(t, held, "the test file key is registered")
 		})
 
 		t.Run("returns a frontend in the exporter role", func(t *testing.T) {
@@ -225,7 +237,6 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    frontend.Keys,
 		Reexported: []symbol.Identity{
 			{Lang: frontend.Lang, Package: userPackage, Name: personName, Kind: symbol.KindInterface},
 		},

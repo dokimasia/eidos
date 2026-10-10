@@ -23,6 +23,12 @@ var leaves = scaffold.Leaves{
 	Quote:  quote,
 }
 
+// The global array types, whose values are array literals.
+const (
+	arrayType         = "Array"
+	readonlyArrayType = "ReadonlyArray"
+)
+
 // target spells a value tree as TypeScript, importing through the
 // file's import set what its references and callees name.
 type target struct{ set *render.ImportSet }
@@ -41,13 +47,15 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 
 // Callee spells a function by the name its import binds: an imported
 // name is called bare in TypeScript, and the function imports as a
-// value, because a call needs it at run time. A function in no module,
-// and one naming nothing, spells its own name.
+// value, because a call needs it at run time. The import specifier is
+// the function's module path relative to the file's own. A function in
+// no module, a function of the file's own module, and an identity
+// without a name spell the function's own name.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	if id.Package == "" || id.Name == "" {
+	if id.Package == "" || id.Name == "" || id.Package == t.set.Home() {
 		return id.Name, nil
 	}
-	return t.set.BindItem(id.Package, id.Name, false), nil
+	return t.set.BindItem(relativeTo(t.set.Home(), id.Package), id.Name, false), nil
 }
 
 // Conversion spells a type assertion. TypeScript erases its types,
@@ -57,13 +65,16 @@ func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
 	return inner + " as " + typ, nil
 }
 
-// Composite spells an object literal for a record and a map, and an
-// array literal for a list. The reference's form decides, and a form
-// TypeScript has no literal for is refused.
+// Composite spells an array literal for a list, an array, a tuple and
+// the global Array and ReadonlyArray, and an object literal for every
+// other type, such as a record or a map. The reference decides, and an
+// entry that the literal cannot write is refused.
 func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
-	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray) {
+	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray || ref.Form == symbol.FormTuple ||
+		ref.Form == symbol.FormNamed && ref.Target.IsZero() && ref.Package == "" &&
+			(ref.Spelling == arrayType || ref.Spelling == readonlyArrayType)) {
 		parts := make([]string, 0, len(entries))
 		for _, e := range entries {
 			if e.Name != "" || e.Key != "" {

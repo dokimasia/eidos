@@ -89,6 +89,34 @@ func TestTemplates(t *testing.T) {
 				"a semicolon in place of a body")
 		})
 
+		t.Run("writes an async interface method as a signature that returns a promise", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: "Store"}
+			i.Methods.Append(
+				&emit.Method{
+					Name: "get", Async: true, Params: []*emit.Param{{Name: "key", Type: ref("string")}},
+					Returns: []*emit.Return{{Type: ref(rowName)}},
+				},
+				&emit.Method{Name: "flush", Async: true},
+			)
+			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
+				"export interface Store {\n  get(key: string): Promise<Row>;\n  flush(): Promise<void>;\n}\n",
+				"the promise of the result in place of async")
+		})
+
+		t.Run("writes an async abstract method without async", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: rowName, Abstract: true}
+			s.Methods.Append(&emit.Method{
+				Name: "pick", Abstract: true, Async: true, Returns: []*emit.Return{{Type: ref(rowName)}},
+			})
+			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
+				"export abstract class Row {\n  abstract pick(): Promise<Row>;\n}\n",
+				"TypeScript allows async only on a method with a body")
+		})
+
 		t.Run("writes a function around its body", func(t *testing.T) {
 			t.Parallel()
 
@@ -572,12 +600,13 @@ func run(t *testing.T, src string, data any) (string, *render.ImportSet, error) 
 	tmpl, err := template.New("kind").
 		Funcs(backend.Funcs(set)).
 		Funcs(template.FuncMap{
-			render.BuiltinBody:    func(any) string { return bodyStub },
-			render.BuiltinUse:     func(string) string { return "" },
-			render.BuiltinImports: func() string { return importsStub },
-			render.BuiltinDecls:   func() string { return declsStub },
-			render.BuiltinSlots:   func() string { return "" },
-			render.BuiltinSlot:    func(string) string { return "" },
+			render.BuiltinBody:       func(any) string { return bodyStub },
+			render.BuiltinMemberBody: func(any) string { return bodyStub },
+			render.BuiltinUse:        func(string) string { return "" },
+			render.BuiltinImports:    func() string { return importsStub },
+			render.BuiltinDecls:      func() string { return declsStub },
+			render.BuiltinSlots:      func() string { return "" },
+			render.BuiltinSlot:       func(string) string { return "" },
 		}).
 		Parse(src)
 	assert.NoError(t, err, "the template parses")

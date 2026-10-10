@@ -38,15 +38,17 @@ const (
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
 		"{{if .Indexer}}  {{indexmods .}}{{indexsig .}}{{else if .Constructs}}" +
-		"  {{ctormods .}}constructor({{params .Params}}) {\n{{body .}}  }{{else}}" +
+		"  {{ctormods .}}constructor({{params .Params}}) {\n{{memberbody .}}  }{{else}}" +
 		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}}" +
-		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{if .Abstract}};{{else}} {\n{{memberbody .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
-	// InterfaceTemplate spells an interface, its type parameters
-	// behind the name: properties, readonly where stated, and
-	// method, index and construct signatures with their own
-	// parameter lists, no bodies and no other keywords.
+	// InterfaceTemplate spells an interface with its type parameters
+	// after the name. Its members are properties, readonly where the
+	// model marks them, and method, index and construct signatures
+	// with their own parameter lists. A signature has no body, and its
+	// only keywords are the modifiers of a signature. An async method
+	// signature returns a promise of its result.
 	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}" +
 		"{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}};" +
@@ -55,7 +57,7 @@ const (
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
 		"{{if .Indexer}}  {{sigmods .}}{{indexsig .}}" +
 		"{{else if .Constructs}}  {{sigmods .}}new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
-		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// FunctionTemplate spells a module-level function, async

@@ -50,6 +50,12 @@
 // block or an ambient module states, and every declaration of a
 // declaration file.
 //
+// A callable that returns Promise<T> is async with the result T, and one
+// that returns Promise<void> is async without a result. A callable that
+// returns void has no result. A callable without a return type has one
+// result without a type, except a constructor and a setter, which have
+// none.
+//
 // A method's accessibility, static level, getter and setter, abstract,
 // async and override marks lower to the model's fields, and a # name is
 // hard and private. A constructor is a method named constructor that
@@ -112,6 +118,19 @@
 // [BadCarrier]. The comments in a function's body belong to its
 // statements, which the model does not contain.
 //
+// # Markers
+//
+// A decorator whose path starts with the brand is a marker of a
+// directive, as @acme.stub and @acme.gen.table are. The frontend lifts
+// its arguments from the syntax: a string, a number with at most one
+// minus sign, true, false and an array of them as positional arguments,
+// and an object literal in the last position as keyed ones. The marker
+// attaches its directive to the class or the member that it decorates,
+// and it remains an annotation. A marker whose path is not a directive
+// name, or whose argument does not lift, reports under [BadMarker]. A
+// marker on a parameter or on an overloaded method's implementation
+// reports under [UnaddressedCarrier].
+//
 // # Classification
 //
 // typescript.testFile stamps a file Jest's default match names a test:
@@ -127,8 +146,8 @@
 // # Dependency position
 //
 // lang/typescript/frontend imports the sdk facade, the satellite root,
-// lang/treesitter and its TypeScript grammar, github.com/tailscale/hujson
-// for the tsconfig chain, and the Go stdlib. It runs no tool and reads
+// lang/treesitter and its TypeScript grammar, lang/numeric,
+// github.com/tailscale/hujson for the tsconfig chain, and the Go stdlib. It runs no tool and reads
 // nothing outside its units' doors. The conformance corpus and a
 // composition import it.
 package frontend

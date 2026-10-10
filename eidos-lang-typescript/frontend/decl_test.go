@@ -98,6 +98,15 @@ func TestDecl(t *testing.T) {
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a statement declares nothing")
 		})
 
+		t.Run("reports UnaddressedCarrier for a carrier on a declaration whose name does not parse",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, found := parsedSource(t, carrierLine+"export function () {}\n")
+				assert.Contains(t, codesOf(found), frontend.UnaddressedCarrier,
+					"a declaration without a name declares nothing")
+			})
+
 		t.Run("stamps typescript.ambient on a declared class", func(t *testing.T) {
 			t.Parallel()
 
@@ -266,10 +275,16 @@ func TestDecl(t *testing.T) {
 			assert.True(t, fn.Async, "async is a fact")
 		})
 
-		t.Run("leaves a plain function unmarked", func(t *testing.T) {
+		t.Run("marks a function that returns a promise async", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, functionOf(t, "(): Promise<void>").Async, "returning a promise is no async mark")
+			assert.True(t, functionOf(t, "(): Promise<void>").Async, "a promise is TypeScript's asynchronous result")
+		})
+
+		t.Run("leaves a function that returns no promise unmarked", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, functionOf(t, "(): number").Async, "the result arrives synchronously")
 		})
 
 		t.Run("lowers a declare function as a function", func(t *testing.T) {

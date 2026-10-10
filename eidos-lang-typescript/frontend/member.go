@@ -32,7 +32,9 @@ const (
 // parameter properties declare, and its index signatures. A method's
 // implementation after its overload signatures is left out, because
 // TypeScript hides it from callers. A decorator applies to the member
-// after it. A static block declares nothing.
+// after it. A static block declares nothing. A marker on an overloaded
+// method's implementation is refused, because the implementation
+// declares nothing.
 func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 	overloaded := map[string]bool{}
 	for m := range body.NamedChildren() {
@@ -40,17 +42,18 @@ func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 			overloaded[l.nameText(m.Child(l.v.fieldName))] = true
 		}
 	}
-	var pending symbol.Annotations
+	var pending []treesitter.Node
 	for m := range body.NamedChildren() {
 		switch m.Kind() {
 		case l.v.comment:
 			continue
 		case l.v.decorator:
-			pending = append(pending, l.decorator(m))
+			pending = append(pending, m)
 			continue
 		case l.v.methodDefinition:
 			if overloaded[l.nameText(m.Child(l.v.fieldName))] {
 				l.refuse(m, "an overloaded method's implementation")
+				l.refuseMarkers(pending, "an overloaded method's implementation")
 				break
 			}
 			l.method(m, st, pending)
@@ -72,9 +75,9 @@ func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 }
 
 // method lowers one method, overload signature or abstract signature
-// into a struct. A constructor's parameter properties declare the
-// struct's fields too.
-func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators symbol.Annotations) {
+// into a struct, with the decorators before it. A constructor's
+// parameter properties declare the struct's fields too.
+func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators []treesitter.Node) {
 	built := l.methodOf(m, decorators, false)
 	if built == nil {
 		return
@@ -88,12 +91,15 @@ func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators symbol.
 // methodOf builds one method: its accessibility, static level, accessor
 // kind, async and abstract marks, override modifier, a # name's hard
 // privacy, its signature and its decorators. A method named
-// constructor constructs. A generator method, which its * declares, is
-// stamped typescript.generator, and a method declared with ?
+// constructor constructs. [lowering.result] lowers its result. The
+// method is async when it has the async keyword or returns a promise. A
+// constructor and a setter without a return type have no result.
+// A generator method, which its * declares, is stamped
+// typescript.generator, and a method declared with ?
 // typescript.optional. inInterface builds an interface's method
 // signature, which is public and abstract. It returns nil for a member
 // signature depth leaves out: a private or #-named one.
-func (l *lowering) methodOf(m treesitter.Node, decorators symbol.Annotations, inInterface bool) *node.Method {
+func (l *lowering) methodOf(m treesitter.Node, decorators []treesitter.Node, inInterface bool) *node.Method {
 	nameNode := m.Child(l.v.fieldName)
 	name := l.nameText(nameNode)
 	hard := nameNode.Kind() == l.v.privatePropertyIdentifier
@@ -107,18 +113,20 @@ func (l *lowering) methodOf(m treesitter.Node, decorators symbol.Annotations, in
 	}
 	parts, comment := l.declParts(m)
 	params, receiver := l.params(m.Child(l.v.fieldParameters))
+	returns, promised := l.result(m.Child(l.v.fieldReturnType),
+		name != constructorName && !l.token(m, keywordSet), nameNode.Pos())
 	built := &node.Method{
 		Name: name, Pos: nameNode.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Abstract:    inInterface || m.Kind() == l.v.abstractMethodSignature || l.token(m, keywordAbstract),
-		Override:    !l.firstOf(m, l.v.overrideModifier).IsZero(),
-		Async:       l.token(m, keywordAsync),
-		Hard:        hard,
-		Receiver:    receiver,
-		TypeParams:  l.typeParams(m.Child(l.v.fieldTypeParameters)),
-		Params:      params,
-		Returns:     l.returns(m.Child(l.v.fieldReturnType)),
-		Annotations: decorators,
+		Abstract:   inInterface || m.Kind() == l.v.abstractMethodSignature || l.token(m, keywordAbstract),
+		Override:   !l.firstOf(m, l.v.overrideModifier).IsZero(),
+		Async:      promised || l.token(m, keywordAsync),
+		Hard:       hard,
+		Receiver:   receiver,
+		TypeParams: l.typeParams(m.Child(l.v.fieldTypeParameters)),
+		Params:     params,
+		Returns:    returns,
 	}
+	built.Annotations = l.decorate(built, decorators)
 	if l.token(m, keywordStatic) {
 		built.Level = symbol.LevelType
 	}
@@ -186,10 +194,11 @@ func (l *lowering) parameterProperties(list treesitter.Node, params []*node.Para
 
 // field lowers one class property: its accessibility, static level,
 // readonly as immutable, ? as optional, a # name's hard privacy, its
-// type, its initializer verbatim and its decorators. A property declared
-// with ! is stamped typescript.definiteAssignment. It returns nil for a
-// property signature depth leaves out.
-func (l *lowering) field(m treesitter.Node, decorators symbol.Annotations) *node.Field {
+// type, its initializer verbatim, and the decorators before it and
+// inside it. A property declared with ! is stamped
+// typescript.definiteAssignment. It returns nil for a property
+// signature depth leaves out.
+func (l *lowering) field(m treesitter.Node, decorators []treesitter.Node) *node.Field {
 	nameNode := m.Child(l.v.fieldName)
 	hard := nameNode.Kind() == l.v.privatePropertyIdentifier
 	vis := l.access(m, hard)
@@ -200,13 +209,13 @@ func (l *lowering) field(m treesitter.Node, decorators symbol.Annotations) *node
 	parts, comment := l.declParts(m)
 	f := &node.Field{
 		Name: l.nameText(nameNode), Pos: nameNode.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Mutability:  symbol.MutabilityMutable,
-		Hard:        hard,
-		Optional:    l.token(m, keywordOptional),
-		Type:        l.typeRef(m.Child(l.v.fieldType)),
-		Value:       m.Child(l.v.fieldValue).Text(),
-		Annotations: append(decorators, l.decorators(m)...),
+		Mutability: symbol.MutabilityMutable,
+		Hard:       hard,
+		Optional:   l.token(m, keywordOptional),
+		Type:       l.typeRef(m.Child(l.v.fieldType)),
+		Value:      m.Child(l.v.fieldValue).Text(),
 	}
+	f.Annotations = l.decorate(f, append(decorators, l.decoratorsOf(m)...))
 	if l.token(m, keywordStatic) {
 		f.Level = symbol.LevelType
 	}

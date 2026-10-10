@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -41,8 +42,10 @@ const (
 // The allocations of a build and of the scaled corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the seven kind templates.
-	newAllocs = 1_742
+	// template and the seven kind templates. The four lowering policies
+	// add seven: their specs, the kit's list of them, and the check of
+	// the specs that Build makes.
+	newAllocs = 1_748
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// The count varies between processes: 13 fresh processes, three of
@@ -96,6 +99,28 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.New().Target(), typescript.Target, "the rendering target")
+		})
+
+		t.Run("returns a backend that declares the TypeScript policies", func(t *testing.T) {
+			t.Parallel()
+
+			provider, declares := backend.New().(plugin.PolicyProvider)
+			assert.True(t, declares, "the backend serves its policies")
+			assert.Equal(t, provider.Policies(), typescript.Policies(), "the policies are the satellite's")
+		})
+
+		t.Run("returns a backend whose spoke spells a type under the plan's policy", func(t *testing.T) {
+			t.Parallel()
+
+			b := backend.New()
+			speller, spells := b.(plugin.TypeSpeller)
+			assert.True(t, spells, "the backend serves the spoke")
+			p, err := plugin.NewPolicy(typescript.Target, typescript.Policies(),
+				map[plugin.PolicyKey]plugin.Choice{typescript.Int64: typescript.String})
+			assert.NoError(t, err, "the policy resolves")
+			got, err := speller.SpellType(rules.Scalar("int64", rules.ScalarInt, 64), p)
+			assert.NoError(t, err, "the spoke spells the integer")
+			assert.Equal(t, got.Spelling, "string", "the backend's spoke reads the policy's choice")
 		})
 
 		t.Run("returns a backend whose files stamp under the module's contract", func(t *testing.T) {

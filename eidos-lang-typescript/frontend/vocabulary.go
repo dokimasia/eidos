@@ -39,8 +39,10 @@ type vocabulary struct {
 	namespaceImport, importRequireClause, importAlias, exportClause,
 	exportSpecifier, namespaceExport treesitter.Kind
 
-	// Decorators and the expressions they call.
-	decorator, callExpression, memberExpression treesitter.Kind
+	// Decorators, the expressions they call, and the literals of their
+	// arguments.
+	decorator, callExpression, memberExpression, number, trueNode, falseNode, array, object, pair,
+	templateString, unaryExpression treesitter.Kind
 
 	// Signatures.
 	formalParameters, requiredParameter, optionalParameter, restPattern, this,
@@ -58,7 +60,7 @@ type vocabulary struct {
 	fieldTypeParameters, fieldParameters, fieldReturnType, fieldType,
 	fieldDecorator, fieldPattern, fieldIndexType, fieldConstraint,
 	fieldFunction, fieldArguments, fieldTypeArguments, fieldObject,
-	fieldProperty, fieldModule treesitter.Field
+	fieldProperty, fieldModule, fieldKey, fieldArgument, fieldOperator treesitter.Field
 }
 
 // newVocabulary resolves a vocabulary from one grammar. It panics on a
@@ -134,6 +136,14 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		decorator:        g.Kind("decorator"),
 		callExpression:   g.Kind("call_expression"),
 		memberExpression: g.Kind("member_expression"),
+		number:           g.Kind("number"),
+		trueNode:         g.Kind("true"),
+		falseNode:        g.Kind("false"),
+		array:            g.Kind("array"),
+		object:           g.Kind("object"),
+		pair:             g.Kind("pair"),
+		templateString:   g.Kind("template_string"),
+		unaryExpression:  g.Kind("unary_expression"),
 
 		formalParameters:        g.Kind("formal_parameters"),
 		requiredParameter:       g.Kind("required_parameter"),
@@ -187,5 +197,8 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		fieldObject:         g.Field("object"),
 		fieldProperty:       g.Field("property"),
 		fieldModule:         g.Field("module"),
+		fieldKey:            g.Field("key"),
+		fieldArgument:       g.Field("argument"),
+		fieldOperator:       g.Field("operator"),
 	}
 }

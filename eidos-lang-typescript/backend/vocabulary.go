@@ -5,6 +5,7 @@ package backend
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -92,10 +93,28 @@ const (
 // callable that returns nothing.
 const (
 	annotationSep = ": "
-	promiseOpen   = "Promise<"
-	promiseClose  = ">"
+	promiseType   = "Promise"
+	promiseOpen   = promiseType + argsOpener
+	promiseClose  = argsCloser
 	voidType      = "void"
 )
+
+// The marks of a relative import specifier. currentDir opens a
+// specifier of a module in the directory of the file under render or
+// below it, parentDir climbs one directory, and pathSep separates the
+// segments of a module path.
+const (
+	currentDir = "./"
+	parentDir  = "../"
+	pathSep    = "/"
+)
+
+// globalTypes lists the global types of TypeScript that a reference can
+// write without an import. A declaration of the file with one of these
+// names hides the global type.
+var globalTypes = []string{
+	"Array", "AsyncIterable", "Date", "Map", "Partial", promiseType, "ReadonlyArray", "Record", "Set", "Uint8Array",
+}
 
 // discardName is the name an unnamed parameter binds, numbered from
 // the second on.
@@ -105,13 +124,23 @@ const discardName = "_"
 // language's identity, as every backend's refusals open.
 const refusalPrefix = string(typescript.Lang) + ": "
 
-// Speller spells type references for one file. A declaration a
-// spelling names from another module is imported through the file's
-// import set, under its own name or a numbered one where another
-// import or a declaration of the file takes that name, and the
-// spelling names it through the bound name. The module is the
-// reference's target's where the target is a TypeScript declaration,
-// and the one the reference records where it has no target.
+// Speller spells type references for one file. A reference to a
+// declaration of another module imports the declaration through the
+// file's import set, under its own name or under a numbered one where
+// another import or a declaration of the file takes that name. The
+// spelling then uses the bound name. The import specifier follows these
+// rules:
+//
+//   - A reference to a TypeScript declaration imports the module path of
+//     the declaration relative to the file's own, as ./store or
+//     ../api/user. Where its source wrote a bare specifier, such as react
+//     for an ambient module, it imports that specifier as written.
+//   - A translated reference imports the module path that the layout
+//     recorded, relative to the file's own.
+//   - A reference without a target imports the specifier that its source
+//     wrote.
+//
+// A reference to a declaration of the file's own module imports nothing.
 //
 // # Concurrency
 //
@@ -120,12 +149,13 @@ const refusalPrefix = string(typescript.Lang) + ": "
 // # Allocation contract
 //
 // Each method allocates the text it writes and nothing else, so a name
-// spelled as written and a declaration whose import is bound allocate
-// nothing. Binding a declaration's import for the first time allocates
-// in the set. A method that joins more than two parts also allocates
-// its list of parts, because Go places a list of at most two strings on
-// the stack. A trailing comment allocates its block comment and the
-// part it ends. A refusal allocates its error.
+// spelled as written allocates nothing. A reference that imports a
+// module path allocates its relative specifier, and binding a
+// declaration's import for the first time allocates in the set. A
+// method that joins more than two parts also allocates its list of
+// parts, because Go places a list of at most two strings on the stack. A
+// trailing comment allocates its block comment and the part it ends. A
+// refusal allocates its error.
 type Speller struct {
 	set *render.ImportSet
 }
@@ -142,10 +172,13 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // angle brackets. A structural reference keeps its written spelling,
 // and Spell returns an error where a type inside it imports under
 // another name, because TypeScript's composite spelling does not
-// follow from its structure.
+// follow from its structure. Spell refuses a global type that a
+// declaration of the file hides, because the spelling would refer to
+// that declaration.
 //
-// Spell allocates nothing for a name spelled as written, an imported
-// declaration, a missing reference and a structural reference. A
+// Spell allocates nothing for a name spelled as written, a missing
+// reference and a structural reference. An imported declaration
+// allocates its relative specifier where it imports a module path. A
 // reference with arguments writes into one buffer, one allocation where
 // every bound name is as long as its written spelling. A member of an
 // imported declaration allocates the member behind the bound name.
@@ -333,13 +366,14 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 	return strings.Join(parts, ", "), nil
 }
 
-// Returns writes a callable's return annotation: the [Results]
-// spelling, inside Promise for an async callable, because an async
-// function returns a promise of its result, and nothing for a
-// setter, which TypeScript forbids an annotation. It allocates what
-// [Speller.Results] allocates, the promise taking the annotation's
-// place, and nothing for a setter or an async callable that returns
-// nothing.
+// Returns writes a callable's return annotation. It writes the
+// [Results] spelling, inside Promise for an async callable, because an
+// async function returns a promise of its result. It writes nothing for
+// a setter, because a TypeScript setter cannot have a return
+// annotation. It refuses an async callable in a file whose declaration
+// hides the global Promise. It allocates what [Speller.Results]
+// allocates, the promise taking the annotation's place, and nothing for
+// a setter or an async callable that returns nothing.
 func (s Speller) Returns(d symbol.Symbol) (string, error) {
 	var rs []*emit.Return
 	async := false
@@ -355,6 +389,8 @@ func (s Speller) Returns(d symbol.Symbol) (string, error) {
 	switch {
 	case !async:
 		return s.Results(rs)
+	case s.set.Reserved(promiseType):
+		return "", refuse("a declaration of the file hides the global type %s", promiseType)
 	case len(rs) == 0:
 		return annotationSep + promiseOpen + voidType + promiseClose, nil
 	}
@@ -409,21 +445,38 @@ func (s Speller) spell(t *emit.TypeRef, typeOnly bool) (string, error) {
 }
 
 // qualify returns the spelling of a named reference through its
-// import: the first segment of a qualified spelling is the
-// declaration the module exports, and the rest names a member of it.
+// import. The first segment of a qualified spelling is the declaration
+// that the module exports, and the rest is a member of it. A reference
+// without a module and a reference of the file's own module import
+// nothing. qualify refuses a global type that a declaration of the file
+// hides.
 func (s Speller) qualify(typeOnly bool) spellref.Qualify {
 	return func(t *emit.TypeRef) (string, error) {
+		head, rest, qualified := strings.Cut(t.Spelling, qualifierSep)
 		module := spellref.PackageOf(t, typescript.Lang)
-		if module == "" {
+		switch {
+		case module == "" && slices.Contains(globalTypes, head) && s.set.Reserved(head):
+			return "", refuse("a declaration of the file hides the global type %s", head)
+		case module == "" || module == s.set.Home():
 			return t.Spelling, nil
 		}
-		head, rest, qualified := strings.Cut(t.Spelling, qualifierSep)
-		local := s.set.BindItem(module, head, typeOnly)
+		local := s.set.BindItem(s.specifier(t, module), head, typeOnly)
 		if !qualified {
 			return local, nil
 		}
 		return local + qualifierSep + rest, nil
 	}
+}
+
+// specifier returns the import specifier of the module of a named
+// reference, by the rules of [Speller]. module is the reference's module
+// path, or the specifier that its source wrote where it has no target.
+func (s Speller) specifier(t *emit.TypeRef, module string) string {
+	if t.Target.IsZero() ||
+		t.Target.Lang == typescript.Lang && t.Package != "" && kindOf(t.Package) == packageSpecifier {
+		return t.Package
+	}
+	return relativeTo(s.set.Home(), module)
 }
 
 // all writes each reference through spell, in order.
@@ -662,16 +715,24 @@ func Mods(d symbol.Symbol) (string, error) {
 	}
 }
 
-// MemberMods writes a class member's leading keywords, in the
-// order TypeScript states them: accessibility, static, abstract,
-// override, async on methods, and readonly on fields. A final method
-// refuses, because TypeScript seals nothing. A method stating a
-// default refuses, because a class method states its body outright,
-// and an abstract method with a body refuses, because an abstract
-// method is a signature. A package or internal accessibility
-// refuses, because class members do not take one. MemberMods allocates
-// one join per keyword it writes behind the first, and nothing for a
-// member of one keyword or none. A refusal allocates its error.
+// MemberMods writes a class member's leading keywords in the order of
+// TypeScript's grammar: accessibility, static, abstract, override, async
+// on methods, and readonly on fields. TypeScript allows async only on a
+// method with a body that is not an accessor. An async abstract method
+// and an async accessor keep their asynchrony in the promise of their
+// annotation. MemberMods refuses these members:
+//
+//   - a final method, because TypeScript has no final methods;
+//   - a method with a default, because TypeScript has no default
+//     methods;
+//   - an abstract method with a body, because an abstract method is a
+//     signature;
+//   - a member with package or internal accessibility, because class
+//     members do not take one.
+//
+// MemberMods allocates one join per keyword that it writes after the
+// first, and nothing for a member of one keyword or none. A refusal
+// allocates its error.
 func MemberMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Field:
@@ -711,7 +772,7 @@ func MemberMods(d symbol.Symbol) (string, error) {
 		if t.Override {
 			part += "override "
 		}
-		if t.Async {
+		if t.Async && !t.Abstract && t.Accessor == symbol.AccessorNone {
 			part += "async "
 		}
 		return part, nil
@@ -803,8 +864,10 @@ func PropMods(f *emit.Field) (string, error) {
 // SigMods guards an interface member signature, which takes no
 // keywords and no body: a method signature, an index signature and
 // a construct signature alike. A stated modifier or a body is
-// refused, and the signature spells bare. SigMods allocates nothing,
-// and a refusal allocates its error.
+// refused, and the signature spells bare. An async method signature
+// keeps its asynchrony in the promise of its annotation, and an async
+// index or construct signature is refused, because neither returns a
+// promise. SigMods allocates nothing, and a refusal allocates its error.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
@@ -817,9 +880,10 @@ func SigMods(m *emit.Method) (string, error) {
 	case m.Accessor != symbol.AccessorNone || m.Hard:
 		return "", refuse("an interface states properties, not accessors or hard-private names, "+
 			"and %s states one", m.Name)
-	case m.Level == symbol.LevelType || m.Abstract || m.Final ||
-		m.Override || m.HasDefault || m.Async:
+	case m.Level == symbol.LevelType || m.Abstract || m.Final || m.Override || m.HasDefault:
 		return "", refuse("an interface method is a bare signature, and %s states a modifier", m.Name)
+	case m.Async && (m.Indexer || m.Constructs):
+		return "", refuse("an index or construct signature returns no promise, and %s is async", m.Name)
 	case len(m.Throws) > 0:
 		return "", unthrown(m.Name)
 	}
@@ -895,6 +959,46 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 		return "", refuse("a class member states public, private or protected, and %s "+
 			"states another scope", name)
 	}
+}
+
+// relativeTo returns the relative specifier of a module path from the
+// directory of the module path home. The specifier opens with ./ where
+// the module is in that directory or below it, and otherwise with one
+// ../ for each directory that the path climbs. It allocates the
+// specifier.
+func relativeTo(home, module string) string {
+	dir, _, nested := strings.CutLast(home, pathSep)
+	if !nested {
+		dir = ""
+	}
+	// shared is the length of the directories that dir and the module
+	// path open with, with the separator behind them.
+	shared := 0
+	for shared < len(dir) {
+		segment := dir[shared:]
+		if i := strings.Index(segment, pathSep); i >= 0 {
+			segment = segment[:i]
+		}
+		end := shared + len(segment)
+		if end >= len(module) || module[shared:end] != segment || module[end:end+len(pathSep)] != pathSep {
+			break
+		}
+		shared = end + len(pathSep)
+	}
+	climbs := 0
+	if shared < len(dir) {
+		climbs = strings.Count(dir[shared:], pathSep) + 1
+	}
+	var b strings.Builder
+	b.Grow(len(currentDir) + climbs*len(parentDir) + len(module) - shared)
+	if climbs == 0 {
+		b.WriteString(currentDir)
+	}
+	for range climbs {
+		b.WriteString(parentDir)
+	}
+	b.WriteString(module[shared:])
+	return b.String()
 }
 
 // unthrown is the refusal for declared failure types: a
