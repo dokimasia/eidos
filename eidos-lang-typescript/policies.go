@@ -24,6 +24,12 @@ const (
 	// Bytes chooses the spelling of bytes: Uint8Array, or a base64
 	// string.
 	Bytes plugin.PolicyKey = "typescript.bytes"
+	// Duration chooses the spelling of the well-known duration: a string,
+	// as ProtoJSON writes a duration such as "1.5s", or a number of
+	// milliseconds, the unit of JavaScript's timers. TypeScript does not
+	// declare a duration type of its own, so the default is the string
+	// that a JSON payload delivers.
+	Duration plugin.PolicyKey = "typescript.duration"
 )
 
 // The choices of the TypeScript policies. Each choice is the TypeScript
@@ -45,21 +51,25 @@ const (
 	absentDoc    = "the spelling of an absent value of an optional"
 	timestampDoc = "the spelling of a point in time"
 	bytesDoc     = "the spelling of bytes"
+	durationDoc  = "the spelling of a span of time"
 )
 
-// Policies returns the specs of the four TypeScript policies, whose
-// defaults are TypeScript's own types: bigint, undefined, Date and
-// Uint8Array. The backend declares them through the backend kit.
+// Policies returns the specs of the five TypeScript policies. The
+// defaults of four are TypeScript's own types: bigint, undefined, Date and
+// Uint8Array. The default of the duration is string, because TypeScript
+// does not declare a duration type. The backend declares them through the
+// backend kit.
 //
 // # Allocation contract
 //
 // Policies allocates the list of specs and the list of choices of each
-// spec: five allocations.
+// spec: six allocations.
 func Policies() []plugin.PolicySpec {
 	return []plugin.PolicySpec{
 		{Key: Int64, Choices: []plugin.Choice{BigInt, String, Number}, Default: BigInt, Doc: int64Doc},
 		{Key: Absent, Choices: []plugin.Choice{Undefined, Null}, Default: Undefined, Doc: absentDoc},
 		{Key: Timestamp, Choices: []plugin.Choice{Date, String}, Default: Date, Doc: timestampDoc},
 		{Key: Bytes, Choices: []plugin.Choice{Uint8Array, String}, Default: Uint8Array, Doc: bytesDoc},
+		{Key: Duration, Choices: []plugin.Choice{String, Number}, Default: String, Doc: durationDoc},
 	}
 }

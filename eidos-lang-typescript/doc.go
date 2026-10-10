@@ -21,8 +21,8 @@
 // reports a file whose every declaration is implemented elsewhere.
 //
 // [Policies] returns the target's lowering policies. Their keys are
-// [Int64], [Absent], [Timestamp] and [Bytes], and each choice is a
-// constant, such as [BigInt].
+// [Int64], [Absent], [Timestamp], [Bytes] and [Duration], and each choice
+// is a constant, such as [BigInt].
 //
 // [Unquote], [ParseNumber] and [ParseBigInt] decode TypeScript's string,
 // numeric and bigint literals. The frontend decodes the arguments of a

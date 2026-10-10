@@ -49,9 +49,10 @@ const (
 )
 
 // keywordTypes lists the keyword types of TypeScript. The builtin table
-// classifies them as Opaque, and SamplesOf derives no value for them.
+// classifies any and unknown as the top type and the others as Opaque.
+// SamplesOf derives no value for any of them.
 var keywordTypes = []string{
-	"any", "unknown", "never", "object", "symbol", "void", spellNull, spellUndefined, "this",
+	spellAny, unknownSpelling, "never", "object", "symbol", "void", spellNull, spellUndefined, "this",
 }
 
 // SamplesOf derives two distinguishable values of a type:
@@ -513,6 +514,8 @@ func (r Rules) typedBuiltin(lit literal, ref *node.TypeRef, v rules.View) (emit.
 		takes = literalBool
 	case symbol.FormText:
 		takes = literalString
+	case symbol.FormDynamic:
+		return lit.value()
 	}
 	switch {
 	case takes != 0:
@@ -524,8 +527,6 @@ func (r Rules) typedBuiltin(lit literal, ref *node.TypeRef, v rules.View) (emit.
 		takes = literalNull
 	case ref.Spelling == spellUndefined || ref.Spelling == "void":
 		takes = literalUndefined
-	case ref.Spelling == "any" || ref.Spelling == "unknown":
-		return lit.value()
 	default:
 		own, scanned := scanLiteral(ref.Spelling)
 		if !scanned || own.kind == literalPath || own != lit {

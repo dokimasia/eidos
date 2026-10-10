@@ -42,6 +42,14 @@ func TestBuiltin(t *testing.T) {
 				want: rules.Leaf(symbol.FormBool, "boolean"),
 			},
 			{
+				name: "classifies any as the top type", give: &node.TypeRef{Spelling: "any"},
+				want: rules.Leaf(symbol.FormDynamic, "any"),
+			},
+			{
+				name: "classifies unknown as the top type", give: &node.TypeRef{Spelling: "unknown"},
+				want: rules.Leaf(symbol.FormDynamic, "unknown"),
+			},
+			{
 				name: "classifies Date as the well-known timestamp", give: &node.TypeRef{Spelling: "Date"},
 				want: rules.Reference("Date", rules.WellKnownTimestamp),
 			},

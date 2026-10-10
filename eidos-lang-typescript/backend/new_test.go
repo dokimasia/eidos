@@ -42,10 +42,10 @@ const (
 // The allocations of a build and of the scaled corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the seven kind templates. The four lowering policies
-	// add seven: their specs, the kit's list of them, and the check of
+	// template and the seven kind templates. The five lowering policies
+	// add eight: their specs, the kit's list of them, and the check of
 	// the specs that Build makes.
-	newAllocs = 1_748
+	newAllocs = 1_749
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// The count varies between processes: 13 fresh processes, three of

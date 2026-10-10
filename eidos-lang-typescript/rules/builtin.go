@@ -14,6 +14,7 @@ const (
 	spellString                = "string"
 	spellNumber                = "number"
 	spellBoolean               = "boolean"
+	spellAny                   = "any"
 	spellBigInt                = "bigint"
 	spellDate                  = "Date"
 	spellUint8Array            = "Uint8Array"
@@ -45,6 +46,7 @@ var globalTypes = []string{
 // resolution step left without a target:
 //
 //   - string, number and boolean as Text, a float of 64 bits and Bool;
+//   - any and unknown as the top type;
 //   - Date as the well-known timestamp, and Uint8Array as Bytes;
 //   - Array and ReadonlyArray with a type argument as a list;
 //   - Record, Map and ReadonlyMap with type arguments as a map;
@@ -53,9 +55,9 @@ var globalTypes = []string{
 //
 // The kernel's fold makes the type arguments the children of a list, a
 // map or a stream. It folds a reference with another number of arguments
-// to Opaque. Every other spelling is Opaque. That includes bigint, any,
-// unknown, Promise and a literal type. A name that an import binds is not
-// a global, so it is Opaque too. Builtin allocates nothing.
+// to Opaque. Every other spelling is Opaque. That includes bigint,
+// Promise and a literal type. A name that an import binds is not a
+// global, so it is Opaque too. Builtin allocates nothing.
 func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	if ref == nil || ref.Form != symbol.FormNamed || !ref.Target.IsZero() || ref.Package != "" {
 		return rules.Opaque(ref)
@@ -67,6 +69,8 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 		return rules.Scalar(ref.Spelling, rules.ScalarFloat, numberBits)
 	case spellBoolean:
 		return rules.Leaf(symbol.FormBool, ref.Spelling)
+	case spellAny, unknownSpelling:
+		return rules.Leaf(symbol.FormDynamic, ref.Spelling)
 	case spellDate:
 		return rules.Reference(ref.Spelling, rules.WellKnownTimestamp)
 	case spellUint8Array:

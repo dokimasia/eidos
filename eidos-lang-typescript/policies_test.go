@@ -51,6 +51,10 @@ func TestPolicies(t *testing.T) {
 				name: "returns bytes with Uint8Array as its default", key: typescript.Bytes,
 				spelling: "typescript.bytes", choices: []plugin.Choice{"Uint8Array", "string"}, def: "Uint8Array",
 			},
+			{
+				name: "returns duration with string as its default", key: typescript.Duration,
+				spelling: "typescript.duration", choices: []plugin.Choice{"string", "number"}, def: "string",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -64,15 +68,15 @@ func TestPolicies(t *testing.T) {
 				}
 				expect.Equal(t, string(spec.Key), tt.spelling, "the key's spelling")
 				expect.Equal(t, spec.Choices, tt.choices, "the choices, in the order they document")
-				expect.Equal(t, spec.Default, tt.def, "the default is TypeScript's own type")
+				expect.Equal(t, spec.Default, tt.def, "the default is the spelling the policy documents")
 				expect.NotEmpty(t, spec.Doc, "the spec documents its key")
 			})
 		}
 
-		t.Run("returns four policies", func(t *testing.T) {
+		t.Run("returns five policies", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Length(t, typescript.Policies(), 4, "int64, absent, timestamp and bytes")
+			assert.Length(t, typescript.Policies(), 5, "int64, absent, timestamp, bytes and duration")
 		})
 	})
 }

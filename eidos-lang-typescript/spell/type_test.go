@@ -50,12 +50,16 @@ const (
 	recordAllocs = 4
 )
 
-// The declarations of the source language that the cases reference.
+// The declarations of the source language that the cases reference. state
+// is a type that session declares.
 var (
 	session = symbol.Identity{Lang: sourceLang, Package: "svc", Name: sessionName, Kind: symbol.KindStruct}
 	page    = symbol.Identity{Lang: sourceLang, Package: "svc", Name: pageName, Kind: symbol.KindStruct}
 	status  = symbol.Identity{Lang: sourceLang, Package: "svc", Name: statusName, Kind: symbol.KindEnum}
 	result  = symbol.Identity{Lang: sourceLang, Package: "svc", Name: resultName, Kind: symbol.KindSum}
+	state   = symbol.Identity{
+		Lang: sourceLang, Package: "svc", Owner: sessionName, Name: "State", Kind: symbol.KindEnum,
+	}
 )
 
 // The shapes the cases compose.
@@ -346,6 +350,27 @@ func TestType(t *testing.T) {
 				name: "returns Date for the well-known timestamp under the default policy",
 				give: rules.Reference("time.Time", rules.WellKnownTimestamp), want: &emit.TypeRef{Spelling: "Date"},
 			},
+			{
+				name: "returns string for the well-known duration under the default policy",
+				give: rules.Reference("time.Duration", rules.WellKnownDuration),
+				want: &emit.TypeRef{Spelling: "string"},
+			},
+			{
+				name: "returns a record without keys for the well-known empty value",
+				give: rules.Reference("google.protobuf.Empty", rules.WellKnownEmpty),
+				want: &emit.TypeRef{
+					Spelling: "Record", Args: []*emit.TypeRef{{Spelling: "string"}, {Spelling: "never"}},
+				},
+			},
+			{
+				name: "returns unknown for the top type",
+				give: rules.Leaf(symbol.FormDynamic, "any"), want: &emit.TypeRef{Spelling: "unknown"},
+			},
+			{
+				name: "returns the flat name for a reference to a nested type",
+				give: rules.Reference("Session.State", state),
+				want: &emit.TypeRef{Spelling: "SessionState", Target: state},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -395,6 +420,11 @@ func TestType(t *testing.T) {
 				chosen: map[plugin.PolicyKey]plugin.Choice{typescript.Bytes: typescript.String},
 				give:   rules.Leaf(symbol.FormBytes, "[]byte"), want: "string",
 			},
+			{
+				name:   "returns number for the well-known duration under the number choice",
+				chosen: map[plugin.PolicyKey]plugin.Choice{typescript.Duration: typescript.Number},
+				give:   rules.Reference("time.Duration", rules.WellKnownDuration), want: "number",
+			},
 		}
 		for _, tt := range choices {
 			t.Run(tt.name, func(t *testing.T) {
@@ -425,11 +455,6 @@ func TestType(t *testing.T) {
 				name: "returns an error for a synchronous stream",
 				give: rules.TypeShape{Form: symbol.FormStream, Spelling: "chan int", Elems: []rules.TypeShape{long}},
 				want: "typescript: a synchronous stream has no TypeScript spelling",
-			},
-			{
-				name: "returns an error for the well-known duration",
-				give: rules.Reference("time.Duration", rules.WellKnownDuration),
-				want: "typescript: the well-known duration has no TypeScript spelling",
 			},
 			{
 				name: "returns an error for a wildcard with a lower bound",

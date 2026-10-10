@@ -31,7 +31,7 @@ const Extension = ".ts"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds beside the grammar's version:

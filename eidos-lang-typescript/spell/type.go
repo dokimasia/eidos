@@ -27,6 +27,7 @@ const (
 	booleanType       = "boolean"
 	stringType        = "string"
 	unknownType       = "unknown"
+	neverType         = "never"
 	voidType          = "void"
 	recordType        = "Record"
 	partialType       = "Partial"
@@ -62,8 +63,8 @@ const (
 //   - an integer of 8 to 32 bits and every float as number, and an
 //     integer of 64 bits or of the platform's width as the choice of
 //     [typescript.Int64];
-//   - Bool and Text as boolean and string, and Bytes as the choice of
-//     [typescript.Bytes];
+//   - Bool and Text as boolean and string, Bytes as the choice of
+//     [typescript.Bytes], and the top type as unknown;
 //   - an optional as a union of its type and the choice of
 //     [typescript.Absent];
 //   - a list as T[], an array of a stated length as a tuple of that many
@@ -77,21 +78,22 @@ const (
 //     more results;
 //   - an asynchronous stream as AsyncIterable<T>, a borrow as its type,
 //     and a wildcard as its upper bound or as unknown without a bound;
-//   - the well-known timestamp as the choice of [typescript.Timestamp];
+//   - the well-known timestamp and duration as the choices of
+//     [typescript.Timestamp] and [typescript.Duration], and the
+//     well-known empty value as Record<string, never>;
 //   - every other reference and sum as a translated reference with the
-//     referent's declared name, the shape's target and the translated
-//     type arguments, which TypeScript writes in angle brackets.
+//     referent's flat name, the shape's target and the translated type
+//     arguments, which TypeScript writes in angle brackets.
 //
 // Inside a list, an optional, a union and an intersection, the spoke
 // writes a union, an intersection and a function type in parentheses. A
 // global type that the spoke writes does not need an import.
 //
-// Type refuses a synchronous stream, the well-known duration, a wildcard
-// with a lower bound, an inline type and an opaque type, because
-// TypeScript has no spelling of them. It refuses an integer of another
-// width and an array of an unstated length. It refuses a form whose
-// child it refuses, and the error contains the source spelling of the
-// child.
+// Type refuses a synchronous stream, a wildcard with a lower bound, an
+// inline type and an opaque type, because TypeScript has no spelling of
+// them. It refuses an integer of another width and an array of an
+// unstated length. It refuses a form whose child it refuses, and the
+// error contains the source spelling of the child.
 //
 // # Allocation contract
 //
@@ -119,6 +121,8 @@ func tsType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: booleanType}, nil
 	case symbol.FormText:
 		return &emit.TypeRef{Spelling: stringType}, nil
+	case symbol.FormDynamic:
+		return &emit.TypeRef{Spelling: unknownType}, nil
 	case symbol.FormBytes:
 		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Bytes))}, nil
 	case symbol.FormOptional, symbol.FormList, symbol.FormBorrow:
@@ -300,10 +304,11 @@ func wildcard(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 	return spoke.Child(s.Elems[0], spell)
 }
 
-// reference spells a reference or a sum: the well-known timestamp as the
-// choice of [typescript.Timestamp], and every other referent as a
-// translated reference with its translated arguments. It refuses the
-// well-known duration.
+// reference spells a reference or a sum: the well-known timestamp and
+// duration as the choices of [typescript.Timestamp] and
+// [typescript.Duration], the well-known empty value as a record without
+// keys, and every other referent as a translated reference under its flat
+// name, with its translated arguments.
 func reference(
 	s rules.TypeShape, p plugin.Policy, spell func(rules.TypeShape) (*emit.TypeRef, error),
 ) (*emit.TypeRef, error) {
@@ -311,13 +316,17 @@ func reference(
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Timestamp))}, nil
 	case rules.WellKnownDuration:
-		return nil, fmt.Errorf("the well-known duration has no TypeScript spelling")
+		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Duration))}, nil
+	case rules.WellKnownEmpty:
+		return &emit.TypeRef{
+			Spelling: recordType, Args: []*emit.TypeRef{{Spelling: stringType}, {Spelling: neverType}},
+		}, nil
 	}
 	args, err := spoke.Children(s.Args, spell)
 	if err != nil {
 		return nil, err
 	}
-	return &emit.TypeRef{Spelling: s.Ref.Name, Target: s.Ref, Args: args}, nil
+	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
 }
 
 // joined returns the spellings of refs joined by sep, each in
