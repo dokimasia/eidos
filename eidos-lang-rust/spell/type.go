@@ -79,18 +79,20 @@ var (
 //     has no result, and with a tuple of two or more results;
 //   - a wildcard as its upper bound;
 //   - the well-known timestamp and duration as std::time::SystemTime and
-//     std::time::Duration;
+//     std::time::Duration, and the well-known empty value as the unit
+//     type ();
 //   - every other reference and sum as a translated reference with the
-//     referent's declared name, the shape's target and the translated
-//     type arguments, which Rust writes in angle brackets.
+//     referent's flat name, the shape's target and the translated type
+//     arguments, which Rust writes in angle brackets.
 //
 // Type refuses a union, an intersection, a stream, an inline type and an
-// opaque type, because Rust has no spelling of them. It refuses a borrow,
-// because a Rust borrow needs a lifetime, and the shape of a type of
-// another language has none. It refuses a wildcard with a lower bound or
-// without a bound, a scalar of another width, and an array of an unstated
-// length. It refuses a form whose child it refuses, and the error
-// contains the source spelling of the child.
+// opaque type, because Rust has no spelling of them. It refuses the top
+// type, because Rust does not have a type of every value. It refuses a
+// borrow, because a Rust borrow needs a lifetime, and a type of another
+// language has none. It refuses a wildcard with a lower bound
+// or without a bound, a scalar of another width, and an array of an
+// unstated length. It refuses a form whose child it refuses, and the
+// error contains the source spelling of the child.
 //
 // # Allocation contract
 //
@@ -229,21 +231,24 @@ func function(s rules.TypeShape) (*emit.TypeRef, error) {
 	return &emit.TypeRef{Spelling: boxType, Args: []*emit.TypeRef{fn}}, nil
 }
 
-// reference spells a reference or a sum: a well-known type as the type of
-// std::time, and every other referent as a translated reference with its
-// translated arguments.
+// reference spells a reference or a sum: the well-known timestamp and
+// duration as the types of std::time, the well-known empty value as the
+// unit type, and every other referent as a translated reference under its
+// flat name, with its translated arguments.
 func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: systemTimeType, Package: timeModule}, nil
 	case rules.WellKnownDuration:
 		return &emit.TypeRef{Spelling: durationType, Package: timeModule}, nil
+	case rules.WellKnownEmpty:
+		return &emit.TypeRef{Spelling: unitType, Form: symbol.FormTuple}, nil
 	}
 	args, err := spoke.Children(s.Args, rustType)
 	if err != nil {
 		return nil, err
 	}
-	return &emit.TypeRef{Spelling: s.Ref.Name, Target: s.Ref, Args: args}, nil
+	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
 }
 
 // tupleOf returns the spelling of a tuple of refs: (A, B), (A,) for one

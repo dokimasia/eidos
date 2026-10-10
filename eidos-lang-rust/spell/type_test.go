@@ -55,11 +55,15 @@ const (
 	functionAllocs = 7
 )
 
-// The declarations of the source language that the cases reference.
+// The declarations of the source language that the cases reference. state
+// is a type that session declares.
 var (
 	session = symbol.Identity{Lang: sourceLang, Package: "svc", Name: sessionName, Kind: symbol.KindStruct}
 	page    = symbol.Identity{Lang: sourceLang, Package: "svc", Name: pageName, Kind: symbol.KindStruct}
 	result  = symbol.Identity{Lang: sourceLang, Package: "svc", Name: resultName, Kind: symbol.KindSum}
+	state   = symbol.Identity{
+		Lang: sourceLang, Package: "svc", Owner: sessionName, Name: "State", Kind: symbol.KindEnum,
+	}
 )
 
 // The shapes the cases compose.
@@ -297,6 +301,16 @@ func TestType(t *testing.T) {
 				give: rules.Reference("time.Duration", rules.WellKnownDuration),
 				want: &emit.TypeRef{Spelling: "Duration", Package: timeModule},
 			},
+			{
+				name: "returns the unit type for the well-known empty value",
+				give: rules.Reference("google.protobuf.Empty", rules.WellKnownEmpty),
+				want: &emit.TypeRef{Spelling: "()", Form: symbol.FormTuple},
+			},
+			{
+				name: "returns the flat name for a reference to a nested type",
+				give: rules.Reference("Session.State", state),
+				want: &emit.TypeRef{Spelling: "SessionState", Target: state},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -368,6 +382,10 @@ func TestType(t *testing.T) {
 				name: "returns an error for an opaque type",
 				give: rules.Opaque(nil),
 				want: "rust: a type that the rules of its language do not classify has no Rust spelling",
+			},
+			{
+				name: "returns an error for the top type",
+				give: rules.Leaf(symbol.FormDynamic, "any"), want: "rust: the top type has no Rust spelling",
 			},
 			{
 				name: "returns an error for an integer of 256 bits",
