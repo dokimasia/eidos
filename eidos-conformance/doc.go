@@ -38,8 +38,11 @@
 // suites over them and benchmark a load of this repository.
 // lang/typescript declares the TypeScript pipeline fixture and a Go plan
 // over TypeScript source, and its tests run the pipeline suite and the
-// TypeScript toolchain over them. The package matrix renders the support
-// matrix of the satellites from their entries.
+// TypeScript toolchain over them. lang/protobuf declares the service
+// fixture, a Go server plan and a TypeScript client plan over a proto
+// service, and its tests run the workspace and warm suites over the
+// service's schema in each protobuf version. The package matrix renders
+// the support matrix of the satellites from their entries.
 //
 // # Dependency position
 //

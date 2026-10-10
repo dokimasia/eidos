@@ -26,6 +26,17 @@ const (
 	unspelledRow = "| Bool | none |\n"
 )
 
+// The rows of the top type, the empty value, the asynchronous stream and
+// the choices of the duration's policy.
+const (
+	dynamicRow = "| Dynamic | `any` | `unknown` | `Object` | refused |\n"
+	emptyRow   = "| Empty | `struct{}` | `Record<string, never>` | refused | `()` |\n"
+	asyncRow   = "| Asynchronous stream of text | `iter.Seq2[string, error]` | `AsyncIterable<string>` | " +
+		"refused | refused |\n"
+	durationChoices = "| typescript.duration: string | none | `string` | none | none |\n" +
+		"| typescript.duration: number | none | `number` | none | none |\n"
+)
+
 // The policy of the stub target that the cases declare, and the error of
 // a policy without a probe.
 const (
@@ -82,6 +93,24 @@ func TestHub(t *testing.T) {
 			assert.NoError(t, err, "the matrix of the satellites renders")
 			assert.Contains(t, doc, inlineRow, "no target spells an inline type")
 		})
+		rows := []struct {
+			name string
+			want string
+		}{
+			{name: "writes the top type of each target", want: dynamicRow},
+			{name: "writes the empty value of each target", want: emptyRow},
+			{name: "writes the asynchronous stream of each target", want: asyncRow},
+			{name: "writes the spelling of each choice of the duration's policy", want: durationChoices},
+		}
+		for _, tt := range rows {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				doc, err := matrix.Markdown(matrix.Entries())
+				assert.NoError(t, err, "the matrix of the satellites renders")
+				assert.Contains(t, doc, tt.want, "the hub has the row of the spokes' spellings")
+			})
+		}
 		t.Run("writes none in the column of a backend without a spoke", func(t *testing.T) {
 			t.Parallel()
 

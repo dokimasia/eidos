@@ -18,16 +18,21 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/bufbuild/protocompile v0.14.1 // indirect
+	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
+	github.com/petermattis/goid v0.0.0-20260716134002-a9b348f0a2b9 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
+	github.com/tidwall/btree v1.8.1 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
 
 replace go.dokimi.dev/eidos/cli => ../eidos-cli

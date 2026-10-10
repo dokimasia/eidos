@@ -1,0 +1,56 @@
+syntax = "proto2";
+
+package acme.svc;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Session is one signed-in user's state.
+message Session {
+  // State is the lifecycle of a session.
+  enum State {
+    UNSPECIFIED = 0;
+    ACTIVE = 1;
+    REVOKED = 2;
+  }
+
+  required string owner = 1;
+  required int64 expires = 2;
+  required State state = 3;
+  optional google.protobuf.Timestamp created = 4;
+  optional google.protobuf.Duration lifetime = 5;
+  optional google.protobuf.Struct attributes = 6;
+  map<string, string> labels = 7;
+  optional string note = 8;
+  oneof credential {
+    string token = 9;
+    bytes key = 10;
+  }
+}
+
+message GetRequest {
+  required string key = 1;
+}
+
+message Event {
+  optional Session session = 1;
+}
+
+message Chunk {
+  required bytes data = 1;
+}
+
+message Summary {
+  required int64 size = 1;
+}
+
+// Store serves sessions.
+service Store {
+  rpc Get(GetRequest) returns (Session);
+  rpc Watch(GetRequest) returns (stream Event);
+  rpc Upload(stream Chunk) returns (Summary);
+  rpc Chat(stream Event) returns (stream Event);
+  rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
+}

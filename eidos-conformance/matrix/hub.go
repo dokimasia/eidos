@@ -84,6 +84,7 @@ var (
 	optional   = rules.TypeShape{Form: symbol.FormOptional, Spelling: textSource, Elems: []rules.TypeShape{text}}
 	octets     = rules.Leaf(symbol.FormBytes, textSource)
 	timestamp  = rules.Reference(textSource, rules.WellKnownTimestamp)
+	duration   = rules.Reference(textSource, rules.WellKnownDuration)
 	sessionRef = rules.Reference(sessionName, session)
 )
 
@@ -103,6 +104,7 @@ var probes = []probe{
 	{label: "Bool", shape: boolean},
 	{label: "Text", shape: text},
 	{label: "Bytes", shape: octets},
+	{label: "Dynamic", shape: rules.Leaf(symbol.FormDynamic, textSource)},
 	{label: "Optional of text", shape: optional},
 	{label: "List of text", shape: rules.TypeShape{Form: symbol.FormList, Elems: []rules.TypeShape{text}}},
 	{
@@ -153,7 +155,8 @@ var probes = []probe{
 	{label: "Reference with a type argument", shape: rules.Reference(sessionName, session, text)},
 	{label: "Sum", shape: rules.TypeShape{Form: symbol.FormSum, Spelling: resultName, Ref: result}},
 	{label: "Timestamp", shape: timestamp},
-	{label: "Duration", shape: rules.Reference(textSource, rules.WellKnownDuration)},
+	{label: "Duration", shape: duration},
+	{label: "Empty", shape: rules.Reference(textSource, rules.WellKnownEmpty)},
 	{label: "Opaque", shape: rules.Opaque(nil)},
 }
 
@@ -165,6 +168,7 @@ var policyProbes = map[plugin.PolicyKey]rules.TypeShape{
 	typescript.Absent:    optional,
 	typescript.Timestamp: timestamp,
 	typescript.Bytes:     octets,
+	typescript.Duration:  duration,
 }
 
 // hub writes the hub's section. A row of a probe contains the spelling of
