@@ -14,6 +14,7 @@ import (
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -70,7 +71,6 @@ func TestFrontend(t *testing.T) {
 					// the fixture lists no dropped identity.
 					Signatures: []string{"dep"},
 					Schemas:    []directive.Schema{tableSchema()},
-					Keys:       protobuf.Keys,
 				}
 			})
 		})
@@ -90,6 +90,21 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, f.Name(), protobuf.Name, "findings report under the satellite's identity")
+		})
+	})
+
+	t.Run("Keys", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("registers the protobuf keys under the language's spelling", func(t *testing.T) {
+			t.Parallel()
+
+			provider, provides := f.(plugin.KeyProvider)
+			assert.True(t, provides, "the frontend registers keys")
+			r := meta.NewRegistry()
+			assert.NoError(t, provider.Keys(r.For(string(protofrontend.Lang))), "the keys register")
+			_, held := r.Resolve(protobuf.FieldKey)
+			assert.True(t, held, "the field key is registered")
 		})
 	})
 

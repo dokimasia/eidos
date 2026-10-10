@@ -51,12 +51,20 @@ func TestKeys(t *testing.T) {
 			}
 		})
 
-		t.Run("returns an error for a second registration", func(t *testing.T) {
+		t.Run("returns no error for a second registration of one registrant", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry().For(string(protobuf.Name))
+			assert.NoError(t, protobuf.Keys(r), "the first registration succeeds")
+			assert.NoError(t, protobuf.Keys(r), "the registrant repeats its registration")
+		})
+
+		t.Run("returns an error for a registration of another registrant", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
-			assert.NoError(t, protobuf.Keys(r), "the first registration succeeds")
-			assert.HasError(t, protobuf.Keys(r), "the namespace is claimed once")
+			assert.NoError(t, protobuf.Keys(r.For(string(protobuf.Name))), "the first registration succeeds")
+			assert.HasError(t, protobuf.Keys(r.For(rivalPlugin)), "the namespace has one registrant")
 		})
 
 		t.Run("returns an error for a key whose spelling a group took", func(t *testing.T) {

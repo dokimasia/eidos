@@ -10,6 +10,7 @@ import (
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -107,9 +108,13 @@ func New() plugin.Frontend { return protoFrontend{} }
 // what it allocates.
 type protoFrontend struct{}
 
-// A proto import names a file, so the resolution step asks the
-// frontend which import names a declaring file.
-var _ plugin.Importer = protoFrontend{}
+// A proto import refers to a file, so the frontend implements the
+// importer role for the resolution step. The frontend registers its
+// language's keys through its role.
+var (
+	_ plugin.Importer    = protoFrontend{}
+	_ plugin.KeyProvider = protoFrontend{}
+)
 
 // Name returns [protobuf.Name], the origin of this frontend's
 // findings and classification stamps. It allocates nothing.
@@ -136,6 +141,11 @@ func (protoFrontend) Overloads() bool { return false }
 // it changes with what the frontend produces and not with the
 // module's release. It allocates nothing.
 func (protoFrontend) Version() string { return protobuf.Version }
+
+// Keys registers every protobuf key through the handle that the
+// workspace binds to the language's spelling. It returns the error of
+// [protobuf.Keys], and allocates what protobuf.Keys allocates.
+func (protoFrontend) Keys(r *meta.Registry) error { return protobuf.Keys(r) }
 
 // Selection claims every file under the workspace whose name ends in
 // [protobuf.Extension].

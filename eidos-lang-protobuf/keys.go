@@ -96,8 +96,9 @@ const (
 // A composition passes it to the workspace builder and a corpus
 // fixture passes it to the conformance runner, so both register one
 // set. It returns the first error a registration reports and
-// registers nothing after it. Calling it twice on one registry is an
-// error, because a namespace is claimed once.
+// registers nothing after it. A second call through the same
+// registrant repeats the registration and returns nil. A call through
+// another registrant fails, because a namespace has one registrant.
 //
 // # Allocation contract
 //

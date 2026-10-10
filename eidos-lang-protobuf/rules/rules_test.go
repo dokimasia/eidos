@@ -90,7 +90,7 @@ func loadedFrom(tb assert.TB, files map[string]string) *fixture {
 	for path, body := range files {
 		tree[path] = &fstest.MapFile{Data: []byte(body)}
 	}
-	return viewed(tb, rulestest.Loaded(tb, protofrontend.New(), tree, protobuf.Keys))
+	return viewed(tb, rulestest.Loaded(tb, protofrontend.New(), tree))
 }
 
 // viewed returns a loaded tree with a tracked view over it.
@@ -657,7 +657,7 @@ func benchCall(b *testing.B, tt allocCall) {
 func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 	tb.Helper()
 	return protorules.New(),
-		rulestest.Loaded(tb, protofrontend.New(), os.DirFS("testdata/schema"), protobuf.Keys)
+		rulestest.Loaded(tb, protofrontend.New(), os.DirFS("testdata/schema"))
 }
 
 // identityOf returns the identity of a resolved declaration.

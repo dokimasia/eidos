@@ -487,7 +487,7 @@ func linked(tb assert.TB, files map[string]string) *store.Graph {
 	for path, body := range files {
 		tree[path] = &fstest.MapFile{Data: []byte(body)}
 	}
-	return rulestest.Loaded(tb, protofrontend.New(), tree, protobuf.Keys).Graph
+	return rulestest.Loaded(tb, protofrontend.New(), tree).Graph
 }
 
 // typesOf returns each field's type reference by the field's name,
