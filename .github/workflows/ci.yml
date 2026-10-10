@@ -41,3 +41,15 @@ jobs:
       # which contains the mutation stage. The gate's lint stage runs
       # govulncheck.
       - run: make check
+      # The matrix test writes the support matrix into its artifact
+      # directory. With -artifacts, Go keeps the directory under
+      # _artifacts in the output directory, which must exist, and the
+      # job uploads it.
+      - name: Generate the support matrix
+        run: >-
+          go test -C eidos-conformance -count=1 -run '^TestMarkdown$'
+          -artifacts -outputdir="$RUNNER_TEMP" ./matrix
+      - uses: actions/upload-artifact@v7
+        with:
+          name: support-matrix
+          path: ${{ runner.temp }}/_artifacts
