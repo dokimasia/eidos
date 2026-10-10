@@ -1,0 +1,19 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/dependabot.yml and run ergon init sync.
+#
+# Weekly updates of the package manager of each language: the minor and patch updates of each
+# directory in one pull request, and each major update in a pull request of its own. The pins of the
+# actions are options of .ergon.yaml, which Dependabot does not update.
+
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directories: [/, "/**/*"]
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+    groups:
+      gomod:
+        patterns: ["*"]
+        update-types: [minor, patch]

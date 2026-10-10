@@ -1,3 +1,4 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.editorconfig and run ergon init sync.
 root = true
 
 [*]
@@ -5,12 +6,6 @@ charset = utf-8
 end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
-
-[*.go]
-indent_style = tab
-indent_size = 4
-
-[*.{yml,yaml}]
 indent_style = space
 indent_size = 2
 
@@ -20,6 +15,6 @@ trim_trailing_whitespace = false
 [Makefile]
 indent_style = tab
 
-[*.{json,toml}]
-indent_style = space
-indent_size = 2
+[*.go]
+indent_style = tab
+indent_size = 4

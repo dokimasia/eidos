@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Contributing to eidos
 
 eidos is not released yet. Most work implements a mechanism the
@@ -6,14 +11,26 @@ one of those mechanisms, change the specification first.
 
 ## Setup
 
-You need Go 1.27.0 or later. Every `go.mod` and `go.work` pins that version,
-and CI reads it from there.
+You need Go 1.27.2 or later, ergon and pre-commit. `go.work` requires that Go
+version, and CI installs it from there.
+
+Install ergon with Homebrew, or with Go from source:
 
 ```sh
-make bootstrap    # installs gofumpt, gci, golangci-lint, govulncheck, go-license
-make install      # downloads and verifies dependencies
-pre-commit install --hook-type pre-commit --hook-type commit-msg
+brew install --cask dokimasia/tap/ergon
+go install go.dokimi.dev/ergon/cmd/ergon@latest
 ```
+
+The targets of the Makefile run their tools through `ergon tool run`. On its
+first run, ergon installs each tool at the version that `.ergon.yaml` pins.
+Install the git hooks once:
+
+```sh
+pre-commit install
+```
+
+The hooks run `make lint` and `make test` before each commit, `make check`
+before each push, and commitlint on each commit message.
 
 ## Before you open a PR
 
@@ -21,67 +38,85 @@ pre-commit install --hook-type pre-commit --hook-type commit-msg
 make check
 ```
 
-That runs `ergon check`, which verifies the modules, lints them and runs the
-tests. CI runs the same command, and so does the pre-commit hook. A commit
-that would fail CI fails on your machine first.
+`make check` runs the gate of Go in every module of `go.work`. The gate runs
+golangci-lint with its format check, the tests, the tests under the race
+detector, and govulncheck. CI runs the same gate on Linux, macOS and Windows.
+CI also checks the commit messages, the changesets, the license headers, the
+Markdown files and the managed files.
 
 While you work, run the narrower targets:
 
 ```sh
-make fmt          # SPDX headers, gofumpt, gci, markdownlint. Run before make check
-make lint-go      # golangci-lint only
-make test         # go test, per module
-make build        # compile every module
-make help         # every target
+make fmt            # the formatters of .golangci.yml
+make lint-go        # golangci-lint and its format check
+make test           # go test, per module
+make help           # every target
+ergon license fix   # the SPDX header of every file
 ```
 
-ergon runs golangci-lint once per module, from each module directory. They
-all read the single `.golangci.yml` at the repository root.
+The Makefile runs golangci-lint once per module, from the directory of the
+module. In every module, golangci-lint reads the one `.golangci.yml` at the
+repository root.
+gci groups the imports, with the modules of eidos in a group of their own
+under `prefix(go.dokimi.dev/eidos)`.
 
-Do not add `gofmt` or `goimports` to that config. gofumpt already does what
-gofmt does. goimports regroups imports that gci then regroups back, so
-running `make fmt` twice gives you two different files. gci owns import
-grouping, with `prefix(go.dokimi.dev/eidos)`.
+## Managed files
+
+ergon writes the Makefile, `.golangci.yml`, the workflows and every other
+file whose first line starts with `Managed by ergon init`. Do not edit these
+files. Put a setting of eidos into the file of the same path under
+`.ergon/local/`, run `ergon init sync`, and commit both files. The Baseline
+job of CI runs `ergon init check`, which fails when a managed file differs
+from the file that ergon writes.
+
+## Changesets
+
+A pull request that changes a module adds a changeset to `.changeset/`. The
+changeset contains each module that the change releases with its bump, and a
+summary. The summary becomes the entry in the changelog of each module:
+
+```sh
+ergon release add --bump go.dokimi.dev/eidos/core=minor -m "Add the rename of a symbol."
+```
+
+A change that releases nothing, such as a change to the tests or the
+documentation alone, adds a changeset without modules with
+`ergon release add --empty`. The Changeset job of CI runs
+`ergon release status`, which fails a pull request that changes a module
+without a changeset for it.
 
 ## How the repository is laid out
 
 Each component is its own Go module, tagged and released on its own. The
 [README](README.md) lists them.
 
-`go.work` holds the module list, and ergon reads it from there. That is why
-`.ergon.yaml` leaves `modules:` empty. The root module `go.dokimi.dev/eidos`
-stays out of `go.work`. It holds no packages, it exists to own the
-import-path prefix and pin the toolchain for CI, and `go vet ./...` fails on
-a module with no Go files.
+`go.work` holds the module list, and ergon reads it from there. The root
+module `go.dokimi.dev/eidos` declares the import-path prefix and has no
+packages. It stays out of `go.work`, because `go vet ./...` fails on a module
+without Go files.
 
 To add a module, follow [Add a module](docs/how-to/add-a-module.md).
 
 ## Commits
 
-Write Conventional Commits. The commit-msg hook runs `ergon check commit-msg`
-and rejects anything outside these two lists.
+Write Conventional Commits. The commit-msg hook runs commitlint with
+`.commitlint.yaml`, and rejects anything outside these two lists.
 
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore`, `perf`,
-`build`, `deps`, `revert`.
+`build`, `revert`.
 
-Scopes: `conformance`, `core`, `lang`, `go`, `java`, `kotlin`, `php`,
+Scopes: `cli`, `conformance`, `core`, `lang`, `go`, `java`, `kotlin`, `php`,
 `protobuf`, `rust`, `typescript`, `shape`, `reference`, `sdk`. These are the
 module names without their `eidos-`, `eidos-lang-` or `eidos-plugin-` prefix.
 Leave the scope off when a change touches the whole repository.
 
-Keep the subject under 80 bytes and body lines under 100. Say what changed
+Keep the subject to 72 characters and body lines to 100. Say what changed
 and why; the diff shows how.
 
-## Tests and coverage
+## Tests
 
 Put test files beside what they test, and fixtures in `testdata/` beside the
-test that reads them. `make test` runs each package twice, so a test that
-only passes in one order fails here rather than in CI.
-
-Each module with code has a line-coverage floor under
-`checks.coverage.packages` in `.ergon.yaml`. `make check` fails a module
-whose coverage drops below its floor. A module without code has no entry. Its
-0 of 0 statements would fail any floor.
+test that reads them.
 
 The kernel ships a conformance suite that tests plugins, satellites and
 backends. It has eight checks, from `plugintest` through `warm≡cold`. Write

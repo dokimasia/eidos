@@ -1,0 +1,57 @@
+# Managed by ergon init, with .ergon/local/.commitlint.yaml merged in. Change the repository's settings there and run ergon init sync.
+#
+# A commit message follows Conventional Commits: a subject of a type, an optional scope and a
+# description, then a blank line and the body. A repository adds its closed set of scopes in its
+# local file, as the rule scope-enum.
+#
+# The rules: https://github.com/conventionalcommit/commitlint#available-rules
+
+min-version: v0.12.0
+formatter: default
+rules:
+  - type-enum
+  - description-empty
+  - header-max-length
+  - header-full-stop
+  - body-leading-blank
+  - body-max-line-length
+  - footer-leading-blank
+  - footer-max-line-length
+  - scope-enum
+severity:
+  default: error
+settings:
+  type-enum:
+    argument: [feat, fix, docs, refactor, test, ci, chore, perf, build, revert]
+  description-empty:
+    argument: null
+  header-max-length:
+    argument: 72
+  header-full-stop:
+    argument: "."
+  body-leading-blank:
+    argument: null
+  body-max-line-length:
+    argument: 100
+  footer-leading-blank:
+    argument: null
+  footer-max-line-length:
+    argument: 100
+  scope-enum:
+    argument:
+      - cli
+      - conformance
+      - core
+      - lang
+      - go
+      - java
+      - kotlin
+      - php
+      - protobuf
+      - rust
+      - typescript
+      - shape
+      - reference
+      - sdk
+    flags:
+      allow-empty: true

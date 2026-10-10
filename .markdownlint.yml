@@ -1,52 +1,43 @@
-# markdownlint configuration. Consumed by `ergon fmt` (auto-fix)
-# and `ergon lint md` (reporting only). Rule reference:
-# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+# Managed by ergon init. Add repository settings to .ergon/local/.markdownlint.yml and run ergon init sync.
 #
-# Each disabled rule below has a one-line rationale — change
-# them when your project's prose conventions diverge.
+# The rules: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
 
-# Line length — off. READMEs and docs routinely include tables,
-# fenced code blocks, and long URLs that exceed any sensible
-# wrap point.
+# Hard tabs are allowed in fenced code blocks, because a tab-indented language is shown as it is
+# written. Prose still may not contain them.
+MD010:
+  code_blocks: false
+
+# Line length is not checked: tables, code blocks and URLs exceed any wrap point.
 MD013: false
 
-# Multiple headings with same content — off. Common in
-# changelogs / release notes ("### Fixed" repeated per version).
+# Headings may repeat, as "### Fixed" does in every release of a changelog.
 MD024: false
 
-# Trailing punctuation in headings — allow "?" for FAQ-style
-# titles; everything else still flagged.
+# A second top-level heading is allowed, as front matter generates one.
+MD025: false
+
+# A heading may end in a question mark.
 MD026:
   punctuation: ".,;:!"
 
-# Multiple top-level headings — off. Some Markdown frontmatter
-# patterns generate a second h1.
-MD025: false
-
-# Inline HTML — off. Sometimes the only way to align tables or
-# embed badges.
+# Inline HTML is allowed, for badges and aligned tables.
 MD033: false
 
-# Bare URLs — off. URL-as-text is fine in changelogs and link
-# references.
+# Bare URLs are allowed in changelogs and link lists.
 MD034: false
 
-# First line heading — off. YAML / TOML frontmatter blocks
-# precede the first h1 on docs site generators.
-MD041: false
-
-# Emphasis as heading — off. Bolded one-liners aren't always a
-# misused heading.
+# A bold line is not taken for a heading.
 MD036: false
 
-# Code block style — fenced (consistent ```language blocks).
+# A fenced code block needs no language, as a directory tree has none.
+MD040: false
+
+# The first line need not be a heading, because front matter and comments precede it.
+MD041: false
+
+# Code blocks are fenced.
 MD046:
   style: fenced
 
-# Fenced code block language — off. Some blocks (directory
-# trees, ASCII diagrams) have no meaningful language.
-MD040: false
-
-# Table column style — off. Compact-style tables (without
-# pipe-aligned padding) are intentional in many docs.
+# Table columns need no padding.
 MD060: false

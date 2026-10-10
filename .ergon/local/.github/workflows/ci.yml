@@ -1,0 +1,20 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# The support matrix of eidos. The test TestMarkdown writes the matrix into its artifact directory.
+# With -artifacts, Go keeps that directory under _artifacts in the output directory, which must
+# exist. The job on Linux uploads it.
+jobs:
+  check-go:
+    steps:
+      - name: Generate the support matrix
+        if: runner.os == 'Linux'
+        run: >-
+          go test -C eidos-conformance -count=1 -run '^TestMarkdown$'
+          -artifacts -outputdir="$RUNNER_TEMP" ./matrix
+      - name: Upload the support matrix
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: support-matrix
+          path: ${{ runner.temp }}/_artifacts

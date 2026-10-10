@@ -1,0 +1,62 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/workflows/codeql.yml and run ergon init sync.
+#
+# The CodeQL analysis of one language, which security.yml calls for each analysis that a producer
+# of ergon init contributes. The analysis runs once the repository has a file of the pattern
+# files, which pins the toolchain of the language. The steps that a producer contributes to its
+# analysis, such as the setup of its toolchain, run before CodeQL in the runs of its language.
+
+name: CodeQL
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: The language of CodeQL to analyze, such as go or javascript-typescript.
+        required: true
+        type: string
+      build-mode:
+        description: How CodeQL extracts the language, none or autobuild.
+        required: true
+        type: string
+      files:
+        description: The pattern of hashFiles whose files run the analysis, such as go.work.
+        required: true
+        type: string
+      timeout:
+        description: The limit of the analysis in minutes.
+        required: true
+        type: number
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-26.04
+    timeout-minutes: ${{ inputs.timeout }}
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        if: "inputs.language == 'go' && hashFiles(inputs.files) != ''"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - name: Fetch the modules of go.work from their origin
+        if: "inputs.language == 'go' && hashFiles(inputs.files) != ''"
+        run: |
+          echo "GOPRIVATE=$(go list -m -f '{{.Path}}' | paste -sd , -)" >> "$GITHUB_ENV"
+      - if: hashFiles(inputs.files) != ''
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ inputs.language }}
+          build-mode: ${{ inputs.build-mode }}
+      - if: hashFiles(inputs.files) != ''
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ inputs.language }}

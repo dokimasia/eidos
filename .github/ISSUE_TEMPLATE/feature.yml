@@ -1,0 +1,35 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/ISSUE_TEMPLATE/feature.yml and run ergon init sync.
+
+name: Feature request
+description: Propose a capability that the repository does not have.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        A change to a published interface, or a change with competing approaches, is designed in
+        an RFC under docs/rfc. Open this issue to agree on the problem first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: The task you tried to do, and the point where the repository stopped you.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do today
+      description: The workaround you use, and what it costs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: The interface or the behaviour as you would write it, where you have one.
+    validations:
+      required: false

@@ -1,130 +1,12 @@
-# Managed by ergon init, with .ergon/local/.golangci.yml merged in. Change the repository's settings there and run ergon init sync.
-#
-# The configuration of golangci-lint for every module of the repository. It enables each linter
-# that a Go repository of the baseline enables, with the strictest setting that one of them uses.
-# A repository adds its own settings in its local file, which merges into this one: maps key by
-# key, lists appended. The depguard rules of the repository's module boundaries go there.
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
 
-version: "2"
-run:
-  timeout: 5m
-  modules-download-mode: readonly
-  allow-parallel-runners: true
-  tests: true
-  relative-path-mode: gomod
-output:
-  show-stats: true
-  sort-order:
-    - linter
-    - severity
-    - file
+# The settings of eidos, which ergon init merges into .golangci.yml.
+
 linters:
-  default: none
-  enable:
-    # Correctness
-    - copyloopvar
-    - durationcheck
-    - errcheck
-    - errorlint
-    - exhaustive
-    - forcetypeassert
-    - gosec
-    - govet
-    - ineffassign
-    - makezero
-    - nilerr
-    - nilnil
-    - predeclared
-    - reassign
-    - staticcheck
-    - unconvert
-    - unused
-    - wastedassign
-    # Modernization
-    - modernize
-    - unparam
-    # Performance
-    - bodyclose
-    - gocritic
-    - mirror
-    - noctx
-    - perfsprint
-    - prealloc
-    # Architecture and style
-    - decorder
-    - depguard
-    - dupl
-    - dupword
-    - forbidigo
-    - funcorder
-    - goconst
-    - interfacebloat
-    - misspell
-    - musttag
-    - nolintlint
-    - revive
-    - sloglint
-    - usestdlibvars
-    - whitespace
-    - wrapcheck
-    # Concurrency
-    - asasalint
-    - containedctx
-    - contextcheck
-    - errname
-    - fatcontext
-    - spancheck
-    # Test hygiene
-    - paralleltest
-    - testifylint
-    - testpackage
-    - thelper
-    - tparallel
-    - usetesting
-    # The analyzers of go.lint.analyzers and the module plugins of go.lint.plugins, which ergon tool
-    # run builds into golangci-lint
-    - assertlint
-    - errorprefix
-    - skipexpiry
   settings:
-    asasalint:
-      use-builtin-exclusions: true
-    copyloopvar:
-      check-alias: true
-    # golangci-lint loads each analyzer and module plugin from its program. A repository sets the
-    # settings of a plugin in its local file, under the name of the plugin.
-    custom:
-      assertlint:
-        type: module
-      errorprefix:
-        type: module
-      skipexpiry:
-        type: module
-    decorder:
-      disable-dec-order-check: true
-      disable-init-func-first-check: false
-    # depguard allows only the standard library in a module without rules, so this rule denies
-    # the packages that the standard library or a successor replaces, and allows everything else.
-    # A repository adds the rules of its module boundaries in its local file.
     depguard:
       rules:
-        replaced:
-          list-mode: lax
-          files:
-            - $all
-          deny:
-            - pkg: io/ioutil$
-              desc: io/ioutil is deprecated, so use io and os
-            - pkg: github.com/pkg/errors
-              desc: wrap with fmt.Errorf and %w, and match with errors.Is and errors.As
-            - pkg: golang.org/x/exp/slices$
-              desc: use slices of the standard library
-            - pkg: golang.org/x/exp/maps$
-              desc: use maps of the standard library
-            - pkg: golang.org/x/net/context$
-              desc: use context of the standard library
-            - pkg: github.com/golang/protobuf
-              desc: github.com/golang/protobuf is deprecated, so use google.golang.org/protobuf
         # Plugin modules import the SDK facade alone, and the kernel arrives transitively through
         # go.dokimi.dev/eidos/sdk, so a regrouping of the kernel moves no plugin's import path.
         # eidos-reference and the tools module of the shape catalog are not listed: each is host
@@ -144,6 +26,7 @@ linters:
           deny:
             - pkg: go.dokimi.dev/eidos/core
               desc: plugin source speaks the facade; import go.dokimi.dev/eidos/sdk instead
+
         # The shape catalog is language-neutral: a detector reads the projection of a callable,
         # and a composition supplies the language. The tools module composes the Go backend, so
         # it is not listed.
@@ -154,6 +37,7 @@ linters:
           deny:
             - pkg: go.dokimi.dev/eidos/lang
               desc: the catalog reads the projection of the SDK facade; a composition supplies the language
+
         # The read side parses source into the graph and never renders: core/frontend reaches the
         # store and the node builders, and knows nothing of emit or the write side.
         frontend-seam:
@@ -164,6 +48,7 @@ linters:
               desc: the read side loads declarations; emit is the write side's vocabulary
             - pkg: go.dokimi.dev/eidos/core/backend
               desc: the read side never renders
+
         # The write side renders a settled store and never loads: core/backend works on the SPI
         # and the emit vocabulary, and reaches neither the graph builders nor the read side.
         backend-seam:
@@ -176,6 +61,7 @@ linters:
               desc: the write side reads its subjects through the render context, not the store
             - pkg: go.dokimi.dev/eidos/core/frontend
               desc: the write side never loads
+
         # One layer in eidos-lang binds tree-sitter: it wraps the runtime binding and pins the
         # grammars, so a change of binding changes one module, and the binding's leaks stay behind
         # the functions the layer calls.
@@ -186,6 +72,7 @@ linters:
           deny:
             - pkg: github.com/tree-sitter
               desc: parse through go.dokimi.dev/eidos/lang/treesitter, the one package that binds tree-sitter
+
         # A frontend reads bytes through its unit's door and the load's stores, which fold every
         # byte into a unit key. A tool's output is bytes no key folds, so no frontend runs one.
         frontend-tools:
@@ -195,144 +82,32 @@ linters:
           deny:
             - pkg: os/exec
               desc: a frontend runs no tool; read through the unit's door or a store
-    exhaustive:
-      default-signifies-exhaustive: true
-      check:
-        - switch
-    forbidigo:
-      analyze-types: true
-      forbid:
-        - pattern: ^panic$
-          msg: return an error instead of a panic
-        - pattern: ^(fmt\.(Print|Printf|Println)|print|println)$
-          msg: write to an io.Writer that the caller passes, or log through log/slog
-    funcorder:
-      constructor: true
-      struct-method: true
-    gocritic:
-      enabled-tags:
-        - diagnostic
-        - performance
-      disabled-checks:
-        - ifElseChain
-    govet:
-      enable-all: true
-    interfacebloat:
-      max: 10
-    nolintlint:
-      require-explanation: true
-      require-specific: true
-      allow-unused: false
-    revive:
-      severity: error
-      confidence: 0.1
-      rules:
-        - name: blank-imports
-        # thelper requires the test first in a helper, so a helper takes its context second.
-        - name: context-as-argument
-          arguments:
-            - allowTypesBefore: "*testing.T"
-        - name: early-return
-        - name: empty-block
-        - name: error-naming
-        - name: error-return
-        - name: error-strings
-        - name: errorf
-        - name: exported
-        - name: if-return
-        - name: indent-error-flow
-        - name: modifies-value-receiver
-        - name: package-comments
-        - name: range
-        - name: receiver-naming
-        - name: redundant-import-alias
-        - name: time-naming
-        - name: unexported-return
-        - name: unnecessary-stmt
-        - name: unused-receiver
-        - name: var-naming
-    # revive checks the package comments and the names, so staticcheck runs every other check.
-    staticcheck:
-      checks:
-        - all
-        - -ST1000
-        - -ST1003
-    # Every test file declares the package x_test, so a test calls only what its package exports.
-    # The pattern matches no file name, and an empty pattern would match every one.
-    testpackage:
-      skip-regexp: "^$"
-    usetesting:
-      context-background: true
-      context-todo: true
-      os-setenv: true
-      os-mkdir-temp: true
-      os-temp-dir: true
-    whitespace:
-      multi-if: true
-      multi-func: false
-    # An error that the constructor of an error, a wrap, a join or a context returns already
-    # carries its cause, and a walk of a file tree returns the error of the caller's own function,
-    # so neither needs a second wrap.
+
+    # Each module of eidos starts its errors with the name of its package, so an error that one
+    # module returns from another already has its context. The command kernel renders the error
+    # of a flag set as the usage error of its command, which names the command.
+    #
+    # A tree that wraps an fs.FS returns the *fs.PathError of the wrapped tree unchanged, as the
+    # wrappers of io/fs do. The functions of plugin that mirror fs.ReadFile, fs.ReadDir and
+    # fs.Stat do the same. A callback of fs.WalkDir returns the error of a read to the walk, and
+    # the caller of the walk wraps or reports it. cmp.Or returns the first of the errors that it
+    # receives, and the code that returned each of them wrapped it.
+    #
+    # An UnmarshalYAML method returns the error of a nested decode unchanged. The decoder of
+    # yaml.v3 collects the entries of a *yaml.TypeError through a type assertion, so a wrapped
+    # one stops the decode.
     wrapcheck:
+      ignore-package-globs:
+        - go.dokimi.dev/eidos/*
       ignore-sig-regexps:
-        - \.New.*Error\(
-        - \.(Wrap|Wrapf)\(
-        - errors\.(Join|Unwrap)\(
-        - \.Err\(
-        - context\.Cause\(
-        - (fs|filepath)\.WalkDir\(
-        - filepath\.Walk\(
         - \(\*flag\.FlagSet\)\.Parse\(
         - \bio/fs\.(ReadFile|ReadDir|Stat)\(
         - \(io/fs\.(FS|DirEntry)\)\.(Open|Info)\(
         - \bcmp\.Or\[
         - \(\*go\.yaml\.in/yaml/v3\.Node\)\.Decode\(
-      ignore-package-globs:
-        - go.dokimi.dev/eidos/*
+
   exclusions:
-    generated: lax
-    presets:
-      - std-error-handling
-      - common-false-positives
-    paths:
-      - (^|/)testdata($|/)
     rules:
-      # A table or a fixture of a test exists once per test, so its layout and its size do not
-      # matter.
-      - path: _test\.go$
-        linters: [govet]
-        text: "fieldalignment:"
-      - path: _test\.go$
-        linters: [gocritic]
-        text: "(hugeParam|rangeValCopy):"
-      # A test states its values inline, because the value is the assertion.
-      - path: _test\.go$
-        linters: [goconst, gosec]
-      # A failed type assertion or an unused parameter in a test fails the test, which is the
-      # signal these linters exist for.
-      - path: _test\.go$
-        linters: [forcetypeassert, unparam]
-      # A test file puts its fakes and helpers below the tests that use them, in reading order.
-      - path: _test\.go$
-        linters: [funcorder]
-      # A fake of a test returns a nil value with a nil error on purpose, to prove the guard
-      # against a broken value-or-error contract.
-      - path: _test\.go$
-        linters: [nilnil]
-      # A spec mirrors its source file, so the specs of two similar files repeat each other.
-      - path: _test\.go$
-        linters: [dupl]
-      # A test and the code of a generator return the errors of the code that they call unchanged.
-      # A test checks such an error with errors.Is, and a generator has no context to add.
-      - path: (_test|[._]gen)\.go$
-        linters: [wrapcheck]
-      # A test of an allocation ceiling, of an environment variable or of the test binary as a
-      # process runs serially, and its name ends in Allocs, Env or Process.
-      # testing.AllocsPerRun and t.Setenv panic in a parallel test, and two processes that exit
-      # in the same nanosecond write one coverage file.
-      - path: _test\.go$
-        linters: [paralleltest, tparallel]
-        text: 'Test\w*(Allocs|Env|Process)\b'
       # The API of the kernel and of the plugins takes the value types of eidos, such as symbol
       # identities, views and subjects, by value.
       - linters: [gocritic]
@@ -429,22 +204,9 @@ linters:
       # types read the ledger under the context of the run.
       - path: (frontend/load/load|internal/state/(loadrecord|memo|phases)|frontend/parse)\.go
         linters: [containedctx]
+
 formatters:
-  enable:
-    - gci
-    - gofmt
-    - gofumpt
-    - goimports
-    - golines
-  # gci groups the standard library apart from every other import. A repository puts its own
-  # modules in a group of their own by adding gci's sections in its local file, such as standard,
-  # default and the prefix of its module paths.
   settings:
-    gofumpt:
-      extra:
-        group-params: true
-    golines:
-      max-len: 120
     # The modules of eidos form an import group of their own.
     gci:
       sections:
@@ -452,10 +214,3 @@ formatters:
         - default
         - prefix(go.dokimi.dev/eidos)
       custom-order: true
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  uniq-by-line: false
-  fix: false
-severity:
-  default: error

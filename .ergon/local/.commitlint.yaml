@@ -1,0 +1,26 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# The scope of a commit names the module or the language that the commit changes. A commit that
+# changes no single module, such as one of the documentation, has no scope.
+rules:
+  - scope-enum
+settings:
+  scope-enum:
+    argument:
+      - cli
+      - conformance
+      - core
+      - lang
+      - go
+      - java
+      - kotlin
+      - php
+      - protobuf
+      - rust
+      - typescript
+      - shape
+      - reference
+      - sdk
+    flags:
+      allow-empty: true

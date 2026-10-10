@@ -1,0 +1,15 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/actions/setup-make/action.yml and run ergon init sync.
+
+name: Set up make
+description: >-
+  Installs GNU make on a Windows runner, whose image has none, at the release of the section github
+  of .ergon.yaml. The images of Linux and macOS have make, so the action does nothing there. A job
+  then runs make in bash on every system.
+
+runs:
+  using: composite
+  steps:
+    - name: Install GNU make
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: choco install make --version 4.4.1 --no-progress --yes

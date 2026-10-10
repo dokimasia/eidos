@@ -1,3 +1,8 @@
+<!--
+  ~ Copyright Dokimasia B.V. 2026
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # eidos
 
 eidos generates code. A frontend parses your source into a symbol graph that
@@ -45,24 +50,23 @@ no language, and its runtime packages import the standard library alone. Its
 conformance kits import `go.dokimi.dev/assert`.
 
 `go.work` holds the module list and ergon reads it from there. The root
-module `go.dokimi.dev/eidos` owns the import-path prefix and pins the
-toolchain for CI. It holds no packages and stays out of `go.work`.
+module `go.dokimi.dev/eidos` declares the import-path prefix. It has no
+packages and stays out of `go.work`.
 
 ## Development
 
-[ergon](https://go.thesmos.sh/ergon) drives the build, the tests, the linters
-and the releases:
+[ergon](https://github.com/dokimasia/ergon) drives the build, the tests, the
+linters and the releases:
 
 ```sh
-make bootstrap    # install dev tools
-make check        # the full pre-merge gate: mod verify, lint, test
-make fmt          # apply SPDX headers, gofumpt, gci, markdownlint
+make check        # the gate: lint, test, race and audit in every module
+make fmt          # the formatters of .golangci.yml
 make help         # every target
 ```
 
 Write Conventional Commits, scoped by module name, such as `feat(core):` or
-`fix(go):`. [.ergon.yaml](.ergon.yaml) lists the accepted types and scopes,
-and the commit-msg hook rejects anything else.
+`fix(go):`. [.commitlint.yaml](.commitlint.yaml) lists the accepted types and
+scopes, and the commit-msg hook rejects anything else.
 
 ## Contributing
 

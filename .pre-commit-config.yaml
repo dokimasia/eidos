@@ -1,56 +1,63 @@
-# pre-commit configuration for eidos.
+# Managed by ergon init. Add repository settings to .ergon/local/.pre-commit-config.yaml and run ergon init sync.
 #
-# Install:
-#   pre-commit install --hook-type pre-commit --hook-type commit-msg
-#
-# Heavy gates (vet, golangci-lint, test, coverage, vuln) run via
-# `make check` so the Makefile remains the single source of truth
-# for "what runs before a commit". The commit-msg hook calls
-# `ergon check commit-msg`, which validates the Conventional
-# Commits subset declared in `.ergon.yaml`'s `checks.commit_msg`
-# section — no Node/npm dependency.
+# Install the hooks with: pre-commit install
 
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 default_stages: [pre-commit]
 
 repos:
-  # File hygiene — fast checks that don't need the Go toolchain.
+  # File hygiene, without a language toolchain, at the release of the section common of
+  # .ergon.yaml, before each commit. pre-commit-hooks declares three of these hooks for the stage
+  # pre-push as well, so this configuration limits each of them to the stage pre-commit.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: '\.md$'
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: mixed-line-ending
         args: ["--fix=lf"]
       - id: check-merge-conflict
       - id: detect-private-key
       - id: check-added-large-files
         args: ["--maxkb=500"]
+        stages: [pre-commit]
       - id: check-yaml
         args: ["--allow-multiple-documents"]
       - id: check-json
       - id: check-toml
       - id: check-symlinks
 
-  # Pre-commit: the full umbrella gate. `make check` shells out to
-  # `ergon check` (mod, lint, test, coverage, skip-expiry,
-  # error-prefix, vuln); see the Makefile for what's wired up.
   - repo: local
     hooks:
+      # Each commit runs the targets of the Makefile that common.hooks.pre-commit of .ergon.yaml
+      # lists.
+      - id: lint
+        name: make lint
+        entry: make lint
+        language: system
+        pass_filenames: false
+      - id: test
+        name: make test
+        entry: make test
+        language: system
+        pass_filenames: false
+
+      # Each push runs the targets of the Makefile that common.hooks.pre-push of .ergon.yaml lists.
       - id: check
         name: make check
         entry: make check
         language: system
         pass_filenames: false
+        stages: [pre-push]
 
-  # Commit message validation. Pre-commit passes the path to the
-  # commit-message file as the first positional argument;
-  # `ergon check commit-msg` reads it and validates against the
-  # configured Conventional Commits subset.
-  - repo: local
-    hooks:
-      - id: ergon-commit-msg
-        name: ergon check commit-msg
-        entry: ergon check commit-msg
+      # The commit message, against .commitlint.yaml. The command of the key ergon of the section
+      # common of .ergon.yaml installs the commitlint of the section, and checks its archive against
+      # the digest of the section.
+      - id: commitlint
+        name: commitlint
+        entry: ergon tool run common.commitlint -- lint --message
         language: system
         stages: [commit-msg]

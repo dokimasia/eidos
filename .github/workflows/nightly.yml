@@ -1,0 +1,235 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/workflows/nightly.yml and run ergon init sync.
+#
+# The steps that are too long for each push, such as fuzz and mutate, on the schedule of the
+# section github of .ergon.yaml and on demand. Each step of each language is a job of its own, so
+# the jobs run in parallel and fail independently. A job runs on the Linux runner of the section
+# github unless its setup states runners, sets up its toolchain before ergon once the repository
+# has the files of the toolchain, and keeps the tools of ergon in the cache of GitHub Actions as a
+# job of ci.yml does. A run that starts while another runs waits for it.
+#
+# The job prune-tools runs when a job of the repository keeps the tools of ergon in the cache. It
+# deletes each cache of the tools that a newer cache of the same job replaced, because a job
+# restores only the newest cache of its own.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+# Every command runs in bash, which is Git Bash on Windows.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fuzz-go:
+    name: Fuzz Go
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: "hashFiles('**/go.mod') != ''"
+        uses: ./.github/actions/setup-make
+      - name: Require go.work
+        if: "hashFiles('**/go.mod') != '' && (hashFiles('go.work') == '')"
+        run: |
+          echo "::error::The targets of Go run in the modules of go.work, which the repository lacks."
+          exit 1
+      - name: Set up Go
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - name: Set up Node.js
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install TypeScript
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          npm install --global typescript@7.0.2
+      - name: Set up Java
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Install Rust
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - if: "hashFiles('**/go.mod') != ''"
+        uses: ./.github/actions/setup-ergon
+      - name: Keep the tools of ergon
+        id: ergon-tools
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock', 'go.work') }}"
+          path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
+          restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Fuzz Go
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          make fuzz-go
+      - name: Prune the tools of ergon
+        if: "hashFiles('**/go.mod') != '' && (steps.ergon-tools.outputs.cache-hit != 'true')"
+        run: |
+          ergon tool prune
+
+  bench-go:
+    name: Bench Go
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: "hashFiles('**/go.mod') != ''"
+        uses: ./.github/actions/setup-make
+      - name: Require go.work
+        if: "hashFiles('**/go.mod') != '' && (hashFiles('go.work') == '')"
+        run: |
+          echo "::error::The targets of Go run in the modules of go.work, which the repository lacks."
+          exit 1
+      - name: Set up Go
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - name: Set up Node.js
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install TypeScript
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          npm install --global typescript@7.0.2
+      - name: Set up Java
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Install Rust
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - if: "hashFiles('**/go.mod') != ''"
+        uses: ./.github/actions/setup-ergon
+      - name: Keep the tools of ergon
+        id: ergon-tools
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock', 'go.work') }}"
+          path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
+          restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Bench Go
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          make bench-go
+      - name: Prune the tools of ergon
+        if: "hashFiles('**/go.mod') != '' && (steps.ergon-tools.outputs.cache-hit != 'true')"
+        run: |
+          ergon tool prune
+
+  mutate-go:
+    name: Mutate Go
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: "hashFiles('**/go.mod') != ''"
+        uses: ./.github/actions/setup-make
+      - name: Require go.work
+        if: "hashFiles('**/go.mod') != '' && (hashFiles('go.work') == '')"
+        run: |
+          echo "::error::The targets of Go run in the modules of go.work, which the repository lacks."
+          exit 1
+      - name: Set up Go
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - name: Set up Node.js
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install TypeScript
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          npm install --global typescript@7.0.2
+      - name: Set up Java
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Install Rust
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - if: "hashFiles('**/go.mod') != ''"
+        uses: ./.github/actions/setup-ergon
+      - name: Keep the tools of ergon
+        id: ergon-tools
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock', 'go.work') }}"
+          path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
+          restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Mutate Go
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          make mutate-go
+      - name: Prune the tools of ergon
+        if: "hashFiles('**/go.mod') != '' && (steps.ergon-tools.outputs.cache-hit != 'true')"
+        run: |
+          ergon tool prune
+
+  prune-tools:
+    name: Prune the tool caches
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ergon
+      - name: Delete the tool caches that newer caches replaced
+        env:
+          GITHUB_TOKEN: "${{ github.token }}"
+        run: |
+          ergon tool ci prune

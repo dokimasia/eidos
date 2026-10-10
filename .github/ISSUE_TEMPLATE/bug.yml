@@ -1,0 +1,51 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/ISSUE_TEMPLATE/bug.yml and run ergon init sync.
+
+name: Bug report
+description: Report behaviour that differs from the documentation.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Report a vulnerability through a private security advisory, not through an issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version you run, from the lockfile rather than a range.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The behaviour that the documentation describes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The behaviour you saw instead. Paste the whole error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce it
+      description: The smallest configuration or code that shows the behaviour, and the commands you ran.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The operating system and the version of each toolchain.
+      render: shell
+    validations:
+      required: false

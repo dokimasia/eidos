@@ -1,176 +1,317 @@
-name: eidos
-modules: []
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
 
+common:
+  # The command that runs ergon in the targets of the Makefile and in the hooks of
+  # .pre-commit-config.yaml, as its words, such as [ergon] for the ergon on the PATH. The repository
+  # of ergon runs ergon from its own source with [go, run, go.dokimi.dev/ergon/cmd/ergon].
+  ergon: [ergon]
+  # The tools of the common files.
+  tools:
+    # The release of commitlint, which checks each commit message in the commit-msg hook of
+    # .pre-commit-config.yaml and in the job commits of ci.yml.
+    commitlint:
+      sha256:
+        darwin/arm64: 35f25a55947031db016177ac0211d479c1fca21ccb87b368b6a429629524436c
+        linux/amd64: bf9666441262bf8d31345a6d29d6f788d0dadea7d47e5b91890c3a651999c118
+        windows/amd64: e8f90d08616ab8cd987b2dbef7ae0ee7fd1cb43c97f5a1ad171e8a56d1bd2f3d
+      version: 0.12.0
+  # The release of github.com/pre-commit/pre-commit-hooks, whose hooks check the hygiene of the
+  # files before each commit.
+  pre-commit-hooks: v6.0.0
+  # The targets of the Makefile that the hooks of .pre-commit-config.yaml run, at each stage of git.
+  # An empty list turns the hooks of its stage off.
+  hooks:
+    # The targets that run before each commit, in order: fmt, lint, test, audit or check.
+    pre-commit: [lint, test]
+    # The targets that run before each push, in order: fmt, lint, test, audit or check.
+    pre-push: [check]
+  # The pins of the actions of the jobs docs and commits of ci.yml, and the limit of each job in
+  # minutes.
+  ci:
+    actions:
+      # The action that lints the Markdown files in the job docs, with the rules of
+      # .markdownlint.yml.
+      markdownlint:
+        uses: DavidAnson/markdownlint-cli2-action
+        commit: 21c1be1b93ad9ed58fa840aacc3f279cde2a72ff
+        release: v24.2.0
+    timeout: 10
+github:
+  # The runner images of the jobs that run on every runner, each pinned to a version of its system.
+  # The key ci.runners of a section lists a part of them.
+  runners: [ubuntu-26.04, macos-26, windows-2025]
+  # The runner image of the jobs that check text and of the analyses of CodeQL, one of runners.
+  linux: ubuntu-26.04
+  # The release of GNU make that the action setup-make installs from Chocolatey on a Windows runner,
+  # whose image has no make.
+  make: 4.4.1
+  # The options of nightly.yml, which runs the steps under the key nightly of each language on a
+  # schedule, each in a job of its own.
+  nightly:
+    # When nightly.yml runs, as a cron expression of five fields in UTC, such as 0 3 * * * for 03:00
+    # each day.
+    schedule: 0 3 * * *
+  # The pins of the actions of the workflows, and the limit in minutes of each job of the GitHub
+  # files.
+  ci:
+    actions:
+      # The action that checks out the repository in every job of every workflow.
+      checkout:
+        uses: actions/checkout
+        commit: 3d3c42e5aac5ba805825da76410c181273ba90b1
+        release: v7.0.1
+      # The actions of CodeQL. init and analyze run the analysis of each language in codeql.yml, and
+      # upload-sarif uploads the results of the Scorecard.
+      codeql:
+        uses: github/codeql-action
+        commit: 2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        release: v4.38.2
+      # The action that reviews the dependencies that a pull request changes, in the job
+      # dependency-review of security.yml.
+      dependency-review:
+        uses: actions/dependency-review-action
+        commit: a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        release: v5.0.0
+      # The action of the OpenSSF Scorecard, in the weekly job scorecard of security.yml.
+      scorecard:
+        uses: ossf/scorecard-action
+        commit: 2d1146689b8cda280b9bc96326124645441f03bc
+        release: v2.4.4
+      # The action that uploads the publish plan of the job select-mode and the artifacts of the job
+      # pack of release.yml.
+      upload-artifact:
+        uses: actions/upload-artifact
+        commit: cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        release: v7.0.2
+      # The action that downloads the publish plan in the job pack, and the artifacts in the job
+      # publish of release.yml.
+      download-artifact:
+        uses: actions/download-artifact
+        commit: 9000827ccba6bdab643e8b6fd33ac0654aef8333
+        release: v8.0.2
+      # The action that restores the tool directory of ergon before the steps of each job of ci.yml
+      # that runs tools, and saves it after a run that succeeds.
+      cache:
+        uses: actions/cache
+        commit: 55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        release: v6.1.0
+      # The action that creates a token of the GitHub App of the variable ERGON_APP_CLIENT_ID and
+      # the secret ERGON_APP_PRIVATE_KEY in version.yml, whose pull request then runs its checks
+      # without an approval, and in the job homebrew of release.yml, which commits the casks of a
+      # release to the tap.
+      create-github-app-token:
+        uses: actions/create-github-app-token
+        commit: bcd2ba49218906704ab6c1aa796996da409d3eb1
+        release: v3.2.0
+      # The action that attests the assets of a release with SLSA build provenance in the job pack
+      # of release.yml, which GitHub stores in its attestation API.
+      attest:
+        uses: actions/attest
+        commit: 1e69f48acb82d1966a394da916b4c1698aa569d6
+        release: v4.2.2
+    timeout: 15
 license:
-  config_file: .go-license.yml
-  exclude_dirs: [.git, .topoi, vendor, dist, node_modules, testdata]
-  exclude_files:
-    - "*.gen.go"
-    - "*.gen_test.go"
-
-lint:
-  enabled: []
-  disabled: []
-  error_prefix:
-    target_dirs: ["."]
-    excludes: []
-
-markdown:
-  globs:
-    - "**/*.md"
-    - "#.topoi"
-    - "#vendor"
-    - "#dist"
-    - "#node_modules"
-
-test:
-  cpu: 4
-  count: 2
-  timeout: 10m
-  race_count: 3
-  bench_count: 3
-  fuzz_time: 30s
-
-bench:
-  baseline_path: bench/baseline.txt
-  thresholds:
-    time_percent: 25
-    bytes_percent: 10
-    allocs_percent: 0
-
-checks:
-  enabled: []
-  disabled: []
-
-  excludes:
-    - path: "**/*_test.go"
-      reason: tests are the gate, not its subject
-    - path: "eidos-sdk/**"
-      reason: generated re-exports; the mirror guard and the satellites' suites are the tests
-
-  skips: []
-
-  # Each floor sits under the layer's measured coverage with room for
-  # ordinary work, so the gate catches a regression rather than every
-  # commit that adds a branch. Raise a floor when its layer settles
-  # above it; never lower one to make a red build green.
-  coverage:
-    packages:
-      - path: eidos-cli/...
-        line: 100
-      - path: eidos-conformance/...
-        line: 90
-      - path: eidos-core/...
-        line: 95
-      - path: eidos-lang/...
-        line: 90
-      - path: eidos-lang-go/...
-        line: 85
-      - path: eidos-lang-java/...
-        line: 90
-      - path: eidos-lang-protobuf/...
-        line: 90
-      - path: eidos-lang-rust/...
-        line: 90
-      - path: eidos-lang-typescript/...
-        line: 85
-      - path: eidos-plugin-shape/...
-        line: 100
-      # The remaining modules hold a package comment and no
-      # declarations, so their coverage is 0 of 0 statements and any
-      # floor fails them. Each takes an entry when it holds code:
-      # eidos-lang-kotlin, eidos-lang-php, eidos-reference.
-    top_n: 10
-
-  mutation:
-    packages:
-      # The kernel's root package takes no entry: a path of
-      # eidos-core/ selects the whole module, so it re-mutates every
-      # layer below at once. Its own files stay unmeasured until a
-      # path form that stops at the package exists.
-      - path: eidos-core/symbol/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/position/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/diag/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/meta/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/directive/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/rules/...
-        score: 80
-        coverage: 80
-      # store sizes every index from its tallies before filling any,
-      # so a mutant that changes a capacity hint changes no observable
-      # behaviour and no test can kill it. Its whole surviving set is
-      # that code, which is why its floor sits below the rest.
-      - path: eidos-core/store/...
-        score: 70
-        coverage: 80
-      - path: eidos-core/emit/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/node/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/output/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/plugin/...
-        score: 80
-        coverage: 80
-      - path: eidos-core/backend/...
-        score: 80
-        coverage: 80
-      # frontend kills every mutant its tests reach, so its floor
-      # sits above the rest with room for ordinary work. What it
-      # does not reach is the scripted stand-in's statement switch:
-      # Go instruments a case body and not the case condition, so
-      # those mutants never run and never score.
-      - path: eidos-core/frontend/...
-        score: 90
-        coverage: 80
-      - path: eidos-core/workspace/...
-        score: 80
-        coverage: 80
-    gremlins:
-      workers: 2
-      test_cpu: 2
-      timeout_coefficient: 30
-
-  commit_msg:
-    types:
-      - feat
-      - fix
-      - docs
-      - refactor
-      - test
-      - ci
-      - chore
-      - perf
-      - build
-      - deps
-      - revert
-    scopes:
-      - cli
-      - conformance
-      - core
-      - lang
-      - go
-      - java
-      - kotlin
-      - php
-      - protobuf
-      - rust
-      - typescript
-      - shape
-      - reference
-      - sdk
-    max_subject_length: 80
-    body_max_line_length: 100
+  # The copyright holder of the headers and of the license files. ergon init writes it from --owner,
+  # and ergon init sync --owner changes it.
+  owner: Dokimasia B.V.
+  # The SPDX identifier of the license of the headers and of the license files. ergon init writes it
+  # from --license, and ergon init sync --license changes it.
+  spdx: Apache-2.0
+  # The parameters of BUSL-1.1, which LICENSE states before its terms. Every other license ignores
+  # them.
+  parameters:
+    # The Licensed Work of BUSL-1.1, such as the name and the release of the software.
+    licensed-work: ""
+    # The Additional Use Grant of BUSL-1.1, the production use that the Licensor permits, or None.
+    additional-use-grant: ""
+    # The Change Date of BUSL-1.1, on which the Change License applies, such as 2030-01-01.
+    change-date: ""
+    # The Change License of BUSL-1.1, the license that applies on the Change Date, such as
+    # GPL-2.0-or-later.
+    change-license: ""
+  # The directories under a license of their own: the path of each, relative and slash-separated,
+  # its SPDX identifier, and its parameters of BUSL-1.1. A file states the license of the deepest
+  # directory that contains it, and each directory gets its LICENSE, with a NOTICE for Apache-2.0.
+  directories: []
+  # The comment style of the header of each extension, such as .sql, or base name, such as
+  # Dockerfile: a style of skywalking-eyes, such as DoubleSlash, Hashtag or Semicolon, or none for
+  # no header. A key here replaces the style that ergon resolves.
+  styles: {}
+  # The doublestar globs of the paths whose files have no header, such as testdata/**.
+  exclude: ['**/testdata/**']
+  # The limit in minutes of the job license of ci.yml, which runs ergon license check.
+  ci:
+    actions: {}
+    timeout: 10
+go:
+  # The tools of the targets and of the releases of Go, which ergon tool run installs: a Go module
+  # with go install, as <module>@<version>, and a release binary by its version and the SHA-256 of
+  # the asset of each platform.
+  tools:
+    # The linter and the formatter of lint-go and fmt-go, with the rules of .golangci.yml, and with
+    # the analyzers of lint.analyzers and the module plugins of lint.plugins built in.
+    golangci-lint: github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+    # The vulnerability scan of audit-go, which reports a known vulnerability that the code calls.
+    govulncheck: golang.org/x/vuln/cmd/govulncheck@v1.8.0
+    # The comparison of two runs of bench-go in benchstat-go.
+    benchstat: golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68
+    # The mutation engine of mutate-go.
+    dokimi-mutate-go: go.dokimi.dev/mutate/cmd/dokimi-mutate-go@v0.0.0-20261006212535-719083ce3457
+    # The release of GoReleaser, which builds, packs and signs the commands of binaries in the job
+    # pack of release.yml.
+    goreleaser:
+      sha256:
+        darwin/amd64: 5e97d6517f73a0b6f71675a2911b15d3136c03c8907650c2b18e114b1c0f5205
+        darwin/arm64: a811ff154fe136a0cfb55d00126c151fc39ec370a663d805a9ca5547445aa70c
+        linux/amd64: 0a96edc9d9bc594e4a41cc4d59467c182062910ab24d9d1f6dd7b667d32606d3
+        linux/arm64: a71681b29194f08f057a68cfcaa5c6b15d907a83a2622c51900c4faff828f322
+        windows/amd64: de61a8e7a064abb14210b16c942facd299643d83341c5cd293f19155a7c8b95f
+        windows/arm64: d2aebc59bee96078c1f529160f170e02ffc96fd5d31b5e33eef66cdd7256f602
+      version: 2.18.2
+    # The release of cosign, which signs the checksums.txt of each release with the OIDC identity of
+    # the workflow, without a key.
+    cosign:
+      sha256:
+        darwin/amd64: 2347488e5d5b25336644024dfeca5601b190e91197a71a917bda44744aff106c
+        darwin/arm64: 5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76
+        linux/amd64: 4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71
+        linux/arm64: c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a
+        windows/amd64: 9fe59be0eca1271873ce019061335eb1ac419b7059202e797828467ddabe33be
+      version: 3.1.3
+    # The release of syft, which writes the SPDX SBOM of each archive and package of a release.
+    syft:
+      sha256:
+        darwin/amd64: 2956322838b2f64e470eea474495f0cd96be4f222b1ac037258cdc47d965064e
+        darwin/arm64: b4319c3abaa87a0170ab76ee83ea2260ca34b53aecfa3ab0dd5428d2319d744f
+        linux/amd64: c069905b391cc4c20a5ba65ad5c10be2a7ba074f8ea6ad203e24d14e303dad47
+        linux/arm64: dfdf0537610113edbefe1f1fc6548bc957b2d77439636ec824fcf0e10d46d054
+        windows/amd64: 8b56e8285e295e0bbed26eeea9b16ed51c493be97ccdf42dae6326c84fe8e19f
+        windows/arm64: 440019acac7c5b3b44edb8d224aa226b52aadca66a1c3a0a8d58a9525f675e36
+      version: 1.54.1
+    # The release of UPX, which packs each Linux binary of the commands of binaries with --best
+    # --lzma in the job pack of release.yml.
+    upx:
+      sha256:
+        linux/amd64: 402162aad30af47e60dbd767fb2e64ca394ace9727ba1f40283641f1d1b91657
+        linux/arm64: a72d112c5970a904a31da0b9c84f919bc16b9a311787c12245508544a78c7d36
+        windows/amd64: eabc6792a347d45e945be7748423e7868fd01b0d2bcaa2f4b1031fd71ff69bda
+      version: 5.2.1
+  # The package patterns that each target of Go passes in every module of go.work.
+  paths: [./...]
+  # The steps that check-go runs, in order: lint, test, race, fuzz, bench, mutate, generate or
+  # audit.
+  check: [lint, test, race, audit]
+  # The steps that nightly.yml runs on its schedule, fuzz, bench or mutate, each in a job of its own
+  # on Linux, mapped to the limit of that job in minutes.
+  nightly:
+    bench: 45
+    fuzz: 120
+    mutate: 60
+  # The options of lint-go, which runs golangci-lint in every module with the rules of
+  # .golangci.yml, the analyzers of the key analyzers and the module plugins of the key plugins.
+  lint:
+    # The module plugins of golangci-lint, by the name of the linter that each registers, in
+    # lowercase, as <package>@<version> of the package that registers it, such as assertlint:
+    # go.dokimi.dev/assert/lint/golangci@v0.1.0. ergon tool run builds them into golangci-lint with
+    # golangci-lint custom, and .golangci.yml enables each linter. The local .golangci.yml sets the
+    # settings of a plugin under linters.settings.custom.<name>.settings.
+    plugins:
+      assertlint: go.dokimi.dev/assert/lint/golangci@v0.1.1
+    # The package that registers the analyzers errorprefix and skipexpiry as module plugins of
+    # golangci-lint, as <package>@<version>. errorprefix reports a text of errors.New that does not
+    # start with the name of its package, and skipexpiry reports a skipped test whose expiry has
+    # passed. ergon tool run builds them into golangci-lint with the plugins, and .golangci.yml
+    # enables both.
+    analyzers: go.dokimi.dev/lint/golangci@v0.2.0
+  # test-go runs go test with args.
+  test:
+    args: [-count=1]
+  # race-go runs go test -race with args. -p=1 tests one package at a time, because the race
+  # detector multiplies the memory of a test.
+  race:
+    args: [-count=1, -p=1]
+  # fuzz-go fuzzes each fuzz target whose name matches the regular expression match, for time each,
+  # with args. -fuzzminimizetime bounds the minimization of a new input, which go test runs for 60s
+  # by default.
+  fuzz:
+    match: .
+    time: 30s
+    args: [-fuzzminimizetime=5s]
+  # bench-go runs each benchmark whose name matches the regular expression match, count times, for
+  # time each, with args. benchstat states a 95% confidence interval from 6 runs.
+  bench:
+    match: .
+    time: 1s
+    args: [-benchmem]
+    count: 6
+  # mutate-go runs dokimi-mutate-go with workers mutants of a module at a time and args, and ends
+  # the run after timeout. A timeout of 0s sets no limit.
+  mutate:
+    timeout: 0s
+    args: []
+    workers: 1
+  # generate-go runs command with args and the paths in every module. verify-generate-go, the step
+  # generate of check, runs the same and fails when the run changes a tracked file or writes a file
+  # that git does not track. An empty command removes both targets.
+  generate:
+    command: [go, generate]
+    args: []
+  # audit-go runs govulncheck with args in every module.
+  audit:
+    args: []
+  # The commands whose binaries each release of their module attaches, which the job pack of
+  # release.yml builds, signs and attests with GoReleaser: name, the binary and its archives,
+  # packages and cask; module, the directory of the module in go.work, . for the root; main, the
+  # package of the command in the module; description, one line, and for a cask one that brew audit
+  # accepts, such as one without a full stop at its end; platforms, every platform when empty;
+  # completions, true for a cobra program; packages, from deb, rpm and apk; homebrew, true for a
+  # cask in homebrew.tap; license, the license of the repository when empty.
+  binaries: []
+  # The options of the casks of the commands under binaries whose homebrew is true.
+  homebrew:
+    # The repository of the Homebrew tap on GitHub, as owner/name, to which the job homebrew of
+    # release.yml commits each cask, with a token of the GitHub App of ERGON_APP_CLIENT_ID and
+    # ERGON_APP_PRIVATE_KEY.
+    tap: ""
+  # The pin of setup-go, the runners and the versions of Go of the job check-go, and its limit in
+  # minutes. Empty runners select every runner of the section github, and empty versions the version
+  # of go.work.
+  ci:
+    actions:
+      # The action that installs Go, at the version of go.work or of the matrix.
+      setup-go:
+        uses: actions/setup-go
+        commit: b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        release: v7.0.0
+    runners: []
+    versions: []
+    # The steps that each job of the toolchain runs after the setup of the toolchain and before
+    # ergon, such as the installation of a compiler that the tests run. A step has the keys name,
+    # id, if and env, and either uses with its inputs under with, or run. uses is an action as uses,
+    # commit and release, and each input is a string. run is the list of the lines of a command of
+    # bash.
+    steps:
+      - name: Set up Node.js
+        uses:
+          uses: actions/setup-node
+          commit: 820762786026740c76f36085b0efc47a31fe5020
+          release: v7.0.0
+        with:
+          node-version: "24"
+      - name: Install TypeScript
+        run:
+          - npm install --global typescript@7.0.2
+      - name: Set up Java
+        uses:
+          uses: actions/setup-java
+          commit: de7274f081f381c8f8158605e0321c36c376e2e6
+          release: v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Install Rust
+        run:
+          - rustup toolchain install stable --profile minimal --component rustfmt
+          - rustup default stable
+    timeout: 30

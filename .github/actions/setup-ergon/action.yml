@@ -1,0 +1,65 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/actions/setup-ergon/action.yml and run ergon init sync.
+
+name: Set up ergon
+description: >-
+  Installs a release of ergon from github.com/dokimasia/ergon on a Linux, macOS or Windows runner,
+  and checks the archive against the checksums.txt of the release. The release is the one that
+  .ergon/init.lock names, unless the input version names another.
+
+inputs:
+  version:
+    description: >-
+      The release of ergon to install, such as 1.4.0, or latest for the newest release. An empty
+      version installs the release that .ergon/init.lock names. The version source installs no
+      release, for a repository that builds ergon in a step of its local file of this action.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install ergon
+      if: inputs.version != 'source'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        case "$VERSION" in
+          "") VERSION="$(jq -r .ergon .ergon/init.lock)" ;;
+          latest) VERSION="$(gh release view --repo dokimasia/ergon --json tagName --jq .tagName)" ;;
+        esac
+        VERSION="${VERSION#v}"
+        case "$RUNNER_OS/$RUNNER_ARCH" in
+          Linux/X64) platform=linux_amd64 ;;
+          Linux/ARM64) platform=linux_arm64 ;;
+          macOS/X64) platform=darwin_amd64 ;;
+          macOS/ARM64) platform=darwin_arm64 ;;
+          Windows/X64) platform=windows_amd64 ;;
+          Windows/ARM64) platform=windows_arm64 ;;
+          *) echo "::error::ergon has no release for $RUNNER_OS on $RUNNER_ARCH"; exit 1 ;;
+        esac
+        archive="ergon_${VERSION}_${platform}.tar.gz"
+        release="https://github.com/dokimasia/ergon/releases/download/v${VERSION}"
+        dir="${RUNNER_TEMP//\\//}/ergon"
+        mkdir -p "$dir"
+        cd "$dir"
+        curl --fail --silent --show-error --location --retry 3 --output "$archive" "$release/$archive"
+        curl --fail --silent --show-error --location --retry 3 --output checksums.txt "$release/checksums.txt"
+        awk -v name="$archive" '$2 == name' checksums.txt > archive.sha256
+        if [ ! -s archive.sha256 ]; then
+          echo "::error::checksums.txt of ergon $VERSION has no line for $archive"
+          exit 1
+        fi
+        if command -v sha256sum > /dev/null; then
+          sha256sum --check --strict archive.sha256
+        else
+          shasum --algorithm 256 --check archive.sha256
+        fi
+        tar -xzf "$archive"
+        if [ "$RUNNER_OS" = Windows ]; then
+          cygpath --windows "$dir" >> "$GITHUB_PATH"
+        else
+          echo "$dir" >> "$GITHUB_PATH"
+        fi
+        ./ergon --version

@@ -1,5 +1,7 @@
-blank_issues_enabled: true
+# Managed by ergon init. Add repository settings to .ergon/local/.github/ISSUE_TEMPLATE/config.yml and run ergon init sync.
+
+blank_issues_enabled: false
 contact_links:
-  - name: Report a security vulnerability
-    url: mailto:security@dokimi.dev
-    about: Never report a vulnerability as a public issue — mail security@dokimi.dev.
+  - name: Report a vulnerability
+    url: https://github.com/dokimasia/eidos/security/advisories/new
+    about: Report a vulnerability privately, as SECURITY.md describes. Do not open a public issue for it.

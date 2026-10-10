@@ -1,8 +1,11 @@
-go 1.27.0
+// Copyright Dokimasia B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
+go 1.27.2
 
 // The repository root module (go.dokimi.dev/eidos) is deliberately
-// absent: it carries no packages and exists only to anchor the
-// module path and pin the toolchain version for CI. Every ergon
+// absent: it has no packages and exists only to anchor the module
+// path. CI installs the Go of the go line above. Every ergon
 // per-module command iterates the list below.
 use (
 	./eidos-cli

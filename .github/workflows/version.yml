@@ -1,0 +1,68 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/workflows/version.yml and run ergon init sync.
+#
+# The version pull request of the packages of the repository. When the run of ci.yml for a push to
+# main succeeds, the job version writes the release plan of the changesets of that commit, and opens
+# or updates the version pull request. It marks the commit of the pull request with the status
+# ergon/version, so the runs of ci.yml on that commit and on its merge skip their jobs. It skips a
+# commit that is no longer the head of main. The job sets up the toolchains of the repository before
+# ergon, which refresh the lockfiles. A repository with the variable ERGON_APP_CLIENT_ID and the
+# secret ERGON_APP_PRIVATE_KEY of a GitHub App opens the pull request with a token of the App, so
+# the runs of its checks start without an approval.
+
+name: Version
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+# Every command runs in bash.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version:
+    name: Version
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create a token of the GitHub App
+        id: app
+        if: vars.ERGON_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.ERGON_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ERGON_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-statuses: write
+      - name: Set up Go
+        if: "hashFiles('go.work') != ''"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - uses: ./.github/actions/setup-ergon
+      - name: Open the version pull request
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
+        run: |
+          ergon release ci version
