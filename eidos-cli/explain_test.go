@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli_test
@@ -140,9 +140,9 @@ func TestExplain(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), storeTarget, jsonFlag)
-			got := kinds(t, stdout)
-			expect.Contains(t, got, workspace.RecordCheck.String(), "the lister looked the store up")
-			expect.Contains(t, got, workspace.RecordInvocation.String(), "the plugins ran on the store")
+			expect.That(t, kinds(t, stdout)).
+				Contains(workspace.RecordCheck.String(), "the lister looked the store up").
+				Contains(workspace.RecordInvocation.String(), "the plugins ran on the store")
 		})
 
 		t.Run("writes the kind of a read of a kind", func(t *testing.T) {
@@ -186,21 +186,20 @@ func TestExplain(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, noisySource+dropped), "fake:svc.Noisy")
-			expect.Contains(t, stdout, "file svc/mirror.txt: plan mirrors, plugins mirror\n"+
-				"  contributor mirror rule 0 fake:svc.Noisy\n  source fake:svc.Noisy\n",
-				"the text has the file and its contributor")
-			expect.Contains(t, stdout, "claim cli.flag on fake:svc.Noisy: "+
-				"value dropped, winner true, authority directive, bucket 0, at svc/store.zz:3\n",
-				"the text has the drop")
-			expect.Contains(t, stdout, "\n  derived from subject fake:svc.Noisy, key cli.flag\n",
-				"the text has the read that the stamp derives from")
-			expect.Contains(t, stdout, "\n  svc/store.zz:2: warning "+noted.String()+": Noisy is noisy (mirror)\n",
-				"the text has the finding of a record")
-			expect.Contains(t, stdout, "\n  read declaration of fake:svc.Noisy\n",
-				"the text has the read of a declaration")
-			expect.Contains(t, stdout, "\n  read fact cli.flag of fake:svc.Noisy\n", "the text has the read of a fact")
-			expect.Contains(t, stdout, "\n  read kind "+symbol.KindStruct.String()+"\n",
-				"the text has the read of a kind")
+			expect.That(t, stdout).
+				Contains("file svc/mirror.txt: plan mirrors, plugins mirror\n"+
+					"  contributor mirror rule 0 fake:svc.Noisy\n  source fake:svc.Noisy\n",
+					"the text has the file and its contributor").
+				Contains("claim cli.flag on fake:svc.Noisy: "+
+					"value dropped, winner true, authority directive, bucket 0, at svc/store.zz:3\n",
+					"the text has the drop").
+				Contains("\n  derived from subject fake:svc.Noisy, key cli.flag\n",
+					"the text has the read that the stamp derives from").
+				Contains("\n  svc/store.zz:2: warning "+noted.String()+": Noisy is noisy (mirror)\n",
+					"the text has the finding of a record").
+				Contains("\n  read declaration of fake:svc.Noisy\n", "the text has the read of a declaration").
+				Contains("\n  read fact cli.flag of fake:svc.Noisy\n", "the text has the read of a fact").
+				Contains("\n  read kind "+symbol.KindStruct.String()+"\n", "the text has the read of a kind")
 		})
 
 		t.Run("reads a path relative to the working directory", func(t *testing.T) {
@@ -287,8 +286,9 @@ func explained(t *testing.T, src string) string {
 func kinds(t *testing.T, stdout string) []string {
 	t.Helper()
 
-	var out []string
-	for _, r := range decoded[recordEvent](t, stdout, eventExplainRecord) {
+	records := decoded[recordEvent](t, stdout, eventExplainRecord)
+	out := make([]string, 0, len(records))
+	for _, r := range records {
 		out = append(out, r.Kind)
 	}
 	return out

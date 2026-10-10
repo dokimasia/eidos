@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli
@@ -184,12 +184,12 @@ type Renderer struct {
 	stdio  IO
 	flags  Flags
 	colour bool
-	// member is the name of the member of a list that the output is about,
-	// and empty outside a list.
-	member string
 	// listed is true once the renderer rendered a file or the outcome of a
 	// plan, and text output then ends with a summary line.
 	listed bool
+	// member is the name of the member of a list that the output is about,
+	// and empty outside a list.
+	member string
 	// total counts for the whole command, and members counts for each
 	// member of a list. current is the index of the tally of the member
 	// that the output is about.

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli
@@ -63,11 +63,11 @@ func (f *Format) Set(s string) error {
 
 // Flags are the flags that every command accepts.
 type Flags struct {
-	// Format is the output format that --format selects.
-	Format Format
 	// Config is the path that --config sets, and empty when the flag is not
 	// set. A relative path is relative to the working directory.
 	Config string
+	// Format is the output format that --format selects.
+	Format Format
 	// Strict is true under --strict, which reports every Warning as an
 	// Error.
 	Strict bool

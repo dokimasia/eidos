@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package acceptancetest_test
@@ -48,7 +48,7 @@ const (
 func TestMain(m *testing.M) {
 	if os.Getenv(probeEnv) == probeValue {
 		env, _ := json.Marshal(os.Environ())
-		fmt.Println(string(env))
+		fmt.Fprintln(os.Stdout, string(env))
 		os.Exit(0)
 	}
 	os.Exit(m.Run())

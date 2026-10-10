@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli_test
@@ -64,8 +64,14 @@ func TestRenderer(t *testing.T) {
 
 			_, stdout, stderr := rendered(t, jsonOutput, nil, false)
 			var got struct {
-				Event, Schema, Command, Brand string
-				Binary                        struct{ Path, Version string }
+				Event   string `json:"event"`
+				Schema  string `json:"schema"`
+				Command string `json:"command"`
+				Brand   string `json:"brand"`
+				Binary  struct {
+					Path    string `json:"path"`
+					Version string `json:"version"`
+				} `json:"binary"`
 			}
 			assert.NoError(t, json.Unmarshal(stdout.Bytes(), &got), "the start event is one JSON object")
 			info, ok := debug.ReadBuildInfo()

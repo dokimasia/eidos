@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli_test
@@ -109,28 +109,27 @@ func TestPlan(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdPlan, workspaceDir(t, files.Tree{}), jsonFlag)
-			expect.Contains(t, stdout, `{"event":"component","role":"frontend","name":"fakefront","version":"1"}`+"\n",
-				"the frontend has its version")
-			expect.Contains(t, stdout,
-				`{"event":"component","role":"annotator","name":"flagger","version":"2","bucket":1}`+"\n",
-				"the annotator has its bucket and its version")
-			expect.Contains(t, stdout, `{"event":"component","role":"check","name":"lister","reads":["mirrors"]}`+"\n",
-				"the check has the plans that it reads")
+			expect.That(t, stdout).
+				Contains(`{"event":"component","role":"frontend","name":"fakefront","version":"1"}`+"\n",
+					"the frontend has its version").
+				Contains(`{"event":"component","role":"annotator","name":"flagger","version":"2","bucket":1}`+"\n",
+					"the annotator has its bucket and its version").
+				Contains(`{"event":"component","role":"check","name":"lister","reads":["mirrors"]}`+"\n",
+					"the check has the plans that it reads")
 		})
 
 		t.Run("writes a plan event for each plan", func(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdPlan, workspaceDir(t, files.Tree{}), jsonFlag)
-			expect.Contains(t, stdout,
-				`{"event":"plan","name":"mirrors","order":1,"sources":{},"generate":[{"name":"mirror","bucket":2}],`+
+			expect.That(t, stdout).
+				Contains(`{"event":"plan","name":"mirrors","order":1,"sources":{},"generate":[{"name":"mirror","bucket":2}],`+
 					`"backend":{"name":"printer"},"target":"text","layout":{"policy":"inherit"}}`+"\n",
-				"the plan of the mirror commits first")
-			expect.Contains(t, stdout,
-				`{"event":"plan","name":"bindings","order":2,"sources":{},"dependsOn":["mirrors"],`+
+					"the plan of the mirror commits first").
+				Contains(`{"event":"plan","name":"bindings","order":2,"sources":{},"dependsOn":["mirrors"],`+
 					`"generate":[{"name":"binder","version":"3","bucket":1}],`+
 					`"backend":{"name":"printer"},"target":"text","layout":{"policy":"inherit"}}`+"\n",
-				"the plan bindings depends on the plan of the mirror")
+					"the plan bindings depends on the plan of the mirror")
 		})
 
 		t.Run("writes the sources and the layout that the config file refines", func(t *testing.T) {
@@ -138,10 +137,11 @@ func TestPlan(t *testing.T) {
 
 			root := workspaceDir(t, files.Tree{confName: files.Text(refinedConfig)})
 			_, stdout, _ := invoke(t, compose, cmdPlan, root)
-			expect.Contains(t, stdout, "  sources: language fake, packages ./svc/..., module example.test/svc\n",
-				"the sources are the refined ones")
-			expect.Contains(t, stdout, "  layout: policy centralised, dir gen, import base example.test/gen\n",
-				"the layout is the refined one")
+			expect.That(t, stdout).
+				Contains("  sources: language fake, packages ./svc/..., module example.test/svc\n",
+					"the sources are the refined ones").
+				Contains("  layout: policy centralised, dir gen, import base example.test/gen\n",
+					"the layout is the refined one")
 		})
 
 		t.Run("writes the refined sources and layout into the plan event", func(t *testing.T) {

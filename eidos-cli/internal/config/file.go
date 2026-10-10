@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -41,7 +41,7 @@ var _ jsonschema.Schemer = Current
 // JSONSchema returns the JSON Schema of the version field, a new map on
 // each call. The schema allows only [Current].
 func (Version) JSONSchema() map[string]any {
-	return map[string]any{"type": "integer", "const": int(Current)}
+	return map[string]any{keywordType: typeInteger, keywordConst: int(Current)}
 }
 
 // Error is a fault in a config file. It includes the line of the fault.

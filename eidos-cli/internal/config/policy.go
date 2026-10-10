@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -37,7 +37,7 @@ func (Policy) JSONSchema() map[string]any {
 	for q := layout.PolicyInherit; q.Valid(); q++ {
 		names = append(names, q.String())
 	}
-	return map[string]any{"type": "string", "enum": names}
+	return map[string]any{keywordType: typeString, keywordEnum: names}
 }
 
 // policyNames joins the names of the policies for an error message, as in

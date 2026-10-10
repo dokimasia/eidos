@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli
@@ -136,6 +136,7 @@ func changes(report *workspace.Report) bool {
 		if len(p.Refused) > 0 || slices.ContainsFunc(p.Changes, func(c output.Change) bool {
 			return changed(c) != actionUnchanged
 		}) {
+
 			return true
 		}
 	}

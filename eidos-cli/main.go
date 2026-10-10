@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli
@@ -134,6 +134,8 @@ func listCommands(w io.Writer, binary string, commands []Command) {
 	for _, c := range commands {
 		fmt.Fprintf(tw, "  %s\t%s\n", c.Name(), c.Synopsis())
 	}
-	tw.Flush()
+	// The listing is the output of the command, so a write that fails has no
+	// other place to report to.
+	_ = tw.Flush()
 	fmt.Fprintf(w, "\nRun %s help <command> for the flags of a command.\n", binary)
 }

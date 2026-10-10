@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli_test
@@ -139,9 +139,9 @@ func TestDoctor(t *testing.T) {
 			})
 			status, _, stderr := invoke(t, compose, cmdDoctor, root)
 			expect.Equal(t, status, cli.StatusFailed, "the config error of tools fails doctor")
-			expect.Contains(t, stderr, "the file has version 2", "doctor writes the fault of tools")
-			expect.Contains(t, stderr, "svc/store.zz:3: info "+workspace.UnusedSuppression.String(),
-				"doctor checks svc")
+			expect.That(t, stderr).
+				Contains("the file has version 2", "doctor writes the fault of tools").
+				Contains("svc/store.zz:3: info "+workspace.UnusedSuppression.String(), "doctor checks svc")
 		})
 
 		t.Run("returns StatusFailed for a locator that returns an error", func(t *testing.T) {

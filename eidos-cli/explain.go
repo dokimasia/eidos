@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli
@@ -185,9 +185,9 @@ func (x *invocation) explanation(e *workspace.Explanation) {
 		for _, p := range f.Entry.Plugins {
 			out.Plugins = append(out.Plugins, string(p))
 		}
-		lines := []string{
-			"file " + out.Path + ": " + fields("plan", out.Plan, "plugins", strings.Join(out.Plugins, " ")),
-		}
+		lines := make([]string, 0, 1+len(f.Contributors)+len(out.Sources))
+		lines = append(lines,
+			"file "+out.Path+": "+fields("plan", out.Plan, "plugins", strings.Join(out.Plugins, " ")))
 		for _, c := range f.Contributors {
 			m := matchOf{
 				Plugin: string(c.Plugin), Rule: int(c.Rule), Subject: identityOf(c.Subject), Instance: c.Instance,
@@ -210,10 +210,11 @@ func (x *invocation) explanation(e *workspace.Explanation) {
 		if out.Value == nil {
 			value = "dropped"
 		}
-		lines := []string{fmt.Sprintf("claim %s on %s: %s", out.Key, out.Subject, fields(
+		lines := make([]string, 0, 1+len(c.Claim.Derived))
+		lines = append(lines, fmt.Sprintf("claim %s on %s: %s", out.Key, out.Subject, fields(
 			"value", value, "winner", strconv.FormatBool(out.Winner), "authority", out.Authority,
 			"plugin", out.Plugin, "bucket", strconv.Itoa(out.Bucket), "at", out.Pos,
-		))}
+		)))
 		for _, r := range c.Claim.Derived {
 			read := pointRead{Subject: r.Subject.String(), Key: string(r.Key)}
 			out.Derived = append(out.Derived, read)
@@ -246,9 +247,10 @@ func (x *invocation) record(r workspace.ExplainedRecord) {
 	if out.Group != nil {
 		group = out.Group.Key
 	}
-	lines := []string{fmt.Sprintf("record %s: %s; %d reads, %d unidentified", out.Kind, fields(
+	lines := make([]string, 0, 1+len(r.Reads))
+	lines = append(lines, fmt.Sprintf("record %s: %s; %d reads, %d unidentified", out.Kind, fields(
 		"plan", out.Plan, "match", matchText(out.Match), "check", out.Check, "group", group, "subject", out.Subject,
-	), len(r.Reads), r.Unidentified)}
+	), len(r.Reads), r.Unidentified))
 	for _, read := range r.Reads {
 		kind := ""
 		if read.Grain == workspace.ReadKind {

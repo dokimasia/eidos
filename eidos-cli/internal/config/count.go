@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -34,5 +34,5 @@ func (c *Count) UnmarshalYAML(n *yaml.Node) error {
 // JSONSchema returns the JSON Schema of a count, a new map on each call.
 // The schema allows an integer of 0 or more.
 func (Count) JSONSchema() map[string]any {
-	return map[string]any{"type": "integer", "minimum": 0}
+	return map[string]any{keywordType: typeInteger, keywordMinimum: 0}
 }

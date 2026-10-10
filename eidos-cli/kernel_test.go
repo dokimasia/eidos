@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package cli_test
@@ -107,8 +107,9 @@ func TestKernel(t *testing.T) {
 		t.Run("returns the seven kernel commands in order", func(t *testing.T) {
 			t.Parallel()
 
-			var got []string
-			for _, c := range cli.Kernels(compose) {
+			kernels := cli.Kernels(compose)
+			got := make([]string, 0, len(kernels))
+			for _, c := range kernels {
 				got = append(got, c.Name())
 			}
 			assert.Equal(t, got, kernelNames, "the commands have the kernel names")

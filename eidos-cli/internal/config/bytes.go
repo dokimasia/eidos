@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package config
@@ -18,6 +18,10 @@ const (
 	intTag = "!!int"
 	strTag = "!!str"
 )
+
+// sizePattern is the pattern of a size with a unit in the JSON Schema of a
+// size: digits followed by the suffix of one of the units.
+const sizePattern = "^[0-9]+(KiB|MiB|GiB)$"
 
 // units contains the unit suffixes of a size and the number of bytes in
 // each unit.
@@ -73,8 +77,8 @@ func (b *Bytes) UnmarshalYAML(n *yaml.Node) error {
 // schema allows a non-negative integer, and a string of digits followed by
 // KiB, MiB or GiB.
 func (Bytes) JSONSchema() map[string]any {
-	return map[string]any{"oneOf": []any{
-		map[string]any{"type": "integer", "minimum": 0},
-		map[string]any{"type": "string", "pattern": "^[0-9]+(KiB|MiB|GiB)$"},
+	return map[string]any{keywordOneOf: []any{
+		map[string]any{keywordType: typeInteger, keywordMinimum: 0},
+		map[string]any{keywordType: typeString, keywordPattern: sizePattern},
 	}}
 }
