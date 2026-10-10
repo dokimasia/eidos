@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -239,6 +239,7 @@ func packageUnit(r plugin.StoreReader, dir string, shared []string) ([]plugin.So
 		name := e.Name()
 		if e.IsDir() || path.Ext(name) != golang.Extension || strings.HasSuffix(name, testSuffix) ||
 			strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
+
 			continue
 		}
 		unit = append(unit, plugin.SourceRef{Path: dir + "/" + name, Shared: shared})

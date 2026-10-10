@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang_test
@@ -196,7 +196,7 @@ func TestNames(t *testing.T) {
 // Every name rule reads the universe scope or slices its input, and
 // allocates nothing. The ordinary run, which runs no benchmark, checks
 // that here.
-func TestNamesZeroAlloc(t *testing.T) {
+func TestNamesAllocs(t *testing.T) {
 	for _, c := range nameCalls() {
 		msg := c.name + " allocates nothing"
 		assert.MaxAllocs(t, c.call, 0, msg)

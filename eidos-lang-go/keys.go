@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package golang
@@ -194,6 +194,8 @@ func Register(r *meta.Registry) (Handles, error) {
 			h.EmbedsInterface = key
 		case ComparableKey:
 			h.Comparable = key
+		default:
+			// A key that the annotator does not stamp has no handle.
 		}
 	}
 	return h, nil

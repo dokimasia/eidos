@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules_test
@@ -183,7 +183,7 @@ func TestBuiltin(t *testing.T) {
 
 // A classification reads the reference and allocates nothing. The
 // ordinary run, which runs no benchmark, checks that here.
-func TestBuiltinZeroAlloc(t *testing.T) {
+func TestBuiltinAllocs(t *testing.T) {
 	checkAllocs(t, builtinCalls())
 }
 

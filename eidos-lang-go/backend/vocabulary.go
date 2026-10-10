@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend
@@ -618,12 +618,14 @@ func packageOf(t *emit.TypeRef) (string, error) {
 // structure does not determine, and for a reference missing the
 // children its form takes.
 func restate(t *emit.TypeRef, elems []string) (string, error) {
-	want := 1
+	var want int
 	switch t.Form {
 	case symbol.FormMap:
 		want = 2
 	case symbol.FormFunc:
 		want = t.Split
+	default:
+		want = 1
 	}
 	if len(elems) < want || t.Split > len(elems) {
 		return "", refuse("%s states %d of the %d types its form takes", t.Spelling, len(elems), want)

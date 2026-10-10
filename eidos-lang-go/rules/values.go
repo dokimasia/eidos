@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -240,6 +240,8 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 			return rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, sampleSmall))),
 				rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, alternateSmall)))
 		}
+	default:
+		// Every other form refuses below.
 	}
 	if t := nameOf(ref); t.pkg == "" && golang.Predeclared(t.name) || t == unsafePointerType {
 		return rules.RefusedPair(rules.RefusedNoLiteral)
@@ -262,6 +264,7 @@ func (r Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Va
 		}
 		if text, stamped := rules.Fact(v, variant.ID, key); stamped &&
 			!slices.Contains(texts, text) {
+
 			texts = append(texts, text)
 		}
 		if len(texts) == 2 {
@@ -371,6 +374,8 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 		case rules.WellKnownDuration:
 			return emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, sampleZero)), true
 		}
+	default:
+		// Every other form takes the zero of its name below.
 	}
 	switch nameOf(ref) {
 	case anyType, errorType, unsafePointerType:
@@ -444,6 +449,7 @@ func scanLiteral(text string) (literal, bool) {
 	negate := false
 	if len(toks) == 2 && (toks[0] == token.SUB || toks[0] == token.ADD) &&
 		(toks[1] == token.INT || toks[1] == token.FLOAT) {
+
 		negate = toks[0] == token.SUB
 		toks, lits = toks[1:], lits[1:]
 	}
@@ -467,6 +473,8 @@ func scanLiteral(text string) (literal, bool) {
 			value = constant.UnaryOp(token.SUB, value, 0)
 		}
 		return literal{value: value}, true
+	default:
+		// Any other token is no literal.
 	}
 	return literal{}, false
 }
@@ -479,8 +487,9 @@ func (l literal) typed(shape rules.TypeShape) (emit.Value, bool) {
 		switch shape.Form {
 		case symbol.FormScalar, symbol.FormBool, symbol.FormText:
 			return emit.Value{}, false
+		default:
+			return emit.Literal(emit.LiteralNil, ""), true
 		}
-		return emit.Literal(emit.LiteralNil, ""), true
 	}
 	switch shape.Form {
 	case symbol.FormScalar:
@@ -498,6 +507,8 @@ func (l literal) typed(shape rules.TypeShape) (emit.Value, bool) {
 			return emit.Value{}, false
 		}
 		return emit.Literal(emit.LiteralString, constant.StringVal(l.value)), true
+	default:
+		// Any other shape takes each literal as its own kind below.
 	}
 	switch l.value.Kind() {
 	case constant.Bool:

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -80,8 +80,9 @@ func parsedUnit(tb testing.TB, sources map[string]string) []*node.File {
 	tb.Helper()
 
 	tree := fstest.MapFS{}
-	var refs []plugin.SourceRef
-	for _, path := range []string{"p/a.go", "p/b.go"} {
+	paths := []string{"p/a.go", "p/b.go"}
+	refs := make([]plugin.SourceRef, 0, len(paths))
+	for _, path := range paths {
 		tree[path] = &fstest.MapFile{Data: []byte(sources[path])}
 		refs = append(refs, plugin.SourceRef{Path: path})
 	}

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -759,8 +759,9 @@ func TestParse(t *testing.T) {
 
 			free := unitOf(t, f, fstest.MapFS{"f/one/x.go": {Data: []byte("package one\n")}}, "f/one/x.go")
 			assert.NoError(t, f.Parse(t.Context(), free), "a moduleless unit parses")
-			var keys []meta.KeyName
-			for _, s := range free.Graph().StampRecords() {
+			records := free.Graph().StampRecords()
+			keys := make([]meta.KeyName, 0, len(records))
+			for _, s := range records {
 				keys = append(keys, s.Stamp.Key)
 			}
 			expect.That(t, keys).

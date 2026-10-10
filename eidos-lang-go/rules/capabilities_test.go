@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules_test
@@ -554,8 +554,9 @@ func settable(tb assert.TB, host string) rules.MemberSet {
 func settableNames(tb assert.TB, host string) []string {
 	tb.Helper()
 
-	var names []string
-	for _, m := range settable(tb, host).Members {
+	members := settable(tb, host).Members
+	names := make([]string, 0, len(members))
+	for _, m := range members {
 		field, isField := m.Symbol.(*node.Field)
 		assert.True(tb, isField, "a settable member is a field")
 		names = append(names, field.Name)

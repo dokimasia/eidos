@@ -1,10 +1,11 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend_test
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -141,9 +142,11 @@ func line(name, path string) string {
 // block spells an import block around its lines.
 func block(lines ...string) string {
 	out := "import (\n"
+	var outSb144 strings.Builder
 	for _, l := range lines {
-		out += l
+		outSb144.WriteString(l)
 	}
+	out += outSb144.String()
 	return out + ")\n"
 }
 

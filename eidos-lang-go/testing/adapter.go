@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package testing
@@ -35,7 +35,7 @@ const (
 	// goVersion is the language version the scratch module
 	// declares. It tracks the repository's own, because output the
 	// repository's toolchain cannot build is output nobody can.
-	goVersion = "1.27.0"
+	goVersion = "1.27.2"
 	// dirPerm and filePerm are what the scratch project is written
 	// with: a private tree, because nothing in it is anyone else's
 	// to read.
@@ -84,7 +84,7 @@ func (adapter) Available() (bool, string) {
 func (adapter) Layout(g toolchain.Generated) (string, error) {
 	dir, err := os.MkdirTemp("", "eidos-go-*")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("testing: %w", err)
 	}
 	written := false
 	for path, body := range g.Files {
@@ -193,7 +193,7 @@ func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) 
 	}
 	probe := filepath.Join(dir, probeFile)
 	if err := os.WriteFile(probe, []byte(probeSource(pkg, typeName, contract)), filePerm); err != nil {
-		return false, err
+		return false, fmt.Errorf("testing: %w", err)
 	}
 	defer func() { _ = os.Remove(probe) }()
 
@@ -238,12 +238,13 @@ const probeFile = "zz_eidos_probe_gen.go"
 func probePackage(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("testing: %w", err)
 	}
 	fset := token.NewFileSet()
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != golang.Extension ||
 			strings.HasSuffix(e.Name(), testSuffix) {
+
 			continue
 		}
 		f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()),
@@ -262,7 +263,7 @@ func resolve(dir, path string) (string, error) {
 	target := filepath.Join(dir, filepath.FromSlash(path))
 	rel, err := filepath.Rel(dir, target)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("testing: %w", err)
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("the generated path %q climbs out of the scratch project", path)

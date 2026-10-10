@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package spell
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -155,12 +156,14 @@ func goType(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // scalar spells a scalar as the predeclared type of its class and width.
 func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
-	widths := floats
+	var widths map[int]string
 	switch s.Class {
 	case rules.ScalarInt:
 		widths = ints
 	case rules.ScalarUint:
 		widths = uints
+	default:
+		widths = floats
 	}
 	name, held := widths[s.Bits]
 	switch {
@@ -182,7 +185,7 @@ func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
 func container(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch {
 	case s.Form == symbol.FormArray && s.Length == 0:
-		return nil, fmt.Errorf("an array of an unstated length has no Go spelling")
+		return nil, errors.New("an array of an unstated length has no Go spelling")
 	case len(s.Elems) != 1:
 		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
 	}
@@ -223,6 +226,8 @@ func mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
 	case symbol.FormList, symbol.FormMap, symbol.FormFunc, symbol.FormBytes:
 		return nil, fmt.Errorf("%s: Go does not compare the values of %s, so the type cannot be a map key",
 			k.Spelling, spoke.Describe(k))
+	default:
+		// Go compares the values of every other form.
 	}
 	elems, err := spoke.Children(s.Elems, goType)
 	if err != nil {
@@ -267,7 +272,7 @@ func wildcard(s rules.TypeShape) (*emit.TypeRef, error) {
 	case len(s.Elems) == 0:
 		return &emit.TypeRef{Spelling: anyType}, nil
 	case s.Variance == symbol.VarianceIn:
-		return nil, fmt.Errorf("a wildcard with a lower bound has no Go spelling")
+		return nil, errors.New("a wildcard with a lower bound has no Go spelling")
 	}
 	return spoke.Child(s.Elems[0], goType)
 }

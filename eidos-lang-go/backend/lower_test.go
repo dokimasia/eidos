@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backend_test
@@ -635,7 +635,7 @@ func constantValues(tb assert.TB, e *emit.Enum) []string {
 
 	out, err := backend.Lower(e)
 	assert.NoError(tb, err, "the enum lowers")
-	var got []string
+	got := make([]string, 0, len(out)-1)
 	for _, d := range out[1:] {
 		c, isConstant := d.(*emit.Constant)
 		assert.True(tb, isConstant, "a variant lowers to a constant")

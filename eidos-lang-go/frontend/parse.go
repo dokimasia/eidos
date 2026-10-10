@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -383,6 +383,7 @@ func generatedMarker(parsed *ast.File) (string, bool) {
 		for _, c := range group.List {
 			if strings.HasPrefix(c.Text, "// Code generated ") &&
 				strings.HasSuffix(c.Text, " DO NOT EDIT.") {
+
 				return c.Text, true
 			}
 		}

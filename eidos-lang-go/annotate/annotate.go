@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package annotate
@@ -6,7 +6,7 @@ package annotate
 import (
 	golang "go.dokimi.dev/eidos/lang/go"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
-	sdk "go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
