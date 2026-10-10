@@ -37,7 +37,9 @@
 // the old blob or the new one and a crash of the machine keeps the new
 // one once Write returns. [Ledger.Put] replaces a blob atomically
 // without a sync, for entries that check their own bytes. A removal is
-// not synced.
+// not synced. On Windows, [Dir] does not sync a directory, because an
+// [os.Root] opens a directory there with read access alone. A crash of the
+// machine can undo a rename there.
 //
 // # Failure semantics
 //

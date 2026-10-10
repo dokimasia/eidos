@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"time"
 
@@ -27,6 +28,10 @@ const (
 	filePerm = 0o644
 	dirPerm  = 0o755
 )
+
+// goosWindows is the value of runtime.GOOS on Windows, where a write does
+// not sync a directory.
+const goosWindows = "windows"
 
 // Dir is the ledger of a directory on disk. Each name maps to a file
 // below the directory, resolved through an [os.Root], so a symlink does
@@ -234,7 +239,9 @@ func (d *Dir) ReadAt(ctx context.Context, name string, p []byte, off int64) (int
 // Write replaces the file a name maps to through a staging file of its
 // own, synced, then syncs the file's directory. A directory the write
 // creates is synced into its parent, so once Write returns, a crash of
-// the machine keeps the new bytes.
+// the machine keeps the new bytes. On Windows, Write syncs the staging
+// file but not a directory, so a crash of the machine can undo the rename
+// and the directories that the write created.
 //
 // Error modes: an invalid name wraps [fs.ErrInvalid], and a directory or
 // a file that cannot be created, written, synced or renamed returns the
@@ -422,8 +429,13 @@ func ensure(r *os.Root, dir string, durability stagefile.Durability) error {
 }
 
 // syncDir syncs a directory inside the root, so an entry created or
-// renamed into it is on disk before the call returns.
+// renamed into it is on disk before the call returns. On Windows it
+// returns nil without a sync. An [os.Root] opens a directory there with
+// read access alone, and FlushFileBuffers requires write access.
 func syncDir(r *os.Root, dir string) error {
+	if runtime.GOOS == goosWindows {
+		return nil
+	}
 	f, err := r.Open(dir)
 	if err != nil {
 		return fmt.Errorf("opening %s to sync it: %w", dir, err)

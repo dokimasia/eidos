@@ -36,7 +36,9 @@ type Ledger interface {
 	ReadAt(ctx context.Context, name string, p []byte, off int64) (int, error)
 	// Write replaces a blob atomically and durably. A reader sees the old
 	// bytes or the new ones, and once Write returns, a crash of the
-	// machine does not lose the new ones.
+	// machine does not lose the new ones. On Windows, a crash of the
+	// machine can undo a write of [Dir], because Dir does not sync a
+	// directory there.
 	Write(ctx context.Context, name string, b []byte) error
 	// Put replaces a blob atomically without a sync. A crash of the
 	// process loses nothing, and a crash of the machine can leave the old
