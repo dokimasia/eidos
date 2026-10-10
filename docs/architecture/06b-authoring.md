@@ -180,6 +180,12 @@ Multiple files per plugin are families crossed with keys: declare
 several tagged outputs, each with its own cardinality, and address
 them independently from one handler.
 
+A family that declares a file template claims its files, and it takes
+records instead of declarations. `Out.Record(data, decls...)` places
+declarations with the data of their match. The family's template then
+writes each file from its records ([07-rendering.md](07-rendering.md)),
+such as a test file with a test of each subject.
+
 Targets, stems and provenance derive from the subject and the
 family. `Mirror` copies a signature once, in the framework, so no
 plugin repeats the copy, and leaves the receiver to the target: the
@@ -416,10 +422,12 @@ func (b *Builder) Handle(rules ...Rule) *Builder
 func (b *Builder) Build() Plugin                   // lowers to the SPI
 
 type Output struct {
-    Tag  string      // "" = primary
-    Per  Cardinality // PerSource | PerPackage | PerPlan
-    Word string      // the family's word; the TARGET spells the join
-}                    // and extension (store_stub.go vs store.stub.ts)
+    Tag      string      // "" = primary
+    Per      Cardinality // PerSource | PerPackage | PerPlan
+    Word     string      // the family's word; the TARGET spells the join
+                         // and extension (store_stub.go vs store.stub.ts)
+    Template string      // the file template that claims the family's files;
+}                        // "" leaves the files to the kind templates
 
 // Presentation: neutral defaults at plugin level, per-target
 // layering via options; never a config struct, never a word map.
@@ -476,6 +484,8 @@ func Stmts(ss ...Stmt) Body                    // the scaffolding vocabulary
 func (e *Emitter) File(tag ...Tag) *Out                    // per source file
 func (e *Emitter) PackageFile(tag ...Tag) *Out             // per package
 func (e *Emitter) PlanFile(tag ...Tag) *Out                // per plan
+func (o *Out) Append(decls ...symbol.Symbol)               // declarations of the file
+func (o *Out) Record(data any, decls ...symbol.Symbol)     // records of a claimed family, with their data
 func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] // one slot's write view
 func (v SlotView[T]) Append(values ...T)                   // names a weaver among the contributors
 func (e *Emitter) JoinName(word, base string) string       // target's join

@@ -106,12 +106,21 @@ while the same emit graph renders through
 `templates/golang/method1.tpl` in one plan and
 `templates/typescript/method1.tpl` in another.
 
-**A plugin may claim its own files.** For each declared output
-([18-routing-and-layout.md](18-routing-and-layout.md)) a plugin may
-ship a file template per language. The backend hands it that file's
-emit values and the merged funcmap, and the template drives the
-file's body. This is the presentation path, for output whose shape
-belongs to the plugin rather than to the language.
+**A plugin may claim its own files.** With a file template in
+`Output.Template` ([18-routing-and-layout.md](18-routing-and-layout.md)),
+a family claims every one of its files. Its handlers place records
+through `Out.Record`. A
+record is a declaration with the data of its match. No name table,
+collision check or export reads a record. The render executes the
+template from the plugin's tree for the plan's target. The template
+reads the name and the package of the file, and the declaration and the
+data of each record. It writes the declarations of the file through the
+language's funcmap, and it places the body of a record through the
+`body` builtin. The language's file skeleton then frames the output
+with the header and the imports that the template recorded through
+`use`. A file that mixes the units of a claimed family with other units
+is withheld under `MixedClaim`. This is the presentation path, for
+output whose shape belongs to the plugin rather than to the language.
 
 **Slot contents always render through the backend's kind
 machinery**, whichever mode the host uses. So a cross-cutting
@@ -222,10 +231,16 @@ Undefined functions, colliding overrides and missing body-slot
 markers become build failures. So do undefined field references
 wherever the bound type is known, which means always for kind
 templates, and for the emit-value half of body and file templates
-but not for plugin-supplied payloads.
+but not for plugin-supplied payloads. A file template places no
+body-slot marker, so the check parses it against the file builtins
+and does not ask for the marker.
 
 **Execute-time errors map to a template file and line**, carried on
-the diagnostic, with the emitting plugin named.
+the diagnostic, with the emitting plugin named. The render executes
+every body template and every file template with `missingkey=error`.
+A key that a payload map does not contain fails the execution under
+`RefusedTemplate`, so the generated source never contains the text
+`<no value>`.
 
 ## The builder API, an equal second path
 

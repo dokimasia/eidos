@@ -257,7 +257,8 @@ The steps, in order, where each assumes the ones before it:
    config section, and a failure names the plugin and the field.
 4. **Plans.** The config's refinements apply first. Each refines a
    plan that the composition declares, and no enabled plan or check
-   reads a plan that the config disables.
+   reads a plan that the config disables. A refinement adds
+   generators only to a plan that the composition marks `Extensible`.
    Each plan has exactly one backend and a registered
    target, and every template-claiming plugin declares that target.
    Layout refinements name plugins and tags that exist. The sources
@@ -301,6 +302,7 @@ type Plan struct {                // a value, not a plugin (D8)
     Generators []plugin.Generator
     Backend    plugin.Backend     // exactly one, its target registered
     Layout     layout.Config
+    Extensible bool               // admits the generators of the config, after its own
 }
 
 type Sources struct {             // conjunctive: every field that is set matches
@@ -574,9 +576,12 @@ directive spellings a load ignores, the parse memo's size cap and the
 directory of its entries
 ([09-incrementality.md](09-incrementality.md)), each plugin's options,
 and per compiled-in plan, whether it runs, its sources and its
-layout's policy, directory and import base. A config file cannot
-assemble a plan or set the brand, because the brand is part of the
-config file's name.
+layout's policy, directory and import base. An extensible plan also
+takes the declarative plugins of the config file, which the command
+kernels load into generators
+([14-distribution-and-cli.md](14-distribution-and-cli.md)). A config
+file cannot assemble a plan or set the brand, because the brand is
+part of the config file's name.
 
 ```go
 type Config struct {
@@ -585,11 +590,12 @@ type Config struct {
 }
 
 type PlanConfig struct {
-    Disabled   bool          // leaves the plan out; refused while an enabled plan or a check reads it
-    Sources    *Sources      // replaces the plan's sources where set
-    Policy     layout.Policy // each of the three replaces the layout's field where set
+    Disabled   bool               // leaves the plan out; refused while an enabled plan or a check reads it
+    Sources    *Sources           // replaces the plan's sources where set
+    Policy     layout.Policy      // each of the three replaces the layout's field where set
     Dir        string
     ImportBase string
+    Generators []plugin.Generator // appended to an extensible plan's own; refused for any other plan
 }
 ```
 

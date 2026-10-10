@@ -59,6 +59,12 @@ the kernel and on one YAML library. No satellite or plugin module
 depends on it, so the kernel keeps its zero dependencies and a
 satellite never builds the YAML library.
 
+`eidos-declarative` contains the declarative host. Its `Load` builds a
+generator from a plugin directory of a YAML manifest and template trees
+([06-plugins.md](06-plugins.md)). It depends on the kernel and on the
+same YAML library. The CLI module depends on it to load the plugins that
+a config file lists, and the kernel does not import it.
+
 The kernel is the only module whose tags gate anyone else.
 Satellites release on their own schedule against a declared kernel
 version range ([15-compatibility.md](15-compatibility.md)).
@@ -86,7 +92,7 @@ eidos-core/
   diag/          positioned diagnostics with stable codes
   position/      the leaf
   plugin/        roles + capabilities, per-role priorities, plugin
-                 values, the declarative host
+                 values
                  plugintest/ — the kit holding a plugin to its roles
   authored/      the sample and witness annotators, which stamp an
                  author's values onto the kernel's own keys
@@ -147,6 +153,7 @@ Dependencies point one way and only one way:
 ```
 consumers (dokimi, org binaries) ──► satellites (eidos-lang-go, …) ──► sdk ──► kernel
 consumers (dokimi, org binaries) ──► eidos-cli (command kernels) ───────────► kernel
+                                     eidos-cli ──► eidos-declarative (the host) ──► kernel
                                      satellites ──► eidos-lang (helpers) ──► kernel
                                      eidos-plugin-shape ─────────────► sdk ──► kernel
                                      tree-sitter satellites ──► eidos-lang ──► kernel
@@ -188,6 +195,8 @@ import line rather than in review.
   ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
 - The command line. The command kernels read a YAML config file, so
   they are the module `eidos-cli`, beside the kernel.
+- The declarative host. Its loader reads a YAML manifest, so it is the
+  module `eidos-declarative`, beside the kernel.
 - Any language satellite content, including a helper table added
   "just this once". The degradation scale and the metadata
   namespaces exist so the kernel never needs a language exception.

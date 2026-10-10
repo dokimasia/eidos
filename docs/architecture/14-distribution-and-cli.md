@@ -24,9 +24,10 @@ their own binary the product:
 - **The workspace builder and plan values.** A consumer's `main` is
   a composition function plus `cli.Main(...)`, or the binary's own
   command line with the values of `cli.Kernels(...)` mounted in it.
-- **The declarative host** ([06-plugins.md](06-plugins.md)). A
-  consumer that compiles it in lets its own users extend the tool
-  without a toolchain.
+- **The declarative host**, in `eidos/declarative`
+  ([06-plugins.md](06-plugins.md)). A binary admits declarative
+  plugins into the plans that it marks `Extensible`, so its users
+  extend the tool without a toolchain.
 
 Consumers answer the question about users who do not write Go, not
 eidos. dokimi, the reference consumer, ships a batteries-included
@@ -65,12 +66,35 @@ the same typed structs. That is how a binary lets its users choose
 among the plugins it compiled in: selection happens at run time,
 existence at build time.
 
+A plan that the binary marks `Extensible` also admits the declarative
+plugins that the config file lists under the plan's key `plugins`.
+Each entry is a plugin directory, absolute or relative to the
+workspace root, with slashes:
+
+```yaml
+version: 1
+plans:
+    go-audit:
+        plugins: [plugins/acme-audit]
+    ts-audit:
+        plugins: [plugins/acme-audit]
+options:
+    acme-audit: {redact: false}
+```
+
+The command kernels load each directory once for each workspace, so a
+directory in two plans is one plugin in both plans. A directory that
+does not load fails the command with a config error and the exit status
+64. Build refuses plugins for a plan that the binary does not mark
+`Extensible`, so a binary with a fixed product keeps its output fixed.
+
 What a consumer's `go.mod` takes on, and under what discipline:
 
 | Dependency | Discipline |
 |---|---|
 | `go.dokimi.dev/eidos/core` | semver, canary-tested, additive within a major ([15-compatibility.md](15-compatibility.md)) |
 | `go.dokimi.dev/eidos/cli` | semver; the command kernels, whose flags, JSON schemas and exit codes follow the same policy ([20-cli.md](20-cli.md)) |
+| `go.dokimi.dev/eidos/declarative` | semver; the manifest format and its JSON Schema follow the same policy |
 | `go.dokimi.dev/eidos/lang/<lang>` | its own cadence; declares a kernel range and proves it in CI |
 | `go.dokimi.dev/eidos/plugin-shape` | its own cadence; the catalog grows by spec |
 | third-party typed plugins | code you vet; the conformance suite is the acceptance test |

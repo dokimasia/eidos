@@ -170,57 +170,129 @@ config.
 ## The declarative host
 
 The second authoring tier is a **declarative plugin**: a plugin
-written as files, with no Go. It is a directory:
+written as files, with no Go. It is a directory with a manifest and
+one template tree for each target:
 
 ```
 acme-audit/
   plugin.yaml
   templates/
-    golang/audit.impl.tmpl
-    typescript/audit.impl.tmpl
+    golang/
+      function.tmpl
+      method.tmpl
+      test.tmpl
+    typescript/
+      function.tmpl
+      method.tmpl
+      test.tmpl
 ```
 
-The manifest carries the complete field set:
+The manifest declares the plugin's directives, output families,
+capabilities, options and rules:
 
 ```yaml
-# acme-audit/plugin.yaml
-name: acme-audit          # plugin identity; reserved-name rules apply
-version: "0.3.0"          # folds into the run fingerprint
-directives:               # schemas, same machinery as typed plugins
-  - name: audit
-    params:
-      - {key: level, type: string, required: true}
-      - {key: sink,  type: reference, resolve: callable-in-scope}
-outputs:                  # tagged outputs with suffix derivations
-  - {tag: "", suffix: "_audit"}
-provides: [audit]         # capability topology, per plugin
-requires: [handlers]
-options:                  # typed options schema, config-populated
-  - {key: redact, type: bool, default: true}
-words: {marker: "Audit"}  # per-language vocabulary, under templates/<lang>
+format: 1
+name: acme-audit
+version: 0.3.0
+directives:
+    - name: audit
+      doc: Generates code that records each call of the declaration.
+      params:
+          - key: level
+            type: string
+            choices: [debug, info, warn]
+            required: true
+            doc: The level of each record.
+          - key: sink
+            type: reference
+            resolve: callable-in-scope
+            required: true
+            doc: The function that receives each record.
+outputs:
+    - per: source
+      word: audit
+    - tag: test
+      per: source
+      word: audit
+      template: test.tmpl
+provides: [audit]
+options:
+    - key: redact
+      type: bool
+      default: true
+      doc: When true, a record leaves out the arguments of the call.
+rules:
+    - on: interface
+      directive: audit
+      emit: implementation
+      template: method.tmpl
+    - on: function
+      directive: audit
+      emit: mirror
+      template: function.tmpl
+    - on: interface
+      directive: audit
+      output: test
+      emit: mirror
 ```
 
-A kernel-provided **loader** instantiates one adapted plugin per
-manifest and presents it through the ordinary role interfaces:
-Generator, TemplateProvider, DirectiveProvider. The loader is not
-itself the plugin. The workspace sees N ordinary plugins, so
-priorities, capability topology, options and conformance all apply
-per declarative plugin rather than to the loader as a lump. Nothing
-else in the kernel knows declarative plugins exist.
+A rule emits one declaration into one family for each subject of its
+kind that it matches. A rule with a directive runs for each subject
+with an instance of the directive. A rule without one runs for every
+subject of its kind in the plan's sources. The loader accepts four
+pairs of kind and emission:
 
-The tier's guarantees and its limits are both structural. Templates
-are data, so compile-time composition still holds. Manifests hash
-into the run fingerprint, so determinism still holds. The limits are
-stated rather than discovered: no typed metadata, no projections,
-and no logic beyond template conditionals. Needing any of those
-means writing the plugin in Go. The manifest schema is public API,
-versioned under the compatibility policy.
+| `on` | `emit` | The declaration |
+|---|---|---|
+| `function` | `mirror` | a function with the subject's signature, whose body the rule's template renders |
+| `interface` | `mirror` | an interface with the subject's effective methods and properties |
+| `interface` | `implementation` | a struct with the field `next` of the subject's type and a method for each effective method, whose bodies the rule's template renders |
+| `struct` | `mirror` | a struct with the subject's effective fields |
 
-What this buys a public ecosystem: a declarative plugin is inert
-files, which is safe to adopt from another plugin, while a typed plugin
-is code you have to vet. A consumer whose binary compiles in the
-loader gives its own users extension without any toolchain
-([14-distribution-and-cli.md](14-distribution-and-cli.md)).
+A template reads the declaration as `.Decl` and the payload as
+`.Data`. The payload has the subject's name, the params of the gating
+directive by key, and the plugin's options by key. The render executes
+the template with `missingkey=error`, so a key that the payload does
+not contain fails the template under `RefusedTemplate`.
+
+A family with a `template` claims its files. Its rules emit records,
+and no kind template renders them. The family's file template writes
+each file from the records ([07-rendering.md](07-rendering.md)). The
+family `test` of acme-audit writes a Go test of each implementation
+this way, such as `svc/ledger_audit_test.go`.
+
+The module `eidos-declarative` contains the **loader**, outside the
+kernel ([01-repos-and-kernel.md](01-repos-and-kernel.md)).
+`declarative.Load` reads one plugin directory and builds an ordinary
+generator through the authoring surface. So priorities, capability
+topology, options and conformance apply to each declarative plugin as
+they apply to a typed one. The loader reports each fault of the
+directory as an `Error` with its file and line, and it refuses every
+declaration that the authoring surface refuses with a panic. A manifest
+never makes Build panic.
+
+The guarantees and the limits of the tier are both structural:
+
+- Templates are data, so plugins still compose at compile time.
+- The version of a declarative plugin is the manifest's `version`, a
+  plus sign and the SHA-256 of the manifest and of every template
+  file. The fingerprint folds the version, so an edit of either makes
+  the next run a cold run.
+- A declarative plugin has no typed metadata, no projections beyond
+  the members and the types that its rules read, and no logic beyond
+  template conditionals. A plugin that needs any of those is written
+  in Go.
+- The manifest format is public API, versioned under the
+  compatibility policy. `declarative.Schema` returns its JSON Schema,
+  and the module publishes the schema as `plugin.schema.json`.
+
+A binary admits declarative plugins into the plans that it marks
+`Extensible`. Its users list plugin directories under
+`plans.<name>.plugins` in the config file
+([14-distribution-and-cli.md](14-distribution-and-cli.md)). A
+declarative plugin consists of inert files, so a team can adopt one
+from another team without a review of its code. A typed plugin is code
+that the team has to vet.
 
 ## The authoring surface
 
