@@ -42,7 +42,10 @@
 // fixture, a Go server plan and a TypeScript client plan over a proto
 // service, and its tests run the workspace and warm suites over the
 // service's schema in each protobuf version. The package matrix renders
-// the support matrix of the satellites from their entries.
+// the support matrix of the satellites from their entries. The package
+// declarative declares the fixture of a declarative plugin, and its tests
+// run the plugin through the config file of a Go tree in a Go plan and a
+// TypeScript plan.
 //
 // # Dependency position
 //

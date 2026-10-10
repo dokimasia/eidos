@@ -1,0 +1,2 @@
+{{.Data.Directive.sink}}({{printf "%q" .Data.Subject}}, {{printf "%q" .Data.Directive.level}}{{if not .Data.Options.redact}}{{range .Decl.Params}}, {{.Name}}{{end}}{{end}})
+{{slots}}{{if .Decl.Returns}}return {{end}}{{.Data.Subject}}({{range $i, $p := .Decl.Params}}{{if $i}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})

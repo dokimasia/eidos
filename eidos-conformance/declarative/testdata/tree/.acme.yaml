@@ -1,0 +1,8 @@
+version: 1
+plans:
+    go-audit:
+        plugins: [plugins/acme-audit]
+    ts-audit:
+        plugins: [plugins/acme-audit]
+options:
+    acme-audit: {redact: false}

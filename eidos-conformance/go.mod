@@ -9,6 +9,7 @@ require (
 	go.dokimi.dev/assert v0.0.0-20261007133442-6f235714117b
 	go.dokimi.dev/eidos/cli v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/core v0.0.0-00010101000000-000000000000
+	go.dokimi.dev/eidos/declarative v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/go v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/java v0.0.0-00010101000000-000000000000
@@ -41,6 +42,8 @@ require (
 replace go.dokimi.dev/eidos/cli => ../eidos-cli
 
 replace go.dokimi.dev/eidos/core => ../eidos-core
+
+replace go.dokimi.dev/eidos/declarative => ../eidos-declarative
 
 replace go.dokimi.dev/eidos/lang => ../eidos-lang
 
