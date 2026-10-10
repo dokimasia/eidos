@@ -19,11 +19,11 @@
 // loads them under that package path. A language whose canonical paths
 // differ states them through its own derivation.
 //
-// The inventory follows the node model, and no feature is ever removed
-// from it, so totality covers every capability the model has had. The
-// same expectations run over every language's tree. A contract defect
-// then shows in the language the others do not share, while the
-// contract can still change.
+// The inventory follows the node model and keeps every feature that it
+// has had, so totality covers every capability that the model has had.
+// The same expectations run over every language's tree. A contract
+// defect then shows in the language that the others do not share, while
+// the contract can still change.
 //
 // # Languages
 //
@@ -33,8 +33,13 @@
 // lang/java, lang/protobuf, lang/rust and lang/typescript. Each declares
 // its language's corpus entry, and its tests run [Run] over the tree
 // under its testdata. lang/go also declares Go's whole-composition
-// fixtures, and its tests run the kernel's pipeline and workspace suites
-// over them and benchmark a load of this repository.
+// fixtures, the cross-language fixture of a Go and a TypeScript plan
+// among them, and its tests run the kernel's pipeline and workspace
+// suites over them and benchmark a load of this repository.
+// lang/typescript declares the TypeScript pipeline fixture and a Go plan
+// over TypeScript source, and its tests run the pipeline suite and the
+// TypeScript toolchain over them. The package matrix renders the support
+// matrix of the satellites from their entries.
 //
 // # Dependency position
 //

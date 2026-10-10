@@ -97,5 +97,30 @@ func TestInventory(t *testing.T) {
 					"f2 resolves to the sibling's declaration below its reference's root",
 				}, "naming each field that lacks the composite")
 			})
+
+		t.Run("returns a directive_sugar check that rejects a declaration without the marker's directive",
+			func(t *testing.T) {
+				t.Parallel()
+
+				// The scripted language has no markers, so its Table has no
+				// directive.
+				tree := fstest.MapFS{
+					"f/directive_sugar/a.zz": {Data: []byte("package f/directive_sugar\ntype Table string\n")},
+				}
+				g, _, err := load.Load(t.Context(), load.Config{
+					FS:        tree,
+					Frontends: []plugin.Frontend{frontendtest.NewScripted()},
+					Sink:      diag.NewSink(),
+					Brand:     frontendtest.Brand,
+				})
+				assert.NoError(t, err, "the bare table loads")
+
+				c := conformance.Corpus{Frontend: frontendtest.NewScripted(), Sources: tree}
+				got := assert.Rejects(t, "a table without the marker's directive", func(tb assert.TB) {
+					conformance.AssertFeature(tb, c, g, featureByID(t, "directive_sugar"))
+				})
+				assert.Equal(t, contracts(got), []string{"the marker's directive attaches"},
+					"the check fails at the missing directive")
+			})
 	})
 }

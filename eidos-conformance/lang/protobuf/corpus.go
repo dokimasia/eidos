@@ -9,7 +9,6 @@ import (
 
 	"go.dokimi.dev/eidos/conformance"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
-	protolang "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
 )
@@ -52,13 +51,15 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			"constants": conformance.Refuses,
 			// protobuf has no test-file convention to classify by.
 			"test_classification": conformance.Refuses,
+			// A custom option refers to an extension that a schema of the
+			// consumer declares, so the brand alone cannot spell a marker.
+			"directive_sugar": conformance.Refuses,
 		},
 		// A schema states no bodies, so a signature-only root loads
 		// the same declarations as a full one, and the corpus lists
 		// no dropped identity.
 		Signatures: []string{signatureRoot},
 		Schemas:    frontendtest.ScriptedSchemas(),
-		Keys:       protolang.Keys,
 		Rules:      protorules.New(),
 		PackageOf:  packageOf,
 	}

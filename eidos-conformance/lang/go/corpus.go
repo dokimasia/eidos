@@ -22,9 +22,10 @@ const (
 
 // Corpus returns Go's entry over tree, with its rules: the first real
 // language against the shared inventory. The tree places each feature
-// under f/<id>, as the corpus convention does. The one refusal is Go's
-// own semantics: overloads do not exist. A typed constant group loads
-// as the enum the schema names it.
+// under f/<id>, as the corpus convention does. The refusals are Go's own
+// semantics: overloads do not exist, and Go's syntax for metadata is the
+// tool-directive comment, which is a carrier already. A typed constant
+// group loads as the enum the schema names it.
 func Corpus(tree fs.FS) conformance.Corpus {
 	return conformance.Corpus{
 		Frontend: gofrontend.New(nil),
@@ -41,13 +42,13 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			"test_classification": conformance.Projects,
 			"interfaces":          conformance.Projects,
 			"enum_values":         conformance.Projects,
+			"directive_sugar":     conformance.Refuses,
 		},
 		Signatures: []string{constantsRoot},
 		Dropped: []symbol.Identity{
 			{Lang: gofrontend.Lang, Package: constantsRoot, Name: limitName, Kind: symbol.KindConstant},
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    gofrontend.Keys,
 		Rules:   gorules.New(),
 	}
 }

@@ -32,15 +32,26 @@
 //     from the plans of the workspace fixture and [Stubbed]. [Crash] is a
 //     command of the binaries that panics, and [CompileAcceptance] compiles
 //     the output of a run with go build.
+//   - [ComposeHub] and [HubPlans] compose the cross-language fixture. One
+//     run over a Go workspace writes the double of Store in
+//     svc/store_stub_test.go and a TypeScript client of Session and Store
+//     in svc/store.ts. The client generator translates every type through
+//     the Emitter. [EditHub] renames the parameter of Get, which changes
+//     both files. [StoreClient] writes the client of each interface alone,
+//     so the client of Store refers to a Session that the plan does not
+//     emit.
 //
 // # Dependency position
 //
 // golang imports cli, the conformance package, core/frontend/frontendtest,
-// core/symbol, core/workspace and core/ledger, the root, frontend, rules
-// and backend packages of the Go satellite, and the SDK facade. Its tests
-// also import the assert module, cli/acceptancetest, core/frontend/load,
-// core/manifest, sdk/frontendtest, and the pipeline and workspace kits of
-// the kernel, core/workspace/pipelinetest and core/workspace/workspacetest.
-// The level checks of the conformance package import golang for the entry
-// of Go. The binaries under testdata/acceptance import cli and golang.
+// core/symbol, core/workspace, core/layout and core/ledger, the root,
+// frontend, rules and backend packages of the Go satellite, the root and
+// backend packages of the TypeScript satellite, and the SDK facade. Its
+// tests also import the assert module, cli/acceptancetest,
+// core/frontend/load, core/manifest, sdk/frontendtest, sdk/toolchain, the
+// toolchain adapter of the TypeScript satellite, and the pipeline and
+// workspace kits of the kernel, core/workspace/pipelinetest and
+// core/workspace/workspacetest. The level checks of the conformance
+// package import golang for the entry of Go. The binaries under
+// testdata/acceptance import cli and golang.
 package golang

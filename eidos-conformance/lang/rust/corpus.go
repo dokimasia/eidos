@@ -22,9 +22,10 @@ const (
 
 // Corpus returns Rust's entry over tree. Rust spells every feature
 // except overloading: a struct is the record type, an inherent impl
-// adds its methods, a trait is the interface, and #[test] classifies a
-// test function. The crate is one unit, so a signature root would load
-// every feature shallow, and the entry states none.
+// adds its methods, a trait is the interface, #[test] classifies a test
+// function, and an attribute of the brand is a marker. The crate is one
+// unit, so a signature root would load every feature shallow, and the
+// entry states none.
 func Corpus(tree fs.FS) conformance.Corpus {
 	return conformance.Corpus{
 		Frontend: rustfrontend.New(nil),
@@ -40,13 +41,13 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			"test_classification": conformance.Loads,
 			"interfaces":          conformance.Loads,
 			"enum_values":         conformance.Loads,
+			"directive_sugar":     conformance.Loads,
 
 			// Rust has no overloading: two functions of one name in one
 			// scope do not compile.
 			"method_overloads": conformance.Refuses,
 		},
 		Schemas:   frontendtest.ScriptedSchemas(),
-		Keys:      rustfrontend.Keys,
 		PackageOf: packageOf,
 	}
 }

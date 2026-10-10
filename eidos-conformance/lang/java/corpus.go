@@ -23,10 +23,10 @@ const (
 
 // Corpus returns Java's entry over tree. Java spells every feature
 // except a constant outside a type: a class is the record type, a
-// method overloads by its parameter types, and a file Surefire's
-// default includes name is a test. A Java package's path is its package
-// clause with slashes for dots, so the default convention places every
-// feature.
+// method overloads by its parameter types, a file that Surefire's
+// default includes match is a test, and an annotation of the brand is
+// a marker. A Java package's path is its package clause with slashes
+// for dots, so the default convention places every feature.
 func Corpus(tree fs.FS) conformance.Corpus {
 	return conformance.Corpus{
 		Frontend: javafrontend.New(nil),
@@ -42,6 +42,7 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			"test_classification": conformance.Loads,
 			"interfaces":          conformance.Loads,
 			"enum_values":         conformance.Loads,
+			"directive_sugar":     conformance.Loads,
 
 			// Java declares a constant inside a type only, as a static
 			// final field.
@@ -65,6 +66,5 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			},
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    javafrontend.Keys,
 	}
 }

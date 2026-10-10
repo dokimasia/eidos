@@ -49,6 +49,10 @@ const (
 	getByID   = "Get(id string)"
 )
 
+// sourceMode is the mode of a source file that an edit creates. An edit
+// of an existing file keeps the file's mode.
+const sourceMode = 0o644
+
 // The prefix, number and meaning that [Unstubbed] registers.
 const (
 	unstubbedPrefix  diag.Prefix = "ACME"
@@ -148,16 +152,26 @@ func WorkspacePlans(extra ...plugin.Generator) []workspace.Plan {
 // Error modes: the error of a file that does not read or write, and an
 // error for a file that declares no Get with the parameter key.
 func EditWorkspace(root string) error {
-	path := filepath.Join(root, filepath.FromSlash(storeFile))
-	b, err := os.ReadFile(path)
+	return rename(root, storeFile, getByKey, getByID)
+}
+
+// rename replaces the first occurrence of from with to in the file at the
+// slash-separated path under root, the way a person edits a source file.
+// It keeps the file's mode.
+//
+// Error modes: the error of a file that does not read or write, and an
+// error for a file without from.
+func rename(root, path, from, to string) error {
+	target := filepath.Join(root, filepath.FromSlash(path))
+	b, err := os.ReadFile(target)
 	if err != nil {
 		return err
 	}
 	src := string(b)
-	if !strings.Contains(src, getByKey) {
-		return fmt.Errorf("golang: %s declares no %s to rename", storeFile, getByKey)
+	if !strings.Contains(src, from) {
+		return fmt.Errorf("golang: %s declares no %s to rename", path, from)
 	}
-	return os.WriteFile(path, []byte(strings.Replace(src, getByKey, getByID, 1)), 0o644)
+	return os.WriteFile(target, []byte(strings.Replace(src, from, to, 1)), sourceMode)
 }
 
 // doubles returns the workspace fixture's stub generator: per interface

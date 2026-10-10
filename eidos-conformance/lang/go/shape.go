@@ -12,16 +12,16 @@ import (
 )
 
 // ComposeShape returns the composition of the shape catalog over Go
-// source. It composes the Go frontend, its keys and its rules, and the
-// annotators of the catalog under [Brand], so an author writes a directive
-// of the catalog as //+acme:shape writer. The caller adds the plans that
-// consume the catalog, and the output. Each call returns new plugins,
-// because a plugin instance belongs to one workspace.
+// source. It composes the Go frontend, which registers the Go keys, the
+// Go rules, and the annotators of the catalog under [Brand], so an author
+// writes a directive of the catalog as //+acme:shape writer. The caller
+// adds the plans that consume the catalog, and the output. Each call
+// returns new plugins, because a plugin instance belongs to one
+// workspace.
 func ComposeShape() *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
 		Frontends(gofrontend.New(nil)).
-		Keys(gofrontend.Keys).
 		Rules(gorules.New()).
 		Targets(golang.Target).
 		Annotators(catalog.Annotators()...)

@@ -3,6 +3,7 @@ pub mod composite_refs;
 pub mod constants;
 pub mod cross_package_ref;
 pub mod directive_carrier;
+pub mod directive_sugar;
 pub mod enum_values;
 pub mod interfaces;
 pub mod struct_fields;

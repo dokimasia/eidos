@@ -179,7 +179,7 @@ func goCorpus() conformance.Corpus { return gocorpus.Corpus(os.DirFS(goTree)) }
 // goFixture loads the Go corpus once for a case.
 func goFixture(tb assert.TB) *rulestest.Fixture {
 	tb.Helper()
-	return rulestest.Loaded(tb, gofrontend.New(nil), os.DirFS(goTree), golang.Keys)
+	return rulestest.Loaded(tb, gofrontend.New(nil), os.DirFS(goTree))
 }
 
 // opaqueCorpus returns a scripted corpus whose one feature package

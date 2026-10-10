@@ -208,6 +208,7 @@ func scriptedCorpus() conformance.Corpus {
 			"test_classification": conformance.Loads,
 			"interfaces":          conformance.Refuses,
 			"enum_values":         conformance.Refuses,
+			"directive_sugar":     conformance.Refuses,
 		},
 		Schemas: frontendtest.ScriptedSchemas(),
 		Keys:    frontendtest.ScriptedKeys,

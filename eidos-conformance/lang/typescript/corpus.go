@@ -11,6 +11,7 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/symbol"
 	tsfrontend "go.dokimi.dev/eidos/lang/typescript/frontend"
+	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"
 )
 
 // The directory the corpus convention places features under, which the
@@ -36,27 +37,31 @@ const (
 	testModule    = "a.test"
 )
 
-// Corpus returns TypeScript's entry over tree. TypeScript spells every
-// feature: a class is the record type, a method overloads through its
-// signatures, and a module's const is the constant. The two modules
-// whose methods the inventory discriminates alias int to number, so a
-// discriminator spells int, as the inventory's does.
+// Corpus returns TypeScript's entry over tree, with its rules.
+// TypeScript spells every feature: a class is the record type, a method
+// overloads through its signatures, a module's const is the constant,
+// and a decorator of the brand is a marker. The two modules whose
+// methods the inventory discriminates alias int to number, so a
+// discriminator spells int, as the inventory's does. The function type
+// of composite_refs returns the global class Error, which the builtin
+// table does not classify, so the feature projects partly.
 func Corpus(tree fs.FS) conformance.Corpus {
 	return conformance.Corpus{
 		Frontend: tsfrontend.New(),
 		Sources:  tree,
 		Coverage: conformance.Coverage{
-			"struct_fields":       conformance.Loads,
-			"struct_methods":      conformance.Loads,
-			"method_overloads":    conformance.Loads,
-			"constants":           conformance.Loads,
-			"cross_package_ref":   conformance.Loads,
-			"composite_refs":      conformance.Loads,
-			"builtin_ref":         conformance.Loads,
-			"directive_carrier":   conformance.Loads,
-			"test_classification": conformance.Loads,
-			"interfaces":          conformance.Loads,
-			"enum_values":         conformance.Loads,
+			"struct_fields":       conformance.Projects,
+			"struct_methods":      conformance.Projects,
+			"method_overloads":    conformance.Projects,
+			"constants":           conformance.Projects,
+			"cross_package_ref":   conformance.Projects,
+			"composite_refs":      conformance.ProjectsPartly,
+			"builtin_ref":         conformance.Projects,
+			"directive_carrier":   conformance.Projects,
+			"test_classification": conformance.Projects,
+			"interfaces":          conformance.Projects,
+			"enum_values":         conformance.Projects,
+			"directive_sugar":     conformance.Projects,
 		},
 		Signatures: []string{constantsRoot},
 		Dropped: []symbol.Identity{{
@@ -64,7 +69,7 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			Name: limitName, Kind: symbol.KindConstant,
 		}},
 		Schemas:   frontendtest.ScriptedSchemas(),
-		Keys:      tsfrontend.Keys,
+		Rules:     tsrules.New(),
 		PackageOf: packageOf,
 	}
 }

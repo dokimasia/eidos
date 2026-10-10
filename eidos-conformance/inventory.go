@@ -7,6 +7,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -152,6 +153,26 @@ func Inventory() []Feature {
 			Declares: []Decl{
 				{Name: "Color", Kind: symbol.KindEnum},
 				{Owner: "Color", Name: "Red", Kind: symbol.KindEnumVariant},
+			},
+		},
+		{
+			ID:  "directive_sugar",
+			Doc: "a marker in the language's own syntax for metadata, lowered to a canonical directive",
+			Declares: []Decl{
+				{
+					Name: "Table", Kind: symbol.KindStruct,
+					Check: func(tb assert.TB, c *Ctx) {
+						decl, is := c.Decl.(node.Declaration)
+						assert.True(tb, is, "the subject is a declaration")
+						raws := c.Graph.DirectivesOf(decl.Identity())
+						assert.Length(tb, raws, 1, "the marker's directive attaches")
+						expect.Equal(tb, string(raws[0].Name), "gen:table", "under its canonical spelling")
+						assert.Length(tb, raws[0].Args, 1, "with the marker's one argument")
+						expect.Equal(tb, raws[0].Args[0].Key, "name", "the argument is keyed")
+						expect.Equal(tb, raws[0].Args[0].Value, directive.RawValue{Text: "t", Quoted: true},
+							"the argument is the marker's string literal")
+					},
+				},
 			},
 		},
 	}
