@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin
@@ -313,12 +313,12 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 // a collision group already anchored.
 type planned struct {
 	host    symbol.Symbol
-	kind    symbol.Kind
 	at      position.Pos
 	emitted string
 	settled string
 	final   string
 	err     error
+	kind    symbol.Kind
 	grouped bool
 }
 
@@ -647,6 +647,7 @@ func resolveMembers(
 					pb := &list[b]
 					if pb.host != pa.host || pb.err != nil || pb.grouped ||
 						pb.final != settled {
+
 						continue
 					}
 					names = append(names, pb.emitted)
@@ -669,6 +670,7 @@ func collides(list []planned, a int) bool {
 		pb := &list[b]
 		if pb.host == pa.host && pb.err == nil && !pb.grouped &&
 			pb.final == pa.final && pb.emitted != pa.emitted {
+
 			return true
 		}
 	}
@@ -852,6 +854,7 @@ func paramNames(list []planned) map[symbol.Symbol]map[string]string {
 		p := &list[k]
 		if p.host == nil ||
 			(p.kind != symbol.KindParam && p.kind != symbol.KindReturn) {
+
 			continue
 		}
 		if out == nil {
@@ -1029,6 +1032,7 @@ func replaceName(s, old, now string) string {
 func wholeName(s string, at, end int) bool {
 	if before, size := utf8.DecodeLastRuneInString(s[:at]); size > 0 &&
 		(nameRune(before) || strings.ContainsRune(qualifierMarks, before)) {
+
 		return false
 	}
 	after, size := utf8.DecodeRuneInString(s[end:])
@@ -1135,6 +1139,8 @@ func (r *resolver) rewriteExpr(x *emit.Expr, locals map[string]string) {
 		for i := range x.Args {
 			r.rewriteExpr(&x.Args[i], locals)
 		}
+	case emit.ExprValue:
+		// A value has no name to follow.
 	}
 }
 
@@ -1237,6 +1243,7 @@ func (l *readLog) typeRefs(e *Emit) {
 				t, ref := s.(*emit.TypeRef)
 				if !ref || t.Form != symbol.FormNamed || !t.Target.IsZero() ||
 					(t.Package != "" && t.Package != u.Pkg.Package) {
+
 					continue
 				}
 				l.name(NameKey{Package: u.Pkg.Package, Emitted: t.Spelling})

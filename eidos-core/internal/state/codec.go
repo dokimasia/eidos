@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -254,7 +254,7 @@ func (d *decoder) identity() symbol.Identity {
 		Package: d.text(),
 		Owner:   d.text(),
 		Name:    d.text(),
-		Kind:    symbol.Kind(d.Uvarint()),
+		Kind:    symbol.Kind(d.Enum()),
 		Disc:    d.text(),
 	}
 }
@@ -280,8 +280,8 @@ func (d *decoder) pos() position.Pos {
 // finding reads one finding.
 func (d *decoder) finding() diag.Diag {
 	out := diag.Diag{
-		Code:     diag.Code{Prefix: diag.Prefix(d.text()), Number: int(d.Uvarint())},
-		Severity: diag.Severity(d.Uvarint()),
+		Code:     diag.Code{Prefix: diag.Prefix(d.text()), Number: d.Int()},
+		Severity: diag.Severity(d.Enum()),
 		Pos:      d.pos(),
 		Msg:      d.text(),
 		Origin:   diag.Origin(d.text()),

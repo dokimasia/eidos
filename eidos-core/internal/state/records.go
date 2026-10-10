@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -688,7 +688,7 @@ func (d *decoder) directive() directive.Directive {
 // param reads one validated value, a list with no element as nil.
 func (d *decoder) param() directive.Value {
 	out := directive.Value{
-		Kind: directive.ParamType(d.Uvarint()),
+		Kind: directive.ParamType(d.Enum()),
 		Str:  d.text(),
 		Int:  d.Varint(),
 		Bool: d.Bool(),

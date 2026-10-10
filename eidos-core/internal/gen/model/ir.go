@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package model
@@ -80,9 +80,9 @@ type FieldSpec struct {
 	Comment  string
 	Type     string
 	Elem     string
+	Slot     string
 	Side     Side
 	Walk     bool
-	Slot     string
 	Slice    bool
 	IsSymbol bool
 	// IsName marks a declared name the respell traversal visits.
@@ -243,6 +243,7 @@ func collect(fset *token.FileSet, files []*ast.File) ([]declaration, error) {
 				}
 				if typeSpec.Name.Name == MarkerName ||
 					typeSpec.Name.Name == BodyMarkerName {
+
 					continue
 				}
 				structType, ok := typeSpec.Type.(*ast.StructType)
@@ -391,7 +392,7 @@ func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 		return at(fset, pos, "%s is tagged %s but %s is not a slice of kinds",
 			spec.Name, SlotPrefix, spec.Type)
 	}
-	if spec.IsName && spec.Type != "string" {
+	if spec.IsName && spec.Type != stringType {
 		return at(fset, pos,
 			"%s is tagged %s but %s is not a string: a name is one spelling",
 			spec.Name, NameToken, spec.Type)

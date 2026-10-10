@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos
@@ -96,6 +96,9 @@ type phaseCall struct {
 	// journal receives the call's records once its effects apply, and is
 	// nil for a call that keeps none.
 	journal plugin.Journal
+	// collects reports that the call runs on more than one worker, so
+	// it collects each rule's matches before it runs them.
+	collects bool
 	// selects reports that the call runs under a selection, and selection
 	// is the call's view of it.
 	selects   bool
@@ -108,9 +111,6 @@ type phaseCall struct {
 	hosts    []plugin.EmitRef
 	findings []diag.Diag
 	filling  *record
-	// collects reports that the call runs on more than one worker, so
-	// it collects each rule's matches before it runs them.
-	collects bool
 	// seq is the sequence the next match takes: the numbers continue
 	// across the phase call's rules, so they are the canonical match
 	// order.

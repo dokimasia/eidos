@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules_test
@@ -188,7 +188,7 @@ func TestMembers(t *testing.T) {
 		t.Run("stops at the depth budget", func(t *testing.T) {
 			t.Parallel()
 
-			var decls []symbol.Symbol
+			decls := make([]symbol.Symbol, 0, 4)
 			for i := range 4 {
 				s := coretest.Struct(svcPath, "L"+string(rune('0'+i)))
 				if i > 0 {
@@ -517,7 +517,7 @@ func TestMembers(t *testing.T) {
 		t.Run("gives each member a path of its own", func(t *testing.T) {
 			t.Parallel()
 
-			var decls []symbol.Symbol
+			decls := make([]symbol.Symbol, 0, 4)
 			for i := range 4 {
 				s := coretest.Struct(svcPath, "L"+string(rune('0'+i)))
 				if i > 0 {
@@ -593,7 +593,7 @@ func TestMembers(t *testing.T) {
 		t.Run("counts depth from the host", func(t *testing.T) {
 			t.Parallel()
 
-			var decls []symbol.Symbol
+			decls := make([]symbol.Symbol, 0, 4)
 			for i := range 4 {
 				s := coretest.Struct(svcPath, "L"+string(rune('0'+i)))
 				if i > 0 {
@@ -752,7 +752,7 @@ func TestMembers(t *testing.T) {
 
 // A set reports its completeness, and a declared reason spells, without
 // allocating in the ordinary run, which runs no benchmark.
-func TestMembersZeroAlloc(t *testing.T) {
+func TestMembersAllocs(t *testing.T) {
 	set, reason := rules.MemberSet{Gaps: []rules.Gap{{Reason: rules.GapCyclic}}}, rules.GapConflict
 	var complete bool
 	assert.MaxAllocs(t, func() { complete = set.Complete() }, 0, "MemberSet.Complete allocates nothing")

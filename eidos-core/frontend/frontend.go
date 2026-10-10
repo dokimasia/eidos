@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend
@@ -36,6 +36,8 @@ type Builder struct {
 	name         plugin.ID
 	lang         symbol.Lang
 	syntax       plugin.CommentSyntax
+	options      any
+	hasOptions   bool
 	overloads    bool
 	version      string
 	selection    []string
@@ -43,8 +45,6 @@ type Builder struct {
 	parse        func(context.Context, *plugin.SourceUnit) error
 	resolve      func(plugin.ImportScope, string) plugin.Candidates
 	classifiers  []Classifier
-	options      any
-	hasOptions   bool
 	dependencies func(context.Context, *plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
 	exports      func(plugin.ImportScope, string) plugin.Candidates
 	stores       func(getenv func(key string) string) (map[string]fs.FS, error)

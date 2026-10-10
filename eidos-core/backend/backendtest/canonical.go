@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backendtest
@@ -50,6 +50,15 @@ const verbatimBody = "\ttrace()\n"
 // boundName is the one bound every generic canonical declaration
 // constrains by, so each target proves one bound spelling.
 const boundName = "Codec"
+
+// The names that two or more canonical declarations use: the field and
+// the parameter item, the parameter key, and the generic interface keyed,
+// which the generic aliases reference.
+const (
+	itemName  = "item"
+	keyName   = "key"
+	keyedName = "keyed"
+)
 
 // canonicalKinds lists the kinds the fixture emits a declaration
 // of, in build order: every kind an emit declaration takes at file
@@ -370,8 +379,8 @@ func packSum() *emit.Sum {
 		Name:   "some",
 	}
 	some.Fields.Append(&emit.Field{
-		Origin: memberOf("some", "item", symbol.KindField),
-		Name:   "item",
+		Origin: memberOf("some", itemName, symbol.KindField),
+		Name:   itemName,
 		Type:   typeRef("T"),
 	})
 	s.Variants.Append(some, &emit.SumVariant{
@@ -395,9 +404,9 @@ func boxStruct() *emit.Struct {
 		TypeParams: []*emit.TypeParam{{Name: "T"}},
 	}
 	s.Fields.Append(&emit.Field{
-		Origin: memberOf("box", "item", symbol.KindField),
+		Origin: memberOf("box", itemName, symbol.KindField),
 		Doc:    []string{"Item is the wrapped value."},
-		Name:   "item",
+		Name:   itemName,
 		Type:   typeRef("T"),
 	})
 	s.Methods.Append(&emit.Method{
@@ -407,7 +416,7 @@ func boxStruct() *emit.Struct {
 		TypeParams: []*emit.TypeParam{
 			{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
-		Params:  []*emit.Param{{Name: "item", Type: typeRef("U")}},
+		Params:  []*emit.Param{{Name: itemName, Type: typeRef("U")}},
 		Returns: []*emit.Return{{Type: typeRef("U")}},
 	})
 	return s
@@ -430,7 +439,7 @@ func storeInterface() *emit.Interface {
 		Doc:     []string{"Get returns the row key names."},
 		Comment: "by key",
 		Name:    "get",
-		Params:  []*emit.Param{{Name: "key", Type: typeRef("string"), Comment: "the row key"}},
+		Params:  []*emit.Param{{Name: keyName, Type: typeRef("string"), Comment: "the row key"}},
 		Returns: []*emit.Return{{Type: typeRef("string"), Comment: "the row"}},
 	})
 	return i
@@ -440,18 +449,18 @@ func storeInterface() *emit.Interface {
 // parameter its method signature references.
 func keyedInterface() *emit.Interface {
 	i := &emit.Interface{
-		Origin: originOf("keyed", symbol.KindInterface),
+		Origin: originOf(keyedName, symbol.KindInterface),
 		Doc:    []string{"Keyed looks rows up."},
-		Name:   "keyed",
+		Name:   keyedName,
 		TypeParams: []*emit.TypeParam{
 			{Name: "K", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
 	}
 	i.Methods.Append(&emit.Method{
-		Origin:  memberOf("keyed", "pick", symbol.KindMethod),
+		Origin:  memberOf(keyedName, "pick", symbol.KindMethod),
 		Doc:     []string{"Pick returns the row at a key."},
 		Name:    "pick",
-		Params:  []*emit.Param{{Name: "key", Type: typeRef("K")}},
+		Params:  []*emit.Param{{Name: keyName, Type: typeRef("K")}},
 		Returns: []*emit.Return{{Type: typeRef("K")}},
 	})
 	return i
@@ -518,7 +527,7 @@ func foldMethod() *emit.Method {
 		TypeParams: []*emit.TypeParam{
 			{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
-		Params:  []*emit.Param{{Name: "item", Type: typeRef("U")}},
+		Params:  []*emit.Param{{Name: itemName, Type: typeRef("U")}},
 		Returns: []*emit.Return{{Type: typeRef("U")}},
 		Body:    emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
 	}
@@ -547,7 +556,7 @@ func matchAlias() *emit.Alias {
 			{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
 		Target: &emit.TypeRef{
-			Spelling: "keyed",
+			Spelling: keyedName,
 			Args:     []*emit.TypeRef{typeRef("T")},
 		},
 	}

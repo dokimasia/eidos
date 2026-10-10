@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -40,14 +40,14 @@ type Config struct {
 // refined sources and layout. Build leaves the plan unchanged for the zero
 // PlanConfig.
 type PlanConfig struct {
+	// Build replaces the sources of the plan with Sources when Sources is
+	// not nil.
+	Sources *Sources
 	// When Disabled is true, Build leaves the plan out of the composition.
 	// Build returns an error for a disabled plan that an enabled plan
 	// depends on or that a workspace check reads. The error includes the
 	// names of both.
 	Disabled bool
-	// Build replaces the sources of the plan with Sources when Sources is
-	// not nil.
-	Sources *Sources
 	// Build replaces the layout fields of the plan with Policy, Dir and
 	// ImportBase when they are set. Policy is set when it is not
 	// [layout.PolicyInherit], and Dir and ImportBase are set when they are

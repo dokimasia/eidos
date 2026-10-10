@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -491,6 +491,9 @@ func (wp *warmPlan) dirtyEdge(e state.EdgeHash) (bool, error) {
 				}
 				grew = grew || joined
 			}
+		case state.RecordValidation, state.RecordCheck:
+			// The run routes the validations before the plans, and the close
+			// step decides on each check.
 		}
 	}
 	return grew, nil
@@ -881,6 +884,9 @@ func (wp *warmPlan) replay() error {
 					wp.report(g.Findings)
 				}
 			}
+		case state.RecordValidation, state.RecordCheck:
+			// The run replays the validations, and the close step reports
+			// the findings of each check that it keeps.
 		}
 	}
 	return nil

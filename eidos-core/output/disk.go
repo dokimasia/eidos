@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package output
@@ -203,7 +203,10 @@ func (d *Disk) Discard() error {
 	}
 	clear(d.files)
 	clear(d.removals)
-	return d.root.Close()
+	if err := d.root.Close(); err != nil {
+		return fmt.Errorf("output: %w", err)
+	}
+	return nil
 }
 
 // commit writes one staged file.

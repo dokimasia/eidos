@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package directive
@@ -131,12 +131,6 @@ func (k ParamKey) Valid() bool { return isIdentifier(string(k)) }
 type ParamSpec struct {
 	Key  ParamKey
 	Type ParamType
-	// Required refuses an instance that omits the param. With
-	// Roles set, the requirement applies under those roles alone.
-	Required bool
-	// Roles admits the param only when the instance's role is one
-	// of these. Empty admits it under every role.
-	Roles []string
 	// ListOf types a TypeList param's elements: any scalar type or
 	// a reference, never a list. Registration refuses a list of
 	// lists, and validation types each element as declared.
@@ -145,16 +139,22 @@ type ParamSpec struct {
 	// for the param itself or for every element of a reference
 	// list.
 	Resolution ResolutionKind
+	// Required refuses an instance that omits the param. With
+	// Roles set, the requirement applies under those roles alone.
+	Required bool
+	// Counterexample marks a param whose value names an input no
+	// derivation could invent. The kernel records the mark and
+	// reads nothing from it.
+	Counterexample bool
+	// Roles admits the param only when the instance's role is one
+	// of these. Empty admits it under every role.
+	Roles []string
 	// Choices closes a string param to the spellings it lists.
 	// Validation refuses another value under [BadSpelling], and the
 	// message lists the choices. Registration refuses choices on a
 	// param of another type, an empty choice and a repeated choice.
 	// Empty admits every string.
 	Choices []string
-	// Counterexample marks a param whose value names an input no
-	// derivation could invent. The kernel records the mark and
-	// reads nothing from it.
-	Counterexample bool
 	// Doc states the param's meaning. Registration refuses an
 	// empty one.
 	Doc string
@@ -224,6 +224,12 @@ type Schema struct {
 	// spec declares. The reserved keys keep their meaning under an
 	// open schema: role, out and tag are never read as open keys.
 	Open *ParamSpec
+	// Variants declares the closed set of variants. Where it is not
+	// empty, the first positional argument of every instance is the name
+	// of a variant, and Positional declares the positional arguments
+	// after it. A schema with variants declares no Roles, because each
+	// variant declares its own.
+	Variants []Variant
 	// Roles is the closed set of values the role key accepts. A
 	// schema listing none refuses the role key. Declaring roles is
 	// what reserves the key: no entry in Params spells "role".
@@ -233,12 +239,6 @@ type Schema struct {
 	// bare instance is admitted, and what it means is the schema's
 	// documented semantic.
 	RolesRequired bool
-	// Variants declares the closed set of variants. Where it is not
-	// empty, the first positional argument of every instance is the name
-	// of a variant, and Positional declares the positional arguments
-	// after it. A schema with variants declares no Roles, because each
-	// variant declares its own.
-	Variants []Variant
 	// Repeatable admits more than one instance per subject, and one
 	// instance of each variant of a schema with variants.
 	// Single-instance is the default: a second instance is a

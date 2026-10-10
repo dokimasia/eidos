@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -124,15 +124,15 @@ func (g ReadGrain) String() string {
 // the generation stores.
 type Read struct {
 	Grain ReadGrain
-	// Subject is the declaration of a declaration read or a fact read, and
-	// the package of a package read. Key is the key of a fact read.
-	Subject symbol.Identity
-	Key     meta.KeyName
 	// Kind is the kind of a kind enumeration, and Directive is the directive
 	// of a directive enumeration. Plan is the plan of an export read.
 	Kind      symbol.Kind
 	Directive directive.Name
 	Plan      string
+	// Subject is the declaration of a declaration read or a fact read, and
+	// the package of a package read. Key is the key of a fact read.
+	Subject symbol.Identity
+	Key     meta.KeyName
 }
 
 // Explanation is what a generation records about a target.

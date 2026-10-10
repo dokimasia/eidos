@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package render
 
 import (
+	"fmt"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/emit"
@@ -182,7 +183,7 @@ func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	}
 	var out strings.Builder
 	if err := t.Execute(&out, s); err != nil {
-		return "", err
+		return "", fmt.Errorf("render: %w", err)
 	}
 	return strings.TrimSuffix(indented(out.String(), indent), string(lineBreak)), nil
 }

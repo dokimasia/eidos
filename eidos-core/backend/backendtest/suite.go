@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backendtest
@@ -452,6 +452,8 @@ func normalizeExpr(x *emit.Expr, table map[string]bool) {
 		for i := range x.Args {
 			normalizeExpr(&x.Args[i], table)
 		}
+	case emit.ExprValue:
+		// A value has no name to rewrite.
 	}
 }
 

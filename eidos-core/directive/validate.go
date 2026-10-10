@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package directive
@@ -311,6 +311,7 @@ func (v *validator) duplicateVariants(typed []checked, indexes []int, canonical 
 		if variant == "" || slices.ContainsFunc(indexes[:n], func(j int) bool {
 			return typed[j].instance.Variant == variant
 		}) {
+
 			continue
 		}
 		for _, j := range indexes[n+1:] {
@@ -642,9 +643,10 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 			return Value{}, false
 		}
 		return Value{Kind: TypeReference, Ref: raw.Text, Target: target}, true
+	default:
+		v.report(TypeMismatch, v.at, "%s param %s has no type", name, spec.Key)
+		return Value{}, false
 	}
-	v.report(TypeMismatch, v.at, "%s param %s has no type", name, spec.Key)
-	return Value{}, false
 }
 
 // code types a reference to a diagnostic code. The spelling must be one

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package store
@@ -279,6 +279,7 @@ func (s *sealedIndex) carriers(n directive.Name) []node.Declaration {
 				if held && slices.ContainsFunc(pkg.directives[subject], func(raw directive.Raw) bool {
 					return raw.Name == n
 				}) {
+
 					slot.decls = append(slot.decls, decl)
 				}
 			}

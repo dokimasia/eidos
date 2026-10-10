@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package diag_test
@@ -135,7 +135,7 @@ func TestDiag(t *testing.T) {
 
 // A comparison allocates nothing in the ordinary run, which runs no
 // benchmark.
-func TestDiagZeroAlloc(t *testing.T) {
+func TestDiagAllocs(t *testing.T) {
 	first, second := ordered()
 	var got int
 	assert.MaxAllocs(t, func() { got = first.Compare(second) }, 0, "Compare allocates nothing")

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -231,12 +231,12 @@ func (d *executableDigests) of(exe state.Executable) ([sha256.Size]byte, error) 
 	}
 	f, err := os.Open(exe.Path)
 	if err != nil {
-		return [sha256.Size]byte{}, err
+		return [sha256.Size]byte{}, fmt.Errorf("hashing the executable: %w", err)
 	}
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return [sha256.Size]byte{}, err
+		return [sha256.Size]byte{}, fmt.Errorf("hashing the executable: %w", err)
 	}
 	var sum [sha256.Size]byte
 	h.Sum(sum[:0])
@@ -254,11 +254,11 @@ func (d *executableDigests) of(exe state.Executable) ([sha256.Size]byte, error) 
 func executable(recorded state.Executable) (state.Executable, error) {
 	path, err := os.Executable()
 	if err != nil {
-		return state.Executable{}, err
+		return state.Executable{}, fmt.Errorf("locating the executable: %w", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return state.Executable{}, err
+		return state.Executable{}, fmt.Errorf("checking the executable: %w", err)
 	}
 	exe := state.Executable{Path: path, Size: info.Size(), ModTime: info.ModTime()}
 	if recorded.Path == exe.Path && recorded.Size == exe.Size && recorded.ModTime.Equal(exe.ModTime) {

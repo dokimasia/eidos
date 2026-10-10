@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta_test
@@ -100,7 +100,7 @@ func TestClaim(t *testing.T) {
 
 // Two places compare without allocating in the ordinary run, which runs
 // no benchmark.
-func TestClaimZeroAlloc(t *testing.T) {
+func TestClaimAllocs(t *testing.T) {
 	earlier, later := places()
 	var got int
 	assert.MaxAllocs(t, func() { got = earlier.Compare(later) }, 0, "Compare allocates nothing")

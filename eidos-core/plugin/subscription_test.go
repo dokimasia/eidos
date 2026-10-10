@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin_test
@@ -96,7 +96,7 @@ func TestSubscription(t *testing.T) {
 
 // A declared phase spells without allocating in the ordinary run,
 // which runs no benchmark.
-func TestSubscriptionZeroAlloc(t *testing.T) {
+func TestSubscriptionAllocs(t *testing.T) {
 	phase := plugin.PhaseEmit
 	var got string
 	assert.MaxAllocs(t, func() { got = phase.String() }, 0, "String allocates nothing for a declared phase")

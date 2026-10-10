@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin_test
@@ -70,7 +70,7 @@ func TestPlugin(t *testing.T) {
 
 // A declared role spells without allocating in the ordinary run, which
 // runs no benchmark.
-func TestPluginZeroAlloc(t *testing.T) {
+func TestPluginAllocs(t *testing.T) {
 	role := plugin.RoleGenerator
 	var got string
 	assert.MaxAllocs(t, func() { got = role.String() }, 0, "String allocates nothing for a declared role")

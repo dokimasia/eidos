@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package diag
@@ -46,14 +46,14 @@ type Sink struct {
 	mu     sync.Mutex
 	found  []Diag
 	failed bool
+	// promoted reports every Warning as an Error once Promote ran.
+	promoted bool
 	// table lists, by the position of a declaration, the codes whose
 	// findings the sink removes there. It is nil until Suppress.
 	table map[position.Pos][]Code
 	// removed counts the findings that the table removed, by position
 	// and code.
 	removed map[position.Pos]map[Code]int
-	// promoted reports every Warning as an Error once Promote ran.
-	promoted bool
 }
 
 // NewSink returns an empty sink.

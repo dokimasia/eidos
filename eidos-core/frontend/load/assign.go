@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load
@@ -501,6 +501,8 @@ func (a *assigner) disc(params []*node.Param) string {
 			b.WriteString(discPositional)
 		case symbol.VariadicKeyword:
 			b.WriteString(discKeyword)
+		case symbol.VariadicNone:
+			// A parameter that is not variadic has no mark.
 		}
 		discType(&b, p.Type)
 		if p.Optional {

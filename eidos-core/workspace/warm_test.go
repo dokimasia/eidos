@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace_test
 
 import (
+	"bytes"
 	"slices"
 	"strconv"
 	"strings"
@@ -292,11 +293,12 @@ func TestWarm(t *testing.T) {
 			mem := ledger.NewMem()
 			w := built(t, warmBuilder(t, mem, &warmKeys{}))
 			sealedRun(t, w, workspace.Input{Tree: before})
-			first := liveGeneration(t, mem)
 			refused := editedAfter(before, warmTree(rowLine, colLine, readerLine, unknownStamp))
-			_, err := w.Run(t.Context(), workspace.Input{Tree: refused})
+			var err error
+			assert.Pure(t, func() string { return liveGeneration(t, mem) }, func() {
+				_, err = w.Run(t.Context(), workspace.Input{Tree: refused})
+			}, "the generation of the first run is still live")
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refused stamp fails the run")
-			assert.Equal(t, liveGeneration(t, mem), first, "the generation of the first run is still live")
 		})
 
 		t.Run("reports a refused stamp again on the next run", func(t *testing.T) {
@@ -504,7 +506,7 @@ func editedAfter(before, after fstest.MapFS) fstest.MapFS {
 	edited := make(fstest.MapFS, len(after))
 	for path, f := range after {
 		file := *f
-		if was, found := before[path]; !found || string(was.Data) != string(file.Data) {
+		if was, found := before[path]; !found || !bytes.Equal(was.Data, file.Data) {
 			file.ModTime = warmEdit
 		}
 		edited[path] = &file

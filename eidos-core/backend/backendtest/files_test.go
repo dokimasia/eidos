@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backendtest_test
 
 import (
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -130,9 +131,11 @@ func paths(files []plugin.File) []string {
 	out := make([]string, 0, len(files))
 	for _, f := range files {
 		line := f.Path + ":"
+		var lineSb133 strings.Builder
 		for _, u := range f.Units {
-			line += " " + string(u.Plugin)
+			lineSb133.WriteString(" " + string(u.Plugin))
 		}
+		line += lineSb133.String()
 		out = append(out, line)
 	}
 	return out

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state_test
@@ -306,8 +306,9 @@ func TestLoadState(t *testing.T) {
 			g := recordedLoad(t, l, loaded(t, tree, nil))
 			units := unitsOf(t, g.Load(t.Context()))
 			assert.Length(t, units, 1, "the dropped unit's row is gone")
-			var paths []string
-			for _, f := range filesOf(t, g.Load(t.Context())) {
+			recorded := filesOf(t, g.Load(t.Context()))
+			paths := make([]string, 0, len(recorded))
+			for _, f := range recorded {
 				paths = append(paths, f.Path)
 			}
 			assert.NotContains(t, paths, apiFile, "and so is its file's record")

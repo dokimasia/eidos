@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package schema
@@ -77,11 +77,11 @@ type TypeRef struct {
 	Target   symbol.Identity `eidos:"both"`      // zero until resolution, and for builtins, externals and structural forms
 	Package  string          `eidos:"both"`      // what the import names; "" for a builtin, a structural form and a name needing no import
 	Form     symbol.TypeForm `eidos:"both"`      // the structure; FormNamed by default
+	Variance symbol.Variance `eidos:"both"`      // FormWildcard: In for a lower bound, Out for an upper one
+	Async    bool            `eidos:"both"`      // FormStream: the elements arrive asynchronously
 	Elems    []*TypeRef      `eidos:"both,walk"` // the form's children, in the form's fixed order
 	Split    int             `eidos:"both"`      // FormFunc: the index in Elems where the returns begin
 	Length   int             `eidos:"both"`      // FormArray: the literal length; 0 when the spelling keeps an expression
-	Variance symbol.Variance `eidos:"both"`      // FormWildcard: In for a lower bound, Out for an upper one
-	Async    bool            `eidos:"both"`      // FormStream: the elements arrive asynchronously
 	Args     []*TypeRef      `eidos:"both,walk"` // the type arguments of an instantiation
 	Fields   []*Field        `eidos:"node,walk"` // FormInline: the body's fields, without identities
 	Methods  []*Method       `eidos:"node,walk"` // FormInline: the body's methods, without identities
@@ -109,9 +109,9 @@ type TypeParam struct {
 	Pos          position.Pos    `eidos:"node"`
 	Name         string          `eidos:"both,name"`
 	Variance     symbol.Variance `eidos:"both,fact=Variance"`
+	Const        bool            `eidos:"both,fact=ConstParam"` // the argument is a value, not a type
 	Bounds       []*TypeRef      `eidos:"both,walk"`
 	Default      *TypeRef        `eidos:"both,walk,fact=TypeParamDefault"` // default type argument; nil when none
-	Const        bool            `eidos:"both,fact=ConstParam"`            // the argument is a value, not a type
 	Type         *TypeRef        `eidos:"both,walk"`                       // the value's type, when Const
 	DefaultValue string          `eidos:"both"`                            // default value spelling, when Const
 }

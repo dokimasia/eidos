@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rulestest
@@ -358,6 +358,7 @@ func AssertRecorded(tb assert.TB, setup Setup) {
 		field, is := s.(*node.Field)
 		if !is || field.Type == nil || field.Type.Target.IsZero() ||
 			field.Type.Target.Kind == symbol.KindTypeParam {
+
 			continue
 		}
 		driven++

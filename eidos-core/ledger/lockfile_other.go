@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 //go:build !(darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd || windows)

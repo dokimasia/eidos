@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -151,7 +151,7 @@ func decodeIndex(index []byte, sum uint32, limit int) ([]blockRef, error) {
 	d := wire.NewDecoder(index)
 	refs := make([]blockRef, d.Count())
 	for i := range refs {
-		refs[i] = blockRef{first: d.Bytes(), offset: int(d.Uvarint()), length: int(d.Uvarint())}
+		refs[i] = blockRef{first: d.Bytes(), offset: d.Int(), length: d.Int()}
 		if refs[i].offset+refs[i].length+trailerSize > limit {
 			d.Fail(fmt.Errorf("%w: a block lies outside its run", ErrDamaged))
 		}

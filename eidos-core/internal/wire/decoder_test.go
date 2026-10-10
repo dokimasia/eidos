@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package wire_test
@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"math"
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -26,6 +28,9 @@ var errFound = errors.New("wire_test: the value is not one the caller knows")
 // The encodings each read's cases and benchmark decode: one value each.
 var (
 	uvarint300  = binary.AppendUvarint(nil, 300)
+	uvarintMax  = binary.AppendUvarint(nil, math.MaxUint64)
+	enumSeven   = binary.AppendUvarint(nil, 7)
+	enumWide    = binary.AppendUvarint(nil, math.MaxUint8+1)
 	varintMinus = binary.AppendVarint(nil, -7)
 	byteAB      = []byte{0xab}
 	boolTrue    = wire.AppendBool(nil, true)
@@ -182,6 +187,21 @@ func TestDecoder(t *testing.T) {
 			bad:  overflow, fault: "returns ErrMalformed for an unsigned integer that overflows",
 		},
 		{
+			method: "Enum", ok: enumSeven, want: uint8(7),
+			read: func(d *wire.Decoder) any { return d.Enum() },
+			bad:  enumWide, fault: "returns ErrMalformed for a value larger than a byte",
+		},
+		{
+			method: "Int", ok: uvarint300, want: 300,
+			read: func(d *wire.Decoder) any { return d.Int() },
+			bad:  uvarintMax, fault: "returns ErrMalformed for a value larger than the largest int",
+		},
+		{
+			method: "Int64", ok: uvarint300, want: int64(300),
+			read: func(d *wire.Decoder) any { return d.Int64() },
+			bad:  uvarintMax, fault: "returns ErrMalformed for a value larger than the largest int64",
+		},
+		{
 			method: "Varint", ok: varintMinus, want: int64(-7),
 			read: func(d *wire.Decoder) any { return d.Varint() },
 			bad:  overflow, fault: "returns ErrMalformed for a signed integer that overflows",
@@ -239,10 +259,11 @@ func TestDecoder(t *testing.T) {
 	}
 }
 
-// Every read but a text allocates nothing, and so does a caller's
-// failure. A text allocates its string. The ordinary run, which runs no
-// benchmark, checks these ceilings here. The check runs alone, because
-// the count includes every goroutine's allocations.
+// Every read but a text allocates nothing, the checked reads included,
+// and so does a caller's failure. A text allocates its string. The
+// ordinary run, which runs no benchmark, checks these ceilings here. The
+// check runs alone, because the count includes every goroutine's
+// allocations.
 func TestDecoderAllocs(t *testing.T) {
 	b := record()
 	var (
@@ -272,6 +293,21 @@ func TestDecoderAllocs(t *testing.T) {
 		got = d.Text()
 	}, 1, "Text allocates the string it returns")
 	assert.Equal(t, got, "cd", "Text returns the text")
+	checked := slices.Concat(enumSeven, uvarint300, uvarint300)
+	var (
+		enum  uint8
+		count int
+		wide  int64
+	)
+	assert.MaxAllocs(t, func() {
+		d = wire.NewDecoder(checked)
+		enum = d.Enum()
+		count = d.Int()
+		wide = d.Int64()
+	}, 0, "the checked reads of an enumeration, an int and an int64 allocate nothing")
+	expect.Equal(t, enum, uint8(7), "Enum returns the enumeration")
+	expect.Equal(t, count, 300, "Int returns the int")
+	expect.Equal(t, wide, int64(300), "Int64 returns the int64")
 	assert.MaxAllocs(t, func() {
 		d = wire.NewDecoder(text)
 		d.Fail(errFound)
@@ -303,6 +339,39 @@ func BenchmarkDecoder(b *testing.B) {
 			got = d.Uvarint()
 		}
 		assert.Equal(b, got, uint64(300), "the unsigned integer")
+	})
+
+	b.Run("Enum", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got uint8
+		for c.Loop() {
+			d := wire.NewDecoder(enumSeven)
+			got = d.Enum()
+		}
+		assert.Equal(b, got, uint8(7), "the enumeration")
+	})
+
+	b.Run("Int", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			d := wire.NewDecoder(uvarint300)
+			got = d.Int()
+		}
+		assert.Equal(b, got, 300, "the int")
+	})
+
+	b.Run("Int64", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int64
+		for c.Loop() {
+			d := wire.NewDecoder(uvarint300)
+			got = d.Int64()
+		}
+		assert.Equal(b, got, int64(300), "the int64")
 	})
 
 	b.Run("Varint", func(b *testing.B) {

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package model
@@ -80,9 +80,12 @@ const (
 
 // The schema spellings of the types the binary codec writes by name.
 const (
+	stringType   = "string"
+	boolType     = "bool"
+	intType      = "int"
 	identityType = symbolQualifier + "Identity"
 	posType      = positionQualifier + "Pos"
-	stringsType  = sliceMarker + "string"
+	stringsType  = sliceMarker + stringType
 )
 
 // Field names the models treat by convention and not by tag.
@@ -137,6 +140,14 @@ type view struct {
 	DocExpr string
 	HasPos  bool
 	HasDoc  bool
+	// Subject marks a kind the dispatch surface triggers on, which
+	// is what the match template ranges over.
+	Subject bool
+	// Fallible reports whether the binary encoding of the kind can
+	// fail: the kind has a field that admits any kind, or a field of a
+	// kind whose encoding can fail. Only a symbol from outside the
+	// model fails an encoding.
+	Fallible bool
 	// Members satisfy the Membered interface. The slice is empty for
 	// a kind without a member list, and an entry with an empty Items
 	// returns nil.
@@ -147,9 +158,6 @@ type view struct {
 	// IDStorage is the field returning the identity accessor, empty
 	// on the emit side, which has an origin instead.
 	IDStorage string
-	// Subject marks a kind the dispatch surface triggers on, which
-	// is what the match template ranges over.
-	Subject bool
 	// OriginStorage is the field returning OriginOf, empty on the
 	// node side and on emit kinds that derive from nothing.
 	OriginStorage string
@@ -189,11 +197,6 @@ type view struct {
 	// has the wrong JSON type, so a decoder places the kind and then
 	// fails on its body.
 	Malformed string
-	// Fallible reports whether the binary encoding of the kind can
-	// fail: the kind has a field that admits any kind, or a field of a
-	// kind whose encoding can fail. Only a symbol from outside the
-	// model fails an encoding.
-	Fallible bool
 	// Populate are the statements a test uses to give the subject a
 	// value other than the zero value in every field the binary codec
 	// writes as a value, each field a value of its own.
@@ -259,9 +262,6 @@ type fieldView struct {
 	// Items ranges over the field's values, and Len sizes them.
 	Items string
 	Len   string
-	// Slice and Pointer describe the shape the traversal walks.
-	Slice   bool
-	Pointer bool
 	// Accessor is the exported slot method, empty when the field is
 	// not a slot, and Child the expression constructing one value
 	// the slot admits.
@@ -278,6 +278,9 @@ type fieldView struct {
 	// reports whether writing the field can fail.
 	Codec    string
 	Fallible bool
+	// Slice and Pointer describe the shape the traversal walks.
+	Slice   bool
+	Pointer bool
 }
 
 // viewsFor prepares every kind for one model side.
@@ -362,11 +365,11 @@ func codecOf(field FieldSpec) string {
 		return codecRefs
 	case field.Elem != "":
 		return codecRef
-	case field.Type == "string":
+	case field.Type == stringType:
 		return codecString
-	case field.Type == "bool":
+	case field.Type == boolType:
 		return codecBool
-	case field.Type == "int":
+	case field.Type == intType:
 		return codecInt
 	case field.Type == stringsType:
 		return codecStrings
@@ -499,9 +502,9 @@ func factStated(field FieldSpec, f fieldView) string {
 	switch {
 	case field.Fact == multiReturnFact:
 		return f.Len + " > 1"
-	case field.Type == "bool":
+	case field.Type == boolType:
 		return f.selector()
-	case field.Type == "string":
+	case field.Type == stringType:
 		return f.selector() + ` != ""`
 	case field.Type == annotationsType:
 		return "len(" + f.selector() + ") > 0"
@@ -522,9 +525,9 @@ func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string
 	switch {
 	case field.Fact == multiReturnFact:
 		return target + " = " + qualify(field.Type) + "{{}, {}}"
-	case field.Type == "bool":
+	case field.Type == boolType:
 		return target + " = true"
-	case field.Type == "string":
+	case field.Type == stringType:
 		return target + ` = "x"`
 	case field.Type == annotationsType:
 		return target + " = " + annotationsType + "{{}}"
@@ -672,6 +675,7 @@ func viewOf(kind KindSpec, side string, reach map[string]bool, named map[string]
 	for _, field := range kind.Fields {
 		if (side == NodePackage && !field.Side.OnNode()) ||
 			(side == EmitPackage && !field.Side.OnEmit()) {
+
 			continue
 		}
 		f := fieldOf(field, side)
@@ -761,7 +765,7 @@ func malformedOf(v view) string {
 	}
 	field := v.Fields[0]
 	wrong := `"nope"`
-	if !strings.HasPrefix(field.JSONType, sliceMarker) && field.JSONType == "string" {
+	if !strings.HasPrefix(field.JSONType, sliceMarker) && field.JSONType == stringType {
 		wrong = "[]"
 	}
 	return `{"kind":"` + v.Name + `","` + field.JSONName + `":` + wrong + `}`
@@ -809,7 +813,7 @@ func childOf(f fieldView, enclosing string) string {
 // returns nothing when the kind has no member list at all, so a
 // kind that is not membered grows no methods.
 func membersOf(byName map[string]fieldView) []memberView {
-	var members []memberView
+	members := make([]memberView, 0, len(memberMethods))
 	found := false
 	for _, method := range memberMethods {
 		entry := memberView{Method: method.Method}

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load_test
@@ -429,9 +429,11 @@ func TestLink(t *testing.T) {
 // one field spells it through an alias bound to both paths.
 func dualTree(bound ...string) fstest.MapFS {
 	imports := "import dual"
+	var importsSb432 strings.Builder
 	for _, path := range bound {
-		imports += " " + path
+		importsSb432.WriteString(" " + path)
 	}
+	imports += importsSb432.String()
 	return fstest.MapFS{
 		"a/left/l.zz":  {Data: []byte("package a/left\ntype Thing string\n")},
 		"a/right/r.zz": {Data: []byte("package a/right\ntype Thing string\n")},

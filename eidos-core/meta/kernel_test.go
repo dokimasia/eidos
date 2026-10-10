@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta_test
@@ -132,12 +132,8 @@ func TestKernel(t *testing.T) {
 		t.Run("returns the handles of the first registration for a second registration", func(t *testing.T) {
 			t.Parallel()
 
-			r := meta.NewRegistry()
-			first, err := meta.Kernel(r)
-			assert.NoError(t, err, "the first registration succeeds")
-			again, err := meta.Kernel(r)
-			assert.NoError(t, err, "the second registration succeeds")
-			assert.Equal(t, again, first, "the second registration returns the same handles")
+			assert.Deterministic(t, meta.Kernel, meta.NewRegistry(),
+				"every registration after the first returns the handles of the first")
 		})
 
 		t.Run("returns an error naming the plugin that claimed the kernel namespace", func(t *testing.T) {

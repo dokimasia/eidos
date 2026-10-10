@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -148,6 +148,7 @@ func (l *Lane) Invoked(inv plugin.Invocation) {
 	if inv.Match.Rule != plugin.WholeCall && inv.Match.Host == (plugin.EmitRef{}) &&
 		(inv.Reads == nil || inv.Reads.Len() == 0) && len(inv.Exports) == 0 && len(inv.Units) == 0 &&
 		len(inv.Hosts) == 0 && len(inv.Claimed) == 0 && len(inv.Findings) == 0 {
+
 		return
 	}
 	l.edges = appendEdges(l.edges[:0], inv.Reads)

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load
@@ -171,8 +171,6 @@ type UnitReport struct {
 	// Files are the unit's members, in partition order, each with its
 	// shared inputs.
 	Files []plugin.SourceRef
-	// Depth is what the unit loaded at.
-	Depth plugin.Depth
 	// Key is the unit's finished key, folded as the package
 	// documentation states.
 	Key []byte
@@ -180,6 +178,8 @@ type UnitReport struct {
 	// dependency round's number for a unit a [plugin.Dependent]
 	// frontend returned.
 	Round int
+	// Depth is what the unit loaded at.
+	Depth plugin.Depth
 	// From states where the load took the unit's region from.
 	From From
 	// Restorable reports whether a parse memo can restore the unit. It is
@@ -200,7 +200,6 @@ type UnitReport struct {
 type unit struct {
 	frontend plugin.Frontend
 	files    []plugin.SourceRef
-	depth    plugin.Depth
 	// door is the fold of the record of the door that shaped the unit:
 	// the partition's, shared per frontend, or the dependency round's,
 	// shared per round.
@@ -212,6 +211,10 @@ type unit struct {
 	// record is the last load's record of the unit, matched by its
 	// first member, and nil for a unit the history lacks.
 	record *UnitRecord
+	depth  plugin.Depth
+	// relinked reports that a kept or restored unit's references select
+	// other targets than its region records, so its region changed.
+	relinked bool
 	// from is where the load takes the unit's region from. A parsed
 	// unit has its sink and its source unit, and the region the load
 	// builds from them. A kept unit's region decodes from the history on
@@ -220,9 +223,6 @@ type unit struct {
 	sink   *diag.Sink
 	src    *plugin.SourceUnit
 	region *store.Region
-	// relinked reports that a kept or restored unit's references select
-	// other targets than its region records, so its region changed.
-	relinked bool
 	// imports are the imports the unit's files name.
 	imports []Import
 	// linked are the findings the splice and the assignment reported

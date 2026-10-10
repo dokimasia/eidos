@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -148,12 +148,12 @@ type arrival struct {
 	member Member
 	// via is the contributor the member arrived by, nil for a
 	// declared member: what a conflict gap names.
-	via *node.TypeRef
+	via  *node.TypeRef
+	next int // index of the next arrival of this name, or -1
 	// sig is the member's signature, spelled the first time a rule
 	// compares one. signed reports whether it is spelled.
 	sig     string
 	signed  bool
-	next    int  // index of the next arrival of this name, or -1
 	dropped bool // folded away by an interface's set semantics
 }
 

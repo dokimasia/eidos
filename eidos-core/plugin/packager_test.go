@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin_test
@@ -166,7 +166,7 @@ func TestPackager(t *testing.T) {
 // The module arithmetic allocates nothing in the ordinary run, which
 // runs no benchmark, for a root longer than the compiler joins on the
 // stack.
-func TestPackagerZeroAlloc(t *testing.T) {
+func TestPackagerAllocs(t *testing.T) {
 	m, dir := deepModule(), deepDir
 	held := false
 	assert.MaxAllocs(t, func() { held = m.Contains(dir) }, 0, "Contains allocates nothing")

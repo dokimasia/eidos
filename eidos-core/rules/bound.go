@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -25,7 +25,7 @@ import (
 // # Allocation contract
 //
 // [NewBound] allocates the memo, one allocation. The memo stores each
-// [TypeShape] out of line, because a shape is 200 bytes and a Go map
+// [TypeShape] out of line, because a shape is 184 bytes and a Go map
 // stores a value above 128 bytes in an allocation of its own. Each
 // method states what it allocates.
 type Bound struct {

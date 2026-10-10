@@ -53,7 +53,7 @@ func TestSlots(t *testing.T) {
 
 // The accessors allocate nothing in the ordinary run, which runs no
 // benchmark.
-func TestSlotsZeroAlloc(t *testing.T) {
+func TestSlotsAllocs(t *testing.T) {
 	for _, tt := range slotsCases() {
 		assert.MaxAllocs(t, tt.call, 0, tt.name+" allocates nothing")
 		tt.check(t)

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package store_test
@@ -323,7 +323,7 @@ func TestReader(t *testing.T) {
 // allocates nothing, under a scope as without one. The count's warm-up
 // call records the edges. The check runs alone, because the count
 // includes every goroutine's allocations.
-func TestReaderZeroAlloc(t *testing.T) {
+func TestReaderAllocs(t *testing.T) {
 	decl := coretest.Struct(coretest.StorePath, "Store")
 	r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 	var held bool

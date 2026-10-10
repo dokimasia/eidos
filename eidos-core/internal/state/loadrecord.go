@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -62,9 +62,9 @@ type LoadState struct {
 	ctx context.Context
 	g   *Generation
 
-	filesOnce sync.Once
 	files     []load.FileRecord
 	filesErr  error
+	filesOnce sync.Once
 
 	unitsOnce sync.Once
 	units     []unitRow
@@ -649,7 +649,7 @@ func decodeFile(key, row []byte, interned map[string]string) (load.FileRecord, e
 		Change:  d.instant(),
 		Inode:   d.Uvarint(),
 		Digest:  d.Digest(),
-		Verdict: load.Verdict(d.Uvarint()),
+		Verdict: load.Verdict(d.Enum()),
 		Pkg:     d.identity(),
 	}
 	if err := d.Err(); err != nil {
@@ -684,10 +684,10 @@ func decodeUnit(row []byte, interned map[string]string) (unitRow, error) {
 	var u unitRow
 	u.record.Frontend = plugin.ID(d.text())
 	u.record.Files = d.refs()
-	u.record.Depth = plugin.Depth(d.Uvarint())
-	u.record.Round = int(d.Uvarint())
+	u.record.Depth = plugin.Depth(d.Enum())
+	u.record.Round = d.Int()
 	u.record.Key = bytes.Clone(d.Bytes())
-	u.region = RegionRef{Segment: d.text(), Offset: int64(d.Uvarint()), Length: int64(d.Uvarint())}
+	u.region = RegionRef{Segment: d.text(), Offset: d.Int64(), Length: d.Int64()}
 	u.record.Summary = d.summary()
 	u.record.Imports = d.imports()
 	u.record.Findings = d.findings()
@@ -727,7 +727,7 @@ func encodeDoor(door load.DoorRecord) []byte {
 func decodeDoor(row []byte, interned map[string]string) (load.DoorRecord, error) {
 	d := newDecoder(row, nil)
 	d.interned = interned
-	door := load.DoorRecord{Round: int(d.Uvarint())}
+	door := load.DoorRecord{Round: d.Int()}
 	if n := d.Count(); n > 0 {
 		door.Reads = make([]load.Digested, n)
 		for i := range door.Reads {
@@ -830,7 +830,7 @@ func (d *decoder) summary() store.RegionInfo {
 	if n := d.Count(); n > 0 {
 		s.Kinds = make([]symbol.Kind, n)
 		for i := range s.Kinds {
-			s.Kinds[i] = symbol.Kind(d.Uvarint())
+			s.Kinds[i] = symbol.Kind(d.Enum())
 		}
 	}
 	for range d.Count() {

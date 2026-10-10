@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package manifest
@@ -90,7 +90,7 @@ func Split(m Manifest) []Shard {
 	}
 	var lists [256][]Entry
 	filled := 0
-	for b, n := range counts {
+	for b, n := range &counts {
 		if n > 0 {
 			lists[b] = make([]Entry, 0, n)
 			filled++
@@ -100,7 +100,7 @@ func Split(m Manifest) []Shard {
 		lists[at[i]] = append(lists[at[i]], e)
 	}
 	out := make([]Shard, 0, filled)
-	for b, files := range lists {
+	for b, files := range &lists {
 		if files != nil {
 			out = append(out, Shard{Version: m.Version, Workspace: m.Workspace, Bucket: buckets[b], Files: files})
 		}

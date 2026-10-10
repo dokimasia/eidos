@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos_test
@@ -322,8 +322,9 @@ func subscribedKeys(tb assert.TB, p plugin.Plugin) []meta.KeyID {
 
 	subscribed, declares := p.(plugin.Subscribed)
 	assert.True(tb, declares, "a built plugin declares its gates")
-	var out []meta.KeyID
-	for _, s := range subscribed.Subscriptions() {
+	subscriptions := subscribed.Subscriptions()
+	out := make([]meta.KeyID, 0, len(subscriptions))
+	for _, s := range subscriptions {
 		out = append(out, s.FactKey)
 	}
 	return out

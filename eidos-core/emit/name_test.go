@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package emit_test
@@ -52,7 +52,7 @@ func TestName(t *testing.T) {
 
 // A declared name reads without allocating in the ordinary run, which
 // runs no benchmark.
-func TestNameZeroAlloc(t *testing.T) {
+func TestNameAllocs(t *testing.T) {
 	var d symbol.Symbol = &emit.Variable{Name: declared}
 	var got string
 	assert.MaxAllocs(t, func() { got = emit.DeclaredName(d) }, 0, "DeclaredName allocates nothing")

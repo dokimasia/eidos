@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backendtest_test
@@ -32,8 +32,9 @@ func TestCanonical(t *testing.T) {
 		t.Run("emits one unit per file-level kind", func(t *testing.T) {
 			t.Parallel()
 
-			var kinds []symbol.Kind
-			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+			units := unitsOf(t, backendtest.CanonicalFixture(t))
+			kinds := make([]symbol.Kind, 0, len(units))
+			for _, u := range units {
 				assert.NotEmpty(t, u.Decls, "every unit has declarations: "+u.Key)
 				kinds = append(kinds, u.Decls[0].Kind())
 			}

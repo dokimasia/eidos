@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package output_test
@@ -352,7 +352,7 @@ func TestSink(t *testing.T) {
 
 // A declared action and a declared verdict spell without allocating in
 // the ordinary run, which runs no benchmark.
-func TestSinkZeroAlloc(t *testing.T) {
+func TestSinkAllocs(t *testing.T) {
 	action, found := output.ActionUpdated, output.FoundIntact
 	var got string
 	assert.MaxAllocs(t, func() { got = action.String() }, 0, "Action.String allocates nothing for a declared action")

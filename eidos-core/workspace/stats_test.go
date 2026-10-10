@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace_test
@@ -190,7 +190,7 @@ func TestStats(t *testing.T) {
 			first := sealedPlan(t, "first", mirror("first-mirror"))
 			report := sealedRun(t, built(t, sealingPlans(ledger.NewMem(), second, first)),
 				workspace.Input{Tree: statsTree()})
-			var calls []plugin.ID
+			calls := make([]plugin.ID, 0, len(report.Stats.Invoked))
 			for _, c := range report.Stats.Invoked {
 				calls = append(calls, c.Plugin)
 			}

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package directive_test
@@ -58,8 +58,9 @@ func TestKernel(t *testing.T) {
 		t.Run("returns an out schema that declares the reserved routing keys", func(t *testing.T) {
 			t.Parallel()
 
-			var keys []directive.ParamKey
-			for _, spec := range kernelSchema(t, directive.KernelOut).Params {
+			params := kernelSchema(t, directive.KernelOut).Params
+			keys := make([]directive.ParamKey, 0, len(params))
+			for _, spec := range params {
 				keys = append(keys, spec.Key)
 			}
 			expect.That(t, keys).

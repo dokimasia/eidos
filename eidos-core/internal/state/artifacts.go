@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -234,7 +234,7 @@ func decodeArtifact(d *decoder, at string) Artifact {
 			key := plugin.ExportKey{Origin: d.identity(), Plugin: plugin.ID(d.text()), Tag: d.text()}
 			key.Host, key.Name = d.text(), d.text()
 			a.Export[i] = plugin.ExportedSymbol{
-				ExportKey: key, Kind: symbol.Kind(d.Uvarint()), Spelling: d.text(), Package: a.Pkg, File: at,
+				ExportKey: key, Kind: symbol.Kind(d.Enum()), Spelling: d.text(), Package: a.Pkg, File: at,
 			}
 		}
 	}
@@ -242,7 +242,7 @@ func decodeArtifact(d *decoder, at string) Artifact {
 		a.Names = make([]plugin.NameEntry, n)
 		for i := range a.Names {
 			a.Names[i] = plugin.NameEntry{
-				Package: d.text(), Receiver: d.text(), Origin: d.identity(), Kind: symbol.Kind(d.Uvarint()),
+				Package: d.text(), Receiver: d.text(), Origin: d.identity(), Kind: symbol.Kind(d.Enum()),
 				Emitted: d.text(), Settled: d.text(), File: at, FilePkg: a.Pkg,
 			}
 		}

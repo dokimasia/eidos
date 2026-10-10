@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package store_test
@@ -509,11 +509,11 @@ func TestSealed(t *testing.T) {
 	})
 }
 
-// TestSealedZeroAlloc checks that a read of a built index allocates
+// TestSealedAllocs checks that a read of a built index allocates
 // nothing: every lookup, and every enumeration ranged directly, once
 // each has decoded its regions. The check runs alone, because the count
 // includes every goroutine's allocations.
-func TestSealedZeroAlloc(t *testing.T) {
+func TestSealedAllocs(t *testing.T) {
 	f := newSplit()
 	g, _ := f.sealed()
 	warm(g, f.store.ID)

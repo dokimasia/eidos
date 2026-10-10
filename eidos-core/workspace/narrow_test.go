@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace_test
@@ -121,10 +121,10 @@ func TestNarrow(t *testing.T) {
 			t.Parallel()
 
 			root, w, l := onDiskRun(t)
-			first := liveGeneration(t, l)
-			grown(t, root)
-			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Patterns: []string{storePattern}})
-			assert.Equal(t, liveGeneration(t, l), first, "the generation of the first run is still live")
+			assert.Pure(t, func() string { return liveGeneration(t, l) }, func() {
+				grown(t, root)
+				sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Patterns: []string{storePattern}})
+			}, "the generation of the first run is still live")
 		})
 
 		t.Run("commits on the next run the change that a run with patterns withheld", func(t *testing.T) {
@@ -249,11 +249,11 @@ func TestNarrow(t *testing.T) {
 			t.Parallel()
 
 			root, w, l := onDiskRun(t)
-			first := liveGeneration(t, l)
-			assert.NoError(t, os.Remove(filepath.Join(root, filepath.FromSlash(apiSource))),
-				"the api package's source is deleted")
-			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Prune: true})
-			assert.Equal(t, liveGeneration(t, l), first, "the generation of the first run is still live")
+			assert.Pure(t, func() string { return liveGeneration(t, l) }, func() {
+				assert.NoError(t, os.Remove(filepath.Join(root, filepath.FromSlash(apiSource))),
+					"the api package's source is deleted")
+				sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Prune: true})
+			}, "the generation of the first run is still live")
 		})
 	})
 }

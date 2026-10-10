@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state_test
@@ -87,7 +87,7 @@ func TestTable(t *testing.T) {
 
 // A declared table spells without allocating in the ordinary run, which
 // runs no benchmark.
-func TestTableZeroAlloc(t *testing.T) {
+func TestTableAllocs(t *testing.T) {
 	table := state.TableChecks
 	var got string
 	assert.MaxAllocs(t, func() { got = table.String() }, 0, "String allocates nothing for a declared table")

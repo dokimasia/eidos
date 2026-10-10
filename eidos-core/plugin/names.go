@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin
@@ -57,12 +57,12 @@ type NameEntry struct {
 	// Origin is the declaration's origin, and the zero identity for a
 	// declaration without one.
 	Origin symbol.Identity
-	// Kind is the declaration's kind.
-	Kind symbol.Kind
 	// Emitted is the name the declaration was emitted under, and
 	// Settled the name the settle left it with.
 	Emitted string
 	Settled string
+	// Kind is the declaration's kind.
+	Kind symbol.Kind
 	// Ambiguous reports that more than one declaration of the package
 	// declares the emitted name under different settled names. A bare
 	// reference to such a name is left as written.

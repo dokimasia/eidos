@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontendtest
@@ -550,9 +550,9 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 				"an attached instance passes validation: "+d.Code.String()+" "+d.Msg)
 		}
 		for _, line := range decl.Docs() {
-			payload := line
-			if _, cut, isCarrier := plugin.CutCarrier(line, string(Brand)); isCarrier {
-				payload = cut
+			_, payload, isCarrier := plugin.CutCarrier(line, string(Brand))
+			if !isCarrier {
+				payload = line
 			}
 			if raw, err := directive.Parse(payload); err == nil {
 				expect.NotContains(tb, names, raw.Name,

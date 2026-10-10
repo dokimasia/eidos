@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos_test
@@ -165,8 +165,9 @@ func TestStamper(t *testing.T) {
 			g, alpha, beta := fixtureGraph(t)
 			reg := meta.NewRegistry()
 			assert.NoError(t, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
-			var keys []meta.Key[bool]
-			for _, name := range []meta.KeyName{"t.first", "t.second", "t.third"} {
+			names := []meta.KeyName{"t.first", "t.second", "t.third"}
+			keys := make([]meta.Key[bool], 0, len(names))
+			for _, name := range names {
 				key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "a fixture key"})
 				assert.NoError(t, err, "the key registers")
 				keys = append(keys, key)
@@ -213,8 +214,9 @@ func TestStamper(t *testing.T) {
 			g, _, beta := fixtureGraph(t)
 			reg := meta.NewRegistry()
 			assert.NoError(t, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
-			var keys []meta.Key[bool]
-			for _, name := range []meta.KeyName{"t.first", "t.second"} {
+			names := []meta.KeyName{"t.first", "t.second"}
+			keys := make([]meta.Key[bool], 0, len(names))
+			for _, name := range names {
 				key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "a fixture key"})
 				assert.NoError(t, err, "the key registers")
 				keys = append(keys, key)

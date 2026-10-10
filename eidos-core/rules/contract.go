@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -258,11 +258,11 @@ type MemberPolicy struct {
 	// for the JVM languages, Extends for TypeScript. A policy
 	// listing none contributes nothing beyond the declared members.
 	Contributes []Contribution
+	// Depth bounds the walk. 0 takes [DefaultDepth].
+	Depth int
 	// Shadowing states how two members of one name settle. The zero
 	// value settles nothing and keeps the declared members alone.
 	Shadowing Shadowing
-	// Depth bounds the walk. 0 takes [DefaultDepth].
-	Depth int
 	// EmbedsAreFields records each embed of a struct as a member:
 	// the embedded field, named by its identity's name, at the depth
 	// of the type that declares it. Go selects an embedded field by

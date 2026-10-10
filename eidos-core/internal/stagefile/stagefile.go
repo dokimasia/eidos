@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package stagefile
 
 import (
+	"fmt"
 	"io/fs"
 	"math/rand/v2"
 	"os"
@@ -39,7 +40,7 @@ func Replace(r *os.Root, name string, body []byte, perm fs.FileMode) error {
 	stage := name + Suffix
 	f, err := r.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
-		return err
+		return fmt.Errorf("stagefile: %w", err)
 	}
 	return finish(r, f, stage, name, body, Synced)
 }
@@ -59,7 +60,7 @@ func ReplaceShared(r *os.Root, name string, body []byte, perm fs.FileMode, d Dur
 	stage := name + "." + strconv.FormatUint(rand.Uint64()|1<<63, 16) + Suffix
 	f, err := r.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
-		return err
+		return fmt.Errorf("stagefile: %w", err)
 	}
 	return finish(r, f, stage, name, body, d)
 }
@@ -80,6 +81,7 @@ func finish(r *os.Root, f *os.File, stage, name string, body []byte, d Durabilit
 	}
 	if err != nil {
 		_ = r.Remove(stage)
+		return fmt.Errorf("stagefile: %w", err)
 	}
-	return err
+	return nil
 }

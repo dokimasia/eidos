@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -262,12 +262,12 @@ func decodeGeneration(b []byte) (*Generation, error) {
 	}
 	for range d.Count() {
 		s := d.text()
-		g.segments[s] = int(d.Uvarint())
+		g.segments[s] = d.Int()
 	}
 	for t := range g.tables {
 		for range d.Count() {
 			g.tables[t] = append(g.tables[t], runRef{
-				segment: d.text(), offset: int64(d.Uvarint()), length: int64(d.Uvarint()),
+				segment: d.text(), offset: d.Int64(), length: d.Int64(),
 			})
 		}
 	}

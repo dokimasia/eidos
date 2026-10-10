@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state_test
@@ -190,7 +190,7 @@ func TestGeneration(t *testing.T) {
 			g := committed(t, l, past, "beta")
 			rows, err := g.All(t.Context(), state.TableChecks)
 			assert.NoError(t, err, "the table reads")
-			var keys []string
+			keys := make([]string, 0, len(rows))
 			for _, r := range rows {
 				keys = append(keys, string(r.Key))
 			}

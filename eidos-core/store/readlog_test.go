@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package store_test
@@ -167,7 +167,7 @@ func TestReadLog(t *testing.T) {
 // set, and a log reset and filled again allocates nothing within its
 // earlier use. The check runs alone, because the count includes every
 // goroutine's allocations.
-func TestReadLogZeroAlloc(t *testing.T) {
+func TestReadLogAllocs(t *testing.T) {
 	reads := everyGrain(t)
 	var log store.ReadLog
 	at := log.Append(reads)

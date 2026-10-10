@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta_test
@@ -126,7 +126,7 @@ func TestKey(t *testing.T) {
 
 // A name and a handle report what they spell without allocating in the
 // ordinary run, which runs no benchmark.
-func TestKeyZeroAlloc(t *testing.T) {
+func TestKeyAllocs(t *testing.T) {
 	key := registered(t)
 	name := key.Name()
 	var namespace string

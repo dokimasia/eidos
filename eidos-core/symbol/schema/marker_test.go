@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package schema_test
@@ -158,8 +158,9 @@ func TestMarker(t *testing.T) {
 				declared = append(declared, name)
 			}
 		}
-		listed := []string{}
-		for name := range everyKind() {
+		kinds := everyKind()
+		listed := make([]string, 0, len(kinds))
+		for name := range kinds {
 			listed = append(listed, name)
 		}
 		assert.Permutation(t, listed, declared,

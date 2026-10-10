@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state_test
@@ -359,9 +359,10 @@ func bagOf(f *meta.Facts, subject symbol.Identity) []meta.StoredClaim {
 // one block, spanSubjects subjects under each of three keys with the flag's
 // rows in the middle, and the flag's subjects in identity order.
 func spanRows() ([]state.Row, []symbol.Identity) {
-	var rows []state.Row
+	keys := []string{alphaKey, string(flagKey), otherKey}
+	rows := make([]state.Row, 0, len(keys)*spanSubjects)
 	flagged := make([]symbol.Identity, 0, spanSubjects)
-	for _, key := range []string{alphaKey, string(flagKey), otherKey} {
+	for _, key := range keys {
 		for i := range spanSubjects {
 			id := symbol.Identity{
 				Lang: recordedSubject.Lang, Package: recordedSubject.Package,

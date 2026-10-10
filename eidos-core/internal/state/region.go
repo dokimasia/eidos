@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -178,7 +178,7 @@ func (d *decoder) region() *store.Region {
 	if n := d.Count(); n > 0 {
 		r.Links = make([]store.Link, n)
 		for i := range r.Links {
-			l := store.Link{Ref: int(d.Uvarint())}
+			l := store.Link{Ref: d.Int()}
 			if tiers := d.Count(); tiers > 0 {
 				l.Tiers = make([][]symbol.Identity, tiers)
 				for j := range l.Tiers {

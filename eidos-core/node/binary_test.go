@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package node_test
@@ -125,12 +125,13 @@ func TestBinary(t *testing.T) {
 // repository produced. Each seed is the choices of one case: a two-byte
 // little-endian length, then the bytes of the input.
 func FuzzDecodeBinary(f *testing.F) {
-	inputs := [][]byte{{0xff}, overflow}
-	for _, seed := range []symbol.Symbol{
+	seeds := []symbol.Symbol{
 		coretest.EveryKind(coretest.StorePath),
 		coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")),
 		nil,
-	} {
+	}
+	inputs := append(make([][]byte, 0, 2+len(seeds)), []byte{0xff}, overflow)
+	for _, seed := range seeds {
 		b, err := node.AppendBinary(nil, seed, nil)
 		assert.NoError(f, err, "every seed symbol encodes")
 		inputs = append(inputs, b)

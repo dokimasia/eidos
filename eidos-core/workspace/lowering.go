@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -348,6 +348,9 @@ func (c *lowerCall) selected(sel *plugin.Selection) error {
 			pkgs = append(pkgs, m.Subject)
 		case ruleInstance:
 			instances = append(instances, m)
+		case plugin.WholeCall:
+			// The lowering journals an invocation for each match, so its
+			// selection has no whole call.
 		}
 	}
 	for _, id := range sel.Candidates {

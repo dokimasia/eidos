@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package wire
@@ -8,12 +8,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // ErrMalformed is the class of every decoding failure: the bytes end
-// inside a value, an integer overflows, a bool is neither zero nor one,
-// or a length exceeds the bytes left. A caller tests for it with
-// [errors.Is].
+// inside a value, an integer overflows or does not fit the type that the
+// caller reads, a bool is neither zero nor one, or a length exceeds the
+// bytes left. A caller tests for it with [errors.Is].
 var ErrMalformed = errors.New("wire: malformed encoding")
 
 // Decoder reads values from the front of a byte slice in sequence,
@@ -86,6 +87,39 @@ func (d *Decoder) Uvarint() uint64 {
 	return u
 }
 
+// Enum reads the value of an enumeration, an unsigned integer that fits
+// a byte, and fails for a larger value.
+func (d *Decoder) Enum() uint8 {
+	u := d.Uvarint()
+	if u > math.MaxUint8 {
+		d.fail("an enumeration does not fit a byte")
+		return 0
+	}
+	return uint8(u)
+}
+
+// Int reads an unsigned integer that fits an int, such as a count or an
+// offset, and fails for a larger value.
+func (d *Decoder) Int() int {
+	u := d.Uvarint()
+	if u > math.MaxInt {
+		d.fail("an unsigned integer does not fit an int")
+		return 0
+	}
+	return int(u)
+}
+
+// Int64 reads an unsigned integer that fits an int64, such as the offset
+// of a region in a segment, and fails for a larger value.
+func (d *Decoder) Int64() int64 {
+	u := d.Uvarint()
+	if u > math.MaxInt64 {
+		d.fail("an unsigned integer does not fit an int64")
+		return 0
+	}
+	return int64(u)
+}
+
 // Varint reads a signed integer.
 func (d *Decoder) Varint() int64 {
 	i, n := binary.Varint(d.rest)
@@ -126,12 +160,12 @@ func (d *Decoder) Bool() bool {
 // bytes left: every element takes at least one byte, so a larger length
 // is a corrupt encoding and never a long list.
 func (d *Decoder) Count() int {
-	n := d.Uvarint()
-	if n > uint64(len(d.rest)) {
+	n := d.Int()
+	if n > len(d.rest) {
 		d.fail("a list does not fit the bytes left")
 		return 0
 	}
-	return int(n)
+	return n
 }
 
 // Bytes reads a length and that many bytes, and returns them as a

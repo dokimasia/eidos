@@ -1,10 +1,11 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package diag_test
 
 import (
 	"cmp"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -21,6 +22,10 @@ const testPrefix diag.Prefix = "EIDTEST"
 // claimed counts the numbers the cases have taken under
 // [testPrefix].
 var claimed atomic.Int64
+
+// kernelMu serializes the cases that register into the kernel registry,
+// which is not safe for concurrent use.
+var kernelMu sync.Mutex
 
 // firstSpec is the registration the allocation checks and the
 // benchmarks make: number 7, with its meaning.
@@ -292,13 +297,18 @@ func TestCode(t *testing.T) {
 		}
 	})
 
-	// The kernel registry is package state, so its cases run in
-	// sequence and not in parallel: they would otherwise race on the map
-	// and see each other's registrations. That state outlives one test
-	// run too, so every case claims a number no other has, which is what
-	// lets the suite run twice in one binary.
+	// The kernel registry is package state, so each case that registers
+	// into it locks kernelMu. The state also outlives one test run, so
+	// every case claims a number that no other case claims. The suite can
+	// then run twice in one binary.
 	t.Run("MustRegister", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("records into the kernel registry", func(t *testing.T) {
+			t.Parallel()
+			kernelMu.Lock()
+			defer kernelMu.Unlock()
+
 			spec := diag.CodeSpec{
 				Number:  nextTestNumber(),
 				Meaning: "a code declared where it is registered",
@@ -313,6 +323,10 @@ func TestCode(t *testing.T) {
 		})
 
 		t.Run("panics for a number claimed twice", func(t *testing.T) {
+			t.Parallel()
+			kernelMu.Lock()
+			defer kernelMu.Unlock()
+
 			spec := diag.CodeSpec{Number: nextTestNumber(), Meaning: "the first claim"}
 			diag.MustRegister(testPrefix, spec)
 			spec.Meaning = "the second claim"
@@ -323,7 +337,11 @@ func TestCode(t *testing.T) {
 	})
 
 	t.Run("Kernel", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("returns one registry for every call", func(t *testing.T) {
+			t.Parallel()
+
 			first, second := diag.Kernel(), diag.Kernel()
 			assert.Equal(t, first, second,
 				"a code registered into one registry would be missing from another", assert.ByIdentity())
@@ -349,8 +367,9 @@ func TestCode(t *testing.T) {
 				assert.NoError(t, err, "every fixture code registers")
 			}
 
-			var got []string
-			for _, c := range r.Codes() {
+			codes := r.Codes()
+			got := make([]string, 0, len(codes))
+			for _, c := range codes {
 				got = append(got, c.String())
 			}
 			assert.Equal(t, got, []string{"EID-0003", "EID-0009", "EIDGO-0001", "EIDGO-0002"},

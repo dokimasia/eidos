@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package coretest_test
@@ -160,8 +160,9 @@ func TestLedger(t *testing.T) {
 			assert.NoError(t, err, "the record commits")
 			assert.NoError(t, l.Remove(t.Context(), "manifest/"+manifest.BucketOf(keptPath)+".json"),
 				"the kept file's document is removed")
-			paths := []string{}
-			for _, e := range onDisk(t, root).Files {
+			recorded := onDisk(t, root).Files
+			paths := make([]string, 0, len(recorded))
+			for _, e := range recorded {
 				paths = append(paths, e.Path)
 			}
 			assert.Contains(t, paths, keptPath, "the edit records the kept file again")

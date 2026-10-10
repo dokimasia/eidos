@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -176,7 +176,7 @@ func (d *decoder) storedClaim(subject symbol.Identity) meta.StoredClaim {
 	out := meta.StoredClaim{Key: meta.KeyName(d.text()), Group: meta.GroupName(d.text())}
 	out.Claim = meta.Claim{
 		Subject:   subject,
-		Authority: meta.Authority(d.Uvarint()),
+		Authority: meta.Authority(d.Enum()),
 		Bucket:    int(d.Varint()),
 		Plugin:    diag.Origin(d.text()),
 		Order:     meta.Order{Rule: int(d.Varint()), Subject: d.identity(), Instance: int(d.Varint())},

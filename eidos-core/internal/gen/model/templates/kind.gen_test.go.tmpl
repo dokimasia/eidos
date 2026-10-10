@@ -135,7 +135,7 @@ func TestKind(t *testing.T) {
 
 // String and ParseKind allocate nothing in the ordinary run, which
 // runs no benchmark.
-func TestKindZeroAlloc(t *testing.T) {
+func TestKindAllocs(t *testing.T) {
 	var spelled int
 	assert.MaxAllocs(t, func() { spelled = spellEveryKind() }, 0, "String allocates nothing")
 	assert.Equal(t, spelled, len(kindNamings), "String spells every kind")

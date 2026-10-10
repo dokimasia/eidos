@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -47,12 +47,6 @@ type Input struct {
 	// Graph is a sealed graph, or one the run seals. The run starts at
 	// directive validation and audits every declaration in it.
 	Graph *store.Graph
-	// Dry runs every phase and commits nothing: each plan stages,
-	// prepares and discards, and the ledger records nothing.
-	Dry bool
-	// Cold runs the tree without reading the sealed state, and reports
-	// nothing for it. The run writes the next generation as any run does.
-	Cold bool
 	// Plans restricts the run to the plans that it lists and every plan
 	// they depend on, transitively. Empty runs every plan. A plan that the
 	// selection leaves out reports [PlanSkipped]: it does not run, and its
@@ -69,6 +63,12 @@ type Input struct {
 	// every other change in [PlanReport.Withheld]. Run refuses a pattern
 	// that names no directory of a workspace tree.
 	Patterns []string
+	// Dry runs every phase and commits nothing: each plan stages,
+	// prepares and discards, and the ledger records nothing.
+	Dry bool
+	// Cold runs the tree without reading the sealed state, and reports
+	// nothing for it. The run writes the next generation as any run does.
+	Cold bool
 	// OverwriteDrift lets a plan write over a generated file that was
 	// edited since its stamp, where the run otherwise reports
 	// [DriftedOutput]. The sink has to implement [output.Overwriter].
@@ -833,7 +833,7 @@ func stampSubject(g *store.Graph, facts *meta.Facts, sink *diag.Sink, id symbol.
 func (w *Workspace) applyDrops(
 	table map[symbol.Identity][]directive.Directive, facts *meta.Facts,
 ) error {
-	var errs []error
+	errs := make([]error, 0, len(table))
 	for _, id := range slices.SortedFunc(maps.Keys(table), symbol.Identity.Compare) {
 		_, err := w.drops(facts, id, table[id], false, nil)
 		errs = append(errs, err)

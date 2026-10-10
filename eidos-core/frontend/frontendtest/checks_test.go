@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontendtest_test
@@ -801,6 +801,7 @@ func (b *blank) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 		node.Walk(pkg, func(s symbol.Symbol) bool {
 			if ref, is := s.(*node.TypeRef); is && !strings.Contains(ref.Spelling, ".") &&
 				ref.Spelling != "" && (ref.Spelling[0] < 'A' || ref.Spelling[0] > 'Z') {
+
 				ref.Spelling = ""
 			}
 			return true

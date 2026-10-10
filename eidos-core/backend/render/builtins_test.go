@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package render_test
@@ -152,7 +152,7 @@ func TestBuiltins(t *testing.T) {
 
 // use spells a use builtin over the given arguments, each quoted.
 func use(args ...string) string {
-	words := []string{render.BuiltinUse}
+	words := append(make([]string, 0, 1+len(args)), render.BuiltinUse)
 	for _, a := range args {
 		words = append(words, strconv.Quote(a))
 	}

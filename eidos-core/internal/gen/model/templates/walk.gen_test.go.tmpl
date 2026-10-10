@@ -282,7 +282,7 @@ func TestWalk(t *testing.T) {
 
 // The traversals allocate nothing in the ordinary run, which runs no
 // benchmark.
-func TestWalkZeroAlloc(t *testing.T) {
+func TestWalkAllocs(t *testing.T) {
 	for _, tt := range walkCases({{if .Identified}}1{{end}}) {
 		assert.MaxAllocs(t, tt.call, 0, tt.method+" for "+tt.name+" allocates nothing")
 		tt.check(t)

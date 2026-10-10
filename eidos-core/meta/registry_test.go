@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta_test
@@ -223,11 +223,9 @@ func TestRegistry(t *testing.T) {
 			t.Parallel()
 
 			r := claimed(t)
-			first, err := meta.Register[string](r, contractedRoleSpec(diag.SeverityError))
-			assert.NoError(t, err, "the first registration succeeds")
-			again, err := meta.Register[string](r, contractedRoleSpec(diag.SeverityError))
-			assert.NoError(t, err, "the repeated registration succeeds")
-			assert.Equal(t, again, first, "the repeated registration returns the first handle")
+			assert.Deterministic(t, func(s meta.KeySpec) (meta.Key[string], error) {
+				return meta.Register[string](r, s)
+			}, contractedRoleSpec(diag.SeverityError), "every repeated registration returns the first handle")
 			assert.Length(t, slices.Collect(r.Keys()), 1, "the registry keeps one key")
 			assert.Length(t, slices.Collect(r.Group("shape.writer")), 1, "the group keeps one member")
 		})

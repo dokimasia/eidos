@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load_test
@@ -816,7 +816,7 @@ func TestLoad(t *testing.T) {
 
 			_, report, _ := loadTree(t, stdTree())
 			store := unitOf(t, report, storeFile)
-			var spellings []string
+			spellings := make([]string, 0, len(store.Region.Links))
 			for _, link := range store.Region.Links {
 				assert.NotEmpty(t, link.Tiers, "each record keeps the candidates the frontend returned")
 				spellings = append(spellings, refAt(t, store.Region, link.Ref).Spelling)

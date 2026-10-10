@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package ledger_test
@@ -329,8 +329,9 @@ func TestDir(t *testing.T) {
 			assert.NoError(t, os.MkdirAll(onDisk(root, path.Join(holderFile, "blocked")), 0o755),
 				"a directory takes the record's place")
 			_, err := d.Lock(t.Context(), fixtureHolder)
-			assert.HasError(t, err, "the record is not written")
-			assert.ErrorIsNot(t, err, ledger.ErrLocked, "and the error is not a lock")
+			assert.That(t, err).
+				HasError("the record is not written").
+				ErrorIsNot(ledger.ErrLocked, "and the error is not a lock")
 			assert.NoError(t, os.RemoveAll(onDisk(root, holderFile)), "the directory is removed")
 			release, err := d.Lock(t.Context(), fixtureHolder)
 			assert.NoError(t, err, "the failed lock released its file")
@@ -343,8 +344,9 @@ func TestDir(t *testing.T) {
 			d, root := opened(t)
 			assert.NoError(t, os.MkdirAll(onDisk(root, lockFile), 0o755), "a directory takes the lock file's place")
 			_, err := d.Lock(t.Context(), fixtureHolder)
-			assert.HasError(t, err, "the lock file does not open")
-			assert.ErrorIsNot(t, err, ledger.ErrLocked, "and the error is not a lock")
+			assert.That(t, err).
+				HasError("the lock file does not open").
+				ErrorIsNot(ledger.ErrLocked, "and the error is not a lock")
 		})
 
 		t.Run("returns an error for a state directory that is a file", func(t *testing.T) {

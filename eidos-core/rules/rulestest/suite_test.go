@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rulestest_test
@@ -119,8 +119,10 @@ func TestSuite(t *testing.T) {
 					return silent{rulestest.Scripted()}, f
 				})
 			})
-			want := []string{"a spelling the language cannot reason about names its refusal"}
-			for _, field := range []string{userField, boxField, rowUser, rowInt, rowString} {
+			fields := []string{userField, boxField, rowUser, rowInt, rowString}
+			want := append(make([]string, 0, 1+2*len(fields)),
+				"a spelling the language cannot reason about names its refusal")
+			for _, field := range fields {
 				want = append(want, sampled+field, alternated+field)
 			}
 			assert.Permutation(t, coretest.Contracts(records), want,

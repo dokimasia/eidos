@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package diag_test
@@ -54,7 +54,7 @@ func TestSeverity(t *testing.T) {
 
 // A declared severity spells without allocating in the ordinary run,
 // which runs no benchmark.
-func TestSeverityZeroAlloc(t *testing.T) {
+func TestSeverityAllocs(t *testing.T) {
 	severity := diag.SeverityWarning
 	var got string
 	assert.MaxAllocs(t, func() { got = severity.String() }, 0, "String allocates nothing for a declared severity")

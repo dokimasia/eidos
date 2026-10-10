@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load_test
@@ -94,7 +94,7 @@ func TestGate(t *testing.T) {
 			t.Parallel()
 
 			_, report, _ := loadTree(t, stdTree())
-			var paths []string
+			paths := make([]string, 0, len(report.Files))
 			for _, f := range report.Files {
 				paths = append(paths, f.Path)
 			}

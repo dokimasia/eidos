@@ -170,7 +170,7 @@ func TestNames(t *testing.T) {
 
 // The traversal allocates nothing in the ordinary run, which runs no
 // benchmark, when the hook returns each name as it is.
-func TestNamesZeroAlloc(t *testing.T) {
+func TestNamesAllocs(t *testing.T) {
 	subjects := namesSubjects()
 	var visits int
 	var err error

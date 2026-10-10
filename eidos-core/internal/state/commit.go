@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -6,6 +6,7 @@ package state
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -97,7 +98,7 @@ func NewCommit(parent *Generation, recorded Digests) *Commit {
 // Error modes: an error for a second call.
 func (c *Commit) AddRegions(blobs [][]byte) ([]RegionRef, error) {
 	if c.regionSegment != "" {
-		return nil, fmt.Errorf("state: a commit adds one region segment, and it has one")
+		return nil, errors.New("state: a commit adds one region segment, and it has one")
 	}
 	if len(blobs) == 0 {
 		return nil, nil

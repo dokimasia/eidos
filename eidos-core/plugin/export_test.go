@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin_test
@@ -179,8 +179,9 @@ func TestExport(t *testing.T) {
 		t.Run("sorts one key's declarations by file", func(t *testing.T) {
 			t.Parallel()
 
-			var files []string
-			for _, s := range keyed(1).Symbols {
+			symbols := keyed(1).Symbols
+			files := make([]string, 0, len(symbols))
+			for _, s := range symbols {
 				files = append(files, s.File)
 			}
 			assert.Equal(t, files, []string{exportFile, exportOther}, "the files of one key")

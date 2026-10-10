@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos_test
@@ -151,7 +151,7 @@ func TestPresentation(t *testing.T) {
 
 // Each option constructor returns its option by value without
 // allocating, in the ordinary run, which runs no benchmark.
-func TestPresentationZeroAlloc(t *testing.T) {
+func TestPresentationAllocs(t *testing.T) {
 	tree, fm := stubTree(), template.FuncMap{toneHelper: shout}
 	var opt eidos.TargetOption
 	assert.MaxAllocs(t, func() { opt = eidos.Templates(tree) }, 0, "Templates allocates nothing")

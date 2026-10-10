@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package emit
@@ -50,13 +50,13 @@ func (k StmtKind) String() string {
 // a consumer switches on it and reads without an assertion. A Stmt
 // is a plain value: copy it freely.
 type Stmt struct {
-	Kind StmtKind `json:"kind"`
-	// Name is the guarded name; Names are the assignment targets.
-	Name    string   `json:"name,omitzero"`
-	Names   []string `json:"names,omitzero"`
-	Value   Expr     `json:"value,omitzero"`
+	Kind    StmtKind `json:"kind"`
 	Declare bool     `json:"declare,omitzero"`
-	Then    []Stmt   `json:"then,omitzero"`
+	// Name is the guarded name; Names are the assignment targets.
+	Name  string   `json:"name,omitzero"`
+	Names []string `json:"names,omitzero"`
+	Value Expr     `json:"value,omitzero"`
+	Then  []Stmt   `json:"then,omitzero"`
 }
 
 // ExprKind selects an expression's populated fields. The zero kind

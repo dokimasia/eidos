@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -477,11 +477,8 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 // entries run before every annotator, in the order of their names, so
 // each annotator reads every target name.
 func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry, []error) {
-	var faults []error
-
 	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
-	faults = append(faults, aerr...)
 	ann := make([]annEntry, 0, len(entries)+len(annotators))
 	for _, l := range entries {
 		ann = append(ann, annEntry{bucket: len(ann) + 1, name: l.Name(), run: l})
@@ -496,7 +493,6 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 
 	generators, gerr := order("generator", membersOf(roster, plugin.RoleGenerator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Generator); return held }))
-	faults = append(faults, gerr...)
 	gen := make([]genEntry, 0, len(generators))
 	for i, m := range generators {
 		run, held := m.p.(plugin.Generator)
@@ -505,7 +501,7 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 		}
 		gen = append(gen, genEntry{bucket: i + 1, name: m.name, run: run})
 	}
-	return ann, gen, faults
+	return ann, gen, slices.Concat(aerr, gerr)
 }
 
 // bindKeys is the binding step. Each plugin that implements
@@ -580,7 +576,7 @@ func order(role string, ms []member) ([]member, []error) {
 	var out []member
 	var faults []error
 	for start := 0; start < len(ms); {
-		end := start
+		end := start + 1
 		for end < len(ms) && ms[end].pri == ms[start].pri {
 			end++
 		}

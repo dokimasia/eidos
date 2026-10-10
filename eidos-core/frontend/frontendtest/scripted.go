@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontendtest
@@ -220,7 +220,7 @@ func (f *Scripted) ParseFile(u *plugin.SourceUnit, path string) error {
 func (*Scripted) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	bindings, _ := scope.Bindings.(map[string][]string)
 	if alias, name, qualified := strings.Cut(spelling, "."); qualified {
-		var tier []symbol.Identity
+		tier := make([]symbol.Identity, 0, len(bindings[alias]))
 		for _, pkg := range bindings[alias] {
 			tier = append(tier, symbol.Identity{Lang: ScriptedLang, Package: pkg, Name: name})
 		}
@@ -446,7 +446,7 @@ func NewScriptedExporter() *ScriptedExporter {
 // publishing alias binds, and nothing for a file that binds none.
 func (*ScriptedExporter) Exports(scope plugin.ImportScope, name string) plugin.Candidates {
 	bindings, _ := scope.Bindings.(map[string][]string)
-	var tier []symbol.Identity
+	tier := make([]symbol.Identity, 0, len(bindings[ScriptedPublish]))
 	for _, pkg := range bindings[ScriptedPublish] {
 		tier = append(tier, symbol.Identity{Lang: ScriptedLang, Package: pkg, Name: name})
 	}

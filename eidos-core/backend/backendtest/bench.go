@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package backendtest
@@ -253,8 +253,8 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			Name:   "circle",
 		}
 		circle.Fields.Append(&emit.Field{
-			Origin: memberOf("circle", "item", symbol.KindField),
-			Name:   "item",
+			Origin: memberOf("circle", itemName, symbol.KindField),
+			Name:   itemName,
 			Type:   typeRef("T"),
 		})
 		s.Variants.Append(circle, &emit.SumVariant{
@@ -296,7 +296,7 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 		iface.Methods.Append(&emit.Method{
 			Origin:  memberOf("store"+i, "get", symbol.KindMethod),
 			Name:    "get",
-			Params:  []*emit.Param{{Name: "key", Type: typeRef("string")}},
+			Params:  []*emit.Param{{Name: keyName, Type: typeRef("string")}},
 			Returns: []*emit.Return{{Type: typeRef("string")}},
 		})
 		return iface
@@ -330,7 +330,7 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 				{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 			},
 			Target: &emit.TypeRef{
-				Spelling: "keyed",
+				Spelling: keyedName,
 				Args:     []*emit.TypeRef{typeRef("T")},
 			},
 		}

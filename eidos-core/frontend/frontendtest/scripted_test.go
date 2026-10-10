@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontendtest_test
@@ -338,12 +338,14 @@ func TestScripted(t *testing.T) {
 
 			r := meta.NewRegistry()
 			assert.NoError(t, frontendtest.ScriptedKeys(r), "the first registration succeeds")
-			first, held := r.Resolve(frontendtest.ScriptedTestKey)
+			_, held := r.Resolve(frontendtest.ScriptedTestKey)
 			assert.True(t, held, "the first registration registers the key")
-			assert.NoError(t, frontendtest.ScriptedKeys(r), "the repeated registration succeeds")
-			again, held := r.Resolve(frontendtest.ScriptedTestKey)
-			assert.True(t, held, "the key remains registered")
-			assert.Equal(t, again, first, "the repeated registration keeps the key's id")
+			var err error
+			assert.Pure(t, func() meta.KeyID {
+				id, _ := r.Resolve(frontendtest.ScriptedTestKey)
+				return id
+			}, func() { err = frontendtest.ScriptedKeys(r) }, "the repeated registration keeps the key's id")
+			assert.NoError(t, err, "the repeated registration succeeds")
 		})
 
 		t.Run("returns an error naming the namespace for a claim of another registrant", func(t *testing.T) {

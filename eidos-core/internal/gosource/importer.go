@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package gosource
@@ -79,7 +79,11 @@ func (im *Importer) Import(path string) (*types.Package, error) {
 		return pkg, nil
 	}
 	if !im.owns(path) {
-		return im.std.Import(path)
+		pkg, err := im.std.Import(path)
+		if err != nil {
+			return nil, fmt.Errorf("gosource: %w", err)
+		}
+		return pkg, nil
 	}
 	if im.loading[path] {
 		err := fmt.Errorf("gosource: import cycle through %s", path)

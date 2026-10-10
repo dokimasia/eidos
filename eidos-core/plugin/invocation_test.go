@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin_test
@@ -183,7 +183,7 @@ func TestInvocation(t *testing.T) {
 // The orders allocate nothing: a warm run sorts and searches its
 // records by them. The checks run alone, because the count includes
 // every goroutine's allocations.
-func TestInvocationZeroAlloc(t *testing.T) {
+func TestInvocationAllocs(t *testing.T) {
 	later := baseMatch
 	later.Host.Index++
 	var got int

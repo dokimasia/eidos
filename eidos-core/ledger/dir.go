@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package ledger
@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -220,7 +221,14 @@ func (d *Dir) ReadAt(ctx context.Context, name string, p []byte, off int64) (int
 		return 0, fmt.Errorf("ledger: read %s: %w", name, err)
 	}
 	defer f.Close()
-	return f.ReadAt(p, off)
+	n, err := f.ReadAt(p, off)
+	if errors.Is(err, io.EOF) {
+		return n, io.EOF
+	}
+	if err != nil {
+		return n, fmt.Errorf("ledger: read %s: %w", name, err)
+	}
+	return n, nil
 }
 
 // Write replaces the file a name maps to through a staging file of its
@@ -398,14 +406,14 @@ func ensure(r *os.Root, dir string, durability stagefile.Durability) error {
 	case err == nil:
 		return fmt.Errorf("%s is not a directory", dir)
 	case !errors.Is(err, fs.ErrNotExist):
-		return err
+		return fmt.Errorf("checking %s: %w", dir, err)
 	}
 	parent := path.Dir(dir)
 	if err := ensure(r, parent, durability); err != nil {
 		return err
 	}
 	if err := r.Mkdir(dir, dirPerm); err != nil && !errors.Is(err, fs.ErrExist) {
-		return err
+		return fmt.Errorf("creating %s: %w", dir, err)
 	}
 	if durability == stagefile.Synced {
 		return syncDir(r, parent)

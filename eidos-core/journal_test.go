@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos_test
@@ -866,7 +866,10 @@ func twoKeys(tb assert.TB) (meta.Key[bool], meta.Key[bool], *meta.Facts) {
 // findingMessages returns the messages of findings, in order, and nil
 // for none.
 func findingMessages(found []diag.Diag) []string {
-	var out []string
+	if len(found) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(found))
 	for _, d := range found {
 		out = append(out, d.Msg)
 	}
@@ -876,7 +879,10 @@ func findingMessages(found []diag.Diag) []string {
 // findingCodes returns the codes of findings, in order, and nil for
 // none.
 func findingCodes(found []diag.Diag) []diag.Code {
-	var out []diag.Code
+	if len(found) == 0 {
+		return nil
+	}
+	out := make([]diag.Code, 0, len(found))
 	for _, d := range found {
 		out = append(out, d.Code)
 	}

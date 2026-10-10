@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"go.dokimi.dev/eidos/core/internal/wire"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -27,12 +28,13 @@ func (s *PhaseState) Modules() (map[plugin.Module]int, error) {
 	out := make(map[plugin.Module]int, len(rows))
 	for _, e := range rows {
 		parts := bytes.Split(e.key, []byte{keySep})
-		count, n := binary.Uvarint(e.row)
-		if len(parts) != 3 || n != len(e.row) {
+		d := wire.NewDecoder(e.row)
+		count := d.Int()
+		if len(parts) != 3 || d.Err() != nil || d.Len() != 0 {
 			return nil, fmt.Errorf("%w: a modules row does not decode", ErrDamaged)
 		}
 		m := plugin.Module{Lang: symbol.Lang(parts[0]), Root: string(parts[1]), Path: string(parts[2])}
-		out[m] = int(count)
+		out[m] = count
 	}
 	return out, nil
 }

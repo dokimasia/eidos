@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package wire_test
@@ -56,10 +56,10 @@ func TestEncoder(t *testing.T) {
 	})
 }
 
-// TestEncoderZeroAlloc checks that every helper appends into a buffer
+// TestEncoderAllocs checks that every helper appends into a buffer
 // with room without allocating. The check runs alone, because the count
 // includes every goroutine's allocations.
-func TestEncoderZeroAlloc(t *testing.T) {
+func TestEncoderAllocs(t *testing.T) {
 	dst := make([]byte, 0, 16)
 	assert.MaxAllocs(t, func() { dst = wire.AppendBool(dst[:0], true) }, 0, "AppendBool allocates nothing")
 	assert.Length(t, dst, 1, "AppendBool appends one byte")

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -30,8 +30,6 @@ type Invoked struct {
 // report summarizes. A cold run and a warm run over one tree leave the
 // same files and findings, and differ here.
 type Stats struct {
-	// Cold reports that the run ignored the sealed state.
-	Cold bool
 	// Statted and Hashed count the files the gate statted and hashed.
 	Statted, Hashed int
 	// Parsed, Restored and Kept count the units the run parsed, restored
@@ -51,6 +49,8 @@ type Stats struct {
 	// Checked counts the workspace checks the run called. A check that
 	// reads a failed plan is not called.
 	Checked int
+	// Cold reports that the run ignored the sealed state.
+	Cold bool
 	// Generation reports that the commit wrote a generation, Written the
 	// bytes the commit wrote to the ledger, and Size the bytes of the
 	// generation it wrote with the segments that generation references,

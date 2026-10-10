@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package ledger_test
@@ -125,7 +125,7 @@ func holdLock(root string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Println(lockedLine)
+	fmt.Fprintln(os.Stdout, lockedLine)
 	if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

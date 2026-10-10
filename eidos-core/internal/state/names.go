@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package state
@@ -218,7 +218,7 @@ func decodeNameRow(d *decoder) plugin.NameEntry {
 		Package:  d.text(),
 		Receiver: d.text(),
 		Origin:   d.identity(),
-		Kind:     symbol.Kind(d.Uvarint()),
+		Kind:     symbol.Kind(d.Enum()),
 		Emitted:  d.text(),
 		Settled:  d.text(),
 	}

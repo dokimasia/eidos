@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -196,6 +196,9 @@ func (d *dirtySet) route(e state.EdgeHash, plans bool) error {
 			for _, g := range groups {
 				d.plan(g.Plan).groups[g.Key] = g
 			}
+		case state.RecordCheck:
+			// The close step decides on each check from the record of the
+			// check.
 		}
 	}
 	return nil

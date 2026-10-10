@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load_test
 
 import (
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -188,8 +189,10 @@ func TestChanges(t *testing.T) {
 // row's directive lines replaced by directives, one line each.
 func storeBody(directives ...string) string {
 	var lines string
+	var linesSb191 strings.Builder
 	for _, d := range directives {
-		lines += d + "\n"
+		linesSb191.WriteString(d + "\n")
 	}
+	lines += linesSb191.String()
 	return "package svc/store\nimport api svc/api\ntype Row api.User int\n" + lines + "const rowmax\n"
 }

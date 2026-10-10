@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace_test
@@ -675,10 +675,10 @@ func TestRun(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root)})
 			l, err := ledger.OpenDir(root, fixtureBrand)
 			assert.NoError(t, err, "the ledger opens")
-			first := liveGeneration(t, l)
-			grown(t, root)
-			sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Plans: []string{selectedPlan}})
-			assert.Equal(t, liveGeneration(t, l), first, "the generation of the first run is still live")
+			assert.Pure(t, func() string { return liveGeneration(t, l) }, func() {
+				grown(t, root)
+				sealedRun(t, w, workspace.Input{Tree: os.DirFS(root), Plans: []string{selectedPlan}})
+			}, "the generation of the first run is still live")
 		})
 
 		t.Run("commits on the next run the changes of a plan that a run skipped", func(t *testing.T) {

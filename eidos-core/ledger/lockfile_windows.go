@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 //go:build windows
@@ -28,7 +28,7 @@ const errSharingViolation syscall.Errno = 32
 func lockFile(_ *os.Root, _, abs string) (*os.File, error) {
 	p, err := syscall.UTF16PtrFromString(abs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open %s: %w", abs, err)
 	}
 	h, err := syscall.CreateFile(p, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil,
 		syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)

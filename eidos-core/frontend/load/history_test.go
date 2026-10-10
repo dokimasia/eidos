@@ -1,9 +1,10 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load_test
 
 import (
+	"bytes"
 	"encoding/hex"
 	"io/fs"
 	"iter"
@@ -248,7 +249,7 @@ func warmCold(tb testing.TB, before, after fstest.MapFS, mutate ...func(*load.Co
 	tb.Helper()
 
 	for path, f := range after {
-		if was, held := before[path]; !held || string(was.Data) != string(f.Data) {
+		if was, held := before[path]; !held || !bytes.Equal(was.Data, f.Data) {
 			f.ModTime = editTime
 		}
 	}

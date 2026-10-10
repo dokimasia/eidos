@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules_test
@@ -63,7 +63,7 @@ func TestOptional(t *testing.T) {
 
 // A declared form and a declared ownership spell without allocating in
 // the ordinary run, which runs no benchmark.
-func TestOptionalZeroAlloc(t *testing.T) {
+func TestOptionalAllocs(t *testing.T) {
 	form, ownership := rules.EnumValue, rules.OwnBorrowMut
 	var got string
 	assert.MaxAllocs(t, func() { got = form.String() }, 0, "EnumForm.String allocates nothing for a declared form")

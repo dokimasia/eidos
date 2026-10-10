@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin
@@ -60,14 +60,14 @@ type Subscription struct {
 	// Kind is the trigger's subject kind, zero for a graph-wide
 	// rule.
 	Kind symbol.Kind
-	// Directive is the gating schema's name, "" when the rule has
-	// no directive gate.
-	Directive directive.Name
+	// Phase is the phase in which the rule runs.
+	Phase Phase
 	// FactKey is the gating fact key, zero when the rule has no
 	// fact gate.
 	FactKey meta.KeyID
-	// Phase says when the rule runs.
-	Phase Phase
+	// Directive is the gating schema's name, "" when the rule has
+	// no directive gate.
+	Directive directive.Name
 }
 
 // Subscribed is a plugin that declares its gates, so the engine

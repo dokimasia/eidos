@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load
@@ -136,6 +136,7 @@ func (w *linker) reselect(u *unit, r *store.Region) (bool, error) {
 		findings := ambiguity(ref, u.frontend, hits)
 		if ref.Target == target && slices.Equal(link.Followed, w.followed) &&
 			slices.Equal(link.Reached, w.reached) && sameFindings(link.Findings, findings) {
+
 			continue
 		}
 		if imports && ref.Target != target {

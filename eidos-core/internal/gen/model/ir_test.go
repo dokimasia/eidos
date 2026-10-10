@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package model_test
@@ -42,7 +42,7 @@ func TestIR(t *testing.T) {
 
 			schema, err := model.Lower(validSchema, "")
 			assert.NoError(t, err, "the fixture schema lowers")
-			var got []string
+			got := make([]string, 0, len(schema.Kinds))
 			for _, kind := range schema.Kinds {
 				got = append(got, kind.Name)
 			}
@@ -136,7 +136,7 @@ func TestIR(t *testing.T) {
 			assert.NoError(t, err, "the module root resolves")
 			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
 			assert.NoError(t, err, "the kernel's own schema lowers")
-			var types []string
+			types := make([]string, 0, len(schema.Enums))
 			for _, e := range schema.Enums {
 				types = append(types, e.Type)
 			}

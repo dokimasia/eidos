@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta
@@ -193,7 +193,7 @@ func (f *Facts) DropGroup(g GroupName, c Claim) error {
 
 	changed, err := b.group(g).admit(stored{claim: c, drop: true})
 	if err != nil {
-		return fmt.Errorf("meta: group %s on %s %w", g, c.Subject, err)
+		return fmt.Errorf("%w: group %s on %s", err, g, c.Subject)
 	}
 	if changed {
 		f.recordMembers(c.Subject, b, g, members)
@@ -475,7 +475,7 @@ func (f *Facts) admitLocked(
 ) error {
 	changed, err := state.admit(entry)
 	if err != nil {
-		return fmt.Errorf("meta: %s on %s %w", keyName, id, err)
+		return fmt.Errorf("%w: %s on %s", err, keyName, id)
 	}
 	if changed {
 		f.index.record(id, k, b.presentLocked(f.group(k), k))

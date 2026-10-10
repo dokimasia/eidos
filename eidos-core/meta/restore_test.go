@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta_test
@@ -323,8 +323,9 @@ func TestRestore(t *testing.T) {
 			t.Parallel()
 
 			r, _, _, _ := fixture(t)
-			var flags []meta.Key[bool]
-			for _, name := range []meta.KeyName{"shape.e", "shape.d", "shape.c", "shape.b", "shape.a"} {
+			names := []meta.KeyName{"shape.e", "shape.d", "shape.c", "shape.b", "shape.a"}
+			flags := make([]meta.Key[bool], 0, len(names))
+			for _, name := range names {
 				k, err := meta.Register[bool](r, meta.KeySpec{Name: name, Doc: "one of five flags"})
 				assert.NoError(t, err, "the flag registers")
 				flags = append(flags, k)
@@ -333,8 +334,9 @@ func TestRestore(t *testing.T) {
 			for _, k := range flags {
 				assert.NoError(t, meta.Stamp(f, k, true, by("alpha", 1)), "each flag is stamped")
 			}
-			var got []meta.KeyName
-			for _, c := range bagsOf(f)[subject] {
+			claims := bagsOf(f)[subject]
+			got := make([]meta.KeyName, 0, len(claims))
+			for _, c := range claims {
 				got = append(got, c.Key)
 			}
 			assert.Equal(t, got, []meta.KeyName{"shape.a", "shape.b", "shape.c", "shape.d", "shape.e"},

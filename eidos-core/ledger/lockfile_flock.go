@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 //go:build darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd
@@ -25,7 +25,7 @@ import (
 func lockFile(r *os.Root, name, _ string) (*os.File, error) {
 	f, err := r.OpenFile(name, os.O_RDWR|os.O_CREATE, filePerm)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open %s: %w", name, err)
 	}
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {

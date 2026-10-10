@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package directive
@@ -22,9 +22,9 @@ import (
 // instances alias.
 type Value struct {
 	Kind ParamType
+	Bool bool
 	Str  string
 	Int  int64
-	Bool bool
 	List []Value
 	// Ref is a reference's spelling: validated for the metadata
 	// kind, and bound through the resolver for the source kinds.

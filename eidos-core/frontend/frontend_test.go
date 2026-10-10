@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package frontend_test
@@ -441,8 +441,9 @@ func TestFrontend(t *testing.T) {
 				func(*meta.Registry) error { return early },
 				func(*meta.Registry) error { return late },
 			).Keys(meta.NewRegistry())
-			expect.ErrorIs(t, err, early, "the error has the first fault")
-			expect.ErrorIs(t, err, late, "the error has the second fault")
+			expect.That(t, err).
+				ErrorIs(early, "the error has the first fault").
+				ErrorIs(late, "the error has the second fault")
 		})
 	})
 

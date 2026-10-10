@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -432,6 +432,7 @@ func (r *warmRun) withdrawStamps(id symbol.Identity, touched []meta.FactRef) ([]
 		_, stamp := r.frontends[c.Plugin]
 		if !stamp || sc.Group != "" || sc.Drop || c.Authority != meta.AuthorityPlugin || c.Bucket != 0 ||
 			c.Order.Rule != 0 || c.Order.Subject != id {
+
 			continue
 		}
 		key, registered := r.w.keys.Resolve(sc.Key)
@@ -690,6 +691,9 @@ func (r *warmRun) replay() error {
 					r.report(inv.Findings)
 				}
 			}
+		case state.RecordGroup, state.RecordCheck:
+			// Each plan replays its groups, and the close step reports the
+			// findings of each check that it keeps.
 		}
 	}
 	return nil

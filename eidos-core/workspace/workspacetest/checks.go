@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspacetest
@@ -205,8 +205,9 @@ func AssertSwept(tb assert.TB, f Fixture, root string) {
 	edited := drifted(tb, root, kept, w.Brand())
 	report, after := withoutLast(tb, f, root)
 	expect.Equal(tb, after[kept], edited, "the removed plan's edited file remains")
-	var warned []string
-	for _, d := range codes(report, workspace.KeptOutput) {
+	keptOutputs := codes(report, workspace.KeptOutput)
+	warned := make([]string, 0, len(keptOutputs))
+	for _, d := range keptOutputs {
 		warned = append(warned, d.Pos.File)
 	}
 	expect.Contains(tb, warned, kept, "a KeptOutput warning names the edited file")
@@ -403,26 +404,26 @@ func AssertDamaged(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
 	_, w, _ := clean(tb, f, root)
-	generated := rundir.Framed(tb, root, w.Brand())
-	ctx := context.Background()
-	l, err := ledger.OpenDir(root, w.Brand())
-	assert.NoError(tb, err, "the state directory's ledger opens")
-	segments, err := l.List(ctx, segmentDir)
-	assert.NoError(tb, err, "the ledger lists the segments of the sealed state")
-	assert.NotEmpty(tb, segments, "the run writes the segments of the sealed state")
-	for _, s := range segments {
-		body, readErr := l.Read(ctx, s.Name)
-		assert.NoError(tb, readErr, "the segment "+s.Name+" reads")
-		assert.NoError(tb, l.Write(ctx, s.Name, body[:1]), "the segment "+s.Name+" is cut to its first byte")
-	}
-	report, err := ran(f, w, root)
-	assert.NoError(tb, err, "the run over the damaged state is clean")
+	var report *workspace.Report
+	assert.Pure(tb, func() map[string]string { return rundir.Framed(tb, root, w.Brand()) }, func() {
+		ctx := context.Background()
+		l, err := ledger.OpenDir(root, w.Brand())
+		assert.NoError(tb, err, "the state directory's ledger opens")
+		segments, err := l.List(ctx, segmentDir)
+		assert.NoError(tb, err, "the ledger lists the segments of the sealed state")
+		assert.NotEmpty(tb, segments, "the run writes the segments of the sealed state")
+		for _, s := range segments {
+			body, readErr := l.Read(ctx, s.Name)
+			assert.NoError(tb, readErr, "the segment "+s.Name+" reads")
+			assert.NoError(tb, l.Write(ctx, s.Name, body[:1]), "the segment "+s.Name+" is cut to its first byte")
+		}
+		report, err = ran(f, w, root)
+		assert.NoError(tb, err, "the run over the damaged state is clean")
+	}, "the run over the damaged state leaves the files that the first run left")
 	cold := codes(report, workspace.ColdState)
 	assert.Length(tb, cold, 1, "the run over the damaged state reports one ColdState")
 	expect.Equal(tb, cold[0].Severity, diag.SeverityInfo, "the ColdState is an Info")
 	expect.True(tb, report.Stats.Cold, "the run over the damaged state runs cold")
-	expect.Equal(tb, rundir.Framed(tb, root, w.Brand()), generated,
-		"the run over the damaged state leaves the files that the first run left")
 }
 
 // AssertRestored composes the fixture with a parse memo and runs the
@@ -632,8 +633,11 @@ func treeOf(tb assert.TB, f Fixture) files.Tree {
 			return err
 		}
 		b, err := fs.ReadFile(f.Tree, path)
+		if err != nil {
+			return err
+		}
 		tree[path] = files.Bytes(b)
-		return err
+		return nil
 	})
 	assert.NoError(tb, err, "the fixture's tree reads")
 	return tree

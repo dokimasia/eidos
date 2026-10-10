@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package manifest_test
@@ -88,7 +88,7 @@ func TestManifest(t *testing.T) {
 // The comparison a commit runs on every record allocates nothing. The
 // check runs alone, because the count includes every goroutine's
 // allocations.
-func TestManifestZeroAlloc(t *testing.T) {
+func TestManifestAllocs(t *testing.T) {
 	m, other := scaled(), scaled()
 	var equal bool
 	assert.MaxAllocs(t, func() { equal = m.Equal(other) }, 0, "Equal allocates nothing")

@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin
@@ -173,6 +173,7 @@ func (u *SourceUnit) Doc(raw string) []string {
 	for _, line := range lines {
 		if u.syntax.Directives && line.adjacent &&
 			(directiveLine(line.text) || legacyDirective(line.text)) {
+
 			continue
 		}
 		out = append(out, line.text)
@@ -434,6 +435,7 @@ func enclosingBlock(raw string, blocks []CommentBlock) (CommentBlock, bool) {
 	for _, b := range blocks {
 		if (!found || len(b.Open) > len(best.Open)) &&
 			strings.HasPrefix(raw, b.Open) && strings.HasSuffix(raw, b.Close) {
+
 			best, found = b, true
 		}
 	}

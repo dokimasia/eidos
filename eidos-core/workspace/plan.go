@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace
@@ -44,6 +44,17 @@ type planRun struct {
 	// skipped reports a plan that [Input.Plans] left out, which does not
 	// run. Its kept are its previous entries, which the run keeps.
 	skipped bool
+	// selective reports a plan that a warm run executed in part, and its
+	// files are those of the groups it executed again. exportChanged
+	// reports that the plan's export may differ from the export the
+	// generation records, which makes dirty every invocation that read it.
+	selective     bool
+	exportChanged bool
+	// status is how the plan's run ended, set by the commit step.
+	status PlanStatus
+	// kept are the previous entries of the files that a selective plan
+	// keeps, in path order.
+	kept []manifest.Entry
 	// upstream is the first plan this one depends on that failed
 	// before this one generated, nil where every one of them rendered.
 	// A plan with an upstream generates nothing.
@@ -54,15 +65,6 @@ type planRun struct {
 	// lane records the plan's invocations, groups and files where the
 	// run records its phases, and is nil where it does not.
 	lane *state.Lane
-	// selective reports a plan that a warm run executed in part. kept are
-	// the previous entries of the files that such a plan keeps, in path
-	// order, and its files are those of the groups it executed again.
-	// exportChanged reports that the plan's export may differ from the
-	// export the generation records, which makes dirty every invocation
-	// that read it.
-	selective     bool
-	kept          []manifest.Entry
-	exportChanged bool
 	// files are what the plan rendered, in path order.
 	files []stagedFile
 	// fresh are the export rows of the files that the plan rendered, in
@@ -89,8 +91,6 @@ type planRun struct {
 	// stale are the previous entries the plan staged for removal, by
 	// path.
 	stale map[string]manifest.Entry
-	// status is how the plan's run ended, set by the commit step.
-	status PlanStatus
 }
 
 // failed reports whether the plan cannot commit: it returned an error,
@@ -559,6 +559,9 @@ func kept(sink *diag.Sink, c output.Change, brand output.Brand) {
 	case output.FoundForeign:
 		sink.Warnf(KeptOutput, at, diag.PhaseClose,
 			"%s is no longer generated, and it remains because it is not the %s brand's output", c.Path, brand)
+	case output.FoundNothing, output.FoundIntact, output.FoundSame:
+		// The removal finds no file or deletes the brand's intact output.
+		// FoundSame is a verdict of a write alone.
 	}
 }
 
@@ -571,7 +574,7 @@ func (w *Workspace) openSink() (output.Sink, error) {
 		return nil, fmt.Errorf("open the output: %w", err)
 	}
 	if out == nil {
-		return nil, fmt.Errorf("open the output: the open function returned (nil, nil)")
+		return nil, errors.New("workspace: open the output: the open function returned (nil, nil)")
 	}
 	return out, nil
 }

@@ -1,13 +1,17 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package meta
 
 import (
-	"fmt"
+	"errors"
 	"slices"
 	"sync"
 )
+
+// errTwoValues is the error of a second claim from one rank source with
+// another value. Rank cannot order the two claims, and arrival would.
+var errTwoValues = errors.New("meta: a source claims two values, and rank cannot order them")
 
 // stored is one claim as a bag keeps it: the envelope, the value, nil
 // for a drop, and whether a recorded source restored it, where a write
@@ -122,8 +126,7 @@ func (b *bag) group(g GroupName) *factState {
 // admit appends one claim and re-ranks the winner, and reports whether
 // it appended. An identical claim, from the same rank source with an
 // equal value, changes nothing. A claim from the same source with
-// another value is an error, because rank could not order the two and
-// arrival would.
+// another value returns errTwoValues.
 //
 // The dedupe scan is linear in the claims already kept, which the
 // channel's design bounds to a few claimants per fact: every write
@@ -134,9 +137,7 @@ func (s *factState) admit(entry stored) (bool, error) {
 		if held.drop == entry.drop && equalValue(held.value, entry.value) {
 			return false, nil
 		}
-		return false, fmt.Errorf(
-			"claims twice from one source with two values: rank cannot order them",
-		)
+		return false, errTwoValues
 	}
 	s.add(entry)
 	if s.winner < 0 || entry.claim.outranks(s.claims[s.winner].claim) {

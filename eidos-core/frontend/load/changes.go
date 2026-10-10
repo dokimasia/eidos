@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package load
@@ -238,6 +238,7 @@ func compare(before, after *side) *Changes {
 	for id, names := range after.names {
 		if was, held := before.names[id]; held && !slices.Equal(slices.Sorted(slices.Values(was)),
 			slices.Sorted(slices.Values(names))) {
+
 			c.Renamed = append(c.Renamed, id)
 		}
 	}

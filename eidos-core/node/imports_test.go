@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package node_test
@@ -67,7 +67,7 @@ func TestImports(t *testing.T) {
 
 // A range over the imports allocates nothing in the ordinary run, which
 // runs no benchmark.
-func TestImportsZeroAlloc(t *testing.T) {
+func TestImportsAllocs(t *testing.T) {
 	var n int
 	assert.MaxAllocs(t, func() {
 		n = 0

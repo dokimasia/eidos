@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package rules
@@ -44,17 +44,17 @@ func (c ScalarClass) String() string {
 //
 // # Allocation contract
 //
-// A TypeShape is a value of 200 bytes. The constructors return it by
+// A TypeShape is a value of 184 bytes. The constructors return it by
 // value, and allocate only the list of arguments a reference keeps.
 type TypeShape struct {
 	Form     symbol.TypeForm
-	Spelling string          // the source spelling, on every form
 	Class    ScalarClass     // Scalar
+	Variance symbol.Variance // Wildcard
+	Async    bool            // Stream
+	Spelling string          // the source spelling, on every form
 	Bits     int             // Scalar: 0 for the platform width
 	Length   int             // Array
 	Split    int             // Func: the index in Elems where the returns begin
-	Variance symbol.Variance // Wildcard
-	Async    bool            // Stream
 	Elems    []TypeShape     // the form's children, in the form's order
 	Ref      symbol.Identity // Reference and Sum
 	Args     []TypeShape     // Reference type arguments

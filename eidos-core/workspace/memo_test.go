@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace_test
@@ -86,11 +86,10 @@ func TestMemo(t *testing.T) {
 			w := built(t, sealingBuilder(t, l, "plan").Memo(workspace.Memo{Limit: memoLimit}))
 			sealedRun(t, w, workspace.Input{Tree: apiTree(firstName, editTime)})
 			sealedRun(t, w, workspace.Input{Tree: apiTree(secondName, editTime.Add(1))})
-			before := slices.Sorted(maps.Keys(entriesIn(t, l)))
-			assert.Length(t, before, 2, "the memo has an entry for each of the two names")
-			sealedRun(t, w, workspace.Input{Tree: apiTree(firstName, editTime.Add(2)), Cold: true})
-			assert.Equal(t, slices.Sorted(maps.Keys(entriesIn(t, l))), before,
-				"the cold run keeps the entry of the name that its tree does not declare")
+			assert.Length(t, entriesIn(t, l), 2, "the memo has an entry for each of the two names")
+			assert.Pure(t, func() []string { return slices.Sorted(maps.Keys(entriesIn(t, l))) }, func() {
+				sealedRun(t, w, workspace.Input{Tree: apiTree(firstName, editTime.Add(2)), Cold: true})
+			}, "the cold run keeps the entry of the name that its tree does not declare")
 		})
 
 		t.Run("removes the least recently used entry at the commit of a run over the memo's cap", func(t *testing.T) {

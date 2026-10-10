@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspacetest
@@ -221,6 +221,7 @@ func (cutoff) Generate(ctx *plugin.GeneratorContext) error {
 	if ctx.Select != nil && !slices.ContainsFunc(ctx.Select.Matches, func(m plugin.MatchKey) bool {
 		return m.Compare(match) == 0
 	}) {
+
 		return nil
 	}
 	ctx.Journal.Invoked(plugin.Invocation{Match: match, Exports: slices.Sorted(maps.Keys(ctx.Exports))})

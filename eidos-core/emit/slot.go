@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package emit
@@ -51,10 +51,19 @@ func (s Slot[T]) IsZero() bool { return len(s.items) == 0 }
 // includes the kind a decoder needs. A slot of one concrete kind
 // encodes from that kind's own struct tags.
 func (s Slot[T]) MarshalJSON() ([]byte, error) {
+	var (
+		b   []byte
+		err error
+	)
 	if declarations, ok := any(s.items).([]symbol.Symbol); ok {
-		return json.Marshal(Symbols(declarations))
+		b, err = json.Marshal(Symbols(declarations))
+	} else {
+		b, err = json.Marshal(s.items)
 	}
-	return json.Marshal(s.items)
+	if err != nil {
+		return nil, fmt.Errorf("emit: encode a slot: %w", err)
+	}
+	return b, nil
 }
 
 // UnmarshalJSON decodes an array into the slot and replaces its

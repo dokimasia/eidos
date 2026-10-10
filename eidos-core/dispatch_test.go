@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos_test
@@ -915,7 +915,7 @@ func TestDispatch(t *testing.T) {
 			got := flushed[0]
 			assert.Equal(t, got.Key, coretest.StorePath, "a per-package unit keys on the origin's package path")
 
-			var names []string
+			names := make([]string, 0, len(got.Decls))
 			for _, d := range got.Decls {
 				s, ok := d.(*emit.Struct)
 				assert.True(t, ok, "the unit contains what the handler appended")

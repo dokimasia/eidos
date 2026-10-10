@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package eidos
@@ -30,6 +30,9 @@ import (
 // allocates eight times.
 func Mirror(host string, m *node.Method) *emit.Method {
 	var typeParams []*emit.TypeParam
+	if len(m.TypeParams) > 0 {
+		typeParams = make([]*emit.TypeParam, 0, len(m.TypeParams))
+	}
 	for _, tp := range m.TypeParams {
 		typeParams = append(typeParams, mirrorTypeParam(tp))
 	}
@@ -52,6 +55,9 @@ func Mirror(host string, m *node.Method) *emit.Method {
 		})
 	}
 	var throws []*emit.TypeRef
+	if len(m.Throws) > 0 {
+		throws = make([]*emit.TypeRef, 0, len(m.Throws))
+	}
 	for _, t := range m.Throws {
 		throws = append(throws, rules.EmitRef(t))
 	}

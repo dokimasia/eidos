@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package store_test
@@ -94,8 +94,8 @@ func TestReadSet(t *testing.T) {
 		t.Run("returns the edges of a set past four edges in identity order", func(t *testing.T) {
 			t.Parallel()
 
-			var decls []symbol.Symbol
-			var ids []symbol.Identity
+			decls := make([]symbol.Symbol, 0, pastInline)
+			ids := make([]symbol.Identity, 0, pastInline)
 			for i := range pastInline {
 				s := coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i))
 				decls, ids = append(decls, s), append(ids, s.ID)

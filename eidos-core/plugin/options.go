@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package plugin
@@ -134,12 +134,10 @@ func hiddenField(t reflect.Type, seen map[reflect.Type]bool) (string, bool) {
 		if marshals(t) {
 			return "", false
 		}
-		switch t.Kind() {
-		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Map:
-			t = t.Elem()
-			continue
+		if k := t.Kind(); k != reflect.Pointer && k != reflect.Slice && k != reflect.Array && k != reflect.Map {
+			break
 		}
-		break
+		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct || seen[t] {
 		return "", false

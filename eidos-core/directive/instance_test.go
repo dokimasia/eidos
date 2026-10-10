@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package directive_test
@@ -58,7 +58,7 @@ func TestInstance(t *testing.T) {
 
 // A param read allocates nothing in the ordinary run, which runs no
 // benchmark.
-func TestInstanceZeroAlloc(t *testing.T) {
+func TestInstanceAllocs(t *testing.T) {
 	d := deep()
 	var (
 		got  directive.Value

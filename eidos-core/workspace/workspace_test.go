@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package workspace_test
@@ -70,7 +70,7 @@ func TestWorkspace(t *testing.T) {
 
 // The accessors allocate nothing in the ordinary run, which runs no
 // benchmark.
-func TestWorkspaceZeroAlloc(t *testing.T) {
+func TestWorkspaceAllocs(t *testing.T) {
 	w, err := valid().Build()
 	assert.NoError(t, err, "the fixture composition is valid")
 	var brand output.Brand

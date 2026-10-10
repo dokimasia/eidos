@@ -1,4 +1,4 @@
-// Copyright ThesmOS B.V. 2026
+// Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
 package render_test
@@ -187,7 +187,7 @@ func TestCoverage(t *testing.T) {
 
 // A verdict and the declaration question allocate nothing in the
 // ordinary run, which runs no benchmark.
-func TestCoverageZeroAlloc(t *testing.T) {
+func TestCoverageAllocs(t *testing.T) {
 	var verdict render.Verdict
 	assert.MaxAllocs(t, func() { verdict = excepted.Of(symbol.KindField, symbol.FactValue) }, 0,
 		"Of allocates nothing")
