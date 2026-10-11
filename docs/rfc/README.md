@@ -43,4 +43,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0024](0024-protobuf-editions-and-services.md) | Protobuf editions and a service in Go and TypeScript | Accepted |
 | [0025](0025-declarative-plugins.md) | Declarative plugins and their manifest | Accepted |
 | [0026](0026-the-reference-ensemble-and-the-canary-ring.md) | The reference ensemble and the canary ring | Accepted |
-| [0027](0027-the-subject-kinds-of-a-directive.md) | The subject kinds of a directive | Draft |
+| [0027](0027-the-subject-kinds-of-a-directive.md) | The subject kinds of a directive | Accepted |

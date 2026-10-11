@@ -85,6 +85,14 @@ stamped during Annotate.
 and registers the schema. `Where(pred, rules…)` gates on stamped
 facts, through `HasKey` and `KeyEquals`.
 
+`Builder.Build` gives the schema of each `Directive` wrapper the kinds
+that an instance can affect: the kinds of the rules under the wrapper,
+and for an override schema also the kinds of the plugin's bare and
+fact-gated rules. Build leaves the kinds empty where one of those rules
+is an `OnEmit` rule, and the plugin of such a rule states its kinds in
+`Kinds` ([05-directives.md](05-directives.md)). Build panics where an
+explicit `Kinds` leaves out the kind of a rule under the wrapper.
+
 For emit-side rules the predicate evaluates against the **origin**,
 which is how a weaver subscribes to "methods emitted from
 handler-classified symbols" without touching a handler.

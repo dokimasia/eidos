@@ -159,6 +159,17 @@ assume. The schema declares:
   conflict, and a subject that sets and negates one directive is
   reported under `Conflict`, with every instance of that directive
   on it refused.
+- **Subject kinds.** A schema lists in `Kinds` the declaration kinds
+  that an instance may be written on, and an empty list admits every
+  kind. Validation refuses a positive instance on a declaration of
+  another kind with a positioned Error under `MisplacedDirective`, and
+  does not check it further. It does not check the kind of a negated
+  instance. `Builder.Build` fills an empty list with the kinds of the
+  rules under the schema's wrapper, and for an override schema adds the
+  kinds of the plugin's bare and fact-gated rules. An `OnEmit` rule
+  keeps the list empty, because the origin of an emitted value can have
+  any kind. The plugin of such a rule states its kinds itself
+  ([06b-authoring.md](06b-authoring.md)).
 
 Every schema **generates constants** for its directive name and its
 param keys. Typed plugins and their tests reference the constants,
@@ -180,8 +191,8 @@ type Directive struct {
     Negated  bool           // written under the negated mark
 }
 
-// Freeze-time validation: closure, types, resolution kinds,
-// repeatability and cross-directive constraints, over each
+// Freeze-time validation: subject kinds, closure, types, resolution
+// kinds, repeatability and cross-directive constraints, over each
 // subject's full directive list, as positioned Errors, before any
 // handler runs.
 func Validate(subject symbol.Symbol, ds []Directive, r *Registry, d Diag) bool
