@@ -49,8 +49,8 @@
 //
 // ring exits with status 0 when no module fails, and with status 1 when a
 // module fails or the scratch directory of the run cannot be created. It
-// exits with status 2 for a command line or a checkout that it cannot
-// read.
+// exits with status 64 for a command line or a checkout that it cannot
+// read. A Go panic exits with status 2.
 //
 // # Dependency position
 //

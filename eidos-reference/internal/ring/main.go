@@ -22,11 +22,12 @@ import (
 // The exit statuses of the ring. statusOK reports a run in which no module
 // failed. statusFailed reports a module that failed, or a run that could
 // not test the modules. statusUsage reports a command line or a checkout
-// that does not read.
+// that does not read. A Go panic exits with status 2, which no status of
+// the ring takes.
 const (
 	statusOK     = 0
 	statusFailed = 1
-	statusUsage  = 2
+	statusUsage  = 64
 )
 
 // The name of the command, and its flag of the root of the checkout with

@@ -30,6 +30,11 @@ const (
 	runMain = "1"
 )
 
+// usageExit is the exit status of a command line or a checkout that does not
+// read. A Go panic exits with status 2, so a usage error has a status of its
+// own.
+const usageExit = 64
+
 // graceShare is the share of the time left before the deadline of a test
 // that a process of the test does not get: the test kills the process at
 // the deadline less the time left divided by graceShare.
@@ -82,7 +87,7 @@ func TestMainProcess(t *testing.T) {
 			cmd.Stderr = &stderr
 			_, exited := errors.AsType[*exec.ExitError](cmd.Run())
 			assert.True(t, exited, "the process exits with a status")
-			expect.Equal(t, cmd.ProcessState.ExitCode(), statusUsage, "main exits with the status of run")
+			expect.Equal(t, cmd.ProcessState.ExitCode(), usageExit, "main exits with the status of a usage error")
 			expect.HasPrefix(t, stderr.String(), commandName+": ", "main writes the error of the checkout")
 		})
 
@@ -102,7 +107,7 @@ func TestMainProcess(t *testing.T) {
 			assert.NoError(t, stdin.Close(), "the test lets the process run")
 			_, exited := errors.AsType[*exec.ExitError](cmd.Wait())
 			assert.True(t, exited, "the process exits with a status")
-			expect.Equal(t, cmd.ProcessState.ExitCode(), statusUsage, "main exits with the status of run")
+			expect.Equal(t, cmd.ProcessState.ExitCode(), usageExit, "main exits with the status of a usage error")
 			expect.HasPrefix(t, stderr.String(), commandName+": ", "main writes the error of the root")
 		})
 
