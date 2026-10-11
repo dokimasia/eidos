@@ -316,7 +316,9 @@ func (g *Graph) Holds(id symbol.Identity) bool {
 // Packages enumerates the loaded packages in identity order,
 // untracked: the roster the seal fixed, the same on every run. Over a
 // sealed graph it decodes every region, and a package that more than
-// one region contributes files to comes back once, merged.
+// one region contributes files to comes back once, merged. A sealed graph
+// builds the index of every package on up to GOMAXPROCS goroutines
+// before the first package comes back.
 func (g *Graph) Packages() iter.Seq[*node.Package] {
 	return func(yield func(*node.Package) bool) {
 		if g.lazy != nil {

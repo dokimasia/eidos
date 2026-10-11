@@ -68,7 +68,9 @@ func (g *Graph) DirectivesOf(id symbol.Identity) []directive.Raw {
 
 // Directives enumerates every subject that has instances, with its
 // instances, in identity order: the validator's walk, dangling subjects
-// included. Over a sealed graph it decodes every region.
+// included. Over a sealed graph it decodes every region, and builds the
+// index of every package on up to GOMAXPROCS goroutines before the first
+// subject comes back.
 func (g *Graph) Directives() iter.Seq2[symbol.Identity, []directive.Raw] {
 	return func(yield func(symbol.Identity, []directive.Raw) bool) {
 		if g.lazy != nil {

@@ -49,7 +49,9 @@ func (g *Graph) StampsOf(id symbol.Identity) []meta.RawStamp {
 
 // Stamps enumerates every subject that has stamps, with its stamps, in
 // identity order: what the run applies to the fact store at plugin
-// authority. Over a sealed graph it decodes every region.
+// authority. Over a sealed graph it decodes every region, and builds the
+// index of every package on up to GOMAXPROCS goroutines before the first
+// subject comes back.
 func (g *Graph) Stamps() iter.Seq2[symbol.Identity, []meta.RawStamp] {
 	return func(yield func(symbol.Identity, []meta.RawStamp) bool) {
 		if g.lazy != nil {

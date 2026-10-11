@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
@@ -30,7 +32,9 @@ var errNoRegion = errors.New("store: the source decoded the region to nothing")
 // Every lazily built part is behind a [sync.Once], so concurrent
 // readers decode a region and build an index once, and read the result
 // without a lock afterwards. The maps and slots a read consults are
-// complete when [Sealed] returns.
+// complete when [Sealed] returns. An enumeration of every package builds
+// the index of each package on up to GOMAXPROCS goroutines before its
+// first yield.
 //
 // # Allocation contract
 //
@@ -59,6 +63,9 @@ type sealedIndex struct {
 	// returns.
 	damageMu sync.Mutex
 	damage   error
+
+	// built builds the index of every package once, on a pool.
+	built sync.Once
 }
 
 // regionSlot is one region, decoded once.
@@ -90,9 +97,10 @@ type packageSlot struct {
 	// pkg is the merged package node, nil where no decoded region
 	// declares the package.
 	pkg *node.Package
-	// byID maps each identity-bearing declaration of the package, the
-	// package node included, to the declaration.
-	byID map[symbol.Identity]node.Declaration
+	// byID lists each identity-bearing declaration of the package, the
+	// package node included, in identity order. Declarations under one
+	// identity keep their region order.
+	byID []node.Declaration
 	// directives and stamps map each subject of the package to its
 	// raw attachments in the seal's order. directed and stamped list
 	// the same subjects in identity order.
@@ -100,6 +108,23 @@ type packageSlot struct {
 	directed   []symbol.Identity
 	stamps     map[symbol.Identity][]meta.RawStamp
 	stamped    []symbol.Identity
+}
+
+// lookup returns the declaration under an identity, by a binary search
+// of the sorted declarations. Where two regions of the package declare
+// one identity, it returns the declaration of the later region. It does
+// not allocate.
+func (slot *packageSlot) lookup(id symbol.Identity) (node.Declaration, bool) {
+	i, found := slices.BinarySearchFunc(slot.byID, id, func(d node.Declaration, id symbol.Identity) int {
+		return d.Identity().Compare(id)
+	})
+	if !found {
+		return nil, false
+	}
+	for i+1 < len(slot.byID) && slot.byID[i+1].Identity() == id {
+		i++
+	}
+	return slot.byID[i], true
 }
 
 // declSlot is one enumeration of a sealed graph: the regions whose
@@ -205,8 +230,7 @@ func (s *sealedIndex) declaration(id symbol.Identity) (node.Declaration, bool) {
 	if slot == nil {
 		return nil, false
 	}
-	decl, held := slot.byID[id]
-	return decl, held
+	return slot.lookup(id)
 }
 
 // packageOf returns the merged package that contains a declaration the
@@ -216,7 +240,7 @@ func (s *sealedIndex) packageOf(id symbol.Identity) (*node.Package, bool) {
 	if slot == nil || slot.pkg == nil {
 		return nil, false
 	}
-	if _, held := slot.byID[id]; !held {
+	if _, held := slot.lookup(id); !held {
 		return nil, false
 	}
 	return slot.pkg, true
@@ -275,7 +299,7 @@ func (s *sealedIndex) carriers(n directive.Name) []node.Declaration {
 		for _, id := range s.packagesOf(slot.regions) {
 			pkg := s.pkg(id)
 			for _, subject := range pkg.directed {
-				decl, held := pkg.byID[subject]
+				decl, held := pkg.lookup(subject)
 				if held && slices.ContainsFunc(pkg.directives[subject], func(raw directive.Raw) bool {
 					return raw.Name == n
 				}) {
@@ -307,8 +331,10 @@ func (s *sealedIndex) stampsOf(id symbol.Identity) []meta.RawStamp {
 }
 
 // eachPackage calls yield with every merged package in identity order,
-// decoding every region, until yield returns false.
+// decoding every region, until yield returns false. It builds the index of
+// every package through [sealedIndex.buildAll] first.
 func (s *sealedIndex) eachPackage(yield func(*node.Package) bool) {
+	s.buildAll()
 	for _, id := range s.order {
 		if pkg := s.pkg(id).pkg; pkg != nil && !yield(pkg) {
 			return
@@ -318,8 +344,10 @@ func (s *sealedIndex) eachPackage(yield func(*node.Package) bool) {
 
 // eachDirected calls yield with every subject that has directives,
 // with its directives, in identity order, decoding every region, until
-// yield returns false.
+// yield returns false. It builds the index of every package through
+// [sealedIndex.buildAll] first.
 func (s *sealedIndex) eachDirected(yield func(symbol.Identity, []directive.Raw) bool) {
+	s.buildAll()
 	for _, id := range s.order {
 		pkg := s.pkg(id)
 		for _, subject := range pkg.directed {
@@ -332,8 +360,10 @@ func (s *sealedIndex) eachDirected(yield func(symbol.Identity, []directive.Raw) 
 
 // eachStamped calls yield with every subject that has stamps, with its
 // stamps, in identity order, decoding every region, until yield
-// returns false.
+// returns false. It builds the index of every package through
+// [sealedIndex.buildAll] first.
 func (s *sealedIndex) eachStamped(yield func(symbol.Identity, []meta.RawStamp) bool) {
+	s.buildAll()
 	for _, id := range s.order {
 		pkg := s.pkg(id)
 		for _, subject := range pkg.stamped {
@@ -342,6 +372,28 @@ func (s *sealedIndex) eachStamped(yield func(symbol.Identity, []meta.RawStamp) b
 			}
 		}
 	}
+}
+
+// buildAll builds the index of every package once, on up to GOMAXPROCS
+// goroutines, and returns when every index is built. An enumeration of
+// every package would build each index anyway, one after another. A
+// package that a reader built before keeps its index, through the
+// package's own [sync.Once].
+func (s *sealedIndex) buildAll() {
+	s.built.Do(func() {
+		var (
+			next atomic.Int64
+			wg   sync.WaitGroup
+		)
+		for range min(runtime.GOMAXPROCS(0), len(s.order)) {
+			wg.Go(func() {
+				for i := int(next.Add(1)) - 1; i < len(s.order); i = int(next.Add(1)) - 1 {
+					s.pkg(s.order[i])
+				}
+			})
+		}
+		wg.Wait()
+	})
 }
 
 // damaged returns the first decoding failure.
@@ -398,13 +450,14 @@ func (s *sealedIndex) build(id symbol.Identity, slot *packageSlot) {
 	}
 
 	slot.pkg = merge(nodes)
-	slot.byID = make(map[symbol.Identity]node.Declaration, len(decls)+1)
+	slot.byID = make([]node.Declaration, 0, len(decls)+1)
 	if slot.pkg != nil {
-		slot.byID[slot.pkg.ID] = slot.pkg
+		slot.byID = append(slot.byID, slot.pkg)
 	}
-	for _, decl := range decls {
-		slot.byID[decl.Identity()] = decl
-	}
+	slot.byID = append(slot.byID, decls...)
+	slices.SortStableFunc(slot.byID, func(a, b node.Declaration) int {
+		return a.Identity().Compare(b.Identity())
+	})
 	for subject, raws := range slot.directives {
 		slices.SortFunc(raws, compareRaw)
 		slot.directives[subject] = raws

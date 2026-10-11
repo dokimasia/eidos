@@ -241,6 +241,26 @@ func TestSealed(t *testing.T) {
 			_, held = g.Lookup(f.store.ID)
 			assert.True(t, held, "and the first part reads whole")
 		})
+
+		t.Run("returns the later declaration under an identity that two regions declare", func(t *testing.T) {
+			t.Parallel()
+
+			earlier := coretest.Struct(coretest.StorePath, "Store")
+			later := coretest.Struct(coretest.StorePath, "Store")
+			first := coretest.Package(coretest.StorePath, earlier)
+			second := &node.Package{ID: first.ID, Path: first.Path, Files: []*node.File{{
+				ID:    coretest.ID(coretest.StorePath, secondFile, symbol.KindFile),
+				Path:  secondFile,
+				Decls: node.Symbols{later},
+			}}}
+			g := store.Sealed(newMemory(
+				&store.Region{Packages: []*node.Package{first}},
+				&store.Region{Packages: []*node.Package{second}},
+			))
+			got, held := g.Lookup(earlier.ID)
+			assert.True(t, held, "Lookup finds the identity")
+			assert.Equal(t, got, symbol.Symbol(later), "the declaration is the later region's", assert.ByIdentity())
+		})
 	})
 
 	t.Run("Holds", func(t *testing.T) {
@@ -341,6 +361,16 @@ func TestSealed(t *testing.T) {
 				break
 			}
 			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
+		})
+
+		t.Run("decodes every region before the first package comes back", func(t *testing.T) {
+			t.Parallel()
+
+			g, src := newSplit().sealed()
+			for range g.Packages() {
+				break
+			}
+			assert.Equal(t, src.decoded(), []int{1, 1, 1}, "each region decodes once before the first package")
 		})
 	})
 
@@ -460,6 +490,23 @@ func TestSealed(t *testing.T) {
 				break
 			}
 			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
+		})
+
+		t.Run("decodes each region once under concurrent ranges", func(t *testing.T) {
+			t.Parallel()
+
+			const readers = 8
+			f := newSplit()
+			g, src := f.sealed()
+			want := attached(f.loaded(t).Directives())
+			outcomes := history.Concurrently(readers, time.Minute, func(int) (any, error) {
+				return attached(g.Directives()), nil
+			})
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "every reader finishes")
+				expect.Equal(t, o.Output, any(want), "every reader enumerates the same subjects as a loaded graph")
+			}
+			assert.Equal(t, src.decoded(), []int{1, 1, 1}, "each region decodes once")
 		})
 	})
 
