@@ -516,6 +516,32 @@ func TestEmitter(t *testing.T) {
 				"the second file's unit took only its own subject")
 		})
 
+		t.Run("tags each unit of the TagTest family with test", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+
+			p := eidos.NewPlugin("suite").
+				Output(plugin.Output{Tag: eidos.TagTest, Per: plugin.PerSource, Word: "suite"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.File(eidos.TagTest).Append(&emit.Struct{
+						Origin: m.Struct.Identity(), Name: "Suite" + m.Struct.Name,
+					})
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+
+			var tags []string
+			for u := range ctx.Emit.Units() {
+				tags = append(tags, u.Tag)
+			}
+			assert.Equal(t, tags, []string{"test", "test"},
+				"each unit has the tag that the targets spell as a test file")
+		})
+
 		t.Run("keys the empty string for a subject with no position", func(t *testing.T) {
 			t.Parallel()
 

@@ -71,6 +71,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("TagTest", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, sdk.TagTest, core.TagTest, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Emitter", func(t *testing.T) {
 		t.Parallel()
 

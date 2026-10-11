@@ -27,6 +27,12 @@ import (
 // is a defect and panics on the first matching test.
 type Tag string
 
+// TagTest is the well-known tag of a test companion. A target spells a
+// family under it as its ecosystem spells a test file, such as
+// suite_test.go in Go and suite.test.ts in TypeScript. The constant is
+// untyped, so it is a [Tag] and the tag of a [plugin.Output] alike.
+const TagTest = "test"
+
 // Emitter is a handler's write surface, scoped to its subject.
 //
 // Each accessor returns a handle onto the one accumulator for its
