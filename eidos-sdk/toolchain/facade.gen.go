@@ -102,10 +102,14 @@ func RequiredInCI() bool {
 }
 
 // Prepare lays a fixture out and returns its directory and the
-// cleanup the caller defers. A missing adapter, a fixture with no
-// output and a layout the language refused each record a failure
-// through tb, as the assertion of expect it states, and return an
-// empty directory with a cleanup that does nothing.
+// cleanup the caller defers. It reads every file of the fixture's
+// sources into the files that the adapter lays out, at the file's path
+// in the sources. A generated file replaces a source file at the same
+// path, and the adapter does not receive the sources. A missing
+// adapter, a fixture with no output, sources that do not read and a
+// layout the language refused each record a failure through tb, as the
+// assertion of expect it states, and return an empty directory with a
+// cleanup that does nothing.
 func Prepare(tb assert.TB, a Adapter, g Generated) (string, func()) {
 	return core.Prepare(tb, a, g)
 }
