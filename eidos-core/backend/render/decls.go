@@ -4,6 +4,7 @@
 package render
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -174,15 +175,25 @@ func (f *frame) guard(d symbol.Symbol) {
 // declaration propagates, so a host never renders around a
 // half-spelt member. The block returns without its trailing line
 // break, because the host's template supplies the separators its
-// member layout uses.
+// member layout uses. The template writes into the frame's buffer for
+// the depth of the call, which every later call at that depth reuses.
+// A call allocates a copy of the text, and a second copy behind a
+// non-empty indent. It allocates no growth once its buffer has grown.
 func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	t, spelt := f.bound.kinds[s.Kind()]
 	if !spelt {
 		f.unspelt(s.Kind(), "the nested declaration")
 		return "", nil
 	}
-	var out strings.Builder
-	if err := t.Execute(&out, s); err != nil {
+	if len(f.nestOut) == f.depth {
+		f.nestOut = append(f.nestOut, new(bytes.Buffer))
+	}
+	out := f.nestOut[f.depth]
+	out.Reset()
+	f.depth++
+	err := t.Execute(out, s)
+	f.depth--
+	if err != nil {
 		return "", fmt.Errorf("render: %w", err)
 	}
 	return strings.TrimSuffix(indented(out.String(), indent), string(lineBreak)), nil

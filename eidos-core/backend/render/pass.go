@@ -345,6 +345,11 @@ type frame struct {
 	// bound is the frame's own template set once bind ran, which the
 	// nested builtin renders through.
 	bound *bound
+	// nestOut contains one buffer for each depth of nested renders,
+	// which the nested builtin reuses, and depth is the number of
+	// nested renders under execution.
+	nestOut []*bytes.Buffer
+	depth   int
 }
 
 // refKey addresses one parsed reference template: the plugin whose
