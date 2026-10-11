@@ -180,6 +180,8 @@ func TestLower(t *testing.T) {
 		positional.Variants.Items()[0].Fields.Append(&emit.Field{Type: ref(stringType)})
 		unnamable := sumOf()
 		unnamable.Name = digitPrefix + shapeName
+		discriminated := sumOf()
+		discriminated.Variants.Items()[0].Fields.Append(&emit.Field{Name: discriminantName, Type: ref(stringType)})
 		refusals := []struct {
 			name string
 			give *emit.Sum
@@ -190,6 +192,7 @@ func TestLower(t *testing.T) {
 			{name: "returns an error for a decorated variant", give: decoratedVariant},
 			{name: "returns an error for a payload entry without a name", give: positional},
 			{name: "returns an error for a variant whose interface name is no identifier", give: unnamable},
+			{name: "returns an error for a payload entry named like the discriminant", give: discriminated},
 		}
 		for _, tt := range refusals {
 			t.Run(tt.name, func(t *testing.T) {
@@ -197,6 +200,78 @@ func TestLower(t *testing.T) {
 
 				_, err := backend.Lower(tt.give)
 				assert.HasError(t, err, "a union cannot state it")
+			})
+		}
+
+		members := []struct {
+			name string
+			give symbol.Symbol
+			want string
+		}{
+			{
+				name: "returns an error for a class with two properties of one name",
+				give: classOf([]*emit.Field{field(radiusName), field(radiusName)}, nil),
+				want: "two properties named radius",
+			},
+			{
+				name: "returns an error for an interface with two properties of one name",
+				give: interfaceOf([]*emit.Field{field(radiusName), field(radiusName)}, nil),
+				want: "two properties named radius",
+			},
+			{
+				name: "returns an error for a class with a property and a method of one name",
+				give: classOf([]*emit.Field{field(areaName)}, []*emit.Method{{Name: areaName}}),
+				want: "a property and a method named area",
+			},
+			{
+				name: "returns an error for a class with two methods of one name",
+				give: classOf(nil, []*emit.Method{{Name: areaName}, {Name: areaName}}),
+				want: "two methods named area",
+			},
+			{
+				name: "returns an error for a class with two getters of one name",
+				give: classOf(nil, []*emit.Method{
+					{Name: areaName, Accessor: symbol.AccessorGet}, {Name: areaName, Accessor: symbol.AccessorGet},
+				}),
+				want: "two getters named area",
+			},
+		}
+		for _, tt := range members {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := backend.Lower(tt.give)
+				assert.HasError(t, err, "TypeScript declares one member of each name")
+				assert.Contains(t, err.Error(), tt.want, "the error names the member")
+			})
+		}
+
+		passed := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{
+				name: "passes an interface with two method signatures of one name",
+				give: interfaceOf(nil, []*emit.Method{{Name: areaName}, {Name: areaName}}),
+			},
+			{
+				name: "passes a class with a getter and a setter of one name",
+				give: classOf(nil, []*emit.Method{
+					{Name: areaName, Accessor: symbol.AccessorGet}, {Name: areaName, Accessor: symbol.AccessorSet},
+				}),
+			},
+			{
+				name: "passes a class with two abstract methods of one name",
+				give: classOf(nil, []*emit.Method{{Name: areaName, Abstract: true}, {Name: areaName, Abstract: true}}),
+			},
+		}
+		for _, tt := range passed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				out, err := backend.Lower(tt.give)
+				assert.NoError(t, err, "TypeScript states the members")
+				assert.Empty(t, out, "the declaration passes through unchanged")
 			})
 		}
 	})
@@ -257,6 +332,27 @@ func sumOf(params ...*emit.TypeParam) *emit.Sum {
 	circle.Fields.Append(&emit.Field{Name: radiusName, Type: ref(numberType)})
 	s.Variants.Append(circle, &emit.SumVariant{Name: emptyName})
 	return s
+}
+
+// classOf returns a class of the given properties and methods.
+func classOf(fields []*emit.Field, methods []*emit.Method) *emit.Struct {
+	s := &emit.Struct{Name: rowName}
+	s.Fields.Append(fields...)
+	s.Methods.Append(methods...)
+	return s
+}
+
+// interfaceOf returns an interface of the given properties and methods.
+func interfaceOf(fields []*emit.Field, methods []*emit.Method) *emit.Interface {
+	i := &emit.Interface{Name: rowName}
+	i.Fields.Append(fields...)
+	i.Methods.Append(methods...)
+	return i
+}
+
+// field returns a property of a number named name.
+func field(name string) *emit.Field {
+	return &emit.Field{Name: name, Type: ref(numberType)}
 }
 
 // lowered lowers a sum and asserts it lowers.

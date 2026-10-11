@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/lowering"
@@ -43,9 +44,12 @@ const discriminant = "kind"
 // second settle changes nothing. A sum stating methods refuses,
 // because a union has no members. One stating no variants refuses,
 // because a union joins at least one. A decorated sum or variant
-// refuses, because TypeScript decorates classes alone, and a
-// payload entry without a name refuses, because a property has one.
-// Everything else passes through unchanged.
+// refuses, because TypeScript decorates classes alone. A payload entry
+// without a name refuses, because a property has one. Lower also returns
+// an error for a payload entry named like the discriminant, because the
+// variant interface would declare that property twice. A class or an
+// interface passes through unchanged unless [members] returns an error for
+// it. Everything else passes through unchanged.
 //
 // # Allocation contract
 //
@@ -59,8 +63,15 @@ const discriminant = "kind"
 // the variant's spelling with its type arguments. A refusal allocates
 // its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
-	sum, is := s.(*emit.Sum)
-	if !is {
+	var sum *emit.Sum
+	switch d := s.(type) {
+	case *emit.Struct:
+		return nil, members(d.Name, d.Fields.Items(), d.Methods.Items(), true)
+	case *emit.Interface:
+		return nil, members(d.Name, d.Fields.Items(), d.Methods.Items(), false)
+	case *emit.Sum:
+		sum = d
+	default:
 		return nil, nil // the declaration passes through
 	}
 	switch {
@@ -91,6 +102,49 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		TypeParams: sum.TypeParams,
 		Target:     &emit.TypeRef{Spelling: strings.Join(parts, " | ")},
 	}), nil
+}
+
+// members returns an error for two members of one name in a class or an
+// interface host, where both members are static or neither is. TypeScript
+// allows one property, one getter and one setter of each name, and a
+// property and a method cannot share a name. In a class, members also
+// returns an error for two methods of one name unless both are abstract.
+// The backend renders a body for each method that is not abstract, and
+// TypeScript allows one implementation of each name. TypeScript reads two
+// method signatures of one name in an interface as overloads. An index
+// signature has no name, so members skips it. host is the name of the
+// class or the interface, and each error contains it. members does not
+// allocate, and an error allocates its message.
+func members(host string, fields []*emit.Field, methods []*emit.Method, class bool) error {
+	for i, f := range fields {
+		if slices.ContainsFunc(fields[:i], func(g *emit.Field) bool { return g.Name == f.Name && g.Level == f.Level }) {
+			return refuse("%s declares two properties named %s, and TypeScript declares one", host, f.Name)
+		}
+	}
+	for i, m := range methods {
+		if m.Indexer {
+			continue
+		}
+		if slices.ContainsFunc(fields, func(f *emit.Field) bool { return f.Name == m.Name && f.Level == m.Level }) {
+			return refuse("%s declares a property and a method named %s, and TypeScript declares one of them",
+				host, m.Name)
+		}
+		for _, earlier := range methods[:i] {
+			if earlier.Indexer || earlier.Name != m.Name || earlier.Level != m.Level || earlier.Accessor != m.Accessor {
+				continue
+			}
+			switch {
+			case m.Accessor == symbol.AccessorGet:
+				return refuse("%s declares two getters named %s, and TypeScript declares one", host, m.Name)
+			case m.Accessor == symbol.AccessorSet:
+				return refuse("%s declares two setters named %s, and TypeScript declares one", host, m.Name)
+			case class && (!m.Abstract || !earlier.Abstract):
+				return refuse("%s declares two methods named %s, and a method of a class has one implementation",
+					host, m.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // variantInterface builds one variant's interface and the spelling
@@ -125,6 +179,10 @@ func variantInterface(
 		if f.Name == "" {
 			return nil, "", refuse("a property has a name, and a payload entry in %s states none",
 				v.Name)
+		}
+		if f.Name == discriminant {
+			return nil, "", refuse("the discriminant property is named %s, and so is a payload entry in %s",
+				discriminant, v.Name)
 		}
 		fields = append(fields, f)
 	}
