@@ -39,9 +39,8 @@ by CI, and the generated documentation artifacts publish with the tag.
       [14-distribution-and-cli.md](../architecture/14-distribution-and-cli.md)
       generates in the tag pipeline, and a seeded stale page blocks
       the tag the way a failing check does.
-- [ ] The support matrix, the parity matrix, the diagnostic-code index
-      and the benchmark comparison against the previous release
-      publish beside the tag.
+- [ ] The support matrix, the parity matrix and the diagnostic-code
+      index publish beside the tag.
 - [ ] Tags exist: `eidos-core/v0.1.0`, and first tags for eidos-cli,
       eidos-lang, eidos-lang-go, eidos-lang-typescript,
       eidos-lang-protobuf, eidos-plugin-shape and eidos-reference, each
@@ -86,5 +85,6 @@ and the first version tags.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-11 | The fourth bullet publishes no benchmark comparison against the previous release | We do not gate or report benchmark regressions between releases |
 | 2026-10-08 | The handshake bullet has `version` print the contract version, and eidos-cli joins the first tags | Milestone 0008's `version` has no contract version to print before the handshake exists, and the command kernels are a module of their own |
 | 2026-08-30 | Added at position 14 | The release comes last because it freezes what everything before it was still free to change |
