@@ -212,6 +212,35 @@ func TestConfig(t *testing.T) {
 					fault(`family "plan" of stubgen writes under a directory, and the plan states none`),
 				},
 			},
+			{
+				name: "returns a fault for a family tag that a generator declares twice",
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerSource, Word: "stub"},
+					{Per: plugin.PerSource, Word: "fake"},
+				}},
+				want: []string{fault(`stubgen declares the family "" twice`)},
+			},
+			{
+				name:    "returns a fault for a family without a cardinality",
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {{Word: "stub"}}},
+				want:    []string{fault(`family "" of stubgen states no cardinality`)},
+			},
+			{
+				name:    "returns a fault for a family without a word",
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {{Per: plugin.PerSource}}},
+				want:    []string{fault(`family "" of stubgen states no word`)},
+			},
+			{
+				name: "returns a fault for a family template that is no path inside a tree",
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerSource, Word: "stub", Template: "../stub.tmpl"},
+				}},
+				want: []string{
+					fault(
+						`family "" of stubgen has the template "../stub.tmpl", which is no slash-separated path inside a tree`,
+					),
+				},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

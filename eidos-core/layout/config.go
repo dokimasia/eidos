@@ -197,16 +197,32 @@ func (c Config) AppendBinary(b []byte) ([]byte, error) {
 	return b, nil
 }
 
-// checkGenerator validates the routing each declared family of one
-// generator resolves to: a family that writes under a directory has
-// one, and a refinement's directory is read by a family it applies to.
+// checkGenerator validates the declared families of one generator and
+// the routing each resolves to. Each family needs a cardinality, a word
+// and a tag of its own, and a family template must be a slash-separated
+// path inside a tree. A family that writes under a directory has one,
+// and a refinement's directory is read by a family it applies to.
 func (c Config) checkGenerator(plan string, p plugin.ID, declared []plugin.Output) []error {
 	var faults []error
 	fault := func(format string, a ...any) {
 		faults = append(faults, fmt.Errorf("layout: plan %q: "+format, append([]any{plan}, a...)...))
 	}
 	generatorDirRead := false
-	for _, o := range declared {
+	for i, o := range declared {
+		if slices.ContainsFunc(declared[:i], func(earlier plugin.Output) bool { return earlier.Tag == o.Tag }) {
+			fault("%s declares the family %q twice", p, o.Tag)
+			continue
+		}
+		if o.Per == 0 {
+			fault("family %q of %s states no cardinality", o.Tag, p)
+		}
+		if o.Word == "" {
+			fault("family %q of %s states no word", o.Tag, p)
+		}
+		if o.Template != "" && !fs.ValidPath(o.Template) {
+			fault("family %q of %s has the template %q, which is no slash-separated path inside a tree",
+				o.Tag, p, o.Template)
+		}
 		f := Family{Plugin: p, Tag: o.Tag}
 		r := c.resolve(f)
 		own := c.Families[f]
