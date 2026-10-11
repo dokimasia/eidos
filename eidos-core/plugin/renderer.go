@@ -108,7 +108,9 @@ type SyntaxProvider interface {
 // shared name shadowed without a declaration is a lint finding,
 // and where two plugins override one name, the one at the latest
 // schedule position takes effect, because a plugin that changes
-// how a construct renders runs after what it changes.
+// how a construct renders runs after what it changes. A slice that
+// TemplateTargets or Overrides returns is the plugin's own storage, and
+// a caller does not change it.
 type TemplateProvider interface {
 	Templates(t Target) (fs.FS, bool)
 	TemplateTargets() []Target

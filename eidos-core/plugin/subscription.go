@@ -75,7 +75,8 @@ type Subscription struct {
 //
 // A hand-rolled plugin may skip it entirely, which reads as one
 // implicit subscription to everything in scope: honest, and costs
-// full-graph dispatch.
+// full-graph dispatch. The slice that Subscriptions returns is the
+// plugin's own storage, and a caller does not change it.
 type Subscribed interface {
 	Plugin
 	Subscriptions() []Subscription

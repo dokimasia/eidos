@@ -10,7 +10,8 @@ import (
 
 // The capability surfaces: interfaces the composition asserts on a
 // plugin to learn what it declared. Each returns data built once;
-// none is invoked during a phase.
+// none is invoked during a phase. A slice that one of these interfaces
+// returns is the plugin's own storage, and a caller does not change it.
 
 // DirectiveProvider declares the schemas a plugin owns, for
 // registration at composition.
