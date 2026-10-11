@@ -4,21 +4,33 @@
 package callee
 
 import (
+	"strings"
+
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/reference/handlergen"
 	"go.dokimi.dev/eidos/reference/middlewaregen"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/meta"
+	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The separator of a qualified name in the text that a weaver logs.
-const selector = "."
+// The separator of a qualified name in the text that a weaver logs, and
+// the separator of the elements of an import path.
+const (
+	selector = "."
+	pathSep  = "/"
+)
 
-// Reporter is the part of a match that reports at its subject. Every match
-// of the SDK satisfies it.
+// Reporter is the part of a match that [Check] reads and reports at: the
+// facts and the declarations of the load, and the subject of the match.
+// Every match of the SDK satisfies it.
 type Reporter interface {
+	sdk.Matcher
+	Rules() rules.Bound
 	Errorf(c diag.Code, format string, a ...any)
 }
 
@@ -107,21 +119,65 @@ func Weave(o *Log) func(*sdk.EmitMatch, *sdk.Emitter) error {
 	}
 }
 
-// Check reports whether pkg and fn name a function to call. Where pkg or fn
-// is empty, it reports [Missing] at the subject of m and returns false. It
-// allocates what the report allocates, and nothing for a function.
-func Check(m Reporter, pkg, fn string) bool {
+// Check reports whether pkg and fn name a function to call from the
+// declaration at, which the rule of m generates code for. It reports at the
+// subject of m and returns false in three cases:
+//
+//   - [Missing] where pkg or fn is empty.
+//   - [UnknownFunction] where the load contains the Go package pkg, and no
+//     file of it declares a function named fn.
+//   - [UnknownPackage] where pkg is in the module of the package of at, and
+//     the load does not contain it.
+//
+// The load contains the packages of the workspace alone. So Check accepts
+// the function of a package outside the module of at, such as a package of
+// the standard library, as the options name it. Each read records on the
+// invocation of m. Check allocates what the reads and the report allocate.
+func Check(m Reporter, at symbol.Identity, pkg, fn string) bool {
 	if pkg == "" || fn == "" {
 		m.Errorf(Missing, "the plugin calls no function, because the option package or the option func is empty")
+		return false
+	}
+	p, loaded := m.Rules().View().PackageOf(symbol.Identity{Lang: golang.Lang, Package: pkg, Kind: symbol.KindPackage})
+	if loaded {
+		if declares(p, fn) {
+			return true
+		}
+		m.Errorf(UnknownFunction, "the package %s declares no function %s, which the options of the plugin name",
+			pkg, fn)
+		return false
+	}
+	module, known := sdk.FactOf(m, symbol.Identity{Lang: at.Lang, Package: at.Package, Kind: symbol.KindPackage},
+		meta.Named[string](meta.ModuleKey))
+	rest, inModule := strings.CutPrefix(pkg, module)
+	if known && inModule && (rest == "" || strings.HasPrefix(rest, pathSep)) {
+		m.Errorf(UnknownPackage, "the module %s contains no package %s, which the options of the plugin name",
+			module, pkg)
 		return false
 	}
 	return true
 }
 
+// declares reports whether a file of the package p declares a function
+// named fn at its top level.
+func declares(p *node.Package, fn string) bool {
+	for _, f := range p.Files {
+		if f == nil {
+			continue
+		}
+		for _, d := range f.Decls {
+			if fun, isFunction := d.(*node.Function); isFunction && fun.Name == fn {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // call returns the call of the function fn of the Go package pkg with
-// args. It returns false where [Check] returns false.
+// args. It returns false where [Check] returns false for the origin of m.
 func call(m *sdk.EmitMatch, pkg, fn string, args ...emit.Expr) (emit.Expr, bool) {
-	if !Check(m, pkg, fn) {
+	if !Check(m, m.Origin(), pkg, fn) {
 		return emit.Expr{}, false
 	}
 	ref := emit.RefExpr(symbol.Identity{Lang: golang.Lang, Package: pkg, Name: fn, Kind: symbol.KindFunction})

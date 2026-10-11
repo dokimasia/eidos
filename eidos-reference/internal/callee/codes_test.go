@@ -17,23 +17,42 @@ import (
 func TestCodes(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Missing", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("is the first code of the prefix", func(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    diag.Code
+		spelled string
+		meaning string
+	}{
+		{
+			name: "Missing", code: callee.Missing, spelled: "REFERENCE-0001",
+			meaning: "the options of a plugin set no function for the plugin to call",
+		},
+		{
+			name: "UnknownPackage", code: callee.UnknownPackage, spelled: "REFERENCE-0005",
+			meaning: "the options of a plugin name a package that the module of the subject does not contain",
+		},
+		{
+			name: "UnknownFunction", code: callee.UnknownFunction, spelled: "REFERENCE-0006",
+			meaning: "the options of a plugin name a function that their package does not declare",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, callee.Missing.String(), "REFERENCE-0001",
-				"the code has the prefix of the ensemble and the number 1")
-		})
+			t.Run("has the prefix of the ensemble and its number", func(t *testing.T) {
+				t.Parallel()
 
-		t.Run("has a meaning in the registry of the codes", func(t *testing.T) {
-			t.Parallel()
+				assert.Equal(t, tt.code.String(), tt.spelled, "the spelling is pinned")
+			})
 
-			meaning, registered := diag.Kernel().Meaning(callee.Missing)
-			assert.True(t, registered, "the package registers the code")
-			assert.Equal(t, meaning, "the options of a plugin set no function for the plugin to call",
-				"the meaning anchors the code in the index")
+			t.Run("has a meaning in the registry of the codes", func(t *testing.T) {
+				t.Parallel()
+
+				meaning, registered := diag.Kernel().Meaning(tt.code)
+				assert.True(t, registered, "the package registers the code")
+				assert.Equal(t, meaning, tt.meaning, "the meaning anchors the code in the index")
+			})
 		})
-	})
+	}
 }

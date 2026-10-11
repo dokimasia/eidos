@@ -54,7 +54,8 @@ var templates embed.FS
 // Callee is the data that the file template reads beside the record of a
 // struct. It is the function that registers the struct. Package is the
 // import path of its package, and Name is the name by which the file refers
-// to the package. Func is the name of the function.
+// to the package, which golang.Qualifier returns for the path. Func is the
+// name of the function.
 type Callee struct {
 	Package string
 	Name    string
@@ -93,7 +94,7 @@ func New() plugin.Generator {
 func record(o *callee.Options) func(*sdk.StructMatch, *sdk.Emitter) error {
 	return func(m *sdk.StructMatch, e *sdk.Emitter) error {
 		s := m.Struct
-		if !callee.Check(m, o.Package, o.Func) {
+		if !callee.Check(m, s.ID, o.Package, o.Func) {
 			return nil
 		}
 		if len(s.TypeParams) > 0 {
@@ -101,7 +102,7 @@ func record(o *callee.Options) func(*sdk.StructMatch, *sdk.Emitter) error {
 			return nil
 		}
 		e.PackageFile().Record(
-			Callee{Package: o.Package, Name: golang.AssumedName(o.Package), Func: o.Func},
+			Callee{Package: o.Package, Name: golang.Qualifier(o.Package), Func: o.Func},
 			&emit.Struct{Origin: s.ID, Name: s.Name, Visibility: s.Visibility},
 		)
 		return nil

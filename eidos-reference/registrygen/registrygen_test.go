@@ -35,12 +35,22 @@ const (
 )
 
 // The name by which a file refers to the package of the default function,
-// and the package, its name and the function that a config sets.
+// and the package outside the module of the tree, its name and the
+// function that a config sets.
 const (
 	gobName      = "gob"
-	codecPackage = "example.com/shop/codec"
+	codecPackage = "example.org/codec"
 	codecName    = "codec"
 	codecFunc    = "Add"
+)
+
+// A package of a config whose path ends in a keyword, the escaped name by
+// which a file refers to it, and a package of the module of the tree that
+// the tree does not contain.
+const (
+	keywordPackage = "example.org/shop/go"
+	keywordName    = "go_"
+	missingPackage = "example.com/shop/codec"
 )
 
 // registrygen records each struct under its directive into the registry of
@@ -103,6 +113,21 @@ func TestRegistrygen(t *testing.T) {
 				"the record of Item calls the function of the options")
 		})
 
+		t.Run("records an escaped name for a package of the options whose path ends in a keyword", func(t *testing.T) {
+			t.Parallel()
+
+			p := registrygen.New()
+			o := p.(plugin.OptionsProvider).Options().(*callee.Options)
+			o.Package, o.Func = keywordPackage, codecFunc
+			f := catalog(t.Context(), t, p)
+			units, _ := registries(t, f, p)
+			assert.Length(t, units, 1, "the package catalog has one registry")
+			item := f.Find(t, symbol.KindStruct, "", itemName).Identity()
+			assert.Equal(t, units[0].Data[item],
+				any(registrygen.Callee{Package: keywordPackage, Name: keywordName, Func: codecFunc}),
+				"go is a keyword, so the record refers to the package as go_")
+		})
+
 		t.Run("reports Missing at a struct for an empty option", func(t *testing.T) {
 			t.Parallel()
 
@@ -117,6 +142,23 @@ func TestRegistrygen(t *testing.T) {
 				"the finding is at Item")
 			expect.Empty(t, units, "registrygen records nothing")
 		})
+
+		t.Run("reports UnknownPackage at a struct for a package of its module that the load does not contain",
+			func(t *testing.T) {
+				t.Parallel()
+
+				p := registrygen.New()
+				o := p.(plugin.OptionsProvider).Options().(*callee.Options)
+				o.Package, o.Func = missingPackage, codecFunc
+				f := catalog(t.Context(), t, p)
+				units, sink := registries(t, f, p)
+				found := slices.Collect(sink.All())
+				assert.Length(t, found, 1, "registrygen reports the one struct")
+				expect.That(t, found[0].Code).Equal(callee.UnknownPackage, "the finding is UnknownPackage")
+				expect.That(t, found[0].Pos.Line).Equal(f.Find(t, symbol.KindStruct, "", itemName).Position().Line,
+					"the finding is at Item")
+				expect.Empty(t, units, "registrygen records nothing")
+			})
 
 		t.Run("reports Generic at a struct with type parameters", func(t *testing.T) {
 			t.Parallel()

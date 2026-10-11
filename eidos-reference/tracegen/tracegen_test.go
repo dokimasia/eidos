@@ -91,15 +91,16 @@ func configured() plugin.Generator {
 	return p
 }
 
-// orders returns a fixture over the package orders of the tree, loaded
-// under ctx and stamped by handlergen, with the target golang, the plugin
-// tracegen p, and the units of handlergen and middlewaregen seeded.
+// orders returns a fixture over the package orders of the tree and the
+// package of the function of the options, loaded under ctx and stamped by
+// handlergen, with the target golang, the plugin tracegen p, and the units
+// of handlergen and middlewaregen seeded.
 func orders(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
 	return referencetest.New(ctx, tb, referencetest.Spec{
 		Dir:        referencetest.Tree,
-		Packages:   []string{ordersPackage},
+		Packages:   []string{ordersPackage, tracePackage},
 		Target:     golang.Target,
 		Plugins:    []plugin.Plugin{p},
 		Annotators: []plugin.Annotator{handlergen.New().(plugin.Annotator)},

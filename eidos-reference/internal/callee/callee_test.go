@@ -4,6 +4,7 @@
 package callee_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -55,19 +56,23 @@ const (
 	logFormat  = "debug: %s entered"
 )
 
-// reporter records the codes of the findings that a check reports.
-type reporter struct {
-	codes []diag.Code
-}
-
-// Errorf records the code c.
-func (r *reporter) Errorf(c diag.Code, _ string, _ ...any) {
-	r.codes = append(r.codes, c)
-}
+// The package of the tree that declares the function of the checked
+// options, the function, a function that the package does not declare,
+// the module of the tree, a package of the module that the tree does not
+// contain, and a package whose path starts with the module path without
+// being in the module.
+const (
+	metricsPackage = "example.com/shop/httpmw/metrics"
+	metricsFunc    = "RecordLatency"
+	missingFunc    = "RecordLatencies"
+	shopModule     = "example.com/shop"
+	missingPackage = "example.com/shop/httpmw/latency"
+	shoppingPkg    = "example.com/shopping/pay"
+)
 
 // Each rule appends one call of the function of its options into a body
-// that the host wrote, and reports Missing where the options set no
-// function.
+// that the host wrote. Check reports why where the options name no
+// function that the load or the standard library can declare.
 func TestCallee(t *testing.T) {
 	t.Parallel()
 
@@ -85,22 +90,44 @@ func TestCallee(t *testing.T) {
 			want        bool
 			wantCodes   []diag.Code
 		}{
-			{name: "returns true for a package and a function", givePackage: logPackage, giveFunc: logFunc, want: true},
+			{
+				name:        "returns true for a function of a package of the load",
+				givePackage: metricsPackage, giveFunc: metricsFunc, want: true,
+			},
+			{
+				name:        "returns true for a function of a package outside the module of the subject",
+				givePackage: logPackage, giveFunc: logFunc, want: true,
+			},
+			{
+				name:        "returns true for a package whose path starts with the module path without a separator",
+				givePackage: shoppingPkg, giveFunc: metricsFunc, want: true,
+			},
 			{name: "returns false for an empty package", giveFunc: logFunc, wantCodes: []diag.Code{callee.Missing}},
 			{
 				name:        "returns false for an empty function",
 				givePackage: logPackage,
 				wantCodes:   []diag.Code{callee.Missing},
 			},
+			{
+				name:        "returns false for a function that the package of the load does not declare",
+				givePackage: metricsPackage, giveFunc: missingFunc, wantCodes: []diag.Code{callee.UnknownFunction},
+			},
+			{
+				name:        "returns false for a package of the module of the subject that the load does not contain",
+				givePackage: missingPackage, giveFunc: metricsFunc, wantCodes: []diag.Code{callee.UnknownPackage},
+			},
+			{
+				name:        "returns false for the root package of the module that the load does not contain",
+				givePackage: shopModule, giveFunc: metricsFunc, wantCodes: []diag.Code{callee.UnknownPackage},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				r := &reporter{}
-				expect.Equal(t, callee.Check(r, tt.givePackage, tt.giveFunc), tt.want,
-					"Check reports whether the options name a function")
-				expect.Equal(t, r.codes, tt.wantCodes, "Check reports Missing for empty options alone")
+				got, codes := checked(t, tt.givePackage, tt.giveFunc)
+				expect.Equal(t, got, tt.want, "Check reports whether the options name a function")
+				expect.Equal(t, codes, tt.wantCodes, "Check reports why the options name no function")
 			})
 		}
 	})
@@ -138,6 +165,18 @@ func TestCallee(t *testing.T) {
 
 			out := run(t, symbol.KindFunction, callee.Chain(&callee.Options{}))
 			assertMissing(t, out.sink, 1)
+			slot, _ := out.middleware.Body.Slot(middlewaregen.ChainSlot)
+			assert.Empty(t, slot.Items(), "the chain has no statement")
+		})
+
+		t.Run("reports UnknownPackage at the subject for a package of the module of the origin", func(t *testing.T) {
+			t.Parallel()
+
+			out := run(t, symbol.KindFunction,
+				callee.Chain(&callee.Options{Package: missingPackage, Func: metricsFunc}))
+			found := slices.Collect(out.sink.All())
+			assert.Length(t, found, 1, "the chain reports the one middleware")
+			expect.That(t, found[0].Code).Equal(callee.UnknownPackage, "the finding is UnknownPackage")
 			slot, _ := out.middleware.Body.Slot(middlewaregen.ChainSlot)
 			assert.Empty(t, slot.Items(), "the chain has no statement")
 		})
@@ -280,6 +319,37 @@ func run(t *testing.T, k symbol.Kind, rule func(*sdk.EmitMatch, *sdk.Emitter) er
 		}
 	}
 	return out
+}
+
+// checked runs Check with the options pkg and fn in the rule of a probe
+// plugin on the struct Orders, over the packages orders and httpmw/metrics
+// of the tree. It returns what Check returned and the codes of the
+// findings, in order.
+func checked(t *testing.T, pkg, fn string) (bool, []diag.Code) {
+	t.Helper()
+
+	var got bool
+	p := sdk.NewPlugin(probeID).
+		Handle(sdk.OnStruct(func(m *sdk.StructMatch, _ *sdk.Emitter) error {
+			if m.Struct.Name == ordersName {
+				got = callee.Check(m, m.Struct.ID, pkg, fn)
+			}
+			return nil
+		})).
+		Build()
+	f := referencetest.New(t.Context(), t, referencetest.Spec{
+		Dir:      tree,
+		Packages: []string{ordersPackage, metricsPackage},
+		Target:   golang.Target,
+		Plugins:  []plugin.Plugin{p},
+	})
+	res := f.Generate(t, p)
+	assert.NoError(t, res.Err, "the rule runs whole")
+	var codes []diag.Code
+	for d := range res.Sink.All() {
+		codes = append(codes, d.Code)
+	}
+	return got, codes
 }
 
 // host returns the generator whose units the cases seed. For the struct
