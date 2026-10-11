@@ -15,7 +15,10 @@ func (v {{$t}}) String() string {
 {{- if $d.Textual}}
 	return string(v)
 {{- else}}{{use "fmt"}}
-	return fmt.Sprintf("{{$t}}(%d)", int64(v))
+	// plain has the underlying type of {{$t}} and no methods, so the value
+	// prints in its own type without a call of String.
+	type plain {{$t}}
+	return fmt.Sprintf("{{$t}}(%v)", plain(v))
 {{- end}}
 }
 
