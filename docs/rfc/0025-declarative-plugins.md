@@ -8,7 +8,7 @@ updated: 2026-10-11
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: ADR-0018, ADR-0019
+produces-adr: ADR-0018, ADR-0019, ADR-0020, ADR-0021
 ---
 
 <!--

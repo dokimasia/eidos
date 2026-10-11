@@ -246,7 +246,7 @@ pairs of kind and emission:
 |---|---|---|
 | `function` | `mirror` | a function with the subject's signature, whose body the rule's template renders |
 | `interface` | `mirror` | an interface with the subject's effective methods and properties |
-| `interface` | `implementation` | a struct with the field `next` of the subject's type and a method for each effective method, whose bodies the rule's template renders |
+| `interface` | `implementation` | a struct with the field `next` of the subject's type and a method for each effective method, whose bodies the rule's template renders. The rule reports `UndelegatedProperty` for an interface with a property, and emits nothing for it |
 | `struct` | `mirror` | a struct with the subject's effective fields |
 
 A template reads the declaration as `.Decl` and the payload as
