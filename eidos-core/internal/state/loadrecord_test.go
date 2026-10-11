@@ -21,6 +21,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
@@ -326,6 +327,19 @@ func TestLoadState(t *testing.T) {
 			var second *state.Generation
 			assert.Pure(t, l.Writes, func() { second = recordedLoad(t, l, report) }, "nothing is written")
 			assert.Equal(t, second.Name, first.Name, "because the record is unchanged")
+		})
+
+		t.Run("returns the error of a region that does not encode", func(t *testing.T) {
+			t.Parallel()
+
+			report := loaded(t, scriptedTree(), nil)
+			region := report.Units[0].Region
+			region.Stamps = map[symbol.Identity][]meta.RawStamp{
+				region.Packages[0].ID: {{Key: meta.ModuleKey, Value: struct{}{}}},
+			}
+			err := state.RecordLoad(t.Context(), state.NewCommit(nil, nil), nil, report)
+			assert.HasError(t, err, "the record returns the error of the encoding")
+			assert.Contains(t, err.Error(), report.Units[0].Files[0].Path, "the error names the unit's first member")
 		})
 	})
 
