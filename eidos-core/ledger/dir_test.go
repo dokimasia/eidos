@@ -16,12 +16,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
+	"go.dokimi.dev/assert/history"
 
 	"go.dokimi.dev/eidos/core/ledger"
 )
@@ -49,6 +52,15 @@ const (
 	// path, the staging file's name, write, sync and rename, and the sync
 	// of the file's directory.
 	dirWriteAllocs = 41
+	// dirWriteAllAllocs is one durable replacement of two documents in
+	// one group: the sorted names, the root, the group and its barrier, the
+	// paths, the pool, and what the group allocates for the two writes. For
+	// each write that is the stat of its directory and the staging file's
+	// name, open and rename, and for the group it is the barrier's open of
+	// the root and the open and the sync of the directory. os.Root splits
+	// each path that it resolves, and copies each element into the bytes
+	// that a system call takes.
+	dirWriteAllAllocs = 93
 	// dirPutAllocs is one replacement without a sync: the root, the
 	// name's path, and the staging file's name, write and rename.
 	dirPutAllocs = 34
@@ -534,6 +546,123 @@ func TestDir(t *testing.T) {
 		})
 	})
 
+	t.Run("WriteAll", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes each blob with its bytes in the directories it creates", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.NoError(t, d.WriteAll(t.Context(), map[string][]byte{
+				docName: []byte(docBody), segName: []byte(otherBody),
+			}), "the blobs are written")
+			files.Equal(t, os.DirFS(onDisk(root, ".")), files.Tree{
+				docName: files.Text(docBody), segName: files.Text(otherBody),
+			}, "each blob is a file of the state directory with its bytes, and no staging file remains")
+		})
+
+		t.Run("replaces a blob stored before", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			assert.NoError(t, d.WriteAll(t.Context(), map[string][]byte{docName: []byte(otherBody)}),
+				"the blob is replaced")
+			got, err := d.Read(t.Context(), docName)
+			assert.NoError(t, err, "the blob reads")
+			assert.Equal(t, string(got), otherBody, "the new bytes")
+		})
+
+		t.Run("creates the directory of a ledger OpenAt returned", func(t *testing.T) {
+			t.Parallel()
+
+			dir := filepath.Join(t.TempDir(), "memo", "shared")
+			d, err := ledger.OpenAt(dir)
+			assert.NoError(t, err, "a missing directory opens")
+			assert.NoError(t, d.WriteAll(t.Context(), map[string][]byte{docName: []byte(docBody)}),
+				"the first write creates it")
+			files.HasContent(t, filepath.Join(dir, filepath.FromSlash(docName)), docBody,
+				"the blob is a file of the directory itself, with its bytes")
+		})
+
+		t.Run("leaves one ledger's whole blob when two ledgers write one name at once", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			other := reopened(t, root)
+			bodies := []string{strings.Repeat("a", 8192), strings.Repeat("b", 8193)}
+			outcomes := history.Concurrently(len(bodies), time.Minute, func(writer int) (any, error) {
+				l := []*ledger.Dir{d, other}[writer]
+				return writer, l.WriteAll(t.Context(), map[string][]byte{docName: []byte(bodies[writer])})
+			})
+			for _, o := range outcomes {
+				expect.True(t, o.Finished, "each ledger finishes")
+				expect.NoError(t, o.Error, "each ledger writes the blob")
+			}
+			got := files.Read(t, onDisk(root, docName))
+			assert.Contains(t, bodies, got, "the blob is one ledger's whole bytes")
+			files.Equal(t, os.DirFS(filepath.Dir(onDisk(root, docName))),
+				files.Tree{path.Base(docName): files.Text(got)}, "no staging file remains")
+		})
+
+		t.Run("returns nil for no blob and creates nothing", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.NoError(t, d.WriteAll(t.Context(), nil), "nothing is written")
+			files.Absent(t, filepath.Join(root, ledger.StateDir(brand)), "and no state directory is made")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name and writes the other blobs", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			err := d.WriteAll(t.Context(), map[string][]byte{"../x": nil, docName: []byte(docBody)})
+			assert.ErrorIs(t, err, fs.ErrInvalid, "the name is refused")
+			got, rerr := d.Read(t.Context(), docName)
+			assert.NoError(t, rerr, "the valid blob reads")
+			assert.Equal(t, string(got), docBody, "with its bytes")
+		})
+
+		t.Run("returns ErrInvalid for invalid names alone and creates nothing", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.ErrorIs(t, d.WriteAll(t.Context(), map[string][]byte{"": nil}), fs.ErrInvalid, "the name is refused")
+			files.Absent(t, filepath.Join(root, ledger.StateDir(brand)), "and no state directory is made")
+		})
+
+		t.Run("returns an error for a blob whose directory is a file and writes the other blobs", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, "manifest", docBody)
+			err := d.WriteAll(t.Context(), map[string][]byte{docName: []byte(docBody), segName: []byte(otherBody)})
+			assert.HasError(t, err, "the directory is a file")
+			assert.Contains(t, err.Error(), docName, "the error names the blob")
+			got, rerr := d.Read(t.Context(), segName)
+			assert.NoError(t, rerr, "the other blob reads")
+			assert.Equal(t, string(got), otherBody, "with its bytes")
+		})
+
+		t.Run("returns an error for a root removed after the ledger opened", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.NoError(t, os.RemoveAll(root), "the root is removed")
+			assert.HasError(t, d.WriteAll(t.Context(), map[string][]byte{docName: []byte(docBody)}),
+				"the root does not open")
+		})
+
+		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				return d.WriteAll(ctx, map[string][]byte{docName: []byte(docBody)})
+			}, "the cancellation is returned")
+			files.Absent(t, filepath.Join(root, ledger.StateDir(brand)), "and nothing is created")
+		})
+	})
+
 	t.Run("Put", func(t *testing.T) {
 		t.Parallel()
 
@@ -745,6 +874,10 @@ func TestDirAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { err = cmp.Or(err, d.Write(ctx, docName, body)) }, dirWriteAllocs,
 		"Write allocates the root and the staged, synced file")
 	assert.NoError(t, err, "the blob is written")
+	two := map[string][]byte{docName: body, "manifest/cd.json": body}
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, d.WriteAll(ctx, two)) }, dirWriteAllAllocs,
+		"WriteAll allocates the root, the group and the staged files")
+	assert.NoError(t, err, "the blobs are written")
 	assert.MaxAllocs(t, func() { err = cmp.Or(err, d.Put(ctx, docName, body)) }, dirPutAllocs,
 		"Put allocates the root and the staged file")
 	assert.NoError(t, err, "the blob is put")
@@ -854,6 +987,19 @@ func BenchmarkDir(b *testing.B) {
 				err = d.Write(b.Context(), docName, body)
 			}
 			assert.NoError(b, err, "the blob is written")
+		})
+	})
+
+	b.Run("WriteAll", func(b *testing.B) {
+		b.Run("two blobs stored before", func(b *testing.B) {
+			two := map[string][]byte{docName: body, "manifest/cd.json": body}
+			c := bench.Start(b).Warmup(1).MaxAllocs(dirWriteAllAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = d.WriteAll(b.Context(), two)
+			}
+			assert.NoError(b, err, "the blobs are written")
 		})
 	})
 

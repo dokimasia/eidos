@@ -23,9 +23,9 @@ const (
 	documentExt = ".json"
 )
 
-// writers is how many documents a commit writes at once: a synced write
-// waits on the disk, and 16 writers measured 143 µs a write against
-// 745 µs on one.
+// writers is how many documents a commit writes at once through a ledger
+// without group writes: a synced write waits on the disk, and 16 writers
+// measured 143 µs a write against 745 µs on one.
 const writers = 16
 
 // Digests are the SHA-256 digests of a record's documents, keyed by
@@ -94,10 +94,11 @@ func readDocument(ctx context.Context, l ledger.Ledger, name, bucket string) (
 }
 
 // WriteManifest records a manifest as its documents: it writes every
-// document whose digest differs from recorded, up to 16 at once and each
-// durably, then removes every document of the directory whose bucket the
-// manifest leaves empty, and returns the digest of every document the
-// manifest has. A document the ledger contains with the bytes recorded
+// document whose digest differs from recorded, each durably, in one group
+// write where the ledger implements [ledger.GroupWriter] and up to 16 at
+// once otherwise. It then removes every document of the directory whose
+// bucket the manifest leaves empty, and returns the digest of every
+// document the manifest has. A document the ledger contains with the bytes recorded
 // states is not written again, so a manifest equal to the recorded one
 // writes nothing.
 //
@@ -144,10 +145,10 @@ func documentsOf(m manifest.Manifest) (documents, error) {
 	return docs, nil
 }
 
-// write writes every document whose digest differs from recorded, up to
-// 16 at once and each durably, then removes every document of the
-// directory whose bucket the documents leave empty. It returns how many
-// bytes it wrote.
+// write writes every document whose digest differs from recorded, each
+// durably, as writeAll does, then removes every document of the directory
+// whose bucket the documents leave empty. It returns how many bytes it
+// wrote.
 //
 // Error modes: a document that fails to write or to remove is joined
 // into the returned error, and the other documents still write.
@@ -181,10 +182,24 @@ func (docs documents) write(ctx context.Context, l ledger.Ledger, recorded Diges
 	return written, nil
 }
 
-// writeAll writes n blobs, which blob(k) names and returns, through
-// [ledger.Ledger.Write] on up to [writers] goroutines, and returns every
-// write's error in the order of k.
+// writeAll writes n blobs, which blob(k) names and returns, durably. A
+// ledger that implements [ledger.GroupWriter] writes them in one call of
+// WriteAll, and writeAll returns its joined error. Any other ledger writes
+// them through [ledger.Ledger.Write] on up to [writers] goroutines, and
+// writeAll returns every write's error in the order of k. It writes
+// nothing for an n of zero.
 func writeAll(ctx context.Context, l ledger.Ledger, n int, blob func(k int) (string, []byte)) []error {
+	if n == 0 {
+		return nil
+	}
+	if gw, ok := l.(ledger.GroupWriter); ok {
+		blobs := make(map[string][]byte, n)
+		for k := range n {
+			name, b := blob(k)
+			blobs[name] = b
+		}
+		return []error{gw.WriteAll(ctx, blobs)}
+	}
 	errs := make([]error, n)
 	var next atomic.Int64
 	var wg sync.WaitGroup

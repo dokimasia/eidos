@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
@@ -89,6 +90,12 @@ func (f failing) Write(ctx context.Context, name string, b []byte) error {
 		return errDevice
 	}
 	return f.Mem.Write(ctx, name, b)
+}
+
+// WriteAll writes each blob through Write, so a group write meets the same
+// refusal.
+func (f failing) WriteAll(ctx context.Context, blobs map[string][]byte) error {
+	return coretest.WriteEach(ctx, f.Write, blobs)
 }
 
 // The record's documents round-trip through a ledger, and a commit
@@ -209,6 +216,20 @@ func TestManifest(t *testing.T) {
 			l, digests := recorded(t, m)
 			assert.Equal(t, l.Writes(), len(manifest.Split(m)), "one write per document")
 			assert.Length(t, digests, len(manifest.Split(m)), "and one digest per document")
+		})
+
+		t.Run("writes every document of a new record through a ledger without group writes", func(t *testing.T) {
+			t.Parallel()
+
+			m := scaled()
+			mem := ledger.NewMem()
+			digests, err := state.WriteManifest(t.Context(), single{Ledger: mem}, m, nil)
+			assert.NoError(t, err, "the record is written")
+			assert.Equal(t, mem.Writes(), len(manifest.Split(m)), "one write per document")
+			got, recorded, err := state.ReadManifest(t.Context(), mem)
+			assert.NoError(t, err, "the record reads")
+			assert.Equal(t, got, m, "the recorded manifest", assert.EquateEmpty())
+			assert.Equal(t, recorded, digests, "and the recorded digests")
 		})
 
 		t.Run("writes nothing for a manifest equal to the record", func(t *testing.T) {

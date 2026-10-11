@@ -14,6 +14,8 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 )
 
+require golang.org/x/sys v0.49.0 // indirect
+
 replace go.dokimi.dev/eidos/core => ../../eidos-core
 
 replace go.dokimi.dev/eidos/lang => ../../eidos-lang

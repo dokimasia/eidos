@@ -323,6 +323,12 @@ func (d *documentCounting) Write(ctx context.Context, name string, b []byte) err
 	return d.Mem.Write(ctx, name, b)
 }
 
+// WriteAll writes each blob through Write, so a group write counts its
+// documents.
+func (d *documentCounting) WriteAll(ctx context.Context, blobs map[string][]byte) error {
+	return coretest.WriteEach(ctx, d.Write, blobs)
+}
+
 // unlockable is a ledger without a lock: it offers the blobs of the
 // ledger it wraps, and not its lock.
 type unlockable struct{ ledger.Ledger }

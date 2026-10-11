@@ -10,4 +10,6 @@ require (
 	go.dokimi.dev/eidos/core v0.0.0-00010101000000-000000000000
 )
 
+require golang.org/x/sys v0.49.0 // indirect
+
 replace go.dokimi.dev/eidos/core => ../eidos-core

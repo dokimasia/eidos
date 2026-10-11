@@ -5,6 +5,7 @@ package coretest
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -75,6 +76,25 @@ func (l *Rewriting) Write(ctx context.Context, name string, b []byte) error {
 	return l.rewrite(ctx, name)
 }
 
+// WriteAll writes blobs in one group, and where one of them is a manifest
+// document, rewrites the record through the edit once.
+//
+// Error modes: those of [ledger.Dir.WriteAll], and of reading and writing
+// the record back.
+func (l *Rewriting) WriteAll(ctx context.Context, blobs map[string][]byte) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.Dir.WriteAll(ctx, blobs); err != nil {
+		return err
+	}
+	for name := range blobs {
+		if strings.HasPrefix(name, manifestPrefix) {
+			return l.rewrite(ctx, name)
+		}
+	}
+	return nil
+}
+
 // Remove removes a blob, and after a manifest document, rewrites the
 // record through the edit.
 //
@@ -105,4 +125,28 @@ func (l *Rewriting) rewrite(ctx context.Context, name string) error {
 	m.Files = slices.Clone(m.Files)
 	_, err = state.WriteManifest(ctx, l.Dir, l.edit(l.run, m), digests)
 	return err
+}
+
+// WriteEach writes each blob of blobs through write in name order, and
+// joins the error of each blob that fails. The other blobs still write. It
+// is the WriteAll of a test ledger that changes Write: the ledger passes
+// its own Write, so a group write meets the same refusals and counts as
+// the writes one after another do.
+//
+// Error modes: the error of each write that fails, joined.
+func WriteEach(
+	ctx context.Context, write func(ctx context.Context, name string, b []byte) error, blobs map[string][]byte,
+) error {
+	names := make([]string, 0, len(blobs))
+	for name := range blobs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var errs []error
+	for _, name := range names {
+		if err := write(ctx, name, blobs[name]); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

@@ -17,6 +17,7 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
 	go.dokimi.dev/eidos/core v0.0.0-00010101000000-000000000000 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )
 
 replace go.dokimi.dev/eidos/core => ../eidos-core

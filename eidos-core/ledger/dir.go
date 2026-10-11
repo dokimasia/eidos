@@ -69,8 +69,9 @@ type Dir struct {
 }
 
 var (
-	_ Ledger = (*Dir)(nil)
-	_ Locker = (*Dir)(nil)
+	_ Ledger      = (*Dir)(nil)
+	_ GroupWriter = (*Dir)(nil)
+	_ Locker      = (*Dir)(nil)
 )
 
 // OpenDir returns the ledger of the state directory .<brand>/ under
@@ -250,6 +251,71 @@ func (d *Dir) Write(ctx context.Context, name string, b []byte) error {
 	return d.replace(ctx, name, b, stagefile.Synced)
 }
 
+// WriteAll replaces the file of each name in blobs through one
+// [stagefile.Group] with unique staging names, so two runs that write one
+// blob at once do not share a staging file. The group writes every
+// staging file on a pool and passes the order barrier of the running
+// system. It then renames the staging files in name order and passes the
+// durability barrier, so once WriteAll returns, a crash of the machine
+// keeps every blob that did not fail. The group creates the directories
+// that a name needs, and makes them durable on Windows as well.
+//
+// Error modes: the context's error before it begins, an invalid name
+// wrapping [fs.ErrInvalid], a root that does not open, the error of each
+// blob that fails to write or to rename, and the error of a barrier, each
+// joined. The other blobs still write, and WriteAll runs to its end once
+// it begins. A barrier that fails before the renames leaves every blob as
+// it was.
+//
+// # Allocation contract
+//
+// WriteAll allocates the sorted names, the root, the group and its
+// barrier, the path of each blob, and what the group allocates for each
+// write.
+func (d *Dir) WriteAll(ctx context.Context, blobs map[string][]byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(blobs))
+	for name := range blobs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var errs []error
+	valid := names[:0]
+	for _, name := range names {
+		if err := checkName(name); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		valid = append(valid, name)
+	}
+	if len(valid) == 0 {
+		return errors.Join(errs...)
+	}
+	r, err := d.open(true)
+	if err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+	defer r.Close()
+	g := stagefile.NewGroup(r, stagefile.Unique, stagefile.System())
+	paths := make([]string, len(valid))
+	for i, name := range valid {
+		paths[i] = path.Join(d.base, name)
+		g.Write(paths[i], blobs[name], filePerm)
+	}
+	failed, err := g.Commit()
+	for i, name := range valid {
+		if ferr, held := failed[paths[i]]; held && !errors.Is(ferr, stagefile.ErrNotApplied) {
+			errs = append(errs, fmt.Errorf("ledger: write %s: %w", name, ferr))
+		}
+	}
+	if err != nil {
+		errs = append(errs, fmt.Errorf("ledger: write the group: %w", err))
+	}
+	return errors.Join(errs...)
+}
+
 // Put replaces the file a name maps to through a staging file of its
 // own, without a sync of the file or of a directory.
 //
@@ -386,16 +452,28 @@ func (d *Dir) resolve(ctx context.Context, name string, write bool) (*os.Root, s
 	if err := checkName(name); err != nil {
 		return nil, "", err
 	}
+	r, err := d.open(write)
+	if err != nil {
+		return nil, "", err
+	}
+	return r, path.Join(d.base, name), nil
+}
+
+// open opens the jail. A write creates the root of an [OpenAt] ledger
+// where it does not exist. The caller closes the root.
+//
+// Error modes: a root that cannot be made or opened, each wrapped.
+func (d *Dir) open(write bool) (*os.Root, error) {
 	if write && d.creates {
 		if err := os.MkdirAll(d.root, dirPerm); err != nil {
-			return nil, "", fmt.Errorf("ledger: making the ledger directory: %w", err)
+			return nil, fmt.Errorf("ledger: making the ledger directory: %w", err)
 		}
 	}
 	r, err := os.OpenRoot(d.root)
 	if err != nil {
-		return nil, "", fmt.Errorf("ledger: opening %s: %w", d.root, err)
+		return nil, fmt.Errorf("ledger: opening %s: %w", d.root, err)
 	}
-	return r, path.Join(d.base, name), nil
+	return r, nil
 }
 
 // ensure creates dir and every directory above it that is missing,

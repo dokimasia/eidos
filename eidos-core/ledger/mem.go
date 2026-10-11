@@ -5,6 +5,7 @@ package ledger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -31,16 +32,17 @@ import (
 //
 // # Allocation contract
 //
-// [Mem.Write] and [Mem.Put] copy the bytes they store, and [Mem.Read]
-// returns a copy, so neither the caller nor the run changes a blob after
-// it is stored. [Mem.List] allocates its result, and [Mem.Lock] the
+// [Mem.Write], [Mem.WriteAll] and [Mem.Put] copy the bytes they store,
+// and [Mem.Read] returns a copy, so neither the caller nor the run
+// changes a blob after it is stored. [Mem.WriteAll] also allocates the
+// sorted names. [Mem.List] allocates its result, and [Mem.Lock] the
 // holder's record and the release.
 type Mem struct {
 	mu    sync.Mutex
 	blobs map[string]memBlob
 	// clock is the last tick a write, put or touch took.
 	clock int64
-	// writes counts the calls to Write and Put that stored a blob.
+	// writes counts the blobs that Write, WriteAll and Put stored.
 	writes int
 	// holder is the record of the lock's holder, and nil while no holder
 	// has the lock.
@@ -55,8 +57,9 @@ type memBlob struct {
 }
 
 var (
-	_ Ledger = (*Mem)(nil)
-	_ Locker = (*Mem)(nil)
+	_ Ledger      = (*Mem)(nil)
+	_ GroupWriter = (*Mem)(nil)
+	_ Locker      = (*Mem)(nil)
 )
 
 // NewMem returns an empty ledger in memory.
@@ -134,6 +137,31 @@ func (l *Mem) ReadAt(ctx context.Context, name string, p []byte, off int64) (int
 // Error modes: an invalid name wraps [fs.ErrInvalid].
 func (l *Mem) Write(ctx context.Context, name string, b []byte) error { return l.store(ctx, name, b) }
 
+// WriteAll stores a copy of each blob of blobs under its name as Write
+// does, in name order, each at the next tick.
+//
+// Error modes: the context's error before it begins, and an invalid name
+// wrapping [fs.ErrInvalid], each joined. The other blobs still store, and
+// WriteAll runs to its end once it begins.
+func (l *Mem) WriteAll(ctx context.Context, blobs map[string][]byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ctx = context.WithoutCancel(ctx)
+	names := make([]string, 0, len(blobs))
+	for name := range blobs {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var errs []error
+	for _, name := range names {
+		if err := l.store(ctx, name, blobs[name]); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Put stores a copy of b under the name at the next tick, as Write does:
 // memory has no crash to survive.
 //
@@ -197,7 +225,7 @@ func (l *Mem) List(ctx context.Context, dir string) ([]Blob, error) {
 	return out, nil
 }
 
-// Writes returns how many calls to Write and Put stored a blob: what a
+// Writes returns how many blobs Write, WriteAll and Put stored: what a
 // test reads to tell a run that wrote nothing from one that wrote a
 // generation.
 func (l *Mem) Writes() int {

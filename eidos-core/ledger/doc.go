@@ -37,9 +37,15 @@
 // the old blob or the new one and a crash of the machine keeps the new
 // one once Write returns. [Ledger.Put] replaces a blob atomically
 // without a sync, for entries that check their own bytes. A removal is
-// not synced. On Windows, [Dir] does not sync a directory, because an
-// [os.Root] opens a directory there with read access alone. A crash of the
-// machine can undo a rename there.
+// not synced. On Windows, [Dir.Write] does not sync a directory, because
+// an [os.Root] opens a directory there with read access alone. A crash of
+// the machine can undo a rename there.
+//
+// [GroupWriter.WriteAll] replaces many blobs as Write does, in one group.
+// [Dir] writes every staging file and passes one order barrier, then
+// renames in name order and passes one durability barrier. Each barrier
+// is the one that the running system offers for many files at once, and
+// the group makes the directories durable on Windows too.
 //
 // # Failure semantics
 //

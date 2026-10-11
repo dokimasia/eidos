@@ -23,12 +23,14 @@
 // bytes follow what the run changed and not the size of the record. It
 // merges a table's runs into one where the table would keep more than
 // eight runs, or where its newer runs would contain more bytes than its
-// oldest. It then writes the generation, the manifest's documents whose
-// bytes differ from the ledger's, and CURRENT, and removes every
-// generation and segment the new generation does not reference and that
-// is older than its anchor. A commit that changes nothing writes
-// nothing. A generation of another [Format] does not open, with an error
-// wrapping [ErrFormat].
+// oldest. It then writes the segments and the generation, the manifest's
+// documents whose bytes differ from the ledger's, and CURRENT, each step
+// durable before the next, and removes every generation and segment the
+// new generation does not reference and that is older than its anchor. A
+// ledger that implements [ledger.GroupWriter] writes the segments and the
+// generation in one group, and the documents in a second one. A commit
+// without a change does not write. A generation of another [Format] does
+// not open, with an error wrapping [ErrFormat].
 //
 // [AppendRegion] and [DecodeRegion] encode one unit's region with a
 // string table of its own, so a region decodes without any other blob,
@@ -88,8 +90,10 @@
 // [ReadManifest] lists the manifest directory, decodes every document
 // and joins them, and returns the digest of each document beside the
 // manifest. [WriteManifest] writes only the documents whose digest
-// differs from the recorded one, several at once and each durably, and
-// removes the documents whose bucket the new manifest leaves empty.
+// differs from the recorded one, each durably, in one group where the
+// ledger implements [ledger.GroupWriter] and on up to 16 goroutines
+// otherwise. It removes the documents whose bucket the new manifest
+// leaves empty.
 //
 // # Failure semantics
 //

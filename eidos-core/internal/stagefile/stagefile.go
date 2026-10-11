@@ -11,10 +11,49 @@ import (
 	"strconv"
 )
 
-// Suffix names the staging file a replacement writes beside its target.
-// A caller that stages paths of its own reserves it, so a staged path
-// never collides with a replacement in progress.
+// Suffix ends the name of every staging file. A caller that stages paths
+// of its own reserves it, so a staged path never collides with a
+// replacement in progress.
 const Suffix = ".stage"
+
+// Staging is the rule that sets the name of the staging file of a write.
+type Staging uint8
+
+const (
+	// Reserved stages a write of name in name followed by [Suffix], and
+	// truncates a staging file that a killed process left there. The
+	// caller reserves the suffix, so no target ends in it.
+	Reserved Staging = 1
+	// Unique stages a write of name in name, a dot, 16 random hex digits
+	// and [Suffix], created exclusively. Groups that write one name at once
+	// never share a staging file. A staging name that another writer took
+	// is an error that wraps [fs.ErrExist]. The 63 random bits of the
+	// digits make it vanishingly rare.
+	Unique Staging = 2
+)
+
+// open creates the staging file of a write of name with perm by the rule
+// s, and returns the open file and its name.
+//
+// Error modes: the error of the open, wrapped.
+func (s Staging) open(r *os.Root, name string, perm fs.FileMode) (*os.File, string, error) {
+	var (
+		stage string
+		flag  int
+	)
+	if s == Unique {
+		stage = name + "." + strconv.FormatUint(rand.Uint64()|1<<63, 16) + Suffix
+		flag = os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	} else {
+		stage = name + Suffix
+		flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	}
+	f, err := r.OpenFile(stage, flag, perm)
+	if err != nil {
+		return nil, "", fmt.Errorf("stagefile: %w", err)
+	}
+	return f, stage, nil
+}
 
 // Durability states whether a replacement's bytes are on stable storage
 // before the rename makes them visible.
@@ -31,36 +70,19 @@ const (
 	Unsynced Durability = 2
 )
 
-// Replace writes body to name and the staging suffix with perm, syncs
-// it, closes it and renames it over name, so a reader of name sees the
-// old file or the new one. The directory of name must exist. A staging
-// file that fails to write, sync, close or rename is removed, and name
-// remains as it was.
-func Replace(r *os.Root, name string, body []byte, perm fs.FileMode) error {
-	stage := name + Suffix
-	f, err := r.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return fmt.Errorf("stagefile: %w", err)
-	}
-	return finish(r, f, stage, name, body, Synced)
-}
-
-// ReplaceShared replaces name the way [Replace] does, through a staging
-// file that belongs to this call alone: name, a dot, 16 random hex
-// digits and [Suffix], created exclusively. Writers that replace one
-// name at once never share a staging file, so a reader of name sees the
-// whole bytes of one writer. It syncs the staging file before the rename
-// where d is [Synced]. The directory of name must exist. A staging name
-// another writer took is an error wrapping [fs.ErrExist], which 63
-// random bits make vanishingly rare. A staging file that fails to write,
-// sync, close or rename is removed, and name remains as it was. A
-// staging file a killed process left behind remains until the owner of
-// its directory removes it.
+// ReplaceShared replaces name through a [Unique] staging file, which
+// belongs to this call alone. It writes body to the staging file with perm
+// and syncs it where d is [Synced]. It then closes the staging file and
+// renames it over name, so a reader of name sees the old file or the new
+// one. Writers that replace one name at once never share a staging file,
+// so a reader of name sees the whole bytes of one writer. The directory of
+// name must exist. A staging file that fails to write, sync, close or
+// rename is removed, and name remains as it was. A staging file a killed
+// process left behind remains until the owner of its directory removes it.
 func ReplaceShared(r *os.Root, name string, body []byte, perm fs.FileMode, d Durability) error {
-	stage := name + "." + strconv.FormatUint(rand.Uint64()|1<<63, 16) + Suffix
-	f, err := r.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	f, stage, err := Unique.open(r, name, perm)
 	if err != nil {
-		return fmt.Errorf("stagefile: %w", err)
+		return err
 	}
 	return finish(r, f, stage, name, body, d)
 }

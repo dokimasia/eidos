@@ -43,6 +43,9 @@ type crashing struct {
 // Write returns errRecord.
 func (crashing) Write(context.Context, string, []byte) error { return errRecord }
 
+// WriteAll returns errRecord.
+func (crashing) WriteAll(context.Context, map[string][]byte) error { return errRecord }
+
 // cancelling is a sink that cancels the run's context when it commits:
 // a cancellation that arrives between two plans' commits.
 type cancelling struct {

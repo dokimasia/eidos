@@ -13,9 +13,14 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/ledger"
 )
+
+// memWriteAllAllocs is one WriteAll of two blobs stored before: the
+// sorted names and the copy of each blob.
+const memWriteAllAllocs = 3
 
 // listedDocs are the documents the listing fixtures write under the
 // manifest directory.
@@ -210,6 +215,68 @@ func TestMem(t *testing.T) {
 		})
 	})
 
+	t.Run("WriteAll", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stores each blob with the bytes a read returns", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			blobs := map[string][]byte{docName: []byte(docBody), segName: []byte(otherBody)}
+			assert.NoError(t, l.WriteAll(t.Context(), blobs), "the blobs are written")
+			for name, want := range blobs {
+				got, err := l.Read(t.Context(), name)
+				assert.NoError(t, err, "the blob reads")
+				expect.Equal(t, string(got), string(want), "the blob has its bytes")
+			}
+			assert.Equal(t, l.Writes(), 2, "one write for each blob")
+		})
+
+		t.Run("stores the blobs in name order, each at the next tick", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			assert.NoError(t, l.WriteAll(t.Context(), map[string][]byte{
+				"memo/b": []byte(docBody), "memo/a": []byte(docBody),
+			}), "the blobs are written")
+			listed, err := l.List(t.Context(), "memo")
+			assert.NoError(t, err, "the blobs list")
+			assert.Length(t, listed, 2, "both blobs")
+			assert.True(t, listed[0].ModTime.Before(listed[1].ModTime), "the first name takes the earlier tick")
+		})
+
+		t.Run("stores a copy the caller can change", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			b := []byte(docBody)
+			assert.NoError(t, l.WriteAll(t.Context(), map[string][]byte{docName: b}), "the blob is written")
+			b[0] = 'X'
+			got, err := l.Read(t.Context(), docName)
+			assert.NoError(t, err, "the blob reads")
+			assert.Equal(t, string(got), docBody, "the stored bytes are unchanged")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name and stores the other blobs", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			err := l.WriteAll(t.Context(), map[string][]byte{"../x": nil, docName: []byte(docBody)})
+			assert.ErrorIs(t, err, fs.ErrInvalid, "the name is refused")
+			assert.Equal(t, l.Writes(), 1, "the valid blob is stored")
+		})
+
+		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				return l.WriteAll(ctx, map[string][]byte{docName: nil})
+			}, "the cancellation is returned")
+			assert.Equal(t, l.Writes(), 0, "and nothing is stored")
+		})
+	})
+
 	t.Run("Put", func(t *testing.T) {
 		t.Parallel()
 
@@ -374,6 +441,10 @@ func TestMemAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { err = cmp.Or(err, l.Write(ctx, docName, body)) }, 1,
 		"Write allocates the copy it stores")
 	assert.NoError(t, err, "the blob is written")
+	two := map[string][]byte{docName: body, segName: body}
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, l.WriteAll(ctx, two)) }, memWriteAllAllocs,
+		"WriteAll allocates the sorted names and the copies it stores")
+	assert.NoError(t, err, "the blobs are written")
 	assert.MaxAllocs(t, func() { err = cmp.Or(err, l.Put(ctx, docName, body)) }, 1,
 		"Put allocates the copy it stores")
 	assert.NoError(t, err, "the blob is put")
@@ -452,6 +523,19 @@ func BenchmarkMem(b *testing.B) {
 				err = l.Write(b.Context(), docName, body)
 			}
 			assert.NoError(b, err, "the blob is written")
+		})
+	})
+
+	b.Run("WriteAll", func(b *testing.B) {
+		b.Run("two blobs stored before", func(b *testing.B) {
+			two := map[string][]byte{docName: body, segName: body}
+			c := bench.Start(b).MaxAllocs(memWriteAllAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = l.WriteAll(b.Context(), two)
+			}
+			assert.NoError(b, err, "the blobs are written")
 		})
 	})
 

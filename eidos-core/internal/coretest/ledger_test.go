@@ -4,6 +4,8 @@
 package coretest_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -20,6 +22,14 @@ import (
 
 // rewritingBrand is the brand the rewriting fixture records under.
 const rewritingBrand output.Brand = "fixture"
+
+// errRefused is the failure that a failing write of the WriteEach cases
+// returns.
+var errRefused = errors.New("the write is refused")
+
+// single is a ledger without group writes: it offers the blob calls of the
+// ledger that it wraps, and not its WriteAll.
+type single struct{ ledger.Ledger }
 
 // The rewriting fixture's plans and kept path.
 const (
@@ -82,35 +92,16 @@ func TestLedger(t *testing.T) {
 	t.Run("Write", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("records the edited copy of the record a commit writes", func(t *testing.T) {
+		t.Run("records the edited copy of the record that single writes write", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
 			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 1, underOther)
 			assert.NoError(t, err, "the ledger opens")
-			_, err = state.WriteManifest(t.Context(), l, twoFiles(), nil)
-			assert.NoError(t, err, "the record commits")
+			_, err = state.WriteManifest(t.Context(), single{Ledger: l}, twoFiles(), nil)
+			assert.NoError(t, err, "the record commits one document after another")
 			for _, e := range onDisk(t, root).Files {
 				assert.Equal(t, e.Plan, otherPlan, "every entry is recorded under the other plan")
-			}
-		})
-
-		t.Run("hands the edit the run's ordinal", func(t *testing.T) {
-			t.Parallel()
-
-			root := t.TempDir()
-			var seen []int
-			recording := func(run int, m manifest.Manifest) manifest.Manifest {
-				seen = append(seen, run)
-				return m
-			}
-			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 3, recording)
-			assert.NoError(t, err, "the ledger opens")
-			_, err = state.WriteManifest(t.Context(), l, twoFiles(), nil)
-			assert.NoError(t, err, "the record commits")
-			assert.NotEmpty(t, seen, "the edit runs")
-			for _, run := range seen {
-				expect.Equal(t, run, 3, "with the ledger's run")
 			}
 		})
 
@@ -144,6 +135,109 @@ func TestLedger(t *testing.T) {
 			assert.NoError(t, err, "the ledger opens")
 			assert.HasError(t, l.Write(t.Context(), "manifest/ea.json", []byte("not a document")),
 				"the record does not read back")
+		})
+	})
+
+	t.Run("WriteAll", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records the edited copy of the record a commit writes in one group", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 1, underOther)
+			assert.NoError(t, err, "the ledger opens")
+			_, err = state.WriteManifest(t.Context(), l, twoFiles(), nil)
+			assert.NoError(t, err, "the record commits")
+			for _, e := range onDisk(t, root).Files {
+				assert.Equal(t, e.Plan, otherPlan, "every entry is recorded under the other plan")
+			}
+		})
+
+		t.Run("hands the edit the run's ordinal", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			var seen []int
+			recording := func(run int, m manifest.Manifest) manifest.Manifest {
+				seen = append(seen, run)
+				return m
+			}
+			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 3, recording)
+			assert.NoError(t, err, "the ledger opens")
+			_, err = state.WriteManifest(t.Context(), l, twoFiles(), nil)
+			assert.NoError(t, err, "the record commits")
+			assert.NotEmpty(t, seen, "the edit runs")
+			for _, run := range seen {
+				expect.Equal(t, run, 3, "with the ledger's run")
+			}
+		})
+
+		t.Run("writes blobs that are no manifest documents as given", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 1, underOther)
+			assert.NoError(t, err, "the ledger opens")
+			assert.NoError(t, l.WriteAll(t.Context(), map[string][]byte{"state/CURRENT": []byte("gen\n")}),
+				"the blob is written")
+			got, err := l.Read(t.Context(), "state/CURRENT")
+			assert.NoError(t, err, "the blob reads")
+			assert.Equal(t, string(got), "gen\n", "with its bytes")
+		})
+
+		t.Run("returns an error for a root removed after the ledger opened", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 1, underOther)
+			assert.NoError(t, err, "the ledger opens")
+			assert.NoError(t, os.RemoveAll(root), "the root is removed")
+			assert.HasError(t, l.WriteAll(t.Context(), map[string][]byte{"manifest/ea.json": nil}),
+				"the write is refused")
+		})
+
+		t.Run("returns an error for a record that does not read back", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			l, err := coretest.NewRewriting(t.Context(), root, rewritingBrand, 1, underOther)
+			assert.NoError(t, err, "the ledger opens")
+			assert.HasError(t, l.WriteAll(t.Context(), map[string][]byte{"manifest/ea.json": []byte("not a document")}),
+				"the record does not read back")
+		})
+	})
+
+	t.Run("WriteEach", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes each blob through write in name order", func(t *testing.T) {
+			t.Parallel()
+
+			var names []string
+			write := func(_ context.Context, name string, _ []byte) error {
+				names = append(names, name)
+				return nil
+			}
+			blobs := map[string][]byte{"b": nil, "c": nil, "a": nil}
+			assert.NoError(t, coretest.WriteEach(t.Context(), write, blobs), "every blob is written")
+			assert.Equal(t, names, []string{"a", "b", "c"}, "in name order")
+		})
+
+		t.Run("joins the error of each write that fails and writes the other blobs", func(t *testing.T) {
+			t.Parallel()
+
+			var written []string
+			write := func(_ context.Context, name string, _ []byte) error {
+				if name == "b" {
+					return errRefused
+				}
+				written = append(written, name)
+				return nil
+			}
+			err := coretest.WriteEach(t.Context(), write, map[string][]byte{"a": nil, "b": nil, "c": nil})
+			assert.ErrorIs(t, err, errRefused, "the failed write is returned")
+			assert.Equal(t, written, []string{"a", "c"}, "and the other blobs are written")
 		})
 	})
 

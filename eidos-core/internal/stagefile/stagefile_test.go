@@ -30,94 +30,17 @@ const (
 	mode   = fs.FileMode(0o600)
 )
 
-// The ceilings of one replacement. os.Root spends all but the staging
-// name's: it splits each path it resolves, copies each name into the
-// bytes a system call takes, and allocates the file it opens.
-const (
-	// replaceAllocs is one Replace: the staging name, and 11 that
-	// os.Root spends opening the staging file and renaming it over the
-	// target.
-	replaceAllocs = 12
-	// replaceSharedAllocs is one ReplaceShared: Replace's, and the
-	// random staging name's digits.
-	replaceSharedAllocs = replaceAllocs + 1
-)
+// replaceSharedAllocs is one ReplaceShared: the random staging name's
+// digits and the name, and 11 that os.Root spends opening the staging
+// file and renaming it over the target. os.Root splits each path it
+// resolves, copies each name into the bytes a system call takes, and
+// allocates the file it opens.
+const replaceSharedAllocs = 13
 
 // A replacement is atomic per file: the target contains the old bytes
 // or the new ones, and no staging file outlives the call.
 func TestStagefile(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Replace", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("writes the body to a missing target with the given mode", func(t *testing.T) {
-			t.Parallel()
-
-			dir, r := rooted(t, nil)
-			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is written")
-			files.Equal(t, os.DirFS(dir), files.Tree{target: files.Text(body).WithMode(mode)},
-				"the target alone contains the body under the mode")
-		})
-
-		t.Run("replaces the bytes of an existing target", func(t *testing.T) {
-			t.Parallel()
-
-			dir, r := rooted(t, files.Tree{target: files.Text("old and longer\n").WithMode(mode)})
-			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is replaced")
-			files.HasContent(t, filepath.Join(dir, target), body, "the target contains the new body alone")
-		})
-
-		t.Run("leaves no staging file behind", func(t *testing.T) {
-			t.Parallel()
-
-			dir, r := rooted(t, nil)
-			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is written")
-			files.Equal(t, os.DirFS(dir), files.Tree{target: files.Text(body)}, "the target alone remains")
-		})
-
-		t.Run("truncates a staging file a killed process left", func(t *testing.T) {
-			t.Parallel()
-
-			dir, r := rooted(t, files.Tree{
-				target + stagefile.Suffix: files.Text("a stale staging file much longer than the body\n"),
-			})
-			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is written")
-			files.Equal(t, os.DirFS(dir), files.Tree{target: files.Text(body)},
-				"the target contains the body alone, and the stale staging file is gone")
-		})
-
-		t.Run("returns an error for a target whose directory is missing", func(t *testing.T) {
-			t.Parallel()
-
-			dir, r := rooted(t, nil)
-			var err error
-			files.Unchanged(
-				t,
-				os.DirFS(dir),
-				func() { err = stagefile.Replace(r, "missing/"+target, []byte(body), mode) },
-				"the root is untouched",
-			)
-			assert.HasError(t, err, "nothing is written")
-		})
-
-		t.Run("returns an error for a target that is a directory", func(t *testing.T) {
-			t.Parallel()
-
-			dir, r := rooted(t, files.Tree{target + "/kept": files.Text("")})
-			var err error
-			files.Unchanged(t, os.DirFS(dir), func() { err = stagefile.Replace(r, target, []byte(body), mode) },
-				"the staging file is removed")
-			assert.HasError(t, err, "the rename is refused")
-		})
-
-		t.Run("returns an error for a target outside the root", func(t *testing.T) {
-			t.Parallel()
-
-			_, r := rooted(t, nil)
-			assert.HasError(t, stagefile.Replace(r, "../"+target, []byte(body), mode), "the root jails the write")
-		})
-	})
 
 	t.Run("ReplaceShared", func(t *testing.T) {
 		t.Parallel()
@@ -202,11 +125,10 @@ func TestStagefile(t *testing.T) {
 	})
 }
 
-// A replacement allocates within its ceiling in the ordinary run,
-// which runs no benchmark. Each count keeps the first error of its
-// calls, which cmp.Or returns without allocating. Darwin and Windows
-// allocate more in their file system calls, so the test runs on Linux
-// alone.
+// A replacement allocates within its ceiling in the ordinary run, which
+// runs no benchmark. The count keeps the first error of its calls, which
+// cmp.Or returns without allocating. Darwin and Windows allocate more in
+// their file system calls, so the test runs on Linux alone.
 func TestStagefileAllocs(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the ceilings count the allocations of Linux's file system calls")
@@ -214,9 +136,6 @@ func TestStagefileAllocs(t *testing.T) {
 	dir, r := rooted(t, nil)
 	data := []byte(body)
 	var err error
-	assert.MaxAllocs(t, func() { err = cmp.Or(err, stagefile.Replace(r, target, data, mode)) }, replaceAllocs,
-		"Replace allocates the staging name and the file")
-	assert.NoError(t, err, "every replacement succeeds")
 	assert.MaxAllocs(t, func() {
 		err = cmp.Or(err, stagefile.ReplaceShared(r, target, data, mode, stagefile.Unsynced))
 	}, replaceSharedAllocs, "ReplaceShared allocates the random staging name and the file")
@@ -224,22 +143,10 @@ func TestStagefileAllocs(t *testing.T) {
 	files.Equal(t, os.DirFS(dir), files.Tree{target: files.Text(body)}, "and leaves the target alone")
 }
 
-// BenchmarkStagefile measures one replacement of an existing target in
-// a temporary directory.
+// BenchmarkStagefile measures one replacement of an existing target in a
+// temporary directory.
 func BenchmarkStagefile(b *testing.B) {
 	data := []byte(body)
-
-	b.Run("Replace", func(b *testing.B) {
-		dir, r := rooted(b, nil)
-		c := bench.Start(b).MaxAllocs(replaceAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = stagefile.Replace(r, target, data, mode)
-		}
-		assert.NoError(b, err, "every replacement succeeds")
-		files.Equal(b, os.DirFS(dir), files.Tree{target: files.Text(body)}, "and leaves the target alone")
-	})
 
 	b.Run("ReplaceShared", func(b *testing.B) {
 		dir, r := rooted(b, nil)

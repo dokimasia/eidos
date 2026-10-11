@@ -71,6 +71,13 @@ type freshRun struct {
 	whole   bool
 }
 
+// namedBlob is one blob that a commit writes: its ledger name and its
+// bytes.
+type namedBlob struct {
+	name string
+	data []byte
+}
+
 // NewCommit returns an empty commit over a parent, nil for a cold run.
 // recorded are the digests of the documents the ledger contains, as
 // [ReadManifest] returns them, and nil for none: the commit writes each
@@ -142,15 +149,20 @@ func (c *Commit) Delete(t Table, key []byte) {
 }
 
 // Write makes the commit the live generation, in the order a crash can
-// interrupt without losing a run's work:
+// interrupt without losing a run's work, each step durable before the
+// next begins:
 //
-//  1. the region segment and the run segment, each durably
-//  2. the generation, durably
-//  3. each manifest document whose bytes differ from the ledger's, and the
+//  1. the region segment, the run segment and the generation
+//  2. each manifest document whose bytes differ from the ledger's, and the
 //     removal of each document whose bucket is now empty
-//  4. CURRENT, naming the generation
-//  5. the removal of every generation and segment the new generation does
+//  3. CURRENT, naming the generation
+//  4. the removal of every generation and segment the new generation does
 //     not reference and that is older than the header's anchor
+//
+// A ledger that implements [ledger.GroupWriter] writes the blobs of step 1
+// in one call and the documents of step 2 in a second one. Any other
+// ledger writes the blobs of step 1 one after another, and the documents
+// on up to 16 goroutines.
 //
 // A commit with no region, no changed row, and a manifest whose documents
 // both the ledger and the parent record unchanged writes nothing and
@@ -173,7 +185,7 @@ func (c *Commit) Write(ctx context.Context, l ledger.Ledger, h Header, m manifes
 	if c.parent != nil && c.empty() && unchanged && maps.Equal(c.parent.Manifest, docs.digests) {
 		return Result{Generation: c.parent.Name}, nil
 	}
-	tables, written, err := c.segments(ctx, l)
+	tables, blobs, err := c.segments(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -183,7 +195,7 @@ func (c *Commit) Write(ctx context.Context, l ledger.Ledger, h Header, m manifes
 		h.Sequence, h.Parent = c.parent.Header.Sequence+1, c.parent.Name
 	}
 	g := &Generation{Header: h, Manifest: docs.digests, segments: c.segmentsOf(tables), tables: tables}
-	return c.publish(ctx, l, g, docs, written)
+	return c.publish(ctx, l, g, blobs, docs)
 }
 
 // change records one entry, the last one for a key deciding.
@@ -194,20 +206,21 @@ func (c *Commit) change(t Table, e entry) {
 	c.changes[t][string(e.key)] = e
 }
 
-// segments writes the region segment and the run segment, each durably,
-// and returns every table's runs after the commit and the bytes it
-// wrote.
-func (c *Commit) segments(ctx context.Context, l ledger.Ledger) ([tableCount][]runRef, int64, error) {
-	var written int64
+// segments returns every table's runs after the commit, and the blobs of
+// the region segment and of the run segment that contain the new regions
+// and runs, in the order in which a ledger without group writes stores
+// them. It sets the name of the run segment in each reference to a new
+// run.
+func (c *Commit) segments(ctx context.Context) ([tableCount][]runRef, []namedBlob, error) {
+	// The region segment, the run segment and the generation that publish
+	// appends.
+	blobs := make([]namedBlob, 0, 3)
 	if len(c.regions) > 0 {
-		if err := l.Write(ctx, c.regionSegment, c.regions); err != nil {
-			return [tableCount][]runRef{}, 0, fmt.Errorf("state: write the region segment: %w", err)
-		}
-		written += int64(len(c.regions))
+		blobs = append(blobs, namedBlob{name: c.regionSegment, data: c.regions})
 	}
 	tables, runs, err := c.tables(ctx)
 	if err != nil || len(runs) == 0 {
-		return tables, written, err
+		return tables, blobs, err
 	}
 	segment := blobName(segDir, runs)
 	for t := range tables {
@@ -217,22 +230,24 @@ func (c *Commit) segments(ctx context.Context, l ledger.Ledger) ([tableCount][]r
 			}
 		}
 	}
-	if err := l.Write(ctx, segment, runs); err != nil {
-		return tables, 0, fmt.Errorf("state: write the run segment: %w", err)
-	}
-	return tables, written + int64(len(runs)), nil
+	return tables, append(blobs, namedBlob{name: segment, data: runs}), nil
 }
 
-// publish writes the generation durably, then the manifest's documents
-// that changed, then CURRENT, and collects what the generation no longer
-// references.
+// publish writes the segments and the generation durably, then the
+// manifest's documents that changed, then CURRENT, and collects what the
+// generation no longer references.
 func (c *Commit) publish(
-	ctx context.Context, l ledger.Ledger, g *Generation, docs documents, written int64,
+	ctx context.Context, l ledger.Ledger, g *Generation, blobs []namedBlob, docs documents,
 ) (Result, error) {
-	blob := appendGeneration(nil, g)
-	g.Name = blobName(genDir, blob)
-	if err := l.Write(ctx, g.Name, blob); err != nil {
-		return Result{}, fmt.Errorf("state: write the generation: %w", err)
+	generation := appendGeneration(nil, g)
+	g.Name = blobName(genDir, generation)
+	blobs = append(blobs, namedBlob{name: g.Name, data: generation})
+	if err := writeDurably(ctx, l, blobs); err != nil {
+		return Result{}, fmt.Errorf("state: write the generation and its segments: %w", err)
+	}
+	var written int64
+	for _, b := range blobs {
+		written += int64(len(b.data))
 	}
 	wrote, docErr := docs.write(ctx, l, c.recorded)
 	if err := l.Write(ctx, currentName, []byte(g.Name+"\n")); err != nil {
@@ -240,8 +255,8 @@ func (c *Commit) publish(
 	}
 	return Result{
 		Generation: g.Name,
-		Written:    written + int64(len(blob)) + wrote,
-		Size:       collect(ctx, l, g, int64(len(blob))),
+		Written:    written + wrote,
+		Size:       collect(ctx, l, g, int64(len(generation))),
 	}, docErr
 }
 
@@ -343,6 +358,27 @@ func (c *Commit) segmentsOf(tables [tableCount][]runRef) map[string]int {
 		}
 	}
 	return out
+}
+
+// writeDurably writes blobs durably: through one WriteAll where the ledger
+// implements [ledger.GroupWriter], and through Write one blob after
+// another otherwise, in the order of blobs, up to the first that fails.
+//
+// Error modes: the ledger's error.
+func writeDurably(ctx context.Context, l ledger.Ledger, blobs []namedBlob) error {
+	if gw, ok := l.(ledger.GroupWriter); ok {
+		group := make(map[string][]byte, len(blobs))
+		for _, b := range blobs {
+			group[b.name] = b.data
+		}
+		return gw.WriteAll(ctx, group)
+	}
+	for _, b := range blobs {
+		if err := l.Write(ctx, b.name, b.data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // collect removes every generation and segment a generation does not

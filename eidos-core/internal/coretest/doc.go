@@ -10,7 +10,9 @@
 // sealed graph and a tracked reader. [CopyTree] copies a fixture tree
 // for a case that writes into the tree it runs in. [Rewriting] is a
 // disk ledger that records an edited record, for a case that checks a
-// suite rejects it. [Contracts] projects the failure records that
+// suite rejects it. [WriteEach] is the group write of a test ledger that
+// changes Write, so its group writes meet the same refusals and counts as
+// its writes do. [Contracts] projects the failure records that
 // [go.dokimi.dev/assert.Rejects] returns onto their contracts, which a
 // case about a kit's check compares.
 //

@@ -64,7 +64,13 @@
 // its mtime untouched, because build systems key on mtimes.
 // Anything else is written to a staging file and renamed over the
 // target, so a reader sees the old file or the new one and never
-// half of either.
+// half of either. The disk sink commits its files as one group. It
+// writes every staging file on a pool and passes one order barrier,
+// then renames in path order and passes one durability barrier. Each
+// barrier is the one that the running system offers for many files at
+// once. After a crash of the machine each file contains its old bytes
+// or its new bytes, and once Commit returns, the commit is on stable
+// storage.
 //
 // The disk sink writes as one brand. It overwrites an existing file
 // only when the file is that brand's intact output, which is the

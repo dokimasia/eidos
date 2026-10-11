@@ -20,6 +20,7 @@ require (
 	go.dokimi.dev/eidos/core v0.0.0-00010101000000-000000000000 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
 	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )
 
 replace go.dokimi.dev/eidos/core => ../eidos-core

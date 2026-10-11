@@ -58,16 +58,18 @@ const (
 	// path without a file.
 	prepareNothingAllocs = 3 + readNothingAllocs
 	// commitSameAllocs is the commit of one staged file over a file with
-	// the staged bytes: the path list, the list of records, the read and
-	// the digest.
-	commitSameAllocs = 3 + readFileAllocs
+	// the staged bytes: the path list, the verdicts, the errors, the
+	// pool's call, the list of records, the read, the digest, the group and
+	// its barrier.
+	commitSameAllocs = 8 + readFileAllocs
 	// commitUpdateAllocs is the commit of one staged file over the brand's
-	// intact output of other bytes: what commitSameAllocs counts, the
-	// record of the file's verification, two allocations for a frame
-	// without derivation lines, and twelve for the staging file. The
-	// twelve are its name, its open, and the rename's two splits, two
-	// spellings and read of the target's status.
-	commitUpdateAllocs = commitSameAllocs + 2 + 12
+	// intact output of other bytes: what commitSameAllocs counts, two
+	// allocations for a frame without derivation lines, and 30 for the
+	// group's write. The 30 are its entry, the commit's errors, shared
+	// state, staging names and call, the staging file's name, open and
+	// rename, the list of changed directories, the barrier's open of the
+	// root, and the open and the sync of the file's directory.
+	commitUpdateAllocs = commitSameAllocs + 2 + 30
 )
 
 // past is the mtime the unchanged check pins against: a fixed
@@ -845,7 +847,7 @@ func BenchmarkDisk(b *testing.B) {
 				d = opened(b, root, bodies[next%2])
 				next++
 			}
-			c := bench.Start(b).MaxAllocs(commitUpdateAllocs)
+			c := bench.Start(b).Warmup(1).MaxAllocs(commitUpdateAllocs)
 			defer c.End()
 			var (
 				got []output.Written
@@ -863,7 +865,9 @@ func BenchmarkDisk(b *testing.B) {
 
 // benchStaged measures one call on a sink over root that stages body,
 // under the bench contract at a ceiling of allocs. Each iteration opens
-// a fresh sink outside the measurement and discards the one before.
+// a fresh sink outside the measurement and discards the one before. One
+// iteration runs before the measurement, because the first commit of a
+// process reads the kernel's release for the barrier.
 func benchStaged(b *testing.B, root string, body []byte, allocs uint64, call func(*output.Disk) error) {
 	b.Helper()
 
@@ -872,7 +876,7 @@ func benchStaged(b *testing.B, root string, body []byte, allocs uint64, call fun
 		discarded(b, d)
 		d = opened(b, root, body)
 	}
-	c := bench.Start(b).MaxAllocs(allocs)
+	c := bench.Start(b).Warmup(1).MaxAllocs(allocs)
 	defer c.End()
 	var err error
 	for c.Loop() {

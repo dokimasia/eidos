@@ -55,6 +55,16 @@ type Ledger interface {
 	List(ctx context.Context, dir string) ([]Blob, error)
 }
 
+// GroupWriter is the interface of a [Ledger] that writes many blobs in
+// one call. [Dir] and [Mem] implement it.
+type GroupWriter interface {
+	// WriteAll replaces the blob of each name in blobs the way Write does.
+	// It returns once every blob is durable. It joins the error of each
+	// blob that failed, and the other blobs still write. It returns the
+	// error of ctx before it begins, and runs to its end once it begins.
+	WriteAll(ctx context.Context, blobs map[string][]byte) error
+}
+
 // Blob is one blob that [Ledger.List] returns.
 type Blob struct {
 	// Name is the blob's name, as Write or Put named it.

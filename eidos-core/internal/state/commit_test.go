@@ -16,6 +16,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
@@ -50,9 +51,10 @@ const (
 	deleteAllocs = 4
 	// writeAllocs is the write of a commit of one row into an empty
 	// ledger: the run segment and its name, the generation's encoding and
-	// its name, CURRENT, the manifest's digests, and the listing the
+	// its name, the list of these blobs, the map of their group write and
+	// its sorted names, CURRENT, the manifest's digests, and the listing the
 	// collection walks.
-	writeAllocs = 40
+	writeAllocs = 42
 )
 
 // refusing is a memory ledger that refuses every write of a name under
@@ -69,6 +71,16 @@ func (r refusing) Write(ctx context.Context, name string, b []byte) error {
 	}
 	return r.Mem.Write(ctx, name, b)
 }
+
+// WriteAll writes each blob through Write, so a group write meets the same
+// refusal.
+func (r refusing) WriteAll(ctx context.Context, blobs map[string][]byte) error {
+	return coretest.WriteEach(ctx, r.Write, blobs)
+}
+
+// single is a ledger without group writes: it offers the blob calls of the
+// ledger that it wraps, and not its WriteAll.
+type single struct{ ledger.Ledger }
 
 // past is an anchor before every blob a memory ledger writes, whose
 // clock counts from the epoch: nothing is old enough to collect.
@@ -306,6 +318,38 @@ func TestCommit(t *testing.T) {
 				assert.Equal(t, live.Name, first.Name, "and the parent is live")
 			})
 		}
+
+		t.Run("makes the generation live through a ledger without group writes", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			c := state.NewCommit(nil, nil)
+			_, err := c.AddRegions([][]byte{[]byte("ab")})
+			assert.NoError(t, err, "the region adds")
+			c.Put(state.TableChecks, []byte("alpha"), []byte("row"))
+			result, err := c.Write(t.Context(), single{Ledger: mem}, header(past), scaled())
+			assert.NoError(t, err, "the commit writes")
+			g, err := state.Open(t.Context(), mem)
+			assert.NoError(t, err, "the generation opens")
+			assert.Equal(t, g.Name, result.Generation, "the commit's generation is live")
+			got, _, err := state.ReadManifest(t.Context(), mem)
+			assert.NoError(t, err, "the documents read")
+			assert.Equal(t, got, scaled(), "and the documents join to the manifest", assert.EquateEmpty())
+		})
+
+		t.Run("stops at the segment that does not write through a ledger without group writes", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			c := state.NewCommit(nil, nil)
+			_, err := c.AddRegions([][]byte{[]byte("ab")})
+			assert.NoError(t, err, "the region adds")
+			c.Put(state.TableChecks, []byte("alpha"), []byte("row"))
+			l := single{Ledger: refusing{Mem: mem, prefix: segPrefix}}
+			_, err = c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+			assert.ErrorIs(t, err, errDevice, "the ledger's own error returns")
+			assert.Empty(t, blobsUnder(t, mem, genPrefix), "and no generation is written after the segment")
+		})
 
 		t.Run("returns the error of a document that does not write after CURRENT", func(t *testing.T) {
 			t.Parallel()

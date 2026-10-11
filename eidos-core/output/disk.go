@@ -9,18 +9,14 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 
 	"go.dokimi.dev/eidos/core/internal/stagefile"
 )
 
-// The permissions a commit writes with: generated files are
-// ordinary source files, and their directories ordinary
-// directories.
-const (
-	filePerm = 0o644
-	dirPerm  = 0o755
-)
+// filePerm is the mode a commit writes with: generated files are
+// ordinary source files. The group creates their directories as
+// ordinary directories.
+const filePerm = 0o644
 
 // Disk stages for a directory tree and commits into it. The root
 // is opened once and every staged path resolves inside it, so a
@@ -133,7 +129,7 @@ func (d *Disk) Prepare() ([]Change, error) {
 	changes := make([]Change, 0, len(paths))
 	for _, p := range paths {
 		body, write := d.files[p]
-		f, err := d.found(p, body, write)
+		f, _, err := d.found(p, body, write)
 		if err != nil {
 			return nil, err
 		}
@@ -146,26 +142,41 @@ func (d *Disk) Prepare() ([]Change, error) {
 	return changes, nil
 }
 
-// Commit writes and removes every staged path, in path order:
-// identical bytes leave the file and its mtime untouched, a file the
-// brand cannot prove it wrote is refused unless [Disk.Overwrite]
-// allowed its verdict, and anything else is written to a staging file,
-// synced, and renamed over the target, so a reader sees the old file or
-// the new one and never half of either. A removal deletes the brand's
-// intact output and leaves any other file. A path that fails is one
-// error and the rest still commit.
+// Commit writes and removes every staged path in three steps:
+//
+//  1. A pool of [stagefile.Workers] goroutines reads each staged path and
+//     classifies it as Prepare does: identical bytes leave the file and
+//     its mtime untouched, and a file that is not the brand's intact
+//     output is refused unless [Disk.Overwrite] allowed its verdict.
+//     Commit reads each path again, because a file can change after
+//     Prepare.
+//  2. One [stagefile.Group] with reserved staging names takes every
+//     write and every removal of the brand's intact output, and commits
+//     them through the barrier of the running system. Each file goes to
+//     a staging file that the group renames over its target, so a reader
+//     sees the old file or the new one and never half of either. After a
+//     crash of the machine, each target contains its old bytes or its new
+//     bytes, and once Commit returns, the commit is on stable storage.
+//  3. Commit builds the records in path order.
+//
+// A path that fails is one error, and the rest still commit. A removal
+// leaves any file other than the brand's intact output, without a record.
 //
 // Error modes: a file the brand cannot prove it wrote whose verdict
-// Overwrite did not allow, a path it cannot read, write or remove, such
-// as a directory, each joined into the returned error, and
-// [ErrFinished] after Commit or Discard.
+// Overwrite did not allow, a directory at a staged path, a path it cannot
+// read, write or remove, and a barrier of the group that fails, each
+// joined into the returned error, and [ErrFinished] after Commit or
+// Discard. A barrier that fails before the renames leaves every path as
+// it was.
 //
 // # Allocation contract
 //
-// Commit allocates the sorted path list, the list of records, one
-// digest per staged file, and the read of every path. A file it
-// overwrites adds the record [Read] allocates for its frame, and twelve
-// allocations for its staging file: the name, the open and the rename.
+// Commit allocates the sorted path list, the verdicts, the errors, the
+// list of records, one digest per staged file, and the read of every
+// path. A file it writes or removes adds the record [Read] allocates for
+// its frame, and what the group allocates for it: the staging name, the
+// open and the rename of a write, and the removal of a removal. The group
+// itself, its barrier and the pool allocate once for each commit.
 func (d *Disk) Commit() ([]Written, error) {
 	if err := d.finish(); err != nil {
 		return nil, err
@@ -173,24 +184,49 @@ func (d *Disk) Commit() ([]Written, error) {
 	defer d.root.Close()
 
 	paths := d.paths()
-	records := make([]Written, 0, len(paths))
-	var faults []error
-	for _, p := range paths {
-		var record Written
-		var err error
-		if body, write := d.files[p]; write {
-			record, err = d.commit(p, body)
-		} else {
-			record, err = d.delete(p)
-		}
+	verdicts := make([]Found, len(paths))
+	faults := make([]error, len(paths), len(paths)+1)
+	stagefile.Each(len(paths), func(i int) { verdicts[i], faults[i] = d.verdict(paths[i]) })
+	g := stagefile.NewGroup(d.root, stagefile.Reserved, stagefile.System())
+	for i, p := range paths {
+		body, write := d.files[p]
 		switch {
-		case err != nil:
-			faults = append(faults, err)
-		case record.Path != "":
-			records = append(records, record)
+		case faults[i] != nil:
+		case write && verdicts[i] != FoundSame:
+			g.Write(p, body, filePerm)
+		case !write && verdicts[i] == FoundIntact:
+			g.Remove(p)
 		}
 	}
-	return records, errors.Join(faults...)
+	failed, err := g.Commit()
+	records := make([]Written, 0, len(paths))
+	for i, p := range paths {
+		body, write := d.files[p]
+		f := verdicts[i]
+		ferr, unapplied := failed[p]
+		switch {
+		case faults[i] != nil:
+		case write && f == FoundSame:
+			records = append(records, Written{Path: p, Action: ActionUnchanged, Hash: digest(body)})
+		case !write && f != FoundIntact:
+		case unapplied && errors.Is(ferr, stagefile.ErrNotApplied):
+		case unapplied && write:
+			faults[i] = fmt.Errorf("output: writing %q through its staging file: %w", p, ferr)
+		case unapplied:
+			faults[i] = fmt.Errorf("output: removing %q: %w", p, ferr)
+		case write && f == FoundNothing:
+			records = append(records, Written{Path: p, Action: ActionCreated, Hash: digest(body)})
+		case write:
+			records = append(records, Written{Path: p, Action: ActionUpdated, Hash: digest(body)})
+		default:
+			records = append(records, Written{Path: p, Action: ActionDeleted})
+		}
+	}
+	var commitErr error
+	if err != nil {
+		commitErr = fmt.Errorf("output: committing the staged files: %w", err)
+	}
+	return records, errors.Join(append(faults, commitErr)...)
 }
 
 // Discard drops the staging and closes the root. It allocates nothing.
@@ -209,64 +245,46 @@ func (d *Disk) Discard() error {
 	return nil
 }
 
-// commit writes one staged file.
-func (d *Disk) commit(at string, body []byte) (Written, error) {
-	action := ActionCreated
-	switch existing, err := d.root.ReadFile(at); {
-	case err == nil && bytes.Equal(existing, body):
-		return Written{Path: at, Action: ActionUnchanged, Hash: digest(body)}, nil
-	case err == nil:
+// verdict classifies one staged path for the commit: what it contains,
+// as Prepare reports it, and the refusal of a write over a directory or
+// over a file that is not the brand's intact output, where Overwrite did
+// not allow its verdict. It does not keep the bytes of the file that it
+// read.
+func (d *Disk) verdict(at string) (Found, error) {
+	body, write := d.files[at]
+	f, existing, err := d.found(at, body, write)
+	switch {
+	case err != nil || !write || f == FoundNothing || f == FoundSame || f == FoundIntact:
+		return f, err
+	case existing == nil:
+		return f, fmt.Errorf("output: refusing to write over the directory %q", at)
+	case d.overwrite&(1<<f) == 0:
 		_, refused := verify(existing, d.brand)
-		if refused != nil && d.overwrite&(1<<ownership(existing, d.brand)) == 0 {
-			return Written{}, fmt.Errorf("output: refusing to overwrite %q: %w", at, refused)
-		}
-		action = ActionUpdated
-	case !errors.Is(err, fs.ErrNotExist):
-		return Written{}, fmt.Errorf("output: reading %q before writing it: %w", at, err)
+		return f, fmt.Errorf("output: refusing to overwrite %q: %w", at, refused)
+	default:
+		return f, nil
 	}
-
-	if dir := path.Dir(at); dir != "." {
-		if err := d.root.MkdirAll(dir, dirPerm); err != nil {
-			return Written{}, fmt.Errorf("output: making the directory for %q: %w", at, err)
-		}
-	}
-	if err := stagefile.Replace(d.root, at, body, filePerm); err != nil {
-		return Written{}, fmt.Errorf("output: writing %q through its staging file: %w", at, err)
-	}
-	return Written{Path: at, Action: action, Hash: digest(body)}, nil
-}
-
-// delete removes one staged removal's file where it is the brand's
-// intact output, and returns the zero record where the path contains
-// nothing or a file the brand cannot prove it wrote intact.
-func (d *Disk) delete(at string) (Written, error) {
-	f, err := d.found(at, nil, false)
-	if err != nil || f != FoundIntact {
-		return Written{}, err
-	}
-	if err := d.root.Remove(at); err != nil {
-		return Written{}, fmt.Errorf("output: removing %q: %w", at, err)
-	}
-	return Written{Path: at, Action: ActionDeleted}, nil
 }
 
 // found reads what a path contains and classifies it against the
 // staged bytes, for a path staged for writing, and the sink's brand. A
-// path that is a directory is foreign.
-func (d *Disk) found(at string, body []byte, write bool) (Found, error) {
+// path that is a directory is foreign. It returns the bytes of a file,
+// and nil for a path without a file or with a directory. A read of a file
+// returns bytes that are not nil, also for an empty file.
+func (d *Disk) found(at string, body []byte, write bool) (Found, []byte, error) {
 	existing, err := d.root.ReadFile(at)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return FoundNothing, nil
+		return FoundNothing, nil, nil
 	case err != nil:
 		if info, statErr := d.root.Lstat(at); statErr == nil && info.IsDir() {
-			return FoundForeign, nil
+			return FoundForeign, nil, nil
 		}
-		return 0, fmt.Errorf("output: reading %q: %w", at, err)
+		return 0, nil, fmt.Errorf("output: reading %q: %w", at, err)
 	case write && bytes.Equal(existing, body):
-		return FoundSame, nil
+		return FoundSame, existing, nil
 	default:
-		return ownership(existing, d.brand), nil
+		return ownership(existing, d.brand), existing, nil
 	}
 }
 
