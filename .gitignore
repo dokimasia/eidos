@@ -45,3 +45,4 @@ vendor/
 # Agents
 .topoi/
 superpowers/
+.scratch/
