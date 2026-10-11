@@ -5,6 +5,7 @@ package handlergen
 
 import (
 	"fmt"
+	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk"
@@ -45,15 +46,17 @@ const (
 	Serve     = "Serve"
 )
 
-// The parameters of ServeHTTP and of Serve, the import path and the types
-// of package net/http, and the selector of Go between a value and its
-// member.
+// The parameters of ServeHTTP and of Serve, the import path of package
+// net/http with the names and the spellings of its two types, and the
+// selector of Go between a value and its member.
 const (
 	writerParam  = "w"
 	requestParam = "r"
 	httpPackage  = "net/http"
-	writerType   = "http.ResponseWriter"
-	requestType  = "http.Request"
+	writerName   = "ResponseWriter"
+	requestName  = "Request"
+	writerType   = "http." + writerName
+	requestType  = "http." + requestName
 	pointerMark  = "*"
 	selector     = "."
 )
@@ -89,9 +92,9 @@ type conclusion struct {
 }
 
 // New returns handlergen. Its annotator stamps [KeyHandler] on each struct
-// under [HandlerDirective] that declares the method Serve with two
-// parameters, and reports [MissingServe] at each other struct under the
-// directive. Its generator writes a handler for each struct with the fact:
+// under [HandlerDirective] that declares the method Serve(w
+// http.ResponseWriter, r *http.Request), and reports [MissingServe] at each
+// other struct under the directive. Its generator writes a handler for each struct with the fact:
 // the struct <T>Handler, with the field <T> that points at the struct, and
 // the method ServeHTTP, which calls Serve of the field. A plugin that
 // extends a handler appends into the prologue or the epilogue of ServeHTTP.
@@ -130,21 +133,39 @@ func (c *conclusion) register(r *meta.Registry) error {
 }
 
 // conclude stamps [KeyHandler] on a struct under the directive that
-// declares the method Serve with two parameters. It reports [MissingServe]
-// at a struct without one, and stamps nothing on it.
+// declares the method Serve(w http.ResponseWriter, r *http.Request). It
+// reports [MissingServe] at a struct without one, and stamps nothing on it.
 func (c *conclusion) conclude(m *sdk.StructMatch, st *sdk.Stamper) error {
 	for _, method := range m.Struct.Methods {
-		if method.Name == Serve && len(method.Params) == serveParams {
+		if method.Name == Serve && serves(method.Params) {
 			sdk.Stamp(st, c.handler, true)
 			return nil
 		}
 	}
 	m.Errorf(
 		MissingServe,
-		"%s is under the directive handler, and declares no method Serve(w, r) for its handler to call",
-		m.Struct.Name,
+		"%s is under the directive handler, and declares no method Serve(w %s, r *%s) for its handler to call",
+		m.Struct.Name, writerType, requestType,
 	)
 	return nil
+}
+
+// serves reports whether params are the parameters that ServeHTTP passes
+// to Serve: an http.ResponseWriter, then a pointer to an http.Request.
+func serves(params []*node.Param) bool {
+	if len(params) != serveParams || !httpType(params[0].Type, writerName) {
+		return false
+	}
+	request := params[1].Type
+	return request.Form == symbol.FormOptional && httpType(request.Elems[0], requestName)
+}
+
+// httpType reports whether ref is the type name of package net/http, as a Go
+// source file names it through a qualified identifier. The Go frontend
+// records the import path that the qualifier binds, so an import under
+// another name does not change the result.
+func httpType(ref *node.TypeRef, name string) bool {
+	return ref.Form == symbol.FormNamed && ref.Package == httpPackage && strings.HasSuffix(ref.Spelling, selector+name)
 }
 
 // generate writes the handler of one struct into the family of the

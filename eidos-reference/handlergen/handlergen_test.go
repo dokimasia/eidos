@@ -31,12 +31,15 @@ const (
 )
 
 // The tree of the structs under the directive handler without a method
-// Serve, its package, and its two structs.
+// Serve that a handler can call, its package, and its five structs.
 const (
 	noServeTree    = "testdata/noserve"
 	noServePackage = "example.com/noserve"
 	ledgerName     = "Ledger"
 	reportName     = "Report"
+	tallyName      = "Tally"
+	copyName       = "Copy"
+	cookieName     = "Cookie"
 )
 
 // The statement that ServeHTTP calls Serve with, the receiver's name that
@@ -155,9 +158,13 @@ func TestHandlergen(t *testing.T) {
 				lines = append(lines, d.Pos.Line)
 			}
 			assert.Equal(t, lines, []int{
+				f.Find(t, symbol.KindStruct, "", cookieName).Position().Line,
+				f.Find(t, symbol.KindStruct, "", copyName).Position().Line,
 				f.Find(t, symbol.KindStruct, "", ledgerName).Position().Line,
 				f.Find(t, symbol.KindStruct, "", reportName).Position().Line,
-			}, "each struct without a method Serve of two parameters has the finding")
+				f.Find(t, symbol.KindStruct, "", tallyName).Position().Line,
+			}, "each struct without a method Serve of a writer and a request has the finding, "+
+				"in the order of the names")
 			assert.Empty(t, slices.Collect(f.Generate(t, p).Emit.Units()), "handlergen writes no handler for them")
 		})
 	})

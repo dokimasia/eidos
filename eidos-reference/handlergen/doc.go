@@ -6,10 +6,11 @@
 //
 // handlergen is the host of the handler set of the ensemble. Its annotator
 // half stamps [KeyHandler] on each struct under //+reference:handler that
-// declares the method Serve(w, r). The other plugins of the set select
-// their subjects through the fact, and do not read the directive. Its
-// generator half writes the handler of each struct with the fact into the
-// family [Word], beside the source of the struct:
+// declares the method Serve(w http.ResponseWriter, r *http.Request). The
+// other plugins of the set select their subjects through the fact, and do
+// not read the directive. Its generator half writes the handler of each
+// struct with the fact into the family [Word], beside the source of the
+// struct:
 //
 //	// OrdersHandler serves Orders over HTTP.
 //	type OrdersHandler struct {
