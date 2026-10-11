@@ -61,7 +61,7 @@ func (k *kernel) Usage() string {
 	var f Flags
 	fs, _ := k.flagSet(&f)
 	var b strings.Builder
-	fmt.Fprintf(&b, "usage: %s [flags]", k.name)
+	fmt.Fprintf(&b, "%s [flags]", k.name)
 	if k.form != "" {
 		fmt.Fprintf(&b, " %s", k.form)
 	}

@@ -133,7 +133,7 @@ func TestKernel(t *testing.T) {
 		t.Run("returns the form of the command above its synopsis", func(t *testing.T) {
 			t.Parallel()
 
-			assert.HasPrefix(t, usage, "usage: run [flags] [<pattern>...]\n\n"+
+			assert.HasPrefix(t, usage, "run [flags] [<pattern>...]\n\n"+
 				"Generates the output of each workspace and commits it.\n\nflags:\n",
 				"the usage starts with the form and the synopsis")
 		})
@@ -163,7 +163,7 @@ func TestKernel(t *testing.T) {
 		t.Run("returns a form without arguments for a command that takes none", func(t *testing.T) {
 			t.Parallel()
 
-			assert.HasPrefix(t, command(t, compose, cmdPlan).Usage(), "usage: plan [flags]\n\n",
+			assert.HasPrefix(t, command(t, compose, cmdPlan).Usage(), "plan [flags]\n\n",
 				"plan takes no arguments")
 		})
 	})
@@ -185,7 +185,7 @@ func TestKernel(t *testing.T) {
 
 			status, stdout, _ := invoke(t, compose, cmdRun, t.TempDir(), "svc", longHelpFlag)
 			expect.Equal(t, status, cli.StatusOK, "help is no failure")
-			expect.HasPrefix(t, stdout, "usage: run ", "the command writes its usage")
+			expect.HasPrefix(t, stdout, "run [flags] ", "the command writes its usage")
 		})
 
 		t.Run("returns StatusUsage for an unknown flag", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestKernel(t *testing.T) {
 
 			status, _, stderr := invoke(t, compose, cmdPlan, t.TempDir(), bogusFlag)
 			expect.Equal(t, status, cli.StatusUsage, "an unknown flag is a usage error")
-			expect.HasPrefix(t, stderr, "error: cli: plan: flag provided but not defined: -bogus\nusage: plan [flags]",
+			expect.HasPrefix(t, stderr, "error: cli: plan: flag provided but not defined: -bogus\nplan [flags]",
 				"text output writes the error and the usage to standard error")
 		})
 

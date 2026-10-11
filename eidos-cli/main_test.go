@@ -66,8 +66,9 @@ func (e extra) Name() string { return e.name }
 // Synopsis returns the synopsis of the command.
 func (extra) Synopsis() string { return "Writes its arguments." }
 
-// Usage returns the help text of the command.
-func (e extra) Usage() string { return "usage: " + e.name + " [arguments]\n" }
+// Usage returns the help text of the command, whose first line is the form
+// of the command.
+func (e extra) Usage() string { return e.name + " [arguments]\n" }
 
 // Run writes args to standard output as one line, and returns StatusOK.
 func (extra) Run(_ context.Context, stdio cli.IO, args []string) int {
@@ -129,7 +130,7 @@ func TestMainProcess(t *testing.T) {
 				name:       "writes the usage of the command after help",
 				args:       []string{helpName, cmdRun},
 				wantStatus: cli.StatusOK,
-				wantStdout: "usage: run [flags] [<pattern>...]\n",
+				wantStdout: "run [flags] [<pattern>...]\n",
 			},
 			{
 				name:       "exits with StatusUsage for help with two names",
