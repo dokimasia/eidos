@@ -6,6 +6,7 @@ package testing_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -352,6 +353,19 @@ func TestAdapter(t *testing.T) {
 				_, err := adapter().Satisfies(ctx, dir, rowType, readerType)
 				return err
 			}, "an ended context asks the checker nothing")
+		})
+	})
+}
+
+// The cases that change the search path of the process run apart from
+// the parallel cases of TestAdapter.
+func TestAdapterEnv(t *testing.T) {
+	t.Run("Parse", func(t *testing.T) {
+		t.Run("returns the error of a tsc that is not on PATH", func(t *testing.T) {
+			dir := laidOut(t, healthy())
+			t.Setenv("PATH", t.TempDir())
+			err := adapter().Parse(t.Context(), dir)
+			assert.ErrorIs(t, err, exec.ErrNotFound, "the parse returns the error of the missing tsc")
 		})
 	})
 }

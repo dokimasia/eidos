@@ -139,14 +139,15 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 // nothing. TypeScript has no parser in Go, so the parse needs the
 // toolchain, and a caller passes [toolchain.Require] first. Parse reads
 // tsc's diagnostics and not its exit status, which a type error sets.
-// A context that ends stops tsc, and Parse returns an error that wraps
-// the context's error.
+// A tsc that does not run to its exit, such as a tsc that is not on
+// PATH, returns its error. A context that ends stops tsc, and Parse
+// returns an error that wraps the context's error.
 func (adapter) Parse(ctx context.Context, dir string) error {
 	if err := hasSource(dir); err != nil {
 		return err
 	}
 	out, err := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
-	if err != nil && ctx.Err() != nil {
+	if _, exited := errors.AsType[*exec.ExitError](err); err != nil && !exited {
 		return err
 	}
 	var refused []string
