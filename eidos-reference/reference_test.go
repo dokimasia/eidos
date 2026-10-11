@@ -15,6 +15,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 	"go.dokimi.dev/assert/golden"
 	"go.yaml.in/yaml/v3"
 
@@ -22,6 +23,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 	golang "go.dokimi.dev/eidos/lang/go"
+	goannotate "go.dokimi.dev/eidos/lang/go/annotate"
 	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	tstesting "go.dokimi.dev/eidos/lang/typescript/testing"
 	"go.dokimi.dev/eidos/reference"
@@ -29,6 +31,7 @@ import (
 	"go.dokimi.dev/eidos/reference/mockgen"
 	"go.dokimi.dev/eidos/reference/shapewriter"
 	"go.dokimi.dev/eidos/reference/stubgen"
+	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -73,6 +76,56 @@ const (
 	countryDefault = "NL"
 )
 
+// The misplaced case writes a module whose source file has builder on an
+// interface, enum on a struct and mock on a function. No schema of the
+// three admits the kind of its declaration.
+const (
+	goModFile       = "go.mod"
+	misplacedModule = "module example.com/shop\n\ngo 1.27\n"
+	misplacedFile   = "misplaced/misplaced.go"
+	misplacedSource = `package misplaced
+
+// Reader reads.
+//
+//+reference:builder
+type Reader interface {
+	Read() error
+}
+
+// Point is a point.
+//
+//+reference:enum
+type Point struct {
+	X int
+}
+
+// Run runs.
+//
+//+reference:mock
+func Run() {}
+`
+)
+
+// misplacedLines are the lines of the carriers of misplacedSource.
+var misplacedLines = []int{5, 12, 19}
+
+// The test of the method String that enum writes on Priority, beside the
+// generated files. A priority outside the declared set has a value above
+// the range of int64, and its text contains that value.
+const (
+	priorityTestFile = "catalog/priority_text_test.go"
+	priorityTest     = `package catalog
+
+import "testing"
+
+func TestPriorityText(t *testing.T) {
+	if got := Priority(1<<63 + 1).String(); got != "Priority(9223372036854775809)" {
+		t.Errorf("String returns %q for a priority outside the declared set", got)
+	}
+}
+`
+)
+
 // config is the config file of the tree as the command line reads it: the
 // version, and the options of the plugins.
 type config struct {
@@ -111,6 +164,13 @@ func TestReference(t *testing.T) {
 
 			_, err := reference.Compose().Build()
 			assert.NoError(t, err, "the composition of the binary builds")
+		})
+
+		t.Run("returns a composition that builds with the annotator of the Go satellite", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := reference.Compose().Annotators(goannotate.New()).Build()
+			assert.NoError(t, err, "the annotator composes beside the Go backend")
 		})
 
 		t.Run("writes the files of testdata/want from the tree", func(t *testing.T) {
@@ -156,6 +216,18 @@ func TestReference(t *testing.T) {
 				return
 			}
 			toolchain.AssertTestsPass(t.Context(), t, a, generated(f, goExtension))
+		})
+
+		t.Run("writes a String that spells a value outside the variants as the value", func(t *testing.T) {
+			t.Parallel()
+
+			a := gotesting.New()
+			if !toolchain.Require(t, a) {
+				return
+			}
+			g := generated(f, goExtension)
+			g.Files[priorityTestFile] = []byte(priorityTest)
+			toolchain.AssertTestsPass(t.Context(), t, a, g)
 		})
 
 		t.Run("writes TypeScript that type-checks", func(t *testing.T) {
@@ -208,6 +280,26 @@ func TestReference(t *testing.T) {
 				}
 				got, _ := meta.Get(report.Facts, id, key)
 				expect.Equal(t, got, tt.want, "defaults stamps the default of "+tt.name+" that takes precedence")
+			}
+		})
+
+		t.Run("reports MisplacedDirective for each directive on a declaration of another kind", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{
+				goModFile:     files.Text(misplacedModule),
+				misplacedFile: files.Text(misplacedSource),
+			})
+			w, err := f.Compose(root).Plans(f.Plans()...).Build()
+			assert.NoError(t, err, "the composition builds")
+			report, err := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: true})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails on the misplaced directives")
+			findings := slices.Collect(report.Sink.All())
+			assert.Length(t, findings, len(misplacedLines), "each misplaced directive reports one finding")
+			for i, line := range misplacedLines {
+				expect.Equal(t, findings[i].Code, directive.MisplacedDirective,
+					"the finding is under MisplacedDirective")
+				expect.Equal(t, findings[i].Pos.Line, line, "the finding is at the carrier of the directive")
 			}
 		})
 	})
