@@ -111,6 +111,10 @@ func TestCodes(t *testing.T) {
 			name: "UnknownVariant", code: directive.UnknownVariant, spelled: "EID-0068",
 			meaning: "a directive has no variant, or a name that no variant of its schema has",
 		},
+		{
+			name: "MisplacedDirective", code: directive.MisplacedDirective, spelled: "EID-0072",
+			meaning: "a directive is written on a declaration of a kind that its schema does not admit",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

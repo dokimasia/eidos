@@ -3,7 +3,11 @@
 
 package directive
 
-import "strconv"
+import (
+	"strconv"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
 
 // ParamType types a schema param.
 //
@@ -263,6 +267,14 @@ type Schema struct {
 	// symmetric: one declaration refuses the pair.
 	Requires      []Name
 	ConflictsWith []Name
+	// Kinds lists the kinds of the declarations that an instance may be
+	// written on. Empty admits every kind. Validate refuses a positive
+	// instance on a declaration of another kind under
+	// [MisplacedDirective], and does not check the kind of a negated
+	// instance.
+	// The facade builder fills an empty field of a plugin's schema where
+	// it can derive the kinds from the plugin's rules.
+	Kinds []symbol.Kind
 	// Doc states the directive's meaning. Registration refuses an
 	// empty one.
 	Doc string

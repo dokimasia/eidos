@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -48,6 +49,14 @@ const (
 // unregisteredCode is a code in the kernel's prefix that no package
 // registers.
 const unregisteredCode = "EID-9999"
+
+// The properties of the kind check of Validate.
+const (
+	admitsListedKinds = "Validate must return a positive instance on a declaration of any kind " +
+		"that the schema lists"
+	refusesUnlistedKinds = "Validate must refuse a positive instance on a declaration of any kind " +
+		"that the schema leaves out, with MisplacedDirective alone"
+)
 
 // validateAllocs is the number of allocations of a validation of the four
 // instances of the benchmark. The returned slice is one allocation. Each
@@ -1098,6 +1107,94 @@ func TestValidate(t *testing.T) {
 			assert.Empty(t, got, "neither instance is returned")
 			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.DuplicateInstance},
 				"DuplicateInstance is reported")
+		})
+
+		t.Run("returns a positive instance on any kind that the schema lists", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, admitsListedKinds, func(c *prop.Case) {
+				order := c.Draw(prop.Permutation(declarationKinds()...), "the order of the kinds")
+				listed := order[:c.Draw(prop.Integer(1, len(order)), "the number of listed kinds")]
+				subject := validationSubject
+				subject.Kind = c.Draw(prop.SampledFrom(listed...), "the kind of the subject")
+				sink := diag.NewSink()
+				got := directive.Validate(subject, []directive.Raw{parse(c, "mockgen:mock", 1)},
+					sealed(c, kinded(listed...)), keyed(c), nil, sink)
+				assert.Length(c, got, 1, "the instance is returned")
+				assert.False(c, sink.Failed(), "nothing is reported")
+			})
+		})
+
+		t.Run("reports MisplacedDirective for a positive instance on any kind that the schema leaves out",
+			func(t *testing.T) {
+				t.Parallel()
+
+				prop.ForAll(t, refusesUnlistedKinds, func(c *prop.Case) {
+					order := c.Draw(prop.Permutation(declarationKinds()...), "the order of the kinds")
+					listed := order[:c.Draw(prop.Integer(1, len(order)-1), "the number of listed kinds")]
+					subject := validationSubject
+					subject.Kind = c.Draw(prop.SampledFrom(order[len(listed):]...), "the kind of the subject")
+					sink := diag.NewSink()
+					got := directive.Validate(subject, []directive.Raw{parse(c, "mockgen:mock", 1)},
+						sealed(c, kinded(listed...)), keyed(c), nil, sink)
+					assert.Empty(c, got, "the instance is not returned")
+					assert.Equal(c, coretest.Codes(sink), []diag.Code{directive.MisplacedDirective},
+						"MisplacedDirective is reported")
+				})
+			})
+
+		t.Run("reports MisplacedDirective with the admitted kinds in the order of symbol.Kind", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validateRaws(t, []directive.Raw{parse(t, "mockgen:mock", 1)},
+				kinded(symbol.KindMethod, symbol.KindFunction))
+			assert.Equal(t, onlyDiag(t, sink).Msg,
+				"mockgen:mock applies to a declaration of kind "+symbol.KindFunction.String()+" or "+
+					symbol.KindMethod.String()+", and "+validationSubject.String()+" has the kind "+
+					symbol.KindStruct.String(),
+				"the message states the admitted kinds and the kind of the subject")
+		})
+
+		t.Run("reports MisplacedDirective as an Error", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validateRaws(t, []directive.Raw{parse(t, "mockgen:mock", 1)}, kinded(symbol.KindInterface))
+			assert.Equal(t, onlyDiag(t, sink).Severity, diag.SeverityError, "a misplaced instance fails the run")
+		})
+
+		t.Run("reports MisplacedDirective alone for a misplaced instance that other checks refuse", func(t *testing.T) {
+			t.Parallel()
+
+			retiredMock := kinded(symbol.KindInterface)
+			retiredMock.Deprecated = "write mockgen:fake in place of mockgen:mock"
+			_, sink := validateRaws(t, []directive.Raw{parse(t, "mockgen:mock nonkey=v", 1)}, retiredMock)
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.MisplacedDirective},
+				"neither the unknown key nor the deprecation is reported")
+		})
+
+		t.Run("returns a negated instance on a kind that the schema leaves out", func(t *testing.T) {
+			t.Parallel()
+
+			negatableMock := kinded(symbol.KindInterface)
+			negatableMock.Negatable = true
+			got, sink := validateRaws(t, []directive.Raw{negated(t, "mockgen:mock", 1)}, negatableMock)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the negated instance is returned")
+		})
+
+		t.Run("reports RequirementUnmet for a directive that requires a misplaced one", func(t *testing.T) {
+			t.Parallel()
+
+			needs := wellFormed("weaver", "weave")
+			needs.Requires = []directive.Name{"mockgen:mock"}
+			got, sink := validateRaws(t, []directive.Raw{
+				parse(t, "weaver:weave", 1),
+				parse(t, "mockgen:mock", 2),
+			}, kinded(symbol.KindInterface), needs)
+			assert.Empty(t, got, "neither instance is returned")
+			assert.Equal(t, coretest.Codes(sink),
+				[]diag.Code{directive.MisplacedDirective, directive.RequirementUnmet},
+				"the misplaced instance meets no requirement")
 		})
 
 		choosy := directive.Schema{

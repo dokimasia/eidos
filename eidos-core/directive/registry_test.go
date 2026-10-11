@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The foreign tool the ignore cases opt out of: its plugin prefix, and
@@ -143,6 +144,8 @@ func TestRegistry(t *testing.T) {
 	t.Run("Register", func(t *testing.T) {
 		t.Parallel()
 
+		kinds := declarationKinds()
+		pastKinds := kinds[len(kinds)-1] + 1
 		tests := []struct {
 			name   string
 			schema directive.Schema
@@ -463,6 +466,21 @@ func TestRegistry(t *testing.T) {
 				}),
 				want: `choice "bigint" twice`,
 			},
+			{
+				name:   "returns an error naming the invalid kind",
+				schema: kinded(symbol.KindStruct, symbol.KindInvalid),
+				want:   "lists Invalid",
+			},
+			{
+				name:   "returns an error naming a value past the declaration kinds",
+				schema: kinded(pastKinds),
+				want:   "lists " + pastKinds.String(),
+			},
+			{
+				name:   "returns an error naming a kind listed twice",
+				schema: kinded(symbol.KindStruct, symbol.KindInterface, symbol.KindStruct),
+				want:   "kind Struct twice",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -539,6 +557,12 @@ func TestRegistry(t *testing.T) {
 			assert.NoError(t, directive.NewRegistry().Register(choosing(directive.ParamSpec{
 				Key: "int64", Type: directive.TypeString, Choices: []string{"bigint", "string"}, Doc: "the spelling",
 			})), "the schema registers")
+		})
+
+		t.Run("registers a schema that lists every declaration kind", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, directive.NewRegistry().Register(kinded(kinds...)), "the schema registers")
 		})
 
 		t.Run("returns an error for a plugin's schema of a target's name", func(t *testing.T) {
@@ -1044,4 +1068,23 @@ func varied(variants ...directive.Variant) directive.Schema {
 	s := wellFormed("shaper", "shape")
 	s.Variants = variants
 	return s
+}
+
+// kinded returns the well-formed schema mockgen:mock with the given kinds.
+func kinded(kinds ...symbol.Kind) directive.Schema {
+	s := wellFormed("mockgen", "mock")
+	s.Kinds = kinds
+	return s
+}
+
+// declarationKinds returns every kind that [symbol.ParseKind] reads, in
+// the order of [symbol.Kind].
+func declarationKinds() []symbol.Kind {
+	var kinds []symbol.Kind
+	for k := symbol.KindInvalid + 1; ; k++ {
+		if _, declared := symbol.ParseKind(k.String()); !declared {
+			return kinds
+		}
+		kinds = append(kinds, k)
+	}
 }

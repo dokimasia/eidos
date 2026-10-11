@@ -24,9 +24,10 @@ const (
 // Resolver binds one source reference param: what a spelling
 // names from a subject, at a resolution kind. The workspace
 // derives it from the registered rules and a view minted over the
-// sealed graph for validation. The view's reads record into a set
-// the run discards, because validation runs whole on every run. An
-// error names what was looked for and not found.
+// sealed graph for validation. The view records its reads with the
+// validation, so a warm run validates a subject again only after its
+// directives or a declaration that it read changed. An error names
+// what was looked for and not found.
 type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (symbol.Identity, error)
 
 // Validate types and checks every instance on one subject,
@@ -40,6 +41,11 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 // from a plugin and states nothing the constraints read. A subject
 // that sets and negates one directive states two opposite intents,
 // and every instance of that directive on it is refused.
+//
+// A positive instance on a declaration of a kind that [Schema.Kinds]
+// leaves out reports [MisplacedDirective] and drops before its other
+// checks. Validate does not check the kind of a negated instance, and an
+// empty Kinds admits every kind.
 //
 // A repeatable directive whose instances on the subject mix carriers
 // in the tool-directive shape with other carriers reports a Warning
@@ -346,6 +352,14 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			return Directive{}, Schema{}, false
 		}
 		v.report(UnclaimedName, raw.Pos, "%s names no registered schema", raw.Name)
+		return Directive{}, Schema{}, false
+	}
+	// A positive instance on a kind that the schema does not admit cannot
+	// run a rule. It reports one finding, and its other checks do not run.
+	if !raw.Negated && len(schema.Kinds) > 0 && !slices.Contains(schema.Kinds, v.subject.Kind) {
+		v.report(MisplacedDirective, raw.Pos,
+			"%s applies to a declaration of kind %s, and %s has the kind %s",
+			canonical, kindList(schema.Kinds), v.subject, v.subject.Kind)
 		return Directive{}, Schema{}, false
 	}
 	if raw.Negated && !schema.Negatable {
@@ -737,6 +751,16 @@ func variantNames(variants []Variant) string {
 		names = append(names, variant.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// kindList spells the kinds that a schema admits for a refusal, in the
+// order of [symbol.Kind].
+func kindList(kinds []symbol.Kind) string {
+	names := make([]string, 0, len(kinds))
+	for _, k := range slices.Sorted(slices.Values(kinds)) {
+		names = append(names, k.String())
+	}
+	return strings.Join(names, " or ")
 }
 
 // nameList spells candidate names for a refusal.

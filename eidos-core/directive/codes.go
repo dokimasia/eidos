@@ -117,4 +117,10 @@ var (
 	UnknownVariant = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 68, Meaning: "a directive has no variant, or a name that no variant of its schema has",
 	})
+	// MisplacedDirective refuses a positive instance on a declaration of a
+	// kind that the schema's Kinds leave out. The instance drops, so it
+	// does not run a rule.
+	MisplacedDirective = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 72, Meaning: "a directive is written on a declaration of a kind that its schema does not admit",
+	})
 )

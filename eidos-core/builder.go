@@ -172,15 +172,24 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 // [plugin.Subscribed] and the provider interfaces, which return
 // what was declared and empty where nothing was.
 //
+// [plugin.DirectiveProvider] returns the schema of each [Directive]
+// wrapper. Build sets an empty Kinds of a schema to the kinds of the
+// rules under the wrapper, in the order of [symbol.Kind]. For an override
+// schema it also adds the kinds of the bare and fact-gated rules of the
+// plugin. An [OnGraph] rule has no subject, so it does not add a kind.
+// Build leaves the field empty where one of those rules is an [OnEmit]
+// rule, because the origin of an emitted value can have any kind.
+//
 // Build panics on a declaration defect: an empty name, no rules, a
 // wrapper around no rules, a duplicate output tag, an empty output
 // word, a zero cardinality, a family template that is no
 // slash-separated path inside a tree, an empty capability label, a nil key
 // registration, a presentation defect, a directive name in two
-// wrappers, a [Gated] name that is not a kernel directive, a rule
-// gating on two directives, a gate wrapped around a graph rule, a
-// zero predicate, and a gate on the zero key. A gate on a named handle
-// binds when the workspace builds, through [plugin.KeyBinder]. A
+// wrappers, an explicit Kinds that leaves out the kind of a rule under its
+// wrapper other than an [OnEmit] rule, a [Gated] name that is not a kernel
+// directive, a rule gating on two directives, a gate wrapped around a
+// graph rule, a zero predicate, and a gate on the zero key. A gate on a
+// named handle binds when the workspace builds, through [plugin.KeyBinder]. A
 // presentation defect is a nil tree or helper map,
 // two trees or one helper name twice at one level, a helper
 // text/template refuses, the zero option, and a [Builder.For]
@@ -194,9 +203,10 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 //
 // Build allocates in proportion to the declaration: the table of output
 // families, the lowered rules and the predicates each inherits, the
-// built value with its copies of the declared lists, the subscriptions,
-// and the role wrapper. A declaration of one family, a graph rule and
-// two emit rules under one fact gate allocates 13 times.
+// built value with its copies of the declared lists, the schemas with the
+// kinds that it derives, the subscriptions, and the role wrapper. A
+// declaration of one family, a graph rule and two emit rules under one
+// fact gate allocates 13 times.
 func (b *Builder) Build() plugin.Plugin {
 	if b.name == "" {
 		panic("eidos: NewPlugin with an empty name")
@@ -378,10 +388,10 @@ func kernelDirective(name directive.Name) bool {
 	})
 }
 
-// collectSchemas gathers the schemas the wrappers carried, one per
-// name: many rules under one wrapper share one schema, and a name
-// carried by two wrappers is refused, so one wrapper gates them
-// all.
+// collectSchemas returns the schemas of the wrappers, one per name, with
+// the kinds that [kinded] sets. Many rules under one wrapper share one
+// schema. collectSchemas panics on a name that two wrappers declare, so
+// one wrapper gates them all.
 func collectSchemas(name string, rules []flatRule) []directive.Schema {
 	byName := map[directive.Name]*directive.Schema{}
 	var out []directive.Schema
@@ -391,15 +401,60 @@ func collectSchemas(name string, rules []flatRule) []directive.Schema {
 		}
 		if held, taken := byName[fr.gate]; taken {
 			if held != fr.schema {
-				panic("eidos: " + name + " carries directive " +
+				panic("eidos: " + name + " declares directive " +
 					string(fr.gate) + " in two wrappers; one wrapper gates them all")
 			}
 			continue
 		}
 		byName[fr.gate] = fr.schema
-		out = append(out, *fr.schema)
+		out = append(out, kinded(name, fr.schema, rules))
 	}
 	return out
+}
+
+// kinded returns a copy of the schema of one wrapper with the kinds of the
+// declarations that an instance may be written on. The rules that an
+// instance can affect are the rules under the wrapper. For an override
+// schema they also include every rule of the plugin that no directive
+// gates, except a graph rule.
+//
+// kinded keeps an explicit Kinds. It panics where the explicit kinds leave
+// out the kind of a rule under the wrapper that a declaration triggers. It
+// sets an empty Kinds to the kinds of the affected rules, in the order of
+// [symbol.Kind]. It leaves the field empty where an affected rule runs on
+// emitted values, because the origin of an emitted value can have any
+// kind. kinded allocates the derived list, one allocation for up to eight
+// kinds.
+func kinded(name string, wrapper *directive.Schema, rules []flatRule) directive.Schema {
+	s := *wrapper
+	var kinds []symbol.Kind
+	emits := false
+	for _, fr := range rules {
+		under := fr.schema == wrapper
+		bare := s.Overrides && fr.gate == "" && !fr.graph
+		if !under && !bare {
+			continue
+		}
+		if fr.phase == plugin.PhaseEmit {
+			emits = true
+			continue
+		}
+		if len(s.Kinds) > 0 {
+			if under && !slices.Contains(s.Kinds, fr.kind) {
+				panic("eidos: " + name + " handles " + fr.kind.String() + " under directive " +
+					string(fr.gate) + ", and the kinds of the directive leave it out")
+			}
+			continue
+		}
+		if !slices.Contains(kinds, fr.kind) {
+			kinds = append(kinds, fr.kind)
+		}
+	}
+	if len(s.Kinds) == 0 && !emits {
+		slices.Sort(kinds)
+		s.Kinds = kinds
+	}
+	return s
 }
 
 // subscriptionsFor lowers the gates to records: one per rule, and

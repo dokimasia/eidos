@@ -397,6 +397,118 @@ func TestBuilder(t *testing.T) {
 				assert.Panics(t, tt.build, "the declaration defect panics at Build")
 			})
 		}
+
+		key, _ := boolKey(t)
+		onFunction := eidos.OnFunction(func(*eidos.FunctionMatch, *eidos.Emitter) error { return nil })
+		onMethod := eidos.OnMethod(func(*eidos.MethodMatch, *eidos.Emitter) error { return nil })
+		onStruct := eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })
+		onEmitMethod := eidos.OnEmit(symbol.KindMethod, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })
+		overriding := stubSchema("shape")
+		overriding.Overrides = true
+		explicit := stubSchema("audit")
+		explicit.Kinds = []symbol.Kind{symbol.KindInterface, symbol.KindStruct}
+		explicitOverriding := overriding
+		explicitOverriding.Kinds = []symbol.Kind{symbol.KindFunction}
+		derivations := []struct {
+			name  string
+			rules []eidos.Rule
+			want  []symbol.Kind
+		}{
+			{
+				name:  "returns the kinds of the rules under a wrapper in the order of symbol.Kind",
+				rules: []eidos.Rule{eidos.Directive(stubSchema("mock"), onStruct, onFunction)},
+				want:  []symbol.Kind{symbol.KindFunction, symbol.KindStruct},
+			},
+			{
+				name:  "returns one kind for two rules of one kind under a wrapper",
+				rules: []eidos.Rule{eidos.Directive(stubSchema("mock"), onStruct, onStruct)},
+				want:  []symbol.Kind{symbol.KindStruct},
+			},
+			{
+				name:  "returns no kinds for a wrapper around an OnEmit rule",
+				rules: []eidos.Rule{eidos.Directive(stubSchema("mock"), onStruct, onEmit())},
+			},
+			{
+				name:  "returns the kinds of the bare rules of the plugin for an override schema",
+				rules: []eidos.Rule{eidos.Directive(overriding, onFunction), onMethod},
+				want:  []symbol.Kind{symbol.KindFunction, symbol.KindMethod},
+			},
+			{
+				name: "returns the kinds of the fact-gated rules of the plugin for an override schema",
+				rules: []eidos.Rule{
+					eidos.Directive(overriding, onFunction),
+					eidos.Where(eidos.HasKey(key), onStruct),
+				},
+				want: []symbol.Kind{symbol.KindFunction, symbol.KindStruct},
+			},
+			{
+				name: "returns no kind of a rule under another wrapper for an override schema",
+				rules: []eidos.Rule{
+					eidos.Directive(overriding, onFunction),
+					eidos.Directive(stubSchema("mock"), onStruct),
+				},
+				want: []symbol.Kind{symbol.KindFunction},
+			},
+			{
+				name: "returns no kind of a rule under a kernel gate for an override schema",
+				rules: []eidos.Rule{
+					eidos.Directive(overriding, onFunction),
+					eidos.Gated(directive.KernelSkip, onStruct),
+				},
+				want: []symbol.Kind{symbol.KindFunction},
+			},
+			{
+				name:  "returns no kind of a graph rule for an override schema",
+				rules: []eidos.Rule{eidos.Directive(overriding, onFunction), emitNothing()},
+				want:  []symbol.Kind{symbol.KindFunction},
+			},
+			{
+				name:  "returns no kinds for an override schema beside a bare OnEmit rule",
+				rules: []eidos.Rule{eidos.Directive(overriding, onFunction), onEmit()},
+			},
+			{
+				name:  "returns no kind of a bare rule for a schema that does not override",
+				rules: []eidos.Rule{eidos.Directive(stubSchema("mock"), onFunction), onMethod},
+				want:  []symbol.Kind{symbol.KindFunction},
+			},
+			{
+				name:  "returns the explicit kinds in their declared order",
+				rules: []eidos.Rule{eidos.Directive(explicit, onStruct)},
+				want:  explicit.Kinds,
+			},
+			{
+				name:  "returns the explicit kinds beside an OnEmit rule of another kind under the wrapper",
+				rules: []eidos.Rule{eidos.Directive(explicit, onEmitMethod)},
+				want:  explicit.Kinds,
+			},
+			{
+				name:  "returns the explicit kinds of an override schema beside a bare rule of another kind",
+				rules: []eidos.Rule{eidos.Directive(explicitOverriding, onFunction), onMethod},
+				want:  explicitOverriding.Kinds,
+			},
+		}
+		for _, tt := range derivations {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				schemas := schemasOf(t, eidos.NewPlugin("stubgen").Handle(tt.rules...).Build())
+				assert.NotEmpty(t, schemas, "the plugin provides the schema of its first wrapper")
+				assert.Equal(t, schemas[0].Kinds, tt.want, "the kinds are the kinds that an instance can affect")
+			})
+		}
+
+		t.Run("panics on explicit kinds that leave out the kind of a rule under the wrapper", func(t *testing.T) {
+			t.Parallel()
+
+			misfit := stubSchema("audit")
+			misfit.Kinds = []symbol.Kind{symbol.KindInterface}
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("stubgen").Handle(eidos.Directive(misfit, onStruct)).Build()
+			}, "the declaration defect panics at Build")
+			assert.Equal(t, got, any("eidos: stubgen handles Struct under directive stubgen:audit, "+
+				"and the kinds of the directive leave it out"),
+				"the panic states the plugin, the kind and the directive")
+		})
 	})
 }
 
@@ -477,6 +589,15 @@ func emitNothing() eidos.Rule {
 	return eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 		return nil
 	})
+}
+
+// schemasOf returns the schemas that a built plugin provides.
+func schemasOf(tb assert.TB, p plugin.Plugin) []directive.Schema {
+	tb.Helper()
+
+	provider, ok := p.(plugin.DirectiveProvider)
+	assert.True(tb, ok, "the plugin provides directives")
+	return provider.Directives()
 }
 
 // stubSchema returns a schema a plugin registers, for gate

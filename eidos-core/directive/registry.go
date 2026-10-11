@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Registry records every schema a workspace recognises.
@@ -105,6 +107,8 @@ func (r *Registry) Ignored(n Name) bool {
 //     reference without a resolution kind;
 //   - choices on a param that is not a string, an empty choice, and a
 //     choice declared twice;
+//   - a value of Kinds that is no declaration kind, [symbol.KindInvalid]
+//     included, and a kind that Kinds lists twice;
 //   - an untyped param, and an empty doc anywhere;
 //   - a canonical spelling registered twice, with an error naming
 //     both docs.
@@ -324,6 +328,14 @@ func (r *Registry) admissible(s Schema) error {
 	}
 	if len(s.Roles) > 0 && len(s.Variants) > 0 {
 		return fmt.Errorf("directive: %s declares roles beside variants, and only a variant declares roles", s.Name)
+	}
+	for i, k := range s.Kinds {
+		if _, declared := symbol.ParseKind(k.String()); !declared {
+			return fmt.Errorf("directive: %s lists %s, which is no declaration kind", s.Name, k)
+		}
+		if slices.Contains(s.Kinds[:i], k) {
+			return fmt.Errorf("directive: %s lists the kind %s twice", s.Name, k)
+		}
 	}
 	roles := map[string]struct{}{}
 	if err := declareRoles(string(s.Name), s.Roles, roles); err != nil {
