@@ -42,7 +42,7 @@ their own schedule.
 | [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang/php` | PHP satellite: a statement of scope and no code |
 | [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang/rust` | Rust satellite: backend and the toolchain adapter for generated tests |
 | [eidos-plugin-shape](eidos-plugin-shape) | `go.dokimi.dev/eidos/plugin-shape` | the classification catalog of shapes, mixins and contracts: a statement of scope and no code |
-| [eidos-reference](eidos-reference) | `go.dokimi.dev/eidos/reference` | the reference plugin ensemble, a consumer of the authoring surface: a statement of scope and no code |
+| [eidos-reference](eidos-reference) | `go.dokimi.dev/eidos/reference` | the canary of the ring: nineteen reference plugins on the SDK facade that build on each other, their composition and the binary `eidos-reference` over it, a workspace tree with the files that the binary writes from it, and the program of the ring job |
 
 Consumers depend on satellites, satellites depend on the kernel, and nothing
 depends the other way. One satellite never imports another. Anything
