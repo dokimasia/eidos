@@ -23,7 +23,7 @@ const ImplGroup render.GroupName = "impl"
 // so a method on Box<T> opens impl<T> Box<T>.
 const ImplTemplate = "impl{{binder (index .Decls 0).Receives}}" +
 	" {{spell (index .Decls 0).Receives}} {\n" +
-	"{{- range .Decls}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+	"{{- range .Decls}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 	"    {{implfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
 	"{{results .Returns}} {\n{{body .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}\n}\n"

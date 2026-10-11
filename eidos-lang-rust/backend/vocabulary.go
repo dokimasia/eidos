@@ -21,6 +21,9 @@ import (
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
+	// FuncMemberDocs writes a member's documentation at the member's
+	// depth.
+	FuncMemberDocs = "memberdocs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
 	// FuncTypeParams writes a type definition's parameter list.
@@ -57,6 +60,9 @@ const (
 	FuncFieldMods = "fieldmods"
 	// FuncAttrs writes a declaration's attribute lines.
 	FuncAttrs = "attrs"
+	// FuncMemberAttrs writes a member's attribute lines at the member's
+	// depth.
+	FuncMemberAttrs = "memberattrs"
 	// FuncSupertraits writes a trait's supertrait bounds.
 	FuncSupertraits = "supertraits"
 	// FuncEnumMods writes an enum's keywords.
@@ -99,6 +105,14 @@ const (
 
 // pathSep separates the segments of a Rust path.
 const pathSep = "::"
+
+// docMark opens a line of an outer doc comment, and attrOpen and
+// attrClose enclose an outer attribute.
+const (
+	docMark   = "/// "
+	attrOpen  = "#["
+	attrClose = "]"
+)
 
 // asyncKeyword marks an asynchronous function, with the space that
 // follows it.
@@ -532,12 +546,16 @@ const (
 
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every item a helper names from
-// another module is used there. Funcs allocates the map of twenty-four
-// helpers, four allocations, and the speller's eleven bound helpers.
+// another module is used there. Every helper takes a fixed list of
+// arguments, because text/template allocates the list of a variadic
+// call and a value for each string argument that a template writes.
+// Funcs allocates the map of twenty-six helpers, four allocations, and
+// the speller's eleven bound helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:        Docs,
+		FuncMemberDocs:  MemberDocs,
 		FuncSpell:       s.Spell,
 		FuncTypeParams:  s.TypeParams,
 		FuncImplParams:  s.ImplParams,
@@ -554,6 +572,7 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 		FuncSelfParams:  s.SelfParams,
 		FuncFieldMods:   FieldMods,
 		FuncAttrs:       Attrs,
+		FuncMemberAttrs: MemberAttrs,
 		FuncSupertraits: s.Supertraits,
 		FuncEnumMods:    EnumMods,
 		FuncAssocType:   s.AssocType,
@@ -564,13 +583,18 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 	}
 }
 
-// Docs writes a declaration's documentation as outer doc
-// comments, each line prefixed with the given indentation, so a
-// member's doc is at its member's depth. It allocates what
-// [textfmt.LineDocs] allocates: the lines, sized once, and nothing for
-// no lines.
-func Docs(lines []string, prefix ...string) string {
-	return textfmt.LineDocs(lines, "/// ", prefix...)
+// Docs writes a declaration's documentation as outer doc comments at
+// the top level. It allocates what [textfmt.LineDocs] allocates: the
+// lines, sized once, and nothing for no lines.
+func Docs(lines []string) string {
+	return textfmt.LineDocs(lines, docMark)
+}
+
+// MemberDocs writes a member's documentation as the outer doc comments
+// of [Docs], each behind the member indent of a block. It allocates
+// what Docs allocates.
+func MemberDocs(lines []string) string {
+	return textfmt.LineDocs(lines, docMark, memberIndent)
 }
 
 // TypeNames writes a parameter list's names alone, the form an
@@ -783,13 +807,20 @@ func FieldMods(f *emit.Field) (string, error) {
 	return Vis(f.Visibility, f.Name)
 }
 
-// Attrs writes a declaration's attribute lines, one per
-// annotation, each prefixed with the given indentation: the name
-// in an outer attribute, its argument spellings verbatim in
-// parentheses where any are stated. It allocates what [textfmt.Marked]
-// allocates: the lines, sized once, and nothing for no annotations.
-func Attrs(a symbol.Annotations, prefix ...string) string {
-	return textfmt.Marked(a, "#[", "]", prefix...)
+// Attrs writes a declaration's attribute lines at the top level, one
+// per annotation: the name in an outer attribute, its argument
+// spellings verbatim in parentheses where any are stated. It allocates
+// what [textfmt.Marked] allocates: the lines, sized once, and nothing
+// for no annotations.
+func Attrs(a symbol.Annotations) string {
+	return textfmt.Marked(a, attrOpen, attrClose)
+}
+
+// MemberAttrs writes a member's attribute lines as [Attrs] writes them,
+// each behind the member indent of a block. It allocates what Attrs
+// allocates.
+func MemberAttrs(a symbol.Annotations) string {
+	return textfmt.Marked(a, attrOpen, attrClose, memberIndent)
 }
 
 // complete reports whether a reference states its type, itself and

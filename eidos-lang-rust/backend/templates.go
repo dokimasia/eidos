@@ -36,11 +36,11 @@ const (
 	// outside the type they attach to.
 	StructTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{structmods .}}struct {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{if .Methods.Len}}\nimpl{{implparams .TypeParams}} {{.Name}}{{typenames .TypeParams}} {\n" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 		"    {{implfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
 		"{{results .Returns}} {\n{{memberbody .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n{{end}}"
@@ -54,10 +54,10 @@ const (
 	// rest close as signatures.
 	InterfaceTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{vis .Visibility .Name}}trait {{.Name}}{{typeparams .TypeParams}}{{supertraits .}} {\n" +
-		"{{- range .Types.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"{{- range .Types.Items}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 		"    {{assoctype .}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 		"    {{traitfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
 		"{{results .Returns}}{{if .HasDefault}} {\n{{memberbody .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
@@ -75,7 +75,7 @@ const (
 	// as its discriminant.
 	EnumTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{enummods .}}enum {{.Name}} {\n" +
-		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"{{- range .Variants.Items}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 		"    {{.Name}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
@@ -86,7 +86,7 @@ const (
 	// bare types in parentheses.
 	SumTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{summods .}}enum {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"{{- range .Variants.Items}}\n{{memberdocs .Doc}}{{memberattrs .Annotations}}" +
 		"    {{.Name}}{{sumpayload .}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 

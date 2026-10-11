@@ -80,7 +80,7 @@ const (
 	// selfParamsAllocs is a method of two parameters: the parameter list,
 	// and the receiver joined before it.
 	selfParamsAllocs = paramsAllocs + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-four
+	// funcsAllocs is the vocabulary of a file: the map of twenty-six
 	// helpers, four allocations, and the speller's eleven bound helpers.
 	funcsAllocs = 4 + 11
 	// typeNamesAllocs is two parameter names: the joined list, and its
@@ -123,11 +123,22 @@ func TestVocabulary(t *testing.T) {
 
 			assert.Equal(t, backend.Docs([]string{"One.", "Two."}), "/// One.\n/// Two.\n", "at the top level")
 		})
+	})
 
-		t.Run("writes at the given depth", func(t *testing.T) {
+	t.Run("MemberDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no lines", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Docs([]string{"Inner."}, "    "), "    /// Inner.\n", "at the member's depth")
+			assert.Equal(t, backend.MemberDocs(nil), "", "no comment")
+		})
+
+		t.Run("writes each outer doc comment behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDocs([]string{"One.", "Two."}), "    /// One.\n    /// Two.\n",
+				"at the member's depth")
 		})
 	})
 
@@ -962,13 +973,32 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, backend.Attrs(nil), "", "no lines")
 		})
 
-		t.Run("writes one outer attribute per annotation at the given depth", func(t *testing.T) {
+		t.Run("writes one outer attribute per annotation", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Attrs(symbol.Annotations{
 				{Name: "derive", Args: []string{"Debug", "Clone"}},
 				{Name: "non_exhaustive"},
-			}, "    "), "    #[derive(Debug, Clone)]\n    #[non_exhaustive]\n", "the arguments verbatim")
+			}), "#[derive(Debug, Clone)]\n#[non_exhaustive]\n", "the arguments verbatim")
+		})
+	})
+
+	t.Run("MemberAttrs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no annotations", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberAttrs(nil), "", "no lines")
+		})
+
+		t.Run("writes each outer attribute behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberAttrs(symbol.Annotations{
+				{Name: "derive", Args: []string{"Debug", "Clone"}},
+				{Name: "non_exhaustive"},
+			}), "    #[derive(Debug, Clone)]\n    #[non_exhaustive]\n", "the arguments verbatim")
 		})
 	})
 
@@ -1132,11 +1162,15 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 24, "Funcs returns the twenty-four helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 26, "Funcs returns the twenty-six helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/// " + rowDoc + "\n"),
+		},
+		{
+			name: "MemberDocs", allocs: textAllocs,
+			call: func() { out = backend.MemberDocs(doc) }, check: spells("    /// " + rowDoc + "\n"),
 		},
 		{
 			name: "TypeNames", allocs: typeNamesAllocs,
@@ -1170,6 +1204,10 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Attrs", allocs: textAllocs,
 			call: func() { out = backend.Attrs(annotations) }, check: spells("#[derive(Debug)]\n"),
+		},
+		{
+			name: "MemberAttrs", allocs: textAllocs,
+			call: func() { out = backend.MemberAttrs(annotations) }, check: spells("    #[derive(Debug)]\n"),
 		},
 	}
 }
