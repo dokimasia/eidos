@@ -241,6 +241,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("MisplacedDirective", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, directive.MisplacedDirective, core.MisplacedDirective, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Name", func(t *testing.T) {
 		t.Parallel()
 

@@ -372,12 +372,13 @@ type Effect = core.Effect
 // subscription records the engine reads.
 type Rule = core.Rule
 
-// Directive gates rules on a validated directive and carries the
-// schema for registration. One wrapper may gate many rules and the
-// schema registers once; a name two wrappers carry is refused at
-// Build, so one wrapper gates them all. On an emit-triggered rule the
-// gate is the origin's instance. Directive allocates the copy of the
-// schema and the list of rules, two allocations.
+// Directive gates rules on a validated directive, and the built plugin
+// returns s for registration. One wrapper may gate many rules, and the
+// schema registers once. Build panics on a name that two wrappers
+// declare, so one wrapper gates them all. On an emit-triggered rule the
+// gate is the instance on the origin. Build sets an empty Kinds of s from
+// the rules, as [Builder.Build] states. Directive allocates the copy of
+// the schema and the list of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return core.Directive(s, rules...)
 }
