@@ -9,10 +9,12 @@
 // [CodePrefix] opens every diagnostic code the satellite registers.
 // [Target] and [Name] are the spellings a plan resolves to select
 // the backend, and [Version] is the backend's behavior version.
+// [AnnotatorName] is the plugin identity of the annotator.
 // [Syntax] returns Go's comment forms: the frontend strips comments
 // with them, and the output contract writes the generated-file
 // header through them. [Keys] registers the fact keys the frontend
-// and the annotator stamp.
+// and the annotator stamp, and [Lookup] returns the annotator's
+// handles from a registry that contains them.
 //
 // [Predeclared] reports Go's predeclared type names, and [Basic] and
 // [Ordered] the basic types among them, read off the universe scope

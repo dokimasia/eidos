@@ -4,6 +4,8 @@
 package golang
 
 import (
+	"fmt"
+
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -75,9 +77,9 @@ const (
 	ComparableKey        meta.KeyName = "golang.comparable"
 )
 
-// Handles are the typed keys the annotator stamps through,
-// returned by [Register] to whichever role composes the
-// registration.
+// Handles are the typed keys the annotator stamps through, returned
+// by [Register] to the role that registers the keys and by [Lookup] to
+// the annotator.
 type Handles struct {
 	SatisfiesError    meta.Key[bool]
 	SatisfiesStringer meta.Key[bool]
@@ -197,6 +199,33 @@ func Register(r *meta.Registry) (Handles, error) {
 		default:
 			// A key that the annotator does not stamp has no handle.
 		}
+	}
+	return h, nil
+}
+
+// Lookup returns the annotator's handles from a registry in which
+// [Register] registered the golang keys, such as the registry of a
+// composition with the Go frontend. It registers nothing.
+//
+// Error modes: Lookup returns an error for a key of the handles that the
+// registry does not contain as a boolean key.
+func Lookup(r *meta.Registry) (Handles, error) {
+	var h Handles
+	for _, k := range [...]struct {
+		name meta.KeyName
+		key  *meta.Key[bool]
+	}{
+		{name: SatisfiesErrorKey, key: &h.SatisfiesError},
+		{name: SatisfiesStringerKey, key: &h.SatisfiesStringer},
+		{name: EmbedsInterfaceKey, key: &h.EmbedsInterface},
+		{name: ComparableKey, key: &h.Comparable},
+	} {
+		key, registered := meta.Lookup[bool](r, k.name)
+		if !registered {
+			return Handles{}, fmt.Errorf(
+				"golang: the registry contains no boolean key %s, which the Go frontend registers", k.name)
+		}
+		*k.key = key
 	}
 	return h, nil
 }

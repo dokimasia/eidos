@@ -38,10 +38,11 @@ func TestAnnotate(t *testing.T) {
 	t.Parallel()
 
 	registry := meta.NewRegistry()
+	assert.NoError(t, golang.Keys(registry.For(string(golang.Lang))), "the keys of the Go frontend register")
 	annotator := annotate.New()
 	keyed, is := annotator.(plugin.KeyProvider)
 	assert.True(t, is, "the annotator declares its keys")
-	assert.NoError(t, keyed.Keys(registry), "the keys register")
+	assert.NoError(t, keyed.Keys(registry.For(string(golang.AnnotatorName))), "the annotator finds its keys")
 
 	facts := meta.NewFacts(registry)
 	index, err := plugin.NewIndex(fixture(t), facts, nil, nil)
@@ -51,11 +52,25 @@ func TestAnnotate(t *testing.T) {
 	sink := diag.NewSink()
 	assert.NoError(t, annotator.Annotate(&plugin.AnnotatorContext{
 		Index: index, Reader: reader, Facts: facts,
-		Sink: sink, Plugin: golang.Name, Bucket: 0,
+		Sink: sink, Plugin: golang.AnnotatorName, Bucket: 0,
 	}), "the annotator runs clean")
 
 	t.Run("New", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("returns an annotator under a name other than the name of the backend", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, annotator.Name(), golang.AnnotatorName, "the annotator has a name of its own")
+		})
+
+		t.Run("returns from Keys the error of a registry without the keys of the Go frontend", func(t *testing.T) {
+			t.Parallel()
+
+			keys, provides := annotate.New().(plugin.KeyProvider)
+			assert.True(t, provides, "the annotator declares its keys")
+			assert.HasError(t, keys.Keys(meta.NewRegistry()), "the annotator registers no key of its own")
+		})
 
 		tests := []struct {
 			name    string
@@ -86,6 +101,14 @@ func TestAnnotate(t *testing.T) {
 			{
 				name: "stamps satisfies-stringer through an embedded interface",
 				key:  golang.SatisfiesStringerKey, subject: "Wrapper", want: true,
+			},
+			{
+				name: "stamps satisfies-stringer on a type whose String returns an alias of string",
+				key:  golang.SatisfiesStringerKey, subject: "Labelled", want: true,
+			},
+			{
+				name: "stamps no satisfies-stringer on a type whose String returns a defined type over string",
+				key:  golang.SatisfiesStringerKey, subject: "Tagged",
 			},
 			{
 				name: "stamps embeds-interface on a struct that embeds an interface",
@@ -244,6 +267,31 @@ func fixture(tb assert.TB) *store.Graph {
 		Receives: &node.TypeRef{Spelling: "Errno"},
 		Returns:  []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
 	}
+	// Label is an alias of string, so a String that returns it returns
+	// string. Tag is a defined type over string, and a String that returns
+	// it does not.
+	label := &node.Alias{
+		ID: id("", "Label", symbol.KindAlias), Name: "Label",
+		Target: &node.TypeRef{Spelling: "string"},
+	}
+	tag := &node.Alias{
+		ID: id("", "Tag", symbol.KindAlias), Name: "Tag", Defined: true,
+		Target: &node.TypeRef{Spelling: "string"},
+	}
+	labelled := &node.Struct{
+		ID: id("", "Labelled", symbol.KindStruct), Name: "Labelled",
+		Methods: []*node.Method{{
+			ID: id("Labelled", "String", symbol.KindMethod), Name: "String",
+			Returns: []*node.Return{{Type: &node.TypeRef{Spelling: "Label", Target: label.ID}}},
+		}},
+	}
+	tagged := &node.Struct{
+		ID: id("", "Tagged", symbol.KindStruct), Name: "Tagged",
+		Methods: []*node.Method{{
+			ID: id("Tagged", "String", symbol.KindMethod), Name: "String",
+			Returns: []*node.Return{{Type: &node.TypeRef{Spelling: "Tag", Target: tag.ID}}},
+		}},
+	}
 	// A method in another package whose receiver shares a fixture
 	// type's name attaches to nothing here.
 	foreign := &node.Method{
@@ -265,6 +313,7 @@ func fixture(tb assert.TB) *store.Graph {
 			Decls: node.Symbols{
 				stringer, failer, errMethod, wrapper, flat, slippery,
 				leaky, holder, nested, errno, errnoMethod,
+				label, tag, labelled, tagged,
 			},
 		}},
 	}), "the fixture loads")

@@ -25,6 +25,11 @@ const Target plugin.Target = "golang"
 // reported under and what a composition schedules it by.
 const Name plugin.ID = "golang"
 
+// AnnotatorName is the plugin identity of the annotator, which stamps the
+// facts that the sealed graph proves. It differs from [Name], so one
+// composition contains the annotator and the backend.
+const AnnotatorName plugin.ID = "golang-facts"
+
 // Extension is the suffix of every Go file.
 const Extension = ".go"
 

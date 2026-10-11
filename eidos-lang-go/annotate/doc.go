@@ -5,7 +5,10 @@
 // declarations: the semantic facts a type checker derives, stamped
 // in the phase that reads across packages.
 //
-// [New] builds the annotator through the kit. On every struct,
+// [New] builds the annotator through the kit, under the plugin identity
+// golang.AnnotatorName. It stamps through the keys that the Go frontend
+// registers, so a composition with the annotator contains the Go
+// frontend. On every struct,
 // interface, enumeration and alias it stamps golang.satisfiesError
 // and golang.satisfiesStringer when the type's visible method set
 // contains the interface's one method. The set is the type's own

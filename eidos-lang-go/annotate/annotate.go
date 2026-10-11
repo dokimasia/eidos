@@ -16,7 +16,9 @@ import (
 )
 
 // New builds the Go annotator: the graph-proven facts, stamped at
-// plugin authority under the language's identity.
+// plugin authority under [golang.AnnotatorName], through the keys that
+// the Go frontend registers. The annotator's Keys returns the error of
+// [golang.Lookup] for a composition without those keys.
 //
 // # Allocation contract
 //
@@ -43,10 +45,10 @@ func New() plugin.Annotator {
 			sdk.Stamp(st, h.Comparable, true)
 		}
 	}
-	built := sdk.NewPlugin(golang.Name).
+	built := sdk.NewPlugin(golang.AnnotatorName).
 		Keys(func(r *meta.Registry) error {
-			registered, err := golang.Register(r)
-			h = registered
+			looked, err := golang.Lookup(r)
+			h = looked
 			return err
 		}).
 		Handle(sdk.OnStruct(func(m *sdk.StructMatch, st *sdk.Stamper) error {
@@ -127,8 +129,8 @@ func prove(
 ) proven {
 	set := methodSet(r, id, methods, embeds, map[symbol.Identity]bool{})
 	out := proven{
-		satisfiesError:    hasNullaryString(set, "Error"),
-		satisfiesStringer: hasNullaryString(set, "String"),
+		satisfiesError:    hasNullaryString(r, set, "Error"),
+		satisfiesStringer: hasNullaryString(r, set, "String"),
 	}
 	for _, e := range embeds {
 		if e.Ref == nil || e.Ref.Target.IsZero() {
@@ -198,15 +200,44 @@ func methodSet(
 }
 
 // hasNullaryString reports a method of the given name taking
-// nothing and returning one string.
-func hasNullaryString(set []*node.Method, name string) bool {
+// nothing and returning one string, as [builtinString] reads the result.
+func hasNullaryString(r *store.Reader, set []*node.Method, name string) bool {
 	for _, m := range set {
 		if m.Name != name || len(m.Params) != 0 || len(m.Returns) != 1 {
 			continue
 		}
-		if m.Returns[0].Type != nil && m.Returns[0].Type.Spelling == "string" {
+		if builtinString(r, m.Returns[0].Type) {
 			return true
 		}
 	}
 	return false
 }
+
+// builtinString reports whether ref is Go's predeclared string: a
+// reference without a target spelled string, or an alias that the graph
+// declares for one, followed through each alias. A defined type over
+// string is a type of its own, and a reference that the graph does not
+// resolve is unknown, so builtinString reports false for both. It reads
+// each alias through r, which records the read.
+func builtinString(r *store.Reader, ref *node.TypeRef) bool {
+	seen := map[symbol.Identity]bool{}
+	for ref != nil && ref.Form == symbol.FormNamed {
+		if ref.Target.IsZero() {
+			return ref.Spelling == stringType
+		}
+		if seen[ref.Target] {
+			return false
+		}
+		seen[ref.Target] = true
+		decl, held := r.Lookup(ref.Target)
+		alias, is := decl.(*node.Alias)
+		if !held || !is || alias.Defined {
+			return false
+		}
+		ref = alias.Target
+	}
+	return false
+}
+
+// stringType is the spelling of Go's predeclared string.
+const stringType = "string"

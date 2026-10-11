@@ -96,6 +96,29 @@ func TestKeys(t *testing.T) {
 		})
 	})
 
+	t.Run("Lookup", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the handles that Register returns", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			registered, err := golang.Register(r)
+			assert.NoError(t, err, "the vocabulary registers")
+			looked, err := golang.Lookup(r)
+			assert.NoError(t, err, "the handles resolve")
+			assert.Equal(t, looked, registered, "Lookup returns the handles of the registration")
+		})
+
+		t.Run("returns an error naming a key that the registry does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := golang.Lookup(meta.NewRegistry())
+			assert.HasError(t, err, "an empty registry contains no golang key")
+			assert.Contains(t, err.Error(), string(golang.SatisfiesErrorKey), "the error names the first key")
+		})
+	})
+
 	t.Run("Keys", func(t *testing.T) {
 		t.Parallel()
 
