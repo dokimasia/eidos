@@ -55,17 +55,33 @@ type templates struct {
 
 // scan reads the template trees of the plugin directory dir through
 // [rooted]. A plugin without a templates directory has no tree. scan
-// returns an Error without a line for a file directly below templates, for
-// a directory that does not read, and for a file that does not read, such
-// as a symbolic link that leaves the plugin directory.
+// returns an Error without a line for each of these faults:
+//
+//   - a templates path that is not a directory
+//   - a file directly below templates
+//   - a directory that does not read
+//   - a file that does not read, such as a symbolic link that leaves the
+//     plugin directory
 func scan(dir string) (templates, []*Error) {
 	fsys := rooted{dir: dir}
-	entries, err := fs.ReadDir(fsys, templatesDir)
+	at := filepath.Join(dir, templatesDir)
+	// On Windows, File.ReadDir of a regular file can return no entries and
+	// no error, so scan stats templates before it lists the directory.
+	info, err := fs.Stat(fsys, templatesDir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return templates{}, nil
 	}
+	if err == nil && !info.IsDir() {
+		return templates{}, []*Error{{
+			File: at, Msg: "the path is not a directory, and each template tree is a directory below " + templatesDir,
+		}}
+	}
+	var entries []fs.DirEntry
+	if err == nil {
+		entries, err = fs.ReadDir(fsys, templatesDir)
+	}
 	if err != nil {
-		return templates{}, []*Error{{File: filepath.Join(dir, templatesDir), Msg: err.Error()}}
+		return templates{}, []*Error{{File: at, Msg: err.Error()}}
 	}
 	var t templates
 	var faults []*Error

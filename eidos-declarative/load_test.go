@@ -271,15 +271,29 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, got[0].File, manifestFile, "the fault is at the manifest, which is a directory")
 		})
 
-		t.Run("returns an Error at templates for a templates path that does not list", func(t *testing.T) {
+		t.Run("returns an Error at templates for a templates path that is a file", func(t *testing.T) {
 			t.Parallel()
 
 			got := loadFaults(t, files.Tree{
 				manifestFile: files.Text("format: 1\nname: acme-audit\nversion: 0.3.0\n" + structRule),
 				"templates":  files.Text("# notes\n"),
 			})
-			assert.Length(t, got, 1, "the templates path is the one fault")
-			assert.Equal(t, got[0].File, "templates", "the fault is at the templates path, which is a file")
+			assert.Equal(t, got, []declarative.Error{{
+				File: "templates",
+				Msg:  "the path is not a directory, and each template tree is a directory below templates",
+			}}, "the fault is at the templates path")
+		})
+
+		t.Run("returns an Error at templates for a templates link that leaves the directory", func(t *testing.T) {
+			t.Parallel()
+
+			got := loadFaults(t, files.Tree{
+				manifestFile: files.Text("format: 1\nname: acme-audit\nversion: 0.3.0\n" + structRule),
+				"templates":  files.Link("../escape"),
+			})
+			assert.Length(t, got, 1, "the templates link is the one fault")
+			assert.Equal(t, got[0].File, "templates", "the fault is at the templates link")
+			assert.Contains(t, got[0].Msg, "path escapes from parent", "the stat does not leave the directory")
 		})
 
 		t.Run("returns an Error at a file directly below templates", func(t *testing.T) {
