@@ -471,6 +471,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ExprRef", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, emit.ExprRef, core.ExprRef, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Expr", func(t *testing.T) {
 		t.Parallel()
 
@@ -488,6 +498,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(emit.ValueExpr), reflect.TypeOf(core.ValueExpr), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("RefExpr", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(emit.RefExpr), reflect.TypeOf(core.RefExpr), "the wrapper has the kernel function's signature")
 		})
 	})
 

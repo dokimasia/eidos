@@ -89,7 +89,9 @@ func ScaledFixture(tb assert.TB, refused map[symbol.Kind]string) *Fixture {
 // CanonicalFixture returns the kernel's shared emit fixture: one
 // unit per canonical kind, the four body content forms on the
 // functions and again on the struct's member methods, and the
-// template tree the reference form resolves in.
+// template tree the reference form resolves in. The scaffolded body
+// calls a function of another package through a reference expression,
+// so each target qualifies the call and imports its package.
 //
 // The fixture emits every kind an emit declaration takes at file
 // level, whatever the backend under test spells. Each kind renders,
