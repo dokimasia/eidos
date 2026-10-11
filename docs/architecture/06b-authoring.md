@@ -192,6 +192,12 @@ plugin repeats the copy, and leaves the receiver to the target: the
 Go satellite's `PointerReceiver` names a pointer receiver against
 the parameter names. Imports are collected at render.
 
+`MirrorTypeParams` copies the type parameters of a generic declaration
+onto a declaration that a plugin derives from it. `TypeArgs` returns
+those parameters as the arguments of a reference inside the derived
+declaration, such as the interface that the mock of a generic interface
+implements.
+
 Slot access is one `SlotView` type, which `Emitter.Slot` returns,
 whether you are appending into your own method's prologue or, through
 `OnEmit`, into another plugin's. An append into another plugin's value
