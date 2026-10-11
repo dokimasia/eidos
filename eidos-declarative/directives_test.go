@@ -4,14 +4,19 @@
 package declarative_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/files"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/declarative"
 )
 
@@ -68,9 +73,34 @@ func TestDirectives(t *testing.T) {
 					},
 					{Key: strictKey, Type: directive.TypeBool, Doc: "When true, a record that fails stops the call."},
 				},
-				Doc: "Generates code that records each call of the declaration.",
-			}}, "the schema has the fields that the manifest sets")
+				Kinds: []symbol.Kind{symbol.KindFunction, symbol.KindInterface},
+				Doc:   "Generates code that records each call of the declaration.",
+			}}, "the schema has the fields that the manifest sets and the kinds of the rules of the directive")
 		})
+
+		t.Run(
+			"returns a schema whose instance on a kind that no rule handles reports MisplacedDirective",
+			func(t *testing.T) {
+				t.Parallel()
+
+				provider, is := auditPlugin(t).(plugin.DirectiveProvider)
+				assert.True(t, is, "the generator declares its directives")
+				r := directive.NewRegistry()
+				assert.Total(t, r.Register, directive.Kernel(), "the kernel schemas register first")
+				assert.Total(t, r.Register, provider.Directives(), "the schema of the manifest registers")
+				assert.Empty(t, r.Seal(), "the registry seals")
+				raw, err := directive.Parse(string(auditDirective) + " level=info sink=" + recordSink)
+				assert.NoError(t, err, "the instance parses")
+				raw.Pos = position.Pos{File: ledgerFile, Line: 14, Col: 1}
+				sink := diag.NewSink()
+				got := directive.Validate(entryID, []directive.Raw{raw}, r, meta.NewRegistry(), nil, sink)
+				assert.Empty(t, got, "the instance on the struct Entry is not returned")
+				findings := slices.Collect(sink.All())
+				assert.Length(t, findings, 1, "the instance reports one finding")
+				assert.Equal(t, findings[0].Code, directive.MisplacedDirective,
+					"the finding is under MisplacedDirective")
+			},
+		)
 
 		tests := []struct {
 			name string
