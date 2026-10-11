@@ -760,7 +760,9 @@ type SyntaxProvider = core.SyntaxProvider
 // shared name shadowed without a declaration is a lint finding,
 // and where two plugins override one name, the one at the latest
 // schedule position takes effect, because a plugin that changes
-// how a construct renders runs after what it changes.
+// how a construct renders runs after what it changes. A slice that
+// TemplateTargets or Overrides returns is the plugin's own storage, and
+// a caller does not change it.
 type TemplateProvider = core.TemplateProvider
 
 // Annotator stamps facts over the frozen graph.
@@ -1059,7 +1061,8 @@ type Subscription = core.Subscription
 //
 // A hand-rolled plugin may skip it entirely, which reads as one
 // implicit subscription to everything in scope: honest, and costs
-// full-graph dispatch.
+// full-graph dispatch. The slice that Subscriptions returns is the
+// plugin's own storage, and a caller does not change it.
 type Subscribed = core.Subscribed
 
 // CommentSyntax is a language's comment forms, declared once per
