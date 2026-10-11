@@ -480,7 +480,9 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 // then by capability topology inside one priority, then by name, and a
 // member's bucket number is its position in the result. The lowering
 // entries run before every annotator, in the order of their names, so
-// each annotator reads every target name.
+// each annotator reads every target name. Every generator runs after the
+// annotators, so lower returns a fault for an annotator that requires a
+// capability that only a generator provides.
 func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry, []error) {
 	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
@@ -506,7 +508,25 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 		}
 		gen = append(gen, genEntry{bucket: i + 1, name: m.name, run: run})
 	}
-	return ann, gen, slices.Concat(aerr, gerr)
+	faults := slices.Concat(aerr, gerr)
+	for _, a := range annotators {
+		for i, c := range a.requires {
+			if slices.Contains(a.requires[:i], c) ||
+				slices.ContainsFunc(annotators, func(p member) bool { return slices.Contains(p.provides, c) }) {
+
+				continue
+			}
+			for _, g := range generators {
+				if slices.Contains(g.provides, c) {
+					faults = append(faults, fmt.Errorf(
+						"workspace: annotator %s requires capability %q, which the generator %s provides, "+
+							"and every generator runs after the annotators", a.name, c, g.name,
+					))
+				}
+			}
+		}
+	}
+	return ann, gen, faults
 }
 
 // bindKeys is the binding step. Each plugin that implements
@@ -570,7 +590,9 @@ func requirable(registrant annEntry) string {
 
 // order sorts one role's members into schedule order: priority
 // ascending, capability topology inside one priority, names
-// breaking what remains open.
+// breaking what remains open. A member that requires a capability
+// whose provider in the role has a later priority would run before its
+// provider, and order returns one fault for each such pair.
 func order(role string, ms []member) ([]member, []error) {
 	slices.SortFunc(ms, func(a, b member) int {
 		if c := cmp.Compare(a.pri, b.pri); c != 0 {
@@ -589,6 +611,21 @@ func order(role string, ms []member) ([]member, []error) {
 		out = append(out, group...)
 		faults = append(faults, ferr...)
 		start = end
+	}
+	for _, m := range ms {
+		for i, c := range m.requires {
+			if slices.Contains(m.requires[:i], c) {
+				continue
+			}
+			for _, p := range ms {
+				if p.pri > m.pri && slices.Contains(p.provides, c) {
+					faults = append(faults, fmt.Errorf(
+						"workspace: %s %s requires capability %q at priority %d, and %s provides it at priority %d, "+
+							"so %s runs after %s", role, m.name, c, m.pri, p.name, p.pri, p.name, m.name,
+					))
+				}
+			}
+		}
 	}
 	return out, faults
 }

@@ -295,6 +295,27 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"missing"`, "requires", "wanting"},
 			},
 			{
+				name: "returns an error naming a requirer at an earlier priority than its provider",
+				compose: func() *workspace.Builder {
+					var calls []plugin.ID
+					return valid().Annotators(
+						ordered("eager", 1, nil, caps("late"), &calls),
+						ordered("tardy", 2, caps("late"), nil, &calls),
+					)
+				},
+				markers: []string{`"late"`, "eager", "tardy", "priority 2"},
+			},
+			{
+				name: "returns an error naming an annotator that requires the capability of a generator",
+				compose: func() *workspace.Builder {
+					var calls []plugin.ID
+					return valid().
+						Annotators(ordered("early", 1, nil, caps("emitted"), &calls)).
+						Plans(planTo("second", "fixture", provider("emitting", "emitted")))
+				},
+				markers: []string{`"emitted"`, "early", "emitting", "generator"},
+			},
+			{
 				name: "returns an error naming the plugins of a capability cycle",
 				compose: func() *workspace.Builder {
 					var calls []plugin.ID
@@ -710,6 +731,20 @@ func composition() func() *workspace.Builder {
 func tuned(name plugin.ID, cfg any) plugin.Generator {
 	p, held := eidos.NewPlugin(name).
 		Options(cfg).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+			return nil
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// provider returns a generator named name that provides the capability c.
+func provider(name plugin.ID, c plugin.Capability) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Provides(c).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
 			return nil
