@@ -87,11 +87,14 @@ func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
 // open finds and builds the workspaces of [Open]. It returns every member
 // that built beside the error that joins the faults of the other members,
 // so a command such as doctor can continue with the members that built.
+// The composition that names the brand becomes the workspace outside a
+// list, and each member of a list builds a composition of its own.
 func open(stdio IO, f Flags, compose Compose) (workspaces, error) {
 	stdio.check()
-	brand := compose().BrandName()
+	b := compose()
+	brand := b.BrandName()
 	if !brand.Valid() {
-		_, err := compose().Build()
+		_, err := b.Build()
 		return workspaces{}, err
 	}
 	dir, err := filepath.EvalSymlinks(stdio.Dir)
@@ -114,7 +117,7 @@ func open(stdio IO, f Flags, compose Compose) (workspaces, error) {
 		members, err = list(compose, brand, root, name, decoded.List)
 		return workspaces{dir: dir, members: members}, err
 	}
-	m, err := member(compose, brand, "", root, file, decoded.Document)
+	m, err := member(b, brand, "", root, file, decoded.Document)
 	if err != nil {
 		return workspaces{dir: dir}, err
 	}
@@ -185,7 +188,7 @@ func list(compose Compose, brand output.Brand, dir, name string, l *config.List)
 			errs = append(errs, err)
 			continue
 		}
-		m, err := member(compose, brand, path.Clean(e.Root), roots[i], file, doc)
+		m, err := member(compose(), brand, path.Clean(e.Root), roots[i], file, doc)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("cli: the workspace %s does not build", e.Root), err)
 			continue
@@ -222,12 +225,12 @@ func entryConfig(root, dir, name, given string) (string, *config.Document, error
 	return file, decoded.Document, nil
 }
 
-// member configures and builds one workspace. doc is the document of the
-// config file of the workspace, and nil when the workspace has none. The
-// workspace writes its output into root and its state into the state
-// directory of brand in root.
-func member(compose Compose, brand output.Brand, name, root, file string, doc *config.Document) (Member, error) {
-	b := compose()
+// member configures and builds one workspace from the composition b, which
+// no other member uses. doc is the document of the config file of the
+// workspace, and nil when the workspace has none. The workspace writes its
+// output into root and its state into the state directory of brand in
+// root.
+func member(b *workspace.Builder, brand output.Brand, name, root, file string, doc *config.Document) (Member, error) {
 	if doc != nil {
 		if err := doc.Apply(b, root); err != nil {
 			return Member{}, err

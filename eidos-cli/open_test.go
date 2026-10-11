@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -357,6 +358,21 @@ func TestOpen(t *testing.T) {
 			assert.NoError(t, err, "the run succeeds")
 			files.IsFile(t, filepath.Join(root, "svc", "mirror.txt"), "the run writes the output below the root")
 			assert.Empty(t, sink.Files(), "the output of the composition receives nothing")
+		})
+
+		t.Run("builds one composition for a workspace outside a list", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(version)})
+			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: root, Getenv: os.Getenv}
+			var calls atomic.Int32
+			members, err := cli.Open(stdio, cli.Flags{}, func() *workspace.Builder {
+				calls.Add(1)
+				return compose()
+			})
+			assert.NoError(t, err, "the workspace opens")
+			assert.Length(t, members, 1, "a document covers one workspace")
+			assert.Equal(t, calls.Load(), int32(1), "the composition that names the brand builds the workspace")
 		})
 
 		t.Run("panics for an IO with a relative working directory", func(t *testing.T) {
