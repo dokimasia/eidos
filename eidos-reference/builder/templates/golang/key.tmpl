@@ -1,0 +1,5 @@
+{{- $r := .Decl.Receiver.Name}}{{$f := printf "%s.value.%s" $r .Data.Field}}{{slots}}if {{$f}} == nil {
+	{{$f}} = make({{spell .Data.Type}})
+}
+{{$f}}[{{(index .Decl.Params 0).Name}}] = {{spell .Data.Elem}}{}
+return {{$r}}

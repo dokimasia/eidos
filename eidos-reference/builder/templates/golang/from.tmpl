@@ -1,0 +1,1 @@
+{{- $builder := index (index .Decl.Returns 0).Type.Elems 0}}{{slots}}return &{{spell $builder}}{value: {{(index .Decl.Params 0).Name}}}

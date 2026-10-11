@@ -1,0 +1,101 @@
+{{- use "testing"}}
+{{- $d := (index .Records 0).Data}}
+{{- $prefix := printf "%s: " (or $d.Prefix $.Pkg.Name)}}
+{{- $sentinels := false}}{{range .Records}}{{if not .Data.Type}}{{$sentinels = true}}{{end}}{{end}}
+
+// {{$d.Test}} checks the sentinels and the error types of the package.
+func {{$d.Test}}(t *testing.T) {
+	t.Parallel()
+{{- if $sentinels}}{{use "errors"}}{{use "strings"}}
+
+	all := []struct {
+		name string
+		err  error
+	}{
+{{- range .Records}}{{if not .Data.Type}}
+		{"{{.Decl.Name}}", {{.Decl.Name}}},
+{{- end}}{{end}}
+	}
+
+	t.Run("each sentinel has a message", func(t *testing.T) {
+		t.Parallel()
+
+		for _, e := range all {
+			if e.err.Error() == "" {
+				t.Errorf("%s has no message", e.name)
+			}
+		}
+	})
+{{- if $d.Checked}}
+
+	t.Run("each message starts with the prefix of the package", func(t *testing.T) {
+		t.Parallel()
+
+		for _, e := range all {
+			if !strings.HasPrefix(e.err.Error(), {{printf "%q" $prefix}}) {
+				t.Errorf("the message %q of %s does not start with %q", e.err.Error(), e.name, {{printf "%q" $prefix}})
+			}
+		}
+	})
+{{- end}}
+
+	t.Run("each message differs from every other", func(t *testing.T) {
+		t.Parallel()
+
+		seen := map[string]string{}
+		for _, e := range all {
+			if first, taken := seen[e.err.Error()]; taken {
+				t.Errorf("%s has the message of %s", e.name, first)
+			}
+			seen[e.err.Error()] = e.name
+		}
+	})
+
+	t.Run("no message starts with another", func(t *testing.T) {
+		t.Parallel()
+
+		for _, a := range all {
+			for _, b := range all {
+				if a.name != b.name && strings.HasPrefix(a.err.Error(), b.err.Error()) {
+					t.Errorf("the message of %s starts with the message of %s", a.name, b.name)
+				}
+			}
+		}
+	})
+
+	t.Run("no sentinel matches another under errors.Is", func(t *testing.T) {
+		t.Parallel()
+
+		for _, a := range all {
+			for _, b := range all {
+				if a.name != b.name && errors.Is(a.err, b.err) {
+					t.Errorf("%s matches %s", a.name, b.name)
+				}
+			}
+		}
+	})
+{{- end}}
+{{- range .Records}}{{if .Data.Type}}
+
+	t.Run("{{.Decl.Name}} reports a message for its zero value", func(t *testing.T) {
+		t.Parallel()
+
+		if (&{{.Decl.Name}}{}).Error() == "" {
+			t.Errorf("{{.Decl.Name}} reports no message for its zero value")
+		}
+	})
+{{- if .Data.Cause}}{{use "errors"}}
+
+	t.Run("{{.Decl.Name}} exposes the cause that it was given", func(t *testing.T) {
+		t.Parallel()
+
+		cause := errors.New("cause")
+		got := &{{.Decl.Name}}{}
+		got.{{.Data.Cause}} = cause
+		if errors.Unwrap(got) != cause {
+			t.Errorf("{{.Decl.Name}} does not expose the cause that it was given")
+		}
+	})
+{{- end}}
+{{- end}}{{end}}
+}

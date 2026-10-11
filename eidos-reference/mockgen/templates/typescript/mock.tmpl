@@ -1,0 +1,18 @@
+{{- range .Records}}
+{{- $mock := .Decl}}
+
+/** {{$mock.Name}} is a mock of {{.Data.Interface}}. Each method calls its function field. */
+export class {{$mock.Name}} implements {{spell (index $mock.Implements 0)}} {
+{{- range $mock.Methods.Items}}
+  /** {{.Name}}Func is the function that {{.Name}} calls. */
+  {{.Name}}Func?: ({{params .Params}}) => {{slice (returns .) 2}};
+{{- end}}
+{{- range $mock.Methods.Items}}
+
+  /** {{.Name}} calls {{.Name}}Func. */
+  {{.Name}}({{params .Params}}){{returns .}} {
+{{memberbody .}}    {{if .Returns}}return {{end}}this.{{.Name}}Func!({{range $i, $p := .Params}}{{if $i}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
+  }
+{{- end}}
+}
+{{- end}}

@@ -1,0 +1,8 @@
+{{- range .Records}}{{use .Data.Package .Data.Name}}{{end}}
+
+// init registers each struct of the package under the directive register.
+func init() {
+{{- range .Records}}
+	{{.Data.Name}}.{{.Data.Func}}({{.Decl.Name}}{})
+{{- end}}
+}

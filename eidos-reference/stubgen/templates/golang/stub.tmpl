@@ -1,0 +1,30 @@
+{{- range .Records}}
+{{- $stub := .Decl}}
+
+// {{$stub.Name}} is a stub of {{.Data.Interface}}. Each method records its arguments and calls its function field.
+type {{$stub.Name}} struct {
+{{- range $i, $m := $stub.Methods.Items}}
+{{- $call := index $stub.Types.Items $i}}
+	// {{$m.Name}}Func is the function that {{$m.Name}} calls.
+	{{$m.Name}}Func func({{params $m.Params}}){{results $m.Returns}}
+	// {{$m.Name}}Calls contains the arguments of each call of {{$m.Name}}, in order.
+	{{$m.Name}}Calls []{{$call.Name}}
+{{- end}}
+}
+{{- range $i, $m := $stub.Methods.Items}}
+{{- $call := index $stub.Types.Items $i}}
+
+// {{$call.Name}} contains the arguments of one call of {{$stub.Name}}.{{$m.Name}}.
+type {{$call.Name}} struct {
+{{- range $j, $p := $m.Params}}
+	{{(index $call.Fields.Items $j).Name}} {{if $p.Variadic}}[]{{end}}{{spell $p.Type}}
+{{- end}}
+}
+
+// {{$m.Name}} records its arguments and calls {{$m.Name}}Func.
+func ({{$m.Receiver.Name}} *{{$stub.Name}}) {{$m.Name}}({{params $m.Params}}){{results $m.Returns}} {
+{{body $m}}{{$m.Receiver.Name}}.{{$m.Name}}Calls = append({{$m.Receiver.Name}}.{{$m.Name}}Calls, {{$call.Name}}{ {{- range $j, $p := $m.Params}}{{if $j}}, {{end}}{{(index $call.Fields.Items $j).Name}}: {{$p.Name}}{{end}}})
+{{if $m.Returns}}return {{end}}{{$m.Receiver.Name}}.{{$m.Name}}Func({{range $j, $p := $m.Params}}{{if $j}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
+}
+{{- end}}
+{{- end}}

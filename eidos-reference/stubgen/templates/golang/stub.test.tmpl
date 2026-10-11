@@ -1,0 +1,35 @@
+{{- use "testing"}}
+{{- range .Records}}
+{{- $stub := .Decl}}
+
+// {{$stub.Name}} implements {{.Data.Interface}}.
+var _ {{spell (index $stub.Implements 0)}} = (*{{$stub.Name}})(nil)
+{{- range $m := $stub.Methods.Items}}
+
+// Test{{$stub.Name}}{{$m.Name}} checks that {{$m.Name}} calls {{$m.Name}}Func once and records one call.
+func Test{{$stub.Name}}{{$m.Name}}(t *testing.T) {
+	t.Parallel()
+
+	called := 0
+	stub := &{{$stub.Name}}{}
+	stub.{{$m.Name}}Func = func({{range $j, $p := $m.Params}}{{if $j}}, {{end}}_ {{if $p.Variadic}}...{{end}}{{spell $p.Type}}{{end}}){{template "results" $m.Returns}} {
+		called++
+{{- if $m.Returns}}
+		return {{range $j, $r := $m.Returns}}{{if $j}}, {{end}}*new({{spell $r.Type}}){{end}}
+{{- end}}
+	}
+	stub.{{$m.Name}}({{range $j, $p := $m.Params}}{{if $j}}, {{end}}*new({{if $p.Variadic}}[]{{end}}{{spell $p.Type}}){{if $p.Variadic}}...{{end}}{{end}})
+	if called != 1 {
+		t.Errorf("{{$m.Name}} calls {{$m.Name}}Func %d times instead of once", called)
+	}
+	if len(stub.{{$m.Name}}Calls) != 1 {
+		t.Errorf("{{$m.Name}} records %d calls instead of one", len(stub.{{$m.Name}}Calls))
+	}
+}
+{{- end}}
+{{- end}}
+{{- define "results"}}
+{{- if eq (len .) 1}} {{spell (index . 0).Type}}
+{{- else if .}} ({{range $j, $r := .}}{{if $j}}, {{end}}{{spell $r.Type}}{{end}})
+{{- end}}
+{{- end}}

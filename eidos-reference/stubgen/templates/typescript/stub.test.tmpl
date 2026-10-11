@@ -1,0 +1,7 @@
+{{- range .Records}}
+{{- $stub := .Decl}}
+{{- use (printf "./%s" (trimSuffix $.Name ".test.ts")) $stub.Name}}
+
+/** tsc checks that a {{$stub.Name}} is a {{.Data.Interface}}. */
+export const check{{$stub.Name}}: {{spell (index $stub.Implements 0)}} = new {{$stub.Name}}();
+{{- end}}

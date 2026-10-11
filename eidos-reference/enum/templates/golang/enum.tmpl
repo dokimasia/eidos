@@ -1,0 +1,74 @@
+{{- range .Records}}
+{{- $t := .Decl.Name}}
+{{- $d := .Data}}
+{{- if $d.String}}{{use "errors"}}
+
+// String returns the text of v. A value outside the declared set returns
+// itself, so a corrupt value is visible.
+func (v {{$t}}) String() string {
+	switch v {
+{{- range $d.Variants}}
+	case {{.Name}}:
+		return {{.Text}}
+{{- end}}
+	}
+{{- if $d.Textual}}
+	return string(v)
+{{- else}}{{use "fmt"}}
+	return fmt.Sprintf("{{$t}}(%d)", int64(v))
+{{- end}}
+}
+
+// {{$d.Unknown}} reports a text that names no variant of {{$t}}.
+var {{$d.Unknown}} = errors.New("{{$.Pkg.Name}}: unknown {{$t}}")
+
+// {{$d.Parse}} returns the variant of {{$t}} whose text is s. It returns
+// {{$d.Unknown}} for a text that names no variant.
+func {{$d.Parse}}(s string) ({{$t}}, error) {
+	switch s {
+{{- range $d.Variants}}
+	case {{.Text}}:
+		return {{.Name}}, nil
+{{- end}}
+	}
+	var zero {{$t}}
+	return zero, {{$d.Unknown}}
+}
+
+// {{$d.Values}} returns each variant of {{$t}} in the order of the declaration.
+func {{$d.Values}}() []{{$t}} {
+	return []{{$t}}{ {{- range $i, $v := $d.Variants}}{{if $i}}, {{end}}{{$v.Name}}{{end}}}
+}
+{{- end}}
+{{- if $d.Valid}}
+
+// IsValid reports whether v is a variant of {{$t}}.
+func (v {{$t}}) IsValid() bool {
+	switch v {
+	case {{range $i, $v := $d.Variants}}{{if $i}}, {{end}}{{$v.Name}}{{end}}:
+		return true
+	}
+	return false
+}
+{{- end}}
+{{- if $d.Marshal}}
+
+// MarshalText returns the text of v.
+func (v {{$t}}) MarshalText() ([]byte, error) {
+	return []byte(v.String()), nil
+}
+{{- end}}
+{{- if $d.Unmarshal}}
+
+// UnmarshalText sets v to the variant whose text is text. It returns
+// {{$d.Unknown}} for a text that names no variant.
+func (v *{{$t}}) UnmarshalText(text []byte) error {
+	parsed, err := {{$d.Parse}}(string(text))
+	if err != nil {
+		return err
+	}
+	*v = parsed
+	return nil
+}
+{{- end}}
+{{- end}}

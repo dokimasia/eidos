@@ -1,0 +1,33 @@
+{{- range .Records}}
+{{- $stub := .Decl}}
+
+/** {{$stub.Name}} is a stub of {{.Data.Interface}}. Each method records its arguments and calls its function field. */
+export class {{$stub.Name}} implements {{spell (index $stub.Implements 0)}} {
+{{- range $i, $m := $stub.Methods.Items}}
+{{- $call := index $stub.Types.Items $i}}
+  /** {{$m.Name}}Func is the function that {{$m.Name}} calls. */
+  {{$m.Name}}Func?: ({{params $m.Params}}) => {{slice (returns $m) 2}};
+  /** {{$m.Name}}Calls contains the arguments of each call of {{$m.Name}}, in order. */
+  {{$m.Name}}Calls: {{$call.Name}}[] = [];
+{{- end}}
+{{- range $i, $m := $stub.Methods.Items}}
+{{- $call := index $stub.Types.Items $i}}
+
+  /** {{$m.Name}} records its arguments and calls {{$m.Name}}Func. */
+  {{$m.Name}}({{params $m.Params}}){{returns $m}} {
+{{memberbody $m}}    this.{{$m.Name}}Calls.push({{if $m.Params}}{ {{range $j, $p := $m.Params}}{{if $j}}, {{end}}{{(index $call.Fields.Items $j).Name}}: {{$p.Name}}{{end}} }{{else}}{}{{end}});
+    {{if $m.Returns}}return {{end}}this.{{$m.Name}}Func!({{range $j, $p := $m.Params}}{{if $j}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
+  }
+{{- end}}
+}
+{{- range $i, $m := $stub.Methods.Items}}
+{{- $call := index $stub.Types.Items $i}}
+
+/** {{$call.Name}} contains the arguments of one call of {{$stub.Name}}.{{$m.Name}}. */
+export interface {{$call.Name}} {
+{{- range $j, $p := $m.Params}}
+  {{(index $call.Fields.Items $j).Name}}: {{spell $p.Type}}{{if $p.Variadic}}[]{{end}};
+{{- end}}
+}
+{{- end}}
+{{- end}}

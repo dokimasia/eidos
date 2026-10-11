@@ -1,0 +1,7 @@
+version: 1
+options:
+    authgen: {package: example.com/shop/httpmw/auth, func: RequireAuth}
+    metricgen: {package: example.com/shop/httpmw/metrics, func: RecordLatency}
+    tracegen: {package: example.com/shop/httpmw/trace, func: StartSpan}
+    errorgen: {package: example.com/shop/httpmw/errors, func: Recover}
+    auditgen: {package: example.com/shop/httpmw/audit, func: Record}

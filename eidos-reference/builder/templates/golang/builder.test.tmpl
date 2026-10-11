@@ -1,0 +1,59 @@
+{{- use "reflect"}}{{use "testing"}}
+{{- range .Records}}
+{{- $b := .Decl}}
+{{- $d := .Data}}
+{{- $build := index $b.Methods.Items 0}}
+{{- $new := index $b.Types.Items 0}}
+{{- $from := index $b.Types.Items 1}}
+
+// Test{{$b.Name}} checks the builder of {{spell $d.Value}}.
+func Test{{$b.Name}}(t *testing.T) {
+	t.Parallel()
+{{- if $from.Body.Stmts}}
+
+	t.Run("{{$from.Name}} keeps each field", func(t *testing.T) {
+		t.Parallel()
+
+		var seed {{spell $d.Value}}
+{{body $from}}		got := {{$from.Name}}{{template "args" $d.Args}}(seed).{{$build.Name}}()
+		if !reflect.DeepEqual(got, seed) {
+			t.Errorf("{{$from.Name}} turns %v into %v", seed, got)
+		}
+	})
+{{- end}}
+{{- range $i, $check := slice $b.Types.Items 2}}
+{{- $field := index $d.Defaults $i}}
+
+	t.Run("{{$new.Name}} sets the default of {{$field}}", func(t *testing.T) {
+		t.Parallel()
+
+		var want {{spell (index $check.Params 0).Type}}
+{{body $check}}		got := {{$new.Name}}{{template "args" $d.Args}}().{{$build.Name}}()
+		if !reflect.DeepEqual(got.{{$field}}, want) {
+			t.Errorf("{{$new.Name}} sets {{$field}} to %v instead of %v", got.{{$field}}, want)
+		}
+	})
+{{- end}}
+{{- range $i, $m := slice $b.Methods.Items 1}}
+{{- $s := index $d.Setters $i}}
+{{- $p := index $m.Params 0}}
+
+	t.Run("{{$m.Name}} sets {{$s.Field}}", func(t *testing.T) {
+		t.Parallel()
+
+		var want {{if $p.Variadic}}[]{{end}}{{spell $p.Type}}
+{{body $m}}		got := {{$new.Name}}{{template "args" $d.Args}}().{{$m.Name}}(want{{if $p.Variadic}}...{{end}}).{{$build.Name}}()
+{{- if $s.Pointer}}
+		if got.{{$s.Field}} == nil || !reflect.DeepEqual(*got.{{$s.Field}}, want) {
+			t.Errorf("{{$m.Name}} sets {{$s.Field}} to %v instead of the address of %v", got.{{$s.Field}}, want)
+		}
+{{- else}}
+		if !reflect.DeepEqual(got.{{$s.Field}}, want) {
+			t.Errorf("{{$m.Name}} sets {{$s.Field}} to %v instead of %v", got.{{$s.Field}}, want)
+		}
+{{- end}}
+	})
+{{- end}}
+}
+{{- end}}
+{{- define "args"}}{{if .}}[{{range $i, $a := .}}{{if $i}}, {{end}}{{spell $a}}{{end}}]{{end}}{{end}}

@@ -1,0 +1,92 @@
+{{- use "testing"}}
+{{- range .Records}}
+{{- $t := .Decl.Name}}
+{{- $d := .Data}}
+
+// Test{{$t}}Enum checks the variants of {{$t}} and the methods that enum writes on it.
+func Test{{$t}}Enum(t *testing.T) {
+	t.Parallel()
+
+	all := []{{$t}}{ {{- range $i, $v := $d.Variants}}{{if $i}}, {{end}}{{$v.Name}}{{end}}}
+
+	t.Run("no two variants share a value", func(t *testing.T) {
+		t.Parallel()
+
+		seen := map[{{$t}}]bool{}
+		for i, v := range all {
+			if seen[v] {
+				t.Errorf("the variant at %d shares its value with an earlier variant", i)
+			}
+			seen[v] = true
+		}
+	})
+{{- if $d.String}}{{use "errors"}}{{use "slices"}}
+
+	t.Run("{{$d.Values}} returns each variant in order", func(t *testing.T) {
+		t.Parallel()
+
+		if got := {{$d.Values}}(); !slices.Equal(got, all) {
+			t.Errorf("{{$d.Values}} returns %v instead of %v", got, all)
+		}
+	})
+
+	t.Run("String returns the text of each variant", func(t *testing.T) {
+		t.Parallel()
+
+		texts := []string{ {{- range $i, $v := $d.Variants}}{{if $i}}, {{end}}{{$v.Text}}{{end}}}
+		for i, v := range all {
+			if got := v.String(); got != texts[i] {
+				t.Errorf("String returns %q instead of %q", got, texts[i])
+			}
+		}
+	})
+
+	t.Run("{{$d.Parse}} returns each variant for its text", func(t *testing.T) {
+		t.Parallel()
+
+		for _, v := range all {
+			if got, err := {{$d.Parse}}(v.String()); err != nil || got != v {
+				t.Errorf("{{$d.Parse}} returns %v and %v for the text of %v", got, err, v)
+			}
+		}
+	})
+
+	t.Run("{{$d.Parse}} returns {{$d.Unknown}} for a text without a variant", func(t *testing.T) {
+		t.Parallel()
+
+		if _, err := {{$d.Parse}}({{$d.UnknownText}}); !errors.Is(err, {{$d.Unknown}}) {
+			t.Errorf("{{$d.Parse}} returns %v instead of {{$d.Unknown}}", err)
+		}
+	})
+{{- end}}
+{{- if $d.Valid}}
+
+	t.Run("IsValid reports true for each variant", func(t *testing.T) {
+		t.Parallel()
+
+		for _, v := range all {
+			if !v.IsValid() {
+				t.Errorf("IsValid reports false for %v", v)
+			}
+		}
+	})
+{{- end}}
+{{- if $d.Unmarshal}}
+
+	t.Run("UnmarshalText returns each variant for the text of MarshalText", func(t *testing.T) {
+		t.Parallel()
+
+		for _, v := range all {
+			text, err := v.MarshalText()
+			if err != nil {
+				t.Fatalf("MarshalText returns %v for %v", err, v)
+			}
+			var got {{$t}}
+			if err := got.UnmarshalText(text); err != nil || got != v {
+				t.Errorf("UnmarshalText returns %v and sets %v for the text of %v", err, got, v)
+			}
+		}
+	})
+{{- end}}
+}
+{{- end}}

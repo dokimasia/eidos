@@ -1,0 +1,2 @@
+{{- $r := .Decl.Receiver.Name}}{{slots}}{{$r}}.value.{{.Data.Field}} = {{spell .Data.Type}}({{(index .Decl.Params 0).Name}})
+return {{$r}}
