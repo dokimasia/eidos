@@ -9,6 +9,7 @@ import (
 	"maps"
 	"math"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -56,6 +57,13 @@ const memoLimit = math.MaxInt64
 // age is how far the warm checks move a file's modification time into
 // the past, so the record of the file is not racily clean.
 const age = time.Hour
+
+// claim is the filename that a plan's backend spells for one part of a
+// claimed unit, and the plugin of the unit.
+type claim struct {
+	plugin plugin.ID
+	name   string
+}
 
 // AssertGenerated runs the fixture's plans in root, an empty directory,
 // and checks that the files under the brand's frame are the wanted
@@ -146,17 +154,34 @@ func AssertIsolated(tb assert.TB, f Fixture, root string) {
 // the plan's record lists: every exported declaration is in a recorded
 // file, under one of the file's plugins and, at file level, from one of
 // its sources, and every recorded file exports a declaration.
+//
+// A file of a family that claims its files does not export a
+// declaration, because its records are data for the family's template.
+// The check exempts a recorded file whose name the plan's backend spells
+// for a part of a claimed unit of the plan's store, where the record of
+// the file lists the plugin of the unit.
 func AssertExported(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	names := planNames(plansOf(tb, f))
+	plans := plansOf(tb, f)
 	copied(tb, f, root)
 	run := probed(tb, f, root, false)
-	expect.Permutation(tb, slices.Collect(maps.Keys(run.exports)), names,
+	expect.Permutation(tb, slices.Collect(maps.Keys(run.exports)), planNames(plans),
 		"the probe reads the export of each plan it depends on")
 	record := rundir.Record(tb, root, run.brand)
-	for _, name := range names {
-		exportedIn(tb, run.exports[name], entriesOf(record, name))
+	for _, p := range plans {
+		speller, spells := p.Backend.(plugin.FileSpeller)
+		assert.True(tb, spells, "the backend of plan "+p.Name+" spells filenames")
+		var claimed []claim
+		for u := range run.report.Emits[p.Name].Units() {
+			if u.Template == "" {
+				continue
+			}
+			for _, part := range speller.SplitUnit(u) {
+				claimed = append(claimed, claim{plugin: part.Plugin, name: speller.FileName(part)})
+			}
+		}
+		exportedIn(tb, run.exports[p.Name], entriesOf(record, p.Name), claimed)
 	}
 }
 
@@ -356,7 +381,7 @@ func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 func AssertWarmUnchanged(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	w := settled(tb, f, root)
+	w, _ := settled(tb, f, root)
 	var (
 		report *workspace.Report
 		err    error
@@ -376,15 +401,26 @@ func AssertWarmUnchanged(tb assert.TB, f Fixture, root string) {
 }
 
 // AssertTouched runs the fixture's plans in root, an empty directory, as
-// [settled] states, moves the modification time of the first file of the
+// [settled] states, moves the modification time of a file of the
 // fixture's tree to the present without changing its bytes, and runs
 // again. It checks that the run reads the sealed state, hashes that one
-// file, and parses no unit.
+// file, and parses no unit. The file is the first input of the load of
+// the last settling run, in path order: a file of the tree that a
+// frontend claims. The load hashes no file that no frontend claims, such
+// as a config file, whatever its stat.
 func AssertTouched(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	w := settled(tb, f, root)
-	touched := treeFile(tb, f).File
+	w, settling := settled(tb, f, root)
+	assert.NotNil(tb, settling.Load, "the warm run that settles the records loads the tree")
+	var touched string
+	for _, r := range settling.Load.Files {
+		if r.Verdict == load.VerdictInput {
+			touched = r.Path
+			break
+		}
+	}
+	assert.NotEqual(tb, touched, "", "a frontend claims a file of the fixture's tree")
 	now := time.Now()
 	assert.NoError(tb, os.Chtimes(rundir.Path(root, touched), now, now),
 		"the modification time of "+touched+" moves to the present")
@@ -538,9 +574,11 @@ func AssertWarmChecked(tb assert.TB, f Fixture, warm, cold string) {
 // exportedIn checks one plan's export against the plan's record entries:
 // every exported declaration is in a recorded file, under one of the
 // file's plugins and, at file level, from one of its sources, and every
-// recorded file exports a declaration. Each declaration and each file
-// that breaks the contract fails the check on a record of its own.
-func exportedIn(tb assert.TB, doc plugin.ExportDoc, entries []manifest.Entry) {
+// recorded file exports a declaration. A recorded file whose name and
+// plugins match a claim is exempt from the last rule. Each declaration
+// and each file that breaks the contract fails the check on a record of
+// its own.
+func exportedIn(tb assert.TB, doc plugin.ExportDoc, entries []manifest.Entry, claimed []claim) {
 	tb.Helper()
 
 	byPath := make(map[string]manifest.Entry, len(entries))
@@ -563,8 +601,13 @@ func exportedIn(tb assert.TB, doc plugin.ExportDoc, entries []manifest.Entry) {
 				"the record of "+s.File+" lists the source "+s.Name+" derives from")
 		}
 	}
-	for _, path := range recorded {
-		expect.Contains(tb, exported, path, "plan "+doc.Plan+" exports a declaration in "+path+", which it records")
+	for _, file := range recorded {
+		claims := slices.ContainsFunc(claimed, func(c claim) bool {
+			return c.name == path.Base(file) && slices.Contains(byPath[file].Plugins, c.plugin)
+		})
+		if !claims {
+			expect.Contains(tb, exported, file, "plan "+doc.Plan+" exports a declaration in "+file+", which it records")
+		}
 	}
 }
 
@@ -589,8 +632,9 @@ func withoutLast(tb assert.TB, f Fixture, root string) (*workspace.Report, map[s
 // nobody edits are, so no record of the sealed state is racily clean. The
 // warm run hashes each file that the cold run wrote, whose record proves
 // nothing yet, so every record proves its file after it. It returns the
-// workspace, and stops the check where a run returns an error.
-func settled(tb assert.TB, f Fixture, root string) *workspace.Workspace {
+// workspace and the report of the warm run, and stops the check where a
+// run returns an error.
+func settled(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspace.Report) {
 	tb.Helper()
 
 	plans := plansOf(tb, f)
@@ -600,9 +644,9 @@ func settled(tb assert.TB, f Fixture, root string) *workspace.Workspace {
 	_, err := ran(f, w, root)
 	assert.NoError(tb, err, "the fixture's plans run clean")
 	aged(tb, root, w.Brand())
-	_, err = ran(f, w, root)
+	report, err := ran(f, w, root)
 	assert.NoError(tb, err, "the warm run that settles the records is clean")
-	return w
+	return w, report
 }
 
 // aged moves the modification time of every file under root outside the

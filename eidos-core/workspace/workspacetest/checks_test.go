@@ -50,6 +50,20 @@ const (
 // change the export of the plan that mirrors Row.
 const renamedSource = "package svc/store\ntype Record int string\n"
 
+// A config file at the root of a tree, which no frontend claims, and its
+// bytes.
+const (
+	configFile = ".fixture.yaml"
+	configBody = "version: 1\n"
+)
+
+// The template of a family that claims its files, and its text, which
+// writes one struct for each record.
+const (
+	claimTemplate = "stub.tmpl"
+	claimText     = "{{range .Records}}type {{.Decl.Name}} struct{}\n{{end}}"
+)
+
 // The sealed state's directory inside the brand's state directory, which
 // one fixture's edit removes, the ordinal of the cold run among the runs
 // over one fixture, and the generator that reports the run it runs in.
@@ -338,6 +352,14 @@ func TestChecks(t *testing.T) {
 					"the rejection names each declaration and file the record and the export disagree on")
 			})
 		}
+
+		t.Run("passes a plan whose family claims its files", func(t *testing.T) {
+			t.Parallel()
+
+			claiming := fixture(t)
+			claiming.Plans = func() []workspace.Plan { return []workspace.Plan{mirrors(), claimedStubs()} }
+			workspacetest.AssertExported(t, claiming, t.TempDir())
+		})
 	})
 
 	t.Run("AssertCycleRefused", func(t *testing.T) {
@@ -567,6 +589,30 @@ func TestChecks(t *testing.T) {
 				"the run after the touch reads the sealed state",
 				"the run after the touch parses no unit",
 			}, "the rejection names the parse that the cold run makes")
+		})
+
+		t.Run("passes a tree whose first file no frontend claims", func(t *testing.T) {
+			t.Parallel()
+
+			configured := fixture(t)
+			configured.Tree = fstest.MapFS{
+				configFile: {Data: []byte(configBody)},
+				rowFile:    {Data: []byte(rowSource)},
+			}
+			workspacetest.AssertTouched(t, configured, t.TempDir())
+		})
+
+		t.Run("rejects a tree of which no frontend claims a file", func(t *testing.T) {
+			t.Parallel()
+
+			unclaimed := fixture(t)
+			unclaimed.Tree = fstest.MapFS{configFile: {Data: []byte(configBody)}}
+			root := t.TempDir()
+			records := assert.Rejects(t, "a tree without a file to touch", func(tb assert.TB) {
+				workspacetest.AssertTouched(tb, unclaimed, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"a frontend claims a file of the fixture's tree"},
+				"the rejection names what the tree owes")
 		})
 	})
 
@@ -865,6 +911,23 @@ func packagedPerRun(t *testing.T) workspacetest.Fixture {
 		return []workspace.Plan{first, stubs()}
 	}
 	return f
+}
+
+// claimedStubs returns the plan that records RowStub for Row into a
+// per-package family of stubber that claims its files through
+// [claimTemplate], and that depends on mirrors.
+func claimedStubs() workspace.Plan {
+	p, held := eidos.NewPlugin(stubberID).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: stubWord, Template: claimTemplate}).
+		Templates(fstest.MapFS{claimTemplate: {Data: []byte(claimText)}}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			e.PackageFile().Record(m.Struct.Name, &emit.Struct{Origin: m.Struct.Identity(), Name: m.Struct.Name + "Stub"})
+			return nil
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspacetest_test: an emitter rule lowers to the generator role")
+	}
+	return planOf(stubsPlan, p, mirrorsPlan)
 }
 
 // counting returns a generator named id that calls report once per struct
