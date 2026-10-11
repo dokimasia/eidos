@@ -29,10 +29,18 @@
 // into the prologue of a method of a mock appends into the file. The tag
 // [TestTag] routes the family into the test files of the target.
 //
+// The mock of a generic interface has the type parameters of the
+// interface, and implements the interface at those parameters.
+//
+// # Diagnostics
+//
+// mockgen does not write a mock of an interface under the directive without
+// a double. The package internal/double reports why.
+//
 // # Dependency position
 //
 // The package imports the packages internal/double, internal/tree and
-// repogen of the module, and the root, directive, emit, plugin and symbol
-// packages of the SDK facade. It serves Go and TypeScript, so it imports
-// no satellite.
+// repogen of the module, the root, directive, emit, plugin and symbol
+// packages of the SDK facade, and the Go stdlib. It serves Go and
+// TypeScript, so it does not import a satellite.
 package mockgen

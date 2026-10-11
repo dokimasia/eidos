@@ -30,15 +30,28 @@
 // of the same name without the tag, so a config that routes the two
 // families apart breaks the import.
 //
+// # Generic interfaces
+//
+// The stub of a generic interface has the type parameters of the
+// interface. A call record has the type parameters that the types of its
+// fields mention, because TypeScript reports a type parameter that a
+// declaration does not use under noUnusedParameters. The test checks the
+// stub at the witnesses of the type parameters. In Go, the test of each
+// method calls a generic function with the witnesses, and the function
+// contains the check. A generic stub has no test where a type parameter
+// has no witness.
+//
 // # Diagnostics
 //
-// stubgen writes no stub of an interface without a double. The package
-// internal/double reports why.
+// stubgen does not write a stub of an interface without a double. The
+// package internal/double reports why. stubgen reports [GenericMethod] at an
+// interface with a method that has type parameters, and does not write a
+// stub of it.
 //
 // # Dependency position
 //
 // The package imports the packages internal/double and internal/tree of
-// the module, the root, directive, emit and plugin packages of the SDK
-// facade, and the Go stdlib. It serves Go and TypeScript, so it imports no
-// satellite.
+// the module, the root, diag, directive, emit, plugin, rules and symbol
+// packages of the SDK facade, and the Go stdlib. It serves Go and
+// TypeScript, so it does not import a satellite.
 package stubgen

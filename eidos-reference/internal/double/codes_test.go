@@ -31,6 +31,10 @@ func TestCodes(t *testing.T) {
 			name: "Property", code: double.Property, spelled: "REFERENCE-0003",
 			meaning: "a double cannot implement a property of its interface",
 		},
+		{
+			name: "Constraint", code: double.Constraint, spelled: "REFERENCE-0004",
+			meaning: "a double cannot implement an interface that only constrains type parameters",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

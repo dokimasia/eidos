@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 )
@@ -25,10 +26,17 @@ const (
 	paramPrefix      = "a"
 )
 
+// constraintKey is the key on which the Go satellite marks an interface
+// with type-set elements. It has the spelling of
+// golang.ConstraintInterfaceKey, because a double plugin does not import
+// the satellite.
+const constraintKey meta.KeyName = "golang.constraintInterface"
+
 // Match is the part of the match of an interface that [Of] reads. Of reads
-// the rules of the language of the interface, and reports at the
-// interface. [sdk.InterfaceMatch] satisfies it.
+// the rules of the language of the interface and a fact of the interface,
+// and reports at the interface. [sdk.InterfaceMatch] satisfies it.
 type Match interface {
+	sdk.Matcher
 	Rules() rules.Bound
 	Errorf(c diag.Code, format string, a ...any)
 }
@@ -39,14 +47,21 @@ type Match interface {
 // of the language of i walk its effective members, so a method that an
 // embedded interface contributes is a method of the double too.
 //
-// Of returns false after it reports [IncompleteMembers] at i where the walk
-// has gaps. It also returns false after it reports [Property] at an
-// interface with a property, because a method of a double cannot implement
-// a property.
+// Of returns false after it reports [Constraint] at an interface that the
+// Go satellite marks as a constraint interface, because no value has the
+// type of such an interface. It returns false after it reports
+// [IncompleteMembers] at i where the walk has gaps. It also returns false
+// after it reports [Property] at an interface with a property, because a
+// method of a double cannot implement a property.
 //
 // It allocates the members of the walk, what sdk.Mirror allocates for each
 // method, and the receiver and the names that it adds.
 func Of(m Match, host string, i *node.Interface) ([]*emit.Method, bool) {
+	if constraint, _ := sdk.FactOf(m, i.ID, meta.Named[bool](constraintKey)); constraint {
+		m.Errorf(Constraint,
+			"%s has type-set elements and only constrains type parameters, so it has no double", i.Name)
+		return nil, false
+	}
 	set, _ := m.Rules().MembersOf(i)
 	if !set.Complete() {
 		m.Errorf(IncompleteMembers, "the members of %s are incomplete, so it has no double", i.Name)

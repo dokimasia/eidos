@@ -2,7 +2,7 @@
 {{- $mock := .Decl}}
 
 // {{$mock.Name}} is a mock of {{.Data.Interface}}. Each method calls its function field.
-type {{$mock.Name}} struct {
+type {{$mock.Name}}{{typeparams $mock.TypeParams}} struct {
 {{- range $mock.Methods.Items}}
 	// {{.Name}}Func is the function that {{.Name}} calls.
 	{{.Name}}Func func({{params .Params}}){{results .Returns}}
@@ -11,8 +11,9 @@ type {{$mock.Name}} struct {
 {{- range $mock.Methods.Items}}
 
 // {{.Name}} calls {{.Name}}Func.
-func ({{.Receiver.Name}} *{{$mock.Name}}) {{.Name}}({{params .Params}}){{results .Returns}} {
+func ({{.Receiver.Name}} *{{$mock.Name}}{{template "typeargs" $mock.TypeParams}}) {{.Name}}({{params .Params}}){{results .Returns}} {
 {{body .}}{{if .Returns}}return {{end}}{{.Receiver.Name}}.{{.Name}}Func({{range $i, $p := .Params}}{{if $i}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
 }
 {{- end}}
 {{- end}}
+{{- define "typeargs"}}{{with .}}[{{range $i, $p := .}}{{if $i}}, {{end}}{{$p.Name}}{{end}}]{{end}}{{end}}

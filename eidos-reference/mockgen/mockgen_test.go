@@ -18,6 +18,7 @@ import (
 	"go.dokimi.dev/eidos/reference/internal/referencetest"
 	"go.dokimi.dev/eidos/reference/mockgen"
 	"go.dokimi.dev/eidos/reference/repogen"
+	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/plugintest"
@@ -52,6 +53,34 @@ const (
 	propertyTree  = "testdata/property"
 	shapedPackage = "web/shaped"
 	shapedName    = "Shaped"
+)
+
+// The tree of a constraint interface, its package, and the interface.
+const (
+	constraintTree    = "testdata/constraint"
+	constraintPackage = "example.com/constraint"
+	numberName        = "Number"
+)
+
+// The mock of the generic interface Cache of the tree, and the type
+// parameter of Cache.
+const (
+	cacheMock  = "CacheMock"
+	cacheParam = "T"
+)
+
+// hostID is the plugin that emits the generic interface Shelf beside Store.
+const hostID plugin.ID = "shelfhost"
+
+// The word of the host, the interface Shelf, its mock, its type parameter,
+// and its method Put with the parameter of Put.
+const (
+	hostWord   = "shelf"
+	shelfName  = "Shelf"
+	shelfMock  = "ShelfMock"
+	shelfParam = "V"
+	putName    = "Put"
+	valueParam = "v"
 )
 
 // mockgen records a mock of each interface under its directive and of each
@@ -142,7 +171,84 @@ func TestMockgen(t *testing.T) {
 				"the finding is at the interface")
 			assert.Empty(t, recorded(t, f, p), "mockgen records no mock of Shaped")
 		})
+
+		t.Run("reports Constraint at a constraint interface and records no mock of it", func(t *testing.T) {
+			t.Parallel()
+
+			p := mockgen.New()
+			f := referencetest.New(t.Context(), t, referencetest.Spec{
+				Dir:      constraintTree,
+				Packages: []string{constraintPackage},
+				Target:   golang.Target,
+				Plugins:  []plugin.Plugin{p},
+			})
+			res := f.Generate(t, p)
+			assert.NoError(t, res.Err, "the generator runs whole")
+			found := slices.Collect(res.Sink.All())
+			assert.Length(t, found, 1, "mockgen reports the one interface")
+			expect.That(t, found[0].Code).Equal(double.Constraint, "the finding is Constraint")
+			expect.That(t, found[0].Pos.Line).Equal(f.Find(t, symbol.KindInterface, "", numberName).Position().Line,
+				"the finding is at the interface")
+			assert.Empty(t, recorded(t, f, p), "mockgen records no mock of Number")
+		})
+
+		t.Run("records the mock of a generic interface with the type parameters of the interface", func(t *testing.T) {
+			t.Parallel()
+
+			p := mockgen.New()
+			mock := recorded(t, catalog(t.Context(), t, p), p)[cacheMock]
+			assert.NotNil(t, mock, "mockgen records the mock of Cache")
+			expect.That(t, typeParamNames(mock.TypeParams)).Equal(cacheParam, "the mock declares the T of Cache")
+			expect.Equal(t, mock.Implements[0].Args, []*emit.TypeRef{{Spelling: cacheParam}},
+				"the mock implements Cache at its own type parameter")
+		})
+
+		t.Run("records the mock of an emitted generic interface with the type parameters of the interface",
+			func(t *testing.T) {
+				t.Parallel()
+
+				p := mockgen.New()
+				f := referencetest.New(t.Context(), t, referencetest.Spec{
+					Dir:      referencetest.Tree,
+					Packages: []string{catalogPackage},
+					Target:   golang.Target,
+					Plugins:  []plugin.Plugin{p},
+					Hosts:    []plugin.Generator{shelfHost()},
+				})
+				mock := recorded(t, f, p)[shelfMock]
+				assert.NotNil(t, mock, "mockgen records the mock of the emitted Shelf")
+				expect.That(t, typeParamNames(mock.TypeParams)).Equal(shelfParam, "the mock declares the V of Shelf")
+				expect.Equal(t, mock.Implements[0].Args, []*emit.TypeRef{{Spelling: shelfParam}},
+					"the mock implements Shelf at its own type parameter")
+			})
 	})
+}
+
+// shelfHost returns a generator that emits the generic interface Shelf for
+// the interface Store of the source, as repogen emits a repository for a
+// struct. Shelf has the method Put, which takes a value of its type
+// parameter.
+func shelfHost() plugin.Generator {
+	g, _ := sdk.NewPlugin(hostID).
+		Output(plugin.Output{Per: plugin.PerSource, Word: hostWord}).
+		Handle(sdk.OnInterface(func(m *sdk.InterfaceMatch, e *sdk.Emitter) error {
+			if m.Interface.Name != storeName {
+				return nil
+			}
+			shelf := &emit.Interface{
+				Origin:     m.Interface.ID,
+				Name:       shelfName,
+				TypeParams: []*emit.TypeParam{{Name: shelfParam}},
+			}
+			shelf.Methods.Append(&emit.Method{
+				Name:   putName,
+				Params: []*emit.Param{{Name: valueParam, Type: &emit.TypeRef{Spelling: shelfParam}}},
+			})
+			e.File().Append(shelf)
+			return nil
+		})).
+		Build().(plugin.Generator)
+	return g
 }
 
 // catalog returns a fixture over the package catalog of the tree, loaded
@@ -202,6 +308,16 @@ func names(ms []*emit.Method) string {
 	out := make([]string, 0, len(ms))
 	for _, m := range ms {
 		out = append(out, m.Name)
+	}
+	return strings.Join(out, " ")
+}
+
+// typeParamNames returns the names of the type parameters, joined by
+// spaces.
+func typeParamNames(tps []*emit.TypeParam) string {
+	out := make([]string, 0, len(tps))
+	for _, tp := range tps {
+		out = append(out, tp.Name)
 	}
 	return strings.Join(out, " ")
 }

@@ -55,6 +55,41 @@ const (
 	shapedName    = "Shaped"
 )
 
+// The tree of a constraint interface, its package, and the interface.
+const (
+	constraintTree    = "testdata/constraint"
+	constraintPackage = "example.com/constraint"
+	numberName        = "Number"
+)
+
+// The stub of the generic interface Cache of the tree, its call records,
+// its type parameter, and the witness of the parameter in Go.
+const (
+	cacheStub    = "CacheStub"
+	cacheGetCall = "CacheGetCall"
+	cachePutCall = "CachePutCall"
+	cacheParam   = "T"
+	intWitness   = "int"
+)
+
+// The tree of generic interfaces, its Go package and its TypeScript module,
+// and the stubs and call records of its interfaces.
+const (
+	genericTree    = "testdata/generic"
+	genericPackage = "example.com/generic"
+	bagPackage     = "web/bag"
+	mapperPackage  = "web/mapper"
+	mapperName     = "Mapper"
+	shelfStub      = "ShelfStub"
+	shelfFillCall  = "ShelfFillCall"
+	shelfWrapCall  = "ShelfWrapCall"
+	shelfTagCall   = "ShelfTagCall"
+	labelsStub     = "LabelsStub"
+	bagStub        = "BagStub"
+	bagAddCall     = "BagAddCall"
+	bagTakeCall    = "BagTakeCall"
+)
+
 // stubgen records the stub of each interface under its directive into the
 // family of the stubs, and the test of the stub into the family of the
 // tests. It passes the plugin suite.
@@ -162,6 +197,129 @@ func TestStubgen(t *testing.T) {
 			expect.Empty(t, stubs, "stubgen records no stub of Shaped")
 			expect.Empty(t, tests, "stubgen records no test of Shaped")
 		})
+
+		t.Run("reports Constraint at a constraint interface and records no stub of it", func(t *testing.T) {
+			t.Parallel()
+
+			p := stubgen.New()
+			f := referencetest.New(t.Context(), t, referencetest.Spec{
+				Dir:      constraintTree,
+				Packages: []string{constraintPackage},
+				Target:   golang.Target,
+				Plugins:  []plugin.Plugin{p},
+			})
+			res := f.Generate(t, p)
+			assert.NoError(t, res.Err, "the generator runs whole")
+			found := slices.Collect(res.Sink.All())
+			assert.Length(t, found, 1, "stubgen reports the one interface")
+			expect.That(t, found[0].Code).Equal(double.Constraint, "the finding is Constraint")
+			expect.That(t, found[0].Pos.Line).Equal(f.Find(t, symbol.KindInterface, "", numberName).Position().Line,
+				"the finding is at the interface")
+			stubs, tests := recorded(t, f, p)
+			expect.Empty(t, stubs, "stubgen records no stub of Number")
+			expect.Empty(t, tests, "stubgen records no test of Number")
+		})
+
+		t.Run("reports GenericMethod at an interface with a generic method and records no stub of it",
+			func(t *testing.T) {
+				t.Parallel()
+
+				p := stubgen.New()
+				f := generic(t.Context(), t, p, typescript.Target, mapperPackage)
+				res := f.Generate(t, p)
+				assert.NoError(t, res.Err, "the generator runs whole")
+				found := slices.Collect(res.Sink.All())
+				assert.Length(t, found, 1, "stubgen reports the one interface")
+				expect.That(t, found[0].Code).Equal(stubgen.GenericMethod, "the finding is GenericMethod")
+				expect.That(t, found[0].Pos.Line).Equal(f.Find(t, symbol.KindInterface, "", mapperName).Position().Line,
+					"the finding is at the interface")
+				stubs, tests := recorded(t, f, p)
+				expect.Empty(t, stubs, "stubgen records no stub of Mapper")
+				expect.Empty(t, tests, "stubgen records no test of Mapper")
+			})
+
+		t.Run("records the stub of a generic interface with the type parameters of the interface", func(t *testing.T) {
+			t.Parallel()
+
+			p := stubgen.New()
+			stubs, _ := recorded(t, catalog(t.Context(), t, p), p)
+			stub := stubs[cacheStub]
+			assert.NotNil(t, stub, "stubgen records the stub of Cache")
+			expect.That(t, typeParamNames(stub.TypeParams)).Equal(cacheParam, "the stub declares the T of Cache")
+			expect.Equal(t, stub.Implements[0].Args, []*emit.TypeRef{{Spelling: cacheParam}},
+				"the stub implements Cache at its own type parameter")
+		})
+
+		t.Run("records the test of a generic stub at the witnesses of its type parameters", func(t *testing.T) {
+			t.Parallel()
+
+			p := stubgen.New()
+			_, tests := recorded(t, catalog(t.Context(), t, p), p)
+			test := tests[cacheStub]
+			assert.NotNil(t, test, "stubgen records the test of the stub of Cache")
+			expect.That(t, typeParamNames(test.TypeParams)).Equal(cacheParam,
+				"the test declares the T of Cache for its generic checks")
+			expect.Equal(t, test.Implements[0].Args, []*emit.TypeRef{{Spelling: intWitness}},
+				"the test checks the stub at int, the witness of T")
+		})
+
+		t.Run("records no test of a generic stub whose type parameter has no witness", func(t *testing.T) {
+			t.Parallel()
+
+			p := stubgen.New()
+			stubs, tests := recorded(t, generic(t.Context(), t, p, golang.Target, genericPackage), p)
+			expect.NotNil(t, stubs[labelsStub], "stubgen records the stub of Labels")
+			expect.NotContains(t, tests, labelsStub, "int does not satisfy fmt.Stringer, so Labels has no witness")
+		})
+
+		cp, gp, wp := stubgen.New(), stubgen.New(), stubgen.New()
+		catalogStubs, _ := recorded(t, catalog(t.Context(), t, cp), cp)
+		goStubs, _ := recorded(t, generic(t.Context(), t, gp, golang.Target, genericPackage), gp)
+		webStubs, _ := recorded(t, generic(t.Context(), t, wp, typescript.Target, bagPackage), wp)
+		tests := []struct {
+			name string
+			stub *emit.Struct
+			give string
+			want string
+		}{
+			{
+				name: "records the type parameter on the call record of a parameter of the type parameter",
+				stub: catalogStubs[cacheStub], give: cachePutCall, want: cacheParam,
+			},
+			{
+				name: "records the type parameter on the call record of a parameter whose type is a list of it",
+				stub: goStubs[shelfStub], give: shelfFillCall, want: cacheParam,
+			},
+			{
+				name: "records the type parameter on the call record of a parameter whose type is instantiated at it",
+				stub: goStubs[shelfStub], give: shelfWrapCall, want: cacheParam,
+			},
+			{
+				name: "records no type parameter on the call record of a parameter whose type name starts with it",
+				stub: goStubs[shelfStub], give: shelfTagCall,
+			},
+			{
+				name: "records no type parameter on the call record of a parameter of another type",
+				stub: catalogStubs[cacheStub], give: cacheGetCall,
+			},
+			{
+				name: "records no type parameter on the call record of a parameter without a type",
+				stub: webStubs[bagStub], give: bagAddCall,
+			},
+			{
+				name: "records no type parameter on the call record of a method without parameters",
+				stub: webStubs[bagStub], give: bagTakeCall,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NotNil(t, tt.stub, "stubgen records the stub")
+				assert.Equal(t, typeParamNames(callRecord(t, tt.stub, tt.give).TypeParams), tt.want,
+					"the call record declares the type parameters that the types of its fields mention")
+			})
+		}
 	})
 }
 
@@ -187,6 +345,22 @@ func web(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixt
 		Dir:      referencetest.Tree,
 		Packages: []string{webPackage},
 		Target:   typescript.Target,
+		Plugins:  []plugin.Plugin{p},
+	})
+}
+
+// generic returns a fixture over the package pkg of the tree of generic
+// interfaces, loaded under ctx, with the plan's target and the plugin
+// stubgen p.
+func generic(
+	ctx context.Context, tb assert.TB, p plugin.Plugin, target plugin.Target, pkg string,
+) *referencetest.Fixture {
+	tb.Helper()
+
+	return referencetest.New(ctx, tb, referencetest.Spec{
+		Dir:      genericTree,
+		Packages: []string{pkg},
+		Target:   target,
 		Plugins:  []plugin.Plugin{p},
 	})
 }
@@ -221,4 +395,28 @@ func methodNames(ms []*emit.Method) string {
 		out = append(out, m.Name)
 	}
 	return strings.Join(out, " ")
+}
+
+// typeParamNames returns the names of the type parameters, joined by
+// spaces.
+func typeParamNames(tps []*emit.TypeParam) string {
+	out := make([]string, 0, len(tps))
+	for _, tp := range tps {
+		out = append(out, tp.Name)
+	}
+	return strings.Join(out, " ")
+}
+
+// callRecord returns the call record named name of the stub. It stops the
+// test where the stub has no such record, or where the record is not a
+// struct.
+func callRecord(t *testing.T, stub *emit.Struct, name string) *emit.Struct {
+	t.Helper()
+
+	calls := stub.Types.Items()
+	at := slices.IndexFunc(calls, func(d symbol.Symbol) bool { return emit.DeclaredName(d) == name })
+	assert.NotEqual(t, at, -1, "the stub "+stub.Name+" has the call record "+name)
+	call, isStruct := calls[at].(*emit.Struct)
+	assert.True(t, isStruct, "the call record "+name+" is a struct")
+	return call
 }

@@ -21,14 +21,16 @@ import (
 // The tree of the cases, its Go package and its TypeScript module, and the
 // interfaces that the tree declares.
 const (
-	tree         = "testdata/tree"
-	goPackage    = "example.com/doubles"
-	tsPackage    = "shaped"
-	ledgerName   = "Ledger"
-	counterName  = "Counter"
-	streamName   = "Stream"
-	shapedName   = "Shaped"
-	doubleSuffix = "Double"
+	tree              = "testdata/tree"
+	goPackage         = "example.com/doubles"
+	constraintPackage = "example.com/doubles/constraint"
+	tsPackage         = "shaped"
+	ledgerName        = "Ledger"
+	counterName       = "Counter"
+	streamName        = "Stream"
+	shapedName        = "Shaped"
+	numberName        = "Number"
+	doubleSuffix      = "Double"
 )
 
 // probeID is the name of the plugin that mirrors the interfaces.
@@ -123,6 +125,14 @@ func TestDouble(t *testing.T) {
 			got, sink := of(t, tsPackage)
 			assert.False(t, got[shapedName].ok, "Shaped has no double")
 			assert.Equal(t, codes(sink), []diag.Code{double.Property}, "Of reports the property of Shaped")
+		})
+
+		t.Run("reports Constraint at an interface with type-set elements", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := of(t, constraintPackage)
+			assert.False(t, got[numberName].ok, "Number has no double")
+			assert.Equal(t, codes(sink), []diag.Code{double.Constraint}, "Of reports the type set of Number")
 		})
 	})
 

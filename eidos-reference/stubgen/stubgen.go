@@ -5,8 +5,10 @@ package stubgen
 
 import (
 	"embed"
+	"slices"
 	"strings"
 	"text/template"
+	"unicode"
 
 	"go.dokimi.dev/eidos/reference/internal/double"
 	"go.dokimi.dev/eidos/reference/internal/tree"
@@ -14,6 +16,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/rules"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // ID is the name of the plugin.
@@ -86,6 +90,10 @@ type data struct {
 // record. The test of a TypeScript stub assigns a new stub to a constant
 // of the interface's type. tsc checks the assignment.
 //
+// The stub of a generic interface has the type parameters of the
+// interface. Its test checks it at the witnesses of the type parameters,
+// and a generic stub has no test where a type parameter has no witness.
+//
 // Each call returns a new plugin, because a plugin instance belongs to one
 // workspace.
 func New() plugin.Generator {
@@ -105,14 +113,23 @@ func New() plugin.Generator {
 
 // generate records the stub of an interface under the directive, and the
 // test of the stub. It records nothing for an interface without a double.
-// [double.Of] reports why such an interface has none.
+// [double.Of] reports why such an interface has none. It also records
+// nothing for an interface with a method that has type parameters, after
+// it reports [GenericMethod] at the interface.
 //
-// The stub has the methods of the double. Its nested types are the call
-// records of the methods, in the order of the methods. A call record has a
-// field for each parameter of its method, with the name of the parameter.
-// The templates write the type of each field from the parameter, because
-// the list of a variadic parameter has no neutral spelling. The test has
-// the [double.Signatures] of the methods of the stub.
+// The stub has the methods of the double and the type parameters of the
+// interface. Its nested types are the call records of the methods, in the
+// order of the methods. A call record has a field for each parameter of its
+// method, with the name of the parameter. It has the type parameters that
+// the types of the parameters mention, so a TypeScript record passes
+// noUnusedParameters. The templates write the type of each field from the
+// parameter, because the list of a variadic parameter has no neutral
+// spelling.
+//
+// The test has the [double.Signatures] of the methods of the stub and the
+// type parameters of the interface. It implements the interface at the
+// witnesses of the type parameters. generate does not record a test of a
+// generic stub where a type parameter does not have a witness.
 func generate(m *sdk.InterfaceMatch, e *sdk.Emitter) error {
 	i := m.Interface
 	name := e.JoinName(Word, i.Name)
@@ -120,29 +137,91 @@ func generate(m *sdk.InterfaceMatch, e *sdk.Emitter) error {
 	if !stubbed {
 		return nil
 	}
+	for _, method := range methods {
+		if len(method.TypeParams) > 0 {
+			m.Errorf(
+				GenericMethod,
+				"%s has the method %s with type parameters, whose arguments a call record cannot state, so it has no stub",
+				i.Name,
+				method.Name,
+			)
+			return nil
+		}
+	}
 	stub := &emit.Struct{
 		Origin:     i.ID,
 		Name:       name,
 		Visibility: i.Visibility,
-		Implements: []*emit.TypeRef{{Spelling: i.Name, Target: i.ID}},
+		TypeParams: sdk.MirrorTypeParams(i.TypeParams),
 	}
+	stub.Implements = []*emit.TypeRef{{Spelling: i.Name, Target: i.ID, Args: sdk.TypeArgs(stub.TypeParams)}}
 	stub.Methods.Append(methods...)
 	for _, method := range methods {
-		call := &emit.Struct{Name: e.JoinName(CallWord, e.JoinName(method.Name, i.Name)), Visibility: i.Visibility}
+		call := &emit.Struct{
+			Name:       e.JoinName(CallWord, e.JoinName(method.Name, i.Name)),
+			Visibility: i.Visibility,
+			TypeParams: mentioned(sdk.MirrorTypeParams(i.TypeParams), method.Params),
+		}
 		for _, p := range method.Params {
 			call.Fields.Append(&emit.Field{Name: p.Name})
 		}
 		stub.Types.Append(call)
 	}
+	d := data{Interface: i.Name}
+	e.File().Record(d, stub)
+	witnesses := m.Rules().Witnesses(i.TypeParams)
+	if len(i.TypeParams) > 0 && witnesses == nil {
+		return nil
+	}
+	var args []*emit.TypeRef
+	for _, w := range witnesses {
+		args = append(args, rules.EmitRef(w))
+	}
 	test := &emit.Struct{
 		Origin:     i.ID,
 		Name:       name,
 		Visibility: i.Visibility,
-		Implements: []*emit.TypeRef{{Spelling: i.Name, Target: i.ID}},
+		TypeParams: sdk.MirrorTypeParams(i.TypeParams),
+		Implements: []*emit.TypeRef{{Spelling: i.Name, Target: i.ID, Args: args}},
 	}
 	test.Methods.Append(double.Signatures(methods)...)
-	d := data{Interface: i.Name}
-	e.File().Record(d, stub)
 	e.File(TestTag).Record(d, test)
 	return nil
+}
+
+// mentioned returns the type parameters of tps that the type of a
+// parameter of params mentions, in order, and nil where no type mentions
+// one.
+func mentioned(tps []*emit.TypeParam, params []*emit.Param) []*emit.TypeParam {
+	var out []*emit.TypeParam
+	for _, tp := range tps {
+		if slices.ContainsFunc(params, func(p *emit.Param) bool { return mentions(p.Type, tp.Name) }) {
+			out = append(out, tp)
+		}
+	}
+	return out
+}
+
+// mentions reports whether the reference t mentions the type parameter
+// named name. For a named reference, the spelling or a type argument must
+// match the name. For a structural reference, a word of the written
+// spelling must equal the name, because a written spelling contains the
+// spelling of each child. A word is a run of letters, digits, underscores
+// and dollar signs, so a qualified name, a literal type and a member of an
+// inline body with the name of the parameter count as a mention. A nil
+// reference, which a parameter without a type has, reports false.
+func mentions(t *emit.TypeRef, name string) bool {
+	if t == nil {
+		return false
+	}
+	if t.Form != symbol.FormNamed {
+		words := strings.FieldsFunc(t.Spelling, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '$'
+		})
+		return slices.Contains(words, name)
+	}
+	if t.Spelling == name {
+		return true
+	}
+	return slices.ContainsFunc(t.Args, func(a *emit.TypeRef) bool { return mentions(a, name) })
 }

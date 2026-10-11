@@ -278,20 +278,20 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 	name := e.JoinName(builderWord, s.Name)
 	newName := e.JoinName(s.Name, newWord)
 	fromName := e.JoinName(fromWord, newName)
-	args := typeArgs(s)
 	builder := &emit.Struct{
 		Origin:     s.ID,
 		Doc:        []string{fmt.Sprintf(builderDoc, name, s.Name)},
 		Name:       name,
 		Visibility: s.Visibility,
-		TypeParams: typeParams(s),
+		TypeParams: sdk.MirrorTypeParams(s.TypeParams),
 	}
+	args := sdk.TypeArgs(builder.TypeParams)
 	builder.Fields.Append(&emit.Field{
 		Origin: s.ID, Name: valueField, Visibility: symbol.VisibilityPackage,
 		Type: &emit.TypeRef{Spelling: s.Name, Target: s.ID, Args: args},
 	})
 	for _, f := range fields(s) {
-		builder.Methods.Append(setters(b, e, s, name, f)...)
+		builder.Methods.Append(setters(b, e, s, name, args, f)...)
 	}
 	build := golang.PointerReceiver(&emit.Method{
 		Origin:     s.ID,
@@ -311,7 +311,7 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Doc:        []string{fmt.Sprintf(newDoc, newName, s.Name)},
 		Name:       newName,
 		Visibility: s.Visibility,
-		TypeParams: typeParams(s),
+		TypeParams: sdk.MirrorTypeParams(s.TypeParams),
 		Returns:    []*emit.Return{{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}},
 	}
 	ctor.Body.Declare(DefaultsSlot)
@@ -326,7 +326,7 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Doc:        []string{fmt.Sprintf(fromDoc, fromName)},
 		Name:       fromName,
 		Visibility: s.Visibility,
-		TypeParams: typeParams(s),
+		TypeParams: sdk.MirrorTypeParams(s.TypeParams),
 		Params:     []*emit.Param{{Name: valueParam, Type: &emit.TypeRef{Spelling: s.Name, Target: s.ID, Args: args}}},
 		Returns:    []*emit.Return{{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}},
 	}
@@ -437,41 +437,6 @@ func fields(s *node.Struct) []*node.Field {
 	return out
 }
 
-// typeParams returns a copy of the type parameters of s in the emit model,
-// for one declaration of the builder of s, and nil for a struct without
-// type parameters.
-func typeParams(s *node.Struct) []*emit.TypeParam {
-	if len(s.TypeParams) == 0 {
-		return nil
-	}
-	out := make([]*emit.TypeParam, 0, len(s.TypeParams))
-	for _, tp := range s.TypeParams {
-		bounds := make([]*emit.TypeRef, 0, len(tp.Bounds))
-		for _, bound := range tp.Bounds {
-			bounds = append(bounds, rules.EmitRef(bound))
-		}
-		out = append(out, &emit.TypeParam{
-			Name: tp.Name, Variance: tp.Variance, Const: tp.Const, Bounds: bounds,
-			Default: rules.EmitRef(tp.Default), Type: rules.EmitRef(tp.Type), DefaultValue: tp.DefaultValue,
-		})
-	}
-	return out
-}
-
-// typeArgs returns the type parameters of s as the arguments of a reference
-// inside a declaration of the builder of s, and nil for a struct without
-// type parameters.
-func typeArgs(s *node.Struct) []*emit.TypeRef {
-	if len(s.TypeParams) == 0 {
-		return nil
-	}
-	out := make([]*emit.TypeRef, 0, len(s.TypeParams))
-	for _, tp := range s.TypeParams {
-		out = append(out, &emit.TypeRef{Spelling: tp.Name})
-	}
-	return out
-}
-
 // pointerTo returns a reference to a pointer to t, as Go writes it: the
 // pointer mark before the name of t and the arguments of t in brackets.
 func pointerTo(t *emit.TypeRef) *emit.TypeRef {
@@ -523,9 +488,11 @@ func formOf(b rules.Bound, f *node.Field) form {
 }
 
 // setters returns the setters of the field f of the struct s on the builder
-// named name, by the form of the type of f.
-func setters(b rules.Bound, e *sdk.Emitter, s *node.Struct, name string, f *node.Field) []*emit.Method {
-	args := typeArgs(s)
+// named name, by the form of the type of f. args are the arguments of a
+// reference to the builder inside its own declaration.
+func setters(
+	b rules.Bound, e *sdk.Emitter, s *node.Struct, name string, args []*emit.TypeRef, f *node.Field,
+) []*emit.Method {
 	setter := func(setName, doc, tmpl string, data member, params ...*emit.Param) *emit.Method {
 		m := golang.PointerReceiver(&emit.Method{
 			Origin:     s.ID,

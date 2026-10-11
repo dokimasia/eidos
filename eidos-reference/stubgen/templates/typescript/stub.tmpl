@@ -2,13 +2,13 @@
 {{- $stub := .Decl}}
 
 /** {{$stub.Name}} is a stub of {{.Data.Interface}}. Each method records its arguments and calls its function field. */
-export class {{$stub.Name}} implements {{spell (index $stub.Implements 0)}} {
+export class {{$stub.Name}}{{typeparams $stub.TypeParams}} implements {{spell (index $stub.Implements 0)}} {
 {{- range $i, $m := $stub.Methods.Items}}
 {{- $call := index $stub.Types.Items $i}}
   /** {{$m.Name}}Func is the function that {{$m.Name}} calls. */
   {{$m.Name}}Func?: ({{params $m.Params}}) => {{slice (returns $m) 2}};
   /** {{$m.Name}}Calls contains the arguments of each call of {{$m.Name}}, in order. */
-  {{$m.Name}}Calls: {{$call.Name}}[] = [];
+  {{$m.Name}}Calls: {{$call.Name}}{{template "typeargs" $call.TypeParams}}[] = [];
 {{- end}}
 {{- range $i, $m := $stub.Methods.Items}}
 {{- $call := index $stub.Types.Items $i}}
@@ -24,10 +24,11 @@ export class {{$stub.Name}} implements {{spell (index $stub.Implements 0)}} {
 {{- $call := index $stub.Types.Items $i}}
 
 /** {{$call.Name}} contains the arguments of one call of {{$stub.Name}}.{{$m.Name}}. */
-export interface {{$call.Name}} {
+export interface {{$call.Name}}{{typeparams $call.TypeParams}} {
 {{- range $j, $p := $m.Params}}
   {{(index $call.Fields.Items $j).Name}}: {{spell $p.Type}}{{if $p.Variadic}}[]{{end}};
 {{- end}}
 }
 {{- end}}
 {{- end}}
+{{- define "typeargs"}}{{with .}}<{{range $i, $p := .}}{{if $i}}, {{end}}{{$p.Name}}{{end}}>{{end}}{{end}}

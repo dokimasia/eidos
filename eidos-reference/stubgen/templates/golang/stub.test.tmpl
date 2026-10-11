@@ -1,17 +1,26 @@
 {{- use "testing"}}
 {{- range .Records}}
 {{- $stub := .Decl}}
+{{- $contract := index $stub.Implements 0}}
 
 // {{$stub.Name}} implements {{.Data.Interface}}.
-var _ {{spell (index $stub.Implements 0)}} = (*{{$stub.Name}})(nil)
+var _ {{spell $contract}} = (*{{$stub.Name}}{{template "witnesses" $contract.Args}})(nil)
 {{- range $m := $stub.Methods.Items}}
 
 // Test{{$stub.Name}}{{$m.Name}} checks that {{$m.Name}} calls {{$m.Name}}Func once and records one call.
 func Test{{$stub.Name}}{{$m.Name}}(t *testing.T) {
 	t.Parallel()
+{{- if $stub.TypeParams}}
 
+	test{{$stub.Name}}{{$m.Name}}{{template "witnesses" $contract.Args}}(t)
+}
+
+// test{{$stub.Name}}{{$m.Name}} checks {{$m.Name}} for the type arguments that Test{{$stub.Name}}{{$m.Name}} passes.
+func test{{$stub.Name}}{{$m.Name}}{{typeparams $stub.TypeParams}}(t *testing.T) {
+{{- else}}
+{{end}}
 	called := 0
-	stub := &{{$stub.Name}}{}
+	stub := &{{$stub.Name}}{{template "typeargs" $stub.TypeParams}}{}
 	stub.{{$m.Name}}Func = func({{range $j, $p := $m.Params}}{{if $j}}, {{end}}_ {{if $p.Variadic}}...{{end}}{{spell $p.Type}}{{end}}){{template "results" $m.Returns}} {
 		called++
 {{- if $m.Returns}}
@@ -33,3 +42,5 @@ func Test{{$stub.Name}}{{$m.Name}}(t *testing.T) {
 {{- else if .}} ({{range $j, $r := .}}{{if $j}}, {{end}}{{spell $r.Type}}{{end}})
 {{- end}}
 {{- end}}
+{{- define "typeargs"}}{{with .}}[{{range $i, $p := .}}{{if $i}}, {{end}}{{$p.Name}}{{end}}]{{end}}{{end}}
+{{- define "witnesses"}}{{with .}}[{{range $i, $a := .}}{{if $i}}, {{end}}{{spell $a}}{{end}}]{{end}}{{end}}

@@ -25,4 +25,13 @@ var (
 		Number:  3,
 		Meaning: "a double cannot implement a property of its interface",
 	})
+	// Constraint reports an interface with type-set elements, such as the
+	// Go interface ~int | ~float64. Such an interface constrains a type
+	// parameter and is never the type of a value, so no double implements
+	// it. The finding is an Error at the interface, and the plugin writes
+	// no double of it.
+	Constraint = diag.MustRegister(CodePrefix, diag.CodeSpec{
+		Number:  4,
+		Meaning: "a double cannot implement an interface that only constrains type parameters",
+	})
 )

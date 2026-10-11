@@ -5,6 +5,7 @@ package mockgen
 
 import (
 	"embed"
+	"slices"
 
 	"go.dokimi.dev/eidos/reference/internal/double"
 	"go.dokimi.dev/eidos/reference/internal/tree"
@@ -63,7 +64,9 @@ type data struct {
 // New returns mockgen. It writes the mock <I>Mock of each interface under
 // [MockDirective] and of each interface that the plan emits, such as a
 // repository of repogen. A mock has a function field for each method. Each
-// method of the mock calls its field.
+// method of the mock calls its field. The mock of a generic interface has
+// the type parameters of the interface, and implements the interface at
+// those parameters.
 //
 // The family [Word] claims its files through the template mock.tmpl of the
 // plan's target. The tree of the target golang writes the fields as func
@@ -104,15 +107,17 @@ func source(m *sdk.InterfaceMatch, e *sdk.Emitter) error {
 		Origin:     i.ID,
 		Name:       name,
 		Visibility: i.Visibility,
-		Implements: []*emit.TypeRef{{Spelling: i.Name, Target: i.ID}},
+		TypeParams: sdk.MirrorTypeParams(i.TypeParams),
 	}
+	mock.Implements = []*emit.TypeRef{{Spelling: i.Name, Target: i.ID, Args: sdk.TypeArgs(mock.TypeParams)}}
 	mock.Methods.Append(methods...)
 	e.File(TestTag).Record(data{Interface: i.Name}, mock)
 	return nil
 }
 
 // emitted writes the mock of an interface that an earlier plugin emitted.
-// The mock has the origin of the interface.
+// The mock has the origin of the interface. It shares the type parameters
+// of the interface, which the settle respells in place for both.
 func emitted(m *sdk.EmitMatch, e *sdk.Emitter) error {
 	i, _ := m.Value.(*emit.Interface)
 	name := e.JoinName(Word, i.Name)
@@ -120,7 +125,8 @@ func emitted(m *sdk.EmitMatch, e *sdk.Emitter) error {
 		Origin:     i.Origin,
 		Name:       name,
 		Visibility: i.Visibility,
-		Implements: []*emit.TypeRef{{Spelling: i.Name}},
+		TypeParams: slices.Clone(i.TypeParams),
+		Implements: []*emit.TypeRef{{Spelling: i.Name, Args: sdk.TypeArgs(i.TypeParams)}},
 	}
 	mock.Methods.Append(double.Copy(name, i)...)
 	e.File(TestTag).Record(data{Interface: i.Name}, mock)
