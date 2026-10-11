@@ -73,7 +73,9 @@ type workspaces struct {
 // error for a working directory that does not resolve, for a file that does
 // not read or decode, for a plugin directory of the file that does not load,
 // for a fault of Build, for a root of a list that does not exist, and for two
-// roots of a list that nest.
+// roots of a list that nest. A fault of a file that does not decode names
+// the file relative to the directory of the file that Open found, in slash
+// form, as a finding names a file.
 func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
 	found, err := open(stdio, f, compose)
 	if err != nil {
@@ -103,7 +105,7 @@ func open(stdio IO, f Flags, compose Compose) (workspaces, error) {
 	}
 	var decoded config.File
 	if file != "" {
-		if decoded, err = config.Decode(file, data); err != nil {
+		if decoded, err = config.Decode(relative(root, file), data); err != nil {
 			return workspaces{dir: dir}, err
 		}
 	}
@@ -197,7 +199,7 @@ func list(compose Compose, brand output.Brand, dir, name string, l *config.List)
 // is the root of the entry, dir is the directory of the list, and given is
 // the path that the entry sets. When given is empty, the file is the config
 // file of the brand in the root, and the entry has no config when that file
-// does not exist.
+// does not exist. A fault of the file names the file relative to dir.
 func entryConfig(root, dir, name, given string) (string, *config.Document, error) {
 	file := filepath.Join(root, name)
 	if given != "" {
@@ -210,12 +212,12 @@ func entryConfig(root, dir, name, given string) (string, *config.Document, error
 	if err != nil {
 		return "", nil, fmt.Errorf("cli: read the config file: %w", err)
 	}
-	decoded, err := config.Decode(file, data)
+	decoded, err := config.Decode(relative(dir, file), data)
 	if err != nil {
 		return "", nil, err
 	}
 	if decoded.List != nil {
-		return "", nil, fmt.Errorf("cli: the config file %s of a workspace in a list is a list", file)
+		return "", nil, fmt.Errorf("cli: the config file %s of a workspace in a list is a list", relative(dir, file))
 	}
 	return file, decoded.Document, nil
 }
@@ -249,6 +251,19 @@ func resolve(dir, p string) string {
 		return filepath.Clean(p)
 	}
 	return filepath.Join(dir, p)
+}
+
+// relative returns the path of file relative to the directory dir in slash
+// form, the form in which a finding names a file of a workspace. A config
+// error names its file this way, so its text does not depend on where the
+// workspace is. relative returns file unchanged when file has no path
+// relative to dir, such as a file on another volume of Windows.
+func relative(dir, file string) string {
+	rel, err := filepath.Rel(dir, file)
+	if err != nil {
+		return file
+	}
+	return filepath.ToSlash(rel)
 }
 
 // marked reports whether dir contains a version control marker.

@@ -185,8 +185,8 @@ func TestOpen(t *testing.T) {
 
 			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
 			err := refused(t, root, cli.Flags{})
-			assert.Contains(t, err.Error(), filepath.Join(root, confName)+":2: field workerz not found",
-				"the error has the file and the line of the fault")
+			assert.HasPrefix(t, err.Error(), confName+":2: field workerz not found",
+				"the error has the file relative to the root and the line of the fault")
 		})
 
 		t.Run("returns the faults of Build", func(t *testing.T) {
@@ -310,7 +310,8 @@ func TestOpen(t *testing.T) {
 				"svc/" + confName: files.Text("version: 2\n"),
 			})
 			err := refused(t, root, cli.Flags{})
-			assert.Contains(t, err.Error(), "the file has version 2", "the error is the fault of the file")
+			assert.HasPrefix(t, err.Error(), "svc/"+confName+":1: the file has version 2",
+				"the error has the file relative to the list and the fault of the file")
 		})
 
 		t.Run("returns the faults of Build after the name of the list entry", func(t *testing.T) {
