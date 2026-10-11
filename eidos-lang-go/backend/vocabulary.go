@@ -79,9 +79,9 @@ const (
 
 // Speller spells type references for one file. Every package a
 // spelling names is bound in the file's import set, under the name
-// the import path assumes or a numbered one where another import or
-// a declaration of the file takes that name, and the spelling
-// qualifies through the bound name.
+// that [golang.Qualifier] returns for its path or a numbered one where
+// another import or a declaration of the file takes that name, and the
+// spelling qualifies through the bound name.
 //
 // # Concurrency
 //
@@ -293,14 +293,15 @@ func (s Speller) named(t *emit.TypeRef) (string, bool, error) {
 }
 
 // qualified writes a named reference's name through its package's
-// bound name, and reports whether that is the name as written.
+// bound name, and reports whether that is the name as written. The
+// package binds the name that [golang.Qualifier] returns for its path.
 func (s Speller) qualified(t *emit.TypeRef) (string, bool, error) {
 	pkg, err := packageOf(t)
 	if err != nil || pkg == "" {
 		return t.Spelling, true, err
 	}
 	name := golang.Unqualified(t.Spelling)
-	if local := s.set.Bind(pkg, golang.AssumedName(pkg)); local != "" {
+	if local := s.set.Bind(pkg, golang.Qualifier(pkg)); local != "" {
 		name = local + qualifierSep + name
 	}
 	return name, name == t.Spelling, nil
@@ -402,19 +403,20 @@ func Docs(lines []string, prefix ...string) string {
 }
 
 // Package writes the package clause's name, taken from the
-// identity's own name and falling back to the name its path
-// assumes, [golang.AssumedName]. Every Go file declares a package,
-// and the backend invents no package name, so an identity naming no
-// package returns an error, and the render withholds the file. The
-// layout routes a file without a package where no Go module contains
-// the file's directory and the plan states no import base for it.
-// Package allocates nothing, and a refusal allocates its error.
+// identity's own name and falling back to the qualifier of its path,
+// [golang.Qualifier], so a path whose last element is a keyword still
+// declares an identifier. Go requires a package clause in each file, and
+// the backend does not invent a package name. So an identity without a
+// package returns an error, and the render withholds the file. The layout
+// routes a file without a package where no Go module contains the
+// file's directory and the plan states no import base for it. Package
+// allocates an escaped qualifier, and a refusal allocates its error.
 func Package(id symbol.Identity) (string, error) {
 	switch {
 	case id.Name != "":
 		return id.Name, nil
 	case id.Package != "":
-		return golang.AssumedName(id.Package), nil
+		return golang.Qualifier(id.Package), nil
 	default:
 		return "", refuse("every Go file declares a package, and none derives for this file: " +
 			"no Go module contains its directory, and the plan states no import base for it")
@@ -593,13 +595,16 @@ func qualifiesInside(spelling string) bool {
 }
 
 // packageOf returns the import path of the package of a named reference,
-// and the empty path for a reference without a package. For a reference
-// whose target is a declaration of another language, it returns the
-// package that the layout recorded. The spelling of a reference without
-// a target must be a Go type name, and a qualified spelling must have a
-// recorded package.
+// and the empty path for a reference without a package. A reference to a
+// type parameter has the empty path, because no package exports a type
+// parameter. For a reference whose target is a declaration of another
+// language, it returns the package that the layout recorded. The spelling
+// of a reference without a target must be a Go type name, and a qualified
+// spelling must have a recorded package.
 func packageOf(t *emit.TypeRef) (string, error) {
 	switch {
+	case t.Target.Kind == symbol.KindTypeParam:
+		return "", nil
 	case !t.Target.IsZero() && t.Target.Lang != golang.Lang:
 		return t.Package, nil
 	case !t.Target.IsZero():

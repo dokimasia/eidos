@@ -32,6 +32,12 @@ const (
 	// yamlName the name it assumes.
 	yamlPkg  = "gopkg.in/yaml.v3"
 	yamlName = "yaml"
+	// keywordPkg is a path whose last element is a Go keyword,
+	// keywordClause the name its package clause declares, and
+	// keywordName the escaped name a generated file imports it under.
+	keywordPkg    = "example.com/shop/go"
+	keywordClause = "golang"
+	keywordName   = "go_"
 	// timePkg and contextPkg are standard library packages.
 	timePkg    = "time"
 	contextPkg = "context"
@@ -41,6 +47,8 @@ const (
 	qualifiedRow = storeName + "." + rowName
 	// protoLang is a language other than Go that a target can be in.
 	protoLang symbol.Lang = "protobuf"
+	// paramName is a type parameter of rowName.
+	paramName = "T"
 )
 
 // The declarations and spellings the allocation cases name.
@@ -195,6 +203,21 @@ func TestVocabulary(t *testing.T) {
 				"the major version is dropped")
 		})
 
+		t.Run("qualifies a package whose path ends in a keyword through the escaped name", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			target := &emit.TypeRef{
+				Spelling: keywordClause + "." + rowName,
+				Target: symbol.Identity{
+					Lang: golang.Lang, Package: keywordPkg, Name: rowName, Kind: symbol.KindStruct,
+				},
+			}
+			assert.Equal(t, spelled(t, s, target), keywordName+"."+rowName, "go is a keyword, so the qualifier is go_")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: keywordPkg, Name: keywordName}},
+				"the import binds the escaped name")
+		})
+
 		t.Run("suffixes the qualifier of a second package that assumes the same name", func(t *testing.T) {
 			t.Parallel()
 
@@ -223,6 +246,20 @@ func TestVocabulary(t *testing.T) {
 			}
 			assert.Equal(t, spelled(t, s, target), qualifiedRow, "a declaration of another package is qualified")
 			assert.Equal(t, set.Paths(), []string{storePkg}, "the package is imported")
+		})
+
+		t.Run("writes a reference to a type parameter of another package bare", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			param := &emit.TypeRef{
+				Spelling: paramName,
+				Target: symbol.Identity{
+					Lang: golang.Lang, Package: storePkg, Owner: rowName, Name: paramName, Kind: symbol.KindTypeParam,
+				},
+			}
+			assert.Equal(t, spelled(t, s, param), paramName, "no package exports a type parameter")
+			assert.Equal(t, set.Len(), 0, "a type parameter has no import")
 		})
 
 		t.Run("qualifies a target of another language through its recorded package", func(t *testing.T) {
@@ -722,6 +759,15 @@ func TestVocabulary(t *testing.T) {
 			assert.NoError(t, err, "a package path spells")
 			assert.Equal(t, got, yamlName, "the major version is dropped")
 		})
+
+		t.Run("returns the escaped name of a path that ends in a keyword for an identity without a name",
+			func(t *testing.T) {
+				t.Parallel()
+
+				got, err := backend.Package(symbol.Identity{Package: keywordPkg})
+				assert.NoError(t, err, "a package path spells")
+				assert.Equal(t, got, keywordName, "go is a keyword, so the package declares go_")
+			})
 
 		t.Run("returns an error for an identity naming no package", func(t *testing.T) {
 			t.Parallel()

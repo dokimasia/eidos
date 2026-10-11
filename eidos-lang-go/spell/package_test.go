@@ -122,6 +122,11 @@ func TestPackage(t *testing.T) {
 				want: declared(svcModule+"/gen", "gen"),
 			},
 			{
+				name: "returns the escaped name of a directory without a Go package whose name is a keyword",
+				give: plugin.Placement{Path: "go/stub.go", Modules: []plugin.Module{acme()}},
+				want: declared(acmeModule+"/go", "go_"),
+			},
+			{
 				name: "returns the import base's path for a directory outside every Go module",
 				give: plugin.Placement{
 					Path:       "gen/svc/store/stub.go",

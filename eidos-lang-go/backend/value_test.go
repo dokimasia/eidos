@@ -196,6 +196,17 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, got, "\treturn "+yamlName+".Marshal()\n", "the major version is dropped")
 		})
 
+		t.Run("qualifies a callee of a package whose path ends in a keyword through the escaped name",
+			func(t *testing.T) {
+				t.Parallel()
+
+				got, set, err := returned(t, emit.Call(valueFn(keywordPkg, "Open")))
+				assert.NoError(t, err, "the call spells")
+				assert.Equal(t, got, "\treturn "+keywordName+".Open()\n", "go is a keyword, so the qualifier is go_")
+				assert.Equal(t, set.Entries(), []render.Entry{{Path: keywordPkg, Name: keywordName}},
+					"the import binds the escaped name")
+			})
+
 		t.Run("suffixes a callee's qualifier another package binds", func(t *testing.T) {
 			t.Parallel()
 

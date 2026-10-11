@@ -48,7 +48,8 @@ const treeRoot = "."
 //
 // Package returns a resident's package without allocating, and
 // allocates the import path it derives for a directory without one,
-// one allocation. A refusal allocates its error.
+// one allocation, and one more where the qualifier of the path is
+// escaped. A refusal allocates its error.
 func Package(p plugin.Placement) (symbol.Identity, error) {
 	if strings.HasSuffix(p.Path, testFile) {
 		for _, r := range p.Residents {
@@ -75,9 +76,10 @@ func Package(p plugin.Placement) (symbol.Identity, error) {
 }
 
 // derived returns the package of an import path no loaded package
-// declares, named the way an import of the path binds it.
+// declares, named the way a generated file imports the path,
+// [golang.Qualifier].
 func derived(importPath string) symbol.Identity {
 	return symbol.Identity{
-		Lang: golang.Lang, Package: importPath, Name: golang.AssumedName(importPath), Kind: symbol.KindPackage,
+		Lang: golang.Lang, Package: importPath, Name: golang.Qualifier(importPath), Kind: symbol.KindPackage,
 	}
 }

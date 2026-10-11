@@ -43,15 +43,16 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 
 // Callee spells a function by its identity and binds its package's
 // import. A call has no source spelling of its own, so the name is
-// qualified by the name the package's import binds, which is the
-// name its path assumes unless another import or a declaration of
-// the file takes that name. A function in no package, and one in the
-// file's own package, spells bare.
+// qualified by the name the package's import binds. The import binds the
+// name that [golang.Qualifier] returns for the path, as it does for a
+// type reference. Where another import or a declaration of the file takes
+// that name, the import binds a numbered name. A function in no package,
+// and one in the file's own package, spells bare.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Package == "" {
 		return id.Name, nil
 	}
-	local := t.set.Bind(id.Package, golang.AssumedName(id.Package))
+	local := t.set.Bind(id.Package, golang.Qualifier(id.Package))
 	if local == "" {
 		return id.Name, nil
 	}

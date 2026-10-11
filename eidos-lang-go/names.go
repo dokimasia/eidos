@@ -4,11 +4,13 @@
 package golang
 
 import (
+	"go/token"
 	"go/types"
 	"path"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/sdk/node"
 )
@@ -39,6 +41,15 @@ const (
 	// goPrefix opens a repository name that is not the package's,
 	// such as go-sqlite3.
 	goPrefix = "go-"
+)
+
+// The escapes that make an assumed import name a qualifier.
+const (
+	// qualifierPrefix opens the qualifier of a name that starts with a
+	// digit, and is the qualifier of a path whose assumed name is empty.
+	qualifierPrefix = "pkg"
+	// keywordSuffix closes the qualifier of a name that is a keyword.
+	keywordSuffix = "_"
 )
 
 // Predeclared reports whether a name is one of Go's predeclared
@@ -104,6 +115,31 @@ func AssumedName(importPath string) string {
 	name = strings.TrimPrefix(name, goPrefix)
 	if cut := strings.IndexFunc(name, notIdentifier); cut >= 0 {
 		name = name[:cut]
+	}
+	return name
+}
+
+// Qualifier returns the name under which a generated file imports the
+// package of importPath: the name that [AssumedName] returns, escaped
+// where it is no Go identifier. A keyword gains a trailing underscore, so
+// example.com/shop/go binds go_. A name that starts with a digit gains the
+// prefix pkg, so example.com/2fa binds pkg2fa. A path whose assumed name is
+// empty binds pkg.
+//
+// An escaped qualifier differs from the last element of the path, so the
+// import states it, and the qualifier binds whatever name the package
+// declares. Qualifier allocates an escaped qualifier, one allocation, and
+// nothing for a name that does not need an escape.
+func Qualifier(importPath string) string {
+	name := AssumedName(importPath)
+	if name == "" {
+		return qualifierPrefix
+	}
+	if token.IsKeyword(name) {
+		return name + keywordSuffix
+	}
+	if first, _ := utf8.DecodeRuneInString(name); unicode.IsDigit(first) {
+		return qualifierPrefix + name
 	}
 	return name
 }

@@ -15,6 +15,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/node"
 )
 
+// keywordPath is an import path whose last element is a Go keyword.
+const keywordPath = "example.com/shop/go"
+
 // nameCall is one name rule's call and the check of its result, which
 // the allocation test and the benchmark share.
 type nameCall struct {
@@ -151,6 +154,32 @@ func TestNames(t *testing.T) {
 		}
 	})
 
+	t.Run("Qualifier", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "returns the assumed name of a path", give: "github.com/golang-jwt/jwt/v5", want: "jwt"},
+			{name: "returns a keyword with a trailing underscore", give: keywordPath, want: "go_"},
+			{
+				name: "returns a keyword before a major version element with a trailing underscore",
+				give: "example.com/type/v2", want: "type_",
+			},
+			{name: "returns a name that starts with a digit behind pkg", give: "example.com/2fa", want: "pkg2fa"},
+			{name: "returns pkg for a path that assumes no name", give: "example.com/-", want: "pkg"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, golang.Qualifier(tt.give), tt.want, "the qualifier of a generated import")
+			})
+		}
+	})
+
 	t.Run("ImportName", func(t *testing.T) {
 		t.Parallel()
 
@@ -202,6 +231,10 @@ func TestNamesAllocs(t *testing.T) {
 		assert.MaxAllocs(t, c.call, 0, msg)
 		c.check(t)
 	}
+	var escaped string
+	assert.MaxAllocs(t, func() { escaped = golang.Qualifier(keywordPath) }, 1,
+		"Qualifier allocates the escaped qualifier of a keyword")
+	assert.Equal(t, escaped, "go_", "Qualifier escapes go")
 }
 
 // BenchmarkNames measures the name rules the frontend and the rules
@@ -246,6 +279,11 @@ func nameCalls() []nameCall {
 			name:  "AssumedName",
 			call:  func() { name = golang.AssumedName("github.com/golang-jwt/jwt/v5") },
 			check: func(tb assert.TB) { assert.Equal(tb, name, "jwt", "AssumedName returns jwt") },
+		},
+		{
+			name:  "Qualifier",
+			call:  func() { name = golang.Qualifier("github.com/golang-jwt/jwt/v5") },
+			check: func(tb assert.TB) { assert.Equal(tb, name, "jwt", "Qualifier returns jwt") },
 		},
 		{
 			name:  "Unqualified",
