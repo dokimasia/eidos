@@ -231,6 +231,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("MirrorTypeParams", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(sdk.MirrorTypeParams), reflect.TypeOf(core.MirrorTypeParams), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(sdk.TypeArgs), reflect.TypeOf(core.TypeArgs), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("TargetOption", func(t *testing.T) {
 		t.Parallel()
 

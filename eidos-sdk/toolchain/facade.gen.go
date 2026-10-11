@@ -127,10 +127,10 @@ type TB = core.TB
 // hide behind a missing compiler. A missing adapter records a failure
 // and reports false.
 //
-// [RunToolchainSuite] calls it once for the kernel's two checks that
-// run a toolchain. A satellite adding assertions of its own calls it
-// too, because every caller that runs a toolchain passes the gate,
-// whether or not the suite runs it.
+// [RunToolchainSuite] calls it once, before the kernel's three checks.
+// A satellite adding assertions of its own calls it too, because every
+// caller that runs a toolchain passes the gate, whether or not the suite
+// runs it.
 func Require(tb TB, a Adapter) bool {
 	return core.Require(tb, a)
 }
@@ -144,14 +144,13 @@ type Setup = core.Setup
 // the generated output parses, it type-checks, and its own tests
 // pass.
 //
-// Parsing needs no toolchain, so the parse check runs on every
-// machine. The two checks after it gate on the toolchain once:
-// absent locally they skip with the reason the adapter gave, and
-// absent in CI they fail, so a regression cannot hide behind a
-// missing compiler. A satellite adds its own assertions in its own
-// test, beside this call, because the kernel set is the minimum
-// every satellite runs. Each check runs the toolchain under its own
-// test's context.
+// The three checks gate on the toolchain once, because a language such
+// as TypeScript parses through its toolchain: absent locally they skip
+// with the reason the adapter gave, and absent in CI they fail, so a
+// regression cannot hide behind a missing compiler. A satellite adds its
+// own assertions in its own test, beside this call, because the kernel
+// set is the minimum every satellite runs. Each check runs the toolchain
+// under its own test's context.
 func RunToolchainSuite(t *testing.T, setup Setup) {
 	core.RunToolchainSuite(t, setup)
 }

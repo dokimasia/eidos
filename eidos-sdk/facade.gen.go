@@ -290,6 +290,41 @@ func Mirror(host string, m *node.Method) *emit.Method {
 	return core.Mirror(host, m)
 }
 
+// MirrorTypeParams returns the emit form of the node type parameters tps,
+// in order: each parameter's name, variance, bounds, default, value type
+// and default value, with each type reference restated through
+// [rules.EmitRef]. It returns nil for no parameters. A generator lifts the
+// type parameters of a generic declaration onto the declaration that it
+// emits for it, such as the mock of a generic interface, whose methods
+// name the parameters.
+//
+// # Allocation contract
+//
+// MirrorTypeParams allocates nothing for no parameters. Otherwise it
+// allocates the list, each parameter, the list of each parameter's bounds,
+// and what [rules.EmitRef] allocates for each bound, default and value
+// type. One parameter with one bound allocates four times.
+func MirrorTypeParams(tps []*node.TypeParam) []*emit.TypeParam {
+	return core.MirrorTypeParams(tps)
+}
+
+// TypeArgs returns the type parameters tps as the arguments of a
+// reference inside the declaration that declares them, in order, and nil
+// for no parameters. Each argument has the name of its parameter and no
+// target. [Emitter.Type] translates a reference to a type parameter the
+// same way. A generator writes the arguments where a generic declaration
+// that it emits refers to itself or to the declaration that it derives
+// from, such as the interface that the mock of a generic interface
+// implements.
+//
+// # Allocation contract
+//
+// TypeArgs allocates nothing for no parameters. Otherwise it allocates the
+// list and each argument. Two parameters allocate three times.
+func TypeArgs(tps []*emit.TypeParam) []*emit.TypeRef {
+	return core.TypeArgs(tps)
+}
+
 // TargetOption is one presentation declaration for one target, the
 // argument [Builder.For] takes: a template tree, helpers, or
 // overrides. [Templates], [Funcs] and [Overrides] construct one.
