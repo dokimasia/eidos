@@ -1,7 +1,7 @@
 ---
 milestone: 0012
 title: A plugin runs from files alone
-status: Planned
+status: Done
 depends-on: 0005
 ships-in: unscheduled
 deadline: none
@@ -40,7 +40,7 @@ without a toolchain.
       special-casing.
 - [x] A unit test asserts that the manifest and the template tree hash
       into the plugin's fingerprint contribution.
-- [ ] The manifest schema is published as a versioned JSON Schema, and
+- [x] The manifest schema is published as a versioned JSON Schema, and
       an editor completes manifest fields against it.
 
 ## Why now
@@ -72,6 +72,7 @@ The declarative host of [06-plugins.md](../architecture/06-plugins.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-11 | Ticked the last bullet and set the milestone to Done | The module contains the schema of format 1 as `plugin.schema.json`, and a golden test compares the file with `Schema`. A probe drives yaml-language-server 1.25.0 over stdio in the way that an editor drives it. The server reads the schema through the modeline of the fixture's manifest, and it reports no diagnostic for the manifest. It completes the keys of the manifest, of a rule, of a family and of a directive param, and the values of `emit` and `per`. It reports an unknown key and a format other than 1 |
 | 2026-10-10 | The last bullet waits for a check in an editor | python-jsonschema 4.26.0 over ruamel.yaml, which reads YAML 1.2, accepts the manifest of the fixture under `eidos-declarative/plugin.schema.json`. It refuses an unknown key, an unknown emission and a manifest without `format`. No editor has completed a manifest against the schema yet |
 | 2026-10-10 | Ticked the first four bullets | `declarative.Load` builds each plugin directory into a generator through the authoring surface, in the module `eidos-declarative`, which no kernel package imports. The conformance fixture opens a Go tree through `cli.Open`, and a cold run writes `svc/ledger_audit.go`, `svc/ledger_audit_test.go`, `ops/transfer_audit.go` and `ops/transfer.audit.ts`. A warm run writes the same files and reports the same findings. `level=trace` reports `BadSpelling` and `sink=missing` reports `UnresolvedReference` at the carrier. `go vet` passes over the Go output, and `go test` runs the generated test. `RunPluginSuite` passes over the plugin of the fixture and over the plugin of the module's tests. The module's tests assert that an edit of one byte of the manifest or of a template, a renamed template and a new template change the version and the fingerprint |
 | 2026-10-10 | A family claims its files through a file template, and the fixture's family `test` writes a Go test of each implementation | A declarative plugin has to generate the tests of the code that it generates, and no rule of a manifest describes a test file ([ADR-0019](../adr/0019-a-family-claims-its-files-through-a-template.md)) |
