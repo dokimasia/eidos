@@ -73,26 +73,26 @@ type checkout struct {
 	ring []string
 }
 
-// read returns the checkout whose go.work is in root. It reads the go.work
-// and the go.mod of each directory that the go.work uses through an
-// os.Root of root, so it does not read a file outside the checkout. A
-// module that has the kernel among its requirements is a module of the
-// ring. The directories of the checkout are absolute, because a scratch
-// module in another directory replaces the kernel and the facade with
-// them.
+// read returns the checkout whose go.work is in root. A root that is not
+// absolute is relative to dir, an absolute directory such as the working
+// directory of the command. read reads the go.work and the go.mod of each
+// directory that the go.work uses through an os.Root of root, so it does
+// not read a file outside the checkout. A module that has the kernel among
+// its requirements is a module of the ring. The directories of the
+// checkout are absolute, because a scratch module in another directory
+// replaces the kernel and the facade with them.
 //
 // Error modes:
-//   - the error of a root that does not resolve or open
+//   - the error of a root that does not open
 //   - the error of a go.work or a go.mod that does not read or parse, such
 //     as the go.mod of a directory outside the checkout
 //   - an error for a go.work without a go line, and for a go.mod without a
 //     module line
 //   - an error for a go.work that does not use the kernel, the SDK facade
 //     or a module of the ring
-func read(root string) (checkout, error) {
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return checkout{}, fmt.Errorf("%s: %w", commandName, err)
+func read(dir, root string) (checkout, error) {
+	if !filepath.IsAbs(root) {
+		root = filepath.Join(dir, root)
 	}
 	r, err := os.OpenRoot(root)
 	if err != nil {

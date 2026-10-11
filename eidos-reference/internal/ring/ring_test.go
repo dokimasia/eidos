@@ -158,7 +158,7 @@ func TestRing(t *testing.T) {
 			t.Parallel()
 
 			f := proxied(t, ringNames...)
-			got, err := read(f.root)
+			got, err := read(t.TempDir(), f.root)
 			assert.NoError(t, err, "the checkout reads")
 			expect.Equal(t, got.ring, ringModules, "the ring has each module that requires the kernel")
 			expect.Equal(t, got.kernel, filepath.Join(f.root, kernelDir), "the kernel is in its directory")
@@ -170,11 +170,7 @@ func TestRing(t *testing.T) {
 			t.Parallel()
 
 			root := files.Workspace(t, checkoutTree(passingName))
-			cwd, err := os.Getwd()
-			assert.NoError(t, err, "the test has a working directory")
-			relative, err := filepath.Rel(cwd, root)
-			assert.NoError(t, err, "the root is relative to the working directory")
-			got, err := read(relative)
+			got, err := read(filepath.Dir(root), filepath.Base(root))
 			assert.NoError(t, err, "the checkout reads")
 			expect.Equal(t, got.kernel, filepath.Join(root, kernelDir), "the directory of the kernel is absolute")
 			expect.Equal(t, got.facade, filepath.Join(root, facadeDir), "the directory of the facade is absolute")
@@ -183,7 +179,7 @@ func TestRing(t *testing.T) {
 		t.Run("returns the error of a root that does not exist", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := read(filepath.Join(t.TempDir(), missingDir))
+			_, err := read(t.TempDir(), missingDir)
 			assert.ErrorIs(t, err, fs.ErrNotExist, "the error wraps the error of the file system")
 		})
 
@@ -199,7 +195,7 @@ func TestRing(t *testing.T) {
 			fmt.Fprintf(&work, useFormat, localUse+passingName)
 			work.WriteString(workEnd)
 			files.Write(t, root, files.Tree{workFile: files.Text(work.String())})
-			_, err := read(root)
+			_, err := read(t.TempDir(), root)
 			assert.HasError(t, err, "the checkout does not read")
 			expect.HasPrefix(t, err.Error(), commandName+": ", "the error starts with the name of the command")
 		})
@@ -267,7 +263,7 @@ func TestRing(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, err := read(files.Workspace(t, tt.give))
+				_, err := read(t.TempDir(), files.Workspace(t, tt.give))
 				assert.HasError(t, err, "the checkout does not read")
 				expect.HasPrefix(t, err.Error(), commandName+": ", "the error starts with the name of the command")
 				if tt.wantIs != nil {
@@ -332,7 +328,7 @@ func TestRing(t *testing.T) {
 		t.Parallel()
 
 		f := proxied(t, ringNames...)
-		c, err := read(f.root)
+		c, err := read(t.TempDir(), f.root)
 		assert.NoError(t, err, "the checkout reads")
 
 		t.Run("returns no error for a release whose tests pass against the checkout", func(t *testing.T) {

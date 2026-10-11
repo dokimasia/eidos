@@ -49,18 +49,25 @@ const (
 // run, in the temporary directory of the system.
 const scratchPattern = "eidos-ring-*"
 
-// main runs the ring with the arguments and the environment of the process,
-// and exits the process with the status of the run. The first interrupt or
-// termination signal cancels the run.
+// main runs the ring with the working directory, the arguments and the
+// environment of the process, and exits the process with the status of the
+// run. The first interrupt or termination signal cancels the run. A working
+// directory that does not resolve ends the process with statusUsage.
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	status := run(ctx, os.Args[1:], os.Environ(), os.Stdout, os.Stderr)
+	status := statusUsage
+	if dir, err := os.Getwd(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", commandName, err)
+	} else {
+		status = run(ctx, dir, os.Args[1:], os.Environ(), os.Stdout, os.Stderr)
+	}
 	stop()
 	os.Exit(status)
 }
 
 // run runs the ring under ctx over the checkout that the flags of args
-// name, and returns the exit status. env is the environment of the go
+// name, and returns the exit status. dir is the absolute working directory,
+// against which a relative root resolves. env is the environment of the go
 // command.
 //
 // run reads the checkout and queries the module proxy for the latest version
@@ -70,7 +77,7 @@ func main() {
 // of the command line and of the checkout to stderr. Each module has a
 // directory of its own in the scratch directory of the run. run removes
 // the scratch directory before it returns.
-func run(ctx context.Context, args, env []string, stdout, stderr io.Writer) int {
+func run(ctx context.Context, dir string, args, env []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	root := flags.String(rootFlag, rootDefault, rootUsage)
@@ -82,7 +89,7 @@ func run(ctx context.Context, args, env []string, stdout, stderr io.Writer) int 
 			strings.Join(flags.Args(), " "))
 		return statusUsage
 	}
-	c, err := read(*root)
+	c, err := read(dir, *root)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return statusUsage

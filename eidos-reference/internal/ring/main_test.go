@@ -143,7 +143,7 @@ func TestMainProcess(t *testing.T) {
 				t.Parallel()
 
 				var stdout, stderr bytes.Buffer
-				expect.Equal(t, run(t.Context(), tt.args, os.Environ(), &stdout, &stderr), statusUsage,
+				expect.Equal(t, run(t.Context(), t.TempDir(), tt.args, os.Environ(), &stdout, &stderr), statusUsage,
 					"run returns statusUsage")
 				expect.Contains(t, stderr.String(), tt.want, "run writes the error of the command line")
 			})
@@ -154,7 +154,7 @@ func TestMainProcess(t *testing.T) {
 
 			f := proxied(t, ringNames...)
 			var stdout, stderr bytes.Buffer
-			got := run(t.Context(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
+			got := run(t.Context(), t.TempDir(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
 			expect.Equal(t, got, statusFailed, "run returns statusFailed for the module that fails")
 			expect.ContainsInOrder(t, stdout.String(), []string{
 				failWord + " " + modulePrefix + brokenName + ": ",
@@ -176,7 +176,7 @@ func TestMainProcess(t *testing.T) {
 
 			f := proxied(t, missingName, passingName, pseudoName)
 			var stdout, stderr bytes.Buffer
-			got := run(t.Context(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
+			got := run(t.Context(), t.TempDir(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
 			expect.Equal(t, got, statusOK, "run returns statusOK: "+stdout.String()+stderr.String())
 		})
 
@@ -187,7 +187,7 @@ func TestMainProcess(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
 			var stdout, stderr bytes.Buffer
-			got := run(ctx, []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
+			got := run(ctx, t.TempDir(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
 			expect.Equal(t, got, statusFailed, "run returns statusFailed")
 			expect.HasPrefix(t, stdout.String(), failWord+" "+modulePrefix+passingName+": ",
 				"run writes FAIL for the module")
