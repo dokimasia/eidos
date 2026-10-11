@@ -55,8 +55,8 @@ const (
 	paramsAllocs = 2 + 1
 	// clauseAllocs is one clause behind its keyword.
 	clauseAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of sixteen helpers,
-	// four allocations, and the speller's six bound helpers.
+	// funcsAllocs is the vocabulary of a file: the map of eighteen
+	// helpers, four allocations, and the speller's six bound helpers.
 	funcsAllocs = 4 + 6
 	// textAllocs is a docblock, an annotation or a package statement,
 	// sized once.
@@ -98,10 +98,26 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, backend.Docs(nil), "", "no block")
 		})
 
-		t.Run("writes a Javadoc block at the given depth", func(t *testing.T) {
+		t.Run("writes a Javadoc block at the top level", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Docs([]string{"One."}, "    "), "    /**\n     * One.\n     */\n",
+			assert.Equal(t, backend.Docs([]string{"One."}), "/**\n * One.\n */\n", "one gutter line per line")
+		})
+	})
+
+	t.Run("MemberDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no lines", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDocs(nil), "", "no block")
+		})
+
+		t.Run("writes the Javadoc block behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDocs([]string{"One."}), "    /**\n     * One.\n     */\n",
 				"the whole block indented to the member's depth")
 		})
 	})
@@ -863,13 +879,32 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, backend.Annotate(nil), "", "no lines")
 		})
 
-		t.Run("writes one annotation line per annotation at the given depth", func(t *testing.T) {
+		t.Run("writes one annotation line per annotation", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Annotate(symbol.Annotations{
 				{Name: "Deprecated"},
 				{Name: "SuppressWarnings", Args: []string{`"unchecked"`}},
-			}, "    "), "    @Deprecated\n    @SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
+			}), "@Deprecated\n@SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
+		})
+	})
+
+	t.Run("MemberAnnotate", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no annotations", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberAnnotate(nil), "", "no lines")
+		})
+
+		t.Run("writes each annotation line behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberAnnotate(symbol.Annotations{
+				{Name: "Deprecated"},
+				{Name: "SuppressWarnings", Args: []string{`"unchecked"`}},
+			}), "    @Deprecated\n    @SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
 		})
 	})
 
@@ -986,11 +1021,15 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 16, "Funcs returns the sixteen helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 18, "Funcs returns the eighteen helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/**\n * " + rowDoc + "\n */\n"),
+		},
+		{
+			name: "MemberDocs", allocs: textAllocs,
+			call: func() { out = backend.MemberDocs(doc) }, check: spells("    /**\n     * " + rowDoc + "\n     */\n"),
 		},
 		{
 			name: "PackageClause", allocs: textAllocs,
@@ -1027,6 +1066,10 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Annotate", allocs: textAllocs,
 			call: func() { out = backend.Annotate(annotations) }, check: spells("@Override\n"),
+		},
+		{
+			name: "MemberAnnotate", allocs: textAllocs,
+			call: func() { out = backend.MemberAnnotate(annotations) }, check: spells("    @Override\n"),
 		},
 	}
 }

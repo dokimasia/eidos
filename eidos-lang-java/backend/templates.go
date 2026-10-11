@@ -35,11 +35,11 @@ const (
 	// before its return type, which is where Java states it.
 	StructTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 		"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 		"{{if .Override}}    @Override\n{{end}}" +
 		"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
@@ -58,11 +58,11 @@ const (
 	// at type level, and places the body.
 	InterfaceTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 		"{{typemods .}}interface {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 		"    {{constantmods .}}{{spell .Type}} {{.Name}} = {{.Value}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 		"    {{sigmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
 		"{{if .HasDefault}} {\n{{memberbody .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
@@ -78,15 +78,15 @@ const (
 // way the class template spells its members.
 const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 	"{{typemods .}}enum {{.Name}} {\n" +
-	"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+	"{{- range .Variants.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 	"    {{enumvariant .}},{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}" +
 	"{{- if or .Fields.Len .Methods.Len}}\n    ;{{end}}" +
-	"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+	"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 	"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};" +
 	"{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}" +
-	"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+	"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 	"{{if .Override}}    @Override\n{{end}}" +
 	"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 	"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +

@@ -43,13 +43,12 @@ const (
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the three kind templates.
-	newAllocs = 1_512
+	newAllocs = 1_486
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
-	// The count varies between processes: 13 fresh processes, three of
-	// them with the collector off, counted 27,063,032 to 27,063,477. The
-	// ceiling allows 512 above the lowest.
-	renderAllocs = 27_063_032 + 512
+	// One run counted 22,812,619, and the budget is a round number about
+	// 5% above it.
+	renderAllocs = 24_000_000
 	// settleAllocs is one settle of the scaled corpus. With the collector
 	// off a settle allocates 2,186,665 times: the lowering pass, about two
 	// thirds of them, and the respelling of every name, about a third. The
