@@ -14,7 +14,8 @@
 // # Dependency position
 //
 // lang/typescript/spell imports the sdk's emit, plugin, rules and symbol
-// facades, the module root for the language identity, the module path
-// and the policy keys, the case conversion, the reference spelling and
-// the spoke helpers of eidos-lang, and the Go stdlib.
+// facades, the module root for the language identity, the module path,
+// the policy keys and the identifier predicates, the case conversion, the
+// reference spelling and the spoke helpers of eidos-lang, and the Go
+// stdlib.
 package spell

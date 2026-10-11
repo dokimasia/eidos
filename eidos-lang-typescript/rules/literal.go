@@ -43,11 +43,6 @@ const (
 	escapeMark = '\\'
 	// pathSep joins the names of a path, such as Color.Red.
 	pathSep = "."
-	// nameMarks are the characters other than letters that can open a
-	// name.
-	nameMarks = "$_"
-	// joiners are the two zero-width characters that continue a name.
-	joiners = "\U0000200c\U0000200d"
 )
 
 // The operators of a constant enum expression, and the parentheses that
@@ -134,11 +129,11 @@ func (l *lexer) next() token {
 	case strings.IndexByte(quotes, c) >= 0:
 		return l.quoted(start, c)
 	}
-	if r, size := utf8.DecodeRuneInString(l.text[start:]); nameRune(r, true) {
+	if r, size := utf8.DecodeRuneInString(l.text[start:]); typescript.IsIdentifierStart(r) {
 		l.at += size
 		for l.at < len(l.text) {
 			r, size := utf8.DecodeRuneInString(l.text[l.at:])
-			if !nameRune(r, false) {
+			if !typescript.IsIdentifierPart(r) {
 				break
 			}
 			l.at += size
@@ -329,16 +324,4 @@ func scanName(l *lexer, first token) (literal, bool) {
 		return literal{}, false
 	}
 	return lit, true
-}
-
-// nameRune reports whether a rune can start a TypeScript identifier when
-// first is set, or continue one otherwise. A letter, $ and _ can start
-// one. A digit, a combining mark, a connector and the two joiners can
-// also continue one.
-func nameRune(r rune, first bool) bool {
-	if strings.ContainsRune(nameMarks, r) || unicode.IsLetter(r) {
-		return true
-	}
-	return !first && (unicode.IsDigit(r) || unicode.In(r, unicode.Mn, unicode.Mc, unicode.Pc) ||
-		strings.ContainsRune(joiners, r))
 }

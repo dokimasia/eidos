@@ -75,6 +75,26 @@ func TestEvaluate(t *testing.T) {
 				"C is twice B, which is A plus one")
 		})
 
+		// Each name contains a character that ECMAScript admits in an
+		// identifier. The character is not a letter, a digit, a mark or a
+		// connector.
+		names := []struct {
+			name string
+			give string
+		}{
+			{name: "evaluates a reference to a member whose name starts with a letter number", give: "\U0000216b"},
+			{name: "evaluates a reference to a member whose name contains a middle dot", give: "a\U000000b7b"},
+		}
+		for _, tt := range names {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				e := enumOf(tt.give, "5", "B", tt.give+" + 1")
+				assert.Equal(t, tsrules.Rules{}.EnumOf(e, rules.View{}).OutOfRange.Inner.Text, "7",
+					"B is one more than the member that it names")
+			})
+		}
+
 		t.Run("joins two texts", func(t *testing.T) {
 			t.Parallel()
 

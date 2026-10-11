@@ -48,6 +48,10 @@ func TestName(t *testing.T) {
 				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HTTPRow",
 			},
 			{
+				name: "returns a class name with a letter outside ASCII",
+				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "Caf\U000000e9", want: "Caf\U000000e9",
+			},
+			{
 				name: "returns the camel-case spelling of a method",
 				host: symbol.KindStruct, kind: symbol.KindMethod, vis: symbol.VisibilityPublic,
 				give: "FetchRow", want: "fetchRow",
@@ -145,26 +149,45 @@ func TestName(t *testing.T) {
 	t.Run("IsIdentifier", func(t *testing.T) {
 		t.Parallel()
 
-		for _, name := range []string{"a", "_x", "$", "row1", "Row_$2"} {
-			t.Run("reports true for "+name, func(t *testing.T) {
+		identifiers := []struct {
+			name string
+			give string
+		}{
+			{name: "reports true for a letter", give: "a"},
+			{name: "reports true for an underscore before a letter", give: "_x"},
+			{name: "reports true for a dollar", give: "$"},
+			{name: "reports true for a digit after a letter", give: "row1"},
+			{name: "reports true for a dollar and an underscore after letters", give: "Row_$2"},
+			{name: "reports true for a letter outside ASCII", give: "\U000000e9"},
+			{name: "reports true for a letter number", give: "\U0000216b"},
+			{name: "reports true for a zero-width non-joiner between letters", give: "a\U0000200cb"},
+		}
+		for _, tt := range identifiers {
+			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.True(t, spell.IsIdentifier(name), "the name spells bare")
+				assert.True(t, spell.IsIdentifier(tt.give), "the name spells bare")
 			})
 		}
-		for _, name := range []string{"1row", wireName, "é", "a b"} {
-			t.Run("reports false for "+name, func(t *testing.T) {
+
+		others := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for a digit first", give: "1row"},
+			{name: "reports false for a hyphen", give: wireName},
+			{name: "reports false for a space", give: "a b"},
+			{name: "reports false for a combining mark first", give: "\U00000301a"},
+			{name: "reports false for a line separator", give: "a\U00002028"},
+			{name: "reports false for the empty name", give: ""},
+		}
+		for _, tt := range others {
+			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.False(t, spell.IsIdentifier(name), "the name does not spell bare")
+				assert.False(t, spell.IsIdentifier(tt.give), "the name does not spell bare")
 			})
 		}
-
-		t.Run("reports false for the empty name", func(t *testing.T) {
-			t.Parallel()
-
-			assert.False(t, spell.IsIdentifier(""), "an empty name spells nothing")
-		})
 	})
 }
 

@@ -57,6 +57,7 @@ const (
 	indexName   = "index"
 	keyName     = "key"
 	wireName    = "content-type"
+	cafeName    = "caf\U000000e9"
 	phaseName   = "Phase"
 	openName    = "Open"
 	makeName    = "make"
@@ -824,6 +825,14 @@ func TestVocabulary(t *testing.T) {
 			got, err := backend.PropKey(&emit.Field{Name: idName})
 			assert.NoError(t, err, "the key spells")
 			assert.Equal(t, got, idName, "unquoted")
+		})
+
+		t.Run("writes an identifier with a letter outside ASCII bare", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.PropKey(&emit.Field{Name: cafeName})
+			assert.NoError(t, err, "the key spells")
+			assert.Equal(t, got, cafeName, "unquoted")
 		})
 
 		t.Run("quotes a name that is no identifier", func(t *testing.T) {

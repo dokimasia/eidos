@@ -29,6 +29,11 @@
 // decorator with them. The rules decode the literal of a directive and
 // the value of an enum member with them.
 //
+// [IsIdentifierStart] and [IsIdentifierPart] report whether a character
+// can start or continue an identifier. The rules read the names in the
+// literal of a directive and in the value of an enum member with them.
+// spell decides with them whether a name spells bare.
+//
 // # Packages
 //
 // The module covers TypeScript as a source and as a target:

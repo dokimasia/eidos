@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -72,20 +73,18 @@ func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error)
 	return spelt, nil
 }
 
-// IsIdentifier reports whether a name spells bare in TypeScript: an
-// ASCII letter, an underscore or a dollar first, those and digits
-// after. It allocates nothing.
+// IsIdentifier reports whether a name spells bare in TypeScript. The
+// first character of the name passes [typescript.IsIdentifierStart], and
+// every other character passes [typescript.IsIdentifierPart]. An empty
+// name does not spell bare. IsIdentifier does not allocate.
 func IsIdentifier(name string) bool {
 	if name == "" {
 		return false
 	}
 	for i, r := range name {
-		head := r == '_' || r == '$' ||
-			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
-		if head || (i > 0 && r >= '0' && r <= '9') {
-			continue
+		if !typescript.IsIdentifierPart(r) || i == 0 && !typescript.IsIdentifierStart(r) {
+			return false
 		}
-		return false
 	}
 	return true
 }

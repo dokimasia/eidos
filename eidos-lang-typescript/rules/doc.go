@@ -46,7 +46,8 @@
 //
 // lang/typescript/rules imports the sdk facade, lang/naming,
 // lang/numeric, the satellite root for its language, its namespace key,
-// its module paths and its literal readers, and the Go stdlib. It never
+// its module paths, its literal readers and its identifier predicates, and
+// the Go stdlib. It never
 // imports the frontend: the rules read the sealed graph and its facts,
 // not source.
 package rules
