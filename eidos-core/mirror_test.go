@@ -37,6 +37,8 @@ const (
 	userMap       = "Map[string, User]"
 	stringType    = "string"
 	userType      = "User"
+	sizeParam     = "N"
+	sizeDefault   = "8"
 )
 
 // The allocations of a mirror.
@@ -48,6 +50,12 @@ const (
 	// bareMirrorAllocs is the mirror of a method without a signature: the
 	// method and its receiving type.
 	bareMirrorAllocs = 2
+	// typeParamAllocs is the lift of one type parameter with one bound:
+	// the list, the parameter, the list of its bounds and the bound.
+	typeParamAllocs = 4
+	// typeArgsAllocs is the arguments of two type parameters: the list
+	// and each argument.
+	typeArgsAllocs = 1 + 2
 )
 
 // Mirror copies a signature once, in the framework, so the copy is
@@ -145,6 +153,60 @@ func TestMirror(t *testing.T) {
 			assert.Nil(t, got.Receiver, "a pointer receiver is Go's spelling, and Rust spells self")
 		})
 	})
+
+	t.Run("MirrorTypeParams", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("copies each type parameter whole", func(t *testing.T) {
+			t.Parallel()
+
+			tps := []*node.TypeParam{
+				{
+					Name:     keyParam,
+					Variance: symbol.VarianceOut,
+					Bounds:   []*node.TypeRef{{Spelling: keyBound}},
+					Default:  &node.TypeRef{Spelling: stringType},
+				},
+				{Name: sizeParam, Const: true, Type: &node.TypeRef{Spelling: intType}, DefaultValue: sizeDefault},
+			}
+			assert.Equal(t, eidos.MirrorTypeParams(tps), []*emit.TypeParam{
+				{
+					Name:     keyParam,
+					Variance: symbol.VarianceOut,
+					Bounds:   []*emit.TypeRef{{Spelling: keyBound}},
+					Default:  &emit.TypeRef{Spelling: stringType},
+				},
+				{Name: sizeParam, Const: true, Type: &emit.TypeRef{Spelling: intType}, DefaultValue: sizeDefault},
+			}, "each parameter copies over with its references restated")
+		})
+
+		t.Run("returns nil for no type parameters", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, eidos.MirrorTypeParams(nil), "a declaration without type parameters lifts none")
+		})
+	})
+
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns an argument named after each type parameter", func(t *testing.T) {
+			t.Parallel()
+
+			tps := []*emit.TypeParam{
+				{Name: keyParam, Bounds: []*emit.TypeRef{{Spelling: keyBound}}},
+				{Name: sizeParam, Const: true},
+			}
+			assert.Equal(t, eidos.TypeArgs(tps), []*emit.TypeRef{{Spelling: keyParam}, {Spelling: sizeParam}},
+				"each argument has the name of its parameter and no target")
+		})
+
+		t.Run("returns nil for no type parameters", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, eidos.TypeArgs(nil), "a declaration without type parameters has no arguments")
+		})
+	})
 }
 
 // A mirror allocates the method it returns and its parts in the
@@ -159,6 +221,16 @@ func TestMirrorAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = eidos.Mirror(mirrorHost, bare) }, bareMirrorAllocs,
 		"Mirror allocates the method and its receiving type for a method without a signature")
 	assert.Equal(t, got.Name, getMethod, "Mirror returns the method's name")
+	tps := []*node.TypeParam{{Name: keyParam, Bounds: []*node.TypeRef{{Spelling: keyBound}}}}
+	var lifted []*emit.TypeParam
+	assert.MaxAllocs(t, func() { lifted = eidos.MirrorTypeParams(tps) }, typeParamAllocs,
+		"MirrorTypeParams allocates the list, the parameter, the list of its bounds and the bound")
+	assert.Length(t, lifted, 1, "MirrorTypeParams returns the parameter")
+	params := []*emit.TypeParam{{Name: keyParam}, {Name: sizeParam}}
+	var args []*emit.TypeRef
+	assert.MaxAllocs(t, func() { args = eidos.TypeArgs(params) }, typeArgsAllocs,
+		"TypeArgs allocates the list and each argument")
+	assert.Length(t, args, 2, "TypeArgs returns an argument for each parameter")
 }
 
 // BenchmarkMirror measures the mirror of a getter of one parameter and
@@ -185,6 +257,32 @@ func BenchmarkMirror(b *testing.B) {
 				got = eidos.Mirror(mirrorHost, m)
 			}
 			assert.Equal(b, got.Receives.Spelling, mirrorHost, "Mirror names the host")
+		})
+	})
+
+	b.Run("MirrorTypeParams", func(b *testing.B) {
+		b.Run("a parameter with a bound", func(b *testing.B) {
+			tps := []*node.TypeParam{{Name: keyParam, Bounds: []*node.TypeRef{{Spelling: keyBound}}}}
+			c := bench.Start(b).MaxAllocs(typeParamAllocs)
+			defer c.End()
+			var got []*emit.TypeParam
+			for c.Loop() {
+				got = eidos.MirrorTypeParams(tps)
+			}
+			assert.Length(b, got, 1, "MirrorTypeParams returns the parameter")
+		})
+	})
+
+	b.Run("TypeArgs", func(b *testing.B) {
+		b.Run("two parameters", func(b *testing.B) {
+			tps := []*emit.TypeParam{{Name: keyParam}, {Name: sizeParam}}
+			c := bench.Start(b).MaxAllocs(typeArgsAllocs)
+			defer c.End()
+			var got []*emit.TypeRef
+			for c.Loop() {
+				got = eidos.TypeArgs(tps)
+			}
+			assert.Length(b, got, 2, "TypeArgs returns an argument for each parameter")
 		})
 	})
 }

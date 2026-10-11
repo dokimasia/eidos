@@ -29,13 +29,6 @@ import (
 // entry's restated type. A method of one parameter and one return
 // allocates eight times.
 func Mirror(host string, m *node.Method) *emit.Method {
-	var typeParams []*emit.TypeParam
-	if len(m.TypeParams) > 0 {
-		typeParams = make([]*emit.TypeParam, 0, len(m.TypeParams))
-	}
-	for _, tp := range m.TypeParams {
-		typeParams = append(typeParams, mirrorTypeParam(tp))
-	}
 	params := make([]*emit.Param, 0, len(m.Params))
 	for _, p := range m.Params {
 		params = append(params, &emit.Param{
@@ -68,11 +61,60 @@ func Mirror(host string, m *node.Method) *emit.Method {
 		Level:      m.Level,
 		Async:      m.Async,
 		Receives:   &emit.TypeRef{Spelling: host},
-		TypeParams: typeParams,
+		TypeParams: MirrorTypeParams(m.TypeParams),
 		Params:     params,
 		Returns:    returns,
 		Throws:     throws,
 	}
+}
+
+// MirrorTypeParams returns the emit form of the node type parameters tps,
+// in order: each parameter's name, variance, bounds, default, value type
+// and default value, with each type reference restated through
+// [rules.EmitRef]. It returns nil for no parameters. A generator lifts the
+// type parameters of a generic declaration onto the declaration that it
+// emits for it, such as the mock of a generic interface, whose methods
+// name the parameters.
+//
+// # Allocation contract
+//
+// MirrorTypeParams allocates nothing for no parameters. Otherwise it
+// allocates the list, each parameter, the list of each parameter's bounds,
+// and what [rules.EmitRef] allocates for each bound, default and value
+// type. One parameter with one bound allocates four times.
+func MirrorTypeParams(tps []*node.TypeParam) []*emit.TypeParam {
+	if len(tps) == 0 {
+		return nil
+	}
+	out := make([]*emit.TypeParam, 0, len(tps))
+	for _, tp := range tps {
+		out = append(out, mirrorTypeParam(tp))
+	}
+	return out
+}
+
+// TypeArgs returns the type parameters tps as the arguments of a
+// reference inside the declaration that declares them, in order, and nil
+// for no parameters. Each argument has the name of its parameter and no
+// target. [Emitter.Type] translates a reference to a type parameter the
+// same way. A generator writes the arguments where a generic declaration
+// that it emits refers to itself or to the declaration that it derives
+// from, such as the interface that the mock of a generic interface
+// implements.
+//
+// # Allocation contract
+//
+// TypeArgs allocates nothing for no parameters. Otherwise it allocates the
+// list and each argument. Two parameters allocate three times.
+func TypeArgs(tps []*emit.TypeParam) []*emit.TypeRef {
+	if len(tps) == 0 {
+		return nil
+	}
+	out := make([]*emit.TypeRef, 0, len(tps))
+	for _, tp := range tps {
+		out = append(out, &emit.TypeRef{Spelling: tp.Name})
+	}
+	return out
 }
 
 // mirrorTypeParam restates a node type parameter in the emit model,
@@ -85,6 +127,9 @@ func mirrorTypeParam(tp *node.TypeParam) *emit.TypeParam {
 		Const:        tp.Const,
 		Type:         rules.EmitRef(tp.Type),
 		DefaultValue: tp.DefaultValue,
+	}
+	if len(tp.Bounds) > 0 {
+		out.Bounds = make([]*emit.TypeRef, 0, len(tp.Bounds))
 	}
 	for _, b := range tp.Bounds {
 		out.Bounds = append(out.Bounds, rules.EmitRef(b))
