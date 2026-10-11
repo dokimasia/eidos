@@ -20,6 +20,10 @@ import (
 // referencePattern matches the templates of the emitter's tree.
 const referencePattern = "*.tpl"
 
+// fetchName is the name of the canonical callables whose body is
+// scaffolding.
+const fetchName = "fetch"
+
 // The canonical fixture is what every satellite's suite renders, so
 // the kinds it emits, the forms it covers and the order it keeps are
 // contract.
@@ -84,6 +88,36 @@ func TestCanonical(t *testing.T) {
 			}
 			assert.Equal(t, forms, everyForm(),
 				"a backend refusing file-level callables still meets every content form")
+		})
+
+		t.Run("calls a function of another package through a reference in the scaffolded fetch", func(t *testing.T) {
+			t.Parallel()
+
+			fetches := 0
+			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+				for _, d := range u.Decls {
+					for s := range emit.All(d) {
+						var stmts []emit.Stmt
+						switch c := s.(type) {
+						case *emit.Function:
+							if c.Name != fetchName {
+								continue
+							}
+							stmts = c.Body.Stmts
+						case *emit.Method:
+							if c.Name != fetchName {
+								continue
+							}
+							stmts = c.Body.Stmts
+						default:
+							continue
+						}
+						fetches++
+						assert.True(t, slices.ContainsFunc(stmts, callsReference), "fetch calls through a reference")
+					}
+				}
+			}
+			assert.Equal(t, fetches, 2, "the fixture scaffolds fetch as a function and as a member method")
 		})
 
 		t.Run("returns the tree the reference form resolves in", func(t *testing.T) {
@@ -193,6 +227,13 @@ func assertFlushOrder(tb assert.TB, units []plugin.Unit) {
 			return earlier.Compare(later) < 0
 		}, "the origins are sorted and distinct: "+u.Key)
 	}
+}
+
+// callsReference reports whether a statement calls a function through
+// a reference expression with a name.
+func callsReference(s emit.Stmt) bool {
+	fn := s.Value.Fn
+	return s.Value.Kind == emit.ExprCall && fn != nil && fn.Kind == emit.ExprRef && fn.Ref != nil && fn.Ref.Name != ""
 }
 
 // everyForm is the set of content forms a covering fixture states.

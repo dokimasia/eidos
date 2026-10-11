@@ -60,6 +60,15 @@ const (
 	keyedName = "keyed"
 )
 
+// The package, the class and the function of the call that the
+// scaffolded fetch makes into another package. The class is there
+// because Java calls no free function.
+const (
+	auditPackage = "audit"
+	auditOwner   = "Audit"
+	auditName    = "record"
+)
+
 // canonicalKinds lists the kinds the fixture emits a declaration
 // of, in build order: every kind an emit declaration takes at file
 // level.
@@ -78,7 +87,9 @@ var canonicalKinds = []symbol.Kind{
 // CanonicalFixture returns the kernel's shared emit fixture: one
 // unit per canonical kind, the four body content forms on the
 // functions and again on the struct's member methods, and the
-// template tree the reference form resolves in.
+// template tree the reference form resolves in. The scaffolded body
+// calls a function of another package through a reference expression,
+// so each target qualifies the call and imports its package.
 //
 // The fixture emits every kind an emit declaration takes at file
 // level, whatever the backend under test spells. Each kind renders,
@@ -254,10 +265,30 @@ func formCallables() []formCallable {
 	ref.Prologue.Append(emit.Stmt{Kind: emit.StmtExpr, Value: callExpr("audit")})
 	return []formCallable{
 		{Name: "boot", Body: emit.Body{}},
-		{Name: "fetch", Body: emit.Body{Stmts: scaffoldStmts()}},
+		{Name: "fetch", Body: emit.Body{Stmts: fetchStmts()}},
 		{Name: "push", Body: ref},
 		{Name: "trace", Body: emit.Body{Verbatim: verbatimBody}},
 	}
+}
+
+// fetchStmts returns the scaffolding of the canonical fetch: the
+// statements of [scaffoldStmts], with a call of a function of another
+// package before the return. The call passes a local name, so each
+// target proves that it qualifies a reference and records its import.
+func fetchStmts() []emit.Stmt {
+	stmts := scaffoldStmts()
+	record := emit.RefExpr(symbol.Identity{
+		Lang:    fixtureLang,
+		Package: auditPackage,
+		Owner:   auditOwner,
+		Name:    auditName,
+		Kind:    symbol.KindMethod,
+	})
+	audit := emit.Stmt{
+		Kind:  emit.StmtExpr,
+		Value: emit.Expr{Kind: emit.ExprCall, Fn: &record, Args: []emit.Expr{{Kind: emit.ExprName, Name: "state"}}},
+	}
+	return slices.Insert(stmts, len(stmts)-1, audit)
 }
 
 // scaffoldStmts returns the statements every target spells: a

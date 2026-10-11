@@ -454,6 +454,9 @@ func normalizeExpr(x *emit.Expr, table map[string]bool) {
 		}
 	case emit.ExprValue:
 		// A value has no name to rewrite.
+	case emit.ExprRef:
+		// A reference identifies a declaration of another package,
+		// which the settle leaves as written.
 	}
 }
 

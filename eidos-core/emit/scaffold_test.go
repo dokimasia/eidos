@@ -11,7 +11,19 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// The package and the name of the function that the reference cases
+// call.
+const (
+	recordPackage = "example.com/audit"
+	recordName    = "Record"
+)
+
+// recordID is the identity of the function that the reference cases
+// call: Record of the package example.com/audit.
+var recordID = symbol.Identity{Package: recordPackage, Name: recordName, Kind: symbol.KindFunction}
 
 // The scaffolding vocabulary is deliberately small and its
 // spellings are API: faults and lint findings name statement and
@@ -53,6 +65,7 @@ func TestScaffold(t *testing.T) {
 			{name: "returns name for a name", give: emit.ExprName, want: "name"},
 			{name: "returns call for an application", give: emit.ExprCall, want: "call"},
 			{name: "returns value for a value", give: emit.ExprValue, want: "value"},
+			{name: "returns ref for a reference", give: emit.ExprRef, want: "ref"},
 			{name: "returns the number of a kind nothing declares", give: emit.ExprKind(9), want: "9"},
 		}
 		for _, tt := range tests {
@@ -73,6 +86,19 @@ func TestScaffold(t *testing.T) {
 			got := emit.ValueExpr(forty())
 			assert.Equal(t, got.Kind, emit.ExprValue, "the expression is a value")
 			assert.Equal(t, *got.Val, forty(), "over the value given")
+		})
+	})
+
+	t.Run("RefExpr", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a reference expression to the identity", func(t *testing.T) {
+			t.Parallel()
+
+			got := emit.RefExpr(recordID)
+			assert.Equal(t, got.Kind, emit.ExprRef, "the expression is a reference")
+			assert.NotNil(t, got.Ref, "the reference points at an identity")
+			assert.Equal(t, *got.Ref, recordID, "the reference identifies the declaration given")
 		})
 	})
 
@@ -110,6 +136,22 @@ func TestScaffold(t *testing.T) {
 					return s, err
 				}, guard, "the round trip returns the value")
 		})
+
+		t.Run("returns a call of a reference with the identity it encoded", func(t *testing.T) {
+			t.Parallel()
+
+			fn := emit.RefExpr(recordID)
+			audit := emit.Stmt{
+				Kind:  emit.StmtExpr,
+				Value: emit.Expr{Kind: emit.ExprCall, Fn: &fn, Args: []emit.Expr{{Kind: emit.ExprName, Name: "w"}}},
+			}
+			assert.RoundTrip(t, func(s emit.Stmt) ([]byte, error) { return json.Marshal(s) },
+				func(b []byte) (emit.Stmt, error) {
+					var s emit.Stmt
+					err := json.Unmarshal(b, &s)
+					return s, err
+				}, audit, "the round trip returns the call")
+		})
 	})
 }
 
@@ -126,6 +168,9 @@ func TestScaffoldAllocs(t *testing.T) {
 	var got emit.Expr
 	assert.MaxAllocs(t, func() { got = emit.ValueExpr(value) }, 1, "ValueExpr allocates the value it points at")
 	assert.Equal(t, *got.Val, value, "ValueExpr points at the value given")
+	id := recordID
+	assert.MaxAllocs(t, func() { got = emit.RefExpr(id) }, 1, "RefExpr allocates the identity it points at")
+	assert.Equal(t, *got.Ref, id, "RefExpr identifies the declaration given")
 }
 
 // BenchmarkScaffold measures the kinds' spellings, which faults and
@@ -162,5 +207,16 @@ func BenchmarkScaffold(b *testing.B) {
 			got = emit.ValueExpr(value)
 		}
 		assert.Equal(b, *got.Val, value, "ValueExpr points at the value given")
+	})
+
+	b.Run("RefExpr", func(b *testing.B) {
+		id := recordID
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got emit.Expr
+		for c.Loop() {
+			got = emit.RefExpr(id)
+		}
+		assert.Equal(b, *got.Ref, id, "RefExpr identifies the declaration given")
 	})
 }

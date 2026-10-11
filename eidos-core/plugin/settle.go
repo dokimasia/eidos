@@ -1157,6 +1157,9 @@ func (r *resolver) rewriteExpr(x *emit.Expr, locals map[string]string) {
 		}
 	case emit.ExprValue:
 		// A value has no name to follow.
+	case emit.ExprRef:
+		// A reference identifies a declaration of another package,
+		// and the target spells it from the identity.
 	}
 }
 
