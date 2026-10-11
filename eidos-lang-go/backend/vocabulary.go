@@ -23,6 +23,9 @@ import (
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
+	// FuncMemberDocs writes a member's documentation at the member's
+	// depth.
+	FuncMemberDocs = "memberdocs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
 	// FuncTypeParams writes a type parameter list.
@@ -43,6 +46,9 @@ const (
 	FuncEmbedGuard = "embedguard"
 	// FuncDirectives writes annotations as directive comment lines.
 	FuncDirectives = "directives"
+	// FuncMemberDirectives writes a member's annotations as directive
+	// comment lines at the member's depth.
+	FuncMemberDirectives = "memberdirectives"
 	// FuncVarType writes a variable's type slot, empty where an
 	// initializer lets Go infer.
 	FuncVarType = "vartype"
@@ -73,8 +79,14 @@ const (
 	sendChan = "chan<- "
 	chanWord = "chan "
 	funcOpen = "func("
-	// directiveMark opens a directive comment line.
+	// directiveMark opens a directive comment line, and docMark a line
+	// of documentation.
 	directiveMark = "//"
+	docMark       = "// "
+	// memberIndent is the depth of a member inside the braces of its
+	// type: a field or an embed in a struct, and a method in an
+	// interface.
+	memberIndent = "\t"
 )
 
 // Speller spells type references for one file. Every package a
@@ -372,34 +384,43 @@ func (s Speller) param(p *emit.Param) (string, error) {
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every reference a helper
 // spells binds its package's import there. A consumer composing a
-// variant backend registers it beside its own additions. Funcs
-// allocates the map of twelve helpers, four allocations, and the
-// speller's six bound helpers.
+// variant backend registers it beside its own additions. Every helper
+// takes a fixed list of arguments, because text/template allocates the
+// list of a variadic call and a value for each string argument that a
+// template writes. Funcs allocates the map of fourteen helpers, four
+// allocations, and the speller's six bound helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
-		FuncDocs:       Docs,
-		FuncSpell:      s.Spell,
-		FuncTypeParams: s.TypeParams,
-		FuncParams:     s.Params,
-		FuncResults:    s.Results,
-		FuncReceiver:   s.Receiver,
-		FuncPackage:    Package,
-		FuncGuard:      Guard,
-		FuncSigGuard:   SigGuard,
-		FuncEmbedGuard: EmbedGuard,
-		FuncDirectives: Directives,
-		FuncVarType:    s.VarType,
+		FuncDocs:             Docs,
+		FuncMemberDocs:       MemberDocs,
+		FuncSpell:            s.Spell,
+		FuncTypeParams:       s.TypeParams,
+		FuncParams:           s.Params,
+		FuncResults:          s.Results,
+		FuncReceiver:         s.Receiver,
+		FuncPackage:          Package,
+		FuncGuard:            Guard,
+		FuncSigGuard:         SigGuard,
+		FuncEmbedGuard:       EmbedGuard,
+		FuncDirectives:       Directives,
+		FuncMemberDirectives: MemberDirectives,
+		FuncVarType:          s.VarType,
 	}
 }
 
-// Docs writes a declaration's documentation as line comments,
-// each prefixed with the given indentation, so a member's doc
-// is at its member's depth. Called with no prefix it writes at
-// the top level. It allocates what [textfmt.LineDocs] allocates: the
-// lines, sized once, and nothing for no lines.
-func Docs(lines []string, prefix ...string) string {
-	return textfmt.LineDocs(lines, "// ", prefix...)
+// Docs writes a declaration's documentation as line comments at the
+// top level. It allocates what [textfmt.LineDocs] allocates: the lines,
+// sized once, and nothing for no lines.
+func Docs(lines []string) string {
+	return textfmt.LineDocs(lines, docMark)
+}
+
+// MemberDocs writes a member's documentation as line comments behind
+// one tab, the depth of a field or an embed in its struct and of a
+// method in its interface. It allocates what [Docs] allocates.
+func MemberDocs(lines []string) string {
+	return textfmt.LineDocs(lines, docMark, memberIndent)
 }
 
 // Package writes the package clause's name, taken from the
@@ -535,23 +556,32 @@ func EmbedGuard(e *emit.Embed) (string, error) {
 }
 
 // Directives writes a declaration's annotations as Go directive
-// comment lines, such as //go:embed or //nolint:gosec, one per
-// annotation, its arguments space-joined behind the name, at the
-// member's depth where one is given. Go's directives are comments
-// whose spelling is the contract, so the annotation passes through
-// verbatim, and the generator is responsible for an undocumented
-// name. A name outside the tool:name shape and the legacy space
-// forms reads back as documentation on the frontend side.
+// comment lines at the top level, such as //go:embed or
+// //nolint:gosec, one per annotation, its arguments space-joined
+// behind the name. Go's directives are comments whose spelling is the
+// contract, so the annotation passes through verbatim, and the
+// generator is responsible for an undocumented name. A name outside
+// the tool:name shape and the legacy space forms reads back as
+// documentation on the frontend side.
 //
 // Directives sizes the lines once and allocates them, one allocation,
 // and nothing for a declaration without annotations.
-func Directives(as symbol.Annotations, indent ...string) string {
+func Directives(as symbol.Annotations) string {
+	return directiveLines(as, "")
+}
+
+// MemberDirectives writes a member's annotations as the directive
+// comment lines of [Directives], each behind one tab. It allocates what
+// Directives allocates.
+func MemberDirectives(as symbol.Annotations) string {
+	return directiveLines(as, memberIndent)
+}
+
+// directiveLines writes one directive comment line per annotation, each
+// behind prefix.
+func directiveLines(as symbol.Annotations, prefix string) string {
 	if len(as) == 0 {
 		return ""
-	}
-	prefix := ""
-	if len(indent) > 0 {
-		prefix = indent[0]
 	}
 	size := 0
 	for _, a := range as {

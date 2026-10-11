@@ -37,10 +37,10 @@ const (
 	// states a method outside the type it attaches to. The guard
 	// refuses what Go states nowhere before a byte renders.
 	StructTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
-		"{{- range .Embeds}}\n{{docs .Doc \"\\t\"}}{{with .Annotations}}{{directives . \"\\t\"}}{{end}}\t{{spell .Ref}}" +
+		"{{- range .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}\t{{spell .Ref}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{with .Annotations}}{{directives . \"\\t\"}}{{end}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
+		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{range .Methods.Items}}\n{{nested \"\" .}}\n{{end}}"
@@ -56,10 +56,10 @@ const (
 	// receiver and no type parameters, which Go refuses on interface
 	// methods, so it is a signature alone under its own guard.
 	InterfaceTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
-		"{{- range .Embeds}}\n{{docs .Doc \"\\t\"}}{{with .Annotations}}{{directives . \"\\t\"}}{{end}}{{embedguard .}}" +
+		"{{- range .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}{{embedguard .}}" +
 		"\t{{spell .Ref}}{{with .Comment}} // {{.}}{{end}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"\\t\"}}{{sigguard .}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{sigguard .}}" +
 		"\t{{.Name}}({{params .Params}}){{results .Returns}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 

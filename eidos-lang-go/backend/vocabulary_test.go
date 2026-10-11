@@ -86,8 +86,8 @@ const (
 	resultsAllocs = 1 + 1 + 1
 	// varTypeAllocs is a variable's type behind its space.
 	varTypeAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of twelve helpers,
-	// four allocations, and the speller's six bound helpers.
+	// funcsAllocs is the vocabulary of a file: the map of fourteen
+	// helpers, four allocations, and the speller's six bound helpers.
 	funcsAllocs = 4 + 6
 	// docsAllocs is a docblock, sized once.
 	docsAllocs = 1
@@ -130,11 +130,22 @@ func TestVocabulary(t *testing.T) {
 
 			assert.Equal(t, backend.Docs([]string{"One.", "Two."}), "// One.\n// Two.\n", "at the top level")
 		})
+	})
 
-		t.Run("writes at the given depth", func(t *testing.T) {
+	t.Run("MemberDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no lines", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Docs([]string{"Inner."}, "\t"), "\t// Inner.\n", "at the member's depth")
+			assert.Equal(t, backend.MemberDocs(nil), "", "no comment")
+		})
+
+		t.Run("writes each line comment behind a tab", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDocs([]string{"One.", "Two."}), "\t// One.\n\t// Two.\n",
+				"at the member's depth")
 		})
 	})
 
@@ -931,18 +942,28 @@ func TestVocabulary(t *testing.T) {
 			}), "//go:embed schema.sql\n//nolint errcheck\n", "the arguments space-joined behind the name")
 		})
 
-		t.Run("writes at the given depth", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, backend.Directives(symbol.Annotations{{Name: "go:fix"}}, "\t"), "\t//go:fix\n",
-				"at the member's depth")
-		})
-
 		t.Run("writes every argument space-joined behind the name", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Directives(symbol.Annotations{{Name: generateDirective, Args: generateArgs}}),
 				"//go:generate stringer -type=Colour\n", "two arguments in order")
+		})
+	})
+
+	t.Run("MemberDirectives", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no annotations", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDirectives(nil), "", "no lines")
+		})
+
+		t.Run("writes each directive comment behind a tab", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDirectives(symbol.Annotations{{Name: "go:fix"}, {Name: "nolint"}}),
+				"\t//go:fix\n\t//nolint\n", "at the member's depth")
 		})
 	})
 
@@ -1098,11 +1119,15 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 12, "Funcs returns the twelve helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 14, "Funcs returns the fourteen helpers") },
 		},
 		{
 			name: "Docs", allocs: docsAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("// " + rowDoc + "\n"),
+		},
+		{
+			name: "MemberDocs", allocs: docsAllocs,
+			call: func() { out = backend.MemberDocs(doc) }, check: spells("\t// " + rowDoc + "\n"),
 		},
 		{name: "Package", call: func() { out, err = backend.Package(pkg) }, check: spells(storeName)},
 		{name: "Guard", call: func() { out, err = backend.Guard(row) }, check: spells("")},
@@ -1112,6 +1137,11 @@ func vocabularyCalls() []allocCall {
 			name: "Directives", allocs: directivesAllocs,
 			call:  func() { out = backend.Directives(annotations) },
 			check: spells("//go:generate stringer -type=Colour\n"),
+		},
+		{
+			name: "MemberDirectives", allocs: directivesAllocs,
+			call:  func() { out = backend.MemberDirectives(annotations) },
+			check: spells("\t//go:generate stringer -type=Colour\n"),
 		},
 	}
 }
