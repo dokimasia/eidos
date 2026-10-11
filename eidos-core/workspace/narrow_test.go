@@ -33,6 +33,14 @@ const (
 	mirroredReader = "type ForReader struct{}"
 )
 
+// dottedPath is a package whose last path element contains a dot, as a
+// protobuf package and a Go major version suffix do, and dottedGen is the
+// file that the disk plan writes for it.
+const (
+	dottedPath = "svc/store.v2"
+	dottedGen  = dottedPath + "/gen.txt"
+)
+
 // The stale entry of the case whose source does not parse: its path, and
 // the source that its record lists.
 const (
@@ -157,6 +165,17 @@ func TestNarrow(t *testing.T) {
 				assert.NoError(t, err, "the run is clean")
 				files.IsFile(t, filepath.Join(root, cacheGen), "the cache package's file is written")
 			})
+
+		t.Run("commits the write of a package whose last path element contains a dot", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})))
+			in := workspace.Input{Graph: routedIn(t, dottedPath), Patterns: []string{dottedPath}}
+			_, err := w.Run(t.Context(), in)
+			assert.NoError(t, err, "the run is clean")
+			files.IsFile(t, filepath.Join(root, filepath.FromSlash(dottedGen)), "the package's file is written")
+		})
 
 		t.Run("withholds the removal of a stale file outside the patterns", func(t *testing.T) {
 			t.Parallel()
