@@ -5,6 +5,8 @@ package toolchain
 
 import (
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
 	"strconv"
 
@@ -34,10 +36,14 @@ func RequiredInCI() bool {
 }
 
 // Prepare lays a fixture out and returns its directory and the
-// cleanup the caller defers. A missing adapter, a fixture with no
-// output and a layout the language refused each record a failure
-// through tb, as the assertion of expect it states, and return an
-// empty directory with a cleanup that does nothing.
+// cleanup the caller defers. It reads every file of the fixture's
+// sources into the files that the adapter lays out, at the file's path
+// in the sources. A generated file replaces a source file at the same
+// path, and the adapter does not receive the sources. A missing
+// adapter, a fixture with no output, sources that do not read and a
+// layout the language refused each record a failure through tb, as the
+// assertion of expect it states, and return an empty directory with a
+// cleanup that does nothing.
 func Prepare(tb assert.TB, a Adapter, g Generated) (string, func()) {
 	tb.Helper()
 
@@ -50,6 +56,24 @@ func Prepare(tb assert.TB, a Adapter, g Generated) (string, func()) {
 		"run proves nothing")
 	if g.IsEmpty() {
 		return "", func() {}
+	}
+	if g.Sources != nil {
+		laid := maps.Clone(g.Files)
+		err := fs.WalkDir(g.Sources, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			if _, generated := laid[path]; generated {
+				return nil
+			}
+			laid[path], err = fs.ReadFile(g.Sources, path)
+			return err
+		})
+		expect.NoError(tb, err, lang+": the sources of the fixture read")
+		if err != nil {
+			return "", func() {}
+		}
+		g = Generated{Files: laid, Module: g.Module}
 	}
 	dir, err := a.Layout(g)
 	expect.NoError(tb, err, lang+": the generated output lays out for the toolchain")

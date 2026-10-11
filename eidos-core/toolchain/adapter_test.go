@@ -20,6 +20,12 @@ import (
 // scriptedLang is the language the fixture adapter answers for.
 const scriptedLang symbol.Lang = "scripted"
 
+// The path of the fixture's generated file, and its bytes.
+const (
+	generatedFile = "gen/row.s"
+	generatedBody = "row\n"
+)
+
 // scripted is an adapter whose every answer the case states, so the
 // assertions are exercised without a compiler. It records the
 // directory it laid out, which is what the cleanup contract rests
@@ -146,7 +152,7 @@ func TestAdapter(t *testing.T) {
 // output is a fixture carrying one generated file.
 func output() toolchain.Generated {
 	return toolchain.Generated{
-		Files:  map[string][]byte{"gen/row.s": []byte("row\n")},
+		Files:  map[string][]byte{generatedFile: []byte(generatedBody)},
 		Module: "example.test/generated",
 	}
 }

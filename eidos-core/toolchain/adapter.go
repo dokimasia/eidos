@@ -22,8 +22,9 @@ type Generated struct {
 	// in the output tree, slash-separated.
 	Files map[string][]byte
 	// Sources is the tree the run read, for a language whose
-	// generated output refers back to it. A fixture whose output
-	// stands alone leaves it nil.
+	// generated output refers back to it. [Prepare] lays its files
+	// out beneath Files. A fixture whose output does not refer to
+	// its sources leaves it nil.
 	Sources fs.FS
 	// Module is the module or namespace identity the laid-out
 	// project declares, for a language that needs one to resolve
