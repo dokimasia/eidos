@@ -41,7 +41,7 @@ const StubDirective directive.Name = "stub"
 // and the name of the method.
 const (
 	Word     = "stub"
-	TestTag  = "test"
+	TestTag  = sdk.TagTest
 	CallWord = "call"
 )
 

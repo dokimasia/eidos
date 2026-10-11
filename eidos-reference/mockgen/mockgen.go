@@ -36,7 +36,7 @@ const MockDirective directive.Name = "mock"
 // routes the family into the test files of a target.
 const (
 	Word    = "mock"
-	TestTag = "test"
+	TestTag = sdk.TagTest
 )
 
 // fileTemplate is the template of each file of the family.

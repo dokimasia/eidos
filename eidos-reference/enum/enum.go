@@ -36,7 +36,7 @@ const (
 // their tests. TestTag is the tag of the family of the tests.
 const (
 	Word    = "enum"
-	TestTag = "test"
+	TestTag = sdk.TagTest
 )
 
 // The methods that enum writes on an enumeration, each withheld where the

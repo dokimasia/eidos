@@ -41,7 +41,7 @@ const (
 // the family of their tests.
 const (
 	Word    = "builder"
-	TestTag = "test"
+	TestTag = sdk.TagTest
 )
 
 // DefaultsSlot is the named slot of the body of New<T>. It contains the

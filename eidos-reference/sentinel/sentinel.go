@@ -32,7 +32,7 @@ const KeyValue meta.KeyName = "sentinel.value"
 // routes the family into the test files of a package.
 const (
 	Word    = "sentinel"
-	TestTag = "test"
+	TestTag = sdk.TagTest
 )
 
 // PrefixOff is the value of the option prefix that withholds the check of
