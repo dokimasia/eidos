@@ -128,20 +128,37 @@ func versionNamed(stated keyword.Keyword, value string) (version, bool) {
 	return version{}, false
 }
 
-// with returns f after the features options among opts. Each such option
-// replaces the value of its feature.
+// with returns f after the features options among opts. The option of one
+// feature replaces the value of that feature. The features option with a
+// message literal replaces the value of each feature that the literal
+// sets, and a field of the literal without a key sets nothing.
 func (f features) with(opts []option) features {
 	for _, o := range opts {
-		switch o.name {
-		case featurePresence:
-			f.presence = o.value
-		case featureEnumType:
-			f.enumType = o.value
-		case featureEncoding:
-			f.encoding = o.value
-		case featureVisibility:
-			f.visibility = o.value
+		if o.name != featuresOption {
+			f = f.set(o.name, o.value)
+			continue
 		}
+		fields := o.val.AsDict().Elements()
+		for i := range fields.Len() {
+			field := fields.At(i)
+			f = f.set(featuresPrefix+field.Key().Span().Text(), field.Value().Span().Text())
+		}
+	}
+	return f
+}
+
+// set returns f with value as the value of the feature whose option is
+// name. A name of another option leaves f as it is.
+func (f features) set(name, value string) features {
+	switch name {
+	case featurePresence:
+		f.presence = value
+	case featureEnumType:
+		f.enumType = value
+	case featureEncoding:
+		f.encoding = value
+	case featureVisibility:
+		f.visibility = value
 	}
 	return f
 }

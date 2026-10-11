@@ -26,8 +26,8 @@ import (
 
 // The proto spellings the lowering reads.
 const (
-	// listSep joins the entries of a stamped list, a reserved range
-	// set or a file's options.
+	// listSep joins the entries of the reserved stamp, and the ranges of
+	// one extension range declaration.
 	listSep = ", "
 	// streamRequest, streamResponse and streamBoth name which side
 	// of an rpc streams.
@@ -157,10 +157,10 @@ type lowered struct {
 	// pkg is the file's proto package, the namespace its
 	// declarations load under.
 	pkg string
-	// imports are the file's imports in source order, which the
-	// import stamp spells, and paths the paths of the imports that
-	// import types, which the resolution step's
-	// [protoFrontend.ImportOf] matches a declaring file against.
+	// imports are the entries of the import stamp, one per import in
+	// source order. paths are the paths of the imports that import
+	// types, which the resolution step's [protoFrontend.ImportOf]
+	// matches a declaring file against.
 	imports []string
 	paths   []string
 	// leading and trailing are the comment groups that lead and trail a
@@ -293,9 +293,7 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 	}
 	l.stampOptions(file, file.Pos, fileOptions)
 	if len(l.imports) > 0 {
-		gb.Stamp(file, meta.RawStamp{
-			Key: protobuf.ImportKey, Value: strings.Join(l.imports, listSep), Pos: file.Pos,
-		})
+		gb.Stamp(file, meta.RawStamp{Key: protobuf.ImportKey, Value: l.imports, Pos: file.Pos})
 	}
 	l.sweep(file)
 }
@@ -433,9 +431,7 @@ func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, neste
 		})
 	}
 	if len(extensions) > 0 {
-		gb.Stamp(s, meta.RawStamp{
-			Key: protobuf.ExtensionsKey, Value: strings.Join(extensions, listSep), Pos: s.Pos,
-		})
+		gb.Stamp(s, meta.RawStamp{Key: protobuf.ExtensionsKey, Value: extensions, Pos: s.Pos})
 	}
 	l.stampOptions(s, s.Pos, options)
 	l.stampLocal(s, def, outer, nested)

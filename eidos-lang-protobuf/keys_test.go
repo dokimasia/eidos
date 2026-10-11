@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -32,22 +33,33 @@ const (
 const keysAllocs = 14 + 17
 
 // A consumer reads the residue through these keys. Their spellings,
-// their value type, the kinds each admits and the namespace claim are
-// pinned.
+// the value type of each, the kinds each admits and the namespace claim
+// are pinned.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Keys", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("registers every key as text", func(t *testing.T) {
+		t.Run("registers each list key as a list of text", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
 			assert.NoError(t, protobuf.Keys(r), "the keys register")
-			for _, name := range every() {
-				_, held := meta.Lookup[string](r, name)
-				assert.True(t, held, string(name)+" is registered as text")
+			for _, k := range every() {
+				_, held := meta.Lookup[[]string](r, k.name)
+				expect.Equal(t, held, k.list, string(k.name)+" is a list of text exactly when its stamp is a list")
+			}
+		})
+
+		t.Run("registers every other key as text", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, protobuf.Keys(r), "the keys register")
+			for _, k := range every() {
+				_, held := meta.Lookup[string](r, k.name)
+				expect.Equal(t, held, !k.list, string(k.name)+" is text exactly when its stamp is not a list")
 			}
 		})
 
@@ -85,9 +97,9 @@ func TestKeys(t *testing.T) {
 		t.Run("registers every key under the protobuf namespace", func(t *testing.T) {
 			t.Parallel()
 
-			for _, name := range every() {
-				assert.Equal(t, name.Namespace(), namespace,
-					string(name)+" is spelled under the satellite's namespace")
+			for _, k := range every() {
+				expect.Equal(t, k.name.Namespace(), namespace,
+					string(k.name)+" is spelled under the satellite's namespace")
 			}
 		})
 
@@ -167,15 +179,32 @@ func BenchmarkKeys(b *testing.B) {
 	})
 }
 
+// key is one key of the satellite. list reports whether the frontend
+// stamps the key as a list of text.
+type key struct {
+	name meta.KeyName
+	list bool
+}
+
 // every is the satellite's whole key set, which a composition
 // registers as one and a corpus fixture declares as one.
-func every() []meta.KeyName {
-	return []meta.KeyName{
-		protobuf.FieldKey, protobuf.ReservedKey, protobuf.OptionsKey,
-		protobuf.SyntaxKey, protobuf.PackageKey, protobuf.OneofKey,
-		protobuf.StreamKey, protobuf.MapEntryKey, protobuf.FeaturesKey,
-		protobuf.LabelKey, protobuf.JSONNameKey, protobuf.ExtensionsKey,
-		protobuf.ImportKey, protobuf.ClosedKey, protobuf.DelimitedKey,
-		protobuf.LocalKey,
+func every() []key {
+	return []key{
+		{name: protobuf.FieldKey},
+		{name: protobuf.ReservedKey},
+		{name: protobuf.OptionsKey, list: true},
+		{name: protobuf.SyntaxKey},
+		{name: protobuf.PackageKey},
+		{name: protobuf.OneofKey},
+		{name: protobuf.StreamKey},
+		{name: protobuf.MapEntryKey},
+		{name: protobuf.FeaturesKey, list: true},
+		{name: protobuf.LabelKey},
+		{name: protobuf.JSONNameKey},
+		{name: protobuf.ExtensionsKey, list: true},
+		{name: protobuf.ImportKey, list: true},
+		{name: protobuf.ClosedKey},
+		{name: protobuf.DelimitedKey},
+		{name: protobuf.LocalKey},
 	}
 }

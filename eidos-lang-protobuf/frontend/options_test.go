@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -64,6 +65,25 @@ service Store {
 				"and an rpc's, which is where a transport reads its own")
 		})
 
+		t.Run("stamps each option as an entry of a list", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+message Row {
+  option (svc.store.limits) = { low: 1, high: 2 };
+  option deprecated = true;
+}
+`)
+			assert.False(t, sink.Failed(), "the schema loads clean")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, stampsOn(gb, row, string(protobuf.OptionsKey)),
+				[]string{"(svc.store.limits)={ low: 1, high: 2 }", "deprecated=true"},
+				"the comma inside the message literal belongs to its option")
+		})
+
 		t.Run("stamps edition features apart from the other options", func(t *testing.T) {
 			t.Parallel()
 
@@ -93,6 +113,24 @@ message Row {
 			assert.Contains(t, stampsOn(gb, row, features)[0], "EXPLICIT", "a message's features are stamped")
 			assert.Contains(t, stampsOn(gb, row.Fields[0], features)[0], "LEGACY_REQUIRED",
 				"and a field's, which is where presence is finally decided")
+		})
+
+		t.Run("stamps a features option that a message literal sets apart from the other options", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `edition = "2024";
+
+package svc.store;
+
+option features = { field_presence: IMPLICIT };
+option go_package = "example.test/svc";
+`)
+			assert.False(t, sink.Failed(), "an edition file loads")
+			file := onlyFile(t, gb)
+			expect.Equal(t, stampsOn(gb, file, string(protobuf.FeaturesKey)),
+				[]string{"features={ field_presence: IMPLICIT }"}, "the message literal is stamped among the features")
+			expect.Equal(t, stampsOn(gb, file, string(protobuf.OptionsKey)),
+				[]string{`go_package="example.test/svc"`}, "and not among the other options")
 		})
 	})
 }

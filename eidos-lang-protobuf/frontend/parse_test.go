@@ -424,10 +424,9 @@ enum Colour {
 				"the syntax decides what an absent value means, so it is stamped")
 			assert.Equal(t, stampsOn(gb, file, string(protobuf.PackageKey)), []string{fixturePkg},
 				"and the proto package, which is not the path the file loaded under")
-			options := stampsOn(gb, file, string(protobuf.OptionsKey))
-			assert.Length(t, options, 1, "the file's options arrive as one entry")
-			assert.Contains(t, options[0], "go_package=", "naming each option")
-			assert.Contains(t, options[0], "java_package=", "for generators outside this workspace")
+			assert.Equal(t, stampsOn(gb, file, string(protobuf.OptionsKey)),
+				[]string{`go_package="example.test/svc/store"`, `java_package="test.example.svc"`},
+				"the file's options arrive as one entry per option, for generators outside this workspace")
 
 			row, _ := declOf(t, file, "Row").(*node.Struct)
 			reserved := stampsOn(gb, row, string(protobuf.ReservedKey))
@@ -461,6 +460,27 @@ message Row {
 			assert.Equal(t, stampsOn(gb, row, string(protobuf.ExtensionsKey)),
 				[]string{"100 to 199 [verification = UNVERIFIED]"},
 				"an extension range keeps the options it states")
+		})
+
+		t.Run("stamps each extension range declaration as an entry of a list", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `edition = "2023";
+
+package svc.store;
+
+message Row {
+  extensions 100 to 199 [declaration = { number: 100, full_name: ".svc.store.tag", type: "string" }];
+  extensions 300, 400 to 499;
+  string name = 1;
+}
+`)
+			assert.False(t, sink.Failed(), "the edition schema loads clean")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, stampsOn(gb, row, string(protobuf.ExtensionsKey)), []string{
+				`100 to 199 [declaration = { number: 100, full_name: ".svc.store.tag", type: "string" }]`,
+				"300, 400 to 499",
+			}, "the commas inside a declaration belong to its entry")
 		})
 
 		t.Run("records the imports a schema states", func(t *testing.T) {
@@ -673,13 +693,9 @@ import weak "optional.proto";
 `)
 			assert.False(t, sink.Failed(), "the schema loads clean")
 			file := onlyFile(t, gb)
-			imports := stampsOn(gb, file, string(protobuf.ImportKey))
-			assert.Length(t, imports, 1, "the imports are stamped as one list")
-			assert.Contains(t, imports[0], "plain.proto", "a plain import by its path")
-			assert.Contains(t, imports[0], "public shared.proto",
-				"a public one marked, because it re-exports what it imports")
-			assert.Contains(t, imports[0], "weak optional.proto",
-				"and a weak one, because it may be absent at run time")
+			assert.Equal(t, stampsOn(gb, file, string(protobuf.ImportKey)),
+				[]string{"plain.proto", "public shared.proto", "weak optional.proto"},
+				"each import is an entry, and a public or weak import has its keyword before the path")
 		})
 
 		t.Run("stamps a oneof's options", func(t *testing.T) {
@@ -1138,14 +1154,18 @@ func formsOf(s *node.Struct) []symbol.TypeForm {
 }
 
 // stampsOn returns the values stamped on one subject under one
-// key, in record order.
+// key, in record order. A list value contributes each of its entries.
 func stampsOn(gb *plugin.GraphBuilder, subject symbol.Symbol, key string) []string {
 	var out []string
 	for _, r := range gb.StampRecords() {
-		if r.Subject == subject && string(r.Stamp.Key) == key {
-			if text, is := r.Stamp.Value.(string); is {
-				out = append(out, text)
-			}
+		if r.Subject != subject || string(r.Stamp.Key) != key {
+			continue
+		}
+		switch v := r.Stamp.Value.(type) {
+		case string:
+			out = append(out, v)
+		case []string:
+			out = append(out, v...)
 		}
 	}
 	return out

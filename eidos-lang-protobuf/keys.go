@@ -29,11 +29,11 @@ const (
 	// promises never to reuse.
 	ReservedKey meta.KeyName = "protobuf.reserved"
 
-	// OptionsKey is the options a declaration states, one name=value
-	// per entry: go_package on a file, deprecated on a field,
-	// idempotency_level on an rpc, and any option a schema states for
-	// a generator outside this workspace. A features option is
-	// stamped under FeaturesKey, because editions give it a meaning
+	// OptionsKey is the options a declaration states, as a list with
+	// one name=value entry per option: go_package on a file, deprecated
+	// on a field, idempotency_level on an rpc, and any option a schema
+	// states for a generator outside this workspace. A features option
+	// is stamped under FeaturesKey, because editions give it a meaning
 	// the other options lack.
 	OptionsKey meta.KeyName = "protobuf.options"
 
@@ -59,8 +59,9 @@ const (
 	// projection is the Map form over its key and value.
 	MapEntryKey meta.KeyName = "protobuf.mapEntry"
 
-	// FeaturesKey is the edition features a declaration states, as
-	// written. Editions replace the syntax keyword with features,
+	// FeaturesKey is the edition features a declaration states, as a
+	// list with one name=value entry per features option as written.
+	// Editions replace the syntax keyword with features,
 	// and field presence among them changes what an absent value
 	// means, so every level that states features is stamped: a file,
 	// a message, a field, a oneof, an enum, an enum value, a service
@@ -78,15 +79,17 @@ const (
 	// field's spelling in JSON and nothing about its type.
 	JSONNameKey meta.KeyName = "protobuf.jsonName"
 
-	// ExtensionsKey is a message's extension ranges as written, each
-	// with its options: the numbers the message reserves for
-	// extensions declared elsewhere.
+	// ExtensionsKey is a message's extension ranges as written, as a
+	// list with one entry per extension range declaration and its
+	// options: the numbers the message reserves for extensions declared
+	// elsewhere.
 	ExtensionsKey meta.KeyName = "protobuf.extensions"
 
-	// ImportKey is a file's imports as written, public, weak and option
-	// marked, because a public import re-exports what it imports, a weak
-	// one may be absent at run time, and an option import imports custom
-	// options and no types.
+	// ImportKey is a file's imports as written, as a list with one entry
+	// per import. A public, a weak and an option import have their
+	// keyword before the path, because a public import re-exports what it
+	// imports, a weak one may be absent at run time, and an option import
+	// imports custom options and no types.
 	ImportKey meta.KeyName = "protobuf.import"
 
 	// ClosedKey marks an enum whose resolved enum_type is CLOSED, as
@@ -108,8 +111,9 @@ const (
 )
 
 // Keys claims the protobuf metadata namespace for the handle's
-// registrant and registers every key in it through the same handle,
-// each typed as text.
+// registrant and registers every key in it through the same handle.
+// The frontend stamps the options, features, extensions and import keys
+// as lists of text, and every other key as text.
 //
 // A composition passes it to the workspace builder and a corpus
 // fixture passes it to the conformance runner, so both register one
@@ -138,14 +142,6 @@ func Keys(r *meta.Registry) error {
 			Doc: "the numbers and names a schema promises never to reuse",
 		},
 		{
-			Name: OptionsKey,
-			Kinds: []symbol.Kind{
-				symbol.KindFile, symbol.KindStruct, symbol.KindField, symbol.KindEnum,
-				symbol.KindEnumVariant, symbol.KindSum, symbol.KindInterface, symbol.KindMethod,
-			},
-			Doc: "the options a declaration states, for generators outside this workspace",
-		},
-		{
 			Name: SyntaxKey, Kinds: file,
 			Doc: "a file's syntax or edition, which decides what an absent value means",
 		},
@@ -166,28 +162,12 @@ func Keys(r *meta.Registry) error {
 			Doc: "marks a field the schema wrote as a map",
 		},
 		{
-			Name: FeaturesKey,
-			Kinds: []symbol.Kind{
-				symbol.KindFile, symbol.KindStruct, symbol.KindField, symbol.KindSum,
-				symbol.KindEnum, symbol.KindEnumVariant, symbol.KindInterface, symbol.KindMethod,
-			},
-			Doc: "the edition features a declaration states, as written",
-		},
-		{
 			Name: LabelKey, Kinds: []symbol.Kind{symbol.KindField},
 			Doc: "a required field's label, which the projection has no form for",
 		},
 		{
 			Name: JSONNameKey, Kinds: []symbol.Kind{symbol.KindField},
 			Doc: "a field's stated json_name",
-		},
-		{
-			Name: ExtensionsKey, Kinds: []symbol.Kind{symbol.KindStruct},
-			Doc: "a message's extension ranges and their options, as written",
-		},
-		{
-			Name: ImportKey, Kinds: file,
-			Doc: "a file's imports as written, public, weak and option marked",
 		},
 		{
 			Name: ClosedKey, Kinds: []symbol.Kind{symbol.KindEnum},
@@ -203,6 +183,36 @@ func Keys(r *meta.Registry) error {
 		},
 	} {
 		if _, err := meta.Register[string](r, spec); err != nil {
+			return err
+		}
+	}
+	for _, spec := range []meta.KeySpec{
+		{
+			Name: OptionsKey,
+			Kinds: []symbol.Kind{
+				symbol.KindFile, symbol.KindStruct, symbol.KindField, symbol.KindEnum,
+				symbol.KindEnumVariant, symbol.KindSum, symbol.KindInterface, symbol.KindMethod,
+			},
+			Doc: "the options a declaration states, for generators outside this workspace",
+		},
+		{
+			Name: FeaturesKey,
+			Kinds: []symbol.Kind{
+				symbol.KindFile, symbol.KindStruct, symbol.KindField, symbol.KindSum,
+				symbol.KindEnum, symbol.KindEnumVariant, symbol.KindInterface, symbol.KindMethod,
+			},
+			Doc: "the edition features a declaration states, as written",
+		},
+		{
+			Name: ExtensionsKey, Kinds: []symbol.Kind{symbol.KindStruct},
+			Doc: "a message's extension ranges and their options, as written",
+		},
+		{
+			Name: ImportKey, Kinds: file,
+			Doc: "a file's imports as written, public, weak and option marked",
+		},
+	} {
+		if _, err := meta.Register[[]string](r, spec); err != nil {
 			return err
 		}
 	}

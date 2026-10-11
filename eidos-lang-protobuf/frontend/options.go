@@ -17,9 +17,12 @@ import (
 
 // The option spellings the lowering reads.
 const (
-	// featuresPrefix opens an edition feature, which is stamped apart
-	// from the other options.
-	featuresPrefix = "features."
+	// featuresOption is the option that sets edition features through a
+	// message literal, as in features = { field_presence: IMPLICIT }.
+	// featuresPrefix opens the option of one feature. Both are stamped
+	// apart from the other options.
+	featuresOption = "features"
+	featuresPrefix = featuresOption + "."
 	// jsonNameOption is the field option that renames a field in
 	// JSON, which decides its spelling there and nothing about its
 	// type.
@@ -97,13 +100,14 @@ func (o option) stringValue() string {
 
 // stampOptions stamps a declaration's plain options under
 // [protobuf.OptionsKey] and its edition features under
-// [protobuf.FeaturesKey], each spelled name=value as written. A
-// declaration stating neither is not stamped.
+// [protobuf.FeaturesKey]. Each stamp is a list with one entry per option,
+// spelled name=value as written. A declaration stating neither is not
+// stamped.
 func (l *lowered) stampOptions(subject symbol.Symbol, at position.Pos, opts []option) {
 	var plain, features []string
 	for _, o := range opts {
 		entry := o.name + optionAssign + o.value
-		if strings.HasPrefix(o.name, featuresPrefix) {
+		if o.name == featuresOption || strings.HasPrefix(o.name, featuresPrefix) {
 			features = append(features, entry)
 			continue
 		}
@@ -111,14 +115,10 @@ func (l *lowered) stampOptions(subject symbol.Symbol, at position.Pos, opts []op
 	}
 	gb := l.unit.Graph()
 	if len(plain) > 0 {
-		gb.Stamp(subject, meta.RawStamp{
-			Key: protobuf.OptionsKey, Value: strings.Join(plain, listSep), Pos: at,
-		})
+		gb.Stamp(subject, meta.RawStamp{Key: protobuf.OptionsKey, Value: plain, Pos: at})
 	}
 	if len(features) > 0 {
-		gb.Stamp(subject, meta.RawStamp{
-			Key: protobuf.FeaturesKey, Value: strings.Join(features, listSep), Pos: at,
-		})
+		gb.Stamp(subject, meta.RawStamp{Key: protobuf.FeaturesKey, Value: features, Pos: at})
 	}
 }
 

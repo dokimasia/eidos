@@ -292,6 +292,24 @@ func TestEditions(t *testing.T) {
 				want: []string{delimitedEncoding},
 			},
 			{
+				name: "resolves enum_type from the message literal of an enum's features option",
+				give: "edition = \"2023\";\npackage svc.r;\nenum E {\n  option features = { enum_type: CLOSED };\n" +
+					"  E_ZERO = 0;\n}\n",
+				subject: func(tb assert.TB, file *node.File) symbol.Symbol { return declOf(tb, file, "E") },
+				key:     protobuf.ClosedKey,
+				want:    []string{closedEnum},
+			},
+			{
+				name: "resolves message_encoding from the message literal of a field's features option",
+				give: "edition = \"2023\";\npackage svc.r;\nmessage M {\n" +
+					"  N b = 1 [features = { message_encoding: DELIMITED }];\n  message N {}\n}\n",
+				subject: func(tb assert.TB, file *node.File) symbol.Symbol {
+					return declOf(tb, file, "M").(*node.Struct).Fields[0]
+				},
+				key:  protobuf.DelimitedKey,
+				want: []string{delimitedEncoding},
+			},
+			{
 				name: "marks no scalar field as delimited",
 				give: "edition = \"2023\";\npackage svc.r;\noption features.message_encoding = DELIMITED;\n" +
 					"message M {\n  string a = 1;\n}\n",
@@ -339,6 +357,28 @@ func TestEditions(t *testing.T) {
 					"the resolved feature decides the mark")
 			})
 		}
+
+		t.Run("resolves field_presence from the message literal of the file's features option", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, "edition = \"2023\";\npackage svc.r;\n"+
+				"option features = { field_presence: IMPLICIT };\nmessage M {\n  string a = 1;\n}\n")
+			assert.False(t, sink.Failed(), "the schema loads clean")
+			m, _ := declOf(t, onlyFile(t, gb), "M").(*node.Struct)
+			assert.Equal(t, m.Fields[0].Type.Form, symbol.FormNamed,
+				"a singular scalar field under implicit presence is the type itself")
+		})
+
+		t.Run("keeps the default field_presence for a field of the message literal without a key", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, "edition = \"2023\";\npackage svc.r;\noption features = { IMPLICIT };\n"+
+				"message M {\n  string a = 1;\n}\n")
+			assert.True(t, sink.Failed(), "the parser reports the field without a key")
+			m, _ := declOf(t, onlyFile(t, gb), "M").(*node.Struct)
+			assert.Equal(t, m.Fields[0].Type.Form, symbol.FormOptional,
+				"a singular scalar field keeps the explicit presence of edition 2023")
+		})
 
 		t.Run("stamps an option import with its mark", func(t *testing.T) {
 			t.Parallel()

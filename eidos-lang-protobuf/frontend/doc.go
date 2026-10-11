@@ -28,7 +28,10 @@
 // The frontend resolves four features. Each feature starts from the
 // version's default, as descriptor.proto of protobuf v36.0 declares it.
 // The options of the file, of each enclosing message, of a oneof and of
-// the declaration itself then override it in that order. proto2 and
+// the declaration itself then override it in that order. An option sets a
+// feature by its own name, as features.field_presence = IMPLICIT does, or
+// through a message literal, as features = { field_presence: IMPLICIT }
+// does. proto2 and
 // proto3 set some features through their syntax: a required label, a
 // group and an optional label.
 //
