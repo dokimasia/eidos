@@ -14,27 +14,25 @@ type Setup func(tb TB) (Adapter, Generated)
 // the generated output parses, it type-checks, and its own tests
 // pass.
 //
-// Parsing needs no toolchain, so the parse check runs on every
-// machine. The two checks after it gate on the toolchain once:
-// absent locally they skip with the reason the adapter gave, and
-// absent in CI they fail, so a regression cannot hide behind a
-// missing compiler. A satellite adds its own assertions in its own
-// test, beside this call, because the kernel set is the minimum
-// every satellite runs. Each check runs the toolchain under its own
-// test's context.
+// The three checks gate on the toolchain once, because a language such
+// as TypeScript parses through its toolchain: absent locally they skip
+// with the reason the adapter gave, and absent in CI they fail, so a
+// regression cannot hide behind a missing compiler. A satellite adds its
+// own assertions in its own test, beside this call, because the kernel
+// set is the minimum every satellite runs. Each check runs the toolchain
+// under its own test's context.
 func RunToolchainSuite(t *testing.T, setup Setup) {
 	t.Helper()
-
-	t.Run("the generated output parses", func(t *testing.T) {
-		t.Parallel()
-		a, g := setup(t)
-		AssertParses(t.Context(), t, a, g)
-	})
 
 	a, _ := setup(t)
 	if !Require(t, a) {
 		return
 	}
+	t.Run("the generated output parses", func(t *testing.T) {
+		t.Parallel()
+		a, g := setup(t)
+		AssertParses(t.Context(), t, a, g)
+	})
 	t.Run("the generated output type-checks", func(t *testing.T) {
 		t.Parallel()
 		a, g := setup(t)

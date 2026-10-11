@@ -100,10 +100,10 @@ type TB interface {
 // hide behind a missing compiler. A missing adapter records a failure
 // and reports false.
 //
-// [RunToolchainSuite] calls it once for the kernel's two checks that
-// run a toolchain. A satellite adding assertions of its own calls it
-// too, because every caller that runs a toolchain passes the gate,
-// whether or not the suite runs it.
+// [RunToolchainSuite] calls it once, before the kernel's three checks.
+// A satellite adding assertions of its own calls it too, because every
+// caller that runs a toolchain passes the gate, whether or not the suite
+// runs it.
 func Require(tb TB, a Adapter) bool {
 	tb.Helper()
 

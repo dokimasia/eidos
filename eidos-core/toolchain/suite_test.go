@@ -68,7 +68,7 @@ func TestSuiteGate(t *testing.T) {
 
 	var mu sync.Mutex
 	runs := 0
-	t.Run("parses without the toolchain and skips the checks that run one", func(t *testing.T) {
+	t.Run("skips every check without the toolchain", func(t *testing.T) {
 		toolchain.RunToolchainSuite(t, func(toolchain.TB) (toolchain.Adapter, toolchain.Generated) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -78,5 +78,5 @@ func TestSuiteGate(t *testing.T) {
 	})
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, runs, 2, "the parse check and the gate each set up once, and no gated check runs")
+	assert.Equal(t, runs, 1, "the gate sets up once, and no check runs")
 }
