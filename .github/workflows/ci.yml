@@ -234,7 +234,7 @@ jobs:
   result:
     name: Result
     if: always()
-    needs: [skip, docs, commits, changeset, baseline, license, check-go]
+    needs: [skip, docs, commits, changeset, baseline, license, check-go, ring]
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions: {}
@@ -242,3 +242,42 @@ jobs:
       - name: Require every job to pass or to skip
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
+  # The canary ring. The program internal/ring of eidos-reference tests the published version of
+  # each module that requires the kernel against the kernel and the SDK facade of the checkout. The
+  # job sets up the toolchains that the tests of the satellites run, and the job result requires it.
+  ring:
+    name: Ring
+    needs: skip
+    if: "needs.skip.outputs.skip != 'true'"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install TypeScript
+        run: |
+          npm install --global typescript@7.0.2
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - name: Test the published modules of the ring against the checkout
+        run: |
+          go run ./eidos-reference/internal/ring

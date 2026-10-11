@@ -9,8 +9,9 @@ linters:
       rules:
         # Plugin modules import the SDK facade alone, and the kernel arrives transitively through
         # go.dokimi.dev/eidos/sdk, so a regrouping of the kernel moves no plugin's import path.
-        # eidos-reference and the tools module of the shape catalog are not listed: each is host
-        # side and composes the workspace, which the facade does not re-export.
+        # The tools module of the shape catalog is not listed, and neither are the composition of
+        # eidos-reference at the root of its module, its binary and the fixture of its tests. Each
+        # is host side and composes or loads the workspace, which the facade does not re-export.
         plugin-modules:
           files:
             - "**/eidos-lang/**"
@@ -23,6 +24,10 @@ linters:
             - "**/eidos-lang-typescript/**"
             - "**/eidos-plugin-shape/**"
             - "!**/eidos-plugin-shape/tools/**"
+            - "**/eidos-reference/**"
+            - "!**/eidos-reference/*.go"
+            - "!**/eidos-reference/cmd/**"
+            - "!**/eidos-reference/internal/referencetest/**"
           deny:
             - pkg: go.dokimi.dev/eidos/core
               desc: plugin source speaks the facade; import go.dokimi.dev/eidos/sdk instead

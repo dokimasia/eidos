@@ -60,8 +60,8 @@
     {
       "path": ".github/workflows/ci.yml",
       "producer": "github",
-      "local": "c614e483c7af56e8e5566c6d4cffee8479911a9a66c318c3c7d98cf11f4e64b2",
-      "sha256": "734a769d08c6edaab4ff70fb05cbe99dcfde59bdbee707a708662490eea44023"
+      "local": "4d41bb995f5c089c6f8deb101cdb7a0c7e12f425e7f8ed046e0dd5ab16759a79",
+      "sha256": "af502190a7e69e5aab88b22b8b5ab6981d7ccb1bb1dd3aac2bce8f050f1ed0ac"
     },
     {
       "path": ".github/workflows/codeql.yml",
@@ -97,8 +97,8 @@
     {
       "path": ".golangci.yml",
       "producer": "go",
-      "local": "b5da99dd3e706efe78fbd85c1e0d6cd551cbecb129a5e8587f3fbbd05c8c85e5",
-      "sha256": "9438cbe4f4fbc1d616781a5618824ff3d4b507663daf9e78e5fa37ea578fa554"
+      "local": "60a4696eb646efe0936d3b30b64aeec9b66f67f0255c48aae4ae4d668f9647d0",
+      "sha256": "ef4002945026587308f16981acd8fa146b9355e5898b7dbc17d0fff8c93ad177"
     },
     {
       "path": ".markdownlint.yml",
