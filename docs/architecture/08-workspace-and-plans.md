@@ -252,7 +252,10 @@ The steps, in order, where each assumes the ones before it:
    ([06b-authoring.md](06b-authoring.md)), subscriptions are
    collected as data, and per-role priorities and capability
    topology sort. A cycle is an error naming the bucket and its
-   members.
+   members. A requirement whose provider runs later is an error naming
+   both plugins. A provider runs later where it has a later priority in
+   the role of the requirer, and where it is a generator alone and the
+   requirer is an annotator.
 3. **Options.** Every plugin's options schema populates from its
    config section, and a failure names the plugin and the field.
 4. **Plans.** The config's refinements apply first. Each refines a
