@@ -86,7 +86,7 @@ const (
 	// resultTupleAllocs is two results: the joined tuple, and the
 	// annotation.
 	resultTupleAllocs = 1 + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-one
+	// funcsAllocs is the vocabulary of a file: the map of twenty-three
 	// helpers, four allocations, and the speller's seven bound helpers.
 	funcsAllocs = 4 + 7
 	// joinedKeywordsAllocs is two keywords joined behind an accessibility,
@@ -807,11 +807,21 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, backend.Docs([]string{"One.", "Two."}), "/**\n * One.\n * Two.\n */\n",
 				"one gutter line per line")
 		})
+	})
 
-		t.Run("writes at the given depth", func(t *testing.T) {
+	t.Run("MemberDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no lines", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Docs([]string{"Inner."}, "  "), "  /**\n   * Inner.\n   */\n",
+			assert.Equal(t, backend.MemberDocs(nil), "", "no block")
+		})
+
+		t.Run("writes the TSDoc block behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDocs([]string{"Inner."}), "  /**\n   * Inner.\n   */\n",
 				"the whole block indented to the member's depth")
 		})
 	})
@@ -1412,13 +1422,32 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, backend.Decorators(nil), "", "no lines")
 		})
 
-		t.Run("writes one decorator line per annotation at the given depth", func(t *testing.T) {
+		t.Run("writes one decorator line per annotation", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Decorators(symbol.Annotations{
 				{Name: "injectable"},
 				{Name: "route", Args: []string{`"/rows"`, "true"}},
-			}, "  "), "  @injectable\n  @route(\"/rows\", true)\n", "the arguments verbatim")
+			}), "@injectable\n@route(\"/rows\", true)\n", "the arguments verbatim")
+		})
+	})
+
+	t.Run("MemberDecorators", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for no annotations", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDecorators(nil), "", "no lines")
+		})
+
+		t.Run("writes each decorator line behind the member indent", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.MemberDecorators(symbol.Annotations{
+				{Name: "injectable"},
+				{Name: "route", Args: []string{`"/rows"`, "true"}},
+			}), "  @injectable\n  @route(\"/rows\", true)\n", "the arguments verbatim")
 		})
 	})
 }
@@ -1553,11 +1582,15 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 21, "Funcs returns the twenty-one helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 23, "Funcs returns the twenty-three helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/**\n * " + rowDoc + "\n */\n"),
+		},
+		{
+			name: "MemberDocs", allocs: textAllocs,
+			call: func() { out = backend.MemberDocs(doc) }, check: spells("  /**\n   * " + rowDoc + "\n   */\n"),
 		},
 		{
 			name:     "PropKey",
@@ -1595,6 +1628,10 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Decorators", allocs: textAllocs,
 			call: func() { out = backend.Decorators(annotations) }, check: spells("@log\n"),
+		},
+		{
+			name: "MemberDecorators", allocs: textAllocs,
+			call: func() { out = backend.MemberDecorators(annotations) }, check: spells("  @log\n"),
 		},
 	}
 }

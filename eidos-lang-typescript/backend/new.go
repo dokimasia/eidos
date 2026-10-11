@@ -27,7 +27,7 @@ const memberIndent = "  "
 // hermeticity refuses a printer that the machine provides.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the seven kind templates: 1,748 allocations.
+// and the seven kind templates: 1,767 allocations.
 func New() plugin.Backend {
 	return backend.New(typescript.Name, typescript.Target, typescript.Syntax()).
 		Version(typescript.Version).

@@ -32,11 +32,11 @@ const (
 	// results, because TypeScript gives a constructor neither.
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
+		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{memberdecorators .Annotations}}" +
 		"  {{membermods .}}{{hard .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberdecorators .Annotations}}" +
 		"{{if .Indexer}}  {{indexmods .}}{{indexsig .}}{{else if .Constructs}}" +
 		"  {{ctormods .}}constructor({{params .Params}}) {\n{{memberbody .}}  }{{else}}" +
 		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}}" +
@@ -51,10 +51,10 @@ const (
 	// signature returns a promise of its result.
 	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}" +
 		"{{typeparams .TypeParams}}{{heritage .}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}};" +
+		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}  {{propmods .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
+		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}" +
 		"{{if .Indexer}}  {{sigmods .}}{{indexsig .}}" +
 		"{{else if .Constructs}}  {{sigmods .}}new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
 		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
@@ -75,7 +75,7 @@ const (
 	// quoted where the name is not an identifier, its stated value
 	// behind an equals sign, each under its own doc block.
 	EnumTemplate = "{{docs .Doc}}{{mods .}}{{if .Const}}const {{end}}enum {{.Name}} {\n" +
-		"{{- range .Variants.Items}}\n{{docs .Doc \"  \"}}" +
+		"{{- range .Variants.Items}}\n{{memberdocs .Doc}}" +
 		"  {{enumkey .}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 

@@ -24,6 +24,9 @@ import (
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
+	// FuncMemberDocs writes a member's documentation at the member's
+	// depth.
+	FuncMemberDocs = "memberdocs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
 	// FuncTypeParams writes a type parameter list.
@@ -50,6 +53,9 @@ const (
 	FuncBinding = "binding"
 	// FuncDecorators writes a declaration's decorator lines.
 	FuncDecorators = "decorators"
+	// FuncMemberDecorators writes a member's decorator lines at the
+	// member's depth.
+	FuncMemberDecorators = "memberdecorators"
 	// FuncHeritage writes a type's heritage clauses.
 	FuncHeritage = "heritage"
 	// FuncAccessor writes a method's accessor keyword.
@@ -502,45 +508,58 @@ func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)
 
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every declaration a helper
-// names from another module is imported there. Funcs allocates the map
-// of twenty-one helpers, four allocations, and the speller's seven
-// bound helpers.
+// names from another module is imported there. Every helper takes a
+// fixed list of arguments, because text/template allocates the list of
+// a variadic call and a value for each string argument that a template
+// writes. Funcs allocates the map of twenty-three helpers, four
+// allocations, and the speller's seven bound helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
-		FuncDocs:       Docs,
-		FuncSpell:      s.Spell,
-		FuncTypeParams: s.TypeParams,
-		FuncParams:     s.Params,
-		FuncResults:    s.Results,
-		FuncReturns:    s.Returns,
-		FuncMods:       Mods,
-		FuncMemberMods: MemberMods,
-		FuncIndexMods:  IndexMods,
-		FuncCtorMods:   CtorMods,
-		FuncPropMods:   PropMods,
-		FuncSigMods:    SigMods,
-		FuncBinding:    Binding,
-		FuncDecorators: Decorators,
-		FuncHeritage:   s.Heritage,
-		FuncAccessor:   AccessorKw,
-		FuncHard:       Hard,
-		FuncIndexSig:   s.IndexSig,
-		FuncPropKey:    PropKey,
-		FuncMethodKey:  MethodKey,
-		FuncEnumKey:    EnumKey,
+		FuncDocs:             Docs,
+		FuncMemberDocs:       MemberDocs,
+		FuncSpell:            s.Spell,
+		FuncTypeParams:       s.TypeParams,
+		FuncParams:           s.Params,
+		FuncResults:          s.Results,
+		FuncReturns:          s.Returns,
+		FuncMods:             Mods,
+		FuncMemberMods:       MemberMods,
+		FuncIndexMods:        IndexMods,
+		FuncCtorMods:         CtorMods,
+		FuncPropMods:         PropMods,
+		FuncSigMods:          SigMods,
+		FuncBinding:          Binding,
+		FuncDecorators:       Decorators,
+		FuncMemberDecorators: MemberDecorators,
+		FuncHeritage:         s.Heritage,
+		FuncAccessor:         AccessorKw,
+		FuncHard:             Hard,
+		FuncIndexSig:         s.IndexSig,
+		FuncPropKey:          PropKey,
+		FuncMethodKey:        MethodKey,
+		FuncEnumKey:          EnumKey,
 	}
 }
 
-// Docs writes a declaration's documentation as a TSDoc block,
-// each line prefixed with the given indentation, so a member's
-// doc is at its member's depth. It allocates what [textfmt.BlockDocs]
-// allocates: the block, sized once, and nothing for no lines.
-func Docs(lines []string, prefix ...string) string {
+// Docs writes a declaration's documentation as a TSDoc block at the
+// top level. It allocates what [textfmt.BlockDocs] allocates: the
+// block, sized once, and nothing for no lines.
+func Docs(lines []string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	return textfmt.BlockDocs(lines, "/**", " * ", " */", prefix...)
+	return textfmt.BlockDocs(lines, "/**", " * ", " */")
+}
+
+// MemberDocs writes a member's documentation as the TSDoc block of
+// [Docs], each line behind the member indent of a class, an interface
+// or an enum. It allocates what Docs allocates.
+func MemberDocs(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return textfmt.BlockDocs(lines, "/**", " * ", " */", memberIndent)
 }
 
 // PropKey writes a field's property key: an identifier bare, and any
@@ -914,13 +933,20 @@ func Binding(v *emit.Variable) (string, error) {
 	return constBinding, nil
 }
 
-// Decorators writes a declaration's decorator lines, one per
-// annotation, each prefixed with the given indentation: the name
-// behind its marker, and the argument spellings verbatim in
-// parentheses where any are stated. It allocates what [textfmt.Marked]
-// allocates: the lines, sized once, and nothing for no annotations.
-func Decorators(a symbol.Annotations, prefix ...string) string {
-	return textfmt.Marked(a, "@", "", prefix...)
+// Decorators writes a declaration's decorator lines at the top level,
+// one per annotation: the name behind its marker, and the argument
+// spellings verbatim in parentheses where any are stated. It allocates
+// what [textfmt.Marked] allocates: the lines, sized once, and nothing
+// for no annotations.
+func Decorators(a symbol.Annotations) string {
+	return textfmt.Marked(a, "@", "")
+}
+
+// MemberDecorators writes a member's decorator lines as [Decorators]
+// writes them, each behind the member indent of a class. It allocates
+// what Decorators allocates.
+func MemberDecorators(a symbol.Annotations) string {
+	return textfmt.Marked(a, "@", "", memberIndent)
 }
 
 // variance writes the declaration-site keyword TypeScript places
