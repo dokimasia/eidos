@@ -393,7 +393,7 @@ question arrives on a declared source of truth:
 | cross-package types, embeds, effective member sets | the linked graph, through `Members` and `Resolve` ([03-projection.md](03-projection.md)) |
 | comparability, zero values, samples | `rules/` walking the linked graph |
 | dependencies distributed without source | declared artifacts such as JARs and `.d.ts`, parsed and never executed |
-| inferred types, such as `var x = f()` with no annotation | level 2: the declaration projects with the type opaque, and `<lang>.inferred` carries the spelling |
+| inferred types, such as `var x = f()` with no annotation | level 2: the declaration projects without a type, and its value keeps the spelling of the initializer |
 | anything needing execution or macro expansion | levels 3 and 4 of the scale |
 
 The residue is honest and small: what a compiler infers that the

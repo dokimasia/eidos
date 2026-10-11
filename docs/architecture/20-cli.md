@@ -202,14 +202,16 @@ scoped `run` deliberately leaves alone, `prune` reconciles.
 
 ### doctor
 
-Diagnosis, no writes. It validates config with the same Go types
-from which the published schema is generated, checks the environment,
-reports deprecated directive and API usage
-([15-compatibility.md](15-compatibility.md)), lists dead
-suppressions ([16-diagnostics.md](16-diagnostics.md)), and runs the
-schema-evolution check, diffing the workspace's directive usage
-against the current schema index so a consumer sees breaking
-annotation changes before an upgrade bites.
+`doctor` diagnoses and writes nothing but the lock file. It validates
+config with the same Go types from which the published schema is
+generated, and makes a dry run of each workspace that builds. It
+reports every Error and Warning of the dry run. At every severity it
+also reports a sealed state that the next run ignores
+([09-incrementality.md](09-incrementality.md)), a deprecated
+directive ([15-compatibility.md](15-compatibility.md)) and a dead
+suppression ([16-diagnostics.md](16-diagnostics.md)). It does not
+compare the workspace's directive usage with the schema index of
+another release.
 
 ### watch
 

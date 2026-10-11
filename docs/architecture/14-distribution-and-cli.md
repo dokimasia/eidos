@@ -63,8 +63,10 @@ func main() {
 
 Config, written as YAML against the published JSON Schema, drives
 the same typed structs. That is how a binary lets its users choose
-among the plugins it compiled in: selection happens at run time,
-existence at build time.
+among the plans it compiled in and set the options of its plugins:
+selection happens at run time, existence at build time. A plan runs
+whole or not at all, because the config file does not assemble a
+plan from the plugins of the binary.
 
 A plan that the binary marks `Extensible` also admits the declarative
 plugins that the config file lists under the plan's key `plugins`.

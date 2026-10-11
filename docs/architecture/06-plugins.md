@@ -88,13 +88,16 @@ Four structural rules bind the roles:
 ## Capabilities
 
 Capabilities are asserted through interfaces, and each has a name
-the conformance suite can hold it to: `CapabilityProvider` for
-priority plus provides and requires, where capability topology
-orders execution inside priority buckets; `OptionsProvider` for
-typed options schemas; `TemplateProvider` for template trees, funcs
-and overrides; `FilenameProvider` for declared outputs;
-`DirectiveProvider` for owned schemas; and `Versioned` for the
-contribution to the cache key.
+the conformance suite can hold it to:
+
+- `CapabilityProvider` states the priority, and the capabilities that
+  the plugin provides and requires. Capability topology orders the
+  plugins of one priority.
+- `OptionsProvider` states typed options schemas.
+- `TemplateProvider` states template trees, funcs and overrides.
+- `FilenameProvider` states the declared outputs.
+- `DirectiveProvider` states the directive schemas of the plugin.
+- `Versioned` states the contribution to the cache key.
 
 Capability labels follow the same rule as every other registered
 name ([README](README.md)). The plugin that provides a capability

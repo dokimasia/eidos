@@ -10,9 +10,14 @@
 compatibility claim is executed with.*
 
 This is how a framework split across modules keeps its promises.
-Everything here ships in the kernel's `conformance/` package, and
-satellites and consumers run it too. Claims about compatibility,
-determinism and language support are executed rather than asserted.
+The suites are test packages of the kernel: `plugintest`,
+`backendtest`, `pipelinetest`, `workspacetest`, `frontendtest` and
+`rulestest` in eidos-core, and `acceptancetest` in eidos-cli.
+eidos-sdk re-exports `plugintest`, `backendtest`, `frontendtest` and
+`rulestest` for satellites, and satellites and consumers run them
+too. The eidos-conformance module checks every language against one
+corpus. Claims about compatibility, determinism and language support
+are executed rather than asserted.
 
 ## The eight checks
 

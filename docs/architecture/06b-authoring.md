@@ -355,11 +355,11 @@ generates while another builds on the same subjects, is the positive
 form of that rule, composed from three approved mechanisms.
 
 The owner's annotator half **promotes its conclusions to declared
-facts**, such as `handlergen.isHandler` under a namespaced key,
+facts**, such as `handlergen.handler` under a namespaced key,
 which works as a dual role through per-role priorities.
 
 The weaver **declares its gate**:
-`Where(HasKey(handlergen.KeyIsHandler), OnEmit(kind, weave))`, with
+`Where(HasKey(meta.Named[bool](handlergen.KeyHandler)), OnEmit(kind, weave))`, with
 the predicate evaluating against the origin, per the rule that gates
 are declarative. It appends into **slots** through `Emitter.Slot`: the
 standard body slots, which every body has without a declaration from
@@ -479,7 +479,8 @@ func KeyEquals[T comparable](k meta.Key[T], v T) Pred
 //   Kernel() meta.KernelKeys     // the kernel's own keys, for its facts
 //   Errorf / Warnf(code, format, ...) // origin and position pre-bound
 //   ErrorfAt(code, pos, format, ...)  // at a carrier line instead
-// plus its subject field (.Interface, .Enum, {.Host, .Method}, …).
+// plus its subject field (.Interface, .Enum, .Method, …). The host of
+// a method is the identity m.Method.Host.
 // EmitMatch also carries Origin(), the emit value's source symbol,
 // with tracked fact reads, so a weaver can ask whose output it is
 // looking at without ever seeing another plugin's directive.
