@@ -18,6 +18,9 @@
 //     value vocabulary for the C-family targets.
 //   - [go.dokimi.dev/eidos/lang/spellref] spells emit-model type
 //     references.
+//   - [go.dokimi.dev/eidos/lang/spoke] spells the children of a
+//     canonical type shape through a spoke of the cross-language hub,
+//     and describes the form of a shape for a refusal.
 //   - [go.dokimi.dev/eidos/lang/textfmt] writes comments and import
 //     statements and normalizes rendered source.
 //   - [go.dokimi.dev/eidos/lang/treesitter] parses source with a
@@ -29,7 +32,8 @@
 //
 // The root package imports nothing. naming imports the Go stdlib
 // alone. lowering and spellref import sdk/emit, numeric imports
-// sdk/emit and sdk/rules, textfmt imports sdk/render and sdk/symbol,
+// sdk/emit and sdk/rules, spoke imports sdk/emit, sdk/rules and
+// sdk/symbol, textfmt imports sdk/render and sdk/symbol,
 // and scaffold imports sdk/emit, sdk/render and sdk/symbol, each
 // beside the Go stdlib. treesitter imports the tree-sitter runtime
 // binding and sdk/position, and each grammar package imports its
