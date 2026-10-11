@@ -19,10 +19,8 @@ dominates end-to-end time. A cache sitting *below* the loader would
 memoise the cheap part and add serialization on top, which loses.
 Every layer here sits above the expensive work it skips.
 
-Every number in this document is a target until the
-dedicated-runner baseline exists
-([19-benchmarking.md](19-benchmarking.md)). None of them is a
-measurement.
+Every number in this document is a target, except where a sentence
+states that it measured the number.
 
 ## The dependency graph
 
@@ -201,10 +199,9 @@ family it dirties ([18-routing-and-layout.md](18-routing-and-layout.md)):
 
 A `PerPlan` file costs its full size on every edit to one of its
 contributors, in any design, because rendering, formatting and
-hashing one file reads every byte of it. The warm-one-edit gate
-([19-benchmarking.md](19-benchmarking.md)) applies to per-source and
-per-package outputs, and a plan with a per-plan family adds that
-file's full cost to each such edit.
+hashing one file reads every byte of it. The warm cost that tracks the
+edit holds for per-source and per-package outputs, and a plan with a
+per-plan family adds that file's full cost to each such edit.
 
 O(dirty) is real without persisting emit, because "whose inputs
 moved" is a table lookup rather than a rerun. Two earlier rules are
@@ -377,10 +374,9 @@ regions on the read side.** Opening costs what the run touches, and
 committing costs what the run changed: one segment for the regions of
 the units it parsed or restored and one for the runs of the tables it
 changed, plus the generation, never the corpus. A full-generation
-rewrite would scale
-the commit with the corpus and fail the warm-one-edit scaling gate
-([19-benchmarking.md](19-benchmarking.md)) on the last step alone. A
-run that changed nothing writes nothing at all.
+rewrite would scale the commit with the corpus, so the cost of one edit
+would grow with the corpus on the last step alone. A run that changed
+nothing does not write at all.
 
 The commit writes its segments and the generation, then the manifest
 documents whose bytes changed
@@ -563,10 +559,11 @@ else: memoization, cutoff, laziness and parallel plans. A cache that
 cannot prove it produces the same answer is a determinism bug that
 happens to be fast.
 
-The target itself is executed rather than asserted.
-[19-benchmarking.md](19-benchmarking.md) defines the corpus
-generator, the scenario matrix that pins these layers one at a time,
-and the budget gates that block a release on a speed regression.
+The check of every commit executes two parts of the target. A probe
+asserts that a warm run over an unchanged tree does not hash a file,
+parse a unit or run an invocation, and the Allocs tests pin the
+allocation ceilings of the hot paths
+([19-benchmarking.md](19-benchmarking.md)).
 
 ## Batch only: there is no daemon
 

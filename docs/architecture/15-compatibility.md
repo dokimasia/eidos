@@ -54,14 +54,28 @@ the go.mod and the range in CI are the same data.
 
 ## The canary ring
 
-Before the kernel tags anything, its release pipeline runs the ring:
+The ring is every module of the workspace that requires the kernel:
 eidos-reference, which is the designated canary and is kept
-API-typical on purpose, plus eidos-plugin-shape and the language
-satellites at their published versions, all against kernel HEAD.
-"Only adds" is therefore tested against real consumers before
-release rather than promised in a changelog. A ring failure blocks
-the tag, and a human decides with the failure in hand whether the
-fix is kernel-side or a coordinated satellite release.
+API-typical on purpose, plus eidos-plugin-shape, the language
+satellites and the other consumers of the kernel.
+
+Every CI run builds and tests each module of the workspace against the
+kernel at the commit. Before the first publication of a module, this
+run is the ring for that module.
+
+The ring job of CI tests the latest published version of each module
+of the ring against the kernel at the commit. It reads the modules from
+`go.work`, queries the module proxy for the latest version of each, and
+runs `go test` over the packages of each release in a scratch module.
+The scratch module replaces the kernel and the SDK facade with the
+checkout. A module without a release is unpublished, and the job does
+not test it.
+
+The release job publishes a commit only after a CI run passed on the
+same content, so a ring failure blocks the tag. Real consumers test
+"only adds" before each release, and no changelog has to promise it. A
+human decides with the failure in hand whether the fix is kernel-side
+or a coordinated satellite release.
 
 ## Deprecation
 
@@ -122,7 +136,9 @@ every template and every formatter with it.
 - The cross-language metadata parity matrix
   ([04-metadata.md](04-metadata.md)).
 - The diagnostic-code index, with stable anchors.
-- Benchmark results against the previous release, budget-gated.
+
+A release does not publish benchmark results, and it does not wait on
+a benchmark run.
 
 ## Stable diagnostic codes
 

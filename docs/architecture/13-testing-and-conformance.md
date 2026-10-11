@@ -256,8 +256,10 @@ type Generated struct {
 
 `Generated` is a value and the adapter lays it out; nothing in the
 kernel writes a file, because where a scratch project sits and what
-it must contain is the language's own question. `Prepare` runs the
-layout and hands back the cleanup, so every assertion removes its
+it must contain is the language's own question. `Prepare` reads the
+files of `Sources` into the fixture beneath the generated files, so a
+generated file takes the place of a source at its path. It then runs
+the layout and hands back the cleanup, so every assertion removes its
 scratch tree whether it passed or not.
 
 Language harnesses stay thin adapters. The assertion semantics and

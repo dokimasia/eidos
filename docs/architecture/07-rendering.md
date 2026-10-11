@@ -149,10 +149,29 @@ comparing a sample. It is deliberately too small to write logic in.
 Anything beyond it belongs in a hand-written file that the generated
 one calls.
 
-One expression kind carries data rather than a spelling. `ExprValue`
-holds a `Value`, the tree a projection derives
-([03-projection.md](03-projection.md)), so a check's call takes a
-sample as an argument. Each target's scaffold spells the tree
+An expression has one of four kinds:
+
+- `ExprName` is a local spelling, such as a parameter, a receiver or a
+  callable of the file's own package. The target writes it as it is
+  and imports nothing for it.
+- `ExprCall` applies its `Fn` to its `Args`.
+- `ExprValue` holds a `Value`, the tree that a projection derives.
+- `ExprRef` refers to a function, a constant or a variable of another
+  package by its identity in `Ref`.
+
+The target qualifies the name of a reference for the file and records
+the import through `Callee`, as it does for the callee of a value call.
+As the `Fn` of a call, a reference calls the function with the
+arguments of the call. So a contributor appends `audit.Record(w, r)` to
+a handler, with the parameters of the handler as names. The scaffold
+refuses a reference whose identity has no name, and a reference
+without a target. The settle leaves a reference as written, because the
+target spells the identity. A name in one of the plan's own packages is
+an `ExprName`, and the settle follows it.
+
+A check's call takes a sample as an argument through `ExprValue`,
+whose `Value` contains the data of the sample rather than its spelling
+([03-projection.md](03-projection.md)). Each target's scaffold spells the tree
 through the shared walk, recording the imports its references and
 callees need into the file's import set, and refuses a leaf it has
 no form for under `UnspeltValue`: raw text written in another

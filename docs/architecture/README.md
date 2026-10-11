@@ -105,6 +105,6 @@ and links into the specification at every step. Keep the
 | [16-diagnostics.md](16-diagnostics.md) | Severities, failure semantics, suppression, codes |
 | [17-output-and-determinism.md](17-output-and-determinism.md) | The sink contract, determinism rules, headers, manifest |
 | [18-routing-and-layout.md](18-routing-and-layout.md) | Layouts, tags, overrides, collision semantics |
-| [19-benchmarking.md](19-benchmarking.md) | The corpus generator, scenario matrix, budget gates |
+| [19-benchmarking.md](19-benchmarking.md) | The probe of zero work, the allocation contract of the micro benchmarks |
 | [20-cli.md](20-cli.md) | The command kernels: per-command contracts, flags, machine output |
 | [21-decisions.md](21-decisions.md) | The decision table |
