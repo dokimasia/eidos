@@ -34,10 +34,12 @@ const (
 	DefaultFormat  = "audit: %s"
 )
 
-// schema is the directive of auditweaver.
+// schema is the directive of auditweaver. Its rule runs on the methods that
+// the plan emits, so the schema lists the kinds of their origins.
 var schema = directive.Schema{
 	Plugin: string(ID),
 	Name:   AuditDirective,
+	Kinds:  []symbol.Kind{symbol.KindStruct, symbol.KindInterface},
 	Doc:    "logs the entry of each method that the plan emits from the declaration",
 }
 
