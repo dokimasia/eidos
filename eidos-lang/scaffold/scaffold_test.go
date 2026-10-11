@@ -12,7 +12,19 @@ import (
 
 	"go.dokimi.dev/eidos/lang/scaffold"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
+
+// The package and the name of the function that the reference cases
+// call.
+const (
+	auditPackage = "example.com/audit"
+	auditName    = "Record"
+)
+
+// auditRecord is the identity of the function that the reference cases
+// call: Record of the package example.com/audit.
+var auditRecord = symbol.Identity{Package: auditPackage, Name: auditName, Kind: symbol.KindFunction}
 
 // The allocations of a statement whose values allocate nothing.
 const (
@@ -188,6 +200,11 @@ func TestScaffold(t *testing.T) {
 				name: "writes a value expression as a call's argument",
 				give: call(name("want"), emit.ValueExpr(integer("42"))), want: "want(42)",
 			},
+			{name: "writes a reference as the target spells it", give: emit.RefExpr(auditRecord), want: "Record"},
+			{
+				name: "writes a call of a reference with local arguments",
+				give: call(emit.RefExpr(auditRecord), name("w"), name("r")), want: "Record(w, r)",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -209,6 +226,11 @@ func TestScaffold(t *testing.T) {
 			{name: "returns an error for a broken argument inside a call", give: call(name("f"), name(""))},
 			{name: "returns an error for a broken function inside a call", give: call(name(""))},
 			{name: "returns an error for a value expression without a value", give: emit.Expr{Kind: emit.ExprValue}},
+			{name: "returns an error for a reference without an identity", give: emit.Expr{Kind: emit.ExprRef}},
+			{
+				name: "returns an error for a reference to a declaration without a name",
+				give: emit.RefExpr(symbol.Identity{Package: auditPackage}),
+			},
 		}
 		for _, tt := range refusals {
 			t.Run(tt.name, func(t *testing.T) {
@@ -234,6 +256,31 @@ func TestScaffold(t *testing.T) {
 			err := scaffold.Expr(&b, raw, &scripted{refuseRaw: true})
 			assert.HasError(t, err, "the target refuses the value")
 			assert.Contains(t, err.Error(), "another language", "the target's refusal passes through")
+		})
+
+		t.Run("records the import of a reference through the target", func(t *testing.T) {
+			t.Parallel()
+
+			var b bytes.Buffer
+			target := &scripted{}
+			assert.NoError(t, scaffold.Expr(&b, emit.RefExpr(auditRecord), target), "the fixture spells")
+			assert.Equal(t, target.imported, []string{auditPackage}, "the target records the package of the reference")
+		})
+
+		t.Run("returns an error for a reference without a target", func(t *testing.T) {
+			t.Parallel()
+
+			var b bytes.Buffer
+			assert.HasError(t, scaffold.Expr(&b, emit.RefExpr(auditRecord), nil), "nothing spells the reference")
+		})
+
+		t.Run("returns the error the target returns for a reference", func(t *testing.T) {
+			t.Parallel()
+
+			var b bytes.Buffer
+			err := scaffold.Expr(&b, emit.RefExpr(auditRecord), &unspelling{})
+			assert.HasError(t, err, "the target refuses the callee")
+			assert.Contains(t, err.Error(), "no callee form", "the target's refusal passes through")
 		})
 	})
 }
@@ -265,6 +312,11 @@ func TestScaffoldAllocs(t *testing.T) {
 		"Expr allocates nothing in a grown buffer")
 	assert.NoError(t, err, "Expr spells the call")
 	assert.Equal(t, buf.String(), "load(ctx, 42)", "Expr writes the call")
+	referred := call(emit.RefExpr(auditRecord), name("w"))
+	assert.MaxAllocs(t, func() { buf.Reset(); err = scaffold.Expr(&buf, referred, passthrough{}) }, 0,
+		"Expr allocates nothing for a reference beyond what the target's Callee allocates")
+	assert.NoError(t, err, "Expr spells the call of the reference")
+	assert.Equal(t, buf.String(), "Record(w)", "Expr writes the call of the reference")
 }
 
 // BenchmarkScaffold measures each statement form a backend scaffolds
@@ -298,19 +350,33 @@ func BenchmarkScaffold(b *testing.B) {
 		}
 	})
 
+	expressions := []struct {
+		name string
+		give emit.Expr
+		want string
+	}{
+		{
+			name: "a call of a name",
+			give: call(name("load"), name("ctx"), emit.ValueExpr(integer("42"))), want: "load(ctx, 42)",
+		},
+		{name: "a call of a reference", give: call(emit.RefExpr(auditRecord), name("w")), want: "Record(w)"},
+	}
 	b.Run("Expr", func(b *testing.B) {
-		expr := call(name("load"), name("ctx"), emit.ValueExpr(integer("42")))
-		var buf bytes.Buffer
-		buf.Grow(len("load(ctx, 42)"))
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			buf.Reset()
-			err = scaffold.Expr(&buf, expr, passthrough{})
+		for _, tt := range expressions {
+			b.Run(tt.name, func(b *testing.B) {
+				var buf bytes.Buffer
+				buf.Grow(len(tt.want))
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				var err error
+				for c.Loop() {
+					buf.Reset()
+					err = scaffold.Expr(&buf, tt.give, passthrough{})
+				}
+				assert.NoError(b, err, "Expr spells the expression")
+				assert.Equal(b, buf.String(), tt.want, "Expr writes the expression")
+			})
 		}
-		assert.NoError(b, err, "Expr spells the call")
-		assert.Equal(b, buf.String(), "load(ctx, 42)", "Expr writes the call")
 	})
 }
 

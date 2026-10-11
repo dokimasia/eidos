@@ -198,23 +198,30 @@ func writeIndent(b *bytes.Buffer, indent string, depth int) {
 // locally resolving names and no target qualifies one. A call spells
 // the applied expression, an open parenthesis, its arguments joined
 // with commas, and a close. A value goes to the target, which spells
-// its tree and records the imports its references need.
+// its tree and records the imports its references need. A reference
+// goes to the target's [Target.Callee], which qualifies the name of
+// the declaration and records its import.
 //
 // Error modes:
 //   - An empty name, a call that applies no function, and a value
 //     expression without a value or without a target each return an
 //     error that names what is missing.
+//   - A reference without an identity, a reference to an identity
+//     without a name, and a reference without a target each return an
+//     error that names what is missing.
 //   - An expression kind the vocabulary does not declare returns an
 //     error that names the kind.
 //   - A value the walk or the target refuses returns its
-//     [render.ValueError].
+//     [render.ValueError], and a reference that the target refuses
+//     returns the target's error.
 //
 // Bytes written before an error stay in b.
 //
 // # Allocation contract
 //
 // Expr allocates nothing for names and calls beyond the growth of b. A
-// value expression allocates what [Value] allocates for its value.
+// value expression allocates what [Value] allocates for its value, and
+// a reference allocates what the target's Callee allocates.
 func Expr(b *bytes.Buffer, e emit.Expr, t Target) error {
 	switch e.Kind {
 	case emit.ExprName:
@@ -227,9 +234,28 @@ func Expr(b *bytes.Buffer, e emit.Expr, t Target) error {
 		return call(b, e, t)
 	case emit.ExprValue:
 		return value(b, e, t)
+	case emit.ExprRef:
+		return reference(b, e, t)
 	default:
 		return fmt.Errorf("scaffold: no spelling for the %s expression", e.Kind)
 	}
+}
+
+// reference writes the declaration of another package that an
+// expression refers to, as the target qualifies it.
+func reference(b *bytes.Buffer, e emit.Expr, t Target) error {
+	if e.Ref == nil || e.Ref.Name == "" {
+		return errors.New("scaffold: a reference expression refers to a declaration without a name")
+	}
+	if t == nil {
+		return errors.New("scaffold: a reference expression needs a target to spell it")
+	}
+	spelled, err := t.Callee(*e.Ref)
+	if err != nil {
+		return err
+	}
+	b.WriteString(spelled)
+	return nil
 }
 
 // value writes the value an expression contains through the target.
