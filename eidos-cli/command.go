@@ -22,7 +22,10 @@ const (
 
 // Compose returns a new composition with the brand, the frontends, the
 // plugins and the plans of the binary. A command calls it once for each
-// workspace, because a plugin instance belongs to one workspace.
+// workspace, because a plugin instance belongs to one workspace. [Open]
+// sets the output and the ledger of each composition to the disk below the
+// workspace root, so an output or a ledger that compose sets has no effect
+// under a command.
 type Compose func() *workspace.Builder
 
 // Command is one command of a binary. A host selects a command by its name,

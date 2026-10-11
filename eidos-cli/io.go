@@ -21,7 +21,8 @@ type IO struct {
 	// string for a variable that is not set.
 	Getenv func(key string) string
 	// Terminal is true when Stderr is a terminal. Text output colours the
-	// severities only on a terminal.
+	// severities only on a terminal. A host that replaces Stderr sets
+	// Terminal for the writer that replaces it.
 	Terminal bool
 }
 

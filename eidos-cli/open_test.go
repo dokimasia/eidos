@@ -21,6 +21,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -337,6 +338,25 @@ func TestOpen(t *testing.T) {
 			assert.NoError(t, err, "the run succeeds")
 			files.IsFile(t, filepath.Join(root, "svc", "mirror.txt"), "the run writes the output below the root")
 			files.IsDir(t, filepath.Join(root, stateName), "the run writes the state directory into the root")
+		})
+
+		t.Run("returns a workspace that writes to disk where the composition sets an output", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(version), "svc/store.zz": files.Text(source)})
+			sink := output.NewMem()
+			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: root, Getenv: os.Getenv}
+			members, err := cli.Open(stdio, cli.Flags{}, func() *workspace.Builder {
+				return compose().
+					Output(func() (output.Sink, error) { return sink, nil }).
+					Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil })
+			})
+			assert.NoError(t, err, "the workspaces open")
+			assert.Length(t, members, 1, "a document covers one workspace")
+			_, err = members[0].Workspace.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			assert.NoError(t, err, "the run succeeds")
+			files.IsFile(t, filepath.Join(root, "svc", "mirror.txt"), "the run writes the output below the root")
+			assert.Empty(t, sink.Files(), "the output of the composition receives nothing")
 		})
 
 		t.Run("panics for an IO with a relative working directory", func(t *testing.T) {
