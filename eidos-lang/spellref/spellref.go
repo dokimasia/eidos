@@ -175,8 +175,14 @@ func write(b *strings.Builder, s string) {
 // otherwise. A reference without a target records the package of its
 // source. A translated reference has a target in another language, and
 // the layout records the package of the file that declares its referent.
-// PackageOf allocates nothing.
+// A reference to a type parameter has no package, because no package
+// exports a type parameter. PackageOf returns the empty package for it,
+// so the backend writes it without an import. PackageOf allocates
+// nothing.
 func PackageOf(t *emit.TypeRef, lang symbol.Lang) string {
+	if t.Target.Kind == symbol.KindTypeParam {
+		return ""
+	}
 	if !t.Target.IsZero() && t.Target.Lang == lang {
 		return t.Target.Package
 	}

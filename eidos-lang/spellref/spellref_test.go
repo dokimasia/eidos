@@ -31,6 +31,8 @@ const (
 	// its target declares.
 	modulePkg = "rows"
 	targetPkg = "svc/rows"
+	// paramName is a type parameter of rowName.
+	paramName = "T"
 )
 
 // spelledAllocs is the spelling of a reference with arguments: one
@@ -186,6 +188,18 @@ func TestSpellRef(t *testing.T) {
 			}
 			assert.Equal(t, spellref.PackageOf(ref, lang), modulePkg,
 				"the layout records the package of the file that declares a translated reference's referent")
+		})
+
+		t.Run("returns no package for a reference to a type parameter", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{
+				Spelling: paramName,
+				Target: symbol.Identity{
+					Lang: lang, Package: targetPkg, Owner: rowName, Name: paramName, Kind: symbol.KindTypeParam,
+				},
+			}
+			assert.Equal(t, spellref.PackageOf(ref, lang), "", "no package exports a type parameter")
 		})
 	})
 }
