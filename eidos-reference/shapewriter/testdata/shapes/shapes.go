@@ -24,6 +24,12 @@ type Spread struct{}
 // Write discards p.
 func (Spread) Write(p ...byte) (int, error) { return len(p), nil }
 
+// Multi takes a variadic list of byte slices.
+type Multi struct{}
+
+// Write discards p.
+func (Multi) Write(p ...[]byte) (int, error) { return len(p), nil }
+
 // Single returns the count alone.
 type Single struct{}
 

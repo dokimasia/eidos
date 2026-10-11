@@ -6,8 +6,8 @@
 //
 // shapewriter is an annotator with two rules. The bare rule detects a
 // struct that declares the method Write of a writer. The method takes one
-// parameter of bytes, and returns a count of the platform's width and an
-// error. The rules of the language of the struct project the signature, so
+// parameter of bytes that is not variadic, and returns a count of the
+// platform's width and an error. The rules of the language of the struct project the signature, so
 // the rule reads the shapes of the types and not their spellings. A method
 // that an embedded field promotes does not count.
 //

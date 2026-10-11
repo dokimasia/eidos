@@ -37,6 +37,7 @@ const (
 	teeName       = "Tee"
 	textName      = "Text"
 	spreadName    = "Spread"
+	multiName     = "Multi"
 	singleName    = "Single"
 	wideName      = "Wide"
 	unsignedName  = "Unsigned"
@@ -93,6 +94,7 @@ func TestShapewriter(t *testing.T) {
 			{name: "stamps no struct whose method Write an embedded field promotes", give: teeName},
 			{name: "stamps no struct whose method Write takes a string", give: textName},
 			{name: "stamps no struct whose method Write takes the bytes one by one", give: spreadName},
+			{name: "stamps no struct whose method Write takes a variadic list of byte slices", give: multiName},
 			{name: "stamps no struct whose method Write returns the count alone", give: singleName},
 			{name: "stamps no struct whose method Write returns a count of 64 bits", give: wideName},
 			{name: "stamps no struct whose method Write returns an unsigned count", give: unsignedName},

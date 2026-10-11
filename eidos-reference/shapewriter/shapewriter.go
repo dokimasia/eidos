@@ -57,9 +57,9 @@ type conclusion struct {
 
 // New returns shapewriter, an annotator. It stamps [KeyWriter] on each
 // struct under [WriterDirective], and on each struct that declares the
-// method Write of a writer. That method takes one parameter of bytes, and
-// returns a count of the platform's width and an error, as io.Writer
-// declares it. A method that an embedded field promotes does not count. The
+// method Write of a writer. That method takes one parameter of bytes that
+// is not variadic, and returns a count of the platform's width and an
+// error, as io.Writer declares it. A method that an embedded field promotes does not count. The
 // negated directive excludes a struct from the detection. The fact store
 // reads the absence of a fact as false, so shapewriter stamps true alone.
 // Each call returns a new plugin, because a plugin instance belongs to one
@@ -102,9 +102,9 @@ func (c *conclusion) declared(_ *sdk.StructMatch, st *sdk.Stamper) error {
 
 // detect stamps [KeyWriter] on a struct whose declared method Write is the
 // method of a writer. The rules of the language of the struct project the
-// signature. The parameter has the form of bytes, the first result is a
-// signed integer of the platform's width, and the second result has the
-// role of the error.
+// signature. The one parameter is not variadic and has the form of bytes,
+// the first result is a signed integer of the platform's width, and the
+// second result has the role of the error.
 func (c *conclusion) detect(m *sdk.StructMatch, st *sdk.Stamper) error {
 	b := m.Rules()
 	for _, method := range m.Struct.Methods {
@@ -112,7 +112,7 @@ func (c *conclusion) detect(m *sdk.StructMatch, st *sdk.Stamper) error {
 			continue
 		}
 		call, _ := b.CallableOf(method)
-		if len(call.Params) != 1 || len(call.Returns) != writeResults {
+		if len(call.Params) != 1 || call.Params[0].Variadic || len(call.Returns) != writeResults {
 			return nil
 		}
 		bytes, count := b.TypeOf(call.Params[0].Ref), b.TypeOf(call.Returns[0].Ref)
