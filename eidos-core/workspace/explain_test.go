@@ -28,13 +28,15 @@ import (
 
 // The files of the explained trees beside the store's source: the source
 // of a second package, a file that the scripted frontend refuses, which
-// declares a struct before its package line, and a path that no plan
-// generates.
+// declares a struct before its package line, a path that no plan
+// generates, and the source of the package whose last path element
+// contains a dot.
 const (
 	otherSource    = "svc/other/other.zz"
 	refusedSource  = "svc/bad/bad.zz"
 	refusedContent = "type Bad int\n"
 	ungenerated    = "svc/store/none.txt"
+	dottedSource   = dottedPath + "/row.zz"
 )
 
 // flagName is the key that the flagger of the recording composition
@@ -364,6 +366,26 @@ func TestExplain(t *testing.T) {
 			got, err := w.Explain(t.Context(), workspace.Target{Identity: kindlessRow()})
 			assert.NoError(t, err, "the generation explains the identity without a kind")
 			assert.Equal(t, got, want, "the identity names the row")
+		})
+
+		t.Run("returns the explanation of the identity for the spelling of a dotted package", func(t *testing.T) {
+			t.Parallel()
+
+			var flag meta.Key[bool]
+			w := built(t, phaseRecording(t, ledger.NewMem(), &flag))
+			sealedRun(t, w, workspace.Input{Tree: fstest.MapFS{
+				dottedSource: {Data: []byte("package " + dottedPath + "\ntype Row int string\n" + markLine + "\n")},
+			}})
+			row := rowID
+			row.Package = dottedPath
+			want, err := w.Explain(t.Context(), workspace.Target{Identity: row})
+			assert.NoError(t, err, "the generation explains the row")
+			assert.NotEmpty(t, want.Records, "records read the row")
+			target, err := w.ParseTarget(row.String())
+			assert.NoError(t, err, "the spelling of the row parses")
+			got, err := w.Explain(t.Context(), target)
+			assert.NoError(t, err, "the generation explains the spelling")
+			assert.Equal(t, got, want, "the spelling names the row of the dotted package")
 		})
 
 		t.Run("returns the claim on the fact of a key at a position", func(t *testing.T) {

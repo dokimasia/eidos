@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -459,24 +460,78 @@ func (x *explainer) finding(code diag.Code, at position.Pos) error {
 // a kind names one declaration, the identity itself. An identity without a
 // kind names each declaration of the recorded load whose other fields are
 // equal, and resolve finds these declarations in the regions of the package
-// of the identity.
+// of the identity. resolve reads the identity again first where the
+// recorded load does not contain its package, as [explainer.respelled]
+// states.
 func (x *explainer) resolve(id symbol.Identity) ([]symbol.Identity, error) {
-	if id.Kind != symbol.KindInvalid {
-		return []symbol.Identity{id}, nil
-	}
-	pkg := id.PackageIdentity()
 	var out []symbol.Identity
-	err := x.declarations(func(u load.UnitRecord) bool {
-		return slices.Contains(u.Summary.Packages, pkg)
-	}, func(d node.Declaration) {
-		candidate := d.Identity()
-		candidate.Kind = symbol.KindInvalid
-		if candidate == id {
-			out = append(out, d.Identity())
+	for _, c := range x.respelled(id) {
+		if c.Kind != symbol.KindInvalid {
+			out = append(out, c)
+			continue
 		}
-	})
-	return out, err
+		pkg := c.PackageIdentity()
+		err := x.declarations(func(u load.UnitRecord) bool {
+			return slices.Contains(u.Summary.Packages, pkg)
+		}, func(d node.Declaration) {
+			candidate := d.Identity()
+			candidate.Kind = symbol.KindInvalid
+			if candidate == c {
+				out = append(out, d.Identity())
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
+
+// respelled returns the identities whose spelling is the spelling of id.
+// The explain command parses its argument with [symbol.Parse], which cuts
+// a package whose last path element contains a dot at that dot, so id can
+// have the wrong package. Where the recorded load contains the package of
+// id, respelled returns id. Otherwise respelled parses the spelling of id
+// again against each recorded package whose spelling, followed by a dot,
+// starts the spelling of id. It returns id where no recorded package
+// matches.
+func (x *explainer) respelled(id symbol.Identity) []symbol.Identity {
+	pkg := id.PackageIdentity()
+	var recorded []symbol.Identity
+	for _, u := range x.units {
+		if slices.Contains(u.Summary.Packages, pkg) {
+			return []symbol.Identity{id}
+		}
+		for _, p := range u.Summary.Packages {
+			if !slices.Contains(recorded, p) {
+				recorded = append(recorded, p)
+			}
+		}
+	}
+	spelling := id.String()
+	var out []symbol.Identity
+	for _, p := range recorded {
+		prefix := p.String()
+		if len(spelling) <= len(prefix) || spelling[len(prefix)] != '.' || !strings.HasPrefix(spelling, prefix) {
+			continue
+		}
+		again, err := symbol.Parse(string(p.Lang) + ":" + respellPackage + spelling[len(prefix):])
+		if err != nil {
+			continue
+		}
+		again.Package = p.Package
+		out = append(out, again)
+	}
+	if len(out) == 0 {
+		return []symbol.Identity{id}
+	}
+	return out
+}
+
+// respellPackage is the package without a dot that [explainer.respelled]
+// spells in place of a recorded package, so [symbol.Parse] reads the rest of
+// a spelling and nothing of the package.
+const respellPackage = "p"
 
 // claims adds the claims on the fact of a registered key on a subject, in
 // rank order with the winner first.
