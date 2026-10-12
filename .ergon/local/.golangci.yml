@@ -88,6 +88,14 @@ linters:
             - pkg: os/exec
               desc: a frontend runs no tool; read through the unit's door or a store
 
+    # The store of a plan seals the slots of the values that it contains, so a plugin writes into
+    # such a value through the slot view of its emitter, which buffers the write and names the
+    # writer. emit.AppendSealed and emit.Seal write past the seal, and the kernel alone calls them.
+    forbidigo:
+      forbid:
+        - pattern: ^emit\.(AppendSealed|Seal)$
+          msg: the kernel alone writes into a sealed slot; append through the slot view of the emitter
+
     # Each module of eidos starts its errors with the name of its package, so an error that one
     # module returns from another already has its context. The command kernel renders the error
     # of a flag set as the usage error of its command, which names the command.
@@ -136,6 +144,12 @@ linters:
       # that the caller receives the panic of a handler.
       - linters: [forbidigo]
         text: "use of `panic` forbidden"
+      # The kernel applies the buffered appends of a phase call in effects.go, seals the store of
+      # a plan in plugin/, and tests both in emit/ and plugin/. The paths are relative to each
+      # module, and no plugin module has these paths outside its generated facade.
+      - path: ^(effects\.go|emit/|plugin/)
+        linters: [forbidigo]
+        text: "emit\\.(AppendSealed|Seal)"
       # The encoders of the sealed state and of a unit's key write counts, offsets, lengths,
       # rounds and places, which are never negative, as unsigned integers. The decoders read them
       # back through the checked reads of the wire decoder.
