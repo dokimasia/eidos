@@ -18,17 +18,17 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The extensions of a dependency unit's members: a ct.sym entry, a class
-// file and a JAR.
+// The extensions of the members of a dependency unit: a ct.sym entry, a
+// class file and a JAR.
 const (
 	sigExt   = ".sig"
 	classExt = ".class"
 	jarExt   = ".jar"
 )
 
-// The names the class-file lowering treats apart: a package's
-// declaration, the methods that construct and initialize, and the
-// supertypes source leaves unwritten, which Extends leaves out.
+// The names that the class-file lowering treats apart: the declaration of a
+// package, the methods that construct and initialize, and the supertypes
+// that the source does not write, which Extends leaves out.
 const (
 	packageInfoClass = "package-info"
 	initMethod       = "<init>"
@@ -37,10 +37,10 @@ const (
 	annotationClass  = "java/lang/annotation/Annotation"
 )
 
-// The spellings the class-file lowering writes: an unbounded wildcard
-// and the openings of a bounded one, as the source lowering's compact
-// form spells them, the separator of an annotation's element and value,
-// and the package separator of a binary name in internal form.
+// The spellings that the class-file lowering writes: an unbounded wildcard
+// and the openings of a bounded one, in the compact form of the source
+// lowering, the separator between the element and the value of an
+// annotation, and the package separator of a binary name in internal form.
 const (
 	wildcardMark  = "?"
 	extendsBound  = "?extends "
@@ -49,31 +49,31 @@ const (
 	binarySlash   = "/"
 )
 
-// classFile is one decoded class of a dependency unit: the path of the
-// member it is from, which its File node and positions name, and the
+// classFile is one decoded class of a dependency unit: the path of its
+// member, which is the path of its File node and of its positions, and the
 // class.
 type classFile struct {
 	path  string
 	class *classfile.Class
 }
 
-// fileKey is one File node of a class-file unit: a member path in one
-// package. A JAR's classes of one package share the JAR's File node in
-// that package.
+// fileKey identifies one File node of a class-file unit: a member path in
+// one package. The classes of a JAR in one package share the File node of
+// the JAR in that package.
 type fileKey struct {
 	pkg  string
 	path string
 }
 
-// classScope is a class file's bindings: the spelling of each class its
-// references name, its binary name in dotted form, mapped to the one
-// identity the class has. A class file names every class by its binary
-// name, so a spelling has no other candidate.
+// classScope contains the bindings of a class file. It maps the spelling of
+// each class that its references contain, the binary name in dotted form,
+// to the one identity of the class. A class file refers to every class by
+// its binary name, so a spelling has no other candidate.
 type classScope map[string]symbol.Identity
 
-// classHeader is what every class lowers the same way: its simple name,
-// its visibility, whether it is a member class, whether a member class
-// is static, and the class that declares a member class.
+// classHeader contains what every class lowers the same way: its simple
+// name, its visibility, whether it is a member class, whether a member
+// class is static, and the class that declares a member class.
 type classHeader struct {
 	name   string
 	vis    symbol.Visibility
@@ -82,11 +82,11 @@ type classHeader struct {
 	outer  string
 }
 
-// classLowering is one dependency unit's lowering of its class files:
-// the unit, the classes by binary name, the member classes each class
-// declares, in name order, and the File node of each member path in each
-// package, in the order the lowering declares them, with each one's
-// scope and the packages it imports.
+// classLowering is the state of the lowering of the class files of one
+// dependency unit: the unit, the classes by binary name, the member classes
+// of each class in name order, and the File node of each member path in
+// each package, in the order of declaration. Each File node has its scope
+// and the packages that it imports.
 type classLowering struct {
 	u       *plugin.SourceUnit
 	classes map[string]classFile
@@ -97,13 +97,13 @@ type classLowering struct {
 	imports map[*node.File]map[string]bool
 }
 
-// lowerClasses lowers a unit's class files into its builder. A
+// lowerClasses lowers the class files of a unit into its builder. A
 // module-info class declares nothing, and a package-info class annotates
-// its File node. A member class lowers into the class its InnerClasses
-// entry names as declaring it, and a local or an anonymous class, whose
-// entry names none, declares nothing. Every other class lowers into its
-// package. Each File node imports the packages its declarations
-// reference, so the next round's needs include them.
+// its File node. A member class lowers into the declaring class of its
+// InnerClasses entry. The entry of a local or an anonymous class has no
+// declaring class, so such a class declares nothing. Every other class
+// lowers into its package. Each File node imports the packages that its
+// declarations reference, so the needs of the next round include them.
 func lowerClasses(u *plugin.SourceUnit, classes []classFile) {
 	l := &classLowering{
 		u: u, classes: map[string]classFile{}, members: map[string][]string{}, files: map[fileKey]*node.File{},
@@ -145,8 +145,9 @@ func lowerClasses(u *plugin.SourceUnit, classes []classFile) {
 	}
 }
 
-// fileOf returns the File node of a class's member path in the class's
-// package. The first call declares it in the package, with its scope.
+// fileOf returns the File node of the member path of a class in the package
+// of the class. The first call declares the File node in the package, with
+// its scope.
 func (l *classLowering) fileOf(cf classFile) *node.File {
 	pkg := packagePath(cf.class.Name)
 	key := fileKey{pkg: pkg, path: cf.path}
@@ -167,9 +168,9 @@ func (l *classLowering) fileOf(cf classFile) *node.File {
 	return f
 }
 
-// kept reports whether a load at the unit's depth keeps a declaration of
-// a visibility: no private one, every other one at full depth, and a
-// public or a protected one at signature depth.
+// kept reports whether a load at the depth of the unit keeps a declaration
+// of a visibility: no private declaration, every other declaration at full
+// depth, and a public or a protected one at signature depth.
 func (l *classLowering) kept(vis symbol.Visibility) bool {
 	if vis == symbol.VisibilityPrivate {
 		return false
@@ -177,10 +178,10 @@ func (l *classLowering) kept(vis symbol.Visibility) bool {
 	return l.u.Depth() == plugin.DepthFull || vis == symbol.VisibilityPublic || vis == symbol.VisibilityProtected
 }
 
-// declare lowers one class and the member classes it declares, and
-// returns nil for a class the depth leaves out. vis is the class's
-// visibility, and self the InnerClasses entry of a member class, nil for
-// a top-level class.
+// declare lowers one class and the member classes that it declares, and
+// returns nil for a class that the depth leaves out. vis is the visibility
+// of the class. self is the InnerClasses entry of a member class, and nil
+// for a top-level class.
 func (l *classLowering) declare(cf classFile, vis symbol.Visibility, self *classfile.InnerClass) symbol.Symbol {
 	if !l.kept(vis) {
 		return nil
@@ -208,11 +209,11 @@ func (l *classLowering) declare(cf classFile, vis symbol.Visibility, self *class
 	}
 }
 
-// classDecl is one class file's lowering: the unit's lowering, the
-// class, the File node and the scope its references resolve through, the
-// position its declarations take, its package, and its InnerClasses
-// entries by nested class, which split a binary name into its owners and
-// its name.
+// classDecl is the lowering of one class file: the lowering of the unit,
+// the class, the File node and the scope through which its references
+// resolve, the position of its declarations, its package, and its
+// InnerClasses entries by nested class, which split a binary name into its
+// owners and its name.
 type classDecl struct {
 	l     *classLowering
 	cf    classFile
@@ -223,10 +224,11 @@ type classDecl struct {
 	nest  map[string]classfile.InnerClass
 }
 
-// class lowers a class as a Struct: abstract, final and sealed where its
-// flags state them, its type parameters, its superclass as what it
-// extends unless it is Object, its interfaces, the subclasses it
-// permits, and its members. A static member class is at the type level.
+// class lowers a class as a Struct, abstract, final and sealed where the
+// class has the flag. The Struct has the type parameters of the class, its
+// superclass as what it extends unless the superclass is Object, its
+// interfaces, the subclasses that it permits, and its members. A static
+// member class is at the type level.
 func (d *classDecl) class(h classHeader) *node.Struct {
 	c := d.cf.class
 	st := &node.Struct{
@@ -248,11 +250,11 @@ func (d *classDecl) class(h classHeader) *node.Struct {
 	return st
 }
 
-// iface lowers an interface, or an annotation interface, as an
-// Interface: sealed where it permits subtypes, its type parameters, the
-// interfaces it extends without the Annotation every annotation
-// interface extends, and its members. java.annotationType stamps an
-// annotation interface.
+// iface lowers an interface, or an annotation interface, as an Interface,
+// sealed where the interface permits subtypes. The Interface has the type
+// parameters of the interface, the interfaces that it extends without the
+// Annotation that every annotation interface extends, and its members.
+// java.annotationType stamps an annotation interface.
 func (d *classDecl) iface(h classHeader) *node.Interface {
 	c := d.cf.class
 	it := &node.Interface{
@@ -274,10 +276,10 @@ func (d *classDecl) iface(h classHeader) *node.Interface {
 	return it
 }
 
-// enum lowers an enum as an Enum: each enum constant a variant, which a
-// class file states without its constructor arguments, and its other
-// fields and its methods. An enum has no list of nested types, so its
-// member classes are left out.
+// enum lowers an enum as an Enum. Each enum constant is a variant without
+// its constructor arguments, which a class file does not contain. The Enum
+// has the other fields and the methods of the enum. An enum has no list of
+// nested types, so its member classes are left out.
 func (d *classDecl) enum(h classHeader) *node.Enum {
 	c := d.cf.class
 	e := &node.Enum{Name: h.name, Pos: d.pos, Visibility: h.vis, Annotations: annotationsOf(c.Annotations)}
@@ -292,9 +294,9 @@ func (d *classDecl) enum(h classHeader) *node.Enum {
 	return e
 }
 
-// record lowers a record as a Struct, final and stamped java.record:
-// each component a public field that is immutable, its type parameters,
-// its interfaces and its members.
+// record lowers a record as a final Struct with the stamp java.record. Each
+// component is a public field that is immutable, and the Struct has the
+// type parameters, the interfaces and the members of the record.
 func (d *classDecl) record(h classHeader) *node.Struct {
 	c := d.cf.class
 	st := &node.Struct{
@@ -321,10 +323,10 @@ func (d *classDecl) record(h classHeader) *node.Struct {
 	return st
 }
 
-// supertypes returns a class's type parameters, its superclass and its
-// interfaces: the class signature's where the class has one, and the
-// class file's names otherwise. The superclass is the zero Type for a
-// class that names none.
+// supertypes returns the type parameters, the superclass and the interfaces
+// of a class: those of its class signature where the class has one, and
+// the names in the class file otherwise. The superclass is the zero Type
+// for a class without a superclass.
 func (d *classDecl) supertypes() ([]classfile.TypeParam, classfile.Type, []classfile.Type) {
 	c := d.cf.class
 	if sig := c.Signature; sig != nil {
@@ -341,11 +343,11 @@ func (d *classDecl) supertypes() ([]classfile.TypeParam, classfile.Type, []class
 	return nil, super, interfaces
 }
 
-// fields lowers a class's fields, without its enum constants: each with
-// its type, its constant as its value, and its annotations, static at
-// the type level and final immutable, as an interface's fields are
-// flagged. A synthetic field is left out, and so is one the depth leaves
-// out.
+// fields lowers the fields of a class without its enum constants. Each
+// field has its type, its constant as its value, and its annotations. A
+// static field is at the type level and a final field is immutable, as the
+// flags of the fields of an interface mark them. A synthetic field is left
+// out, and so is a field that the depth leaves out.
 func (d *classDecl) fields() []*node.Field {
 	var out []*node.Field
 	for _, f := range d.cf.class.Fields {
@@ -373,12 +375,11 @@ func (d *classDecl) fields() []*node.Field {
 	return out
 }
 
-// methods lowers a class's methods and constructors, and leaves out its
-// class initializer, a synthetic method, a bridge among them, and a
-// method the depth leaves out. A constructor is a method that
-// constructs, named after its class. A static method is at the type
-// level. An interface's method that is neither abstract nor static has a
-// default.
+// methods lowers the methods and the constructors of a class. It leaves out
+// the class initializer, a synthetic method such as a bridge, and a method
+// that the depth leaves out. A constructor is a method that constructs,
+// named after its class. A static method is at the type level. A method of
+// an interface that is neither abstract nor static has a default.
 func (d *classDecl) methods(h classHeader, iface bool) []*node.Method {
 	var out []*node.Method
 	for _, m := range d.cf.class.Methods {
@@ -416,14 +417,15 @@ func (d *classDecl) methods(h classHeader, iface bool) []*node.Method {
 	return out
 }
 
-// params lowers a method's parameters as source declares them: the
-// descriptor's without the leading ones source does not declare, each
-// with the signature's type where the method has a signature, its name
-// from MethodParameters, empty without one, and its annotations. A
-// variadic method's last parameter is positionally variadic, and its
-// type is the element its array collects. innerCtor reports a
-// constructor of an inner class, whose enclosing instance, of the class
-// outer, the descriptor states first.
+// params lowers the parameters of a method as its source declares them:
+// the parameters of the descriptor without the leading ones that the
+// source does not declare. Each parameter has the type of the signature
+// where the method has a signature, its name from MethodParameters, empty
+// without that attribute, and its annotations. The last parameter of a
+// variadic method is positionally variadic, and its type is the element of
+// its array. innerCtor reports a constructor of an inner class, whose
+// descriptor has the enclosing instance, of the class outer, as its first
+// parameter.
 func (d *classDecl) params(m classfile.Method, innerCtor bool, outer string) []*node.Param {
 	implicit, types := sourceParams(m, innerCtor, outer)
 	if len(types) == 0 {
@@ -447,9 +449,9 @@ func (d *classDecl) params(m classfile.Method, innerCtor bool, outer string) []*
 	return out
 }
 
-// typeParams lowers type parameters: each one's name and bounds, without
-// the Object bound a class file states for a parameter source bounds by
-// nothing.
+// typeParams lowers type parameters, each with its name and its bounds. It
+// leaves out the Object bound that a class file contains for a parameter
+// without a bound in the source.
 func (d *classDecl) typeParams(params []classfile.TypeParam) []*node.TypeParam {
 	if len(params) == 0 {
 		return nil
@@ -467,8 +469,8 @@ func (d *classDecl) typeParams(params []classfile.TypeParam) []*node.TypeParam {
 	return out
 }
 
-// nested lowers the member classes a class declares, in name order, each
-// at the visibility its InnerClasses entry states.
+// nested lowers the member classes of a class in name order, each at the
+// visibility of its InnerClasses entry.
 func (d *classDecl) nested() node.Symbols {
 	var out node.Symbols
 	for _, name := range d.l.members[d.cf.class.Name] {
@@ -498,11 +500,11 @@ func (d *classDecl) classRefs(names []string) []*node.TypeRef {
 	return d.refs(classTypes(names))
 }
 
-// ref lowers a class file's type into a reference: a base type and a
-// type variable Named by their names, an array a List, and a class Named
-// by its binary name in dotted form, with its package and the type
-// arguments of its last name. The scope maps a class's spelling to its
-// identity, and the File node imports its package.
+// ref lowers a type of a class file into a reference. A base type and a
+// type variable are Named with their names, and an array is a List. A
+// class is Named with its binary name in dotted form, with its package and
+// the type arguments of its last name. The scope maps the spelling of the
+// class to its identity, and the File node imports its package.
 func (d *classDecl) ref(t classfile.Type) *node.TypeRef {
 	switch t.Kind {
 	case classfile.KindBase:
@@ -512,7 +514,7 @@ func (d *classDecl) ref(t classfile.Type) *node.TypeRef {
 	case classfile.KindArray:
 		return listOf(d.ref(*t.Elem))
 	case classfile.KindClass:
-		// A class type is Named by its binary name below.
+		// A class type is Named with its binary name below.
 	}
 	binary := t.BinaryName()
 	ref := &node.TypeRef{Spelling: dotted(binary), Pos: d.pos, Package: packagePath(binary)}
@@ -526,36 +528,34 @@ func (d *classDecl) ref(t classfile.Type) *node.TypeRef {
 	return ref
 }
 
-// arg lowers a type argument: an unbounded wildcard a Wildcard without a
-// child, a bounded one a Wildcard of its bound with Variance Out for
-// extends and In for super, and any other argument its type.
+// arg lowers a type argument. An unbounded wildcard is a Wildcard without a
+// child, and a bounded one is a Wildcard of its bound with Variance Out for
+// extends and In for super. Any other argument is its type.
 func (d *classDecl) arg(a classfile.TypeArg) *node.TypeRef {
 	if a.Bound == classfile.BoundAny {
-		return &node.TypeRef{Spelling: wildcardMark, Pos: d.pos, Form: symbol.FormWildcard}
+		return plugin.Composite(wildcardMark, d.pos, symbol.FormWildcard)
 	}
 	inner := d.ref(*a.Type)
+	var ref *node.TypeRef
 	switch a.Bound {
 	case classfile.BoundExtends:
-		return &node.TypeRef{
-			Spelling: extendsBound + spelled(inner), Pos: d.pos, Form: symbol.FormWildcard,
-			Variance: symbol.VarianceOut, Elems: []*node.TypeRef{inner},
-		}
+		ref = plugin.Composite(extendsBound+spelled(inner), d.pos, symbol.FormWildcard, inner)
+		ref.Variance = symbol.VarianceOut
 	case classfile.BoundSuper:
-		return &node.TypeRef{
-			Spelling: superBound + spelled(inner), Pos: d.pos, Form: symbol.FormWildcard,
-			Variance: symbol.VarianceIn, Elems: []*node.TypeRef{inner},
-		}
+		ref = plugin.Composite(superBound+spelled(inner), d.pos, symbol.FormWildcard, inner)
+		ref.Variance = symbol.VarianceIn
 	default:
 		return inner
 	}
+	return ref
 }
 
-// identityOf returns the identity of the class a binary name names: its
-// package, and the owners and the name the class file's InnerClasses
-// entries split the rest of the name into. A class no entry names as a
-// member class is top-level, whatever its name contains. The walk up the
-// declaring classes is bounded by the entries, so a cycle the entries
-// state ends.
+// identityOf returns the identity of the class of a binary name: its
+// package, and the owners and the name into which the InnerClasses entries
+// of the class file split the rest of the name. A class that no entry
+// lists as a member class is top-level, whatever its name contains. The
+// number of entries bounds the walk up the declaring classes, so the walk
+// ends on a cycle of entries.
 func (d *classDecl) identityOf(binary string) symbol.Identity {
 	var names []string
 	top := binary
@@ -577,10 +577,10 @@ func (d *classDecl) identityOf(binary string) symbol.Identity {
 	return id
 }
 
-// decodeClass decodes one class file of a member, named in findings by
-// its name in the member: a JAR's entry, or the member's own name. It
-// reports a class file that does not decode under [BadClassFile] at the
-// member, and nothing loads from it.
+// decodeClass decodes one class file of a member. A finding names the class
+// file by name, which is the entry of a JAR or the name of the member.
+// decodeClass reports a class file that does not decode under
+// [BadClassFile] at the member, and nothing loads from it.
 func decodeClass(u *plugin.SourceUnit, p, name string, data []byte) (classFile, bool) {
 	c, err := classfile.Parse(data)
 	if err != nil {
@@ -590,8 +590,8 @@ func decodeClass(u *plugin.SourceUnit, p, name string, data []byte) (classFile, 
 	return classFile{path: p, class: c}, true
 }
 
-// selfEntry returns the InnerClasses entry a class has for itself, which
-// a nested class has, and reports whether it has one.
+// selfEntry returns the InnerClasses entry of a class for itself, which a
+// nested class has, and reports whether the class has one.
 func selfEntry(c *classfile.Class) (classfile.InnerClass, bool) {
 	for _, ic := range c.Inner {
 		if ic.Inner == c.Name {
@@ -601,15 +601,15 @@ func selfEntry(c *classfile.Class) (classfile.InnerClass, bool) {
 	return classfile.InnerClass{}, false
 }
 
-// sourceParams returns how many of a method's leading descriptor
-// parameters source does not declare, and the types of the ones it
-// does. A signature states only the declared ones (§4.7.9.1), and a
-// signature longer than the descriptor is ignored. Without one,
-// MethodParameters flags the undeclared ones synthetic, and an inner
-// class constructor's enclosing instance mandated. Without either, an
-// inner class constructor's first parameter is its enclosing instance
-// where its type is the class outer, as the Java Language Specification
-// states (§8.8.1).
+// sourceParams returns the number of leading descriptor parameters of a
+// method that the source does not declare, and the types of the declared
+// ones. A signature contains only the declared ones (JVMS §4.7.9.1), and
+// sourceParams ignores a signature longer than the descriptor. Without a
+// signature, MethodParameters flags the undeclared ones as synthetic, and
+// the enclosing instance of an inner class constructor as mandated.
+// Without either attribute, the first parameter of an inner class
+// constructor is its enclosing instance where its type is the class outer,
+// as the Java Language Specification states (§8.8.1).
 func sourceParams(m classfile.Method, innerCtor bool, outer string) (int, []classfile.Type) {
 	desc := m.Params
 	if sig := m.Signature; sig != nil && len(sig.Params) <= len(desc) {
@@ -627,15 +627,16 @@ func sourceParams(m classfile.Method, innerCtor bool, outer string) (int, []clas
 	return n, desc[n:]
 }
 
-// implicitParam reports whether MethodParameters marks a leading
-// parameter as one source does not declare: a synthetic one, or an inner
-// class constructor's mandated one, its enclosing instance.
+// implicitParam reports whether MethodParameters marks a leading parameter
+// as one that the source does not declare: a synthetic parameter, or the
+// mandated enclosing instance of an inner class constructor.
 func implicitParam(p classfile.Parameter, innerCtor bool) bool {
 	return p.Access.Has(classfile.AccSynthetic) || innerCtor && p.Access.Has(classfile.AccMandated)
 }
 
-// accessVisibility returns the visibility access flags state: public,
-// protected, private, and package access where they state none.
+// accessVisibility returns the visibility of access flags: public,
+// protected, private, and package access where no flag of the three is
+// set.
 func accessVisibility(access classfile.Access) symbol.Visibility {
 	switch {
 	case access.Has(classfile.AccPublic):
@@ -649,9 +650,9 @@ func accessVisibility(access classfile.Access) symbol.Visibility {
 	}
 }
 
-// annotationsOf lowers a class file's annotations: each named by its
-// binary name in dotted form, with one argument per element-value pair,
-// the element's name and its value as source spells it.
+// annotationsOf lowers the annotations of a class file. Each annotation has
+// its binary name in dotted form, with one argument per element-value
+// pair: the name of the element and its value as the source writes it.
 func annotationsOf(list []classfile.Annotation) symbol.Annotations {
 	if len(list) == 0 {
 		return nil
@@ -682,8 +683,8 @@ func classTypes(names []string) []classfile.Type {
 	return out
 }
 
-// packagePath returns the package of a binary name in internal form,
-// and empty for a class of the unnamed package.
+// packagePath returns the package of a binary name in internal form, and
+// the empty string for a class of the unnamed package.
 func packagePath(binary string) string {
 	pkg, _, found := strings.CutLast(binary, binarySlash)
 	if !found {
@@ -692,8 +693,8 @@ func packagePath(binary string) string {
 	return pkg
 }
 
-// dotted returns a binary name in internal form with dots for its
-// slashes, as in java.util.Map$Entry.
+// dotted returns a binary name in internal form with dots for its slashes,
+// as in java.util.Map$Entry.
 func dotted(binary string) string {
 	return strings.ReplaceAll(binary, binarySlash, nameSeparator)
 }

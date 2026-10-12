@@ -10,18 +10,14 @@ import (
 )
 
 // The spellings of a Java literal (JLS §3.10): the suffixes of a long
-// and a float, the quotes of a string and a character, the boolean
-// values, the fraction a double without one takes, and the backslash an
-// escape opens with.
+// and a float, the boolean values, and the fraction a double without one
+// takes. The root's Quote functions spell a string and a char.
 const (
 	longSuffix   = "L"
 	floatSuffix  = "f"
-	stringQuote  = '"'
-	charQuote    = '\''
 	trueLiteral  = "true"
 	falseLiteral = "false"
 	zeroFraction = ".0"
-	backslash    = '\\'
 )
 
 // The fields of the floating-point classes that name the values no Java
@@ -40,23 +36,6 @@ const (
 	floatBits  = 32
 	doubleBits = 64
 )
-
-// The range of printable ASCII, which a literal spells as itself, and a
-// Unicode escape: its opening, its four hexadecimal digits, and the
-// digits' shift and mask.
-const (
-	printableLow = 0x20
-	printableTop = 0x7e
-	unicodeOpen  = `\u`
-	hexDigits    = "0123456789abcdef"
-	unitDigits   = 4
-	digitBits    = 4
-	digitMask    = 0xf
-)
-
-// escapes maps each control character Java spells with a character
-// escape to its escape (JLS §3.10.7).
-var escapes = map[uint16]string{'\b': `\b`, '\t': `\t`, '\n': `\n`, '\f': `\f`, '\r': `\r`}
 
 // intLiteral spells an int.
 func intLiteral(v int32) string { return strconv.FormatInt(int64(v), 10) }
@@ -107,45 +86,4 @@ func doubleLiteral(v float64) string {
 		s += zeroFraction
 	}
 	return s
-}
-
-// charLiteral spells a char, which a class file stores as an int.
-func charLiteral(v int32) string {
-	var b strings.Builder
-	b.WriteByte(charQuote)
-	escape(&b, uint16(v), charQuote)
-	b.WriteByte(charQuote)
-	return b.String()
-}
-
-// stringLiteral spells a string's UTF-16 code units.
-func stringLiteral(units []uint16) string {
-	var b strings.Builder
-	b.WriteByte(stringQuote)
-	for _, u := range units {
-		escape(&b, u, stringQuote)
-	}
-	b.WriteByte(stringQuote)
-	return b.String()
-}
-
-// escape writes one code unit as a Java literal of a quote spells it: a
-// control character's escape, the quote and the backslash behind a
-// backslash, printable ASCII as itself, and any other unit as a Unicode
-// escape, which spells each half of a surrogate pair.
-func escape(b *strings.Builder, u uint16, quote byte) {
-	switch esc, ok := escapes[u]; {
-	case ok:
-		b.WriteString(esc)
-	case u == uint16(quote) || u == backslash:
-		b.WriteByte(backslash)
-		b.WriteByte(byte(u))
-	case u >= printableLow && u <= printableTop:
-		b.WriteByte(byte(u))
-	default:
-		b.WriteString(unicodeOpen)
-		for d := unitDigits - 1; d >= 0; d-- {
-			b.WriteByte(hexDigits[u>>(d*digitBits)&digitMask])
-		}
-	}
 }

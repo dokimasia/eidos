@@ -18,8 +18,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The files a healthy fixture contains, and the type names the
-// satisfaction cases pass to Satisfies.
+// The files of a healthy fixture, and the type names that the satisfaction
+// cases pass to Satisfies.
 const (
 	readerFile  = "demo/Reader.java"
 	rowFile     = "demo/Row.java"
@@ -31,7 +31,7 @@ const (
 	nowhereType = "demo.Nowhere"
 )
 
-// The sources the fixtures are built from.
+// The sources of the fixtures.
 const (
 	readerSource = "package demo;\n\n/** Reader is what a Row satisfies. */\n" +
 		"public interface Reader {\n    String read();\n}\n"
@@ -51,25 +51,20 @@ const (
 	typeErrorSource = "package demo;\n\npublic final class Row {\n    int x = \"text\";\n}\n"
 )
 
-// The kernel's assertions drive the adapter, so the project it lays
-// out and the meaning of each result are its contract. The layout
-// needs no toolchain, and every case that runs one skips locally
-// where it is absent and fails in CI.
+// TestAdapter checks the adapter through the assertions of the kernel, so
+// the project that it lays out and the meaning of each result are its
+// contract. The layout needs no toolchain. Every case that runs one skips
+// locally where it is absent, and fails in CI.
 func TestAdapter(t *testing.T) {
 	t.Parallel()
 
 	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns an adapter that passes the kernel's toolchain suite", func(t *testing.T) {
+		t.Run("returns an adapter that passes the toolchain suite of the kernel", func(t *testing.T) {
 			t.Parallel()
 
-			if !toolchain.Require(t, adapter()) {
-				return
-			}
-			toolchain.RunToolchainSuite(t, func(toolchain.TB) (toolchain.Adapter, toolchain.Generated) {
-				return adapter(), healthy()
-			})
+			toolchain.RunToolchainSuite(t, adapter(), healthy())
 		})
 	})
 
@@ -86,7 +81,7 @@ func TestAdapter(t *testing.T) {
 	t.Run("Available", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("names the binary it did not find", func(t *testing.T) {
+		t.Run("returns a reason that contains the missing binary", func(t *testing.T) {
 			t.Parallel()
 
 			present, why := adapter().Available()
@@ -108,12 +103,12 @@ func TestAdapter(t *testing.T) {
 				"the generated file is on disk with its own bytes")
 		})
 
-		t.Run("returns an error for a path climbing out of the scratch project", func(t *testing.T) {
+		t.Run("returns an error for a path that leaves the scratch directory", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := adapter().Layout(only("../Escape.java", "final class Escape {}\n"))
-			assert.HasError(t, err, "a fixture is not a place to write from")
-			assert.Contains(t, err.Error(), "climbs out", "and the refusal names the escape")
+			assert.HasError(t, err, "a fixture writes only inside its project")
+			assert.Contains(t, err.Error(), "leaves the directory", "the error contains the reason")
 		})
 	})
 
@@ -129,7 +124,7 @@ func TestAdapter(t *testing.T) {
 			assert.NoError(t, adapter().Parse(t.Context(), laidOut(t, healthy())), "the healthy output parses")
 		})
 
-		t.Run("returns an error naming the file of a syntax error", func(t *testing.T) {
+		t.Run("returns an error that contains the file of a syntax error", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -151,7 +146,7 @@ func TestAdapter(t *testing.T) {
 			assert.NoError(t, err, "a type error is no syntax error")
 		})
 
-		t.Run("returns an error for a project with no Java file", func(t *testing.T) {
+		t.Run("returns an error for a project without a Java file", func(t *testing.T) {
 			t.Parallel()
 
 			err := adapter().Parse(t.Context(), laidOut(t, only("Row.txt", "final class Row {}\n")))
@@ -159,7 +154,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "no Java file", "and the refusal names why")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -174,7 +169,7 @@ func TestAdapter(t *testing.T) {
 	t.Run("TypeCheck", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("passes a healthy project", func(t *testing.T) {
+		t.Run("returns nil for a healthy project", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -183,7 +178,7 @@ func TestAdapter(t *testing.T) {
 			assert.NoError(t, adapter().TypeCheck(t.Context(), laidOut(t, healthy())), "the output compiles")
 		})
 
-		t.Run("returns an error naming the compiler's refusal", func(t *testing.T) {
+		t.Run("returns an error that contains the refusal of the compiler", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -194,7 +189,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "Row.java", "and the compiler's own words follow")
 		})
 
-		t.Run("returns an error for a project with no Java file", func(t *testing.T) {
+		t.Run("returns an error for a project without a Java file", func(t *testing.T) {
 			t.Parallel()
 
 			err := adapter().TypeCheck(t.Context(), laidOut(t, only("Row.txt", "final class Row {}\n")))
@@ -202,7 +197,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "no Java file", "and the refusal names why")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -263,7 +258,7 @@ func TestAdapter(t *testing.T) {
 			assert.Equal(t, report.Failed, 1, "a class the convention cannot run fails")
 		})
 
-		t.Run("runs no nested class whose name ends in Test", func(t *testing.T) {
+		t.Run("does not run a nested class whose name ends in Test", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -301,7 +296,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "Row.java", "and the compiler's refusal returns")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -329,7 +324,7 @@ func TestAdapter(t *testing.T) {
 			assert.True(t, got, "a Row implements Reader")
 		})
 
-		t.Run("reports false for a type the contract does not admit", func(t *testing.T) {
+		t.Run("reports false for a type that the contract does not admit", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -340,7 +335,7 @@ func TestAdapter(t *testing.T) {
 			assert.False(t, got, "a Plain does not implement Reader")
 		})
 
-		t.Run("returns an error for a contract no class declares", func(t *testing.T) {
+		t.Run("returns an error for a contract that no class declares", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -362,7 +357,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "the project does not compile", "and the error names the cause")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -377,8 +372,8 @@ func TestAdapter(t *testing.T) {
 	})
 }
 
-// healthy returns generated output that parses, compiles and whose
-// one test class passes.
+// healthy returns generated output that parses and compiles, with one test
+// class that passes.
 func healthy() toolchain.Generated {
 	return toolchain.Generated{Files: map[string][]byte{
 		readerFile:  []byte(readerSource),
@@ -402,7 +397,7 @@ func only(path, body string) toolchain.Generated {
 	return toolchain.Generated{Files: map[string][]byte{path: []byte(body)}}
 }
 
-// adapter is the harness under test.
+// adapter returns the harness under test.
 func adapter() toolchain.Adapter { return javatesting.New() }
 
 // laidOut lays a fixture out and removes it when the case ends.

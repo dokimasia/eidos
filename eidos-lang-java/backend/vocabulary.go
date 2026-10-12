@@ -17,77 +17,76 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names are constants, so a template and its helper
-// spell one name.
+// The names of the vocabulary are constants, so a template and the map
+// of its helpers use the same name. The names that every backend declares
+// are the names of the render package.
 const (
-	// FuncDocs writes a declaration's documentation.
-	FuncDocs = "docs"
-	// FuncMemberDocs writes a member's documentation at the member's
-	// depth.
+	// FuncDocs is the template name of [Docs].
+	FuncDocs = render.HelperDocs
+	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
-	// FuncSpell writes a type reference.
-	FuncSpell = "spell"
-	// FuncTypeParams writes a type parameter list.
-	FuncTypeParams = "typeparams"
-	// FuncParams writes a parameter list.
-	FuncParams = "params"
-	// FuncResults writes the one return type.
-	FuncResults = "results"
-	// FuncPackage writes the package clause.
+	// FuncSpell is the template name of [Speller.Spell].
+	FuncSpell = render.HelperSpell
+	// FuncTypeParams is the template name of [Speller.TypeParams].
+	FuncTypeParams = render.HelperTypeParams
+	// FuncParams is the template name of [Speller.Params].
+	FuncParams = render.HelperParams
+	// FuncResults is the template name of [Speller.Results].
+	FuncResults = render.HelperResults
+	// FuncPackage is the template name of [PackageClause].
 	FuncPackage = "package"
-	// FuncTypeMods writes a type's keywords.
+	// FuncTypeMods is the template name of [TypeMods].
 	FuncTypeMods = "typemods"
-	// FuncMemberType refuses what an interface's member type states
-	// that Java cannot spell there.
+	// FuncMemberType is the template name of [MemberType].
 	FuncMemberType = "membertype"
-	// FuncFieldMods writes a field's keywords.
+	// FuncFieldMods is the template name of [FieldMods].
 	FuncFieldMods = "fieldmods"
-	// FuncConstantMods writes an interface field's keywords.
+	// FuncConstantMods is the template name of [ConstantMods].
 	FuncConstantMods = "constantmods"
-	// FuncMethodMods writes a class method's keywords.
+	// FuncMethodMods is the template name of [MethodMods].
 	FuncMethodMods = "methodmods"
-	// FuncSigMods writes an interface method's keywords.
+	// FuncSigMods is the template name of [SigMods].
 	FuncSigMods = "sigmods"
-	// FuncAnnotate writes a declaration's annotation lines.
+	// FuncAnnotate is the template name of [Annotate].
 	FuncAnnotate = "annotate"
-	// FuncMemberAnnotate writes a member's annotation lines at the
-	// member's depth.
+	// FuncMemberAnnotate is the template name of [MemberAnnotate].
 	FuncMemberAnnotate = "memberannotate"
-	// FuncHeritage writes a type's heritage clauses.
+	// FuncHeritage is the template name of [Speller.Heritage].
 	FuncHeritage = "heritage"
-	// FuncThrows writes a callable's throws clause.
+	// FuncThrows is the template name of [Speller.Throws].
 	FuncThrows = "throws"
-	// FuncEnumVariant writes one enum constant.
+	// FuncEnumVariant is the template name of [EnumVariantName].
 	FuncEnumVariant = "enumvariant"
 )
 
-// Anonymous is what Java writes where a declaration states no
-// type: the root every reference type descends from.
+// Anonymous is the type that the backend writes where a declaration has
+// no type. Every reference type of Java descends from Object.
 const Anonymous = "Object"
 
-// The brackets Java writes an argument list in.
+// argsOpener and argsCloser enclose an argument list in Java.
 const (
 	argsOpener = "<"
 	argsCloser = ">"
 )
 
-// The separators Java writes a list of types with: a bound list's
-// ampersand, and the comma of every other list.
+// boundSep separates the bounds of a type parameter, and listSep
+// separates the types of every other list.
 const (
 	boundSep = " & "
 	listSep  = ", "
 )
 
-// The package statement's keyword and its end, and the separator of a
-// package path's segments, which Java writes as a dot.
+// packageKeyword and packageEnd enclose the path of a package statement.
+// pathSep separates the segments of a package path, and Java writes each
+// separator as a dot.
 const (
 	packageKeyword = "package "
 	packageEnd     = ";\n\n"
 	pathSep        = "/"
 )
 
-// The modifiers Java writes before a declaration, each with the space
-// that follows it.
+// These are the modifiers that Java writes before a declaration, each
+// with the space after it.
 const (
 	publicKeyword    = "public "
 	privateKeyword   = "private "
@@ -99,21 +98,21 @@ const (
 	defaultKeyword   = "default "
 )
 
-// unnamedParam is the name an unnamed parameter takes, behind its
-// position in the list.
+// unnamedParam is the start of the name of an unnamed parameter. The
+// position of the parameter in the list follows it.
 const unnamedParam = "arg"
 
-// refusalPrefix opens every refusal the backend returns: the
-// language's identity, as every backend's refusals open.
+// refusalPrefix is the start of every refusal of the backend. It is the
+// identity of the language, as in the refusals of every backend.
 const refusalPrefix = string(java.Lang) + ": "
 
-// Speller spells type references for one file. A class a spelling
-// names from another package is imported under its simple name
-// where the file's name is free, and written fully qualified where
-// another import or a declaration of the file takes it, the way
-// javac reads the two. The package is the reference's target's where
-// the target is a Java declaration, and the one the reference records
-// where it has no target.
+// Speller writes the type references of one file. It imports a class of
+// another package under its simple name where the file does not use that
+// name yet. Where another import or a declaration of the file already
+// uses the name, Speller writes the class fully qualified, as javac reads
+// it. The package is the package of the target where the target is a
+// Java declaration, and the package that the reference records where it
+// has no target.
 //
 // # Concurrency
 //
@@ -121,31 +120,31 @@ const refusalPrefix = string(java.Lang) + ": "
 //
 // # Allocation contract
 //
-// Each method allocates the text it writes and nothing else, so a
+// Each method allocates the text that it writes and nothing else, so a
 // builtin and a class imported under its simple name allocate nothing.
-// Claiming a class's name for the first time allocates in the set. A
-// method that joins more than two parts also allocates its list of
-// parts, because Go places a list of at most two strings on the stack.
+// The first claim of the name of a class allocates in the set. A method
+// that joins more than two parts also allocates its list of parts,
+// because Go places a list of at most two strings on the stack.
 type Speller struct {
 	set *render.ImportSet
 }
 
-// NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil. It allocates nothing.
+// NewSpeller returns the speller of the file with the import set set.
+// set must not be nil. NewSpeller allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
-// Spell writes a type reference and imports the class it names. The
-// source spelling passes through where the reference names no class
-// of another package, and a missing one spells [Anonymous]. A
-// reference with arguments has its bare name in Spelling, and the
-// argument list spells here in angle brackets. A structural reference
-// keeps its written spelling, and Spell returns an error where a class
-// inside it is written fully qualified, because Java's composite
-// spelling does not follow from its structure.
+// Spell writes the type reference t and imports its class. It returns
+// the source spelling where t does not refer to a class of another
+// package, and [Anonymous] for a nil t. A reference with arguments has
+// its bare name in Spelling, and Spell writes the argument list in angle
+// brackets. A structural reference keeps its written spelling. Spell
+// returns an error where a class inside a structural reference needs its
+// fully qualified name, because the composite spelling of Java does not
+// follow from its structure.
 //
-// Spell allocates nothing for a builtin or a class it imports under its
-// simple name. A fully qualified class and an argument list allocate
-// their text, and a refusal allocates its error.
+// Spell allocates nothing for a builtin or a class that it imports under
+// its simple name. A fully qualified class and an argument list allocate
+// their text. A refusal allocates its error.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	out, err := spellref.SpellWith(t, argsOpener, argsCloser, Anonymous, s.qualify)
 	if err != nil {
@@ -154,14 +153,14 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return out, nil
 }
 
-// TypeParams writes a type parameter list in angle brackets, or
-// nothing for a declaration stating none, bounds joined by
-// ampersands behind extends. Variance, defaults and value
-// parameters refuse, because Java's variance is a use-site wildcard
-// and its parameters take no default and no value.
+// TypeParams writes the type parameter list ps in angle brackets, and
+// nothing for an empty list. The bounds of a parameter follow extends,
+// joined by ampersands. TypeParams returns an error for a variance, a
+// default and a value parameter. Java expresses variance as a wildcard
+// at the use site, and its type parameters take no default and no value.
 //
-// TypeParams allocates each bounded parameter's spelling, the joined
-// list and its brackets, and what each bound's spelling allocates.
+// TypeParams allocates the spelling of each bounded parameter, the joined
+// list with its brackets, and what the spelling of each bound allocates.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -190,12 +189,16 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
 }
 
-// Params writes a parameter list, the variadic marker included. It
-// allocates each parameter's spelling and the joined list, and what each
-// type's spelling allocates.
-func (s Speller) Params(ps []*emit.Param) (string, error) {
-	parts := make([]string, 0, len(ps))
-	for i, p := range ps {
+// Params writes the parameter list in the slot ps with the variadic
+// marker. A template passes the slot by address, as in
+// {{params .Params}}, so the call reads the slot without a reflective
+// method call. An unnamed parameter gets [unnamedParam] and its position
+// as its name. Params allocates the spelling of each parameter, the
+// joined list, and what the spelling of each type allocates.
+func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
+	items := ps.Items()
+	parts := make([]string, 0, len(items))
+	for i, p := range items {
 		name := p.Name
 		if name == "" {
 			name = unnamedParam + strconv.Itoa(i)
@@ -212,12 +215,15 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 	return strings.Join(parts, ", "), nil
 }
 
-// Results writes the return type: void for none, the type for
-// one, and an error for several, because a Java callable returns
-// one value and a second arrives thrown, not returned. It allocates
-// what the type's spelling allocates, and the type joined to its
-// trailing comment where one is stated.
-func (s Speller) Results(rs []*emit.Return) (string, error) {
+// Results writes the return type of the results in the slot results. It
+// writes void for no result and the type for one result. It returns an
+// error for two or more results, because a Java callable returns one
+// value and reports a failure by a throw. A template passes the slot by
+// address, as Params describes. Results allocates what the spelling of
+// the type allocates, and the type joined to its trailing comment where
+// the result has one.
+func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
+	rs := results.Items()
 	switch len(rs) {
 	case 0:
 		return "void", nil
@@ -233,22 +239,21 @@ func (s Speller) Results(rs []*emit.Return) (string, error) {
 	}
 }
 
-// Heritage writes a type's heritage clauses: one superclass
-// behind extends and the contracts behind implements on a class,
-// the widened contracts behind extends on an interface, and the
-// enumerated subtypes behind permits on either, last the way Java
-// states them. A second superclass refuses, because Java extends
-// one, and an embed refuses on either, because nothing promotes
-// members. The permits clause and the sealed keyword go together:
-// javac rejects a sealed type in a file of its own without the
-// clause, and the clause on a type that is not sealed. It allocates the
-// clauses it writes, and what each type's spelling allocates.
+// Heritage writes the heritage clauses of the type d. A class has one
+// superclass after extends and its contracts after implements. An
+// interface has the interfaces that it extends after extends. Either
+// kind ends with its permitted subtypes after permits, as Java orders the
+// clauses. Heritage returns an error for a second superclass, because a
+// Java class extends one class. Java does not promote members, so the
+// coverage refuses an embed, and Heritage writes none. The permits clause
+// requires the sealed keyword, and the sealed keyword requires the
+// clause. javac rejects a sealed type in a file of its own without the
+// clause, and the clause on a type that is not sealed. Heritage allocates
+// the clauses that it writes, and what the spelling of each type
+// allocates.
 func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
 		var part string
 		switch len(t.Extends) {
 		case 0:
@@ -275,9 +280,6 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 		}
 		return part + permits, nil
 	case *emit.Interface:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
 		var part string
 		if len(t.Extends) > 0 {
 			widened, err := s.joined(t.Extends, listSep)
@@ -296,10 +298,10 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 	}
 }
 
-// Throws writes a callable's throws clause: the declared failure
-// types comma-joined behind the keyword, or nothing where none
-// are stated. It allocates the clause, the joined list of several
-// types, and what each type's spelling allocates.
+// Throws writes the throws clause of the failure types ts, joined by
+// commas after the keyword. It writes nothing for no failure type. It
+// allocates the clause, the joined list of two or more types, and what
+// the spelling of each type allocates.
 func (s Speller) Throws(ts []*emit.TypeRef) (string, error) {
 	if len(ts) == 0 {
 		return "", nil
@@ -311,11 +313,11 @@ func (s Speller) Throws(ts []*emit.TypeRef) (string, error) {
 	return " throws " + failures, nil
 }
 
-// qualify returns the spelling of a named reference: as written where
-// the file claims the simple name of the class it names, and fully
-// qualified where the file cannot. The first segment of a qualified
-// spelling is the class the package declares, and the rest names a
-// member class of it.
+// qualify returns the spelling of the named reference t. It returns the
+// written spelling where the file claims the simple name of the class,
+// and the fully qualified name where the file cannot claim it. The first
+// segment of a qualified spelling is the class that the package
+// declares, and the rest is a path to a member class of it.
 func (s Speller) qualify(t *emit.TypeRef) (string, error) {
 	pkg := spellref.PackageOf(t, java.Lang)
 	if pkg == "" {
@@ -328,9 +330,9 @@ func (s Speller) qualify(t *emit.TypeRef) (string, error) {
 	return javaPackage(pkg) + memberSep + t.Spelling, nil
 }
 
-// permitted writes the permits clause, or nothing where no subtypes
-// are enumerated. A sealed type without one refuses, and so does the
-// clause on a type that is not sealed.
+// permitted writes the permits clause of the subtypes ts of the type
+// name, and nothing for no subtype. It returns an error for a sealed type
+// without subtypes, and for subtypes of a type that is not sealed.
 func (s Speller) permitted(name string, sealed bool, ts []*emit.TypeRef) (string, error) {
 	switch {
 	case sealed && len(ts) == 0:
@@ -348,8 +350,8 @@ func (s Speller) permitted(name string, sealed bool, ts []*emit.TypeRef) (string
 	}
 }
 
-// joined writes references through the speller, in order, joined by
-// sep. The parts do not escape the call, so a list of up to two
+// joined writes the references ts through the speller, in order, joined
+// by sep. The parts do not escape the call, so a list of up to two
 // references allocates no slice.
 func (s Speller) joined(ts []*emit.TypeRef, sep string) (string, error) {
 	parts := make([]string, 0, len(ts))
@@ -363,13 +365,13 @@ func (s Speller) joined(ts []*emit.TypeRef, sep string) (string, error) {
 	return strings.Join(parts, sep), nil
 }
 
-// Funcs returns the shared template vocabulary the kind templates
-// call, bound to one file's import set: every class a helper names
-// from another package is imported there. Every helper takes a fixed
-// list of arguments, because text/template allocates the list of a
-// variadic call and a value for each string argument that a template
-// writes. Funcs allocates the map of eighteen helpers, four
-// allocations, and the speller's six bound helpers.
+// Funcs returns the template vocabulary that the kind templates call. The
+// helpers import every class of another package that they write into set,
+// the import set of one file. Every helper takes a
+// fixed list of arguments, because text/template allocates the list of a
+// variadic call and a value for each string argument in a template.
+// Funcs allocates the map of eighteen helpers in four allocations, and
+// the six bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -394,31 +396,25 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 	}
 }
 
-// Docs writes a declaration's documentation as a Javadoc block at the
-// top level. It allocates what [textfmt.BlockDocs] allocates: the
-// block, sized once, and nothing for no lines.
+// Docs writes the documentation lines of a declaration as a Javadoc block
+// at the top level. It allocates what [textfmt.BlockDocs] allocates. That
+// is one block, sized once, and nothing for no lines.
 func Docs(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
 	return textfmt.BlockDocs(lines, "/**", " * ", " */")
 }
 
-// MemberDocs writes a member's documentation as the Javadoc block of
-// [Docs], each line behind the member indent of a type body. It
-// allocates what Docs allocates.
+// MemberDocs writes the documentation lines of a member as the Javadoc
+// block of [Docs]. Each line starts with the member indent of a type
+// body. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
 	return textfmt.BlockDocs(lines, "/**", " * ", " */", memberIndent)
 }
 
-// PackageClause writes the package statement from the identity's
-// package path, dots for slashes, followed by a blank line. An
-// identity naming no package spells nothing, which is the default
-// package. It sizes the statement once and allocates it, one
-// allocation, and nothing for the default package.
+// PackageClause writes the package statement of the package path of id,
+// with dots for slashes, followed by a blank line. It writes nothing for
+// an identity without a package, because Java puts such a declaration in
+// the default package. It sizes the statement once and allocates it once,
+// and allocates nothing for the default package.
 func PackageClause(id symbol.Identity) string {
 	if id.Package == "" {
 		return ""
@@ -437,16 +433,17 @@ func PackageClause(id symbol.Identity) string {
 	return b.String()
 }
 
-// TypeMods writes a type's keywords in Java's stated order: access,
-// then abstract, static, final and sealed on a class where stated,
-// sealed alone on an interface, and access alone on an enum. The
-// keywords are a member type's, because the kind templates render
-// both file-level and member types: the lowering refuses a file-level
-// type stating what only a member type can spell. A class both
-// abstract and final refuses, and so does one both final and
-// sealed, because javac rejects either pair. TypeMods allocates one
-// join per keyword it writes behind the access keyword, and a refusal
-// allocates its error.
+// TypeMods writes the keywords of the type d in the order of the Java
+// grammar. A class has its access, then abstract, static, final and
+// sealed where the model sets them. An interface has its access and
+// sealed, and an enum has its access alone. TypeMods writes the keywords
+// of a member type, because the kind templates render file-level types
+// and member types. The lowering refuses a file-level type with a
+// keyword that only a member type can have. TypeMods returns an error
+// for a class that is abstract and final, and for a class that is final
+// and sealed, because javac rejects either pair. TypeMods allocates one
+// join for each keyword after the access keyword. A refusal allocates
+// its error.
 func TypeMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -489,11 +486,11 @@ func TypeMods(d symbol.Symbol) (string, error) {
 	}
 }
 
-// MemberType writes nothing and refuses what an interface's member
-// type states that Java cannot spell there: a private, protected or
-// package scope, because every member type of an interface is
-// public. It allocates nothing for a type it passes, and a refusal
-// allocates its error.
+// MemberType checks the member type s of an interface and writes
+// nothing. It returns an error for a private, protected or package
+// visibility, because every member type of an interface is public. It
+// allocates nothing for a type that it accepts. A refusal allocates its
+// error.
 func MemberType(s symbol.Symbol) (string, error) {
 	var name string
 	var v symbol.Visibility
@@ -514,10 +511,10 @@ func MemberType(s symbol.Symbol) (string, error) {
 	return "", nil
 }
 
-// EnumVariantName writes one enum constant's spelling: the name
-// alone. A stated value refuses, because a valued constant takes
-// the constructor form these templates do not spell. It allocates
-// nothing, and a refusal allocates its error.
+// EnumVariantName writes the name of the enum constant v. It returns an
+// error for a value, because a constant with a value needs the
+// constructor form, which the templates do not render. It allocates
+// nothing. A refusal allocates its error.
 func EnumVariantName(v *emit.EnumVariant) (string, error) {
 	if v.Value != "" {
 		return "", refuse("an enum constant spells its name alone, and %s states a value", v.Name)
@@ -525,10 +522,10 @@ func EnumVariantName(v *emit.EnumVariant) (string, error) {
 	return v.Name, nil
 }
 
-// FieldMods writes a field's keywords, in Java's stated order:
-// access, static for a type-level field, final for an immutable
-// one. It allocates one join per keyword it writes behind the access
-// keyword, and a refusal allocates its error.
+// FieldMods writes the keywords of the field f in the order of the Java
+// grammar. They are the access keyword, static for a type-level field
+// and final for an immutable field. FieldMods allocates one join for each
+// keyword after the access keyword. A refusal allocates its error.
 func FieldMods(f *emit.Field) (string, error) {
 	part, err := access(f.Visibility, f.Name)
 	if err != nil {
@@ -543,13 +540,13 @@ func FieldMods(f *emit.Field) (string, error) {
 	return part, nil
 }
 
-// ConstantMods writes an interface field's keywords, which are
-// none: Java reads every interface field as a public, static and
-// final constant. A field without an initializer refuses, because a
-// constant takes its value where it is declared, and so do a scope
-// other than public and a mutable field, because Java spells
-// neither on an interface field. It allocates nothing, and a refusal
-// allocates its error.
+// ConstantMods checks the interface field f and writes no keyword,
+// because every interface field of Java is a public, static and final
+// constant. It returns an error for a field without an initializer,
+// because a constant has its value in its declaration. It returns an
+// error for a visibility other than public and for a mutable field,
+// because an interface field cannot have either. It allocates nothing. A
+// refusal allocates its error.
 func ConstantMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Value == "":
@@ -562,13 +559,13 @@ func ConstantMods(f *emit.Field) (string, error) {
 	return "", nil
 }
 
-// MethodMods writes a class method's keywords, in Java's stated
-// order: access, static, abstract, final. An asynchronous method
-// refuses, because Java marks no signature asynchronous, and a
-// default refuses outside an interface. An abstract method with a
-// body refuses, because an abstract method is a signature. MethodMods
-// allocates one join per keyword it writes behind the access keyword,
-// and a refusal allocates its error.
+// MethodMods writes the keywords of the class method m in the order of
+// the Java grammar: access, static, abstract and final. It returns an
+// error for an async method, because Java does not mark a signature as
+// async. It returns an error for a default outside an interface, and for
+// an abstract method with a body, because an abstract method is a
+// signature. MethodMods allocates one join for each keyword after the
+// access keyword. A refusal allocates its error.
 func MethodMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Abstract && !m.Body.IsZero():
@@ -594,18 +591,19 @@ func MethodMods(m *emit.Method) (string, error) {
 	return part, nil
 }
 
-// SigMods writes an interface method's keywords: nothing for the
-// implicitly public signature, private where stated, static for a
-// type-level method, and default for a public method with a default
-// body at instance level. A private or a static method places its body
-// the way a default does, and javac rejects either without a body, so
-// such a method without a default body refuses. An abstract method
-// passes, because an interface signature is abstract by shape. A body
-// without a default refuses, because the template places only a
-// default body, and final, override and asynchrony refuse. SigMods
-// allocates the keywords of a private static method, one allocation,
-// and nothing for every other signature. A refusal allocates its
-// error.
+// SigMods writes the keywords of the interface method m. It writes
+// nothing for a public signature, because an interface method is public
+// by default. It writes private for a private method, static for a
+// type-level method, and default for a public instance method with a
+// default body. A private or a static method has a body as a default
+// method does, and javac rejects either without a body, so SigMods
+// returns an error for such a method without a default body. It accepts
+// an abstract method, because an interface signature is abstract. It
+// returns an error for a body without a default, because the template
+// renders only a default body. It also returns an error for final,
+// override and async. SigMods allocates once for the keywords of a
+// private static method, and nothing for every other signature. A
+// refusal allocates its error.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.HasDefault && !m.Body.IsZero():
@@ -641,30 +639,31 @@ func SigMods(m *emit.Method) (string, error) {
 	return part, nil
 }
 
-// Annotate writes a declaration's annotation lines at the top level,
-// one per annotation: the name behind its marker, and the argument
-// spellings verbatim in parentheses where any are stated. It allocates
-// what [textfmt.Marked] allocates: the lines, sized once, and nothing
-// for no annotations.
+// Annotate writes one annotation line at the top level for each
+// annotation of a. A line has the name after the marker, and the
+// arguments verbatim in parentheses where the annotation has any. It
+// allocates what [textfmt.Marked] allocates. That is the lines, sized
+// once, and nothing for no annotations.
 func Annotate(a symbol.Annotations) string {
 	return textfmt.Marked(a, "@", "")
 }
 
-// MemberAnnotate writes a member's annotation lines as [Annotate]
-// writes them, each behind the member indent of a type body. It
-// allocates what Annotate allocates.
+// MemberAnnotate writes the annotation lines of a member as [Annotate]
+// writes them. Each line starts with the member indent of a type body.
+// It allocates what Annotate allocates.
 func MemberAnnotate(a symbol.Annotations) string {
 	return textfmt.Marked(a, "@", "", memberIndent)
 }
 
-// javaPackage spells a package path the way Java writes it: dots for
-// slashes.
+// javaPackage returns the Java form of a slash-separated package path,
+// with dots for slashes.
 func javaPackage(path string) string { return strings.ReplaceAll(path, pathSep, memberSep) }
 
-// access writes a member's or a member type's access keyword. An
-// unstated scope spells public, because a generated API exists to be
-// called, and package scope spells Java's default access. An
-// internal scope has no Java spelling at all.
+// access writes the access keyword of the visibility v of a member or a
+// member type. It writes public for an unknown visibility, because other
+// code calls a generated API. It writes nothing for package scope, which
+// is the default access of Java. It returns an error for internal,
+// because Java has no keyword for it.
 func access(v symbol.Visibility, name string) (string, error) {
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
@@ -680,12 +679,7 @@ func access(v symbol.Visibility, name string) (string, error) {
 	}
 }
 
-// unembedded is the refusal for embeds: nothing promotes members.
-func unembedded(name string) error {
-	return refuse("nothing promotes members, and %s states embeds", name)
-}
-
-// refuse builds a refusal under [refusalPrefix].
+// refuse returns a refusal that starts with [refusalPrefix].
 func refuse(format string, args ...any) error {
 	return fmt.Errorf(refusalPrefix+format, args...)
 }

@@ -18,10 +18,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The spellings of a library the classpath option names: its count of
-// parts, which are its group, artifact and version, the separators of a
-// group as a path and of a JAR's name, the suffix of its SHA-1 record,
-// and the digit Gradle leaves off the front of a digest.
+// The parts of a library in the classpath option: the number of parts,
+// which are the group, the artifact and the version, the separator of a
+// group as a path, the separator in the name of a JAR, the suffix of the
+// SHA-1 record, and the digit that Gradle leaves off the front of a digest.
 const (
 	coordinateParts = 3
 	groupDot        = "."
@@ -30,9 +30,9 @@ const (
 	leadingZero     = "0"
 )
 
-// The first and the last release ct.sym names by one character each, the
-// release the letters count from, and the first digit and the first and
-// last letter of the names.
+// The releases that ct.sym names by one character each: the first and the
+// last release, the release that the letters count from, the first and the
+// last digit, and the first and the last letter.
 const (
 	oldestRelease = 8
 	letterRelease = 10
@@ -43,49 +43,50 @@ const (
 	lastLetter    = 'Z'
 )
 
-// coordinate is one library the classpath option names.
+// coordinate is one library of the classpath option.
 type coordinate struct {
 	group    string
 	artifact string
 	version  string
 }
 
-// parseCoordinate parses a library's group:artifact:version, and
-// returns an error for one without three parts that are not empty.
+// parseCoordinate parses the group:artifact:version of a library. It
+// returns an error for a specification without three parts that are not
+// empty.
 func parseCoordinate(spec string) (coordinate, error) {
 	parts := strings.Split(spec, coordinateSeparator)
 	if len(parts) != coordinateParts || slices.Contains(parts, "") {
-		return coordinate{}, fmt.Errorf("frontend: the classpath library %q is no group:artifact:version", spec)
+		return coordinate{}, fmt.Errorf("frontend: the classpath library %q is not group:artifact:version", spec)
 	}
 	return coordinate{group: parts[0], artifact: parts[1], version: parts[2]}, nil
 }
 
-// jar returns the file name of the library's JAR.
+// jar returns the file name of the JAR of the library.
 func (c coordinate) jar() string { return c.artifact + versionDash + c.version + jarExt }
 
-// mavenJAR returns the qualified path of the library's JAR in the Maven
-// local repository, whose path spells the group with a directory per
-// name.
+// mavenJAR returns the qualified path of the JAR of the library in the
+// Maven local repository, whose path has one directory per name of the
+// group.
 func (c coordinate) mavenJAR() string {
 	group := strings.ReplaceAll(c.group, groupDot, binarySlash)
 	return plugin.StorePath(MavenStore, path.Join(group, c.artifact, c.version, c.jar()))
 }
 
-// gradleDir returns the qualified path of the directory Gradle's module
-// cache keeps the library's files in, one directory per digest.
+// gradleDir returns the qualified path of the directory in the module
+// cache of Gradle that contains the files of the library, one directory
+// per digest.
 func (c coordinate) gradleDir() string {
 	return plugin.StorePath(GradleStore, path.Join(c.group, c.artifact, c.version))
 }
 
-// jdkIndex is one release's packages in ct.sym: each package's class
-// files, by their qualified paths in path order, the order the walk
-// visits them in.
+// jdkIndex maps each package of one release in ct.sym to the qualified
+// paths of its class files, in path order, which is the order of the walk.
 type jdkIndex map[string][]string
 
-// unitOf returns the package a need names and its unit: the need itself
-// where ct.sym has that package, and otherwise the package of the class
-// it names, [packageIn]. It returns no unit for a need ct.sym has no
-// package for.
+// unitOf returns the package of a need and its unit. The package is the
+// need itself where ct.sym has that package, and otherwise the package of
+// the class that the need names, as [packageIn] finds it. unitOf returns
+// no unit for a need whose package ct.sym does not have.
 func (x jdkIndex) unitOf(need string) (string, []plugin.SourceRef) {
 	p := packageIn(x, need)
 	if p == "" {
@@ -98,11 +99,11 @@ func (x jdkIndex) unitOf(need string) (string, []plugin.SourceRef) {
 	return p, unit
 }
 
-// packageIn returns the package a need names among packages keyed by
-// path: the need itself where the map has it, and otherwise the package
-// of the class it names, as a static import's need and a single-type
-// import of a member class name a class, its last names left out one at
-// a time. It returns "" where the map has none.
+// packageIn returns the package of a need among packages keyed by path.
+// The package is the need itself where the map has it. Otherwise the need
+// is a class, as the need of a static import or of a single-type import of
+// a member class is, and packageIn drops its last names one at a time. It
+// returns the empty string where the map has no such package.
 func packageIn[V any](packages map[string]V, need string) string {
 	for p := need; p != "."; p = path.Dir(p) {
 		if _, met := packages[p]; met {
@@ -112,19 +113,22 @@ func packageIn[V any](packages map[string]V, need string) string {
 	return ""
 }
 
-// dependencies is the Java frontend's dependency round. The first round
-// returns one unit per library the classpath option names, its JAR, and
-// java/lang. Every round returns the JDK packages its needs name, from
-// ct.sym's entries for the release the options name, the newest where
-// they name none. A store the load does not provide turns its source
-// off. A library malformed in the option, one neither the Maven nor the
-// Gradle store has, a JAR whose SHA-1 digest is not its record's, and a
-// release ct.sym lists no entry for are errors.
+// dependencies is the dependency round of the Java frontend. The first
+// round returns one unit for each library of the classpath option, which
+// is its JAR, and the unit of java/lang. Every round returns the JDK
+// packages of its needs from the entries of ct.sym for the release of the
+// options, and for the newest release where the options name none. A
+// store that the load does not provide turns its source off.
 //
-// The round reports a need placed nowhere where neither ct.sym nor a
-// classpath JAR has its package. The first round reads the packages
-// from the JARs it returns, and a later round's needs are packages no
-// loaded JAR declares.
+// Error modes: dependencies returns an error for a library that the option
+// writes in a wrong form, for a library that neither the Maven nor the
+// Gradle store has, for a JAR whose SHA-1 digest differs from its record,
+// and for a release for which ct.sym lists no entry.
+//
+// The round reports a need as placed nowhere where neither ct.sym nor a
+// JAR of the classpath has its package. The first round reads the packages
+// of the JARs that it returns. The needs of a later round are packages
+// that no loaded JAR declares.
 func (f *javaFrontend) dependencies(
 	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
@@ -168,10 +172,10 @@ func (f *javaFrontend) dependencies(
 	return out, nil
 }
 
-// library returns the unit of one classpath library and its JAR's
-// bytes: its JAR from the Maven store, whose SHA-1 record is the unit's
-// shared input, and from the Gradle store where the Maven store lacks
-// it.
+// library returns the unit of one library of the classpath and the bytes
+// of its JAR. The JAR comes from the Maven store, and the SHA-1 record of
+// the JAR is the shared input of the unit. Where the Maven store does not
+// have the JAR, it comes from the Gradle store.
 func library(r plugin.StoreReader, spec string) ([]plugin.SourceRef, []byte, error) {
 	c, err := parseCoordinate(spec)
 	if err != nil {
@@ -189,14 +193,14 @@ func library(r plugin.StoreReader, spec string) ([]plugin.SourceRef, []byte, err
 		MavenStore, GradleStore, spec)
 }
 
-// fromMaven returns the unit of a library's JAR in the Maven store and
-// the JAR's bytes, and reports whether the store has the JAR. The SHA-1
-// record beside the JAR must state the JAR's digest, its first word
-// compared without case.
+// fromMaven returns the unit of the JAR of a library in the Maven store
+// and the bytes of the JAR, and reports whether the store has the JAR. The
+// SHA-1 record beside the JAR must contain the digest of the JAR as its
+// first word, compared without regard to case.
 func fromMaven(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte, bool, error) {
 	jar := c.mavenJAR()
 	data, err := r.Read(jar)
-	if absent(err) {
+	if plugin.Absent(err) {
 		return nil, nil, false, nil
 	}
 	if err != nil {
@@ -215,14 +219,14 @@ func fromMaven(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte, 
 	return []plugin.SourceRef{{Path: jar, Shared: []string{record}}}, data, true, nil
 }
 
-// fromGradle returns the unit of a library's JAR in the Gradle store and
-// the JAR's bytes, and reports whether the store has the JAR. The JAR's
-// directory is named by its SHA-1 digest, which Gradle writes without
-// leading zeros, so the two compare without them.
+// fromGradle returns the unit of the JAR of a library in the Gradle store
+// and the bytes of the JAR, and reports whether the store has the JAR. The
+// name of the directory of the JAR is its SHA-1 digest, which Gradle writes
+// without leading zeros, so the two compare without them.
 func fromGradle(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte, bool, error) {
 	dir := c.gradleDir()
 	entries, err := r.ReadDir(dir)
-	if absent(err) {
+	if plugin.Absent(err) {
 		return nil, nil, false, nil
 	}
 	if err != nil {
@@ -234,14 +238,15 @@ func fromGradle(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte,
 		}
 		jar := dir + binarySlash + e.Name() + binarySlash + c.jar()
 		data, err := r.Read(jar)
-		if absent(err) {
+		if plugin.Absent(err) {
 			continue
 		}
 		if err != nil {
 			return nil, nil, false, err
 		}
 		if strings.TrimLeft(e.Name(), leadingZero) != strings.TrimLeft(digest(data), leadingZero) {
-			return nil, nil, false, fmt.Errorf("frontend: the SHA-1 digest of %s is %s, and its directory names %s",
+			return nil, nil, false, fmt.Errorf(
+				"frontend: the SHA-1 digest of %s is %s, and the name of its directory is %s",
 				jar, digest(data), e.Name())
 		}
 		return []plugin.SourceRef{{Path: jar}}, data, true, nil
@@ -249,11 +254,14 @@ func fromGradle(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte,
 	return nil, nil, false, nil
 }
 
-// readJDK indexes the packages ct.sym has for a release, by a walk of
-// the directories whose names include the release's character, and
-// reports whether the load provides the JDK store, returning an empty
-// index for a load without it. Release 0 is the newest release ct.sym
-// lists. ct.sym listing no entry for the release is an error.
+// readJDK indexes the packages that ct.sym has for a release. It walks the
+// directories whose names include the character of the release. It also
+// reports whether the load provides the JDK store, and returns an empty
+// index for a load without it. Release 0 is the newest release that
+// ct.sym lists.
+//
+// Error modes: readJDK returns an error where ct.sym lists no entry for
+// the release, and the error of a listing that fails.
 func readJDK(ctx context.Context, r plugin.StoreReader, release int) (jdkIndex, bool, error) {
 	root := plugin.StorePath(JDKStore, "")
 	tops, err := r.ReadDir(root)
@@ -287,9 +295,9 @@ func readJDK(ctx context.Context, r plugin.StoreReader, release int) (jdkIndex, 
 	return x, true, nil
 }
 
-// walk adds a module directory's class files to their packages, below a
-// package path. A module's own declaration, module-info.sig, is indexed
-// under the empty package path, which no need names.
+// walk adds the class files of a module directory to their packages, below
+// a package path. The declaration of the module itself, module-info.sig,
+// is indexed under the empty package path, which no need names.
 func (x jdkIndex) walk(ctx context.Context, r plugin.StoreReader, dir, pkg string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -312,10 +320,13 @@ func (x jdkIndex) walk(ctx context.Context, r plugin.StoreReader, dir, pkg strin
 	return nil
 }
 
-// releaseMark returns the character ct.sym names a release by: 8 and 9
-// for themselves, and a letter from A for 10 on. Release 0 is the newest
-// character the top directories' names have. A release ct.sym cannot
-// name, and one no top directory's name has, is an error.
+// releaseMark returns the character by which ct.sym names a release: 8 and
+// 9 for themselves, and a letter from A for 10 on. Release 0 is the newest
+// character in the names of the top directories.
+//
+// Error modes: releaseMark returns an error for a release that ct.sym
+// cannot name, and for a release that no name of a top directory
+// contains.
 func releaseMark(release int, tops []fs.DirEntry) (rune, error) {
 	newest := rune(0)
 	for _, top := range tops {
@@ -344,8 +355,8 @@ func releaseMark(release int, tops []fs.DirEntry) (rune, error) {
 	return mark, nil
 }
 
-// rank orders release characters: the digits before the letters, as
-// ct.sym orders releases.
+// rank orders the characters of releases, the digits before the letters,
+// as ct.sym orders releases.
 func rank(c rune) int {
 	switch {
 	case c >= firstDigit && c <= lastDigit:
@@ -358,15 +369,9 @@ func rank(c rune) int {
 }
 
 // digest returns the SHA-1 digest of a JAR in lowercase hexadecimal, the
-// digest Maven and Gradle record, which detects a corrupt download and
-// is no security check.
+// digest that Maven and Gradle record. The digest detects a corrupt
+// download and is not a security check.
 func digest(data []byte) string {
 	sum := sha1.Sum(data)
 	return hex.EncodeToString(sum[:])
-}
-
-// absent reports whether a read or a listing found nothing to read: the
-// file does not exist, or the load provides no store for it.
-func absent(err error) bool {
-	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, plugin.ErrStoreAbsent)
 }

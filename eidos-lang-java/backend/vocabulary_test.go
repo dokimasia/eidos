@@ -288,7 +288,7 @@ func TestVocabulary(t *testing.T) {
 			t.Helper()
 
 			s, _ := speller()
-			got, err := s.Params(ps)
+			got, err := s.Params(new(emit.SlotOf(ps...)))
 			assert.NoError(t, err, "the list spells")
 			return got
 		}
@@ -316,7 +316,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Params([]*emit.Param{{Name: "rows", Type: unspellable(t, s)}})
+			_, err := s.Params(new(emit.SlotOf(&emit.Param{Name: "rows", Type: unspellable(t, s)})))
 			assert.HasError(t, err, "the type's refusal is the list's")
 		})
 	})
@@ -328,7 +328,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			got, err := s.Results(nil)
+			got, err := s.Results(&emit.Slot[*emit.Return]{})
 			assert.NoError(t, err, "no results spell")
 			assert.Equal(t, got, "void", "the empty return type")
 		})
@@ -337,7 +337,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			got, err := s.Results([]*emit.Return{{Type: ref(rowName)}})
+			got, err := s.Results(new(emit.SlotOf(&emit.Return{Type: ref(rowName)})))
 			assert.NoError(t, err, "one result spells")
 			assert.Equal(t, got, rowName, "the return type")
 		})
@@ -346,7 +346,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Results([]*emit.Return{{Type: unspellable(t, s)}})
+			_, err := s.Results(new(emit.SlotOf(&emit.Return{Type: unspellable(t, s)})))
 			assert.HasError(t, err, "the result's refusal is the return type's")
 		})
 
@@ -354,7 +354,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Results([]*emit.Return{{Type: ref(rowName)}, {Type: ref("Err")}})
+			_, err := s.Results(new(emit.SlotOf(&emit.Return{Type: ref(rowName)}, &emit.Return{Type: ref("Err")})))
 			assert.HasError(t, err, "a second result arrives thrown, not returned")
 		})
 	})
@@ -804,6 +804,29 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, set.Paths(), []string{storePkg}, "the superclass's import")
 		})
 
+		embedded := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{
+				name: "writes no clause for the embed of an interface",
+				give: &emit.Interface{Name: "Store", Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})},
+			},
+			{
+				name: "writes no clause for the embed of a class",
+				give: &emit.Struct{Name: rowName, Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})},
+			},
+		}
+		for _, tt := range embedded {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := heritage(t, tt.give)
+				assert.NoError(t, err, "the coverage refuses an embed, so the heritage spells")
+				assert.Equal(t, got, "", "nothing promotes members")
+			})
+		}
+
 		tests := []struct {
 			name string
 			give symbol.Symbol
@@ -811,14 +834,6 @@ func TestVocabulary(t *testing.T) {
 			{
 				name: "returns an error for a second superclass",
 				give: &emit.Struct{Name: rowName, Extends: refs("A", "B")},
-			},
-			{
-				name: "returns an error for an embed",
-				give: &emit.Interface{Name: "Store", Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
-			},
-			{
-				name: "returns an error for a class's embed",
-				give: &emit.Struct{Name: rowName, Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
 			},
 			{
 				name: "returns an error for a sealed class without permits",
@@ -960,8 +975,8 @@ func vocabularyCalls() []allocCall {
 	s, set := speller()
 	bare, row := ref(intType), imported(storePkg, rowName)
 	params := []*emit.TypeParam{{Name: keyParam, Bounds: refs(comparableType)}, {Name: valueParam}}
-	args := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: ref(stringType)}}
-	result := []*emit.Return{{Type: bare}}
+	args := new(emit.SlotOf(&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: ref(stringType)}))
+	result := new(emit.SlotOf(&emit.Return{Type: bare}))
 	heir := &emit.Struct{Name: rowName, Extends: refs(baseName)}
 	failures := refs(ioException)
 	doc := []string{rowDoc}

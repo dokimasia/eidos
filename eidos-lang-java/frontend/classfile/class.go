@@ -6,6 +6,8 @@ package classfile
 import (
 	"errors"
 	"slices"
+
+	"go.dokimi.dev/eidos/lang/java"
 )
 
 // ErrMalformed reports a class file that breaks the format of chapter 4:
@@ -403,7 +405,7 @@ func (r *reader) methodSignature(i uint16) *MethodSignature {
 func (r *reader) constant(i uint16, t Type) string {
 	switch {
 	case t.BinaryName() == stringClass:
-		return stringLiteral(r.str(i))
+		return java.QuoteUnits(r.str(i))
 	case t.Kind != KindBase:
 		r.fail("a ConstantValue initializes a field of the type %s", t.BinaryName())
 		return ""
@@ -418,7 +420,7 @@ func (r *reader) constant(i uint16, t Type) string {
 	case baseBoolean:
 		return boolLiteral(r.integer(i))
 	case baseChar:
-		return charLiteral(r.integer(i))
+		return java.QuoteChar(r.integer(i))
 	default:
 		return intLiteral(r.integer(i))
 	}

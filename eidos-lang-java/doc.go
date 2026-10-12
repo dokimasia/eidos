@@ -13,6 +13,11 @@
 // writes the generated-file header through. [Keys] registers the
 // java.* keys a frontend stamps.
 //
+// [Quote], [QuoteUnits] and [QuoteChar] write Java's string and char
+// literals under one set of escapes. The backend quotes a string value
+// with Quote, and the class-file reader quotes a constant with the other
+// two, so one string has one spelling on both paths.
+//
 // # Packages
 //
 // The module covers Java as a source and as a target:

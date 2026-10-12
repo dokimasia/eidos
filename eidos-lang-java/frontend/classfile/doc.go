@@ -31,7 +31,9 @@
 // with the type arguments of each of its names, an array or a type
 // variable. [Type.BinaryName] maps a class type to the class it denotes
 // by the rule §4.7.9.1 states. A constant value and an annotation's
-// element values are spelled as Java source spells them.
+// element values are spelled as Java source spells them. A string and a
+// char are spelled by the satellite root's QuoteUnits and QuoteChar, as
+// the backend spells a string value.
 //
 // # Bounds
 //
@@ -43,6 +45,6 @@
 //
 // # Dependency position
 //
-// lang/java/frontend/classfile imports the Go stdlib alone. The Java
-// frontend imports it.
+// lang/java/frontend/classfile imports the Go stdlib and the satellite
+// root, lang/java. The Java frontend imports it.
 package classfile

@@ -20,32 +20,34 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The whole-contract fixture's signature root and its package, and the
-// one type the package does not publish, which a signature-only load
-// drops.
+// The signature root of the whole-contract fixture and its package, and
+// the one type that the package does not publish, which a signature-only
+// load drops.
 const (
 	depRoot    = "dep"
 	depPackage = "com/acme/dep"
 	hiddenName = "Hidden"
 )
 
-// unparsedCode is the spelling of the code a syntax error reports
-// under, which findings persist.
+// unparsedCode is the spelling of the code of a syntax error, which
+// findings persist.
 const unparsedCode = "JAVA-0001"
 
-// release is the Java release the options cases build a frontend for.
+// release is the Java release of the frontend that the options cases
+// build.
 const release = 21
 
-// newAllocs is the frontend New returns for nil options: the empty
-// options, the frontend's state with its vocabulary and two hooks, the
-// version, the syntax's two, and the kit's five, its list of key
-// registrations included.
-const newAllocs = 1 + 4 + 1 + 2 + 5
+// newAllocs is the cost of New for nil options: the empty options, the
+// state of the frontend with its vocabulary and two hooks, the four
+// functions of the comment walk, the classifier of test files, the
+// version, two allocations of the syntax, and five of the kit with its
+// list of key registrations.
+const newAllocs = 1 + 4 + 4 + 1 + 1 + 2 + 5
 
-// allocCall is one call that an allocation test and a benchmark share:
-// the method it calls, which names its benchmark, the case it measures
-// where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves.
+// allocCall is one call that an allocation test and a benchmark share: the
+// method that it calls, which is the name of its benchmark, the case that
+// it measures where the method has more than one call, its allocation
+// ceiling, the call, and the check of the result of the call.
 type allocCall struct {
 	name     string
 	caseName string
@@ -54,8 +56,8 @@ type allocCall struct {
 	check    func(tb testing.TB)
 }
 
-// The frontend runs the conformance suite every frontend runs, over real
-// Java source.
+// The frontend runs the conformance suite of every frontend over real Java
+// source.
 func TestFrontend(t *testing.T) {
 	t.Parallel()
 
@@ -85,13 +87,13 @@ func TestFrontend(t *testing.T) {
 			assert.True(t, frontend.New(nil).Overloads(), "Java declares overloaded methods")
 		})
 
-		t.Run("returns a version that folds the frontend's version", func(t *testing.T) {
+		t.Run("returns a version that folds the version of the frontend", func(t *testing.T) {
 			t.Parallel()
 
 			assert.HasPrefix(t, versionOf(t), java.FrontendVersion, "a graph change bumps what the unit keys fold")
 		})
 
-		t.Run("returns a version that folds the grammar's version", func(t *testing.T) {
+		t.Run("returns a version that folds the version of the grammar", func(t *testing.T) {
 			t.Parallel()
 
 			assert.HasSuffix(t, versionOf(t), javagrammar.Grammar.Version(),
@@ -131,19 +133,20 @@ func TestFrontend(t *testing.T) {
 
 			_, found := parsedSource(t, "public class {\n")
 			assert.NotEmpty(t, found, "the syntax error reports")
-			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
+			assert.Equal(t, found[0].Code.String(), unparsedCode,
+				"the code has the prefix of the satellite and number 1")
 		})
 	})
 }
 
-// The construction allocates the frontend the kit builds. The ordinary
-// run, which runs no benchmark, checks that ceiling here.
+// The construction allocates the frontend that the kit builds. The
+// ordinary run, which runs no benchmark, checks that ceiling here.
 func TestFrontendAllocs(t *testing.T) {
 	checkAllocs(t, frontendCalls())
 }
 
-// BenchmarkFrontend measures the construction a composition makes once
-// per load.
+// BenchmarkFrontend measures the construction that a composition makes
+// once per load.
 func BenchmarkFrontend(b *testing.B) {
 	benchCalls(b, frontendCalls())
 }
@@ -225,7 +228,11 @@ func benchCall(b *testing.B, tt allocCall) {
 // ct.sym whose java.lang the first dependency round loads.
 func setup(tb assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	return frontend.New(nil), &frontendtest.Fixture{
-		Sources:    javaTree(),
+		Sources: javaTree(),
+		Empty: fstest.MapFS{
+			pomFile: {Data: []byte(pomSrc)},
+			"src/main/java/com/acme/empty/package-info.java": {Data: []byte("package com.acme.empty;\n")},
+		},
 		Signatures: []string{depRoot},
 		Dropped: []symbol.Identity{
 			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindStruct},

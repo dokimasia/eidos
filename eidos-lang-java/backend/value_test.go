@@ -136,12 +136,12 @@ func TestValue(t *testing.T) {
 			{
 				name: "writes a string escaped in Java's grammar",
 				give: emit.Literal(emit.LiteralString, "tab\tbell\x07 \\ \"q\" é"),
-				want: `"tab\tbell\007 \\ \"q\" é"`,
+				want: `"tab\tbell\u0007 \\ \"q\" é"`,
 			},
 			{
 				name: "writes control characters under their named escapes",
 				give: emit.Literal(emit.LiteralString, "\b\f\n\r\x7f"),
-				want: `"\b\f\n\r\177"`,
+				want: `"\b\f\n\r\u007f"`,
 			},
 			{
 				name: "returns a value error for another language's raw text",

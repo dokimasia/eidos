@@ -17,10 +17,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The parts of a number literal of Java that a marker's argument lifts:
-// the minus sign before it, the separator between its digits, the bit
-// that an ASCII letter sets in lower case, the type suffixes of a long, a
-// float and a double, and the widths of a float and a double.
+// The parts of a Java number literal that the argument of a marker lifts:
+// the minus sign before it, the separator between its digits, the bit that
+// an ASCII letter sets in lower case, the type suffixes of a long, a float
+// and a double, and the widths of a float and a double.
 const (
 	minusSign    = "-"
 	separator    = "_"
@@ -32,8 +32,8 @@ const (
 	doubleBits   = 64
 )
 
-// The parts of an escape of Java's string literals: the mark that opens
-// a Unicode escape, and the width of its hexadecimal digits.
+// The parts of an escape in a Java string literal: the mark that opens a
+// Unicode escape, and the number of its hexadecimal digits.
 const (
 	unicodeMark   = "u"
 	unicodeDigits = 4
@@ -45,16 +45,15 @@ var escapes = map[byte]string{
 	'b': "\b", 's': " ", 't': "\t", 'n': "\n", 'f': "\f", 'r': "\r", '"': `"`, '\'': "'", '\\': `\`,
 }
 
-// marker returns the marker of an annotation of the brand. Its path is
-// the annotation's name split at its dots, and its arguments are the
-// annotation's element values, lifted from the syntax by
-// [lowering.elementValue]. An element-value pair lifts as a keyed
-// argument, and the single element of the single-element form as a
-// positional one. The marker's Refusal describes the first element value
-// that does not lift.
+// marker returns the marker of an annotation of the brand. Its path is the
+// name of the annotation split at its dots. Its arguments are the element
+// values of the annotation, which [lowering.elementValue] lifts from the
+// syntax. An element-value pair lifts as a keyed argument, and the element
+// of the single-element form as a positional one. The Refusal of the
+// marker describes the first element value that does not lift.
 func (l *lowering) marker(n treesitter.Node, name string) plugin.Sugar {
 	s := plugin.Sugar{Path: strings.Split(name, nameSeparator), Pos: n.Pos()}
-	for _, value := range l.children(n.Child(l.v.fieldArguments)) {
+	for value := range n.Child(l.v.fieldArguments).Content() {
 		key := ""
 		if value.Kind() == l.v.elementValuePair {
 			key, value = value.Child(l.v.fieldKey).Text(), value.Child(l.v.fieldValue)
@@ -72,15 +71,15 @@ func (l *lowering) marker(n treesitter.Node, name string) plugin.Sugar {
 // elementValue lifts one element value of a marker into a directive
 // value:
 //
-//   - a string literal to its content, as [lowering.stringValue] decodes
-//     it;
-//   - a number literal, with at most one minus sign, to its decimal text,
-//     as [lowering.number] writes it;
+//   - a string literal to its content, which [lowering.stringValue]
+//     decodes;
+//   - a number literal, with at most one minus sign, to the decimal text
+//     that [lowering.number] writes;
 //   - true and false as written;
 //   - an array of element values to the list of their values.
 //
-// elementValue returns the reason that a value does not lift, or the
-// empty string when it lifts.
+// elementValue returns the reason why a value does not lift, and the empty
+// string for a value that lifts.
 func (l *lowering) elementValue(n treesitter.Node) (directive.RawValue, string) {
 	k := n.Kind()
 	switch {
@@ -106,7 +105,7 @@ func (l *lowering) elementValue(n treesitter.Node) (directive.RawValue, string) 
 		// A list value is a list also when it has no element, so the list
 		// is never nil.
 		list := []directive.RawValue{}
-		for _, e := range l.children(n) {
+		for e := range n.Content() {
 			v, refusal := l.elementValue(e)
 			if refusal != "" {
 				return directive.RawValue{}, refusal
@@ -119,16 +118,16 @@ func (l *lowering) elementValue(n treesitter.Node) (directive.RawValue, string) 
 		n.Compact())
 }
 
-// stringValue returns the content of a string literal, its escapes
-// decoded by [unescape]. It reports false for a text block, whose
-// content Java strips of its incidental white space, and for an escape
-// that Java refuses or that encodes a lone surrogate.
+// stringValue returns the content of a string literal, with its escapes
+// decoded by [unescape]. It reports false for a text block, whose content
+// Java strips of its incidental white space. It also reports false for an
+// escape that Java refuses or that encodes a lone surrogate.
 func (l *lowering) stringValue(n treesitter.Node) (string, bool) {
 	var b strings.Builder
 	for part := range n.NamedChildren() {
 		switch part.Kind() {
 		case l.v.stringFragment:
-			b.WriteString(part.Text())
+			b.Write(part.Bytes())
 		case l.v.escapeSequence:
 			if !unescape(&b, part.Text()) {
 				return "", false
@@ -140,13 +139,13 @@ func (l *lowering) stringValue(n treesitter.Node) (string, bool) {
 	return b.String(), true
 }
 
-// number returns the decimal text of a number literal of Java, with its
-// separators and its type suffix dropped. A float literal is the
-// shortest decimal text that parses back to its float or its double. A
-// hexadecimal, an octal and a binary integer literal is the bit pattern
-// of its int or its long in two's complement, as Java reads it, so
-// 0xFFFFFFFF is -1. number reports false for an integer beyond its
-// type's bits and for a float beyond its type's range.
+// number returns the decimal text of a Java number literal without its
+// separators and its type suffix. A float literal is the shortest decimal
+// text that parses back to its float or its double. A hexadecimal, an
+// octal and a binary integer literal is the bit pattern of its int or its
+// long in two's complement, as Java reads it, so 0xFFFFFFFF is -1. number
+// reports false for an integer that needs more bits than its type has, and
+// for a float outside the range of its type.
 func (l *lowering) number(n treesitter.Node) (string, bool) {
 	digits := strings.ReplaceAll(n.Text(), separator, "")
 	last := digits[len(digits)-1] | caseBit
@@ -192,11 +191,11 @@ func (l *lowering) number(n treesitter.Node) (string, bool) {
 	return strconv.FormatInt(int64(int32(uint32(u))), 10), true
 }
 
-// unescape writes the character of one escape of Java's string literals
-// into b, and reports whether Java accepts the escape. text is the
-// escape with its backslash: an escape of one character, an octal escape
-// of up to 255, or a Unicode escape of four hexadecimal digits that is
-// not a surrogate.
+// unescape writes the character of one escape of a Java string literal
+// into b, and reports whether Java accepts the escape. text is the escape
+// with its backslash: an escape of one character, an octal escape of up to
+// 255, or a Unicode escape of four hexadecimal digits that is not a
+// surrogate.
 func unescape(b *strings.Builder, text string) bool {
 	body := text[1:]
 	if s, named := escapes[body[0]]; named && len(body) == 1 {

@@ -20,6 +20,9 @@ import (
 // as every satellite's refusals open.
 const typeRefusal = string(java.Lang) + ": "
 
+// javaName is the name of the language in a refusal.
+const javaName = "Java"
+
 // The types and the syntax that the Java spoke writes.
 const (
 	booleanType   = "boolean"
@@ -107,10 +110,12 @@ var (
 // Type refuses a tuple, a union, an intersection, a stream, an inline
 // type and an opaque type, because Java has no spelling of them. It
 // refuses the well-known empty value, because Java does not have a type
-// of a value without data outside a declaration. It refuses a function
-// type of more than two parameters or more than one result, and a scalar
-// of another width. It refuses a form whose child it refuses, and the
-// error contains the source spelling of the child.
+// of a value without data outside a declaration. It refuses an immutable
+// list, array and map, because a Java collection type does not state that
+// a holder cannot write through it. It refuses a function type of more
+// than two parameters or more than one result, and a scalar of another
+// width. It refuses a form whose child it refuses, and the error contains
+// the source spelling of the child.
 //
 // # Allocation contract
 //
@@ -150,8 +155,11 @@ func javaType(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
 	case symbol.FormOptional, symbol.FormList, symbol.FormArray, symbol.FormBorrow:
 		return container(s, boxed)
 	case symbol.FormMap:
-		if len(s.Elems) != 2 {
-			return nil, fmt.Errorf("a map takes two children, a key and a value, and the shape has %d", len(s.Elems))
+		if err := spoke.ReadOnly(s, javaName); err != nil {
+			return nil, err
+		}
+		if err := spoke.Arity(s, 2); err != nil {
+			return nil, err
 		}
 		args, err := spoke.Children(s.Elems, argument)
 		if err != nil {
@@ -190,15 +198,20 @@ func scalar(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
 }
 
 // container spells a form of one child: an optional as the boxed class
-// of its type, a list as List<T>, an array as T[], and a borrow as its
-// type in the borrow's own position.
+// of its type, a list as List<T>, an array as T[], and a borrow of either
+// mutability as its type in the borrow's own position. It refuses an
+// immutable list or array.
 func container(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
-	if len(s.Elems) != 1 {
-		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
+	if err := spoke.Arity(s, 1); err != nil {
+		return nil, err
+	}
+	if s.Form == symbol.FormBorrow {
+		return spoke.Child(s.Elems[0], func(c rules.TypeShape) (*emit.TypeRef, error) { return javaType(c, boxed) })
+	}
+	if err := spoke.ReadOnly(s, javaName); err != nil {
+		return nil, err
 	}
 	switch s.Form {
-	case symbol.FormBorrow:
-		return spoke.Child(s.Elems[0], func(c rules.TypeShape) (*emit.TypeRef, error) { return javaType(c, boxed) })
 	case symbol.FormArray:
 		elem, err := spoke.Child(
 			s.Elems[0],
@@ -229,8 +242,8 @@ func container(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
 // interface that the numbers of its parameters and results pick, with
 // its parameters and then its results as the interface's arguments.
 func function(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
-	if s.Split < 0 || s.Split > len(s.Elems) {
-		return nil, fmt.Errorf("a function type splits its %d children at %d", len(s.Elems), s.Split)
+	if err := spoke.Split(s); err != nil {
+		return nil, err
 	}
 	params, results := s.Split, len(s.Elems)-s.Split
 	if params == 0 && results == 0 {

@@ -13,13 +13,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// coverageAllocs is the coverage table: the fact map's four, and the
-// exception map's two with its four kinds' two each.
+// coverageAllocs is the count of the coverage table: four for the fact
+// map, and two for the exception map with two for each of its four
+// kinds.
 const coverageAllocs = 4 + 2 + 4*2
 
-// The suite checks the declaration total and the rendered findings
-// against the table, and these cases pin the cells that distinguish
-// Java.
+// TestCoverage pins the verdicts that distinguish Java. The conformance
+// suite checks that the table is total and that the rendered findings
+// match it.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -68,24 +69,41 @@ func TestCoverage(t *testing.T) {
 				name: "returns Renders for an interface's properties",
 				kind: symbol.KindInterface, fact: symbol.FactProperties, want: render.Renders,
 			},
+			{
+				name: "returns Rejects for a computed field",
+				kind: symbol.KindField, fact: symbol.FactComputed, want: render.Rejects,
+			},
+			{
+				name: "returns Refuses for an enum's underlying type",
+				kind: symbol.KindEnum, fact: symbol.FactUnderlying, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for a method's mutability",
+				kind: symbol.KindMethod, fact: symbol.FactMutability, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for a field's mutability",
+				kind: symbol.KindField, fact: symbol.FactMutability, want: render.Renders,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want, "the verdict")
+				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want,
+					"Coverage returns the verdict of Java")
 			})
 		}
 	})
 }
 
-// The table allocates its maps. The ordinary run, which runs no
-// benchmark, checks that ceiling here.
+// TestCoverageAllocs checks the ceiling of the table in the ordinary run,
+// which runs no benchmark.
 func TestCoverageAllocs(t *testing.T) {
 	checkAllocs(t, coverageCalls())
 }
 
-// BenchmarkCoverage measures the table the backend reads once per
+// BenchmarkCoverage measures the table that the backend reads once per
 // build.
 func BenchmarkCoverage(b *testing.B) {
 	benchCalls(b, coverageCalls())

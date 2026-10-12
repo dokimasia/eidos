@@ -161,7 +161,7 @@ func TestLiteral(t *testing.T) {
 		t.Run("spells a string constant with its escapes", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, fieldNamed(t, fixture(t, boxFile), "NAME").Value, `"a\"b\\c\n`+unicodeEscape(0xe9)+`"`,
+			assert.Equal(t, fieldNamed(t, fixture(t, boxFile), "NAME").Value, `"a\"b\\c\n`+"\U000000e9"+`"`,
 				"NAME")
 		})
 

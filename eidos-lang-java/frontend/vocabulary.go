@@ -5,12 +5,15 @@ package frontend
 
 import "go.dokimi.dev/eidos/lang/treesitter"
 
-// vocabulary is the Java grammar's node kinds and field names that the
-// lowering compares, resolved once when the frontend is built, so a
-// walk compares ids and a grammar that renames a kind fails at
-// construction.
+// vocabulary is the node kinds and the field names of the Java grammar
+// that the lowering compares. The frontend resolves them once when it is
+// built, so a walk compares ids, and a grammar that renames a kind fails
+// at construction.
 type vocabulary struct {
 	grammar *treesitter.Grammar
+	// comments is the comment walk of the grammar, which the lowering of
+	// each file copies.
+	comments treesitter.Comments
 
 	// The file, its comments, and its package, import and module
 	// declarations.
@@ -50,15 +53,16 @@ type vocabulary struct {
 	// The clauses that list types.
 	typeList, extendsInterfaces, throws treesitter.Kind
 
-	// The fields the lowering reads children by.
+	// The fields by which the lowering reads children.
 	fieldName, fieldBody, fieldType, fieldTypeParameters, fieldParameters, fieldSuperclass,
 	fieldInterfaces, fieldPermits, fieldValue, fieldDimensions, fieldArguments,
 	fieldElement, fieldDeclarator, fieldKey, fieldOperator, fieldOperand treesitter.Field
 }
 
-// newVocabulary resolves the vocabulary from the Java grammar. It
-// panics on a kind or field the grammar does not declare, through
-// [treesitter.Grammar.Kind] and [treesitter.Grammar.Field].
+// newVocabulary resolves the vocabulary from the Java grammar, and the
+// comment walk over its kinds. It panics on a kind or a field that the
+// grammar does not declare, through [treesitter.Grammar.Kind] and
+// [treesitter.Grammar.Field].
 func newVocabulary(g *treesitter.Grammar) *vocabulary {
 	v := &vocabulary{
 		grammar: g,
@@ -151,5 +155,6 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		v.decimalIntegerLiteral, v.hexIntegerLiteral, v.octalIntegerLiteral, v.binaryIntegerLiteral,
 		v.decimalFloatingPointLiteral, v.hexFloatingPointLiteral,
 	}
+	v.comments = commentWalk(v)
 	return v
 }

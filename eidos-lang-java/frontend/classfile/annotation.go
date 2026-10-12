@@ -3,7 +3,11 @@
 
 package classfile
 
-import "strings"
+import (
+	"strings"
+
+	"go.dokimi.dev/eidos/lang/java"
+)
 
 // The tags of an annotation's element values (§4.7.16.1).
 const (
@@ -103,7 +107,7 @@ func (r *reader) elementValue(depth int) string {
 	case valueByte, valueShort, valueInt:
 		return intLiteral(r.integer(r.u2()))
 	case valueChar:
-		return charLiteral(r.integer(r.u2()))
+		return java.QuoteChar(r.integer(r.u2()))
 	case valueBoolean:
 		return boolLiteral(r.integer(r.u2()))
 	case valueLong:
@@ -113,7 +117,7 @@ func (r *reader) elementValue(depth int) string {
 	case valueDouble:
 		return doubleLiteral(r.double(r.u2()))
 	case valueString:
-		return stringLiteral(r.units(r.u2()))
+		return java.QuoteUnits(r.units(r.u2()))
 	case valueEnum:
 		t := r.fieldType(r.u2())
 		return spell(t) + qualifier + r.utf8(r.u2())

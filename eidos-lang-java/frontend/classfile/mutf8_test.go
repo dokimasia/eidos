@@ -26,11 +26,11 @@ func TestMutf8(t *testing.T) {
 			want string
 		}{
 			{name: "decodes NUL from its two-byte form", give: "\xc0\x80", want: javaString(0)},
-			{name: "decodes a two-byte character", give: "\xc3\xa9", want: javaString(0xe9)},
-			{name: "decodes a three-byte character", give: "\xe2\x82\xac", want: javaString(0x20ac)},
+			{name: "decodes a two-byte character", give: "\xc3\xa9", want: `"` + "\U000000e9" + `"`},
+			{name: "decodes a three-byte character", give: "\xe2\x82\xac", want: `"` + "\U000020ac" + `"`},
 			{
 				name: "decodes a supplementary character from its two surrogates", give: "\xed\xa0\xbd\xed\xb8\x80",
-				want: javaString(0xd83d, 0xde00),
+				want: `"` + "\U0001f600" + `"`,
 			},
 			{name: "decodes ASCII as itself", give: "ok", want: `"ok"`},
 		}

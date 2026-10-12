@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -116,35 +117,28 @@ func fileLevel(s symbol.Symbol) error {
 	return nil
 }
 
-// variantClass builds one variant's final implementing class.
+// variantClass returns the final class of the variant v, which implements
+// the principal interface of the sum. The reference to the principal has
+// the origin of the sum as its target, so the settle follows it, and the
+// type parameters of the sum as its arguments. variantClass returns an
+// error for a payload entry without a name.
 func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
+	if err := lowering.NamedPayload(java.Lang, v); err != nil {
+		return nil, err
+	}
 	cls := &emit.Struct{
-		Origin:      sum.Origin,
-		Doc:         v.Doc,
-		Comment:     v.Comment,
-		Name:        sum.Name + naming.Pascal(v.Name),
-		Visibility:  sum.Visibility,
-		Final:       true,
-		TypeParams:  lowering.CopyTypeParams(sum.TypeParams),
-		Implements:  []*emit.TypeRef{principalRef(sum)},
+		Origin:     sum.Origin,
+		Doc:        v.Doc,
+		Comment:    v.Comment,
+		Name:       sum.Name + naming.Pascal(v.Name),
+		Visibility: sum.Visibility,
+		Final:      true,
+		TypeParams: lowering.CopyTypeParams(sum.TypeParams),
+		Implements: []*emit.TypeRef{{
+			Target: sum.Origin, Spelling: sum.Name, Args: lowering.ParamArgs(sum.TypeParams),
+		}},
 		Annotations: v.Annotations,
 	}
-	for _, f := range v.Fields.Items() {
-		if f.Name == "" {
-			return nil, refuse("a field has a name, and a payload entry in %s states none", v.Name)
-		}
-		cls.Fields.Append(f)
-	}
+	cls.Fields.Append(v.Fields.Items()...)
 	return cls, nil
-}
-
-// principalRef references the principal interface, resolved to the
-// sum's origin so the settle follows it precisely, the sum's
-// parameters restated as arguments.
-func principalRef(sum *emit.Sum) *emit.TypeRef {
-	t := &emit.TypeRef{Target: sum.Origin, Spelling: sum.Name}
-	for _, p := range sum.TypeParams {
-		t.Args = append(t.Args, &emit.TypeRef{Spelling: p.Name})
-	}
-	return t
 }

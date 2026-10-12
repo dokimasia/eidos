@@ -9,21 +9,21 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// members lowers a type body's members into their host. An initializer
-// block declares nothing, because it is part of a body.
+// members lowers the members of a type body into their host. An
+// initializer block declares nothing, because it is part of a body.
 func (l *lowering) members(body treesitter.Node, h *host) {
-	for child := range body.NamedChildren() {
-		if !l.comment(child) && !l.member(child, h) {
+	for child := range body.Content() {
+		if !l.member(child, h) {
 			l.refuse(child, "an initializer block")
 		}
 	}
 }
 
-// member lowers one member declaration into its host, and reports
-// whether the node declares a member: a field, a method, a constructor,
-// an annotation type element or a nested type, and a compact source
-// file's field, whose grammar node is a local variable declaration. A
-// type an enum declares has no place in the model.
+// member lowers one member declaration into its host, and reports whether
+// the node declares a member: a field, a method, a constructor, an
+// annotation type element or a nested type, and the field of a compact
+// source file, whose grammar node is a local variable declaration. A type
+// that an enum declares has no place in the model.
 func (l *lowering) member(n treesitter.Node, h *host) bool {
 	switch k := n.Kind(); {
 	case k == l.v.fieldDeclaration, k == l.v.constantDeclaration, k == l.v.localVariableDeclaration:
@@ -46,9 +46,9 @@ func (l *lowering) member(n treesitter.Node, h *host) bool {
 	return true
 }
 
-// memberVisibility returns the visibility a member takes where its
-// modifiers state none: public in an interface, and package-visible
-// anywhere else.
+// memberVisibility returns the visibility that a member takes where its
+// modifiers state none: public in an interface, and visible in its
+// package anywhere else.
 func memberVisibility(h *host) symbol.Visibility {
 	if h.kind == hostInterface {
 		return symbol.VisibilityPublic
@@ -56,12 +56,12 @@ func memberVisibility(h *host) symbol.Visibility {
 	return symbol.VisibilityPackage
 }
 
-// fields lowers a field declaration into one field per declarator, each
-// with the declaration's type, its dimensions, and the declarator's
-// initializer verbatim. A static field is at the type level and a final
-// one immutable, and an interface's fields are both. The declaration's
-// comments document every field it declares, and its carriers attach to
-// each.
+// fields lowers a field declaration into one field for each declarator,
+// each with the type of the declaration, its dimensions, and the
+// initializer of the declarator verbatim. A static field is at the type
+// level and a final one immutable, and the fields of an interface are
+// both. The comments of the declaration document every field that it
+// declares, and its carriers attach to each.
 func (l *lowering) fields(n treesitter.Node, h *host) {
 	m := l.modifiersOf(n)
 	vis := m.visibility(memberVisibility(h))
@@ -91,9 +91,9 @@ func (l *lowering) fields(n treesitter.Node, h *host) {
 
 // method lowers a method declaration: static at the type level, final
 // and abstract where its modifiers state them, with its type parameters,
-// its parameters, its result and the exceptions it throws. An interface's
-// method without a body is abstract, and one its modifiers mark default
-// has a default. A void method has no result.
+// its parameters, its result and the exceptions that it throws. A method
+// of an interface without a body is abstract, and one that its modifiers
+// mark default has a default. A void method has no result.
 func (l *lowering) method(n treesitter.Node, h *host) {
 	m := l.modifiersOf(n)
 	vis := m.visibility(memberVisibility(h))
@@ -107,7 +107,7 @@ func (l *lowering) method(n treesitter.Node, h *host) {
 	md := &node.Method{
 		Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
 		Final: m.has(modFinal), Abstract: m.has(modAbstract), TypeParams: l.typeParams(n),
-		Receiver: receiver, Params: params, Throws: l.typesOf(l.firstOf(n, l.v.throws)), Annotations: m.annotations,
+		Receiver: receiver, Params: params, Throws: l.typesOf(n.FirstOf(l.v.throws)), Annotations: m.annotations,
 	}
 	if m.has(modStatic) {
 		md.Level = symbol.LevelType
@@ -126,9 +126,10 @@ func (l *lowering) method(n treesitter.Node, h *host) {
 
 // constructor lowers a constructor as a method that constructs, named
 // after its type, as Java spells it: its type parameters, its parameters
-// and the exceptions it throws. A record's compact constructor takes the
-// record's components as its parameters. An enum's constructor is
-// private where it states no access, and any other package-visible.
+// and the exceptions that it throws. The compact constructor of a record
+// takes the components of the record as its parameters. The constructor
+// of an enum is private where it states no access, and any other
+// constructor is visible in its package.
 func (l *lowering) constructor(n treesitter.Node, h *host) {
 	m := l.modifiersOf(n)
 	def := symbol.VisibilityPackage
@@ -150,14 +151,14 @@ func (l *lowering) constructor(n treesitter.Node, h *host) {
 	md := &node.Method{
 		Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
 		Constructs: true, TypeParams: l.typeParams(n), Params: params,
-		Throws: l.typesOf(l.firstOf(n, l.v.throws)), Annotations: m.annotations,
+		Throws: l.typesOf(n.FirstOf(l.v.throws)), Annotations: m.annotations,
 	}
 	l.attach(md, parts.Carriers, m.sugars)
 	*h.methods = append(*h.methods, md)
 }
 
-// element lowers an annotation type's element as an abstract public
-// method whose result is the element's type.
+// element lowers the element of an annotation type as an abstract public
+// method whose result is the type of the element.
 func (l *lowering) element(n treesitter.Node, h *host) {
 	parts, comment := l.declParts(n)
 	name := n.Child(l.v.fieldName)
@@ -172,12 +173,12 @@ func (l *lowering) element(n treesitter.Node, h *host) {
 	*h.methods = append(*h.methods, md)
 }
 
-// params lowers a parameter list: each parameter's name, its type with
-// its dimensions and its annotations, and a variadic one as positionally
-// variadic, whose type is the element it collects. An explicit receiver
-// is returned apart, positioned at its start, and the grammar reads an
-// annotated one as a parameter named this. The carriers of a parameter's
-// comments are refused.
+// params lowers a parameter list: the name of each parameter, its type
+// with its dimensions, and its annotations. A variadic parameter is
+// positionally variadic, and its type is the element that it collects.
+// params returns an explicit receiver apart, at its start, and the grammar
+// reads an annotated one as a parameter named this. The carriers of the
+// comments of a parameter are refused.
 func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver *node.Param) {
 	for p := range list.NamedChildren() {
 		switch p.Kind() {
@@ -193,7 +194,7 @@ func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver 
 			}
 			params = append(params, param)
 		case l.v.spreadParameter:
-			name := l.firstOf(p, l.v.variableDeclarator).Child(l.v.fieldName)
+			name := p.FirstOf(l.v.variableDeclarator).Child(l.v.fieldName)
 			params = append(params, &node.Param{
 				Name: name.Text(), Pos: name.Pos(), Variadic: symbol.VariadicPositional,
 				Type: l.typeRef(l.typeIn(p)), Annotations: l.modifiersOf(p).annotations,
@@ -208,27 +209,30 @@ func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver 
 	return params, receiver
 }
 
-// typeIn returns the type a spread or a receiver parameter states, which
-// the grammar gives no field: its first named child that is no modifier
-// list or comment, because the type precedes its declarator and a
-// receiver's this.
+// typeIn returns the type that a spread or a receiver parameter states,
+// which the grammar gives no field: its first named child that is not a
+// modifier list or a comment, because the type comes before its declarator
+// and before the this of a receiver.
 func (l *lowering) typeIn(p treesitter.Node) treesitter.Node {
-	return firstWhere(p, func(child treesitter.Node) bool {
-		return child.Kind() != l.v.modifiers && !l.comment(child)
-	})
+	for child := range p.Content() {
+		if child.Kind() != l.v.modifiers {
+			return child
+		}
+	}
+	return treesitter.Node{}
 }
 
-// typeParams lowers a declaration's type parameters: each one's name and
-// the bounds its extends clause states.
+// typeParams lowers the type parameters of a declaration: the name of
+// each, and the bounds that its extends clause states.
 func (l *lowering) typeParams(n treesitter.Node) []*node.TypeParam {
 	var out []*node.TypeParam
 	for tp := range n.Child(l.v.fieldTypeParameters).NamedChildren() {
 		if tp.Kind() != l.v.typeParameter {
 			continue
 		}
-		name := l.firstOf(tp, l.v.typeIdentifier)
+		name := tp.FirstOf(l.v.typeIdentifier)
 		p := &node.TypeParam{Name: name.Text(), Pos: name.Pos()}
-		for _, b := range l.children(l.firstOf(tp, l.v.typeBound)) {
+		for b := range tp.FirstOf(l.v.typeBound).Content() {
 			p.Bounds = append(p.Bounds, l.typeRef(b))
 		}
 		out = append(out, p)
@@ -236,31 +240,27 @@ func (l *lowering) typeParams(n treesitter.Node) []*node.TypeParam {
 	return out
 }
 
-// typesOf lowers the types a clause lists: a superclass, an
+// typesOf lowers the types that a clause lists: a superclass, an
 // implements, extends or permits clause, or a throws clause. A clause
 // states its types directly or through a type list.
 func (l *lowering) typesOf(clause treesitter.Node) []*node.TypeRef {
-	if list := l.firstOf(clause, l.v.typeList); !list.IsZero() {
+	if list := clause.FirstOf(l.v.typeList); !list.IsZero() {
 		clause = list
 	}
-	children := l.children(clause)
-	if len(children) == 0 {
-		return nil
-	}
-	out := make([]*node.TypeRef, 0, len(children))
-	for _, t := range children {
+	var out []*node.TypeRef
+	for t := range clause.Content() {
 		out = append(out, l.typeRef(t))
 	}
 	return out
 }
 
-// unmodeled reports a type an enum declares under [UnmodeledItem], at
-// its name, because an enum has no list of nested types. It refuses the
-// type's carriers and passes the sweep over the type.
+// unmodeled reports a type that an enum declares under [UnmodeledItem],
+// at its name, because an enum has no list of nested types. It refuses the
+// carriers of the type and passes the sweep over the type.
 func (l *lowering) unmodeled(n treesitter.Node) {
 	name := n.Child(l.v.fieldName)
 	l.u.Infof(UnmodeledItem, name.Pos(), "%s is not in the model, because an enum has no list of nested types",
 		name.Text())
-	l.refuse(n, "a type an enum declares")
-	l.taken[n.Pos()] = true
+	l.refuse(n, "a type that an enum declares")
+	l.comments.Take(n)
 }

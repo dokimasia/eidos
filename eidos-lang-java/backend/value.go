@@ -44,18 +44,15 @@ const (
 	// float and long.
 	floatWidth = 32
 	longWidth  = 64
-	// octalPad holds the zeros that pad an octal escape's digits to
-	// three, the width Java reads.
-	octalPad = "000"
 )
 
 // leaves is Java's spelling of the literal leaves: a number spells
-// through [number], a string quotes in Java's own grammar, and the
+// through [number], a string quotes through [java.Quote], and the
 // absent value is null, which every reference type takes.
 var leaves = scaffold.Leaves{
 	Lang:   java.Lang,
 	Absent: "null",
-	Quote:  quoteString,
+	Quote:  java.Quote,
 	Number: number,
 }
 
@@ -210,47 +207,4 @@ func number(v emit.Value) (string, error) {
 	default:
 		return v.Text, nil
 	}
-}
-
-// quoteString spells a string literal in Java's grammar: the
-// backslash, the double quote and the named control escapes \b \t
-// \n \f \r, every other control character as an octal escape, and
-// everything else as itself. No \u escape is written, because Java
-// decodes one before it reads the literal, and a decoded line break
-// ends the string. It sizes its buffer for the string and its quotes,
-// one allocation, and an escape grows it once more.
-func quoteString(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + 2)
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '\\':
-			b.WriteString(`\\`)
-		case '"':
-			b.WriteString(`\"`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\r':
-			b.WriteString(`\r`)
-		default:
-			if r < ' ' || r == 0x7f {
-				var scratch [len(octalPad)]byte
-				digits := strconv.AppendUint(scratch[:0], uint64(r), 8)
-				b.WriteByte('\\')
-				b.WriteString(octalPad[len(digits):])
-				b.Write(digits)
-				continue
-			}
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
 }

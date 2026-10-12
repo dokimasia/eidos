@@ -392,6 +392,30 @@ func TestType(t *testing.T) {
 				give: union, want: "java: a union has no Java spelling",
 			},
 			{
+				name: "returns an error for an immutable list",
+				give: rules.TypeShape{
+					Form: symbol.FormList, Spelling: "readonly string[]", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text},
+				},
+				want: "java: a read-only list has no Java spelling",
+			},
+			{
+				name: "returns an error for an immutable array",
+				give: rules.TypeShape{
+					Form: symbol.FormArray, Spelling: "readonly [string, string]", Length: 2,
+					Mutability: symbol.MutabilityImmutable, Elems: []rules.TypeShape{text},
+				},
+				want: "java: a read-only array has no Java spelling",
+			},
+			{
+				name: "returns an error for an immutable map",
+				give: rules.TypeShape{
+					Form: symbol.FormMap, Spelling: "ReadonlyMap", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text, text},
+				},
+				want: "java: a read-only map has no Java spelling",
+			},
+			{
 				name: "returns an error for an intersection",
 				give: rules.TypeShape{Form: symbol.FormIntersection, Spelling: "A & B"},
 				want: "java: an intersection has no Java spelling",
@@ -469,7 +493,7 @@ func TestType(t *testing.T) {
 			{
 				name: "returns an error for a map of one child",
 				give: rules.TypeShape{Form: symbol.FormMap, Spelling: "map[string]", Elems: []rules.TypeShape{text}},
-				want: "java: a map takes two children, a key and a value, and the shape has 1",
+				want: "java: a map takes two children, and the shape has 1",
 			},
 		}
 		for _, tt := range refusals {

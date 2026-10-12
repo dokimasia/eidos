@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/java/backend"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -72,11 +73,43 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "no block")
 		})
 	})
+
+	t.Run("TemplateImport", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name      string
+			givePath  string
+			giveName  string
+			wantLocal string
+			wantItem  string
+		}{
+			{
+				name:     "binds a class without a name under the last segment of its path",
+				givePath: storeClassPath, wantLocal: storeClass,
+			},
+			{
+				name:     "binds the class that the template names",
+				givePath: apiPkg, giveName: storeClass, wantLocal: storeClass, wantItem: storeClass,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				local, item, ok := backend.TemplateImport(tt.givePath, tt.giveName)
+				expect.True(t, ok, "an import statement binds a name")
+				expect.Equal(t, local, tt.wantLocal, "TemplateImport returns the name that the import binds")
+				expect.Equal(t, item, tt.wantItem, "TemplateImport returns the class that the name refers to")
+			})
+		}
+	})
 }
 
 // A block allocates its sorted entries and its statements, and an
-// empty set nothing. The ordinary run, which runs no benchmark, checks
-// those ceilings here.
+// empty set nothing. The binding of a template's import allocates
+// nothing. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
 func TestImportsAllocs(t *testing.T) {
 	checkAllocs(t, importsCalls())
 }
@@ -107,6 +140,11 @@ func importsCalls() []allocCall {
 			name: "Imports", caseName: "an empty set",
 			call:  func() { out = backend.Imports(&empty) },
 			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+		{
+			name: "TemplateImport", caseName: "an import without a name",
+			call:  func() { out, _, _ = backend.TemplateImport(storeClassPath, "") },
+			check: func(tb assert.TB) { assert.Equal(tb, out, storeClass, "TemplateImport binds the simple name") },
 		},
 	}
 }

@@ -8,30 +8,37 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Coverage declares Java's fact coverage, the feature table as
-// data: the render's guard reads it, and the conformance suite
-// checks it total and the rendered findings against it.
+// Coverage declares the fact coverage of Java, the feature table as data:
+// the guard of the render reads it, and the conformance suite checks it
+// total and the rendered findings against it.
 //
-//   - A callable returns one value, so several refuse. A second
-//     result arrives thrown, which is why throws renders.
-//   - An enum constant's value refuses, because a valued constant
-//     takes the constructor form the templates do not spell.
-//   - A sum's methods refuse, because the lowering's variant classes
-//     would owe bodies the model does not state.
+//   - A callable returns one value, so several refuse. A second result
+//     arrives thrown, which is why throws renders.
+//   - The value of an enum constant refuses, because a valued constant
+//     takes the constructor form, which the templates do not spell.
+//   - The methods of a sum refuse, because the variant classes of the
+//     lowering would owe bodies that the model does not state.
 //   - Nested types render at member depth through their own kind
-//     templates, a type-level class as static. The lowering refuses
-//     static and a narrower scope on a file-level type, where javac
-//     rejects both.
-//   - An interface's properties render as its constants, each with
-//     its initializer. One without an initializer refuses through its
-//     keyword helper, because a Java interface declares constants
+//     templates, a class at the type level as static. The lowering
+//     refuses static and a narrower scope on a file-level type, where
+//     javac rejects both.
+//   - The properties of an interface render as its constants, each with
+//     its initializer. A property without an initializer refuses through
+//     its keyword helper, because a Java interface declares constants
 //     alone.
+//   - Nothing promotes members, so the coverage refuses an embed with
+//     every fact on it.
+//   - A Java enum has no underlying type, so the underlying type refuses,
+//     and so does the mutability of an index signature. A computed member
+//     has no name in Java, so the declaration does not render with the
+//     fact or without it.
 //
-// Coverage builds the table on every call, which the caller keeps: the
-// fact map's four allocations, and the exception map's two with its
-// four kinds' two each, 14 allocations.
+// Coverage builds the table on every call, which the caller keeps: four
+// allocations of the fact map, and two of the exception map with two for
+// each of its four kinds, 14 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
+		RefusesEmbeds: true,
 		Facts: map[symbol.Fact]render.Verdict{
 			symbol.FactVisibility:       render.Renders,
 			symbol.FactAsync:            render.Refuses,
@@ -71,13 +78,12 @@ func Coverage() render.Coverage {
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactTypeParamDefault: render.Refuses,
 			symbol.FactConstParam:       render.Refuses,
+			symbol.FactComputed:         render.Rejects,
+			symbol.FactUnderlying:       render.Refuses,
 		},
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
-			// An embed refuses whole, so the facts on it refuse with it.
-			symbol.KindEmbed: {
-				symbol.FactComment:     render.Refuses,
-				symbol.FactTag:         render.Refuses,
-				symbol.FactAnnotations: render.Refuses,
+			symbol.KindMethod: {
+				symbol.FactMutability: render.Refuses, // no index signatures
 			},
 			symbol.KindEnumVariant: {
 				symbol.FactValue: render.Refuses, // the constructor form

@@ -25,12 +25,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// brand is the brand every fixture unit reads its carriers under.
+// brand is the brand under which every fixture unit reads its carriers.
 const brand = string(frontendtest.Brand)
 
 // The cases parse a fixture file and a file beside it, under a package
-// clause and the package path the clause names. The Maven project file
-// above them states the module, and most cases declare the public class.
+// clause and the package path of the clause. The Maven project file above
+// them states the module, and most cases declare the public class.
 const (
 	srcFile     = "src/main/java/com/acme/A.java"
 	siblingFile = "src/main/java/com/acme/B.java"
@@ -41,64 +41,64 @@ const (
 	publicClass = "public class A {}\n"
 )
 
-// The module pomSrc states, the module root of a pom.xml at the
-// workspace root, and the directory of a nested module.
+// The module that pomSrc states, the module root of a pom.xml at the root
+// of the workspace, and the directory of a nested module.
 const (
 	storeModule = "com.acme:store"
 	rootModule  = "."
 	nestedRoot  = "store"
 )
 
-// The SHA-1 record a Maven JAR's unit shares, and its text.
+// The SHA-1 record that the unit of a Maven JAR shares, and its text.
 const (
 	jarRecord  = jarMember + ".sha1"
 	recordText = "0  lib.jar\n"
 )
 
-// The canonical scale every layer benches at: 1000 packages of 10 files
-// of 20 declarations, 200k declarations in all.
+// The canonical scale of every benchmark: 1000 packages of 10 files of 20
+// declarations, 200,000 declarations in all.
 const (
 	benchPackages = 1000
 	benchFiles    = 10
 	benchDecls    = 20
 )
 
-// parseAllocs is one parse of the canonical corpus. With the collector
-// off a parse allocates 1,829,001 times: the lowering's nodes, texts,
-// stamps and type references, and one tree handle per file. Tree-sitter
-// builds its trees in C memory, which the count does not see. The
-// collections that run during a parse add more: 10 fresh processes
-// counted 1 to 10 more. The ceiling allows 32 more.
-const parseAllocs = 1_829_001 + 32
+// parseAllocs is the budget of one parse of the canonical corpus of
+// 200,000 declarations. One run counted 1,820,009 allocations: the nodes,
+// texts, stamps and type references of the lowering, and one tree handle
+// per file. Tree-sitter builds its trees in C memory, which the count does
+// not see. The budget is about 5% above the count.
+const parseAllocs = 1_910_000
 
-// treeReader is the partition's recorded door over a test tree.
+// treeReader is the recorded door of the partition over a test tree.
 type treeReader struct {
 	tree fstest.MapFS
 }
 
-// Read returns one file's bytes.
+// Read returns the bytes of one file.
 func (r treeReader) Read(path string) ([]byte, error) { return r.tree.ReadFile(path) }
 
-// A parse turns one directory's files into the unit's packages, so its
-// contract over the module identity and the unit's failures is pinned.
+// A parse turns the files of one directory into the packages of the unit.
+// The cases pin its contract over the module identity and the failures of
+// the unit.
 func TestParse(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("stamps a package with the module its pom.xml states", func(t *testing.T) {
+		t.Run("stamps a package with the module that its pom.xml states", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedTree(t, pomTree(pomSrc), srcFile, plugin.DepthFull)
 			assert.Equal(t, stampsOf(gb, meta.ModuleKey), []any{storeModule}, "the group and the artifact")
 		})
 
-		t.Run("stamps a package with its pom.xml's directory as the module root", func(t *testing.T) {
+		t.Run("stamps a package with the directory of its pom.xml as the module root", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedTree(t, pomTree(pomSrc), srcFile, plugin.DepthFull)
-			assert.Equal(t, stampsOf(gb, meta.ModuleRootKey), []any{rootModule}, "the workspace root")
+			assert.Equal(t, stampsOf(gb, meta.ModuleRootKey), []any{rootModule}, "the root of the workspace")
 		})
 
 		t.Run("stamps the directory of a nested pom.xml as the module root", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestParse(t *testing.T) {
 				path.Join(nestedRoot, pomFile): {Data: []byte(pomSrc)},
 				nested:                         {Data: []byte(pkgClause + publicClass)},
 			}, nested, plugin.DepthFull)
-			assert.Equal(t, stampsOf(gb, meta.ModuleRootKey), []any{nestedRoot}, "the module's own directory")
+			assert.Equal(t, stampsOf(gb, meta.ModuleRootKey), []any{nestedRoot}, "the directory of the module")
 		})
 
 		t.Run("stamps a package once for the files of one unit", func(t *testing.T) {
@@ -121,7 +121,7 @@ func TestParse(t *testing.T) {
 			assert.Length(t, stampsOf(gb, meta.ModuleKey), 1, "one stamp per package")
 		})
 
-		t.Run("stamps no module for a unit no pom.xml governs", func(t *testing.T) {
+		t.Run("stamps no module for a unit that no pom.xml governs", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, pkgClause+publicClass)
@@ -132,11 +132,11 @@ func TestParse(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedTree(t, pomTree("<project>"), srcFile, plugin.DepthFull)
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.BadPOM}, "the project file's fault reports")
-			assert.Equal(t, found[0].Severity, diag.SeverityWarning, "as a warning")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.BadPOM}, "the fault of the project file reports")
+			assert.Equal(t, found[0].Severity, diag.SeverityWarning, "the finding is a warning")
 		})
 
-		t.Run("loads the files of a pom.xml that does not parse", func(t *testing.T) {
+		t.Run("loads the files under a pom.xml that does not parse", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedTree(t, pomTree("<project>"), srcFile, plugin.DepthFull)
@@ -153,7 +153,7 @@ func TestParse(t *testing.T) {
 				plugin.DepthFull, f.Syntax(), brand, sink, f.Name())
 			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			assert.Equal(t, codesOf(slices.Collect(sink.All())), []diag.Code{frontend.BadPOM},
-				"the project file it declares does not read")
+				"the project file of the unit does not read")
 		})
 
 		t.Run("reads no shared input but a pom.xml as the project file", func(t *testing.T) {
@@ -165,10 +165,10 @@ func TestParse(t *testing.T) {
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: jarMember, Shared: []string{jarRecord}}}, tree,
 				plugin.DepthSignatures, f.Syntax(), brand, sink, f.Name())
 			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
-			assert.Empty(t, slices.Collect(sink.All()), "a Maven JAR's SHA-1 record states no module")
+			assert.Empty(t, slices.Collect(sink.All()), "the SHA-1 record of a Maven JAR states no module")
 		})
 
-		t.Run("returns the context's error for a done context", func(t *testing.T) {
+		t.Run("returns the error of the context for a done context", func(t *testing.T) {
 			t.Parallel()
 
 			f := frontend.New(nil)
@@ -179,7 +179,7 @@ func TestParse(t *testing.T) {
 				"a cancelled load parses nothing")
 		})
 
-		t.Run("returns the read's error for a member outside the tree", func(t *testing.T) {
+		t.Run("returns the error of the read for a member outside the tree", func(t *testing.T) {
 			t.Parallel()
 
 			f := frontend.New(nil)
@@ -190,13 +190,12 @@ func TestParse(t *testing.T) {
 	})
 }
 
-// BenchmarkParse drives the parse at the canonical scale: every unit of
-// the scaled corpus through Parse into a builder of its own, the
-// partition run once before the loop, so the number measures the
-// tree-sitter parse and the lowering alone, and fails above
-// parseAllocs. Only -bench checks the ceiling. One parse takes about
-// 2.4 s on four cores, and the 101 calls of an allocation check would
-// take four minutes.
+// BenchmarkParse drives the parse at the canonical scale: every unit of the
+// scaled corpus through Parse into a builder of its own. The partition
+// runs once before the loop, so the number measures the tree-sitter parse
+// and the lowering alone, and the benchmark fails above parseAllocs. Only
+// -bench checks the budget. One parse takes about 2.6 s on four cores, so
+// the 101 calls of an allocation check would take more than four minutes.
 func BenchmarkParse(b *testing.B) {
 	tree := scaledJava()
 	f := frontend.New(nil)
@@ -213,9 +212,9 @@ func BenchmarkParse(b *testing.B) {
 	assert.NoError(b, err, "the corpus parses")
 }
 
-// scaledJava returns the canonical corpus as Java source: a directory
-// per package of files of four classes, whose first field is a class the
-// package before it declares, and sixteen interfaces of one constant.
+// scaledJava returns the canonical corpus as Java source: a directory per
+// package of files of four classes, whose first field has a class of the
+// package before it as its type, and sixteen interfaces of one constant.
 func scaledJava() fstest.MapFS {
 	tree := fstest.MapFS{}
 	for p := range benchPackages {
@@ -236,7 +235,7 @@ func scaledJava() fstest.MapFS {
 	return tree
 }
 
-// pomTree returns a tree of a pom.xml of a source and the fixture file,
+// pomTree returns a tree of a pom.xml with a source and the fixture file,
 // which declares the public class A in com.acme.
 func pomTree(src string) fstest.MapFS {
 	return fstest.MapFS{
@@ -245,9 +244,9 @@ func pomTree(src string) fstest.MapFS {
 	}
 }
 
-// parsedTree partitions a tree's Java files through the frontend and
-// parses the unit that has a member, at a depth. It returns the unit's
-// builder and the findings the parse reported.
+// parsedTree partitions the Java files of a tree through the frontend and
+// parses the unit that has a member, at a depth. It returns the builder of
+// the unit and the findings that the parse reported.
 func parsedTree(
 	tb testing.TB, tree fstest.MapFS, member string, depth plugin.Depth,
 ) (*plugin.GraphBuilder, []diag.Diag) {
@@ -269,7 +268,7 @@ func parsedTree(
 	return nil, nil
 }
 
-// parsedSource parses one file at src/main/java/com/acme/A.java, at full
+// parsedSource parses one file at src/main/java/com/acme/A.java at full
 // depth.
 func parsedSource(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag) {
 	tb.Helper()
@@ -277,8 +276,8 @@ func parsedSource(tb testing.TB, src string) (*plugin.GraphBuilder, []diag.Diag)
 	return parsedTree(tb, fstest.MapFS{srcFile: {Data: []byte(src)}}, srcFile, plugin.DepthFull)
 }
 
-// declsOf parses a body below the package clause of com.acme and
-// returns the file's declarations.
+// declsOf parses a body below the package clause of com.acme and returns
+// the declarations of the file.
 func declsOf(tb testing.TB, body string) node.Symbols {
 	tb.Helper()
 
@@ -287,7 +286,7 @@ func declsOf(tb testing.TB, body string) node.Symbols {
 }
 
 // shallowDecls parses a body below the package clause of com.acme at
-// signature depth and returns the file's declarations.
+// signature depth and returns the declarations of the file.
 func shallowDecls(tb testing.TB, body string) node.Symbols {
 	tb.Helper()
 
@@ -296,7 +295,7 @@ func shallowDecls(tb testing.TB, body string) node.Symbols {
 	return fileIn(tb, gb, pkgPath).Decls
 }
 
-// packageIn returns a builder's package of a path.
+// packageIn returns the package of a path in a builder.
 func packageIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.Package {
 	tb.Helper()
 
@@ -309,7 +308,8 @@ func packageIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.Package
 	return nil
 }
 
-// fileIn returns the first File node a builder's package of a path has.
+// fileIn returns the first File node of the package of a path in a
+// builder.
 func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 	tb.Helper()
 
@@ -318,8 +318,8 @@ func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 	return p.Files[0]
 }
 
-// named returns the declaration of a name among declarations, of the
-// type the case expects.
+// named returns the declaration of a name among declarations, of the type
+// that the case expects.
 func named[T symbol.Symbol](tb testing.TB, decls node.Symbols, name string) T {
 	tb.Helper()
 
@@ -329,11 +329,11 @@ func named[T symbol.Symbol](tb testing.TB, decls node.Symbols, name string) T {
 		}
 	}
 	var zero T
-	tb.Fatalf("no %T is named %s", zero, name)
+	tb.Fatalf("no %T has the name %s", zero, name)
 	return zero
 }
 
-// nameOf returns a declaration's written name.
+// nameOf returns the written name of a declaration.
 func nameOf(s symbol.Symbol) string {
 	switch d := s.(type) {
 	case *node.Struct:
@@ -356,8 +356,8 @@ func codesOf(found []diag.Diag) []diag.Code {
 	return out
 }
 
-// stampsOf returns the values a builder stamped under a key, in record
-// order.
+// stampsOf returns the values that a builder stamped under a key, in
+// record order.
 func stampsOf(gb *plugin.GraphBuilder, key meta.KeyName) []any {
 	var out []any
 	for _, rec := range gb.StampRecords() {

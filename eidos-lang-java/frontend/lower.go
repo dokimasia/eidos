@@ -12,36 +12,29 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// maxSyntaxFindings caps the findings one file's syntax errors report,
-// and the count past the cap reports once.
-const maxSyntaxFindings = 10
-
-// maxQuoted caps how much of an ERROR node's source a finding quotes.
-const maxQuoted = 32
-
-// The spellings the lowering reads: the separator of a dotted name, the
-// file that documents a package, and the explicit receiver's name.
+// The spellings that the lowering reads: the separator of a dotted name,
+// the file that documents a package, and the name of the explicit
+// receiver.
 const (
 	nameSeparator   = "."
 	packageInfoFile = "package-info.java"
 	receiverName    = "this"
 )
 
-// modifierWords maps each keyword the lowering reads to its bit.
+// modifierWords maps each keyword that the lowering reads to its bit.
 var modifierWords = map[string]modifier{
 	"public": modPublic, "protected": modProtected, "private": modPrivate, "static": modStatic,
 	"final": modFinal, "abstract": modAbstract, "sealed": modSealed, "default": modDefault,
 }
 
-// modifier is one keyword a declaration's modifiers state, as a bit of a
-// set.
+// modifier is one keyword that the modifiers of a declaration state, as a
+// bit of a set.
 type modifier uint16
 
-// The modifier keywords the lowering reads.
+// The modifier keywords that the lowering reads.
 const (
 	modPublic    modifier = 1
 	modProtected modifier = 2
@@ -53,9 +46,9 @@ const (
 	modDefault   modifier = 128
 )
 
-// modifiers is what a declaration's modifiers state: the keywords, the
-// annotations, each its name as written and its arguments verbatim, and
-// the markers of the brand among the annotations.
+// modifiers is what the modifiers of a declaration state: the keywords,
+// the annotations, each with its name as written and its arguments
+// verbatim, and the markers of the brand among the annotations.
 type modifiers struct {
 	words       modifier
 	annotations symbol.Annotations
@@ -65,8 +58,8 @@ type modifiers struct {
 // has reports whether the modifiers state a keyword.
 func (m modifiers) has(w modifier) bool { return m.words&w != 0 }
 
-// visibility returns the visibility the modifiers state, and def where
-// they state none.
+// visibility returns the visibility that the modifiers state, and def
+// where they state none.
 func (m modifiers) visibility(def symbol.Visibility) symbol.Visibility {
 	switch {
 	case m.has(modPublic):
@@ -80,31 +73,35 @@ func (m modifiers) visibility(def symbol.Visibility) symbol.Visibility {
 	}
 }
 
-// lowering is one file's lowering state: the unit, the grammar's
-// vocabulary, the parsed tree and the file's path, the File node and the
-// scope the file's references resolve through, and the comments a
-// declaration took and the subtrees the load left out, which the sweep
-// passes over.
+// lowering is the state of the lowering of one file: the unit, the
+// vocabulary of the grammar, the parsed tree and the path of the file,
+// the File node and the scope that the references of the file resolve
+// through, and the comment walk of the file. The walk records the
+// comments that a declaration took and the subtrees that the load left
+// out, which the sweep passes over.
 type lowering struct {
-	u     *plugin.SourceUnit
-	v     *vocabulary
-	tree  *treesitter.Tree
-	path  string
-	file  *node.File
-	scope *scope
-	taken map[position.Pos]bool
+	u        *plugin.SourceUnit
+	v        *vocabulary
+	tree     *treesitter.Tree
+	path     string
+	file     *node.File
+	scope    *scope
+	comments treesitter.Comments
 }
 
-// lower lowers one parsed file into the unit's builder and returns the
-// package it declares into: the one its package clause names, and the
-// unnamed package, with the empty path, for a file without one. A
+// lower lowers one parsed file into the builder of the unit. The file
+// declares into the package that its package clause names, and into the
+// unnamed package, with the empty path, where it has no package clause. A
 // package-info.java file documents and annotates its package. A
-// module-info.java file declares no type, and java.module stamps its
-// File node with the module's name. A compact source file, one with a
-// method outside a type, declares the class it implicitly declares, and
-// the file's methods, fields and types are that class's members.
-func (l *lowering) lower(root treesitter.Node) *node.Package {
-	clause := l.firstOf(root, l.v.packageDeclaration)
+// module-info.java file declares no type, and java.module stamps its File
+// node with the name of the module. A compact source file, which has a
+// method outside a type, declares the class that it implicitly declares,
+// and the methods, the fields and the types of the file are the members of
+// that class. java.generated stamps the File node of a file whose
+// top-level type has the annotation of a foreign generator, also where the
+// signature depth leaves the type out.
+func (l *lowering) lower(root treesitter.Node) {
+	clause := root.FirstOf(l.v.packageDeclaration)
 	pkgPath := ""
 	if name := l.nameIn(clause); name != "" {
 		pkgPath = strings.ReplaceAll(name, nameSeparator, "/")
@@ -130,7 +127,12 @@ func (l *lowering) lower(root treesitter.Node) *node.Package {
 			l.importDecl(child)
 		}
 	}
-	compact := !l.firstOf(root, l.v.methodDeclaration).IsZero()
+	for child := range root.NamedChildren() {
+		if l.typeDeclaration(child.Kind()) && l.stampGenerated(child) {
+			break
+		}
+	}
+	compact := !root.FirstOf(l.v.methodDeclaration).IsZero()
 	var implicit *host
 	if compact && l.kept(symbol.VisibilityPackage) {
 		implicit = l.implicitClass()
@@ -151,22 +153,25 @@ func (l *lowering) lower(root treesitter.Node) *node.Package {
 			l.refuse(child, "a statement outside a method")
 		}
 	}
-	l.sweep(root)
-	l.reportSyntax()
-	return p
+	l.comments.Sweep(root, func(n treesitter.Node) {
+		l.u.RefuseCarriers(UnaddressedCarrier, l.u.Comment(n.Text(), n.Pos()).Carriers, unattached)
+	})
+	if problems := l.tree.Problems(); problems != nil {
+		l.u.ReportSyntax(UnparsedFile, problems)
+	}
 }
 
-// importDecl records one import declaration in the file's scope and as
-// an Import of the File node. A single-type import binds its simple name
-// and imports the name from its package. An on-demand import imports
-// every type of a package or every member type of a type. A static
-// import imports from the type that declares the members, whose path is
-// the Import's, and resolves a type name the way a type import does.
+// importDecl records one import declaration in the scope of the file and
+// as an Import of the File node. A single-type import binds its simple
+// name and imports the name from its package. An on-demand import imports
+// every type of a package or every member type of a type. A static import
+// imports from the type that declares the members, whose path is the path
+// of the Import, and resolves a type name as a type import does.
 func (l *lowering) importDecl(n treesitter.Node) {
 	segments := strings.Split(l.nameIn(n), nameSeparator)
 	imp := &node.Import{Pos: n.Pos()}
 	switch {
-	case !l.firstOf(n, l.v.asterisk).IsZero():
+	case !n.FirstOf(l.v.asterisk).IsZero():
 		imp.Path, imp.Wildcard = slashed(segments), true
 		l.scope.onDemand = append(l.scope.onDemand, segments)
 	default:
@@ -180,24 +185,25 @@ func (l *lowering) importDecl(n treesitter.Node) {
 	l.file.Imports = append(l.file.Imports, imp)
 }
 
-// modifiersOf reads a declaration's modifiers: the keywords and the
+// modifiersOf reads the modifiers of a declaration: the keywords and the
 // annotations of its modifiers node, with the markers among the
-// annotations. An annotation's or a comment's text is not a keyword, so
-// only the keyword tokens set bits.
+// annotations. The text of an annotation or a comment is not a keyword,
+// so only the keyword tokens set bits.
 func (l *lowering) modifiersOf(n treesitter.Node) modifiers {
 	var m modifiers
-	mods := l.firstOf(n, l.v.modifiers)
+	mods := n.FirstOf(l.v.modifiers)
 	for child := range mods.AllChildren() {
-		m.words |= modifierWords[child.Text()]
+		m.words |= modifierWords[string(child.Bytes())]
 	}
 	m.annotations, m.sugars = l.annotationsIn(mods)
 	return m
 }
 
-// annotationsIn returns the annotations among a node's children: each
-// its name as written and its arguments verbatim, one per argument in
-// source order. It also returns the markers of the annotations whose
-// name starts with the unit's brand, which [lowering.marker] lifts.
+// annotationsIn returns the annotations among the children of a node,
+// each with its name as written and its arguments verbatim, one for each
+// argument in source order. It also returns the markers of the annotations
+// whose name starts with the brand of the unit, which [lowering.marker]
+// lifts.
 func (l *lowering) annotationsIn(n treesitter.Node) (symbol.Annotations, []plugin.Sugar) {
 	var (
 		out    symbol.Annotations
@@ -209,7 +215,7 @@ func (l *lowering) annotationsIn(n treesitter.Node) (symbol.Annotations, []plugi
 		}
 		name := child.Child(l.v.fieldName).Compact()
 		a := symbol.Annotation{Name: name}
-		for _, arg := range l.children(child.Child(l.v.fieldArguments)) {
+		for arg := range child.Child(l.v.fieldArguments).Content() {
 			a.Args = append(a.Args, arg.Text())
 		}
 		out = append(out, a)
@@ -220,7 +226,55 @@ func (l *lowering) annotationsIn(n treesitter.Node) (symbol.Annotations, []plugi
 	return out, sugars
 }
 
-// attach attaches a declaration's carriers and the directives of its
+// stampGenerated stamps java.generated on the File node where a top-level
+// type n has an annotation that [lowering.generated] reports, and reports
+// whether it stamped. The value of the stamp is the first such annotation
+// as written, with its arguments.
+func (l *lowering) stampGenerated(n treesitter.Node) bool {
+	for child := range n.FirstOf(l.v.modifiers).NamedChildren() {
+		if k := child.Kind(); k != l.v.annotation && k != l.v.markerAnnotation {
+			continue
+		}
+		if l.generated(child.Child(l.v.fieldName).Compact()) {
+			l.u.Graph().Stamp(l.file, meta.RawStamp{Key: java.GeneratedKey, Value: child.Text(), Pos: l.file.Pos})
+			return true
+		}
+	}
+	return false
+}
+
+// generated reports whether the name of an annotation refers to
+// [java.GeneratedAnnotation] or [java.LegacyGeneratedAnnotation]. The name
+// is the qualified name, a simple name that a single-type import binds to
+// the annotation, or a simple name that an on-demand import of the package
+// of the annotation imports. A single-type import of the simple name
+// shadows every on-demand import. generated allocates only for the simple
+// name of the two annotations.
+func (l *lowering) generated(name string) bool {
+	for _, qualified := range [...]string{java.GeneratedAnnotation, java.LegacyGeneratedAnnotation} {
+		pkg, simple, _ := strings.CutLast(qualified, nameSeparator)
+		if name == qualified {
+			return true
+		}
+		if name != simple {
+			continue
+		}
+		if segments, met := l.scope.single[name]; met {
+			if strings.Join(segments, nameSeparator) == qualified {
+				return true
+			}
+			continue
+		}
+		for _, imported := range l.scope.onDemand {
+			if strings.Join(imported, nameSeparator) == pkg {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// attach attaches the carriers of a declaration and the directives of its
 // markers.
 func (l *lowering) attach(subject symbol.Symbol, carriers []plugin.Carrier, sugars []plugin.Sugar) {
 	l.u.AttachCarriers(subject, carriers, BadCarrier)
@@ -229,34 +283,16 @@ func (l *lowering) attach(subject symbol.Symbol, carriers []plugin.Carrier, suga
 	}
 }
 
-// kept reports whether a load at the unit's depth keeps a declaration of
-// a visibility: every declaration at full depth, and a public or a
+// kept reports whether a load at the depth of the unit keeps a declaration
+// of a visibility: every declaration at full depth, and a public or a
 // protected one at signature depth.
 func (l *lowering) kept(vis symbol.Visibility) bool {
 	return l.u.Depth() == plugin.DepthFull || vis == symbol.VisibilityPublic || vis == symbol.VisibilityProtected
 }
 
-// reportSyntax reports each ERROR and MISSING node of the tree at its
-// own position, capped, and the remainder counted once.
-func (l *lowering) reportSyntax() {
-	n := 0
-	for bad := range l.tree.Errors() {
-		if n == maxSyntaxFindings {
-			l.u.Errorf(UnparsedFile, bad.Pos(), "and more syntax errors")
-			return
-		}
-		n++
-		if bad.IsMissing() {
-			l.u.Errorf(UnparsedFile, bad.Pos(), "%s is missing here", l.v.grammar.KindName(bad.Kind()))
-			continue
-		}
-		l.u.Errorf(UnparsedFile, bad.Pos(), "%q does not parse", quoted(bad.Text()))
-	}
-}
-
-// nameIn returns the dotted name a declaration states, as in a package
-// clause or an import, without the whitespace between its tokens, and
-// empty for a node that states none.
+// nameIn returns the dotted name that a declaration states, as in a
+// package clause or an import, without the whitespace between its tokens,
+// and the empty string for a node that states none.
 func (l *lowering) nameIn(n treesitter.Node) string {
 	for child := range n.NamedChildren() {
 		if k := child.Kind(); k == l.v.identifier || k == l.v.scopedIdentifier {
@@ -266,46 +302,8 @@ func (l *lowering) nameIn(n treesitter.Node) string {
 	return ""
 }
 
-// firstOf returns a node's first named child of a kind, and the zero
-// Node where it has none.
-func (*lowering) firstOf(n treesitter.Node, kind treesitter.Kind) treesitter.Node {
-	return firstWhere(n, func(child treesitter.Node) bool { return child.Kind() == kind })
-}
-
-// children returns a node's named children that are not comments.
-func (l *lowering) children(n treesitter.Node) []treesitter.Node {
-	var out []treesitter.Node
-	for child := range n.NamedChildren() {
-		if !l.comment(child) {
-			out = append(out, child)
-		}
-	}
-	return out
-}
-
-// firstWhere returns a node's first named child that satisfies a
-// predicate, and the zero Node where none does.
-func firstWhere(n treesitter.Node, accept func(treesitter.Node) bool) treesitter.Node {
-	for child := range n.NamedChildren() {
-		if accept(child) {
-			return child
-		}
-	}
-	return treesitter.Node{}
-}
-
-// quoted returns the first line of a node's source, capped at maxQuoted
-// bytes, for a finding to quote.
-func quoted(text string) string {
-	line, _, _ := strings.Cut(text, "\n")
-	if len(line) > maxQuoted {
-		return line[:maxQuoted] + "..."
-	}
-	return line
-}
-
-// slashed returns a dotted name's segments as a slash path, the form a
-// Java package identity takes.
+// slashed returns the segments of a dotted name as a slash path, which is
+// the form of the identity of a Java package.
 func slashed(segments []string) string {
 	return strings.Join(segments, "/")
 }

@@ -14,8 +14,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The members of a type lower to fields and methods, so each member
-// kind's shape is pinned.
+// The members of a type lower to fields and methods. The cases pin the
+// shape of each kind of member.
 func TestMember(t *testing.T) {
 	t.Parallel()
 
@@ -27,22 +27,22 @@ func TestMember(t *testing.T) {
 
 			st := memberClass(t, "    { }\n    static { }\n")
 			assert.Empty(t, st.Fields, "no field")
-			assert.Empty(t, st.Methods, "and no method")
+			assert.Empty(t, st.Methods, "no method")
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier on an initializer block", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public class A {\n    "+carrierLine+"    static { }\n}\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a block is no declaration")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a block is not a declaration")
 		})
 
-		t.Run("names an initializer block as the refused carrier's subject", func(t *testing.T) {
+		t.Run("describes an initializer block as the subject of the carrier", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public class A {\n    "+carrierLine+"    static { }\n}\n")
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.Contains(t, found[0].Msg, onInitializer, "where the author put it")
+			assert.Contains(t, found[0].Msg, onInitializer, "the finding states where the author put the carrier")
 		})
 	})
 
@@ -62,15 +62,15 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, helper.Name, "Helper", "Helper is a member")
 		})
 
-		t.Run("reports UnmodeledItem for a type an enum declares", func(t *testing.T) {
+		t.Run("reports UnmodeledItem for a type that an enum declares", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public enum Color {\n    RED;\n    static class Nested {}\n}\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnmodeledItem}, "the nested type has no place")
-			assert.Equal(t, found[0].Severity, diag.SeverityInfo, "as information")
+			assert.Equal(t, found[0].Severity, diag.SeverityInfo, "the finding is information")
 		})
 
-		t.Run("declares no type an enum declares", func(t *testing.T) {
+		t.Run("declares no type that an enum declares", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, pkgClause+"public enum Color {\n    RED;\n    static class Nested {}\n}\n")
@@ -87,17 +87,17 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, fieldNames(memberClass(t, "    int a, b;\n").Fields), []string{"a", "b"}, "both")
 		})
 
-		t.Run("lowers a declarator's initializer verbatim as its field's value", func(t *testing.T) {
+		t.Run("lowers the initializer of a declarator verbatim as the value of its field", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, memberClass(t, "    int a = 1 << 4;\n").Fields[0].Value, "1 << 4", "as written")
 		})
 
-		t.Run("lowers a declaration's access as each field's visibility", func(t *testing.T) {
+		t.Run("lowers the access of a declaration as the visibility of each field", func(t *testing.T) {
 			t.Parallel()
 
 			st := memberClass(t, "    private int a, b;\n")
-			assert.Equal(t, st.Fields[1].Visibility, symbol.VisibilityPrivate, "the second declarator's")
+			assert.Equal(t, st.Fields[1].Visibility, symbol.VisibilityPrivate, "the field of the second declarator")
 		})
 
 		t.Run("lowers a field without an access modifier as package-visible", func(t *testing.T) {
@@ -110,14 +110,14 @@ func TestMember(t *testing.T) {
 		t.Run("lowers a static field at the type level", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, memberClass(t, "    static int n;\n").Fields[0].Level, symbol.LevelType, "a static")
+			assert.Equal(t, memberClass(t, "    static int n;\n").Fields[0].Level, symbol.LevelType, "a static field")
 		})
 
 		t.Run("lowers a field without static at the instance level", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, memberClass(t, "    int n;\n").Fields[0].Level, symbol.LevelInstance,
-				"each instance's own")
+				"each instance has its own")
 		})
 
 		t.Run("lowers a final field as immutable", func(t *testing.T) {
@@ -134,42 +134,42 @@ func TestMember(t *testing.T) {
 				"assignable")
 		})
 
-		t.Run("lowers an interface's field as public", func(t *testing.T) {
+		t.Run("lowers the field of an interface as public", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, memberIface(t, "    int K = 1;\n").Fields[0].Visibility, symbol.VisibilityPublic,
-				"an interface's member")
+				"a member of an interface")
 		})
 
-		t.Run("lowers an interface's field at the type level", func(t *testing.T) {
+		t.Run("lowers the field of an interface at the type level", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, memberIface(t, "    int K = 1;\n").Fields[0].Level, symbol.LevelType,
-				"an interface's field is static")
+				"the field of an interface is static")
 		})
 
-		t.Run("lowers an interface's field as immutable", func(t *testing.T) {
+		t.Run("lowers the field of an interface as immutable", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, memberIface(t, "    int K = 1;\n").Fields[0].Mutability, symbol.MutabilityImmutable,
-				"an interface's field is final")
+				"the field of an interface is final")
 		})
 
 		t.Run("annotates each field of a declaration with its annotations", func(t *testing.T) {
 			t.Parallel()
 
 			st := memberClass(t, "    @Deprecated int a, b;\n")
-			assert.Equal(t, st.Fields[1].Annotations, symbol.Annotations{{Name: "Deprecated"}}, "the second's")
+			assert.Equal(t, st.Fields[1].Annotations, symbol.Annotations{{Name: "Deprecated"}}, "the second field")
 		})
 
 		t.Run("documents each field of a declaration with its Javadoc", func(t *testing.T) {
 			t.Parallel()
 
 			st := memberClass(t, "    /** The pair. */\n    int a, b;\n")
-			assert.Equal(t, st.Fields[1].Doc, []string{"The pair."}, "the second's")
+			assert.Equal(t, st.Fields[1].Doc, []string{"The pair."}, "the second field")
 		})
 
-		t.Run("attaches a declaration's carriers to each field it declares", func(t *testing.T) {
+		t.Run("attaches the carriers of a declaration to each field that it declares", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, pkgClause+"public class A {\n    "+carrierLine+"    public int a, b;\n}\n")
@@ -188,20 +188,20 @@ func TestMember(t *testing.T) {
 	t.Run("method", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("lowers a method's type parameters", func(t *testing.T) {
+		t.Run("lowers the type parameters of a method", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Length(t, memberClass(t, "    <U> U conv() { return null; }\n").Methods[0].TypeParams, 1, "U")
 		})
 
-		t.Run("lowers a method's parameters in order", func(t *testing.T) {
+		t.Run("lowers the parameters of a method in order", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(int a, String b) {}\n").Methods[0]
 			assert.Equal(t, paramNames(m.Params), []string{"a", "b"}, "both")
 		})
 
-		t.Run("lowers a method's result type as its one result", func(t *testing.T) {
+		t.Run("lowers the result type of a method as its one result", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    String name() { return null; }\n").Methods[0]
@@ -211,17 +211,17 @@ func TestMember(t *testing.T) {
 		t.Run("lowers a void method without a result", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Empty(t, memberClass(t, "    void f() {}\n").Methods[0].Returns, "void is no result")
+			assert.Empty(t, memberClass(t, "    void f() {}\n").Methods[0].Returns, "void is not a result")
 		})
 
-		t.Run("lowers a method's dimensions into its result", func(t *testing.T) {
+		t.Run("lowers the dimensions of a method into its result", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    int f()[] { return null; }\n").Methods[0]
 			assert.Equal(t, m.Returns[0].Type.Form, symbol.FormList, "int f()[] returns an array")
 		})
 
-		t.Run("lowers the exceptions a method throws", func(t *testing.T) {
+		t.Run("lowers the exceptions that a method throws", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f() throws java.io.IOException, E {}\n").Methods[0]
@@ -250,16 +250,17 @@ func TestMember(t *testing.T) {
 		t.Run("lowers a native method as not abstract", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, memberClass(t, "    native void f();\n").Methods[0].Abstract, "the platform's body")
+			assert.False(t, memberClass(t, "    native void f();\n").Methods[0].Abstract,
+				"the platform supplies the body")
 		})
 
-		t.Run("attaches a method's carriers to the method", func(t *testing.T) {
+		t.Run("attaches the carriers of a method to the method", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, pkgClause+"public class A {\n    "+carrierLine+"    void f() {}\n}\n")
 			assert.Length(t, gb.Attachments(), 1, "one directive")
 			_, onMethod := gb.Attachments()[0].Subject.(*node.Method)
-			assert.True(t, onMethod, "on the method")
+			assert.True(t, onMethod, "the subject is the method")
 		})
 
 		t.Run("lowers a method without an access modifier as package-visible", func(t *testing.T) {
@@ -276,41 +277,41 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, m.Annotations, symbol.Annotations{{Name: "Override"}}, "the annotation")
 		})
 
-		t.Run("lowers an interface's method without a body as abstract", func(t *testing.T) {
+		t.Run("lowers a method of an interface without a body as abstract", func(t *testing.T) {
 			t.Parallel()
 
 			assert.True(t, memberIface(t, "    void m();\n").Methods[0].Abstract, "the implementation supplies it")
 		})
 
-		t.Run("lowers an interface's method without an access modifier as public", func(t *testing.T) {
+		t.Run("lowers a method of an interface without an access modifier as public", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, memberIface(t, "    void m();\n").Methods[0].Visibility, symbol.VisibilityPublic,
-				"an interface's member")
+				"a member of an interface")
 		})
 
-		t.Run("lowers an interface's default method as having a default", func(t *testing.T) {
+		t.Run("lowers a default method of an interface with a default", func(t *testing.T) {
 			t.Parallel()
 
 			assert.True(t, memberIface(t, "    default int d() { return 0; }\n").Methods[0].HasDefault,
 				"an implementation inherits the body")
 		})
 
-		t.Run("lowers an interface's default method as not abstract", func(t *testing.T) {
+		t.Run("lowers a default method of an interface as not abstract", func(t *testing.T) {
 			t.Parallel()
 
 			assert.False(t, memberIface(t, "    default int d() { return 0; }\n").Methods[0].Abstract,
 				"the method has a body")
 		})
 
-		t.Run("lowers an interface's static method without a default", func(t *testing.T) {
+		t.Run("lowers a static method of an interface without a default", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberIface(t, "    static int s() { return 0; }\n").Methods[0]
 			assert.False(t, m.HasDefault, "an implementation inherits no static method")
 		})
 
-		t.Run("lowers an interface's private method as private", func(t *testing.T) {
+		t.Run("lowers a private method of an interface as private", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberIface(t, "    private int p() { return 0; }\n").Methods[0]
@@ -332,22 +333,22 @@ func TestMember(t *testing.T) {
 		t.Run("lowers a constructor as a method that constructs", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, memberClass(t, "    A() {}\n").Methods[0].Constructs, "constructs an A")
+			assert.True(t, memberClass(t, "    A() {}\n").Methods[0].Constructs, "the method constructs an A")
 		})
 
 		t.Run("names a constructor after its class", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, memberClass(t, "    A() {}\n").Methods[0].Name, "A", "the class's name")
+			assert.Equal(t, memberClass(t, "    A() {}\n").Methods[0].Name, "A", "the name of the class")
 		})
 
-		t.Run("lowers a constructor's parameters", func(t *testing.T) {
+		t.Run("lowers the parameters of a constructor", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, paramNames(memberClass(t, "    A(int a) {}\n").Methods[0].Params), []string{"a"}, "a")
 		})
 
-		t.Run("lowers a constructor's type parameters", func(t *testing.T) {
+		t.Run("lowers the type parameters of a constructor", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Length(t, memberClass(t, "    <T> A(T t) {}\n").Methods[0].TypeParams, 1, "T")
@@ -360,23 +361,23 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, m.Annotations, symbol.Annotations{{Name: "Deprecated"}}, "the annotation")
 		})
 
-		t.Run("attaches a constructor's carriers to its method", func(t *testing.T) {
+		t.Run("attaches the carriers of a constructor to its method", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, pkgClause+"public class A {\n    "+carrierLine+"    A() {}\n}\n")
 			assert.Length(t, gb.Attachments(), 1, "one directive")
 			_, onMethod := gb.Attachments()[0].Subject.(*node.Method)
-			assert.True(t, onMethod, "on the constructor")
+			assert.True(t, onMethod, "the subject is the constructor")
 		})
 
-		t.Run("lowers the exceptions a constructor throws", func(t *testing.T) {
+		t.Run("lowers the exceptions that a constructor throws", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    A() throws Exception {}\n").Methods[0]
 			assert.Equal(t, spellingsOf(m.Throws), []string{"Exception"}, "the exception")
 		})
 
-		t.Run("lowers a constructor's access as its visibility", func(t *testing.T) {
+		t.Run("lowers the access of a constructor as its visibility", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    protected A() {}\n").Methods[0]
@@ -390,14 +391,14 @@ func TestMember(t *testing.T) {
 				"package access")
 		})
 
-		t.Run("lowers an enum's constructor without an access modifier as private", func(t *testing.T) {
+		t.Run("lowers the constructor of an enum without an access modifier as private", func(t *testing.T) {
 			t.Parallel()
 
 			e := enumOf(t, "public enum Color {\n    RED;\n    Color() {}\n}\n")
-			assert.Equal(t, e.Methods[0].Visibility, symbol.VisibilityPrivate, "an enum's constructor is private")
+			assert.Equal(t, e.Methods[0].Visibility, symbol.VisibilityPrivate, "the constructor of an enum is private")
 		})
 
-		t.Run("lowers a compact constructor with the record's components as its parameters", func(t *testing.T) {
+		t.Run("lowers a compact constructor with the components of the record as its parameters", func(t *testing.T) {
 			t.Parallel()
 
 			st := classOf(t, "public record Pt(int x, int y) {\n    public Pt {}\n}\n", "Pt")
@@ -415,25 +416,25 @@ func TestMember(t *testing.T) {
 	t.Run("element", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("lowers an annotation type's element as an abstract method", func(t *testing.T) {
+		t.Run("lowers the element of an annotation type as an abstract method", func(t *testing.T) {
 			t.Parallel()
 
 			assert.True(t, elementOf(t, "    int[] n();\n").Abstract, "an annotation states the value")
 		})
 
-		t.Run("lowers an annotation type's element as public", func(t *testing.T) {
+		t.Run("lowers the element of an annotation type as public", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, elementOf(t, "    int[] n();\n").Visibility, symbol.VisibilityPublic, "public")
 		})
 
-		t.Run("lowers an annotation type's element's type as its result", func(t *testing.T) {
+		t.Run("lowers the type of an element as its result", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, elementOf(t, "    int[] n();\n").Returns[0].Type.Form, symbol.FormList, "int[]")
 		})
 
-		t.Run("lowers an element's dimensions into its result", func(t *testing.T) {
+		t.Run("lowers the dimensions of an element into its result", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, elementOf(t, "    int n()[];\n").Returns[0].Type.Form, symbol.FormList, "int n()[]")
@@ -446,7 +447,7 @@ func TestMember(t *testing.T) {
 				symbol.Annotations{{Name: "Deprecated"}}, "the annotation")
 		})
 
-		t.Run("lowers an annotation type's element with a default as its method", func(t *testing.T) {
+		t.Run("lowers an element with a default as its method", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, elementOf(t, "    String value() default \"x\";\n").Name, "value", "the element")
@@ -463,35 +464,35 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, m.Params[0].Variadic, symbol.VariadicPositional, "varargs")
 		})
 
-		t.Run("lowers a variadic parameter's type as the element it collects", func(t *testing.T) {
+		t.Run("lowers the type of a variadic parameter as the element that it collects", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(String... xs) {}\n").Methods[0]
-			assert.Equal(t, m.Params[0].Type.Spelling, "String", "each argument's type")
+			assert.Equal(t, m.Params[0].Type.Spelling, "String", "the type of each argument")
 		})
 
-		t.Run("lowers a variadic parameter's type past its modifiers", func(t *testing.T) {
+		t.Run("lowers the type of a variadic parameter past its modifiers", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(final String... xs) {}\n").Methods[0]
-			assert.Equal(t, m.Params[0].Type.Spelling, "String", "final is no type")
+			assert.Equal(t, m.Params[0].Type.Spelling, "String", "final is not a type")
 		})
 
-		t.Run("lowers a variadic parameter's type past a comment", func(t *testing.T) {
+		t.Run("lowers the type of a variadic parameter past a comment", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(final /* names */ String... xs) {}\n").Methods[0]
-			assert.Equal(t, m.Params[0].Type.Spelling, "String", "the comment is no type")
+			assert.Equal(t, m.Params[0].Type.Spelling, "String", "the comment is not a type")
 		})
 
 		t.Run("names a variadic parameter", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, paramNames(memberClass(t, "    void f(int... xs) {}\n").Methods[0].Params),
-				[]string{"xs"}, "the declarator's name")
+				[]string{"xs"}, "the name of the declarator")
 		})
 
-		t.Run("lowers a parameter's dimensions into its type", func(t *testing.T) {
+		t.Run("lowers the dimensions of a parameter into its type", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(int a[]) {}\n").Methods[0]
@@ -502,14 +503,14 @@ func TestMember(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(A this, int n) {}\n").Methods[0]
-			assert.Equal(t, paramNames(m.Params), []string{"n"}, "the receiver is no parameter")
+			assert.Equal(t, paramNames(m.Params), []string{"n"}, "the receiver is not a parameter")
 		})
 
-		t.Run("lowers an explicit receiver's type", func(t *testing.T) {
+		t.Run("lowers the type of an explicit receiver", func(t *testing.T) {
 			t.Parallel()
 
 			m := memberClass(t, "    void f(A this) {}\n").Methods[0]
-			assert.Equal(t, m.Receiver.Type.Spelling, "A", "the receiver's class")
+			assert.Equal(t, m.Receiver.Type.Spelling, "A", "the class of the receiver")
 		})
 
 		t.Run("lowers an annotated explicit receiver apart from the parameters", func(t *testing.T) {
@@ -548,13 +549,13 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a parameter takes no carrier")
 		})
 
-		t.Run("names a parameter as the refused carrier's subject", func(t *testing.T) {
+		t.Run("describes a parameter as the subject of the carrier", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public class A {\n    void f(\n        "+carrierLine+
 				"        int n) {}\n}\n")
 			assert.NotEmpty(t, found, "the carrier reports")
-			assert.Contains(t, found[0].Msg, onParameter, "where the author put it")
+			assert.Contains(t, found[0].Msg, onParameter, "the finding states where the author put the carrier")
 		})
 	})
 
@@ -567,7 +568,7 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, classOf(t, "public class A<T> {}\n", "A").TypeParams[0].Name, "T", "T")
 		})
 
-		t.Run("lowers a type parameter's bounds", func(t *testing.T) {
+		t.Run("lowers the bounds of a type parameter", func(t *testing.T) {
 			t.Parallel()
 
 			tp := classOf(t, "public class A<T extends Comparable<T> & Cloneable> {}\n", "A").TypeParams[0]
@@ -588,14 +589,14 @@ func TestMember(t *testing.T) {
 			t.Parallel()
 
 			st := classOf(t, "public class A implements I /* and */, J {}\n", "A")
-			assert.Equal(t, spellingsOf(st.Implements), []string{"I", "J"}, "the comment is no interface")
+			assert.Equal(t, spellingsOf(st.Implements), []string{"I", "J"}, "the comment is not an interface")
 		})
 	})
 
 	t.Run("unmodeled", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports UnaddressedCarrier for a carrier on a type an enum declares", func(t *testing.T) {
+		t.Run("reports UnaddressedCarrier for a carrier on a type that an enum declares", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public enum Color {\n    RED;\n    "+carrierLine+
@@ -604,40 +605,42 @@ func TestMember(t *testing.T) {
 				"the type and its carrier")
 		})
 
-		t.Run("names a type an enum declares as the refused carrier's subject", func(t *testing.T) {
+		t.Run("describes a type that an enum declares as the subject of the carrier", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public enum Color {\n    RED;\n    "+carrierLine+
 				"    static class Nested {}\n}\n")
 			assert.Length(t, found, 2, "the type and its carrier")
-			assert.Contains(t, found[1].Msg, onEnumType, "where the author put it")
+			assert.Contains(t, found[1].Msg, onEnumType, "the finding states where the author put the carrier")
 		})
 
-		t.Run("passes the sweep over a type an enum declares", func(t *testing.T) {
+		t.Run("passes the sweep over a type that an enum declares", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, pkgClause+"public enum Color {\n    RED;\n    static class Nested {\n        "+
 				carrierLine+"        int n;\n    }\n}\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnmodeledItem}, "the carrier inside leaves with it")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnmodeledItem},
+				"the carrier inside leaves with the type")
 		})
 	})
 }
 
-// memberClass parses a public class A of a body and returns it.
+// memberClass parses a public class A with a body and returns the class.
 func memberClass(tb testing.TB, body string) *node.Struct {
 	tb.Helper()
 
 	return classOf(tb, "public class A {\n"+body+"}\n", "A")
 }
 
-// memberIface parses a public interface I of a body and returns it.
+// memberIface parses a public interface I with a body and returns the
+// interface.
 func memberIface(tb testing.TB, body string) *node.Interface {
 	tb.Helper()
 
 	return ifaceOf(tb, "public interface I {\n"+body+"}\n")
 }
 
-// elementOf parses a public annotation type Ann of a body and returns
+// elementOf parses a public annotation type Ann with a body and returns
 // its first method.
 func elementOf(tb testing.TB, body string) *node.Method {
 	tb.Helper()

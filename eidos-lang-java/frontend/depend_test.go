@@ -22,10 +22,11 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The fake ct.sym the round cases read: java.lang for release 8 and for
-// 9 to 25, java.util for 25 alone, java.sql for 11 to 25, a module's
-// declaration, and a file beside the release directories, one inside a
-// release directory and one inside a package directory.
+// The entries of the fake ct.sym that the round cases read: java.lang for
+// release 8 and for 9 to 25, java.util for 25 alone, java.sql for 11 to
+// 25, the declaration of a module, and three files that are not class
+// files: one beside the release directories, one inside a release
+// directory and one inside a package directory.
 const (
 	lang8       = "8/java.base/java/lang/Object.sig"
 	lang9To25   = "9ABCDEFGHIJKLMNOP/java.base/java/lang/Object.sig"
@@ -51,9 +52,9 @@ const (
 	langYZ = "YZ/java.base/java/lang/Object.sig"
 )
 
-// The classpath library the round cases place: its coordinates, its
+// The classpath library that the round cases place: its coordinates, its
 // paths in the Maven and the Gradle store, the bytes of its JAR, and an
-// entry of its Gradle directory that is no digest's directory.
+// entry of its Gradle directory that is not the directory of a digest.
 const (
 	libCoordinate = "com.acme:lib:1.0"
 	mavenJAR      = "com/acme/lib/1.0/lib-1.0.jar"
@@ -64,9 +65,9 @@ const (
 	gradleNotes   = "!notes.txt"
 )
 
-// The releases the round cases name: one ct.sym does not list, one older
-// than any ct.sym names, the newest and the oldest that a letter names,
-// and the ones past the letters.
+// The releases of the round cases: one that ct.sym does not list, one
+// older than any release that ct.sym names, the newest and the oldest
+// release that a letter names, and one past the letters.
 const (
 	unlisted  = 26
 	tooOld    = 7
@@ -77,31 +78,31 @@ const (
 	pastLast  = 36
 )
 
-// The needs the placement reports name: a class of the classpath JAR's
-// package, a package a multi-release JAR has under version 21 alone, and
-// that package's class entry.
+// The needs of the placement reports: a class in the package of the
+// classpath JAR, a package that a multi-release JAR has under version 21
+// alone, and the class entry of that package.
 const (
 	boxNeed   = libPackage + "/" + boxClass
 	lateNeed  = "com/acme/late"
 	lateEntry = "META-INF/versions/21/" + lateNeed + "/Late.class"
 )
 
-// The reasons a round reports a need placed nowhere with: the JDK store
-// provided, and not.
+// The reasons with which a round reports a need as placed nowhere, with
+// the JDK store provided and without it.
 const (
 	noPackageReason = "neither the " + frontend.JDKStore + " store nor a classpath library has its package"
 	noJDKReason     = "the load provides no " + frontend.JDKStore + " store, and no classpath library has its package"
 )
 
-// The texts of the errors a round returns, as each refusal case expects
+// The texts of the errors that a round returns, as each error case expects
 // them.
 const (
-	malformedText  = "is no group:artifact:version"
+	malformedText  = "is not group:artifact:version"
 	neitherText    = "neither the m2 store nor the gradle store"
 	noRecordText   = "has no SHA-1 record"
 	emptyRecord    = `records ""`
 	otherRecord    = "records"
-	otherDirText   = "its directory names"
+	otherDirText   = "the name of its directory is"
 	noReleasesText = "ct.sym lists no release"
 )
 
@@ -111,33 +112,34 @@ type storeTree struct {
 	stores map[string]fs.FS
 }
 
-// Store returns one of the tree's stores.
+// Store returns one store of the tree.
 func (t storeTree) Store(name string) (fs.FS, bool) {
 	s, provided := t.stores[name]
 	return s, provided
 }
 
-// roundReader is a dependency round's door over a test workspace and its
-// stores.
+// roundReader is the door of a dependency round over a test workspace and
+// its stores.
 type roundReader struct {
 	tree storeTree
 }
 
-// Read returns one file's bytes, from the workspace or a store.
+// Read returns the bytes of one file from the workspace or a store.
 func (r roundReader) Read(p string) ([]byte, error) { return plugin.ReadFile(r.tree, p) }
 
-// ReadDir returns one directory's entries, from the workspace or a
+// ReadDir returns the entries of one directory from the workspace or a
 // store.
 func (r roundReader) ReadDir(p string) ([]fs.DirEntry, error) { return plugin.ReadDir(r.tree, p) }
 
-// failingFS is a store whose one path fails to open with an error that
-// is not a missing file's.
+// failingFS is a store in which one path fails to open with an error that
+// differs from the error of a missing file.
 type failingFS struct {
 	fs.FS
 	fail string
 }
 
-// Open opens a path of the store, and fails for the failing one.
+// Open opens a path of the store, and returns errBroken for the failing
+// path.
 func (f failingFS) Open(name string) (fs.File, error) {
 	if name == f.fail {
 		return nil, errBroken
@@ -145,12 +147,12 @@ func (f failingFS) Open(name string) (fs.File, error) {
 	return f.FS.Open(name)
 }
 
-// errBroken is the error a failing store's path fails with.
+// errBroken is the error of the failing path of a failing store.
 var errBroken = errors.New("broken store")
 
-// The dependency round places the JDK packages the needs name and the
-// classpath's libraries, so each source, each refusal and the
-// placements that yield nothing are pinned over fixture stores.
+// The dependency round places the JDK packages of the needs and the
+// libraries of the classpath. The cases pin each source, each error and
+// each placement that yields nothing over fixture stores.
 func TestDepend(t *testing.T) {
 	t.Parallel()
 
@@ -160,7 +162,8 @@ func TestDepend(t *testing.T) {
 		t.Run("returns java/lang in the first round", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, placed(t, nil, jdkStores(), 1), [][]string{{inJDK(lang9To25)}}, "the newest release's")
+			assert.Equal(t, placed(t, nil, jdkStores(), 1), [][]string{{inJDK(lang9To25)}},
+				"the unit of the newest release")
 		})
 
 		t.Run("returns no java/lang after the first round", func(t *testing.T) {
@@ -169,54 +172,54 @@ func TestDepend(t *testing.T) {
 			assert.Empty(t, placed(t, nil, jdkStores(), 2), "the first round loaded it")
 		})
 
-		t.Run("returns the JDK package a need names", func(t *testing.T) {
+		t.Run("returns the JDK package of a need", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, placed(t, nil, jdkStores(), 2, utilPackage), [][]string{{inJDK(utilList), inJDK(utilMap)}},
-				"its class files in path order, and no file that is no class file")
+				"its class files in path order, and no file that is not a class file")
 		})
 
-		t.Run("returns the package of the class a need names", func(t *testing.T) {
+		t.Run("returns the package of the class of a need", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, placed(t, nil, jdkStores(), 2, mapNeed), [][]string{{inJDK(utilList), inJDK(utilMap)}},
 				"a static import names Map")
 		})
 
-		t.Run("returns a package once for two needs that name it", func(t *testing.T) {
+		t.Run("returns a package once for two needs of the package", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Length(t, placed(t, nil, jdkStores(), 2, utilPackage, mapNeed), 1, "java/util once")
 		})
 
-		t.Run("returns no unit for a need ct.sym has no package for", func(t *testing.T) {
+		t.Run("returns no unit for a need whose package ct.sym does not have", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, placed(t, nil, jdkStores(), 2, appNeed), "a package of no library")
 		})
 
-		t.Run("returns the units of the release the options name", func(t *testing.T) {
+		t.Run("returns the units of the release of the options", func(t *testing.T) {
 			t.Parallel()
 
 			got := placed(t, &frontend.Options{Release: release11}, jdkStores(), 1, utilPackage, sqlPackage)
-			assert.Equal(t, got, [][]string{{inJDK(lang9To25)}, {inJDK(sqlConn)}}, "java/util is 25's alone")
+			assert.Equal(t, got, [][]string{{inJDK(lang9To25)}, {inJDK(sqlConn)}}, "java/util is in release 25 alone")
 		})
 
-		t.Run("returns release 8's units for release 8", func(t *testing.T) {
+		t.Run("returns the units of release 8 for release 8", func(t *testing.T) {
 			t.Parallel()
 
 			got := placed(t, &frontend.Options{Release: release8}, jdkStores(), 1)
 			assert.Equal(t, got, [][]string{{inJDK(lang8)}}, "the digit names release 8")
 		})
 
-		t.Run("returns release 10's units past a file whose name has its letter", func(t *testing.T) {
+		t.Run("returns the units of release 10 past a file whose name contains its letter", func(t *testing.T) {
 			t.Parallel()
 
 			got := placed(t, &frontend.Options{Release: release10}, jdkStores(), 1)
-			assert.Equal(t, got, [][]string{{inJDK(lang9To25)}}, "A names release 10, and README is no directory")
+			assert.Equal(t, got, [][]string{{inJDK(lang9To25)}}, "A names release 10, and README is not a directory")
 		})
 
-		t.Run("returns the newest release's units for the newest release", func(t *testing.T) {
+		t.Run("returns the units of the newest release for the newest release", func(t *testing.T) {
 			t.Parallel()
 
 			got := placed(t, &frontend.Options{Release: release25}, jdkStores(), 1)
@@ -229,15 +232,15 @@ func TestDepend(t *testing.T) {
 			want  string
 		}{
 			{
-				name:  "returns release 9's units for release 0 of a ct.sym that lists 9 last",
+				name:  "returns the units of release 9 for release 0 of a ct.sym that lists 9 last",
 				store: fstest.MapFS{lang8: {}, lang89: {}}, want: lang89,
 			},
 			{
-				name:  "returns release 10's units for release 0 of a ct.sym that lists 10 last",
+				name:  "returns the units of release 10 for release 0 of a ct.sym that lists 10 last",
 				store: fstest.MapFS{lang89: {}, langA: {}}, want: langA,
 			},
 			{
-				name:  "returns release 35's units for release 0 of a ct.sym that lists 35 last",
+				name:  "returns the units of release 35 for release 0 of a ct.sym that lists 35 last",
 				store: fstest.MapFS{langY: {}, langYZ: {}}, want: langYZ,
 			},
 		}
@@ -246,11 +249,11 @@ func TestDepend(t *testing.T) {
 				t.Parallel()
 
 				got := placed(t, nil, map[string]fs.FS{frontend.JDKStore: tt.store}, 1)
-				assert.Equal(t, got, [][]string{{inJDK(tt.want)}}, "the newest release, digits before letters")
+				assert.Equal(t, got, [][]string{{inJDK(tt.want)}}, "the newest release, with digits before letters")
 			})
 		}
 
-		t.Run("returns release 35's units for release 35", func(t *testing.T) {
+		t.Run("returns the units of release 35 for release 35", func(t *testing.T) {
 			t.Parallel()
 
 			got := placed(t, &frontend.Options{Release: newest}, map[string]fs.FS{
@@ -259,33 +262,36 @@ func TestDepend(t *testing.T) {
 			assert.Equal(t, got, [][]string{{inJDK(langYZ)}}, "Z names release 35")
 		})
 
-		t.Run("returns a library's JAR from the Maven store with its SHA-1 record shared", func(t *testing.T) {
-			t.Parallel()
+		t.Run("returns the JAR of a library from the Maven store with its SHA-1 record as a shared input",
+			func(t *testing.T) {
+				t.Parallel()
 
-			stores := map[string]fs.FS{frontend.MavenStore: mavenStore(sha1Hex(jarBytes))}
-			units := rounds(t, &frontend.Options{Classpath: []string{libCoordinate}}, stores, 1)
-			assert.Equal(t, units, [][]plugin.SourceRef{{{
-				Path: inMaven(mavenJAR), Shared: []string{inMaven(mavenRecord)},
-			}}}, "the JAR and its record")
-		})
+				stores := map[string]fs.FS{frontend.MavenStore: mavenStore(sha1Hex(jarBytes))}
+				units := rounds(t, &frontend.Options{Classpath: []string{libCoordinate}}, stores, 1)
+				assert.Equal(t, units, [][]plugin.SourceRef{{{
+					Path: inMaven(mavenJAR), Shared: []string{inMaven(mavenRecord)},
+				}}}, "the JAR and its record")
+			})
 
-		t.Run("returns a library's JAR whose SHA-1 record states the digest in upper case", func(t *testing.T) {
+		t.Run("returns the JAR of a library whose SHA-1 record contains the digest in upper case", func(t *testing.T) {
 			t.Parallel()
 
 			stores := map[string]fs.FS{frontend.MavenStore: mavenStore(strings.ToUpper(sha1Hex(jarBytes)))}
 			got := placed(t, &frontend.Options{Classpath: []string{libCoordinate}}, stores, 1)
-			assert.Equal(t, got, [][]string{{inMaven(mavenJAR)}}, "hexadecimal digits compare without case")
+			assert.Equal(t, got, [][]string{{inMaven(mavenJAR)}}, "hexadecimal digits compare without regard to case")
 		})
 
-		t.Run("returns a library's JAR from the Gradle store where the Maven store lacks it", func(t *testing.T) {
-			t.Parallel()
+		t.Run("returns the JAR of a library from the Gradle store where the Maven store does not have it",
+			func(t *testing.T) {
+				t.Parallel()
 
-			stores := map[string]fs.FS{frontend.GradleStore: gradleStore(jarBytes, sha1Hex(jarBytes))}
-			got := placed(t, &frontend.Options{Classpath: []string{libCoordinate}}, stores, 1)
-			assert.Equal(t, got, [][]string{{inGradle(sha1Hex(jarBytes))}}, "the JAR in its digest's directory")
-		})
+				stores := map[string]fs.FS{frontend.GradleStore: gradleStore(jarBytes, sha1Hex(jarBytes))}
+				got := placed(t, &frontend.Options{Classpath: []string{libCoordinate}}, stores, 1)
+				assert.Equal(t, got, [][]string{{inGradle(sha1Hex(jarBytes))}},
+					"the JAR in the directory of its digest")
+			})
 
-		t.Run("returns a Gradle JAR whose directory drops its digest's leading zeros", func(t *testing.T) {
+		t.Run("returns a Gradle JAR in a directory without the leading zeros of its digest", func(t *testing.T) {
 			t.Parallel()
 
 			data := zeroLedJAR()
@@ -296,14 +302,14 @@ func TestDepend(t *testing.T) {
 			assert.Equal(t, got, [][]string{{inGradle(dir)}}, "Gradle drops the zeros from the name")
 		})
 
-		t.Run("returns a Gradle JAR whose directory keeps its digest's leading zeros", func(t *testing.T) {
+		t.Run("returns a Gradle JAR in a directory with the leading zeros of its digest", func(t *testing.T) {
 			t.Parallel()
 
 			data := zeroLedJAR()
 			got := placed(t, &frontend.Options{Classpath: []string{libCoordinate}}, map[string]fs.FS{
 				frontend.GradleStore: gradleStore(data, sha1Hex(data)),
 			}, 1)
-			assert.Equal(t, got, [][]string{{inGradle(sha1Hex(data))}}, "the full digest names it as well")
+			assert.Equal(t, got, [][]string{{inGradle(sha1Hex(data))}}, "the full digest is a valid name as well")
 		})
 
 		t.Run("returns no JDK unit for a load without the JDK store", func(t *testing.T) {
@@ -327,11 +333,11 @@ func TestDepend(t *testing.T) {
 				opts: &frontend.Options{Classpath: []string{"com.acme::1.0"}}, stores: jdkStores(), want: malformedText,
 			},
 			{
-				name: "returns an error for a library neither store has",
+				name: "returns an error for a library that neither store has",
 				opts: &frontend.Options{Classpath: []string{libCoordinate}}, stores: jdkStores(), want: neitherText,
 			},
 			{
-				name: "returns an error for a library whose Gradle directory neither store has",
+				name: "returns an error for a library whose Gradle directory is missing",
 				opts: &frontend.Options{Classpath: []string{libCoordinate}},
 				stores: map[string]fs.FS{frontend.GradleStore: fstest.MapFS{
 					"org/other/1.0/0000/other-1.0.jar": {},
@@ -339,7 +345,7 @@ func TestDepend(t *testing.T) {
 				want: neitherText,
 			},
 			{
-				name:   "returns an error for a Maven JAR whose record states another digest",
+				name:   "returns an error for a Maven JAR whose record contains another digest",
 				opts:   &frontend.Options{Classpath: []string{libCoordinate}},
 				stores: map[string]fs.FS{frontend.MavenStore: mavenStore(sha1Hex("other"))}, want: otherRecord,
 			},
@@ -360,7 +366,7 @@ func TestDepend(t *testing.T) {
 				want: noRecordText,
 			},
 			{
-				name:   "returns an error for a Gradle JAR whose directory names another digest",
+				name:   "returns an error for a Gradle JAR in the directory of another digest",
 				opts:   &frontend.Options{Classpath: []string{libCoordinate}},
 				stores: map[string]fs.FS{frontend.GradleStore: gradleStore(jarBytes, sha1Hex("other"))},
 				want:   otherDirText,
@@ -374,26 +380,27 @@ func TestDepend(t *testing.T) {
 				want: neitherText,
 			},
 			{
-				name: "returns an error for a release ct.sym does not list", opts: &frontend.Options{Release: unlisted},
-				stores: jdkStores(), want: fmt.Sprintf("lists no release %d", unlisted),
+				name: "returns an error for a release that ct.sym does not list",
+				opts: &frontend.Options{Release: unlisted}, stores: jdkStores(),
+				want: fmt.Sprintf("lists no release %d", unlisted),
 			},
 			{
-				name: "returns an error for a release past the newest ct.sym lists",
+				name: "returns an error for a release past the newest release that ct.sym lists",
 				opts: &frontend.Options{Release: newest}, stores: jdkStores(),
 				want: fmt.Sprintf("lists no release %d", newest),
 			},
 			{
-				name: "returns an error for a release older than ct.sym can name",
+				name: "returns an error for a release older than the oldest release that ct.sym can name",
 				opts: &frontend.Options{Release: tooOld}, stores: jdkStores(),
 				want: fmt.Sprintf("names no release %d", tooOld),
 			},
 			{
-				name: "returns an error for a release newer than ct.sym can name",
+				name: "returns an error for a release newer than the newest release that ct.sym can name",
 				opts: &frontend.Options{Release: pastLast}, stores: jdkStores(),
 				want: fmt.Sprintf("names no release %d", pastLast),
 			},
 			{
-				name: "returns an error for a ct.sym that lists no release", stores: map[string]fs.FS{
+				name: "returns an error for a ct.sym that does not list a release", stores: map[string]fs.FS{
 					frontend.JDKStore: fstest.MapFS{rootFile: {}},
 				},
 				want: noReleasesText,
@@ -405,7 +412,7 @@ func TestDepend(t *testing.T) {
 
 				_, err := runRound(t, tt.opts, tt.stores, 1)
 				assert.HasError(t, err, "the round fails")
-				assert.Contains(t, err.Error(), tt.want, "for its own reason")
+				assert.Contains(t, err.Error(), tt.want, "the error states its own reason")
 			})
 		}
 
@@ -415,34 +422,34 @@ func TestDepend(t *testing.T) {
 			stores map[string]fs.FS
 		}{
 			{
-				name:   "returns the store's error for a Maven JAR that does not read",
+				name:   "returns the error of the store for a Maven JAR that does not read",
 				opts:   &frontend.Options{Classpath: []string{libCoordinate}},
 				stores: map[string]fs.FS{frontend.MavenStore: failingFS{mavenStore(sha1Hex(jarBytes)), mavenJAR}},
 			},
 			{
-				name: "returns the store's error for a Gradle directory that does not list",
+				name: "returns the error of the store for a Gradle directory that does not list",
 				opts: &frontend.Options{Classpath: []string{libCoordinate}},
 				stores: map[string]fs.FS{frontend.GradleStore: failingFS{
 					gradleStore(jarBytes, sha1Hex(jarBytes)), gradleVersion,
 				}},
 			},
 			{
-				name: "returns the store's error for a Gradle JAR that does not read",
+				name: "returns the error of the store for a Gradle JAR that does not read",
 				opts: &frontend.Options{Classpath: []string{libCoordinate}},
 				stores: map[string]fs.FS{frontend.GradleStore: failingFS{
 					gradleStore(jarBytes, sha1Hex(jarBytes)), path.Join(gradleVersion, sha1Hex(jarBytes), jarName),
 				}},
 			},
 			{
-				name:   "returns the store's error for a ct.sym whose root does not list",
+				name:   "returns the error of the store for a ct.sym whose root does not list",
 				stores: map[string]fs.FS{frontend.JDKStore: failingFS{jdkStore(), "."}},
 			},
 			{
-				name:   "returns the store's error for a release directory that does not list",
+				name:   "returns the error of the store for a release directory that does not list",
 				stores: map[string]fs.FS{frontend.JDKStore: failingFS{jdkStore(), "P"}},
 			},
 			{
-				name:   "returns the store's error for a package directory that does not list",
+				name:   "returns the error of the store for a package directory that does not list",
 				stores: map[string]fs.FS{frontend.JDKStore: failingFS{jdkStore(), "P/java.base/java"}},
 			},
 		}
@@ -451,11 +458,11 @@ func TestDepend(t *testing.T) {
 				t.Parallel()
 
 				_, err := runRound(t, tt.opts, tt.stores, 1)
-				assert.ErrorIs(t, err, errBroken, "the store's own failure")
+				assert.ErrorIs(t, err, errBroken, "the round returns the failure of the store")
 			})
 		}
 
-		t.Run("skips a Gradle entry that is no directory", func(t *testing.T) {
+		t.Run("skips a Gradle entry that is not a directory", func(t *testing.T) {
 			t.Parallel()
 
 			cache := t.TempDir()
@@ -465,7 +472,7 @@ func TestDepend(t *testing.T) {
 				frontend.GradleStore: os.DirFS(cache),
 			}, 1)
 			assert.Equal(t, got, [][]string{{inGradle(sha1Hex(jarBytes))}},
-				"a file contains no JAR, and reads as no directory")
+				"a file contains no JAR and does not read as a directory")
 		})
 
 		t.Run("skips a Gradle digest directory without the JAR", func(t *testing.T) {
@@ -476,10 +483,10 @@ func TestDepend(t *testing.T) {
 			got := placed(t, &frontend.Options{Classpath: []string{libCoordinate}}, map[string]fs.FS{
 				frontend.GradleStore: store,
 			}, 1)
-			assert.Equal(t, got, [][]string{{inGradle(sha1Hex(jarBytes))}}, "the directory of the POM is passed")
+			assert.Equal(t, got, [][]string{{inGradle(sha1Hex(jarBytes))}}, "the round passes the directory of the POM")
 		})
 
-		t.Run("returns the context's error for a done context", func(t *testing.T) {
+		t.Run("returns the error of the context for a done context", func(t *testing.T) {
 			t.Parallel()
 
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
@@ -500,18 +507,19 @@ func TestDepend(t *testing.T) {
 			want   []plugin.Unplaced
 		}{
 			{
-				name: "reports a need neither ct.sym nor a classpath library has placed nowhere", stores: jdkStores(),
-				number: 2, need: appNeed, want: []plugin.Unplaced{{Path: appNeed, Reason: noPackageReason}},
+				name:   "reports a need as placed nowhere where neither ct.sym nor a classpath library has its package",
+				stores: jdkStores(), number: 2, need: appNeed,
+				want: []plugin.Unplaced{{Path: appNeed, Reason: noPackageReason}},
 			},
 			{
-				name: "reports a need placed nowhere for a load without the JDK store", stores: map[string]fs.FS{},
+				name: "reports a need as placed nowhere for a load without the JDK store", stores: map[string]fs.FS{},
 				number: 1, need: utilPackage, want: []plugin.Unplaced{{Path: utilPackage, Reason: noJDKReason}},
 			},
 			{
 				name: "reports nothing for a need of a JDK class", stores: jdkStores(), number: 2, need: mapNeed,
 			},
 			{
-				name: "reports nothing for a need of a classpath library's package",
+				name: "reports nothing for a need of the package of a classpath library",
 				opts: &frontend.Options{Classpath: []string{libCoordinate}}, stores: libStores(t, mustRead(t, libJAR)),
 				number: 1, need: libPackage,
 			},
@@ -521,17 +529,17 @@ func TestDepend(t *testing.T) {
 				number: 1, need: boxNeed,
 			},
 			{
-				name: "reports a need placed nowhere where the classpath JAR does not open",
+				name: "reports a need as placed nowhere where the classpath JAR does not open",
 				opts: &frontend.Options{Classpath: []string{libCoordinate}}, stores: libStores(t, []byte(jarBytes)),
 				number: 1, need: libPackage, want: []plugin.Unplaced{{Path: libPackage, Reason: noPackageReason}},
 			},
 			{
-				name:   "reports nothing for a need of a multi-release JAR's versioned package",
+				name:   "reports nothing for a need of a versioned package of a multi-release JAR",
 				opts:   &frontend.Options{Classpath: []string{libCoordinate}, Release: release21},
 				stores: libStores(t, lateJAR), number: 1, need: lateNeed,
 			},
 			{
-				name:   "reports a need of a versioned package placed nowhere for an older release",
+				name:   "reports a need of a versioned package as placed nowhere for an older release",
 				opts:   &frontend.Options{Classpath: []string{libCoordinate}, Release: release17},
 				stores: libStores(t, lateJAR), number: 1, need: lateNeed,
 				want: []plugin.Unplaced{{Path: lateNeed, Reason: noPackageReason}},
@@ -546,14 +554,14 @@ func TestDepend(t *testing.T) {
 				_, err := dependent.Dependencies(t.Context(), round,
 					roundReader{storeTree{fstest.MapFS{}, tt.stores}})
 				assert.NoError(t, err, "the round places what it can")
-				assert.Equal(t, round.Unplaced(), tt.want, "the needs the round reports and why")
+				assert.Equal(t, round.Unplaced(), tt.want, "the round reports the expected needs with their reasons")
 			})
 		}
 	})
 }
 
-// libStores returns the fake ct.sym beside a Maven store with the
-// library's JAR of some bytes and their SHA-1 record.
+// libStores returns the fake ct.sym beside a Maven store that contains the
+// JAR of the library with the given bytes and their SHA-1 record.
 func libStores(tb testing.TB, data []byte) map[string]fs.FS {
 	tb.Helper()
 
@@ -576,8 +584,9 @@ func jdkStore() fstest.MapFS {
 // jdkStores returns the stores of a load with the fake ct.sym alone.
 func jdkStores() map[string]fs.FS { return map[string]fs.FS{frontend.JDKStore: jdkStore()} }
 
-// mavenStore returns a Maven store with the library's JAR, beside a
-// record of a digest and the JAR's name, as Maven writes it.
+// mavenStore returns a Maven store with the JAR of the library, beside a
+// record of a digest and the name of the JAR in the form that Maven
+// writes.
 func mavenStore(record string) fstest.MapFS {
 	return fstest.MapFS{
 		mavenJAR:    {Data: []byte(jarBytes)},
@@ -585,14 +594,14 @@ func mavenStore(record string) fstest.MapFS {
 	}
 }
 
-// gradleStore returns a Gradle store with the library's JAR of some
-// bytes in a directory of a name.
+// gradleStore returns a Gradle store with the JAR of the library, with the
+// given bytes, in the given directory.
 func gradleStore(data, dir string) fstest.MapFS {
 	return fstest.MapFS{path.Join(gradleVersion, dir, jarName): {Data: []byte(data)}}
 }
 
 // zeroLedJAR returns the first bytes of the form "jar N" whose SHA-1
-// digest opens with a zero.
+// digest starts with a zero.
 func zeroLedJAR() string {
 	for n := 0; ; n++ {
 		if data := fmt.Sprintf("%s %d", jarBytes, n); strings.HasPrefix(sha1Hex(data), "0") {
@@ -607,9 +616,9 @@ func sha1Hex(data string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// runRound runs a round of a number through a Java frontend of options,
-// over an empty workspace and stores, for the needs given, under the
-// test's context.
+// runRound runs a round of a number through a Java frontend with options,
+// over an empty workspace and stores, for the given needs, under the
+// context of the test.
 func runRound(
 	tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
 ) ([][]plugin.SourceRef, error) {
@@ -623,8 +632,7 @@ func runRound(
 	return dependent.Dependencies(tb.Context(), round, roundReader{storeTree{fstest.MapFS{}, stores}})
 }
 
-// rounds runs a round that the case states succeeds and returns its
-// units.
+// rounds runs a round that succeeds in the case and returns its units.
 func rounds(
 	tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
 ) [][]plugin.SourceRef {
@@ -635,8 +643,8 @@ func rounds(
 	return units
 }
 
-// placed runs a round that the case states succeeds and returns the
-// member paths of each unit.
+// placed runs a round that succeeds in the case and returns the member
+// paths of each unit.
 func placed(tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string) [][]string {
 	tb.Helper()
 
@@ -652,14 +660,14 @@ func placed(tb testing.TB, opts *frontend.Options, stores map[string]fs.FS, numb
 	return out
 }
 
-// inJDK returns the qualified path of a ct.sym entry.
+// inJDK returns the qualified path of an entry of ct.sym.
 func inJDK(p string) string { return plugin.StorePath(frontend.JDKStore, p) }
 
-// inMaven returns the qualified path of a Maven store file.
+// inMaven returns the qualified path of a file of the Maven store.
 func inMaven(p string) string { return plugin.StorePath(frontend.MavenStore, p) }
 
-// inGradle returns the qualified path of the library's JAR in a Gradle
-// digest directory.
+// inGradle returns the qualified path of the JAR of the library in a
+// digest directory of the Gradle store.
 func inGradle(dir string) string {
 	return plugin.StorePath(frontend.GradleStore, path.Join(gradleVersion, dir, jarName))
 }

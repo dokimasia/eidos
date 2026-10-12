@@ -59,8 +59,8 @@ func TestTemplates(t *testing.T) {
 				&emit.Field{Name: "count", Type: ref("int"), Comment: "rows per call"},
 			)
 			s.Methods.Append(&emit.Method{
-				Name: "load", Params: []*emit.Param{{Name: "key", Type: ref("String")}},
-				Returns: []*emit.Return{{Type: ref(rowName)}},
+				Name: "load", Params: emit.SlotOf(&emit.Param{Name: "key", Type: ref("String")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"/**\n * Row is one record.\n */\n"+
@@ -90,8 +90,8 @@ func TestTemplates(t *testing.T) {
 			i := &emit.Interface{Name: "Store", Comment: "read side"}
 			i.Methods.Append(&emit.Method{
 				Name: "get", Comment: "by key",
-				Params:  []*emit.Param{{Name: "key", Type: ref("String"), Comment: "the row key"}},
-				Returns: []*emit.Return{{Type: ref("String"), Comment: "the row"}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("String"), Comment: "the row key"}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("String"), Comment: "the row"}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"public interface Store {\n"+
@@ -142,8 +142,8 @@ func TestTemplates(t *testing.T) {
 			s.Methods.Append(&emit.Method{
 				Name:       "map",
 				TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
-				Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
-				Returns:    []*emit.Return{{Type: ref("U")}},
+				Params:     emit.SlotOf(&emit.Param{Name: "item", Type: ref("U")}),
+				Returns:    emit.SlotOf(&emit.Return{Type: ref("U")}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"public class Box<T> {\n"+
@@ -161,8 +161,8 @@ func TestTemplates(t *testing.T) {
 				TypeParams: []*emit.TypeParam{{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}}},
 			}
 			i.Methods.Append(&emit.Method{
-				Name: "pick", Params: []*emit.Param{{Name: "key", Type: ref("K")}},
-				Returns: []*emit.Return{{Type: ref("K")}},
+				Name: "pick", Params: emit.SlotOf(&emit.Param{Name: "key", Type: ref("K")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("K")}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"public interface Keyed<K extends Codec> {\n    K pick(K key);\n}\n", "members referencing it")
@@ -192,7 +192,7 @@ func TestTemplates(t *testing.T) {
 
 			s := &emit.Struct{Name: rowName}
 			s.Methods.Append(&emit.Method{
-				Name: "load", Returns: []*emit.Return{{Type: ref(rowName)}},
+				Name: "load", Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 				Throws: []*emit.TypeRef{ref("IOException")},
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
@@ -205,7 +205,7 @@ func TestTemplates(t *testing.T) {
 
 			i := &emit.Interface{Name: "Store", Extends: []*emit.TypeRef{ref("Keyed")}}
 			i.Methods.Append(&emit.Method{
-				Name: "load", Returns: []*emit.Return{{Type: ref(rowName)}},
+				Name: "load", Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 				Throws: []*emit.TypeRef{ref("IOException")},
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
@@ -222,8 +222,8 @@ func TestTemplates(t *testing.T) {
 				Type: ref("int"), Value: "8",
 			})
 			s.Methods.Append(
-				&emit.Method{Name: "load", Override: true, Returns: []*emit.Return{{Type: ref(rowName)}}},
-				&emit.Method{Name: "pick", Abstract: true, Returns: []*emit.Return{{Type: ref(rowName)}}},
+				&emit.Method{Name: "load", Override: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})},
+				&emit.Method{Name: "pick", Abstract: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})},
 			)
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"@Entity\n"+
@@ -243,7 +243,7 @@ func TestTemplates(t *testing.T) {
 			i.Methods.Append(
 				&emit.Method{Name: "close"},
 				&emit.Method{
-					Name: "load", HasDefault: true, Returns: []*emit.Return{{Type: ref(rowName)}},
+					Name: "load", HasDefault: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 					Body: emit.Body{Verbatim: "        return null;\n"},
 				},
 			)
@@ -260,7 +260,8 @@ func TestTemplates(t *testing.T) {
 
 			i := &emit.Interface{Name: "Store"}
 			i.Methods.Append(&emit.Method{
-				Name: "load", Returns: []*emit.Return{{Type: ref(rowName)}, {Type: ref("Exception")}},
+				Name:    "load",
+				Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}, &emit.Return{Type: ref("Exception")}),
 			})
 			assert.HasError(t, refused(t, kind(symbol.KindInterface), i), "the second arrives thrown")
 		})

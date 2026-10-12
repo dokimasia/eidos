@@ -8,11 +8,12 @@ import (
 
 	"go.dokimi.dev/eidos/lang/treesitter"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The tokens an array type's dimensions spell, one pair per dimension,
-// and the ones a type argument list spells.
+// The tokens of the dimensions of an array type, one pair per dimension,
+// and the tokens of a type argument list.
 const (
 	dimensionOpen = "["
 	dimensionPair = "[]"
@@ -21,33 +22,35 @@ const (
 	argsSeparator = ","
 )
 
-// typeRef lowers one type. A reference spells its source's tokens
-// without the whitespace between them, one space kept between two
-// identifier tokens, so a reformatted signature spells one identity,
-// and without its type annotations, which are no part of a signature.
-// It sets the structural forms the syntax states and leaves every other
-// type Named with its spelling:
+// typeRef lowers one type. The spelling of a reference is the sequence of
+// its source tokens without the whitespace between them, with one space
+// kept between two identifier tokens, so a reformatted signature has one
+// identity. The spelling leaves out the type annotations, which are no
+// part of a signature. typeRef sets the structural forms that the syntax
+// states and leaves every other type Named with its spelling:
 //
-//   - A name, a qualified name and a primitive type are Named. A
-//     generic type is Named with its arguments in Args, and its bare
-//     name in the spelling. A name a single-type import binds, and a
-//     qualified name, record the package they name as their package.
+//   - A name, a qualified name and a primitive type are Named. A generic
+//     type is Named with its arguments in Args, and its spelling is its
+//     bare name. A name that a single-type import binds, and a qualified
+//     name, record the package that they name as their package.
 //   - T[] is a List of T, one per dimension.
 //   - ? extends T is a Wildcard of T with Variance Out, ? super T one
 //     with Variance In, and ? a Wildcard without a child.
 func (l *lowering) typeRef(n treesitter.Node) *node.TypeRef {
 	switch n.Kind() {
 	case l.v.annotatedType:
-		parts := l.children(n)
-		return l.typeRef(parts[len(parts)-1])
+		var typ treesitter.Node
+		for part := range n.Content() {
+			typ = part
+		}
+		return l.typeRef(typ)
 	case l.v.typeIdentifier, l.v.scopedTypeIdentifier:
 		spelling := l.spelling(n)
 		return &node.TypeRef{Spelling: spelling, Pos: n.Pos(), Package: l.scope.packageOf(spelling)}
 	case l.v.genericType:
-		name := l.children(n)[0]
-		spelling := l.spelling(name)
+		spelling := l.spelling(n.FirstOf(l.v.typeIdentifier, l.v.scopedTypeIdentifier))
 		ref := &node.TypeRef{Spelling: spelling, Pos: n.Pos(), Package: l.scope.packageOf(spelling)}
-		for _, arg := range l.children(l.firstOf(n, l.v.typeArguments)) {
+		for arg := range n.FirstOf(l.v.typeArguments).Content() {
 			ref.Args = append(ref.Args, l.typeRef(arg))
 		}
 		return ref
@@ -59,15 +62,15 @@ func (l *lowering) typeRef(n treesitter.Node) *node.TypeRef {
 	return &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos()}
 }
 
-// spelling returns a type name's spelling without its annotations: a
-// simple name, or a qualified name's segments joined by dots, a generic
-// segment spelled whole.
+// spelling returns the spelling of a type name without its annotations: a
+// simple name, or the segments of a qualified name joined by dots, with a
+// generic segment spelled whole.
 func (l *lowering) spelling(n treesitter.Node) string {
 	if n.Kind() != l.v.scopedTypeIdentifier {
 		return n.Compact()
 	}
 	var segments []string
-	for _, part := range l.children(n) {
+	for part := range n.Content() {
 		if k := part.Kind(); k != l.v.annotation && k != l.v.markerAnnotation {
 			segments = append(segments, l.spelling(part))
 		}
@@ -75,49 +78,49 @@ func (l *lowering) spelling(n treesitter.Node) string {
 	return strings.Join(segments, nameSeparator)
 }
 
-// dimensioned lowers a type behind the dimensions a declaration states
-// for it, each a List: an array type's own, and a declarator's or a
-// method's, as int a[] and int f()[] state them.
+// dimensioned lowers a type behind the dimensions that a declaration
+// states for it, each a List. The dimensions are those of an array type,
+// of a declarator, as in int a[], or of a method, as in int f()[].
 func (l *lowering) dimensioned(typ, dims treesitter.Node) *node.TypeRef {
 	ref := l.typeRef(typ)
 	for child := range dims.AllChildren() {
-		if !child.Named() && child.Text() == dimensionOpen {
+		if !child.Named() && string(child.Bytes()) == dimensionOpen {
 			ref = listOf(ref)
 		}
 	}
 	return ref
 }
 
-// wildcardOf lowers a wildcard: its bound as its one child, with
-// Variance In for super and Out for extends, and no child for an
-// unbounded one.
+// wildcardOf lowers a wildcard. Its bound is its one child, with Variance
+// In for super and Out for extends, and an unbounded wildcard has no
+// child.
 func (l *lowering) wildcardOf(n treesitter.Node) *node.TypeRef {
-	ref := &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos(), Form: symbol.FormWildcard}
-	for _, child := range l.children(n) {
+	variance := symbol.VarianceInvariant
+	var bound []*node.TypeRef
+	for child := range n.Content() {
 		switch k := child.Kind(); {
 		case k == l.v.superKeyword:
-			ref.Variance = symbol.VarianceIn
+			variance = symbol.VarianceIn
 		case k != l.v.annotation && k != l.v.markerAnnotation:
-			ref.Elems = append(ref.Elems, l.typeRef(child))
-			if ref.Variance == symbol.VarianceInvariant {
-				ref.Variance = symbol.VarianceOut
+			bound = append(bound, l.typeRef(child))
+			if variance == symbol.VarianceInvariant {
+				variance = symbol.VarianceOut
 			}
 		}
 	}
+	ref := plugin.Composite(n.Compact(), n.Pos(), symbol.FormWildcard, bound...)
+	ref.Variance = variance
 	return ref
 }
 
-// listOf returns a List of a type, spelled as the type with its
-// arguments and one more dimension.
+// listOf returns a List of a type. Its spelling is the spelling of the
+// type with its arguments and one more dimension.
 func listOf(elem *node.TypeRef) *node.TypeRef {
-	return &node.TypeRef{
-		Spelling: spelled(elem) + dimensionPair, Pos: elem.Pos, Form: symbol.FormList,
-		Elems: []*node.TypeRef{elem},
-	}
+	return plugin.Composite(spelled(elem)+dimensionPair, elem.Pos, symbol.FormList, elem)
 }
 
-// spelled returns a reference's spelling with its type arguments, which
-// a generic reference keeps apart from its bare name.
+// spelled returns the spelling of a reference with its type arguments,
+// which a generic reference keeps apart from its bare name.
 func spelled(ref *node.TypeRef) string {
 	if len(ref.Args) == 0 {
 		return ref.Spelling

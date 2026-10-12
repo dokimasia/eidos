@@ -5,6 +5,7 @@ package frontend
 
 import (
 	"path"
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/java"
@@ -14,14 +15,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// hostKind is what a declaration is in, which decides the visibility
-// and the level a member takes where its modifiers state none.
+// hostKind is the place of a declaration, which decides the visibility
+// and the level that a member takes where its modifiers state none.
 type hostKind uint8
 
-// The places a declaration is in: a file's top level, a class or a
-// record body, an interface or an annotation type body, whose members
-// are public and whose types are static, and an enum body, whose
-// constructors are private.
+// The places of a declaration: the top level of a file, the body of a
+// class or a record, the body of an interface or an annotation type, whose
+// members are public and whose types are static, and the body of an enum,
+// whose constructors are private.
 const (
 	hostFile      hostKind = 1
 	hostClass     hostKind = 2
@@ -29,10 +30,10 @@ const (
 	hostEnum      hostKind = 4
 )
 
-// host is the type declaration members lower into: what kind of body
-// it has, the lists the members append to, without a list of types for
-// an enum, which has none, and a record's parameter list, whose
-// components a compact constructor takes as its parameters.
+// host is the type declaration that members lower into: the kind of its
+// body, and the lists that the members append to, without a list of types
+// for an enum, which has none. components is the parameter list of a
+// record, whose components a compact constructor takes as its parameters.
 type host struct {
 	kind       hostKind
 	fields     *[]*node.Field
@@ -52,11 +53,11 @@ type header struct {
 	mods    modifiers
 }
 
-// implicitClass declares the class a compact source file implicitly
-// declares, and returns the host the file's members lower into: a final
-// Struct with package access, named after its file without the .java
-// extension, as javac names it, because the Java Language Specification
-// leaves the name to the host system.
+// implicitClass declares the class that a compact source file implicitly
+// declares, and returns the host that the members of the file lower into.
+// The class is a final Struct with package access, named after its file
+// without the .java extension, as javac names it, because the Java
+// Language Specification leaves the name to the host system.
 func (l *lowering) implicitClass() *host {
 	st := &node.Struct{
 		Name: strings.TrimSuffix(path.Base(l.path), java.Extension), Pos: l.file.Pos, Final: true,
@@ -73,9 +74,9 @@ func (l *lowering) typeDeclaration(k treesitter.Kind) bool {
 		k == l.v.recordDeclaration || k == l.v.annotationTypeDeclaration
 }
 
-// typeDecl lowers one type declaration in a host, and returns nil for
-// one signature depth leaves out. A type in an interface is public
-// where it states no access, and package-visible anywhere else. Its
+// typeDecl lowers one type declaration in a host, and returns nil for one
+// that the signature depth leaves out. A type in an interface is public
+// where it states no access, and visible in its package anywhere else. Its
 // carriers attach to the type.
 func (l *lowering) typeDecl(n treesitter.Node, in hostKind) symbol.Symbol {
 	m := l.modifiersOf(n)
@@ -107,9 +108,9 @@ func (l *lowering) typeDecl(n treesitter.Node, in hostKind) symbol.Symbol {
 
 // class lowers a class as a Struct: abstract, final and sealed where its
 // modifiers state them, its type parameters, its superclass as what it
-// extends, its interfaces, the subclasses it permits, and its members.
-// A nested class is at the type level where it is static or in an
-// interface, and an inner class at the instance level.
+// extends, its interfaces, the subclasses that it permits, and its
+// members. A nested class is at the type level where it is static or in
+// an interface, and an inner class at the instance level.
 func (l *lowering) class(n treesitter.Node, h header, in hostKind) *node.Struct {
 	st := &node.Struct{
 		Name: h.name.Text(), Pos: h.name.Pos(), Doc: h.doc, Comment: h.comment, Visibility: h.vis,
@@ -129,14 +130,14 @@ func (l *lowering) class(n treesitter.Node, h header, in hostKind) *node.Struct 
 
 // iface lowers an interface, or an annotation type, as an Interface:
 // sealed where its modifiers state it, its type parameters, the
-// interfaces it extends, the subtypes it permits, and its members. An
-// annotation type's elements are its methods, and java.annotationType
-// stamps it.
+// interfaces that it extends, the subtypes that it permits, and its
+// members. The elements of an annotation type are its methods, and
+// java.annotationType stamps it.
 func (l *lowering) iface(n treesitter.Node, h header) *node.Interface {
 	it := &node.Interface{
 		Name: h.name.Text(), Pos: h.name.Pos(), Doc: h.doc, Comment: h.comment, Visibility: h.vis,
 		Sealed: h.mods.has(modSealed), TypeParams: l.typeParams(n),
-		Extends: l.typesOf(l.firstOf(n, l.v.extendsInterfaces)), Permits: l.typesOf(n.Child(l.v.fieldPermits)),
+		Extends: l.typesOf(n.FirstOf(l.v.extendsInterfaces)), Permits: l.typesOf(n.Child(l.v.fieldPermits)),
 		Annotations: h.mods.annotations,
 	}
 	if n.Kind() == l.v.annotationTypeDeclaration {
@@ -148,10 +149,11 @@ func (l *lowering) iface(n treesitter.Node, h header) *node.Interface {
 	return it
 }
 
-// enum lowers an enum as an Enum: each constant a variant whose value
-// is its constructor arguments verbatim, and the fields, methods and
-// constructors its body declares. A type an enum declares has no place
-// in the model, which reports it under [UnmodeledItem].
+// enum lowers an enum as an Enum. Each constant is a variant whose value
+// is its constructor arguments verbatim, and the enum has the fields, the
+// methods and the constructors that its body declares. A type that an
+// enum declares has no place in the model, and the lowering reports it
+// under [UnmodeledItem].
 func (l *lowering) enum(n treesitter.Node, h header) *node.Enum {
 	e := &node.Enum{
 		Name: h.name.Text(), Pos: h.name.Pos(), Doc: h.doc, Comment: h.comment, Visibility: h.vis,
@@ -169,7 +171,7 @@ func (l *lowering) enum(n treesitter.Node, h header) *node.Enum {
 }
 
 // variant lowers one enum constant: its name, its constructor arguments
-// verbatim as its value, its annotations and its comments. A body the
+// verbatim as its value, its annotations and its comments. A body that the
 // constant declares is an anonymous class, which the model does not
 // contain.
 func (l *lowering) variant(n treesitter.Node) *node.EnumVariant {
@@ -178,16 +180,16 @@ func (l *lowering) variant(n treesitter.Node) *node.EnumVariant {
 	m := l.modifiersOf(n)
 	v := &node.EnumVariant{
 		Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment,
-		Value: l.inner(n.Child(l.v.fieldArguments)), Annotations: m.annotations,
+		Value: inner(n.Child(l.v.fieldArguments)), Annotations: m.annotations,
 	}
 	l.attach(v, parts.Carriers, m.sugars)
 	return v
 }
 
-// record lowers a record as a Struct, final and stamped java.record:
-// each component a public field that is immutable, its type
-// parameters, its interfaces and its members. A nested record is at the
-// type level, because a record is static.
+// record lowers a record as a Struct, final and stamped java.record: each
+// component a public field that is immutable, its type parameters, its
+// interfaces and its members. A nested record is at the type level,
+// because a record is static.
 func (l *lowering) record(n treesitter.Node, h header, in hostKind) *node.Struct {
 	st := &node.Struct{
 		Name: h.name.Text(), Pos: h.name.Pos(), Doc: h.doc, Comment: h.comment, Visibility: h.vis,
@@ -217,10 +219,10 @@ func (l *lowering) record(n treesitter.Node, h header, in hostKind) *node.Struct
 	return st
 }
 
-// inner returns an argument list's contents as written, between its
-// parentheses, and empty for no argument list.
-func (l *lowering) inner(args treesitter.Node) string {
-	parts := l.children(args)
+// inner returns the contents of an argument list as written, between its
+// parentheses, and the empty string for no argument list.
+func inner(args treesitter.Node) string {
+	parts := slices.Collect(args.Content())
 	if len(parts) == 0 {
 		return ""
 	}

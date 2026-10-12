@@ -20,16 +20,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// homeVar is the variable of the user's home directory that Stores reads
-// on the systems that CI runs: USERPROFILE on Windows, and HOME elsewhere.
-var homeVar = func() string {
-	if runtime.GOOS == "windows" {
-		return "USERPROFILE"
-	}
-	return "HOME"
-}()
+// homeVar is the variable of the home directory of the user, which Stores
+// reads.
+var homeVar = plugin.UserHomeVar()
 
-// The variables Stores reads, and the paths it resolves under them.
+// The variables that Stores reads, and the paths that it resolves under
+// them.
 const (
 	envJavaHome   = "JAVA_HOME"
 	envGradleHome = "GRADLE_USER_HOME"
@@ -42,13 +38,13 @@ const (
 	stringClass   = "String"
 )
 
-// fileMode is the mode the store cases write their files with.
+// fileMode is the mode of the files that the store cases write.
 const fileMode = 0o644
 
-// dirMode is the mode the store cases create their directories with.
+// dirMode is the mode of the directories that the store cases create.
 const dirMode = 0o755
 
-// The homes the allocation cases name. Stores reads no directory under
+// The homes of the allocation cases. Stores reads no directory under
 // either, so neither has to exist.
 const (
 	userHome   = "/home"
@@ -57,26 +53,26 @@ const (
 
 // The allocations of the stores.
 const (
-	// storesAllocs is the stores over a ct.sym of one entry: the file's
-	// read, its reader and its ZIP index, the four paths Stores joins, and
-	// the map with its two directory roots.
+	// storesAllocs is the cost of the stores over a ct.sym of one entry:
+	// the read of the file, its reader and its ZIP index, the four paths
+	// that Stores joins, and the map with its two directory roots.
 	storesAllocs = 5 + 1 + 13 + 4 + 2 + 2
-	// gradleStoresAllocs is the stores where GRADLE_USER_HOME names
-	// Gradle's home, which joins one path fewer.
+	// gradleStoresAllocs is the cost of the stores where GRADLE_USER_HOME
+	// is set, because Stores joins one path fewer.
 	gradleStoresAllocs = storesAllocs - 1
 )
 
-// Stores resolves each store's root from the environment, so the
-// variable each root comes from, the defaults and the refusals are
-// pinned over temporary trees, and the JDK's own ct.sym is loaded where
-// JAVA_HOME names one.
+// Stores resolves the root of each store from the environment. The cases
+// pin the variable of each root, the defaults and the errors over
+// temporary trees, and load the ct.sym of the JDK of the machine where
+// JAVA_HOME is set.
 func TestStore(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Stores", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns an error naming JAVA_HOME for an unset JAVA_HOME", func(t *testing.T) {
+		t.Run("returns an error that contains JAVA_HOME where JAVA_HOME is unset", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := frontend.Stores(env(nil))
@@ -84,7 +80,7 @@ func TestStore(t *testing.T) {
 			assert.Contains(t, err.Error(), envJavaHome, "the variable to set")
 		})
 
-		t.Run("returns an error naming the home variable for an unset home", func(t *testing.T) {
+		t.Run("returns an error that contains the home variable where the home is unset", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := frontend.Stores(env(map[string]string{envJavaHome: jdkHome(t)}))
@@ -99,7 +95,7 @@ func TestStore(t *testing.T) {
 			assert.ErrorIs(t, err, fs.ErrNotExist, "lib/ct.sym is missing")
 		})
 
-		t.Run("returns an error for a ct.sym that is no ZIP file", func(t *testing.T) {
+		t.Run("returns an error for a ct.sym that is not a ZIP file", func(t *testing.T) {
 			t.Parallel()
 
 			home := t.TempDir()
@@ -152,7 +148,7 @@ func TestStore(t *testing.T) {
 			assert.NoError(t, err, "the module cache's file reads")
 		})
 
-		t.Run("loads java.lang from the ct.sym JAVA_HOME names", func(t *testing.T) {
+		t.Run("loads java.lang from the ct.sym under JAVA_HOME", func(t *testing.T) {
 			t.Parallel()
 
 			decls := machineLang(t)
@@ -160,7 +156,7 @@ func TestStore(t *testing.T) {
 			named[*node.Struct](t, decls, stringClass)
 		})
 
-		t.Run("lowers Object from the ct.sym JAVA_HOME names without a superclass", func(t *testing.T) {
+		t.Run("lowers Object from the ct.sym under JAVA_HOME without a superclass", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, named[*node.Struct](t, machineLang(t), objectClass).Extends, "Object extends nothing")
@@ -168,10 +164,10 @@ func TestStore(t *testing.T) {
 	})
 }
 
-// The stores allocate ct.sym's read and index, the paths and the map.
-// The ordinary run, which runs no benchmark, checks those ceilings here.
-// Darwin and Windows allocate more in their file system calls and path
-// functions, so the test runs on Linux alone.
+// The stores allocate the read and the index of ct.sym, the paths and the
+// map. The ordinary run, which runs no benchmark, checks those ceilings
+// here. Darwin and Windows allocate more in their file system calls and
+// path functions, so the test runs on Linux alone.
 func TestStoreAllocs(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the ceilings count the allocations of Linux's file system calls")
@@ -179,14 +175,14 @@ func TestStoreAllocs(t *testing.T) {
 	checkAllocs(t, storeCalls(t))
 }
 
-// BenchmarkStore measures the resolution a load makes once, before it
+// BenchmarkStore measures the resolution that a load makes once, before it
 // reads any dependency unit.
 func BenchmarkStore(b *testing.B) {
 	benchCalls(b, storeCalls(b))
 }
 
-// storeCalls returns a call of Stores over a ct.sym of one entry, with
-// Gradle's home by default and named.
+// storeCalls returns the calls of Stores over a ct.sym of one entry, with
+// the default home of Gradle and with GRADLE_USER_HOME set.
 func storeCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
@@ -218,8 +214,8 @@ func storeCalls(tb testing.TB) []allocCall {
 }
 
 // machineLang returns the declarations of java.lang that the first round
-// places in the ct.sym JAVA_HOME names, parsed at signature depth. It
-// skips the case without JAVA_HOME, and fails it there in CI.
+// places in the ct.sym under JAVA_HOME, parsed at signature depth. It
+// skips the case where JAVA_HOME is unset, and fails it in CI.
 func machineLang(tb testing.TB) node.Symbols {
 	tb.Helper()
 
@@ -242,13 +238,14 @@ func machineLang(tb testing.TB) node.Symbols {
 	return packageDecls(tb, u.Graph(), langPackage)
 }
 
-// env returns a getenv over a map of variables, empty for any other.
+// env returns a getenv over a map of variables, which returns the empty
+// string for any other variable.
 func env(vars map[string]string) func(string) string {
 	return func(key string) string { return vars[key] }
 }
 
-// jdkHome returns a temporary JDK home whose lib/ct.sym is a ZIP file of
-// the fake ct.sym's java.lang entry.
+// jdkHome returns a temporary JDK home whose lib/ct.sym is a ZIP file with
+// the java.lang entry of the fake ct.sym.
 func jdkHome(tb testing.TB) string {
 	tb.Helper()
 
