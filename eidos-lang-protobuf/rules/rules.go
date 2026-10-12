@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -103,23 +102,6 @@ func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, r
 		}
 	}
 	return roles, rules.ErrorsNone
-}
-
-// TypeName joins a generator's word onto a schema's name in
-// PascalCase, which is how protobuf spells a message and what every
-// generator over a schema produces.
-//
-// Both parts are recased, so a snake-cased schema name joins the
-// same way a Pascal one does: TypeName("check", "row_key") is
-// CheckRowKey.
-//
-// # Allocation contract
-//
-// TypeName allocates the PascalCase of each part that is not already
-// PascalCase, and the joined name: two allocations for a lower-case
-// word and a Pascal base, and three for a snake-cased base.
-func (Rules) TypeName(word, base string) string {
-	return naming.Pascal(word) + naming.Pascal(base)
 }
 
 // Resolve returns the declaration a directive's spelling names from

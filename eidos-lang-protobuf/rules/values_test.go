@@ -14,7 +14,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
-	"go.dokimi.dev/eidos/sdk/store"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -157,13 +156,12 @@ const (
 	stringLiteralAllocs = 1
 )
 
-// The values are what a check generator writes, so each form's
-// sample pair, its zero and the literals a schema's text types to are
-// pinned at the wire's widths.
+// TestValues pins the sample pair, the zero and the literals of each form
+// at the widths of the wire. A check generator writes these values.
 func TestValues(t *testing.T) {
 	t.Parallel()
 
-	t.Run("SamplesOf", func(t *testing.T) {
+	t.Run("DeriveSamples", func(t *testing.T) {
 		t.Parallel()
 
 		scalars := []struct {
@@ -471,10 +469,8 @@ func TestValues(t *testing.T) {
 			stamp(t, f, f.Keys.Sample, row.Target, authoredRow)
 			stamp(t, f, f.Keys.Alternate, row.Target, otherRow)
 			pairOf(t, f, composite("repeated Row", symbol.FormList, row), "")
-			reads, recorded := f.view.Reads.(*store.ReadSet)
-			assert.True(t, recorded, "the view records into a read set")
 			var read []symbol.Identity
-			for subject := range reads.Facts() {
+			for subject := range f.reads.Facts() {
 				read = append(read, subject)
 			}
 			assert.NotContains(t, read, fieldOf(t, f, row.Target, nameField).ID,
@@ -487,7 +483,7 @@ func TestValues(t *testing.T) {
 			f := loaded(t)
 			empty := ref(svcPkg, emptyName, symbol.KindStruct)
 			stamp(t, f, f.Keys.Sample, empty.Target, authoredEmpty)
-			s, a := protorules.New().SamplesOf(composite("repeated Empty", symbol.FormList, empty), "", f.view)
+			s, a := protorules.New().DeriveSamples(composite("repeated Empty", symbol.FormList, empty), "", f.view)
 			assert.Equal(t, [2]rules.Refusal{s.Refusal, a.Refusal},
 				[2]rules.Refusal{rules.RefusedNoLiteral, rules.RefusedNoLiteral},
 				"Empty derives no alternate, so neither half has a value")
@@ -738,7 +734,7 @@ func BenchmarkValues(b *testing.B) {
 func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
 	tb.Helper()
 
-	sample, alternate := protorules.New().SamplesOf(ref, hint, f.view)
+	sample, alternate := protorules.New().DeriveSamples(ref, hint, f.view)
 	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
 	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
 	return sample.Value, alternate.Value
@@ -746,7 +742,7 @@ func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Valu
 
 // refusalOf returns the refusal of a reference's sample.
 func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
-	sample, _ := protorules.New().SamplesOf(ref, "", f.view)
+	sample, _ := protorules.New().DeriveSamples(ref, "", f.view)
 	return sample.Refusal
 }
 
@@ -773,27 +769,27 @@ func valueCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "SamplesOf", caseName: "a scalar",
-			call:  func() { sample, _ = r.SamplesOf(scalar, "", f.view) },
-			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "SamplesOf returns 42") },
+			name: "DeriveSamples", caseName: "a scalar",
+			call:  func() { sample, _ = r.DeriveSamples(scalar, "", f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "DeriveSamples returns 42") },
 		},
 		{
-			name: "SamplesOf", caseName: "a message", allocs: messageSamplesAllocs,
-			call:  func() { sample, _ = r.SamplesOf(row, "", f.view) },
-			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives Row") },
+			name: "DeriveSamples", caseName: "a message", allocs: messageSamplesAllocs,
+			call:  func() { sample, _ = r.DeriveSamples(row, "", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "DeriveSamples derives Row") },
 		},
 		{
-			name: "SamplesOf", caseName: "a repeated field", allocs: listSamplesAllocs,
-			call: func() { sample, _ = r.SamplesOf(list, tagHint, f.view) },
+			name: "DeriveSamples", caseName: "a repeated field", allocs: listSamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(list, tagHint, f.view) },
 			check: func(tb assert.TB) {
-				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the list")
+				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "DeriveSamples derives the list")
 			},
 		},
 		{
-			name: "SamplesOf", caseName: "an enum", allocs: enumSamplesAllocs,
-			call: func() { sample, _ = r.SamplesOf(colour, "", f.view) },
+			name: "DeriveSamples", caseName: "an enum", allocs: enumSamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(colour, "", f.view) },
 			check: func(tb assert.TB) {
-				assert.Equal(tb, sample.Value.Kind, emit.ValueConversion, "SamplesOf derives Colour")
+				assert.Equal(tb, sample.Value.Kind, emit.ValueConversion, "DeriveSamples derives Colour")
 			},
 		},
 		{
@@ -823,8 +819,8 @@ func valueCalls(tb testing.TB) []allocCall {
 	}
 }
 
-// stamp states one authored text on a subject under a kernel key, at
-// plugin authority, the way the sample annotator stamps it.
+// stamp stamps one authored text on a subject under a kernel key at
+// plugin authority, as the sample annotator stamps it.
 func stamp(tb assert.TB, f *fixture, k meta.Key[string], subject symbol.Identity, text string) {
 	tb.Helper()
 

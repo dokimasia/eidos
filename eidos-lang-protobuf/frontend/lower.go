@@ -11,13 +11,12 @@ import (
 	"github.com/bufbuild/protocompile/experimental/source/length"
 	"github.com/bufbuild/protocompile/experimental/token"
 
-	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The comment spellings the attribution reads.
+// The comment spellings that the attribution reads.
 const (
 	// lineComment opens a line comment. Every other comment is a
 	// block comment.
@@ -31,25 +30,29 @@ const (
 	commentLineSep = "\n"
 )
 
-// at returns the position of a span: the file the unit is loading, and
-// the line and the column of the span's first byte. The column counts
+// importSubject describes an import in the refusal of a carrier on it.
+const importSubject = "an import"
+
+// at returns the position of a span in the file that the unit loads: the
+// line and the column of the first byte of the span. The column counts
 // runes. The zero span is at the start of the file. The callers pass the
-// span of a node, not the node, because a node converted to
+// span of a node and not the node, because a node converted to
 // [source.Spanner] costs one allocation.
 func (l *lowered) at(span source.Span) position.Pos {
 	loc := span.Location(span.Start, length.Runes)
 	return position.Pos{File: l.path, Line: loc.Line, Col: loc.Column}
 }
 
-// commentGroup is one run of comments protoc attributes as a unit:
+// commentGroup is one run of comments that protoc attributes as a unit:
 // line comments on consecutive lines, or one block comment.
 type commentGroup []token.Token
 
 // isLine reports whether a comment is a line comment.
 func isLine(c token.Token) bool { return strings.HasPrefix(c.Text(), lineComment) }
 
-// startLine returns the line a token starts on. The zero token stands for
-// the end of the file, and starts on the line of the file's last byte.
+// startLine returns the line that a token starts on. The zero token is
+// the end of the file, and starts on the line of the last byte of the
+// file.
 func (l *lowered) startLine(t token.Token) int {
 	if t.IsZero() {
 		return l.stream.LineByOffset(len(l.stream.Text()))
@@ -57,20 +60,20 @@ func (l *lowered) startLine(t token.Token) int {
 	return l.stream.LineByOffset(t.LeafSpan().Start)
 }
 
-// endLine returns the line of a token's last byte.
+// endLine returns the line of the last byte of a token.
 func (l *lowered) endLine(t token.Token) int {
 	span := t.LeafSpan()
 	return l.stream.LineByOffset(max(span.End-1, span.Start))
 }
 
-// attribute attributes every comment of the file the way protoc's source
-// info does, one run of comments between two adjacent tokens at a time.
-// The tokens are the file's tokens other than comments and white space,
-// in source order, and the opening and the closing brace of a body are
-// two tokens. It records the group that trails a token and the group that
-// leads a token, so [lowered.commentsOf] reads a declaration's comments
-// at its first and its last token. It also records the file's first token
-// as l.head.
+// attribute attributes every comment of the file as the source info of
+// protoc does, one run of comments between two adjacent tokens at a time.
+// The tokens are the tokens of the file other than comments and white
+// space, in source order, and the opening and the closing brace of a body
+// are two tokens. It records the group that trails a token and the group
+// that leads a token, so [lowered.commentsOf] reads the comments of a
+// declaration at its first and its last token. It also records the first
+// token of the file as l.head.
 func (l *lowered) attribute() {
 	var (
 		prev    token.Token
@@ -100,15 +103,15 @@ func (l *lowered) attribute() {
 //
 // The first comment trails prev where each of these is true:
 //
-//   - The comment starts on prev's line.
+//   - The comment starts on the line of prev.
 //   - next starts on a later line.
 //   - The comment is a line comment, another comment follows it, or it
 //     ends on a line before next.
 //
 // The end of the file counts as a line below prev. The other comments
 // form groups as protoc groups them, and [lowered.donate] and
-// [lowered.attach] split the groups between prev's trailing group and
-// next's leading group.
+// [lowered.attach] split the groups between the trailing group of prev
+// and the leading group of next.
 func (l *lowered) pair(prev, next token.Token, comments []token.Token) {
 	if len(comments) == 0 {
 		return
@@ -144,9 +147,9 @@ func (l *lowered) pair(prev, next token.Token, comments []token.Token) {
 	}
 }
 
-// groupComments splits a run of comments into protoc's groups: a block
-// comment is a group of its own, and a line comment continues the group
-// of a line comment on the line above it.
+// groupComments splits a run of comments into the groups of protoc. A
+// block comment is a group of its own, and a line comment continues the
+// group of a line comment on the line above it.
 func (l *lowered) groupComments(comments []token.Token) []commentGroup {
 	if len(comments) == 0 {
 		return nil
@@ -165,13 +168,12 @@ func (l *lowered) groupComments(comments []token.Token) []commentGroup {
 	return append(out, current)
 }
 
-// donate gives the previous token the first group before the next
-// token as its trailing group, where protoc does: the group starts
-// on the previous token's line or the one below it, and either
-// another group follows it, a blank line separates it from the next
-// token, or the next token is a closer or the end of the file. A
-// group on the line of both tokens is not donated, because protoc
-// leaves that attribution ambiguous.
+// donate gives the previous token the first group before the next token
+// as its trailing group, where protoc does. The group starts on the line
+// of the previous token or on the line below it. Another group follows
+// it, a blank line separates it from the next token, or the next token is
+// a closer or the end of the file. A group on the line of both tokens is
+// not donated, because protoc leaves that attribution ambiguous.
 func (l *lowered) donate(prev, next token.Token, groups []commentGroup) (commentGroup, []commentGroup) {
 	if len(groups) == 0 {
 		return nil, nil
@@ -197,10 +199,10 @@ func (l *lowered) donate(prev, next token.Token, groups []commentGroup) (comment
 	return nil, groups
 }
 
-// attach returns the last group before a token as its leading group
-// where no blank line separates the two, and nil otherwise. One group
-// on the line of both tokens, with no trailing group before it, leads
-// neither, because protoc leaves it detached.
+// attach returns the last group before a token as its leading group where
+// no blank line separates the two, and nil otherwise. One group on the
+// line of both tokens, without a trailing group before it, leads neither,
+// because protoc leaves it detached.
 func (l *lowered) attach(prev, next token.Token, trailed bool, groups []commentGroup) commentGroup {
 	if len(groups) == 0 {
 		return nil
@@ -220,9 +222,9 @@ func (l *lowered) attach(prev, next token.Token, trailed bool, groups []commentG
 	return nil
 }
 
-// split takes one group apart through the kit, positioned at the
-// group's first line, and records every comment in it as taken, so
-// the sweep reads only the comments no declaration took.
+// split takes one group apart through the kit at the first line of the
+// group, and records every comment in it as taken, so the sweep reads only
+// the comments that no declaration took.
 func (l *lowered) split(g commentGroup) plugin.CommentParts {
 	if len(g) == 0 {
 		return plugin.CommentParts{}
@@ -238,22 +240,21 @@ func (l *lowered) split(g commentGroup) plugin.CommentParts {
 	return l.unit.Comment(strings.Join(raw, commentLineSep), l.at(g[0].LeafSpan()))
 }
 
-// commented is one declaration's comments, split: the documentation
-// above it, the annotations above and beside it, and the comment
-// beside it.
+// commented is the comments of one declaration: the documentation above
+// it, the annotations above and beside it, and the comment beside it.
 type commented struct {
 	doc         []string
 	annotations symbol.Annotations
 	comment     string
 }
 
-// commentsOf attributes a declaration's comments as protoc does and
-// splits them. The leading group of the declaration's first token is
+// commentsOf attributes the comments of a declaration as protoc does and
+// splits them. The leading group of the first token of the declaration is
 // the documentation, and the trailing group of its last token is the
 // comment. The last token of a block declaration is its opening brace,
 // after which protoc takes the trailing comment. A carrier in either
-// group attaches to the subject, and a nil subject reports it as
-// unaddressed. A zero token has no group.
+// group attaches to the subject. A nil subject is an import, whose
+// carriers are refused. A zero token has no group.
 func (l *lowered) commentsOf(first, last token.Token, subject symbol.Symbol) commented {
 	lead := l.split(l.leading[first.ID()])
 	trail := l.split(l.trailing[last.ID()])
@@ -266,12 +267,12 @@ func (l *lowered) commentsOf(first, last token.Token, subject symbol.Symbol) com
 	}
 }
 
-// bounds returns a definition's first token and the token whose trailing
-// group is its comment. The first token is the first token of its type,
-// which is the keyword of a message, an enum, a service, a oneof, a group
-// and an rpc, or its name, because an enum value has no type. The last
-// is the opening brace of its body, or its semicolon. A definition that
-// lacks both, which the parser reports, has the zero last token.
+// bounds returns the first token of a definition and the token whose
+// trailing group is its comment. The first token is the first token of its
+// type, which is the keyword of a message, an enum, a service, a oneof, a
+// group and an rpc, or its name, because an enum value has no type. The
+// last is the opening brace of its body, or its semicolon. A definition
+// that lacks both, which the parser reports, has the zero last token.
 func (l *lowered) bounds(def ast.DeclDef) (first, last token.Token) {
 	var start int
 	if ty := def.Type(); !ty.IsZero() {
@@ -286,22 +287,14 @@ func (l *lowered) bounds(def ast.DeclDef) (first, last token.Token) {
 	return first, def.Semicolon()
 }
 
-// carriers attaches every well-formed carrier to its subject. A
-// carrier the grammar refused reports under [BadCarrier], and one
-// with no addressable subject under [UnaddressedCarrier], each
-// quoted as the author wrote it.
+// carriers attaches every carrier to its subject, and reports a carrier
+// that the grammar refuses under [BadCarrier]. A nil subject is an import,
+// which has no identity, so carriers refuses every carrier on it under
+// [UnaddressedCarrier].
 func (l *lowered) carriers(subject symbol.Symbol, carriers []plugin.Carrier) {
-	if subject != nil {
-		l.unit.AttachCarriers(subject, carriers, BadCarrier)
+	if subject == nil {
+		l.unit.RefuseCarriers(UnaddressedCarrier, carriers, importSubject)
 		return
 	}
-	for _, c := range carriers {
-		if _, err := directive.Parse(c.Payload); err != nil {
-			l.unit.Errorf(BadCarrier, c.Pos, "%q: %v", c.Mark+c.Payload, err)
-			continue
-		}
-		l.unit.Errorf(UnaddressedCarrier, c.Pos,
-			"%q is on a subject the model cannot address. Move it directly above a declaration",
-			c.Mark+c.Payload)
-	}
+	l.unit.AttachCarriers(subject, carriers, BadCarrier)
 }

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"go.dokimi.dev/eidos/lang/naming"
 )
 
 // literalKind names the literal form a text is written in.
@@ -60,7 +62,7 @@ func scanLiteral(text string) (literal, bool) {
 	case text[0] == '"' || text[0] == '\'':
 		s, ok := unquote(text)
 		return literal{kind: literalString, text: s}, ok
-	case isIdentifier(text):
+	case naming.IsIdentifier(text):
 		return literal{kind: literalIdent, text: text}, true
 	}
 	number, integer, ok := scanNumber(text)
@@ -212,19 +214,6 @@ func unescape(b *strings.Builder, s string) (int, bool) {
 		return 1, true
 	}
 	return 0, false
-}
-
-// isIdentifier reports whether a text is a bare proto identifier,
-// which an enum value's name is.
-func isIdentifier(text string) bool {
-	for i, r := range text {
-		letter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '_'
-		digit := r >= '0' && r <= '9'
-		if !letter && (!digit || i == 0) {
-			return false
-		}
-	}
-	return text != ""
 }
 
 // isDigit reports whether a byte is a decimal digit.

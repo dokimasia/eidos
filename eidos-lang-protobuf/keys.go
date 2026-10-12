@@ -4,6 +4,8 @@
 package protobuf
 
 import (
+	"errors"
+
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -117,10 +119,11 @@ const (
 //
 // A composition passes it to the workspace builder and a corpus
 // fixture passes it to the conformance runner, so both register one
-// set. It returns the first error a registration reports and
-// registers nothing after it. A second call through the same
-// registrant repeats the registration and returns nil. A call through
-// another registrant fails, because a namespace has one registrant.
+// set. A failed claim of the namespace registers no key. Otherwise Keys
+// registers every key that it can, and returns the errors of the others
+// joined. A second call through the same registrant repeats the
+// registration and returns nil. A call through another registrant
+// fails, because a namespace has one registrant.
 //
 // # Allocation contract
 //
@@ -131,6 +134,7 @@ func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err
 	}
+	var errs []error
 	file := []symbol.Kind{symbol.KindFile}
 	for _, spec := range []meta.KeySpec{
 		{
@@ -183,7 +187,7 @@ func Keys(r *meta.Registry) error {
 		},
 	} {
 		if _, err := meta.Register[string](r, spec); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 	for _, spec := range []meta.KeySpec{
@@ -213,8 +217,8 @@ func Keys(r *meta.Registry) error {
 		},
 	} {
 		if _, err := meta.Register[[]string](r, spec); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }

@@ -24,32 +24,34 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The proto spellings the lowering reads.
+// The spellings of proto that the lowering reads.
 const (
 	// listSep joins the entries of the reserved stamp, and the ranges of
 	// one extension range declaration.
 	listSep = ", "
-	// streamRequest, streamResponse and streamBoth name which side
-	// of an rpc streams.
+	// streamRequest, streamResponse and streamBoth are the values that the
+	// stream stamp records for the side of an rpc that streams.
 	streamRequest  = "request"
 	streamResponse = "response"
 	streamBoth     = "both"
 	// streamKeyword marks a streaming side of an rpc.
 	streamKeyword = "stream"
-	// requestParam names the one parameter an rpc takes.
+	// requestParam is the name of the one parameter that an rpc takes.
 	requestParam = "request"
-	// mapSpelling marks a field the schema wrote as a map, which the
-	// model projects as the Map form over its key and value.
+	// mapSpelling is the value of the map-entry stamp of a field that the
+	// schema wrote as a map. The model projects such a field as the Map
+	// form over its key and its value.
 	mapSpelling = "map"
-	// labelRepeated and labelOptional are the field labels the
-	// projection has a form for: a list, and presence.
+	// labelRepeated and labelOptional are the field labels that the
+	// projection has a form for. A repeated field is a list, and an
+	// optional field has presence.
 	labelRepeated = "repeated"
 	labelOptional = "optional"
-	// labelRequired is proto2's required, which the projection has
-	// no form for and the residue stamps.
+	// labelRequired is the required label of proto2. The projection has
+	// no form for it, so the frontend stamps it.
 	labelRequired = "required"
-	// importPublic, importWeak and importOption mark how an import is
-	// written.
+	// importPublic, importWeak and importOption are the modifiers of an
+	// import.
 	importPublic = "public"
 	importWeak   = "weak"
 	importOption = "option"
@@ -58,26 +60,29 @@ const (
 	localValue = "local"
 )
 
-// maxSyntaxFindings caps the syntax errors one file reports, and one
-// more finding counts the errors past the cap.
-const maxSyntaxFindings = 10
+// unattributed describes a comment that protoc attributes to no
+// declaration, in the refusal of a carrier in it.
+const unattributed = "a comment that protoc attributes to no declaration"
 
-// Parse loads one proto file. It parses the syntax with protocompile's
-// experimental parser, reads the version from the file's syntax or
-// edition statement, lowers the tree into the node model and stamps the
-// residue.
+// parse loads one proto file. It parses the syntax with the experimental
+// parser of protocompile, reads the version from the syntax or edition
+// statement of the file, lowers the tree into the node model and stamps
+// the residue.
 //
-// Parse reports a syntax error under [UnparsedFile] at its position, and
-// the file still contributes every declaration that the parser
-// recovered. Parse reports a version outside the frontend's table under
+// parse reports a syntax error under [UnparsedFile] at its position, and
+// the file still contributes every declaration that the parser recovered.
+// parse reports a version outside the table of the frontend under
 // [UnknownEdition], and the file does not contribute any declaration,
-// because the defaults that define presence and the openness of enums
-// are unknown.
+// because the defaults that define presence and the openness of enums are
+// unknown.
 //
 // The depth does not change the result. A schema has no bodies and no
 // unexported names, so [plugin.DepthSignatures] and [plugin.DepthFull]
 // load the same declarations under the same identities.
-func (protoFrontend) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+//
+// Error modes: parse returns the error of a context that is done, and the
+// error of a member that does not read.
+func parse(ctx context.Context, u *plugin.SourceUnit) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -100,11 +105,12 @@ func (protoFrontend) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// parseSource parses a file's source with protocompile's experimental
-// parser. It returns the tree, the parser's report, the syntax or
-// edition statement and the version that the statement declares. The
+// parseSource parses the source of a file with the experimental parser of
+// protocompile. It returns the tree, the report of the parser, the syntax
+// or edition statement and the version that the statement declares. The
 // report has no warnings, because each of them is about the style of a
-// schema. It reports false for a version outside the frontend's table.
+// schema. It reports false for a version outside the table of the
+// frontend.
 //
 // The parser does not know Edition 2026, which has the grammar of
 // Edition 2024. It parses a 2026 file a second time, from a copy whose
@@ -127,9 +133,10 @@ func parseSource(path string, src []byte) (*ast.File, *report.Report, ast.DeclSy
 	return tree, r, statement, v, known
 }
 
-// versionOf returns the version that a file's syntax or edition statement
-// declares, and proto2 for a file without a statement. It reports false
-// for a statement whose value is not a string of the frontend's table.
+// versionOf returns the version that the syntax or edition statement of a
+// file declares, and proto2 for a file without a statement. It reports
+// false for a statement whose value is not a string of the table of the
+// frontend.
 func versionOf(statement ast.DeclSyntax) (version, bool) {
 	if statement.IsZero() {
 		return versionNamed(keyword.Syntax, versionProto2)
@@ -141,80 +148,69 @@ func versionOf(statement ast.DeclSyntax) (version, bool) {
 	return versionNamed(statement.Keyword(), value.Text())
 }
 
-// lowered is one file's lowering: the unit it writes through, the
-// parsed tree it reads, and the path every position names.
+// lowered is the lowering of one file. It has the unit that it writes
+// through, the parsed tree that it reads, and the path of every position.
 type lowered struct {
 	unit   *plugin.SourceUnit
 	tree   *ast.File
 	stream *token.Stream
 	path   string
-	// version is the file's protobuf language version, whose defaults the
-	// resolution of every feature starts from.
+	// version is the protobuf language version of the file. The
+	// resolution of every feature starts from its defaults.
 	version version
-	// head is the file's first token other than white space and
+	// head is the first token of the file other than white space and
 	// comments. The position of head is the position of the file.
 	head token.Token
-	// pkg is the file's proto package, the namespace its
-	// declarations load under.
+	// pkg is the proto package of the file, which is the namespace that
+	// its declarations load under.
 	pkg string
-	// imports are the entries of the import stamp, one per import in
-	// source order. paths are the paths of the imports that import
-	// types, which the resolution step's [protoFrontend.ImportOf]
-	// matches a declaring file against.
+	// imports are the entries of the import stamp, one for each import in
+	// source order. paths are the paths of the imports that import types.
+	// [importPath] matches a declaring file against them in the
+	// resolution step.
 	imports []string
 	paths   []string
 	// leading and trailing are the comment groups that lead and trail a
 	// token, by the token, as [lowered.attribute] attributed them.
 	leading, trailing map[token.ID]commentGroup
-	// consumed records every comment a declaration took, so the
-	// sweep reads only the comments no declaration took.
+	// consumed records every comment that a declaration took, so the
+	// sweep reads only the comments that no declaration took.
 	consumed map[token.ID]bool
 }
 
-// reportErrors reports each error of the parser's report under
-// [UnparsedFile] at its position: the first maxSyntaxFindings, then one
-// finding that counts the rest. It drops every diagnostic at the version
-// statement, because the frontend reports its own verdict there.
+// reportErrors reports the errors in the report of the parser through the
+// syntax report of the unit. It drops a diagnostic that is not an error,
+// and every diagnostic at the version statement, because the frontend
+// reports its own verdict there.
 func (l *lowered) reportErrors(r *report.Report, statement ast.DeclSyntax) {
 	if len(r.Diagnostics) == 0 {
 		return
 	}
 	stated := statement.Span()
-	var (
-		reported, more int
-		moreAt         position.Pos
-	)
-	for i := range r.Diagnostics {
-		d := &r.Diagnostics[i]
-		at := d.Primary()
-		if d.Level() != report.ICE && d.Level() != report.Error ||
-			!stated.IsZero() && at.Start >= stated.Start && at.End <= stated.End {
+	l.unit.ReportSyntax(UnparsedFile, func(yield func(position.Pos, string) bool) {
+		for i := range r.Diagnostics {
+			d := &r.Diagnostics[i]
+			at := d.Primary()
+			if d.Level() != report.ICE && d.Level() != report.Error ||
+				!stated.IsZero() && at.Start >= stated.Start && at.End <= stated.End {
 
-			continue
-		}
-		if reported == maxSyntaxFindings {
-			if more == 0 {
-				moreAt = l.at(at)
+				continue
 			}
-			more++
-			continue
+			if !yield(l.at(at), d.Message()) {
+				return
+			}
 		}
-		l.unit.Errorf(UnparsedFile, l.at(at), "%s", d.Message())
-		reported++
-	}
-	if more > 0 {
-		l.unit.Errorf(UnparsedFile, moreAt, "and %d more syntax errors", more)
-	}
+	})
 }
 
-// file lowers the whole tree: the package clause and the syntax or
-// edition first, since every declaration loads under them, then the
-// declarations in source order.
+// file lowers the whole tree. It lowers the package clause and the syntax
+// or edition first, because every declaration loads under them, and then
+// the declarations in source order.
 //
-// The syntax or edition statement's comments are the file's, and
-// the package statement's comments are the package's. A licence header
-// that a blank line separates from the first statement belongs to
-// neither, as protoc attributes it.
+// The comments of the syntax or edition statement are the comments of the
+// file, and the comments of the package statement are the comments of the
+// package. A licence header that a blank line separates from the first
+// statement belongs to neither, as protoc attributes it.
 func (l *lowered) file(statement ast.DeclSyntax) {
 	decls := l.tree.Decls()
 	var pkgDecl ast.DeclPackage
@@ -262,7 +258,7 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 			case ast.DefKindService:
 				out = l.service(def)
 			case ast.DefKindExtend:
-				// An extension adds a field to a message another file
+				// An extension adds a field to a message that another file
 				// declares, so the model cannot represent it.
 				first, _ := l.bounds(def)
 				l.unit.Errorf(RefusedExtension, l.at(first.LeafSpan()),
@@ -273,8 +269,8 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 				continue
 			}
 			if file.Decls == nil {
-				// The declarations from this one on bound the file's
-				// declarations, so the slice is allocated once.
+				// The declarations from this one on bound the declarations
+				// of the file, so the slice is allocated once.
 				file.Decls = make([]symbol.Symbol, 0, decls.Len()-i)
 			}
 			file.Decls = append(file.Decls, out)
@@ -301,10 +297,10 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 // importOf lowers one import and records how it is written for the
 // import stamp. An import option imports the custom options of a file
 // and none of its types, so the resolution step does not read it. An
-// import has no identity, so a carrier on it reports as unaddressed,
-// and its annotations are the file's. An import with more than one
-// modifier takes the form of its first modifier, and the parser reports
-// such an import.
+// import has no identity, so a carrier on it reports as unaddressed, and
+// its annotations are annotations of the file. An import with more than
+// one modifier takes the form of its first modifier, and the parser
+// reports such an import.
 func (l *lowered) importOf(d ast.DeclImport, file *node.File) *node.Import {
 	path := d.ImportPath().AsLiteral().AsString().Text()
 	modifier := keyword.Unknown
@@ -330,10 +326,9 @@ func (l *lowered) importOf(d ast.DeclImport, file *node.File) *node.Import {
 	return &node.Import{Pos: l.at(first.LeafSpan()), Path: path, Doc: c.doc, Comment: c.comment}
 }
 
-// sweep reads the comments no declaration took: their tool
-// directives become the file's annotations, and their carriers
-// report as unaddressed, so an authored directive above nothing is
-// reported and never dropped.
+// sweep reads the comments that no declaration took. Their tool
+// directives are annotations of the file. Their carriers are refused, so
+// an authored directive above nothing is reported and not dropped.
 func (l *lowered) sweep(file *node.File) {
 	for tok := range l.stream.All() {
 		if tok.IsSynthetic() {
@@ -344,11 +339,7 @@ func (l *lowered) sweep(file *node.File) {
 		}
 		parts := l.unit.Comment(tok.Text(), l.at(tok.LeafSpan()))
 		file.Annotations = append(file.Annotations, parts.Annotations...)
-		for _, carrier := range parts.Carriers {
-			l.unit.Errorf(UnaddressedCarrier, carrier.Pos,
-				"%q is in a comment protoc attributes to no declaration. Move it directly above a declaration",
-				carrier.Mark+carrier.Payload)
-		}
+		l.unit.RefuseCarriers(UnaddressedCarrier, parts.Carriers, unattributed)
 	}
 }
 
@@ -369,14 +360,14 @@ func (l *lowered) message(def ast.DeclDef, outer features, nested bool) *node.St
 	return s
 }
 
-// members lowers a message's body into a struct: its fields, its oneofs
-// as nested sums, its groups, nested messages and nested enums as nested
-// types, and its reserved and extension ranges, its options and its
-// visibility as stamps.
+// members lowers the body of a message into a struct. Its fields lower as
+// fields, its oneofs as nested sums, and its groups, nested messages and
+// nested enums as nested types. Its reserved and extension ranges, its
+// options and its visibility are stamps.
 //
-// A nested declaration is a nested type, not a file-level one, which
-// is how protobuf addresses it. The message's own features override
-// outer for its members and its nested declarations.
+// A nested declaration is a nested type and not a file-level one, as
+// protobuf addresses it. The features of the message override outer for
+// its members and its nested declarations.
 func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, nested bool) {
 	decls := def.Body().Decls()
 	options := statementOptions(decls)
@@ -397,8 +388,8 @@ func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, neste
 		switch d.Classify() {
 		case ast.DefKindField:
 			if s.Fields == nil {
-				// The declarations from this one on bound the message's
-				// fields, so the slice is allocated once.
+				// The declarations from this one on bound the fields of the
+				// message, so the slice is allocated once.
 				s.Fields = make([]*node.Field, 0, decls.Len()-i)
 			}
 			s.Fields = append(s.Fields, l.field(d, scope, false))
@@ -438,10 +429,11 @@ func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, neste
 }
 
 // field lowers one plain field: its type under its label and its
-// presence, then the parts every field form shares. A field the schema
-// wrote as a map lowers through [lowered.mapField]. outer is the features
-// of the message or the oneof that declares the field, and member
-// reports a member of a oneof, which has presence through its oneof.
+// presence, and then the parts that every field form shares. A field that
+// the schema wrote as a map lowers through [lowered.mapField]. outer is
+// the features of the message or the oneof that declares the field, and
+// member reports a member of a oneof, which has presence through its
+// oneof.
 //
 // A field of a type other than a scalar has the delimited mark where its
 // resolved message_encoding is DELIMITED. The parse does not resolve the
@@ -471,10 +463,10 @@ func (l *lowered) field(def ast.DeclDef, outer features, member bool) *node.Fiel
 	return out
 }
 
-// fieldType lowers a field's type under its label and its resolved
+// fieldType lowers the type of a field under its label and its resolved
 // presence, and reports whether the field is required. A repeated field
 // is a list of its element. A member of a oneof is its type, because the
-// oneof's sum contains its presence. A field with presence is the
+// sum of the oneof contains its presence. A field with presence is the
 // optional form over its type. proto2 and proto3 give a field presence
 // with the optional label, and an edition gives it with explicit
 // presence. A required field and a field without presence are the type
@@ -483,34 +475,26 @@ func (l *lowered) field(def ast.DeclDef, outer features, member bool) *node.Fiel
 func fieldType(inner *node.TypeRef, label keyword.Keyword, presence string, member bool) (*node.TypeRef, bool) {
 	switch {
 	case label == keyword.Repeated:
-		return &node.TypeRef{
-			Spelling: labelRepeated + " " + inner.Spelling, Pos: inner.Pos,
-			Form: symbol.FormList, Elems: []*node.TypeRef{inner},
-		}, false
+		return plugin.Composite(labelRepeated+" "+inner.Spelling, inner.Pos, symbol.FormList, inner), false
 	case member:
 		return inner, false
 	case label == keyword.Optional:
-		return &node.TypeRef{
-			Spelling: labelOptional + " " + inner.Spelling, Pos: inner.Pos,
-			Form: symbol.FormOptional, Elems: []*node.TypeRef{inner},
-		}, false
+		return plugin.Composite(labelOptional+" "+inner.Spelling, inner.Pos, symbol.FormOptional, inner), false
 	case label == keyword.Required:
 		return inner, true
 	case presence == presenceExplicit:
 		// An edition sets presence with a feature and not with a label,
 		// so the spelling is the type as written.
-		return &node.TypeRef{
-			Spelling: inner.Spelling, Pos: inner.Pos,
-			Form: symbol.FormOptional, Elems: []*node.TypeRef{inner},
-		}, false
+		return plugin.Composite(inner.Spelling, inner.Pos, symbol.FormOptional, inner), false
 	default:
 		return inner, presence == presenceLegacyRequired
 	}
 }
 
-// labelled returns a type under its outermost prefix, and the prefix's
-// keyword: a field's label, or the stream mark of an rpc's side. A type
-// without a prefix returns itself and the unknown keyword.
+// labelled returns a type under its outermost prefix, and the keyword of
+// the prefix: the label of a field, or the stream mark of a side of an
+// rpc. For a type without a prefix, it returns the type and the unknown
+// keyword.
 func labelled(t ast.TypeAny) (ast.TypeAny, keyword.Keyword) {
 	if p := t.AsPrefixed(); !p.IsZero() {
 		return p.Type(), p.Prefix()
@@ -529,8 +513,8 @@ func spelled(t ast.TypeAny) string {
 
 // namedRef lowers one named reference as the schema wrote it, and a
 // well-known type with the import path of the file that declares it,
-// because the workspace does not load that file and no resolution
-// names the import.
+// because the workspace does not load that file and no resolution finds
+// the import.
 func namedRef(spelling string, at position.Pos) *node.TypeRef {
 	ref := &node.TypeRef{Spelling: spelling, Pos: at}
 	if file, known := protobuf.WellKnownImport(spelling); known {
@@ -540,27 +524,21 @@ func namedRef(spelling string, at position.Pos) *node.TypeRef {
 }
 
 // mapField lowers a map field into the Map form over its key and its
-// value, with the spelling the schema wrote, and marks it as a map.
+// value, with the spelling that the schema wrote, and marks it as a map.
 func (l *lowered) mapField(def ast.DeclDef, generic, key, value ast.TypeAny, options []option) *node.Field {
-	typ := &node.TypeRef{
-		Spelling: generic.Span().Text(),
-		Pos:      l.at(generic.Span()),
-		Form:     symbol.FormMap,
-		Elems: []*node.TypeRef{
-			{Spelling: spelled(key), Pos: l.at(key.Span())},
-			namedRef(spelled(value), l.at(value.Span())),
-		},
-	}
+	typ := plugin.Composite(generic.Span().Text(), l.at(generic.Span()), symbol.FormMap,
+		&node.TypeRef{Spelling: spelled(key), Pos: l.at(key.Span())},
+		namedRef(spelled(value), l.at(value.Span())))
 	out := l.fieldDecl(def, def.Name().AsIdent().Text(), def.Value(), typ, options)
 	l.unit.Graph().Stamp(out, meta.RawStamp{Key: protobuf.MapEntryKey, Value: mapSpelling, Pos: out.Pos})
 	return out
 }
 
-// fieldDecl lowers what every field form states: the name, the
-// comments, the wire number, a default, a json_name and the other
-// options. A plain field, a map field and a group's field differ in
-// their type alone. A group's field takes its trailing comment after
-// the opening brace of the group's body, as protoc does.
+// fieldDecl lowers what every field form states: the name, the comments,
+// the wire number, a default, a json_name and the other options. A plain
+// field, a map field and the field of a group differ in their type alone.
+// The field of a group takes its trailing comment after the opening brace
+// of the body of the group, as protoc does.
 func (l *lowered) fieldDecl(
 	def ast.DeclDef, name string, tag ast.ExprAny, typ *node.TypeRef, options []option,
 ) *node.Field {
@@ -582,8 +560,8 @@ func (l *lowered) fieldDecl(
 		}
 	}
 	if o, stated := named(options, defaultOption); stated {
-		// proto2's default is the value an absent field reads as,
-		// which the model stores on the field.
+		// The default of proto2 is the value of an absent field, and the
+		// model stores it on the field.
 		out.Value = o.value
 	}
 	if o, stated := named(options, jsonNameOption); stated {
@@ -593,15 +571,15 @@ func (l *lowered) fieldDecl(
 	return out
 }
 
-// group lowers a proto2 group into a nested message and a field, because
-// a group declares both in one statement. The message has the group's
-// name and members. The field has the message's type, and the group's
-// name in lower case, as protoc names it. The field also has the group's
-// label, number, options and comments, and the marker of a delimited
-// field, because a group is encoded delimited. The message repeats the
-// field's documentation. Both have the group's position. outer is the
-// features of the scope that declares the group, and member reports a
-// group inside a oneof.
+// group lowers a proto2 group into a nested message and a field, because a
+// group declares both in one statement. The message has the name and the
+// members of the group. The field has the type of the message, and the
+// name of the group in lower case, as protoc names it. The field also has
+// the label, the number, the options and the comments of the group, and
+// the marker of a delimited field, because a group is encoded delimited.
+// The message repeats the documentation of the field. Both are at the
+// position of the group. outer is the features of the scope that declares
+// the group, and member reports a group inside a oneof.
 func (l *lowered) group(def ast.DeclDef, outer features, member bool) (*node.Field, *node.Struct) {
 	g := def.AsGroup()
 	name := g.Name.Text()
@@ -626,9 +604,9 @@ func (l *lowered) group(def ast.DeclDef, outer features, member bool) (*node.Fie
 	return field, message
 }
 
-// variantOf returns the variant of a oneof member. The variant has the
-// member's field, and it repeats the field's documentation, comment and
-// annotations.
+// variantOf returns the variant of a member of a oneof. The variant has
+// the field of the member, and repeats the documentation, the comment and
+// the annotations of the field.
 func variantOf(f *node.Field) *node.SumVariant {
 	return &node.SumVariant{
 		Pos:         f.Pos,
@@ -640,13 +618,12 @@ func variantOf(f *node.Field) *node.SumVariant {
 	}
 }
 
-// oneof lowers a oneof into a sum whose variants are its members:
-// the tagged shape, never an untagged union. Each member is one
-// field, which takes the member's comments and carriers, and its
-// variant repeats the field's documentation, comment and
-// annotations. It also returns the messages of the groups among the
-// members, which the oneof's message declares, because a oneof is no
-// scope.
+// oneof lowers a oneof into a sum whose variants are its members, which is
+// the tagged shape and not an untagged union. Each member is one field
+// with the comments and the carriers of the member, and its variant
+// repeats the documentation, the comment and the annotations of the
+// field. oneof also returns the messages of the groups among the members.
+// The message of the oneof declares them, because a oneof is not a scope.
 func (l *lowered) oneof(def ast.DeclDef, outer features) (*node.Sum, []symbol.Symbol) {
 	first, last := l.bounds(def)
 	s := &node.Sum{
@@ -681,11 +658,11 @@ func (l *lowered) oneof(def ast.DeclDef, outer features) (*node.Sum, []symbol.Sy
 	return s, groups
 }
 
-// enum lowers an enum into the enum kind: each value a variant with
-// its declared number, and its reserved ranges, its options, its
-// openness and its visibility as stamps. outer is the features of the
-// scope that declares the enum, and nested reports an enum that a
-// message declares.
+// enum lowers an enum into the enum kind. Each value is a variant with its
+// declared number. The reserved ranges, the options, the openness and the
+// visibility of the enum are stamps. outer is the features of the scope
+// that declares the enum, and nested reports an enum that a message
+// declares.
 func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum {
 	first, last := l.bounds(def)
 	out := &node.Enum{
@@ -723,8 +700,8 @@ func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum 
 		variant.Doc, variant.Annotations, variant.Comment = vc.doc, vc.annotations, vc.comment
 		l.stampOptions(variant, variant.Pos, compactOptions(v.Options))
 		if out.Variants == nil {
-			// The declarations from this one on bound the enum's values,
-			// so the slice is allocated once.
+			// The declarations from this one on bound the values of the
+			// enum, so the slice is allocated once.
 			out.Variants = make([]*node.EnumVariant, 0, decls.Len()-i)
 		}
 		out.Variants = append(out.Variants, variant)
@@ -746,8 +723,8 @@ func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum 
 // stampLocal marks a message or an enum that another file cannot
 // reference. The keyword local makes a declaration local. A declaration
 // without the keyword local or export takes the default visibility of
-// the scope that declares it. The keywords are prefixes of the
-// definition's type.
+// the scope that declares it. The keywords are prefixes of the type of the
+// definition.
 func (l *lowered) stampLocal(subject symbol.Symbol, def ast.DeclDef, outer features, nested bool) {
 	stated := keyword.Unknown
 	for ty := def.Type(); ty.Kind() == ast.TypeKindPrefixed; ty = ty.AsPrefixed().Type() {
@@ -763,8 +740,8 @@ func (l *lowered) stampLocal(subject symbol.Symbol, def ast.DeclDef, outer featu
 	}
 }
 
-// service lowers a service into an interface, each rpc a method
-// taking its request and returning its response.
+// service lowers a service into an interface. Each rpc is a method that
+// takes its request and returns its response.
 func (l *lowered) service(def ast.DeclDef) *node.Interface {
 	first, last := l.bounds(def)
 	out := &node.Interface{
@@ -784,10 +761,10 @@ func (l *lowered) service(def ast.DeclDef) *node.Interface {
 	return out
 }
 
-// rpc lowers one rpc into an abstract method: one parameter for the
-// request, one return for the response, and a stamp naming which
-// side streams where either does. An rpc whose response is not a
-// stream is asynchronous, because the caller awaits the one response.
+// rpc lowers one rpc into an abstract method with one parameter for the
+// request and one return for the response. Where a side streams, a stamp
+// records which side does. An rpc whose response is not a stream is
+// asynchronous, because the caller awaits the one response.
 func (l *lowered) rpc(def ast.DeclDef) *node.Method {
 	first, last := l.bounds(def)
 	m := &node.Method{
@@ -818,23 +795,22 @@ func (l *lowered) rpc(def ast.DeclDef) *node.Method {
 	return m
 }
 
-// rpcType lowers one side of an rpc: the message it names, under the
-// asynchronous stream form where that side streams, because the
-// messages of a proto stream arrive over a connection.
+// rpcType lowers one side of an rpc to the message that it refers to.
+// Where that side streams, the message is under the asynchronous stream
+// form, because the messages of a proto stream arrive over a connection.
 func (l *lowered) rpcType(t ast.TypeAny) *node.TypeRef {
 	ty, mark := labelled(t)
 	inner := namedRef(spelled(ty), l.at(ty.Span()))
 	if mark != keyword.Stream {
 		return inner
 	}
-	return &node.TypeRef{
-		Spelling: streamKeyword + " " + inner.Spelling, Pos: l.at(t.Span()),
-		Form: symbol.FormStream, Async: true, Elems: []*node.TypeRef{inner},
-	}
+	ref := plugin.Composite(streamKeyword+" "+inner.Spelling, l.at(t.Span()), symbol.FormStream, inner)
+	ref.Async = true
+	return ref
 }
 
-// streamSide names which side of an rpc streams, and empty for one
-// where neither does.
+// streamSide returns the value of the stream stamp for the side of an rpc
+// that streams, and the empty string for an rpc where neither side does.
 func streamSide(m *node.Method) string {
 	in := len(m.Params) > 0 && m.Params[0].Type.Form == symbol.FormStream
 	out := len(m.Returns) > 0 && m.Returns[0].Type.Form == symbol.FormStream

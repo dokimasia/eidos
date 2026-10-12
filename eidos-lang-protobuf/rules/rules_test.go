@@ -22,7 +22,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The fixture's namespaces.
+// The namespaces of the fixture.
 const (
 	svcPkg = "svc.store"
 	depPkg = "dep"
@@ -36,14 +36,10 @@ const (
 // one iteration: 300 fresh processes counted 0 or 1.
 const rulesAllocs = 80 + 2
 
-// The allocations of a signature's classification, a derived name and
-// a resolution.
+// The allocations of a signature's classification and a resolution.
 const (
 	// returnRolesAllocs is the list of the returns' roles.
 	returnRolesAllocs = 1
-	// typeNameAllocs is a derived name: the word in PascalCase, and the
-	// word joined onto the base.
-	typeNameAllocs = 2
 	// probeAllocs is a type resolved from inside a top-level message of a
 	// two-segment package: the scope's joined name, the list of tiers, and
 	// one list per tier for the message, the package, its parent and the
@@ -67,10 +63,12 @@ type allocCall struct {
 	bench    func(b *testing.B)
 }
 
-// fixture is the loaded tree with a tracked view over it.
+// fixture is the loaded tree with a tracked view over it, and the read set
+// into which the view records.
 type fixture struct {
 	*rulestest.Fixture
-	view rules.View
+	view  rules.View
+	reads *store.ReadSet
 }
 
 // loaded returns the fixture with a tracked view.
@@ -81,8 +79,8 @@ func loaded(tb assert.TB) *fixture {
 	return viewed(tb, f)
 }
 
-// loadedFrom loads a tree of the case's own schemas, for a case that
-// needs declarations the shared fixture does not state.
+// loadedFrom loads a tree of the schemas of the case, for a case that
+// needs declarations that the shared fixture does not declare.
 func loadedFrom(tb assert.TB, files map[string]string) *fixture {
 	tb.Helper()
 
@@ -99,14 +97,15 @@ func viewed(tb assert.TB, f *rulestest.Fixture) *fixture {
 
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
-	assert.NoError(tb, err, "the sealed graph hands out a reader")
+	assert.NoError(tb, err, "the sealed graph returns a reader")
 	return &fixture{
 		Fixture: f,
-		view:    rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys},
+		view:    rules.NewView(reader, f.Facts, reads, f.Keys),
+		reads:   reads,
 	}
 }
 
-// bound returns protobuf's rules bound over the fixture's view.
+// bound returns the rules of protobuf bound over the view of the fixture.
 func (f *fixture) bound() rules.Bound { return rules.NewBound(protorules.New(), f.view, nil) }
 
 // decl looks a declaration up by identity.
@@ -118,7 +117,7 @@ func (f *fixture) decl(tb assert.TB, want symbol.Identity) symbol.Symbol {
 	return sym
 }
 
-// rpc returns one rpc of the fixture's Store, in declaration order.
+// rpc returns one rpc of the Store of the fixture, in declaration order.
 func (f *fixture) rpc(tb assert.TB, index int) *node.Method {
 	tb.Helper()
 
@@ -127,8 +126,8 @@ func (f *fixture) rpc(tb assert.TB, index int) *node.Method {
 	return service.Methods[index]
 }
 
-// callable returns the kernel's projection of one rpc of the fixture's
-// Store.
+// callable returns the projection of the kernel of one rpc of the Store
+// of the fixture.
 func (f *fixture) callable(tb assert.TB, index int) rules.Callable {
 	tb.Helper()
 
@@ -137,9 +136,8 @@ func (f *fixture) callable(tb assert.TB, index int) rules.Callable {
 	return c
 }
 
-// The rules are the projections a generator reads, so the member
-// policy, the roles, the type-name join and the directive resolution
-// are each pinned.
+// TestRules pins the member policy, the roles and the directive
+// resolution of the rules. A generator reads these projections.
 func TestRules(t *testing.T) {
 	t.Parallel()
 
@@ -228,30 +226,6 @@ func TestRules(t *testing.T) {
 			roles, _ := protorules.New().ReturnRoles([]*node.Return{nil, {}}, rules.View{})
 			assert.Equal(t, roles, []rules.ReturnRole{rules.ReturnValue, rules.ReturnValue}, "nothing to read")
 		})
-	})
-
-	t.Run("TypeName", func(t *testing.T) {
-		t.Parallel()
-
-		tests := []struct {
-			name string
-			word string
-			base string
-			want string
-		}{
-			{name: "joins a word onto a Pascal base", word: "check", base: "Row", want: "CheckRow"},
-			{
-				name: "joins a word onto a snake-cased base in PascalCase",
-				word: "check", base: "row_key", want: "CheckRowKey",
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				assert.Equal(t, protorules.New().TypeName(tt.word, tt.base), tt.want, "the joined name")
-			})
-		}
 	})
 
 	t.Run("Resolve", func(t *testing.T) {
@@ -490,9 +464,8 @@ func TestRules(t *testing.T) {
 }
 
 // A classification, a field and a parameter allocate nothing, and the
-// list of roles, a derived name and a type's resolution allocate their
-// results. The ordinary run, which runs no benchmark, checks those
-// ceilings here.
+// list of roles and a type's resolution allocate their results. The
+// ordinary run, which runs no benchmark, checks those ceilings here.
 func TestRulesAllocs(t *testing.T) {
 	checkAllocs(t, rulesCalls(t))
 }
@@ -529,7 +502,6 @@ func rulesCalls(tb testing.TB) []allocCall {
 		policy rules.MemberPolicy
 		role   rules.ParamRole
 		roles  []rules.ReturnRole
-		name   string
 		got    symbol.Symbol
 		err    error
 	)
@@ -564,11 +536,6 @@ func rulesCalls(tb testing.TB) []allocCall {
 				assert.Equal(tb, roles, []rules.ReturnRole{rules.ReturnValue, rules.ReturnStream},
 					"ReturnRoles classifies the value and the stream")
 			},
-		},
-		{
-			name: "TypeName", allocs: typeNameAllocs,
-			call:  func() { name = r.TypeName("check", "Row") },
-			check: func(tb assert.TB) { assert.Equal(tb, name, "CheckRow", "TypeName joins the word onto the base") },
 		},
 		{
 			name: "Resolve", caseName: "a field of the subject",

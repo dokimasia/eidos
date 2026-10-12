@@ -12,7 +12,7 @@ import (
 )
 
 // Rules reports the presence of a message field, which its type does not
-// contain where the field's field_presence is IMPLICIT.
+// contain where the field_presence of the field is IMPLICIT.
 var _ rules.PresenceRules = Rules{}
 
 // Presence reports whether a field has presence that its type does not
@@ -20,17 +20,17 @@ var _ rules.PresenceRules = Rules{}
 // gives that field presence in every version, also where its
 // field_presence is IMPLICIT.
 //
-// A field whose type is not a named reference reports false: the load
+// A field whose type is not a named reference reports false. The load
 // gives a field with explicit presence the optional form, and a repeated
 // field and a map field have no presence. A member of a oneof reports
-// false, because the oneof's sum contains its presence, and so does a
-// required field, which the load marks with [protobuf.LabelKey]. Every
-// well-known type is a message, except the enum NullValue. A wrapper
-// reports false, because its shape is an optional already.
+// false, because the sum of the oneof contains its presence. A required
+// field, which the load marks with [protobuf.LabelKey], reports false
+// too. Every well-known type is a message, except the enum NullValue. A
+// wrapper reports false, because its shape is an optional already.
 //
-// Presence reads the field's host, its label and the declaration that its
-// type resolves to through v, so the caller's read set records each
-// dependency. It allocates nothing.
+// Presence reads the host of the field, its label and the declaration to
+// which its type resolves through v, so the read set of the caller
+// records each dependency. It allocates nothing.
 func (Rules) Presence(f *node.Field, v rules.View) bool {
 	if f == nil || f.Type == nil || f.Type.Form != symbol.FormNamed {
 		return false
@@ -54,16 +54,9 @@ func (Rules) Presence(f *node.Field, v rules.View) bool {
 
 // stamped reports whether the load stamped a key on a subject. A view
 // without facts and a key that the composition did not register report
-// false. It reads the fact through v, so the caller's read set records
-// it, and allocates nothing.
+// false. It reads the fact through v, so the read set of the caller
+// records it, and allocates nothing.
 func stamped(v rules.View, id symbol.Identity, name meta.KeyName) bool {
-	if v.Facts == nil {
-		return false
-	}
-	key, registered := meta.Lookup[string](v.Facts.Registry(), name)
-	if !registered {
-		return false
-	}
-	_, held := rules.Fact(v, id, key)
+	_, held := rules.Fact(v, id, meta.Named[string](name))
 	return held
 }

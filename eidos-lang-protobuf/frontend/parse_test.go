@@ -35,11 +35,9 @@ const (
 	brand       = string(frontendtest.Brand)
 )
 
-// The syntax errors the cap case writes, one for each line, and the cap
-// the frontend reports up to.
+// The syntax errors that the cap case writes, one on each line.
 const (
 	badFields    = 15
-	syntaxCap    = 10
 	badFieldLine = "message M { string x = 1 }\n"
 )
 
@@ -616,8 +614,9 @@ message Row {
 			for d := range sink.All() {
 				found = append(found, d)
 			}
-			assert.Length(t, found, syntaxCap+1, "the cap's worth of errors, then one count")
-			assert.Contains(t, found[syntaxCap].Msg, "and 5 more syntax errors", "naming the rest")
+			assert.Length(t, found, plugin.MaxSyntaxFindings+1, "the cap of findings and one more are reported")
+			assert.Contains(t, found[plugin.MaxSyntaxFindings].Msg, "and 5 more syntax errors",
+				"the last finding counts the errors past the cap")
 		})
 
 		t.Run("loads a file stating no package under the unnamed namespace", func(t *testing.T) {

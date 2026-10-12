@@ -233,7 +233,7 @@ import "dep/t.proto";
 			assert.Empty(t, gb.Attachments(), "the carrier attaches nothing")
 		})
 
-		t.Run("reports BadCarrier for a malformed carrier on an import", func(t *testing.T) {
+		t.Run("reports UnaddressedCarrier for a malformed carrier on an import", func(t *testing.T) {
 			t.Parallel()
 
 			_, sink := parsed(t, `syntax = "proto3";
@@ -243,8 +243,12 @@ package svc.store;
 //+fixture:gen:table name=
 import "dep/t.proto";
 `)
-			assert.Contains(t, messageOf(sink, protofrontend.BadCarrier), `"+fixture:gen:table name="`,
-				"the finding quotes the carrier as the author wrote it")
+			assert.That(t, codesOf(sink)).
+				Contains(protofrontend.UnaddressedCarrier, "an import has no identity, so the carrier reports").
+				NotContains(protofrontend.BadCarrier, "the frontend does not parse a carrier that attaches nowhere")
+			expect.That(t, messageOf(sink, protofrontend.UnaddressedCarrier)).
+				Contains(`"+fixture:gen:table name="`, "the finding quotes the carrier as the author wrote it").
+				Contains("an import", "the finding names the subject")
 		})
 
 		t.Run("spells an enum number in every form proto admits", func(t *testing.T) {

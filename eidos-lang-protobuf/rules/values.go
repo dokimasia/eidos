@@ -40,7 +40,7 @@ const (
 	alternateSuffix = "-b"
 )
 
-// SamplesOf returns two values of a type that differ, for a check
+// DeriveSamples returns two values of a type that differ, for a check
 // that must tell one from the other. Each form derives its pair its
 // own way:
 //
@@ -82,11 +82,11 @@ const (
 // and the field list of each composite. A map entry allocates its key.
 // An enum's pair allocates the reference and the conversion of each
 // value.
-func (r Rules) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+func (r Rules) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	return r.derive(ref, hint, v, 0)
 }
 
-// derive is [Rules.SamplesOf] with the depth walked so far.
+// derive is [Rules.DeriveSamples] with the depth walked so far.
 func (r Rules) derive(
 	ref *node.TypeRef, hint string, v rules.View, depth int,
 ) (rules.Sample, rules.Sample) {
