@@ -86,7 +86,8 @@ fold the composition, because a region depends on its frontend and
 its inputs alone.
 
 The generation's header checks the composition and the code once per
-run. It records two digests:
+run. It records the contract version of the kernel that wrote it, and
+two digests:
 
 - The composition fingerprint folds everything the composition reads
   from outside the executable: its plugins with their versions and
@@ -98,7 +99,8 @@ run. It records two digests:
   run hashes the executable only where its path, size or modification
   time differs from the header's record.
 
-A difference in either sends the run cold. The executable digest makes
+A difference in the contract version or in either digest sends the run
+cold. The executable digest makes
 an upgraded plugin safe without trusting its declared version: code
 that changed is a different executable, and a rebuild of unchanged
 source produces the same bytes.
@@ -131,7 +133,7 @@ graph honest at ten thousand packages.
 **3. Red-green re-derivation** along the recorded edges, with early
 cutoff, per plan.
 
-**4. Parallelism**: frontends per unit, plugins inside a bucket as
+**4. Parallelism**: frontends per unit, plugins inside a turn as
 an opt-in, and plans against each other, since plans are
 read-isolated by construction and only declared export edges
 sequence them.
@@ -270,8 +272,9 @@ The rules above applied in order, which is the warm body of
 out so that O(dirty) names an algorithm rather than a hope.
 
 1. **Open.** Read `CURRENT` and validate the generation's header,
-   meaning the format version, the composition fingerprint and the
-   executable digest. Any mismatch discards the generation and the
+   meaning the format version, the contract version, the composition
+   fingerprint and the executable digest. Any mismatch discards the
+   generation and the
    run goes cold. Then run the stat-first sweep over the scope:
    changed, added and removed files become the dirty unit set, and
    owned outputs are excluded at the gate.
@@ -294,12 +297,12 @@ out so that O(dirty) names an algorithm rather than a hope.
 6. **Stamps and drops.** The claims of changed units and changed
    validations are withdrawn and applied again. Each fact whose
    winner changed joins S.
-7. **Annotate**, bucket by bucket. Run exactly the matches whose read
+7. **Annotate**, turn by turn. Run exactly the matches whose read
    record meets S and the matches that appeared, and withdraw the
    claims of matches that disappeared. Every re-stamp compares
    against the persisted fact value. Equal stops there, which is
    early cutoff. Changed joins S as (symbol, key) dirt before the
-   next bucket reads.
+   next turn reads.
 8. **Generate, per plan**, in export topological order, otherwise in
    parallel. The plan's dirty groups re-run their contributing
    invocations through a selection, settle against the clean groups'

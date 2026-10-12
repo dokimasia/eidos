@@ -51,8 +51,8 @@ arrival order:
 1. Higher **authority** wins, ordered `plugin < directive < manual`.
    A `meta drop` is a directive-authority deletion like any other
    directive write.
-2. Within one authority, the earlier **capability bucket** wins.
-3. Within a bucket, **plugin name**, alphabetically, which is the
+2. Within one authority, the earlier **turn** in the schedule wins.
+3. Within a turn, **plugin name**, alphabetically, which is the
    same tie-break slots use.
 4. Within a plugin, the **first claim wins**, in canonical match
    order: the rule that made it, then the subject identity of its

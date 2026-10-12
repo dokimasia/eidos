@@ -30,8 +30,8 @@ eidos-lang-<lang>/
                    <lang>.* metadata stamping
   rules/           the read half: the decisions the kernel's
                    walks take (member policy, roles, builtins,
-                   Resolve, values, naming) + the Tier-2
-                   optionals the language satisfies
+                   Resolve, values) + the Tier-2 optionals the
+                   language satisfies
   spell/           the write half: canonical-type spelling,
                    optionality, error model, naming joins, the
                    package a routed file declares — the hub's spoke
@@ -40,8 +40,11 @@ eidos-lang-<lang>/
                    binding files alone (conformance ships the lint)
   testing/         the kernel's toolchain-adapter skeleton
                    implemented (parse / typecheck / test /
-                   satisfies) + the fixture builder — thin adapters
-                   over kernel skeletons, not hand-kept twins
+                   satisfies): the binaries, project files and
+                   probe texts of the language over core/toolchain's
+                   Run, Scratch, Sources and Probe + the spelling
+                   adapter of nodetest's fixture builder, pinned to
+                   the frontend by a parity test, not hand-kept twins
   testdata/features/
                    one fixture per feature row; driven by the
                    kernel's completeness check from a root-level
@@ -202,10 +205,10 @@ declared carrier ([05-directives.md](05-directives.md)).
 the kit owns everything around it:
 
 ```go
-frontend.New(lang, syntax).
-    Match("*.go").                      // include-shaped selection
-    Classify(eidos.TestFiles(isTest)).  // stamps golang.testFile; excludes NOTHING
-    Units(byDirectory).                 // the language defines the unit
+frontend.New(name, lang, syntax).
+    Match("**/*.go").                                       // the files that the frontend claims
+    Classify(frontend.TestFiles(golang.TestFileKey, isTest)). // stamps the test files; excludes NOTHING
+    Units(byDirectory).                                     // the language defines the unit
     Parse(parseUnit).
     Build()
 
@@ -216,8 +219,17 @@ u.Artifacts() []Artifact      // declared dep artifacts (JARs, .d.ts)
 u.Depth() Depth               // Full | Signatures — the kit tells you
 u.Graph() *GraphBuilder       // back-pointers, identities, ordering
 u.Doc(raw) / u.DocLines(…)    // the comment pipeline
+u.RefuseCarriers / RefuseSugar // a directive on a subject the model cannot address
+u.ReportSyntax(code, errs)    // ten syntax errors one by one, then their count
 u.Errorf / u.Warnf            // scoped diagnostics
 ```
+
+A partition finds the manifest of a unit through `frontend.Nearest`,
+which reads each directory once for all the probes of one name. The
+builder stamps the module of each package through `StampModule`. A
+tree-sitter frontend attributes its comments through the comment walk
+of `eidos-lang/treesitter`, with the facts of its language as the
+parameters of the walk.
 
 Three rules ride the kit.
 
@@ -232,9 +244,9 @@ this workspace generated itself, proven by a manifest entry or a
 provenance trailer, do not load at all
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)), and the
 kit enforces that before `Parse` sees a unit. Output from a
-*foreign* generator is ordinary input: parsed, stamped with the
-kit's generated-marker classification, and gated by consumers like
-any other fact.
+*foreign* generator is ordinary input. Its parse stamps it with the
+generated marker of its language, and a consumer selects it by the
+marker as by any other fact.
 
 **There is no ambient filesystem.** `u.Read` is the only way bytes
 enter a frontend. It is jailed to the unit's files, to declared
@@ -389,7 +401,7 @@ question arrives on a declared source of truth:
 |---|---|
 | declarations, signatures, docs, carriers | syntax |
 | build and config constraints on a file | syntax: parsed and stamped as classification facts, never resolved by the frontend. Sources scopes and `Where` decide |
-| enum and constant values, including iota-style arithmetic | syntax plus a small constant evaluator in `rules/` |
+| enum and constant values, including iota-style arithmetic | the layer that has the facts: the Go frontend evaluates through the type checker and stamps the exact value, and the TypeScript and protobuf rules evaluate from the declaration |
 | cross-package types, embeds, effective member sets | the linked graph, through `Members` and `Resolve` ([03-projection.md](03-projection.md)) |
 | comparability, zero values, samples | `rules/` walking the linked graph |
 | dependencies distributed without source | declared artifacts such as JARs and `.d.ts`, parsed and never executed |

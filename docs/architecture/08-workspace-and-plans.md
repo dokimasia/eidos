@@ -30,7 +30,7 @@ per plan.**
 
 ```
 Load ─► Link ─► Freeze ─► Annotate ─► Plan "go-server"  ─► Generate ► Layout ► Render ► Sink ─┐
-(N frontends,  (spellings  (buckets, ├► Plan "ts-client" ─► ...                               ├─► Close
+(N frontends,  (spellings  (turns,   ├► Plan "ts-client" ─► ...                               ├─► Close
  parallel,      resolve to  tracked  └► Plan "docs"      ─► ...      (plans parallel,         │
  fingerprinted) identities) reads)                                    topo on exports)        │
                                         merged manifest · collision check · sweep · checks ───┘
@@ -90,7 +90,7 @@ Workspace (built once, survives forever)
 ├─ composition   plugins (lowered), plans (values), config
 ├─ registries    schemas, meta keys, diag codes, capabilities, languages
 ├─ interner A    composition-static names → dense IDs
-└─ dispatch plan per phase, per bucket: gate→handler tables — COMPILED
+└─ dispatch plan per phase, per turn: gate→handler tables — COMPILED
 
 Run (per invocation; holds the workspace lock)
 ├─ state         the sealed state over the ledger's blobs: the gate,
@@ -157,9 +157,9 @@ type Dispatcher struct{ tables PhaseTables }       // Build's output
 // One call serves cold (sel nil: every match) and warm (sel: the
 // recorded matches of dirty groups, plus the candidate subjects whose
 // matches may have changed). It yields matches in canonical order,
-// (bucket, plugin, rule, subject identity, instance, host), and
+// (turn, plugin, rule, subject identity, instance, host), and
 // journals what each invocation read and touched.
-func (d *Dispatcher) MatchesOver(ph Phase, bucket int, sel *Selection, j Journal) iter.Seq[MatchWork]
+func (d *Dispatcher) MatchesOver(ph Phase, turn int, sel *Selection, j Journal) iter.Seq[MatchWork]
 type PlanExec interface {
     Generate(dirty []GroupID, d *Dispatcher, g Graph, f Facts) error
     LayoutAndRender(ctx context.Context) ([]StagedFile, error)
@@ -215,7 +215,7 @@ Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
 
 Concurrency per phase: phases are barriers. Load shards per unit,
 with graph writes serialized per package. Annotate and each plan's
-Generate run bucket-sequentially. Parallelism inside a bucket is the
+Generate run one turn after another. Parallelism inside a turn is the
 workspace's opt-in, `Builder.Parallel`: one plugin's phase call runs
 its matches on up to the worker count, and the dispatcher applies
 every placement, slot append and finding of its matches in canonical
@@ -251,7 +251,7 @@ The steps, in order, where each assumes the ones before it:
 2. **Plugin lowering.** Authoring-surface values lower to the SPI
    ([06b-authoring.md](06b-authoring.md)), subscriptions are
    collected as data, and per-role priorities and capability
-   topology sort. A cycle is an error naming the bucket and its
+   topology sort. A cycle is an error naming the priority and its
    members. A requirement whose provider runs later is an error naming
    both plugins. A provider runs later where it has a later priority in
    the role of the requirer, and where it is a generator alone and the
@@ -274,9 +274,12 @@ The steps, in order, where each assumes the ones before it:
    choices, and each plan's total `Policy` is fixed here
    ([10-cross-language.md](10-cross-language.md)).
 6. **The dispatch plan.** Subscriptions compile into the per-phase,
-   per-bucket gate-to-handler tables the Run's dispatcher executes.
-7. **The handshake.** One contract version, checked across every
-   registered component
+   per-turn gate-to-handler tables the Run's dispatcher executes.
+7. **The handshake.** Build checks no contract version. Go links one
+   kernel into a binary, so every compiled component has the contract
+   version of the binary. The declarative loader refuses a manifest of
+   another version before Build, and a run over a sealed state of
+   another version runs cold
    ([15-compatibility.md](15-compatibility.md)).
 
 The builder and the values it composes, pinned:
@@ -603,7 +606,7 @@ type PlanConfig struct {
 ```
 
 `Describe` returns the composition as data: the frontends, the
-buckets, the topological order, the layouts and the export edges. It
+turns, the topological order, the layouts and the export edges. It
 executes nothing, and the `plan` command prints it.
 
 The workspace ID names the workspace in manifests and in

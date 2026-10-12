@@ -164,7 +164,7 @@ therefore exits 1 through the ordinary contract, and enforcing
 ### plan
 
 Shows the resolved execution picture without running anything:
-plugins per phase in bucket and topological order, per-plan layout
+plugins per phase in turn order, per-plan layout
 policies, export edges between plans, and the source scope each plan
 sees. This is a dry run of the composition, showing what would
 execute, where `run --dry-run` applies the composition to sources
@@ -226,8 +226,8 @@ the poll, and the default is one second.
 The main module's path and version, the versions of the kernel and of
 the command kernels, the contract version, every registered plugin
 with its version, the composition fingerprint and the executable's
-digest. The sealed state's header records the last two, and a
-difference in either runs the next run cold
+digest. The sealed state's header records the contract version and the
+last two, and a difference in any of the three runs the next run cold
 ([09-incrementality.md](09-incrementality.md)).
 
 ## Machine output

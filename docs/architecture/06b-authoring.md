@@ -32,9 +32,10 @@ that go with it. Everything below covers the subscriber surface. The
 kits live with the satellite anatomy.
 
 **A declaration is a value.**
-`NewPlugin(name).Version(v).Output(o)….Handle(rules…).Build()`.
-Identity, outputs, priorities and schemas are data, built once. Only
-the handlers are functions.
+`NewPlugin(name).Version(v).Output(o)….Handle(rules…).Generator()`
+builds a generator, and `Annotator()` and `Dual()` build the other two
+roles. Identity, outputs, priorities and schemas are data, built once.
+Only the handlers are functions.
 
 ## Triggers
 
@@ -43,7 +44,7 @@ the handlers are functions.
 `OnMethod`, `OnField`, `OnConstant`, `OnVariable` and `OnAlias`.
 
 Two structural triggers join them. `OnEmit(kind)` takes one emit
-value produced by an earlier-bucket plugin in the same plan, which
+value produced by a plugin of an earlier turn in the same plan, which
 is what a weaver subscribes to. `OnGraph` takes the whole graph, and
 it is the pressure valve for logic that genuinely spans subjects.
 
@@ -85,13 +86,14 @@ stamped during Annotate.
 and registers the schema. `Where(pred, rules…)` gates on stamped
 facts, through `HasKey` and `KeyEquals`.
 
-`Builder.Build` gives the schema of each `Directive` wrapper the kinds
+A typed build gives the schema of each `Directive` wrapper the kinds
 that an instance can affect: the kinds of the rules under the wrapper,
 and for an override schema also the kinds of the plugin's bare and
-fact-gated rules. Build leaves the kinds empty where one of those rules
-is an `OnEmit` rule, and the plugin of such a rule states its kinds in
-`Kinds` ([05-directives.md](05-directives.md)). Build panics where an
-explicit `Kinds` leaves out the kind of a rule under the wrapper.
+fact-gated rules. The build leaves the kinds empty where one of those
+rules is an `OnEmit` rule, and the plugin of such a rule states its
+kinds in `Kinds` ([05-directives.md](05-directives.md)). The build
+panics where an explicit `Kinds` leaves out the kind of a rule under the
+wrapper.
 
 For emit-side rules the predicate evaluates against the **origin**,
 which is how a weaver subscribes to "methods emitted from
@@ -127,13 +129,13 @@ That is why it is banned rather than discouraged.
 
 ## Two-level lowering
 
-The engine never reads authoring-surface values. `Build` lowers them
-into the kernel form the engine indexes:
+The engine never reads authoring-surface values. A typed build lowers
+them into the kernel form the engine indexes:
 
 ```go
 package plugin
 
-type Subscribed interface {          // what Build produces
+type Subscribed interface {          // what a typed build produces
     Generator
     Subscriptions() []Subscription   // the gate tuples, as data
 }
@@ -212,7 +214,20 @@ whether you are appending into your own method's prologue or, through
 names your plugin among the contributors of the unit that contains the
 value. The frame of the file the value is written in, and the file's
 manifest entry, then name the weaver beside the emitter
-([17-output-and-determinism.md](17-output-and-determinism.md)).
+([17-output-and-determinism.md](17-output-and-determinism.md)). The
+parameters and the results of a callable, the embeds of a struct or an
+interface and the tag entries of a field are slots as well, so a
+weaver changes a signature or a tag through the same view. A helper of
+a backend takes such a slot by address, as in `{{params .Params}}`. A
+template that ranges over the entries reads `.Items`, and tests for
+entries with `.Len`.
+
+The store of a plan seals every slot of a value that a unit places. A
+direct `Append` or `Replace` on such a slot panics until the settle
+starts, so the slot view is the only path into a value of the store. A
+handler appends directly into a value that it builds itself, before it
+places the value. The settle lifts the seal, so the lowering hooks of a
+backend rewrite the declarations of their target.
 
 ## Ordering rules
 
@@ -267,8 +282,10 @@ symbols subscribes to those kinds.
 `Fact(m, key)` reads the subject's stamped facts through the tracked
 reader, so an annotator depending on another annotator becomes an
 incrementality edge automatically. The ordering between them is
-declared through `Provides` and `Requires` on the builder rather
-than hoped for.
+declared through `Provides`, `Requires` and `After` on the builder
+rather than hoped for. `Requires` names a capability whose provider
+must be present and runs first. `After` names a capability whose
+provider runs first where the composition contains it.
 
 ## Target universality
 
@@ -366,7 +383,9 @@ standard body slots, which every body has without a declaration from
 the owner, or named slots the owner exported as constants.
 
 And **`Requires(owner.Cap)`** turns the ordering into a scheduled
-guarantee.
+guarantee. A weaver that also serves compositions without the owner
+declares `After(owner.Cap)`, which orders it after the owner where the
+owner is present.
 
 A param that two plugins both want is either promoted to a fact by
 its owner, or it belongs in the consumer's own directive. Sharing it
@@ -374,8 +393,8 @@ raw does not exist.
 
 **One directive may gate many rules, and it registers once.** The
 `Directive` wrapper both gates and registers its schema, and a
-plugin declares each directive in one wrapper: the plugin's `Build`
-panics on a second wrapper that declares the same directive. A name
+plugin declares each directive in one wrapper: the typed build of the
+plugin panics on a second wrapper that declares the same directive. A name
 that two plugins register is ambiguous under its bare spelling, so
 a carrier writes it with its plugin prefix. The common multi-kind
 plugin needs one wrapper:
@@ -411,12 +430,14 @@ The target spells the join of word and tag per its own ecosystem
 ## The lowering guarantee
 
 This is the layer boundary's contract. Every rule set lowers to the
-SPI: emit-bearing rules to Generator, stamp-bearing rules to
-Annotator, and rules that do both to both, with per-role priorities
-intact. The workspace never knows which layer authored a plugin, and
-the SPI stays public for whatever the facade does not fit. The
-conformance suite holds both spellings of one plugin to byte-equal
-output.
+SPI through the typed build of its role: `Generator()` for
+emit-bearing rules, `Annotator()` for stamp-bearing rules, and `Dual()`
+for rules that do both, with per-role priorities intact. A typed build
+panics where the rules do not fit its role, so the role is a compile-time
+type and never an assertion. The workspace never knows which layer
+authored a plugin, and the SPI stays public for whatever the facade does
+not fit. The conformance suite holds both spellings of one plugin to
+byte-equal output.
 
 The contract, written out. These signatures are terse enough to pin,
 and the kind-indexed constructors are shown as two, since each
@@ -429,11 +450,14 @@ func (b *Builder) Version(v string) *Builder
 func (b *Builder) Output(o Output) *Builder        // repeatable: families
 func (b *Builder) Priority(r Role, p int) *Builder // per role
 func (b *Builder) Provides(caps ...Capability) *Builder
-func (b *Builder) Requires(caps ...Capability) *Builder
-func (b *Builder) Options(cfg any) *Builder        // tagged struct; populated
-                                                   // at Build, errors name the field
+func (b *Builder) Requires(caps ...Capability) *Builder // present, and runs first
+func (b *Builder) After(caps ...Capability) *Builder    // runs first where present
+func (b *Builder) Options(cfg any) *Builder        // tagged struct; the workspace's
+                                                   // Build populates it, errors name the field
 func (b *Builder) Handle(rules ...Rule) *Builder
-func (b *Builder) Build() Plugin                   // lowers to the SPI
+func (b *Builder) Generator() Generator            // lowers to one role of the SPI,
+func (b *Builder) Annotator() Annotator            // and panics where the rules
+func (b *Builder) Dual() Dual                      // do not fit the role
 
 type Output struct {
     Tag      string      // "" = primary
@@ -503,7 +527,7 @@ func (o *Out) Append(decls ...symbol.Symbol)               // declarations of th
 func (o *Out) Record(data any, decls ...symbol.Symbol)     // records of a claimed family, with their data
 func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] // one slot's write view
 func (v SlotView[T]) Append(values ...T)                   // names a weaver among the contributors
-func (e *Emitter) JoinName(word, base string) string       // target's join
+func (e *Emitter) JoinName(tail, head string) string       // head, then tail raised
 func (e *Emitter) Ref(name string, data any) *emit.TemplateRef // resolves in this plugin's tree
 
 // Stamper: authority and origin filled in by the dispatch.

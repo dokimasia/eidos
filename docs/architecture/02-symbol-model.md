@@ -92,7 +92,14 @@ Hand-written rather than generated:
 
 Package, File, Import, Export, Binding, Struct, Interface, Method,
 Field, Function, Param, Return, Variable, Constant, Enum,
-EnumVariant, Sum, SumVariant, Alias, TypeParam, TypeRef, Embed.
+EnumVariant, Sum, SumVariant, Alias, TypeParam, TypeRef, Embed,
+TagEntry.
+
+TagEntry is one entry of the struct tag of an emitted field, with a key
+and a value. It has fields on the emit side alone. A parsed field keeps
+its tag as the text that the source wrote, and an emitted field keeps
+its entries in a slot, so a weaver appends an entry through the slot
+view.
 
 Import and Export carry a statement's whole binding list, and each
 bound name is a Binding, because `import {a as b, c} from 'x'` binds
@@ -124,6 +131,12 @@ each addition:
 | `Visibility` | normalized to `Public \| Package \| Protected \| Private \| Internal` on every declaration. The raw spelling stays in language metadata |
 | `Level` on members | `Instance \| Type`, covering statics and companions. Go always returns Instance |
 | `Method.HasDefault` | interface methods with default bodies: Java 8 and later, Kotlin, Rust default impls. Go leaves it false |
+| `Method.Optional` | a method that a value of its type may lack: TypeScript's `run?(): void`. Every other language leaves it false |
+| `Method.Mutability` | whether a holder can assign the entries of an index signature: TypeScript's `readonly [key: string]: V`. A method that is not an index signature leaves it unknown |
+| `Method.Computed` / `Field.Computed` | a member whose name is an expression: TypeScript's `[Symbol.iterator]`. The member keeps the brackets in its name, and the member walk leaves it out under the gap reason `GapComputed` |
+| `TypeRef.Mutability` | whether a holder can write through a list, an array, a tuple, a map or a borrow: TypeScript's `readonly T[]`, and Rust's `&T` and `&mut T` |
+| `TypeRef.Absent` | the members of a source union that an optional folds, in source order, such as the `null` of TypeScript's `T \| null`. It is on the node side alone, and an optional that a mark states, such as Go's `*T`, has none |
+| `Enum.Underlying` | the representation that an enum declares: the target of Go's `type Level uint8` and the integer of Rust's `#[repr(u8)]`. TypeScript, protobuf and Java leave it nil |
 | `Enum.Methods` | Java enums are classes with members. Most languages leave it empty |
 | `Package.Path` | hierarchical segments. Rust `mod` nesting, TypeScript namespaces and a proto package's dotted name map into them, and the original spelling stays in language metadata |
 

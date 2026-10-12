@@ -2,9 +2,9 @@
 rfc: 0029
 title: The memory layout of the model
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-11
-updated: 2026-10-11
+updated: 2026-10-12
 discussion: none
 supersedes: none
 superseded-by: none
@@ -370,7 +370,8 @@ it.
 ## Drawbacks
 
 - `node.TypeRef` loses a field. A plugin that reads or sets it stops
-  compiling. The repository has none outside generated code.
+  compiling. The repository has none outside generated code, and the SDK has no
+  tagged release that a plugin outside the repository could build on.
 - A node-side kind without an `ID` field gets a generated `Identity` method
   that returns the zero identity. The generator needs one field of the view,
   one condition in `viewsIdentified`, one branch in each of two templates, and
@@ -382,14 +383,11 @@ it.
   is 6.5% of the live heap at the peak. A module with fewer references for each
   declaration saves less.
 
-## Open questions
-
-- Should a type reference leave `node.Declaration` instead of returning the
-  zero identity? 91 sites refer to the interface. Each one would need a check
-  that it treats a type reference as it does today.
-- Does a plugin outside this repository read or set `TypeRef.ID`?
-
 ## Unresolved and future work
+
+- A type reference that leaves `node.Declaration` is not proposed here. 91 sites
+  refer to the interface, and each one would need a check that it treats a type
+  reference as it does today. The zero identity keeps every site as it is.
 
 - The engine's own maps keyed by identity are not part of this proposal. The
   duplicate check of the identity assignment allocates 0.46 GB over the cold

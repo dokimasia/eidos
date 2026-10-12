@@ -12,9 +12,10 @@ compatibility claim is executed with.*
 This is how a framework split across modules keeps its promises.
 The suites are test packages of the kernel: `plugintest`,
 `backendtest`, `pipelinetest`, `workspacetest`, `frontendtest` and
-`rulestest` in eidos-core, and `acceptancetest` in eidos-cli.
-eidos-sdk re-exports `plugintest`, `backendtest`, `frontendtest` and
-`rulestest` for satellites, and satellites and consumers run them
+`rulestest` in eidos-core, and `acceptancetest` in eidos-cli. Beside
+them, `nodetest` builds the declaration graph of a test. eidos-sdk
+re-exports `plugintest`, `backendtest`, `frontendtest`, `rulestest`
+and `nodetest` for satellites, and satellites and consumers run them
 too. The eidos-conformance module checks every language against one
 corpus. Claims about compatibility, determinism and language support
 are executed rather than asserted.
@@ -49,8 +50,13 @@ failures are written once.
 setup builds the plugin with its fixture fresh per call. Per plugin
 it checks these properties:
 
-- Declaration stability. The name, the gate records, the outputs and
-  the schemas the plugin registers come back identical across builds.
+- Declaration stability. The plugin has a name. Every declaration
+  that the workspace reads off the plugin comes back identical across
+  repeated reads of one build and across two builds: the name, the version,
+  the gate records, the outputs, the schemas, the priorities and
+  capabilities, the options with their defaults, and the template
+  declarations. The template declarations are read for each target of
+  the fixture and for a target that no backend claims.
 - Determinism. Two runs over one fixture store produce byte-equal emit
   under `-count=2`.
 - Parallel dispatch. A run on eight workers produces the emit, the fact
@@ -61,18 +67,36 @@ it checks these properties:
   call ran reproduces the full call's emit, facts and findings, and
   the journal lists every match once.
 - Annotator idempotence.
+- Clean run. A run over the fixture reports no Error.
+- Empty input. A run over the fixture without its graph, its
+  directives, its facts and its emit store completes without a panic
+  and without an Error.
 - No structural write. The node count is unchanged.
-- Positioned diagnostics. Every diagnostic has a position.
+- Positioned diagnostics. Every diagnostic has a position with a file,
+  which `diag.Diag.Positioned` checks for every kit.
 - Declared tags. Every emitted tag is a declared tag.
 - Attribution. Every unit names the plugin that emitted it.
 - Options schema stability. Unknown keys and missing required keys are
   rejected.
 - Template lint. Every declared template parses against each
-  language's merged funcmap, body templates place the slot marker, and
-  no name collides with a reserved one.
+  language's merged funcmap, body templates place the slot marker, no
+  name collides with a reserved one, and text/template can call every
+  helper.
 - The lowering guarantee. A facade-authored plugin and its hand-rolled
   SPI twin produce byte-equal output, the contributors each unit
   records included. This is where 06b's promise is checked.
+
+A check of a role or a surface that the plugin does not implement runs
+as a skipped subtest that states the reason. A panic of a phase call
+or of a declaration read fails the check that made the call, so the
+other checks still report.
+
+A plugin author who tests over real source builds the fixture with
+`plugintest.Loaded`. It loads a source tree through its frontends,
+registers the keys of the frontends and the plugins, files the
+classification stamps of the load under `meta.LoadClaim`, and validates
+the directives of the plugins, as a workspace prepares its first phase
+call. The reference ensemble builds its fixtures this way.
 
 **backendtest**, through `RunBackendSuite(t, setup Setup)`. Over a
 hand-built emit fixture it checks: that the fixture is populated,
@@ -83,12 +107,18 @@ its backend declares; that every body arrives whole, with slot
 contents spliced through the kind machinery;
 and that a file's failure reports positioned and attributed while
 the render continues per [07-rendering.md](07-rendering.md), the
-refused file withheld. The header and trailer checks are the output
-contract's and join the suite with it.
+refused file withheld. It also renders an empty store, and fails on a
+file or an Error. The header and trailer checks are the output
+contract's and join the suite with it. `backendtest.Rendered` returns
+the files and the findings of one settle and render, and
+`Fixture.Context` lowers a fixture to the context of one render call,
+so the test of a satellite pins a finding of its backend without the
+plumbing.
 
-**pipelinetest**, through `RunPipelineSuite(t, f Fixture)`, where the
-fixture is a source tree, the stores its load reads, a composition
-over the directory a check runs in, and every file the run generates.
+**pipelinetest**, through `RunPipelineSuite(t, f workspacetest.Fixture)`,
+where the fixture is the workspace kit's fixture with one plan: a source
+tree, the stores its load reads, a composition over the directory a
+check runs in, the plan, and every file the run generates.
 Plugins plus a real backend driving one plan, each check over
 directories of its own: a clean run with every finding positioned,
 end-to-end bytes at their routed paths with no other file under the
@@ -97,7 +127,9 @@ run, cold, that leaves every byte and every mtime unchanged, and a run
 in a second directory that writes the same bytes and records the same
 files. The second run is cold because a warm run over an unchanged
 tree executes nothing, so it would not check that the phases produce
-the same bytes again.
+the same bytes again. `workspacetest.AssertRerunUnchanged` compares the
+two runs for the pipeline kit and for the acceptance kit, the manifest
+included.
 
 **frontendtest**, through `RunFrontendSuite(t, f FrontendFixture)`.
 A real frontend with the chain behind it: deterministic graphs, a
@@ -212,16 +244,24 @@ func RunWorkspaceSuite(t *testing.T, f workspacetest.Fixture)
 func RunWarmColdSuite(t *testing.T, f workspacetest.Fixture)
 
 type Fixture struct {
-    Tree    fs.FS                                // the fixture tree
-    Stores  map[string]fs.FS                     // the trees dependency units read
-    Compose func(root string) *workspace.Builder // the composition without its plans
-    Plans   func() []workspace.Plan              // two or more, fresh instances per call
-    Want    map[string][]byte                    // every generated file, frame included
-    Edit    func(root string) error              // changes one declaration the first plan
-                                                 // generates from: its output changes,
-                                                 // its export does not
+    Tree    fs.FS                                         // the fixture tree
+    Stores  map[string]fs.FS                              // the trees dependency units read
+    Compose func(root string) (*workspace.Builder, error) // the composition without its plans
+    Plans   func() []workspace.Plan                       // two or more, fresh instances per call
+    Want    map[string][]byte                             // every generated file, frame included
+    Edit    func(root string) error                       // changes one declaration the first plan
+                                                          // generates from: its output changes,
+                                                          // its export does not
 }
 ```
+
+A check stops where `Compose` returns an error, such as the error of a
+config file that does not decode. `cli.Configure` applies the brand's
+config file of a root to a composition, so a fixture composes what the
+binary runs. `workspacetest.Want` reads the goldens of a fixture from a
+directory, and `workspacetest.AssertGolden` matches a run against them,
+so `-update` rewrites them. `workspacetest.Generated` reads the files
+that a run recorded as the input of a toolchain check.
 
 The kernel's own tests cover what the suites cannot vary through a
 fixture: early cutoff, the scoped membership edge, a package that
@@ -243,13 +283,13 @@ small adapter interface that each language's `testing/` implements:
 
 ```go
 type Adapter interface {
-    Lang() symbol.Lang                               // for the assertions' wording
-    Available() (bool, string)                       // and the reason where it is not
-    Layout(g Generated) (dir string, err error)      // scratch project the toolchain accepts
-    Parse(dir string) error                          // syntax only
-    TypeCheck(dir string) error
-    RunTests(dir string) (TestReport, error)
-    Satisfies(dir, typeName, contract string) (bool, error)
+    Lang() symbol.Lang                          // for the assertions' wording
+    Available() (bool, string)                  // and the reason where it is not
+    Layout(g Generated) (dir string, err error) // scratch project the toolchain accepts
+    Parse(ctx context.Context, dir string) error // syntax only
+    TypeCheck(ctx context.Context, dir string) error
+    RunTests(ctx context.Context, dir string) (TestReport, error)
+    Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error)
 }
 
 type Generated struct {
@@ -287,21 +327,46 @@ assertions themselves never skip: a caller reaching for one has
 already decided the toolchain is there.
 
 Two assertions refuse rather than pass on an absence. A fixture
-carrying no output fails, because a toolchain run over nothing
-passes while proving nothing, and a test run reporting no case at
-all fails for the same reason: generated tests that execute nothing
-are the failure the assertion exists to catch.
+without output fails, because a toolchain run over nothing passes
+while proving nothing, and a test run reporting no case at all fails
+for the same reason: generated tests that execute nothing are the
+failure the assertion exists to catch.
+
+`RunToolchainSuite(t, a, g)` takes the adapter and the fixture as
+values. Each of its three checks lays the fixture out in a scratch
+directory of its own, so the checks share both.
+
+Two checks of the kit read generated output through the frontend of
+its language and run no toolchain, so they never skip. `Surface`
+renders the public declarations of the output from the model, one
+line for each feature, without comments, bodies, the names of
+parameters or the order of declarations. `AssertSurface` matches the
+surface against a golden file that `-update` writes, so a reviewer
+reads the change of the API of a template as a change of a few lines.
+`AssertDocumented` requires a doc comment on every public declaration
+at file level of the output. The reference test runs both over its Go
+and its TypeScript output.
 
 Go's harness is the first: it parses with the standard library, so a
 machine with no toolchain still holds generated output to Go's
 grammar, and type-checks, tests and vets by running the go tool.
-`AssertVets` is its language-specific addition, because a template
-that assembles a call site correctly for one type assembles it
-wrongly for the next, and that is exactly what vet catches.
+`AssertVets(ctx, tb, g)` is its language-specific addition, because a
+template that assembles a call site correctly for one type assembles
+it wrongly for the next, and that is exactly what vet catches. It lays
+the project out through the Go adapter itself.
 
-The fixture builders follow the same pattern: a neutral
-symbol-fixture core in `conformance/`, with per-language spelling
-adapters in each satellite.
+The fixture builder follows the same pattern. Its core is the
+kernel's `nodetest`. A test builds a fixture in three steps:
+
+- It writes its declarations as literals of the node model.
+- It links them with `Builder.Ref`.
+- It calls `Builder.Build`, which loads them through the kernel's load.
+
+The load assigns every identity, host and target of the fixture. The
+testing package of each satellite provides the `Language` of its
+language, which writes the source spelling of a structural reference.
+A parity test pins each spelling to the frontend of the language.
+`nodetest.Neutral` serves a language without a satellite.
 
 ## Fixtures
 

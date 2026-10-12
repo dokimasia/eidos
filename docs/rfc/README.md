@@ -45,4 +45,12 @@ the decision is already made and there is nothing left to argue, write an
 | [0026](0026-the-reference-ensemble-and-the-canary-ring.md) | The reference ensemble and the canary ring | Accepted |
 | [0027](0027-the-subject-kinds-of-a-directive.md) | The subject kinds of a directive | Accepted |
 | [0028](0028-group-commit-of-outputs-and-the-record.md) | Group commit of outputs and the record | Accepted |
-| [0029](0029-the-memory-layout-of-the-model.md) | The memory layout of the model | Draft |
+| [0029](0029-the-memory-layout-of-the-model.md) | The memory layout of the model | Accepted |
+| [0030](0030-the-contracts-of-the-spi-and-the-authoring-api.md) | The contracts of the SPI and the authoring API | Accepted |
+| [0031](0031-the-shared-helpers-of-the-satellites.md) | The shared helpers of the satellites | Accepted |
+| [0032](0032-the-fixture-builder.md) | The fixture builder | Accepted |
+| [0033](0033-the-shared-mechanisms-of-the-test-kits.md) | The shared mechanisms of the test kits | Accepted |
+| [0034](0034-the-surface-and-documentation-checks-of-generated-output.md) | The surface and documentation checks of generated output | Accepted |
+| [0035](0035-one-name-for-each-concept.md) | One name for each concept | Accepted |
+| [0036](0036-the-facts-that-the-model-drops.md) | The facts that the model drops | Accepted |
+| [0037](0037-five-contracts-that-the-reviewed-defects-need.md) | Five contracts that the reviewed defects need | Accepted |

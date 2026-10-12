@@ -28,7 +28,7 @@ judgement call.
 
 ```
 Tier 1  every language returns        Callable · TypeShape · Resolve
-        (the language contract)       · Members · Values · naming
+        (the language contract)       · Members · Values
 Tier 2  declared by satisfying,       EnumRules · AnnotationRules ·
         found by asserting            GenericsRules · …
 Tier 3  language sdk, importable      the Go-only, Java-only
@@ -54,8 +54,8 @@ it resolves against the registry at workspace Build
 
 ## Tier 1: every language returns
 
-Five projections and the naming joins. Implementing Tier 1 is what
-makes something a language ([11-languages.md](11-languages.md)).
+Tier 1 has five projections. Implementing Tier 1 is what makes
+something a language ([11-languages.md](11-languages.md)).
 The kernel owns the walks every language would otherwise repeat, and
 the language returns the decisions inside them:
 
@@ -64,9 +64,14 @@ the language returns the decisions inside them:
 | Callable | mapping receiver, parameters, returns, variadic and async from the model | the role of each parameter, the role of each return, the error model |
 | TypeShape | folding a reference's form and children; classifying a resolved target | the meaning of a builtin spelling, and the well-known mapping |
 | MemberSet | the walk: cycle guard, depth budget, argument binding, provenance, gaps | which member lists contribute, in which order, and how names shadow |
-| Resolve | the resolution kinds and the validation binding | what a spelling names in a scope |
+| Resolve | the resolution kinds, the validation binding and the walk of each kind | the probe order of a scope, the members a subject can use, the predeclared types, and the type of a value |
 | Values | the value tree, its refusal vocabulary, the authored-value precedence | deriving two values, the zero, and a value from text |
-| Naming | nothing | the join |
+
+A name that a generator derives is not a projection. The generator
+joins its word to the name of a declaration with `Emitter.JoinName`.
+The joined name is in the neutral convention of every emitted name.
+The backend writes it in the case of the target when the plan
+settles.
 
 The contract a language returns, pinned:
 
@@ -78,19 +83,25 @@ type SourceRules interface {
     ReturnRoles(rs []*node.Return, v View) ([]ReturnRole, ErrorModel) // Value | OkBool | Stream | Error; None | LastReturn | ResultType | Thrown | Raised
     Builtin(ref *node.TypeRef, v View) TypeShape                    // a spelling the resolution step left without a target
     Resolve(scope Scope, name string, kind directive.ResolutionKind, v View) (symbol.Symbol, error)
-    SamplesOf(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
+    DeriveSamples(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
     ZeroValue(ref *node.TypeRef, v View) (emit.Value, bool)
     LiteralFor(f *node.File, ref *node.TypeRef, text string, v View) (emit.Value, bool)
-    TypeName(word, base string) string
 }
 ```
 
 A handler reaches the kernel's walks through the bound `Rules()` on
 its match: `CallableOf`, `TypeOf`, `FieldTypeOf`, `MembersOf`,
-`SamplesOf`, `ZeroValue`, `LiteralFor`, `Witnesses` and `TypeName`, over the
-invocation's tracked view. Every read a projection makes records on
-that invocation, and a value is safe for concurrent use because it
-holds nothing of its own.
+`SamplesOf`, `ZeroValue`, `LiteralFor`, `Witnesses`, `Tag`,
+`SentinelName` and `IsSentinelName`, over the invocation's tracked view.
+Every read that a projection makes records on that invocation. A value
+is safe for concurrent use, because it has no state of its own.
+
+The workspace builds each view with `rules.NewView`. The fact store and
+the read set of a view are unexported. A rules implementation reads a
+fact only through `rules.Fact`, which records the read. An
+implementation reads a key of another registrant through a handle from
+`meta.Named`, and `rules.Fact` resolves the handle by the name of the
+key.
 
 Call `OK()` on a `Sample` or any refusable answer before you use it.
 When a language cannot reason about a type, it refuses with a
@@ -199,14 +210,30 @@ vocabulary.
 
 Scope resolution as a neutral question: resolve a name against a
 scope at a declared resolution kind, which is one of
-callable-in-scope, package-var, value-field, host-param or
-member-on-handle.
+callable-in-scope, package-var, type-in-scope, value-field,
+host-param or member-on-handle.
 
 Directive params bind through it ([05-directives.md](05-directives.md)),
 classification resolves against it
 ([12-shape-catalog.md](12-shape-catalog.md)), and the kernel's Link
 step consults it when it resolves type spellings to canonical
 identities after Load ([02-symbol-model.md](02-symbol-model.md)).
+
+The kernel performs the walk of each kind in `rules.Resolve`. A
+language passes the walk a `rules.Resolver`, which returns the four
+decisions of the language:
+
+- `InScope` returns the first declaration that a name refers to in
+  the scope of the subject, in the probe order of the language.
+- `Usable` reports whether code of the subject can use a member.
+- `Placeholder` returns the declaration of a type name that the view
+  does not declare, such as a predeclared type.
+- `Value` returns the type of a value of a type, such as the target
+  of a pointer.
+
+The Go and TypeScript rules resolve through this walk. The protobuf
+rules keep a walk of their own, because a schema resolves oneof
+fields, services and rpcs and has no package variables.
 
 ### Members
 
@@ -234,14 +261,14 @@ any other read ([09-incrementality.md](09-incrementality.md)).
 
 Value synthesis, which every check-emitting generator depends on.
 
-`SamplesOf` returns with **two distinct values** of a type. Two
-rather than one, because a check that compares against a single
-value passes whenever the subject already held that value, and you
-cannot always know what it held. The hint names the declaration the
-value belongs to, so a value that turns up in a failure message says
-where it came from.
+`DeriveSamples` returns **two distinct values** of a type. A check
+that compares against a single value passes whenever the subject
+already had that value. You cannot always know which value the
+subject had. The hint is the name of the declaration that the value
+belongs to. A failure message that contains the value shows where the
+value came from.
 
-`ZeroLiteral` spells the type's zero, which is what a declared
+`ZeroValue` spells the type's zero, which is what a declared
 default gets compared against. The spellings differ per language,
 `nil` against `None`, so a kernel table would be returning for one
 language.
@@ -258,25 +285,24 @@ compare against.
 **Authored values beat derived ones.** The kernel registers the
 `gen.sample`, `gen.alternate` and `gen.witness` keys and owns the
 two directives that stamp them ([05-directives.md](05-directives.md)).
-`SamplesOf` and the Tier-2 `Witnesses` read those stamps before they
-derive anything, so every consumer gets the authored answer without
-knowing any annotator exists. This is a contract rather than a
+The bound `SamplesOf` and `Witnesses` read those stamps before they
+ask the language to derive anything, so every consumer gets the
+authored answer without knowing any annotator exists. This is a
+contract rather than a
 convention, because a preference each generator has to remember is a
 preference two of them will forget.
-
-### Naming
-
-Case conventions and identifier joins: how a generator's word joins
-an author's name in this language. The generator owns the word,
-"Builder" or "Factory". The language owns the join.
 
 ## Tier 2: declared by satisfying, found by asserting
 
 A language declares an optional capability by implementing the
-interface. A consumer asserts for it, and when the assertion fails,
-reports once and generates nothing. That beats building a projection
-on a default nobody chose. If these were required instead, a
-language without the concept would have to return by refusing.
+interface. The bound rules wrap five capabilities: `Tag`,
+`SentinelName`, `IsSentinelName`, `FieldTypeOf` and `Witnesses`. A
+handler reads them through methods that report false for a language
+without the capability. A consumer of any other capability asserts
+for it. When the assertion fails, the consumer reports once and
+generates nothing. It does not build a projection on a default that
+nobody chose. If these were required instead, a language without the
+concept would have to return by refusing.
 
 The contract shapes, pinned to the same standard as Tier 1:
 
@@ -293,7 +319,6 @@ type TagRules interface {
 }
 type GenericsRules interface {
     Derive(p *node.TypeParam, v View) (*node.TypeRef, bool)   // one witness the author left unstated
-    Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef
     Reified() bool
 }
 type PropertyRules interface {
@@ -372,8 +397,13 @@ refs on the symbol model, and every anticipated language returns it.
 
 **Reasoning is Tier 2**, through `GenericsRules`: witnesses, meaning
 one concrete type per parameter and all of them or none, since a
-witness for one parameter is worth nothing without the rest; plus
-substitution, and whether the language reifies or erases.
+witness for one parameter is worth nothing without the rest, and
+whether the language reifies or erases.
+
+**Substitution is the kernel's.** `rules.Substitute` rewrites every
+reference to a type parameter into its argument the same way for every
+language, so the member walk and `Witnesses` do not assert a
+capability.
 
 Witnesses are usually authored rather than derived. A language can
 derive one only where the constraint's type set is knowable without

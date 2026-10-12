@@ -40,3 +40,11 @@ way.
 | [0019](0019-a-family-claims-its-files-through-a-template.md) | A family claims its files through a file template | Accepted |
 | [0020](0020-the-interface-rules-account-for-properties.md) | The interface rules account for properties | Accepted |
 | [0021](0021-the-receiver-avoids-the-names-of-its-signature.md) | The receiver of an implementation avoids the names of its signature | Accepted |
+| [0022](0022-a-rules-implementation-reads-a-named-key-through-fact.md) | A rules implementation reads a named key through rules.Fact | Accepted |
+| [0023](0023-a-template-passes-a-signature-slot-by-address.md) | A template passes a signature slot to its helper by address | Accepted |
+| [0024](0024-the-shared-helpers-keep-the-departures-of-their-implementation.md) | The shared helpers keep the departures of their implementation | Accepted |
+| [0025](0025-the-kit-mechanisms-keep-the-departures-of-their-implementation.md) | The kit mechanisms keep the departures of their implementation | Accepted |
+| [0026](0026-the-surface-checks-keep-the-departures-of-their-implementation.md) | The surface checks keep the departures of their implementation | Accepted |
+| [0027](0027-the-renames-keep-the-departures-of-their-implementation.md) | The renames keep the departures of their implementation | Accepted |
+| [0028](0028-the-facts-of-the-model-keep-the-departures-of-their-implementation.md) | The facts of the model keep the departures of their implementation | Accepted |
+| [0029](0029-the-five-contracts-keep-the-departures-of-their-implementation.md) | The five contracts keep the departures of their implementation | Accepted |

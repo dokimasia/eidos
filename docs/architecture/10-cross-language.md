@@ -127,6 +127,14 @@ value. Java refuses the well-known `empty`, because Java has no type of
 a value without data outside a declaration. This is level 4 of the
 degradation scale, and the completeness check tests it per language.
 
+A spoke spells every fact of a shape or refuses the shape. It never
+writes a spelling with fewer constraints than the shape has. The
+read-only mark of a list, an array, a tuple or a map is such a fact.
+TypeScript writes `readonly T[]`, `readonly [A, B]`,
+`Readonly<Record<K, V>>` and `ReadonlyMap<K, V>`. Go, Rust and Java
+refuse each read-only collection that they write as writable, through
+`spoke.ReadOnly`.
+
 ## Names across the boundary
 
 Cross-language naming, such as proto `user_id` becoming Go `UserID`

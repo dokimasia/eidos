@@ -42,8 +42,15 @@ every context carries the tracked reader and the diagnostic sink:
 
 ```go
 type Frontend interface {
-    Plugin
-    Load(ctx *FrontendContext) error       // ctx: store, pattern, parser, cache, fingerprint
+    Versioned                              // the version that every unit key includes
+    Name() ID
+    Lang() symbol.Lang
+    Syntax() CommentSyntax
+    Overloads() bool
+    Selection() []string                   // the file claim
+    Partition(ctx context.Context, files []SourceRef, r FileReader) ([][]SourceRef, error)
+    Parse(ctx context.Context, u *SourceUnit) error
+    Resolve(scope ImportScope, spelling string) Candidates
 }
 type Annotator interface {
     Plugin
@@ -55,8 +62,15 @@ type Generator interface {
 }
 type Backend interface {
     Plugin
-    Language() rules.Target
-    Render(ctx *BackendContext) error      // ctx: plan emit, sink, diag
+    Target() Target
+    Renderer                               // Render(ctx *RenderContext) ([]RenderedFile, error)
+    FileSpeller                            // the name of each file
+    SyntaxProvider                         // the comment forms of the target
+    TypeSpeller                            // types of other languages
+    Packager                               // the package of each file
+    PolicyProvider                         // the lowering policies
+    Lowerer                                // Lower(symbol.Symbol) ([]symbol.Symbol, error)
+    Respeller                              // Respell(host, kind, v, name) (string, error)
 }
 type WorkspaceCheck interface {
     Plugin
@@ -90,9 +104,11 @@ Four structural rules bind the roles:
 Capabilities are asserted through interfaces, and each has a name
 the conformance suite can hold it to:
 
-- `CapabilityProvider` states the priority, and the capabilities that
-  the plugin provides and requires. Capability topology orders the
-  plugins of one priority.
+- `CapabilityProvider` states the priority, the capabilities that the
+  plugin provides and requires, and the capabilities that it runs after
+  where the composition contains them. Capability topology orders the
+  plugins of one priority. Build refuses a plugin that implements part
+  of the interface, as it refuses a partial `TemplateProvider`.
 - `OptionsProvider` states typed options schemas.
 - `TemplateProvider` states template trees, funcs and overrides.
 - `FilenameProvider` states the declared outputs.
@@ -108,7 +124,7 @@ validated at Build against the declared providers.
 **Priorities are per role.** A plugin declares a priority for each
 role it implements, because one shared number cannot place a
 dual-role plugin's annotator half and generator half independently,
-and the two phases' bucket sequences have no reason to share integers.
+and the turn sequences of the two phases have no reason to share integers.
 
 ## The concurrency contract
 
@@ -118,7 +134,7 @@ What a plugin may assume is stated here rather than discovered:
   instance must tolerate concurrent `Load` calls. The store
   serializes graph writes per package.
 - Annotators and generators run sequentially by default.
-  Parallelism inside a bucket is a workspace opt-in,
+  Parallelism inside a turn is a workspace opt-in,
   `Builder.Parallel`, under which one plugin's phase call runs its
   matches on up to the worker count. The dispatcher buffers the
   placements, slot appends and findings of every match and applies the

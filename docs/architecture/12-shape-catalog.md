@@ -50,8 +50,8 @@ One callable carries all three at once by construction. `Commit` is
 
 A contract instance binds by protocol name within a package, and
 `id=` separates two instances of one protocol in scope. Role arity,
-such as "exactly one `commit`", is validated by the catalog's
-validation-bucket annotator over the whole instance, and reported as
+such as "exactly one `commit`", is validated by an annotator of the
+catalog over the whole instance, and reported as
 positioned Errors.
 
 Generated name constants are **typed per form**: `shape.ShapeName`,

@@ -24,8 +24,8 @@ home.
 the default verb, and it lets two plugins compose without knowing
 about each other.
 
-**Replace**, through declared template overrides in the funcmap's
-overrideable bucket. This serves the plugin whose whole purpose is
+**Replace**, through declared template overrides of the funcmap's
+shared helpers. This serves the plugin whose whole purpose is
 changing how a construct renders. It is visible, declared, and
 resolved by capability topology.
 
@@ -223,7 +223,7 @@ pushes another conditional into a file every language has to share.
 ## The funcmap
 
 A language's shared template vocabulary is registered **once, by
-that language's backend**, into the overrideable bucket. A plugin
+that language's backend**. A plugin
 registers only the helpers it wrote, under the names it declared,
 and replaces a shared name through a declared override, which is the
 replace verb.

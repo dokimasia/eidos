@@ -19,10 +19,14 @@ release only adds. The generated mirrors keep adding cheap: a new
 kind or field is a schema edit plus a regeneration
 ([02-symbol-model.md](02-symbol-model.md)).
 
-One **contract version** constant is checked at workspace Build
-across every registered component, so the whole contract shakes
-hands once. A mismatch is a Build error naming the component and
-both versions.
+The kernel declares one **contract version**, `plugin.ContractVersion`,
+which a change that breaks a component raises. Go links one kernel into
+a binary, so a compiled component cannot have another version, and
+only what crosses the boundary of a binary records the version. A
+declarative manifest states its version, and the loader refuses a
+manifest of another version with a fault that names the plugin and both
+versions. The header of the sealed state records the version, and a run
+over a state of another version runs cold. `version` prints it.
 
 The public API surface is enumerated rather than implied. It covers
 the kernel packages' exported identifiers, the directive grammar and
