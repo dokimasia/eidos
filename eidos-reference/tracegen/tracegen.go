@@ -31,13 +31,12 @@ const Capability plugin.Capability = "http.trace"
 // workspace.
 func New() plugin.Generator {
 	o := &callee.Options{}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Requires(metricgen.Capability).
 		Options(o).
 		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)),
 			sdk.OnEmit(symbol.KindFunction, callee.Chain(o)))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }

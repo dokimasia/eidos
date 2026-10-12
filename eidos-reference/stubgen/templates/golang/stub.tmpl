@@ -16,15 +16,15 @@ type {{$stub.Name}}{{typeparams $stub.TypeParams}} struct {
 
 // {{$call.Name}} contains the arguments of one call of {{$stub.Name}}.{{$m.Name}}.
 type {{$call.Name}}{{typeparams $call.TypeParams}} struct {
-{{- range $j, $p := $m.Params}}
+{{- range $j, $p := $m.Params.Items}}
 	{{(index $call.Fields.Items $j).Name}} {{if $p.Variadic}}[]{{end}}{{spell $p.Type}}
 {{- end}}
 }
 
 // {{$m.Name}} records its arguments and calls {{$m.Name}}Func.
 func ({{$m.Receiver.Name}} *{{$stub.Name}}{{template "typeargs" $stub.TypeParams}}) {{$m.Name}}({{params $m.Params}}){{results $m.Returns}} {
-{{body $m}}{{$m.Receiver.Name}}.{{$m.Name}}Calls = append({{$m.Receiver.Name}}.{{$m.Name}}Calls, {{$call.Name}}{{template "typeargs" $call.TypeParams}}{ {{- range $j, $p := $m.Params}}{{if $j}}, {{end}}{{(index $call.Fields.Items $j).Name}}: {{$p.Name}}{{end}}})
-{{if $m.Returns}}return {{end}}{{$m.Receiver.Name}}.{{$m.Name}}Func({{range $j, $p := $m.Params}}{{if $j}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
+{{body $m}}{{$m.Receiver.Name}}.{{$m.Name}}Calls = append({{$m.Receiver.Name}}.{{$m.Name}}Calls, {{$call.Name}}{{template "typeargs" $call.TypeParams}}{ {{- range $j, $p := $m.Params.Items}}{{if $j}}, {{end}}{{(index $call.Fields.Items $j).Name}}: {{$p.Name}}{{end}}})
+{{if $m.Returns.Len}}return {{end}}{{$m.Receiver.Name}}.{{$m.Name}}Func({{range $j, $p := $m.Params.Items}}{{if $j}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
 }
 {{- end}}
 {{- end}}

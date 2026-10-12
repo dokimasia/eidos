@@ -1,4 +1,4 @@
-{{- $r := .Decl.Receiver.Name}}{{$f := printf "%s.value.%s" $r .Data.Field}}{{$p := (index .Decl.Params 0).Name}}{{slots}}if {{$f}} == nil {
+{{- $r := .Decl.Receiver.Name}}{{$f := printf "%s.value.%s" $r .Data.Field}}{{$p := (index .Decl.Params.Items 0).Name}}{{slots}}if {{$f}} == nil {
 	{{$f}} = make({{spell .Data.Type}}, len({{$p}}))
 }
 for key, elem := range {{$p}} {

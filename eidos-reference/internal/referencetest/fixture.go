@@ -4,7 +4,6 @@
 package referencetest
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,22 +12,16 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
-	"go.dokimi.dev/eidos/core/frontend/load"
-	golang "go.dokimi.dev/eidos/lang/go"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
-	"go.dokimi.dev/eidos/lang/typescript"
 	tsfrontend "go.dokimi.dev/eidos/lang/typescript/frontend"
 	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"
 	"go.dokimi.dev/eidos/sdk/diag"
-	"go.dokimi.dev/eidos/sdk/directive"
-	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/plugintest"
 	"go.dokimi.dev/eidos/sdk/rules"
-	"go.dokimi.dev/eidos/sdk/store"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -57,11 +50,11 @@ type Spec struct {
 	// directives it validates, the plugin under test among them.
 	Plugins []plugin.Plugin
 	// Annotators stamp the fixture in order before the plugin under test
-	// runs, as the annotators of earlier buckets stamp a run.
+	// runs, as the annotators of earlier turns stamp a run.
 	Annotators []plugin.Annotator
 	// Hosts generate in order over a fixture of their own after the
 	// annotators, and the fixture seeds their units, as the generators of
-	// earlier buckets place their units in a plan.
+	// earlier turns place their units in a plan.
 	Hosts []plugin.Generator
 }
 
@@ -79,24 +72,23 @@ type Fixture struct {
 }
 
 // New returns a fixture over the packages of the tree that s describes. It
-// loads the tree, and registers the rules, the keys and the classification
-// stamps of Go and TypeScript, the keys of the plugins of s, and the
-// validated directives of every declaration of the packages. Then the
-// annotators of s stamp the fixture, and the units of the hosts of s are
-// seeded into it. New stops the test where the tree does not load, where a
-// key, a schema, a stamp or a phase call fails, and where the load, the
-// validation or a phase call reports an Error.
+// loads the tree through [plugintest.Loaded] with the Go and the
+// TypeScript frontends and rules under [Brand], and registers the plugins
+// of s, its annotators and its hosts. Then the annotators of s stamp the
+// fixture, and the units of the hosts of s are seeded into it. New stops
+// the test where [plugintest.Loaded] stops it, where a phase call returns
+// an error, and where a phase call reports an Error.
 //
 // Each call loads the tree again, so a plugintest setup that calls New
 // returns a fresh fixture on every call.
-func New(ctx context.Context, tb assert.TB, s Spec) *Fixture {
+func New(tb assert.TB, s Spec) *Fixture {
 	tb.Helper()
 
-	f := build(ctx, tb, s)
+	f := build(tb, s)
 	if len(s.Hosts) == 0 {
 		return f
 	}
-	hosts := build(ctx, tb, s)
+	hosts := build(tb, s)
 	var res plugintest.Result
 	for _, h := range s.Hosts {
 		res = hosts.Generate(tb, h)
@@ -128,127 +120,30 @@ func (f *Fixture) Find(tb assert.TB, kind symbol.Kind, owner, name string) node.
 
 // build returns a fixture over the packages of the tree that s describes,
 // stamped by the annotators of s. It is what [New] returns for a spec
-// without hosts.
-func build(ctx context.Context, tb assert.TB, s Spec) *Fixture {
+// without hosts. It seals the graph of the fixture to list the
+// declarations of the packages, as the first phase call seals it.
+func build(tb assert.TB, s Spec) *Fixture {
 	tb.Helper()
 
-	g := loaded(ctx, tb, s.Dir)
-	f := &Fixture{Fixture: plugintest.New(tb)}
+	f := &Fixture{Fixture: plugintest.Loaded(tb, plugintest.Source{
+		Tree:      os.DirFS(filepath.FromSlash(s.Dir)),
+		Brand:     Brand,
+		Frontends: []plugin.Frontend{gofrontend.New(nil), tsfrontend.New()},
+		Rules:     []rules.SourceRules{gorules.New(), tsrules.New()},
+		Plugins:   slices.Concat(s.Plugins, plugins(s.Annotators), plugins(s.Hosts)),
+		Packages:  s.Packages,
+	})}
 	f.Target = s.Target
-	f.Rules = rules.NewRegistry()
-	assert.NoError(tb, f.Rules.Register(gorules.New()), "the Go rules register")
-	assert.NoError(tb, f.Rules.Register(tsrules.New()), "the TypeScript rules register")
-	assert.NoError(tb, golang.Keys(f.Keys.For(string(golang.Lang))), "the Go keys register")
-	assert.NoError(tb, typescript.Keys(f.Keys.For(string(typescript.Lang))), "the TypeScript keys register")
-	schemas := directive.NewRegistry()
-	assert.Total(tb, schemas.Register, directive.Kernel(), "the schemas of the kernel register")
-	for _, p := range slices.Concat(s.Plugins, plugins(s.Annotators), plugins(s.Hosts)) {
-		if kp, provides := p.(plugin.KeyProvider); provides {
-			assert.NoError(tb, kp.Keys(f.Keys.For(string(p.Name()))), "the keys of "+string(p.Name())+" register")
-		}
-		dp, declares := p.(plugin.DirectiveProvider)
-		if !declares {
-			continue
-		}
-		for _, d := range dp.Directives() {
-			if _, registered := schemas.ResolveName(d.Canonical()); !registered {
-				assert.NoError(tb, schemas.Register(d), "the schema "+string(d.Canonical())+" registers")
-			}
-		}
+	f.Graph.Freeze()
+	for pkg := range f.Graph.Packages() {
+		f.decls = slices.AppendSeq(f.decls, node.Declarations(pkg))
 	}
-	assert.Empty(tb, schemas.Seal(), "the schemas of the fixture seal")
-	f.Keys.Seal()
-	f.Facts = meta.NewFacts(f.Keys)
-
-	sink := diag.NewSink()
-	reader, err := g.Reader(store.NewReadSet(), nil)
-	assert.NoError(tb, err, "the graph of the tree opens a reader")
-	view := rules.View{Decls: reader, Facts: f.Facts, Kernel: f.Kernel}
-	contained := 0
-	for pkg := range g.Packages() {
-		if !slices.Contains(s.Packages, pkg.ID.Package) {
-			continue
-		}
-		contained++
-		f.Load(tb, pkg)
-		for d := range node.Declarations(pkg) {
-			id := d.Identity()
-			f.decls = append(f.decls, d)
-			for i, st := range g.StampsOf(id) {
-				claim := meta.Claim{
-					Subject: id,
-					Plugin:  st.Origin,
-					Order:   meta.Order{Subject: id, Instance: i},
-					Pos:     st.Pos,
-				}
-				assert.NoError(
-					tb,
-					f.Facts.StampRaw(st, claim),
-					"the stamp "+string(st.Key)+" on "+id.String()+" applies",
-				)
-			}
-			var raws []directive.Raw
-			for _, r := range g.DirectivesOf(id) {
-				if _, claimed := schemas.ResolveName(r.Name); claimed {
-					raws = append(raws, r)
-				}
-			}
-			resolve := resolver(tb, f.Rules, view, pkg, d)
-			if typed := directive.Validate(id, raws, schemas, f.Keys, resolve, sink); len(typed) > 0 {
-				f.Validated(tb, id, typed...)
-			}
-		}
-	}
-	clean(tb, sink, "the validation of the directives")
-	assert.Equal(tb, contained, len(s.Packages), "the tree declares each package of the spec")
 	for _, a := range s.Annotators {
 		res := f.Annotate(tb, a)
 		assert.NoError(tb, res.Err, "the annotator "+string(a.Name())+" annotates")
 		clean(tb, res.Sink, "the annotator "+string(a.Name()))
 	}
 	return f
-}
-
-// loaded returns the graph of the tree at dir, loaded with the Go and the
-// TypeScript frontends under [Brand]. It stops the test where the load
-// returns an error or reports an Error.
-func loaded(ctx context.Context, tb assert.TB, dir string) *store.Graph {
-	tb.Helper()
-
-	sink := diag.NewSink()
-	g, _, err := load.Load(ctx, load.Config{
-		FS:        os.DirFS(filepath.FromSlash(dir)),
-		Frontends: []plugin.Frontend{gofrontend.New(nil), tsfrontend.New()},
-		Sink:      sink,
-		Brand:     Brand,
-	})
-	assert.NoError(tb, err, "the tree "+dir+" loads")
-	clean(tb, sink, "the load of "+dir)
-	return g
-}
-
-// resolver returns the resolver through which validation binds the
-// reference params of decl, a declaration of pkg. The resolver binds a
-// name through the rules of the language of the subject, in the scope of
-// the file of decl and over view, as a run binds it. Validation calls it
-// with decl as the subject. It returns the error of a name that the rules
-// do not resolve. It stops the test where pkg has no file at the position
-// of decl, and where a name resolves to a symbol without an identity.
-func resolver(
-	tb assert.TB, rs *rules.Registry, view rules.View, pkg *node.Package, decl node.Declaration,
-) directive.Resolver {
-	return func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
-		src, _ := rs.For(subject.Lang)
-		at := slices.IndexFunc(pkg.Files, func(file *node.File) bool { return file.Pos.File == decl.Position().File })
-		assert.NotEqual(tb, at, -1, "the package of "+subject.String()+" has the file of the subject")
-		sym, err := src.Resolve(rules.Scope{Subject: subject, File: pkg.Files[at]}, name, kind, view)
-		if err != nil {
-			return symbol.Identity{}, err
-		}
-		resolved, is := sym.(node.Declaration)
-		assert.True(tb, is, fmt.Sprintf("%q resolves to a declaration", name))
-		return resolved.Identity(), nil
-	}
 }
 
 // clean fails the test once for each Error of sink, with the code, the

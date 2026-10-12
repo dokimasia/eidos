@@ -4,7 +4,6 @@
 package enum_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -86,10 +85,9 @@ func TestEnum(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := enum.New()
-				return p, fixture(ctx, tb, referencetest.Tree, catalogPackage, p).Fixture
+				return p, fixture(tb, referencetest.Tree, catalogPackage, p).Fixture
 			})
 		})
 
@@ -175,7 +173,7 @@ func TestEnum(t *testing.T) {
 			t.Parallel()
 
 			p := enum.New()
-			f := fixture(t.Context(), t, clashTree, clashPackage, p)
+			f := fixture(t, clashTree, clashPackage, p)
 			res := f.Generate(t, p)
 			assert.NoError(t, res.Err, "the generator runs whole")
 			found := slices.Collect(res.Sink.All())
@@ -190,11 +188,11 @@ func TestEnum(t *testing.T) {
 }
 
 // fixture returns a fixture over the package pkg of the tree dir, loaded
-// under ctx, with the target golang and the plugin enum p.
-func fixture(ctx context.Context, tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the plugin enum p.
+func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      dir,
 		Packages: []string{pkg},
 		Target:   golang.Target,
@@ -209,7 +207,7 @@ func record(t *testing.T, dir, pkg string) recorded {
 	t.Helper()
 
 	p := enum.New()
-	res := fixture(t.Context(), t, dir, pkg, p).Generate(t, p)
+	res := fixture(t, dir, pkg, p).Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")
 	got := recorded{surfaces: map[string]enum.Surface{}, tests: map[string]enum.Surface{}}
 	for u := range res.Emit.Units() {

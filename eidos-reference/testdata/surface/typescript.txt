@@ -1,0 +1,50 @@
+package web/cache.mock.test
+CacheMock implements Cache
+CacheMock.get(string) T|undefined
+CacheMock.getFunc? (key:string)=>T|undefined
+CacheMock.put(string, T)
+CacheMock.putFunc? (key:string,p:T)=>void
+Struct CacheMock[T Product]
+package web/cache.stub
+CacheGetCall.key string
+CachePutCall.key string
+CachePutCall.p T
+CacheStub implements Cache
+CacheStub.get(string) T|undefined
+CacheStub.getCalls CacheGetCall[]
+CacheStub.getFunc? (key:string)=>T|undefined
+CacheStub.put(string, T)
+CacheStub.putCalls CachePutCall<T>[]
+CacheStub.putFunc? (key:string,p:T)=>void
+Interface CacheGetCall
+Interface CachePutCall[T Product]
+Struct CacheStub[T Product]
+package web/cache.stub.test
+Constant checkCacheStub Cache = new CacheStub<Product>()
+package web/mapper.mock.test
+MapperMock implements Mapper
+MapperMock.mapFunc? <U>(v:T,f:(t:T)=>U)=>U
+MapperMock.map[U](T, (t:T)=>U) U
+Struct MapperMock[T]
+package web/store.mock.test
+StoreMock implements Store
+StoreMock.get(string) Product
+StoreMock.getFunc? (id:string)=>Product
+StoreMock.put(Product)
+StoreMock.putFunc? (p:Product)=>void
+Struct StoreMock
+package web/store.stub
+Interface StoreGetCall
+Interface StorePutCall
+StoreGetCall.id string
+StorePutCall.p Product
+StoreStub implements Store
+StoreStub.get(string) Product
+StoreStub.getCalls StoreGetCall[]
+StoreStub.getFunc? (id:string)=>Product
+StoreStub.put(Product)
+StoreStub.putCalls StorePutCall[]
+StoreStub.putFunc? (p:Product)=>void
+Struct StoreStub
+package web/store.stub.test
+Constant checkStoreStub Store = new StoreStub()

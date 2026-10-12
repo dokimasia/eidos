@@ -59,22 +59,22 @@ type conclusion struct {
 // struct under [WriterDirective], and on each struct that declares the
 // method Write of a writer. That method takes one parameter of bytes that
 // is not variadic, and returns a count of the platform's width and an
-// error, as io.Writer declares it. A method that an embedded field promotes does not count. The
-// negated directive excludes a struct from the detection. The fact store
-// reads the absence of a fact as false, so shapewriter stamps true alone.
-// Each call returns a new plugin, because a plugin instance belongs to one
-// workspace.
+// error, as io.Writer declares it. A method that an embedded field
+// promotes does not count. The negated directive excludes a struct from
+// the detection. The fact store reads the absence of a fact as false, so
+// shapewriter stamps true alone. Each call returns a new plugin, because
+// the registration of the keys of a workspace sets the handle of the
+// plugin.
 func New() plugin.Annotator {
 	c := &conclusion{}
-	a, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Keys(c.register).
 		Handle(
 			sdk.Directive(schema, sdk.OnStruct(c.declared)),
 			sdk.OnStruct(c.detect),
 		).
-		Build().(plugin.Annotator)
-	return a
+		Annotator()
 }
 
 // register claims the namespace of shapewriter and registers [KeyWriter].

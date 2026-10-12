@@ -4,7 +4,6 @@
 package mockgen_test
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -94,20 +93,18 @@ func TestMockgen(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := mockgen.New()
-				return p, catalog(ctx, tb, p).Fixture
+				return p, catalog(tb, p).Fixture
 			})
 		})
 
 		t.Run("passes the plugin suite over the TypeScript store of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := mockgen.New()
-				return p, web(ctx, tb, p).Fixture
+				return p, web(tb, p).Fixture
 			})
 		})
 
@@ -115,7 +112,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			mocks := recorded(t, catalog(t.Context(), t, p), p)
+			mocks := recorded(t, catalog(t, p), p)
 			mock := mocks[storeMock]
 			assert.NotNil(t, mock, "mockgen records the mock of Store")
 			expect.That(t, names(mock.Methods.Items())).Equal(goMethods, "the mock has the methods of Store")
@@ -126,7 +123,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			f := catalog(t.Context(), t, p)
+			f := catalog(t, p)
 			mock := recorded(t, f, p)[productMock]
 			assert.NotNil(t, mock, "mockgen records the mock of the repository of Product")
 			expect.That(t, mock.Origin).Equal(f.Find(t, symbol.KindStruct, "", productName).Identity(),
@@ -139,7 +136,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			assert.NotContains(t, recorded(t, catalog(t.Context(), t, p), p), reviewMock,
+			assert.NotContains(t, recorded(t, catalog(t, p), p), reviewMock,
 				"the skip on Review excludes its repository")
 		})
 
@@ -147,7 +144,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			mock := recorded(t, web(t.Context(), t, p), p)[storeMock]
+			mock := recorded(t, web(t, p), p)[storeMock]
 			assert.NotNil(t, mock, "mockgen records the mock of the TypeScript Store")
 			expect.That(t, names(mock.Methods.Items())).Equal(webMethods, "the mock has the methods of Store")
 		})
@@ -156,7 +153,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      propertyTree,
 				Packages: []string{shapedPackage},
 				Target:   typescript.Target,
@@ -176,7 +173,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      constraintTree,
 				Packages: []string{constraintPackage},
 				Target:   golang.Target,
@@ -196,7 +193,7 @@ func TestMockgen(t *testing.T) {
 			t.Parallel()
 
 			p := mockgen.New()
-			mock := recorded(t, catalog(t.Context(), t, p), p)[cacheMock]
+			mock := recorded(t, catalog(t, p), p)[cacheMock]
 			assert.NotNil(t, mock, "mockgen records the mock of Cache")
 			expect.That(t, typeParamNames(mock.TypeParams)).Equal(cacheParam, "the mock declares the T of Cache")
 			expect.Equal(t, mock.Implements[0].Args, []*emit.TypeRef{{Spelling: cacheParam}},
@@ -208,7 +205,7 @@ func TestMockgen(t *testing.T) {
 				t.Parallel()
 
 				p := mockgen.New()
-				f := referencetest.New(t.Context(), t, referencetest.Spec{
+				f := referencetest.New(t, referencetest.Spec{
 					Dir:      referencetest.Tree,
 					Packages: []string{catalogPackage},
 					Target:   golang.Target,
@@ -229,7 +226,7 @@ func TestMockgen(t *testing.T) {
 // struct. Shelf has the method Put, which takes a value of its type
 // parameter.
 func shelfHost() plugin.Generator {
-	g, _ := sdk.NewPlugin(hostID).
+	return sdk.NewPlugin(hostID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: hostWord}).
 		Handle(sdk.OnInterface(func(m *sdk.InterfaceMatch, e *sdk.Emitter) error {
 			if m.Interface.Name != storeName {
@@ -242,22 +239,21 @@ func shelfHost() plugin.Generator {
 			}
 			shelf.Methods.Append(&emit.Method{
 				Name:   putName,
-				Params: []*emit.Param{{Name: valueParam, Type: &emit.TypeRef{Spelling: shelfParam}}},
+				Params: emit.SlotOf(&emit.Param{Name: valueParam, Type: &emit.TypeRef{Spelling: shelfParam}}),
 			})
 			e.File().Append(shelf)
 			return nil
 		})).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // catalog returns a fixture over the package catalog of the tree, loaded
-// under ctx and stamped by repogen, with the target golang, the plugin
-// mockgen p, and the units of repogen seeded.
-func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb and stamped by repogen, with the target golang,
+// the plugin mockgen p, and the units of repogen seeded.
+func catalog(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        referencetest.Tree,
 		Packages:   []string{catalogPackage},
 		Target:     golang.Target,
@@ -268,11 +264,11 @@ func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.
 }
 
 // web returns a fixture over the TypeScript store of the tree, loaded under
-// ctx, with the target typescript and the plugin mockgen p.
-func web(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// the context of tb, with the target typescript and the plugin mockgen p.
+func web(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      referencetest.Tree,
 		Packages: []string{webPackage},
 		Target:   typescript.Target,

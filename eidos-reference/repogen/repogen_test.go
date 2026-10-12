@@ -4,7 +4,6 @@
 package repogen_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -62,10 +61,9 @@ func TestRepogen(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := repogen.New()
-				return p, catalog(ctx, tb, p).Fixture
+				return p, catalog(tb, p).Fixture
 			})
 		})
 
@@ -73,7 +71,7 @@ func TestRepogen(t *testing.T) {
 			t.Parallel()
 
 			p := repogen.New()
-			f := catalog(t.Context(), t, p)
+			f := catalog(t, p)
 			assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
 			key, registered := meta.Lookup[bool](f.Keys, repogen.KeyRepository)
 			assert.True(t, registered, "repogen registers its key")
@@ -122,11 +120,12 @@ func TestRepogen(t *testing.T) {
 }
 
 // catalog returns a fixture over the package catalog of the tree, loaded
-// under ctx, with the target golang and the plugin repogen p.
-func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the plugin repogen
+// p.
+func catalog(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      referencetest.Tree,
 		Packages: []string{catalogPackage},
 		Target:   golang.Target,
@@ -140,7 +139,7 @@ func generated(t *testing.T) (*emit.Interface, *emit.Struct) {
 	t.Helper()
 
 	p := repogen.New()
-	f := catalog(t.Context(), t, p)
+	f := catalog(t, p)
 	assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
 	res := f.Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")
@@ -171,10 +170,10 @@ func signatures(ms []*emit.Method) []signatureOf {
 	out := make([]signatureOf, 0, len(ms))
 	for _, m := range ms {
 		s := signatureOf{name: m.Name}
-		for _, p := range m.Params {
+		for _, p := range m.Params.Items() {
 			s.params = append(s.params, p.Type.Spelling)
 		}
-		for _, r := range m.Returns {
+		for _, r := range m.Returns.Items() {
 			s.returns = append(s.returns, r.Type.Spelling)
 		}
 		out = append(out, s)

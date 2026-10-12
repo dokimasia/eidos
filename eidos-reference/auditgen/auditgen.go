@@ -31,13 +31,12 @@ const Priority = 2
 // instance belongs to one workspace.
 func New() plugin.Generator {
 	o := &callee.Options{}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Priority(plugin.RoleGenerator, Priority).
 		Requires(handlergen.Capability).
 		Options(o).
 		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)),
 			sdk.OnEmit(symbol.KindMethod, callee.Epilogue(o)))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }

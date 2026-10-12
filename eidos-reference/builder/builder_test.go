@@ -4,7 +4,6 @@
 package builder_test
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -61,7 +60,7 @@ const (
 	pageBuilder     = "PageBuilder"
 	newPage         = "NewPage"
 	labelledBuilder = "LabelledBuilder"
-	pageChecks      = "Build WithNext"
+	pageChecks      = "Build WithItems WithNext"
 	pageTypes       = "NewPage NewPageFrom NextDefault"
 	nextAssign      = "value.Next"
 )
@@ -95,10 +94,9 @@ func TestBuilder(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := builder.New()
-				return p, fixture(ctx, tb, referencetest.Tree, catalogPackage, p).Fixture
+				return p, fixture(tb, referencetest.Tree, catalogPackage, p).Fixture
 			})
 		})
 
@@ -150,13 +148,14 @@ func TestBuilder(t *testing.T) {
 				"the record has the constructors and the defaults other than zero")
 		})
 
-		t.Run("records no check of a field whose type refers to a type parameter", func(t *testing.T) {
+		t.Run("records a check of a field whose type refers to a type parameter", func(t *testing.T) {
 			t.Parallel()
 
 			got := generate(t, genericTree, genericPackage)
 			record := got.checks[pageBuilder]
 			assert.NotNil(t, record, "builder records the checks of the builder of Page")
-			expect.That(t, methodNames(record.Methods.Items())).Equal(pageChecks, "the record has no setter of Items")
+			expect.That(t, methodNames(record.Methods.Items())).Equal(pageChecks,
+				"the record has the setter of Items at the witness of its parameter")
 			expect.That(t, typeNames(record.Types.Items())).Equal(pageTypes, "the record has the default of Next")
 		})
 
@@ -172,7 +171,7 @@ func TestBuilder(t *testing.T) {
 			t.Parallel()
 
 			p := builder.New()
-			f := fixture(t.Context(), t, badTree, badPackage, p)
+			f := fixture(t, badTree, badPackage, p)
 			res := f.Generate(t, p)
 			assert.NoError(t, res.Err, "the generator runs whole")
 			found := slices.Collect(res.Sink.All())
@@ -186,12 +185,12 @@ func TestBuilder(t *testing.T) {
 }
 
 // fixture returns a fixture over the package pkg of the tree dir, loaded
-// under ctx and stamped by defaults, with the target golang and the plugin
-// builder p.
-func fixture(ctx context.Context, tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb and stamped by defaults, with the target golang
+// and the plugin builder p.
+func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        dir,
 		Packages:   []string{pkg},
 		Target:     golang.Target,
@@ -207,7 +206,7 @@ func generate(t *testing.T, dir, pkg string) generated {
 	t.Helper()
 
 	p := builder.New()
-	res := fixture(t.Context(), t, dir, pkg, p).Generate(t, p)
+	res := fixture(t, dir, pkg, p).Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")
 	got := generated{
 		builders: map[string]*emit.Struct{},

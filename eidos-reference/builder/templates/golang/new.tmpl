@@ -1,2 +1,2 @@
-{{- $builder := index (index .Decl.Returns 0).Type.Elems 0}}{{if not .Data.Seeded}}var value {{spell .Data.Value}}
+{{- $builder := index (index .Decl.Returns.Items 0).Type.Elems 0}}{{if not .Data.Seeded}}var value {{spell .Data.Value}}
 {{end}}{{slots}}return &{{spell $builder}}{value: value}

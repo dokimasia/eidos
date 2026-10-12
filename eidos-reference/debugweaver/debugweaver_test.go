@@ -4,7 +4,6 @@
 package debugweaver_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -44,10 +43,9 @@ func TestDebugweaver(t *testing.T) {
 		t.Run("passes the plugin suite over the repositories of the package catalog", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := debugweaver.New()
-				return p, catalog(ctx, tb, p).Fixture
+				return p, catalog(tb, p).Fixture
 			})
 		})
 
@@ -91,12 +89,12 @@ func TestDebugweaver(t *testing.T) {
 }
 
 // catalog returns a fixture over the package catalog of the tree, loaded
-// under ctx and stamped by repogen, with the target golang, the plugin
-// debugweaver p, and the units of repogen and mockgen seeded.
-func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb and stamped by repogen, with the target golang,
+// the plugin debugweaver p, and the units of repogen and mockgen seeded.
+func catalog(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        referencetest.Tree,
 		Packages:   []string{catalogPackage},
 		Target:     golang.Target,
@@ -113,7 +111,7 @@ func weave(t *testing.T) map[string][]*emit.Method {
 	t.Helper()
 
 	p := debugweaver.New()
-	res := catalog(t.Context(), t, p).Generate(t, p)
+	res := catalog(t, p).Generate(t, p)
 	assert.NoError(t, res.Err, "the weaver runs whole")
 	out := map[string][]*emit.Method{}
 	for u := range res.Emit.Units() {

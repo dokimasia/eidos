@@ -1,2 +1,2 @@
-{{- $r := .Decl.Receiver.Name}}{{slots}}{{$r}}.value.{{.Data.Field}} = &{{(index .Decl.Params 0).Name}}
+{{- $r := .Decl.Receiver.Name}}{{slots}}{{$r}}.value.{{.Data.Field}} = &{{(index .Decl.Params.Items 0).Name}}
 return {{$r}}

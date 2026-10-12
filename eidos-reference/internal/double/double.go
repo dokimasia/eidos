@@ -120,13 +120,13 @@ func Signatures(ms []*emit.Method) []*emit.Method {
 			TypeParams: slices.Clone(m.TypeParams),
 			Throws:     slices.Clone(m.Throws),
 		}
-		for _, p := range m.Params {
+		for _, p := range m.Params.Items() {
 			param := *p
-			c.Params = append(c.Params, &param)
+			c.Params.Append(&param)
 		}
-		for _, r := range m.Returns {
+		for _, r := range m.Returns.Items() {
 			result := *r
-			c.Returns = append(c.Returns, &result)
+			c.Returns.Append(&result)
 		}
 		out = append(out, c)
 	}
@@ -143,14 +143,14 @@ func Signatures(ms []*emit.Method) []*emit.Method {
 // completed returns m. It allocates the set of the names of m, the receiver
 // and the names that it adds.
 func completed(host string, m *emit.Method) *emit.Method {
-	taken := make(map[string]bool, len(m.Params)+len(m.Returns))
-	for i, p := range m.Params {
+	taken := make(map[string]bool, m.Params.Len()+m.Returns.Len())
+	for i, p := range m.Params.Items() {
 		if p.Name == "" {
 			p.Name = paramPrefix + strconv.Itoa(i)
 		}
 		taken[p.Name] = true
 	}
-	for _, r := range m.Returns {
+	for _, r := range m.Returns.Items() {
 		taken[r.Name] = true
 	}
 	letter := receiverFallback

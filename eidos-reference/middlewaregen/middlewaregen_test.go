@@ -4,7 +4,6 @@
 package middlewaregen_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -41,10 +40,9 @@ func TestMiddlewaregen(t *testing.T) {
 		t.Run("passes the plugin suite over the package orders of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := middlewaregen.New()
-				return p, orders(ctx, tb, p).Fixture
+				return p, orders(tb, p).Fixture
 			})
 		})
 
@@ -52,7 +50,7 @@ func TestMiddlewaregen(t *testing.T) {
 			t.Parallel()
 
 			p := middlewaregen.New()
-			res := orders(t.Context(), t, p).Generate(t, p)
+			res := orders(t, p).Generate(t, p)
 			assert.NoError(t, res.Err, "the generator runs whole")
 			units := slices.Collect(res.Emit.Units())
 			assert.Length(t, units, 1, "middlewaregen writes one unit")
@@ -63,18 +61,19 @@ func TestMiddlewaregen(t *testing.T) {
 			expect.That(t, fn.Body.Ref.Name).Equal(bodyTemplate, "the template writes the body")
 			_, declared := fn.Body.Slot(middlewaregen.ChainSlot)
 			expect.True(t, declared, "the body declares the slot of the chain")
-			expect.That(t, fn.Params[0].Name).Equal(handlerParam, "the function takes the handler")
+			assert.Length(t, fn.Params.Items(), 1, "the function takes one parameter")
+			expect.That(t, fn.Params.Items()[0].Name).Equal(handlerParam, "the function takes the handler")
 		})
 	})
 }
 
 // orders returns a fixture over the package orders of the tree, loaded
-// under ctx and stamped by the annotator of handlergen, with the target
-// golang and the plugin middlewaregen p.
-func orders(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb and stamped by the annotator of handlergen, with
+// the target golang and the plugin middlewaregen p.
+func orders(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        referencetest.Tree,
 		Packages:   []string{ordersPackage},
 		Target:     golang.Target,

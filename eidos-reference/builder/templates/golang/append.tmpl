@@ -1,2 +1,2 @@
-{{- $r := .Decl.Receiver.Name}}{{$f := printf "%s.value.%s" $r .Data.Field}}{{slots}}{{$f}} = append({{$f}}, {{(index .Decl.Params 0).Name}}...)
+{{- $r := .Decl.Receiver.Name}}{{$f := printf "%s.value.%s" $r .Data.Field}}{{slots}}{{$f}} = append({{$f}}, {{(index .Decl.Params.Items 0).Name}}...)
 return {{$r}}

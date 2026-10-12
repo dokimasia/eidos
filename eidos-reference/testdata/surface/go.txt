@@ -1,0 +1,104 @@
+package example.com/shop/catalog
+AddressBuilder.AppendLines(...string) *AddressBuilder
+AddressBuilder.Build() Address
+AddressBuilder.WithCity(string) *AddressBuilder
+AddressBuilder.WithCountry(string) *AddressBuilder
+AddressBuilder.WithFloor(int) *AddressBuilder
+AddressBuilder.WithLabels(map[string]struct{}) *AddressBuilder
+AddressBuilder.WithLabelsEntries(...string) *AddressBuilder
+AddressBuilder.WithLabelsEntry(string) *AddressBuilder
+AddressBuilder.WithLines(...string) *AddressBuilder
+AddressBuilder.WithNotes(map[string]string) *AddressBuilder
+AddressBuilder.WithNotesEntries(map[string]string) *AddressBuilder
+AddressBuilder.WithNotesEntry(string, string) *AddressBuilder
+AddressBuilder.WithRaw([]byte) *AddressBuilder
+AddressBuilder.WithRawString(string) *AddressBuilder
+AddressBuilder.WithStreet(string) *AddressBuilder
+AddressBuilder.WithUnit(string) *AddressBuilder
+CacheGetCall.Key string
+CacheMock.Get(string) (T, bool)
+CacheMock.GetFunc func(key string) (T, bool)
+CacheMock.Put(string, T)
+CacheMock.PutFunc func(key string, value T)
+CachePutCall.Key string
+CachePutCall.Value T
+CacheStub.Get(string) (T, bool)
+CacheStub.GetCalls []CacheGetCall
+CacheStub.GetFunc func(key string) (T, bool)
+CacheStub.Put(string, T)
+CacheStub.PutCalls []CachePutCall[T]
+CacheStub.PutFunc func(key string, value T)
+Function NewAddress() *AddressBuilder
+Function NewAddressFrom(Address) *AddressBuilder
+Function ParsePriority(string) (Priority, error)
+Function ParseStatus(string) (Status, error)
+Function PriorityValues() []Priority
+Function StatusValues() []Status
+Function TestAddressBuilder(*testing.T)
+Function TestCacheStubGet(*testing.T)
+Function TestCacheStubPut(*testing.T)
+Function TestCatalogErrors(*testing.T)
+Function TestPriorityEnum(*testing.T)
+Function TestStatusEnum(*testing.T)
+Function TestStoreStubGet(*testing.T)
+Function TestStoreStubPut(*testing.T)
+Interface ProductRepository
+Interface ReviewRepository
+ProductRepo.Delete(context.Context, string) error
+ProductRepo.Get(context.Context, string) (*Product, error)
+ProductRepo.List(context.Context) ([]*Product, error)
+ProductRepo.Put(context.Context, *Product) error
+ProductRepositoryMock.Delete(context.Context, string) error
+ProductRepositoryMock.DeleteFunc func(ctx context.Context, id string) error
+ProductRepositoryMock.Get(context.Context, string) (*Product, error)
+ProductRepositoryMock.GetFunc func(ctx context.Context, id string) (*Product, error)
+ProductRepositoryMock.List(context.Context) ([]*Product, error)
+ProductRepositoryMock.ListFunc func(ctx context.Context) ([]*Product, error)
+ProductRepositoryMock.Put(context.Context, *Product) error
+ProductRepositoryMock.PutFunc func(ctx context.Context, v *Product) error
+ReviewRepo.Delete(context.Context, string) error
+ReviewRepo.Get(context.Context, string) (*Review, error)
+ReviewRepo.List(context.Context) ([]*Review, error)
+ReviewRepo.Put(context.Context, *Review) error
+StoreGetCall.Ctx context.Context
+StoreGetCall.ID string
+StoreMock.Get(context.Context, string) (*Product, error)
+StoreMock.GetFunc func(ctx context.Context, id string) (*Product, error)
+StoreMock.Put(context.Context, *Product) error
+StoreMock.PutFunc func(ctx context.Context, p *Product) error
+StorePutCall.Ctx context.Context
+StorePutCall.P *Product
+StoreStub.Get(context.Context, string) (*Product, error)
+StoreStub.GetCalls []StoreGetCall
+StoreStub.GetFunc func(ctx context.Context, id string) (*Product, error)
+StoreStub.Put(context.Context, *Product) error
+StoreStub.PutCalls []StorePutCall
+StoreStub.PutFunc func(ctx context.Context, p *Product) error
+Struct AddressBuilder
+Struct CacheGetCall
+Struct CacheMock[T any]
+Struct CachePutCall[T any]
+Struct CacheStub[T any]
+Struct ProductRepo
+Struct ProductRepositoryMock
+Struct ReviewRepo
+Struct StoreGetCall
+Struct StoreMock
+Struct StorePutCall
+Struct StoreStub
+Variable ErrUnknownPriority
+Variable ErrUnknownStatus
+abstract ProductRepository.Delete(context.Context, string) error
+abstract ProductRepository.Get(context.Context, string) (*Product, error)
+abstract ProductRepository.List(context.Context) ([]*Product, error)
+abstract ProductRepository.Put(context.Context, *Product) error
+abstract ReviewRepository.Delete(context.Context, string) error
+abstract ReviewRepository.Get(context.Context, string) (*Review, error)
+abstract ReviewRepository.List(context.Context) ([]*Review, error)
+abstract ReviewRepository.Put(context.Context, *Review) error
+package example.com/shop/orders
+Function OrdersMiddleware(http.Handler) http.Handler
+Function ValidateOrders(*http.Request) error
+OrdersHandler.Orders *Orders
+OrdersHandler.ServeHTTP(http.ResponseWriter, *http.Request)
+Struct OrdersHandler

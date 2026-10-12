@@ -61,15 +61,14 @@ var templates embed.FS
 // plugin serves the target golang alone. Each call returns a new plugin,
 // because a plugin instance belongs to one workspace.
 func New() plugin.Generator {
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Requires(handlergen.Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
 		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
 		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)), sdk.OnStruct(generate))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // generate writes the middleware function of one struct. It declares the
@@ -84,8 +83,8 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Doc:        []string{fmt.Sprintf(functionDoc, name, s.Name)},
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
-		Params:     []*emit.Param{{Name: handlerParam, Type: handler}},
-		Returns:    []*emit.Return{{Type: handler}},
+		Params:     emit.SlotOf(&emit.Param{Name: handlerParam, Type: handler}),
+		Returns:    emit.SlotOf(&emit.Return{Type: handler}),
 	}
 	fn.Body.Declare(ChainSlot)
 	fn.Body.Ref = e.Ref(bodyTemplate, nil)

@@ -4,7 +4,6 @@
 package validategen_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -41,8 +40,9 @@ const (
 	receiverName = "c"
 )
 
-// validategen writes a validator of each struct that handlergen serves,
-// guards ServeHTTP with it, and passes the plugin suite.
+// TestValidategen checks that validategen writes a validator of each
+// struct that handlergen serves, guards ServeHTTP with it, and passes the
+// plugin suite.
 func TestValidategen(t *testing.T) {
 	t.Parallel()
 
@@ -52,10 +52,9 @@ func TestValidategen(t *testing.T) {
 		t.Run("passes the plugin suite over the handler of the package orders", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := validategen.New()
-				return p, orders(ctx, tb, p).Fixture
+				return p, orders(tb, p).Fixture
 			})
 		})
 
@@ -72,7 +71,8 @@ func TestValidategen(t *testing.T) {
 			}
 			assert.NotNil(t, validator, "validategen writes the validator")
 			expect.That(t, validator.Name).Equal(validatorName, "the validator joins its prefix onto the struct")
-			expect.That(t, validator.Params[0].Name).Equal(requestParam, "the validator takes the request")
+			assert.Length(t, validator.Params.Items(), 1, "the validator takes one parameter")
+			expect.That(t, validator.Params.Items()[0].Name).Equal(requestParam, "the validator takes the request")
 			assert.Equal(t, validator.Body.Stmts, []emit.Stmt{{
 				Kind: emit.StmtReturn, Value: emit.ValueExpr(emit.Literal(emit.LiteralNil, "")),
 			}}, "the validator returns nil")
@@ -103,7 +103,7 @@ func TestValidategen(t *testing.T) {
 			t.Parallel()
 
 			p := validategen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:        referencetest.Tree,
 				Packages:   []string{ordersPackage},
 				Target:     golang.Target,
@@ -120,7 +120,7 @@ func TestValidategen(t *testing.T) {
 				}
 			}
 			assert.NotNil(t, closed, "the host writes the method Close")
-			assert.Equal(t, closed.Body, emit.Body{}, "the method Close has no contribution")
+			assert.True(t, closed.Body.IsZero(), "the method Close has no contribution")
 		})
 	})
 }
@@ -132,11 +132,12 @@ func closer() plugin.Generator {
 		Output(plugin.Output{Per: plugin.PerSource, Word: closerWord}).
 		Handle(sdk.OnStruct(func(m *sdk.StructMatch, e *sdk.Emitter) error {
 			s := &emit.Struct{Origin: m.Struct.ID, Name: closerWord + m.Struct.Name}
-			s.Methods.Append(&emit.Method{Origin: m.Struct.ID, Name: closeName, Receiver: &emit.Param{Name: receiverName}})
+			closer := &emit.Method{Origin: m.Struct.ID, Name: closeName, Receiver: &emit.Param{Name: receiverName}}
+			s.Methods.Append(closer)
 			e.File().Append(s)
 			return nil
 		})).
-		Build().(plugin.Generator)
+		Generator()
 }
 
 // generated runs validategen over the handler of the package orders, and
@@ -145,18 +146,18 @@ func generated(t *testing.T) *plugin.Emit {
 	t.Helper()
 
 	p := validategen.New()
-	res := orders(t.Context(), t, p).Generate(t, p)
+	res := orders(t, p).Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")
 	return res.Emit
 }
 
 // orders returns a fixture over the package orders of the tree, loaded
-// under ctx and stamped by handlergen, with the target golang, the plugin
-// validategen p, and the units of handlergen seeded.
-func orders(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb and stamped by handlergen, with the target
+// golang, the plugin validategen p, and the units of handlergen seeded.
+func orders(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        referencetest.Tree,
 		Packages:   []string{ordersPackage},
 		Target:     golang.Target,

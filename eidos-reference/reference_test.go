@@ -5,7 +5,6 @@ package reference_test
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -16,15 +15,16 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
-	"go.dokimi.dev/assert/golden"
-	"go.yaml.in/yaml/v3"
 
+	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 	golang "go.dokimi.dev/eidos/lang/go"
 	goannotate "go.dokimi.dev/eidos/lang/go/annotate"
+	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gotesting "go.dokimi.dev/eidos/lang/go/testing"
+	tsfrontend "go.dokimi.dev/eidos/lang/typescript/frontend"
 	tstesting "go.dokimi.dev/eidos/lang/typescript/testing"
 	"go.dokimi.dev/eidos/reference"
 	"go.dokimi.dev/eidos/reference/defaults"
@@ -39,12 +39,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The tree, its config file, and the directory of the files that the
-// plans generate from it.
+// These constants are the tree, the directory of the files that the plans
+// generate from it, and the golden files of the surface of the Go and the
+// TypeScript output.
 const (
-	tree       = "testdata/tree"
-	configFile = ".reference.yaml"
-	want       = "testdata/want"
+	tree      = "testdata/tree"
+	want      = "testdata/want"
+	goSurface = "testdata/surface/go.txt"
+	tsSurface = "testdata/surface/typescript.txt"
 )
 
 // The file that the edit of the tree changes, the signature of Get before
@@ -126,16 +128,11 @@ func TestPriorityText(t *testing.T) {
 `
 )
 
-// config is the config file of the tree as the command line reads it: the
-// version, and the options of the plugins.
-type config struct {
-	Version int                       `yaml:"version"`
-	Options map[string]map[string]any `yaml:"options"`
-}
-
 // The composition of eidos-reference generates the files of testdata/want
-// from the tree, passes the workspace suites, and generates Go that vets
-// with tests that pass and TypeScript that type-checks.
+// from the tree and passes the workspace suites. Its Go vets, its tests
+// pass and run in parallel, and its TypeScript type-checks. The public
+// surface of both languages matches its golden, and every public
+// declaration has a doc comment.
 func TestReference(t *testing.T) {
 	t.Parallel()
 
@@ -176,14 +173,7 @@ func TestReference(t *testing.T) {
 		t.Run("writes the files of testdata/want from the tree", func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			report := run(t, f, root)
-			for _, e := range report.Manifest.Files {
-				got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(e.Path)))
-				assert.NoError(t, err, "the run writes "+e.Path)
-				golden.MatchAt(t, filepath.Join(filepath.FromSlash(want), filepath.FromSlash(e.Path)), got,
-					golden.ShouldUpdate())
-			}
+			workspacetest.AssertGolden(t, f, t.TempDir(), want)
 		})
 
 		t.Run("passes the workspace suite over the tree", func(t *testing.T) {
@@ -201,11 +191,34 @@ func TestReference(t *testing.T) {
 		t.Run("writes Go that vets", func(t *testing.T) {
 			t.Parallel()
 
-			a := gotesting.New()
-			if !toolchain.Require(t, a) {
+			if !toolchain.Require(t, gotesting.New()) {
 				return
 			}
-			gotesting.AssertVets(t.Context(), t, a, generated(f, goExtension))
+			gotesting.AssertVets(t.Context(), t, generated(f, goExtension))
+		})
+
+		t.Run("writes Go whose public surface matches its golden", func(t *testing.T) {
+			t.Parallel()
+
+			toolchain.AssertSurface(t, gofrontend.New(nil), generated(f, goExtension), goSurface)
+		})
+
+		t.Run("writes Go whose public declarations have doc comments", func(t *testing.T) {
+			t.Parallel()
+
+			toolchain.AssertDocumented(t, gofrontend.New(nil), generated(f, goExtension))
+		})
+
+		t.Run("writes TypeScript whose public surface matches its golden", func(t *testing.T) {
+			t.Parallel()
+
+			toolchain.AssertSurface(t, tsfrontend.New(), generated(f, tsExtension), tsSurface)
+		})
+
+		t.Run("writes TypeScript whose public declarations have doc comments", func(t *testing.T) {
+			t.Parallel()
+
+			toolchain.AssertDocumented(t, tsfrontend.New(), generated(f, tsExtension))
 		})
 
 		t.Run("writes Go tests that pass", func(t *testing.T) {
@@ -216,6 +229,12 @@ func TestReference(t *testing.T) {
 				return
 			}
 			toolchain.AssertTestsPass(t.Context(), t, a, generated(f, goExtension))
+		})
+
+		t.Run("writes Go tests that run in parallel", func(t *testing.T) {
+			t.Parallel()
+
+			gotesting.AssertParallel(t, generated(f, goExtension))
 		})
 
 		t.Run("writes a String that spells a value outside the variants as the value", func(t *testing.T) {
@@ -290,7 +309,9 @@ func TestReference(t *testing.T) {
 				goModFile:     files.Text(misplacedModule),
 				misplacedFile: files.Text(misplacedSource),
 			})
-			w, err := f.Compose(root).Plans(f.Plans()...).Build()
+			b, err := f.Compose(root)
+			assert.NoError(t, err, "the composition configures")
+			w, err := b.Plans(f.Plans()...).Build()
 			assert.NoError(t, err, "the composition builds")
 			report, err := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: true})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails on the misplaced directives")
@@ -306,11 +327,12 @@ func TestReference(t *testing.T) {
 }
 
 // fixture returns the fixture of the workspace suites over the tree: the
-// composition of Base with the config of the tree, a disk sink and a ledger
-// at the root of a check, the stores that the frontends of the composition
-// locate in the environment, as the command line passes them, the plans of
-// Plans, the files of testdata/want, and the edit that renames the
-// parameter of Get in the interface Store.
+// composition of Base with a disk sink and a ledger at the root of a check
+// and the config file in the root, as the binary applies it, the stores
+// that the frontends of the composition locate in the environment, as the
+// command line passes them, the plans of Plans, the files of
+// testdata/want, and the edit that renames the parameter of Get in the
+// interface Store.
 func fixture(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
@@ -318,45 +340,32 @@ func fixture(t *testing.T) workspacetest.Fixture {
 	assert.NoError(t, err, "the composition builds")
 	stores, err := w.Stores(os.Getenv)
 	assert.NoError(t, err, "the frontends of the composition locate their stores")
-	b, err := os.ReadFile(filepath.Join(filepath.FromSlash(tree), configFile))
-	assert.NoError(t, err, "the config file of the tree reads")
-	var c config
-	assert.NoError(t, yaml.Unmarshal(b, &c), "the config file of the tree decodes")
-	wanted := map[string][]byte{}
-	if !golden.ShouldUpdate() {
-		err = fs.WalkDir(os.DirFS(filepath.FromSlash(want)), ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			wanted[p], err = fs.ReadFile(os.DirFS(filepath.FromSlash(want)), p)
-			return err
-		})
-		assert.NoError(t, err, "the files of testdata/want read")
-	}
 	return workspacetest.Fixture{
 		Tree:   os.DirFS(filepath.FromSlash(tree)),
 		Stores: stores,
-		Compose: func(root string) *workspace.Builder {
-			return reference.Base().
-				Config(workspace.Config{Options: c.Options}).
+		Compose: func(root string) (*workspace.Builder, error) {
+			b := reference.Base().
 				Output(func() (output.Sink, error) { return output.NewDisk(root, reference.Brand) }).
 				Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, reference.Brand) })
+			return b, cli.Configure(b, root)
 		},
 		Plans: reference.Plans,
-		Want:  wanted,
+		Want:  workspacetest.Want(t, want),
 		Edit:  edit,
 	}
 }
 
 // run copies the tree into root, an empty directory, runs the composition
 // of the fixture f over it cold with the stores of f, and returns the
-// report. It stops the test where the composition does not build or the run
-// returns an error.
+// report. It stops the test where the composition does not configure or
+// build, or where the run returns an error.
 func run(t *testing.T, f workspacetest.Fixture, root string) *workspace.Report {
 	t.Helper()
 
 	assert.NoError(t, os.CopyFS(root, f.Tree), "the tree copies into the root")
-	w, err := f.Compose(root).Plans(f.Plans()...).Build()
+	b, err := f.Compose(root)
+	assert.NoError(t, err, "the composition configures")
+	w, err := b.Plans(f.Plans()...).Build()
 	assert.NoError(t, err, "the composition builds")
 	report, err := w.Run(t.Context(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: true})
 	assert.NoError(t, err, "the plans run clean")

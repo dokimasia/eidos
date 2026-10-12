@@ -75,14 +75,13 @@ type Callee struct {
 // returns a new plugin, because a plugin instance belongs to one workspace.
 func New() plugin.Generator {
 	o := &callee.Options{Package: DefaultPackage, Func: DefaultFunc}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Options(o).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: Word, Template: fileTemplate}).
 		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
 		Handle(sdk.Directive(schema, sdk.OnStruct(record(o)))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // record returns the rule of registrygen under the options o. The rule

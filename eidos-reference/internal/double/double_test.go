@@ -83,7 +83,7 @@ func TestDouble(t *testing.T) {
 			t.Parallel()
 
 			got, _ := of(t, goPackage)
-			assert.Equal(t, got[ledgerName].methods[0].Params[0].Name, unnamedParam,
+			assert.Equal(t, got[ledgerName].methods[0].Params.Items()[0].Name, unnamedParam,
 				"the parameter of Get takes the name of its position")
 		})
 
@@ -147,12 +147,12 @@ func TestDouble(t *testing.T) {
 			assert.Length(t, got, 1, "the copy has the one method of the interface")
 			source := i.Methods.Items()[0]
 			expect.That(t, got[0].Name).Equal(closeName, "the copy has the name of the method")
-			expect.NotEqual(t, got[0].Params[0], source.Params[0], "the copy has parameters of its own",
-				assert.ByIdentity())
-			expect.NotEqual(t, got[0].Returns[0], source.Returns[0], "the copy has results of its own",
-				assert.ByIdentity())
-			expect.Equal(t, got[0].Returns[0].Type, source.Returns[0].Type, "the copy shares the type of a result",
-				assert.ByIdentity())
+			expect.NotEqual(t, got[0].Params.Items()[0], source.Params.Items()[0],
+				"the copy has parameters of its own", assert.ByIdentity())
+			expect.NotEqual(t, got[0].Returns.Items()[0], source.Returns.Items()[0],
+				"the copy has results of its own", assert.ByIdentity())
+			expect.Equal(t, got[0].Returns.Items()[0].Type, source.Returns.Items()[0].Type,
+				"the copy shares the type of a result", assert.ByIdentity())
 		})
 
 		t.Run("names the receiver d for a double whose name does not start with a letter", func(t *testing.T) {
@@ -202,8 +202,8 @@ func of(t *testing.T, pkg string) (map[string]mirrored, *diag.Sink) {
 			got[m.Interface.Name] = mirrored{methods: methods, ok: ok}
 			return nil
 		})).
-		Build()
-	f := referencetest.New(t.Context(), t, referencetest.Spec{
+		Generator()
+	f := referencetest.New(t, referencetest.Spec{
 		Dir:      tree,
 		Packages: []string{pkg},
 		Target:   golang.Target,
@@ -220,8 +220,8 @@ func emitted() *emit.Interface {
 	i := &emit.Interface{Name: ledgerName}
 	i.Methods.Append(&emit.Method{
 		Name:    closeName,
-		Params:  []*emit.Param{{Name: receiverName, Type: &emit.TypeRef{Spelling: intType}}},
-		Returns: []*emit.Return{{Type: &emit.TypeRef{Spelling: errorType}}},
+		Params:  emit.SlotOf(&emit.Param{Name: receiverName, Type: &emit.TypeRef{Spelling: intType}}),
+		Returns: emit.SlotOf(&emit.Return{Type: &emit.TypeRef{Spelling: errorType}}),
 	})
 	return i
 }

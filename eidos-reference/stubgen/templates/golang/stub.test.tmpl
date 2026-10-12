@@ -21,13 +21,13 @@ func test{{$stub.Name}}{{$m.Name}}{{typeparams $stub.TypeParams}}(t *testing.T) 
 {{end}}
 	called := 0
 	stub := &{{$stub.Name}}{{template "typeargs" $stub.TypeParams}}{}
-	stub.{{$m.Name}}Func = func({{range $j, $p := $m.Params}}{{if $j}}, {{end}}_ {{if $p.Variadic}}...{{end}}{{spell $p.Type}}{{end}}){{template "results" $m.Returns}} {
+	stub.{{$m.Name}}Func = func({{range $j, $p := $m.Params.Items}}{{if $j}}, {{end}}_ {{if $p.Variadic}}...{{end}}{{spell $p.Type}}{{end}}){{template "results" $m.Returns.Items}} {
 		called++
-{{- if $m.Returns}}
-		return {{range $j, $r := $m.Returns}}{{if $j}}, {{end}}*new({{spell $r.Type}}){{end}}
+{{- if $m.Returns.Len}}
+		return {{range $j, $r := $m.Returns.Items}}{{if $j}}, {{end}}*new({{spell $r.Type}}){{end}}
 {{- end}}
 	}
-	stub.{{$m.Name}}({{range $j, $p := $m.Params}}{{if $j}}, {{end}}*new({{if $p.Variadic}}[]{{end}}{{spell $p.Type}}){{if $p.Variadic}}...{{end}}{{end}})
+	stub.{{$m.Name}}({{range $j, $p := $m.Params.Items}}{{if $j}}, {{end}}*new({{if $p.Variadic}}[]{{end}}{{spell $p.Type}}){{if $p.Variadic}}...{{end}}{{end}})
 	if called != 1 {
 		t.Errorf("{{$m.Name}} calls {{$m.Name}}Func %d times instead of once", called)
 	}

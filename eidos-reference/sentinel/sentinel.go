@@ -13,7 +13,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -109,9 +108,9 @@ type conclusion struct {
 //
 // The plugin serves the target golang alone. Each call returns a new
 // plugin, because a plugin instance belongs to one workspace.
-func New() plugin.Generator {
+func New() sdk.Dual {
 	c := &conclusion{options: &Options{}}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Options(c.options).
 		Keys(c.register).
@@ -122,8 +121,7 @@ func New() plugin.Generator {
 			sdk.Where(sdk.HasKey(meta.Named[bool](KeyValue)), sdk.OnVariable(c.sentinel)),
 			sdk.Where(sdk.HasKey(meta.Named[bool](golang.SatisfiesErrorKey)), sdk.OnStruct(c.errorType)),
 		).
-		Build().(plugin.Generator)
-	return g
+		Dual()
 }
 
 // register claims the namespace of sentinel and registers [KeyValue].
@@ -143,12 +141,11 @@ func (c *conclusion) register(r *meta.Registry) error {
 	return err
 }
 
-// stamp stamps [KeyValue] on a variable whose name the ErrorValueRules of
-// its language accept. A language whose rules do not implement
-// rules.ErrorValueRules has no sentinels.
+// stamp stamps [KeyValue] on a variable whose name follows the
+// convention of its language for an error value. A language without
+// error values has no sentinels.
 func (c *conclusion) stamp(m *sdk.VariableMatch, st *sdk.Stamper) error {
-	names, named := m.Rules().Source().(rules.ErrorValueRules)
-	if named && names.IsSentinelName(m.Variable.Name) {
+	if m.Rules().IsSentinelName(m.Variable.Name) {
 		sdk.Stamp(st, c.value, true)
 	}
 	return nil

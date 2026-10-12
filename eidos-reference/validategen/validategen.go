@@ -54,7 +54,7 @@ const (
 // new plugin, because a plugin instance belongs to one workspace.
 func New() plugin.Generator {
 	handled := sdk.HasKey(meta.Named[bool](handlergen.KeyHandler))
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Requires(handlergen.Capability).
@@ -63,8 +63,7 @@ func New() plugin.Generator {
 			sdk.Where(handled, sdk.OnStruct(validator)),
 			sdk.Where(handled, sdk.OnEmit(symbol.KindMethod, guard)),
 		).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // validator writes the validator of one struct. The validator returns nil.
@@ -76,11 +75,11 @@ func validator(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Doc:        []string{fmt.Sprintf(validatorDoc, name, s.Name)},
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
-		Params: []*emit.Param{{Name: requestParam, Type: &emit.TypeRef{
+		Params: emit.SlotOf(&emit.Param{Name: requestParam, Type: &emit.TypeRef{
 			Spelling: pointerMark + requestType, Form: symbol.FormOptional,
 			Elems: []*emit.TypeRef{{Spelling: requestType, Package: httpPackage}},
-		}}},
-		Returns: []*emit.Return{{Type: &emit.TypeRef{Spelling: errorType}}},
+		}}),
+		Returns: emit.SlotOf(&emit.Return{Type: &emit.TypeRef{Spelling: errorType}}),
 	}
 	fn.Body.Stmts = []emit.Stmt{{Kind: emit.StmtReturn, Value: emit.ValueExpr(emit.Literal(emit.LiteralNil, ""))}}
 	e.File().Append(fn)
@@ -98,7 +97,8 @@ func guard(m *sdk.EmitMatch, e *sdk.Emitter) error {
 		return nil
 	}
 	validate := emit.Expr{Kind: emit.ExprName, Name: Prefix + m.Origin().Name}
-	request := emit.Expr{Kind: emit.ExprName, Name: method.Params[len(method.Params)-1].Name}
+	params := method.Params.Items()
+	request := emit.Expr{Kind: emit.ExprName, Name: params[len(params)-1].Name}
 	e.Slot(&method.Body.Prologue).Append(
 		emit.Stmt{
 			Kind: emit.StmtAssign, Declare: true, Names: []string{errVar},

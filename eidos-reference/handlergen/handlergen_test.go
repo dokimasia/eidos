@@ -4,7 +4,6 @@
 package handlergen_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -66,10 +65,9 @@ func TestHandlergen(t *testing.T) {
 		t.Run("passes the plugin suite over the package orders of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := handlergen.New()
-				return p, orders(ctx, tb, p).Fixture
+				return p, orders(tb, p).Fixture
 			})
 		})
 
@@ -77,7 +75,7 @@ func TestHandlergen(t *testing.T) {
 			t.Parallel()
 
 			p := handlergen.New()
-			f := orders(t.Context(), t, p)
+			f := orders(t, p)
 			res := f.Annotate(t, p)
 			assert.NoError(t, res.Err, "the annotator runs whole")
 			key, registered := meta.Lookup[bool](f.Keys, handlergen.KeyHandler)
@@ -107,8 +105,8 @@ func TestHandlergen(t *testing.T) {
 			expect.That(t, m.Name).Equal(handlergen.ServeHTTP, "the method serves HTTP")
 			expect.That(t, m.Receiver.Name).Equal(receiver, "the receiver takes the first letter of the handler")
 			expect.That(t, m.Receiver.Type.Form).Equal(symbol.FormOptional, "the receiver is a pointer")
-			names := make([]string, 0, len(m.Params))
-			for _, p := range m.Params {
+			names := make([]string, 0, m.Params.Len())
+			for _, p := range m.Params.Items() {
 				names = append(names, p.Name)
 			}
 			assert.Equal(t, names, []string{writerName, requestName}, "ServeHTTP takes the writer and the request")
@@ -121,7 +119,7 @@ func TestHandlergen(t *testing.T) {
 			assert.Length(t, stmts, 1, "the content is one statement")
 			call := stmts[0].Value
 			expect.That(t, call.Kind).Equal(emit.ExprCall, "the statement is a call")
-			expect.That(t, call.Fn.Name).Equal(serveCall, "the call reaches Serve through the field")
+			expect.That(t, call.Fn.Name).Equal(serveCall, "the call selects Serve through the field")
 			expect.That(t, call.Args).Equal([]emit.Expr{
 				{Kind: emit.ExprName, Name: writerName},
 				{Kind: emit.ExprName, Name: requestName},
@@ -143,7 +141,7 @@ func TestHandlergen(t *testing.T) {
 			t.Parallel()
 
 			p := handlergen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      noServeTree,
 				Packages: []string{noServePackage},
 				Target:   golang.Target,
@@ -171,12 +169,12 @@ func TestHandlergen(t *testing.T) {
 }
 
 // orders returns a fixture over the package orders of the tree, loaded
-// under ctx, with the target golang and the keys and the directive of the
-// plugin handlergen p.
-func orders(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the keys and the
+// directive of the plugin handlergen p.
+func orders(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      referencetest.Tree,
 		Packages: []string{ordersPackage},
 		Target:   golang.Target,
@@ -191,7 +189,7 @@ func generated(t *testing.T) *emit.Struct {
 	t.Helper()
 
 	p := handlergen.New()
-	f := orders(t.Context(), t, p)
+	f := orders(t, p)
 	assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
 	res := f.Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")

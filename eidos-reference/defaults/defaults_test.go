@@ -4,7 +4,6 @@
 package defaults_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -77,10 +76,9 @@ func TestDefaults(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := defaults.New()
-				return p, fixture(ctx, tb, referencetest.Tree, catalogPackage, p).Fixture
+				return p, fixture(tb, referencetest.Tree, catalogPackage, p).Fixture
 			})
 		})
 
@@ -112,7 +110,7 @@ func TestDefaults(t *testing.T) {
 				t.Parallel()
 
 				p := defaults.New()
-				f := fixture(t.Context(), t, referencetest.Tree, catalogPackage, p)
+				f := fixture(t, referencetest.Tree, catalogPackage, p)
 				assert.Equal(t, stamped(t, f, p, addressName, tt.give), tt.want,
 					"defaults stamps the field "+tt.give+" as the case states")
 			})
@@ -122,7 +120,7 @@ func TestDefaults(t *testing.T) {
 			t.Parallel()
 
 			p := defaults.New()
-			f := fixture(t.Context(), t, taggedTree, taggedPackage, p)
+			f := fixture(t, taggedTree, taggedPackage, p)
 			assert.Equal(t, stamped(t, f, p, configName, regionName),
 				stamp{value: regionDefault, source: defaults.SourceTag, stamped: true},
 				"defaults reads the tag of the key default")
@@ -133,7 +131,7 @@ func TestDefaults(t *testing.T) {
 
 			p := defaults.New()
 			p.(plugin.OptionsProvider).Options().(*defaults.Options).Tag = fallbackTag
-			f := fixture(t.Context(), t, taggedTree, taggedPackage, p)
+			f := fixture(t, taggedTree, taggedPackage, p)
 			assert.Equal(t, stamped(t, f, p, configName, regionName),
 				stamp{value: fallbackDefault, source: defaults.SourceTag, stamped: true},
 				"defaults reads the tag of the key that the option sets")
@@ -143,7 +141,7 @@ func TestDefaults(t *testing.T) {
 			t.Parallel()
 
 			p := defaults.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      referencetest.Tree,
 				Packages: []string{webPackage},
 				Target:   typescript.Target,
@@ -167,11 +165,12 @@ func TestDefaults(t *testing.T) {
 }
 
 // fixture returns a fixture over the Go package pkg of the tree dir, loaded
-// under ctx, with the target golang and the plugin defaults p.
-func fixture(ctx context.Context, tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the plugin defaults
+// p.
+func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      dir,
 		Packages: []string{pkg},
 		Target:   golang.Target,

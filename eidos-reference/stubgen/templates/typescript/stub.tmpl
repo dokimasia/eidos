@@ -15,8 +15,8 @@ export class {{$stub.Name}}{{typeparams $stub.TypeParams}} implements {{spell (i
 
   /** {{$m.Name}} records its arguments and calls {{$m.Name}}Func. */
   {{$m.Name}}({{params $m.Params}}){{returns $m}} {
-{{memberbody $m}}    this.{{$m.Name}}Calls.push({{if $m.Params}}{ {{range $j, $p := $m.Params}}{{if $j}}, {{end}}{{(index $call.Fields.Items $j).Name}}: {{$p.Name}}{{end}} }{{else}}{}{{end}});
-    {{if $m.Returns}}return {{end}}this.{{$m.Name}}Func!({{range $j, $p := $m.Params}}{{if $j}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
+{{memberbody $m}}    this.{{$m.Name}}Calls.push({{if $m.Params.Len}}{ {{range $j, $p := $m.Params.Items}}{{if $j}}, {{end}}{{(index $call.Fields.Items $j).Name}}: {{$p.Name}}{{end}} }{{else}}{}{{end}});
+    {{if $m.Returns.Len}}return {{end}}this.{{$m.Name}}Func!({{range $j, $p := $m.Params.Items}}{{if $j}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
   }
 {{- end}}
 }
@@ -25,7 +25,7 @@ export class {{$stub.Name}}{{typeparams $stub.TypeParams}} implements {{spell (i
 
 /** {{$call.Name}} contains the arguments of one call of {{$stub.Name}}.{{$m.Name}}. */
 export interface {{$call.Name}}{{typeparams $call.TypeParams}} {
-{{- range $j, $p := $m.Params}}
+{{- range $j, $p := $m.Params.Items}}
   {{(index $call.Fields.Items $j).Name}}: {{spell $p.Type}}{{if $p.Variadic}}[]{{end}};
 {{- end}}
 }

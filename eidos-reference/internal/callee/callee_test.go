@@ -70,9 +70,10 @@ const (
 	shoppingPkg    = "example.com/shopping/pay"
 )
 
-// Each rule appends one call of the function of its options into a body
-// that the host wrote. Check reports why where the options name no
-// function that the load or the standard library can declare.
+// TestCallee checks that each rule appends one call of the function of
+// its options into a body that the host wrote. Check reports the reason
+// where the options name no function that the load or the standard
+// library can declare.
 func TestCallee(t *testing.T) {
 	t.Parallel()
 
@@ -157,7 +158,7 @@ func TestCallee(t *testing.T) {
 			t.Parallel()
 
 			out := run(t, symbol.KindFunction, callee.Chain(&callee.Options{Package: logPackage, Func: logFunc}))
-			assert.Equal(t, out.validator.Body, emit.Body{}, "the validator has no contribution")
+			assert.True(t, out.validator.Body.IsZero(), "the validator has no contribution")
 		})
 
 		t.Run("reports Missing at the subject for empty options", func(t *testing.T) {
@@ -202,7 +203,7 @@ func TestCallee(t *testing.T) {
 			t.Parallel()
 
 			out := run(t, symbol.KindMethod, callee.Epilogue(&callee.Options{Package: logPackage, Func: logFunc}))
-			assert.Equal(t, out.close.Body, emit.Body{}, "the method Close has no contribution")
+			assert.True(t, out.close.Body.IsZero(), "the method Close has no contribution")
 		})
 
 		t.Run("reports Missing at the subject for empty options", func(t *testing.T) {
@@ -244,7 +245,7 @@ func TestCallee(t *testing.T) {
 				symbol.KindMethod,
 				callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}),
 			)
-			assert.Equal(t, out.signature.Body, emit.Body{}, "the method of the interface has no contribution")
+			assert.True(t, out.signature.Body.IsZero(), "the method of the interface has no contribution")
 		})
 
 		t.Run("reports Missing at the subject for empty options", func(t *testing.T) {
@@ -257,13 +258,12 @@ func TestCallee(t *testing.T) {
 		t.Run("passes the plugin suite in a plugin of its own", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := sdk.NewPlugin(probeID).
 					Handle(sdk.OnEmit(symbol.KindMethod,
 						callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}))).
-					Build()
-				return p, referencetest.New(ctx, tb, referencetest.Spec{
+					Generator()
+				return p, referencetest.New(tb, referencetest.Spec{
 					Dir:      tree,
 					Packages: []string{ordersPackage},
 					Target:   golang.Target,
@@ -290,8 +290,8 @@ type written struct {
 func run(t *testing.T, k symbol.Kind, rule func(*sdk.EmitMatch, *sdk.Emitter) error) written {
 	t.Helper()
 
-	p := sdk.NewPlugin(probeID).Handle(sdk.OnEmit(k, rule)).Build()
-	f := referencetest.New(t.Context(), t, referencetest.Spec{
+	p := sdk.NewPlugin(probeID).Handle(sdk.OnEmit(k, rule)).Generator()
+	f := referencetest.New(t, referencetest.Spec{
 		Dir:      tree,
 		Packages: []string{ordersPackage},
 		Target:   golang.Target,
@@ -336,8 +336,8 @@ func checked(t *testing.T, pkg, fn string) (bool, []diag.Code) {
 			}
 			return nil
 		})).
-		Build()
-	f := referencetest.New(t.Context(), t, referencetest.Spec{
+		Generator()
+	f := referencetest.New(t, referencetest.Spec{
 		Dir:      tree,
 		Packages: []string{ordersPackage, metricsPackage},
 		Target:   golang.Target,
@@ -361,14 +361,18 @@ func host() plugin.Generator {
 		Output(plugin.Output{Per: plugin.PerSource, Word: hostWord}).
 		Handle(sdk.OnStruct(func(m *sdk.StructMatch, e *sdk.Emitter) error {
 			id := m.Struct.ID
-			middleware := &emit.Function{Origin: id, Name: middlewareName, Params: []*emit.Param{{Name: handlerParam}}}
+			middleware := &emit.Function{
+				Origin: id, Name: middlewareName, Params: emit.SlotOf(&emit.Param{Name: handlerParam}),
+			}
 			middleware.Body.Declare(middlewaregen.ChainSlot)
-			validator := &emit.Function{Origin: id, Name: validatorName, Params: []*emit.Param{{Name: requestParam}}}
+			validator := &emit.Function{
+				Origin: id, Name: validatorName, Params: emit.SlotOf(&emit.Param{Name: requestParam}),
+			}
 			handler := &emit.Struct{Origin: id, Name: handlerName}
 			handler.Methods.Append(
 				&emit.Method{
 					Origin: id, Name: handlergen.ServeHTTP, Receiver: &emit.Param{Name: receiverParam},
-					Params: []*emit.Param{{Name: writerParam}, {Name: requestParam}},
+					Params: emit.SlotOf(&emit.Param{Name: writerParam}, &emit.Param{Name: requestParam}),
 				},
 				&emit.Method{Origin: id, Name: closeName, Receiver: &emit.Param{Name: receiverParam}},
 			)
@@ -377,7 +381,7 @@ func host() plugin.Generator {
 			e.File().Append(middleware, validator, handler, contract)
 			return nil
 		})).
-		Build().(plugin.Generator)
+		Generator()
 }
 
 // assertMissing checks that the sink has n findings, each Missing at Error

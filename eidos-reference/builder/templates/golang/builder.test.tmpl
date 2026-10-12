@@ -27,7 +27,7 @@ func Test{{$b.Name}}(t *testing.T) {
 	t.Run("{{$new.Name}} sets the default of {{$field}}", func(t *testing.T) {
 		t.Parallel()
 
-		var want {{spell (index $check.Params 0).Type}}
+		var want {{spell (index $check.Params.Items 0).Type}}
 {{body $check}}		got := {{$new.Name}}{{template "args" $d.Args}}().{{$build.Name}}()
 		if !reflect.DeepEqual(got.{{$field}}, want) {
 			t.Errorf("{{$new.Name}} sets {{$field}} to %v instead of %v", got.{{$field}}, want)
@@ -36,7 +36,7 @@ func Test{{$b.Name}}(t *testing.T) {
 {{- end}}
 {{- range $i, $m := slice $b.Methods.Items 1}}
 {{- $s := index $d.Setters $i}}
-{{- $p := index $m.Params 0}}
+{{- $p := index $m.Params.Items 0}}
 
 	t.Run("{{$m.Name}} sets {{$s.Field}}", func(t *testing.T) {
 		t.Parallel()

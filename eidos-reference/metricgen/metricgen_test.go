@@ -4,7 +4,6 @@
 package metricgen_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -43,10 +42,9 @@ func TestMetricgen(t *testing.T) {
 		t.Run("passes the plugin suite over the middleware of the package orders", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := configured()
-				return p, orders(ctx, tb, p).Fixture
+				return p, orders(tb, p).Fixture
 			})
 		})
 
@@ -54,7 +52,7 @@ func TestMetricgen(t *testing.T) {
 			t.Parallel()
 
 			p := configured()
-			res := orders(t.Context(), t, p).Generate(t, p)
+			res := orders(t, p).Generate(t, p)
 			assert.NoError(t, res.Err, "the generator runs whole")
 			var chain []emit.Stmt
 			for u := range res.Emit.Units() {
@@ -92,13 +90,13 @@ func configured() plugin.Generator {
 }
 
 // orders returns a fixture over the package orders of the tree and the
-// package of the function of the options, loaded under ctx and stamped by
-// handlergen, with the target golang, the plugin metricgen p, and the units
-// of handlergen and middlewaregen seeded.
-func orders(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// package of the function of the options, loaded under the context of tb
+// and stamped by handlergen, with the target golang, the plugin metricgen
+// p, and the units of handlergen and middlewaregen seeded.
+func orders(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        referencetest.Tree,
 		Packages:   []string{ordersPackage, metricsPackage},
 		Target:     golang.Target,

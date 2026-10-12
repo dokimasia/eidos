@@ -12,7 +12,7 @@ type {{$mock.Name}}{{typeparams $mock.TypeParams}} struct {
 
 // {{.Name}} calls {{.Name}}Func.
 func ({{.Receiver.Name}} *{{$mock.Name}}{{template "typeargs" $mock.TypeParams}}) {{.Name}}({{params .Params}}){{results .Returns}} {
-{{body .}}{{if .Returns}}return {{end}}{{.Receiver.Name}}.{{.Name}}Func({{range $i, $p := .Params}}{{if $i}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
+{{body .}}{{if .Returns.Len}}return {{end}}{{.Receiver.Name}}.{{.Name}}Func({{range $i, $p := .Params.Items}}{{if $i}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
 }
 {{- end}}
 {{- end}}

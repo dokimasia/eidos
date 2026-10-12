@@ -4,7 +4,6 @@
 package registrygen_test
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -64,10 +63,9 @@ func TestRegistrygen(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := registrygen.New()
-				return p, catalog(ctx, tb, p).Fixture
+				return p, catalog(tb, p).Fixture
 			})
 		})
 
@@ -75,7 +73,7 @@ func TestRegistrygen(t *testing.T) {
 			t.Parallel()
 
 			p := registrygen.New()
-			f := catalog(t.Context(), t, p)
+			f := catalog(t, p)
 			units, _ := registries(t, f, p)
 			assert.Length(t, units, 1, "the package catalog has one registry")
 			assert.Length(t, units[0].Decls, 1, "the registry has one record")
@@ -104,7 +102,7 @@ func TestRegistrygen(t *testing.T) {
 			p := registrygen.New()
 			o := p.(plugin.OptionsProvider).Options().(*callee.Options)
 			o.Package, o.Func = codecPackage, codecFunc
-			f := catalog(t.Context(), t, p)
+			f := catalog(t, p)
 			units, _ := registries(t, f, p)
 			assert.Length(t, units, 1, "the package catalog has one registry")
 			item := f.Find(t, symbol.KindStruct, "", itemName).Identity()
@@ -119,7 +117,7 @@ func TestRegistrygen(t *testing.T) {
 			p := registrygen.New()
 			o := p.(plugin.OptionsProvider).Options().(*callee.Options)
 			o.Package, o.Func = keywordPackage, codecFunc
-			f := catalog(t.Context(), t, p)
+			f := catalog(t, p)
 			units, _ := registries(t, f, p)
 			assert.Length(t, units, 1, "the package catalog has one registry")
 			item := f.Find(t, symbol.KindStruct, "", itemName).Identity()
@@ -133,7 +131,7 @@ func TestRegistrygen(t *testing.T) {
 
 			p := registrygen.New()
 			p.(plugin.OptionsProvider).Options().(*callee.Options).Func = ""
-			f := catalog(t.Context(), t, p)
+			f := catalog(t, p)
 			units, sink := registries(t, f, p)
 			found := slices.Collect(sink.All())
 			assert.Length(t, found, 1, "registrygen reports the one struct")
@@ -150,7 +148,7 @@ func TestRegistrygen(t *testing.T) {
 				p := registrygen.New()
 				o := p.(plugin.OptionsProvider).Options().(*callee.Options)
 				o.Package, o.Func = missingPackage, codecFunc
-				f := catalog(t.Context(), t, p)
+				f := catalog(t, p)
 				units, sink := registries(t, f, p)
 				found := slices.Collect(sink.All())
 				assert.Length(t, found, 1, "registrygen reports the one struct")
@@ -164,7 +162,7 @@ func TestRegistrygen(t *testing.T) {
 			t.Parallel()
 
 			p := registrygen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      genericTree,
 				Packages: []string{genericPackage},
 				Target:   golang.Target,
@@ -182,11 +180,12 @@ func TestRegistrygen(t *testing.T) {
 }
 
 // catalog returns a fixture over the package catalog of the tree, loaded
-// under ctx, with the target golang and the plugin registrygen p.
-func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the plugin
+// registrygen p.
+func catalog(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      referencetest.Tree,
 		Packages: []string{catalogPackage},
 		Target:   golang.Target,

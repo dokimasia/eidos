@@ -129,9 +129,9 @@ type conclusion struct {
 // struct: the slots, and the return of the zero values of the results. The
 // plugin serves the target golang alone. Each call returns a new plugin,
 // because a plugin instance belongs to one workspace.
-func New() plugin.Generator {
+func New() sdk.Dual {
 	c := &conclusion{}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
@@ -141,8 +141,7 @@ func New() plugin.Generator {
 			sdk.Directive(schema, sdk.OnStruct(c.conclude)),
 			sdk.Where(sdk.HasKey(meta.Named[bool](KeyRepository)), sdk.OnStruct(generate)),
 		).
-		Build().(plugin.Generator)
-	return g
+		Dual()
 }
 
 // register claims the namespace of repogen and registers [KeyRepository].
@@ -193,8 +192,8 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 			Doc:        []string{fmt.Sprintf(rm.doc, s.Name)},
 			Name:       rm.name,
 			Visibility: symbol.VisibilityPublic,
-			Params:     params,
-			Returns:    returns,
+			Params:     emit.SlotOf(params...),
+			Returns:    emit.SlotOf(returns...),
 		})
 		params, returns = signature(s, rm)
 		method := golang.PointerReceiver(&emit.Method{
@@ -203,8 +202,8 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 			Name:       rm.name,
 			Visibility: symbol.VisibilityPublic,
 			Receives:   &emit.TypeRef{Spelling: impl},
-			Params:     params,
-			Returns:    returns,
+			Params:     emit.SlotOf(params...),
+			Returns:    emit.SlotOf(returns...),
 		})
 		method.Body.Ref = e.Ref(bodyTemplate, nil)
 		zero.Methods.Append(method)

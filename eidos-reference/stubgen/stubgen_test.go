@@ -4,7 +4,6 @@
 package stubgen_test
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -102,20 +101,18 @@ func TestStubgen(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := stubgen.New()
-				return p, catalog(ctx, tb, p).Fixture
+				return p, catalog(tb, p).Fixture
 			})
 		})
 
 		t.Run("passes the plugin suite over the TypeScript store of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := stubgen.New()
-				return p, web(ctx, tb, p).Fixture
+				return p, web(tb, p).Fixture
 			})
 		})
 
@@ -123,7 +120,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			stubs, _ := recorded(t, catalog(t.Context(), t, p), p)
+			stubs, _ := recorded(t, catalog(t, p), p)
 			stub := stubs[storeStub]
 			assert.NotNil(t, stub, "stubgen records the stub of Store")
 			expect.That(t, methodNames(stub.Methods.Items())).Equal(goMethods, "the stub has the methods of Store")
@@ -134,7 +131,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			stubs, _ := recorded(t, catalog(t.Context(), t, p), p)
+			stubs, _ := recorded(t, catalog(t, p), p)
 			stub := stubs[storeStub]
 			assert.NotNil(t, stub, "stubgen records the stub of Store")
 			calls := stub.Types.Items()
@@ -144,18 +141,22 @@ func TestStubgen(t *testing.T) {
 			put, isStruct := calls[1].(*emit.Struct)
 			assert.True(t, isStruct, "the call record of Put is a struct")
 			expect.That(t, get.Name).Equal(getCall, "the first call record is the record of Get")
-			expect.Equal(t, get.Fields.Items(), []*emit.Field{{Name: ctxParam}, {Name: idParam}},
-				"the call record of Get has a field for each parameter of Get")
+			getFields := get.Fields.Items()
+			assert.Length(t, getFields, 2, "the call record of Get has a field for each parameter of Get")
+			expect.Equal(t, getFields[0].Name, ctxParam, "the first field of Get is the context")
+			expect.Equal(t, getFields[1].Name, idParam, "the second field of Get is the identifier")
 			expect.That(t, put.Name).Equal(putCall, "the second call record is the record of Put")
-			expect.Equal(t, put.Fields.Items(), []*emit.Field{{Name: ctxParam}, {Name: productParam}},
-				"the call record of Put has a field for each parameter of Put")
+			putFields := put.Fields.Items()
+			assert.Length(t, putFields, 2, "the call record of Put has a field for each parameter of Put")
+			expect.Equal(t, putFields[0].Name, ctxParam, "the first field of Put is the context")
+			expect.Equal(t, putFields[1].Name, productParam, "the second field of Put is the product")
 		})
 
 		t.Run("records the test of the stub with the methods of the stub without a receiver", func(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			_, tests := recorded(t, catalog(t.Context(), t, p), p)
+			_, tests := recorded(t, catalog(t, p), p)
 			test := tests[storeStub]
 			assert.NotNil(t, test, "stubgen records the test of the stub of Store")
 			methods := test.Methods.Items()
@@ -169,7 +170,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			stubs, tests := recorded(t, web(t.Context(), t, p), p)
+			stubs, tests := recorded(t, web(t, p), p)
 			assert.NotNil(t, stubs[storeStub], "stubgen records the stub of the TypeScript Store")
 			expect.That(t, methodNames(stubs[storeStub].Methods.Items())).Equal(webMethods,
 				"the stub has the methods of Store")
@@ -180,7 +181,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      propertyTree,
 				Packages: []string{shapedPackage},
 				Target:   typescript.Target,
@@ -202,7 +203,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:      constraintTree,
 				Packages: []string{constraintPackage},
 				Target:   golang.Target,
@@ -225,7 +226,7 @@ func TestStubgen(t *testing.T) {
 				t.Parallel()
 
 				p := stubgen.New()
-				f := generic(t.Context(), t, p, typescript.Target, mapperPackage)
+				f := generic(t, p, typescript.Target, mapperPackage)
 				res := f.Generate(t, p)
 				assert.NoError(t, res.Err, "the generator runs whole")
 				found := slices.Collect(res.Sink.All())
@@ -242,7 +243,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			stubs, _ := recorded(t, catalog(t.Context(), t, p), p)
+			stubs, _ := recorded(t, catalog(t, p), p)
 			stub := stubs[cacheStub]
 			assert.NotNil(t, stub, "stubgen records the stub of Cache")
 			expect.That(t, typeParamNames(stub.TypeParams)).Equal(cacheParam, "the stub declares the T of Cache")
@@ -254,7 +255,7 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			_, tests := recorded(t, catalog(t.Context(), t, p), p)
+			_, tests := recorded(t, catalog(t, p), p)
 			test := tests[cacheStub]
 			assert.NotNil(t, test, "stubgen records the test of the stub of Cache")
 			expect.That(t, typeParamNames(test.TypeParams)).Equal(cacheParam,
@@ -267,15 +268,15 @@ func TestStubgen(t *testing.T) {
 			t.Parallel()
 
 			p := stubgen.New()
-			stubs, tests := recorded(t, generic(t.Context(), t, p, golang.Target, genericPackage), p)
+			stubs, tests := recorded(t, generic(t, p, golang.Target, genericPackage), p)
 			expect.NotNil(t, stubs[labelsStub], "stubgen records the stub of Labels")
 			expect.NotContains(t, tests, labelsStub, "int does not satisfy fmt.Stringer, so Labels has no witness")
 		})
 
 		cp, gp, wp := stubgen.New(), stubgen.New(), stubgen.New()
-		catalogStubs, _ := recorded(t, catalog(t.Context(), t, cp), cp)
-		goStubs, _ := recorded(t, generic(t.Context(), t, gp, golang.Target, genericPackage), gp)
-		webStubs, _ := recorded(t, generic(t.Context(), t, wp, typescript.Target, bagPackage), wp)
+		catalogStubs, _ := recorded(t, catalog(t, cp), cp)
+		goStubs, _ := recorded(t, generic(t, gp, golang.Target, genericPackage), gp)
+		webStubs, _ := recorded(t, generic(t, wp, typescript.Target, bagPackage), wp)
 		tests := []struct {
 			name string
 			stub *emit.Struct
@@ -324,11 +325,12 @@ func TestStubgen(t *testing.T) {
 }
 
 // catalog returns a fixture over the package catalog of the tree, loaded
-// under ctx, with the target golang and the plugin stubgen p.
-func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the plugin stubgen
+// p.
+func catalog(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      referencetest.Tree,
 		Packages: []string{catalogPackage},
 		Target:   golang.Target,
@@ -337,11 +339,11 @@ func catalog(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.
 }
 
 // web returns a fixture over the TypeScript store of the tree, loaded under
-// ctx, with the target typescript and the plugin stubgen p.
-func web(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
+// the context of tb, with the target typescript and the plugin stubgen p.
+func web(tb assert.TB, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      referencetest.Tree,
 		Packages: []string{webPackage},
 		Target:   typescript.Target,
@@ -350,14 +352,12 @@ func web(ctx context.Context, tb assert.TB, p plugin.Plugin) *referencetest.Fixt
 }
 
 // generic returns a fixture over the package pkg of the tree of generic
-// interfaces, loaded under ctx, with the plan's target and the plugin
-// stubgen p.
-func generic(
-	ctx context.Context, tb assert.TB, p plugin.Plugin, target plugin.Target, pkg string,
-) *referencetest.Fixture {
+// interfaces, loaded under the context of tb, with the plan's target and
+// the plugin stubgen p.
+func generic(tb assert.TB, p plugin.Plugin, target plugin.Target, pkg string) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      genericTree,
 		Packages: []string{pkg},
 		Target:   target,

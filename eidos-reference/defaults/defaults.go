@@ -10,7 +10,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -96,7 +95,7 @@ type conclusion struct {
 // because a plugin instance belongs to one workspace.
 func New() plugin.Annotator {
 	c := &conclusion{options: &Options{Tag: DefaultTag}}
-	a, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Options(c.options).
@@ -105,8 +104,7 @@ func New() plugin.Annotator {
 			sdk.Directive(schema, sdk.OnField(c.declared)),
 			sdk.OnField(c.tagged),
 		).
-		Build().(plugin.Annotator)
-	return a
+		Annotator()
 }
 
 // register claims the namespace of defaults and registers [KeyValue] and
@@ -143,14 +141,9 @@ func (c *conclusion) declared(m *sdk.FieldMatch, st *sdk.Stamper) error {
 
 // tagged stamps the value of the tag of the field under the key of the
 // option tag, with the source [SourceTag]. It stamps nothing on a field
-// without the tag, and on a field of a language whose rules do not
-// implement rules.TagRules.
+// without the tag, and on a field of a language without tags.
 func (c *conclusion) tagged(m *sdk.FieldMatch, st *sdk.Stamper) error {
-	tags, reads := m.Rules().Source().(rules.TagRules)
-	if !reads {
-		return nil
-	}
-	if text, stated := tags.Tag(m.Field, c.options.Tag); stated {
+	if text, stated := m.Rules().Tag(m.Field, c.options.Tag); stated {
 		sdk.Stamp(st, c.value, text)
 		sdk.Stamp(st, c.source, SourceTag)
 	}

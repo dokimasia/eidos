@@ -32,13 +32,12 @@ const Capability plugin.Capability = "http.auth"
 // because a plugin instance belongs to one workspace.
 func New() plugin.Generator {
 	o := &callee.Options{}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Requires(middlewaregen.Capability).
 		Options(o).
 		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)),
 			sdk.OnEmit(symbol.KindFunction, callee.Chain(o)))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }

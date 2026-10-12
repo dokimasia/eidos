@@ -94,10 +94,9 @@ type data struct {
 // interface. Its test checks it at the witnesses of the type parameters,
 // and a generic stub has no test where a type parameter has no witness.
 //
-// Each call returns a new plugin, because a plugin instance belongs to one
-// workspace.
+// Each call returns a new plugin.
 func New() plugin.Generator {
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word, Template: stubTemplate}).
@@ -107,8 +106,7 @@ func New() plugin.Generator {
 			sdk.Templates(tree.Of(templates, double.TypeScriptTarget)),
 			sdk.Funcs(template.FuncMap{trimSuffix: strings.TrimSuffix})).
 		Handle(sdk.Directive(schema, sdk.OnInterface(generate))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // generate records the stub of an interface under the directive, and the
@@ -160,9 +158,9 @@ func generate(m *sdk.InterfaceMatch, e *sdk.Emitter) error {
 		call := &emit.Struct{
 			Name:       e.JoinName(CallWord, e.JoinName(method.Name, i.Name)),
 			Visibility: i.Visibility,
-			TypeParams: mentioned(sdk.MirrorTypeParams(i.TypeParams), method.Params),
+			TypeParams: mentioned(sdk.MirrorTypeParams(i.TypeParams), method.Params.Items()),
 		}
-		for _, p := range method.Params {
+		for _, p := range method.Params.Items() {
 			call.Fields.Append(&emit.Field{Name: p.Name})
 		}
 		stub.Types.Append(call)

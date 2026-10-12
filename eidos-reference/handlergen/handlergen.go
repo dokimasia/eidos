@@ -94,15 +94,15 @@ type conclusion struct {
 // New returns handlergen. Its annotator stamps [KeyHandler] on each struct
 // under [HandlerDirective] that declares the method Serve(w
 // http.ResponseWriter, r *http.Request), and reports [MissingServe] at each
-// other struct under the directive. Its generator writes a handler for each struct with the fact:
-// the struct <T>Handler, with the field <T> that points at the struct, and
-// the method ServeHTTP, which calls Serve of the field. A plugin that
-// extends a handler appends into the prologue or the epilogue of ServeHTTP.
-// Each call returns a new plugin, because a plugin instance belongs to one
-// workspace.
-func New() plugin.Generator {
+// other struct under the directive. Its generator writes a handler for each
+// struct with the fact. The handler is the struct <T>Handler, with the
+// field <T> that points at the struct, and the method ServeHTTP, which
+// calls Serve of the field. A plugin that extends a handler appends into
+// the prologue or the epilogue of ServeHTTP. Each call returns a new
+// plugin, because a plugin instance belongs to one workspace.
+func New() sdk.Dual {
 	c := &conclusion{}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
@@ -111,8 +111,7 @@ func New() plugin.Generator {
 			sdk.Directive(schema, sdk.OnStruct(c.conclude)),
 			sdk.Where(sdk.HasKey(meta.Named[bool](KeyHandler)), sdk.OnStruct(generate)),
 		).
-		Build().(plugin.Generator)
-	return g
+		Dual()
 }
 
 // register claims the namespace of handlergen and registers [KeyHandler].
@@ -203,13 +202,13 @@ func serveHTTP(s *node.Struct, name string) *emit.Method {
 		Name:       ServeHTTP,
 		Visibility: symbol.VisibilityPublic,
 		Receives:   &emit.TypeRef{Spelling: name},
-		Params: []*emit.Param{
-			{Name: writerParam, Type: &emit.TypeRef{Spelling: writerType, Package: httpPackage}},
-			{Name: requestParam, Type: &emit.TypeRef{
+		Params: emit.SlotOf(
+			&emit.Param{Name: writerParam, Type: &emit.TypeRef{Spelling: writerType, Package: httpPackage}},
+			&emit.Param{Name: requestParam, Type: &emit.TypeRef{
 				Spelling: pointerMark + requestType, Form: symbol.FormOptional,
 				Elems: []*emit.TypeRef{{Spelling: requestType, Package: httpPackage}},
 			}},
-		},
+		),
 	})
 	serve := emit.Expr{Kind: emit.ExprName, Name: method.Receiver.Name + selector + s.Name + selector + Serve}
 	method.Body.Stmts = []emit.Stmt{{

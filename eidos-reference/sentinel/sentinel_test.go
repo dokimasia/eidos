@@ -4,7 +4,6 @@
 package sentinel_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -74,10 +73,9 @@ func TestSentinel(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := sentinel.New()
-				return p, fixture(ctx, tb, referencetest.Tree, catalogPackage, p).Fixture
+				return p, fixture(tb, referencetest.Tree, catalogPackage, p).Fixture
 			})
 		})
 
@@ -185,12 +183,12 @@ func TestSentinel(t *testing.T) {
 }
 
 // fixture returns a fixture over the Go package pkg of the tree dir, loaded
-// under ctx and stamped by the annotator of the Go satellite, with the
-// target golang and the plugin sentinel p.
-func fixture(ctx context.Context, tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb and stamped by the annotator of the Go
+// satellite, with the target golang and the plugin sentinel p.
+func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:        dir,
 		Packages:   []string{pkg},
 		Target:     golang.Target,
@@ -205,7 +203,7 @@ func stamped(t *testing.T, dir, pkg string, target plugin.Target, name string) b
 	t.Helper()
 
 	p := sentinel.New()
-	f := referencetest.New(t.Context(), t, referencetest.Spec{
+	f := referencetest.New(t, referencetest.Spec{
 		Dir: dir, Packages: []string{pkg}, Target: target, Plugins: []plugin.Plugin{p},
 	})
 	assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
@@ -226,7 +224,7 @@ func record(t *testing.T, dir, pkg string, o *sentinel.Options) map[string]senti
 	if o != nil {
 		*p.(plugin.OptionsProvider).Options().(*sentinel.Options) = *o
 	}
-	f := fixture(t.Context(), t, dir, pkg, p)
+	f := fixture(t, dir, pkg, p)
 	assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
 	res := f.Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")

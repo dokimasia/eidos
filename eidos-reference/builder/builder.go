@@ -223,18 +223,16 @@ type checks struct {
 //
 // builder reports [BadDefault] at a field whose default is not a literal of
 // its type, and writes nothing for the struct. The plugin serves the target
-// golang alone. Each call returns a new plugin, because a plugin instance
-// belongs to one workspace.
+// golang alone. Each call returns a new plugin.
 func New() plugin.Generator {
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Requires(defaults.Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
 		Output(plugin.Output{Tag: TestTag, Per: plugin.PerSource, Word: Word, Template: testTemplate}).
 		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
 		Handle(sdk.Directive(schema, sdk.OnStruct(generate))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // generate writes the builder of one struct into the family of the
@@ -299,7 +297,7 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Name:       buildName,
 		Visibility: s.Visibility,
 		Receives:   &emit.TypeRef{Spelling: name, Args: args},
-		Returns:    []*emit.Return{{Type: &emit.TypeRef{Spelling: s.Name, Target: s.ID, Args: args}}},
+		Returns:    emit.SlotOf(&emit.Return{Type: &emit.TypeRef{Spelling: s.Name, Target: s.ID, Args: args}}),
 	})
 	build.Body.Stmts = []emit.Stmt{{
 		Kind: emit.StmtReturn, Value: emit.Expr{Kind: emit.ExprName, Name: build.Receiver.Name + selector + valueField},
@@ -312,7 +310,7 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Name:       newName,
 		Visibility: s.Visibility,
 		TypeParams: sdk.MirrorTypeParams(s.TypeParams),
-		Returns:    []*emit.Return{{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}},
+		Returns:    emit.SlotOf(&emit.Return{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}),
 	}
 	ctor.Body.Declare(DefaultsSlot)
 	slot, _ := ctor.Body.Slot(DefaultsSlot)
@@ -327,8 +325,10 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		Name:       fromName,
 		Visibility: s.Visibility,
 		TypeParams: sdk.MirrorTypeParams(s.TypeParams),
-		Params:     []*emit.Param{{Name: valueParam, Type: &emit.TypeRef{Spelling: s.Name, Target: s.ID, Args: args}}},
-		Returns:    []*emit.Return{{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}},
+		Params: emit.SlotOf(
+			&emit.Param{Name: valueParam, Type: &emit.TypeRef{Spelling: s.Name, Target: s.ID, Args: args}},
+		),
+		Returns: emit.SlotOf(&emit.Return{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}),
 	}
 	from.Body.Ref = e.Ref(fromTemplate, nil)
 	e.File().Append(builder, ctor, from)
@@ -346,9 +346,10 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 // the check to want. Its first nested function is New<T>, and its second is
 // New<T>From, whose body seeds each field with a sample. Each further
 // nested function is the check of one default, whose body binds the default
-// to want. A field whose type refers to a type parameter of the struct has
-// no checks. tests reports false for a generic struct whose type parameters
-// have no witnesses.
+// to want. The checks of a field whose type refers to a type parameter of
+// the struct run at the witnesses of the parameters, so the type of the
+// field is substituted first. tests reports false for a generic struct
+// whose type parameters have no witnesses.
 func tests(
 	m *sdk.StructMatch,
 	e *sdk.Emitter,
@@ -357,9 +358,8 @@ func tests(
 ) (*emit.Struct, checks, bool) {
 	s := m.Struct
 	b := m.Rules()
-	generics, substitutes := b.Source().(rules.GenericsRules)
 	witnesses := b.Witnesses(s.TypeParams)
-	if !substitutes || len(s.TypeParams) > 0 && witnesses == nil {
+	if len(s.TypeParams) > 0 && witnesses == nil {
 		return nil, checks{}, false
 	}
 	args := make([]*emit.TypeRef, 0, len(witnesses))
@@ -372,10 +372,7 @@ func tests(
 	from := &emit.Function{Origin: s.ID, Name: n.from, Visibility: s.Visibility}
 	test.Types.Append(&emit.Function{Origin: s.ID, Name: n.ctor, Visibility: s.Visibility}, from)
 	for _, f := range fields(s) {
-		ref := f.Type
-		if generics.Substitute(ref, s.TypeParams, witnesses) != ref {
-			continue
-		}
+		ref := rules.Substitute(f.Type, s.TypeParams, witnesses)
 		if sample, _ := b.SamplesOf(f.ID, ref, f.Name); sample.OK() {
 			from.Body.Stmts = append(from.Body.Stmts, emit.Stmt{
 				Kind:  emit.StmtAssign,
@@ -384,10 +381,10 @@ func tests(
 			})
 		}
 		if value, declared := values[f]; declared {
-			if zero, has := b.ZeroValue(f.Type); !has || !reflect.DeepEqual(value, zero) {
+			if zero, has := b.ZeroValue(ref); !has || !reflect.DeepEqual(value, zero) {
 				test.Types.Append(&emit.Function{
 					Origin: s.ID, Name: e.JoinName(defaultWord, f.Name), Visibility: s.Visibility,
-					Params: []*emit.Param{{Name: wantLocal, Type: rules.EmitRef(ref)}},
+					Params: emit.SlotOf(&emit.Param{Name: wantLocal, Type: rules.EmitRef(ref)}),
 					Body: emit.Body{Stmts: []emit.Stmt{{
 						Kind: emit.StmtAssign, Names: []string{wantLocal}, Value: emit.ValueExpr(value),
 					}}},
@@ -414,7 +411,7 @@ func tests(
 		if sample, _ := b.SamplesOf(f.ID, sampled, f.Name); sample.OK() {
 			test.Methods.Append(&emit.Method{
 				Origin: s.ID, Name: e.JoinName(f.Name, withWord), Visibility: s.Visibility,
-				Params: []*emit.Param{param},
+				Params: emit.SlotOf(param),
 				Body: emit.Body{Stmts: []emit.Stmt{{
 					Kind: emit.StmtAssign, Names: []string{wantLocal}, Value: emit.ValueExpr(sample.Value),
 				}}},
@@ -500,8 +497,8 @@ func setters(
 			Name:       setName,
 			Visibility: s.Visibility,
 			Receives:   &emit.TypeRef{Spelling: name, Args: args},
-			Params:     params,
-			Returns:    []*emit.Return{{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}},
+			Params:     emit.SlotOf(params...),
+			Returns:    emit.SlotOf(&emit.Return{Type: pointerTo(&emit.TypeRef{Spelling: name, Args: args})}),
 		})
 		m.Body.Ref = e.Ref(tmpl, data)
 		return m

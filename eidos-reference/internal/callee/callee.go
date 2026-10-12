@@ -63,7 +63,7 @@ func Chain(o *Options) func(*sdk.EmitMatch, *sdk.Emitter) error {
 		if !declared {
 			return nil
 		}
-		handler := emit.Expr{Kind: emit.ExprName, Name: fn.Params[0].Name}
+		handler := emit.Expr{Kind: emit.ExprName, Name: fn.Params.Items()[0].Name}
 		wrapped, set := call(m, o.Package, o.Func, handler)
 		if !set {
 			return nil
@@ -83,8 +83,8 @@ func Epilogue(o *Options) func(*sdk.EmitMatch, *sdk.Emitter) error {
 		if method.Name != handlergen.ServeHTTP {
 			return nil
 		}
-		args := make([]emit.Expr, 0, len(method.Params))
-		for _, p := range method.Params {
+		args := make([]emit.Expr, 0, method.Params.Len())
+		for _, p := range method.Params.Items() {
 			args = append(args, emit.Expr{Kind: emit.ExprName, Name: p.Name})
 		}
 		c, set := call(m, o.Package, o.Func, args...)

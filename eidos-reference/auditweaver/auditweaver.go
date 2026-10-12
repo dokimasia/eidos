@@ -52,12 +52,11 @@ var schema = directive.Schema{
 // workspace.
 func New() plugin.Generator {
 	o := &callee.Log{Package: DefaultPackage, Func: DefaultFunc, Format: DefaultFormat}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Requires(debugweaver.Capability).
 		Options(o).
 		Handle(sdk.Directive(schema, sdk.OnEmit(symbol.KindMethod, callee.Weave(o)))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }

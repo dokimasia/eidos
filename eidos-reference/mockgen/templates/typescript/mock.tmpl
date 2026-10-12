@@ -11,7 +11,7 @@ export class {{$mock.Name}}{{typeparams $mock.TypeParams}} implements {{spell (i
 
   /** {{.Name}} calls {{.Name}}Func. */
   {{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}} {
-{{memberbody .}}    {{if .Returns}}return {{end}}this.{{.Name}}Func!({{range $i, $p := .Params}}{{if $i}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
+{{memberbody .}}    {{if .Returns.Len}}return {{end}}this.{{.Name}}Func!({{range $i, $p := .Params.Items}}{{if $i}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
   }
 {{- end}}
 }

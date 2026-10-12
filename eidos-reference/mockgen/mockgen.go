@@ -75,10 +75,9 @@ type data struct {
 // kernel directive skip plugin=mockgen on the origin of an emitted
 // interface excludes the interface.
 //
-// Each call returns a new plugin, because a plugin instance belongs to one
-// workspace.
+// Each call returns a new plugin.
 func New() plugin.Generator {
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
 		Requires(repogen.Capability).
@@ -89,8 +88,7 @@ func New() plugin.Generator {
 			sdk.Directive(schema, sdk.OnInterface(source)),
 			sdk.OnEmit(symbol.KindInterface, emitted),
 		).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // source writes the mock of an interface of the source under the

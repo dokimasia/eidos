@@ -6,13 +6,12 @@ module go.dokimi.dev/eidos/reference
 go 1.27.2
 
 require (
-	go.dokimi.dev/assert v0.0.0-20261007133442-6f235714117b
+	go.dokimi.dev/assert v0.1.1
 	go.dokimi.dev/eidos/cli v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/core v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/go v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/typescript v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/sdk v0.0.0-00010101000000-000000000000
-	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.41.0
 )
 
@@ -23,6 +22,7 @@ require (
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
 	go.dokimi.dev/eidos/declarative v0.0.0-00010101000000-000000000000 // indirect
 	go.dokimi.dev/eidos/lang v0.0.0-00010101000000-000000000000 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
 

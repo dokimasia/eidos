@@ -126,17 +126,15 @@ type Surface struct {
 //
 // enum reports [DuplicateText] at the second of two variants with one
 // text, and writes nothing for the type. The plugin serves the target
-// golang alone. Each call returns a new plugin, because a plugin instance
-// belongs to one workspace.
+// golang alone. Each call returns a new plugin.
 func New() plugin.Generator {
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word, Template: enumTemplate}).
 		Output(plugin.Output{Tag: TestTag, Per: plugin.PerSource, Word: Word, Template: testTemplate}).
 		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
 		Handle(sdk.Directive(schema, sdk.OnEnum(generate))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // generate records the declarations of one enumeration into the family of

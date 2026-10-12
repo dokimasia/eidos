@@ -31,18 +31,18 @@ const (
 	missingPackage = "example.com/shop/missing"
 )
 
-// A tree that does not exist, and a tree whose carrier of builder names a
-// function of defaults that its package does not declare, with that
-// package.
+// These constants are a tree that does not exist, and a tree whose
+// builder carrier refers to a defaults function that its package does
+// not declare, with that package.
 const (
 	missingTree       = "testdata/missing"
 	unresolvedTree    = "testdata/unresolved"
 	unresolvedPackage = "example.com/unresolved"
 )
 
-// The declarations that the cases find: the struct under builder, the
-// function of its defaults, its field with a declared default and that
-// default, and a name that the tree does not declare.
+// These constants are the declarations that the cases find: the struct
+// under builder, the function of its defaults, its field with a declared
+// default and that default, and a name that the tree does not declare.
 const (
 	addressName  = "Address"
 	defaultsName = "defaultAddress"
@@ -106,7 +106,7 @@ func TestFixture(t *testing.T) {
 		t.Run("seeds the units of the hosts of the spec", func(t *testing.T) {
 			t.Parallel()
 
-			f := referencetest.New(t.Context(), t, referencetest.Spec{
+			f := referencetest.New(t, referencetest.Spec{
 				Dir:        workspaceTree,
 				Packages:   []string{catalogPackage},
 				Target:     golang.Target,
@@ -129,27 +129,23 @@ func TestFixture(t *testing.T) {
 			t.Parallel()
 
 			records := assert.Rejects(t, "a tree that does not exist", func(tb assert.TB) {
-				referencetest.New(
-					t.Context(),
-					tb,
-					referencetest.Spec{Dir: missingTree, Packages: []string{catalogPackage}},
-				)
+				referencetest.New(tb, referencetest.Spec{Dir: missingTree, Packages: []string{catalogPackage}})
 			})
 			assert.Length(t, records, 1, "the fixture stops at the load")
-			assert.Equal(t, records[0].Contract, "the tree "+missingTree+" loads", "the record names the tree")
+			assert.Equal(t, records[0].Contract, "the source tree loads", "the record names the load")
 		})
 
 		t.Run("stops at a package that the tree does not declare", func(t *testing.T) {
 			t.Parallel()
 
 			records := assert.Rejects(t, "a spec of a package that the tree lacks", func(tb assert.TB) {
-				referencetest.New(t.Context(), tb, referencetest.Spec{
+				referencetest.New(tb, referencetest.Spec{
 					Dir: workspaceTree, Packages: []string{missingPackage},
 				})
 			})
 			assert.Length(t, records, 1, "the fixture stops at the packages")
-			assert.Equal(t, records[0].Contract, "the tree declares each package of the spec",
-				"the record names the packages of the spec")
+			assert.Equal(t, records[0].Contract, "the load declares the package "+missingPackage,
+				"the record names the package of the spec")
 		})
 
 		t.Run("fails at a reference param that the rules do not resolve", func(t *testing.T) {
@@ -159,7 +155,7 @@ func TestFixture(t *testing.T) {
 				t,
 				"a carrier of builder with a function that does not exist",
 				func(tb assert.TB) {
-					referencetest.New(t.Context(), tb, referencetest.Spec{
+					referencetest.New(tb, referencetest.Spec{
 						Dir:      unresolvedTree,
 						Packages: []string{unresolvedPackage},
 						Target:   golang.Target,
@@ -204,7 +200,7 @@ func TestFixture(t *testing.T) {
 func address(t *testing.T) *referencetest.Fixture {
 	t.Helper()
 
-	return referencetest.New(t.Context(), t, referencetest.Spec{
+	return referencetest.New(t, referencetest.Spec{
 		Dir:        workspaceTree,
 		Packages:   []string{catalogPackage},
 		Target:     golang.Target,

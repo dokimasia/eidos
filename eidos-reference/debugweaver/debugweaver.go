@@ -34,21 +34,21 @@ const (
 
 // New returns debugweaver. On each method with a receiver that the plan
 // emits from a struct that repogen stamps, it appends
-// <package>.<func>(<format>, "<T>.<M>") into the prologue: the methods of
-// <T>Repo, and the methods of the mock of <T>Repository where mockgen
-// writes one. The options package, func and format set the call, and
-// default to log.Printf with the format "debug: %s entered". Each call
-// returns a new plugin, because a plugin instance belongs to one
-// workspace.
+// <package>.<func>(<format>, "<T>.<M>") into the prologue. Those methods
+// are the methods of <T>Repo, and the methods of the mock of <T>Repository
+// where mockgen writes one. debugweaver runs after repogen and mockgen
+// where the composition contains them, and requires neither. The options
+// package, func and format set the call, and default to log.Printf with
+// the format "debug: %s entered". Each call returns a new plugin, because
+// a plugin instance belongs to one workspace.
 func New() plugin.Generator {
 	o := &callee.Log{Package: DefaultPackage, Func: DefaultFunc, Format: DefaultFormat}
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Version(Version).
 		Provides(Capability).
-		Requires(repogen.Capability, mockgen.Capability).
+		After(repogen.Capability, mockgen.Capability).
 		Options(o).
 		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](repogen.KeyRepository)),
 			sdk.OnEmit(symbol.KindMethod, callee.Weave(o)))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }

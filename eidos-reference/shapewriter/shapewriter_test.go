@@ -4,7 +4,6 @@
 package shapewriter_test
 
 import (
-	"context"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -60,10 +59,9 @@ func TestShapewriter(t *testing.T) {
 		t.Run("passes the plugin suite over the package catalog of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			ctx := t.Context()
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := shapewriter.New()
-				return p, fixture(ctx, tb, referencetest.Tree, catalogPackage, p).Fixture
+				return p, fixture(tb, referencetest.Tree, catalogPackage, p).Fixture
 			})
 		})
 
@@ -124,11 +122,12 @@ func TestShapewriter(t *testing.T) {
 }
 
 // fixture returns a fixture over the package pkg of the tree dir, loaded
-// under ctx, with the target golang and the plugin shapewriter p.
-func fixture(ctx context.Context, tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
+// under the context of tb, with the target golang and the plugin
+// shapewriter p.
+func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
 	tb.Helper()
 
-	return referencetest.New(ctx, tb, referencetest.Spec{
+	return referencetest.New(tb, referencetest.Spec{
 		Dir:      dir,
 		Packages: []string{pkg},
 		Target:   golang.Target,
@@ -142,7 +141,7 @@ func stamped(t *testing.T, dir, pkg, name string) bool {
 	t.Helper()
 
 	p := shapewriter.New()
-	f := fixture(t.Context(), t, dir, pkg, p)
+	f := fixture(t, dir, pkg, p)
 	assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
 	key, registered := meta.Lookup[bool](f.Keys, shapewriter.KeyWriter)
 	assert.True(t, registered, "shapewriter registers its key")
