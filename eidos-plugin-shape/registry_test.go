@@ -19,6 +19,7 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/nodetest"
 )
 
 // The spellings of the key layout of the catalog, and the values that the
@@ -190,14 +191,20 @@ type readFixture struct {
 func readFixtureOf(tb testing.TB, s shape.Spec) readFixture {
 	tb.Helper()
 
-	str := &node.TypeRef{Spelling: shapetest.String}
-	failure := &node.TypeRef{Spelling: shapetest.Error}
 	f := readFixture{
-		subject:  shapetest.Method(storeName, subjectName, []*node.TypeRef{str, str, str}, str, str, str, failure),
-		outsider: shapetest.Method(storeName, outsiderName, []*node.TypeRef{str, str}, str, str),
-		target:   shapetest.Method(storeName, referenceName, nil, str, str),
+		subject: shapetest.Method(storeName, subjectName,
+			[]*node.TypeRef{
+				nodetest.Named(shapetest.String), nodetest.Named(shapetest.String), nodetest.Named(shapetest.String),
+			},
+			nodetest.Named(shapetest.String), nodetest.Named(shapetest.String), nodetest.Named(shapetest.String),
+			nodetest.Named(shapetest.Error)),
+		outsider: shapetest.Method(storeName, outsiderName,
+			[]*node.TypeRef{nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)},
+			nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)),
+		target: shapetest.Method(storeName, referenceName, nil,
+			nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)),
 	}
-	f.run = shapetest.New(tb, shapetest.Package(f.subject, f.outsider, f.target))
+	f.run = shapetest.New(tb, shapetest.Package(tb, f.subject, f.outsider, f.target))
 	in := shapetest.Instance{Params: map[directive.ParamKey]directive.Value{}}
 	switch s.Form {
 	case shape.FormShape:

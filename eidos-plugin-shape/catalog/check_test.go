@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/plugin/shape/internal/shapetest"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/nodetest"
 )
 
 // The names of the declarations of the fixtures of the plugin shapecheck,
@@ -77,10 +78,10 @@ func TestCheck(t *testing.T) {
 		t.Run("accepts an instance whose methods belong to two types of the package", func(t *testing.T) {
 			t.Parallel()
 
-			begin := shapetest.Method(dbName, string(shape.TxBegin), nil, failure)
-			commit := shapetest.Method(txName, string(shape.TxCommit), nil, failure)
-			rollback := shapetest.Method(txName, string(shape.TxRollback), nil, failure)
-			r := shapetest.New(t, shapetest.Package(begin, commit, rollback))
+			begin := shapetest.Method(dbName, string(shape.TxBegin), nil, nodetest.Named(shapetest.Error))
+			commit := shapetest.Method(txName, string(shape.TxCommit), nil, nodetest.Named(shapetest.Error))
+			rollback := shapetest.Method(txName, string(shape.TxRollback), nil, nodetest.Named(shapetest.Error))
+			r := shapetest.New(t, shapetest.Package(t, begin, commit, rollback))
 			r.Declare(t, begin.ID, shapetest.Instance{Contract: shape.Tx, Role: shape.TxBegin})
 			r.Declare(t, commit.ID, shapetest.Instance{Contract: shape.Tx, Role: shape.TxCommit})
 			r.Declare(t, rollback.ID, shapetest.Instance{Contract: shape.Tx, Role: shape.TxRollback})
@@ -90,10 +91,10 @@ func TestCheck(t *testing.T) {
 		t.Run("validates the instances of one package apart by their ids", func(t *testing.T) {
 			t.Parallel()
 
-			stepA := shapetest.Method(storeName, stepName+instanceID, nil, failure)
-			undoA := shapetest.Method(storeName, undoName+instanceID, nil, failure)
-			stepB := shapetest.Method(storeName, stepName+secondID, nil, failure)
-			r := shapetest.New(t, shapetest.Package(stepA, undoA, stepB))
+			stepA := shapetest.Method(storeName, stepName+instanceID, nil, nodetest.Named(shapetest.Error))
+			undoA := shapetest.Method(storeName, undoName+instanceID, nil, nodetest.Named(shapetest.Error))
+			stepB := shapetest.Method(storeName, stepName+secondID, nil, nodetest.Named(shapetest.Error))
+			r := shapetest.New(t, shapetest.Package(t, stepA, undoA, stepB))
 			for _, d := range []struct {
 				method *node.Method
 				role   shape.Role
@@ -120,8 +121,8 @@ func TestCheck(t *testing.T) {
 		t.Run("names the package of the functions of an instance", func(t *testing.T) {
 			t.Parallel()
 
-			appendFn := shapetest.Function(appendName, nil, failure)
-			r := shapetest.New(t, shapetest.Package(appendFn))
+			appendFn := shapetest.Function(appendName, nil, nodetest.Named(shapetest.Error))
+			r := shapetest.New(t, shapetest.Package(t, appendFn))
 			r.Declare(t, appendFn.ID, shapetest.Instance{Contract: shape.Chain, Role: shape.ChainAppend})
 			findings := r.Classify(t)
 			assert.Length(t, findings, 1, "the chain lacks its replay")
@@ -131,9 +132,9 @@ func TestCheck(t *testing.T) {
 		t.Run("accepts an optional role without a callable", func(t *testing.T) {
 			t.Parallel()
 
-			appendFn := shapetest.Function(appendName, nil, failure)
-			replayFn := shapetest.Function(replayName, nil, failure)
-			r := shapetest.New(t, shapetest.Package(appendFn, replayFn))
+			appendFn := shapetest.Function(appendName, nil, nodetest.Named(shapetest.Error))
+			replayFn := shapetest.Function(replayName, nil, nodetest.Named(shapetest.Error))
+			r := shapetest.New(t, shapetest.Package(t, appendFn, replayFn))
 			r.Declare(t, appendFn.ID, shapetest.Instance{Contract: shape.Chain, Role: shape.ChainAppend})
 			r.Declare(t, replayFn.ID, shapetest.Instance{Contract: shape.Chain, Role: shape.ChainReplay})
 			assert.Empty(t, r.Classify(t), "the chain needs no verify")
@@ -150,11 +151,11 @@ func transaction(t *testing.T, roles ...shape.Role) (*shapetest.Run, []*node.Met
 	methods := make([]*node.Method, 0, len(roles))
 	decls := make([]node.Declaration, 0, len(roles))
 	for i, role := range roles {
-		m := shapetest.Method(storeName, string(role)+strconv.Itoa(i), nil, failure)
+		m := shapetest.Method(storeName, string(role)+strconv.Itoa(i), nil, nodetest.Named(shapetest.Error))
 		methods = append(methods, m)
 		decls = append(decls, m)
 	}
-	r := shapetest.New(t, shapetest.Package(decls...))
+	r := shapetest.New(t, shapetest.Package(t, decls...))
 	for i, role := range roles {
 		r.Declare(t, methods[i].ID, shapetest.Instance{Contract: shape.Tx, Role: role})
 	}

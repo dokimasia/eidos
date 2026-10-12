@@ -13,11 +13,16 @@ import (
 // keyspace is the namespace of the keys that the spec frontend stamps.
 const keyspace = "shapespec"
 
-// The keys that the spec frontend stamps on a spec's struct.
+// These keys are the facts that the spec frontend stamps on the struct of
+// a spec.
 const (
-	// KeyForm is the form of the spec: shape, mixin or contract.
+	// KeyForm is the form of the spec. The form is shape, mixin or
+	// contract.
 	KeyForm meta.KeyName = keyspace + ".form"
-	// KeyDetected marks a detected shape.
+	// KeyDetected marks the spec of a shape that a detector classifies.
+	// The key of the same Go name in package shape is a fact of a
+	// callable. It lists the detected shapes whose detectors report the
+	// callable.
 	KeyDetected meta.KeyName = keyspace + ".detected"
 	// KeyDocumentary marks a documentary mixin or contract.
 	KeyDocumentary meta.KeyName = keyspace + ".documentary"
@@ -28,7 +33,8 @@ const (
 	KeyRoles meta.KeyName = keyspace + ".roles"
 )
 
-// The keys that the spec frontend stamps on the field of a param.
+// These keys are the facts that the spec frontend stamps on the field of
+// a param.
 const (
 	// KeyResolve is the resolution kind of a reference param.
 	KeyResolve meta.KeyName = keyspace + ".resolve"
@@ -50,10 +56,12 @@ const (
 	KeyAlsoOn meta.KeyName = keyspace + ".also-on"
 )
 
-// The keys that the spec frontend stamps on the field of a binding. A
-// field with [KeyFrom] is a binding, and every other field is a param.
+// These keys are the facts that the spec frontend stamps on the field of
+// a binding. A field with [KeyFrom] is a binding, and every other field
+// is a param.
 const (
-	// KeyFrom is the list that a binding's index counts in.
+	// KeyFrom is the list in which the index of a binding counts. The
+	// list is input or result.
 	KeyFrom meta.KeyName = keyspace + ".from"
 	// KeyIndex is the position of a binding in its list.
 	KeyIndex meta.KeyName = keyspace + ".index"
@@ -75,10 +83,10 @@ func Keys(r *meta.Registry) error {
 	strs := []meta.KeySpec{
 		{Name: KeyForm, Kinds: structs, Doc: "the form of a spec: shape, mixin or contract"},
 		{Name: KeyResolve, Kinds: fields, Doc: "the resolution kind of a reference param"},
-		{Name: KeyFrom, Kinds: fields, Doc: "the list that a binding counts in: input or result"},
+		{Name: KeyFrom, Kinds: fields, Doc: "the list in which the index of a binding counts"},
 	}
 	bools := []meta.KeySpec{
-		{Name: KeyDetected, Kinds: structs, Doc: "marks a detected shape"},
+		{Name: KeyDetected, Kinds: structs, Doc: "marks the spec of a shape that a detector classifies"},
 		{Name: KeyDocumentary, Kinds: structs, Doc: "marks a mixin or a contract that licenses no check"},
 		{Name: KeyRequired, Kinds: fields, Doc: "marks a param that every instance writes"},
 		{Name: KeyCounterexample, Kinds: fields, Doc: "marks a param whose value no derivation could invent"},

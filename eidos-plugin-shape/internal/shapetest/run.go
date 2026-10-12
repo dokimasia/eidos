@@ -129,6 +129,6 @@ func (r *Run) Classify(tb assert.TB) []diag.Diag {
 func (r *Run) Consume(tb assert.TB, rs ...sdk.Rule) {
 	tb.Helper()
 
-	res := r.Generate(tb, sdk.NewPlugin(ConsumerID).Handle(rs...).Build())
+	res := r.Generate(tb, sdk.NewPlugin(ConsumerID).Handle(rs...).Generator())
 	assert.NoError(tb, res.Err, "the consumer runs whole")
 }

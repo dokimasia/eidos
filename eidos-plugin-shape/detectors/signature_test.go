@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/plugin/shape/detectors"
 	"go.dokimi.dev/eidos/plugin/shape/internal/shapetest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/store"
@@ -96,9 +97,9 @@ type detection struct {
 	want bool
 }
 
-// A detector reads the inputs, the values, the context and the error
-// model of a callable. These cases state each rule through a detector
-// that depends on it.
+// TestSignature checks each rule of a signature through a detector that
+// depends on it. A detector reads the inputs, the values, the context and
+// the error model of a callable.
 func TestSignature(t *testing.T) {
 	t.Parallel()
 
@@ -175,15 +176,12 @@ func bound(tb testing.TB) rules.Bound {
 	tb.Helper()
 
 	g := store.New()
-	pkg := shapetest.Package(
-		&node.Struct{ID: valueID, Name: valueName},
-		&node.Interface{ID: sourceID, Name: sourceName},
-	)
+	pkg := shapetest.Package(tb, &node.Struct{Name: valueName}, &node.Interface{Name: sourceName})
 	assert.NoError(tb, g.AddPackage(pkg), "the fixture package loads")
 	g.Freeze()
 	r, err := g.Reader(store.NewReadSet(), nil)
-	assert.NoError(tb, err, "the sealed graph hands out a reader")
-	return rules.NewBound(shapetest.Rules(), rules.View{Decls: r}, nil)
+	assert.NoError(tb, err, "the sealed graph returns a reader")
+	return rules.NewBound(shapetest.Rules(), rules.NewView(r, nil, nil, meta.KernelKeys{}), nil)
 }
 
 // callable returns the projection of a callable with the parameters and

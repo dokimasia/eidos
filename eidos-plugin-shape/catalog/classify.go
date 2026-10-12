@@ -22,8 +22,9 @@ import (
 // ShapeID is the name of the plugin that classifies callables.
 const ShapeID plugin.ID = "shape"
 
-// The names of the directives of the catalog, and the param of the
-// contract directive that separates two instances in one package.
+// These constants are the names of the directives of the catalog and the
+// param of the contract directive. The param separates two instances of a
+// contract in one package.
 const (
 	ShapeDirective    directive.Name     = "shape"
 	MixinDirective    directive.Name     = "mixin"
@@ -31,8 +32,7 @@ const (
 	IDParam           directive.ParamKey = "id"
 )
 
-// callables are the kinds that the plugin shape stamps every key of the
-// catalog on.
+// callables is the list of kinds that every key of the catalog admits.
 var callables = []symbol.Kind{symbol.KindFunction, symbol.KindMethod}
 
 // match is the part of a function match or a method match that a handler
@@ -47,7 +47,7 @@ type match interface {
 	ErrorfAt(c diag.Code, at position.Pos, format string, a ...any)
 }
 
-// callable is the subject of a handler. It has the symbol of the callable,
+// callable is the subject of a handler. It has the symbol of the callable
 // and the parameters and the returns whose identities the plugin stamps
 // for the bindings.
 type callable struct {
@@ -71,11 +71,11 @@ type classifier struct {
 	families   map[string]*family
 }
 
-// family is the handles of the keys of one classification. A shape and a
-// mixin have the flag, and a contract has the role and the id. stamps has
-// the function that stamps a validated value of each param under the key
-// of the param, and bindings are in the order of the bindings of the
-// spec.
+// family contains the handles of the keys of one classification. A shape
+// and a mixin have the flag, and a contract has the role and the id.
+// stamps maps each param to the function that stamps a validated value
+// under the key of the param. bindings are in the order of the bindings of
+// the spec.
 type family struct {
 	flag     meta.Key[bool]
 	role     meta.Key[string]
@@ -99,40 +99,31 @@ func newClassifier(specs []shape.Spec, detections []shape.Detection) plugin.Anno
 		c.specs[specs[i].Name] = &specs[i]
 	}
 	shapes, mixins, contracts := schemas(specs)
-	a, _ := sdk.NewPlugin(ShapeID).
+	return sdk.NewPlugin(ShapeID).
 		Provides(shape.Capability).
 		Keys(c.register).
 		Handle(
-			sdk.Directive(shapes,
-				sdk.OnFunction(func(m *sdk.FunctionMatch, st *sdk.Stamper) error {
-					return c.declare(m, st, callable{m.Function, m.Function.Params, m.Function.Returns})
-				}),
-				sdk.OnMethod(func(m *sdk.MethodMatch, st *sdk.Stamper) error {
-					return c.declare(m, st, callable{m.Method, m.Method.Params, m.Method.Returns})
-				})),
-			sdk.Directive(mixins,
-				sdk.OnFunction(func(m *sdk.FunctionMatch, st *sdk.Stamper) error {
-					return c.declare(m, st, callable{m.Function, m.Function.Params, m.Function.Returns})
-				}),
-				sdk.OnMethod(func(m *sdk.MethodMatch, st *sdk.Stamper) error {
-					return c.declare(m, st, callable{m.Method, m.Method.Params, m.Method.Returns})
-				})),
-			sdk.Directive(contracts,
-				sdk.OnFunction(func(m *sdk.FunctionMatch, st *sdk.Stamper) error {
-					return c.declare(m, st, callable{m.Function, m.Function.Params, m.Function.Returns})
-				}),
-				sdk.OnMethod(func(m *sdk.MethodMatch, st *sdk.Stamper) error {
-					return c.declare(m, st, callable{m.Method, m.Method.Params, m.Method.Returns})
-				})),
-			sdk.OnFunction(func(m *sdk.FunctionMatch, st *sdk.Stamper) error {
-				return c.detect(m, st, callable{m.Function, m.Function.Params, m.Function.Returns})
-			}),
-			sdk.OnMethod(func(m *sdk.MethodMatch, st *sdk.Stamper) error {
-				return c.detect(m, st, callable{m.Method, m.Method.Params, m.Method.Returns})
-			}),
+			sdk.Directive(shapes, onCallable(c.declare)...),
+			sdk.Directive(mixins, onCallable(c.declare)...),
+			sdk.Directive(contracts, onCallable(c.declare)...),
 		).
-		Build().(plugin.Annotator)
-	return a
+		Handle(onCallable(c.detect)...).
+		Annotator()
+}
+
+// onCallable returns a rule on a function and a rule on a method. Each
+// rule calls handle with the callable of its match. Each call of
+// onCallable returns a new list, because [sdk.Directive] keeps the list
+// that it receives.
+func onCallable(handle func(match, *sdk.Stamper, callable) error) []sdk.Rule {
+	return []sdk.Rule{
+		sdk.OnFunction(func(m *sdk.FunctionMatch, st *sdk.Stamper) error {
+			return handle(m, st, callable{m.Function, m.Function.Params, m.Function.Returns})
+		}),
+		sdk.OnMethod(func(m *sdk.MethodMatch, st *sdk.Stamper) error {
+			return handle(m, st, callable{m.Method, m.Method.Params, m.Method.Returns})
+		}),
+	}
 }
 
 // schemas returns the three directives of the catalog, each with one
@@ -191,7 +182,7 @@ func (c *classifier) register(r *meta.Registry) error {
 	})
 	errs = append(errs, err)
 	c.shapeName, err = meta.Register[string](r, meta.KeySpec{
-		Name: shape.KeyShape, Kinds: callables, Doc: "the name of the shape of a callable",
+		Name: shape.KeyShape, Kinds: callables, Doc: "the name of the shape of a callable", Derived: true,
 	})
 	errs = append(errs, err)
 	marks := []struct {
@@ -204,7 +195,9 @@ func (c *classifier) register(r *meta.Registry) error {
 		{&c.classified, shape.KeyClassified, "marks a callable with a classification"},
 	}
 	for _, mark := range marks {
-		*mark.key, err = meta.Register[bool](r, meta.KeySpec{Name: mark.name, Kinds: callables, Doc: mark.doc})
+		*mark.key, err = meta.Register[bool](r, meta.KeySpec{
+			Name: mark.name, Kinds: callables, Doc: mark.doc, Derived: true,
+		})
 		errs = append(errs, err)
 	}
 	for i := range c.ordered {

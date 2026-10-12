@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/plugin/shape/internal/shapetest"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/nodetest"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/plugintest"
 )
@@ -94,14 +95,14 @@ func TestCatalog(t *testing.T) {
 func suiteRun(tb assert.TB) *shapetest.Run {
 	tb.Helper()
 
-	str := &node.TypeRef{Spelling: shapetest.String}
-	failure := &node.TypeRef{Spelling: shapetest.Error}
-	begin := shapetest.Method(storeName, beginName, nil, failure)
-	commit := shapetest.Method(storeName, commitName, nil, failure)
-	rollback := shapetest.Method(storeName, rollbackName, nil, failure)
-	put := shapetest.Method(storeName, putName, []*node.TypeRef{str}, failure)
-	get := shapetest.Method(storeName, getName, []*node.TypeRef{str}, str, failure)
-	r := shapetest.New(tb, shapetest.Package(begin, commit, rollback, put, get))
+	begin := shapetest.Method(storeName, beginName, nil, nodetest.Named(shapetest.Error))
+	commit := shapetest.Method(storeName, commitName, nil, nodetest.Named(shapetest.Error))
+	rollback := shapetest.Method(storeName, rollbackName, nil, nodetest.Named(shapetest.Error))
+	put := shapetest.Method(storeName, putName,
+		[]*node.TypeRef{nodetest.Named(shapetest.String)}, nodetest.Named(shapetest.Error))
+	get := shapetest.Method(storeName, getName, []*node.TypeRef{nodetest.Named(shapetest.String)},
+		nodetest.Named(shapetest.String), nodetest.Named(shapetest.Error))
+	r := shapetest.New(tb, shapetest.Package(tb, begin, commit, rollback, put, get))
 	r.Declare(tb, begin.ID, shapetest.Instance{Contract: shape.Tx, Role: shape.TxBegin})
 	r.Declare(tb, commit.ID,
 		shapetest.Instance{Contract: shape.Tx, Role: shape.TxCommit},

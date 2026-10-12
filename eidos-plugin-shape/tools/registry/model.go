@@ -151,7 +151,7 @@ func check(m *sdk.GraphMatch, entries []entry) bool {
 		if i > 0 && entries[i-1].name == e.name {
 			clean = false
 			for _, at := range []entry{entries[i-1], e} {
-				m.Errorf(specfront.SpecDuplicate, at.at, "two specs have the name %s", e.name)
+				m.ErrorfAt(specfront.SpecDuplicate, at.at, "two specs have the name %s", e.name)
 			}
 			continue
 		}
@@ -163,11 +163,11 @@ func check(m *sdk.GraphMatch, entries []entry) bool {
 			}
 			clean = false
 			if first.id == e.id {
-				m.Errorf(specfront.SpecDuplicate, e.at, "the spec %s gives the Go identifier %s twice", e.name, ident)
+				m.ErrorfAt(specfront.SpecDuplicate, e.at, "the spec %s gives the Go identifier %s twice", e.name, ident)
 				continue
 			}
 			for _, at := range []entry{first, e} {
-				m.Errorf(specfront.SpecDuplicate, at.at, "the specs %s and %s both give the Go identifier %s",
+				m.ErrorfAt(specfront.SpecDuplicate, at.at, "the specs %s and %s both give the Go identifier %s",
 					first.name, e.name, ident)
 			}
 		}
@@ -180,7 +180,7 @@ func check(m *sdk.GraphMatch, entries []entry) bool {
 		for _, y := range e.yields {
 			if !detected[y] {
 				clean = false
-				m.Errorf(specfront.SpecInvalid, e.at, "the shape %s yields to %s, which is no detected shape",
+				m.ErrorfAt(specfront.SpecInvalid, e.at, "the shape %s yields to %s, which is no detected shape",
 					e.name, y)
 			}
 		}
@@ -188,7 +188,7 @@ func check(m *sdk.GraphMatch, entries []entry) bool {
 	for _, e := range entries {
 		if e.detected && leads(entries, e.name, e.name, map[string]bool{}) {
 			clean = false
-			m.Errorf(specfront.PrecedenceCycle, e.at,
+			m.ErrorfAt(specfront.PrecedenceCycle, e.at,
 				"the yields_to lists form a cycle through %s, so no order ranks it", e.name)
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"io/fs"
 
 	"go.dokimi.dev/eidos/lang/naming"
-	"go.dokimi.dev/eidos/plugin/shape/tools/specfront"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -23,8 +22,9 @@ const ID plugin.ID = "registry"
 // registry_wiring.go, and a composition can name them in its layout.
 const WiringTag sdk.Tag = "wiring"
 
-// The word of the two families of the generator, the directory of its
-// templates, and the space that joins the lines of a claim.
+// These constants are the word of the two families of the generator, the
+// directory of its templates, and the space that joins the lines of a
+// claim.
 const (
 	word         = "registry"
 	templatesDir = "templates"
@@ -36,37 +36,17 @@ const (
 //go:embed templates
 var templateFiles embed.FS
 
-// The Go expressions of package shape and of the directive layer that the
-// spellings of a spec map to in the generated table.
-var (
-	formExprs = map[string]string{
-		string(specfront.FormShape):    "FormShape",
-		string(specfront.FormMixin):    "FormMixin",
-		string(specfront.FormContract): "FormContract",
-	}
-	typeExprs = map[string]string{
-		string(specfront.TypeString):    "TypeString",
-		string(specfront.TypeInt):       "TypeInt",
-		string(specfront.TypeReference): "TypeReference",
-	}
-	resolutionExprs = map[string]string{
-		string(specfront.ResolveCallableInScope): "ResolveCallableInScope",
-		string(specfront.ResolvePackageVar):      "ResolvePackageVar",
-		string(specfront.ResolveValueField):      "ResolveValueField",
-		string(specfront.ResolveHostParam):       "ResolveHostParam",
-		string(specfront.ResolveMemberOnHandle):  "ResolveMemberOnHandle",
-		string(specfront.ResolveTypeInScope):     "ResolveTypeInScope",
-	}
-	sourceExprs = map[string]string{
-		string(specfront.SourceInput):  "SourceInput",
-		string(specfront.SourceResult): "SourceResult",
-	}
-	arityExprs = map[string]string{
-		string(specfront.ArityOne):      "ArityOne",
-		string(specfront.ArityOptional): "ArityOptional",
-		string(specfront.ArityMany):     "ArityMany",
-		string(specfront.ArityAny):      "ArityAny",
-	}
+// These constants are the prefixes of the constants of package shape and
+// of the directive layer in the generated table. The constant of a
+// spelling is its prefix and the Pascal case of the spelling, so the form
+// contract is FormContract and the resolution callable-in-scope is
+// ResolveCallableInScope.
+const (
+	formPrefix       = "Form"
+	typePrefix       = "Type"
+	resolutionPrefix = "Resolve"
+	sourcePrefix     = "Source"
+	arityPrefix      = "Arity"
 )
 
 // specsData is the payload of the template of Specs. It has one entry for
@@ -154,17 +134,15 @@ type detectionData struct {
 // specs give twice under [specfront.SpecDuplicate], each yields_to entry
 // that is no detected shape under [specfront.SpecInvalid], and each cycle
 // of yields_to entries under [specfront.PrecedenceCycle], at the spec. It
-// writes nothing when it reports. Each call returns a new generator,
-// because a plugin instance belongs to one workspace.
+// writes nothing when it reports. Each call returns a new generator.
 func New() plugin.Generator {
 	tree, _ := fs.Sub(templateFiles, templatesDir)
-	g, _ := sdk.NewPlugin(ID).
+	return sdk.NewPlugin(ID).
 		Output(plugin.Output{Per: plugin.PerPlan, Word: word}).
 		Output(plugin.Output{Tag: string(WiringTag), Per: plugin.PerPlan, Word: word}).
 		Templates(tree).
 		Handle(sdk.OnGraph(generate)).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // generate is the rule of the generator. It reads the specs, checks them,
@@ -186,9 +164,9 @@ func generate(m *sdk.GraphMatch, e *sdk.Emitter) error {
 			"names of the specs. Each call returns new slices."),
 		Name:       specsFunc,
 		Visibility: symbol.VisibilityPublic,
-		Returns: []*emit.Return{{Type: &emit.TypeRef{
+		Returns: emit.SlotOf(&emit.Return{Type: &emit.TypeRef{
 			Spelling: "[]" + specType, Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: specType}},
-		}}},
+		}}),
 		Body: emit.Body{Ref: e.Ref(specsTemplate, specs)},
 	})
 	detections := detectionsData{}
@@ -202,10 +180,10 @@ func generate(m *sdk.GraphMatch, e *sdk.Emitter) error {
 			"precedence. A shape comes before every shape that yields to it. Each call returns a new slice."),
 		Name:       detectionsFunc,
 		Visibility: symbol.VisibilityPublic,
-		Returns: []*emit.Return{{Type: &emit.TypeRef{
+		Returns: emit.SlotOf(&emit.Return{Type: &emit.TypeRef{
 			Spelling: "[]" + detectionType, Form: symbol.FormList,
 			Elems: []*emit.TypeRef{{Spelling: detectionType, Package: CatalogPath}},
-		}}},
+		}}),
 		Body: emit.Body{Ref: e.Ref(wiringTemplate, detections)},
 	})
 	return nil
@@ -215,15 +193,18 @@ func generate(m *sdk.GraphMatch, e *sdk.Emitter) error {
 func specOf(en entry) specData {
 	n := namesOf(en)
 	s := specData{
-		Name: en.name, Form: formExprs[en.form], Doc: en.doc,
+		Name: en.name, Form: formPrefix + naming.Pascal(en.form), Doc: en.doc,
 		Group: n.group, Key: n.familyKey, ID: n.idKey,
 		Detected: en.detected, Documentary: en.documentary,
 	}
 	for i, p := range en.params {
 		d := paramData{
-			Const: n.paramConsts[i], Fact: n.paramKeys[i], Type: typeExprs[p.typ],
-			Resolution: resolutionExprs[p.resolve], Required: p.required, Counterexample: p.counterexample,
+			Const: n.paramConsts[i], Fact: n.paramKeys[i], Type: typePrefix + naming.Pascal(p.typ),
+			Required: p.required, Counterexample: p.counterexample,
 			Minimum: p.minimum, HasMinimum: p.hasMinimum, Doc: p.doc,
+		}
+		if p.resolve != "" {
+			d.Resolution = resolutionPrefix + naming.Pascal(p.resolve)
 		}
 		for _, r := range p.applies {
 			d.Roles = append(d.Roles, naming.Pascal(en.name+wordSep+r))
@@ -238,12 +219,12 @@ func specOf(en entry) specData {
 	}
 	for i, b := range en.bindings {
 		s.Bindings = append(s.Bindings, bindingData{
-			Const: n.bindingConsts[i], Fact: n.bindingKeys[i], From: sourceExprs[b.from],
+			Const: n.bindingConsts[i], Fact: n.bindingKeys[i], From: sourcePrefix + naming.Pascal(b.from),
 			Index: b.index, Doc: b.doc,
 		})
 	}
 	for i, r := range en.roles {
-		s.Roles = append(s.Roles, roleData{Const: n.roleConsts[i], Arity: arityExprs[r.arity]})
+		s.Roles = append(s.Roles, roleData{Const: n.roleConsts[i], Arity: arityPrefix + naming.Pascal(r.arity)})
 	}
 	for _, y := range en.yields {
 		s.YieldsTo = append(s.YieldsTo, naming.Pascal(y))

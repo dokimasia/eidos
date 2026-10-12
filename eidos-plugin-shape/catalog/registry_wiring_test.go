@@ -226,14 +226,16 @@ func TestRegistryWiring(t *testing.T) {
 	})
 }
 
-// corpusPackage returns the package of the corpus. It declares the types
+// corpusPackage builds the package of the corpus. It declares the types
 // that the signatures of the corpus refer to, and the methods of
 // [corpusOf] on each host. It also returns the entries of the first host.
-func corpusPackage(hosts ...string) (*node.Package, []corpusEntry) {
+func corpusPackage(tb assert.TB, hosts ...string) (*node.Package, []corpusEntry) {
+	tb.Helper()
+
 	decls := []node.Declaration{
-		&node.Struct{ID: valueID, Name: valueName},
-		&node.Struct{ID: metaID, Name: metaName},
-		&node.Interface{ID: sourceID, Name: sourceName},
+		&node.Struct{Name: valueName},
+		&node.Struct{Name: metaName},
+		&node.Interface{Name: sourceName},
 	}
 	var first []corpusEntry
 	for i, host := range hosts {
@@ -245,7 +247,7 @@ func corpusPackage(hosts ...string) (*node.Package, []corpusEntry) {
 			decls = append(decls, e.method)
 		}
 	}
-	return shapetest.Package(decls...), first
+	return shapetest.Package(tb, decls...), first
 }
 
 // classifyCorpus classifies the corpus, and returns its entries and the
@@ -253,7 +255,7 @@ func corpusPackage(hosts ...string) (*node.Package, []corpusEntry) {
 func classifyCorpus(t *testing.T) ([]corpusEntry, map[string][]string) {
 	t.Helper()
 
-	pkg, entries := corpusPackage(shapesName)
+	pkg, entries := corpusPackage(t, shapesName)
 	r := shapetest.New(t, pkg)
 	assert.Empty(t, r.Classify(t), "the corpus classifies without a finding")
 	detected := map[string][]string{}

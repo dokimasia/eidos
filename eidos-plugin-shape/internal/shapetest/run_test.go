@@ -32,7 +32,7 @@ func TestRun(t *testing.T) {
 		t.Run("registers the rules of the test language", func(t *testing.T) {
 			t.Parallel()
 
-			r := shapetest.New(t, shapetest.Package())
+			r := shapetest.New(t, shapetest.Package(t))
 			_, registered := r.Rules.For(shapetest.Lang)
 			assert.True(t, registered, "the fixture binds the test language to its rules")
 		})
@@ -40,7 +40,7 @@ func TestRun(t *testing.T) {
 		t.Run("registers the keys of the catalog", func(t *testing.T) {
 			t.Parallel()
 
-			r := shapetest.New(t, shapetest.Package())
+			r := shapetest.New(t, shapetest.Package(t))
 			_, registered := meta.Lookup[string](r.Keys, shape.KeyShape)
 			assert.True(t, registered, "the registry of the fixture contains the summary key of the shape")
 		})
@@ -53,7 +53,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			put := shapetest.Method(storeName, putName, nil)
-			r := shapetest.New(t, shapetest.Package(put))
+			r := shapetest.New(t, shapetest.Package(t, put))
 			got := r.Declare(t, put.ID,
 				shapetest.Instance{Shape: shape.Writer},
 				shapetest.Instance{Mixin: shape.Atomic},
@@ -74,7 +74,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			put := shapetest.Method(storeName, putName, nil)
-			r := shapetest.New(t, shapetest.Package(put))
+			r := shapetest.New(t, shapetest.Package(t, put))
 			got := r.Declare(t, put.ID,
 				shapetest.Instance{Mixin: shape.Atomic},
 				shapetest.Instance{Mixin: shape.Idempotent},
@@ -88,7 +88,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			put, get := shapetest.Method(storeName, putName, nil), shapetest.Method(storeName, getName, nil)
-			r := shapetest.New(t, shapetest.Package(put, get))
+			r := shapetest.New(t, shapetest.Package(t, put, get))
 			first := r.Declare(
 				t,
 				put.ID,
@@ -105,7 +105,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			put := shapetest.Method(storeName, putName, nil)
-			r := shapetest.New(t, shapetest.Package(put))
+			r := shapetest.New(t, shapetest.Package(t, put))
 			got := r.Declare(
 				t,
 				put.ID,
@@ -125,7 +125,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			put := shapetest.Method(storeName, putName, nil)
-			r := shapetest.New(t, shapetest.Package(put))
+			r := shapetest.New(t, shapetest.Package(t, put))
 			r.Declare(t, put.ID, shapetest.Instance{Contract: shape.Tx, Role: shape.TxCommit})
 			got := r.Classify(t)
 			assert.NotEmpty(t, got, "the instance without a begin and a rollback has findings")
@@ -143,7 +143,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			put, get := shapetest.Method(storeName, putName, nil), shapetest.Method(storeName, getName, nil)
-			r := shapetest.New(t, shapetest.Package(put, get))
+			r := shapetest.New(t, shapetest.Package(t, put, get))
 			r.Declare(t, put.ID, shapetest.Instance{Mixin: shape.Atomic})
 			assert.Empty(t, r.Classify(t), "the classification has no findings")
 			var visited []string

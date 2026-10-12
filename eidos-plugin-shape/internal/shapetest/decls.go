@@ -4,12 +4,12 @@
 package shapetest
 
 import (
-	"path"
 	"strconv"
-	"strings"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/sdk/node"
-	"go.dokimi.dev/eidos/sdk/position"
+	"go.dokimi.dev/eidos/sdk/nodetest"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -20,104 +20,121 @@ const (
 )
 
 // The prefixes of the names of the parameters and the returns of a
-// callable, which end in the position of each, and the separators of an
-// owner and of a package path.
+// callable, which end in the position of each.
 const (
 	paramPrefix  = "p"
 	returnPrefix = "r"
-	ownerSep     = "."
-	pathSep      = "/"
 )
 
-// Method returns a method of the struct host. It has one parameter for
-// each reference in params, named p0, p1 and on, and one return for each
-// reference in returns, named r0, r1 and on. Each declaration has the
-// identity that the resolution step assigns it, and [Package] gives the
-// method its position and its struct.
+// Method returns a method of the struct host, without an identity. It has
+// one parameter for each reference in params, named p0, p1 and on, and one
+// return for each reference in returns, named r0, r1 and on. Its Receives
+// names host until [Package] places the method in the struct of that name.
 func Method(host, name string, params []*node.TypeRef, returns ...*node.TypeRef) *node.Method {
 	m := &node.Method{
-		ID:         symbol.Identity{Lang: Lang, Package: Path, Owner: host, Name: name, Kind: symbol.KindMethod},
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
 		Level:      symbol.LevelInstance,
-		Host:       symbol.Identity{Lang: Lang, Package: Path, Name: host, Kind: symbol.KindStruct},
+		Receives:   nodetest.Named(host),
 	}
-	m.Params, m.Returns = signature(host+ownerSep+name, params, returns)
+	m.Params, m.Returns = signature(params, returns)
 	return m
 }
 
-// Function returns a function of the package. It has the parameters and
-// the returns that [Method] states, and [Package] gives it its position.
+// Function returns a function of the package, without an identity. It has
+// the parameters and the returns that [Method] states.
 func Function(name string, params []*node.TypeRef, returns ...*node.TypeRef) *node.Function {
-	fn := &node.Function{
-		ID:         symbol.Identity{Lang: Lang, Package: Path, Name: name, Kind: symbol.KindFunction},
-		Name:       name,
-		Visibility: symbol.VisibilityPublic,
-	}
-	fn.Params, fn.Returns = signature(name, params, returns)
+	fn := &node.Function{Name: name, Visibility: symbol.VisibilityPublic}
+	fn.Params, fn.Returns = signature(params, returns)
 	return fn
 }
 
-// signature returns the parameters and the returns of a callable whose
-// members have the owner, one for each reference, named by their
-// positions.
-func signature(owner string, params, returns []*node.TypeRef) ([]*node.Param, []*node.Return) {
+// signature returns the parameters and the returns of a callable, one for
+// each reference, named by their positions.
+func signature(params, returns []*node.TypeRef) ([]*node.Param, []*node.Return) {
 	ps := make([]*node.Param, 0, len(params))
 	for i, ref := range params {
-		name := paramPrefix + strconv.Itoa(i)
-		ps = append(ps, &node.Param{
-			ID:   symbol.Identity{Lang: Lang, Package: Path, Owner: owner, Name: name, Kind: symbol.KindParam},
-			Name: name,
-			Type: ref,
-		})
+		ps = append(ps, &node.Param{Name: paramPrefix + strconv.Itoa(i), Type: ref})
 	}
 	rs := make([]*node.Return, 0, len(returns))
 	for i, ref := range returns {
-		name := returnPrefix + strconv.Itoa(i)
-		rs = append(rs, &node.Return{
-			ID:   symbol.Identity{Lang: Lang, Package: Path, Owner: owner, Name: name, Kind: symbol.KindReturn},
-			Name: name,
-			Type: ref,
-		})
+		rs = append(rs, &node.Return{Name: returnPrefix + strconv.Itoa(i), Type: ref})
 	}
 	return ps, rs
 }
 
-// Package returns the package [Path] with one file, [File], that declares
-// the declarations in order. It declares one struct for each host of a
-// method, at the first method of the host, with the methods of the host
-// in order. A method and a function have their line in the file, counted
-// from 1, and every other declaration keeps its position.
-func Package(decls ...node.Declaration) *node.Package {
-	var file node.Symbols
-	hosts := map[symbol.Identity]*node.Struct{}
-	for i, decl := range decls {
-		at := position.Pos{File: File, Line: i + 1}
-		switch d := decl.(type) {
-		case *node.Method:
-			d.Pos = at
-			host, declared := hosts[d.Host]
-			if !declared {
-				host = &node.Struct{ID: d.Host, Pos: at, Name: d.Host.Name, Visibility: symbol.VisibilityPublic}
-				hosts[d.Host] = host
-				file = append(file, host)
+// Package builds the package [Path] through nodetest, with one file,
+// [File], that declares the declarations in order, and returns the package
+// that the load builds. It declares one struct for each host of a method,
+// at the first method of the host, with the methods of the host in order,
+// and clears the Receives of each such method. After Package, every
+// declaration has the identity, the host and the position that the load of
+// the language [Lang] gives it.
+//
+// Package replaces the type of each parameter, return and field of the
+// declarations with a copy, children and arguments included, so a test can
+// pass one reference to several places and several tests can share one,
+// while each place of the built fixture has a reference of its own. An
+// inline reference keeps its members.
+func Package(tb assert.TB, decls ...node.Declaration) *node.Package {
+	tb.Helper()
+
+	for _, decl := range decls {
+		node.Walk(decl, func(s symbol.Symbol) bool {
+			switch x := s.(type) {
+			case *node.Param:
+				x.Type = copied(x.Type)
+			case *node.Return:
+				x.Type = copied(x.Type)
+			case *node.Field:
+				x.Type = copied(x.Type)
 			}
-			host.Methods = append(host.Methods, d)
-		case *node.Function:
-			d.Pos = at
-			file = append(file, d)
-		default:
+			return true
+		})
+	}
+	var file []symbol.Symbol
+	hosts := map[string]*node.Struct{}
+	for _, decl := range decls {
+		m, isMethod := decl.(*node.Method)
+		if !isMethod || m.Receives == nil {
 			file = append(file, decl)
+			continue
+		}
+		host, declared := hosts[m.Receives.Spelling]
+		if !declared {
+			host = &node.Struct{Name: m.Receives.Spelling, Visibility: symbol.VisibilityPublic}
+			hosts[m.Receives.Spelling] = host
+			file = append(file, host)
+		}
+		m.Receives = nil
+		host.Methods = append(host.Methods, m)
+	}
+	b := nodetest.New(nodetest.Neutral{Language: Lang})
+	b.File(Path, File, file...)
+	pkgs := b.Build(tb)
+	assert.Length(tb, pkgs, 1, "the fixture builds one package")
+	return pkgs[0]
+}
+
+// copied returns a copy of ref, with a copy of each of its children and
+// its arguments, and nil for a nil ref. An inline reference keeps its
+// members.
+func copied(ref *node.TypeRef) *node.TypeRef {
+	if ref == nil {
+		return nil
+	}
+	c := *ref
+	if len(ref.Elems) > 0 {
+		c.Elems = make([]*node.TypeRef, 0, len(ref.Elems))
+		for _, e := range ref.Elems {
+			c.Elems = append(c.Elems, copied(e))
 		}
 	}
-	return &node.Package{
-		ID:   symbol.Identity{Lang: Lang, Package: Path, Kind: symbol.KindPackage},
-		Path: strings.Split(Path, pathSep),
-		Name: path.Base(Path),
-		Files: []*node.File{{
-			ID:    symbol.Identity{Lang: Lang, Package: Path, Name: File, Kind: symbol.KindFile},
-			Path:  File,
-			Decls: file,
-		}},
+	if len(ref.Args) > 0 {
+		c.Args = make([]*node.TypeRef, 0, len(ref.Args))
+		for _, a := range ref.Args {
+			c.Args = append(c.Args, copied(a))
+		}
 	}
+	return &c
 }

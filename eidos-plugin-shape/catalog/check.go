@@ -36,8 +36,7 @@ func newChecker(specs []shape.Spec) plugin.Annotator {
 			}),
 		))
 	}
-	a, _ := sdk.NewPlugin(CheckID).Requires(shape.Capability).Handle(rs...).Build().(plugin.Annotator)
-	return a
+	return sdk.NewPlugin(CheckID).Requires(shape.Capability).Handle(rs...).Annotator()
 }
 
 // validate checks the arity of every role of the instance of a callable.

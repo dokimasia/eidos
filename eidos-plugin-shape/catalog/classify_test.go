@@ -103,7 +103,7 @@ func TestClassify(t *testing.T) {
 		t.Run("registers the summary keys and every key of each spec", func(t *testing.T) {
 			t.Parallel()
 
-			r := shapetest.New(t, shapetest.Package())
+			r := shapetest.New(t, shapetest.Package(t))
 			var got []string
 			for name := range r.Keys.Keys() {
 				if strings.HasPrefix(string(name), shape.KeyShape.Namespace()+keySep) {
@@ -194,7 +194,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			del := shapetest.Method(storeName, deleteName, []*node.TypeRef{str}, failure)
-			r := shapetest.New(t, shapetest.Package(del))
+			r := shapetest.New(t, shapetest.Package(t, del))
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[deleteName], stamps{
 				detected: []string{string(shape.Deleter), string(shape.Writer)},
@@ -219,22 +219,22 @@ func TestClassify(t *testing.T) {
 			{
 				name: "stamps the detected shapes of a method of an interface",
 				give: func() (node.Declaration, *node.Param) {
-					del := hostedDelete(symbol.KindInterface)
-					return &node.Interface{ID: del.Host, Name: storeName, Methods: []*node.Method{del}}, del.Params[0]
+					del := hostedDelete()
+					return &node.Interface{Name: storeName, Methods: []*node.Method{del}}, del.Params[0]
 				},
 			},
 			{
 				name: "stamps the detected shapes of a method of an enum",
 				give: func() (node.Declaration, *node.Param) {
-					del := hostedDelete(symbol.KindEnum)
-					return &node.Enum{ID: del.Host, Name: storeName, Methods: []*node.Method{del}}, del.Params[0]
+					del := hostedDelete()
+					return &node.Enum{Name: storeName, Methods: []*node.Method{del}}, del.Params[0]
 				},
 			},
 			{
 				name: "stamps the detected shapes of a method of a sum",
 				give: func() (node.Declaration, *node.Param) {
-					del := hostedDelete(symbol.KindSum)
-					return &node.Sum{ID: del.Host, Name: storeName, Methods: []*node.Method{del}}, del.Params[0]
+					del := hostedDelete()
+					return &node.Sum{Name: storeName, Methods: []*node.Method{del}}, del.Params[0]
 				},
 			},
 		}
@@ -243,7 +243,7 @@ func TestClassify(t *testing.T) {
 				t.Parallel()
 
 				decl, key := tt.give()
-				r := shapetest.New(t, shapetest.Package(decl))
+				r := shapetest.New(t, shapetest.Package(t, decl))
 				got, _ := stampsOf(t, r)
 				assert.Equal(t, got[deleteName], stamps{
 					detected: []string{string(shape.Deleter), string(shape.Writer)},
@@ -295,7 +295,7 @@ func TestClassify(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				r := shapetest.New(t, shapetest.Package(tt.give))
+				r := shapetest.New(t, shapetest.Package(t, tt.give))
 				got, _ := stampsOf(t, r)
 				assert.Equal(t, got[tt.give.Name].detected, tt.want, "the detected shapes are in precedence order")
 			})
@@ -304,7 +304,7 @@ func TestClassify(t *testing.T) {
 		t.Run("stamps nothing in a package without declarations", func(t *testing.T) {
 			t.Parallel()
 
-			r := shapetest.New(t, shapetest.Package())
+			r := shapetest.New(t, shapetest.Package(t))
 			got, findings := stampsOf(t, r)
 			expect.Empty(t, findings, "the empty package has no finding")
 			expect.Empty(t, got, "the empty package has no callable to stamp")
@@ -314,7 +314,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			save := shapetest.Method(storeName, saveName, []*node.TypeRef{ctxRef, str}, failure)
-			r := shapetest.New(t, shapetest.Package(save))
+			r := shapetest.New(t, shapetest.Package(t, save))
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[saveName].of.Params[string(shape.Writer)][shape.WriterValue], any(save.Params[1].ID),
 				"the value of the writer is the parameter after the context")
@@ -324,7 +324,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			get := shapetest.Method(storeName, getName, []*node.TypeRef{str}, str, failure)
-			r := shapetest.New(t, shapetest.Package(get))
+			r := shapetest.New(t, shapetest.Package(t, get))
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[getName].of.Params[string(shape.Reader)], shape.Params{
 				shape.ReaderKey: get.Params[0].ID, shape.ReaderValue: get.Returns[0].ID,
@@ -335,7 +335,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			pair := shapetest.Method(storeName, pairName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(pair))
+			r := shapetest.New(t, shapetest.Package(t, pair))
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[pairName], stamps{}, "Pair has no detected shape")
 		})
@@ -344,7 +344,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			put := shapetest.Method(storeName, putName, []*node.TypeRef{str}, failure)
-			r := shapetest.New(t, shapetest.Package(put))
+			r := shapetest.New(t, shapetest.Package(t, put))
 			r.Rules = nil
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[putName], stamps{}, "the absent rules project nothing to detect")
@@ -354,7 +354,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			put := shapetest.Method(storeName, putName, []*node.TypeRef{str}, failure)
-			r := shapetest.New(t, shapetest.Package(put))
+			r := shapetest.New(t, shapetest.Package(t, put))
 			r.Declare(t, put.ID, shapetest.Instance{Shape: shape.Reader})
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[putName], stamps{of: shape.Classification{
@@ -367,7 +367,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			lookup := shapetest.Function(lookupName, []*node.TypeRef{str}, failure)
-			r := shapetest.New(t, shapetest.Package(lookup))
+			r := shapetest.New(t, shapetest.Package(t, lookup))
 			r.Declare(t, lookup.ID, shapetest.Instance{Shape: shape.Reader}, shapetest.Instance{Mixin: shape.Pure})
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[lookupName], stamps{of: shape.Classification{
@@ -381,7 +381,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			ping := shapetest.Method(storeName, pingName, nil, failure)
-			r := shapetest.New(t, shapetest.Package(ping))
+			r := shapetest.New(t, shapetest.Package(t, ping))
 			r.Declare(t, ping.ID, shapetest.Instance{Shape: shape.Writer})
 			got, _ := stampsOf(t, r)
 			assert.Equal(t, got[pingName].of, shape.Classification{Shape: shape.Writer},
@@ -393,7 +393,7 @@ func TestClassify(t *testing.T) {
 
 			put := shapetest.Method(storeName, putName, []*node.TypeRef{str, str}, str, str)
 			get := shapetest.Method(storeName, getName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(put, get))
+			r := shapetest.New(t, shapetest.Package(t, put, get))
 			r.Declare(t, put.ID, shapetest.Instance{Mixin: shape.Atomic, Params: map[directive.ParamKey]directive.Value{
 				shape.AtomicRead: {Kind: directive.TypeReference, Ref: getName, Target: get.ID},
 			}})
@@ -408,7 +408,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			commit := shapetest.Method(storeName, commitName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(commit))
+			r := shapetest.New(t, shapetest.Package(t, commit))
 			r.Declare(t, commit.ID, shapetest.Instance{
 				Contract: shape.Tx, Role: shape.TxCommit,
 				Params: map[directive.ParamKey]directive.Value{
@@ -427,7 +427,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			commit := shapetest.Method(storeName, commitName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(commit))
+			r := shapetest.New(t, shapetest.Package(t, commit))
 			r.Declare(t, commit.ID, shapetest.Instance{
 				Contract: shape.Tx, Role: shape.TxCommit,
 				Params: map[directive.ParamKey]directive.Value{catalog.IDParam: {Kind: directive.TypeString}},
@@ -441,7 +441,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			retry := shapetest.Method(storeName, retryName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(retry))
+			r := shapetest.New(t, shapetest.Package(t, retry))
 			r.Declare(t, retry.ID, shapetest.Instance{
 				Mixin: shape.RetrySucceeds,
 				Params: map[directive.ParamKey]directive.Value{
@@ -459,7 +459,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			retry := shapetest.Method(storeName, retryName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(retry))
+			r := shapetest.New(t, shapetest.Package(t, retry))
 			ds := r.Declare(t, retry.ID, shapetest.Instance{
 				Mixin: shape.RetrySucceeds,
 				Params: map[directive.ParamKey]directive.Value{
@@ -476,7 +476,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			expiry := shapetest.Method(storeName, expiryName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(expiry))
+			r := shapetest.New(t, shapetest.Package(t, expiry))
 			ds := r.Declare(t, expiry.ID, shapetest.Instance{
 				Mixin: shape.TTL,
 				Params: map[directive.ParamKey]directive.Value{
@@ -533,7 +533,7 @@ func TestClassify(t *testing.T) {
 
 				shard := shapetest.Method(storeName, shardName, []*node.TypeRef{str, str}, str, str)
 				callee := tt.callee()
-				r := shapetest.New(t, shapetest.Package(shard, callee))
+				r := shapetest.New(t, shapetest.Package(t, shard, callee))
 				r.Declare(t, shard.ID, shapetest.Instance{
 					Mixin: shape.Partition,
 					Params: map[directive.ParamKey]directive.Value{
@@ -554,7 +554,7 @@ func TestClassify(t *testing.T) {
 			t.Parallel()
 
 			shard := shapetest.Method(storeName, shardName, []*node.TypeRef{str, str}, str, str)
-			r := shapetest.New(t, shapetest.Package(shard))
+			r := shapetest.New(t, shapetest.Package(t, shard))
 			r.Declare(t, shard.ID, shapetest.Instance{
 				Mixin: shape.Partition,
 				Params: map[directive.ParamKey]directive.Value{
@@ -610,17 +610,18 @@ func scaledRun(tb assert.TB) *shapetest.Run {
 	for i := range hosts {
 		hosts[i] = hostPrefix + strconv.Itoa(i)
 	}
-	pkg, _ := corpusPackage(hosts...)
+	pkg, _ := corpusPackage(tb, hosts...)
 	r := shapetest.New(tb, pkg)
 	r.Annotate(tb, r.Annotators[1])
 	return r
 }
 
-// hostedDelete returns the method Delete of the declaration Store of a
-// kind. Delete takes a key and returns only its error.
-func hostedDelete(kind symbol.Kind) *node.Method {
+// hostedDelete returns the method Delete for the body of a declaration
+// Store that the test builds. Delete takes a key and returns only its
+// error, and it receives no type, because its declaration contains it.
+func hostedDelete() *node.Method {
 	del := shapetest.Method(storeName, deleteName, []*node.TypeRef{str}, failure)
-	del.Host.Kind = kind
+	del.Receives = nil
 	return del
 }
 

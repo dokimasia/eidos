@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/nodetest"
 	"go.dokimi.dev/eidos/sdk/plugintest"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -73,18 +74,24 @@ type classification struct {
 func classify(tb testing.TB) classification {
 	tb.Helper()
 
-	str := &node.TypeRef{Spelling: shapetest.String}
-	failure := &node.TypeRef{Spelling: shapetest.Error}
 	c := classification{
-		put:    shapetest.Method(storeName, putName, []*node.TypeRef{str}, failure),
-		get:    shapetest.Method(storeName, getName, []*node.TypeRef{str, str}, str, str),
-		find:   shapetest.Method(storeName, findName, []*node.TypeRef{str}, str),
-		commit: shapetest.Method(storeName, commitName, nil, failure),
-		retry:  shapetest.Method(storeName, retryName, []*node.TypeRef{str, str}, str, str),
-		stale:  shapetest.Method(storeName, staleName, []*node.TypeRef{str, str}, str, str),
-		got:    map[string]shape.Classification{},
+		put: shapetest.Method(storeName, putName,
+			[]*node.TypeRef{nodetest.Named(shapetest.String)}, nodetest.Named(shapetest.Error)),
+		get: shapetest.Method(storeName, getName,
+			[]*node.TypeRef{nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)},
+			nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)),
+		find: shapetest.Method(storeName, findName,
+			[]*node.TypeRef{nodetest.Named(shapetest.String)}, nodetest.Named(shapetest.String)),
+		commit: shapetest.Method(storeName, commitName, nil, nodetest.Named(shapetest.Error)),
+		retry: shapetest.Method(storeName, retryName,
+			[]*node.TypeRef{nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)},
+			nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)),
+		stale: shapetest.Method(storeName, staleName,
+			[]*node.TypeRef{nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)},
+			nodetest.Named(shapetest.String), nodetest.Named(shapetest.String)),
+		got: map[string]shape.Classification{},
 	}
-	r := shapetest.New(tb, shapetest.Package(c.put, c.get, c.find, c.commit, c.retry, c.stale))
+	r := shapetest.New(tb, shapetest.Package(tb, c.put, c.get, c.find, c.commit, c.retry, c.stale))
 	c.run = r
 	get := directive.Value{Kind: directive.TypeReference, Ref: getName, Target: c.get.ID}
 	r.Declare(tb, c.find.ID, shapetest.Instance{Shape: shape.Writer, Params: map[directive.ParamKey]directive.Value{

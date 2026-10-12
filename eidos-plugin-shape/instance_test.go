@@ -73,7 +73,7 @@ func instanceFixture(tb testing.TB) instances {
 		appendFn:    shapetest.Function(appendName, nil),
 		replayFn:    shapetest.Function(replayName, nil),
 	}
-	f.run = shapetest.New(tb, shapetest.Package(
+	f.run = shapetest.New(tb, shapetest.Package(tb,
 		f.begin, f.get, f.commit, f.rollback, f.stepA, f.undoA, f.stepB, f.undoB,
 		f.cacheBegin, f.chainMethod, f.appendFn, f.replayFn,
 	))

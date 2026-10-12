@@ -17,7 +17,7 @@ import (
 // module is package shape.
 const CatalogPath = "go.dokimi.dev/eidos/plugin/shape"
 
-// The import paths of the generated code.
+// These constants are the import paths of the generated code.
 const (
 	sdkPath       = "go.dokimi.dev/eidos/sdk"
 	directivePath = sdkPath + "/directive"
@@ -25,9 +25,10 @@ const (
 	symbolPath    = sdkPath + "/symbol"
 )
 
-// The spellings of the types of the generated declarations. A type of
-// package shape has a bare spelling in the declarations of the package,
-// and a type of the SDK facade has the name of its package.
+// These constants are the spellings of the types of the generated
+// declarations. A type of package shape has a bare spelling in the
+// declarations of the package, and a type of the SDK facade has the name
+// of its package.
 const (
 	shapeNameType    = "Shape"
 	mixinNameType    = "Mixin"
@@ -45,9 +46,9 @@ const (
 	int64Type        = "int64"
 )
 
-// The names of the generated functions, the parameter of a reader, the
-// fields of the params of a contract, the template of each body, and the
-// word of the constant of a summary key.
+// These constants are the names of the generated functions, the parameter
+// of a reader, the fields of the params of a contract, the template of
+// each body, and the word of the constant of a summary key.
 const (
 	specsFunc      = "Specs"
 	detectionsFunc = "Detections"
@@ -59,21 +60,15 @@ const (
 	summaryWord    = "key"
 )
 
-// The width of a line of generated documentation, the full stop that ends
-// a sentence, and the nouns of the owner of a key constant.
+// These constants are the width of a line of generated documentation, the
+// full stop that ends a sentence, and the nouns of the owner of a key
+// constant.
 const (
 	docWidth    = 76
 	stop        = "."
 	paramNoun   = "param"
 	bindingNoun = "binding"
 )
-
-// formNouns are the nouns of the forms in generated documentation.
-var formNouns = map[string]string{
-	string(specfront.FormShape):    "shape",
-	string(specfront.FormMixin):    "mixin",
-	string(specfront.FormContract): "contract",
-}
 
 // summaries returns the constants of the summary keys, in the order of
 // [specfront.Summaries].
@@ -98,10 +93,9 @@ func summaries() []symbol.Symbol {
 // handles of its keys.
 func declarations(e entry) []symbol.Symbol {
 	n := namesOf(e)
-	noun := formNouns[e.form]
 	out := []symbol.Symbol{&emit.Constant{
 		Origin:     e.id,
-		Doc:        wrap(n.constant + " is the " + noun + " " + e.name + ". " + e.doc),
+		Doc:        wrap(n.constant + " is the " + e.form + " " + e.name + ". " + e.doc),
 		Name:       n.constant,
 		Visibility: symbol.VisibilityPublic,
 		Type:       &emit.TypeRef{Spelling: nameType(e.form)},
@@ -146,7 +140,7 @@ func nameType(form string) string {
 func keyConstant(e entry, name, noun, key, doc string) *emit.Constant {
 	return &emit.Constant{
 		Origin: e.id,
-		Doc: wrap(name + " is the key of the " + noun + " " + key + " of the " + formNouns[e.form] + " " +
+		Doc: wrap(name + " is the key of the " + noun + " " + key + " of the " + e.form + " " +
 			e.name + ". The " + noun + " is " + doc + stop),
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
@@ -161,7 +155,7 @@ func keyConstant(e entry, name, noun, key, doc string) *emit.Constant {
 func paramsStruct(e entry, n names) *emit.Struct {
 	s := &emit.Struct{
 		Origin:     e.id,
-		Doc:        wrap(n.params + " are the params of the " + formNouns[e.form] + " " + e.name + stop),
+		Doc:        wrap(n.params + " are the params of the " + e.form + " " + e.name + stop),
 		Name:       n.params,
 		Visibility: symbol.VisibilityPublic,
 	}
@@ -205,7 +199,6 @@ func paramsStruct(e entry, n names) *emit.Struct {
 // reader returns the reader of a spec. The reader is the function that
 // reads the classification and its values on the subject of a match.
 func reader(e entry, n names) *emit.Function {
-	noun := formNouns[e.form]
 	var doc string
 	var body strings.Builder
 	body.WriteString("var p " + n.params + "\n")
@@ -217,8 +210,8 @@ func reader(e entry, n names) *emit.Function {
 		body.WriteString("p." + roleField + " = " + roleType + "(role)\n")
 		body.WriteString("p." + idField + ", _ = sdk.Fact(m, " + n.idVar + ")\n")
 	} else {
-		doc = n.reader + " returns the params of the " + noun + " " + e.name +
-			" on the subject of m, and false where the subject does not have the " + noun + "."
+		doc = n.reader + " returns the params of the " + e.form + " " + e.name +
+			" on the subject of m, and false where the subject does not have the " + e.form + "."
 		body.WriteString("if _, held := sdk.Fact(m, " + n.familyVar + "); !held {\nreturn p, false\n}\n")
 	}
 	for i, b := range e.bindings {
@@ -233,14 +226,14 @@ func reader(e entry, n names) *emit.Function {
 		Doc:        wrap(doc + " It records each read in the invocation of m."),
 		Name:       n.reader,
 		Visibility: symbol.VisibilityPublic,
-		Params: []*emit.Param{{
+		Params: emit.SlotOf(&emit.Param{
 			Name: readerParam,
 			Type: &emit.TypeRef{Spelling: matcherType, Package: sdkPath},
-		}},
-		Returns: []*emit.Return{
-			{Type: &emit.TypeRef{Spelling: n.params}},
-			{Type: &emit.TypeRef{Spelling: boolType}},
-		},
+		}),
+		Returns: emit.SlotOf(
+			&emit.Return{Type: &emit.TypeRef{Spelling: n.params}},
+			&emit.Return{Type: &emit.TypeRef{Spelling: boolType}},
+		),
 		Body: emit.Body{Verbatim: body.String()},
 	}
 }

@@ -44,7 +44,7 @@ func TestPredicate(t *testing.T) {
 			t.Parallel()
 
 			assert.Panics(t, func() {
-				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.Is(ghostName), sdk.OnMethod(ignore))).Build()
+				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.Is(ghostName), sdk.OnMethod(ignore))).Generator()
 			}, "a gate on no key is a defect of the plugin")
 		})
 	})
@@ -63,7 +63,7 @@ func TestPredicate(t *testing.T) {
 			t.Parallel()
 
 			assert.Panics(t, func() {
-				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.Has(ghostName), sdk.OnMethod(ignore))).Build()
+				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.Has(ghostName), sdk.OnMethod(ignore))).Generator()
 			}, "a gate on no key is a defect of the plugin")
 		})
 	})
@@ -91,7 +91,7 @@ func TestPredicate(t *testing.T) {
 			t.Parallel()
 
 			assert.Panics(t, func() {
-				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.In(ghostName), sdk.OnMethod(ignore))).Build()
+				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.In(ghostName), sdk.OnMethod(ignore))).Generator()
 			}, "a gate on no key is a defect of the plugin")
 		})
 	})
@@ -122,7 +122,7 @@ func TestPredicate(t *testing.T) {
 			assert.Panics(t, func() {
 				sdk.NewPlugin(gatedID).
 					Handle(sdk.Where(shape.Plays(ghostName, shape.TxBegin), sdk.OnMethod(ignore))).
-					Build()
+					Generator()
 			}, "a gate on no key is a defect of the plugin")
 		})
 	})
