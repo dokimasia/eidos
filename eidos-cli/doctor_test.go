@@ -72,7 +72,7 @@ func TestDoctor(t *testing.T) {
 					Handle(eidos.Directive(oldSchema, eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error {
 						return nil
 					}))).
-					Build().(plugin.Annotator)
+					Annotator()
 				return compose().Annotators(olden)
 			}
 			root := stored(t, files.Tree{storePath: files.Text(deprecatedSource)})
@@ -179,7 +179,7 @@ func TestDoctor(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdDoctor, root, jsonFlag)
 			got := decoded[findingEvent](t, stdout, eventDiag)
 			assert.Length(t, got, 1, "the member has one finding")
-			expect.Equal(t, got[0].Workspace, memberSvc, "the event names the member")
+			expect.Equal(t, got[0].Member, memberSvc, "the event names the member")
 			expect.Equal(t, got[0].Code, workspace.UnusedSuppression.String(), "the finding is the Info")
 		})
 	})

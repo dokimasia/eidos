@@ -28,7 +28,6 @@ func TestFlags(t *testing.T) {
 				give cli.Format
 				want bool
 			}{
-				{name: "reports true for the zero Format", give: 0, want: true},
 				{name: "reports true for FormatText", give: cli.FormatText, want: true},
 				{name: "reports true for FormatJSON", give: cli.FormatJSON, want: true},
 				{name: "reports false for a value above FormatJSON", give: cli.FormatJSON + 1, want: false},
@@ -37,7 +36,7 @@ func TestFlags(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 
-					assert.Equal(t, tt.give.Valid(), tt.want, "Valid accepts the zero Format and the two formats")
+					assert.Equal(t, tt.give.Valid(), tt.want, "Valid accepts the two formats")
 				})
 			}
 		})
@@ -50,7 +49,6 @@ func TestFlags(t *testing.T) {
 				give cli.Format
 				want string
 			}{
-				{name: "returns text for the zero Format", give: 0, want: "text"},
 				{name: "returns text for FormatText", give: cli.FormatText, want: "text"},
 				{name: "returns json for FormatJSON", give: cli.FormatJSON, want: "json"},
 				{name: "returns the number for a value above FormatJSON", give: 3, want: "Format(3)"},

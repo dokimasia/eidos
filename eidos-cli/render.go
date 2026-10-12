@@ -132,12 +132,12 @@ func (c *planCounts) add(s workspace.PlanStatus) {
 
 // tally counts the files, the plans and the findings of a workspace.
 type tally struct {
-	Workspace string     `json:"workspace,omitempty"`
-	Files     fileCounts `json:"files"`
-	Plans     planCounts `json:"plans"`
-	Errors    int        `json:"errors"`
-	Warnings  int        `json:"warnings"`
-	Infos     int        `json:"infos"`
+	Member   string     `json:"member,omitempty"`
+	Files    fileCounts `json:"files"`
+	Plans    planCounts `json:"plans"`
+	Errors   int        `json:"errors"`
+	Warnings int        `json:"warnings"`
+	Infos    int        `json:"infos"`
 	// Suppressed counts the findings that a diag directive removed, for
 	// each code.
 	Suppressed map[string]int `json:"suppressed,omitempty"`
@@ -224,17 +224,17 @@ func Begin(stdio IO, f Flags, compose Compose, command string) *Renderer {
 	return r
 }
 
-// Workspace starts the output of the member m of a list. The events that
-// follow have the name of m in their field workspace, and the summary
+// Member starts the output of the member m of a list. The events that
+// follow have the name of m in their field member, and the summary
 // counts the files, the plans and the findings of m on their own. Text
 // output puts the name of m before each path. A second call for one member
 // continues its counts.
-func (r *Renderer) Workspace(m Member) {
+func (r *Renderer) Member(m Member) {
 	r.member = m.Name
-	r.current = slices.IndexFunc(r.members, func(t tally) bool { return t.Workspace == m.Name })
+	r.current = slices.IndexFunc(r.members, func(t tally) bool { return t.Member == m.Name })
 	if r.current < 0 {
 		r.current = len(r.members)
-		r.members = append(r.members, tally{Workspace: m.Name})
+		r.members = append(r.members, tally{Member: m.Name})
 	}
 }
 
@@ -248,10 +248,10 @@ func (r *Renderer) Report(d diag.Diag) {
 }
 
 // Event renders one event of a command. JSON output writes the event with
-// the field event set to name, the field workspace of a member of a list,
-// and then the fields of v. Text output writes text as one line to standard
+// the field event set to name, the field member of a member of a list, and
+// then the fields of v. Text output writes text as one line to standard
 // output, and nothing when text is empty. The caller keeps the fields event
-// and workspace out of v.
+// and member out of v.
 //
 // Event panics when v does not encode as a JSON object, which is a defect
 // of the command.
@@ -267,7 +267,7 @@ func (r *Renderer) Event(name string, v any, text string) {
 		panic(fmt.Sprintf("cli: the event %q does not encode as a JSON object", name))
 	}
 	// A header has two strings, which always encode.
-	line, _ := json.Marshal(&header{Event: name, Workspace: r.member})
+	line, _ := json.Marshal(&header{Event: name, Member: r.member})
 	line = line[:len(line)-1]
 	if len(body) > len("{}") {
 		line = append(append(line, ','), body[1:]...)
@@ -291,7 +291,7 @@ func (r *Renderer) Error(err error) {
 			continue
 		}
 		if r.flags.Format == FormatJSON {
-			r.emit(&errorEvent{Event: eventError, Msg: msg, Usage: usage, Workspace: r.member})
+			r.emit(&errorEvent{Event: eventError, Msg: msg, Usage: usage, Member: r.member})
 			continue
 		}
 		fmt.Fprintf(r.stdio.Stderr, "%s: %s\n", r.paint(diag.SeverityError), msg)
@@ -310,7 +310,7 @@ func (r *Renderer) End(status int) {
 		}
 		return
 	}
-	r.emit(&summaryEvent{Event: eventSummary, Status: status, tally: r.total, Workspaces: r.members})
+	r.emit(&summaryEvent{Event: eventSummary, Status: status, tally: r.total, Members: r.members})
 }
 
 // report renders one finding and counts it. It renders an Info only under
@@ -332,7 +332,7 @@ func (r *Renderer) report(d diag.Diag, always bool) {
 
 // diagOf returns the diag event of a finding.
 func (r *Renderer) diagOf(d diag.Diag) *diagEvent {
-	return &diagEvent{Event: eventDiag, finding: findingOf(d), Workspace: r.member}
+	return &diagEvent{Event: eventDiag, finding: findingOf(d), Member: r.member}
 }
 
 // file renders one change of a plan with action a, and counts it. plan is
@@ -344,7 +344,7 @@ func (r *Renderer) file(plan string, c output.Change, a action) {
 	if r.flags.Format == FormatJSON {
 		r.emit(&fileEvent{
 			Event: eventFile, Path: c.Path, Plan: plan, Action: a, Found: c.Found.String(), Hash: c.Hash,
-			Workspace: r.member,
+			Member: r.member,
 		})
 		return
 	}
@@ -359,7 +359,7 @@ func (r *Renderer) outcome(plan string, s workspace.PlanStatus) {
 	r.listed = true
 	r.count(func(t *tally) { t.Plans.add(s) })
 	if r.flags.Format == FormatJSON {
-		r.emit(&outcomeEvent{Event: eventOutcome, Plan: plan, Status: s.String(), Workspace: r.member})
+		r.emit(&outcomeEvent{Event: eventOutcome, Plan: plan, Status: s.String(), Member: r.member})
 	}
 }
 
@@ -441,15 +441,15 @@ type finding struct {
 type diagEvent struct {
 	Event string `json:"event"`
 	finding
-	Workspace string `json:"workspace,omitempty"`
+	Member string `json:"member,omitempty"`
 }
 
 // errorEvent is the event of one line of a failure without a position.
 type errorEvent struct {
-	Event     string `json:"event"`
-	Msg       string `json:"msg"`
-	Usage     bool   `json:"usage"`
-	Workspace string `json:"workspace,omitempty"`
+	Event  string `json:"event"`
+	Msg    string `json:"msg"`
+	Usage  bool   `json:"usage"`
+	Member string `json:"member,omitempty"`
 }
 
 // fileEvent is the event of one change of a file.
@@ -458,34 +458,34 @@ type fileEvent struct {
 	Path  string `json:"path"`
 	// Plan is empty for a removal of the sweep, whose plan the composition
 	// no longer declares.
-	Plan      string `json:"plan,omitempty"`
-	Action    action `json:"action"`
-	Found     string `json:"found"`
-	Hash      string `json:"hash,omitempty"`
-	Workspace string `json:"workspace,omitempty"`
+	Plan   string `json:"plan,omitempty"`
+	Action action `json:"action"`
+	Found  string `json:"found"`
+	Hash   string `json:"hash,omitempty"`
+	Member string `json:"member,omitempty"`
 }
 
 // outcomeEvent is the event of the status of one plan.
 type outcomeEvent struct {
-	Event     string `json:"event"`
-	Plan      string `json:"plan"`
-	Status    string `json:"status"`
-	Workspace string `json:"workspace,omitempty"`
+	Event  string `json:"event"`
+	Plan   string `json:"plan"`
+	Status string `json:"status"`
+	Member string `json:"member,omitempty"`
 }
 
 // header contains the fields that the event of a command starts with.
 type header struct {
-	Event     string `json:"event"`
-	Workspace string `json:"workspace,omitempty"`
+	Event  string `json:"event"`
+	Member string `json:"member,omitempty"`
 }
 
 // summaryEvent is the last event of a command. Its counts are the totals of
-// the command, and Workspaces contains the counts of each member of a list.
+// the command, and Members contains the counts of each member of a list.
 type summaryEvent struct {
 	Event  string `json:"event"`
 	Status int    `json:"status"`
 	tally
-	Workspaces []tally `json:"workspaces,omitempty"`
+	Members []tally `json:"members,omitempty"`
 }
 
 // findingOf returns the JSON form of the finding d.

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,6 +24,7 @@ import (
 	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/cli"
+	"go.dokimi.dev/eidos/core/plugin"
 )
 
 // coreModule is the module path of the kernel. The command version writes
@@ -46,12 +48,14 @@ type moduleEvent struct {
 // cases read.
 type versionEvent struct {
 	Module     moduleEvent `json:"module"`
+	Contract   int         `json:"contract"`
 	Executable string      `json:"executable"`
-	Workspace  string      `json:"workspace"`
+	Member     string      `json:"member"`
 }
 
-// Version writes the versions of the binary, of eidos and of the plugins of
-// each workspace, and the digests of the composition and of the executable.
+// TestVersion tests the command version, which writes the versions of the
+// binary, of eidos and of the plugins of each workspace, and the digests of
+// the composition and of the executable.
 func TestVersion(t *testing.T) {
 	t.Parallel()
 
@@ -76,8 +80,10 @@ func TestVersion(t *testing.T) {
 			expect.Equal(t, stdout, strings.Join([]string{
 				"module " + info.Main.Path + " " + info.Main.Version,
 				"core " + core,
+				"contract " + strconv.Itoa(plugin.ContractVersion),
 				"cli " + info.Main.Version,
 				"frontend fakefront 1",
+				"annotator " + string(loweringName),
 				"annotator flagger 2",
 				"generator mirror",
 				"backend printer",
@@ -95,11 +101,12 @@ func TestVersion(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdVersion, listed(t), jsonFlag)
 			got := decoded[versionEvent](t, stdout, eventVersion)
 			assert.Length(t, got, 2, "each member has one event")
-			expect.Equal(t, got[0].Workspace, memberSvc, "the first event names the first member")
+			expect.Equal(t, got[0].Member, memberSvc, "the first event names the first member")
 			expect.Equal(t, got[0].Executable, executableDigest(t), "the event has the digest of the executable")
+			expect.Equal(t, got[0].Contract, plugin.ContractVersion, "the event has the contract version of the kernel")
 			expect.Equal(t, got[0].Module, moduleEvent{Path: info.Main.Path, Version: info.Main.Version},
 				"the event has the main module of the binary")
-			expect.Equal(t, got[1].Workspace, memberTool, "the second event names the second member")
+			expect.Equal(t, got[1].Member, memberTool, "the second event names the second member")
 		})
 
 		t.Run("returns StatusUsage for a config error", func(t *testing.T) {
@@ -113,9 +120,10 @@ func TestVersion(t *testing.T) {
 	})
 }
 
-// Version returns StatusFailed for an executable that does not read. The
-// case runs a copy of the test binary as the binary, and removes the copy
-// before version reads it, so it runs alone.
+// TestVersionProcess tests that version returns StatusFailed for an
+// executable that does not read. The case runs a copy of the test binary as
+// the binary, and removes the copy before version reads it, so it runs
+// alone.
 func TestVersionProcess(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not remove the executable of a running process")

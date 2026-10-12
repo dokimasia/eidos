@@ -20,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/declarative"
 )
@@ -51,15 +52,28 @@ const (
 		"outputs:\n    - per: package\n      word: shape\nrules:\n    - on: struct\n      emit: mirror\n"
 )
 
-// stubBackend is the backend of the fixture plan. It does not implement a
-// renderer.
-type stubBackend struct{}
+// stubBackend is the backend of the fixture plan. Its settle keeps every
+// construct and every name, and it declares no policy. The methods of a
+// rendering backend belong to the nil interface that it embeds, so a
+// test that renders through it panics.
+type stubBackend struct{ plugin.Backend }
 
 // Name returns the name of the backend.
 func (stubBackend) Name() plugin.ID { return "stub-printer" }
 
 // Target returns the target of the backend.
 func (stubBackend) Target() plugin.Target { return target }
+
+// Policies returns nil.
+func (stubBackend) Policies() []plugin.PolicySpec { return nil }
+
+// Lower keeps the declaration.
+func (stubBackend) Lower(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }
+
+// Respell returns the name unchanged.
+func (stubBackend) Respell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return name, nil
+}
 
 // stubOptions are the options of the generator of the fixture plan.
 type stubOptions struct {
@@ -296,13 +310,11 @@ func extensible(tb testing.TB, names ...string) *workspace.Builder {
 func stub(tb testing.TB, opts *stubOptions) plugin.Generator {
 	tb.Helper()
 
-	gen, isGenerator := eidos.NewPlugin(genID).
+	return eidos.NewPlugin(genID).
 		Options(opts).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "stub"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
-		Build().(plugin.Generator)
-	assert.True(tb, isGenerator, "an emitter rule lowers to the generator role")
-	return gen
+		Generator()
 }
 
 // plugins returns a document that lists the plugin directory dir in each

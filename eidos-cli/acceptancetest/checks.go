@@ -19,6 +19,7 @@ import (
 
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 )
 
 // The kernel commands that the checks run by name.
@@ -104,10 +105,6 @@ const (
 // lockCaller is the caller in the holder record of the lock that
 // AssertLocked takes.
 const lockCaller = "acceptancetest"
-
-// past is the modification time that AssertIdempotent gives each file
-// before the second run.
-var past = time.Unix(0, 0)
 
 // event is an event of JSON output, with the fields that the checks read.
 type event struct {
@@ -263,41 +260,37 @@ func AssertJSON(tb assert.TB, f Fixture, bin, root string) {
 
 // AssertIdempotent checks that a second run over a copy of the tree of the
 // fixture in root rewrites no file. The second run is cold, so it renders
-// every file again. It reports each file unchanged, and moves no
-// modification time of a file outside the state directory.
+// every file again. It reports each file unchanged, and
+// [workspacetest.AssertRerunUnchanged] checks that it changes no byte and
+// moves no modification time of a file outside the sealed state, the
+// manifest included.
 func AssertIdempotent(tb assert.TB, f Fixture, bin, root string) {
 	tb.Helper()
 
-	state, _ := stateNames(tb, f)
+	stateNames(tb, f)
 	copied(tb, f, root)
 	run := slices.Concat(f.Prefix, []string{runName})
 	got := Exec(tb, bin, root, nil, run...)
 	assert.Equal(tb, got.Status, cli.StatusOK, "the first run exits 0: "+string(got.Stderr))
-	paths := outside(tb, root, state)
-	for _, p := range paths {
-		assert.NoError(tb, os.Chtimes(p, past, past), "the check sets the modification time of "+p)
-	}
-	got = Exec(tb, bin, root, nil, slices.Concat(run, []string{coldFlag, jsonFlag})...)
-	assert.Equal(tb, got.Status, cli.StatusOK, "the second run exits 0: "+string(got.Stdout))
-	rendered := 0
-	for line := range strings.Lines(string(got.Stdout)) {
-		var e event
-		assert.NoError(tb, json.Unmarshal([]byte(line), &e), "each line of the second run is a JSON object: "+line)
-		if e.Event == eventFile {
-			rendered++
-			assert.Equal(tb, e.Action, actionUnchanged, "the second run leaves "+e.Path+" unchanged")
+	workspacetest.AssertRerunUnchanged(tb, root, f.Brand, func() {
+		got = Exec(tb, bin, root, nil, slices.Concat(run, []string{coldFlag, jsonFlag})...)
+		assert.Equal(tb, got.Status, cli.StatusOK, "the second run exits 0: "+string(got.Stdout))
+		rendered := 0
+		for line := range strings.Lines(string(got.Stdout)) {
+			var e event
+			assert.NoError(tb, json.Unmarshal([]byte(line), &e), "each line of the second run is a JSON object: "+line)
+			if e.Event == eventFile {
+				rendered++
+				assert.Equal(tb, e.Action, actionUnchanged, "the second run leaves "+e.Path+" unchanged")
+			}
 		}
-	}
-	assert.NotEqual(tb, rendered, 0, "the second run renders the files of the first run again")
-	for _, p := range paths {
-		info, err := os.Stat(p)
-		assert.NoError(tb, err, "the check reads the modification time of "+p)
-		assert.True(tb, info.ModTime().Equal(past), "the second run moves no modification time of "+p)
-	}
+		assert.NotEqual(tb, rendered, 0, "the second run renders the files of the first run again")
+	})
 }
 
 // AssertCompiles checks that the Compile of the fixture compiles the output
-// of a run over a copy of the tree of the fixture in root.
+// of a run over a copy of the tree of the fixture in root. The Compile runs
+// under the context of tb with the timeout of a process.
 func AssertCompiles(tb assert.TB, f Fixture, bin, root string) {
 	tb.Helper()
 
@@ -305,7 +298,7 @@ func AssertCompiles(tb assert.TB, f Fixture, bin, root string) {
 	copied(tb, f, root)
 	got := Exec(tb, bin, root, nil, slices.Concat(f.Prefix, []string{runName})...)
 	assert.Equal(tb, got.Status, cli.StatusOK, "the run exits 0: "+string(got.Stderr))
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(assert.Context(tb), timeout)
 	defer cancel()
 	assert.NoError(tb, f.Compile(ctx, root), "the generated output compiles")
 }
@@ -347,7 +340,8 @@ func AssertLists(tb assert.TB, f Fixture, bin, root string) {
 
 // AssertLocked checks that a run over a copy of the tree of the fixture in
 // root exits 1 while the check has the lock of the state directory, and
-// that the output of the run has the process ID of the check.
+// that the output of the run has the process ID of the check. The check
+// takes the lock under the context of tb.
 func AssertLocked(tb assert.TB, f Fixture, bin, root string) {
 	tb.Helper()
 
@@ -355,7 +349,7 @@ func AssertLocked(tb assert.TB, f Fixture, bin, root string) {
 	l, err := ledger.OpenDir(root, f.Brand)
 	assert.NoError(tb, err, "the state directory of the copy of the tree opens")
 	host, _ := os.Hostname()
-	release, err := l.Lock(context.Background(), ledger.Holder{
+	release, err := l.Lock(assert.Context(tb), ledger.Holder{
 		PID: os.Getpid(), Host: host, Caller: lockCaller, Since: time.Now(),
 	})
 	assert.NoError(tb, err, "the check takes the lock of the state directory")
@@ -386,25 +380,4 @@ func stateNames(tb assert.TB, f Fixture) (string, string) {
 	assert.True(tb, f.Brand.Valid(), "the fixture has a valid brand")
 	state := ledger.StateDir(f.Brand)
 	return state, state + configExt
-}
-
-// outside returns the path of each regular file under root, except the
-// files of the state directory state in root. It stops the check when root
-// does not walk.
-func outside(tb assert.TB, root, state string) []string {
-	tb.Helper()
-
-	skipped := filepath.Join(root, state)
-	var paths []string
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if p == skipped {
-			return filepath.SkipDir
-		}
-		if err == nil && d.Type().IsRegular() {
-			paths = append(paths, p)
-		}
-		return err
-	})
-	assert.NoError(tb, err, "the files under "+root+" walk")
-	return paths
 }

@@ -20,14 +20,17 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The parts that the described composition adds to the fixture: an
-// annotator that stamps a flag on each struct, the plan bindings with its
-// generator, which depends on the plan of the mirror, and a check that reads
-// the plan of the mirror.
+// The parts that the described composition adds to the fixture. They are
+// an annotator that stamps a flag on each struct, the plan bindings with
+// its generator, which depends on the plan of the mirror, and a check that
+// reads the plan of the mirror. loweringName is the name of the lowering
+// entry of the target text, which the workspace adds before every
+// annotator.
 const (
 	flaggerName  plugin.ID    = "flagger"
 	binderName   plugin.ID    = "binder"
 	listerName   plugin.ID    = "lister"
+	loweringName plugin.ID    = "text-lowering"
 	bindingsPlan              = "bindings"
 	flagKey      meta.KeyName = "cli.flag"
 )
@@ -72,10 +75,11 @@ func (lister) Check(ctx *plugin.CheckContext) error {
 // memberEvent is an event of JSON output, with the member of a list that the
 // event is about.
 type memberEvent struct {
-	Workspace string `json:"workspace"`
+	Member string `json:"member"`
 }
 
-// Plan writes the composition of each workspace and runs nothing.
+// TestPlan tests the command plan, which writes the composition of each
+// workspace and runs nothing.
 func TestPlan(t *testing.T) {
 	t.Parallel()
 
@@ -90,7 +94,8 @@ func TestPlan(t *testing.T) {
 			expect.Equal(t, status, cli.StatusOK, "plan succeeds")
 			expect.Equal(t, stdout,
 				"frontend fakefront 1\n"+
-					"annotator 1 flagger 2\n"+
+					"annotator 1 "+string(loweringName)+"\n"+
+					"annotator 2 flagger 2\n"+
 					"plan mirrors: target text, backend printer, commit order 1\n"+
 					"  sources: every package\n"+
 					"  generator 2 mirror\n"+
@@ -112,8 +117,10 @@ func TestPlan(t *testing.T) {
 			expect.That(t, stdout).
 				Contains(`{"event":"component","role":"frontend","name":"fakefront","version":"1"}`+"\n",
 					"the frontend has its version").
-				Contains(`{"event":"component","role":"annotator","name":"flagger","version":"2","bucket":1}`+"\n",
-					"the annotator has its bucket and its version").
+				Contains(`{"event":"component","role":"annotator","name":"`+string(loweringName)+`","turn":1}`+"\n",
+					"the lowering entry has the first turn and no version").
+				Contains(`{"event":"component","role":"annotator","name":"flagger","version":"2","turn":2}`+"\n",
+					"the annotator has its turn and its version").
 				Contains(`{"event":"component","role":"check","name":"lister","reads":["mirrors"]}`+"\n",
 					"the check has the plans that it reads")
 		})
@@ -123,11 +130,11 @@ func TestPlan(t *testing.T) {
 
 			_, stdout, _ := invoke(t, described, cmdPlan, workspaceDir(t, files.Tree{}), jsonFlag)
 			expect.That(t, stdout).
-				Contains(`{"event":"plan","name":"mirrors","order":1,"sources":{},"generate":[{"name":"mirror","bucket":2}],`+
+				Contains(`{"event":"plan","name":"mirrors","order":1,"sources":{},"generate":[{"name":"mirror","turn":2}],`+
 					`"backend":{"name":"printer"},"target":"text","layout":{"policy":"inherit"}}`+"\n",
 					"the plan of the mirror commits first").
 				Contains(`{"event":"plan","name":"bindings","order":2,"sources":{},"dependsOn":["mirrors"],`+
-					`"generate":[{"name":"binder","version":"3","bucket":1}],`+
+					`"generate":[{"name":"binder","version":"3","turn":1}],`+
 					`"backend":{"name":"printer"},"target":"text","layout":{"policy":"inherit"}}`+"\n",
 					"the plan bindings depends on the plan of the mirror")
 		})
@@ -151,7 +158,7 @@ func TestPlan(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdPlan, root, jsonFlag)
 			assert.Contains(t, stdout,
 				`"sources":{"lang":"fake","packages":["./svc/..."],"module":"example.test/svc"},`+
-					`"generate":[{"name":"mirror","bucket":1}],"backend":{"name":"printer"},"target":"text",`+
+					`"generate":[{"name":"mirror","turn":1}],"backend":{"name":"printer"},"target":"text",`+
 					`"layout":{"policy":"centralised","dir":"gen","importBase":"example.test/gen"}}`+"\n",
 				"the event has the refined fields")
 		})
@@ -178,7 +185,7 @@ func TestPlan(t *testing.T) {
 
 			_, stdout, _ := invoke(t, compose, cmdPlan, listed(t), jsonFlag)
 			assert.Equal(t, decoded[memberEvent](t, stdout, eventPlan),
-				[]memberEvent{{Workspace: memberSvc}, {Workspace: memberTool}},
+				[]memberEvent{{Member: memberSvc}, {Member: memberTool}},
 				"each member has one plan, in the order of the list")
 		})
 
@@ -215,7 +222,7 @@ func described() *workspace.Builder {
 			eidos.Stamp(st, flag, true)
 			return nil
 		})).
-		Build().(plugin.Annotator)
+		Annotator()
 	binder := eidos.NewPlugin(binderName).
 		Version("3").
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "binding"}).
@@ -223,7 +230,7 @@ func described() *workspace.Builder {
 			e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Bound" + m.Struct.Name})
 			return nil
 		})).
-		Build().(plugin.Generator)
+		Generator()
 	shared := printer()
 	return workspace.New().
 		Brand(brand).

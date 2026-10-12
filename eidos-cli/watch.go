@@ -7,7 +7,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 	"slices"
 	"time"
 
@@ -90,15 +89,12 @@ func (x *invocation) watch(ctx context.Context, interval time.Duration) int {
 			if len(x.args) > 0 && len(patterns[i]) == 0 {
 				continue
 			}
-			stores, err := m.Workspace.Stores(x.stdio.Getenv)
+			in, err := x.input(m, workspace.Input{Patterns: patterns[i]})
 			if err != nil {
 				x.r.Error(err)
 				return StatusFailed
 			}
-			report, err := m.Workspace.Run(ctx, workspace.Input{
-				Tree: os.DirFS(m.Root), Stores: stores, Patterns: patterns[i],
-				Strict: x.flags.Strict, Caller: x.caller(),
-			})
+			report, err := m.Workspace.Run(ctx, in)
 			if ctx.Err() != nil {
 				return StatusOK
 			}
@@ -112,7 +108,7 @@ func (x *invocation) watch(ctx context.Context, interval time.Duration) int {
 			}
 			if changes(report) || !now.same(previous[i]) {
 				if m.Name != "" {
-					x.r.Workspace(m)
+					x.r.Member(m)
 				}
 				x.render(report)
 				if failure != nil {

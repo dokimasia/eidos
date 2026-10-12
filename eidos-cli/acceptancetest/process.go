@@ -65,13 +65,13 @@ func Build(tb testing.TB, main string) string {
 // the environment of the test process, because a frontend locates its
 // stores through the environment, such as the JDK of the Java frontend
 // through JAVA_HOME. Each variable of env, in the form name=value, replaces
-// the inherited variable of its name. Exec kills a process that runs longer
-// than two minutes, and stops the check for it and for a process that does
-// not start.
+// the inherited variable of its name. Exec runs the process under the
+// context of tb, kills a process that runs longer than two minutes, and
+// stops the check for it and for a process that does not start.
 func Exec(tb assert.TB, bin, dir string, env []string, args ...string) Result {
 	tb.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(assert.Context(tb), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir

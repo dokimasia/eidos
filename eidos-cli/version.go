@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -42,7 +44,10 @@ type moduleOf struct {
 type versionOf struct {
 	Module moduleOf `json:"module"`
 	Core   string   `json:"core"`
-	CLI    string   `json:"cli"`
+	// Contract is the contract version of the kernel,
+	// [plugin.ContractVersion].
+	Contract int    `json:"contract"`
+	CLI      string `json:"cli"`
 	// Plugins are the plugins of the composition, each once.
 	Plugins []component `json:"plugins"`
 	// Composition is the SHA-256 of the fingerprint of the composition.
@@ -52,8 +57,8 @@ type versionOf struct {
 }
 
 // versionCommand returns the command version, which prints the versions of
-// the binary, of eidos and of the plugins, and the digests of the
-// composition and of the executable.
+// the binary, of eidos and of the plugins, the contract version of the
+// kernel, and the digests of the composition and of the executable.
 func versionCommand(compose Compose) *kernel {
 	return &kernel{
 		name:     "version",
@@ -82,7 +87,7 @@ func (x *invocation) version() int {
 		x.r.Error(err)
 		return StatusFailed
 	}
-	v := versionOf{Executable: exe}
+	v := versionOf{Executable: exe, Contract: plugin.ContractVersion}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		versions := map[string]string{info.Main.Path: info.Main.Version}
 		for _, d := range info.Deps {
@@ -93,7 +98,7 @@ func (x *invocation) version() int {
 	}
 	for _, m := range found.members {
 		if m.Name != "" {
-			x.r.Workspace(m)
+			x.r.Member(m)
 		}
 		d := m.Workspace.Describe()
 		sum := sha256.Sum256(d.Fingerprint)
@@ -102,6 +107,7 @@ func (x *invocation) version() int {
 		lines := []string{
 			"module " + v.Module.Path + " " + v.Module.Version,
 			"core " + v.Core,
+			"contract " + strconv.Itoa(v.Contract),
 			"cli " + v.CLI,
 		}
 		for _, p := range v.Plugins {

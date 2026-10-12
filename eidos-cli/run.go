@@ -82,7 +82,7 @@ func (x *invocation) runEach(ctx context.Context, in workspace.Input) int {
 			continue
 		}
 		if m.Name != "" {
-			x.r.Workspace(m)
+			x.r.Member(m)
 		}
 		in.Patterns = patterns[i]
 		status = max(status, x.runOnce(ctx, m, in))
@@ -91,18 +91,16 @@ func (x *invocation) runEach(ctx context.Context, in workspace.Input) int {
 }
 
 // runOnce runs the workspace of m with the input in, and renders the
-// report. It sets the tree, the stores, the strict mode and the caller of
-// the input.
+// report.
 //
 // runOnce returns [StatusUsage] for an input that the run refuses, and
 // [StatusFailed] for an error of the stores or of the run.
 func (x *invocation) runOnce(ctx context.Context, m Member, in workspace.Input) int {
-	stores, err := m.Workspace.Stores(x.stdio.Getenv)
+	in, err := x.input(m, in)
 	if err != nil {
 		x.r.Error(err)
 		return StatusFailed
 	}
-	in.Tree, in.Stores, in.Strict, in.Caller = os.DirFS(m.Root), stores, x.flags.Strict, x.caller()
 	report, err := m.Workspace.Run(ctx, in)
 	if report == nil {
 		return x.usage(err)
@@ -115,6 +113,20 @@ func (x *invocation) runOnce(ctx context.Context, m Member, in workspace.Input) 
 		x.r.Error(failure)
 	}
 	return StatusFailed
+}
+
+// input completes the input of a run of the workspace of m. It sets the
+// tree at the member's root, the stores, the strict mode and the caller.
+// run, watch and doctor run each workspace with it.
+//
+// Error modes: input returns the error of the stores.
+func (x *invocation) input(m Member, in workspace.Input) (workspace.Input, error) {
+	stores, err := m.Workspace.Stores(x.stdio.Getenv)
+	if err != nil {
+		return in, err
+	}
+	in.Tree, in.Stores, in.Strict, in.Caller = os.DirFS(m.Root), stores, x.flags.Strict, x.caller()
+	return in, nil
 }
 
 // render renders the findings of a run, the changes and the outcome of

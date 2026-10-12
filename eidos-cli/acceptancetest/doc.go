@@ -22,7 +22,8 @@
 //   - [AssertDiscovery] checks the search for the config file.
 //   - [AssertJSON] checks the JSON output of each kernel command except
 //     watch.
-//   - [AssertIdempotent] checks that a second run rewrites no file.
+//   - [AssertIdempotent] checks that a second run rewrites no file, through
+//     the rerun check of the workspace kit.
 //   - [AssertCompiles] checks that the generated output compiles.
 //   - [AssertLists] checks lists of workspaces.
 //   - [AssertLocked] checks a run while another process has the lock.
@@ -30,12 +31,12 @@
 // # Processes
 //
 // [Build] compiles the binary with the go command into a temporary
-// directory of the test, and [Exec] runs it under an environment of PATH,
-// HOME and the variables that a check adds. Exec kills a process after two
-// minutes.
+// directory of the test, and [Exec] runs it with the environment of the
+// test process and the variables that a check adds. Exec runs a process
+// under the context of the test, and kills it after two minutes.
 //
 // # Dependency position
 //
-// acceptancetest imports cli, core/ledger, core/output, the assert module
-// and the Go stdlib.
+// acceptancetest imports cli, core/ledger, core/output,
+// core/workspace/workspacetest, the assert module and the Go stdlib.
 package acceptancetest

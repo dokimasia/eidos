@@ -96,7 +96,7 @@ var suppressing = "+diag off=" + noted.String() + "\n"
 // The lines of text output for the error of the mirror on the struct
 // Broken, and for the error of the locator of the failing composition.
 var (
-	brokenError = `error: workspace: plan "mirrors": generator mirror in bucket 1: eidos: mirror rule 0: ` +
+	brokenError = `error: workspace: plan "mirrors": generator mirror in turn 1: eidos: mirror rule 0: ` +
 		errBroken.Error() + "\n"
 	locateError = "error: workspace: frontend locator: " + errLocate.Error() + "\n"
 )
@@ -107,12 +107,12 @@ var failing = locatingCompose(func(func(string) string) (map[string]fs.FS, error
 
 // fileEvent is a file event of JSON output.
 type fileEvent struct {
-	Path      string `json:"path"`
-	Plan      string `json:"plan"`
-	Action    string `json:"action"`
-	Found     string `json:"found"`
-	Hash      string `json:"hash"`
-	Workspace string `json:"workspace"`
+	Path   string `json:"path"`
+	Plan   string `json:"plan"`
+	Action string `json:"action"`
+	Found  string `json:"found"`
+	Hash   string `json:"hash"`
+	Member string `json:"member"`
 }
 
 // outcomeEvent is an outcome event of JSON output.
@@ -512,9 +512,9 @@ func TestRun(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdRun, listed(t), jsonFlag)
 			got := decoded[fileEvent](t, stdout, eventFile)
 			assert.Length(t, got, 2, "each member creates one file")
-			expect.Equal(t, got[0].Workspace, memberSvc, "the first event names the first member")
+			expect.Equal(t, got[0].Member, memberSvc, "the first event names the first member")
 			expect.Equal(t, got[0].Path, "mirror.txt", "the path is relative to the root of the member")
-			expect.Equal(t, got[1].Workspace, memberTool, "the second event names the second member")
+			expect.Equal(t, got[1].Member, memberTool, "the second event names the second member")
 		})
 
 		t.Run("puts the name of the member before each path in text output", func(t *testing.T) {
@@ -532,7 +532,7 @@ func TestRun(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdRun, root, jsonFlag, memberTool)
 			got := decoded[fileEvent](t, stdout, eventFile)
 			assert.Length(t, got, 1, "the run of tools alone creates one file")
-			expect.Equal(t, got[0].Workspace, memberTool, "the event names the member of the pattern")
+			expect.Equal(t, got[0].Member, memberTool, "the event names the member of the pattern")
 			files.Absent(t, filepath.Join(root, "svc", "mirror.txt"), "the other member does not run")
 		})
 

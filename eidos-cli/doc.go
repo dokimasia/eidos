@@ -14,7 +14,8 @@
 //
 // A command of the binary itself reads its workspaces with [Open] and
 // renders its output through [Begin]. [Flags] are the flags that every
-// command accepts.
+// command accepts. [Configure] applies the config file of one root to a
+// composition, so a test runs the composition that the binary runs.
 //
 // # Exit statuses
 //

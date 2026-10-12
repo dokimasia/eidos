@@ -217,7 +217,7 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, _, stderr := rendered(t, text, nil, false)
-			r.Workspace(member)
+			r.Member(member)
 			r.Report(finding)
 			assert.Equal(t, stderr.String(),
 				"platform/svc/store.zz:3:2: error "+code+": Store has no spelling (mirror)\n"+
@@ -251,9 +251,9 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, stdout, _ := rendered(t, jsonOutput, nil, false)
-			r.Workspace(member)
+			r.Member(member)
 			r.Report(finding)
-			assert.HasSuffix(t, after(stdout), `,"workspace":"platform"}`+"\n", "the event names the member")
+			assert.HasSuffix(t, after(stdout), `,"member":"platform"}`+"\n", "the event names the member")
 		})
 	})
 
@@ -300,9 +300,9 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, stdout, _ := rendered(t, jsonOutput, nil, false)
-			r.Workspace(member)
+			r.Member(member)
 			r.Event("file", file{Path: "svc/mirror.txt"}, "")
-			assert.Equal(t, after(stdout), `{"event":"file","workspace":"platform","path":"svc/mirror.txt"}`+"\n",
+			assert.Equal(t, after(stdout), `{"event":"file","member":"platform","path":"svc/mirror.txt"}`+"\n",
 				"the event names the member")
 		})
 
@@ -380,10 +380,10 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, stdout, _ := rendered(t, jsonOutput, nil, false)
-			r.Workspace(member)
+			r.Member(member)
 			r.Error(errors.New("cli_test: the fault"))
 			assert.Equal(t, after(stdout),
-				`{"event":"error","msg":"cli_test: the fault","usage":false,"workspace":"platform"}`+"\n",
+				`{"event":"error","msg":"cli_test: the fault","usage":false,"member":"platform"}`+"\n",
 				"the event names the member")
 		})
 	})
@@ -411,15 +411,15 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, stdout, _ := rendered(t, jsonOutput, nil, false)
-			r.Workspace(cli.Member{Name: "platform"})
+			r.Member(cli.Member{Name: "platform"})
 			r.Report(finding)
-			r.Workspace(cli.Member{Name: "tools/gen"})
+			r.Member(cli.Member{Name: "tools/gen"})
 			r.Report(warning)
 			r.End(cli.StatusFailed)
 			assert.HasSuffix(t, stdout.String(), `{"event":"summary","status":1,`+noFiles+`,`+noPlans+
-				`,"errors":1,"warnings":1,"infos":0,"workspaces":[`+
-				`{"workspace":"platform",`+noFiles+`,`+noPlans+`,"errors":1,"warnings":0,"infos":0},`+
-				`{"workspace":"tools/gen",`+noFiles+`,`+noPlans+`,"errors":0,"warnings":1,"infos":0}]}`+"\n",
+				`,"errors":1,"warnings":1,"infos":0,"members":[`+
+				`{"member":"platform",`+noFiles+`,`+noPlans+`,"errors":1,"warnings":0,"infos":0},`+
+				`{"member":"tools/gen",`+noFiles+`,`+noPlans+`,"errors":0,"warnings":1,"infos":0}]}`+"\n",
 				"the summary has the totals and the counts of each member")
 		})
 
@@ -427,12 +427,12 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, stdout, _ := rendered(t, jsonOutput, nil, false)
-			r.Workspace(cli.Member{Name: "platform"})
+			r.Member(cli.Member{Name: "platform"})
 			r.Report(finding)
-			r.Workspace(cli.Member{Name: "platform"})
+			r.Member(cli.Member{Name: "platform"})
 			r.Report(finding)
 			r.End(cli.StatusFailed)
-			assert.HasSuffix(t, stdout.String(), `"workspaces":[{"workspace":"platform",`+noFiles+`,`+noPlans+
+			assert.HasSuffix(t, stdout.String(), `"members":[{"member":"platform",`+noFiles+`,`+noPlans+
 				`,"errors":2,"warnings":0,"infos":0}]}`+"\n",
 				"the summary has one count of the member")
 		})

@@ -420,7 +420,7 @@ func mirror() plugin.Generator {
 			e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name})
 			return nil
 		})).
-		Build().(plugin.Generator)
+		Generator()
 }
 
 // printer returns the backend of the fixture plans. It renders each struct

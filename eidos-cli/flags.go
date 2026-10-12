@@ -19,27 +19,27 @@ const (
 )
 
 // Format is the output format that --format selects. The zero Format is
-// text.
+// FormatText.
 type Format uint8
 
 const (
 	// FormatText renders text for a person.
-	FormatText Format = 1
+	FormatText Format = 0
 	// FormatJSON renders one JSON event per line under the versioned schema.
-	FormatJSON Format = 2
+	FormatJSON Format = 1
 )
 
 var _ flag.Value = (*Format)(nil)
 
-// Valid reports whether f is the zero Format or one of the two formats.
+// Valid reports whether f is one of the two formats.
 func (f Format) Valid() bool { return f <= FormatJSON }
 
-// String returns the name of the format: text for the zero Format and for
-// FormatText, and json for FormatJSON. For a value outside the formats, it
-// returns the number in the form Format(n).
+// String returns the name of the format: text for FormatText and json for
+// FormatJSON. For a value outside the formats, it returns the number in
+// the form Format(n).
 func (f Format) String() string {
 	switch f {
-	case 0, FormatText:
+	case FormatText:
 		return "text"
 	case FormatJSON:
 		return "json"

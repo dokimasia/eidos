@@ -25,13 +25,13 @@ const (
 	roleCheck      = "check"
 )
 
-// component is the JSON form of one plugin of a composition. Bucket is 0
+// component is the JSON form of one plugin of a composition. Turn is 0
 // for a plugin outside a schedule, such as a frontend.
 type component struct {
 	Role    string   `json:"role,omitempty"`
 	Name    string   `json:"name"`
 	Version string   `json:"version,omitempty"`
-	Bucket  int      `json:"bucket,omitempty"`
+	Turn    int      `json:"turn,omitempty"`
 	Reads   []string `json:"reads,omitempty"`
 }
 
@@ -90,7 +90,7 @@ func (x *invocation) plan() int {
 	}
 	for _, m := range found.members {
 		if m.Name != "" {
-			x.r.Workspace(m)
+			x.r.Member(m)
 		}
 		d := m.Workspace.Describe()
 		for _, c := range d.Frontends {
@@ -113,8 +113,8 @@ func (x *invocation) plan() int {
 // are the plans that a check reads.
 func (x *invocation) component(role string, c workspace.Component, reads []string) {
 	text := role + " " + string(c.Name)
-	if c.Bucket > 0 {
-		text = fmt.Sprintf("%s %d %s", role, c.Bucket, c.Name)
+	if c.Turn > 0 {
+		text = fmt.Sprintf("%s %d %s", role, c.Turn, c.Name)
 	}
 	if c.Version != "" {
 		text += " " + c.Version
@@ -123,7 +123,7 @@ func (x *invocation) component(role string, c workspace.Component, reads []strin
 		text += ": reads " + strings.Join(reads, ", ")
 	}
 	x.r.Event(eventComponent, &component{
-		Role: role, Name: string(c.Name), Version: c.Version, Bucket: c.Bucket, Reads: reads,
+		Role: role, Name: string(c.Name), Version: c.Version, Turn: c.Turn, Reads: reads,
 	}, text)
 }
 
@@ -144,8 +144,8 @@ func (x *invocation) planEvent(p workspace.PlanDescription, order int) {
 		lines = append(lines, "  depends on: "+strings.Join(p.DependsOn, ", "))
 	}
 	for _, g := range p.Generate {
-		generate = append(generate, component{Name: string(g.Name), Version: g.Version, Bucket: g.Bucket})
-		line := fmt.Sprintf("  generator %d %s", g.Bucket, g.Name)
+		generate = append(generate, component{Name: string(g.Name), Version: g.Version, Turn: g.Turn})
+		line := fmt.Sprintf("  generator %d %s", g.Turn, g.Name)
 		if g.Version != "" {
 			line += " " + g.Version
 		}

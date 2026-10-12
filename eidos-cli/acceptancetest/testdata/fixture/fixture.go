@@ -116,7 +116,7 @@ func composed(name func(string) string) *workspace.Builder {
 			e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name(m.Struct.Name)})
 			return nil
 		})).
-		Build().(plugin.Generator)
+		Generator()
 	coverage := map[symbol.Fact]render.Verdict{}
 	for _, f := range symbol.Facts() {
 		coverage[f] = render.Renders

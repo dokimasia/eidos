@@ -56,10 +56,10 @@ type explainedFileEvent struct {
 	Plan         string       `json:"plan"`
 	Plugins      []string     `json:"plugins"`
 	Contributors []matchEvent `json:"contributors"`
-	Workspace    string       `json:"workspace"`
+	Member       string       `json:"member"`
 }
 
-// readEvent is one read of a record or of a claim in JSON output.
+// readEvent is one read of an execution or of a claim in JSON output.
 type readEvent struct {
 	Grain   string `json:"grain"`
 	Subject string `json:"subject"`
@@ -74,22 +74,22 @@ type claimEvent struct {
 	Value     any         `json:"value"`
 	Winner    bool        `json:"winner"`
 	Authority string      `json:"authority"`
-	Bucket    int         `json:"bucket"`
+	Turn      int         `json:"turn"`
 	Plugin    string      `json:"plugin"`
 	Pos       string      `json:"pos"`
 	Derived   []readEvent `json:"derived"`
 }
 
-// recordEvent is an explain.record event of JSON output.
-type recordEvent struct {
+// executionEvent is an explain.execution event of JSON output.
+type executionEvent struct {
 	Kind     string         `json:"kind"`
 	Check    string         `json:"check"`
 	Findings []findingEvent `json:"findings"`
 	Reads    []readEvent    `json:"reads"`
 }
 
-// Explain writes what the last run recorded about a target, and runs
-// nothing.
+// TestExplain tests the command explain, which writes what the last run
+// recorded about a target and runs nothing.
 func TestExplain(t *testing.T) {
 	t.Parallel()
 
@@ -117,12 +117,12 @@ func TestExplain(t *testing.T) {
 			}}, "the invocation of the mirror on the store contributed to the file")
 		})
 
-		t.Run("writes the records of the group and of the contributors of a file", func(t *testing.T) {
+		t.Run("writes the group and the contributors of a file", func(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), mirrorPath, jsonFlag)
 			assert.Equal(t, kinds(t, stdout),
-				[]string{workspace.RecordGroup.String(), workspace.RecordInvocation.String()},
+				[]string{workspace.ExecutionGroup.String(), workspace.ExecutionInvocation.String()},
 				"the group comes before its contributor")
 		})
 
@@ -130,30 +130,37 @@ func TestExplain(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), storeTarget, jsonFlag)
-			assert.Equal(t, decoded[claimEvent](t, stdout, eventExplainClaim), []claimEvent{{
-				Key: string(flagKey), Subject: storeTarget, Value: true, Winner: true,
-				Authority: meta.AuthorityPlugin.String(), Bucket: 1, Plugin: string(flaggerName),
-				Derived: []readEvent{{Subject: storeTarget, Key: string(flagKey)}},
-			}}, "the claim of the flagger derives from its read of the flag")
+			assert.Equal(t, decoded[claimEvent](t, stdout, eventExplainClaim), []claimEvent{
+				{
+					Key: string(target.NameKey()), Subject: storeTarget, Value: "Store", Winner: true,
+					Authority: meta.AuthorityPlugin.String(), Turn: 1, Plugin: string(loweringName),
+					Derived: []readEvent{{Subject: storeTarget}},
+				},
+				{
+					Key: string(flagKey), Subject: storeTarget, Value: true, Winner: true,
+					Authority: meta.AuthorityPlugin.String(), Turn: 2, Plugin: string(flaggerName),
+					Derived: []readEvent{{Subject: storeTarget, Key: string(flagKey)}},
+				},
+			}, "the lowering entry claims the name of the store, and the flagger claims the flag that it read")
 		})
 
-		t.Run("writes the records that read a declaration", func(t *testing.T) {
+		t.Run("writes the executions that read a declaration", func(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), storeTarget, jsonFlag)
 			expect.That(t, kinds(t, stdout)).
-				Contains(workspace.RecordCheck.String(), "the lister looked the store up").
-				Contains(workspace.RecordInvocation.String(), "the plugins ran on the store")
+				Contains(workspace.ExecutionCheck.String(), "the lister looked the store up").
+				Contains(workspace.ExecutionInvocation.String(), "the plugins ran on the store")
 		})
 
 		t.Run("writes the kind of a read of a kind", func(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), storeTarget, jsonFlag)
-			records := decoded[recordEvent](t, stdout, eventExplainRecord)
-			i := slices.IndexFunc(records, func(r recordEvent) bool { return r.Check == string(listerName) })
-			assert.NotEqual(t, i, -1, "the output has the record of the lister")
-			assert.Contains(t, records[i].Reads,
+			executions := decoded[executionEvent](t, stdout, eventExplainExecution)
+			i := slices.IndexFunc(executions, func(r executionEvent) bool { return r.Check == string(listerName) })
+			assert.NotEqual(t, i, -1, "the output has the execution of the lister")
+			assert.Contains(t, executions[i].Reads,
 				readEvent{Grain: workspace.ReadKind.String(), Kind: symbol.KindStruct.String()},
 				"the lister ranged over the structs")
 		})
@@ -170,17 +177,17 @@ func TestExplain(t *testing.T) {
 			expect.False(t, got[1].Winner, "the stamp ranks second")
 		})
 
-		t.Run("writes the records that reported a finding", func(t *testing.T) {
+		t.Run("writes the executions that reported a finding", func(t *testing.T) {
 			t.Parallel()
 
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, noisySource), noisyTarget, jsonFlag)
-			got := decoded[recordEvent](t, stdout, eventExplainRecord)
+			got := decoded[executionEvent](t, stdout, eventExplainExecution)
 			assert.Length(t, got, 1, "the mirror reported the finding")
-			expect.Equal(t, got[0].Kind, workspace.RecordInvocation.String(), "an invocation reported it")
+			expect.Equal(t, got[0].Kind, workspace.ExecutionInvocation.String(), "an invocation reported it")
 			expect.Equal(t, got[0].Findings, []findingEvent{{
 				Code: noted.String(), Severity: diag.SeverityWarning.String(), Pos: "svc/store.zz:2",
 				Msg: "Noisy is noisy", Origin: "mirror",
-			}}, "the record has the finding")
+			}}, "the execution has the finding")
 		})
 
 		t.Run("writes the explanation as text", func(t *testing.T) {
@@ -192,12 +199,12 @@ func TestExplain(t *testing.T) {
 					"  contributor mirror rule 0 fake:svc.Noisy\n  source fake:svc.Noisy\n",
 					"the text has the file and its contributor").
 				Contains("claim cli.flag on fake:svc.Noisy: "+
-					"value dropped, winner true, authority directive, bucket 0, at svc/store.zz:3\n",
+					"value dropped, winner true, authority directive, turn 0, at svc/store.zz:3\n",
 					"the text has the drop").
 				Contains("\n  derived from subject fake:svc.Noisy, key cli.flag\n",
 					"the text has the read that the stamp derives from").
 				Contains("\n  svc/store.zz:2: warning "+noted.String()+": Noisy is noisy (mirror)\n",
-					"the text has the finding of a record").
+					"the text has the finding of an execution").
 				Contains("\n  read declaration of fake:svc.Noisy\n", "the text has the read of a declaration").
 				Contains("\n  read fact cli.flag of fake:svc.Noisy\n", "the text has the read of a fact").
 				Contains("\n  read kind "+symbol.KindStruct.String()+"\n", "the text has the read of a kind")
@@ -233,7 +240,7 @@ func TestExplain(t *testing.T) {
 			_, stdout, _ := invoke(t, compose, cmdExplain, root, "tools/mirror.txt", jsonFlag)
 			got := decoded[explainedFileEvent](t, stdout, eventExplainFile)
 			assert.Length(t, got, 1, "the member tools has the file")
-			expect.Equal(t, got[0].Workspace, memberTool, "the event names the member")
+			expect.Equal(t, got[0].Member, memberTool, "the event names the member")
 			expect.Equal(t, got[0].Path, "mirror.txt", "the path is relative to the root of the member")
 		})
 
@@ -294,14 +301,14 @@ func explained(t *testing.T, src string) string {
 	return root
 }
 
-// kinds returns the kind of each record event of JSON output, in the order
-// of the output.
+// kinds returns the kind of each execution event of JSON output, in the
+// order of the output.
 func kinds(t *testing.T, stdout string) []string {
 	t.Helper()
 
-	records := decoded[recordEvent](t, stdout, eventExplainRecord)
-	out := make([]string, 0, len(records))
-	for _, r := range records {
+	executions := decoded[executionEvent](t, stdout, eventExplainExecution)
+	out := make([]string, 0, len(executions))
+	for _, r := range executions {
 		out = append(out, r.Kind)
 	}
 	return out

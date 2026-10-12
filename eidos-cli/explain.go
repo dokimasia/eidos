@@ -20,10 +20,10 @@ import (
 
 // The events of explain.
 const (
-	eventExplain       = "explain"
-	eventExplainFile   = "explain.file"
-	eventExplainClaim  = "explain.claim"
-	eventExplainRecord = "explain.record"
+	eventExplain          = "explain"
+	eventExplainFile      = "explain.file"
+	eventExplainClaim     = "explain.claim"
+	eventExplainExecution = "explain.execution"
 )
 
 // generationOf is the JSON form of the generation that an explanation
@@ -50,7 +50,8 @@ type unitOf struct {
 	Key     string `json:"key"`
 }
 
-// readOf is the JSON form of one read of a record that Explain identified.
+// readOf is the JSON form of one read of an execution that Explain
+// identified.
 type readOf struct {
 	Grain     string `json:"grain"`
 	Subject   string `json:"subject,omitempty"`
@@ -86,15 +87,15 @@ type explainedClaim struct {
 	Value     any         `json:"value"`
 	Winner    bool        `json:"winner"`
 	Authority string      `json:"authority"`
-	Bucket    int         `json:"bucket"`
+	Turn      int         `json:"turn"`
 	Plugin    string      `json:"plugin"`
 	Pos       string      `json:"pos,omitempty"`
 	Derived   []pointRead `json:"derived,omitempty"`
 }
 
-// explainedRecord is the JSON form of the record of one execution. Match is
-// set for an invocation, and Group for a group.
-type explainedRecord struct {
+// explainedExecution is the JSON form of one execution. Match is set for an
+// invocation, and Group for a group.
+type explainedExecution struct {
 	Kind         string    `json:"kind"`
 	Plan         string    `json:"plan,omitempty"`
 	Match        *matchOf  `json:"match,omitempty"`
@@ -154,7 +155,7 @@ func (x *invocation) explain(ctx context.Context) int {
 		}
 		placed = true
 		if m.Name != "" {
-			x.r.Workspace(m)
+			x.r.Member(m)
 		}
 		explanation, err := m.Workspace.Explain(ctx, t)
 		if err != nil {
@@ -171,7 +172,7 @@ func (x *invocation) explain(ctx context.Context) int {
 }
 
 // explanation renders the generation of an explanation, then each file,
-// each claim and each record.
+// each claim and each execution.
 func (x *invocation) explanation(e *workspace.Explanation) {
 	recorded := e.Recorded.UTC().Format(time.RFC3339)
 	x.r.Event(eventExplain, &generationOf{Generation: e.Generation, Recorded: recorded},
@@ -202,7 +203,7 @@ func (x *invocation) explanation(e *workspace.Explanation) {
 	for _, c := range e.Claims {
 		out := &explainedClaim{
 			Key: string(c.Key), Subject: c.Claim.Subject.String(), Value: c.Value, Winner: c.Winner,
-			Authority: c.Claim.Authority.String(), Bucket: c.Claim.Bucket, Plugin: string(c.Claim.Plugin),
+			Authority: c.Claim.Authority.String(), Turn: c.Claim.Turn, Plugin: string(c.Claim.Plugin),
 			Pos: placeOf(c.Claim.Pos),
 		}
 		value := fmt.Sprint(out.Value)
@@ -212,7 +213,7 @@ func (x *invocation) explanation(e *workspace.Explanation) {
 		lines := make([]string, 0, 1+len(c.Claim.Derived))
 		lines = append(lines, fmt.Sprintf("claim %s on %s: %s", out.Key, out.Subject, fields(
 			"value", value, "winner", strconv.FormatBool(out.Winner), "authority", out.Authority,
-			"plugin", out.Plugin, "bucket", strconv.Itoa(out.Bucket), "at", out.Pos,
+			"plugin", out.Plugin, "turn", strconv.Itoa(out.Turn), "at", out.Pos,
 		)))
 		for _, r := range c.Claim.Derived {
 			read := pointRead{Subject: r.Subject.String(), Key: string(r.Key)}
@@ -221,14 +222,14 @@ func (x *invocation) explanation(e *workspace.Explanation) {
 		}
 		x.r.Event(eventExplainClaim, out, strings.Join(lines, "\n"))
 	}
-	for _, r := range e.Records {
-		x.record(r)
+	for _, r := range e.Executions {
+		x.execution(r)
 	}
 }
 
-// record renders the record of one execution.
-func (x *invocation) record(r workspace.ExplainedRecord) {
-	out := &explainedRecord{
+// execution renders one execution.
+func (x *invocation) execution(r workspace.ExplainedExecution) {
+	out := &explainedExecution{
 		Kind: r.Kind.String(), Plan: r.Plan, Check: string(r.Check), Subject: identityOf(r.Subject),
 		Findings: findingsOf(r.Findings), Unidentified: r.Unidentified,
 	}
@@ -247,7 +248,7 @@ func (x *invocation) record(r workspace.ExplainedRecord) {
 		group = out.Group.Key
 	}
 	lines := make([]string, 0, 1+len(r.Reads))
-	lines = append(lines, fmt.Sprintf("record %s: %s; %d reads, %d unidentified", out.Kind, fields(
+	lines = append(lines, fmt.Sprintf("execution %s: %s; %d reads, %d unidentified", out.Kind, fields(
 		"plan", out.Plan, "match", matchText(out.Match), "check", out.Check, "group", group, "subject", out.Subject,
 	), len(r.Reads), r.Unidentified))
 	for _, read := range r.Reads {
@@ -269,7 +270,7 @@ func (x *invocation) record(r workspace.ExplainedRecord) {
 		}
 		lines = append(lines, line)
 	}
-	x.r.Event(eventExplainRecord, out, strings.Join(append(lines, findingsText(out.Findings)...), "\n"))
+	x.r.Event(eventExplainExecution, out, strings.Join(append(lines, findingsText(out.Findings)...), "\n"))
 }
 
 // relocate rewrites the path of t and the file of its position from the

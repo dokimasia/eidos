@@ -45,21 +45,21 @@ const (
 	intervalFlag = "--interval"
 )
 
-// The events of JSON output that the cases read.
+// These constants are the events of JSON output that the cases read.
 const (
-	eventStart         = "start"
-	eventError         = "error"
-	eventDiag          = "diag"
-	eventFile          = "file"
-	eventOutcome       = "outcome"
-	eventSummary       = "summary"
-	eventComponent     = "component"
-	eventPlan          = "plan"
-	eventVersion       = "version"
-	eventExplain       = "explain"
-	eventExplainFile   = "explain.file"
-	eventExplainClaim  = "explain.claim"
-	eventExplainRecord = "explain.record"
+	eventStart            = "start"
+	eventError            = "error"
+	eventDiag             = "diag"
+	eventFile             = "file"
+	eventOutcome          = "outcome"
+	eventSummary          = "summary"
+	eventComponent        = "component"
+	eventPlan             = "plan"
+	eventVersion          = "version"
+	eventExplain          = "explain"
+	eventExplainFile      = "explain.file"
+	eventExplainClaim     = "explain.claim"
+	eventExplainExecution = "explain.execution"
 )
 
 // kernelNames contains the names of the kernel commands, in the order of
@@ -73,9 +73,9 @@ type header struct {
 
 // errorEvent is an error event of JSON output.
 type errorEvent struct {
-	Msg       string `json:"msg"`
-	Usage     bool   `json:"usage"`
-	Workspace string `json:"workspace"`
+	Msg    string `json:"msg"`
+	Usage  bool   `json:"usage"`
+	Member string `json:"member"`
 }
 
 // summaryEvent is the summary event of JSON output, with the fields that
@@ -86,14 +86,14 @@ type summaryEvent struct {
 }
 
 // findingEvent is a diag event of JSON output, or a finding of an explained
-// record.
+// execution.
 type findingEvent struct {
-	Code      string `json:"code"`
-	Severity  string `json:"severity"`
-	Pos       string `json:"pos"`
-	Msg       string `json:"msg"`
-	Origin    string `json:"origin"`
-	Workspace string `json:"workspace"`
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Pos      string `json:"pos"`
+	Msg      string `json:"msg"`
+	Origin   string `json:"origin"`
+	Member   string `json:"member"`
 }
 
 // Every kernel command parses its flags and its arguments in the same way,

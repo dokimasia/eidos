@@ -6,7 +6,6 @@ package cli
 import (
 	"context"
 	"flag"
-	"os"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -55,9 +54,9 @@ func (x *invocation) doctor(ctx context.Context) int {
 	}
 	for _, m := range found.members {
 		if m.Name != "" {
-			x.r.Workspace(m)
+			x.r.Member(m)
 		}
-		stores, err := m.Workspace.Stores(x.stdio.Getenv)
+		in, err := x.input(m, workspace.Input{Dry: true})
 		if err != nil {
 			x.r.Error(err)
 			status = StatusFailed
@@ -65,9 +64,7 @@ func (x *invocation) doctor(ctx context.Context) int {
 		}
 		// A dry run over a tree without plans or patterns has no input that
 		// the run refuses, so the report is never nil.
-		report, err := m.Workspace.Run(ctx, workspace.Input{
-			Tree: os.DirFS(m.Root), Stores: stores, Dry: true, Strict: x.flags.Strict, Caller: x.caller(),
-		})
+		report, err := m.Workspace.Run(ctx, in)
 		for d := range report.Sink.All() {
 			x.r.report(d, doctored[d.Code])
 		}
