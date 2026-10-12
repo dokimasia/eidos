@@ -10,8 +10,8 @@
 //
 // # Dependency position
 //
-// sdk/plugin imports core/plugin, sdk/diag, sdk/meta, sdk/store
-// and the Go stdlib.
+// sdk/plugin imports core/plugin, sdk/diag, sdk/meta, sdk/node,
+// sdk/position, sdk/store, sdk/symbol and the Go stdlib.
 package plugin
 
 import (
@@ -20,7 +20,10 @@ import (
 	core "go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/meta"
+	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/store"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // NameParam is the param of a target's directive that overrides the
@@ -34,12 +37,12 @@ const NameParam = core.NameParam
 // Target names nothing.
 type Target = core.Target
 
-// Backend is a plan's target role. It names the [Target] the plan
-// renders to. A backend that also implements [Renderer] renders the
-// plan's emit. A plan has exactly one backend, whose target is a
-// registered name. A composition that runs no renderer still
-// validates both, so a plan is whole before anything arrives on
-// disk.
+// Backend renders the files of one target. A plan has exactly one
+// backend, whose target is a registered name, and calls every method of
+// the interface, so a type that implements Backend passes the checks that
+// workspace Build makes on the role. The kit in package backend builds a
+// Backend from declared parts, and an exotic backend implements it
+// directly.
 type Backend = core.Backend
 
 // TypeSpeller is the role of a backend that spells the canonical shape
@@ -94,9 +97,9 @@ type StoreReader = core.StoreReader
 // the first round that returns no unit the load has not loaded.
 type Dependent = core.Dependent
 
-// Cardinality is how many outputs a family produces. The zero
-// value addresses nothing: every declared family states its
-// cardinality, and [Emit.Add] refuses a unit that does not.
+// Cardinality is the number of outputs that a family produces. The zero
+// value addresses nothing. Every declared family states its cardinality,
+// and [Emit.Add] refuses a unit that does not.
 type Cardinality = core.Cardinality
 
 const (
@@ -108,31 +111,39 @@ const (
 	PerPlan = core.PerPlan
 )
 
-// Output declares one file family a generator emits.
+// Output declares one file family that a generator emits.
 //
-// The target spells the join and extension of Word at render, which
-// is why neither appears here: one declaration serves store_stub.go
-// and store.stub.ts alike.
+// The target spells the join and the extension of Word at render, so one
+// declaration serves store_stub.go and store.stub.ts alike.
 type Output = core.Output
 
-// Unit is one accumulated output entity: everything one plugin
-// contributed to one (family, cardinality key) in one phase call.
-// It contains the full routing key, so no consumer re-derives any
-// part of it from the declarations.
+// Unit is one accumulated output entity. It contains everything that one
+// plugin contributed to one family and cardinality key in one phase
+// call. It contains the full routing key, so no consumer derives any
+// part of the key from the declarations again.
 type Unit = core.Unit
 
-// Emit contains one plan's accumulated units, plus a per-kind index
-// over their declarations that is maintained at [Emit.Add]: each
-// unit's tree is walked once when it arrives, so an emit-triggered
-// rule enumerates its matches and not the whole emit graph.
+// Emit contains the accumulated units of one plan, and a per-kind index
+// over their declarations that [Emit.Add] maintains. Add walks the tree
+// of each unit once when it arrives, so an emit-triggered rule
+// enumerates its matches and not the whole emit graph.
 //
-// An Emit is not safe for concurrent use: annotators and generators
-// run sequentially, and a unit arriving mid-enumeration would race
-// the index it is being read from.
+// The store seals every slot of each declaration that [Emit.Add]
+// receives, through [emit.Seal]. Until the settle starts, a direct
+// append into such a slot panics, so a plugin writes into a value of the
+// store through the slot view of its emitter alone. The settle lifts the
+// seal, so the lowering hooks of the backend rewrite the declarations.
+//
+// # Concurrency
+//
+// An Emit is not safe for concurrent use. Annotators and generators run
+// one after another, and a unit that arrives during an enumeration
+// would race the index that the enumeration reads.
 type Emit = core.Emit
 
-// NewEmit returns an empty emit store. It allocates three times: the
-// store, its set of accumulator keys and its map of kinds.
+// NewEmit returns an empty emit store, which seals the declarations that
+// it receives. It allocates three times: the store, its set of
+// accumulator keys and its map of kinds.
 func NewEmit() *Emit {
 	return core.NewEmit()
 }
@@ -263,6 +274,22 @@ type Exporter = core.Exporter
 // imports, returns them in one tier, so two candidates the graph
 // contains report as an ambiguity.
 type Candidates = core.Candidates
+
+// Zip merges the tiers of sources by position: the first tier of each
+// source, then the second tier of each, and so on. The candidates of the
+// sources compete inside a tier, and each source keeps its own order
+// across the tiers. A language whose scope offers names from several
+// sources at once, such as the imports and the declarations of a module,
+// zips them. A merged tier without candidates is nil, and Zip returns nil
+// where no source has a tier.
+//
+// # Allocation contract
+//
+// Zip allocates the list of tiers and each merged tier that has
+// candidates, each once at its final size.
+func Zip(sources ...Candidates) Candidates {
+	return core.Zip(sources...)
+}
 
 // SourceRef names a file without opening it: the
 // workspace-relative path, and the shared inputs whose bytes fold
@@ -589,6 +616,15 @@ type ID = core.ID
 // the composition's roster.
 type Plugin = core.Plugin
 
+// ContractVersion is the version of the contract between the kernel and
+// its components. The contract is the SPI, the authoring API and the
+// formats that cross the boundary of a binary, and a change that breaks a
+// component raises the version. Go links one version of the kernel into a
+// binary, so only what crosses that boundary records the version. The
+// declarative loader refuses a manifest of another version, and a run over
+// a sealed state of another version runs cold.
+const ContractVersion = core.ContractVersion
+
 // Role names one phase role a plugin can hold.
 //
 // Priorities are per role: one shared number cannot place a
@@ -611,8 +647,8 @@ const (
 // The provider exports it as a constant and requirers reference
 // that constant, so a misspelled requirement is a compile error in
 // a typed plugin and a collected fault only for what a manifest
-// spelled. Capability topology orders execution inside one
-// priority bucket.
+// spelled. Capability topology orders the plugins of one
+// priority.
 type Capability = core.Capability
 
 // PolicyKey is the key of one lowering policy of a target. It is the
@@ -673,53 +709,62 @@ func NewPolicy(t Target, specs []PolicySpec, chosen map[PolicyKey]Choice) (Polic
 	return core.NewPolicy(t, specs, chosen)
 }
 
-// DirectiveProvider declares the schemas a plugin owns, for
-// registration at composition.
+// DirectiveProvider declares the schemas of a plugin, which the workspace
+// registers when it composes.
 type DirectiveProvider = core.DirectiveProvider
 
-// KeyProvider registers the plugin's metadata keys at composition.
-// The call runs once per workspace, and the plugin keeps the typed
-// handles it is returned: they are composition constants, the same
-// class as a directive schema, not run state. It takes the
-// registry rather than returning data because registration returns
-// the handles back, which data cannot. Faults are collected by the
-// caller, so the error names what failed rather than stopping the
-// collection.
+// KeyProvider registers the metadata keys of a plugin when the workspace
+// composes. The call runs once for each workspace, and the plugin keeps
+// the typed handles that the registry returns. The handles are constants
+// of the composition, of the same class as a directive schema, and not run
+// state. Keys takes the registry instead of returning data, because the
+// registry returns the handles. The workspace collects the error as a
+// fault, so the error names what failed and the collection continues.
 type KeyProvider = core.KeyProvider
 
-// KeyBinder binds the plugin's predicates on named key handles, the
-// handles with the name of a key of another registrant. The workspace
-// calls BindKeys once, after it seals the key registry and before the
-// first phase call. The message of the error contains the plugin and each
-// key that the registry does not contain under the handle's value type,
-// and the workspace collects the error as a fault of the composition.
+// KeyBinder binds the named key handles of a plugin to the registry of one
+// workspace. BindKeys returns a plugin with the bound ids, and leaves the
+// receiver unchanged, so one built plugin serves any number of workspaces.
+//
+// The workspace calls BindKeys on each annotator and generator that
+// implements it, once, after it seals the key registry and before the
+// first phase call. The workspace schedules the plugin that BindKeys
+// returns, and refuses a returned plugin of another type or another name
+// than the receiver.
+//
+// Error modes: one error for each name that r does not contain under the
+// value type of its handle. The message of each error contains the plugin
+// and the key, and the workspace collects the error as a fault of the
+// composition.
 type KeyBinder = core.KeyBinder
 
-// OutputProvider declares the file families a generator emits.
+// OutputProvider declares the file families that a generator emits.
 type OutputProvider = core.OutputProvider
 
-// PolicyProvider declares the lowering policies that a backend's spoke
-// reads. The workspace resolves them for each plan of the backend, and
-// derives the target's policy keys and the params of the target's
-// directive from them.
+// PolicyProvider declares the lowering policies that the spoke of a
+// backend reads. The workspace resolves them for each plan of the backend,
+// and derives the policy keys of the target and the params of the
+// directive of the target from them.
 type PolicyProvider = core.PolicyProvider
 
-// CapabilityProvider orders a plugin: a priority per role,
-// plus the capability topology inside one priority bucket.
+// CapabilityProvider orders a plugin. It returns a priority for each role,
+// and the capabilities that order the plugins of one priority. The
+// workspace refuses a plugin that implements some of these methods and
+// lacks others, and names the methods that it lacks.
 type CapabilityProvider = core.CapabilityProvider
 
-// OptionsProvider declares a typed options struct: a pointer whose
-// exported fields are the options, whose tags document them, and
-// whose constructed values are the defaults. The composition
-// populates it; the workspace folds it into the composition
-// fingerprint a load keys units by.
+// OptionsProvider declares a typed options struct. Options returns a
+// pointer whose exported fields are the options, whose tags document them,
+// and whose constructed values are the defaults. The workspace writes the
+// values of the config into it, and the composition fingerprint includes
+// it, so a load keys units by its values.
 type OptionsProvider = core.OptionsProvider
 
-// Versioned declares a behavior version. Bump it with any change
-// to what the plugin produces: a frontend's version folds into
-// every unit key, and every version folds into the composition
-// fingerprint, so a stale version serves stale cached work with
-// nothing reporting why.
+// Versioned declares the version of the behaviour of a component. Raise it
+// with every change to what the component produces. The version of a
+// frontend is part of every unit key, and every version is part of the
+// composition fingerprint. A stale version therefore serves stale cached
+// work without a report.
 type Versioned = core.Versioned
 
 // RenderedFile is one rendered output as a value: the routed path and
@@ -803,7 +848,7 @@ type WorkspaceCheck = core.WorkspaceCheck
 // The two read surfaces split by rule: Index is the dispatcher's
 // routing path and records nothing, and Reader is the plugin's
 // tracked path, recording into the phase's read set. Plugin and
-// Bucket are the arbitration rank fields of every stamp made under
+// Turn are the arbitration rank fields of every stamp made under
 // this call.
 type AnnotatorContext = core.AnnotatorContext
 
@@ -821,111 +866,115 @@ type PlanRecord = core.PlanRecord
 // findings, and a read through Index or Facts records nothing.
 type CheckContext = core.CheckContext
 
-// RefusedConstruct reports a lowering hook refusing a declaration:
-// the target declares no idiom for the construct, and the
-// declaration is withheld from render.
+// RefusedConstruct is the code of a lowering hook that refuses a
+// declaration. The target declares no idiom for the construct, and the
+// settle withholds the declaration from the render.
 var RefusedConstruct = core.RefusedConstruct
 
-// RefusedName reports a respell hook refusing a declared name: the
-// target cannot spell it at its visibility, and the declaration is
-// withheld from render, because rendering it under another access
-// would misstate the declaration.
+// RefusedName is the code of a respell hook that refuses a declared
+// name. The target cannot spell the name at its visibility. The settle
+// withholds the declaration from the render, because a render under
+// another access would misstate the declaration.
 var RefusedName = core.RefusedName
 
-// CollidingNames reports two declarations in one scope settling to
-// one name: both keep their emitted names, references to either
-// follow the emitted names, and the finding names what to fix.
+// CollidingNames is the code of two declarations in one scope that
+// settle to one name. Both keep their emitted names, and the references
+// to either follow the emitted names. The finding names the declarations
+// to fix.
 var CollidingNames = core.CollidingNames
 
-// AmbiguousReference reports a bare reference matching declarations
-// whose settled names diverge: the reference is left as written.
+// AmbiguousReference is the code of a bare reference that matches
+// declarations with different settled names. The settle leaves the
+// reference as written.
 var AmbiguousReference = core.AmbiguousReference
 
-// VerbatimParams reports a verbatim body pinning its callable's
-// parameter and result names: the body's text reads them as
-// emitted, so the signature keeps them as emitted too, and one
-// would have respelled differently.
+// VerbatimParams is the code of a verbatim body that pins the parameter
+// and result names of its callable. The text of the body uses the
+// emitted names, so the signature keeps them, and the respell would have
+// changed one of them.
 var VerbatimParams = core.VerbatimParams
 
-// Lower rewrites one declaration into the target's own construct
-// shape: the same fact, the target's declarations. Every returned
-// declaration has the input's origin, and the output states the
-// lowered fact in the target's shape and not in the model's, so a
-// second settle changes nothing. An error is the target refusing
-// the construct.
+// Lower rewrites one declaration into the construct shapes of the
+// target. Every returned declaration has the origin of the input. The
+// output states the lowered fact in the shape of the target and not in
+// the shape of the model, so a second settle changes nothing. An error
+// means that the target refuses the construct.
 //
-// A nil list without an error keeps the declaration unchanged, so
-// the common pass-through spends no allocation. A hook that
-// reshaped the declaration in place returns nil the same way,
-// because the store already contains it.
+// A nil list without an error keeps the declaration unchanged, so the
+// common pass-through allocates nothing. A hook that reshaped the
+// declaration in place returns nil as well, because the store already
+// contains the declaration.
 type Lower = core.Lower
 
-// Lowerer is the provider a backend implements when its target
-// reshapes constructs. A backend without it renders declarations
-// as emitted.
+// Lowerer is the role of a backend that reshapes the constructs of its
+// target. Every [Backend] implements it. A backend whose target keeps
+// every construct returns nil and no error, which keeps the declaration.
 type Lowerer = core.Lowerer
 
-// Respell spells one declared name in the target's own convention.
-// Host is the kind of the declaration a member is declared in,
-// [symbol.KindInvalid] at file level. A kind without visibility
-// passes the zero value. An error means the target cannot spell the
+// Respell spells one declared name in the convention of the target.
+// host is the kind of the declaration that declares a member, and
+// [symbol.KindInvalid] at file level. A kind without visibility passes
+// the zero visibility. An error means that the target cannot spell the
 // name at that visibility.
 type Respell = core.Respell
 
-// Respeller is the provider a backend implements when its target
-// respells declared names. A backend without it renders names as
-// emitted.
+// Respeller is the role of a backend that respells declared names in the
+// convention of its target. Every [Backend] implements it. A backend
+// whose target keeps every name returns the name unchanged.
 type Respeller = core.Respeller
 
-// Settle takes one plan's store through the backend's lowering
-// seams, once, after the schedule and before the render: every
-// declaration lowers into the target's construct shapes, every
-// declared name respells into the target's convention, references
-// follow their declarations, and the per-kind index rebuilds over
-// what remains. The store is marked settled when it returns, and a
-// settled store settles to itself, so a second call changes
-// nothing.
+// Settle takes the store of one plan through the hooks of the backend,
+// once, after the schedule and before the render. Every declaration
+// lowers into the construct shapes of the target, and every declared
+// name respells into the convention of the target. The references follow
+// their declarations, and the per-kind index rebuilds over the
+// declarations that remain. Settle marks the store settled, and a second
+// call on a settled store changes nothing.
 //
 // A declared name takes an override where facts contains one. An
-// override is a value of the target's [Target.NameKey], such as
-// golang.name, on the declaration's origin, written at directive
-// authority or above. The settle reads each override through a point
-// read of the origin's fact. The override replaces the respell hook's
-// spelling for the declaration that renders the origin. The hook spells
-// the emitted name of that declaration the same way as the origin's own
-// name. A file-level declaration renders a nested origin under the
-// origin's flat name, [symbol.Identity.FlatName]. Another declaration
-// with the same origin, such as a mock of an interface, keeps the hook's
-// spelling. The settle withholds a name that the hook refuses, also
-// where the origin has an override. A plugin's stamp on the key is not
-// an override, because the hook spells the target's convention. The
-// settle does not apply an override where the fact store is nil, where
-// the composition did not register the name key, or where the backend
-// has no respell hook.
+// override is a value of the name key of the target, [Target.NameKey],
+// such as golang.name, on the origin of the declaration. A directive or
+// a higher authority writes it. The settle reads each override through
+// a point read of the fact of the origin. The override replaces the
+// spelling of the respell hook for the declaration that renders the
+// origin. The hook spells the emitted name of that declaration in the
+// same way as the name of the origin. A file-level declaration renders
+// a nested origin under the flat name of the origin,
+// [symbol.Identity.FlatName]. Another declaration with the same origin,
+// such as a mock of an interface, keeps the spelling of the hook. The
+// settle withholds a name that the hook refuses, also where the origin
+// has an override. The stamp of a plugin on the key is not an override,
+// because the hook spells the convention of the target. The settle does
+// not apply an override where the fact store is nil, or where the
+// composition did not register the name key.
 //
-// The settle respells the records of a family that claims its files,
-// whose units have a [Unit.Template], so their template reads the
-// target's names. A record declares no name of its file, so the settle
-// checks no record for a collision, and no reference follows a record.
+// The settle respells the records of a family that claims its files.
+// The units of such a family have a [Unit.Template], and the template
+// reads the names of the target. A record declares no name of its file,
+// so the settle checks no record for a collision, and no reference
+// follows a record.
 //
 // The settle records whether a declaration that renders has a type
-// reference whose target is a declaration of another language than the
-// backend's target, which [Emit.Translates] reports.
+// reference to a declaration of another language than the target of the
+// backend. [Emit.Translates] reports the result.
 //
-// Findings attach to the sink under the backend's name: a refused
-// construct or name withholds its declaration, colliding names
-// keep their emitted spellings, and an ambiguous reference is left
-// as written. A returned error is a defect in the backend's own
-// hooks, a lowering that drops its input's origin, and fails the
-// whole plan, not one declaration.
+// The settle reports its findings to the sink under the name of the
+// backend. A refused construct or name withholds its declaration.
+// Colliding names keep their emitted spellings, and the settle leaves an
+// ambiguous reference as written. A returned error is a defect of the
+// hooks of the backend, a lowering that drops the origin of its input.
+// The error fails the whole plan, not one declaration.
+//
+// A nil backend marks the store settled and changes nothing in it.
 //
 // # Allocation contract
 //
-// A backend without a lowering hook and a respell hook settles the
-// store without allocating, because nothing in it changes. Otherwise
 // Settle rebuilds the store's per-kind index, one list per unit and
-// kind, and a respell hook adds the plan of every declared name and the
-// tables the references follow, each sized once to the store.
+// kind. The lowering allocates a new list for each unit in which the
+// hook refuses or replaces a declaration, and nothing for a hook that
+// keeps every declaration. The respell adds the plan of every declared
+// name and the tables that the references follow, each sized once to
+// the store. A nil backend settles the store without allocating.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	return core.Settle(e, b, facts, sink)
 }
@@ -945,10 +994,9 @@ func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 // It also lists the name override of every origin that the unit's
 // declarations render. It leaves out a lookup that the unit's own
 // declarations settle with no entry in others, because the unit
-// generates again whenever its own names change. A backend without a
-// respell hook rewrites no reference, and SettleWith then lists the
-// lookups of the bare type references alone. The errors are the errors
-// of Settle.
+// generates again whenever its own names change. A nil backend rewrites
+// no reference, and SettleWith then lists the lookups of the bare type
+// references alone. The errors are the errors of Settle.
 //
 // # Allocation contract
 //
@@ -961,39 +1009,49 @@ func SettleWith(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink, others N
 	return core.SettleWith(e, b, facts, sink, others)
 }
 
-// ErrStoreAbsent reports a qualified path naming a store the load does
-// not provide. A dependent frontend reads it as that source being off:
-// the composition configured no such tree, which differs from a
-// configured store that lacks a file.
+// ErrStoreAbsent is the error for a qualified path whose store the load
+// does not provide. A dependent frontend reads it as a source that is off.
+// The composition configured no such tree, which differs from a configured
+// store without the file.
 var ErrStoreAbsent = core.ErrStoreAbsent
 
-// StorePath returns the qualified path of a file inside a store: the
-// store's name, "://", and the slash path inside the store, as in
-// "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
+// Absent reports whether err means that a read found nothing to read. That
+// is the case when the file does not exist, or when the load does not
+// provide the store of a qualified path. A frontend that probes for an
+// optional file, such as a manifest of a dependency, reads either error as
+// the absence of the file and every other error as a failed read. Absent
+// allocates nothing.
+func Absent(err error) bool {
+	return core.Absent(err)
+}
+
+// StorePath returns the qualified path of a file inside a store. The path
+// is the name of the store, "://" and the slash path inside the store, as
+// in "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
 // is a qualified path, because [fs.ValidPath] refuses the empty element
-// that "//" spells. StorePath allocates the joined path, one allocation.
+// between the two slashes. StorePath allocates the joined path, one
+// allocation.
 func StorePath(store, path string) string {
 	return core.StorePath(store, path)
 }
 
-// CutStorePath splits a qualified path into its store and the path
-// inside the store, and reports false for a workspace path. The root
-// of a store is the qualified path with nothing after the separator.
-// It allocates nothing, because both parts share the path's bytes.
+// CutStorePath splits a qualified path into its store and the path inside
+// the store, and reports false for a workspace path. The root of a store is
+// the qualified path with nothing after the separator. It allocates
+// nothing, because both parts share the bytes of the path.
 func CutStorePath(qualified string) (store, path string, ok bool) {
 	return core.CutStorePath(qualified)
 }
 
-// ValidStoreName reports whether a name can name a store: it is not
-// empty, and it contains neither the colon nor the slash that a
-// qualified path separates on. It allocates nothing.
+// ValidStoreName reports whether name is a valid store name. A valid name
+// is not empty and contains neither a colon nor a slash, which separate the
+// parts of a qualified path. It allocates nothing.
 func ValidStoreName(name string) bool {
 	return core.ValidStoreName(name)
 }
 
-// StoreFS is a workspace tree with named stores beside it. The load
-// hands every unit a StoreFS, and a unit resolves a qualified path
-// through it.
+// StoreFS is a workspace tree with named stores beside it. The load passes
+// a StoreFS to every unit, and a unit resolves a qualified path through it.
 type StoreFS = core.StoreFS
 
 // StoreLocator is a frontend that locates the stores that its dependency
@@ -1001,10 +1059,20 @@ type StoreFS = core.StoreFS
 // stores of every locator of a composition to a run.
 type StoreLocator = core.StoreLocator
 
-// ReadFile returns the bytes of one file: a workspace path from the
-// tree itself, and a qualified path from the store it names, which the
-// tree provides as a [StoreFS]. A qualified path whose store the tree
-// does not provide returns an error wrapping [ErrStoreAbsent].
+// UserHomeVar returns the name of the environment variable that contains
+// the home directory of the user, by the rule of os.UserHomeDir. The
+// variable is USERPROFILE on Windows, home on Plan 9 and HOME on every other
+// system. A [StoreLocator] reads the home directory through its getenv
+// under this name. Where the variable is unset, the error of the locator
+// contains the name. UserHomeVar allocates nothing.
+func UserHomeVar() string {
+	return core.UserHomeVar()
+}
+
+// ReadFile returns the bytes of one file. It reads a workspace path from
+// the tree itself, and a qualified path from its store, which the tree
+// provides as a [StoreFS]. For a qualified path whose store the tree does
+// not provide, it returns an error that wraps [ErrStoreAbsent].
 //
 // # Allocation contract
 //
@@ -1014,18 +1082,17 @@ func ReadFile(fsys fs.FS, path string) ([]byte, error) {
 	return core.ReadFile(fsys, path)
 }
 
-// ReadDir returns one directory's entries sorted by name, and resolves
-// a qualified path the way [ReadFile] does. The root of a store is its
-// qualified path with nothing after the separator. It allocates what
-// [fs.ReadDir] allocates, and nothing of its own where the store
-// exists.
+// ReadDir returns the entries of one directory sorted by name, and resolves
+// a qualified path as [ReadFile] does. The root of a store is its qualified
+// path with nothing after the separator. It allocates what [fs.ReadDir]
+// allocates, and nothing of its own where the store exists.
 func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	return core.ReadDir(fsys, path)
 }
 
-// Stat returns the stat of one file, and resolves a qualified path the
-// way [ReadFile] does. It allocates what [fs.Stat] allocates, and
-// nothing of its own where the store exists.
+// Stat returns the stat of one file, and resolves a qualified path as
+// [ReadFile] does. It allocates what [fs.Stat] allocates, and nothing of
+// its own where the store exists.
 func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
 	return core.Stat(fsys, path)
 }
@@ -1045,8 +1112,8 @@ const (
 	PhaseAnnotate = core.PhaseAnnotate
 	// PhaseGenerate runs over node subjects, within a plan.
 	PhaseGenerate = core.PhaseGenerate
-	// PhaseEmit runs over emit values earlier buckets produced in
-	// the same plan.
+	// PhaseEmit runs over emit values that plugins of earlier turns
+	// produced in the same plan.
 	PhaseEmit = core.PhaseEmit
 )
 
@@ -1075,81 +1142,113 @@ type CommentSyntax = core.CommentSyntax
 // doc block's continuation lines strip and render the same way.
 type CommentBlock = core.CommentBlock
 
-// SourceUnit is one frontend compilation unit under parse: the only
-// surface a Parse call touches. Bytes enter through Read alone,
-// jailed to the unit's files and their declared shared inputs. The
-// load keys the unit by the digests of those files, so a frontend
-// that reads around Read depends on bytes the key does not cover.
+// Composite returns the reference of a structural form with the spelling
+// and the position of its source. elems are its children in the order of
+// form, such as the key and then the value of a map. A nil child becomes an
+// empty reference at pos, so the form keeps its arity and no consumer reads
+// a nil child. The reference keeps elems as its children, so the caller
+// does not change the slice afterwards.
+//
+// # Allocation contract
+//
+// Composite allocates the reference and one empty reference for each nil
+// child.
+func Composite(spelling string, pos position.Pos, form symbol.TypeForm, elems ...*node.TypeRef) *node.TypeRef {
+	return core.Composite(spelling, pos, form, elems...)
+}
+
+// FuncType returns the reference of a function type with the spelling and
+// the position of its source. Its children are params and then results,
+// and its Split is the index of the first result. A nil child becomes an
+// empty reference at pos, as in [Composite]. A function type without
+// results keeps params as its children, so the caller does not change
+// params afterwards.
+//
+// # Allocation contract
+//
+// FuncType allocates the reference, the joined children of a function
+// type with results, and one empty reference for each nil child.
+func FuncType(spelling string, pos position.Pos, params, results []*node.TypeRef) *node.TypeRef {
+	return core.FuncType(spelling, pos, params, results)
+}
+
+// MaxSyntaxFindings is the number of syntax errors of one file that
+// [SourceUnit.ReportSyntax] reports one by one.
+const MaxSyntaxFindings = core.MaxSyntaxFindings
+
+// SourceUnit is one compilation unit that a frontend parses. A Parse call
+// touches nothing else. Parse reads bytes only through Read, and Read
+// refuses every path outside the files of the unit and their declared
+// shared inputs. The load keys the unit by the digests of those files, so
+// a frontend that reads around Read depends on bytes that the key does not
+// cover.
 type SourceUnit = core.SourceUnit
 
-// NewSourceUnit assembles a unit for the load driver and the
-// conformance suite: the member files, the tree reads resolve in,
-// the depth, the language's comment syntax, the composition's brand
-// the unit's carriers open with, and the sink findings report to
-// under the frontend's origin. An empty brand is a driver defect
-// and panics, because a unit without a brand cannot tell a carrier
-// from a comment.
+// NewSourceUnit builds a unit for the load driver and the conformance
+// suite. files are the members of the unit, and reads resolve in fsys.
+// syntax is the comment syntax of the language, and each carrier of the
+// unit opens with brand. The unit reports its findings to sink under
+// origin. NewSourceUnit panics on an empty brand, because a unit without a
+// brand cannot tell a carrier from a comment.
 func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyntax, brand string, sink *diag.Sink, origin diag.Origin) *SourceUnit {
 	return core.NewSourceUnit(files, fsys, depth, syntax, brand, sink, origin)
 }
 
-// Carrier is one directive payload and its line, marker stripped,
-// ready for the kernel grammar, and the mark it opened with.
+// Carrier is one directive payload without its marker, with its position
+// and its mark. The kernel grammar parses the payload.
 type Carrier = core.Carrier
 
-// Sugar is one marker that a frontend reads from the language's own
-// syntax for metadata, such as a TypeScript decorator, a Rust attribute
-// or a Java annotation.
+// Sugar is one marker that a frontend reads from the language's own syntax
+// for metadata, such as a TypeScript decorator, a Rust attribute or a Java
+// annotation.
 type Sugar = core.Sugar
 
-// CommentParts is one raw comment taken apart three ways: the
-// documentation lines, the carrier lines, and the tool-directive
-// lines, such as go:build, as annotations. The frontend decides what
-// each part means for its language: it filters its configuration
-// lines out of the annotations before attaching anything.
+// CommentParts contains the three parts of one raw comment. Docs are the
+// documentation lines, Carriers are the carrier lines, and Annotations are
+// the tool-directive lines, such as go:build. The frontend decides what
+// each part means for its language. It filters its configuration lines
+// out of the annotations before it attaches anything.
 type CommentParts = core.CommentParts
 
-// CutCarrier splits a clean comment line into the carrier mark it
-// opens with under a brand and the payload that follows, the way
-// [SourceUnit.Comment] reads a carrier line. The marks are brand:
-// and +brand:, which set a directive, and -brand:, which negates
-// one. It reports false for a line that opens no carrier. The marks
-// are the kit's one cross-language convention, so a directive is
-// spelled the same way in every language's comments, and two tools
-// built on the kernel and run in one repository read only their own
-// carriers. It allocates nothing, because the mark and the payload
-// share the line's bytes.
+// CutCarrier splits a clean comment line into its carrier mark under a
+// brand and the payload after it, as [SourceUnit.Comment] does for a
+// carrier line. The marks brand: and +brand: set a directive, and -brand:
+// negates one. CutCarrier reports false for a line that opens no carrier.
+// Every language uses the same marks, so an author writes a directive the
+// same way in the comments of each language. Two tools on the kernel in
+// one repository each read only the carriers of their own brand.
+// CutCarrier allocates nothing, because the mark and the payload share the
+// bytes of the line.
 func CutCarrier(line, brand string) (mark, payload string, ok bool) {
 	return core.CutCarrier(line, brand)
 }
 
-// GraphBuilder is the unit's write handle into the node model. A
-// unit declares as many packages as its bytes do. Two units that
-// contribute one package path merge at the splice, declarations
-// appended in unit order. The splice validates what a unit built and
-// panics on a structural defect, such as an emit-side symbol or a
-// named kind without a name, because a malformed graph found at the
-// resolution step points away from the frontend that built it.
+// GraphBuilder is the write handle of a unit into the node model. A unit
+// declares every package that its files declare. The splice merges two
+// units that contribute the same package path, and appends their
+// declarations in unit order. The splice validates what a unit built and
+// panics on a structural defect, such as an emit-side symbol or a named
+// kind without a name. A malformed graph that the resolution step finds
+// would point away from the frontend that built it.
 type GraphBuilder = core.GraphBuilder
 
-// ScopeRecord pairs one parsed file with its import bindings, in
-// the language's own form. The file is the node the unit built,
-// because canonical identities do not exist until the splice
-// assigns them, and a derivation spelled twice would drift. The
-// kernel derives the identity at the splice and hands the bindings
-// back to that language's Resolve alone.
+// ScopeRecord pairs one parsed file with its import bindings in the form
+// of its language. The file is the node that the unit built, because the
+// splice assigns the canonical identities after the parse. The kernel
+// derives the identity at the splice and passes the bindings only to the
+// Resolve of that language.
 type ScopeRecord = core.ScopeRecord
 
-// Attachment is one raw directive instance on a declaration this
-// unit built. The subject is a pointer for the reason
-// [ScopeRecord]'s file is: the splice resolves it to the assigned
-// identity, so an attachment on a declaration another unit already
-// declared attaches to the identity the splice keeps.
+// Attachment is one raw directive instance on a declaration that this unit
+// built. The subject is a pointer for the same reason as the file of a
+// [ScopeRecord]. The splice resolves it to the assigned identity, so an
+// attachment on a declaration that another unit also declared attaches to
+// the identity that the splice keeps.
 type Attachment = core.Attachment
 
-// StampRecord is one classification stamp on a declaration this
-// unit built: the second raw attachment class, resolved at the
-// splice the way [Attachment] is. The splice sets the stamp's
-// origin and overwrites a frontend's own value, so every stamp is
+// StampRecord is one classification stamp on a declaration that this unit
+// built. It is the second class of raw attachment, and the splice resolves
+// it as it resolves an [Attachment]. The splice sets the origin of the
+// stamp and overwrites the origin that a frontend set, so every stamp is
 // attributed to the frontend that recorded it.
 type StampRecord = core.StampRecord

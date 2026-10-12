@@ -291,6 +291,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("TagEntry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[node.TagEntry](), reflect.TypeFor[core.TagEntry](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("StringTable", func(t *testing.T) {
 		t.Parallel()
 

@@ -471,6 +471,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("GapComputed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.GapComputed, core.GapComputed, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Gap", func(t *testing.T) {
 		t.Parallel()
 
@@ -558,6 +568,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[rules.TagRules](), reflect.TypeFor[core.TagRules](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("WellKnownRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.WellKnownRules](), reflect.TypeFor[core.WellKnownRules](), "the facade aliases the kernel's type")
 		})
 	})
 
@@ -691,6 +711,36 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Resolver", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.Resolver](), reflect.TypeFor[core.Resolver](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("ResolveError", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.ResolveError](), reflect.TypeFor[core.ResolveError](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Resolve", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rules.Resolve), reflect.TypeOf(core.Resolve), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("ScalarClass", func(t *testing.T) {
 		t.Parallel()
 
@@ -818,6 +868,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(rules.IsWellKnown), reflect.TypeOf(core.IsWellKnown), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Substitute", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rules.Substitute), reflect.TypeOf(core.Substitute), "the wrapper has the kernel function's signature")
 		})
 	})
 
@@ -998,6 +1058,26 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[rules.View](), reflect.TypeFor[core.View](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NewView", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rules.NewView), reflect.TypeOf(core.NewView), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Unaliased", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rules.Unaliased), reflect.TypeOf(core.Unaliased), "the wrapper has the kernel function's signature")
 		})
 	})
 }

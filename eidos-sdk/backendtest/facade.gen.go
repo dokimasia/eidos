@@ -10,8 +10,9 @@
 //
 // # Dependency position
 //
-// sdk/backendtest imports core/backend/backendtest, sdk/output,
-// sdk/plugin, sdk/symbol, go.dokimi.dev/assert and the Go stdlib.
+// sdk/backendtest imports core/backend/backendtest, sdk/diag,
+// sdk/output, sdk/plugin, sdk/symbol, go.dokimi.dev/assert and the
+// Go stdlib.
 package backendtest
 
 import (
@@ -20,14 +21,16 @@ import (
 	"go.dokimi.dev/assert"
 
 	core "go.dokimi.dev/eidos/core/backend/backendtest"
+	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The canonical benchmark scale. Every backend measures over the
-// same corpus shape, so two backends' numbers mean one thing and
-// a regression names a code change, never a fixture change.
+// These constants are the canonical benchmark scale. Every backend
+// measures over the same corpus shape, so the numbers of two backends
+// are comparable, and a regression points to a code change and never to
+// a fixture change.
 const (
 	// BenchPackages is the number of packages in the scaled fixture.
 	BenchPackages = core.BenchPackages
@@ -39,10 +42,10 @@ const (
 	BenchDecls = core.BenchDecls
 )
 
-// Budget is what a satellite pins its benchmark to. An allocation
-// count does not move with machine load, so exceeding the ceiling
-// names a real code change. Latency bounds belong beside the pinned
-// baseline gates, where the machine is fixed.
+// Budget is the ceiling of a satellite benchmark. An allocation count
+// does not move with machine load, so a count above the ceiling
+// indicates a real code change. A budget has no latency bound, because
+// latency depends on the machine.
 type Budget = core.Budget
 
 // BenchRender measures one backend over its setup's fixture and
@@ -86,34 +89,34 @@ func ScaledFixture(tb assert.TB, refused map[symbol.Kind]string) *Fixture {
 	return core.ScaledFixture(tb, refused)
 }
 
-// CanonicalFixture returns the kernel's shared emit fixture: one
-// unit per canonical kind, the four body content forms on the
-// functions and again on the struct's member methods, and the
-// template tree the reference form resolves in. The scaffolded body
-// calls a function of another package through a reference expression,
-// so each target qualifies the call and imports its package.
+// CanonicalFixture returns the shared emit fixture of the kernel. The
+// fixture has one unit per canonical kind. The functions and the member
+// methods of the struct each have the four content forms of a body. The
+// fixture also has the template tree in which the reference form
+// resolves. The scaffolded body calls a function of another package
+// through a reference expression, so each target qualifies the call and
+// imports its package.
 //
-// The fixture emits every kind an emit declaration takes at file
-// level, whatever the backend under test spells. Each kind renders,
-// lowers into kinds that render, or reports under
-// [render.RefusedKind] with the reason the backend declares, and
-// [AssertSpeltKinds] fails on any other outcome. A backend that
-// refuses the file-level callables still meets every content form
-// through its struct template's members. Two calls build two
-// isolated fixtures, the way [Setup] requires.
+// The fixture emits every kind that an emit declaration can have at file
+// level, whatever the backend under test supports. Each kind renders,
+// lowers into kinds that render, or reports under [render.RefusedKind]
+// with the reason that the backend declares. [AssertSpeltKinds] fails on
+// any other outcome. A backend that refuses the file-level callables
+// still renders every content form through the members of its struct
+// template. Two calls build two separate fixtures, as [Setup] requires.
 //
-// Each parameterizable kind has a generic sibling beside the plain
-// declaration: a parameter list, one named bound, a reference
-// restating a parameter as an argument, and a method declaring
-// parameters of its own, so a backend's generic spellings render
-// under the same suite. The siblings use nothing beyond what every
-// target spells; variance, defaults and value parameters remain in
-// each satellite's own template tests.
+// Each kind that takes type parameters has a generic sibling beside the
+// plain declaration. The sibling has a parameter list, one named bound,
+// a reference that restates a parameter as an argument, and a method
+// that declares type parameters of its own. The suite therefore renders
+// the generic forms of each backend. The siblings use only what every
+// target can render. The tests of each satellite cover variance,
+// defaults and value parameters.
 //
-// Every declared name spells in the neutral lower camel form, so
-// a backend declaring a respell convention proves it as bytes:
-// one fixture renders row as Row into Go, fetch as fetch into
-// TypeScript and Java, and as fetch into Rust's snake case.
+// Every declared name is in the neutral lower camel case, so a backend
+// with a respell convention proves the convention in its output bytes.
+// The fixture renders row as Row in Go, and fetch as fetch in
+// TypeScript, Java and Rust.
 func CanonicalFixture(tb assert.TB) *Fixture {
 	return core.CanonicalFixture(tb)
 }
@@ -129,43 +132,44 @@ func Files(e *plugin.Emit, s plugin.FileSpeller) []plugin.File {
 	return core.Files(e, s)
 }
 
-// Fixture is a hand-built plan as the renderer sees it: the emit
-// store, the schedule, and the template trees, helpers and
-// override declarations the composition would have handed over.
+// Fixture is a plan that a test builds by hand, in the form that the
+// renderer receives. It has the emit store, the schedule, and the
+// template trees, helpers and override declarations that a composition
+// hands over.
 type Fixture = core.Fixture
 
-// Setup builds the renderer under test with the emit fixture it
-// renders, fresh per call, the way the plugin suite's Setup does:
-// two calls build two isolated fixtures, which is what makes the
-// determinism check honest.
+// Setup builds the backend under test and the emit fixture that it
+// renders, new on each call, as the Setup of the plugin suite does. Two
+// calls build two isolated fixtures, so the determinism check compares
+// two independent renders. A test that needs a backend of its own embeds
+// a kit backend and overrides the methods that it varies.
 type Setup = core.Setup
 
-// AssertStamped renders the fixture and takes every file through
-// the output contract: each one stamps, the body survives byte
-// for byte inside the frame, and the frame verifies whole under
-// the same contract, with the derivation the file declared.
+// AssertStamped renders the fixture and checks every file against the
+// output contract. Each file stamps, the frame contains the body byte
+// for byte, and the frame verifies whole under the same contract with
+// the derivation that the file declares.
 //
-// It is not part of [RunBackendSuite], because a brand is the
-// consumer's to state and the suite's [Setup] states none. A
-// satellite runs this beside the suite with the contract its own
-// binary ships.
+// It is not part of [RunBackendSuite], because the consumer chooses the
+// brand and a [Setup] has none. A satellite runs it beside the suite
+// with the contract of its own binary.
 //
-// Every file reports on its own, so one run names each file the frame
-// refuses. A file that does not stamp, or whose frame does not verify,
-// skips the checks that read the frame.
+// Every file reports on its own, so one run reports each file that the
+// contract refuses. The checks of the frame skip a file that does not
+// stamp or whose frame does not verify.
 func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 	core.AssertStamped(tb, setup, c)
 }
 
-// RunBackendSuite runs the eight checks a render returns as values
-// against a renderer: the fixture is populated, two runs produce
-// byte-identical files, every emit kind in the fixture renders or
-// reports its declared refusal, every body arrives whole, a file's
-// failure reports positioned and attributed while the render
-// continues, the settle preserves the structure, the declared fact
-// coverage matches the refusals, and every member arrives in its
-// host's file. The header and trailer checks are the output
-// contract's, in [AssertStamped].
+// RunBackendSuite runs the nine checks a render returns as values
+// against a renderer: the fixture is populated, an empty store renders
+// no file and no Error, two runs produce byte-identical files, every
+// emit kind in the fixture renders or reports its declared refusal,
+// every body arrives whole, a file's failure reports positioned and
+// attributed while the render continues, the settle preserves the
+// structure, the declared fact coverage matches the refusals, and every
+// member arrives in its host's file. The header and trailer checks are
+// the output contract's, in [AssertStamped].
 func RunBackendSuite(t *testing.T, setup Setup) {
 	core.RunBackendSuite(t, setup)
 }
@@ -173,9 +177,9 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 // AssertRenderedMembers settles one setup's fixture, renders it,
 // and fails on a member declaration missing from the output: each
 // settled field, method and variant name occurs as a whole word in
-// a file that also contains its host's name, or a finding names
-// it. A host template that ranges some member lists and forgets one
-// drops those members with no finding. The kind and fact checks
+// a file that also contains its host's name, or a finding contains
+// it. A host template that ranges some member lists and leaves one out
+// drops those members without a finding. The kind and fact checks
 // never visit a member a template never renders, so this check
 // reads the rendered bytes. It reads only the files that contain
 // the host's name, and a declaration elsewhere that shares a
@@ -186,43 +190,52 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	core.AssertRenderedMembers(tb, setup)
 }
 
-// AssertCoveredFacts checks a backend's declared fact coverage
-// against the render: the declaration is total over the fact set,
-// its exceptions name facts their kind can state, the settled
-// fixture's run reports exactly the refusals the declaration
-// states, and no stated fact meets an undeclared verdict. A
-// declaration of a kind the backend refuses renders nothing, so the
-// check expects no fact of it to report. A renderer declaring no
-// coverage fails: without a declaration the guard is disarmed and
-// every narrowing goes silent, which is the defect class the
-// contract exists to refuse.
+// AssertCoveredFacts checks the declared fact coverage of a backend
+// against the render. The declaration is total over the fact set, its
+// exceptions are facts that their kind can have, the run over the
+// settled fixture reports exactly the refusals and the rejections of the
+// declaration, and no stated fact meets an undeclared verdict. A declaration of a kind
+// that the backend refuses renders nothing, so the check expects no
+// fact of it to report. A backend without a declared coverage fails,
+// because without a declaration the guard is off and every narrowing
+// is silent.
 //
 // The setup's fixture, the declaration, the settle and the render stop
 // the check where they fail, because nothing after them has an input.
-// The declaration's totality, its exceptions and the run's refusals
-// each report on their own, so one run names every way the coverage
-// falls short.
+// The totality of the declaration, its exceptions and the refusals of
+// the run each report on their own, so one run reports every gap of the
+// coverage.
 func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	core.AssertCoveredFacts(tb, setup)
 }
 
-// RenderSettled settles one setup's fixture and renders it once,
-// and fails on an Error other than a declared kind refusal, so a
-// satellite's own convention pins read the rendered bytes without
-// repeating the plumbing. The canonical fixture emits every kind,
-// so a backend that refuses one reports it over the fixture and
-// still renders clean.
+// Rendered settles the fixture of one setup and renders it once. It
+// returns the files, and the findings of the settle and the render in the
+// order of [diag.Sink.All]. It stops the test where the settle or the
+// render returns an error, because a renderer returns an error for a
+// defect in the inputs of the pass and never for a problem with one file.
+func Rendered(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
+	return core.Rendered(tb, setup)
+}
+
+// RenderSettled settles the fixture of one setup and renders it once,
+// as [Rendered] does. It fails on each Error other than a declared kind
+// refusal, so the tests of a satellite read the rendered bytes without
+// the plumbing. The canonical fixture emits every kind, so a backend
+// that refuses one reports the refusal over the fixture and still
+// renders clean.
 func RenderSettled(tb assert.TB, setup Setup) []plugin.RenderedFile {
 	return core.RenderSettled(tb, setup)
 }
 
-// AssertSettledShape settles one setup's fixture and fails on a
-// change its seams may not declare: the unit count, keys and
-// origins survive whatever runs, and a backend declaring no
-// construct lowering keeps every declaration equal to a fresh
-// build once every declared name normalizes. A settle reporting an
-// Error over the suite's fixture fails the check, because the
-// canonical declarations spell in every convention. A changed unit
+// AssertSettledShape settles one setup's fixture and fails on a change
+// that the seams of its backend may not make. The unit count, keys and
+// origins survive the settle. A second fixture settles through the
+// respell alone, with every construct kept, and keeps every declaration
+// equal to a fresh build once every declared name normalizes, because a
+// respell changes name fields and reference spellings alone. A settle
+// reporting an Error over the suite's fixture fails the check, because
+// the canonical declarations spell in every convention. A changed unit
 // count stops the check, and each unit's key, provenance and
 // declarations then report on their own.
 func AssertSettledShape(tb assert.TB, setup Setup) {
@@ -236,12 +249,21 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	core.AssertPopulatedFixture(tb, setup)
 }
 
+// AssertEmptyRender settles and renders an empty store with the
+// schedule, the trees and the helpers of the setup's fixture. It fails
+// where the settle or the render panics or returns an error, where the
+// render returns a file, and on each finding of Error severity. A
+// workspace renders every plan, and a plan can emit nothing.
+func AssertEmptyRender(tb assert.TB, setup Setup) {
+	core.AssertEmptyRender(tb, setup)
+}
+
 // AssertDeterministicRender renders isolated setups, one per call
 // of [assert.Deterministic], and fails unless every render returns
 // the files of the first: the same paths, the same packages, the same
 // bytes, which is the byte-identity contract as values. The findings
-// must match as a set too. Only their order is the run's, because the
-// pass reports in completion order.
+// must match as a set too. Their order may differ, because the pass
+// reports in the order of completion.
 func AssertDeterministicRender(tb assert.TB, setup Setup) {
 	core.AssertDeterministicRender(tb, setup)
 }
@@ -257,18 +279,18 @@ func AssertSpeltKinds(tb assert.TB, setup Setup) {
 }
 
 // AssertPlacedContent renders once and fails on a body that does
-// not arrive whole: conflicting forms, a reference resolving to
-// nothing, or pending slot content its template dropped. Each finding
-// reports on its own.
+// not arrive whole: conflicting forms, a reference that resolves to
+// nothing, or pending slot content that its template dropped. Each
+// finding reports on its own.
 func AssertPlacedContent(tb assert.TB, setup Setup) {
 	core.AssertPlacedContent(tb, setup)
 }
 
 // AssertContinuedRender renders once and fails on a breach of the
-// failure semantics: the call returns no error, every finding
-// states a position and the suite's origin, and a file reported
-// unformatted is withheld from the values. Each finding reports on its
-// own.
+// failure semantics: the call returns no error, every finding has a
+// position that [diag.Diag.Positioned] accepts and the suite's origin,
+// and a file reported unformatted is withheld from the values. Each
+// finding reports on its own.
 func AssertContinuedRender(tb assert.TB, setup Setup) {
 	core.AssertContinuedRender(tb, setup)
 }

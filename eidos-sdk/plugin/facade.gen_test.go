@@ -331,6 +331,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Zip", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.Zip), reflect.TypeOf(core.Zip), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("SourceRef", func(t *testing.T) {
 		t.Parallel()
 
@@ -628,6 +638,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.Plugin](), reflect.TypeFor[core.Plugin](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("ContractVersion", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.ContractVersion, core.ContractVersion, "the facade re-declares the kernel's value")
 		})
 	})
 
@@ -1041,6 +1061,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Absent", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.Absent), reflect.TypeOf(core.Absent), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("StorePath", func(t *testing.T) {
 		t.Parallel()
 
@@ -1088,6 +1118,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.StoreLocator](), reflect.TypeFor[core.StoreLocator](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("UserHomeVar", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.UserHomeVar), reflect.TypeOf(core.UserHomeVar), "the wrapper has the kernel function's signature")
 		})
 	})
 
@@ -1208,6 +1248,36 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.CommentBlock](), reflect.TypeFor[core.CommentBlock](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Composite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.Composite), reflect.TypeOf(core.Composite), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("FuncType", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.FuncType), reflect.TypeOf(core.FuncType), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("MaxSyntaxFindings", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.MaxSyntaxFindings, core.MaxSyntaxFindings, "the facade re-declares the kernel's value")
 		})
 	})
 

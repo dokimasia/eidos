@@ -10,8 +10,8 @@
 //
 // # Dependency position
 //
-// sdk/toolchain imports core/toolchain, go.dokimi.dev/assert and
-// the Go stdlib.
+// sdk/toolchain imports core/toolchain, sdk/plugin,
+// go.dokimi.dev/assert and the Go stdlib.
 package toolchain
 
 import (
@@ -21,39 +21,40 @@ import (
 	"go.dokimi.dev/assert"
 
 	core "go.dokimi.dev/eidos/core/toolchain"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// Generated is what a run produced, as an assertion receives it:
-// the rendered files and whatever a compiler needs beside them to
-// read them.
+// Generated is the output of a run, as an assertion receives it. It
+// contains the rendered files and what a compiler needs beside them to read
+// them.
 //
-// A fixture is a value. The adapter lays it out on disk; nothing
-// here writes a file, because where a scratch project sits and
-// what it must contain is the language's own question.
+// A fixture is a value. An adapter lays it out on disk, through [Scratch]
+// with the project files that its language needs.
 type Generated = core.Generated
 
-// TestReport is what running a language's tests returned.
+// TestReport is the result of a run of the tests of a language.
 type TestReport = core.TestReport
 
-// Adapter is what one language states about its own toolchain.
+// Adapter is the interface that one language implements over its own
+// toolchain.
 //
-// Every method takes or returns a plain value, so the kernel drives
-// a compiler it knows nothing about. An operation the language's
-// tooling cannot perform returns an error saying so, which the
-// assertion reports as the failure it is; nothing here guesses at a
-// missing capability.
+// Every method takes or returns a plain value, so the kernel drives a
+// compiler that it knows nothing about. An operation that the tooling of
+// the language cannot perform returns an error, and the assertion reports
+// the error as a failure. The kernel does not guess at a missing
+// capability.
 //
-// Parse, TypeCheck, RunTests and Satisfies take the caller's context
-// first. When the context ends, the adapter stops the
-// toolchain's process and returns an error that wraps the context's
-// error.
+// Parse, TypeCheck, RunTests and Satisfies take the context of the caller
+// first. When the context ends, the adapter stops the process of the
+// toolchain and returns an error that wraps the error of the context.
 type Adapter = core.Adapter
 
 // AssertParses checks the generated output against its language's
 // grammar: it lays the fixture out and asks the adapter, under ctx, to
 // read the syntax and nothing more, so a syntax error is told apart
 // from a type error. A refusal records a failure whose detail states
-// the language's own error.
+// the language's own error, and whose contract ends with the listing of
+// the generated files.
 func AssertParses(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 	core.AssertParses(ctx, tb, a, g)
 }
@@ -61,7 +62,8 @@ func AssertParses(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 // AssertTypeChecks checks the generated output against its language's
 // type rules under ctx, which is the check that catches a reference the
 // render qualified wrongly or an import it never recorded. A refusal
-// records a failure whose detail states the language's own error.
+// records a failure whose detail states the language's own error, and
+// whose contract ends with the listing of the generated files.
 func AssertTypeChecks(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 	core.AssertTypeChecks(ctx, tb, a, g)
 }
@@ -70,7 +72,8 @@ func AssertTypeChecks(ctx context.Context, tb assert.TB, a Adapter, g Generated)
 // requires every case that ran to pass. A run that does not report a
 // case fails: generated tests that execute nothing pass while proving
 // nothing, which is the failure this assertion exists to catch. Each
-// failure's contract ends with the tool's own output.
+// failure's contract ends with the tool's own output and the listing of
+// the generated files.
 func AssertTestsPass(ctx context.Context, tb assert.TB, a Adapter, g Generated) {
 	core.AssertTestsPass(ctx, tb, a, g)
 }
@@ -89,14 +92,30 @@ func AssertDoesNotSatisfy(ctx context.Context, tb assert.TB, a Adapter, g Genera
 	core.AssertDoesNotSatisfy(ctx, tb, a, g, typeName, contract)
 }
 
+// AssertDocumented requires a doc comment on every public declaration at
+// file level of the files of g that the frontend f claims. It loads the
+// files under the context of tb, as [Surface] loads them. A method whose
+// host is not public is outside the check. A member of a host, such as a
+// field or a method in the body of a class, needs no doc comment of its
+// own.
+//
+// Each declaration without a doc comment fails the test on a record of
+// its own, with its kind, its name and the path of its file. The name of
+// a method is the name of its host, a dot and its own name.
+// AssertDocumented stops the test where f is nil, where the load fails or
+// reports an Error, and where the files of g declare nothing public.
+func AssertDocumented(tb assert.TB, f plugin.Frontend, g Generated) {
+	core.AssertDocumented(tb, f, g)
+}
+
 // RequiredInCI reports whether a missing toolchain must fail rather
 // than skip.
 //
 // It reads the CI variable, which every runner in use sets, so a
-// contributor without a language's compiler still runs the rest of
-// the suite while the same suite in CI covers what they skipped.
-// An empty value and a false boolean, such as CI=false, run as
-// local. Any other value runs as CI.
+// contributor without the compiler of a language still runs the rest of
+// the suite, and the same suite in CI runs what the contributor skipped.
+// An empty value and a false boolean, such as CI=false, run as local.
+// Any other value runs as CI.
 func RequiredInCI() bool {
 	return core.RequiredInCI()
 }
@@ -114,43 +133,160 @@ func Prepare(tb assert.TB, a Adapter, g Generated) (string, func()) {
 	return core.Prepare(tb, a, g)
 }
 
-// TB is the seat the gate reports through: the assert module's,
-// widened with the skip a suite needs. The assertions take the assert
-// module's seat alone, because they never skip. A failure is a record
-// of the assertion that states it, which [assert.Rejects] and an
-// [assert.Recorder] return.
+// TB is the test role that the gate reports through. It is the TB of the
+// assert module with the Skip method that a suite needs. The assertions
+// take the TB of the assert module, because they never skip. A failure
+// is a record of the assertion that states it, which [assert.Rejects]
+// and an [assert.Recorder] return.
 type TB = core.TB
 
-// Require reports whether the toolchain is there to run, and
-// settles the absent case: locally it skips, naming the reason the
-// adapter gave, and in CI it records a failure, so a regression cannot
-// hide behind a missing compiler. A missing adapter records a failure
-// and reports false.
+// Require reports whether the toolchain is present. Where it is absent,
+// Require skips the test locally with the reason that the adapter gave,
+// and records a failure in CI, so a regression cannot hide behind a
+// missing compiler. A missing adapter records a failure and reports
+// false.
 //
-// [RunToolchainSuite] calls it once, before the kernel's three checks.
-// A satellite adding assertions of its own calls it too, because every
+// [RunToolchainSuite] calls it once, before the three checks of the kit.
+// A satellite that adds assertions of its own calls it too, because every
 // caller that runs a toolchain passes the gate, whether or not the suite
 // runs it.
 func Require(tb TB, a Adapter) bool {
 	return core.Require(tb, a)
 }
 
-// Setup builds the adapter under test and the generated output it
-// runs over, fresh per check, so no check reads another check's
-// scratch project.
-type Setup = core.Setup
+// RunTimeout bounds one toolchain invocation. A compiler that has not
+// returned after this time is a fault of the harness, and an unbounded run
+// would stop a suite instead of failing one assertion.
+const RunTimeout = core.RunTimeout
 
-// RunToolchainSuite is the minimum every satellite's harness runs:
-// the generated output parses, it type-checks, and its own tests
-// pass.
+// Run runs binary with args in dir under ctx and returns the combined
+// output of the binary. env lists the variables that the run sets on top of
+// the environment of the process, and a nil env runs the binary in that
+// environment unchanged. [RunTimeout] bounds the run.
 //
-// The three checks gate on the toolchain once, because a language such
-// as TypeScript parses through its toolchain: absent locally they skip
-// with the reason the adapter gave, and absent in CI they fail, so a
-// regression cannot hide behind a missing compiler. A satellite adds its
-// own assertions in its own test, beside this call, because the kernel
-// set is the minimum every satellite runs. Each check runs the toolchain
-// under its own test's context.
-func RunToolchainSuite(t *testing.T, setup Setup) {
-	core.RunToolchainSuite(t, setup)
+// Error modes:
+//   - a binary that exits with an error returns an error that wraps the
+//     [*exec.ExitError] and contains the output;
+//   - a binary that does not start returns an error that wraps the error
+//     of os/exec, such as [exec.ErrNotFound];
+//   - a run that ctx ends returns an error that wraps the error of ctx;
+//   - a run that RunTimeout ends returns an error that wraps
+//     [context.DeadlineExceeded].
+func Run(ctx context.Context, dir string, env []string, binary string, args ...string) (string, error) {
+	return core.Run(ctx, dir, env, binary, args...)
+}
+
+// LookPaths reports whether every binary is on PATH. Where a binary is not,
+// LookPaths returns false and a reason that names the first such binary,
+// which is the reason that [Adapter.Available] returns.
+func LookPaths(binaries ...string) (bool, string) {
+	return core.LookPaths(binaries...)
+}
+
+// Scratch writes the files of g into a new temporary directory and returns
+// the directory. It also writes each file of project at its path, where g
+// has no file at that path, such as the build file that a language needs.
+// pattern names the directory, as it does for [os.MkdirTemp]. The caller
+// removes the directory.
+//
+// Error modes:
+//   - a temporary directory that cannot be created returns the error of
+//     [os.MkdirTemp];
+//   - a write that fails returns the error of [WriteFile], and Scratch
+//     removes the directory.
+func Scratch(pattern string, g Generated, project map[string][]byte) (string, error) {
+	return core.Scratch(pattern, g, project)
+}
+
+// WriteFile writes body to the file at the slash-separated path under dir.
+// The file has the mode 0o600, and WriteFile creates each missing directory
+// with the mode 0o700.
+//
+// Error modes:
+//   - a path that is not local to dir, such as an absolute path or a path
+//     that starts with "..", returns an error and writes nothing;
+//   - a directory or a file that cannot be written returns the error of
+//     the file system.
+func WriteFile(dir, path string, body []byte) error {
+	return core.WriteFile(dir, path, body)
+}
+
+// Sources returns the paths of the files under dir whose names end in one
+// of exts, such as ".go" or ".test.js". It passes over each directory below
+// dir whose name is one of skip. The paths are in lexical order, element by
+// element, which is the order of [filepath.WalkDir].
+//
+// Error modes:
+//   - a directory that cannot be read returns the error of the walk. For a
+//     dir that does not exist, the error wraps [fs.ErrNotExist].
+func Sources(dir string, exts []string, skip ...string) ([]string, error) {
+	return core.Sources(dir, exts, skip...)
+}
+
+// Probe writes source to the file at the slash-separated path name under
+// dir, calls check, and removes the file. A probe is a file that a harness
+// adds to a project to ask its toolchain one question, such as whether a
+// type satisfies a contract. check runs the toolchain and records its
+// answer, and it returns an error only for a fault of the harness.
+//
+// Error modes:
+//   - a write that fails returns the error of [WriteFile], and Probe does
+//     not call check;
+//   - otherwise Probe returns the error of check, joined with the error of
+//     the removal where the removal fails.
+func Probe(dir, name, source string, check func() error) error {
+	return core.Probe(dir, name, source, check)
+}
+
+// RunToolchainSuite runs the three checks of the kit over g with the
+// adapter a: the generated output parses, it type-checks, and its own
+// tests pass. It is the minimum that the harness of every satellite runs.
+//
+// The checks gate on the toolchain once, because a language such as
+// TypeScript parses through its toolchain. Absent locally, the checks skip
+// with the reason that the adapter gave. Absent in CI, they fail, so a
+// regression cannot hide behind a missing compiler. Each check runs in a
+// parallel subtest under the context of that subtest, and lays g out in a
+// scratch directory of its own. No check changes a or g, so the checks
+// share them. A satellite adds its own assertions in its own test, beside
+// this call.
+func RunToolchainSuite(t *testing.T, a Adapter, g Generated) {
+	core.RunToolchainSuite(t, a, g)
+}
+
+// Surface returns the public surface of the files of g that the frontend
+// f claims, loaded under ctx as [AssertDocumented] loads them. The surface
+// has a line for each public declaration at file level, and a line for
+// each relation, each public member and each public nested type of such
+// a declaration. The lines of one package follow a line
+// "package <path>", in byte order, and the packages follow in the order
+// of their paths. A method at file level renders as a member of its host,
+// so a Go method and a method in the body of a class render alike. A
+// method whose host the graph contains and whose host is not public is
+// not in the surface.
+//
+// A line starts with the modifiers of its declaration, each one word and
+// a space: static, abstract, final, sealed, const, async, readonly, get,
+// set, constructor and indexer. A line of a declaration at file level
+// continues with the spelling of its kind and its name. Every type, value
+// and default in a line is the spelling that the frontend recorded. A
+// parameter renders as its type, without its name. The surface has no
+// comment, no body, and no order of declarations or members.
+//
+// Error modes: Surface returns the error of a source of g that does not
+// read, the error of the load, and an error that joins one error for each
+// finding of Error severity of the load.
+func Surface(ctx context.Context, f plugin.Frontend, g Generated) (string, error) {
+	return core.Surface(ctx, f, g)
+}
+
+// AssertSurface matches the surface of the files of g that f claims
+// against the golden file at path, a slash-separated path relative to the
+// directory of the test, through [golden.MatchAt]. Under -update the match
+// writes the file. It loads the files under the context of tb, as
+// [Surface] loads them. It stops the test where f is nil, where the load
+// fails or reports an Error, where the surface has no public declaration,
+// and where the golden file differs from the surface.
+func AssertSurface(tb assert.TB, f plugin.Frontend, g Generated, path string) {
+	core.AssertSurface(tb, f, g, path)
 }

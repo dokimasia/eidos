@@ -31,6 +31,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("TestFiles", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(frontend.TestFiles), reflect.TypeOf(core.TestFiles), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Builder", func(t *testing.T) {
 		t.Parallel()
 
@@ -48,6 +58,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(frontend.New), reflect.TypeOf(core.New), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Nearest", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(frontend.Nearest), reflect.TypeOf(core.Nearest), "the wrapper has the kernel function's signature")
 		})
 	})
 }

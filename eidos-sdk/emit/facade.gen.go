@@ -134,6 +134,14 @@ type Function = core.Function
 // asynchronous result in the language's own form, and the failure
 // types the declaration announces.
 //
+// Optional marks a method that a value of its type may lack, which
+// TypeScript writes as run?(). Mutability states for an index signature
+// whether a holder of the value can assign its entries, which
+// TypeScript writes as a readonly index signature. Every other method
+// leaves it unknown. Computed marks a name that is an expression of the
+// language, such as TypeScript's [Symbol.iterator], and the name is the
+// source text of the expression.
+//
 // The node model records the signature and never a body, and the
 // emit model records a generated body in its Body field.
 //
@@ -266,6 +274,11 @@ type Binding = core.Binding
 // declares instance state and behaviour alongside its variants.
 // Most languages leave both empty.
 //
+// Underlying is the representation that the source declares for the
+// values: the target of a Go defined type, such as uint8, and the
+// integer type of a Rust repr attribute. It is nil where the language
+// does not declare one, as in a TypeScript, a protobuf or a Java enum.
+//
 // This is the emit spelling of the kind.
 type Enum = core.Enum
 
@@ -309,13 +322,17 @@ type SumVariant = core.SumVariant
 // TypeScript readonly and Java final, which a generator emitting a
 // data class has to reproduce. A field declared without a name, as
 // a positional Sum variant payload is, leaves Name empty and
-// carries only its type.
+// carries only its type. Computed marks a name that is an expression
+// of the language, such as a TypeScript property declared as [key],
+// and the name is the source text of the expression.
 //
-// Tag holds the tag text in the source language's spelling with
-// its enclosing delimiters stripped, unevaluated, the way
-// [Constant.Value] holds an expression; the target's template
-// supplies the delimiters its language writes. Only languages with
-// per-field tags fill it.
+// On the node side, Tag is the tag text in the spelling of the source
+// language, with its enclosing delimiters stripped and unevaluated, the
+// way [Constant.Value] is an expression. Only languages with per-field
+// tags fill it. On the emit side, Tags is a slot of the entries of the
+// tag, which the target joins into its tag syntax. A plugin appends an
+// entry to the field of another plugin through the slot view of its
+// emitter, so the header of the file names the plugin.
 //
 // This is the emit spelling of the kind.
 type Field = core.Field
@@ -330,8 +347,12 @@ type Field = core.Field
 //
 // Type is nil when the source states none and the language infers
 // it. That is a declared limit rather than a failure: the
-// declaration still projects, and the language's own metadata
-// carries the inferred spelling for anyone who needs it.
+// declaration still projects, and the metadata of the language
+// contains the inferred spelling for a reader that needs it.
+//
+// Value is source text in the language of the declaration. A backend
+// does not read the text, so a generator whose value names a package
+// imports the package through the use builtin of its template.
 //
 // This is the emit spelling of the kind.
 type Variable = core.Variable
@@ -341,9 +362,12 @@ type Variable = core.Variable
 // const.
 //
 // Type is nil for an untyped constant, which Go has and most
-// languages do not. Value holds the source spelling of the value
-// expression verbatim, unevaluated, the same contract
-// [EnumVariant.Value] carries.
+// languages do not. Value is the source spelling of the value
+// expression, verbatim and unevaluated, as [EnumVariant.Value] is.
+//
+// A backend does not read the text of Value, so a generator whose
+// value names a package imports the package through the use builtin
+// of its template.
 //
 // This is the emit spelling of the kind.
 type Constant = core.Constant
@@ -431,37 +455,41 @@ type Alias = core.Alias
 
 // TypeRef is a type as a declaration mentions it.
 //
+// A type reference is not a declaration, so it has no identity of its
+// own. Its Target is the identity of the declaration it resolves to.
+//
 // Spelling is the source text verbatim. Target is the canonical
-// identity the spelling resolves to. It is zero until the
-// resolution step runs, and permanently for builtins and types
-// outside the workspace. That is legitimate degradation, so a
+// identity that the resolution step finds for the spelling. It is zero
+// until the resolution step runs, and permanently for builtins and
+// types outside the workspace. That is legitimate degradation, so a
 // consumer checks the target before relying on it.
 //
 // Target is an identity and not a pointer. A key can be stored,
 // compared and kept across runs. A pointer cannot, and following
 // one would make the walk cyclic.
 //
-// Package is what the reference's import names. It is empty for a
-// builtin, for a structural form, whose named children record their
-// own, and for a declaration the file uses without an import. Go
-// records an import path, TypeScript a module specifier, and Java
-// and Rust a slash-separated package or module path, which a backend
-// writes with the language's own separator. Each is the form a
-// declaration identity of the language uses for its package, so a
-// backend reads a target's package and a reference's alike. A proto
-// import names a file and not a package, so protobuf records the
-// path of the imported file that declares the type. A backend
-// imports a type the workspace never loaded through Package,
-// because such a reference has no target.
+// Package is the package that the import of the reference names. It
+// is empty for a builtin, for a structural form and for a declaration
+// that the file uses without an import. The named children of a
+// structural form record their own package. Go records an import path,
+// TypeScript a module specifier, and Java and Rust a slash-separated
+// package or module path. A backend writes such a path with the
+// separator of its language. Each is the form that a declaration
+// identity of the language uses for its package, so a backend reads
+// the package of a target and of a reference alike. A proto import
+// names a file and not a package, so protobuf records the path of the
+// imported file that declares the type. A backend imports a type that
+// the workspace never loaded through Package, because such a reference
+// has no target.
 //
 // Args lists the type arguments of an instantiation, so
-// Map[string, User] has two. A reference with Args has the bare
-// name in Spelling, and a target writes the argument list in its
-// own brackets, so the one instantiation spells Map[K, V] in Go and
-// Map<K, V> in Java.
+// Map[string, User] has two. A reference with Args has the bare name
+// in Spelling. A backend writes the argument list in the brackets of
+// its language. The Go backend writes Map[K, V], and the Java backend
+// writes Map<K, V>.
 //
-// Form and Elems record the structure the frontend parsed, each
-// form's children in its fixed order:
+// Form and Elems record the structure that the frontend parsed, with
+// the children of each form in its fixed order:
 //
 //   - Optional, List, Array, Stream and Borrow: one child.
 //   - Map: the key, then the value.
@@ -471,26 +499,41 @@ type Alias = core.Alias
 //     one.
 //   - Inline and Named: none.
 //
-// The spelling is kept verbatim beside them, so a backend spells what
-// it read, and the resolution step visits the named types inside a
-// composite through the children. A structural reference has no
-// target of its own, and its Named children do. Length is a fixed
-// array length written as a literal, and 0 where the length is an
-// expression the spelling keeps.
+// No element of Elems is nil. A frontend records a child that the source
+// does not state as an empty reference, so the form keeps its arity.
+//
+// The spelling is kept verbatim beside them, so a backend writes the
+// spelling that the frontend read. The resolution step visits the
+// named types inside a composite through the children. A structural
+// reference has no target of its own, and its Named children have
+// targets. Length is a fixed array length that the source writes as a
+// literal. It is 0 when the length is an expression in the spelling.
 //
 // Async marks a Stream whose elements arrive asynchronously, such as a
-// protobuf stream, which delivers its messages over a connection. A
-// frontend sets it from the language's syntax, and the projection's fold
-// copies it into the stream's shape. It is false on every other form.
+// protobuf stream over a connection. A frontend sets it from the syntax
+// of the language, and the fold of the projection copies it into the
+// shape of the stream. It is false on every other form.
 //
-// Fields and Methods are an Inline reference's members: the
-// properties and methods of a TypeScript object type, and the fields
-// of a Go inline struct and the methods of a Go inline interface.
-// They are the nodes a declaration's members are, without
-// identities, so no carrier and no stamp can address them, and the
-// resolution step resolves the references among them. They are the
-// node model's alone: a backend spells an inline body from the
-// reference's spelling.
+// Mutability states for a List, an Array, a Tuple, a Map and a Borrow
+// whether a holder can write through the reference. TypeScript states
+// Immutable for readonly T[] and Mutable for T[], and Rust states
+// Immutable for &T and Mutable for &mut T. A language that does not
+// distinguish the two leaves it unknown, and the fold copies it into
+// the shape.
+//
+// Absent lists the members of the source union that an Optional folds
+// away because they denote absence, in source order: TypeScript's null
+// and undefined in T | null. It is empty for an Optional that the
+// source states with a mark, such as Go's *T or TypeScript's T?. Only
+// the node model has it, because a backend writes the spelling.
+//
+// Fields and Methods are the members of an Inline reference. They are
+// the properties and methods of a TypeScript object type, the fields of
+// a Go inline struct and the methods of a Go inline interface. They are
+// the same nodes as the members of a declaration, without identities.
+// No carrier and no stamp can address them. The resolution step
+// resolves the references among them. Only the node model has them. A
+// backend writes an inline body from the spelling of the reference.
 //
 // This is the emit spelling of the kind.
 type TypeRef = core.TypeRef
@@ -499,10 +542,10 @@ type TypeRef = core.TypeRef
 //
 // Variance is Invariant for Go and Rust, and the declared variance
 // for Kotlin, C# and Java wildcards. Bounds lists the constraint as
-// type references: a Go constraint interface, a Java or Kotlin
-// upper bound, a Rust trait bound. What a bound cannot express in
-// references, such as a Go constraint's full type set, is language
-// metadata.
+// type references, such as a Go constraint interface, a Java or Kotlin
+// upper bound, or a Rust trait bound. Language metadata records what a
+// bound cannot express in references, such as the full type set of a
+// Go constraint.
 //
 // Default is the type argument used when a caller supplies none,
 // which TypeScript writes as "<T = string>". It is nil where the
@@ -516,21 +559,29 @@ type TypeRef = core.TypeRef
 // This is the emit spelling of the kind.
 type TypeParam = core.TypeParam
 
-// Embed is one embedded type in a declaration that promotes
-// members: a Go embedded field or embedded interface, a PHP trait
+// Embed is one embedded type in a declaration that promotes members,
+// such as a Go embedded field, a Go embedded interface or a PHP trait
 // use.
 //
-// Embedding differs from nominal supertyping because the members
-// arrive promoted and not inherited. Which members a type has
-// across its embeds is a language rule and not a model one.
+// Embedding differs from nominal supertyping because the members are
+// promoted and not inherited. The set of members that a type has
+// across its embeds is a rule of the language and not of the model.
 //
-// An embed is a declaration in its own right: it has the
-// documentation, trailing comment, tag and annotations an embedded
-// field takes like any field, and its identity, named by the
-// embedded type's bare name, is what a directive attaches to.
+// An embed is a declaration in its own right. It has the
+// documentation, trailing comment, tag and annotations of an embedded
+// field. Its identity has the bare name of the embedded type, and a
+// directive attaches to that identity.
 //
 // This is the emit spelling of the kind.
 type Embed = core.Embed
+
+// TagEntry is one entry of the struct tag of an emitted field: a key and
+// its value. A target joins the entries of a field into its tag syntax,
+// such as json:"name,omitempty" in Go. A target without tags refuses a
+// field with entries.
+//
+// This is the emit spelling of the kind.
+type TagEntry = core.TagEntry
 
 // DeclaredName returns the name a file-level declaration declares in
 // its file's scope, and the empty string for a declaration that
@@ -645,10 +696,59 @@ func RefExpr(id symbol.Identity) Expr {
 // a field slot does not compile, so the compiler reports the mistake
 // at the call that makes it.
 //
+// # Sealing
+//
+// The store of a plan seals every slot of a value that a unit places,
+// through [Seal]. While the phase calls of the plan run, [Slot.Append]
+// and [Slot.Replace] panic on a sealed slot, so a plugin writes into a
+// value of the store through the slot view of its emitter alone. The
+// view buffers the write with its invocation, applies it through
+// [AppendSealed] in canonical match order, and names the plugin among
+// the contributors of the unit. The store lifts the seal when the
+// settle starts, so the lowering hooks of a backend rewrite the
+// declarations of their target. A slot of a value that no store
+// contains is not sealed.
+//
+// # Concurrency
+//
 // The zero Slot is ready to append to. A Slot is not safe for
 // concurrent use. Plans run in parallel, and each plan has its own
 // emit declarations.
+//
+// # Allocation contract
+//
+// An append allocates only where the storage of the slot grows. The
+// check of the seal allocates nothing.
 type Slot[T any] = core.Slot[T]
+
+// SlotOf returns a slot whose contents are values, in order, for the
+// composite literal of an emit value. The slot keeps values as its
+// storage, so the caller does not reuse the slice that it passes. The
+// slot is not sealed. SlotOf allocates nothing beyond the slice of a
+// variadic call.
+func SlotOf[T any](values ...T) Slot[T] {
+	return core.SlotOf[T](values...)
+}
+
+// AppendSealed adds values to the end of a slot, whether the slot is
+// sealed or not. The emitter applies a buffered append through it.
+// AppendSealed is reserved to the kernel, and the lint rule of the
+// repository refuses a call from outside the kernel. It allocates only
+// where the storage of the slot grows.
+func AppendSealed[T any](s *Slot[T], values ...T) {
+	core.AppendSealed[T](s, values...)
+}
+
+// Seal shares flag with every slot of every declaration in the tree of
+// root, including the slots of nested declarations, of members and of
+// bodies. [Slot.Append] and [Slot.Replace] panic on such a slot while
+// *flag is true. The store of a plan seals each declaration that a unit
+// places. Seal is reserved to the kernel, and the lint rule of the
+// repository refuses a call from outside the kernel. It allocates
+// nothing.
+func Seal(root symbol.Symbol, flag *bool) {
+	core.Seal(root, flag)
+}
 
 // Symbols is the type of a field that admits declarations of any
 // kind, such as a file's declaration list.
@@ -823,25 +923,24 @@ func Address(inner Value) Value {
 // schema field order.
 //
 // Returning false from visit prunes that subtree and continues.
-// Only containment edges are followed, so the walk is a tree even
-// though the graph is not: a back-pointer is never traversed, and a
-// cross-reference is an identity rather than a pointer.
+// Walk follows only containment edges, so the walk is a tree although
+// the graph is not. It never traverses a back-pointer, and a
+// cross-reference is an identity and not a pointer.
 func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 	core.Walk(s, visit)
 }
 
-// All returns the same traversal as [Walk], as an iterator.
+// All returns the traversal of [Walk] as an iterator.
 //
-// Stopping the range stops the walk, which differs from Walk's own
-// visit: there, false prunes one subtree.
+// A break out of the range stops the whole walk. In [Walk], a visit
+// that returns false prunes only one subtree.
 func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
 	return core.All(s)
 }
 
-// OriginOf returns the node identity a generated value derives
-// from, and false for a kind that carries no origin storage. The
-// zero identity still returns true, and claims nothing: carrying
-// the field and carrying a value are different questions.
+// OriginOf returns the node identity that a generated value derives
+// from. It returns false for a kind without origin storage. It returns
+// true for a kind with origin storage, also when the identity is zero.
 func OriginOf(s symbol.Symbol) (symbol.Identity, bool) {
 	return core.OriginOf(s)
 }

@@ -30,14 +30,55 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Builder accumulates a plugin's declaration. Everything on it is
-// data; only the handlers inside rules, the key registrations and
-// the template helpers are functions. Build freezes it, and a
-// Builder is not reused afterwards. Every method returns the builder.
+// Builder collects the declaration of a plugin. The declaration is data,
+// except the handlers of the rules, the key registrations and the template
+// helpers, which are functions. Every method returns the builder. Each of
+// [Builder.Generator], [Builder.Annotator] and [Builder.Dual] lowers the
+// declaration to one role, and a builder is not reused after it.
+//
+// # Lowering
+//
+// The built plugin implements its role, [plugin.Subscribed],
+// [plugin.KeyBinder] and the provider interfaces. Each provider returns
+// what the plugin declares, and nothing where the plugin declares nothing.
+//
+// [plugin.DirectiveProvider] returns the schema of each [Directive]
+// wrapper. A typed build sets an empty Kinds of a schema to the kinds of
+// the rules under the wrapper, in the order of [symbol.Kind]. For an
+// override schema, it also adds the kinds of the rules of the plugin that
+// no directive gates. An [OnGraph] rule has no subject, so it adds no
+// kind. A typed build leaves the field empty where one of those rules is
+// an [OnEmit] rule, because the origin of an emitted value can have any
+// kind.
+//
+// # Declaration defects
+//
+// A typed build panics on a defect of the declaration, because a wrong
+// declaration is a bug in the constructor of the plugin. The panic occurs
+// at the first build in any test, before a run exists. The workspace
+// returns the faults of a composition as errors. The defects are:
+//
+//   - an empty name, no rules, and a wrapper around no rules
+//   - a duplicate output tag, an empty output word, a zero cardinality,
+//     and a family template that is not a slash-separated path inside a
+//     tree
+//   - an empty capability label and a nil key registration
+//   - a directive name in two wrappers, and explicit Kinds that leave out
+//     the kind of a rule under the wrapper other than an [OnEmit] rule
+//   - a [Gated] name that is not a kernel directive, a rule gated on two
+//     directives, and a gate around a graph rule
+//   - a zero predicate and a gate on the zero key
+//   - a nil tree or helper map, two trees or one helper name twice at one
+//     level, a helper that text/template refuses, and the zero option
+//   - a [Builder.For] that names the zero target, names a target twice or
+//     declares no option
+//
+// A gate on a named handle binds when the workspace builds, through
+// [plugin.KeyBinder].
 //
 // # Concurrency
 //
-// A Builder is not safe for concurrent use. A plugin's constructor
+// A Builder is not safe for concurrent use. The constructor of a plugin
 // declares it on one goroutine.
 //
 // # Allocation contract
@@ -45,11 +86,21 @@ import (
 // [NewPlugin] allocates the builder and its map of priorities. A method
 // that appends to a list of the declaration allocates the list on its
 // first call and grows it on a later one, and a method that sets one
-// value allocates nothing. [Builder.Build] states what it allocates.
+// value allocates nothing. A typed build allocates in proportion to the
+// declaration. It allocates the table of output families, the lowered
+// rules and the predicates that each inherits, the built plugin with its
+// copies of the declared lists, the schemas with the kinds that it
+// derives, the subscriptions, and the role wrapper. A declaration of one
+// family, a graph rule and two emit rules under one fact gate allocates 13
+// times.
 type Builder = core.Builder
 
-// NewPlugin starts a plugin declaration. It allocates the builder and
-// its map of priorities, two allocations.
+// Dual is a plugin with an annotator half and a generator half. Each half
+// runs at the priority of its own role.
+type Dual = core.Dual
+
+// NewPlugin starts the declaration of a plugin named name. It allocates
+// the builder and its map of priorities, two allocations.
 func NewPlugin(name plugin.ID) *Builder {
 	return core.NewPlugin(name)
 }
@@ -66,10 +117,10 @@ var RefusedStamp = core.RefusedStamp
 // [Emitter.Type] reports it as an Error, so the plan fails.
 var RefusedType = core.RefusedType
 
-// Tag selects a declared output family; the zero value is the
-// primary. Addressing a family the plugin never declared panics:
-// the family set is the plugin's own declaration, so the mismatch
-// is a defect and panics on the first matching test.
+// Tag selects a declared output family. The zero value selects the
+// primary family. An emitter call with a family that the plugin did not
+// declare panics. The plugin declares its families itself, so the
+// mismatch is a defect, and the first matching test panics.
 type Tag = core.Tag
 
 // TagTest is the well-known tag of a test companion. A target spells a
@@ -78,19 +129,20 @@ type Tag = core.Tag
 // untyped, so it is a [Tag] and the tag of a [plugin.Output] alike.
 const TagTest = core.TagTest
 
-// Emitter is a handler's write surface, scoped to its subject.
+// Emitter is the write surface of a handler for its subject.
 //
-// Each accessor returns a handle onto the one accumulator for its
-// cardinality key and family, created on first touch and appended to
-// thereafter, so two interfaces in one source file assemble one
-// per-source unit and a package's matches assemble one registry. At
-// most one tag per call; more is a defect and panics.
+// Each accessor returns a handle to the one accumulator for its
+// cardinality key and family. The first touch creates the accumulator,
+// and later touches append to it. Two interfaces in one source file
+// therefore assemble one per-source unit, and the matches of a package
+// assemble one registry. A call takes at most one tag, and more than one
+// panics.
 //
-// Every write through the Emitter is buffered with the invocation and
-// applies when the phase call's rules have run, in canonical match
-// order, so the output is the same whether the phase call runs its
+// Every write through the Emitter is buffered with the invocation. It
+// applies in canonical match order when the rules of the phase call have
+// run. The output is therefore the same whether the phase call runs its
 // invocations one after another or on several workers. A handler sees
-// the plan's store and the slots as they were when its phase call
+// the store of the plan and the slots as they were when its phase call
 // began.
 //
 // # Concurrency
@@ -100,31 +152,31 @@ const TagTest = core.TagTest
 //
 // # Allocation contract
 //
-// The phase call's buffers and the invocation's handles are pooled, so
-// an accessor, an append and a slot view allocate nothing per
-// invocation once the call's state is warm. What a call's effects leave
-// in the store allocates when they apply: the units, their lists of
-// declarations and origins, and the slots' values.
+// The buffers of the phase call and the handles of the invocation are
+// pooled, so an accessor, an append and a slot view allocate nothing per
+// invocation once the state of the call is warm. When the effects of a
+// call apply, they allocate the units, their lists of declarations and
+// origins, and the values of the slots.
 type Emitter = core.Emitter
 
-// Out is one accumulator seen from one match. The handle records the
-// invocation's sequence and its accessor call, which records the
-// match's subject and gating instance, so an append is attributed and
-// ordered without shared mutable state: two matches have two handles
-// onto one accumulator.
+// Out is one accumulator as one match sees it. The handle records the
+// sequence of the invocation and its accessor call. The accessor call
+// records the subject of the match and the gating instance. An append is
+// therefore attributed and ordered without shared mutable state, and two
+// matches have two handles to one accumulator.
 type Out = core.Out
 
-// SlotView is one invocation's write access to one slot, returned by
-// [Emitter.Slot]. Its zero value has no invocation to buffer with,
-// and appending through it panics.
+// SlotView is the write access of one invocation to one slot.
+// [Emitter.Slot] returns it. Its zero value has no invocation, so an
+// append through it panics.
 type SlotView[T any] = core.SlotView[T]
 
 // FunctionMatch is the OnFunction subject.
 type FunctionMatch = core.FunctionMatch
 
-// OnFunction fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnFunction runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnFunction[E Effect](h func(*FunctionMatch, E) error) Rule {
 	return core.OnFunction[E](h)
@@ -133,9 +185,9 @@ func OnFunction[E Effect](h func(*FunctionMatch, E) error) Rule {
 // MethodMatch is the OnMethod subject.
 type MethodMatch = core.MethodMatch
 
-// OnMethod fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnMethod runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 	return core.OnMethod[E](h)
@@ -144,9 +196,9 @@ func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 // ParamMatch is the OnParam subject.
 type ParamMatch = core.ParamMatch
 
-// OnParam fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnParam runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
 	return core.OnParam[E](h)
@@ -155,9 +207,9 @@ func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
 // ReturnMatch is the OnReturn subject.
 type ReturnMatch = core.ReturnMatch
 
-// OnReturn fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnReturn runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
 	return core.OnReturn[E](h)
@@ -166,9 +218,9 @@ func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
 // EnumMatch is the OnEnum subject.
 type EnumMatch = core.EnumMatch
 
-// OnEnum fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnEnum runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 	return core.OnEnum[E](h)
@@ -177,9 +229,9 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 // SumMatch is the OnSum subject.
 type SumMatch = core.SumMatch
 
-// OnSum fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnSum runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnSum[E Effect](h func(*SumMatch, E) error) Rule {
 	return core.OnSum[E](h)
@@ -188,9 +240,9 @@ func OnSum[E Effect](h func(*SumMatch, E) error) Rule {
 // FieldMatch is the OnField subject.
 type FieldMatch = core.FieldMatch
 
-// OnField fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnField runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnField[E Effect](h func(*FieldMatch, E) error) Rule {
 	return core.OnField[E](h)
@@ -199,9 +251,9 @@ func OnField[E Effect](h func(*FieldMatch, E) error) Rule {
 // VariableMatch is the OnVariable subject.
 type VariableMatch = core.VariableMatch
 
-// OnVariable fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnVariable runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnVariable[E Effect](h func(*VariableMatch, E) error) Rule {
 	return core.OnVariable[E](h)
@@ -210,9 +262,9 @@ func OnVariable[E Effect](h func(*VariableMatch, E) error) Rule {
 // ConstantMatch is the OnConstant subject.
 type ConstantMatch = core.ConstantMatch
 
-// OnConstant fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnConstant runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnConstant[E Effect](h func(*ConstantMatch, E) error) Rule {
 	return core.OnConstant[E](h)
@@ -221,9 +273,9 @@ func OnConstant[E Effect](h func(*ConstantMatch, E) error) Rule {
 // StructMatch is the OnStruct subject.
 type StructMatch = core.StructMatch
 
-// OnStruct fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnStruct runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnStruct[E Effect](h func(*StructMatch, E) error) Rule {
 	return core.OnStruct[E](h)
@@ -232,9 +284,9 @@ func OnStruct[E Effect](h func(*StructMatch, E) error) Rule {
 // InterfaceMatch is the OnInterface subject.
 type InterfaceMatch = core.InterfaceMatch
 
-// OnInterface fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnInterface runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule {
 	return core.OnInterface[E](h)
@@ -243,85 +295,95 @@ func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule {
 // AliasMatch is the OnAlias subject.
 type AliasMatch = core.AliasMatch
 
-// OnAlias fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnAlias runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnAlias[E Effect](h func(*AliasMatch, E) error) Rule {
 	return core.OnAlias[E](h)
 }
 
-// Matcher is the closed set of match types: only this package's
-// matches satisfy it, because the base surface is unexported.
+// Matcher is the closed set of match types. Only the matches of this
+// package satisfy it, because the base surface is unexported.
 type Matcher = core.Matcher
 
-// Fact returns the value of k on the subject whose claim ranks first,
-// recording the read at (subject, key) into the invocation's read set,
-// a miss included. On an emit match the subject is the origin. A graph
-// match has no subject, so Fact returns false and records nothing. The
-// lane's read set keeps its storage across invocations, so a read
-// allocates nothing once the set has grown.
+// Fact returns the value of the first-ranked claim of k on the subject,
+// and records the read at (subject, key) into the read set of the
+// invocation, a miss included. On an emit match the subject is the
+// origin. A graph match has no subject, so Fact returns false and
+// records nothing. The read set of the lane keeps its storage across
+// invocations, so a read allocates nothing once the set has grown.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](m, k)
 }
 
-// FactOf returns the value of k on another declaration whose claim
-// ranks first, recorded the same way: reading a sibling's stamped
-// facts is the sanctioned channel between plugins. A zero identity
-// returns false and records nothing. It allocates as [Fact] does.
+// FactOf returns the value of the first-ranked claim of k on another
+// declaration, and records the read as [Fact] does. A read of the stamped
+// facts of a sibling is the sanctioned channel between plugins. A zero
+// identity returns false and records nothing. It allocates as [Fact]
+// does.
 func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	return core.FactOf[T](m, id, k)
 }
 
-// Mirror returns an emit method mirroring a node method's
-// signature, type spellings verbatim, origin set. The signature is
-// the name, the visibility, the level, the type parameters, the
-// parameters with their labels, defaults, optional and variadic
-// forms, the results, the async flag and the announced failure
-// types. Receives names host, so the settle scopes the method under
-// its host as it scopes a parsed method.
+// Mirror returns an emit method with the signature of the node method
+// m. It copies the spelling of each type verbatim and sets the origin
+// to the identity of m. The signature consists of the name, the
+// visibility, the level, the type parameters, the parameters, the
+// results, the async flag and the declared failure types. It also
+// consists of the optional mark, the accessor, the index and the
+// construct forms, the hard privacy, the mutability of an index
+// signature and the computed mark. Each parameter keeps its label, its
+// default and its optional and variadic forms. Mirror leaves out the
+// facts of an implementation: abstract, final, override and a default
+// body, because the generator writes the implementation. The Receives
+// field of the result is host, so the settle scopes the method under
+// host as it scopes a parsed method.
 //
-// The receiver is left unset, because its spelling is the target's:
-// a Go stub states a pointer receiver through the Go satellite's
-// helper, and Rust spells self. Imports are collected at render as a
-// side effect of spelling types, so Mirror infers none.
+// Mirror leaves the receiver unset, because each target writes it in
+// its own form. The Go satellite sets a pointer receiver on a stub
+// through its own helper, and the Rust backend renders self. The render
+// collects the imports when it renders the types, so Mirror adds no
+// import.
 //
 // # Allocation contract
 //
-// Mirror allocates the method and its receiving type, and for each
-// list of the signature that has entries the list, each entry and each
-// entry's restated type. A method of one parameter and one return
-// allocates eight times.
+// Mirror allocates the method and its Receives type. For each list of
+// the signature that has entries, it allocates the list, each entry and
+// the restated type of each entry. A method with one parameter and one
+// return allocates eight times.
 func Mirror(host string, m *node.Method) *emit.Method {
 	return core.Mirror(host, m)
 }
 
 // MirrorTypeParams returns the emit form of the node type parameters tps,
-// in order: each parameter's name, variance, bounds, default, value type
-// and default value, with each type reference restated through
-// [rules.EmitRef]. It returns nil for no parameters. A generator lifts the
-// type parameters of a generic declaration onto the declaration that it
-// emits for it, such as the mock of a generic interface, whose methods
-// name the parameters.
+// in order. Each result has the name, the variance, the bounds, the
+// default, the value type and the default value of its parameter. It
+// restates each type reference through [rules.EmitRef], and returns nil
+// for no parameters. A generator copies the type parameters of a generic
+// declaration to the declaration that it emits for it. The mock of a
+// generic interface needs them, because its methods refer to the
+// parameters.
 //
 // # Allocation contract
 //
 // MirrorTypeParams allocates nothing for no parameters. Otherwise it
-// allocates the list, each parameter, the list of each parameter's bounds,
-// and what [rules.EmitRef] allocates for each bound, default and value
-// type. One parameter with one bound allocates four times.
+// allocates the list, each parameter and the bound list of each
+// parameter. It also allocates what [rules.EmitRef] allocates for each
+// bound, default and value type. One parameter with one bound allocates
+// four times.
 func MirrorTypeParams(tps []*node.TypeParam) []*emit.TypeParam {
 	return core.MirrorTypeParams(tps)
 }
 
-// TypeArgs returns the type parameters tps as the arguments of a
-// reference inside the declaration that declares them, in order, and nil
-// for no parameters. Each argument has the name of its parameter and no
-// target. [Emitter.Type] translates a reference to a type parameter the
-// same way. A generator writes the arguments where a generic declaration
-// that it emits refers to itself or to the declaration that it derives
-// from, such as the interface that the mock of a generic interface
-// implements.
+// TypeArgs returns the type parameters tps, in order, as the type
+// arguments of a reference inside the declaration that declares them.
+// It returns nil for no parameters. Each argument has the name of its
+// parameter and no target. [Emitter.Type] translates a reference to a
+// type parameter the same way. A generator uses the arguments where a
+// generic declaration that it emits refers to itself or to the
+// declaration that it derives from. The mock of a generic interface
+// uses them in the reference to the interface that it implements.
 //
 // # Allocation contract
 //
@@ -331,117 +393,117 @@ func TypeArgs(tps []*emit.TypeParam) []*emit.TypeRef {
 	return core.TypeArgs(tps)
 }
 
-// TargetOption is one presentation declaration for one target, the
-// argument [Builder.For] takes: a template tree, helpers, or
-// overrides. [Templates], [Funcs] and [Overrides] construct one.
-// The zero value declares nothing, and Build panics on it.
+// TargetOption is one declaration of the presentation of one target, which
+// [Builder.For] takes. It declares a template tree, helpers or overrides,
+// and [Templates], [Funcs] and [Overrides] construct it. The zero value
+// declares nothing, and a typed build panics on it.
 type TargetOption = core.TargetOption
 
-// Templates declares a target's template tree: the tree the
-// target's plans resolve this plugin's template references in, in
-// place of the plugin-level tree. A nil tree panics at Build.
-// Templates returns the option by value and allocates nothing.
+// Templates declares the template tree of a target. The plans of the
+// target resolve the template references of the plugin in this tree, in
+// place of the tree of the plugin level. A typed build panics on a nil
+// tree. Templates returns the option by value and allocates nothing.
 func Templates(tree fs.FS) TargetOption {
 	return core.Templates(tree)
 }
 
-// Funcs declares helpers for a target's plans, layered over the
-// plugin-level helpers: a name declared at both levels takes this
-// function in that target's plans. A nil map, and a function
-// text/template refuses, panic at Build. Funcs returns the option by
-// value and allocates nothing.
+// Funcs declares helpers for the plans of a target, layered over the
+// helpers of the plugin level. A name declared at both levels takes this
+// function in the plans of the target. A typed build panics on a nil map
+// and on a function that text/template refuses. Funcs returns the option
+// by value and allocates nothing.
 func Funcs(fm template.FuncMap) TargetOption {
 	return core.Funcs(fm)
 }
 
-// Overrides declares replacements for names in the target's shared
-// vocabulary, which is the replace verb: in every plan of that
-// target, each function replaces the shared helper of its name in
-// every template the plan renders, the backend's kind templates
-// included. A name the shared vocabulary lacks fails the template
-// lint, and where two plugins override one name, the one later in
-// the schedule takes effect. A nil map, and a function
-// text/template refuses, panic at Build. Overrides returns the option
-// by value and allocates nothing.
+// Overrides declares replacements for names in the shared vocabulary of
+// the target. In every plan of the target, each function replaces the
+// shared helper of its name in every template that the plan renders, the
+// kind templates of the backend included. A name that the shared
+// vocabulary lacks fails the template lint, and where two plugins override
+// one name, the override later in the schedule takes effect. A typed build
+// panics on a nil map and on a function that text/template refuses.
+// Overrides returns the option by value and allocates nothing.
 func Overrides(fm template.FuncMap) TargetOption {
 	return core.Overrides(fm)
 }
 
-// Effect is the set of handler effect surfaces. The handler's
-// second parameter picks the plugin's role: a handler taking
-// [*Emitter] generates, one taking [*Stamper] annotates.
+// Effect is the set of effects of a handler. The second parameter of the
+// handler selects the role of its rule. A handler that takes an [*Emitter]
+// generates, and one that takes a [*Stamper] annotates.
 type Effect = core.Effect
 
-// Rule is one trigger bound to one handler, with its gates. Rules
-// are opaque values: the On constructors make them and the scoping
-// wrappers annotate them, and [Builder.Build] lowers them to the
-// subscription records the engine reads.
+// Rule is one trigger bound to one handler, with its gates. A rule is an
+// opaque value. The On constructors make rules, the scoping wrappers
+// annotate them, and a typed build of the [Builder] lowers them to the
+// subscription records that the engine reads.
 type Rule = core.Rule
 
 // Directive gates rules on a validated directive, and the built plugin
-// returns s for registration. One wrapper may gate many rules, and the
-// schema registers once. Build panics on a name that two wrappers
-// declare, so one wrapper gates them all. On an emit-triggered rule the
-// gate is the instance on the origin. Build sets an empty Kinds of s from
-// the rules, as [Builder.Build] states. Directive allocates the copy of
-// the schema and the list of rules, two allocations.
+// returns s for registration. One wrapper can gate many rules, and the
+// schema registers once. A typed build panics on a name that two wrappers
+// declare, so one wrapper gates every rule of a directive. On a rule that
+// an emit triggers, the gate is the instance on the origin. A typed build
+// sets an empty Kinds of s from the rules, as the documentation of
+// [Builder] states. Directive allocates the copy of the schema and the
+// list of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return core.Directive(s, rules...)
 }
 
-// Gated gates rules on a directive registered by someone else: one
-// of the kernel's, whose schema the composition registers before
-// any plugin's, so a plugin carrying it again would be refused as
-// a duplicate. The name is the schema's canonical spelling. Build
-// panics on a name [directive.Kernel] does not return, because a
-// plugin gates on its own directive through [Directive]. A rule
-// under it runs once per validated instance like one under
-// [Directive]. Gated allocates the list of rules, one allocation.
+// Gated gates rules on a directive that another registrant registers,
+// which is one of the directives of the kernel. The composition registers
+// their schemas before the schema of any plugin, so a plugin that declares
+// one again is refused as a duplicate. name is the canonical spelling of
+// the schema. A typed build panics on a name that [directive.Kernel] does
+// not return, because a plugin gates on its own directive through
+// [Directive]. A rule under Gated runs once for each validated instance,
+// as a rule under [Directive] does. Gated allocates the list of rules, one
+// allocation.
 func Gated(name directive.Name, rules ...Rule) Rule {
 	return core.Gated(name, rules...)
 }
 
-// Where gates rules on stamped facts. Wrappers compose and
-// predicates conjoin; a disjunction is two rules. On an
-// emit-triggered rule the predicate evaluates against the origin.
-// Where allocates the list of predicates and the list of rules, two
-// allocations.
+// Where gates rules on stamped facts. Wrappers compose and predicates
+// conjoin, and a disjunction is two rules. On a rule that an emit
+// triggers, the predicate evaluates against the origin. Where allocates
+// the list of predicates and the list of rules, two allocations.
 func Where(p Pred, rules ...Rule) Rule {
 	return core.Where(p, rules...)
 }
 
-// Pred is a declarative fact predicate: its key is data, which is
-// what the subscription record carries, and its test runs at
-// dispatch, untracked, because gate evaluation is routing. The
-// zero Pred gates nothing and is refused at Build.
+// Pred is a declarative fact predicate. Its key is data, which the
+// subscription record contains, and its test runs untracked at dispatch,
+// because the evaluation of a gate is routing. The zero Pred gates nothing,
+// and a typed build refuses it.
 type Pred = core.Pred
 
 // HasKey admits a subject on which k reads present.
 //
-// The key is read here, when the gate is declared, because the
-// subscription record carries it as data. A handle a composition
-// assigns later is still zero at this point and the gate would
-// watch nothing, so Build panics on it: a handler may read such a
-// handle through its closure, a gate may not. A handle from
-// [meta.Named] has the name of another registrant's key and no id. The
-// workspace binds the gate when it builds, and refuses a name that the
-// registry does not contain under T. HasKey allocates the test's closure
-// over the key, one allocation, and for a named handle the closure that
-// binds it, two allocations.
+// HasKey reads the key when the rule declares the gate, because the
+// subscription record contains it as data. A handle that a composition
+// assigns later is still zero at this point, and the gate would watch
+// nothing, so a typed build panics on it. A handler can read such a handle
+// through its closure, and a gate cannot. A handle from [meta.Named] has
+// the name of a key of another registrant and no id. The workspace binds
+// the gate when it builds, and refuses a name that the registry does not
+// contain under T. HasKey allocates the closure of the test over the key,
+// one allocation, and for a named handle the closure that binds it, two
+// allocations.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return core.HasKey[T](k)
 }
 
-// Equatable is the comparable half of the fact vocabulary; a list
-// value has no equality gate.
+// Equatable is the comparable half of the fact vocabulary. A list value
+// has no equality gate.
 type Equatable = core.Equatable
 
-// KeyEquals admits a subject on which the value arbitration selects
-// for k equals v. The key is read when the gate is declared, and a named
-// handle binds when the workspace builds, as [HasKey] states. KeyEquals
-// allocates the test's closure over the key and the value, one
-// allocation, and for a named handle the closure that binds it, two
-// allocations.
+// KeyEquals admits a subject on which the value that the arbitration
+// selects for k equals v. KeyEquals reads the key when the rule declares
+// the gate, and a named handle binds when the workspace builds, as
+// [HasKey] states. KeyEquals allocates the closure of the test over the
+// key and the value, one allocation, and for a named handle the closure
+// that binds it, two allocations.
 func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return core.KeyEquals[T](k, v)
 }
@@ -456,7 +518,7 @@ func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 type Stamper = core.Stamper
 
 // Stamp records v under k on the subject of the match. The claim has the
-// phase call's bucket and plugin, and the invocation's place in
+// phase call's turn and plugin, and the invocation's place in
 // canonical match order, which is the rule, the subject and the gating
 // instance. The invocation's point reads so far are the claim's
 // derivation. In a match that a directive gates, the claim has directive
@@ -490,35 +552,37 @@ func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T]
 	core.StampOn[T](st, owned, k, v)
 }
 
-// GraphMatch is the OnGraph subject: the whole scope, through the
-// match's reader. It has no subject identity, so subject-bound fact
-// reads return false and its reports demand the position they arrive
-// at.
+// GraphMatch is the OnGraph subject. It reads the whole scope through
+// the reader of the match. It has no subject identity, so a fact read
+// of the subject returns false. Its reports take a position, through
+// [GraphMatch.ErrorfAt], [GraphMatch.WarnfAt] and [GraphMatch.InfofAt],
+// because a finding without a position is a defect of its reporter.
 type GraphMatch = core.GraphMatch
 
-// OnGraph runs the handler once per phase call: the pressure valve
-// for logic that genuinely spans subjects. It takes the Emitter
-// only. A stamper writes to its subject's bag and a graph rule
-// names no subject; an annotator that wants facts on many
-// declarations subscribes to their kinds. OnGraph allocates the rule's
-// leaf and its invocation's closure over the handler, two allocations.
+// OnGraph runs the handler once per phase call, for logic that spans
+// subjects. It takes the Emitter only. A stamper writes to the bag of
+// its subject, and a graph rule has no subject. An annotator that needs
+// facts on many declarations subscribes to their kinds. OnGraph
+// allocates the leaf of the rule and the closure of its invocation over
+// the handler, two allocations.
 func OnGraph(h func(*GraphMatch, *Emitter) error) Rule {
 	return core.OnGraph(h)
 }
 
-// EmitMatch is the OnEmit subject: one emit value an earlier-bucket
-// plugin produced in the same plan. Its subject is the value's
-// origin, so fact reads, predicates and skip all resolve against
-// the origin, and its reports arrive at the origin's position.
+// EmitMatch is the OnEmit subject. It is one emit value that a plugin
+// of an earlier turn produced in the same plan. Its subject is the
+// origin of the value, so fact reads, predicates and the skip directive
+// resolve against the origin. Its reports have the position of the
+// origin.
 type EmitMatch = core.EmitMatch
 
-// OnEmit runs the handler once per emit value of one kind,
-// wherever a slot contains it. It takes the Emitter only: emit is
-// per plan and plans run in parallel, so a fact stamped from the emit
-// side would be visible to one plan, and sibling plans would never
-// read it. A fact about generated output is a fact on its origin,
-// stamped during Annotate. OnEmit allocates the rule's leaf and its
-// invocation's closure over the handler, two allocations.
+// OnEmit runs the handler once for each emit value of one kind,
+// wherever a slot contains it. It takes the Emitter only. Emit values
+// belong to one plan, and plans run in parallel, so a fact stamped from
+// the emit side would be visible to one plan alone. An annotator stamps
+// a fact about generated output on its origin. OnEmit allocates the leaf
+// of the rule and the closure of its invocation over the handler, two
+// allocations.
 func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 	return core.OnEmit(k, h)
 }

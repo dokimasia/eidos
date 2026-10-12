@@ -45,16 +45,16 @@ func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	core.BenchRules(b, setup, budget)
 }
 
-// Loaded loads a source tree through one frontend into a fixture:
-// the sealed graph, and a fact store with the load's classification
-// stamps under the kernel's keys, the keys that the frontend registers
-// through its role, and every key the registrations add. The frontend
-// registers under its language's spelling and the registrations under
-// the handle of the composition, as a workspace registers them. The
-// load runs under [frontendtest.Brand], so a fixture tree writes its
-// carriers the way the frontend suite reads them. A load that reports
-// an Error fails the test, because a tree the language refuses proves
-// nothing about its rules.
+// Loaded loads a source tree through one frontend into a fixture. The
+// fixture has the sealed graph, the findings of the load, and a fact
+// store with the classification stamps of the load. The store registers
+// its keys through [frontendtest.Registry], so a nil function of keys
+// registers nothing. Each stamp has the claim of [meta.LoadClaim], as in
+// a workspace run. The load runs under [frontendtest.Brand], so a
+// fixture tree writes its carriers the way the frontend suite reads
+// them, and under the context of tb, which ends with the test. A load
+// that reports an Error fails the test, because a tree that the language
+// refuses proves nothing about its rules.
 func Loaded(tb assert.TB, f plugin.Frontend, sources fs.FS, keys ...func(*meta.Registry) error) *Fixture {
 	return core.Loaded(tb, f, sources, keys...)
 }
@@ -68,85 +68,90 @@ func Scripted() rules.SourceRules {
 	return core.Scripted()
 }
 
-// Fixture is what a language brings to the suite: a sealed graph
-// its frontend loaded, the facts the run stamped on it, and the
-// kernel's keys those facts registered under.
+// Fixture is the input that a language passes to the suite. It contains a
+// sealed graph that the frontend of the language loaded, the facts that
+// the run stamped on it, the keys of the kernel under which those facts
+// registered, and the findings of the load.
 type Fixture = core.Fixture
 
-// Setup builds the rules under test and their fixture, fresh per
-// check.
+// Setup builds the rules under test and their fixture. The suite calls it
+// once for each check.
 type Setup = core.Setup
 
-// RunRulesSuite checks a language's rules against the projection
-// contract: equal values from two bounds over one view, a total fold
-// and mapping, refusals and gaps with reasons, distinct samples,
-// witnesses a backend can spell and substitute, sample reads
-// recorded on the view the language is handed, and the serial
-// values under concurrency.
+// RunRulesSuite checks the rules of a language against the projection
+// contract. The contract covers these properties:
+//   - Two bounds over one view return equal values.
+//   - The fold and the mapping are total.
+//   - Each refusal and each gap has a reason.
+//   - The two halves of a pair of samples differ.
+//   - A backend can spell and substitute each derived witness.
+//   - The reads of a sample record on the view that the language receives.
+//   - Concurrent passes return the serial values.
 func RunRulesSuite(t *testing.T, setup Setup) {
 	core.RunRulesSuite(t, setup)
 }
 
 // AssertDeterministic checks that bounds over one view return equal
-// values from every projection, one bound per call of
-// [assert.Deterministic]. Each bound memoises its own fold, so every
-// pass derives every value again.
+// values from every projection. Each call of [assert.Deterministic]
+// creates one bound. Each bound memoises its own fold, so every pass
+// derives every value again.
 func AssertDeterministic(tb assert.TB, setup Setup) {
 	core.AssertDeterministic(tb, setup)
 }
 
-// AssertTotal checks that the fold returns a shape for every
-// reference and that the mapping reports false for every
-// non-callable kind, without panicking. Each reference and each
-// subject reports on its own.
+// AssertTotal checks that the fold returns a shape for every reference
+// and that the mapping reports false for every kind that is not callable,
+// without a panic. Each reference and each subject reports on its own.
 func AssertTotal(tb assert.TB, setup Setup) {
 	core.AssertTotal(tb, setup)
 }
 
-// AssertRefusesWithReason checks that every refused sample has a
-// refusal other than none and that every gap names a reason. Each
-// sample and each gap reports on its own.
+// AssertRefusesWithReason checks that every sample without a value has a
+// refusal other than none, and that every gap has a reason. Each sample
+// and each gap reports on its own.
 func AssertRefusesWithReason(tb assert.TB, setup Setup) {
 	core.AssertRefusesWithReason(tb, setup)
 }
 
-// AssertDistinctSamples checks that the two halves of every derived
-// pair differ, compared field by field at every depth. Each pair
-// reports on its own.
+// AssertDistinctSamples checks that the two halves of every derived pair
+// differ, compared field by field at every depth. Each pair reports on
+// its own. A check that compares against one half of a pair that does not
+// differ passes whenever the subject has that value.
 func AssertDistinctSamples(tb assert.TB, setup Setup) {
 	core.AssertDistinctSamples(tb, setup)
 }
 
-// AssertWitnesses checks a language's generics capability over every
-// generic declaration in the fixture. Derive returns a reference
+// AssertWitnesses checks the generics capability of a language over
+// every generic declaration in the fixture. Derive returns a reference
 // with a spelling wherever it reports a witness, because a backend
-// writes the instantiation from the spelling. Substitute rewrites
-// every reference that targets a parameter into the parameter's
-// witness and leaves the reference it is handed unchanged. A
-// language without the capability, and a fixture declaring no type
-// parameter, have nothing to check. A fixture that declares type
-// parameters references one whose witnesses derive, or the check
-// fails as proving nothing.
+// writes the instantiation from the spelling. [rules.Substitute]
+// rewrites every reference that targets a parameter into the witness of
+// the parameter, and leaves the reference that it receives unchanged, so
+// the check also proves that the frontend targets a type parameter in
+// scope. A language without the capability, and a fixture that declares
+// no type parameter, have nothing to check. A fixture that declares type
+// parameters must reference one whose witnesses derive. Otherwise the
+// check fails, because it proves nothing.
 func AssertWitnesses(tb assert.TB, setup Setup) {
 	core.AssertWitnesses(tb, setup)
 }
 
-// AssertRecorded checks that a language's samples read through the
-// view they are handed. A sample of a reference that targets a
-// declaration reads the declaration, so the read set the view
-// records into contains the target, and a change to the declaration
-// re-runs every generator that wrote the sample. The check calls the
-// language's own SamplesOf with a fresh view per field, so no read
-// the kernel's walks make counts toward it.
+// AssertRecorded checks that the samples of a language read through the
+// view that they receive. A sample of a reference that targets a
+// declaration reads the declaration, so the read set of the view
+// contains the target, and a change to the declaration runs every
+// generator that wrote the sample again. The check calls the
+// DeriveSamples of the language with a fresh view per field, so no read
+// of the walks of the kernel counts toward it.
 func AssertRecorded(tb assert.TB, setup Setup) {
 	core.AssertRecorded(tb, setup)
 }
 
-// AssertConcurrent checks that the projections, run by
-// [go.dokimi.dev/assert/history.Concurrently] on goroutines released
-// together, each over its own view, return the serial values. Each
-// pass reports on its own, and one that does not finish within a
-// minute fails.
+// AssertConcurrent checks that concurrent passes of the projections
+// return the serial values. [go.dokimi.dev/assert/history.Concurrently]
+// runs the passes on goroutines that start together, each over its own
+// view. Each pass reports on its own, and a pass that does not finish
+// within a minute fails.
 func AssertConcurrent(tb assert.TB, setup Setup) {
 	core.AssertConcurrent(tb, setup)
 }

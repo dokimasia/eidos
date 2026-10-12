@@ -171,6 +171,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Rendered", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(backendtest.Rendered), reflect.TypeOf(core.Rendered), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("RenderSettled", func(t *testing.T) {
 		t.Parallel()
 
@@ -198,6 +208,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(backendtest.AssertPopulatedFixture), reflect.TypeOf(core.AssertPopulatedFixture), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("AssertEmptyRender", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(backendtest.AssertEmptyRender), reflect.TypeOf(core.AssertEmptyRender), "the wrapper has the kernel function's signature")
 		})
 	})
 

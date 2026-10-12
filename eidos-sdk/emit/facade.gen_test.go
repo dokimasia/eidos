@@ -351,6 +351,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("TagEntry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[emit.TagEntry](), reflect.TypeFor[core.TagEntry](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("DeclaredName", func(t *testing.T) {
 		t.Parallel()
 
@@ -508,6 +518,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(emit.RefExpr), reflect.TypeOf(core.RefExpr), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Seal", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(emit.Seal), reflect.TypeOf(core.Seal), "the wrapper has the kernel function's signature")
 		})
 	})
 

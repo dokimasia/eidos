@@ -52,16 +52,18 @@ const (
 	FactIndexer          = core.FactIndexer
 	FactConstructs       = core.FactConstructs
 	FactHardPrivate      = core.FactHardPrivate
+	FactOptional         = core.FactOptional
+	FactMutability       = core.FactMutability
+	FactComputed         = core.FactComputed
 	FactLabel            = core.FactLabel
 	FactParamDefault     = core.FactParamDefault
-	FactOptional         = core.FactOptional
 	FactVariadic         = core.FactVariadic
 	FactNamedReturn      = core.FactNamedReturn
 	FactConstEnum        = core.FactConstEnum
+	FactUnderlying       = core.FactUnderlying
 	FactFields           = core.FactFields
 	FactMethods          = core.FactMethods
 	FactValue            = core.FactValue
-	FactMutability       = core.FactMutability
 	FactTag              = core.FactTag
 	FactSealed           = core.FactSealed
 	FactTypes            = core.FactTypes
@@ -163,6 +165,7 @@ const (
 	KindTypeRef     = core.KindTypeRef
 	KindTypeParam   = core.KindTypeParam
 	KindEmbed       = core.KindEmbed
+	KindTagEntry    = core.KindTagEntry
 )
 
 // ParseKind returns the kind a name spells, and false for a name no

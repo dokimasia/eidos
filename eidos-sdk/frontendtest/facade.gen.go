@@ -11,7 +11,8 @@
 // # Dependency position
 //
 // sdk/frontendtest imports core/frontend/frontendtest,
-// sdk/directive, sdk/meta, go.dokimi.dev/assert and the Go stdlib.
+// sdk/directive, sdk/meta, sdk/plugin, go.dokimi.dev/assert and
+// the Go stdlib.
 package frontendtest
 
 import (
@@ -22,29 +23,31 @@ import (
 	core "go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/meta"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // AssertDeterministicParse loads the fixture once per call of
 // [assert.Deterministic] and compares what each load recorded with
 // what the first one did: the graph byte for byte, the attached
-// directives and classification stamps, and the findings in report
-// order. Reparsing unchanged files yields the same identities, which
-// every later comparison by identity depends on.
+// directives and classification stamps, and the findings in the order
+// of the sink. A parse of unchanged files must return the same
+// identities, because every later comparison by identity depends on
+// them.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	core.AssertDeterministicParse(tb, setup)
 }
 
-// AssertPositionedDiagnostics checks every finding's address: a
-// finding without a position or an origin is a defect in the
-// frontend that reported it. Each finding reports on its own, under
-// its code and its message.
+// AssertPositionedDiagnostics checks the position and the origin of
+// every finding. A finding that [diag.Diag.Positioned] refuses, or a
+// finding without an origin, is a defect of the frontend that reported
+// it. Each finding reports on its own, with its code and its message.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	core.AssertPositionedDiagnostics(tb, setup)
 }
 
-// AssertClassified checks the claim: every selected file
-// either declares into the graph or has a finding naming it, so
-// nothing drops in silence. The recorded stamps apply cleanly under
+// AssertClassified checks the claim: every selected file either
+// declares into the graph or has a finding at its path, so no file is
+// dropped in silence. The recorded stamps apply cleanly under
 // the keys that the frontend registers through its role and the keys
 // that the fixture declares, the way the workspace run applies them. A
 // stamp under a key that neither registers fails, because nothing could
@@ -54,12 +57,23 @@ func AssertClassified(tb assert.TB, setup Setup) {
 	core.AssertClassified(tb, setup)
 }
 
+// Registry returns the key registry that a workspace builds for the
+// frontend f, and the handles of the kernel's keys in it. It registers
+// the kernel's keys first. Then it registers the keys that f registers
+// through its role, under the spelling of the language of f. Last, it
+// calls each function of keys with the handle of the composition. A nil
+// function registers nothing. Registry stops the test where a
+// registration fails.
+func Registry(tb assert.TB, f plugin.Frontend, keys ...func(*meta.Registry) error) (*meta.Registry, meta.KernelKeys) {
+	return core.Registry(tb, f, keys...)
+}
+
 // AssertOwnedExcluded checks the one exclusion the kernel makes: a
 // selected file framed under the load's own brand is the
 // workspace's output and never enters a unit, while the same file
 // framed under another brand is ordinary input and loads. The
 // check stamps the copies itself through the language's own
-// comment syntax, so a fixture states nothing.
+// comment syntax, so a fixture needs no copies of its own.
 func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 	core.AssertOwnedExcluded(tb, setup)
 }
@@ -85,8 +99,8 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 // returned again over a copy whose every selected file gained a line
 // break, and requires each unit's door fold to move. A dependency unit
 // reads the stores and not the workspace, so the comparison leaves it
-// out. The kernel's side of the door, a read outside the unit refusing
-// and naming the path, is the plugin package's own contract.
+// out. The plugin package checks the side of the kernel: a read outside
+// the unit returns an error that contains the path.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	core.AssertJailedReads(tb, setup)
 }
@@ -94,7 +108,7 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 // AssertSignatureDepth loads the fixture once full and once under
 // its signature roots. The shallow graph's identities are a subset
 // of the full graph's, under the same spellings, and the report
-// states which units loaded shallow. Every identity the fixture
+// lists the units that loaded shallow. Every identity the fixture
 // lists in [Fixture.Dropped] is in the full graph and absent from
 // the shallow one, so a frontend that ignores depth fails a fixture
 // that lists one.
@@ -138,12 +152,24 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 }
 
 // AssertReexports checks the resolution step's following of
-// re-exports for a frontend in the [plugin.Exporter] role: every
-// identity the fixture lists in [Fixture.Reexported], a declaration
-// the fixture's references name only through a re-export, is the
-// target of a reference in the graph.
+// re-exports for a frontend in the [plugin.Exporter] role. Every
+// identity in [Fixture.Reexported] is a declaration that the
+// references of the fixture resolve to only through a re-export, and
+// the check requires a reference in the graph that targets it.
 func AssertReexports(tb assert.TB, setup Setup) {
 	core.AssertReexports(tb, setup)
+}
+
+// AssertEmptyLoad loads the fixture's [Fixture.Empty] tree, whose
+// claimed files declare nothing, with the fixture's stores. It fails
+// where the selection claims no file of the tree, because the load then
+// never calls the frontend, where the load returns an error or reports a
+// finding of Error severity, where a claimed file does not enter the
+// graph, and where a claimed file declares something in the graph. The
+// files of a dependency unit belong to a store, so the check leaves them
+// out. Each finding and each file reports on its own.
+func AssertEmptyLoad(tb assert.TB, setup Setup) {
+	core.AssertEmptyLoad(tb, setup)
 }
 
 // ScriptedLang is the language of every scripted declaration.
@@ -255,10 +281,10 @@ func NewScriptedExporter() *ScriptedExporter {
 // copies under it.
 const Brand = core.Brand
 
-// Fixture is what a frontend brings to the suite: the tree the
-// selection claims from, and what the checks that need more can
-// read. A field left empty skips the checks that need it, and the
-// suite states each skip.
+// Fixture is the input of a frontend to the suite. It has the tree that
+// the selection claims from, and the inputs of the checks that need
+// more. A field left empty skips the checks that need it, and the suite
+// reports each skip as a skipped subtest.
 type Fixture = core.Fixture
 
 // Setup builds the frontend under test and its fixture, fresh per
@@ -269,15 +295,15 @@ type Setup = core.Setup
 // deterministic parses, positioned findings, no silently dropped
 // file, the workspace's own outputs refused, honest unit keys, the
 // jailed read, signature depth, validated directive attachments,
-// resolved references, and for a frontend in the dependent or the
-// exporter role, its dependency units and its re-exports. It drives
-// the SPI, so a kit-built frontend and a hand-rolled one meet the
-// same checks.
+// resolved references, a tree whose files declare nothing, and for a
+// frontend in the dependent or the exporter role, its dependency units
+// and its re-exports. It drives the SPI, so a kit-built frontend and a
+// hand-rolled one meet the same checks.
 //
-// One survey load up front finds what the fixture cannot state:
-// classification keys, a unit loading full beside its signature
-// roots, a second package. The suite states each such skip as a
-// skipped subtest of its own.
+// One survey load at the start finds the facts that the fixture does not
+// contain: the classification keys, a unit that loads full beside its
+// signature roots, and a second package. The suite reports each skip that
+// follows from them as a skipped subtest of its own.
 func RunFrontendSuite(t *testing.T, setup Setup) {
 	core.RunFrontendSuite(t, setup)
 }

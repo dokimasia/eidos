@@ -40,4 +40,14 @@ func TestFacade(t *testing.T) {
 			assert.Equal(t, reflect.TypeOf(backend.New), reflect.TypeOf(core.New), "the wrapper has the kernel function's signature")
 		})
 	})
+
+	t.Run("Backend", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[backend.Backend](), reflect.TypeFor[core.Backend](), "the facade aliases the kernel's type")
+		})
+	})
 }

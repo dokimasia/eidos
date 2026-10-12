@@ -101,6 +101,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("AssertDocumented", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.AssertDocumented), reflect.TypeOf(core.AssertDocumented), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("RequiredInCI", func(t *testing.T) {
 		t.Parallel()
 
@@ -141,13 +151,73 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
-	t.Run("Setup", func(t *testing.T) {
+	t.Run("RunTimeout", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("is the kernel's type", func(t *testing.T) {
+		t.Run("equals the kernel's value", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, reflect.TypeFor[toolchain.Setup](), reflect.TypeFor[core.Setup](), "the facade aliases the kernel's type")
+			assert.Equal(t, toolchain.RunTimeout, core.RunTimeout, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("Run", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.Run), reflect.TypeOf(core.Run), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("LookPaths", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.LookPaths), reflect.TypeOf(core.LookPaths), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Scratch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.Scratch), reflect.TypeOf(core.Scratch), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("WriteFile", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.WriteFile), reflect.TypeOf(core.WriteFile), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Sources", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.Sources), reflect.TypeOf(core.Sources), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Probe", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.Probe), reflect.TypeOf(core.Probe), "the wrapper has the kernel function's signature")
 		})
 	})
 
@@ -158,6 +228,26 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(toolchain.RunToolchainSuite), reflect.TypeOf(core.RunToolchainSuite), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Surface", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.Surface), reflect.TypeOf(core.Surface), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("AssertSurface", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(toolchain.AssertSurface), reflect.TypeOf(core.AssertSurface), "the wrapper has the kernel function's signature")
 		})
 	})
 }

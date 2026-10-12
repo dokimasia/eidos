@@ -241,6 +241,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("UnbindableHelper", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.UnbindableHelper, core.UnbindableHelper, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("RefusedFact", func(t *testing.T) {
 		t.Parallel()
 
@@ -258,6 +268,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, render.UndeclaredFact, core.UndeclaredFact, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RejectedFact", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.RejectedFact, core.RejectedFact, "the facade re-declares the kernel's value")
 		})
 	})
 
@@ -308,6 +328,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, render.Refuses, core.Refuses, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("Rejects", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.Rejects, core.Rejects, "the facade re-declares the kernel's value")
 		})
 	})
 
@@ -458,6 +488,56 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(render.RefuseValue), reflect.TypeOf(core.RefuseValue), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("HelperDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperDocs, core.HelperDocs, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("HelperSpell", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperSpell, core.HelperSpell, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("HelperTypeParams", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperTypeParams, core.HelperTypeParams, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("HelperParams", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperParams, core.HelperParams, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("HelperResults", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperResults, core.HelperResults, "the facade re-declares the kernel's value")
 		})
 	})
 }

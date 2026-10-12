@@ -22,34 +22,32 @@ import (
 // the declaration does not declare, positioned at the carrier.
 var UnknownWitnessParam = core.UnknownWitnessParam
 
-// The two annotators' identities: the origin their findings and
-// claims carry.
+// The names of the two annotators, which their findings and claims record
+// as the origin.
 const (
-	// SamplePlugin is the sample annotator's identity.
+	// SamplePlugin is the name of the sample annotator.
 	SamplePlugin = core.SamplePlugin
-	// WitnessPlugin is the witness annotator's identity.
+	// WitnessPlugin is the name of the witness annotator.
 	WitnessPlugin = core.WitnessPlugin
 )
 
-// Sample returns the annotator behind the sample directive. It runs
-// once per validated instance on every kind the directive admits,
-// a field, a parameter, a return, a variable, a constant, an alias,
-// a struct, an enum and a sum, and stamps the value under
-// gen.sample and the alternate, where stated, under gen.alternate,
-// both as the text the author wrote. On a callable or an
-// interface, which carry several types or none, the stamp is
-// refused at the subject.
+// Sample returns the annotator of the sample directive. It runs once for
+// each validated instance on a field, a parameter, a return, a variable, a
+// constant, an alias, a struct, an enum or a sum. It stamps the value
+// under gen.sample, and the alternate under gen.alternate where the
+// instance states one, both as the text that the author wrote. A callable
+// and an interface have several types or none, so the fact store refuses
+// the stamp at the subject.
 func Sample() plugin.Annotator {
 	return core.Sample()
 }
 
-// Witness returns the annotator behind the witness directive. It
-// runs once per validated instance on every generic kind, a
-// struct, an interface, a function, a method, an alias and a sum,
-// and stamps each key's resolved type under gen.witness on the
-// type parameter the key names. A key naming none of the
-// declaration's parameters is refused under [UnknownWitnessParam]
-// at the carrier, and the rest still stamp.
+// Witness returns the annotator of the witness directive. It runs once
+// for each validated instance on a struct, an interface, a function, a
+// method, an alias or a sum. For each key, it stamps the resolved type
+// under gen.witness on the type parameter that the key names. It refuses
+// a key that names none of the parameters of the declaration under
+// [UnknownWitnessParam] at the carrier, and stamps the other keys.
 func Witness() plugin.Annotator {
 	return core.Witness()
 }

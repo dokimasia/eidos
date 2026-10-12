@@ -81,6 +81,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("LoadClaim", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(meta.LoadClaim), reflect.TypeOf(core.LoadClaim), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Read", func(t *testing.T) {
 		t.Parallel()
 

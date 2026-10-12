@@ -51,6 +51,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Source", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugintest.Source](), reflect.TypeFor[core.Source](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Loaded", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugintest.Loaded), reflect.TypeOf(core.Loaded), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Setup", func(t *testing.T) {
 		t.Parallel()
 
@@ -148,6 +168,26 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(plugintest.AssertIdempotentAnnotate), reflect.TypeOf(core.AssertIdempotentAnnotate), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("AssertCleanRun", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugintest.AssertCleanRun), reflect.TypeOf(core.AssertCleanRun), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("AssertEmptyRun", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugintest.AssertEmptyRun), reflect.TypeOf(core.AssertEmptyRun), "the wrapper has the kernel function's signature")
 		})
 	})
 

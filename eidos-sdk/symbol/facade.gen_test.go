@@ -211,6 +211,36 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("FactOptional", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactOptional, core.FactOptional, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("FactMutability", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactMutability, core.FactMutability, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("FactComputed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactComputed, core.FactComputed, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("FactLabel", func(t *testing.T) {
 		t.Parallel()
 
@@ -228,16 +258,6 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.FactParamDefault, core.FactParamDefault, "the facade re-declares the kernel's value")
-		})
-	})
-
-	t.Run("FactOptional", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("equals the kernel's value", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, symbol.FactOptional, core.FactOptional, "the facade re-declares the kernel's value")
 		})
 	})
 
@@ -271,6 +291,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("FactUnderlying", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactUnderlying, core.FactUnderlying, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("FactFields", func(t *testing.T) {
 		t.Parallel()
 
@@ -298,16 +328,6 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.FactValue, core.FactValue, "the facade re-declares the kernel's value")
-		})
-	})
-
-	t.Run("FactMutability", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("equals the kernel's value", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, symbol.FactMutability, core.FactMutability, "the facade re-declares the kernel's value")
 		})
 	})
 
@@ -718,6 +738,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.KindEmbed, core.KindEmbed, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("KindTagEntry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.KindTagEntry, core.KindTagEntry, "the facade re-declares the kernel's value")
 		})
 	})
 

@@ -30,3 +30,8 @@ type Builder = core.Builder
 func New(name plugin.ID, target plugin.Target, syntax plugin.CommentSyntax) *Builder {
 	return core.New(name, target, syntax)
 }
+
+// Backend is a backend that the kit built. It is the backend of the
+// SPI, with the fact coverage that the guard of the render reads and the
+// kinds that the language refuses, which the backend suite checks.
+type Backend = core.Backend

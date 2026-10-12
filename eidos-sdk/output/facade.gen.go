@@ -223,11 +223,6 @@ type Change = core.Change
 // A Sink belongs to one goroutine and serves one staging.
 type Sink = core.Sink
 
-// Overwriter is a sink whose commit can write over a file that its
-// brand did not write intact: a file edited since its stamp, and a file
-// without the brand's frame. [Disk], [Mem] and [Tee] implement it.
-type Overwriter = core.Overwriter
-
 // Tee stages one set of files into several sinks at once: a disk
 // sink beside a memory sink is how a run writes and reports the
 // same bytes.

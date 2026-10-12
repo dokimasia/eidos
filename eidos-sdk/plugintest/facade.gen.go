@@ -24,38 +24,64 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Fixture is a hand-built run: the graph, the fact store, the
-// validated directive table and the scope one plugin's phase calls
-// see. Build it, load packages, stamp facts, then hand a plugin to
-// [Fixture.Annotate] or [Fixture.Generate].
+// Fixture is a run that a test builds by hand. It has the graph, the fact
+// store, the table of validated directives and the scope that the phase
+// calls of one plugin see. A test creates it with [New], loads packages,
+// stamps facts, and then passes a plugin to [Fixture.Annotate] or
+// [Fixture.Generate].
 //
-// The graph freezes on the first phase call, so every load and
-// attach comes before it. A later structural write fails the test
-// through the store's error. A Fixture belongs to one test and is
-// not safe for concurrent use.
+// The graph freezes on the first phase call, so every load and attach
+// comes before it. A later structural write fails the test with the error
+// of the store. A Fixture belongs to one test, and it is not safe for
+// concurrent use.
 type Fixture = core.Fixture
 
-// New returns an empty fixture at bucket one, with the kernel's
-// keys registered.
+// New returns an empty fixture at turn one, with the keys of the kernel
+// registered.
 func New(tb assert.TB) *Fixture {
 	return core.New(tb)
 }
 
-// Key registers a typed key under the fixture's registry, claiming
-// the name's namespace on first use.
+// Key registers a typed key in the registry of the fixture. The first key
+// of a namespace claims the namespace.
 func Key[T meta.FactValue](tb assert.TB, f *Fixture, name meta.KeyName, doc string) meta.Key[T] {
 	return core.Key[T](tb, f, name, doc)
 }
 
-// Stamp records one subject-bound fact at plugin authority, as an
-// earlier annotator's stamp records it.
+// Stamp records one fact on a subject at the authority of a plugin, as the
+// stamp of an earlier annotator records it.
 func Stamp[T meta.FactValue](tb assert.TB, f *Fixture, k meta.Key[T], subject symbol.Identity, v T) {
 	core.Stamp[T](tb, f, k, subject, v)
 }
 
-// Result is what one phase call left behind: the plan's emit store,
+// Result is what one phase call leaves. It has the emit store of the plan,
 // the findings, and the fatal error where the phase returned one.
 type Result = core.Result
+
+// Source is a source tree that [Loaded] loads into a fixture.
+type Source = core.Source
+
+// Loaded loads the source into a fixture, as a workspace prepares its first
+// phase call. It loads the tree under the context of tb, and adds the
+// packages of the source to the graph of the fixture. It registers the
+// kernel's keys, the keys of each frontend under its language and the keys
+// of each plugin under its name, and seals the registry. It registers the
+// kernel's schemas and the schemas of each plugin. It files the
+// classification stamps of each declaration of the packages under
+// [meta.LoadClaim]. It validates the directives of each declaration whose
+// schema it registered, and binds each reference through the rules of the
+// language of the subject in the scope of the file of the subject.
+//
+// The registry is sealed, so a test that needs the keys of another plugin
+// lists the plugin in Plugins instead of calling [Key] afterwards.
+//
+// Loaded stops the test where the load returns an error, where a
+// registration, a stamp or a schema fails, and where the load does not
+// declare a package that Packages names. It fails the test once for each
+// Error of the load or the validation.
+func Loaded(tb assert.TB, s Source) *Fixture {
+	return core.Loaded(tb, s)
+}
 
 // Setup builds the plugin under test together with the fixture it
 // runs over, the way a composition builds them: sharing one key
@@ -65,13 +91,16 @@ type Result = core.Result
 // fresh pair every call.
 type Setup = core.Setup
 
-// RunPluginSuite runs the conformance checks a fixture needs no
-// workspace for: declaration stability, byte-equal emit across
-// isolated runs, the same output under parallel dispatch, the same
-// output under a selection of every match, annotator idempotence,
-// positioned diagnostics, attribution, declared tags, the options
-// schema, the template lint, and no panics. It skips the checks for a
-// role or a surface the plugin does not implement.
+// RunPluginSuite runs the conformance checks that need no workspace: the
+// populated fixture, declaration stability, the options schema, the
+// template lint, byte-equal emit across isolated runs, attribution and
+// declared tags, annotator idempotence, a clean run, a run over an empty
+// input, the same output under parallel dispatch, the same output under
+// a selection of every match, positioned diagnostics, no structural
+// write, and no panic. A check of a role or a surface that the plugin
+// does not implement runs as a skipped subtest with the reason.
+// The suite reads the surfaces of one build first, and a panic of that
+// read fails the suite.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	core.RunPluginSuite(t, setup)
 }
@@ -85,10 +114,17 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	core.AssertPopulatedFixture(tb, setup)
 }
 
-// AssertStableDeclaration fails unless two builds of one plugin
-// declare the same name, gate records, outputs and schemas. A
-// declaration that varies between builds breaks every consumer
-// that keys on it.
+// AssertStableDeclaration fails unless the plugin has a name, every read
+// of one build returns the same declarations, and a second build
+// declares the values of the first. The declarations are every
+// value that the workspace reads off a plugin when it composes: the
+// type, the name, the version, the gate records, the families, the
+// schemas, the priorities and the capabilities, the options with their
+// defaults, and the template declarations. The check reads the template
+// declarations for each target of the fixture and for a target that no
+// backend claims. A declaration that varies breaks every consumer that
+// keys on it, and the workspace reads some declarations more than once.
+// A read that panics fails the check.
 func AssertStableDeclaration(tb assert.TB, setup Setup) {
 	core.AssertStableDeclaration(tb, setup)
 }
@@ -159,10 +195,30 @@ func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	core.AssertIdempotentAnnotate(tb, setup)
 }
 
+// AssertCleanRun runs every phase the plugin implements over the fixture
+// of the setup, annotate first, and fails on each finding of Error
+// severity. The fixture is an input that the plugin accepts, and an
+// Error fails the run that reports it. Each finding reports on its own.
+func AssertCleanRun(tb assert.TB, setup Setup) {
+	core.AssertCleanRun(tb, setup)
+}
+
+// AssertEmptyRun runs every phase the plugin implements, annotate first,
+// over the fixture of the setup without its input: an empty graph, no
+// directives, no facts and an empty emit store, under the keys, the
+// rules, the target, the spoke and the policy of the setup. It fails
+// where a phase panics, returns an error or reports a finding of Error
+// severity. A workspace runs a plugin over every plan, and the scope of a
+// plan can contain nothing that the plugin matches. Each finding reports
+// on its own.
+func AssertEmptyRun(tb assert.TB, setup Setup) {
+	core.AssertEmptyRun(tb, setup)
+}
+
 // AssertPositionedDiagnostics runs every phase the plugin implements and
-// refuses a finding without a position: a diagnostic nobody can
-// jump to is a defect in whatever reported it. Each finding reports on
-// its own.
+// fails on a finding that [diag.Diag.Positioned] refuses: a diagnostic
+// that no reader can open is a defect in whatever reported it. Each
+// finding reports on its own.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	core.AssertPositionedDiagnostics(tb, setup)
 }

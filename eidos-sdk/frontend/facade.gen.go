@@ -10,35 +10,68 @@
 //
 // # Dependency position
 //
-// sdk/frontend imports core/frontend, sdk/plugin and sdk/symbol.
+// sdk/frontend imports core/frontend, sdk/meta, sdk/plugin and
+// sdk/symbol.
 package frontend
 
 import (
 	core "go.dokimi.dev/eidos/core/frontend"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Classifier inspects a parsed unit and stamps classification
-// facts through the unit's builder, such as a test-file marker or a
-// foreign generator's output, at plugin authority under the
-// frontend's identity. It runs after the author's parse, on the
-// same unit, so what it inspects is what the parse declared, and a
-// returned error is fatal to the load the way a parse error is.
-// There is no exclusion hook beside it: a classifier stamps what it
-// saw and drops nothing, because whether a classified file takes
-// part is the consumer's call.
+// Classifier inspects a parsed unit and stamps classification facts
+// through the builder of the unit, such as a test-file marker or the marker
+// of the output of a foreign generator. The facts have plugin authority
+// under the identity of the frontend. A classifier runs on the unit after
+// the declared parse, so it inspects what the parse declared. A returned error
+// ends the load, as an error of the parse does. A classifier stamps what
+// it saw and drops nothing, because the consumer decides whether a
+// classified file takes part. The kit has no hook that excludes a file.
 type Classifier = core.Classifier
 
-// Builder accumulates a frontend declaration: the identity and the
-// language of every declaration it loads, the comment syntax the
-// parse strips through, whether the language overloads, the file
-// claim, and the functions the pipeline varies in. Everything on it
-// is data except the functions. Build freezes it, and a Builder is
-// not reused afterwards.
+// TestFiles returns a classifier that stamps key true on every file of the
+// unit for which test reports true. test receives the workspace path of the
+// file, so a frontend can test the suffix _test.go as the go command does.
+// The stamp is at the position of the file.
+//
+// # Allocation contract
+//
+// The classifier allocates the list of the packages of the unit and the
+// growth of the list of stamps: two allocations for a unit with one test
+// file. It returns no error.
+func TestFiles(key meta.KeyName, test func(path string) bool) Classifier {
+	return core.TestFiles(key, test)
+}
+
+// Builder accumulates the declaration of a frontend. It records the
+// identity and the language of every declaration that the frontend loads,
+// the comment syntax that the parse strips, whether the language
+// overloads, the claim of files, and the functions that differ between
+// languages. Build freezes the declaration, and a Builder is not used
+// again afterwards.
 type Builder = core.Builder
 
 // New starts a frontend declaration for one language.
 func New(name plugin.ID, lang symbol.Lang, syntax plugin.CommentSyntax) *Builder {
 	return core.New(name, lang, syntax)
+}
+
+// Nearest returns the path of the file named name in dir or in the nearest
+// directory above dir, and the empty string where no directory up to the
+// root of the workspace has one. It probes each directory with a read
+// through r, so the load folds every probe into the keys of the units that
+// the partition produces. A read that fails counts as an absent file.
+// Nearest caches the result in seen for every directory that a probe
+// visited, so a later probe stops at the first directory that an earlier
+// probe visited. A partition passes one seen to every probe for one name.
+//
+// # Allocation contract
+//
+// Nearest allocates the joined path of each directory that it probes, the
+// list of the directories that it visits, and the growth of seen. A
+// directory that seen has costs nothing.
+func Nearest(r plugin.FileReader, dir, name string, seen map[string]string) string {
+	return core.Nearest(r, dir, name, seen)
 }

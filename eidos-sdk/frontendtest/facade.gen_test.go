@@ -51,6 +51,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Registry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(frontendtest.Registry), reflect.TypeOf(core.Registry), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("AssertOwnedExcluded", func(t *testing.T) {
 		t.Parallel()
 
@@ -128,6 +138,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(frontendtest.AssertReexports), reflect.TypeOf(core.AssertReexports), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("AssertEmptyLoad", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(frontendtest.AssertEmptyLoad), reflect.TypeOf(core.AssertEmptyLoad), "the wrapper has the kernel function's signature")
 		})
 	})
 

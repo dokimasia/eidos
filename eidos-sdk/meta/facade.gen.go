@@ -18,43 +18,55 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Authority orders who a write speaks for. A human override at the
-// source declaration outranks any inference, whatever order the
-// plugins ran in. Manual is reserved for consumer tooling. Nothing
-// in a normal run writes at it.
+// Authority is the rank of the source of a write. A human override at
+// the source declaration outranks any inference, in any order of the
+// plugins. Manual is reserved for consumer tooling, and no write of a
+// normal run has it.
 //
-// The zero value is [AuthorityPlugin]: a claim that returned no
-// authority speaks with the least.
+// The zero value is [AuthorityPlugin], so a claim without an authority
+// has the lowest one.
 type Authority = core.Authority
 
 const (
-	// AuthorityPlugin is an inference: a fact a plugin stamped.
+	// AuthorityPlugin is the authority of a fact that a plugin stamped.
 	AuthorityPlugin = core.AuthorityPlugin
-	// AuthorityDirective is a human's write at the source
-	// declaration, a drop included.
+	// AuthorityDirective is the authority of a write by a person at the
+	// source declaration, a drop included.
 	AuthorityDirective = core.AuthorityDirective
-	// AuthorityManual is consumer tooling: a migration or a fix-it
-	// script that outranks even the directives it rewrites.
+	// AuthorityManual is the authority of consumer tooling, such as a
+	// migration or a script that fixes directives. It outranks the
+	// directives that the tooling rewrites.
 	AuthorityManual = core.AuthorityManual
 )
 
-// Order is a claim's place among the claims of one plugin in one
-// bucket: the rule that made it, the subject of the invocation that made
-// it, and the gating instance. A frontend's stamp has rule zero and the
-// stamp's index among its subject's stamps as its instance. A drop has
-// rule zero and the directive's instance.
+// Order is the place of a claim among the claims of one plugin in one
+// turn. It consists of the rule that made the claim, the subject of
+// the invocation that made it, and the gating instance. The stamp of a
+// frontend has rule zero, and its instance is its index among the stamps
+// of its subject. A drop has rule zero and the instance of its
+// directive.
 //
 // Every run computes the same Order for the same claim, whatever else
-// the run executes, so a claim a warm run keeps ranks against one it
-// makes. The zero Order is rule zero on no subject at instance zero.
+// the run executes. A claim that a warm run keeps therefore ranks
+// correctly against a claim that the run makes. The zero Order is rule
+// zero on no subject at instance zero.
 type Order = core.Order
 
-// Claim is one write's envelope: the rank that arbitrates it and
-// the provenance that explains it.
+// Claim is the envelope of one write. It contains the rank of the write
+// and the provenance of the write.
 type Claim = core.Claim
 
-// Read is one recorded read: a declaration read when Key is empty,
-// a fact read at (subject, key) otherwise.
+// LoadClaim returns the claim under which a run files the classification
+// stamp s of subject. The index i is the place of s among the stamps of
+// subject in load order. The claim has plugin authority, and its plugin
+// is the origin of s. Its order has rule zero and i as its instance, and
+// its position is the position of s. It allocates nothing.
+func LoadClaim(subject symbol.Identity, i int, s RawStamp) Claim {
+	return core.LoadClaim(subject, i, s)
+}
+
+// Read is one recorded read. It is a read of a declaration where Key is
+// empty, and a read of the fact at the subject and the key otherwise.
 type Read = core.Read
 
 // FactRef names one fact: a subject and a key.
@@ -209,9 +221,9 @@ const (
 // frontend's own namespace.
 const (
 	// ModuleKey is a package's toolchain-module identity: a Go
-	// module path, a Maven artifact, a crate name. A package
-	// outside every module has none, which is what a bare directory
-	// tree loads as.
+	// module path, a Maven artifact, a crate name or the name of an
+	// npm package. A package outside every module has none, which is
+	// what a bare directory tree loads as.
 	ModuleKey = core.ModuleKey
 	// ModuleRootKey is the workspace-relative directory the
 	// package's module is declared in, "." for the tree's root.

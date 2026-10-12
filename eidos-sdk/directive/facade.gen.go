@@ -93,6 +93,10 @@ var (
 	// kind that the schema's Kinds leave out. The instance drops, so it
 	// does not run a rule.
 	MisplacedDirective = core.MisplacedDirective
+	// DerivedMetadataKey refuses a meta directive that names a key whose
+	// value its registrant derives from other keys. The instance is
+	// dropped, and the facts that the key summarises stay.
+	DerivedMetadataKey = core.DerivedMetadataKey
 )
 
 // Name is a directive's spelling: bare while one plugin claims it,

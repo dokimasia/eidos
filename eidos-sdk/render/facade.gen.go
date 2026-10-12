@@ -138,6 +138,12 @@ var MixedClaim = core.MixedClaim
 // declaration.
 var HelperCollision = core.HelperCollision
 
+// UnbindableHelper reports a plugin helper that text/template cannot
+// call: a name that is not an identifier, a value that is not a
+// function, or a function whose results a template cannot use. The
+// render leaves the helper out of the merged vocabulary.
+var UnbindableHelper = core.UnbindableHelper
+
 // RefusedFact reports a stated fact the backend declares no idiom
 // for: the declaration renders without it, and the finding is what
 // keeps the narrowing loud. It is a warning, because one neutral
@@ -150,6 +156,12 @@ var RefusedFact = core.RefusedFact
 // backend's own declaration: a fact the schema grows reaches every
 // backend as this finding until each declares a verdict.
 var UndeclaredFact = core.UndeclaredFact
+
+// RejectedFact reports a stated fact whose declaration the target
+// cannot render with the fact or without it, such as a member whose
+// name is an expression of another language. It is an error, and the
+// render leaves the declaration out.
+var RejectedFact = core.RejectedFact
 
 // Verdict says what a backend does with one stated fact.
 //
@@ -171,6 +183,10 @@ const (
 	// reports the stated fact and the declaration renders without
 	// it.
 	Refuses = core.Refuses
+	// Rejects means the target cannot render the declaration with the
+	// fact or without it: the render reports the stated fact as an
+	// error and leaves the declaration out.
+	Rejects = core.Rejects
 )
 
 // Coverage is a backend's declared fact coverage: one verdict per
@@ -304,3 +320,20 @@ type ValueError = core.ValueError
 func RefuseValue(lang, format string, args ...any) error {
 	return core.RefuseValue(lang, format, args...)
 }
+
+// The names of the vocabulary helpers that every backend declares under the
+// same name, so one template text serves each target. Each backend binds
+// its own function under each name.
+const (
+	// HelperDocs writes the documentation of a declaration in the comment
+	// form of the target.
+	HelperDocs = core.HelperDocs
+	// HelperSpell writes a type reference as the target spells it.
+	HelperSpell = core.HelperSpell
+	// HelperTypeParams writes the type parameter list of a declaration.
+	HelperTypeParams = core.HelperTypeParams
+	// HelperParams writes the parameter list of a callable.
+	HelperParams = core.HelperParams
+	// HelperResults writes the results of a callable.
+	HelperResults = core.HelperResults
+)

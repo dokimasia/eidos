@@ -10,15 +10,17 @@
 //
 // # Dependency position
 //
-// sdk/rules imports core/rules, sdk/emit, sdk/meta, sdk/node and
-// sdk/symbol.
+// sdk/rules imports core/rules, sdk/directive, sdk/emit, sdk/meta,
+// sdk/node, sdk/store and sdk/symbol.
 package rules
 
 import (
 	core "go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/store"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -45,7 +47,8 @@ type Bound = core.Bound
 
 // NewBound binds a language's rules to a view. forLang returns another
 // language's rules for a contributor or a target declared in it. A nil
-// forLang gives every other language [Absent], and nil rules bind
+// forLang takes the resolver of the view from [View.WithRules], and gives
+// every other language [Absent] where the view has none. Nil rules bind
 // [Absent] for the zero language.
 //
 // # Allocation contract
@@ -79,9 +82,9 @@ type ReturnView = core.ReturnView
 var AbsentRules = core.AbsentRules
 
 // SourceRules is the read-side contract of one language: the decisions
-// inside the kernel's walks, what a spelling names in a scope, the
-// values of a type, and the naming join. A language the composition
-// registers rules for implements it.
+// inside the kernel's walks, what a spelling names in a scope, and the
+// values of a type. A language the composition registers rules for
+// implements it.
 //
 // # Concurrency
 //
@@ -251,12 +254,17 @@ const (
 	// GapCyclic is a contributor already on the path, or one past
 	// the depth budget.
 	GapCyclic = core.GapCyclic
-	// GapGeneric is a contributor with type arguments the walk could
-	// not bind.
+	// GapGeneric is a contributor whose type arguments differ in number
+	// from the type parameters of its declaration.
 	GapGeneric = core.GapGeneric
 	// GapConflict is two arrivals of one name on an interface with
 	// different signatures.
 	GapConflict = core.GapConflict
+	// GapComputed is a member whose name is an expression of its
+	// language, such as TypeScript's [Symbol.iterator]. No other
+	// language can call such a member by name, so the walk leaves it
+	// out. Host is the type that declares the member.
+	GapComputed = core.GapComputed
 )
 
 // Gap is one contributor that yielded nothing, and why.
@@ -291,7 +299,14 @@ type ErrorValueRules = core.ErrorValueRules
 // TagRules reads a language's per-field tags.
 type TagRules = core.TagRules
 
-// GenericsRules reasons about type parameters.
+// WellKnownRules is the optional capability of a language that declares
+// a type of its standard library as a well-known type, such as Go's
+// time.Time. The fold calls the rules of the language of a target before
+// it classifies the target.
+type WellKnownRules = core.WellKnownRules
+
+// GenericsRules reasons about type parameters. The kernel substitutes
+// arguments for parameters itself, through [Substitute].
 type GenericsRules = core.GenericsRules
 
 // PropertyRules computes the properties view: getters paired with
@@ -339,6 +354,57 @@ type PresenceRules = core.PresenceRules
 // EqualityRules reports whether a type works where the language
 // demands equality, and which member references break it.
 type EqualityRules = core.EqualityRules
+
+// Resolver contains the decisions of one language in the resolution of the
+// spelling of a directive. [Resolve] walks the rest.
+//
+// # Concurrency
+//
+// An implementation is safe for concurrent use, as every [SourceRules]
+// is, and reads through the [View] that each method takes.
+type Resolver = core.Resolver
+
+// ResolveError is the refusal of a resolution. Its text starts with the
+// identity of the language, as every refusal of the rules of a language
+// does.
+type ResolveError = core.ResolveError
+
+// Resolve resolves a spelling from a subject through the decisions of r,
+// the rules src of the language and the member walk over the view v. The
+// resolution kind selects the declaration that the walk looks for:
+//
+//   - A callable resolves among the methods of the type of a method
+//     subject, which the method calls through its receiver, and then to a
+//     function in scope.
+//   - A package variable resolves to a constant or a variable in scope.
+//   - A type resolves to a declaration in scope, and then to the
+//     placeholder of the language.
+//   - A value field and a member on a handle resolve among the effective
+//     members of the value or the handle of the subject: the subject
+//     itself for a type, the type of a field, and for a callable the type
+//     of its first value return, and for a value field the type of each
+//     input parameter after it.
+//   - A host parameter resolves on the signature of the subject.
+//
+// A member resolves only where [Resolver.Usable] reports that the subject
+// can use it.
+//
+// Error modes: a refusal of the walk is a *[ResolveError] under the
+// language of src, for an empty spelling, for a kind that the walk does
+// not perform, and for a spelling that resolves to no declaration. Resolve
+// returns an error of the resolver unchanged. Nil rules resolve under
+// [Absent] for the zero language.
+//
+// # Allocation contract
+//
+// Resolve allocates what the resolver allocates. Its binding of the
+// member walk has no memo, so a resolution in scope allocates no object of
+// its own. A member resolution also allocates the list of the types that
+// it searches and what the member walk allocates. A refusal allocates its
+// error.
+func Resolve(r Resolver, src SourceRules, v View, scope Scope, name string, kind directive.ResolutionKind) (symbol.Symbol, error) {
+	return core.Resolve(r, src, v, scope, name, kind)
+}
 
 // ScalarClass names which number a Scalar is.
 type ScalarClass = core.ScalarClass
@@ -411,8 +477,36 @@ func IsWellKnown(id symbol.Identity) bool {
 	return core.IsWellKnown(id)
 }
 
-// Sample is one value of a type a generated check writes, or the
-// reason none could be derived.
+// Substitute returns ref with each reference to a parameter of params
+// replaced by a copy of its argument in args. A reference to a parameter
+// is a named reference without type arguments whose target is the
+// identity of the parameter, because the resolution step targets a type
+// parameter in scope. Substitute restates the children of a structural
+// reference, the arguments of an instantiation, and the field types and
+// method signatures of an inline body. It copies what it rewrites, so ref
+// does not change. A restated structural reference has an empty
+// spelling, because its written spelling contains the parameter, and a
+// speller restates it from its children. A restated named reference
+// keeps its spelling, which is its name, because its arguments spell
+// apart. It returns ref unchanged where ref refers to no
+// parameter, for a nil ref, for no parameters, and for a count of
+// arguments that differs from the count of parameters. A nil parameter
+// or a nil argument replaces nothing.
+//
+// # Allocation contract
+//
+// Substitute allocates a copy of each reference on the path to a
+// replaced parameter, and a copy of each list that contains such a
+// reference. It also allocates a copy of each member of an inline body
+// that refers to a parameter, with the lists of a copied method. A
+// reference that does not refer to a parameter, and an empty parameter
+// list, allocate nothing.
+func Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef {
+	return core.Substitute(ref, params, args)
+}
+
+// Sample is one value of a type that a generated check writes, or the
+// reason why no value derives.
 //
 // # Allocation contract
 //
@@ -458,20 +552,23 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 	return core.Lift(s, wrap)
 }
 
-// Complete returns a pair from the halves an author stated and the
-// halves a language derived. A stated half is kept. A half no author
-// stated takes the derived value of its own position where that
-// value differs from the stated half, the other derived value where
-// that one differs, and a [RefusedNoLiteral] refusal where neither
-// does. The pair is then two distinct values. With no half stated,
-// the derived pair returns as it is. It allocates nothing.
+// Complete returns a pair from the halves that an author stated and the
+// halves that a language derived. Complete keeps a stated half. A half
+// that no author stated takes the first of these values that applies:
+//   - the derived value of its own position, where that value differs
+//     from the stated half
+//   - the other derived value, where that value differs
+//   - a [RefusedNoLiteral] refusal, where neither differs
+//
+// The pair then contains two distinct values. Where no half is stated,
+// Complete returns the derived pair unchanged. It allocates nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
 	return core.Complete(sample, alternate, derived, derivedAlternate)
 }
 
-// Refusal names why a sample has no value. Only [RefusedNoLiteral]
-// is a fact about the type. The rest describe an input the caller
-// can fix.
+// Refusal is the reason why a sample has no value. Only
+// [RefusedNoLiteral] is a fact about the type. The others describe an
+// input that the caller can fix.
 type Refusal = core.Refusal
 
 const (
@@ -485,26 +582,28 @@ const (
 	// RefusedNoLiteral means the type admits no distinguishable
 	// value.
 	RefusedNoLiteral = core.RefusedNoLiteral
-	// RefusedUnresolved means a named type the view does not
+	// RefusedUnresolved means a named type that the view does not
 	// contain.
 	RefusedUnresolved = core.RefusedUnresolved
-	// RefusedDepth means a self-referential type past the walk's
-	// budget.
+	// RefusedDepth means a self-referential type past the budget of the
+	// walk.
 	RefusedDepth = core.RefusedDepth
 )
 
 // FirstRefusal returns the first refusal among samples, and
-// [RefusedNoLiteral] where none states one. A value built from derived
+// [RefusedNoLiteral] where no sample has one. A value built from derived
 // parts refuses with it when a part has no value. FirstRefusal keeps no
-// sample, so the caller's list of arguments does not escape, and a call
+// sample, so the argument list of the caller does not escape, and a call
 // allocates nothing.
 func FirstRefusal(samples ...Sample) Refusal {
 	return core.FirstRefusal(samples...)
 }
 
-// EmitRef restates a node reference in the emit model, structure,
-// arguments, target and package included, so a value's Type is what
-// a backend spells and imports. A nil reference returns nil.
+// EmitRef restates a node reference in the emit model, with its
+// structure, its facts, its arguments, its target and its package, so the
+// Type of a value is the reference that a backend spells and imports. The
+// facts are the variance, the asynchrony and the mutability. A nil
+// reference returns nil.
 //
 // # Allocation contract
 //
@@ -515,18 +614,24 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	return core.EmitRef(ref)
 }
 
-// View is what a projection reads through: the invocation's tracked
-// declaration reader, the run's arbitrated facts and the read set both
-// record into, and the kernel's own keys for the authored values the
-// walks read first. The workspace builds one per invocation.
+// View is what a projection reads through. It has the tracked declaration
+// reader of the invocation, the arbitrated facts of the run, the read set
+// into which both record, and the keys of the kernel for the authored
+// values that the walks read first. The workspace builds one for each
+// invocation with [NewView].
+//
+// A view reads a fact through [Fact] alone, which records the read. A
+// rules implementation reads a key of another registrant through a handle
+// from [meta.Named], which [Fact] resolves by its name. The fact store of
+// the view is not exported, so no read bypasses the read set.
 //
 // The zero View reads nothing. A read of an untracked graph would record
-// no edge, so a projection handed the zero View refuses.
+// no edge, so a projection that receives the zero View refuses.
 //
 // # Concurrency
 //
-// A View is not safe for concurrent use. The read set it records into is
-// not.
+// A View is not safe for concurrent use, because the read set into which it
+// records is not.
 //
 // # Allocation contract
 //
@@ -534,10 +639,32 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 // [View.Authored] states what it allocates to lift a stated value.
 type View = core.View
 
-// Fact returns the value arbitration selects for a subject and a key,
-// and records the read where the view has a read set. A view without
-// facts, a zero key and a zero subject read nothing. It allocates what
-// the read set allocates to record a new edge.
+// NewView returns a view over decls and facts, whose fact reads record into
+// reads. With a nil recorder the view reads without tracking, as only the
+// walks of the kernel do. kernel contains the keys of the kernel for the
+// authored values. A nil decls returns the zero view, and a nil facts
+// reads no fact. NewView allocates nothing.
+func NewView(decls *store.Reader, facts *meta.Facts, reads meta.Recorder, kernel meta.KernelKeys) View {
+	return core.NewView(decls, facts, reads, kernel)
+}
+
+// Fact returns the value that the arbitration selects for a subject and a
+// key, and records the read where the view has a read set. A named handle
+// from [meta.Named] resolves by its name in the registry of the facts, and
+// a name that the registry does not contain under T reads nothing. A view
+// without facts, a zero key and a zero subject read nothing. It allocates
+// what the read set allocates to record a new edge.
 func Fact[T meta.FactValue](v View, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](v, id, k)
+}
+
+// Unaliased follows a chain of transparent aliases that the view
+// declares, and returns the reference at its end. A defined type is a
+// type of its own, so the walk stops at one, and at an alias without a
+// target. It follows at most eight aliases, so an alias cycle in a broken
+// source ends. A nil reference returns nil, and every lookup records its
+// read. Unaliased allocates what the read set allocates to record a new
+// edge.
+func Unaliased(ref *node.TypeRef, v View) *node.TypeRef {
+	return core.Unaliased(ref, v)
 }

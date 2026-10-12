@@ -78,33 +78,36 @@ func Kernel() *Registry {
 	return core.Kernel()
 }
 
-// Origin names whoever reported a finding or wrote a claim: a
-// plugin's declared name, or one of the kernel phases below. The
-// service provider interface spells it plugin.ID where plugins are
-// the subject; the definition sits here so the layers beneath that
-// interface can carry it.
+// Origin is the name of the reporter of a finding or of the writer of a
+// claim. It is the declared name of a plugin or one of the kernel phases
+// that follow. The service provider interface declares the same type as
+// plugin.ID for plugins. This package declares it so that the layers
+// below that interface can use it.
 type Origin = core.Origin
 
-// The kernel phases that report findings. A phase is an origin like
-// any plugin, so a consumer filtering by origin needs no second rule
-// for the kernel.
+// These constants are the kernel phases that report findings. A phase is
+// an origin as a plugin is, so a consumer that filters by origin needs no
+// second rule for the kernel.
 const (
 	// PhaseBuild composes the workspace and populates its registries.
 	PhaseBuild = core.PhaseBuild
-	// PhaseLoad is the frontends parsing units into the graph.
+	// PhaseLoad is the phase in which the frontends parse units into the
+	// graph.
 	PhaseLoad = core.PhaseLoad
 	// PhaseLink resolves type spellings into canonical identities.
 	PhaseLink = core.PhaseLink
 	// PhaseFreeze seals the graph and builds its indexes.
 	PhaseFreeze = core.PhaseFreeze
-	// PhaseAnnotate is the annotators stamping facts.
+	// PhaseAnnotate is the phase in which the annotators stamp facts.
 	PhaseAnnotate = core.PhaseAnnotate
-	// PhaseGenerate is a plan's generators producing emit trees.
+	// PhaseGenerate is the phase in which the generators of a plan
+	// produce emit trees.
 	PhaseGenerate = core.PhaseGenerate
-	// PhaseLayout routes a plan's settled declarations to the files
-	// they are written in.
+	// PhaseLayout routes the settled declarations of a plan to the files
+	// that contain them.
 	PhaseLayout = core.PhaseLayout
-	// PhaseRender is a backend spelling an emit tree as source.
+	// PhaseRender is the phase in which a backend writes an emit tree as
+	// source.
 	PhaseRender = core.PhaseRender
 	// PhaseClose merges the manifests, checks for collisions and
 	// sweeps.
@@ -113,9 +116,9 @@ const (
 
 // Diag is one finding.
 //
-// Every field is API: consumers script against them, tests assert on
-// the code, and machine output carries them under a versioned
-// schema.
+// Every field is API. Consumers write scripts against the fields, tests
+// assert on the code, and the machine output contains the fields under a
+// versioned schema.
 type Diag = core.Diag
 
 // Severity says what a finding means for the run.
