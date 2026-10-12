@@ -4,6 +4,7 @@
 package frontend
 
 import (
+	"bytes"
 	"path"
 	"strings"
 
@@ -16,14 +17,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// maxSyntaxFindings caps the findings one file's syntax errors report,
-// and the count past the cap reports once.
-const maxSyntaxFindings = 10
-
-// maxQuoted caps how much of an ERROR node's source a finding quotes.
-const maxQuoted = 32
-
-// The keywords the lowering reads off a node's unnamed children.
+// The keywords that the lowering reads from the unnamed children of a
+// node.
 const (
 	keywordDefault = "default"
 	keywordDeclare = "declare"
@@ -35,16 +30,17 @@ const (
 // namespaceSeparator joins the names of a dotted namespace, as in A.B.
 const namespaceSeparator = "."
 
-// wildcardName is the name a namespace re-export binds, as the
-// specification's export entry spells the whole module.
+// wildcardName is the name that a namespace re-export binds, which the
+// export entry of the specification uses for the whole module.
 const wildcardName = "*"
 
-// lowering is one file's lowering state: the unit and the grammar's
-// vocabulary, the file's path and module record, the File node the file
-// contributes to each package, the comments a declaration took, the
-// local names the module publishes through an export clause or a
-// default export, and how many inline object bodies enclose the member
-// under lowering, whose members have no identity.
+// lowering is the state of the lowering of one file. It has the unit, the
+// vocabulary of the grammar, the path and the module record of the file,
+// and the File node that the file contributes to each package. It also
+// has the comment walk of the file, the local names that the module
+// publishes through an export clause or a default export, and the number
+// of inline object bodies around the member under lowering, whose members
+// have no identity.
 type lowering struct {
 	u        *plugin.SourceUnit
 	v        *vocabulary
@@ -52,19 +48,19 @@ type lowering struct {
 	path     string
 	module   *module
 	files    map[string]*node.File
-	consumed map[position.Pos]bool
+	comments treesitter.Comments
 	exported map[string]bool
 	inline   int
 }
 
-// container is where one statement list's declarations go: the File
-// node of their package, the packages that enclose it innermost first,
-// the dotted name of the namespace the package is, and whether every
-// declaration in it is public, as in a script's global scope and an
-// ambient context. module reports the module's own top level, whose
+// container is where the declarations of one statement list go: the File
+// node of their package, the packages around it innermost first, the
+// dotted name of the namespace that the package is, and whether every
+// declaration in it is public, as in the global scope of a script and in
+// an ambient context. module reports the top level of the module, whose
 // declarations an export clause can publish by name. ambient reports a
 // context whose declarations are implemented elsewhere: a declaration
-// file, a declare block, and an ambient module.
+// file, a declare block or an ambient module.
 type container struct {
 	file    *node.File
 	pkg     string
@@ -75,9 +71,11 @@ type container struct {
 	ambient bool
 }
 
-// lower lowers one parsed file into the unit's builder: the module
-// record, every declaration into its package, the carriers no
-// declaration took, and the syntax errors.
+// lower lowers one parsed file into the builder of the unit: the module
+// record, every declaration into its package, the mark of a generated
+// file, the carriers that no declaration took, and the syntax errors. The
+// mark is the first comment of the file where the comment contains
+// [typescript.GeneratedMark].
 func (l *lowering) lower(root treesitter.Node) {
 	moduleFile := l.isModule(root)
 	if !moduleFile {
@@ -90,10 +88,19 @@ func (l *lowering) lower(root treesitter.Node) {
 		ambient: typescript.DeclarationFile(l.path),
 	}
 	top.file = l.fileIn(top.pkg, nil, root.Pos())
+	if first := root.FirstOf(l.v.comment); first.PrevNamedSibling().IsZero() &&
+		bytes.Contains(first.Bytes(), []byte(typescript.GeneratedMark)) {
+
+		l.u.Graph().Stamp(top.file, meta.RawStamp{Key: typescript.GeneratedKey, Value: first.Text(), Pos: top.file.Pos})
+	}
 	l.record(root, top.file)
 	l.statements(root, top)
-	l.sweep(root)
-	l.reportSyntax()
+	l.comments.Sweep(root, func(n treesitter.Node) {
+		l.u.RefuseCarriers(UnaddressedCarrier, l.u.Comment(n.Text(), n.Pos()).Carriers, unattached)
+	})
+	if problems := l.tree.Problems(); problems != nil {
+		l.u.ReportSyntax(UnparsedFile, problems)
+	}
 }
 
 // isModule reports whether a file is a module: it has a top-level
@@ -108,9 +115,9 @@ func (l *lowering) isModule(root treesitter.Node) bool {
 	return false
 }
 
-// fileIn returns the File node the file contributes to a package,
-// created on first use with the package's scope: the module record, the
-// package, and the packages enclosing it.
+// fileIn returns the File node that the file contributes to a package, and
+// creates it on first use with the scope of the package: the module
+// record, the package, and the packages around it.
 func (l *lowering) fileIn(pkg string, outer []string, at position.Pos) *node.File {
 	if f, met := l.files[pkg]; met {
 		return f
@@ -127,10 +134,10 @@ func (l *lowering) fileIn(pkg string, outer []string, at position.Pos) *node.Fil
 	return f
 }
 
-// record reads the module boundary of the file's top level into the
+// record reads the module boundary of the top level of the file into the
 // module record and the File node: the imports and what they bind, the
-// import aliases, and the export statements that publish what the file
-// does not declare or publish a local name.
+// import aliases, and the export statements that publish a name that the
+// file does not declare or a local name.
 func (l *lowering) record(root treesitter.Node, file *node.File) {
 	for stmt := range root.NamedChildren() {
 		switch stmt.Kind() {
@@ -146,10 +153,10 @@ func (l *lowering) record(root treesitter.Node, file *node.File) {
 	}
 }
 
-// importStatement lowers one import statement and binds its names in
-// the module record: a named import binds its local name to the name
-// the module exports, a default import to the module's default export,
-// and a namespace import and an import-require to the module itself.
+// importStatement lowers one import statement and binds its names in the
+// module record. A named import binds its local name to the name that the
+// module exports, and a default import to the default export of the
+// module. A namespace import and an import-require bind the module itself.
 func (l *lowering) importStatement(stmt treesitter.Node) *node.Import {
 	imp := &node.Import{Pos: stmt.Pos(), Path: l.unquote(stmt.Child(l.v.fieldSource))}
 	for child := range stmt.NamedChildren() {
@@ -158,7 +165,7 @@ func (l *lowering) importStatement(stmt treesitter.Node) *node.Import {
 			l.importClause(child, imp)
 		case l.v.importRequireClause:
 			imp.Path = l.unquote(child.Child(l.v.fieldSource))
-			if local := l.firstOf(child, l.v.identifier); !local.IsZero() {
+			if local := child.FirstOf(l.v.identifier); !local.IsZero() {
 				imp.Alias = local.Text()
 				l.module.imports[imp.Alias] = binding{specifier: imp.Path}
 			}
@@ -167,8 +174,8 @@ func (l *lowering) importStatement(stmt treesitter.Node) *node.Import {
 	return imp
 }
 
-// importClause reads one import clause's default, namespace and named
-// bindings into an import record and the module record.
+// importClause reads the default, the namespace and the named bindings of
+// one import clause into an import record and the module record.
 func (l *lowering) importClause(clause treesitter.Node, imp *node.Import) {
 	for part := range clause.NamedChildren() {
 		switch part.Kind() {
@@ -176,7 +183,7 @@ func (l *lowering) importClause(clause treesitter.Node, imp *node.Import) {
 			imp.Default = part.Text()
 			l.module.imports[imp.Default] = binding{specifier: imp.Path, name: defaultExport}
 		case l.v.namespaceImport:
-			if local := l.firstOf(part, l.v.identifier); !local.IsZero() {
+			if local := part.FirstOf(l.v.identifier); !local.IsZero() {
 				imp.Alias = local.Text()
 				l.module.imports[imp.Alias] = binding{specifier: imp.Path}
 			}
@@ -199,7 +206,7 @@ func (l *lowering) importClause(clause treesitter.Node, imp *node.Import) {
 }
 
 // importAlias records an import alias, import x = A.B, as the dotted
-// entity its local name refers to.
+// entity that its local name refers to.
 func (l *lowering) importAlias(stmt treesitter.Node) {
 	var names []treesitter.Node
 	for child := range stmt.NamedChildren() {
@@ -212,16 +219,16 @@ func (l *lowering) importAlias(stmt treesitter.Node) {
 	}
 }
 
-// exportOf lowers one export statement's publication into an export
-// record and the module record: an export clause, from a module or of
-// the file's own names, a star and a namespace re-export, and the
-// default export. It returns nil for an export statement that only
-// exports the declaration it wraps.
+// exportOf lowers the publication of one export statement into an export
+// record and the module record: an export clause from a module or of the
+// names of the file, a star and a namespace re-export, and the default
+// export. It returns nil for an export statement that only exports the
+// declaration that it wraps.
 func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 	spec := l.unquote(stmt.Child(l.v.fieldSource))
 	export := &node.Export{Pos: stmt.Pos(), Path: spec}
-	clause := l.firstOf(stmt, l.v.exportClause)
-	namespace := l.firstOf(stmt, l.v.namespaceExport)
+	clause := stmt.FirstOf(l.v.exportClause)
+	namespace := stmt.FirstOf(l.v.namespaceExport)
 	declaration := stmt.Child(l.v.fieldDeclaration)
 	value := stmt.Child(l.v.fieldValue)
 	switch {
@@ -244,22 +251,22 @@ func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 			}
 		}
 	case !namespace.IsZero():
-		if local := l.firstOf(namespace, l.v.identifier); !local.IsZero() {
+		if local := namespace.FirstOf(l.v.identifier); !local.IsZero() {
 			b := &node.Binding{Pos: local.Pos(), Name: wildcardName, Alias: local.Text()}
 			export.Names = append(export.Names, b)
 		}
-	case spec != "" && l.token(stmt, keywordStar):
+	case spec != "" && stmt.HasToken(keywordStar):
 		export.Wildcard = true
 		l.module.stars = append(l.module.stars, spec)
-	case l.token(stmt, keywordDefault):
+	case stmt.HasToken(keywordDefault):
 		export.Default = l.defaultName(declaration, value)
 		if export.Default == "" {
 			return nil
 		}
 		l.module.defaultName = export.Default
 		l.exported[export.Default] = true
-	case l.token(stmt, keywordAssign):
-		local := l.firstOf(stmt, l.v.identifier)
+	case stmt.HasToken(keywordAssign):
+		local := stmt.FirstOf(l.v.identifier)
 		if local.IsZero() {
 			return nil
 		}
@@ -272,10 +279,10 @@ func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 	return export
 }
 
-// defaultName returns the local name a default export publishes: the
-// wrapped declaration's, default for an anonymous class or function,
-// the identifier an export default names, and nothing for any other
-// expression.
+// defaultName returns the local name that a default export publishes: the
+// name of the wrapped declaration, default for an anonymous class or
+// function, the identifier of an export default, and the empty string for
+// any other expression.
 func (l *lowering) defaultName(declaration, value treesitter.Node) string {
 	if !declaration.IsZero() {
 		return l.nameText(declaration.Child(l.v.fieldName))
@@ -290,7 +297,7 @@ func (l *lowering) defaultName(declaration, value treesitter.Node) string {
 	}
 }
 
-// anonymousDefault reports whether an export default's value is an
+// anonymousDefault reports whether the value of an export default is an
 // anonymous class or function, which declares under the name default.
 func (l *lowering) anonymousDefault(value treesitter.Node) bool {
 	if value.IsZero() || !value.Child(l.v.fieldName).IsZero() {
@@ -300,9 +307,9 @@ func (l *lowering) anonymousDefault(value treesitter.Node) bool {
 	return k == l.v.class || k == l.v.functionExpression || k == l.v.generatorFunction
 }
 
-// statements lowers one statement list's declarations into a container.
-// A function's implementation after its overload signatures is left
-// out, because TypeScript hides it from callers.
+// statements lowers the declarations of one statement list into a
+// container. The lowering leaves out the implementation of a function
+// after its overload signatures, because TypeScript hides it from callers.
 func (l *lowering) statements(list treesitter.Node, c container) {
 	overloaded := l.overloaded(list)
 	for stmt := range list.NamedChildren() {
@@ -313,7 +320,7 @@ func (l *lowering) statements(list treesitter.Node, c container) {
 		case l.v.ambientDeclaration:
 			l.ambient(stmt, c, false, stmt, overloaded)
 		case l.v.expressionStatement:
-			if inner := l.firstOf(stmt, l.v.internalModule); !inner.IsZero() {
+			if inner := stmt.FirstOf(l.v.internalModule); !inner.IsZero() {
 				l.namespace(inner, c, false, stmt, c.public)
 			}
 		case l.v.internalModule, l.v.module:
@@ -324,9 +331,10 @@ func (l *lowering) statements(list treesitter.Node, c container) {
 	}
 }
 
-// exportStatement lowers the declaration an export statement wraps, as
-// exported: a named one, an ambient one, a namespace, or the anonymous
-// class or function an export default declares under the name default.
+// exportStatement lowers the declaration that an export statement wraps,
+// as exported: a named one, an ambient one, a namespace, or the anonymous
+// class or function that an export default declares under the name
+// default.
 func (l *lowering) exportStatement(stmt treesitter.Node, c container, overloaded map[string]bool) {
 	declaration := stmt.Child(l.v.fieldDeclaration)
 	switch {
@@ -349,8 +357,8 @@ func (l *lowering) exportStatement(stmt treesitter.Node, c container, overloaded
 func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	overloaded map[string]bool,
 ) {
-	if l.token(n, keywordGlobal) {
-		block := l.firstOf(n, l.v.statementBlock)
+	if n.HasToken(keywordGlobal) {
+		block := n.FirstOf(l.v.statementBlock)
 		global := container{pkg: "", outer: []string{c.pkg}, public: true, ambient: true}
 		global.file = l.fileIn(global.pkg, global.outer, n.Pos())
 		l.statements(block, global)
@@ -372,13 +380,13 @@ func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outerm
 }
 
 // namespace lowers a namespace or a module declaration into the package
-// it is. A name in quotes declares an ambient module, the package of
-// that name, whose members are public and ambient. A dotted name
-// declares the namespace's package below the container's, stamped with
-// the dotted name, whose members are public where public is set and
-// exported by name otherwise, and ambient in an ambient context. A
-// namespace signature depth leaves out takes its comments and its
-// members with it.
+// that it is. A name in quotes declares an ambient module, the package of
+// that name, whose members are public and ambient. A dotted name declares
+// the package of the namespace below the package of the container,
+// stamped with the dotted name. Its members are public where public is
+// set and exported by name otherwise, and ambient in an ambient context.
+// A namespace that the signature depth leaves out takes its comments and
+// its members with it.
 func (l *lowering) namespace(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	public bool,
 ) {
@@ -399,7 +407,7 @@ func (l *lowering) namespace(n treesitter.Node, c container, exported bool, oute
 		inner.outer = append([]string{c.pkg}, c.outer...)
 		inner.pkg = c.pkg
 		for i, segment := range segments {
-			inner.pkg = join(inner.pkg, segment)
+			inner.pkg = typescript.JoinPackage(inner.pkg, segment)
 			if i < len(segments)-1 {
 				inner.outer = append([]string{inner.pkg}, inner.outer...)
 			}
@@ -421,18 +429,18 @@ func (l *lowering) namespace(n treesitter.Node, c container, exported bool, oute
 	}
 }
 
-// visible reports whether a declaration in a container is visible to
-// another module: public in a public container, wrapped in an export
-// statement, or published by an export clause or the default export at
-// the module's top level. A declaration that is not visible loads at
-// full depth only.
+// visible reports whether another module can see a declaration of a
+// container: the declaration is public in a public container, wrapped in
+// an export statement, or published by an export clause or the default
+// export at the top level of the module. A declaration that is not visible
+// loads at full depth only.
 func (l *lowering) visible(c container, exported bool, name string) bool {
 	return c.public || exported || c.module && name != "" && l.exported[name]
 }
 
-// visibility returns the visibility of a declaration in a container:
-// public where another module can name it, and package otherwise,
-// because its module or namespace alone can.
+// visibility returns the visibility of a declaration of a container:
+// public where another module can name it, and package otherwise, because
+// only its module or its namespace can.
 func (l *lowering) visibility(c container, exported bool, name string) symbol.Visibility {
 	if l.visible(c, exported, name) {
 		return symbol.VisibilityPublic
@@ -440,9 +448,9 @@ func (l *lowering) visibility(c container, exported bool, name string) symbol.Vi
 	return symbol.VisibilityPackage
 }
 
-// overloaded returns the names a statement list declares overload
-// signatures for, a function signature without a body, so the
-// implementation that follows them is left out.
+// overloaded returns the names for which a statement list declares
+// overload signatures, which are function signatures without a body, so
+// the lowering leaves out the implementation after them.
 func (l *lowering) overloaded(list treesitter.Node) map[string]bool {
 	out := map[string]bool{}
 	for decl := range list.NamedChildren() {
@@ -450,7 +458,7 @@ func (l *lowering) overloaded(list treesitter.Node) map[string]bool {
 			decl = decl.Child(l.v.fieldDeclaration)
 		}
 		if decl.Kind() == l.v.ambientDeclaration {
-			decl = l.firstOf(decl, l.v.functionSignature)
+			decl = decl.FirstOf(l.v.functionSignature)
 		}
 		if decl.Kind() == l.v.functionSignature {
 			out[l.nameText(decl.Child(l.v.fieldName))] = true
@@ -459,80 +467,18 @@ func (l *lowering) overloaded(list treesitter.Node) map[string]bool {
 	return out
 }
 
-// reportSyntax reports each ERROR and MISSING node of the tree at its
-// own position, capped, and the remainder counted once.
-func (l *lowering) reportSyntax() {
-	n := 0
-	for bad := range l.tree.Errors() {
-		if n == maxSyntaxFindings {
-			l.u.Errorf(UnparsedFile, bad.Pos(), "and more syntax errors")
-			return
-		}
-		n++
-		if bad.IsMissing() {
-			l.u.Errorf(UnparsedFile, bad.Pos(), "%s is missing here", l.v.grammar.KindName(bad.Kind()))
-			continue
-		}
-		l.u.Errorf(UnparsedFile, bad.Pos(), "%q does not parse", quoted(bad.Text()))
-	}
-}
-
-// quoted returns the first line of a node's source, capped at
-// maxQuoted bytes, for a finding to quote.
-func quoted(text string) string {
-	line, _, _ := strings.Cut(text, "\n")
-	if len(line) > maxQuoted {
-		return line[:maxQuoted] + "..."
-	}
-	return line
-}
-
-// join appends a path to a package path: the path alone below the
-// global package, and the package alone for an empty path.
-func join(pkg, segment string) string {
-	switch {
-	case pkg == "":
-		return segment
-	case segment == "":
-		return pkg
-	default:
-		return pkg + "/" + segment
-	}
-}
-
-// token reports whether a node has an unnamed child spelled text: a
-// keyword or a mark of the grammar.
-func (*lowering) token(n treesitter.Node, text string) bool {
-	for child := range n.AllChildren() {
-		if !child.Named() && child.Text() == text {
-			return true
-		}
-	}
-	return false
-}
-
-// firstOf returns a node's first named child of a kind, and the zero
-// Node where it has none.
-func (*lowering) firstOf(n treesitter.Node, kind treesitter.Kind) treesitter.Node {
-	for child := range n.NamedChildren() {
-		if child.Kind() == kind {
-			return child
-		}
-	}
-	return treesitter.Node{}
-}
-
-// unquote returns a string literal's content, and nothing for the zero
-// Node or an empty literal.
+// unquote returns the content of a string literal, and the empty string
+// for the zero Node or an empty literal. The content of a literal without
+// an escape is its one string fragment.
 func (l *lowering) unquote(s treesitter.Node) string {
-	if fragment := l.firstOf(s, l.v.stringFragment); !fragment.IsZero() {
+	if fragment := s.FirstOf(l.v.stringFragment); !fragment.IsZero() {
 		return fragment.Text()
 	}
 	return ""
 }
 
-// nameText returns a declared or published name: an identifier's text,
-// and a string literal's content.
+// nameText returns a declared or a published name: the text of an
+// identifier, or the content of a string literal.
 func (l *lowering) nameText(n treesitter.Node) string {
 	if n.Kind() == l.v.stringNode {
 		return l.unquote(n)

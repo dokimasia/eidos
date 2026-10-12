@@ -14,7 +14,9 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
@@ -27,8 +29,8 @@ import (
 // brand is the brand every fixture unit reads its carriers under.
 const brand = string(frontendtest.Brand)
 
-// The cases parse a module file under the package its path names, the
-// declaration file of that package, and a TSX file, beside the root
+// The cases parse a module file under the package that its path names,
+// the declaration file of that package, and a TSX file, beside the root
 // tsconfig and a tsconfig that does not parse.
 const (
 	aFile       = "src/a.ts"
@@ -41,6 +43,14 @@ const (
 	exportClass = "export class A {}\n"
 )
 
+// The root package.json of the module cases, the name of its package, and
+// the first comment that a generator writes.
+const (
+	packageFile     = "package.json"
+	shopModule      = "@acme/shop"
+	generatedHeader = "// " + typescript.GeneratedMark + " by protoc-gen-ts\n"
+)
+
 // The canonical scale every layer benches at: 1000 packages of 10 files
 // of 20 declarations, 200k declarations in all. A TypeScript unit is one
 // file, so the corpus is 10,000 units.
@@ -50,13 +60,13 @@ const (
 	benchDecls    = 20
 )
 
-// parseAllocs is one parse of the canonical corpus. With the collector
-// off a parse allocates 2,400,001 times: the lowering's nodes, texts,
-// stamps and type references, each unit's source and sink, and one tree
-// handle per file. Tree-sitter builds its trees in C memory, which the
-// count does not see. The collections that run during a parse add more:
-// 10 fresh processes counted up to 9 more. The ceiling allows 32 more.
-const parseAllocs = 2_400_001 + 32
+// parseAllocs is the budget of one parse of the canonical corpus of
+// 200,000 declarations in 10,000 files. One run counted 1,840,010
+// allocations: the nodes, the texts, the stamps and the type references of
+// the lowering, the source and the sink of each unit, and one tree handle
+// for each file. Tree-sitter builds its trees in C memory, which the count
+// does not see. The budget is about 5% above the count.
+const parseAllocs = 1_930_000
 
 // treeReader is the partition's recorded door over a test tree.
 type treeReader struct {
@@ -112,6 +122,61 @@ func TestParse(t *testing.T) {
 			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			assert.Equal(t, codesOf(slices.Collect(sink.All())), []diag.Code{frontend.BadConfig},
 				"the configuration it declares does not read")
+		})
+
+		t.Run("stamps the name of the nearest package.json as the module of every package", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedTree(t, fstest.MapFS{
+				packageFile: {Data: []byte(`{"name": "` + shopModule + `"}`)},
+				aFile:       {Data: []byte(exportClass)},
+			}, aFile, plugin.DepthFull)
+			assert.Empty(t, found, "the manifest parses")
+			pkg := packageIn(t, gb, aPackage)
+			module, stamped := stampOn(gb, pkg, meta.ModuleKey)
+			assert.True(t, stamped, "the package has a module")
+			expect.Equal(t, module, any(shopModule), "the module is the name of the manifest")
+			root, _ := stampOn(gb, pkg, meta.ModuleRootKey)
+			expect.Equal(t, root, any("."), "the root is the directory of the manifest")
+		})
+
+		t.Run("stamps no module for a package.json without a name", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, fstest.MapFS{
+				packageFile: {Data: []byte("{}")},
+				aFile:       {Data: []byte(exportClass)},
+			}, aFile, plugin.DepthFull)
+			_, stamped := stampOn(gb, packageIn(t, gb, aPackage), meta.ModuleKey)
+			assert.False(t, stamped, "a package without a name is in no module")
+		})
+
+		t.Run("reports BadPackage for a package.json that does not parse", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedTree(t, fstest.MapFS{
+				packageFile: {Data: []byte("{")},
+				aFile:       {Data: []byte(exportClass)},
+			}, aFile, plugin.DepthFull)
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.BadPackage}, "the fault of the manifest reports")
+		})
+
+		t.Run("stamps typescript.generated on a file whose first comment has the mark", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, generatedHeader+exportClass)
+			marker, stamped := stampOn(gb, fileIn(t, gb, aPackage), typescript.GeneratedKey)
+			assert.True(t, stamped, "the file has the mark of a generator")
+			assert.Equal(t, marker, any(strings.TrimSuffix(generatedHeader, "\n")),
+				"the stamp is the comment as written")
+		})
+
+		t.Run("stamps nothing on a file whose first comment lacks the mark", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "// The shop module.\n"+generatedHeader+exportClass)
+			_, stamped := stampOn(gb, fileIn(t, gb, aPackage), typescript.GeneratedKey)
+			assert.False(t, stamped, "the frontend reads the mark in the first comment alone")
 		})
 
 		t.Run("returns the context's error for a done context", func(t *testing.T) {
@@ -237,6 +302,16 @@ func fileIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.File {
 	assert.NotEqual(tb, at, -1, "the unit declares the package "+pkg)
 	assert.Length(tb, pkgs[at].Files, 1, "the package has the file's one File node")
 	return pkgs[at].Files[0]
+}
+
+// packageIn returns the package of a path that a builder declares.
+func packageIn(tb testing.TB, gb *plugin.GraphBuilder, pkg string) *node.Package {
+	tb.Helper()
+
+	pkgs := gb.Packages()
+	at := slices.IndexFunc(pkgs, func(p *node.Package) bool { return p.ID.Package == pkg })
+	assert.NotEqual(tb, at, -1, "the unit declares the package "+pkg)
+	return pkgs[at]
 }
 
 // named returns the declaration of a name among declarations, of the

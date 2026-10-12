@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
@@ -17,14 +18,15 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The class and the interface the member cases declare.
+// className and ifaceName are the names of the class and the interface
+// that the member cases declare.
 const (
 	className = "C"
 	ifaceName = "I"
 )
 
-// A member's modifiers each become a fact of the model, so the mapping
-// of every class and interface member is pinned.
+// TestMember pins the fields of the model that the modifiers of each class
+// and interface member set.
 func TestMember(t *testing.T) {
 	t.Parallel()
 
@@ -217,20 +219,54 @@ func TestMember(t *testing.T) {
 			assert.True(t, stamped, "the * declares a generator")
 		})
 
-		t.Run("stamps typescript.optional on a method declared with ?", func(t *testing.T) {
-			t.Parallel()
-
-			gb, i := ifaceBuilt(t, "  run?(): void;\n")
-			_, stamped := stampOn(gb, i.Methods[0], typescript.OptionalKey)
-			assert.True(t, stamped, "a value of the type may lack the method")
-		})
-
-		t.Run("stamps nothing on a method without * or ?", func(t *testing.T) {
+		t.Run("stamps nothing on a method without *", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := classBuilt(t, "  run(): void {}\n")
 			assert.Empty(t, gb.StampRecords(), "a plain method has no mark to record")
 		})
+
+		optionals := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "marks a method declared with ? as optional", give: "  run?(): void;\n", want: true},
+			{name: "marks a method without ? as required", give: "  run(): void;\n", want: false},
+		}
+		for _, tt := range optionals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, ifaceOf(t, tt.give).Methods[0].Optional, tt.want,
+					"a method is optional only where its signature has a ?")
+			})
+		}
+
+		computed := []struct {
+			name     string
+			give     string
+			wantName string
+			want     bool
+		}{
+			{
+				name: "marks a method named in brackets as computed",
+				give: "  [Symbol.iterator](): Iterator<number> {}\n", wantName: "[Symbol.iterator]", want: true,
+			},
+			{
+				name: "marks a method with an identifier as its name as not computed", give: "  run(): void {}\n",
+				wantName: "run", want: false,
+			},
+		}
+		for _, tt := range computed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				m := classOf(t, tt.give).Methods[0]
+				expect.Equal(t, m.Computed, tt.want, "a method is computed only where its name is in brackets")
+				expect.Equal(t, m.Name, tt.wantName, "the method keeps the text of its name")
+			})
+		}
 	})
 
 	t.Run("field", func(t *testing.T) {
@@ -279,25 +315,58 @@ func TestMember(t *testing.T) {
 			gb, _ := classBuilt(t, "  id: string;\n")
 			assert.Empty(t, gb.StampRecords(), "a plain property has no mark to record")
 		})
+
+		computed := []struct {
+			name     string
+			give     string
+			wantName string
+			want     bool
+		}{
+			{
+				name: "marks a property named in brackets as computed", give: "  [key]: string;\n",
+				wantName: "[key]", want: true,
+			},
+			{
+				name: "marks a property with an identifier as its name as not computed", give: "  key: string;\n",
+				wantName: "key", want: false,
+			},
+		}
+		for _, tt := range computed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := classOf(t, tt.give).Fields[0]
+				expect.Equal(t, f.Computed, tt.want, "a property is computed only where its name is in brackets")
+				expect.Equal(t, f.Name, tt.wantName, "the field keeps the text of its name")
+			})
+		}
 	})
 
 	t.Run("indexer", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("stamps typescript.readonly on a readonly index signature", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name string
+			give string
+			want symbol.Mutability
+		}{
+			{
+				name: "lowers a readonly index signature as immutable",
+				give: "  readonly [key: string]: number;\n", want: symbol.MutabilityImmutable,
+			},
+			{
+				name: "lowers an index signature without readonly as mutable",
+				give: "  [key: string]: number;\n", want: symbol.MutabilityMutable,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			gb, i := ifaceBuilt(t, "  readonly [key: string]: number;\n")
-			_, stamped := stampOn(gb, i.Methods[0], typescript.ReadonlyKey)
-			assert.True(t, stamped, "a holder cannot assign the entries")
-		})
-
-		t.Run("stamps nothing on an index signature without readonly", func(t *testing.T) {
-			t.Parallel()
-
-			gb, _ := ifaceBuilt(t, "  [key: string]: number;\n")
-			assert.Empty(t, gb.StampRecords(), "a plain index signature has no mark to record")
-		})
+				assert.Equal(t, ifaceOf(t, tt.give).Methods[0].Mutability, tt.want,
+					"an index signature is immutable only where it is readonly")
+			})
+		}
 	})
 
 	t.Run("objectMembers", func(t *testing.T) {
@@ -312,6 +381,26 @@ func TestMember(t *testing.T) {
 			assert.Equal(t, i.Fields[0].Mutability, symbol.MutabilityImmutable, "and readonly")
 			assert.True(t, i.Methods[0].Abstract, "an interface's method has no body")
 		})
+
+		computed := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "marks a property signature named in brackets as computed", give: "  [key]: string;\n", want: true},
+			{
+				name: "marks a property signature with an identifier as its name as not computed",
+				give: "  key: string;\n", want: false,
+			},
+		}
+		for _, tt := range computed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, ifaceOf(t, tt.give).Fields[0].Computed, tt.want,
+					"a property signature is computed only where its name is in brackets")
+			})
+		}
 
 		t.Run("lowers an interface's index signature as a method named []", func(t *testing.T) {
 			t.Parallel()

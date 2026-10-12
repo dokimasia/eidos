@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/numeric"
@@ -38,24 +37,7 @@ const (
 	alternateSuffix = "-b"
 )
 
-// openers and closers are the brackets of a type spelling. arrowHead is
-// the arrow of a function type, whose > closes no bracket. unionSep
-// separates the members of a union.
-const (
-	openers   = "(<[{"
-	closers   = ")>]}"
-	arrowHead = "=>"
-	unionSep  = '|'
-)
-
-// keywordTypes lists the keyword types of TypeScript. The builtin table
-// classifies any and unknown as the top type and the others as Opaque.
-// SamplesOf derives no value for any of them.
-var keywordTypes = []string{
-	spellAny, unknownSpelling, "never", "object", "symbol", "void", spellNull, spellUndefined, "this",
-}
-
-// SamplesOf derives two distinguishable values of a type:
+// DeriveSamples derives two distinguishable values of a type:
 //
 //   - number, string and boolean take a fixed pair, and the pair of a
 //     string contains the hint;
@@ -82,7 +64,7 @@ var keywordTypes = []string{
 // the type has no required one.
 //
 // The values that an author stated come first for an element, a member,
-// the value of a key and a property. SamplesOf reads them through
+// the value of a key and a property. DeriveSamples reads them through
 // [rules.View.Authored], and derives each value without an author's
 // statement. A Map, a ReadonlyMap, a stream, a function type, an
 // intersection and an inline object type refuse with no literal,
@@ -99,11 +81,11 @@ var keywordTypes = []string{
 //   - An object's pair allocates the member walk and the assertion.
 //   - An enum's pair allocates its list of members and the assertion of
 //     each value.
-func (r Rules) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+func (r Rules) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	return r.derive(ref, hint, v, 0)
 }
 
-// derive derives the pair of [Rules.SamplesOf] at a depth of the walk.
+// derive derives the pair of [Rules.DeriveSamples] at a depth of the walk.
 func (r Rules) derive(ref *node.TypeRef, hint string, v rules.View, depth int) (rules.Sample, rules.Sample) {
 	if ref == nil {
 		return rules.RefusedPair(rules.RefusedNoLiteral)
@@ -172,7 +154,7 @@ func (r Rules) mapPair(
 	if key == nil {
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
-	if form := r.Builtin(unaliased(key, v), v).Form; form != symbol.FormText && form != symbol.FormScalar {
+	if form := r.Builtin(rules.Unaliased(key, v), v).Form; form != symbol.FormText && form != symbol.FormScalar {
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	k, otherKey := r.derive(key, hint, v, depth+1)
@@ -252,7 +234,7 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 	case symbol.FormList:
 		return r.listPair(rules.EmitRef(ref), ref.Args[0], hint, v, depth)
 	case symbol.FormMap:
-		if ref.Spelling != spellRecord || len(ref.Args) != 2 {
+		if ref.Spelling != typescript.TypeRecord || len(ref.Args) != 2 {
 			return rules.RefusedPair(rules.RefusedNoLiteral)
 		}
 		return r.mapPair(rules.EmitRef(ref), ref.Args[0], ref.Args[1], hint, v, depth)
@@ -262,9 +244,11 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 		// Every other form takes the pair of its spelling below.
 	}
 	switch {
-	case ref.Package == "" && ref.Spelling == spellBigInt:
+	case ref.Package == "" && ref.Spelling == typescript.TypeBigInt:
 		return rules.Of(emit.Raw(typescript.Lang, sampleBigInt)), rules.Of(emit.Raw(typescript.Lang, alternateBigInt))
-	case ref.Package == "" && slices.Contains(keywordTypes, ref.Spelling):
+	case ref.Package == "" && typescript.KeywordType(ref.Spelling):
+		// string, number and boolean take their pairs through the builtin
+		// table above, so a keyword type here has no value.
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	if lit, scanned := scanLiteral(ref.Spelling); scanned && lit.kind != literalPath {
@@ -303,7 +287,7 @@ func (r Rules) declaredPair(ref *node.TypeRef, hint string, v rules.View, depth 
 	case *node.Alias:
 		// derive refuses an alias without a target as it refuses a nil
 		// reference.
-		return r.derive(r.Substitute(d.Target, d.TypeParams, ref.Args), hint, v, depth+1)
+		return r.derive(rules.Substitute(d.Target, d.TypeParams, ref.Args), hint, v, depth+1)
 	default:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
@@ -343,25 +327,24 @@ func (r Rules) objectPair(
 //   - 0 for number, the empty string for string, false for boolean and 0n
 //     for bigint;
 //   - the empty array for a list, an Array and a ReadonlyArray;
-//   - null for an optional whose union lists null and not undefined, and
+//   - null for an optional whose Absent lists null and not undefined, and
 //     undefined for every other optional;
 //   - the zero of its target for an alias.
 //
-// The optional of an optional member, such as the a?: T of a tuple,
-// lists neither null nor undefined, so its zero is undefined. Every
-// other type has no zero, and ZeroValue reports false. A builtin's zero
-// allocates nothing, and the empty array allocates the reference to its
-// type.
+// The Absent of an optional member, such as the a?: T of a tuple, is
+// empty, so its zero is undefined. Every other type has no zero, and
+// ZeroValue reports false. The zero of a builtin allocates nothing, and
+// the empty array allocates the reference to its type.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	for range deriveDepth {
 		switch {
 		case ref == nil:
 			return emit.Value{}, false
 		case ref.Form == symbol.FormOptional:
-			if lists(ref.Spelling, spellNull) && !lists(ref.Spelling, spellUndefined) {
+			if listsNull, listsUndefined := absent(ref); listsNull && !listsUndefined {
 				return emit.Literal(emit.LiteralNil, ""), true
 			}
-			return emit.Raw(typescript.Lang, spellUndefined), true
+			return emit.Raw(typescript.Lang, typescript.TypeUndefined), true
 		case ref.Form == symbol.FormList:
 			return emit.Composite(rules.EmitRef(ref)), true
 		case ref.Form != symbol.FormNamed:
@@ -374,7 +357,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		if !isAlias || alias.Target == nil {
 			return emit.Value{}, false
 		}
-		ref = r.Substitute(alias.Target, alias.TypeParams, ref.Args)
+		ref = rules.Substitute(alias.Target, alias.TypeParams, ref.Args)
 	}
 	return emit.Value{}, false
 }
@@ -394,7 +377,7 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	default:
 		// Every other form takes the zero of its spelling below.
 	}
-	if ref.Package == "" && ref.Spelling == spellBigInt {
+	if ref.Package == "" && ref.Spelling == typescript.TypeBigInt {
 		return emit.Raw(typescript.Lang, zeroNumber+bigintMark), true
 	}
 	return emit.Value{}, false
@@ -420,8 +403,8 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 //     and void take undefined;
 //   - an enum takes a member whose value is known, and LiteralFor
 //     asserts the member to the enum's type;
-//   - an optional takes null when its union lists null, and undefined
-//     when its union lists undefined or does not list null;
+//   - an optional takes null where its Absent lists null, and undefined
+//     where its Absent lists undefined or is empty;
 //   - an optional also takes every literal that its type takes;
 //   - a union takes a literal that one of its members takes, as the first
 //     such member types it;
@@ -461,12 +444,12 @@ func (r Rules) typed(lit literal, ref *node.TypeRef, v rules.View, depth int) (e
 	case depth > deriveDepth:
 		return emit.Value{}, false
 	case ref.Form == symbol.FormOptional && lit.kind == literalNull:
-		if !lists(ref.Spelling, spellNull) {
+		if listsNull, _ := absent(ref); !listsNull {
 			return emit.Value{}, false
 		}
 		return lit.value()
 	case ref.Form == symbol.FormOptional && lit.kind == literalUndefined:
-		if lists(ref.Spelling, spellNull) && !lists(ref.Spelling, spellUndefined) {
+		if listsNull, listsUndefined := absent(ref); listsNull && !listsUndefined {
 			return emit.Value{}, false
 		}
 		return lit.value()
@@ -502,7 +485,7 @@ func (r Rules) typed(lit literal, ref *node.TypeRef, v rules.View, depth int) (e
 		}
 		return emit.Value{}, false
 	case isAlias && alias.Target != nil:
-		return r.typed(lit, r.Substitute(alias.Target, alias.TypeParams, ref.Args), v, depth+1)
+		return r.typed(lit, rules.Substitute(alias.Target, alias.TypeParams, ref.Args), v, depth+1)
 	default:
 		return emit.Value{}, false
 	}
@@ -528,11 +511,11 @@ func (r Rules) typedBuiltin(lit literal, ref *node.TypeRef, v rules.View) (emit.
 	case takes != 0:
 	case ref.Package != "":
 		return emit.Value{}, false
-	case ref.Spelling == spellBigInt:
+	case ref.Spelling == typescript.TypeBigInt:
 		takes = literalBigInt
-	case ref.Spelling == spellNull:
+	case ref.Spelling == typescript.TypeNull:
 		takes = literalNull
-	case ref.Spelling == spellUndefined || ref.Spelling == "void":
+	case ref.Spelling == typescript.TypeUndefined || ref.Spelling == typescript.TypeVoid:
 		takes = literalUndefined
 	default:
 		own, scanned := scanLiteral(ref.Spelling)
@@ -547,35 +530,19 @@ func (r Rules) typedBuiltin(lit literal, ref *node.TypeRef, v rules.View) (emit.
 	return lit.value()
 }
 
-// lists reports whether the union of a type spelling has a member at its
-// top level, outside every bracket and every quoted literal. A type that
-// is not a union has one member, the type itself.
-func lists(spelling, member string) bool {
-	depth, start := 0, 0
-	var quote byte
-	for i := 0; i < len(spelling); i++ {
-		c := spelling[i]
-		switch {
-		case quote != 0 && c == escapeMark:
-			i++
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-		case strings.IndexByte(quotes, c) >= 0:
-			quote = c
-		case strings.IndexByte(openers, c) >= 0:
-			depth++
-		case strings.IndexByte(closers, c) >= 0 && !strings.HasSuffix(spelling[:i+1], arrowHead):
-			depth--
-		case c == unionSep && depth == 0:
-			if strings.TrimSpace(spelling[start:i]) == member {
-				return true
-			}
-			start = i + 1
+// absent reports whether the Absent of an optional lists null, and
+// whether it lists undefined. The Absent of an optional that a ? states is
+// empty, so absent reports false twice for it. absent allocates nothing.
+func absent(ref *node.TypeRef) (listsNull, listsUndefined bool) {
+	for _, a := range ref.Absent {
+		switch a.Spelling {
+		case typescript.TypeNull:
+			listsNull = true
+		case typescript.TypeUndefined:
+			listsUndefined = true
 		}
 	}
-	return strings.TrimSpace(spelling[start:]) == member
+	return listsNull, listsUndefined
 }
 
 // child returns the child at index i of a structural reference, or nil
@@ -604,7 +571,7 @@ func (lit literal) value() (emit.Value, bool) {
 	case literalNull:
 		return emit.Literal(emit.LiteralNil, ""), true
 	case literalUndefined:
-		return emit.Raw(typescript.Lang, spellUndefined), true
+		return emit.Raw(typescript.Lang, typescript.TypeUndefined), true
 	default:
 		return emit.Value{}, false
 	}

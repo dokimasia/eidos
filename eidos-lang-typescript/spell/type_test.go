@@ -179,6 +179,34 @@ func TestType(t *testing.T) {
 				},
 			},
 			{
+				name: "returns a readonly list for an immutable list",
+				give: rules.TypeShape{
+					Form: symbol.FormList, Spelling: "ReadonlyArray", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text},
+				},
+				want: &emit.TypeRef{
+					Spelling: "readonly string[]", Form: symbol.FormList, Mutability: symbol.MutabilityImmutable,
+					Elems: []*emit.TypeRef{{Spelling: "string"}},
+				},
+			},
+			{
+				name: "returns a list of an immutable list in parentheses",
+				give: rules.TypeShape{
+					Form: symbol.FormList, Spelling: "Array", Mutability: symbol.MutabilityMutable,
+					Elems: []rules.TypeShape{{
+						Form: symbol.FormList, Spelling: "ReadonlyArray", Mutability: symbol.MutabilityImmutable,
+						Elems: []rules.TypeShape{text},
+					}},
+				},
+				want: &emit.TypeRef{
+					Spelling: "(readonly string[])[]", Form: symbol.FormList, Mutability: symbol.MutabilityMutable,
+					Elems: []*emit.TypeRef{{
+						Spelling: "readonly string[]", Form: symbol.FormList, Mutability: symbol.MutabilityImmutable,
+						Elems: []*emit.TypeRef{{Spelling: "string"}},
+					}},
+				},
+			},
+			{
 				name: "returns a tuple of the length of an array",
 				give: rules.TypeShape{
 					Form: symbol.FormArray, Spelling: "[2]bool", Length: 2,
@@ -187,6 +215,38 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{
 					Spelling: "[boolean, boolean]", Form: symbol.FormTuple,
 					Elems: []*emit.TypeRef{{Spelling: "boolean"}, {Spelling: "boolean"}},
+				},
+			},
+			{
+				name: "returns a readonly tuple for an immutable array",
+				give: rules.TypeShape{
+					Form: symbol.FormArray, Spelling: "[bool; 2]", Length: 2, Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{rules.Leaf(symbol.FormBool, "bool")},
+				},
+				want: &emit.TypeRef{
+					Spelling: "readonly [boolean, boolean]", Form: symbol.FormTuple,
+					Mutability: symbol.MutabilityImmutable,
+					Elems:      []*emit.TypeRef{{Spelling: "boolean"}, {Spelling: "boolean"}},
+				},
+			},
+			{
+				name: "returns a readonly record for an immutable map of a string key",
+				give: rules.TypeShape{
+					Form: symbol.FormMap, Spelling: "ReadonlyMap", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text, float},
+				},
+				want: &emit.TypeRef{Spelling: "Readonly", Args: []*emit.TypeRef{{
+					Spelling: "Record", Args: []*emit.TypeRef{{Spelling: "string"}, {Spelling: "number"}},
+				}}},
+			},
+			{
+				name: "returns a ReadonlyMap for an immutable map of a bigint key",
+				give: rules.TypeShape{
+					Form: symbol.FormMap, Spelling: "ReadonlyMap", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{long, text},
+				},
+				want: &emit.TypeRef{
+					Spelling: "ReadonlyMap", Args: []*emit.TypeRef{{Spelling: "bigint"}, {Spelling: "string"}},
 				},
 			},
 			{
@@ -265,6 +325,18 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{
 					Spelling: "[string, number]", Form: symbol.FormTuple,
 					Elems: []*emit.TypeRef{{Spelling: "string"}, {Spelling: "number"}},
+				},
+			},
+			{
+				name: "returns a readonly tuple for an immutable tuple",
+				give: rules.TypeShape{
+					Form: symbol.FormTuple, Spelling: "readonly[string,number]", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text, float},
+				},
+				want: &emit.TypeRef{
+					Spelling: "readonly [string, number]", Form: symbol.FormTuple,
+					Mutability: symbol.MutabilityImmutable,
+					Elems:      []*emit.TypeRef{{Spelling: "string"}, {Spelling: "number"}},
 				},
 			},
 			{
@@ -512,7 +584,7 @@ func TestType(t *testing.T) {
 			{
 				name: "returns an error for a map of one child",
 				give: rules.TypeShape{Form: symbol.FormMap, Spelling: "map[string]", Elems: []rules.TypeShape{text}},
-				want: "typescript: a map takes two children, a key and a value, and the shape has 1",
+				want: "typescript: a map takes two children, and the shape has 1",
 			},
 			{
 				name: "returns an error for a function type of more parameters than children",

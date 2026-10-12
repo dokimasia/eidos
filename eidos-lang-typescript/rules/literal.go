@@ -11,12 +11,11 @@ import (
 	"go.dokimi.dev/eidos/lang/typescript"
 )
 
-// The keywords of TypeScript's literals.
+// The keywords of TypeScript's truth values. The literals null and
+// undefined have the spellings of their types.
 const (
-	spellTrue      = "true"
-	spellFalse     = "false"
-	spellNull      = "null"
-	spellUndefined = "undefined"
+	spellTrue  = "true"
+	spellFalse = "false"
 )
 
 // The marks of TypeScript's literal syntax that the lexer reads.
@@ -300,9 +299,9 @@ func scanName(l *lexer, first token) (literal, bool) {
 	switch first.text {
 	case spellTrue, spellFalse:
 		lit = literal{kind: literalBool, text: first.text}
-	case spellNull:
+	case typescript.TypeNull:
 		lit = literal{kind: literalNull}
-	case spellUndefined:
+	case typescript.TypeUndefined:
 		lit = literal{kind: literalUndefined}
 	default:
 		start, end := first.end-len(first.text), first.end

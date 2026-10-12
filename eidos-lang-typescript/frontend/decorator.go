@@ -6,7 +6,6 @@ package frontend
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"go.dokimi.dev/eidos/lang/numeric"
 	"go.dokimi.dev/eidos/lang/treesitter"
@@ -24,7 +23,7 @@ const numberBits = 64
 // decorator can have.
 const minusSign = "-"
 
-// markerSeparator separates the names of a decorator's path in a finding.
+// markerSeparator joins the names of the path of a decorator in a finding.
 const markerSeparator = "."
 
 // decoratorsOf returns the decorators among the children of a node, in
@@ -40,8 +39,8 @@ func (l *lowering) decoratorsOf(n treesitter.Node) []treesitter.Node {
 }
 
 // decorate lowers decorators onto a subject in source order, and returns
-// them as the subject's annotations. A decorator whose path starts with
-// the unit's brand also attaches its directive through
+// them as the annotations of the subject. A decorator whose path starts
+// with the brand of the unit also attaches its directive through
 // [plugin.SourceUnit.AttachSugar]. AttachSugar reports such a decorator
 // under [BadMarker] when its path is not a directive name or when an
 // argument does not lift. A decorator of the brand is an annotation as
@@ -61,48 +60,46 @@ func (l *lowering) decorate(subject symbol.Symbol, decorators []treesitter.Node)
 }
 
 // refuseMarkers reports each decorator of the brand among decorators under
-// [UnaddressedCarrier], because they decorate a subject that the model
-// cannot address. what describes the subject.
+// [UnaddressedCarrier], because the decorators are on a subject that the
+// model cannot address. what describes the subject.
 func (l *lowering) refuseMarkers(decorators []treesitter.Node, what string) {
+	var markers []plugin.Sugar
 	for _, d := range decorators {
 		if marker, named := l.marker(d); named {
-			l.u.Errorf(UnaddressedCarrier, marker.Pos,
-				"the marker %s is on %s, which the model cannot address. Move it to a declaration",
-				strings.Join(marker.Path, markerSeparator), what)
+			markers = append(markers, marker)
 		}
 	}
+	l.u.RefuseSugar(UnaddressedCarrier, markers, markerSeparator, what)
 }
 
-// decorator lowers one decorator to an annotation. The annotation's name
-// is the decorator's expression without the @, or the callee of a call.
-// The annotation's arguments are the call's arguments verbatim, one per
-// argument.
+// decorator lowers one decorator to an annotation. The name of the
+// annotation is the expression of the decorator without the @, or the
+// callee of a call. Its arguments are the arguments of the call verbatim,
+// one for each argument.
 func (l *lowering) decorator(d treesitter.Node) symbol.Annotation {
-	expr := l.lastNamed(d)
+	expr := d.LastNamed()
 	if expr.Kind() != l.v.callExpression {
 		return symbol.Annotation{Name: expr.Compact()}
 	}
 	a := symbol.Annotation{Name: expr.Child(l.v.fieldFunction).Compact()}
-	for arg := range expr.Child(l.v.fieldArguments).NamedChildren() {
-		if arg.Kind() != l.v.comment {
-			a.Args = append(a.Args, arg.Text())
-		}
+	for arg := range expr.Child(l.v.fieldArguments).Content() {
+		a.Args = append(a.Args, arg.Text())
 	}
 	return a
 }
 
-// marker returns the marker of a decorator. The marker's path is the
-// list of names in the decorator's dotted path, and its arguments are a
-// call's arguments, lifted from the syntax. A string, a number with at
-// most one minus sign, true, false and an array of them lift as
+// marker returns the marker of a decorator. The path of the marker is the
+// list of names in the dotted path of the decorator, and its arguments are
+// the arguments of a call, lifted from the syntax. A string, a number with
+// at most one minus sign, true, false and an array of them lift as
 // positional arguments. An object literal in the last position lifts its
-// keys and values as keyed arguments. The marker's Refusal describes the
-// first argument that does not lift. marker reports false for a
+// keys and values as keyed arguments. The Refusal of the marker describes
+// the first argument that does not lift. marker reports false for a
 // decorator whose expression is not a path of names, such as a
 // parenthesized expression, and for a path that does not start with the
-// unit's brand, which is ordinary metadata.
+// brand of the unit, which is ordinary metadata.
 func (l *lowering) marker(d treesitter.Node) (plugin.Sugar, bool) {
-	callee, args := l.lastNamed(d), treesitter.Node{}
+	callee, args := d.LastNamed(), treesitter.Node{}
 	if callee.Kind() == l.v.callExpression {
 		callee, args = callee.Child(l.v.fieldFunction), callee.Child(l.v.fieldArguments)
 	}
@@ -121,12 +118,7 @@ func (l *lowering) marker(d treesitter.Node) (plugin.Sugar, bool) {
 	path = append(path, callee.Text())
 	slices.Reverse(path)
 	s := plugin.Sugar{Path: path, Pos: d.Pos()}
-	var list []treesitter.Node
-	for arg := range args.NamedChildren() {
-		if arg.Kind() != l.v.comment {
-			list = append(list, arg)
-		}
-	}
+	list := slices.Collect(args.Content())
 	for i, arg := range list {
 		if arg.Kind() == l.v.object && i == len(list)-1 {
 			s.Refusal = l.keyed(arg, &s.Args)
@@ -142,16 +134,12 @@ func (l *lowering) marker(d treesitter.Node) (plugin.Sugar, bool) {
 	return s, true
 }
 
-// keyed lifts the members of an object literal into keyed arguments. A
-// member's key is a name or a string. keyed returns the reason that a
+// keyed lifts the members of an object literal into keyed arguments. The
+// key of a member is a name or a string. keyed returns the reason that a
 // member does not lift, or the empty string when every member lifts.
 func (l *lowering) keyed(object treesitter.Node, args *[]directive.RawArg) string {
-	for member := range object.NamedChildren() {
-		switch member.Kind() {
-		case l.v.comment:
-			continue
-		case l.v.pair:
-		default:
+	for member := range object.Content() {
+		if member.Kind() != l.v.pair {
 			return fmt.Sprintf("the member %s of the object is not a key with a value", member.Compact())
 		}
 		key := member.Child(l.v.fieldKey)
@@ -204,10 +192,7 @@ func (l *lowering) literal(n treesitter.Node) (directive.RawValue, string) {
 		// A list value is a list also when it has no element, so the list
 		// is never nil.
 		list := []directive.RawValue{}
-		for e := range n.NamedChildren() {
-			if e.Kind() == l.v.comment {
-				continue
-			}
+		for e := range n.Content() {
 			v, refusal := l.literal(e)
 			if refusal != "" {
 				return directive.RawValue{}, refusal

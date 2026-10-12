@@ -9,32 +9,29 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/lang/typescript/frontend"
-	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The carrier the comment cases write, and the directive it names.
+// The carrier of the comment cases, and the name of its directive.
 const (
 	carrierLine   = "// +fixture:gen:table name=t\n"
 	directiveName = "gen:table"
 )
 
-// Comments are where documentation and directives are, so which
-// comment a declaration takes, and what becomes of one no declaration
-// takes, is pinned.
+// Comments contain the documentation and the directives. The cases pin
+// which comments a declaration takes.
 func TestComment(t *testing.T) {
 	t.Parallel()
 
-	t.Run("leading", func(t *testing.T) {
+	t.Run("commentWalk", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("documents a declaration with the block comment directly above it", func(t *testing.T) {
 			t.Parallel()
 
 			st := named[*node.Struct](t, declsOf(t, "/** A is one record. */\nexport class A {}\n"), "A")
-			assert.Equal(t, st.Doc, []string{"A is one record."}, "the block's text")
+			assert.Equal(t, st.Doc, []string{"A is one record."}, "the text of the block")
 		})
 
 		t.Run("documents a declaration with a run of line comments", func(t *testing.T) {
@@ -55,7 +52,7 @@ func TestComment(t *testing.T) {
 			t.Parallel()
 
 			i := ifaceOf(t, "  a: string; // the a\n  b: number;\n")
-			assert.Empty(t, i.Fields[1].Doc, "b takes no comment of a's line")
+			assert.Empty(t, i.Fields[1].Doc, "b takes no comment from the line of a")
 		})
 
 		t.Run("skips the decorators between a member and its comment", func(t *testing.T) {
@@ -64,25 +61,28 @@ func TestComment(t *testing.T) {
 			c := classOf(t, "  /** Runs. */\n  @log\n  run(): void {}\n")
 			assert.Equal(t, c.Methods[0].Doc, []string{"Runs."}, "the comment above the decorator")
 		})
-	})
 
-	t.Run("trailing", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("records the comment on a declaration's last line as its trailing comment", func(t *testing.T) {
+		t.Run("records the comment on the last line of a declaration as its trailing comment", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, ifaceOf(t, "  a: string; // the a\n").Fields[0].Comment, "the a",
 				"the comment after the member")
 		})
 
-		t.Run("records a trailing comment the grammar folds into a declaration without a semicolon",
+		t.Run("records a trailing comment that the grammar folds into a declaration without a semicolon",
 			func(t *testing.T) {
 				t.Parallel()
 
 				c := named[*node.Constant](t, declsOf(t, "export const x = 1 // the x\n"), "x")
-				assert.Equal(t, c.Comment, "the x", "the comment is the statement's last child")
+				assert.Equal(t, c.Comment, "the x", "the comment is the last child of the statement")
 			})
+
+		t.Run("passes over a carrier inside the body of a function", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export function f(): void {\n  "+carrierLine+"  return;\n}\n")
+			assert.Empty(t, found, "the comments of a body belong to its statements")
+		})
 	})
 
 	t.Run("declParts", func(t *testing.T) {
@@ -93,14 +93,14 @@ func TestComment(t *testing.T) {
 
 			gb, _ := parsedSource(t, carrierLine+"export class A {}\n")
 			assert.Length(t, gb.Attachments(), 1, "one directive")
-			assert.Equal(t, string(gb.Attachments()[0].Raw.Name), directiveName, "under its spelling")
+			assert.Equal(t, string(gb.Attachments()[0].Raw.Name), directiveName, "the name of the directive")
 		})
 
 		t.Run("attaches a carrier from a trailing comment", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export class A {} "+carrierLine)
-			assert.Length(t, gb.Attachments(), 1, "the trailing comment's directive")
+			assert.Length(t, gb.Attachments(), 1, "the directive of the trailing comment")
 		})
 
 		t.Run("attaches a carrier above a namespace to its package", func(t *testing.T) {
@@ -116,13 +116,13 @@ func TestComment(t *testing.T) {
 	t.Run("parts", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("folds a carrier's continuation across consecutive line comments", func(t *testing.T) {
+		t.Run("folds the continuation of a carrier across consecutive line comments", func(t *testing.T) {
 			t.Parallel()
 
 			gb, found := parsedSource(t, "// +fixture:gen:table \\\n// name=t\nexport class A {}\n")
 			assert.Empty(t, found, "the folded carrier parses")
 			assert.Length(t, gb.Attachments(), 1, "one directive from two lines")
-			assert.Length(t, gb.Attachments()[0].Raw.Args, 1, "with the argument the second line states")
+			assert.Length(t, gb.Attachments()[0].Raw.Args, 1, "the argument on the second line")
 		})
 
 		t.Run("reads a line comment after a gap apart from the run before it", func(t *testing.T) {
@@ -136,57 +136,23 @@ func TestComment(t *testing.T) {
 	t.Run("skip", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("takes the carriers of a declaration signature depth leaves out with it", func(t *testing.T) {
+		t.Run("takes the carriers of a declaration that the signature depth leaves out", func(t *testing.T) {
 			t.Parallel()
 
 			gb, found := parsedTree(t, fstest.MapFS{aFile: {Data: []byte(
 				"export {};\n" + carrierLine + "class Hidden {}\n",
 			)}}, aFile, plugin.DepthSignatures)
 			assert.Empty(t, found, "the carrier leaves with its declaration")
-			assert.Empty(t, gb.Attachments(), "and attaches nowhere")
+			assert.Empty(t, gb.Attachments(), "the carrier attaches nowhere")
 		})
 
-		t.Run("takes the trailing carrier of a declaration signature depth leaves out with it", func(t *testing.T) {
+		t.Run("takes the trailing carrier of a declaration that the signature depth leaves out", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedTree(t, fstest.MapFS{aFile: {Data: []byte(
 				"export {};\nclass Hidden {} " + carrierLine,
 			)}}, aFile, plugin.DepthSignatures)
 			assert.Empty(t, found, "the trailing carrier leaves with its declaration")
-		})
-	})
-
-	t.Run("sweep", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("reports UnaddressedCarrier for a carrier no declaration takes", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, carrierLine+"\nexport class A {}\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
-				"a blank line keeps the carrier from the class")
-		})
-
-		t.Run("reports UnaddressedCarrier for a carrier in a namespace no declaration takes", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export namespace N {\n  "+carrierLine+"\n  export class A {}\n}\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
-				"a namespace's block contains declarations, and the carrier is on none of them")
-		})
-
-		t.Run("passes over a carrier inside a function's body", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export function f(): void {\n  "+carrierLine+"  return;\n}\n")
-			assert.Empty(t, found, "a body's comments belong to its statements")
-		})
-
-		t.Run("reports UnaddressedCarrier for a carrier in a class body no member takes", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export class A {\n  a = 1;\n\n  "+carrierLine+"\n  b = 2;\n}\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "the carrier floats")
 		})
 	})
 }

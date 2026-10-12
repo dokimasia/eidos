@@ -5,7 +5,6 @@ package backend
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -19,102 +18,100 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names are constants, so a template and its helper
-// spell one name.
+// The names of the vocabulary are constants, so a template and the map
+// of its helpers use the same name. The names that every backend declares
+// are the names of the render package.
 const (
-	// FuncDocs writes a declaration's documentation.
-	FuncDocs = "docs"
-	// FuncMemberDocs writes a member's documentation at the member's
-	// depth.
+	// FuncDocs is the template name of [Docs].
+	FuncDocs = render.HelperDocs
+	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
-	// FuncSpell writes a type reference.
-	FuncSpell = "spell"
-	// FuncTypeParams writes a type parameter list.
-	FuncTypeParams = "typeparams"
-	// FuncParams writes a parameter list.
-	FuncParams = "params"
-	// FuncResults writes a return type.
-	FuncResults = "results"
-	// FuncReturns writes a callable's return annotation.
+	// FuncSpell is the template name of [Speller.Spell].
+	FuncSpell = render.HelperSpell
+	// FuncTypeParams is the template name of [Speller.TypeParams].
+	FuncTypeParams = render.HelperTypeParams
+	// FuncParams is the template name of [Speller.Params].
+	FuncParams = render.HelperParams
+	// FuncResults is the template name of [Speller.Results].
+	FuncResults = render.HelperResults
+	// FuncReturns is the template name of [Speller.Returns].
 	FuncReturns = "returns"
-	// FuncMods writes a module-level declaration's keywords.
+	// FuncMods is the template name of [Mods].
 	FuncMods = "mods"
-	// FuncMemberMods writes a class member's keywords.
+	// FuncMemberMods is the template name of [MemberMods].
 	FuncMemberMods = "membermods"
-	// FuncIndexMods writes a class index signature's keywords.
+	// FuncIndexMods is the template name of [IndexMods].
 	FuncIndexMods = "indexmods"
-	// FuncCtorMods writes a class constructor's keywords.
+	// FuncCtorMods is the template name of [CtorMods].
 	FuncCtorMods = "ctormods"
-	// FuncPropMods writes an interface property's keywords.
+	// FuncPropMods is the template name of [PropMods].
 	FuncPropMods = "propmods"
-	// FuncSigMods guards an interface method signature.
+	// FuncSigMods is the template name of [SigMods].
 	FuncSigMods = "sigmods"
-	// FuncBinding writes a module-level binding's keyword.
+	// FuncBinding is the template name of [Binding].
 	FuncBinding = "binding"
-	// FuncDecorators writes a declaration's decorator lines.
+	// FuncDecorators is the template name of [Decorators].
 	FuncDecorators = "decorators"
-	// FuncMemberDecorators writes a member's decorator lines at the
-	// member's depth.
+	// FuncMemberDecorators is the template name of [MemberDecorators].
 	FuncMemberDecorators = "memberdecorators"
-	// FuncHeritage writes a type's heritage clauses.
+	// FuncHeritage is the template name of [Speller.Heritage].
 	FuncHeritage = "heritage"
-	// FuncAccessor writes a method's accessor keyword.
+	// FuncAccessor is the template name of [AccessorKw].
 	FuncAccessor = "accessor"
-	// FuncHard writes a member's hard-private prefix.
+	// FuncHard is the template name of [Hard].
 	FuncHard = "hard"
-	// FuncIndexSig writes an index signature whole.
+	// FuncIndexSig is the template name of [Speller.IndexSig].
 	FuncIndexSig = "indexsig"
-	// FuncMethodKey writes a method's member key, quoted where the
-	// name is no identifier.
+	// FuncMethodKey is the template name of [MethodKey].
 	FuncMethodKey = "methodkey"
-	// FuncPropKey writes a field's property key, quoted where the
-	// name is not an identifier.
+	// FuncPropKey is the template name of [PropKey].
 	FuncPropKey = "propkey"
-	// FuncEnumKey writes an enum member's key, quoted where the name
-	// is not an identifier.
+	// FuncEnumKey is the template name of [EnumKey].
 	FuncEnumKey = "enumkey"
 )
 
-// Anonymous is what TypeScript writes where a declaration states
-// no type: the type that admits everything while letting nothing
-// through unchecked.
-const Anonymous = "unknown"
+// Anonymous is the type that the backend writes where a declaration has
+// no type. Every value is assignable to it, and TypeScript checks every
+// use of a value of this type.
+const Anonymous = typescript.TypeUnknown
 
-// The brackets TypeScript writes an argument list in, and the
-// separator of a qualified name.
+// argsOpener and argsCloser enclose an argument list in TypeScript, and
+// qualifierSep separates the parts of a qualified name.
 const (
 	argsOpener   = "<"
 	argsCloser   = ">"
 	qualifierSep = "."
 )
 
-// The keywords a module-level binding opens with.
+// constBinding and letBinding are the keywords that open a module-level
+// binding.
 const (
 	constBinding = "const"
 	letBinding   = "let"
 )
 
-// The modifiers of a class member that TypeScript writes before its name,
-// each with the space that follows it.
+// staticKeyword and readonlyKeyword are modifiers of a class member, each
+// with the space after it. TypeScript writes them before the name of the
+// member.
 const (
 	staticKeyword   = "static "
 	readonlyKeyword = "readonly "
 )
 
-// annotationSep, promiseOpen and promiseClose are the spellings an
-// async callable's annotation joins, and voidType the result type of a
-// callable that returns nothing.
+// hardMark starts the name of a hard-private member.
+const hardMark = "#"
+
+// annotationSep, promiseOpen and promiseClose are the parts of the return
+// annotation of an async callable.
 const (
 	annotationSep = ": "
-	promiseType   = "Promise"
-	promiseOpen   = promiseType + argsOpener
+	promiseOpen   = typescript.TypePromise + argsOpener
 	promiseClose  = argsCloser
-	voidType      = "void"
 )
 
-// The marks of a relative import specifier. currentDir opens a
-// specifier of a module in the directory of the file under render or
-// below it, parentDir climbs one directory, and pathSep separates the
+// These are the parts of a relative import specifier. currentDir starts
+// the specifier of a module in the directory of the rendered file or
+// below it. parentDir moves up one directory, and pathSep separates the
 // segments of a module path.
 const (
 	currentDir = "./"
@@ -122,38 +119,31 @@ const (
 	pathSep    = "/"
 )
 
-// globalTypes lists the global types of TypeScript that a reference can
-// write without an import. A declaration of the file with one of these
-// names hides the global type.
-var globalTypes = []string{
-	"Array", "AsyncIterable", "Date", "Map", "Partial", promiseType, "ReadonlyArray", "Record", "Set", "Uint8Array",
-}
-
-// discardName is the name an unnamed parameter binds, numbered from
-// the second on.
+// discardName is the name of an unnamed parameter. The second unnamed
+// parameter and every later one get a number after it.
 const discardName = "_"
 
-// refusalPrefix opens every refusal the backend returns: the
-// language's identity, as every backend's refusals open.
+// refusalPrefix is the start of every refusal of the backend. It is the
+// identity of the language, as in the refusals of every backend.
 const refusalPrefix = string(typescript.Lang) + ": "
 
-// Speller spells type references for one file. A reference to a
-// declaration of another module imports the declaration through the
-// file's import set, under its own name or under a numbered one where
-// another import or a declaration of the file takes that name. The
-// spelling then uses the bound name. The import specifier follows these
-// rules:
+// Speller writes the type references of one file. For a reference to a
+// declaration of another module, it imports the declaration through the
+// import set of the file. The import uses the name of the declaration,
+// or a numbered name where another import or a declaration of the file
+// already uses that name. The written reference then uses the bound
+// name. The import specifier follows these rules:
 //
 //   - A reference to a TypeScript declaration imports the module path of
-//     the declaration relative to the file's own, as ./store or
-//     ../api/user. Where its source wrote a bare specifier, such as react
-//     for an ambient module, it imports that specifier as written.
+//     the declaration relative to the path of the file, such as ./store
+//     or ../api/user. Where the source has a bare specifier, such as react
+//     for an ambient module, the reference imports that specifier as
+//     written.
 //   - A translated reference imports the module path that the layout
-//     recorded, relative to the file's own.
-//   - A reference without a target imports the specifier that its source
-//     wrote.
+//     recorded, relative to the path of the file.
+//   - A reference without a target imports the specifier of its source.
 //
-// A reference to a declaration of the file's own module imports nothing.
+// A reference to a declaration of the module of the file imports nothing.
 //
 // # Concurrency
 //
@@ -161,84 +151,85 @@ const refusalPrefix = string(typescript.Lang) + ": "
 //
 // # Allocation contract
 //
-// Each method allocates the text it writes and nothing else, so a name
-// spelled as written allocates nothing. A reference that imports a
-// module path allocates its relative specifier, and binding a
-// declaration's import for the first time allocates in the set. A
-// method that joins more than two parts also allocates its list of
-// parts, because Go places a list of at most two strings on the stack. A
-// trailing comment allocates its block comment and the part it ends. A
-// refusal allocates its error.
+// Each method allocates the text that it writes and nothing else, so a
+// name in its written form allocates nothing. A reference that imports a
+// module path allocates its relative specifier. The first import of a
+// declaration allocates in the set. A method that joins more than two
+// parts also allocates its list of parts, because Go places a list of at
+// most two strings on the stack. A trailing comment allocates its block
+// comment and the part that it ends. A refusal allocates its error.
 type Speller struct {
 	set *render.ImportSet
 }
 
-// NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil. It allocates nothing.
+// NewSpeller returns the speller of the file with the import set set.
+// set must not be nil. NewSpeller allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
-// Spell writes a type reference in a type position, and imports what
-// it names for the type checker alone. The source spelling passes
-// through where the reference names nothing another module declares,
-// and a missing one spells [Anonymous]. A reference with arguments
-// has its bare name in Spelling, and the argument list spells here in
-// angle brackets. A structural reference keeps its written spelling,
-// and Spell returns an error where a type inside it imports under
-// another name, because TypeScript's composite spelling does not
-// follow from its structure. Spell refuses a global type that a
-// declaration of the file hides, because the spelling would refer to
-// that declaration.
+// Spell writes the type reference t in a type position. It imports the
+// declaration of t for the type checker alone. Spell returns the source
+// spelling where t does not refer to a declaration of another module,
+// and [Anonymous] for a nil t. A reference with arguments has its bare
+// name in Spelling, and Spell writes the argument list in angle
+// brackets. A structural reference keeps its written spelling. Spell
+// returns an error where a type inside a structural reference imports
+// under another name, because the composite spelling of TypeScript does
+// not follow from its structure. Spell also returns an error for a
+// global type that a declaration of the file hides, because the spelling
+// would refer to that declaration.
 //
-// Spell allocates nothing for a name spelled as written, a missing
+// Spell allocates nothing for a name in its written form, a nil
 // reference and a structural reference. An imported declaration
 // allocates its relative specifier where it imports a module path. A
-// reference with arguments writes into one buffer, one allocation where
-// every bound name is as long as its written spelling. A member of an
-// imported declaration allocates the member behind the bound name.
+// reference with arguments writes into one buffer, which is one
+// allocation where every bound name is as long as its written spelling.
+// A member of an imported declaration allocates the member after the
+// bound name.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return s.spell(t, true)
 }
 
-// IndexSig writes an index signature whole: the one key parameter
-// in brackets, the element type behind the colon. It refuses what
-// an index signature cannot state: more parameters, no result, type
-// parameters or an accessor. It allocates the signature, one
-// allocation, and what the key's and the element's spellings allocate.
+// IndexSig writes the whole index signature of m. The one key parameter
+// is in brackets, and the element type follows the colon. IndexSig
+// returns an error for a method that an index signature cannot express:
+// a method with more parameters, without a result, with type parameters
+// or with an accessor. It allocates the signature once, and what the
+// spellings of the key and the element allocate.
 func (s Speller) IndexSig(m *emit.Method) (string, error) {
+	ps, rs := m.Params.Items(), m.Returns.Items()
 	switch {
-	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
+	case len(ps) != 1 || ps[0].Name == "" || ps[0].Type == nil:
 		return "", refuse("an index signature takes one named, typed key, and %s does not", m.Name)
-	case len(m.Returns) != 1:
+	case len(rs) != 1:
 		return "", refuse("an index signature states one element type, and %s does not", m.Name)
 	case len(m.TypeParams) != 0 || m.Accessor != symbol.AccessorNone:
 		return "", refuse("an index signature admits no type parameters and no accessor, "+
 			"and %s states one", m.Name)
 	}
-	key, err := s.Spell(m.Params[0].Type)
+	key, err := s.Spell(ps[0].Type)
 	if err != nil {
 		return "", err
 	}
-	elem, err := s.Spell(m.Returns[0].Type)
+	elem, err := s.Spell(rs[0].Type)
 	if err != nil {
 		return "", err
 	}
-	return "[" + m.Params[0].Name + ": " + key + "]: " + elem + ";", nil
+	return "[" + ps[0].Name + ": " + key + "]: " + elem + ";", nil
 }
 
-// TypeParams writes a type parameter list in angle brackets, or
-// nothing for a declaration stating none: the declared variance
-// before the name, bounds folded into an intersection behind
-// extends, and the default behind an equals sign. A value
-// parameter refuses, because the model's Const takes a value
-// argument and TypeScript's const modifier applies to a type
-// argument.
+// TypeParams writes the type parameter list ps in angle brackets, and
+// nothing for an empty list. Each parameter has its declared variance
+// before the name, its bounds as an intersection after extends, and its
+// default after an equals sign. TypeParams returns an error for a value
+// parameter. Const in the model takes a value argument, and the const
+// modifier of TypeScript applies to a type argument.
 //
-// TypeParams allocates one spelling for each clause a parameter
-// states, which is its variance with its name, its bounds or its
-// default, and the joined bounds of more than one. It allocates the
-// joined list and its brackets, and what each type's spelling
-// allocates: four allocations for a parameter of two bounds beside an
-// unbounded one.
+// Each clause of a parameter allocates one spelling. The clauses are the
+// variance with the name, the bounds and the default. TypeParams also
+// allocates the joined bounds of more than one bound, the joined list
+// with its brackets, and what the spelling of each type allocates. A
+// parameter with two bounds and a parameter without a bound allocate
+// four times.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -268,24 +259,22 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
 }
 
-// Heritage writes a type's heritage clauses: one base behind
-// extends and the contracts behind implements on a class, the
-// widened contracts behind extends on an interface. A class's base
-// is a value at run time, so it imports as a value, and every
-// contract imports for the type checker alone. A second class base
-// refuses, because TypeScript extends one, and an embed refuses on
-// either, because nothing promotes members.
+// Heritage writes the heritage clauses of the type d. A class has one
+// base after extends and its contracts after implements. An interface
+// has the interfaces that it extends after extends. The base of a class
+// is a value at run time, so Heritage imports it as a value. It imports
+// every contract for the type checker alone. Heritage returns an error
+// for a second base of a class, because a TypeScript class extends one
+// class. TypeScript does not promote members, so the coverage refuses an
+// embed, and Heritage writes none.
 //
-// Heritage allocates each clause behind its keyword and the joined
-// contracts of more than one, with what each type's spelling
-// allocates: one allocation for a base alone, three for a base beside
-// two contracts, and nothing for a type without heritage.
+// Heritage allocates each clause with its keyword, the joined contracts
+// of more than one contract, and what the spelling of each type
+// allocates. A base alone allocates once, a base with two contracts
+// allocates three times, and a type without heritage allocates nothing.
 func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
 		var part string
 		switch len(t.Extends) {
 		case 0:
@@ -307,9 +296,6 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 		}
 		return part, nil
 	case *emit.Interface:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
 		if len(t.Extends) == 0 {
 			return "", nil
 		}
@@ -323,21 +309,24 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 	}
 }
 
-// Params writes a parameter list, the rest marker included and a
-// stated default behind its equals sign, verbatim from the model. A
-// rest parameter stating a default refuses, because TypeScript
-// initializes no rest. An unnamed parameter binds the discard name,
-// numbered from the second on.
+// Params writes the parameter list in the slot ps with the rest marker,
+// and with each default after an equals sign, verbatim from the model. A
+// template passes the slot by address, as in {{params .Params}}, so the
+// call reads the slot without a reflective method call. Params returns
+// an error for a rest parameter with a default, because TypeScript does
+// not initialize a rest parameter. An unnamed parameter gets the discard
+// name, with a number from the second unnamed parameter on.
 //
-// Params allocates each parameter's spelling and the joined list of
-// more than one, with what each type's spelling allocates: three
-// allocations for two parameters, and nothing for none. A numbered
-// discard name, an optional marker and a default each allocate one
-// more.
-func (s Speller) Params(ps []*emit.Param) (string, error) {
-	parts := make([]string, 0, len(ps))
+// Params allocates the spelling of each parameter, the joined list of
+// more than one parameter, and what the spelling of each type allocates.
+// Two parameters allocate three times, and an empty list allocates
+// nothing. A numbered discard name, an optional marker and a default
+// each allocate once more.
+func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
+	items := ps.Items()
+	parts := make([]string, 0, len(items))
 	unnamed := 0
-	for _, p := range ps {
+	for _, p := range items {
 		name := p.Name
 		if name == "" {
 			name = discardName
@@ -379,53 +368,54 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 	return strings.Join(parts, ", "), nil
 }
 
-// Returns writes a callable's return annotation. It writes the
-// [Results] spelling, inside Promise for an async callable, because an
-// async function returns a promise of its result. It writes nothing for
-// a setter, because a TypeScript setter cannot have a return
-// annotation. It refuses an async callable in a file whose declaration
-// hides the global Promise. It allocates what [Speller.Results]
-// allocates, the promise taking the annotation's place, and nothing for
-// a setter or an async callable that returns nothing.
+// Returns writes the return annotation of the callable d. It writes the
+// annotation of [Speller.Results], inside Promise for an async callable,
+// because an async function returns a promise of its result. It writes
+// nothing for a setter, because a TypeScript setter cannot have a return
+// annotation. It returns an error for an async callable in a file with a
+// declaration that hides the global Promise. It allocates what
+// [Speller.Results] allocates, and nothing for a setter or an async
+// callable without results.
 func (s Speller) Returns(d symbol.Symbol) (string, error) {
-	var rs []*emit.Return
-	async := false
+	var none emit.Slot[*emit.Return]
+	results, async := &none, false
 	switch c := d.(type) {
 	case *emit.Function:
-		rs, async = c.Returns, c.Async
+		results, async = &c.Returns, c.Async
 	case *emit.Method:
 		if c.Accessor == symbol.AccessorSet {
 			return "", nil
 		}
-		rs, async = c.Returns, c.Async
+		results, async = &c.Returns, c.Async
 	}
 	switch {
 	case !async:
-		return s.Results(rs)
-	case s.set.Reserved(promiseType):
-		return "", refuse("a declaration of the file hides the global type %s", promiseType)
-	case len(rs) == 0:
-		return annotationSep + promiseOpen + voidType + promiseClose, nil
+		return s.Results(results)
+	case s.set.Reserved(typescript.TypePromise):
+		return "", refuse("a declaration of the file hides the global type %s", typescript.TypePromise)
+	case results.Len() == 0:
+		return annotationSep + promiseOpen + typescript.TypeVoid + promiseClose, nil
 	}
-	return s.resultType(rs, annotationSep+promiseOpen, promiseClose)
+	return s.resultType(results.Items(), annotationSep+promiseOpen, promiseClose)
 }
 
-// Results writes a return type annotation: void for none, the
-// type for one, and a tuple for several, because TypeScript
-// returns one value however many the delegate hands back. It allocates
-// the annotation and the joined tuple of more than one result, with
-// what each type's spelling allocates: one allocation for one result,
-// two for a tuple of two, and nothing for none.
-func (s Speller) Results(rs []*emit.Return) (string, error) {
-	if len(rs) == 0 {
-		return annotationSep + voidType, nil
+// Results writes the return type annotation of the results in the slot
+// results. It writes void for no result, the type for one result, and a
+// tuple for two or more, because a TypeScript function returns one
+// value. A template passes the slot by address, as Params describes. It
+// allocates the annotation, the joined tuple of more than one result,
+// and what the spelling of each type allocates. One result allocates
+// once, a tuple of two allocates twice, and no result allocates nothing.
+func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
+	if results.Len() == 0 {
+		return annotationSep + typescript.TypeVoid, nil
 	}
-	return s.resultType(rs, annotationSep, "")
+	return s.resultType(results.Items(), annotationSep, "")
 }
 
-// resultType writes the type one or more results return as, between
-// open and closer: the one result's type, and a tuple of several. The
-// text joins in one concatenation, so one result allocates once.
+// resultType writes the type of one or more results between open and
+// closer. It writes the type of one result, and a tuple for two or more.
+// It joins the text in one concatenation, so one result allocates once.
 func (s Speller) resultType(rs []*emit.Return, open, closer string) (string, error) {
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
@@ -441,34 +431,37 @@ func (s Speller) resultType(rs []*emit.Return, open, closer string) (string, err
 	return open + "[" + strings.Join(parts, ", ") + "]" + closer, nil
 }
 
-// spellValue writes a reference in a value position, where the
-// declaration must exist at run time, such as a class's base.
+// spellValue writes the reference t in a value position, where the
+// declaration must exist at run time. The base of a class is in a value
+// position.
 func (s Speller) spellValue(t *emit.TypeRef) (string, error) {
 	return s.spell(t, false)
 }
 
-// spell writes a reference, importing what it names for the type
-// checker alone where typeOnly is set.
+// spell writes the reference t. Where typeOnly is true, it imports the
+// declaration of t for the type checker alone. A composite whose child
+// imports under another name, and a composite that the rules substituted,
+// restate through [typescript.Restate].
 func (s Speller) spell(t *emit.TypeRef, typeOnly bool) (string, error) {
-	out, err := spellref.SpellWith(t, argsOpener, argsCloser, Anonymous, s.qualify(typeOnly))
+	out, err := spellref.SpellRestated(t, argsOpener, argsCloser, Anonymous, s.qualify(typeOnly), typescript.Restate)
 	if err != nil {
 		return "", refuse("%w", err)
 	}
 	return out, nil
 }
 
-// qualify returns the spelling of a named reference through its
+// qualify returns a function that writes a named reference through its
 // import. The first segment of a qualified spelling is the declaration
 // that the module exports, and the rest is a member of it. A reference
-// without a module and a reference of the file's own module import
-// nothing. qualify refuses a global type that a declaration of the file
-// hides.
+// without a module and a reference into the module of the file import
+// nothing. The function returns an error for a global type that a
+// declaration of the file hides.
 func (s Speller) qualify(typeOnly bool) spellref.Qualify {
 	return func(t *emit.TypeRef) (string, error) {
 		head, rest, qualified := strings.Cut(t.Spelling, qualifierSep)
 		module := spellref.PackageOf(t, typescript.Lang)
 		switch {
-		case module == "" && slices.Contains(globalTypes, head) && s.set.Reserved(head):
+		case module == "" && typescript.GlobalType(head) && s.set.Reserved(head):
 			return "", refuse("a declaration of the file hides the global type %s", head)
 		case module == "" || module == s.set.Home():
 			return t.Spelling, nil
@@ -481,9 +474,9 @@ func (s Speller) qualify(typeOnly bool) spellref.Qualify {
 	}
 }
 
-// specifier returns the import specifier of the module of a named
-// reference, by the rules of [Speller]. module is the reference's module
-// path, or the specifier that its source wrote where it has no target.
+// specifier returns the import specifier of the module of the named
+// reference t, by the rules of [Speller]. module is the module path of
+// t, or the specifier of its source where t has no target.
 func (s Speller) specifier(t *emit.TypeRef, module string) string {
 	if t.Target.IsZero() ||
 		t.Target.Lang == typescript.Lang && t.Package != "" && kindOf(t.Package) == packageSpecifier {
@@ -493,7 +486,7 @@ func (s Speller) specifier(t *emit.TypeRef, module string) string {
 	return relativeTo(s.set.Home(), module)
 }
 
-// all writes each reference through spell, in order.
+// all writes each reference of ts through spell, in order.
 func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)) ([]string, error) {
 	out := make([]string, 0, len(ts))
 	for _, t := range ts {
@@ -506,13 +499,13 @@ func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)
 	return out, nil
 }
 
-// Funcs returns the shared template vocabulary the kind templates
-// call, bound to one file's import set: every declaration a helper
-// names from another module is imported there. Every helper takes a
-// fixed list of arguments, because text/template allocates the list of
-// a variadic call and a value for each string argument that a template
-// writes. Funcs allocates the map of twenty-three helpers, four
-// allocations, and the speller's seven bound helpers.
+// Funcs returns the template vocabulary that the kind templates call. The
+// helpers import every declaration of another module that they write into
+// set, the import set of one file. Every helper takes
+// a fixed list of arguments, because text/template allocates the list of
+// a variadic call and a value for each string argument in a template.
+// Funcs allocates the map of twenty-three helpers in four allocations,
+// and the seven bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -542,64 +535,44 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 	}
 }
 
-// Docs writes a declaration's documentation as a TSDoc block at the
-// top level. It allocates what [textfmt.BlockDocs] allocates: the
-// block, sized once, and nothing for no lines.
+// Docs writes the documentation lines of a declaration as a TSDoc block
+// at the top level. It allocates what [textfmt.BlockDocs] allocates. That
+// is one block, sized once, and nothing for no lines.
 func Docs(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
 	return textfmt.BlockDocs(lines, "/**", " * ", " */")
 }
 
-// MemberDocs writes a member's documentation as the TSDoc block of
-// [Docs], each line behind the member indent of a class, an interface
-// or an enum. It allocates what Docs allocates.
+// MemberDocs writes the documentation lines of a member as the TSDoc
+// block of [Docs]. Each line starts with the member indent of a class,
+// an interface or an enum. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
-	if len(lines) == 0 {
-		return ""
-	}
 	return textfmt.BlockDocs(lines, "/**", " * ", " */", memberIndent)
 }
 
-// PropKey writes a field's property key: an identifier bare, and any
-// other name, such as the wire name content-type or a digit-led key,
-// in single quotes, so the type declares the name whole. A
-// hard-private field must be an identifier, because # admits no
-// quoted form. PropKey allocates a quoted key, one allocation, and
-// nothing for an identifier. A refusal allocates its error.
+// PropKey writes the property key of the field f, as [MethodKey] writes
+// the key of a method. A quoted key is a name such as the wire name
+// content-type or a key that starts with a digit, and the type then
+// declares the whole name. It allocates once for a quoted key and nothing
+// otherwise. A refusal allocates its error.
 func PropKey(f *emit.Field) (string, error) {
-	if spell.IsIdentifier(f.Name) {
-		return f.Name, nil
-	}
-	if f.Hard {
-		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier",
-			f.Name)
-	}
-	return quote(f.Name), nil
+	return memberKey(f.Name, f.Hard, f.Computed)
 }
 
-// MethodKey spells a method's member key: the identifier bare, and
-// anything else quoted, which TypeScript admits on classes and
-// interfaces alike. A hard-private name refuses the quoted form
-// the way a property's does. MethodKey allocates a quoted key, one
-// allocation, and nothing for an identifier. A refusal allocates its
-// error.
+// MethodKey writes the member key of the method m. It writes an
+// identifier as it is, a computed name as written, and any other name in
+// single quotes. TypeScript allows a quoted member key on classes and on
+// interfaces. MethodKey returns an error for a hard-private name that is
+// not an identifier after its #, because # takes no quoted form. It
+// allocates once for a quoted key and nothing otherwise. A refusal
+// allocates its error.
 func MethodKey(m *emit.Method) (string, error) {
-	if spell.IsIdentifier(m.Name) {
-		return m.Name, nil
-	}
-	if m.Hard {
-		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier",
-			m.Name)
-	}
-	return quote(m.Name), nil
+	return memberKey(m.Name, m.Hard, m.Computed)
 }
 
-// EnumKey writes an enum member's key: an identifier bare, and any
-// other name in single quotes, which TypeScript admits on an enum
-// member. It allocates a quoted key, one allocation, and nothing for an
-// identifier.
+// EnumKey writes the key of the enum member v. It writes an identifier
+// as it is and any other name in single quotes. TypeScript allows a
+// quoted key on an enum member. EnumKey allocates once for a quoted key
+// and nothing for an identifier.
 func EnumKey(v *emit.EnumVariant) string {
 	if spell.IsIdentifier(v.Name) {
 		return v.Name
@@ -607,21 +580,24 @@ func EnumKey(v *emit.EnumVariant) string {
 	return quote(v.Name)
 }
 
-// AccessorKw writes a method's accessor keyword and refuses a
-// declaration outside the accessor's shape: a getter takes nothing
-// and returns one value, a setter takes one value and returns
-// nothing, and neither declares type parameters, because
-// TypeScript's accessors admit none. AccessorKw returns a constant
-// keyword and allocates nothing, and a refusal allocates its error.
+// AccessorKw writes the accessor keyword of the method m. It returns an
+// error for an accessor of another shape. A getter takes no parameter
+// and returns one value. A setter takes one value and returns nothing.
+// Neither declares type parameters or a ?, because a TypeScript accessor
+// cannot have them. AccessorKw returns a constant keyword and allocates
+// nothing. A refusal allocates its error.
 func AccessorKw(m *emit.Method) (string, error) {
+	if m.Optional && m.Accessor != symbol.AccessorNone {
+		return "", refuse("an accessor admits no ?, and %s states one", m.Name)
+	}
 	switch m.Accessor {
 	case symbol.AccessorNone:
 		return "", nil
 	case symbol.AccessorGet:
 		switch {
-		case len(m.Params) != 0:
+		case m.Params.Len() != 0:
 			return "", refuse("a getter takes nothing, and %s takes parameters", m.Name)
-		case len(m.Returns) == 0:
+		case m.Returns.Len() == 0:
 			return "", refuse("a getter returns its property, and %s returns nothing", m.Name)
 		case len(m.TypeParams) != 0:
 			return "", refuse("an accessor admits no type parameters, and %s declares some", m.Name)
@@ -629,9 +605,9 @@ func AccessorKw(m *emit.Method) (string, error) {
 		return "get ", nil
 	default:
 		switch {
-		case len(m.Params) != 1:
+		case m.Params.Len() != 1:
 			return "", refuse("a setter takes its one value, and %s does not", m.Name)
-		case len(m.Returns) != 0:
+		case m.Returns.Len() != 0:
 			return "", refuse("a setter returns nothing, and %s returns", m.Name)
 		case len(m.TypeParams) != 0:
 			return "", refuse("an accessor admits no type parameters, and %s declares some", m.Name)
@@ -640,10 +616,11 @@ func AccessorKw(m *emit.Method) (string, error) {
 	}
 }
 
-// Hard writes a member's hard-private prefix. A hard-private name
-// is runtime privacy in the name itself, so a stated visibility
-// beside it refuses: the two mechanisms cannot combine. Hard allocates
-// nothing, and a refusal allocates its error.
+// Hard writes the # of the hard-private member s where the name of s does
+// not start with one, and nothing for a name that does. A hard-private
+// name makes the member private at run time. Hard accepts a private
+// visibility beside it and returns an error for any other visibility.
+// Hard allocates nothing. A refusal allocates its error.
 func Hard(s symbol.Symbol) (string, error) {
 	name, hard, vis := "", false, symbol.VisibilityUnknown
 	switch d := s.(type) {
@@ -655,25 +632,29 @@ func Hard(s symbol.Symbol) (string, error) {
 	switch {
 	case !hard:
 		return "", nil
-	case vis != symbol.VisibilityUnknown:
-		return "", refuse("a hard-private name states its privacy in the name, and %s "+
-			"states a visibility beside it", name)
+	case vis != symbol.VisibilityUnknown && vis != symbol.VisibilityPrivate:
+		return "", refuse("a hard-private name is private, and %s states another visibility beside it", name)
+	case strings.HasPrefix(name, hardMark):
+		return "", nil
 	}
-	return "#", nil
+	return hardMark, nil
 }
 
-// Mods writes a module-level declaration's leading keywords:
-// export for a public or unstated visibility, nothing for a
-// package-scoped one, abstract before an abstract class, and
-// async before an asynchronous function. A protected, private or
-// internal visibility refuses at module level, a final class
-// refuses because TypeScript seals nothing, and a constant without a
-// value refuses, because const X = declares nothing. An annotation
-// list refuses on every declaration decorators cannot mark:
-// TypeScript decorates classes and their members alone. Mods allocates
-// the keywords of an abstract class or an async function, one
-// allocation, and nothing for every other declaration. A refusal
-// allocates its error.
+// Mods writes the leading keywords of the module-level declaration d. It
+// writes export for a public or unknown visibility and nothing for
+// package scope. It adds abstract for an abstract class and async for an
+// async function. Mods returns an error for these declarations:
+//
+//   - a protected, private or internal declaration, because a
+//     module-level declaration cannot have that visibility;
+//   - a final class, because TypeScript does not seal a class;
+//   - a constant without a value, because const X = declares nothing;
+//   - an annotation list on a declaration that is not a class, because
+//     TypeScript decorates only classes and their members.
+//
+// Mods allocates once for the keywords of an abstract class or an async
+// function, and nothing for every other declaration. A refusal allocates
+// its error.
 func Mods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -742,12 +723,14 @@ func Mods(d symbol.Symbol) (string, error) {
 	}
 }
 
-// MemberMods writes a class member's leading keywords in the order of
-// TypeScript's grammar: accessibility, static, abstract, override, async
-// on methods, and readonly on fields. TypeScript allows async only on a
-// method with a body that is not an accessor. An async abstract method
-// and an async accessor keep their asynchrony in the promise of their
-// annotation. MemberMods refuses these members:
+// MemberMods writes the leading keywords of the class member d in the
+// order of the TypeScript grammar. The order is accessibility, static,
+// abstract, override, async on a method and readonly on a field. A
+// hard-private member takes no accessibility, because TypeScript allows
+// none beside a # name. TypeScript allows async only on a method with a
+// body that is not an accessor. An async abstract method and an async
+// accessor express their asynchrony in the promise of their annotation.
+// MemberMods returns an error for these members:
 //
 //   - a final method, because TypeScript has no final methods;
 //   - a method with a default, because TypeScript has no default
@@ -757,13 +740,13 @@ func Mods(d symbol.Symbol) (string, error) {
 //   - a member with package or internal accessibility, because class
 //     members do not take one.
 //
-// MemberMods allocates one join per keyword that it writes after the
-// first, and nothing for a member of one keyword or none. A refusal
-// allocates its error.
+// MemberMods allocates one join for each keyword after the first, and
+// nothing for a member with one keyword or none. A refusal allocates its
+// error.
 func MemberMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Field:
-		part, err := accessibility(t.Visibility, t.Name)
+		part, err := accessibility(t.Visibility, t.Hard, t.Name)
 		if err != nil {
 			return "", err
 		}
@@ -786,7 +769,7 @@ func MemberMods(d symbol.Symbol) (string, error) {
 		case len(t.Throws) > 0:
 			return "", unthrown(t.Name)
 		}
-		part, err := accessibility(t.Visibility, t.Name)
+		part, err := accessibility(t.Visibility, t.Hard, t.Name)
 		if err != nil {
 			return "", err
 		}
@@ -808,13 +791,15 @@ func MemberMods(d symbol.Symbol) (string, error) {
 	}
 }
 
-// IndexMods writes a class index signature's one keyword: static for a
-// type-level signature. An index signature is a
-// declaration without a body, so a body refuses, and so do an
-// accessibility, abstract, override, final, a default, asynchrony,
-// a hard-private name, a throws clause and decorators, because
-// TypeScript spells none of them on an index signature. IndexMods
-// allocates nothing, and a refusal allocates its error.
+// IndexMods writes the keywords of the class index signature m: static
+// for a type-level signature, and readonly for an immutable one. An index
+// signature is a declaration without a body, so IndexMods returns an
+// error for a body. It also returns an error for an accessibility,
+// abstract, override, final, a default, async, a hard-private name, a ?,
+// a throws clause and decorators, because TypeScript has none of them on
+// an index signature. IndexMods allocates the joined keywords of a static
+// readonly signature, and nothing for every other signature. A refusal
+// allocates its error.
 func IndexMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
@@ -822,27 +807,32 @@ func IndexMods(m *emit.Method) (string, error) {
 			m.Name)
 	case m.Visibility != symbol.VisibilityUnknown && m.Visibility != symbol.VisibilityPublic:
 		return "", refuse("an index signature takes no accessibility, and %s states one", m.Name)
-	case m.Abstract || m.Override || m.Final || m.HasDefault || m.Async || m.Hard:
-		return "", refuse("an index signature takes static alone, and %s states another modifier",
-			m.Name)
+	case m.Abstract || m.Override || m.Final || m.HasDefault || m.Async || m.Hard || m.Optional:
+		return "", refuse("an index signature takes static and readonly alone, and %s states another "+
+			"modifier", m.Name)
 	case len(m.Throws) > 0:
 		return "", unthrown(m.Name)
 	case len(m.Annotations) > 0:
 		return "", refuse("decorators mark no index signature, and %s states annotations", m.Name)
 	}
+	part := ""
 	if m.Level == symbol.LevelType {
-		return staticKeyword, nil
+		part = staticKeyword
 	}
-	return "", nil
+	if m.Mutability == symbol.MutabilityImmutable {
+		part += readonlyKeyword
+	}
+	return part, nil
 }
 
-// CtorMods writes a class constructor's keywords: its accessibility
-// alone. A constructor belongs to instances and takes no type
-// parameters, so static and type parameters refuse, and so do
-// abstract, override, final, a default, asynchrony, an accessor, a
-// hard-private name, a throws clause and decorators, because
-// TypeScript spells none of them on a constructor. CtorMods allocates
-// nothing, and a refusal allocates its error.
+// CtorMods writes the keywords of the class constructor m. The keywords
+// consist of its accessibility alone. A constructor is an instance
+// member without type parameters, so CtorMods returns an error for
+// static and for type parameters. It also returns an error for abstract,
+// override, final, a default, async, an accessor, a hard-private name, a
+// ?, a throws clause and decorators, because TypeScript has none of them
+// on a constructor. CtorMods allocates nothing. A refusal allocates its
+// error.
 func CtorMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Level == symbol.LevelType:
@@ -851,7 +841,7 @@ func CtorMods(m *emit.Method) (string, error) {
 		return "", refuse("a constructor takes no type parameters, and %s states %d",
 			m.Name, len(m.TypeParams))
 	case m.Abstract || m.Override || m.Final || m.HasDefault || m.Async ||
-		m.Hard || m.Accessor != symbol.AccessorNone:
+		m.Hard || m.Optional || m.Accessor != symbol.AccessorNone:
 		return "", refuse("a constructor takes an accessibility alone, and %s states another "+
 			"modifier", m.Name)
 	case len(m.Throws) > 0:
@@ -859,14 +849,14 @@ func CtorMods(m *emit.Method) (string, error) {
 	case len(m.Annotations) > 0:
 		return "", refuse("decorators mark no constructor, and %s states annotations", m.Name)
 	}
-	return accessibility(m.Visibility, m.Name)
+	return accessibility(m.Visibility, false, m.Name)
 }
 
-// PropMods writes an interface property's keywords: readonly
-// where the property is immutable. An interface member takes no
-// accessibility, no static level and no decorator, so each of them
-// refuses. PropMods allocates nothing, and a refusal allocates its
-// error.
+// PropMods writes the keywords of the interface property f. It writes
+// readonly for an immutable property and nothing otherwise. An interface
+// member does not have an accessibility, a static level or a decorator,
+// so PropMods returns an error for each of them. PropMods allocates
+// nothing. A refusal allocates its error.
 func PropMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Hard:
@@ -888,13 +878,15 @@ func PropMods(f *emit.Field) (string, error) {
 	return "", nil
 }
 
-// SigMods guards an interface member signature, which takes no
-// keywords and no body: a method signature, an index signature and
-// a construct signature alike. A stated modifier or a body is
-// refused, and the signature spells bare. An async method signature
-// keeps its asynchrony in the promise of its annotation, and an async
-// index or construct signature is refused, because neither returns a
-// promise. SigMods allocates nothing, and a refusal allocates its error.
+// SigMods checks the interface member signature m. It writes readonly for
+// an immutable index signature and nothing for every other signature. A
+// signature takes no other keyword and no body, so SigMods returns an
+// error for another modifier or a body. An async method signature
+// expresses its asynchrony in the promise of its annotation. SigMods
+// returns an error for an async index or construct signature, because
+// neither returns a promise. It also returns an error for an index or
+// construct signature with a ?, because neither can be absent from a
+// value. SigMods allocates nothing. A refusal allocates its error.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
@@ -911,17 +903,23 @@ func SigMods(m *emit.Method) (string, error) {
 		return "", refuse("an interface method is a bare signature, and %s states a modifier", m.Name)
 	case m.Async && (m.Indexer || m.Constructs):
 		return "", refuse("an index or construct signature returns no promise, and %s is async", m.Name)
+	case m.Optional && (m.Indexer || m.Constructs):
+		return "", refuse("an index or construct signature admits no ?, and %s states one", m.Name)
 	case len(m.Throws) > 0:
 		return "", unthrown(m.Name)
+	}
+	if m.Indexer && m.Mutability == symbol.MutabilityImmutable {
+		return readonlyKeyword, nil
 	}
 	return "", nil
 }
 
-// Binding writes a module-level binding's keyword: const for an
-// immutable binding, let otherwise. An immutable binding without an
-// initializer refuses, because TypeScript requires a const to be
-// initialized where it is declared. Binding returns a constant keyword
-// and allocates nothing, and a refusal allocates its error.
+// Binding writes the keyword of the module-level binding v. It writes
+// const for an immutable binding and let otherwise. It returns an error
+// for an immutable binding without an initializer, because TypeScript
+// requires the initializer of a const in its declaration. Binding
+// returns a constant keyword and allocates nothing. A refusal allocates
+// its error.
 func Binding(v *emit.Variable) (string, error) {
 	if v.Mutability != symbol.MutabilityImmutable {
 		return letBinding, nil
@@ -933,25 +931,25 @@ func Binding(v *emit.Variable) (string, error) {
 	return constBinding, nil
 }
 
-// Decorators writes a declaration's decorator lines at the top level,
-// one per annotation: the name behind its marker, and the argument
-// spellings verbatim in parentheses where any are stated. It allocates
-// what [textfmt.Marked] allocates: the lines, sized once, and nothing
-// for no annotations.
+// Decorators writes one decorator line at the top level for each
+// annotation of a. A line has the name after the marker, and the
+// arguments verbatim in parentheses where the annotation has any. It
+// allocates what [textfmt.Marked] allocates. That is the lines, sized
+// once, and nothing for no annotations.
 func Decorators(a symbol.Annotations) string {
 	return textfmt.Marked(a, "@", "")
 }
 
-// MemberDecorators writes a member's decorator lines as [Decorators]
-// writes them, each behind the member indent of a class. It allocates
-// what Decorators allocates.
+// MemberDecorators writes the decorator lines of a member as
+// [Decorators] writes them. Each line starts with the member indent of a
+// class. It allocates what Decorators allocates.
 func MemberDecorators(a symbol.Annotations) string {
 	return textfmt.Marked(a, "@", "", memberIndent)
 }
 
-// variance writes the declaration-site keyword TypeScript places
-// before a parameter's name: in for contravariant, out for
-// covariant, nothing for invariant.
+// variance returns the declaration-site keyword of the variance v, which
+// TypeScript writes before the name of a type parameter. It returns in
+// for contravariance, out for covariance and nothing for invariance.
 func variance(v symbol.Variance) string {
 	switch v {
 	case symbol.VarianceIn:
@@ -963,9 +961,10 @@ func variance(v symbol.Variance) string {
 	}
 }
 
-// exported writes the module-level visibility: export for public
-// or unstated, nothing for package scope, which is the module
-// itself. The other scopes have no module-level spelling.
+// exported writes the module-level visibility v. It writes export for a
+// public or unknown visibility, and nothing for package scope, because a
+// TypeScript module is its own package. The other visibilities have no
+// module-level form, so exported returns an error that names name.
 func exported(v symbol.Visibility, name string) (string, error) {
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
@@ -978,10 +977,15 @@ func exported(v symbol.Visibility, name string) (string, error) {
 	}
 }
 
-// accessibility writes a class member's accessibility: nothing
-// for public or unstated, the keyword for private and protected.
-// Package and internal scopes have no member spelling.
-func accessibility(v symbol.Visibility, name string) (string, error) {
+// accessibility writes the accessibility v of a class member. It writes
+// nothing for a public or unknown visibility, and the keyword for
+// private and protected. It writes nothing for a hard-private member,
+// because [Hard] checks its visibility. Package and internal visibility
+// have no member form, so accessibility returns an error that names name.
+func accessibility(v symbol.Visibility, hard bool, name string) (string, error) {
+	if hard {
+		return "", nil
+	}
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
 		return "", nil
@@ -995,18 +999,18 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 	}
 }
 
-// relativeTo returns the relative specifier of a module path from the
-// directory of the module path home. The specifier opens with ./ where
-// the module is in that directory or below it, and otherwise with one
-// ../ for each directory that the path climbs. It allocates the
-// specifier.
+// relativeTo returns the relative specifier of the module path module
+// from the directory of the module path home. The specifier starts with
+// ./ where the module is in that directory or below it. Otherwise it
+// starts with one ../ for each directory that the path goes up. It
+// allocates the specifier.
 func relativeTo(home, module string) string {
 	dir, _, nested := strings.CutLast(home, pathSep)
 	if !nested {
 		dir = ""
 	}
-	// shared is the length of the directories that dir and the module
-	// path open with, with the separator behind them.
+	// shared is the length of the leading directories that dir and module
+	// have in common, with the separator after them.
 	shared := 0
 	for shared < len(dir) {
 		segment := dir[shared:]
@@ -1035,25 +1039,33 @@ func relativeTo(home, module string) string {
 	return b.String()
 }
 
-// unthrown is the refusal for declared failure types: a
-// TypeScript signature declares none.
+// memberKey writes the key of a member named name, as [MethodKey] states.
+// hard and computed are the facts of the member. The name of a
+// hard-private member must be an identifier after its #.
+func memberKey(name string, hard, computed bool) (string, error) {
+	switch {
+	case hard && !spell.IsIdentifier(strings.TrimPrefix(name, hardMark)):
+		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier", name)
+	case hard, computed, spell.IsIdentifier(name):
+		return name, nil
+	}
+	return quote(name), nil
+}
+
+// unthrown returns the refusal of declared failure types for the
+// declaration name, because a TypeScript signature cannot declare them.
 func unthrown(name string) error {
 	return refuse("a signature declares no failure types, and %s states throws", name)
 }
 
-// unembedded is the refusal for embeds: nothing promotes members.
-func unembedded(name string) error {
-	return refuse("nothing promotes members, and %s states embeds", name)
-}
-
-// undecorated is the refusal for an annotation list on a
-// declaration decorators cannot mark.
+// undecorated returns the refusal of an annotation list on the
+// declaration name, which a decorator cannot mark.
 func undecorated(name string) error {
 	return refuse("decorators mark classes and their members, and %s states annotations "+
 		"elsewhere", name)
 }
 
-// refuse builds a refusal under [refusalPrefix].
+// refuse returns a refusal that starts with [refusalPrefix].
 func refuse(format string, args ...any) error {
 	return fmt.Errorf(refusalPrefix+format, args...)
 }

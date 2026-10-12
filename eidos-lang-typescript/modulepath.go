@@ -57,3 +57,23 @@ func DeclarationFile(file string) bool {
 		return strings.HasSuffix(file, ext)
 	})
 }
+
+// packageSep separates the segments of a package path.
+const packageSep = "/"
+
+// JoinPackage appends a segment to a package path, such as the name of
+// a namespace to the package of the module that declares it. Below the
+// global package, which is the empty path, the result is the segment
+// alone. For an empty segment it is the package alone. JoinPackage
+// allocates the joined path, one allocation, and nothing when either part
+// is empty.
+func JoinPackage(pkg, segment string) string {
+	switch {
+	case pkg == "":
+		return segment
+	case segment == "":
+		return pkg
+	default:
+		return pkg + packageSep + segment
+	}
+}

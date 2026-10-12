@@ -7,20 +7,22 @@ import (
 	"slices"
 	"strings"
 
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// resolve returns what a spelling could mean in one file, in
-// TypeScript's scope order, through the bindings the parse recorded. A
+// resolve returns what a spelling could mean in one file, in the scope
+// order of TypeScript, through the bindings that the parse recorded. A
 // file whose parse recorded no scope resolves nothing.
 //
 // A bare name probes the enclosing namespaces innermost first and then
-// the file's own package, one tier each, then the module an import
-// binds it from, and then the global package. A qualified name probes
-// the module a namespace import binds its first name to, a namespace
-// a named import binds, or a namespace of each enclosing package and of
-// the global package. An import alias resolves as the entity it names.
+// the package of the file, one tier each, then the module that an import
+// binds it from, and then the global package. A qualified name probes the
+// module that a namespace import binds its first name to, a namespace
+// that a named import binds, or a namespace of each enclosing package and
+// of the global package. An import alias resolves as the entity that it
+// refers to.
 func resolve(s plugin.ImportScope, spelling string) plugin.Candidates {
 	sc, _ := s.Bindings.(*scope)
 	if sc == nil {
@@ -33,8 +35,8 @@ func resolve(s plugin.ImportScope, spelling string) plugin.Candidates {
 // declare: the explicit re-exports and the default export in one pair of
 // tiers, the file before the directory index, and then the export-star
 // modules in another pair, where two modules that both publish the name
-// compete. Only the module's own File publishes, and export * publishes
-// no default.
+// compete. Only the File of the module itself publishes, and export *
+// publishes no default.
 func exports(s plugin.ImportScope, name string) plugin.Candidates {
 	sc, _ := s.Bindings.(*scope)
 	if sc == nil || sc.own != sc.module.pkg {
@@ -43,9 +45,9 @@ func exports(s plugin.ImportScope, name string) plugin.Candidates {
 	return sc.module.published(name)
 }
 
-// candidates returns the tiers one spelling names. followed contains the
-// import aliases the resolution already followed, so an alias that
-// names itself, or a cycle of aliases, names nothing.
+// candidates returns the tiers of one spelling. followed contains the
+// import aliases that the resolution already followed, so an alias that
+// refers to itself, or a cycle of aliases, resolves to nothing.
 func (s *scope) candidates(spelling string, followed map[string]bool) plugin.Candidates {
 	if spelling == "" {
 		return nil
@@ -82,12 +84,14 @@ func (s *scope) candidates(spelling string, followed map[string]bool) plugin.Can
 		if b.name == "" {
 			return m.from(b.specifier, inner, name)
 		}
-		return m.from(b.specifier, join(b.name, inner), name)
+		return m.from(b.specifier, typescript.JoinPackage(b.name, inner), name)
 	}
 	namespace := strings.Join(segments[:len(segments)-1], "/")
 	tiers := make(plugin.Candidates, 0, len(chain)+1)
 	for _, pkg := range chain {
-		tiers = append(tiers, []symbol.Identity{{Lang: Lang, Package: join(pkg, namespace), Name: name}})
+		tiers = append(tiers, []symbol.Identity{
+			{Lang: Lang, Package: typescript.JoinPackage(pkg, namespace), Name: name},
+		})
 	}
 	if !slices.Contains(chain, "") {
 		tiers = append(tiers, []symbol.Identity{{Lang: Lang, Package: namespace, Name: name}})
@@ -95,27 +99,24 @@ func (s *scope) candidates(spelling string, followed map[string]bool) plugin.Can
 	return tiers
 }
 
-// from returns the tiers a name inside a module names: each candidate
-// package of the module specifier, a namespace path inside it where
-// inner names one, in the specifier's tiers.
+// from returns the tiers of a name inside a module: each candidate
+// package of the module specifier, with the namespace path inner inside
+// it, in the tiers of the specifier.
 func (m *module) from(specifier, inner, name string) plugin.Candidates {
 	pkgs := m.packages(specifier)
 	out := make(plugin.Candidates, 0, len(pkgs))
 	for _, tier := range pkgs {
 		ids := make([]symbol.Identity, 0, len(tier))
 		for _, pkg := range tier {
-			if inner != "" {
-				pkg += "/" + inner
-			}
-			ids = append(ids, symbol.Identity{Lang: Lang, Package: pkg, Name: name})
+			ids = append(ids, symbol.Identity{Lang: Lang, Package: typescript.JoinPackage(pkg, inner), Name: name})
 		}
 		out = append(out, ids)
 	}
 	return out
 }
 
-// local returns the tiers a name of the file's own scope names: the
-// module an import binds it from, and the file's package otherwise.
+// local returns the tiers of a name of the scope of the file: the module
+// that an import binds it from, and the package of the file otherwise.
 func (m *module) local(name string) plugin.Candidates {
 	if b, bound := m.imports[name]; bound && b.name != "" {
 		return m.from(b.specifier, "", b.name)
@@ -123,9 +124,9 @@ func (m *module) local(name string) plugin.Candidates {
 	return plugin.Candidates{{{Lang: Lang, Package: m.pkg, Name: name}}}
 }
 
-// published returns the tiers a name the module publishes and does not
-// declare names: the default export and the export clauses that publish
-// it, then the export-star modules.
+// published returns the tiers of a name that the module publishes and
+// does not declare: the default export and the export clauses that
+// publish it, then the export-star modules.
 func (m *module) published(name string) plugin.Candidates {
 	var explicit []plugin.Candidates
 	if name == defaultExport && m.defaultName != "" && m.defaultName != defaultExport {
@@ -147,21 +148,5 @@ func (m *module) published(name string) plugin.Candidates {
 			stars = append(stars, m.from(spec, "", name))
 		}
 	}
-	return append(zip(explicit), zip(stars)...)
-}
-
-// zip merges several sources' tiers by position: the first tier of
-// each, then the second of each, so the sources compete within a tier
-// and each source's own order applies across tiers.
-func zip(sources []plugin.Candidates) plugin.Candidates {
-	var out plugin.Candidates
-	for _, src := range sources {
-		for i, tier := range src {
-			for len(out) <= i {
-				out = append(out, nil)
-			}
-			out[i] = append(out[i], tier...)
-		}
-	}
-	return out
+	return append(plugin.Zip(explicit...), plugin.Zip(stars...)...)
 }

@@ -58,29 +58,33 @@ func TestBuiltin(t *testing.T) {
 				want: rules.Leaf(symbol.FormBytes, "Uint8Array"),
 			},
 			{
-				name: "classifies Array with an argument as a list",
+				name: "classifies Array with an argument as a mutable list",
 				give: &node.TypeRef{Spelling: "Array", Args: []*node.TypeRef{arg}},
-				want: rules.TypeShape{Form: symbol.FormList, Spelling: "Array"},
+				want: rules.TypeShape{Form: symbol.FormList, Spelling: "Array", Mutability: symbol.MutabilityMutable},
 			},
 			{
-				name: "classifies ReadonlyArray with an argument as a list",
+				name: "classifies ReadonlyArray with an argument as an immutable list",
 				give: &node.TypeRef{Spelling: "ReadonlyArray", Args: []*node.TypeRef{arg}},
-				want: rules.TypeShape{Form: symbol.FormList, Spelling: "ReadonlyArray"},
+				want: rules.TypeShape{
+					Form: symbol.FormList, Spelling: "ReadonlyArray", Mutability: symbol.MutabilityImmutable,
+				},
 			},
 			{
-				name: "classifies Record with arguments as a map",
+				name: "classifies Record with arguments as a mutable map",
 				give: &node.TypeRef{Spelling: "Record", Args: []*node.TypeRef{arg, arg}},
-				want: rules.TypeShape{Form: symbol.FormMap, Spelling: "Record"},
+				want: rules.TypeShape{Form: symbol.FormMap, Spelling: "Record", Mutability: symbol.MutabilityMutable},
 			},
 			{
-				name: "classifies Map with arguments as a map",
+				name: "classifies Map with arguments as a mutable map",
 				give: &node.TypeRef{Spelling: "Map", Args: []*node.TypeRef{arg, arg}},
-				want: rules.TypeShape{Form: symbol.FormMap, Spelling: "Map"},
+				want: rules.TypeShape{Form: symbol.FormMap, Spelling: "Map", Mutability: symbol.MutabilityMutable},
 			},
 			{
-				name: "classifies ReadonlyMap with arguments as a map",
+				name: "classifies ReadonlyMap with arguments as an immutable map",
 				give: &node.TypeRef{Spelling: "ReadonlyMap", Args: []*node.TypeRef{arg, arg}},
-				want: rules.TypeShape{Form: symbol.FormMap, Spelling: "ReadonlyMap"},
+				want: rules.TypeShape{
+					Form: symbol.FormMap, Spelling: "ReadonlyMap", Mutability: symbol.MutabilityImmutable,
+				},
 			},
 			{
 				name: "classifies AsyncIterable with an argument as an asynchronous stream",

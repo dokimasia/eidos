@@ -74,6 +74,18 @@ func Imports(set *render.ImportSet) string {
 	return b.String()
 }
 
+// TemplateImport returns the binding of an import that a template states
+// through the use builtin. A named import binds the declaration of that
+// name from the module. An import without a name runs the module for its
+// effects and does not bind a name, so TemplateImport reports false for
+// it. It does not allocate.
+func TemplateImport(_, name string) (local, item string, ok bool) {
+	if name == "" {
+		return "", "", false
+	}
+	return name, name, true
+}
+
 // writeImports writes the statements of every path of one group, in
 // entry order.
 func writeImports(b *strings.Builder, entries []render.Entry, kind specifierKind) {

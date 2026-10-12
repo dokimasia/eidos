@@ -65,7 +65,7 @@ var (
 func TestValues(t *testing.T) {
 	t.Parallel()
 
-	t.Run("SamplesOf", func(t *testing.T) {
+	t.Run("DeriveSamples", func(t *testing.T) {
 		t.Parallel()
 
 		literals := []struct {
@@ -132,9 +132,9 @@ func TestValues(t *testing.T) {
 
 				f := loaded(t)
 				fd := f.field(t, tt.host, tt.field)
-				sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
-				expect.Equal(t, sample, rules.Of(tt.sample), "SamplesOf returns the expected sample")
-				expect.Equal(t, alternate, rules.Of(tt.alternate), "SamplesOf returns the expected alternate")
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
+				expect.Equal(t, sample, rules.Of(tt.sample), "DeriveSamples returns the expected sample")
+				expect.Equal(t, alternate, rules.Of(tt.alternate), "DeriveSamples returns the expected alternate")
 			})
 		}
 
@@ -167,7 +167,7 @@ func TestValues(t *testing.T) {
 
 				f := loaded(t)
 				fd := f.field(t, shapesName, tt.field)
-				sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
 				assert.True(t, sample.OK(), "the sample derives")
 				assert.True(t, alternate.OK(), "the alternate derives")
 				enum := symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: tt.enum, Kind: symbol.KindEnum}
@@ -244,7 +244,7 @@ func TestValues(t *testing.T) {
 
 				f := loaded(t)
 				fd := f.field(t, tt.host, tt.field)
-				sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
 				assert.Equal(t, sample.Value.Kind, emit.ValueComposite, "the sample is a composite")
 				assert.Equal(t, alternate.Value.Kind, emit.ValueComposite, "the alternate is a composite")
 				expect.Equal(t, sample.Value.Type.Form, tt.form, "the composite has the type's form")
@@ -288,7 +288,7 @@ func TestValues(t *testing.T) {
 
 				f := loaded(t)
 				fd := f.field(t, tt.host, tt.field)
-				sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
 				assert.Equal(t, sample.Value.Kind, emit.ValueConversion, "the object is asserted to the type")
 				assert.True(t, alternate.OK(), "the alternate derives")
 				expect.Equal(t, sample.Value.Type.Target, tt.target, "the assertion is to the type")
@@ -310,7 +310,7 @@ func TestValues(t *testing.T) {
 				assert.NoError(t, meta.Stamp(f.Facts, key, value, claim), "the fixture stamp applies")
 			}
 			fd := f.field(t, rowName, "target")
-			sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
+			sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
 			expect.Equal(t, sample.Value.Inner.Fields[0].Value, emit.Number(emit.LiteralFloat, "7", 64),
 				"the sample is the stated value")
 			expect.Equal(t, alternate.Value.Inner.Fields[0].Value, emit.Number(emit.LiteralFloat, "8", 64),
@@ -322,7 +322,7 @@ func TestValues(t *testing.T) {
 
 			f := loaded(t)
 			fd := f.field(t, shapesName, "only")
-			sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
+			sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
 			expect.Equal(t, sample, rules.Of(emit.Literal(emit.LiteralString, "read")), "the sample is the one value")
 			expect.Equal(t, alternate, rules.Refused(rules.RefusedNoLiteral), "a literal type has no second value")
 		})
@@ -371,7 +371,7 @@ func TestValues(t *testing.T) {
 
 				f := loaded(t)
 				fd := f.field(t, tt.host, tt.field)
-				sample, alternate := tsrules.New().SamplesOf(fd.Type, fd.Name, f.view)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
 				expect.Equal(t, sample, rules.Refused(tt.want), "the sample refuses with the reason")
 				expect.Equal(t, alternate, rules.Refused(tt.want), "the alternate refuses with the reason")
 			})
@@ -426,7 +426,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				sample, _ := tsrules.New().SamplesOf(tt.give, "", rules.View{})
+				sample, _ := tsrules.New().DeriveSamples(tt.give, "", rules.View{})
 				assert.Equal(t, sample, rules.Refused(tt.want), "the sample refuses with the reason")
 			})
 		}
@@ -440,7 +440,7 @@ func TestValues(t *testing.T) {
 				Elems:    []*node.TypeRef{{Spelling: stringName}},
 			}
 			union := &node.TypeRef{Form: symbol.FormUnion, Elems: []*node.TypeRef{list, {Spelling: stringName}}}
-			sample, alternate := tsrules.New().SamplesOf(union, "", rules.View{})
+			sample, alternate := tsrules.New().DeriveSamples(union, "", rules.View{})
 			expect.Equal(t, sample.Value.Kind, emit.ValueComposite, "the sample is the list's sample")
 			expect.Equal(t, alternate.Value.Kind, emit.ValueComposite, "the alternate is the list's alternate")
 		})
@@ -448,7 +448,7 @@ func TestValues(t *testing.T) {
 		t.Run("derives the default hint for a string without one", func(t *testing.T) {
 			t.Parallel()
 
-			sample, _ := tsrules.New().SamplesOf(&node.TypeRef{Spelling: stringName}, "", rules.View{})
+			sample, _ := tsrules.New().DeriveSamples(&node.TypeRef{Spelling: stringName}, "", rules.View{})
 			assert.Equal(t, sample, rules.Of(emit.Literal(emit.LiteralString, "sample-a")),
 				"the sample has the default hint")
 		})
@@ -458,7 +458,7 @@ func TestValues(t *testing.T) {
 
 			f := loaded(t)
 			alias := &node.TypeRef{Spelling: "Missing", Target: missingID}
-			sample, _ := tsrules.New().SamplesOf(alias, "", f.view)
+			sample, _ := tsrules.New().DeriveSamples(alias, "", f.view)
 			assert.Equal(t, sample, rules.Refused(rules.RefusedUnresolved), "the view does not declare the alias")
 		})
 
@@ -467,7 +467,7 @@ func TestValues(t *testing.T) {
 
 			f := loaded(t)
 			fn := f.function(t, loadName)
-			sample, _ := tsrules.New().SamplesOf(&node.TypeRef{Spelling: loadName, Target: fn.ID}, "", f.view)
+			sample, _ := tsrules.New().DeriveSamples(&node.TypeRef{Spelling: loadName, Target: fn.ID}, "", f.view)
 			assert.Equal(t, sample, rules.Refused(rules.RefusedNoLiteral), "a function is not a type")
 		})
 	})
@@ -510,35 +510,30 @@ func TestValues(t *testing.T) {
 		optionals := []struct {
 			name     string
 			spelling string
+			absent   []*node.TypeRef
 			want     emit.Value
 		}{
 			{
 				name: "returns undefined for an optional of undefined", spelling: "string|undefined",
-				want: emit.Raw(typescript.Lang, undefinedWord),
+				absent: []*node.TypeRef{{Spelling: undefinedWord}}, want: emit.Raw(typescript.Lang, undefinedWord),
 			},
 			{
 				name: "returns null for an optional of null", spelling: "string|null",
-				want: emit.Literal(emit.LiteralNil, ""),
+				absent: []*node.TypeRef{{Spelling: nullWord}}, want: emit.Literal(emit.LiteralNil, ""),
 			},
 			{
 				name: "returns undefined for an optional of null and undefined", spelling: "null|string|undefined",
-				want: emit.Raw(typescript.Lang, undefinedWord),
+				absent: []*node.TypeRef{{Spelling: nullWord}, {Spelling: undefinedWord}},
+				want:   emit.Raw(typescript.Lang, undefinedWord),
 			},
 			{
 				name: "returns undefined for an optional member of a tuple", spelling: "a?:string",
 				want: emit.Raw(typescript.Lang, undefinedWord),
 			},
 			{
-				name:     "returns undefined for an optional whose null is inside a type argument",
-				spelling: "Map<string,null|number>|undefined", want: emit.Raw(typescript.Lang, undefinedWord),
-			},
-			{
-				name:     "returns null for an optional of a function type that returns null",
-				spelling: "(()=>null)|null", want: emit.Literal(emit.LiteralNil, ""),
-			},
-			{
-				name:     "returns undefined for an optional whose null is inside a literal type",
-				spelling: `"a\"|null"|undefined`, want: emit.Raw(typescript.Lang, undefinedWord),
+				name:     "returns null for an optional whose absent member is null under any spelling",
+				spelling: "string|undefined", absent: []*node.TypeRef{{Spelling: nullWord}},
+				want: emit.Literal(emit.LiteralNil, ""),
 			},
 		}
 		for _, tt := range optionals {
@@ -547,10 +542,11 @@ func TestValues(t *testing.T) {
 
 				optional := &node.TypeRef{
 					Spelling: tt.spelling, Form: symbol.FormOptional, Elems: []*node.TypeRef{{Spelling: stringName}},
+					Absent: tt.absent,
 				}
 				got, ok := tsrules.New().ZeroValue(optional, rules.View{})
 				assert.True(t, ok, "an optional has a zero")
-				assert.Equal(t, got, tt.want, "the zero is the absent value that the union lists")
+				assert.Equal(t, got, tt.want, "the zero is the absent value that the source union lists")
 			})
 		}
 
@@ -691,44 +687,46 @@ func TestValues(t *testing.T) {
 			})
 		}
 
+		undefinedOnly := []*node.TypeRef{{Spelling: undefinedWord}}
+		nullOnly := []*node.TypeRef{{Spelling: nullWord}}
 		optionals := []struct {
-			name     string
-			spelling string
-			text     string
-			want     emit.Value
-			takes    bool
+			name   string
+			absent []*node.TypeRef
+			text   string
+			want   emit.Value
+			takes  bool
 		}{
 			{
-				name: "lifts undefined for an optional of undefined", spelling: "string|undefined", text: undefinedWord,
+				name: "lifts undefined for an optional of undefined", absent: undefinedOnly, text: undefinedWord,
 				want: emit.Raw(typescript.Lang, undefinedWord), takes: true,
 			},
 			{
-				name: "lifts undefined for an optional member", spelling: "a?:string", text: undefinedWord,
+				name: "lifts undefined for an optional member", text: undefinedWord,
 				want: emit.Raw(typescript.Lang, undefinedWord), takes: true,
 			},
 			{
-				name: "lifts null for an optional of null", spelling: "string|null", text: nullWord,
+				name:   "lifts undefined for an optional of null and undefined",
+				absent: []*node.TypeRef{{Spelling: nullWord}, {Spelling: undefinedWord}}, text: undefinedWord,
+				want: emit.Raw(typescript.Lang, undefinedWord), takes: true,
+			},
+			{
+				name: "lifts null for an optional of null", absent: nullOnly, text: nullWord,
 				want: emit.Literal(emit.LiteralNil, ""), takes: true,
 			},
 			{
-				name: "lifts the literal of an optional's type", spelling: "string|undefined", text: `"a"`,
+				name: "lifts the literal of the type of an optional", absent: undefinedOnly, text: `"a"`,
 				want: emit.Literal(emit.LiteralString, "a"), takes: true,
 			},
-			{
-				name:     "reports false for null for an optional of undefined",
-				spelling: "string|undefined", text: nullWord,
-			},
-			{
-				name:     "reports false for undefined for an optional of null",
-				spelling: "string|null", text: undefinedWord,
-			},
+			{name: "reports false for null for an optional of undefined", absent: undefinedOnly, text: nullWord},
+			{name: "reports false for null for an optional member", text: nullWord},
+			{name: "reports false for undefined for an optional of null", absent: nullOnly, text: undefinedWord},
 		}
 		for _, tt := range optionals {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				optional := &node.TypeRef{
-					Spelling: tt.spelling, Form: symbol.FormOptional, Elems: []*node.TypeRef{{Spelling: stringName}},
+					Form: symbol.FormOptional, Elems: []*node.TypeRef{{Spelling: stringName}}, Absent: tt.absent,
 				}
 				got, ok := tsrules.New().LiteralFor(nil, optional, tt.text, rules.View{})
 				assert.Equal(t, ok, tt.takes, "LiteralFor reports whether the optional takes the literal")
@@ -903,19 +901,19 @@ func valuesCalls(tb assert.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "SamplesOf", caseName: "a number",
-			call:  func() { sample, _ = r.SamplesOf(number, "", f.view) },
-			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives the number's pair") },
+			name: "DeriveSamples", caseName: "a number",
+			call:  func() { sample, _ = r.DeriveSamples(number, "", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "DeriveSamples derives the number's pair") },
 		},
 		{
-			name: "SamplesOf", caseName: "a string", allocs: stringPairAllocs,
-			call:  func() { sample, _ = r.SamplesOf(str, "s", f.view) },
-			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives the string's pair") },
+			name: "DeriveSamples", caseName: "a string", allocs: stringPairAllocs,
+			call:  func() { sample, _ = r.DeriveSamples(str, "s", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "DeriveSamples derives the string's pair") },
 		},
 		{
-			name: "SamplesOf", caseName: "a list", allocs: listPairAllocs,
-			call:  func() { sample, _ = r.SamplesOf(list, "s", f.view) },
-			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives the list's pair") },
+			name: "DeriveSamples", caseName: "a list", allocs: listPairAllocs,
+			call:  func() { sample, _ = r.DeriveSamples(list, "s", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "DeriveSamples derives the list's pair") },
 		},
 		{
 			name: "ZeroValue", caseName: "a number",

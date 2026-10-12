@@ -84,6 +84,31 @@ func TestModulePath(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("JoinPackage", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name    string
+			pkg     string
+			segment string
+			want    string
+		}{
+			{name: "returns the segment alone below the global package", pkg: "", segment: "N", want: "N"},
+			{name: "returns the package alone for an empty segment", pkg: "svc/store", segment: "", want: "svc/store"},
+			{
+				name: "joins the package and the segment with a slash",
+				pkg:  "svc/store", segment: "N", want: "svc/store/N",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, typescript.JoinPackage(tt.pkg, tt.segment), tt.want, "the joined package path")
+			})
+		}
+	})
 }
 
 // A module path is a part of the path, and the declaration check reads
@@ -99,6 +124,11 @@ func TestModulePathAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { declares = typescript.DeclarationFile("types/api.d.ts") }, 0,
 		"DeclarationFile allocates nothing")
 	assert.True(t, declares, "DeclarationFile reports a declaration file")
+	parts := []string{"svc/store", "N"}
+	var joined string
+	assert.MaxAllocs(t, func() { joined = typescript.JoinPackage(parts[0], parts[1]) }, 1,
+		"JoinPackage allocates the joined path")
+	assert.Equal(t, joined, "svc/store/N", "JoinPackage joins the parts")
 }
 
 // BenchmarkModulePath measures the module path the frontend and the
@@ -123,5 +153,16 @@ func BenchmarkModulePath(b *testing.B) {
 			declares = typescript.DeclarationFile("types/api.d.ts")
 		}
 		assert.True(b, declares, "DeclarationFile reports a declaration file")
+	})
+
+	b.Run("JoinPackage", func(b *testing.B) {
+		parts := []string{"svc/store", "N"}
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var joined string
+		for c.Loop() {
+			joined = typescript.JoinPackage(parts[0], parts[1])
+		}
+		assert.Equal(b, joined, "svc/store/N", "JoinPackage joins the parts")
 	})
 }

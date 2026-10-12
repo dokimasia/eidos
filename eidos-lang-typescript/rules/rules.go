@@ -4,17 +4,11 @@
 package rules
 
 import (
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
-
-// aliasDepth is the longest chain of type aliases that the rules follow.
-// TypeScript refuses an alias that refers to itself, so the bound only
-// ends a walk over a damaged graph.
-const aliasDepth = 8
 
 // contributions lists the clauses that a TypeScript type inherits
 // members from. The walk visits the extends clause first and the
@@ -57,16 +51,18 @@ func (Rules) Members() rules.MemberPolicy {
 // ParamRole classifies a parameter of the type AbortSignal as the
 // context, and every other parameter as an input. The AbortSignal is the
 // global type, which no import binds. An alias of it and an optional of
-// it are the context too. ParamRole allocates nothing.
+// it are the context too. Every TypeScript alias is transparent, so
+// [rules.Unaliased] follows each alias to its target. ParamRole allocates
+// nothing.
 func (Rules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 	if p == nil || p.Type == nil {
 		return rules.ParamInput
 	}
-	t := unaliased(p.Type, v)
+	t := rules.Unaliased(p.Type, v)
 	if t.Form == symbol.FormOptional && len(t.Elems) == 1 {
-		t = unaliased(t.Elems[0], v)
+		t = rules.Unaliased(t.Elems[0], v)
 	}
-	if t.Form == symbol.FormNamed && t.Target.IsZero() && t.Package == "" && t.Spelling == spellAbortSignal {
+	if t.Form == symbol.FormNamed && t.Target.IsZero() && t.Package == "" && t.Spelling == typescript.TypeAbortSignal {
 		return rules.ParamContext
 	}
 	return rules.ParamInput
@@ -82,35 +78,9 @@ func (Rules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 func (r Rules) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	roles := make([]rules.ReturnRole, len(rs))
 	for i, ret := range rs {
-		if ret != nil && ret.Type != nil && r.Builtin(unaliased(ret.Type, v), v).Form == symbol.FormStream {
+		if ret != nil && ret.Type != nil && r.Builtin(rules.Unaliased(ret.Type, v), v).Form == symbol.FormStream {
 			roles[i] = rules.ReturnStream
 		}
 	}
 	return roles, rules.ErrorsRaised
-}
-
-// TypeName returns the base as the author wrote it, followed by the
-// generator's word in Pascal case. The word client on the base Store
-// gives StoreClient. TypeName allocates the word's case conversion and
-// the joined name, two allocations, or one when the word is in Pascal
-// case already.
-func (Rules) TypeName(word, base string) string { return base + naming.Pascal(word) }
-
-// unaliased follows a chain of aliases in the view, and returns the
-// reference at its end. It returns a reference to any other declaration
-// as it is, because every TypeScript alias is transparent. unaliased
-// reads each alias through the view and allocates nothing.
-func unaliased(ref *node.TypeRef, v rules.View) *node.TypeRef {
-	for range aliasDepth {
-		if ref.Target.Kind != symbol.KindAlias {
-			return ref
-		}
-		sym, _ := v.Lookup(ref.Target)
-		alias, isAlias := sym.(*node.Alias)
-		if !isAlias || alias.Target == nil {
-			return ref
-		}
-		ref = alias.Target
-	}
-	return ref
 }

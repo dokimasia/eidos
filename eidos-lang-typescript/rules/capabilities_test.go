@@ -9,15 +9,14 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
-	"go.dokimi.dev/eidos/lang/typescript"
 	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The type parameter that the substitution cases bind, the spelling of
-// TypeScript's top type, and the name of a constructor.
+// The name of the type parameter of the witness cases, the spelling of
+// the top type of TypeScript, and the name of a constructor.
 const (
 	paramName       = "T"
 	unknownSpelling = "unknown"
@@ -28,9 +27,6 @@ const (
 const (
 	// deriveAllocs counts the reference to unknown.
 	deriveAllocs = 1
-	// substituteAllocs counts the copy of the argument that replaces a
-	// parameter.
-	substituteAllocs = 1
 	// propertiesAllocs counts the binding of the member walk, what the
 	// walk allocates, and the list of properties, for a class with one
 	// getter and its setter.
@@ -92,116 +88,6 @@ func TestCapabilities(t *testing.T) {
 				assert.False(t, ok, "Derive reports that no witness derives")
 			})
 		}
-	})
-
-	t.Run("Substitute", func(t *testing.T) {
-		t.Parallel()
-
-		paramID := symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: paramName, Kind: symbol.KindTypeParam}
-		param := &node.TypeParam{ID: paramID, Name: paramName}
-		params := []*node.TypeParam{param}
-		arg := &node.TypeRef{Spelling: stringName}
-		args := []*node.TypeRef{arg}
-
-		t.Run("replaces a reference that resolved to a parameter with a copy of its argument", func(t *testing.T) {
-			t.Parallel()
-
-			got := tsrules.Rules{}.Substitute(&node.TypeRef{Spelling: paramName, Target: param.ID}, params, args)
-			expect.Equal(t, got.Spelling, stringName, "the copy has the argument's spelling")
-			expect.NotEqual(t, got, arg, "the result is a copy of the argument", assert.ByIdentity())
-		})
-
-		t.Run("replaces an unresolved reference with a parameter's name", func(t *testing.T) {
-			t.Parallel()
-
-			got := tsrules.Rules{}.Substitute(&node.TypeRef{Spelling: paramName}, params, args)
-			assert.Equal(t, got.Spelling, stringName, "the result has the argument's spelling")
-		})
-
-		t.Run("keeps a reference that resolved to another declaration of the parameter's name", func(t *testing.T) {
-			t.Parallel()
-
-			class := symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: paramName, Kind: symbol.KindStruct}
-			ref := &node.TypeRef{Spelling: paramName, Target: class}
-			assert.Equal(t, tsrules.Rules{}.Substitute(ref, params, args), ref, "the class T is not a parameter",
-				assert.ByIdentity())
-		})
-
-		t.Run("restates the children and the arguments that refer to a parameter", func(t *testing.T) {
-			t.Parallel()
-
-			list := &node.TypeRef{Spelling: "T[]", Form: symbol.FormList, Elems: []*node.TypeRef{{Spelling: paramName}}}
-			generic := &node.TypeRef{Spelling: "Box", Args: []*node.TypeRef{{Spelling: paramName}}}
-			gotList := tsrules.Rules{}.Substitute(list, params, args)
-			gotGeneric := tsrules.Rules{}.Substitute(generic, params, args)
-			expect.Equal(t, gotList.Elems[0].Spelling, stringName, "the element is the argument")
-			expect.Equal(t, gotGeneric.Args[0].Spelling, stringName, "the type argument is the argument")
-			expect.Equal(t, list.Elems[0].Spelling, paramName, "the input reference is unchanged")
-		})
-
-		t.Run("restates the members of an inline object type that refer to a parameter", func(t *testing.T) {
-			t.Parallel()
-
-			inline := &node.TypeRef{
-				Spelling: "{item:T;get():T}",
-				Form:     symbol.FormInline,
-				Fields: []*node.Field{
-					nil,
-					{Name: "item", Type: &node.TypeRef{Spelling: paramName}},
-					{Name: "fixed", Type: arg},
-				},
-				Methods: []*node.Method{nil, {
-					Name:    "get",
-					Params:  []*node.Param{nil, {Name: "p", Type: &node.TypeRef{Spelling: paramName}}},
-					Returns: []*node.Return{nil, {Type: &node.TypeRef{Spelling: paramName}}},
-				}, {Name: "plain", Returns: []*node.Return{{Type: arg}}}},
-			}
-			got := tsrules.Rules{}.Substitute(inline, params, args)
-			expect.Equal(t, got.Fields[1].Type.Spelling, stringName, "the field's type is the argument")
-			expect.Equal(t, got.Fields[2], inline.Fields[2], "a field without a parameter is the same field",
-				assert.ByIdentity())
-			expect.Equal(t, got.Methods[1].Params[0].Type.Spelling, stringName,
-				"the method's parameter has the argument's type")
-			expect.Equal(t, got.Methods[1].Returns[0].Type.Spelling, stringName,
-				"the method's result has the argument's type")
-			expect.Equal(t, got.Methods[2], inline.Methods[2], "a method without a parameter is the same method",
-				assert.ByIdentity())
-			expect.Equal(t, inline.Fields[1].Type.Spelling, paramName, "the input reference is unchanged")
-		})
-
-		t.Run("returns a reference without a parameter as it is", func(t *testing.T) {
-			t.Parallel()
-
-			ref := &node.TypeRef{Spelling: "Box", Args: []*node.TypeRef{{Spelling: numberName}}}
-			assert.Equal(t, tsrules.Rules{}.Substitute(ref, params, args), ref, "Substitute returns the same reference",
-				assert.ByIdentity())
-		})
-
-		unchanged := []struct {
-			name   string
-			params []*node.TypeParam
-			args   []*node.TypeRef
-		}{
-			{name: "returns the reference for no parameters", params: nil, args: nil},
-			{name: "returns the reference for a count of arguments that differs", params: params, args: nil},
-			{name: "returns the reference for a nil argument", params: params, args: []*node.TypeRef{nil}},
-			{name: "returns the reference for a nil parameter", params: []*node.TypeParam{nil}, args: args},
-		}
-		for _, tt := range unchanged {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				ref := &node.TypeRef{Spelling: paramName}
-				assert.Equal(t, tsrules.Rules{}.Substitute(ref, tt.params, tt.args), ref,
-					"Substitute returns the same reference", assert.ByIdentity())
-			})
-		}
-
-		t.Run("returns nil for a nil reference", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Nil(t, tsrules.Rules{}.Substitute(nil, params, args), "Substitute returns nil")
-		})
 	})
 
 	t.Run("Reified", func(t *testing.T) {
@@ -340,8 +226,6 @@ func capabilitiesCalls(tb assert.TB) []allocCall {
 	f := loaded(tb)
 	r := tsrules.Rules{}
 	param := &node.TypeParam{Name: paramName}
-	params := []*node.TypeParam{param}
-	args := []*node.TypeRef{{Spelling: stringName}}
 	ref := &node.TypeRef{Spelling: paramName}
 	accessors := f.class(tb, "Accessors")
 	overloaded := f.class(tb, "Overloaded")
@@ -349,7 +233,6 @@ func capabilitiesCalls(tb assert.TB) []allocCall {
 		witness  *node.TypeRef
 		ok       bool
 		reified  bool
-		bound    *node.TypeRef
 		props    []rules.Property
 		ctors    []rules.Callable
 		problems []*node.TypeRef
@@ -361,13 +244,6 @@ func capabilitiesCalls(tb assert.TB) []allocCall {
 			check: func(tb assert.TB) {
 				assert.True(tb, ok, "Derive derives a witness")
 				assert.Equal(tb, witness.Spelling, unknownSpelling, "Derive returns unknown")
-			},
-		},
-		{
-			name: "Substitute", allocs: substituteAllocs,
-			call: func() { bound = r.Substitute(ref, params, args) },
-			check: func(tb assert.TB) {
-				assert.Equal(tb, bound.Spelling, stringName, "Substitute replaces the parameter")
 			},
 		},
 		{

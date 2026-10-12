@@ -37,9 +37,11 @@ const (
 	// declaration that a translated reference refers to.
 	goLang    = symbol.Lang("go")
 	goPackage = "svc"
-	// promiseType and dateType are global types of TypeScript.
-	promiseType = "Promise"
-	dateType    = "Date"
+	// promiseType, dateType and abortSignalType are global types of
+	// TypeScript.
+	promiseType     = "Promise"
+	dateType        = "Date"
+	abortSignalType = "AbortSignal"
 )
 
 // The declarations, the spellings and the keywords the allocation cases
@@ -57,6 +59,7 @@ const (
 	indexName   = "index"
 	keyName     = "key"
 	wireName    = "content-type"
+	computedKey = "[Symbol.iterator]"
 	cafeName    = "caf\U000000e9"
 	phaseName   = "Phase"
 	openName    = "Open"
@@ -278,6 +281,17 @@ func TestVocabulary(t *testing.T) {
 			assert.Contains(t, err.Error(), "hides the global type "+dateType, "the refusal contains the hidden type")
 		})
 
+		t.Run("returns an error for AbortSignal when a declaration of the file hides it", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.Reserve(abortSignalType)
+			_, err := s.Spell(ref(abortSignalType))
+			assert.HasError(t, err, "the file's AbortSignal hides the global one")
+			assert.Contains(t, err.Error(), "hides the global type "+abortSignalType,
+				"the refusal contains the hidden type")
+		})
+
 		t.Run("renames a declaration another import binds", func(t *testing.T) {
 			t.Parallel()
 
@@ -334,7 +348,7 @@ func TestVocabulary(t *testing.T) {
 
 			s, _ := speller()
 			m := indexer()
-			m.Params[0].Type = unspellable(t, s)
+			m.Params.Items()[0].Type = unspellable(t, s)
 			_, err := s.IndexSig(m)
 			assert.HasError(t, err, "the key's refusal is the signature's")
 		})
@@ -344,13 +358,13 @@ func TestVocabulary(t *testing.T) {
 
 			s, _ := speller()
 			m := indexer()
-			m.Returns[0].Type = unspellable(t, s)
+			m.Returns.Items()[0].Type = unspellable(t, s)
 			_, err := s.IndexSig(m)
 			assert.HasError(t, err, "the element's refusal is the signature's")
 		})
 
 		noElement := indexer()
-		noElement.Returns = nil
+		noElement.Returns = emit.Slot[*emit.Return]{}
 		generic := indexer()
 		generic.TypeParams = []*emit.TypeParam{{Name: keyParam}}
 		tests := []struct {
@@ -547,6 +561,30 @@ func TestVocabulary(t *testing.T) {
 			assert.HasError(t, err, "the widened contract's refusal is the clause's")
 		})
 
+		embedded := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{
+				name: "writes no clause for the embed of a class",
+				give: &emit.Struct{Name: rowName, Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})},
+			},
+			{
+				name: "writes no clause for the embed of an interface",
+				give: &emit.Interface{Name: "Store", Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})},
+			},
+		}
+		for _, tt := range embedded {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				got, err := s.Heritage(tt.give)
+				assert.NoError(t, err, "the coverage refuses an embed, so the heritage spells")
+				assert.Equal(t, got, "", "nothing promotes members")
+			})
+		}
+
 		tests := []struct {
 			name string
 			give symbol.Symbol
@@ -554,14 +592,6 @@ func TestVocabulary(t *testing.T) {
 			{
 				name: "returns an error for a second class base",
 				give: &emit.Struct{Name: rowName, Extends: []*emit.TypeRef{ref("A"), ref("B")}},
-			},
-			{
-				name: "returns an error for a class's embed",
-				give: &emit.Struct{Name: rowName, Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
-			},
-			{
-				name: "returns an error for an interface's embed",
-				give: &emit.Interface{Name: "Store", Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
 			},
 			{name: "returns an error for an enum", give: &emit.Enum{Name: phaseName}},
 		}
@@ -583,7 +613,7 @@ func TestVocabulary(t *testing.T) {
 			t.Helper()
 
 			s, _ := speller()
-			return s.Params(ps)
+			return s.Params(new(emit.SlotOf(ps...)))
 		}
 
 		tests := []struct {
@@ -636,7 +666,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Params([]*emit.Param{{Name: "rows", Type: unspellable(t, s)}})
+			_, err := s.Params(new(emit.SlotOf(&emit.Param{Name: "rows", Type: unspellable(t, s)})))
 			assert.HasError(t, err, "the type's refusal is the list's")
 		})
 
@@ -691,14 +721,14 @@ func TestVocabulary(t *testing.T) {
 		t.Run("writes a synchronous callable's results", func(t *testing.T) {
 			t.Parallel()
 
-			load := &emit.Function{Name: "load", Returns: []*emit.Return{{Type: ref(rowName)}}}
+			load := &emit.Function{Name: "load", Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})}
 			assert.Equal(t, returns(t, load), ": Row", "the result's type")
 		})
 
 		t.Run("wraps an async callable's result in a promise", func(t *testing.T) {
 			t.Parallel()
 
-			load := &emit.Function{Name: "load", Async: true, Returns: []*emit.Return{{Type: ref(rowName)}}}
+			load := &emit.Function{Name: "load", Async: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})}
 			assert.Equal(t, returns(t, load), ": Promise<Row>", "the promise of the result")
 		})
 
@@ -720,7 +750,10 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			load := &emit.Function{Name: "load", Async: true, Returns: []*emit.Return{{Type: unspellable(t, s)}}}
+			load := &emit.Function{
+				Name: "load", Async: true,
+				Returns: emit.SlotOf(&emit.Return{Type: unspellable(t, s)}),
+			}
 			_, err := s.Returns(load)
 			assert.HasError(t, err, "the result's refusal is the annotation's")
 		})
@@ -744,7 +777,7 @@ func TestVocabulary(t *testing.T) {
 			t.Helper()
 
 			s, _ := speller()
-			got, err := s.Results(rs)
+			got, err := s.Results(new(emit.SlotOf(rs...)))
 			assert.NoError(t, err, "the results spell")
 			return got
 		}
@@ -772,7 +805,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Results([]*emit.Return{{Type: unspellable(t, s)}})
+			_, err := s.Results(new(emit.SlotOf(&emit.Return{Type: unspellable(t, s)})))
 			assert.HasError(t, err, "the result's refusal is the annotation's")
 		})
 	})
@@ -859,6 +892,22 @@ func TestVocabulary(t *testing.T) {
 			_, err := backend.PropKey(&emit.Field{Name: wireName, Hard: true})
 			assert.HasError(t, err, "# admits no quoted form")
 		})
+
+		t.Run("writes a hard-private name with its # as written", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.PropKey(&emit.Field{Name: "#" + idName, Hard: true})
+			assert.NoError(t, err, "the name is an identifier after its #")
+			assert.Equal(t, got, "#"+idName, "PropKey writes the name as written")
+		})
+
+		t.Run("writes a computed name as written", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.PropKey(&emit.Field{Name: computedKey, Computed: true})
+			assert.NoError(t, err, "the key spells")
+			assert.Equal(t, got, computedKey, "PropKey writes the expression in its brackets")
+		})
 	})
 
 	t.Run("MethodKey", func(t *testing.T) {
@@ -885,6 +934,21 @@ func TestVocabulary(t *testing.T) {
 
 			_, err := backend.MethodKey(&emit.Method{Name: wireName, Hard: true})
 			assert.HasError(t, err, "# admits no quoted form")
+		})
+
+		t.Run("returns an error for a computed hard-private name", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.MethodKey(&emit.Method{Name: computedKey, Hard: true, Computed: true})
+			assert.HasError(t, err, "# admits no expression in brackets")
+		})
+
+		t.Run("writes a computed name as written", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.MethodKey(&emit.Method{Name: computedKey, Computed: true})
+			assert.NoError(t, err, "the key spells")
+			assert.Equal(t, got, computedKey, "MethodKey writes the expression in its brackets")
 		})
 	})
 
@@ -933,21 +997,24 @@ func TestVocabulary(t *testing.T) {
 		})
 
 		takingGetter := getter()
-		takingGetter.Params = []*emit.Param{{Name: "v", Type: ref("number")}}
+		takingGetter.Params = emit.SlotOf(&emit.Param{Name: "v", Type: ref("number")})
 		emptyGetter := getter()
-		emptyGetter.Returns = nil
+		emptyGetter.Returns = emit.Slot[*emit.Return]{}
 		genericGetter := getter()
 		genericGetter.TypeParams = []*emit.TypeParam{{Name: "T"}}
 		bareSetter := setter()
-		bareSetter.Params = nil
+		bareSetter.Params = emit.Slot[*emit.Param]{}
 		returningSetter := setter()
-		returningSetter.Returns = []*emit.Return{{Type: ref("number")}}
+		returningSetter.Returns = emit.SlotOf(&emit.Return{Type: ref("number")})
 		genericSetter := setter()
 		genericSetter.TypeParams = []*emit.TypeParam{{Name: "T"}}
+		optionalGetter := getter()
+		optionalGetter.Optional = true
 		tests := []struct {
 			name string
 			give *emit.Method
 		}{
+			{name: "returns an error for an optional getter", give: optionalGetter},
 			{name: "returns an error for a getter taking parameters", give: takingGetter},
 			{name: "returns an error for a getter returning nothing", give: emptyGetter},
 			{name: "returns an error for a getter with type parameters", give: genericGetter},
@@ -984,11 +1051,29 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, got, "", "unprefixed")
 		})
 
-		t.Run("returns an error for a visibility beside the hard name", func(t *testing.T) {
+		t.Run("writes the prefix for a hard-private member with private visibility", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := backend.Hard(&emit.Field{Name: keyName, Hard: true, Visibility: symbol.VisibilityPrivate})
-			assert.HasError(t, err, "the two mechanisms cannot combine")
+			got, err := backend.Hard(&emit.Field{Name: keyName, Hard: true, Visibility: symbol.VisibilityPrivate})
+			assert.NoError(t, err, "a hard-private member is private")
+			assert.Equal(t, got, "#", "Hard writes the # before the name")
+		})
+
+		t.Run("returns nothing for a hard-private name that starts with its #", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Hard(
+				&emit.Method{Name: "#" + keyName, Hard: true, Visibility: symbol.VisibilityPrivate},
+			)
+			assert.NoError(t, err, "a hard-private member is private")
+			assert.Equal(t, got, "", "the name already starts with its #")
+		})
+
+		t.Run("returns an error for another visibility beside the hard name", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Hard(&emit.Field{Name: keyName, Hard: true, Visibility: symbol.VisibilityProtected})
+			assert.HasError(t, err, "a hard-private member cannot be protected")
 		})
 	})
 
@@ -1129,6 +1214,16 @@ func TestVocabulary(t *testing.T) {
 				give: &emit.Method{Name: makeName, Level: symbol.LevelType},
 				want: "static ",
 			},
+			{
+				name: "leaves out private for a hard-private field",
+				give: &emit.Field{Name: "#" + keyName, Hard: true, Visibility: symbol.VisibilityPrivate},
+				want: "",
+			},
+			{
+				name: "leaves out private for a hard-private method",
+				give: &emit.Method{Name: "#load", Hard: true, Visibility: symbol.VisibilityPrivate, Async: true},
+				want: "async ",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -1190,7 +1285,37 @@ func TestVocabulary(t *testing.T) {
 
 			got, err := backend.IndexMods(&emit.Method{Name: indexName, Indexer: true, Level: symbol.LevelType})
 			assert.NoError(t, err, "the signature spells")
-			assert.Equal(t, got, "static ", "the one keyword it takes")
+			assert.Equal(t, got, "static ", "IndexMods writes the static keyword alone")
+		})
+
+		t.Run("writes readonly for an immutable index signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.IndexMods(&emit.Method{
+				Name: indexName, Indexer: true, Mutability: symbol.MutabilityImmutable,
+			})
+			assert.NoError(t, err, "the signature spells")
+			assert.Equal(t, got, "readonly ", "IndexMods writes the readonly keyword alone")
+		})
+
+		t.Run("writes static before readonly for a type-level immutable index signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.IndexMods(&emit.Method{
+				Name: indexName, Indexer: true, Level: symbol.LevelType, Mutability: symbol.MutabilityImmutable,
+			})
+			assert.NoError(t, err, "the signature spells")
+			assert.Equal(t, got, "static readonly ", "IndexMods writes the keywords in the order of the grammar")
+		})
+
+		t.Run("returns nothing for a mutable index signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.IndexMods(&emit.Method{
+				Name: indexName, Indexer: true, Mutability: symbol.MutabilityMutable,
+			})
+			assert.NoError(t, err, "the signature spells")
+			assert.Equal(t, got, "", "a holder can assign the entries of a mutable signature")
 		})
 
 		tests := []struct {
@@ -1204,6 +1329,7 @@ func TestVocabulary(t *testing.T) {
 			{name: "returns an error for a default", give: &emit.Method{HasDefault: true}},
 			{name: "returns an error for asynchrony", give: &emit.Method{Async: true}},
 			{name: "returns an error for a hard-private name", give: &emit.Method{Hard: true}},
+			{name: "returns an error for a ?", give: &emit.Method{Optional: true}},
 			{name: "returns an error for a throws clause", give: &emit.Method{Throws: []*emit.TypeRef{ref("Error")}}},
 			{
 				name: "returns an error for decorators",
@@ -1217,7 +1343,7 @@ func TestVocabulary(t *testing.T) {
 
 				tt.give.Name, tt.give.Indexer = indexName, true
 				_, err := backend.IndexMods(tt.give)
-				assert.HasError(t, err, "an index signature takes static alone")
+				assert.HasError(t, err, "an index signature takes static and readonly alone")
 			})
 		}
 	})
@@ -1257,6 +1383,7 @@ func TestVocabulary(t *testing.T) {
 			{name: "returns an error for a default", give: &emit.Method{HasDefault: true}},
 			{name: "returns an error for asynchrony", give: &emit.Method{Async: true}},
 			{name: "returns an error for a hard-private name", give: &emit.Method{Hard: true}},
+			{name: "returns an error for a ?", give: &emit.Method{Optional: true}},
 			{name: "returns an error for an accessor", give: &emit.Method{Accessor: symbol.AccessorGet}},
 			{name: "returns an error for a throws clause", give: &emit.Method{Throws: []*emit.TypeRef{ref("Error")}}},
 			{
@@ -1340,6 +1467,32 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, got, "", "no keyword")
 		})
 
+		t.Run("returns nothing for an optional method signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.SigMods(&emit.Method{Name: "load", Optional: true})
+			assert.NoError(t, err, "a method signature can be absent from a value")
+			assert.Equal(t, got, "", "the template writes the ? after the key")
+		})
+
+		t.Run("writes readonly for an immutable index signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.SigMods(&emit.Method{
+				Name: indexName, Indexer: true, Mutability: symbol.MutabilityImmutable,
+			})
+			assert.NoError(t, err, "the signature spells")
+			assert.Equal(t, got, "readonly ", "SigMods writes the readonly keyword alone")
+		})
+
+		t.Run("returns nothing for an immutable method signature", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.SigMods(&emit.Method{Name: "load", Mutability: symbol.MutabilityImmutable})
+			assert.NoError(t, err, "the mutability of a method that is no index signature states nothing")
+			assert.Equal(t, got, "", "only an index signature takes readonly")
+		})
+
 		tests := []struct {
 			name string
 			give *emit.Method
@@ -1352,6 +1505,14 @@ func TestVocabulary(t *testing.T) {
 			{
 				name: "returns an error for an async construct signature",
 				give: &emit.Method{Name: makeName, Constructs: true, Async: true},
+			},
+			{
+				name: "returns an error for an optional index signature",
+				give: &emit.Method{Name: indexName, Indexer: true, Optional: true},
+			},
+			{
+				name: "returns an error for an optional construct signature",
+				give: &emit.Method{Name: makeName, Constructs: true, Optional: true},
 			},
 			{
 				name: "returns an error for a body",
@@ -1485,11 +1646,14 @@ func vocabularyCalls() []allocCall {
 		Name: rowName, Extends: []*emit.TypeRef{ref(baseName)},
 		Implements: []*emit.TypeRef{ref(keyedName), ref(closerName)},
 	}
-	args := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: ref(stringType)}}
-	three := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: bare}, {Name: countParam, Type: bare}}
-	one := []*emit.Return{{Type: bare}}
-	pair := []*emit.Return{{Type: bare}, {Type: ref(stringType)}}
-	async := &emit.Function{Name: "load", Async: true, Returns: one}
+	args := new(emit.SlotOf(&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: ref(stringType)}))
+	three := new(emit.SlotOf(
+		&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: bare},
+		&emit.Param{Name: countParam, Type: bare},
+	))
+	one := new(emit.SlotOf(&emit.Return{Type: bare}))
+	pair := new(emit.SlotOf(&emit.Return{Type: bare}, &emit.Return{Type: ref(stringType)}))
+	async := &emit.Function{Name: "load", Async: true, Returns: *one}
 	flush := &emit.Function{Name: "flush", Async: true}
 	doc := []string{rowDoc}
 	field, wire := &emit.Field{Name: idName}, &emit.Field{Name: wireName}
@@ -1660,27 +1824,31 @@ func spelled(tb assert.TB, s backend.Speller, t *emit.TypeRef) string {
 	return out
 }
 
-// unspellable binds rowName of storeModule on s and returns a list of
-// legacyModule's rowName, which s refuses: the element imports under
-// another name, and a composite's spelling does not follow from its
-// structure.
+// unspellable binds rowName of storeModule on s and returns an optional
+// of rowName of legacyModule, which s refuses. The child imports under
+// another name, so s restates the optional, and an emitted optional
+// does not record which absent value its source wrote.
 func unspellable(tb assert.TB, s backend.Speller) *emit.TypeRef {
 	tb.Helper()
 
 	spelled(tb, s, imported(storeModule, rowName))
 	return &emit.TypeRef{
-		Form: symbol.FormList, Spelling: "Row[]", Elems: []*emit.TypeRef{imported(legacyModule, rowName)},
+		Form: symbol.FormOptional, Spelling: "Row | undefined", Elems: []*emit.TypeRef{imported(legacyModule, rowName)},
 	}
 }
 
 // getter returns a getter of one number.
 func getter() *emit.Method {
-	return &emit.Method{Name: sizeName, Accessor: symbol.AccessorGet, Returns: []*emit.Return{{Type: ref(numberType)}}}
+	return &emit.Method{
+		Name: sizeName, Accessor: symbol.AccessorGet,
+		Returns: emit.SlotOf(&emit.Return{Type: ref(numberType)}),
+	}
 }
 
 // setter returns a setter of one number.
 func setter() *emit.Method {
 	return &emit.Method{
-		Name: sizeName, Accessor: symbol.AccessorSet, Params: []*emit.Param{{Name: "v", Type: ref(numberType)}},
+		Name: sizeName, Accessor: symbol.AccessorSet,
+		Params: emit.SlotOf(&emit.Param{Name: "v", Type: ref(numberType)}),
 	}
 }

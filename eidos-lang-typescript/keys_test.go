@@ -14,23 +14,23 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 )
 
-// rivalPlugin is a second registrant, and rivalKey the key it tries
-// to register under the satellite's namespace.
+// rivalPlugin is a second registrant. rivalKey is the key that it
+// registers in the namespace of the satellite.
 const (
 	rivalPlugin              = "rival"
 	rivalKey    meta.KeyName = "typescript.rival"
 )
 
-// keysAllocs is a registration into a fresh registry: the nine kind
-// lists of the keys, and fifteen allocations of the registry, its
-// namespace claim and the growth of its spec list, type list and name
-// map to nine keys.
-const keysAllocs = 9 + 15
+// keysAllocs is the count of a registration into a fresh registry. The
+// registration allocates the eight kind lists of the keys. The registry
+// allocates ten times for its namespace claim and for the growth of its
+// spec list, its type list and its name map to eight keys.
+const keysAllocs = 8 + 10
 
-// The frontend stamps these keys, and a composition registers them
-// once. The registration is pinned: every key resolves, the namespace
-// is the satellite's, a second registration of one registrant repeats
-// the first, and a claim of another registrant fails.
+// TestKeys pins the registration of the keys that the frontend stamps.
+// Every key resolves, and the namespace belongs to the satellite. A second
+// registration of one registrant repeats the first, and a claim of another
+// registrant fails.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -45,7 +45,7 @@ func TestKeys(t *testing.T) {
 			for _, key := range []meta.KeyName{
 				typescript.TestFileKey, typescript.NamespaceKey, typescript.CallSignatureKey,
 				typescript.AmbientKey, typescript.GeneratorKey, typescript.DefiniteAssignmentKey,
-				typescript.ParameterPropertyKey, typescript.OptionalKey, typescript.ReadonlyKey,
+				typescript.ParameterPropertyKey,
 			} {
 				_, known := r.Resolve(key)
 				assert.True(t, known, string(key)+" resolves")
@@ -82,11 +82,11 @@ func TestKeys(t *testing.T) {
 	})
 }
 
-// A registration allocates its kind lists and the registry's growth.
-// The ordinary run, which runs no benchmark, checks that ceiling here,
-// each call into a registry of its own, built outside the count. The
-// count keeps the first error of its calls, which cmp.Or returns without
-// allocating.
+// TestKeysAllocs checks the ceiling of a registration in the ordinary
+// run, which runs no benchmark. Each call registers into a registry of its
+// own, and the setup builds the registry outside the count. The count
+// keeps the first error of its calls, and cmp.Or returns it without an
+// allocation.
 func TestKeysAllocs(t *testing.T) {
 	var err error
 	assert.MaxAllocsWithSetup(t, meta.NewRegistry, func(r *meta.Registry) { err = cmp.Or(err, typescript.Keys(r)) },
@@ -94,8 +94,8 @@ func TestKeysAllocs(t *testing.T) {
 	assert.NoError(t, err, "Keys registers the vocabulary")
 }
 
-// BenchmarkKeys measures the registration a composition makes once,
-// each into a registry of its own.
+// BenchmarkKeys measures the registration that a composition makes once.
+// Each iteration registers into a registry of its own.
 func BenchmarkKeys(b *testing.B) {
 	b.Run("Keys", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(keysAllocs)

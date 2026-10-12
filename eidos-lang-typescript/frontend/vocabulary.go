@@ -5,22 +5,25 @@ package frontend
 
 import "go.dokimi.dev/eidos/lang/treesitter"
 
-// vocabulary is one grammar's node kinds and field names that the
-// lowering compares, resolved once when the frontend is built, so a
-// walk compares ids and a grammar that renames a kind fails at
-// construction. The TypeScript and TSX grammars assign their ids
-// apart, so each has its own vocabulary.
+// vocabulary is the node kinds and the field names of one grammar that the
+// lowering compares. The frontend resolves them once when it is built, so
+// a walk compares ids, and a grammar that renames a kind fails at
+// construction. The TypeScript and TSX grammars assign their ids apart, so
+// each has its own vocabulary.
 type vocabulary struct {
 	grammar *treesitter.Grammar
+	// comments is the comment walk of the grammar, which the lowering of
+	// each file copies.
+	comments treesitter.Comments
 
-	// The statements and the containers a module's declarations are in.
-	program, comment, exportStatement, ambientDeclaration, expressionStatement,
+	// The statements, and the containers of the declarations of a module.
+	comment, exportStatement, ambientDeclaration, expressionStatement,
 	statementBlock, internalModule, module, nestedIdentifier treesitter.Kind
 
 	// The declarations.
 	classDeclaration, abstractClassDeclaration, class, classBody, classHeritage,
-	extendsClause, implementsClause, interfaceDeclaration, interfaceBody,
-	extendsTypeClause, enumDeclaration, enumBody, enumAssignment,
+	extendsClause, implementsClause, interfaceDeclaration,
+	extendsTypeClause, enumDeclaration, enumAssignment,
 	typeAliasDeclaration, functionDeclaration, generatorFunctionDeclaration,
 	functionSignature, functionExpression, generatorFunction, lexicalDeclaration,
 	variableDeclaration, variableDeclarator treesitter.Kind
@@ -30,9 +33,9 @@ type vocabulary struct {
 	publicFieldDefinition, propertySignature, indexSignature, constructSignature,
 	callSignature, accessibilityModifier, overrideModifier treesitter.Kind
 
-	// The names a declaration or a member spells.
-	identifier, propertyIdentifier, privatePropertyIdentifier, typeIdentifier,
-	stringNode, stringFragment, computedPropertyName treesitter.Kind
+	// The names of a declaration or a member.
+	identifier, propertyIdentifier, privatePropertyIdentifier, computedPropertyName, typeIdentifier,
+	stringNode, stringFragment treesitter.Kind
 
 	// The module boundary.
 	importStatement, importClause, namedImports, importSpecifier,
@@ -45,32 +48,32 @@ type vocabulary struct {
 	templateString, unaryExpression treesitter.Kind
 
 	// Signatures.
-	formalParameters, requiredParameter, optionalParameter, restPattern, this,
-	typeAnnotation, typePredicateAnnotation, assertsAnnotation, typeParameters,
-	typeParameter, constraint, defaultType, typeArguments treesitter.Kind
+	requiredParameter, optionalParameter, restPattern, this,
+	typeAnnotation, typePredicateAnnotation, assertsAnnotation,
+	typeParameter treesitter.Kind
 
 	// Types.
-	predefinedType, genericType, nestedTypeIdentifier, arrayType, tupleType,
+	genericType, nestedTypeIdentifier, arrayType, tupleType,
 	optionalType, unionType, intersectionType, literalType, undefined, null,
 	functionType, constructorType, readonlyType, objectType, parenthesizedType,
 	mappedTypeClause treesitter.Kind
 
-	// The fields the lowering reads children by.
+	// The fields by which the lowering reads children.
 	fieldName, fieldBody, fieldDeclaration, fieldValue, fieldSource, fieldAlias,
 	fieldTypeParameters, fieldParameters, fieldReturnType, fieldType,
-	fieldDecorator, fieldPattern, fieldIndexType, fieldConstraint,
+	fieldPattern, fieldIndexType, fieldConstraint,
 	fieldFunction, fieldArguments, fieldTypeArguments, fieldObject,
-	fieldProperty, fieldModule, fieldKey, fieldArgument, fieldOperator treesitter.Field
+	fieldProperty, fieldKey, fieldArgument, fieldOperator treesitter.Field
 }
 
-// newVocabulary resolves a vocabulary from one grammar. It panics on a
-// kind or field the grammar does not declare, through
-// [treesitter.Grammar.Kind] and [treesitter.Grammar.Field].
+// newVocabulary resolves a vocabulary from one grammar, and the comment
+// walk over its kinds. It panics on a kind or a field that the grammar
+// does not declare, through [treesitter.Grammar.Kind] and
+// [treesitter.Grammar.Field].
 func newVocabulary(g *treesitter.Grammar) *vocabulary {
-	return &vocabulary{
+	v := &vocabulary{
 		grammar: g,
 
-		program:             g.Kind("program"),
 		comment:             g.Kind("comment"),
 		exportStatement:     g.Kind("export_statement"),
 		ambientDeclaration:  g.Kind("ambient_declaration"),
@@ -88,10 +91,8 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		extendsClause:                g.Kind("extends_clause"),
 		implementsClause:             g.Kind("implements_clause"),
 		interfaceDeclaration:         g.Kind("interface_declaration"),
-		interfaceBody:                g.Kind("interface_body"),
 		extendsTypeClause:            g.Kind("extends_type_clause"),
 		enumDeclaration:              g.Kind("enum_declaration"),
-		enumBody:                     g.Kind("enum_body"),
 		enumAssignment:               g.Kind("enum_assignment"),
 		typeAliasDeclaration:         g.Kind("type_alias_declaration"),
 		functionDeclaration:          g.Kind("function_declaration"),
@@ -117,10 +118,10 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		identifier:                g.Kind("identifier"),
 		propertyIdentifier:        g.Kind("property_identifier"),
 		privatePropertyIdentifier: g.Kind("private_property_identifier"),
+		computedPropertyName:      g.Kind("computed_property_name"),
 		typeIdentifier:            g.Kind("type_identifier"),
 		stringNode:                g.Kind("string"),
 		stringFragment:            g.Kind("string_fragment"),
-		computedPropertyName:      g.Kind("computed_property_name"),
 
 		importStatement:     g.Kind("import_statement"),
 		importClause:        g.Kind("import_clause"),
@@ -145,7 +146,6 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		templateString:   g.Kind("template_string"),
 		unaryExpression:  g.Kind("unary_expression"),
 
-		formalParameters:        g.Kind("formal_parameters"),
 		requiredParameter:       g.Kind("required_parameter"),
 		optionalParameter:       g.Kind("optional_parameter"),
 		restPattern:             g.Kind("rest_pattern"),
@@ -153,13 +153,8 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		typeAnnotation:          g.Kind("type_annotation"),
 		typePredicateAnnotation: g.Kind("type_predicate_annotation"),
 		assertsAnnotation:       g.Kind("asserts_annotation"),
-		typeParameters:          g.Kind("type_parameters"),
 		typeParameter:           g.Kind("type_parameter"),
-		constraint:              g.Kind("constraint"),
-		defaultType:             g.Kind("default_type"),
-		typeArguments:           g.Kind("type_arguments"),
 
-		predefinedType:       g.Kind("predefined_type"),
 		genericType:          g.Kind("generic_type"),
 		nestedTypeIdentifier: g.Kind("nested_type_identifier"),
 		arrayType:            g.Kind("array_type"),
@@ -187,7 +182,6 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		fieldParameters:     g.Field("parameters"),
 		fieldReturnType:     g.Field("return_type"),
 		fieldType:           g.Field("type"),
-		fieldDecorator:      g.Field("decorator"),
 		fieldPattern:        g.Field("pattern"),
 		fieldIndexType:      g.Field("index_type"),
 		fieldConstraint:     g.Field("constraint"),
@@ -196,9 +190,10 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		fieldTypeArguments:  g.Field("type_arguments"),
 		fieldObject:         g.Field("object"),
 		fieldProperty:       g.Field("property"),
-		fieldModule:         g.Field("module"),
 		fieldKey:            g.Field("key"),
 		fieldArgument:       g.Field("argument"),
 		fieldOperator:       g.Field("operator"),
 	}
+	v.comments = commentWalk(v)
+	return v
 }

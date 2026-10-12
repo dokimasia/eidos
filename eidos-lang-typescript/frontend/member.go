@@ -11,30 +11,31 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The names the model gives the members TypeScript writes without one:
-// a constructor, an interface's construct signature, and an index
-// signature.
+// constructorName, constructName and indexerName are the names that the
+// model gives a constructor, the construct signature of an interface and
+// an index signature. TypeScript writes these members without a name.
 const (
 	constructorName = "constructor"
 	constructName   = "new"
 	indexerName     = "[]"
 )
 
-// The accessibility modifiers' spellings that restrict a member. A
-// member without one, or with public, is public.
+// accessProtected and accessPrivate are the accessibility modifiers that
+// restrict a member. A member with public or without a modifier is
+// public.
 const (
 	accessProtected = "protected"
 	accessPrivate   = "private"
 )
 
-// classBody lowers a class's members into a struct: its methods and
-// overload signatures, its fields, the fields its constructor's
-// parameter properties declare, and its index signatures. A method's
-// implementation after its overload signatures is left out, because
-// TypeScript hides it from callers. A decorator applies to the member
-// after it. A static block declares nothing. A marker on an overloaded
-// method's implementation is refused, because the implementation
-// declares nothing.
+// classBody lowers the members of a class into a struct: its methods and
+// overload signatures, its fields, the fields that the parameter
+// properties of its constructor declare, and its index signatures. The
+// lowering leaves out the implementation of a method after its overload
+// signatures, because TypeScript hides it from callers. A decorator
+// applies to the member after it. A static block declares nothing.
+// classBody refuses a marker on the implementation of an overloaded
+// method, because the implementation declares nothing.
 func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 	overloaded := map[string]bool{}
 	for m := range body.NamedChildren() {
@@ -43,10 +44,8 @@ func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 		}
 	}
 	var pending []treesitter.Node
-	for m := range body.NamedChildren() {
+	for m := range body.Content() {
 		switch m.Kind() {
-		case l.v.comment:
-			continue
 		case l.v.decorator:
 			pending = append(pending, m)
 			continue
@@ -74,9 +73,9 @@ func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 	}
 }
 
-// method lowers one method, overload signature or abstract signature
-// into a struct, with the decorators before it. A constructor's
-// parameter properties declare the struct's fields too.
+// method lowers one method, overload signature or abstract signature and
+// the decorators before it into a struct. The parameter properties of a
+// constructor also declare fields of the struct.
 func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators []treesitter.Node) {
 	built := l.methodOf(m, decorators, false)
 	if built == nil {
@@ -88,17 +87,18 @@ func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators []trees
 	st.Methods = append(st.Methods, built)
 }
 
-// methodOf builds one method: its accessibility, static level, accessor
-// kind, async and abstract marks, override modifier, a # name's hard
-// privacy, its signature and its decorators. A method named
-// constructor constructs. [lowering.result] lowers its result. The
-// method is async when it has the async keyword or returns a promise. A
-// constructor and a setter without a return type have no result.
-// A generator method, which its * declares, is stamped
-// typescript.generator, and a method declared with ?
-// typescript.optional. inInterface builds an interface's method
-// signature, which is public and abstract. It returns nil for a member
-// signature depth leaves out: a private or #-named one.
+// methodOf builds one method: its accessibility, its static level, its
+// accessor kind, its async, abstract and optional marks, its override
+// modifier, the hard privacy of a # name, its signature and its
+// decorators. A name in brackets is computed, and the method keeps the
+// brackets in its name. A method named constructor constructs.
+// [lowering.result] lowers its result. The method is async when it has
+// the async keyword or returns a promise. A constructor and a setter
+// without a return type have no result. methodOf stamps
+// typescript.generator on a generator method, which has a * before its
+// name. inInterface builds the method signature of an interface, which is
+// public and abstract. methodOf returns nil for a member that the
+// signature depth leaves out: a private one or one with a # name.
 func (l *lowering) methodOf(m treesitter.Node, decorators []treesitter.Node, inInterface bool) *node.Method {
 	nameNode := m.Child(l.v.fieldName)
 	name := l.nameText(nameNode)
@@ -114,56 +114,56 @@ func (l *lowering) methodOf(m treesitter.Node, decorators []treesitter.Node, inI
 	parts, comment := l.declParts(m)
 	params, receiver := l.params(m.Child(l.v.fieldParameters))
 	returns, promised := l.result(m.Child(l.v.fieldReturnType),
-		name != constructorName && !l.token(m, keywordSet), nameNode.Pos())
+		name != constructorName && !m.HasToken(keywordSet), nameNode.Pos())
 	built := &node.Method{
 		Name: name, Pos: nameNode.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Abstract:   inInterface || m.Kind() == l.v.abstractMethodSignature || l.token(m, keywordAbstract),
-		Override:   !l.firstOf(m, l.v.overrideModifier).IsZero(),
-		Async:      promised || l.token(m, keywordAsync),
+		Abstract:   inInterface || m.Kind() == l.v.abstractMethodSignature || m.HasToken(keywordAbstract),
+		Override:   !m.FirstOf(l.v.overrideModifier).IsZero(),
+		Async:      promised || m.HasToken(keywordAsync),
 		Hard:       hard,
+		Optional:   m.HasToken(keywordOptional),
+		Computed:   nameNode.Kind() == l.v.computedPropertyName,
 		Receiver:   receiver,
 		TypeParams: l.typeParams(m.Child(l.v.fieldTypeParameters)),
 		Params:     params,
 		Returns:    returns,
 	}
 	built.Annotations = l.decorate(built, decorators)
-	if l.token(m, keywordStatic) {
+	if m.HasToken(keywordStatic) {
 		built.Level = symbol.LevelType
 	}
 	switch {
-	case l.token(m, keywordGet):
+	case m.HasToken(keywordGet):
 		built.Accessor = symbol.AccessorGet
-	case l.token(m, keywordSet):
+	case m.HasToken(keywordSet):
 		built.Accessor = symbol.AccessorSet
 	}
 	if name == constructorName {
 		built.Constructs = true
 	}
-	if l.token(m, keywordStar) {
+	if m.HasToken(keywordStar) {
 		l.mark(built, typescript.GeneratorKey, m.Pos())
-	}
-	if l.token(m, keywordOptional) {
-		l.mark(built, typescript.OptionalKey, m.Pos())
 	}
 	l.attach(built, parts.Carriers)
 	return built
 }
 
-// parameterProperties returns the fields a constructor's parameter
-// properties declare: each parameter with an accessibility modifier or
-// readonly, under its name, readonly as immutable, a ? parameter as
-// optional. The field and the constructor's parameter of its name,
-// among params, are stamped typescript.parameterProperty. Signature
-// depth leaves out a private field and keeps its parameter's stamp,
-// because the constructor still takes the parameter.
+// parameterProperties returns the fields that the parameter properties of
+// a constructor declare. Each parameter with an accessibility modifier or
+// readonly declares a field of its name. A readonly parameter declares an
+// immutable field. A parameter with a ? declares an optional field.
+// parameterProperties stamps typescript.parameterProperty on the field and
+// on the parameter of its name among params. The signature depth leaves
+// out a private field and keeps the stamp of its parameter, because the
+// constructor still takes the parameter.
 func (l *lowering) parameterProperties(list treesitter.Node, params []*node.Param) []*node.Field {
 	var out []*node.Field
 	for p := range list.NamedChildren() {
 		if p.Kind() != l.v.requiredParameter && p.Kind() != l.v.optionalParameter {
 			continue
 		}
-		modifier := l.firstOf(p, l.v.accessibilityModifier)
-		readonly := l.token(p, keywordReadonly)
+		modifier := p.FirstOf(l.v.accessibilityModifier)
+		readonly := p.HasToken(keywordReadonly)
 		pattern := p.Child(l.v.fieldPattern)
 		if modifier.IsZero() && !readonly || pattern.Kind() != l.v.identifier {
 			continue
@@ -192,11 +192,12 @@ func (l *lowering) parameterProperties(list treesitter.Node, params []*node.Para
 	return out
 }
 
-// field lowers one class property: its accessibility, static level,
-// readonly as immutable, ? as optional, a # name's hard privacy, its
-// type, its initializer verbatim, and the decorators before it and
-// inside it. A property declared with ! is stamped
-// typescript.definiteAssignment. It returns nil for a property
+// field lowers one class property: its accessibility, its static level,
+// readonly as immutable, ? as optional, the hard privacy of a # name, its
+// type, its initializer verbatim, and the decorators before it and inside
+// it. A name in brackets is computed, and the field keeps the brackets in
+// its name. field stamps typescript.definiteAssignment on a
+// property declared with !. field returns nil for a property that the
 // signature depth leaves out.
 func (l *lowering) field(m treesitter.Node, decorators []treesitter.Node) *node.Field {
 	nameNode := m.Child(l.v.fieldName)
@@ -211,28 +212,29 @@ func (l *lowering) field(m treesitter.Node, decorators []treesitter.Node) *node.
 		Name: l.nameText(nameNode), Pos: nameNode.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
 		Mutability: symbol.MutabilityMutable,
 		Hard:       hard,
-		Optional:   l.token(m, keywordOptional),
+		Optional:   m.HasToken(keywordOptional),
+		Computed:   nameNode.Kind() == l.v.computedPropertyName,
 		Type:       l.typeRef(m.Child(l.v.fieldType)),
 		Value:      m.Child(l.v.fieldValue).Text(),
 	}
 	f.Annotations = l.decorate(f, append(decorators, l.decoratorsOf(m)...))
-	if l.token(m, keywordStatic) {
+	if m.HasToken(keywordStatic) {
 		f.Level = symbol.LevelType
 	}
-	if l.token(m, keywordReadonly) {
+	if m.HasToken(keywordReadonly) {
 		f.Mutability = symbol.MutabilityImmutable
 	}
-	if l.token(m, keywordDefinite) {
+	if m.HasToken(keywordDefinite) {
 		l.mark(f, typescript.DefiniteAssignmentKey, m.Pos())
 	}
 	l.u.AttachCarriers(f, parts.Carriers, BadCarrier)
 	return f
 }
 
-// indexer lowers an index signature: a method named [] that takes the
-// key and returns the value, stamped typescript.readonly where the
-// signature is readonly. A mapped type's signature names no key type and
-// declares nothing.
+// indexer lowers an index signature to a method named [] that takes the
+// key and returns the value. The method is immutable where the signature
+// is readonly, and mutable otherwise. The signature of a mapped type has
+// no key type and declares nothing.
 func (l *lowering) indexer(m treesitter.Node) *node.Method {
 	key := m.Child(l.v.fieldIndexType)
 	if key.IsZero() {
@@ -241,23 +243,23 @@ func (l *lowering) indexer(m treesitter.Node) *node.Method {
 	parts, comment := l.declParts(m)
 	built := &node.Method{
 		Name: indexerName, Pos: m.Pos(), Doc: parts.Docs, Comment: comment,
-		Visibility: symbol.VisibilityPublic, Indexer: true,
+		Visibility: symbol.VisibilityPublic, Indexer: true, Mutability: symbol.MutabilityMutable,
 		Params:  []*node.Param{{Name: m.Child(l.v.fieldName).Text(), Pos: key.Pos(), Type: l.typeRef(key)}},
 		Returns: []*node.Return{{Pos: m.Child(l.v.fieldType).Pos(), Type: l.typeRef(m.Child(l.v.fieldType))}},
 	}
-	if l.token(m, keywordReadonly) {
-		l.mark(built, typescript.ReadonlyKey, m.Pos())
+	if m.HasToken(keywordReadonly) {
+		built.Mutability = symbol.MutabilityImmutable
 	}
 	l.attach(built, parts.Carriers)
 	return built
 }
 
-// objectMembers lowers an interface body's or an object type's members
-// into fields and methods: a property signature a field, a method
-// signature an abstract method, a construct signature a method named
-// new that constructs, and an index signature a method named []. It
-// returns the call signatures as written, which an interface's caller
-// stamps and an inline body's spelling keeps.
+// objectMembers lowers the members of an interface body or an object type
+// into fields and methods. A property signature is a field, a method
+// signature an abstract method, a construct signature a method named new
+// that constructs, and an index signature a method named []. It returns
+// the call signatures as written. The caller of an interface stamps them,
+// and the spelling of an inline body keeps them.
 func (l *lowering) objectMembers(body treesitter.Node, fields *[]*node.Field, methods *[]*node.Method) []string {
 	var calls []string
 	for m := range body.NamedChildren() {
@@ -282,7 +284,7 @@ func (l *lowering) objectMembers(body treesitter.Node, fields *[]*node.Field, me
 	return calls
 }
 
-// callSignatures returns an object type's call signatures as written.
+// callSignatures returns the call signatures of an object type as written.
 func (l *lowering) callSignatures(body treesitter.Node) []string {
 	var calls []string
 	for m := range body.NamedChildren() {
@@ -293,8 +295,10 @@ func (l *lowering) callSignatures(body treesitter.Node) []string {
 	return calls
 }
 
-// property lowers an interface's property signature: public, readonly
-// as immutable, ? as optional, with its type.
+// property lowers the property signature of an interface to a public field
+// with its type. The field is immutable where the signature is readonly,
+// optional where the signature has a ?, and computed where its name is in
+// brackets.
 func (l *lowering) property(m treesitter.Node) *node.Field {
 	nameNode := m.Child(l.v.fieldName)
 	parts, comment := l.declParts(m)
@@ -302,18 +306,19 @@ func (l *lowering) property(m treesitter.Node) *node.Field {
 		Name: l.nameText(nameNode), Pos: nameNode.Pos(), Doc: parts.Docs, Comment: comment,
 		Visibility: symbol.VisibilityPublic,
 		Mutability: symbol.MutabilityMutable,
-		Optional:   l.token(m, keywordOptional),
+		Optional:   m.HasToken(keywordOptional),
+		Computed:   nameNode.Kind() == l.v.computedPropertyName,
 		Type:       l.typeRef(m.Child(l.v.fieldType)),
 	}
-	if l.token(m, keywordReadonly) {
+	if m.HasToken(keywordReadonly) {
 		f.Mutability = symbol.MutabilityImmutable
 	}
 	l.attach(f, parts.Carriers)
 	return f
 }
 
-// construct lowers an interface's construct signature: a public method
-// named new that constructs what its type annotation names.
+// construct lowers the construct signature of an interface to a public
+// method named new that constructs the type of its annotation.
 func (l *lowering) construct(m treesitter.Node) *node.Method {
 	parts, comment := l.declParts(m)
 	params, _ := l.params(m.Child(l.v.fieldParameters))
@@ -328,13 +333,14 @@ func (l *lowering) construct(m treesitter.Node) *node.Method {
 	return built
 }
 
-// access returns a member's visibility: its accessibility modifier's,
-// private for a # name, and public without either.
+// access returns private for a # name, the visibility of the
+// accessibility modifier of a member, and public for a member without
+// either.
 func (l *lowering) access(m treesitter.Node, hard bool) symbol.Visibility {
 	if hard {
 		return symbol.VisibilityPrivate
 	}
-	switch l.firstOf(m, l.v.accessibilityModifier).Text() {
+	switch m.FirstOf(l.v.accessibilityModifier).Text() {
 	case accessProtected:
 		return symbol.VisibilityProtected
 	case accessPrivate:

@@ -15,12 +15,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// Whether a file takes part as a test is the consumer's call, so the
-// stamp follows Jest's default match exactly.
+// The consumer decides whether a file takes part as a test, so the stamp
+// follows the default match of Jest exactly.
 func TestClassify(t *testing.T) {
 	t.Parallel()
 
-	t.Run("markTests", func(t *testing.T) {
+	t.Run("testFile", func(t *testing.T) {
 		t.Parallel()
 
 		paths := []struct {
@@ -39,14 +39,15 @@ func TestClassify(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, testStamps(t, tt.give), tt.want, "Jest's default match decides")
+				assert.Equal(t, testStamps(t, tt.give), tt.want, "the default match of Jest decides")
 			})
 		}
 	})
 }
 
-// testStamps parses one file at a path through the frontend's parse and
-// classifiers, and returns how many test-file stamps it recorded.
+// testStamps parses one file at a path through the parse and the
+// classifiers of the frontend, and returns the number of test-file stamps
+// that it recorded.
 func testStamps(tb testing.TB, path string) int {
 	tb.Helper()
 

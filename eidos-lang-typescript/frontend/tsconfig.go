@@ -13,10 +13,10 @@ import (
 	"github.com/tailscale/hujson"
 )
 
-// The names a tsconfig chain is spelled with: the file a project's
-// configuration is in, the suffix TypeScript appends to an extends path
-// that names no file, the wildcard a paths pattern and its
-// substitutions share, and the root directory a probe ends at.
+// The names of a tsconfig chain: the file of the configuration of a
+// project, the suffix that TypeScript appends to an extends path without a
+// file, the wildcard that a paths pattern and its substitutions share, and
+// the root directory where a probe ends.
 const (
 	tsconfigName  = "tsconfig.json"
 	jsonExtension = ".json"
@@ -24,10 +24,10 @@ const (
 	rootDir       = "."
 )
 
-// resolution is a tsconfig chain's module resolution, workspace
-// relative: the baseUrl, the directory the paths substitutions are
-// relative to, and the paths patterns, sorted by key. The zero
-// resolution resolves through neither.
+// resolution is the module resolution of a tsconfig chain, relative to the
+// workspace: the baseUrl, the directory that the paths substitutions are
+// relative to, and the paths patterns sorted by key. The zero resolution
+// resolves through neither.
 type resolution struct {
 	baseURL   string
 	pathsBase string
@@ -45,11 +45,11 @@ type pathPattern struct {
 	targets  []string
 }
 
-// substitutions returns the workspace paths a specifier's paths pattern
-// substitutes, in the pattern's order, the way TypeScript selects the
-// pattern: a key that spells the specifier exactly, and otherwise the
-// matching wildcard key with the longest prefix, the first by key on a
-// tie. It returns nothing for a specifier no key matches.
+// substitutions returns the workspace paths that the paths pattern of a
+// specifier substitutes, in the order of the pattern. It selects the
+// pattern as TypeScript does: a key equal to the specifier, and otherwise
+// the matching wildcard key with the longest prefix, the first by key on
+// a tie. It returns nothing for a specifier that no key matches.
 func (r resolution) substitutions(specifier string) []string {
 	var best *pathPattern
 	star := ""
@@ -77,8 +77,8 @@ func (r resolution) substitutions(specifier string) []string {
 	return r.substitute(best, star)
 }
 
-// substitute returns a pattern's substitutions with the wildcard
-// replaced, each joined to the directory the paths are relative to.
+// substitute returns the substitutions of a pattern with the wildcard
+// replaced, each joined to the directory that the paths are relative to.
 func (r resolution) substitute(p *pathPattern, star string) []string {
 	out := make([]string, 0, len(p.targets))
 	for _, t := range p.targets {
@@ -87,9 +87,9 @@ func (r resolution) substitute(p *pathPattern, star string) []string {
 	return out
 }
 
-// tsconfig is the part of a tsconfig.json the frontend reads: what it
-// extends, a path or a list of paths, and the module resolution
-// options.
+// tsconfig is the part of a tsconfig.json that the frontend reads: what it
+// extends, a path or a list of paths, and the options of module
+// resolution.
 type tsconfig struct {
 	Extends         json.RawMessage `json:"extends"`
 	CompilerOptions struct {
@@ -98,41 +98,26 @@ type tsconfig struct {
 	} `json:"compilerOptions"`
 }
 
-// reader is the door a chain reads through: the partition's recorded
-// reader, or a unit's jailed one.
+// reader is the door that a chain reads through: the recorded reader of
+// the partition, or the jailed door of a unit.
 type reader func(path string) ([]byte, error)
 
-// governing returns the tsconfig.json nearest above a directory, and
-// false where no directory up to the root has one. A probe that misses
-// reads nothing.
-func governing(read reader, dir string) (string, bool) {
-	for at := dir; ; at = path.Dir(at) {
-		candidate := path.Join(at, tsconfigName)
-		if _, err := read(candidate); err == nil {
-			return candidate, true
-		}
-		if at == rootDir {
-			return "", false
-		}
-	}
-}
-
-// readChain reads a tsconfig.json and every configuration its extends
+// readChain reads a tsconfig.json and every configuration that its extends
 // names, depth first, and returns their paths in that order and the
-// resolution they state together. A configuration overrides what it
-// extends, and a later entry of an extends list overrides an earlier
-// one. A configuration the chain already read is not read again, which
-// stops a cycle. It returns the paths read before an error, and the
-// error of a configuration that does not read or parse, or whose
-// extends names no configuration.
+// resolution that they state together. A configuration overrides what it
+// extends, and a later entry of an extends list overrides an earlier one.
+// readChain does not read a configuration twice, which stops a cycle. It
+// returns the paths read before an error, and the error of a configuration
+// that does not read or parse, or whose extends refers to no
+// configuration.
 func readChain(read reader, file string) ([]string, resolution, error) {
 	c := &chain{read: read, seen: map[string]bool{}}
 	res, err := c.visit(file)
 	return c.paths, res, err
 }
 
-// chain is one chain read's state: the door, the paths read in order,
-// and the paths already read.
+// chain is the state of one read of a chain: the door, the paths read in
+// order, and the set of paths already read.
 type chain struct {
 	read  reader
 	paths []string
@@ -140,7 +125,8 @@ type chain struct {
 }
 
 // visit reads one configuration and what it extends, and returns the
-// resolution the configuration states over its bases'.
+// resolution that the configuration states over the resolution of its
+// bases.
 func (c *chain) visit(file string) (resolution, error) {
 	if c.seen[file] {
 		return resolution{}, nil
@@ -178,10 +164,10 @@ func (c *chain) visit(file string) (resolution, error) {
 	return own(res, file, cfg), nil
 }
 
-// locate returns the configuration an extends entry names: a relative
-// path from the extending file's directory, with .json appended where
-// the path names no file, or a package path under the nearest
-// node_modules directory that has it, as Node resolves a package.
+// locate returns the configuration of an extends entry: a relative path
+// from the directory of the extending file, with .json appended where the
+// path has no file, or a package path under the nearest node_modules
+// directory that has it, as Node resolves a package.
 func (c *chain) locate(from, spec string) (string, bool) {
 	if relative(spec) {
 		candidate := path.Join(path.Dir(from), spec)
@@ -206,14 +192,14 @@ func (c *chain) locate(from, spec string) (string, bool) {
 	}
 }
 
-// readable reports whether a path reads through the chain's door.
+// readable reports whether a path reads through the door of the chain.
 func (c *chain) readable(p string) bool {
 	_, err := c.read(p)
 	return err == nil
 }
 
-// extendsOf returns the extends option's entries: none for an absent
-// option, one for a string, and each of a list's.
+// extendsOf returns the entries of the extends option: none for an absent
+// option, one for a string, and each entry of a list.
 func extendsOf(raw json.RawMessage) ([]string, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -229,8 +215,8 @@ func extendsOf(raw json.RawMessage) ([]string, error) {
 	return many, nil
 }
 
-// overlay returns a base resolution with a later base's options over
-// it: the later base's baseUrl and paths where it states them.
+// overlay returns a base resolution with the options of a later base over
+// it: the baseUrl and the paths of the later base where it states them.
 func overlay(under, over resolution) resolution {
 	if over.baseURL != "" {
 		under.baseURL = over.baseURL
@@ -242,10 +228,11 @@ func overlay(under, over resolution) resolution {
 	return under
 }
 
-// own returns the resolution a configuration states over its bases'.
-// Its baseUrl is relative to its own directory. Its paths are relative
-// to the baseUrl in effect, and to its own directory where none is.
-// Paths it inherits follow a baseUrl it sets.
+// own returns the resolution that a configuration states over the
+// resolution of its bases. Its baseUrl is relative to its own directory.
+// Its paths are relative to the baseUrl in effect, and to its own
+// directory where none is. The paths that it inherits follow a baseUrl
+// that it sets.
 func own(res resolution, file string, cfg tsconfig) resolution {
 	dir := path.Dir(file)
 	opts := cfg.CompilerOptions
@@ -265,7 +252,7 @@ func own(res resolution, file string, cfg tsconfig) resolution {
 	return res
 }
 
-// patternsOf returns the paths option's patterns, sorted by key.
+// patternsOf returns the patterns of the paths option, sorted by key.
 func patternsOf(paths map[string][]string) []pathPattern {
 	out := make([]pathPattern, 0, len(paths))
 	for key, targets := range paths {

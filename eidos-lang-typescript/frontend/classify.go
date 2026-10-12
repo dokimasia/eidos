@@ -9,13 +9,11 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/typescript"
-	"go.dokimi.dev/eidos/sdk/meta"
-	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The names Jest's default match reads a test file by: the directory a
-// test file is under, a file named test or spec, and a name that ends
-// in .test or .spec before its extension.
+// The names by which the default match of Jest finds a test file: the
+// directory that a test file is under, a file named test or spec, and a
+// name that ends in .test or .spec before its extension.
 const (
 	testsDir   = "__tests__"
 	testName   = "test"
@@ -24,23 +22,10 @@ const (
 	specSuffix = ".spec"
 )
 
-// markTests stamps the test-file key on every File node of a file
-// Jest's default match names a test.
-func markTests(u *plugin.SourceUnit) error {
-	gb := u.Graph()
-	for _, pkg := range gb.Packages() {
-		for _, file := range pkg.Files {
-			if testFile(file.Path) {
-				gb.Stamp(file, meta.RawStamp{Key: typescript.TestFileKey, Value: true, Pos: file.Pos})
-			}
-		}
-	}
-	return nil
-}
-
-// testFile reports whether Jest's default match names a file a test:
-// it is under a __tests__ directory, or its name before its extension
-// is test or spec or ends in .test or .spec.
+// testFile reports whether the default match of Jest finds a file as a
+// test. The file is under a __tests__ directory, or its name before its
+// extension is test or spec or ends in .test or .spec. The kit stamps
+// typescript.testFile on every file for which it reports true.
 func testFile(p string) bool {
 	if slices.Contains(strings.Split(path.Dir(p), "/"), testsDir) {
 		return true

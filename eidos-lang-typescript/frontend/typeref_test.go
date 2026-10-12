@@ -7,17 +7,18 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// aliasName is the alias every type case declares, so the case reads
-// the type it names.
+// aliasName is the name of the alias that every type case declares. The
+// case reads the type of the alias.
 const aliasName = "T"
 
-// Each structural form the syntax states is a contract the projection
-// folds, so the form every type lowers to is pinned.
+// TestTyperef pins the form of every type, because the projection folds
+// each structural form.
 func TestTyperef(t *testing.T) {
 	t.Parallel()
 
@@ -51,35 +52,45 @@ func TestTyperef(t *testing.T) {
 			assert.Empty(t, targetOf(t, "Local").Package, "the file's own scope declares it")
 		})
 
-		t.Run("lowers T[] as a List", func(t *testing.T) {
+		t.Run("lowers T[] as a mutable List", func(t *testing.T) {
 			t.Parallel()
 
 			ref := targetOf(t, "Imported[]")
 			assert.Equal(t, ref.Form, symbol.FormList, "an array type is a list")
-			assert.Equal(t, ref.Elems[0].Spelling, "Imported", "of its element")
+			expect.Equal(t, ref.Mutability, symbol.MutabilityMutable, "a holder can write the elements of the array")
+			expect.Equal(t, ref.Elems[0].Spelling, "Imported", "the list has the element of the array")
 		})
 
-		t.Run("lowers a readonly array as the List it reads", func(t *testing.T) {
+		t.Run("lowers a readonly array as an immutable List", func(t *testing.T) {
 			t.Parallel()
 
 			ref := targetOf(t, "readonly Imported[]")
-			assert.Equal(t, ref.Form, symbol.FormList, "readonly reads an array")
-			assert.Equal(t, ref.Elems[0].Spelling, "Imported", "whose element resolves")
+			assert.Equal(t, ref.Form, symbol.FormList, "a readonly array is a list")
+			expect.Equal(t, ref.Mutability, symbol.MutabilityImmutable, "a holder cannot write the elements")
+			expect.Equal(t, ref.Elems[0].Spelling, "Imported", "the list has the element of the array")
 		})
 
 		t.Run("spells a readonly array with its readonly", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, targetOf(t, "readonly Imported[]").Spelling, "readonly Imported[]",
-				"the spelling keeps what the form leaves out")
+				"the spelling keeps the readonly of the source")
 		})
 
-		t.Run("lowers a readonly tuple as the Tuple it reads", func(t *testing.T) {
+		t.Run("lowers a readonly tuple as an immutable Tuple", func(t *testing.T) {
 			t.Parallel()
 
 			ref := targetOf(t, "readonly [string, Imported]")
-			assert.Equal(t, ref.Form, symbol.FormTuple, "readonly reads a tuple")
-			assert.Length(t, ref.Elems, 2, "of its members")
+			assert.Equal(t, ref.Form, symbol.FormTuple, "a readonly tuple is a tuple")
+			expect.Equal(t, ref.Mutability, symbol.MutabilityImmutable, "a holder cannot write the members")
+			expect.Length(t, ref.Elems, 2, "the tuple has the two members of the source")
+		})
+
+		t.Run("lowers the inner array of a readonly array of arrays as mutable", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, targetOf(t, "readonly Imported[][]").Elems[0].Mutability, symbol.MutabilityMutable,
+				"readonly applies to the outer array alone")
 		})
 
 		t.Run("keeps a named type after readonly as its own spelling", func(t *testing.T) {
@@ -90,13 +101,14 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, ref.Package, "./lib", "and its import")
 		})
 
-		t.Run("lowers a tuple as a Tuple of its members", func(t *testing.T) {
+		t.Run("lowers a tuple as a mutable Tuple of its members", func(t *testing.T) {
 			t.Parallel()
 
 			ref := targetOf(t, "[a: string, b?: number, ...rest: Imported[]]")
 			assert.Equal(t, ref.Form, symbol.FormTuple, "a tuple type is a tuple")
-			assert.Equal(t, formsOf(ref), []symbol.TypeForm{symbol.FormNamed, symbol.FormOptional, symbol.FormNamed},
-				"a labeled member's type, an optional member, and a rest member")
+			expect.Equal(t, ref.Mutability, symbol.MutabilityMutable, "a holder can write the members of the tuple")
+			expect.Equal(t, formsOf(ref), []symbol.TypeForm{symbol.FormNamed, symbol.FormOptional, symbol.FormNamed},
+				"the members are the type of a labeled member, an optional member and a rest member")
 		})
 
 		t.Run("lowers an unlabeled optional member of a tuple as Optional", func(t *testing.T) {
@@ -105,6 +117,13 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, formsOf(targetOf(t, "[string, Imported?]")), []symbol.TypeForm{
 				symbol.FormNamed, symbol.FormOptional,
 			}, "the ? marks the member optional")
+		})
+
+		t.Run("lists no absent member for an optional member of a tuple", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, targetOf(t, "[string, Imported?]").Elems[1].Absent,
+				"a ? states the optional without a union")
 		})
 
 		comments := []struct {
@@ -154,7 +173,7 @@ func TestTyperef(t *testing.T) {
 
 			ref := targetOf(t, "Imported | undefined")
 			assert.Equal(t, ref.Form, symbol.FormOptional, "undefined leaves one member")
-			assert.Equal(t, ref.Elems[0].Spelling, "Imported", "the member left")
+			assert.Equal(t, ref.Elems[0].Spelling, "Imported", "the optional has the member that is left")
 		})
 
 		t.Run("lowers T | null | undefined as an Optional of T", func(t *testing.T) {
@@ -163,6 +182,30 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, targetOf(t, "Imported | null | undefined").Form, symbol.FormOptional,
 				"a nested union flattens before the nullish members leave")
 		})
+
+		absent := []struct {
+			name string
+			give string
+			want []string
+		}{
+			{
+				name: "lists undefined as the absent member of T | undefined", give: "Imported | undefined",
+				want: []string{"undefined"},
+			},
+			{name: "lists null as the absent member of T | null", give: "Imported | null", want: []string{"null"}},
+			{
+				name: "lists the absent members of undefined | T | null in source order",
+				give: "undefined | Imported | null", want: []string{"undefined", "null"},
+			},
+		}
+		for _, tt := range absent {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, spellingsOf(targetOf(t, tt.give).Absent), tt.want,
+					"the optional keeps the nullish members of the source union")
+			})
+		}
 
 		t.Run("lowers a union of two members besides null as a Union of every member", func(t *testing.T) {
 			t.Parallel()
@@ -229,12 +272,21 @@ func TestTyperef(t *testing.T) {
 			assert.Empty(t, ref.Elems[0].Spelling, "the source states no type")
 		})
 
-		t.Run("lowers an object type with one index signature as a Map", func(t *testing.T) {
+		t.Run("lowers an object type with one index signature as a mutable Map", func(t *testing.T) {
 			t.Parallel()
 
 			ref := targetOf(t, "{ [key: string]: Imported }")
 			assert.Equal(t, ref.Form, symbol.FormMap, "a lone index signature maps keys to values")
-			assert.Equal(t, ref.Elems[1].Spelling, "Imported", "the value type")
+			expect.Equal(t, ref.Mutability, symbol.MutabilityMutable, "a holder can assign the entries")
+			expect.Equal(t, ref.Elems[1].Spelling, "Imported", "the map has the value type of the signature")
+		})
+
+		t.Run("lowers an object type with one readonly index signature as an immutable Map", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "{ readonly [key: string]: Imported }")
+			assert.Equal(t, ref.Form, symbol.FormMap, "a lone index signature maps keys to values")
+			assert.Equal(t, ref.Mutability, symbol.MutabilityImmutable, "a holder cannot assign the entries")
 		})
 
 		t.Run("lowers any other object type as Inline", func(t *testing.T) {
@@ -297,7 +349,7 @@ func TestTyperef(t *testing.T) {
 	})
 }
 
-// targetOf parses one type alias and returns the type it names.
+// targetOf parses one type alias and returns its target.
 func targetOf(tb testing.TB, typ string) *node.TypeRef {
 	tb.Helper()
 
@@ -305,11 +357,20 @@ func targetOf(tb testing.TB, typ string) *node.TypeRef {
 		"export type "+aliasName+" = "+typ+";\n"), aliasName).Target
 }
 
-// formsOf returns the forms of a reference's children, in order.
+// formsOf returns the forms of the children of a reference, in order.
 func formsOf(ref *node.TypeRef) []symbol.TypeForm {
 	out := make([]symbol.TypeForm, 0, len(ref.Elems))
 	for _, e := range ref.Elems {
 		out = append(out, e.Form)
+	}
+	return out
+}
+
+// spellingsOf returns the spellings of refs, in order.
+func spellingsOf(refs []*node.TypeRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.Spelling)
 	}
 	return out
 }

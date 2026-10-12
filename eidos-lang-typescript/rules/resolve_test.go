@@ -18,8 +18,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// globalPkg is the package of TypeScript's global scope, which a script
-// declares into. globalsFile is the fixture's script.
+// globalPkg is the package of the global scope of TypeScript, into which
+// a script declares. globalsFile is the script of the fixture.
 const (
 	globalPkg   = ""
 	globalsFile = "fx/globals.ts"
@@ -28,7 +28,7 @@ const (
 // resolveAllocs counts the resolution of a type that a named import
 // binds from another module through a relative specifier. path.Join
 // allocates the joined path, its cleaned copy and the text of the copy.
-// The chain of the subject's packages is on the stack, and a view
+// The chain of the packages of the subject is on the stack, and a view
 // records nothing new for reads that it has recorded before.
 const resolveAllocs = 3
 
@@ -44,8 +44,8 @@ var (
 	goneFunction = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: "Gone", Kind: symbol.KindFunction}
 )
 
-// TestResolve checks each resolution kind, each level of TypeScript's
-// scope order, and each way in which a module publishes a name. A case
+// TestResolve checks each resolution kind, each level of the scope order
+// of TypeScript, and each way in which a module publishes a name. A case
 // leaves the language out of the identity that it expects, and the loop
 // of its table sets the language.
 func TestResolve(t *testing.T) {
@@ -101,6 +101,11 @@ func TestResolve(t *testing.T) {
 			{
 				name: "resolves a global type as a stand-in", give: stringName,
 				want: symbol.Identity{Name: stringName, Kind: symbol.KindAlias},
+			},
+			{
+				name: "resolves a global type that the builtin table does not classify as a stand-in",
+				give: promiseName,
+				want: symbol.Identity{Name: promiseName, Kind: symbol.KindAlias},
 			},
 			{
 				name: "resolves a keyword type as a stand-in", give: "unknown",
@@ -206,13 +211,13 @@ func TestResolve(t *testing.T) {
 			{
 				name: "resolves a type through a view without facts",
 				view: func(f *fixture) rules.View {
-					return rules.View{Decls: f.view.Decls}
+					return rules.NewView(f.view.Reader(), nil, nil, f.view.Kernel())
 				},
 			},
 			{
 				name: "resolves a type through a view whose registry has no namespace key",
 				view: func(f *fixture) rules.View {
-					return rules.View{Decls: f.view.Decls, Facts: meta.NewFacts(meta.NewRegistry())}
+					return rules.NewView(f.view.Reader(), meta.NewFacts(meta.NewRegistry()), nil, f.view.Kernel())
 				},
 			},
 		}
@@ -386,7 +391,7 @@ func TestResolve(t *testing.T) {
 			},
 			{
 				name: "refuses a resolution kind that TypeScript does not perform", kind: directive.ResolveMetadataKey,
-				give: rowName, want: "is not a resolution that TypeScript performs",
+				give: rowName, want: "is not a resolution that typescript performs",
 			},
 			{
 				name: "refuses a spelling that is not a name", kind: directive.ResolveTypeInScope, give: "string[]",
@@ -394,7 +399,7 @@ func TestResolve(t *testing.T) {
 			},
 			{
 				name: "refuses a type that nothing in scope declares", kind: directive.ResolveTypeInScope, give: "Nope",
-				want: "no Struct or Interface or Enum or Alias named Nope is in scope",
+				want: "no Struct or Interface or Alias or Enum or Sum named Nope is in scope",
 			},
 			{
 				name: "refuses a name that a cycle of re-exports publishes", kind: directive.ResolveTypeInScope,
@@ -508,7 +513,7 @@ func resolveCalls(tb assert.TB) []allocCall {
 }
 
 // methodID returns the identity of the first method with a name in a
-// class of the fixture's module a. The identity has the discriminator
+// class of the module a of the fixture. The identity has the discriminator
 // that the frontend gave the method.
 func methodID(tb assert.TB, f *fixture, host, name string) symbol.Identity {
 	tb.Helper()

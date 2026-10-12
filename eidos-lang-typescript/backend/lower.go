@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -155,6 +156,9 @@ func variantInterface(
 	if len(v.Annotations) > 0 {
 		return nil, "", refuse("decorators apply to classes, and the variant %s states some", v.Name)
 	}
+	if err := lowering.NamedPayload(typescript.Lang, v); err != nil {
+		return nil, "", err
+	}
 	name, err := spell.Name(symbol.KindInvalid, symbol.KindInterface,
 		sum.Visibility, sum.Name+naming.Pascal(v.Name))
 	if err != nil {
@@ -176,10 +180,6 @@ func variantInterface(
 		Type:   &emit.TypeRef{Spelling: quote(v.Name)},
 	})
 	for _, f := range payload {
-		if f.Name == "" {
-			return nil, "", refuse("a property has a name, and a payload entry in %s states none",
-				v.Name)
-		}
 		if f.Name == discriminant {
 			return nil, "", refuse("the discriminant property is named %s, and so is a payload entry in %s",
 				discriminant, v.Name)

@@ -8,22 +8,24 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Coverage declares TypeScript's fact coverage, the feature table
-// as data: the render's guard reads it, and the conformance suite
-// checks it total and the rendered findings against it.
+// Coverage declares the fact coverage of TypeScript, the feature table as
+// data: the guard of the render reads it, and the conformance suite checks
+// it total and the rendered findings against it.
 //
-// Decorators apply to classes and their members, so annotations
-// refuse everywhere else, the parameter position included. A
-// parameter's default renders behind its equals sign. Field tags
-// are a Go idiom and refuse. An index signature and a constructor
-// take a narrower set of modifiers than a method, and their keyword
-// helpers refuse the rest.
+// Decorators apply to classes and their members, so annotations refuse
+// everywhere else, the parameter position included. The default of a
+// parameter renders behind its equals sign. Field tags are an idiom of Go
+// and refuse. An index signature and a constructor take a narrower set of
+// modifiers than a method, and their keyword helpers refuse the rest.
+// Nothing promotes members, so the coverage refuses an embed with every
+// fact on it.
 //
-// Coverage builds the table on every call, which the caller keeps: the
-// fact map's four allocations, and the exception map's four with its
-// twelve kinds' two each, 32 allocations.
+// Coverage builds the table on every call, which the caller keeps: four
+// allocations of the fact map, and four of the exception map with two for
+// each of its eleven kinds, 30 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
+		RefusesEmbeds: true,
 		Facts: map[symbol.Fact]render.Verdict{
 			symbol.FactVisibility:       render.Renders,
 			symbol.FactAsync:            render.Renders,
@@ -63,14 +65,10 @@ func Coverage() render.Coverage {
 			symbol.FactVariance:         render.Renders,
 			symbol.FactTypeParamDefault: render.Renders,
 			symbol.FactConstParam:       render.Refuses,
+			symbol.FactComputed:         render.Renders,
+			symbol.FactUnderlying:       render.Refuses,
 		},
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
-			// An embed refuses whole, so the facts on it refuse with it.
-			symbol.KindEmbed: {
-				symbol.FactComment:     render.Refuses,
-				symbol.FactTag:         render.Refuses,
-				symbol.FactAnnotations: render.Refuses,
-			},
 			symbol.KindInterface: {
 				symbol.FactAnnotations: render.Refuses,
 			},

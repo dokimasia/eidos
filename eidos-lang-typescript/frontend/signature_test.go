@@ -15,12 +15,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// fnName is the function every signature case declares.
+// fnName is the name of the function that every signature case declares.
 const fnName = "f"
 
-// A signature's parts are each a subject or a reference the
-// resolution step reads, so how a parameter list, a type parameter list
-// and a return type lower is pinned.
+// TestSignature pins the lowering of a parameter list, a type parameter
+// list and a return type. The resolution step reads each part of a
+// signature.
 func TestSignature(t *testing.T) {
 	t.Parallel()
 
@@ -86,6 +86,32 @@ func TestSignature(t *testing.T) {
 
 				assert.Equal(t, functionOf(t, tt.give).Params[0].Type.Spelling, tt.want,
 					"the type of one argument the parameter takes")
+			})
+		}
+
+		readonly := []struct {
+			name string
+			give string
+			want []diag.Code
+		}{
+			{
+				name: "reports ReadonlyRest for a rest parameter of a readonly array",
+				give: "(...rest: readonly string[])", want: []diag.Code{frontend.ReadonlyRest},
+			},
+			{
+				name: "reports ReadonlyRest for a rest parameter of ReadonlyArray<T>",
+				give: "(...rest: ReadonlyArray<string>)", want: []diag.Code{frontend.ReadonlyRest},
+			},
+			{name: "reports nothing for a rest parameter of an array type", give: "(...rest: string[])"},
+			{name: "reports nothing for a rest parameter of Array<T>", give: "(...rest: Array<string>)"},
+		}
+		for _, tt := range readonly {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, found := parsedSource(t, "export function "+fnName+tt.give+" {}\n")
+				assert.Equal(t, codesOf(found), tt.want, "only the readonly of a rest parameter is dropped",
+					assert.EquateEmpty())
 			})
 		}
 

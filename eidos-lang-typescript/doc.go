@@ -19,6 +19,8 @@
 // is the package the frontend loads a file into and the package the
 // backend names a written file's package by. [DeclarationFile]
 // reports a file whose every declaration is implemented elsewhere.
+// [JoinPackage] appends a namespace to a package path, so the frontend
+// and the rules derive one package for a namespace.
 //
 // [Policies] returns the target's lowering policies. Their keys are
 // [Int64], [Absent], [Timestamp], [Bytes] and [Duration], and each choice
@@ -33,6 +35,13 @@
 // can start or continue an identifier. The rules read the names in the
 // literal of a directive and in the value of an enum member with them.
 // spell decides with them whether a name spells bare.
+//
+// The Type constants are the spellings of TypeScript's keyword types,
+// such as [TypeUnknown], and of the global types that the satellite reads
+// or writes, such as [TypePromise]. [KeywordType] and [GlobalType] report
+// a name of either group. The rules resolve such a name without a
+// declaration in scope, and the backend refuses a reference to a global
+// type that a declaration of the file hides.
 //
 // # Packages
 //

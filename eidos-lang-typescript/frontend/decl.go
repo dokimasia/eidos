@@ -27,15 +27,15 @@ const (
 )
 
 // declaration lowers one declaration into a container: a class, an
-// interface, an enum, a type alias, a function or overload signature,
-// or the variables of a let, const or var statement. outermost is the
-// statement that wraps it, an export or a declare, whose comments are
-// the declaration's. A declaration in an ambient context is stamped
-// typescript.ambient. A declaration signature depth leaves out takes its
-// comments with it. A function's implementation after its overload
-// signatures declares nothing at every depth, and neither does a
-// declaration whose name does not parse or a statement, so a carrier on
-// one refuses.
+// interface, an enum, a type alias, a function or overload signature, or
+// the variables of a let, const or var statement. outermost is the
+// statement that wraps it, an export or a declare, whose comments belong
+// to the declaration. A declaration in an ambient context is stamped
+// typescript.ambient. A declaration that the signature depth leaves out
+// takes its comments with it. The implementation of a function after its
+// overload signatures declares nothing at any depth. Neither does a
+// declaration whose name does not parse, nor a statement, so a carrier on
+// one of them is refused.
 func (l *lowering) declaration(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	overloaded map[string]bool,
 ) {
@@ -97,12 +97,12 @@ func (l *lowering) typeDeclaration(k treesitter.Kind) bool {
 		k == l.v.interfaceDeclaration || k == l.v.enumDeclaration || k == l.v.typeAliasDeclaration
 }
 
-// refuse reports the carriers of a node's comments under
-// [UnaddressedCarrier], naming what the node is: a subject the model
-// cannot address.
+// refuse reports the carriers of the comments of a node under
+// [UnaddressedCarrier]. The node is a subject that the model cannot
+// address, and what describes it.
 func (l *lowering) refuse(outermost treesitter.Node, what string) {
 	parts, _ := l.declParts(outermost)
-	refuseCarriers(l.u, parts.Carriers, what)
+	l.u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, what)
 }
 
 // class lowers a class: abstract where the declaration states it, its type
@@ -121,7 +121,7 @@ func (l *lowering) class(n treesitter.Node, name string, vis symbol.Visibility, 
 		decorators = append(l.decoratorsOf(outermost), decorators...)
 	}
 	st.Annotations = l.decorate(st, decorators)
-	if heritage := l.firstOf(n, l.v.classHeritage); !heritage.IsZero() {
+	if heritage := n.FirstOf(l.v.classHeritage); !heritage.IsZero() {
 		for clause := range heritage.NamedChildren() {
 			switch clause.Kind() {
 			case l.v.extendsClause:
@@ -135,8 +135,8 @@ func (l *lowering) class(n treesitter.Node, name string, vis symbol.Visibility, 
 	return st
 }
 
-// heritage lowers an extends clause's superclass: the expression it
-// names, with the type arguments the clause states.
+// heritage lowers the superclass of an extends clause: the expression that
+// it names, with the type arguments that the clause states.
 func (l *lowering) heritage(clause treesitter.Node) []*node.TypeRef {
 	var out []*node.TypeRef
 	for value := range clause.Children(l.v.fieldValue) {
@@ -147,13 +147,10 @@ func (l *lowering) heritage(clause treesitter.Node) []*node.TypeRef {
 	return out
 }
 
-// typeList lowers each type a clause lists, in order.
+// typeList lowers each type that a clause lists, in order.
 func (l *lowering) typeList(clause treesitter.Node) []*node.TypeRef {
 	var out []*node.TypeRef
-	for t := range clause.NamedChildren() {
-		if t.Kind() == l.v.comment {
-			continue
-		}
+	for t := range clause.Content() {
 		out = append(out, l.typeRef(t))
 	}
 	return out
@@ -170,7 +167,7 @@ func (l *lowering) iface(n treesitter.Node, name string, vis symbol.Visibility, 
 		Name: name, Pos: l.namePos(n), Doc: parts.Docs, Comment: comment, Visibility: vis,
 		TypeParams: l.typeParams(n.Child(l.v.fieldTypeParameters)),
 	}
-	if clause := l.firstOf(n, l.v.extendsTypeClause); !clause.IsZero() {
+	if clause := n.FirstOf(l.v.extendsTypeClause); !clause.IsZero() {
 		for t := range clause.Children(l.v.fieldType) {
 			it.Extends = append(it.Extends, l.typeRef(t))
 		}
@@ -199,9 +196,9 @@ func (l *lowering) stampCalls(subject symbol.Symbol, calls []string, at treesitt
 	}
 }
 
-// mark stamps a key true on a subject, at the position of the source
-// that states the mark. A member of an inline body has no identity a
-// stamp can name, so mark stamps nothing on one.
+// mark stamps a key true on a subject, at the position of the source that
+// states the mark. A member of an inline body has no identity that a stamp
+// can address, so mark stamps nothing on one.
 func (l *lowering) mark(subject symbol.Symbol, key meta.KeyName, at position.Pos) {
 	if l.inline > 0 {
 		return
@@ -209,38 +206,35 @@ func (l *lowering) mark(subject symbol.Symbol, key meta.KeyName, at position.Pos
 	l.u.Graph().Stamp(subject, meta.RawStamp{Key: key, Value: true, Pos: at})
 }
 
-// attach attaches a member's carriers to it. A member of an inline body
-// has no identity a directive can name, so its carriers refuse under
-// [UnaddressedCarrier].
+// attach attaches the carriers of a member to it. A member of an inline
+// body has no identity that a directive can address, so attach refuses its
+// carriers under [UnaddressedCarrier].
 func (l *lowering) attach(member symbol.Symbol, carriers []plugin.Carrier) {
 	if l.inline > 0 {
-		refuseCarriers(l.u, carriers, "a member of an inline object type")
+		l.u.RefuseCarriers(UnaddressedCarrier, carriers, "a member of an inline object type")
 		return
 	}
 	l.u.AttachCarriers(member, carriers, BadCarrier)
 }
 
-// enum lowers an enum, const where the declaration states it: each member
-// a variant, its value verbatim where the member assigns one.
+// enum lowers an enum, which is const where the declaration states it.
+// Each member is a variant, with its value verbatim where the member
+// assigns one.
 func (l *lowering) enum(n treesitter.Node, name string, vis symbol.Visibility, parts plugin.CommentParts,
 	comment string,
 ) *node.Enum {
 	e := &node.Enum{
 		Name: name, Pos: l.namePos(n), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Const: l.token(n, keywordConst),
+		Const: n.HasToken(keywordConst),
 	}
-	body := n.Child(l.v.fieldBody)
-	for member := range body.NamedChildren() {
+	for member := range n.Child(l.v.fieldBody).Content() {
 		var variant *node.EnumVariant
-		switch {
-		case member.Kind() == l.v.comment:
-			continue
-		case member.Kind() == l.v.enumAssignment:
+		if member.Kind() == l.v.enumAssignment {
 			name := member.Child(l.v.fieldName)
 			variant = &node.EnumVariant{
 				Name: l.nameText(name), Pos: name.Pos(), Value: member.Child(l.v.fieldValue).Text(),
 			}
-		default:
+		} else {
 			variant = &node.EnumVariant{Name: l.nameText(member), Pos: member.Pos()}
 		}
 		vparts, vcomment := l.declParts(member)
@@ -280,26 +274,27 @@ func (l *lowering) function(n treesitter.Node, name string, vis symbol.Visibilit
 	returns, promised := l.result(n.Child(l.v.fieldReturnType), true, l.namePos(n))
 	fn := &node.Function{
 		Name: name, Pos: l.namePos(n), Doc: parts.Docs, Comment: comment, Visibility: vis,
-		Async:      promised || l.token(n, keywordAsync),
+		Async:      promised || n.HasToken(keywordAsync),
 		TypeParams: l.typeParams(n.Child(l.v.fieldTypeParameters)),
 		Params:     params,
 		Returns:    returns,
 	}
-	if l.token(n, keywordStar) {
+	if n.HasToken(keywordStar) {
 		l.mark(fn, typescript.GeneratorKey, n.Pos())
 	}
 	return fn
 }
 
-// variables lowers a let, const or var statement: a constant per name a
-// const binds, and a mutable variable per name let and var bind, each
-// with its stated type and its initializer verbatim, each stamped
-// typescript.ambient in an ambient context. Each takes the statement's
-// documentation and trailing comment, and the first takes its carriers.
-// A destructuring pattern binds no single name and declares nothing, so
-// a carrier on a statement of patterns alone refuses.
+// variables lowers a let, const or var statement. Each name that const
+// binds is a constant, and each name that let or var binds is a mutable
+// variable, with its stated type and its initializer verbatim. In an
+// ambient context each is stamped typescript.ambient. Each takes the
+// documentation and the trailing comment of the statement, and the first
+// takes its carriers. A destructuring pattern binds no single name and
+// declares nothing, so a carrier on a statement of patterns alone is
+// refused.
 func (l *lowering) variables(n treesitter.Node, c container, exported bool, outermost treesitter.Node) {
-	constant := l.token(n, keywordConst)
+	constant := n.HasToken(keywordConst)
 	var names []treesitter.Node
 	for declarator := range n.NamedChildren() {
 		name := declarator.Child(l.v.fieldName)
@@ -349,8 +344,8 @@ func (l *lowering) variables(n treesitter.Node, c container, exported bool, oute
 	l.u.AttachCarriers(first, parts.Carriers, BadCarrier)
 }
 
-// namePos returns where a declaration's name is written, and where the
-// declaration starts for one without a name.
+// namePos returns the position of the name of a declaration, and the
+// position of the declaration for one without a name.
 func (l *lowering) namePos(n treesitter.Node) position.Pos {
 	if name := n.Child(l.v.fieldName); !name.IsZero() {
 		return name.Pos()

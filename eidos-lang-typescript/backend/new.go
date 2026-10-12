@@ -8,7 +8,6 @@ import (
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/backend"
-	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // memberIndent is the indentation of a class member's statements, two
@@ -16,19 +15,18 @@ import (
 // member is one level inside its class.
 const memberIndent = "  "
 
-// New returns the TypeScript rendering backend: the module's
-// declared pieces composed through the kernel's kit, implementing
-// [plugin.Backend] and [plugin.Renderer] both. Its spoke is
-// [spell.Type], which spells a type of another language under the
-// target's lowering policies, [typescript.Policies]. Rendered files
+// New returns the TypeScript rendering backend: the module's declared
+// pieces composed through the kernel's kit into a [backend.Backend]. Its
+// spoke is [spell.Type], which spells a type of another language under
+// the target's lowering policies, [typescript.Policies]. Rendered files
 // finalise through the shared normalizer, which strips trailing
 // whitespace and blank-line runs and keeps the templates' spelling
 // otherwise, because the module does not include a printer and
 // hermeticity refuses a printer that the machine provides.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the seven kind templates: 1,767 allocations.
-func New() plugin.Backend {
+// and the seven kind templates: 1,788 allocations.
+func New() backend.Backend {
 	return backend.New(typescript.Name, typescript.Target, typescript.Syntax()).
 		Version(typescript.Version).
 		FileTemplate(FileTemplate).
@@ -45,6 +43,7 @@ func New() plugin.Backend {
 		Scaffold(Scaffold).
 		MemberIndent(memberIndent).
 		Imports(Imports).
+		TemplateImport(TemplateImport).
 		Finalise(textfmt.Normalize).
 		Build()
 }

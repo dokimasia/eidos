@@ -32,10 +32,12 @@ const (
 	unparsedCode = "TYPESCRIPT-0001"
 )
 
-// newAllocs is the frontend New returns: the frontend's state with its
-// two vocabularies and its parse hook, the version, the syntax's two,
-// and the kit's five, its list of key registrations included.
-const newAllocs = 4 + 1 + 2 + 5
+// newAllocs is the frontend that New returns: the state of the frontend
+// with its two vocabularies and its parse hook, the three closures of the
+// comment walk of each vocabulary, the version, the two of the syntax, the
+// test-file classifier, and the five of the kit, its list of key
+// registrations included.
+const newAllocs = 4 + 2*3 + 1 + 2 + 1 + 5
 
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
@@ -232,6 +234,7 @@ func tsTree() fstest.MapFS {
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	return frontend.New(), &frontendtest.Fixture{
 		Sources:    tsTree(),
+		Empty:      fstest.MapFS{"empty/empty.ts": {Data: []byte("export {};\n")}},
 		Signatures: []string{depRoot},
 		Dropped: []symbol.Identity{
 			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},

@@ -21,7 +21,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The packages of the fixture's modules.
+// The packages of the modules of the fixture.
 const (
 	aFile      = "fx/a.ts"
 	aPkg       = "fx/a"
@@ -33,20 +33,19 @@ const (
 	outsideLib = "outside-lib"
 )
 
-// The names of the fixture's declarations that the cases read.
+// The names of the declarations of the fixture that the cases read.
 const (
-	rowName       = "Row"
-	targetName    = "Target"
-	derivedName   = "Derived"
-	readerName    = "Reader"
-	signalName    = "Signal"
-	loadName      = "load"
-	rowsName      = "rows"
-	abortSignal   = "AbortSignal"
-	numberName    = "number"
-	stringName    = "string"
-	wordCheck     = "check"
-	derivedPascal = "RowCheck"
+	rowName     = "Row"
+	targetName  = "Target"
+	derivedName = "Derived"
+	readerName  = "Reader"
+	signalName  = "Signal"
+	loadName    = "load"
+	rowsName    = "rows"
+	abortSignal = "AbortSignal"
+	promiseName = "Promise"
+	numberName  = "number"
+	stringName  = "string"
 )
 
 // rulesAllocs is the allocation count of one projection pass over the
@@ -58,16 +57,13 @@ const (
 // in part.
 const rulesAllocs = 462
 
-// The allocations of a signature's classification and a derived name.
-const (
-	// returnRolesAllocs counts the list of the roles of the returns.
-	returnRolesAllocs = 1
-	// typeNameAllocs counts the word in Pascal case and the joined name.
-	typeNameAllocs = 2
-)
+// returnRolesAllocs is the allocation count of the classification of a
+// signature. The classification allocates the list of the roles of its
+// returns.
+const returnRolesAllocs = 1
 
-// The identities of the fixture's declarations that more than one case
-// compares.
+// The identities of the declarations of the fixture that more than one
+// case compares.
 var (
 	rowID     = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: rowName, Kind: symbol.KindStruct}
 	targetID  = symbol.Identity{Lang: typescript.Lang, Package: depPkg, Name: targetName, Kind: symbol.KindStruct}
@@ -75,9 +71,9 @@ var (
 )
 
 // fixtureTree is the TypeScript source that the cases project. It has a
-// module that exercises every rule, the module that it imports a class
-// from, a barrel that re-exports, the modules behind the barrel, and a
-// script that declares into the global scope.
+// module that exercises every rule, the module from which it imports a
+// class, a barrel that re-exports declarations, the modules that the barrel
+// re-exports, and a script that declares into the global scope.
 var fixtureTree = fstest.MapFS{
 	aFile: {Data: []byte(`import { Target } from "./dep/d";
 import * as dep from "./dep/d";
@@ -335,14 +331,13 @@ export default Again;
 // allocCall is one measured call that an allocation test and a benchmark
 // share.
 type allocCall struct {
-	name     string // the measured method, which is also the benchmark's name
+	name     string // the measured method, which is also the name of the benchmark
 	caseName string // the case of a method with more than one call
 	allocs   uint64 // the allocation ceiling
 	call     func()
 	check    func(tb assert.TB) // checks the result that the call leaves
-	// bench measures a case whose ceiling only a benchmark checks, in
-	// place of call. No list that an allocation test reads contains such
-	// a case.
+	// bench replaces call for a case whose ceiling only a benchmark
+	// checks. No list that an allocation test reads contains such a case.
 	bench func(b *testing.B)
 }
 
@@ -541,34 +536,11 @@ func TestRules(t *testing.T) {
 			assert.Equal(t, model, rules.ErrorsRaised, "a TypeScript callable throws without declaring it")
 		})
 	})
-
-	t.Run("TypeName", func(t *testing.T) {
-		t.Parallel()
-
-		tests := []struct {
-			name string
-			word string
-			base string
-			want string
-		}{
-			{name: "joins the word in Pascal case onto the base", word: wordCheck, base: rowName, want: derivedPascal},
-			{name: "keeps a base as the author wrote it", word: wordCheck, base: "httpRow", want: "httpRowCheck"},
-			{name: "keeps a word in Pascal case", word: "Mock", base: rowName, want: "RowMock"},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				assert.Equal(t, tsrules.New().TypeName(tt.word, tt.base), tt.want,
-					"TypeName returns the joined name")
-			})
-		}
-	})
 }
 
 // TestRulesAllocs checks that the classifications allocate only the list
-// of roles, and that a derived name allocates only the name. The ordinary
-// test run runs no benchmark, so this test checks the ceilings.
+// of roles. The ordinary test run runs no benchmark, so this test checks
+// the ceilings.
 func TestRulesAllocs(t *testing.T) {
 	checkAllocs(t, rulesCalls())
 }
@@ -576,7 +548,7 @@ func TestRulesAllocs(t *testing.T) {
 // BenchmarkRules measures each classification of the TypeScript rules,
 // and runs the four hot projections over the fixture tree under their
 // ceiling. Only -bench checks the ceiling of the projections, because
-// the pass builds the fixture's view.
+// the pass builds the view of the fixture.
 func BenchmarkRules(b *testing.B) {
 	benchCalls(b, append(rulesCalls(), allocCall{
 		name: "New", caseName: "the projections of the fixture tree",
@@ -599,7 +571,6 @@ func rulesCalls() []allocCall {
 		policy rules.MemberPolicy
 		role   rules.ParamRole
 		roles  []rules.ReturnRole
-		name   string
 	)
 	return []allocCall{
 		{
@@ -633,14 +604,6 @@ func rulesCalls() []allocCall {
 			call:   func() { roles, _ = r.ReturnRoles(rets, rules.View{}) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, roles, []rules.ReturnRole{rules.ReturnValue}, "ReturnRoles classifies the value")
-			},
-		},
-		{
-			name:   "TypeName",
-			allocs: typeNameAllocs,
-			call:   func() { name = r.TypeName(wordCheck, rowName) },
-			check: func(tb assert.TB) {
-				assert.Equal(tb, name, derivedPascal, "TypeName joins the word onto the base")
 			},
 		},
 	}
@@ -717,10 +680,10 @@ func loaded(tb assert.TB) *fixture {
 	_, f := setup(tb)
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
-	assert.NoError(tb, err, "the sealed graph hands out a reader")
+	assert.NoError(tb, err, "the sealed graph returns a reader")
 	return &fixture{
 		Fixture: f, reads: reads,
-		view: rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys},
+		view: rules.NewView(reader, f.Facts, reads, f.Keys),
 	}
 }
 
@@ -735,7 +698,7 @@ func (f *fixture) decl(tb assert.TB, pkg, name string, kind symbol.Kind) symbol.
 	return sym
 }
 
-// function returns a function of the fixture's module a by its name.
+// function returns a function of the module a of the fixture by its name.
 func (f *fixture) function(tb assert.TB, name string) *node.Function {
 	tb.Helper()
 
@@ -751,7 +714,7 @@ func (f *fixture) function(tb assert.TB, name string) *node.Function {
 	return found
 }
 
-// class returns a class of the fixture's module a.
+// class returns a class of the module a of the fixture.
 func (f *fixture) class(tb assert.TB, name string) *node.Struct {
 	tb.Helper()
 
@@ -760,7 +723,7 @@ func (f *fixture) class(tb assert.TB, name string) *node.Struct {
 	return class
 }
 
-// field returns a field of a class of the fixture's module a.
+// field returns a field of a class of the module a of the fixture.
 func (f *fixture) field(tb assert.TB, host, name string) *node.Field {
 	tb.Helper()
 

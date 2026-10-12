@@ -8,67 +8,68 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/symbol"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The TypeScript toolchain's spellings.
+// The spellings of the TypeScript toolchain.
 const (
 	tscBinary  = "tsc"
 	nodeBinary = "node"
 	configFile = "tsconfig.json"
-	// buildDir is where a test run emits JavaScript: a directory no
-	// generated path uses, left out of the project's own sources.
+	// scratchPattern names the scratch directory of a laid-out project.
+	scratchPattern = "eidos-ts-*"
+	// buildDir is the directory into which a test run emits JavaScript.
+	// No generated path uses it, and the project leaves it out of its own
+	// sources.
 	buildDir = "eidos-build"
 	// testModule ends the emitted name of a test module.
 	testModule = ".test.js"
-	// dirPerm and filePerm keep the scratch project private to the
-	// user running the check.
-	dirPerm  = 0o700
-	filePerm = 0o600
-	// errorMark opens the code of every error tsc reports, and
+	// errorMark opens the code of every error that tsc reports, and
 	// codeEnd closes it.
 	errorMark = "error TS"
 	codeEnd   = ":"
-	// syntaxClass and configClass open a four-digit code of the parser
-	// or the grammar check, TS1005 among them, and of the project
+	// syntaxClass and configClass open the four-digit codes of the parser
+	// and the grammar check, TS1005 among them, and of the project
 	// configuration, which leaves nothing parsed.
 	syntaxClass = '1'
 	configClass = '5'
 	classDigits = 4
-	// probeFile is the module the satisfaction check writes and
+	// probeFile is the module that the satisfaction check writes and
 	// removes.
 	probeFile = "zz-eidos-probe.ts"
 )
 
-// unassignable are the checker's codes for a type that does not
-// satisfy a contract: not assignable, sharing no property, missing
-// several properties, missing many, and missing one.
+// unassignable are the codes of the checker for a type that does not
+// satisfy a contract: not assignable, sharing no property, missing several
+// properties, missing many, and missing one.
 var unassignable = []string{"2322", "2559", "2739", "2740", "2741"}
 
-// The tap reporter's summary lines, which the tally reads.
+// The summary lines of the tap reporter, which the tally reads.
 const (
 	tapPass    = "# pass "
 	tapFail    = "# fail "
 	tapSkipped = "# skipped "
 )
 
-// config is the project configuration a fixture stating none is laid
-// out with: strict checking, CommonJS output into [buildDir] so node
-// runs the emitted tests, and no ambient type package, because a
-// scratch project installs none.
+// config is the project configuration of a fixture that states none. It
+// checks strictly, refuses an unused local, an unused parameter and an
+// undefined written into an optional property, and emits CommonJS into
+// [buildDir], so node runs the emitted tests. It names no ambient type
+// package, because a scratch project installs none.
 const config = `{
   "compilerOptions": {
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
     "target": "es2022",
     "module": "commonjs",
     "outDir": "` + buildDir + `",
@@ -81,72 +82,51 @@ const config = `{
 }
 `
 
-// runTimeout bounds one toolchain invocation, so a compiler that
-// never returns fails the check with an error and leaves the suite
-// running.
-const runTimeout = 5 * time.Minute
-
-// adapter drives tsc and node over generated TypeScript. It has no
-// state, so one value serves every check.
+// adapter drives tsc and node over generated TypeScript. It has no state,
+// so one value serves every check.
 type adapter struct{}
 
 // New returns the TypeScript toolchain adapter.
 func New() toolchain.Adapter { return adapter{} }
 
-// Lang returns [typescript.Lang], which the kernel's assertions name
-// in their failure messages.
+// Lang returns [typescript.Lang], with which the messages of the
+// assertions of the kernel start.
 func (adapter) Lang() symbol.Lang { return typescript.Lang }
 
-// Available reports whether tsc and node are both on PATH, and names
-// the first binary it did not find.
-func (adapter) Available() (bool, string) {
-	for _, binary := range []string{tscBinary, nodeBinary} {
-		if _, err := exec.LookPath(binary); err != nil {
-			return false, fmt.Sprintf("%s is not on PATH: %v", binary, err)
-		}
-	}
-	return true, ""
-}
+// Available reports whether tsc and node are both on PATH, and names the
+// first binary that it did not find.
+func (adapter) Available() (bool, string) { return toolchain.LookPaths(tscBinary, nodeBinary) }
 
-// Layout writes the generated output as a project in a scratch
-// directory: every file at its own path, and a tsconfig.json at the
-// root unless the output has one there already. A write that fails,
-// a path escaping the directory among them, returns an error and
-// removes the directory.
+// Layout writes the generated output as a project in a scratch directory.
+// Every file is at its own path, and a tsconfig.json is at the root unless
+// the output has one there. A write that fails, such as the write of a
+// path that leaves the directory, returns an error and removes the
+// directory.
 func (adapter) Layout(g toolchain.Generated) (string, error) {
-	dir, err := os.MkdirTemp("", "eidos-ts-*")
-	if err != nil {
-		return "", fmt.Errorf("testing: %w", err)
-	}
-	for path, body := range g.Files {
-		if err := write(dir, path, body); err != nil {
-			return "", errors.Join(err, os.RemoveAll(dir))
-		}
-	}
-	if _, stated := g.Files[configFile]; !stated {
-		if err := write(dir, configFile, []byte(config)); err != nil {
-			return "", errors.Join(err, os.RemoveAll(dir))
-		}
-	}
-	return dir, nil
+	return toolchain.Scratch(scratchPattern, g, map[string][]byte{configFile: []byte(config)})
 }
 
-// Parse reads the project's syntax through tsc and returns the
-// diagnostics of the parser and the grammar check alone, so a type
-// error passes and a syntax error names its file and position. It
-// returns an error for a configuration tsc cannot read, and for a
-// project with no TypeScript file, because a parse of nothing proves
-// nothing. TypeScript has no parser in Go, so the parse needs the
-// toolchain, and a caller passes [toolchain.Require] first. Parse reads
-// tsc's diagnostics and not its exit status, which a type error sets.
-// A tsc that does not run to its exit, such as a tsc that is not on
-// PATH, returns its error. A context that ends stops tsc, and Parse
-// returns an error that wraps the context's error.
+// Parse reads the syntax of the project through tsc and returns the
+// diagnostics of the parser and the grammar check alone, so a type error
+// passes and a syntax error names its file and position. It returns an
+// error for a configuration that tsc cannot read, and for a project
+// without a TypeScript file, because a parse of nothing proves nothing.
+// TypeScript has no parser in Go, so the parse needs the toolchain, and a
+// caller passes [toolchain.Require] first.
+//
+// Parse reads the diagnostics of tsc and not its exit status, which a type
+// error sets. Parse returns the error of a tsc that does not run to its
+// exit, such as a tsc that is not on PATH. A context that ends stops tsc,
+// and Parse returns an error that wraps the error of the context.
 func (adapter) Parse(ctx context.Context, dir string) error {
-	if err := hasSource(dir); err != nil {
+	sources, err := toolchain.Sources(dir, []string{typescript.Extension}, buildDir)
+	if err != nil {
 		return err
 	}
-	out, err := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+	if len(sources) == 0 {
+		return errors.New("testing: the laid-out project has no TypeScript file to parse")
+	}
+	out, err := toolchain.Run(ctx, dir, nil, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
 	if _, exited := errors.AsType[*exec.ExitError](err); err != nil && !exited {
 		return err
 	}
@@ -162,39 +142,33 @@ func (adapter) Parse(ctx context.Context, dir string) error {
 	return nil
 }
 
-// TypeCheck checks the project against TypeScript's strict type rules
-// with tsc and emits nothing. The error contains tsc's output.
+// TypeCheck checks the project against the strict type rules of TypeScript
+// with tsc and emits nothing. The error contains the output of tsc.
 func (adapter) TypeCheck(ctx context.Context, dir string) error {
-	_, err := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+	_, err := toolchain.Run(ctx, dir, nil, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
 	return err
 }
 
-// RunTests emits the project into [buildDir] and runs every emitted
-// test module, a source named *.test.ts, with node's test runner. The
-// counts read off the runner's tap summary. A type error does not stop
-// the run, because tsc emits past one and [TypeCheck] reports it. A
-// project that emits no test module returns an empty report, which
-// fails the kernel's assertion. A context that ends stops tsc or node,
-// and RunTests returns an error that wraps the context's error.
+// RunTests emits the project into [buildDir] and runs every emitted test
+// module, a source named *.test.ts, with the test runner of node. The
+// counts come from the tap summary of the runner. A type error does not
+// stop the run, because tsc emits past one and [TypeCheck] reports it. A
+// project that emits no test module returns an empty report, which fails
+// the assertion of the kernel. A context that ends stops tsc or node, and
+// RunTests returns an error that wraps the error of the context.
 func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, error) {
-	emitted, err := run(ctx, dir, tscBinary, "-p", dir, "--pretty", "false")
+	emitted, err := toolchain.Run(ctx, dir, nil, tscBinary, "-p", dir, "--pretty", "false")
 	if err != nil && ctx.Err() != nil {
 		return toolchain.TestReport{Output: emitted}, err
 	}
-	var tests []string
-	err = filepath.WalkDir(filepath.Join(dir, buildDir), func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.HasSuffix(path, testModule) {
-			tests = append(tests, path)
-		}
-		return err
-	})
+	tests, err := toolchain.Sources(filepath.Join(dir, buildDir), []string{testModule})
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return toolchain.TestReport{Output: emitted}, err
 	}
 	if len(tests) == 0 {
 		return toolchain.TestReport{Output: emitted}, nil
 	}
-	out, err := run(ctx, dir, nodeBinary, append([]string{"--test", "--test-reporter=tap"}, tests...)...)
+	out, err := toolchain.Run(ctx, dir, nil, nodeBinary, append([]string{"--test", "--test-reporter=tap"}, tests...)...)
 	report := tally(out)
 	if err != nil && report.Failed == 0 {
 		// node exited with an error and reported no failed test.
@@ -203,50 +177,59 @@ func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, 
 	return report, nil
 }
 
-// Satisfies asks tsc whether one type is assignable to one contract,
-// which is satisfaction under TypeScript's structural typing: a probe
-// module assigns a value of the type to a binding of the contract and
-// the project is checked again. Both are type expressions resolved at
-// the project's root, so a type another module declares is spelled
-// import("./row").Row. A probe that tsc refuses with assignability
-// codes alone reports false. Any other refusal returns an error, and
-// so does a project that does not type-check without the probe.
+// Satisfies asks tsc whether one type is assignable to one contract, which
+// is satisfaction under the structural typing of TypeScript. A probe
+// module assigns a value of the type to a binding of the contract, and tsc
+// checks the project again. Both are type expressions that resolve at the
+// root of the project, so a type that another module declares is spelled
+// import("./row").Row.
+//
+// A probe that tsc refuses with assignability codes alone reports false.
+// Satisfies returns an error for any other refusal, with the source of the
+// probe, and for a project that does not type-check without the probe.
 func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
 	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the project does not type-check, so nothing can be asked of it: %w", err)
 	}
-	probe := filepath.Join(dir, probeFile)
 	source := "export const eidosProbe: " + contract + " = undefined as unknown as " + typeName + ";\n"
-	if err := os.WriteFile(probe, []byte(source), filePerm); err != nil {
-		return false, fmt.Errorf("testing: %w", err)
+	var (
+		out      string
+		checkErr error
+	)
+	err := toolchain.Probe(dir, probeFile, source, func() error {
+		out, checkErr = toolchain.Run(ctx, dir, nil, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	defer func() { _ = os.Remove(probe) }()
-
-	out, checkErr := run(ctx, dir, tscBinary, "-p", dir, "--noEmit", "--pretty", "false")
 	if checkErr == nil {
 		return true, nil
 	}
 	found := diagnostics(out)
 	for _, d := range found {
 		if !slices.Contains(unassignable, d.code) {
-			return false, fmt.Errorf("the probe does not type-check for a reason other than the contract: %w", checkErr)
+			return false, fmt.Errorf(
+				"the probe does not type-check for a reason other than the contract: %w\nthe probe is:\n%s",
+				checkErr, source)
 		}
 	}
 	if len(found) == 0 {
-		return false, fmt.Errorf("the probe does not type-check and tsc names no error: %w", checkErr)
+		return false, fmt.Errorf("the probe does not type-check and tsc names no error: %w\nthe probe is:\n%s",
+			checkErr, source)
 	}
 	return false, nil
 }
 
-// diagnostic is one error line tsc printed, and the code it names.
+// diagnostic is one error line that tsc printed, and the code of the error.
 type diagnostic struct {
 	code string
 	line string
 }
 
-// diagnostics returns the error lines of tsc's output with their
-// codes, in the order tsc printed them. A continuation line, which
-// explains the error above it, names no code and is left out.
+// diagnostics returns the error lines of the output of tsc with their
+// codes, in the order in which tsc printed them. It leaves out a
+// continuation line, which explains the error above it and has no code.
 func diagnostics(out string) []diagnostic {
 	var found []diagnostic
 	for line := range strings.Lines(out) {
@@ -260,81 +243,9 @@ func diagnostics(out string) []diagnostic {
 	return found
 }
 
-// hasSource returns an error for a project with no TypeScript file
-// outside [buildDir].
-func hasSource(dir string) error {
-	found := false
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || found {
-			return err
-		}
-		if d.IsDir() && d.Name() == buildDir {
-			return filepath.SkipDir
-		}
-		found = !d.IsDir() && filepath.Ext(path) == typescript.Extension
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if !found {
-		return errors.New("testing: the laid-out project has no TypeScript file to parse")
-	}
-	return nil
-}
-
-// write writes one fixture file under the scratch directory, and
-// returns an error for a path that climbs out of it.
-func write(dir, path string, body []byte) error {
-	target := filepath.Join(dir, filepath.FromSlash(path))
-	rel, err := filepath.Rel(dir, target)
-	if err != nil {
-		return fmt.Errorf("testing: %w", err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("the generated path %q climbs out of the scratch project", path)
-	}
-	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-		return fmt.Errorf("testing: %w", err)
-	}
-	if err := os.WriteFile(target, body, filePerm); err != nil {
-		return fmt.Errorf("testing: %w", err)
-	}
-	return nil
-}
-
-// run runs one toolchain binary in dir under ctx and returns its
-// combined output. A failure wraps that output, so the error contains
-// what the tool reported. The run is bounded by [runTimeout] as well,
-// and a run that ctx or the bound ends returns an error that wraps the
-// context's error.
-func run(ctx context.Context, dir, binary string, args ...string) (string, error) {
-	bounded, cancel := context.WithTimeout(ctx, runTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(bounded, binary, args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctx.Err() != nil {
-			return string(out), fmt.Errorf(
-				"testing: %s %s stopped with its caller: %w", binary, strings.Join(args, " "), ctx.Err(),
-			)
-		}
-		if bounded.Err() != nil {
-			return string(out), fmt.Errorf(
-				"testing: %s %s did not return within %s: %w",
-				binary, strings.Join(args, " "), runTimeout, bounded.Err(),
-			)
-		}
-		return string(out), fmt.Errorf("%s %s: %w\n%s", binary, strings.Join(args, " "), err, out)
-	}
-	return string(out), nil
-}
-
-// tally reads the case counts off the tap reporter's summary lines.
-// node reports each test module and each test inside one as a case,
-// so a module without a test call counts once.
+// tally reads the case counts from the summary lines of the tap reporter.
+// node reports each test module and each test inside one as a case, so a
+// module without a test call counts once.
 func tally(stream string) toolchain.TestReport {
 	report := toolchain.TestReport{Output: stream}
 	for line := range strings.Lines(stream) {
@@ -351,8 +262,8 @@ func tally(stream string) toolchain.TestReport {
 	return report
 }
 
-// count reads the number after a summary line's label, and zero for a
-// line whose number does not read.
+// count reads the number after the label of a summary line, and returns
+// zero for a line whose number does not parse.
 func count(line, label string) int {
 	n, err := strconv.Atoi(strings.TrimPrefix(line, label))
 	if err != nil {

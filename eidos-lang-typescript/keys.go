@@ -10,33 +10,39 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// namespace is the metadata namespace every typescript key registers
-// under.
+// namespace is the metadata namespace of every typescript key.
 const namespace = "typescript"
 
-// The satellite's classification keys, which the frontend stamps.
+// GeneratedMark is the text that the generators of the ecosystem write into
+// the first comment of a file that they generate.
+const GeneratedMark = "@generated"
+
+// The frontend stamps these classification keys of the satellite.
 const (
-	// TestFileKey classifies a file Jest's default match names a test:
-	// one under a __tests__ directory, one named test or spec, and one
-	// whose name ends in .test or .spec before its extension.
+	// TestFileKey marks a file that the default match of Jest finds as a
+	// test: one under a __tests__ directory, one named test or spec, and
+	// one whose name ends in .test or .spec before its extension.
 	TestFileKey meta.KeyName = "typescript.testFile"
 
-	// NamespaceKey records, on the package a namespace declares, the
-	// namespace's dotted name as the file spells it, such as A.B.
+	// GeneratedKey records the first comment of a file as written, where
+	// the comment contains [GeneratedMark].
+	GeneratedKey meta.KeyName = "typescript.generated"
+
+	// NamespaceKey records the dotted name of a namespace, such as A.B, on
+	// the package that the namespace declares.
 	NamespaceKey meta.KeyName = "typescript.namespace"
 
-	// CallSignatureKey records the call signatures of an interface or
-	// of the object type an alias names, each as written, because the
-	// model has no member for a callable object.
+	// CallSignatureKey records the call signatures of an interface or of
+	// the object type of an alias as written. The model has no member for
+	// a callable object.
 	CallSignatureKey meta.KeyName = "typescript.callSignature"
 
-	// AmbientKey marks a declaration whose implementation is elsewhere:
-	// one a declare statement or a declare block states, and every
-	// declaration of a declaration file.
+	// AmbientKey marks a declaration whose implementation is elsewhere,
+	// such as one in a declare block or in a declaration file.
 	AmbientKey meta.KeyName = "typescript.ambient"
 
-	// GeneratorKey marks a generator function or method, which its *
-	// declares, because the model has no generator mark.
+	// GeneratorKey marks a generator function or method, which has a *
+	// before its name. The model has no generator mark.
 	GeneratorKey meta.KeyName = "typescript.generator"
 
 	// DefiniteAssignmentKey marks a property declared with !, which its
@@ -44,40 +50,37 @@ const (
 	// neither optional nor initialized in its declaration.
 	DefiniteAssignmentKey meta.KeyName = "typescript.definiteAssignment"
 
-	// ParameterPropertyKey marks a constructor parameter that declares
-	// a field, and the field it declares, so the parameter list and the
-	// field list each state which entry is both.
+	// ParameterPropertyKey marks a constructor parameter that declares a
+	// field, and the field that the parameter declares. A reader of the
+	// parameter list or the field list finds the entries that are both.
 	ParameterPropertyKey meta.KeyName = "typescript.parameterProperty"
-
-	// OptionalKey marks a method declared with ?, which a value of its
-	// type may lack, because the model's method has no optional mark.
-	OptionalKey meta.KeyName = "typescript.optional"
-
-	// ReadonlyKey marks an index signature declared readonly, whose
-	// entries a holder of the value cannot assign.
-	ReadonlyKey meta.KeyName = "typescript.readonly"
 )
 
 // Keys claims the typescript namespace and registers every typescript
-// key, in the form a composition and a corpus fixture declare them.
-// It returns the claim's error, or every registration's error joined.
+// key. A composition and a corpus fixture call it to declare the keys. It
+// returns the error of the claim, or the joined errors of every
+// registration.
 //
 // # Allocation contract
 //
-// Keys allocates the nine kind lists of the keys, and the registry
-// allocates its namespace claim and the growth of its lists and maps to
-// nine keys: 24 allocations into a fresh registry.
+// Keys allocates the eight kind lists of the keys. The registry allocates
+// its namespace claim and the growth of its lists and maps to eight keys.
+// A registration into a fresh registry allocates 18 times.
 func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err
 	}
 	_, testErr := meta.Register[bool](r, meta.KeySpec{
 		Name: TestFileKey, Kinds: []symbol.Kind{symbol.KindFile},
-		Doc: "marks a file Jest's default match names a test",
+		Doc: "marks a file that the default match of Jest finds as a test",
+	})
+	_, generatedErr := meta.Register[string](r, meta.KeySpec{
+		Name: GeneratedKey, Kinds: []symbol.Kind{symbol.KindFile},
+		Doc: "records the first comment of a file that a foreign generator wrote",
 	})
 	_, namespaceErr := meta.Register[string](r, meta.KeySpec{
 		Name: NamespaceKey, Kinds: []symbol.Kind{symbol.KindPackage},
-		Doc: "records the dotted name of the namespace a package declares",
+		Doc: "records the dotted name of the namespace that a package declares",
 	})
 	_, callErr := meta.Register[[]string](r, meta.KeySpec{
 		Name: CallSignatureKey, Kinds: []symbol.Kind{symbol.KindInterface, symbol.KindAlias},
@@ -101,16 +104,8 @@ func Keys(r *meta.Registry) error {
 	})
 	_, propertyErr := meta.Register[bool](r, meta.KeySpec{
 		Name: ParameterPropertyKey, Kinds: []symbol.Kind{symbol.KindField, symbol.KindParam},
-		Doc: "marks a constructor parameter that declares a field, and the field it declares",
+		Doc: "marks a constructor parameter that declares a field, and the field that it declares",
 	})
-	_, optionalErr := meta.Register[bool](r, meta.KeySpec{
-		Name: OptionalKey, Kinds: []symbol.Kind{symbol.KindMethod},
-		Doc: "marks a method declared with ?, which a value of its type may lack",
-	})
-	_, readonlyErr := meta.Register[bool](r, meta.KeySpec{
-		Name: ReadonlyKey, Kinds: []symbol.Kind{symbol.KindMethod},
-		Doc: "marks an index signature declared readonly",
-	})
-	return errors.Join(testErr, namespaceErr, callErr, ambientErr, generatorErr, definiteErr, propertyErr,
-		optionalErr, readonlyErr)
+	return errors.Join(testErr, generatedErr, namespaceErr, callErr, ambientErr, generatorErr, definiteErr,
+		propertyErr)
 }

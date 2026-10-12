@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -118,11 +119,32 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "no block")
 		})
 	})
+
+	t.Run("TemplateImport", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("binds the declaration that the template names", func(t *testing.T) {
+			t.Parallel()
+
+			local, item, ok := backend.TemplateImport(codecModule, codecName)
+			expect.True(t, ok, "a named import binds a name")
+			expect.Equal(t, local, codecName, "the import binds the name of the declaration")
+			expect.Equal(t, item, codecName, "the name refers to the declaration of that name")
+		})
+
+		t.Run("reports false for an import without a name", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, ok := backend.TemplateImport(sideEffect, "")
+			assert.False(t, ok, "an import for the effects of a module does not bind a name")
+		})
+	})
 }
 
 // A block allocates the sorted entries and the block itself, and an
-// empty set allocates nothing. The ordinary run, which runs no
-// benchmark, checks those ceilings here.
+// empty set allocates nothing. The binding of a template's import
+// allocates nothing. The ordinary run, which runs no benchmark, checks
+// those ceilings here.
 func TestImportsAllocs(t *testing.T) {
 	checkAllocs(t, importsCalls())
 }
@@ -156,6 +178,11 @@ func importsCalls() []allocCall {
 			name: "Imports", caseName: "an empty set",
 			call:  func() { out = backend.Imports(&empty) },
 			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+		{
+			name: "TemplateImport", caseName: "a named import",
+			call:  func() { out, _, _ = backend.TemplateImport(codecModule, codecName) },
+			check: func(tb assert.TB) { assert.Equal(tb, out, codecName, "TemplateImport binds the name") },
 		},
 	}
 }

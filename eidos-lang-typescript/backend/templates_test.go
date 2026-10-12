@@ -54,7 +54,7 @@ func TestTemplates(t *testing.T) {
 
 			s := &emit.Struct{Doc: []string{"Row is one record."}, Name: rowName}
 			s.Fields.Append(&emit.Field{Doc: []string{"Key addresses the row."}, Name: "key", Type: ref("string")})
-			s.Methods.Append(&emit.Method{Name: "load", Returns: []*emit.Return{{Type: ref(rowName)}}})
+			s.Methods.Append(&emit.Method{Name: "load", Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"/**\n * Row is one record.\n */\n"+
 					"export class Row {\n"+
@@ -81,8 +81,8 @@ func TestTemplates(t *testing.T) {
 
 			i := &emit.Interface{Name: "Store"}
 			i.Methods.Append(&emit.Method{
-				Name: "load", Params: []*emit.Param{{Name: "key", Type: ref("string")}},
-				Returns: []*emit.Return{{Type: ref(rowName)}},
+				Name: "load", Params: emit.SlotOf(&emit.Param{Name: "key", Type: ref("string")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Store {\n  load(key: string): Row;\n}\n",
@@ -95,8 +95,8 @@ func TestTemplates(t *testing.T) {
 			i := &emit.Interface{Name: "Store"}
 			i.Methods.Append(
 				&emit.Method{
-					Name: "get", Async: true, Params: []*emit.Param{{Name: "key", Type: ref("string")}},
-					Returns: []*emit.Return{{Type: ref(rowName)}},
+					Name: "get", Async: true, Params: emit.SlotOf(&emit.Param{Name: "key", Type: ref("string")}),
+					Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 				},
 				&emit.Method{Name: "flush", Async: true},
 			)
@@ -110,7 +110,7 @@ func TestTemplates(t *testing.T) {
 
 			s := &emit.Struct{Name: rowName, Abstract: true}
 			s.Methods.Append(&emit.Method{
-				Name: "pick", Abstract: true, Async: true, Returns: []*emit.Return{{Type: ref(rowName)}},
+				Name: "pick", Abstract: true, Async: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"export abstract class Row {\n  abstract pick(): Promise<Row>;\n}\n",
@@ -120,7 +120,7 @@ func TestTemplates(t *testing.T) {
 		t.Run("writes a function around its body", func(t *testing.T) {
 			t.Parallel()
 
-			f := &emit.Function{Name: "load", Returns: []*emit.Return{{Type: ref(rowName)}}}
+			f := &emit.Function{Name: "load", Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})}
 			assert.Equal(t, execute(t, kind(symbol.KindFunction), f),
 				"export function load(): Row {\n"+bodyStub+"}\n", "the function shape")
 		})
@@ -172,8 +172,8 @@ func TestTemplates(t *testing.T) {
 			i := &emit.Interface{Name: "Store", Comment: "read side"}
 			i.Methods.Append(&emit.Method{
 				Name: "get", Comment: "by key",
-				Params:  []*emit.Param{{Name: "key", Type: ref("string"), Comment: "the row key"}},
-				Returns: []*emit.Return{{Type: ref("string"), Comment: "the row"}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("string"), Comment: "the row key"}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("string"), Comment: "the row"}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Store {\n"+
@@ -214,8 +214,8 @@ func TestTemplates(t *testing.T) {
 			s.Methods.Append(&emit.Method{
 				Name:       "map",
 				TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
-				Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
-				Returns:    []*emit.Return{{Type: ref("U")}},
+				Params:     emit.SlotOf(&emit.Param{Name: "item", Type: ref("U")}),
+				Returns:    emit.SlotOf(&emit.Return{Type: ref("U")}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"export class Box<T> {\n"+
@@ -233,8 +233,8 @@ func TestTemplates(t *testing.T) {
 				TypeParams: []*emit.TypeParam{{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}}},
 			}
 			i.Methods.Append(&emit.Method{
-				Name: "pick", Params: []*emit.Param{{Name: "key", Type: ref("K")}},
-				Returns: []*emit.Return{{Type: ref("K")}},
+				Name: "pick", Params: emit.SlotOf(&emit.Param{Name: "key", Type: ref("K")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("K")}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Keyed<K extends Codec> {\n  pick(key: K): K;\n}\n", "the bound behind extends")
@@ -246,8 +246,8 @@ func TestTemplates(t *testing.T) {
 			f := &emit.Function{
 				Name:       "sort",
 				TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
-				Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
-				Returns:    []*emit.Return{{Type: ref("T")}},
+				Params:     emit.SlotOf(&emit.Param{Name: "items", Type: ref("T")}),
+				Returns:    emit.SlotOf(&emit.Return{Type: ref("T")}),
 			}
 			assert.Equal(t, execute(t, kind(symbol.KindFunction), f),
 				"export function sort<T extends Codec>(items: T): T {\n"+bodyStub+"}\n", "the bound behind extends")
@@ -282,7 +282,7 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			i := &emit.Interface{Name: "Store", Extends: []*emit.TypeRef{ref("Keyed"), ref("Closer")}}
-			i.Methods.Append(&emit.Method{Name: "get", Returns: []*emit.Return{{Type: ref("string")}}})
+			i.Methods.Append(&emit.Method{Name: "get", Returns: emit.SlotOf(&emit.Return{Type: ref("string")})})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Store extends Keyed, Closer {\n  get(): string;\n}\n", "comma-joined")
 		})
@@ -296,8 +296,11 @@ func TestTemplates(t *testing.T) {
 				Mutability: symbol.MutabilityImmutable, Type: ref("string"), Value: `"r"`,
 			})
 			s.Methods.Append(
-				&emit.Method{Name: "load", Async: true, Override: true, Returns: []*emit.Return{{Type: ref(rowName)}}},
-				&emit.Method{Name: "pick", Abstract: true, Returns: []*emit.Return{{Type: ref(rowName)}}},
+				&emit.Method{
+					Name: "load", Async: true, Override: true,
+					Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
+				},
+				&emit.Method{Name: "pick", Abstract: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})},
 			)
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"@injectable\n"+
@@ -321,7 +324,7 @@ func TestTemplates(t *testing.T) {
 		t.Run("writes an async function's result as a promise", func(t *testing.T) {
 			t.Parallel()
 
-			f := &emit.Function{Name: "load", Async: true, Returns: []*emit.Return{{Type: ref(rowName)}}}
+			f := &emit.Function{Name: "load", Async: true, Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)})}
 			assert.Equal(t, execute(t, kind(symbol.KindFunction), f),
 				"export async function load(): Promise<Row> {\n"+bodyStub+"}\n", "async behind export")
 		})
@@ -350,12 +353,75 @@ func TestTemplates(t *testing.T) {
 				"export class Cache {\n  #store: Map;\n}\n", "the privacy in the name")
 		})
 
+		t.Run("writes a parsed hard-private method with its # and without private", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Cache"}
+			s.Methods.Append(&emit.Method{Name: "#flush", Hard: true, Visibility: symbol.VisibilityPrivate})
+			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
+				"export class Cache {\n  #flush(): void {\n"+bodyStub+"  }\n}\n",
+				"TypeScript allows no accessibility beside a # name")
+		})
+
+		t.Run("writes a ? after the key of an optional class method", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Cache"}
+			s.Methods.Append(&emit.Method{Name: "flush", Optional: true})
+			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
+				"export class Cache {\n  flush?(): void {\n"+bodyStub+"  }\n}\n", "an instance may lack the method")
+		})
+
+		t.Run("writes a computed method key as written", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Cache"}
+			s.Methods.Append(&emit.Method{
+				Name: computedKey, Computed: true,
+				Returns: emit.SlotOf(&emit.Return{Type: ref("Iterator")}),
+			})
+			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
+				"export class Cache {\n  [Symbol.iterator](): Iterator {\n"+bodyStub+"  }\n}\n",
+				"the key is the expression in its brackets")
+		})
+
+		t.Run("writes readonly before a class's immutable index signature", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Cache"}
+			s.Methods.Append(&emit.Method{
+				Name: indexName, Indexer: true, Mutability: symbol.MutabilityImmutable,
+				Params:  emit.SlotOf(&emit.Param{Name: keyName, Type: ref("string")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("number")}),
+			})
+			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
+				"export class Cache {\n  readonly [key: string]: number;\n}\n", "a holder cannot assign the entries")
+		})
+
+		t.Run("writes the optional, readonly and computed members of an interface", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: "Store"}
+			i.Fields.Append(&emit.Field{Name: "[key]", Computed: true, Type: ref("string")})
+			i.Methods.Append(
+				&emit.Method{Name: "run", Optional: true},
+				&emit.Method{
+					Name: indexName, Indexer: true, Mutability: symbol.MutabilityImmutable,
+					Params:  emit.SlotOf(&emit.Param{Name: keyName, Type: ref("string")}),
+					Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
+				},
+			)
+			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
+				"export interface Store {\n  [key]: string;\n  run?(): void;\n  readonly [key: string]: Row;\n}\n",
+				"each member keeps its fact")
+		})
+
 		t.Run("writes a getter behind its keyword", func(t *testing.T) {
 			t.Parallel()
 
 			s := &emit.Struct{Name: "Cache"}
 			s.Methods.Append(&emit.Method{
-				Name: "size", Accessor: symbol.AccessorGet, Returns: []*emit.Return{{Type: ref("number")}},
+				Name: "size", Accessor: symbol.AccessorGet, Returns: emit.SlotOf(&emit.Return{Type: ref("number")}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"export class Cache {\n  get size(): number {\n"+bodyStub+"  }\n}\n", "the getter shape")
@@ -366,7 +432,8 @@ func TestTemplates(t *testing.T) {
 
 			s := &emit.Struct{Name: "Cache"}
 			s.Methods.Append(&emit.Method{
-				Name: "size", Accessor: symbol.AccessorSet, Params: []*emit.Param{{Name: "n", Type: ref("number")}},
+				Name: "size", Accessor: symbol.AccessorSet,
+				Params: emit.SlotOf(&emit.Param{Name: "n", Type: ref("number")}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"export class Cache {\n  set size(n: number) {\n"+bodyStub+"  }\n}\n", "the setter shape")
@@ -415,7 +482,9 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			i := &emit.Interface{Name: "Rows"}
-			i.Methods.Append(&emit.Method{Name: "make", Constructs: true, Returns: []*emit.Return{{Type: ref("Rows")}}})
+			i.Methods.Append(&emit.Method{
+				Name: "make", Constructs: true, Returns: emit.SlotOf(&emit.Return{Type: ref("Rows")}),
+			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Rows {\n  new (): Rows;\n}\n", "behind new")
 		})
@@ -448,7 +517,7 @@ func TestTemplates(t *testing.T) {
 			s := &emit.Struct{Name: "Store"}
 			s.Methods.Append(&emit.Method{
 				Name: "make", Constructs: true, Visibility: symbol.VisibilityProtected,
-				Params: []*emit.Param{{Name: "db", Type: ref("Db")}},
+				Params: emit.SlotOf(&emit.Param{Name: "db", Type: ref("Db")}),
 			})
 			assert.Contains(t, execute(t, kind(symbol.KindStruct), s), "protected constructor(db: Db) {",
 				"the name and results dropped, because the language grants neither")
@@ -638,7 +707,7 @@ func refused(t *testing.T, src string, data any) error {
 func indexer() *emit.Method {
 	return &emit.Method{
 		Name: "index", Indexer: true,
-		Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
-		Returns: []*emit.Return{{Type: ref(rowName)}},
+		Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("string")}),
+		Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 	}
 }

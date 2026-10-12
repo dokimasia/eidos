@@ -19,15 +19,9 @@ import (
 // derived one is null, which a JSON-shaped value takes.
 var leaves = scaffold.Leaves{
 	Lang:   typescript.Lang,
-	Absent: "null",
+	Absent: typescript.TypeNull,
 	Quote:  quote,
 }
-
-// The global array types, whose values are array literals.
-const (
-	arrayType         = "Array"
-	readonlyArrayType = "ReadonlyArray"
-)
 
 // target spells a value tree as TypeScript, importing through the
 // file's import set what its references and callees name.
@@ -74,7 +68,7 @@ func (t target) Composite(
 ) (string, error) {
 	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray || ref.Form == symbol.FormTuple ||
 		ref.Form == symbol.FormNamed && ref.Target.IsZero() && ref.Package == "" &&
-			(ref.Spelling == arrayType || ref.Spelling == readonlyArrayType)) {
+			(ref.Spelling == typescript.TypeArray || ref.Spelling == typescript.TypeReadonlyArray)) {
 
 		parts := make([]string, 0, len(entries))
 		for _, e := range entries {

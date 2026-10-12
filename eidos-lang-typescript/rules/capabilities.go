@@ -6,18 +6,15 @@ package rules
 import (
 	"slices"
 
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// unknownSpelling is TypeScript's top type, which is the witness of a
-// type parameter without a bound. constructorName is the name of a
-// class's constructor, and of the implicit constructor too.
-const (
-	unknownSpelling = "unknown"
-	constructorName = "constructor"
-)
+// constructorName is the name of a class's constructor, and of the
+// implicit constructor too.
+const constructorName = "constructor"
 
 // Derive returns the witness of a type parameter. The witness of a
 // parameter with one bound is the bound, which every admitted type
@@ -32,156 +29,8 @@ func (Rules) Derive(p *node.TypeParam, _ rules.View) (*node.TypeRef, bool) {
 	case len(p.Bounds) == 1 && p.Bounds[0] != nil:
 		return p.Bounds[0], true
 	default:
-		return &node.TypeRef{Spelling: unknownSpelling}, true
+		return &node.TypeRef{Spelling: typescript.TypeUnknown}, true
 	}
-}
-
-// Substitute restates a reference with each type parameter replaced by
-// its argument. A named reference without arguments becomes a copy of
-// the argument at a parameter's position when it resolved to the
-// parameter. It also becomes the copy when it resolved to nothing and
-// has the parameter's name. Substitute restates the children of a
-// structural reference, the arguments of an instantiation, and the field
-// types and method signatures of an inline object type. It copies what it
-// rewrites, and returns a reference that does not refer to a parameter
-// unchanged, with its children.
-//
-// # Allocation contract
-//
-// Substitute allocates a copy of each reference on the path to a
-// replaced parameter, and a copy of each list that contains such a
-// reference. It also allocates a copy of each member of an inline object
-// type that refers to a parameter. A reference that does not refer to a
-// parameter, and an empty parameter list, allocate nothing.
-func (r Rules) Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef {
-	if ref == nil || len(params) == 0 || len(params) != len(args) {
-		return ref
-	}
-	if ref.Form == symbol.FormNamed && len(ref.Args) == 0 {
-		for i, p := range params {
-			if p != nil && args[i] != nil &&
-				(!ref.Target.IsZero() && ref.Target == p.ID || ref.Target.IsZero() && ref.Spelling == p.Name) {
-
-				c := *args[i]
-				return &c
-			}
-		}
-	}
-	elems, elemsBound := r.substituteAll(ref.Elems, params, args)
-	bound, argsBound := r.substituteAll(ref.Args, params, args)
-	fields, fieldsBound := r.substituteFields(ref.Fields, params, args)
-	methods, methodsBound := r.substituteMethods(ref.Methods, params, args)
-	if !elemsBound && !argsBound && !fieldsBound && !methodsBound {
-		return ref
-	}
-	c := *ref
-	c.Elems, c.Args, c.Fields, c.Methods = elems, bound, fields, methods
-	return &c
-}
-
-// substituteAll restates a list of references, and reports whether any
-// of them refers to a parameter. It returns a list without such a
-// reference unchanged. The first restated reference copies the list.
-func (r Rules) substituteAll(
-	refs []*node.TypeRef, params []*node.TypeParam, args []*node.TypeRef,
-) ([]*node.TypeRef, bool) {
-	var out []*node.TypeRef
-	for i, ref := range refs {
-		restated := r.Substitute(ref, params, args)
-		if restated != ref && out == nil {
-			out = slices.Clone(refs)
-		}
-		if out != nil {
-			out[i] = restated
-		}
-	}
-	if out == nil {
-		return refs, false
-	}
-	return out, true
-}
-
-// substituteFields restates the fields of an inline object type, and
-// reports whether the type of any field refers to a parameter. It
-// returns a list without such a field unchanged. A restated field copies
-// the field, and the first one also copies the list.
-func (r Rules) substituteFields(
-	fields []*node.Field, params []*node.TypeParam, args []*node.TypeRef,
-) ([]*node.Field, bool) {
-	var out []*node.Field
-	for i, f := range fields {
-		if f == nil {
-			continue
-		}
-		restated := r.Substitute(f.Type, params, args)
-		if restated == f.Type {
-			continue
-		}
-		if out == nil {
-			out = slices.Clone(fields)
-		}
-		c := *f
-		c.Type = restated
-		out[i] = &c
-	}
-	if out == nil {
-		return fields, false
-	}
-	return out, true
-}
-
-// substituteMethods restates the signatures of the methods of an inline
-// object type, and reports whether any signature refers to a parameter.
-// It returns a list without such a method unchanged. A restated method
-// copies the method, and the first one also copies the list.
-func (r Rules) substituteMethods(
-	methods []*node.Method, params []*node.TypeParam, args []*node.TypeRef,
-) ([]*node.Method, bool) {
-	var out []*node.Method
-	for i, m := range methods {
-		if m == nil {
-			continue
-		}
-		var types []*node.TypeRef
-		for _, p := range m.Params {
-			if p != nil {
-				types = append(types, p.Type)
-			}
-		}
-		for _, ret := range m.Returns {
-			if ret != nil {
-				types = append(types, ret.Type)
-			}
-		}
-		if _, named := r.substituteAll(types, params, args); !named {
-			continue
-		}
-		if out == nil {
-			out = slices.Clone(methods)
-		}
-		c := *m
-		c.Params = make([]*node.Param, 0, len(m.Params))
-		for _, p := range m.Params {
-			if p != nil {
-				pc := *p
-				pc.Type = r.Substitute(p.Type, params, args)
-				c.Params = append(c.Params, &pc)
-			}
-		}
-		c.Returns = make([]*node.Return, 0, len(m.Returns))
-		for _, ret := range m.Returns {
-			if ret != nil {
-				rc := *ret
-				rc.Type = r.Substitute(ret.Type, params, args)
-				c.Returns = append(c.Returns, &rc)
-			}
-		}
-		out[i] = &c
-	}
-	if out == nil {
-		return methods, false
-	}
-	return out, true
 }
 
 // Reified reports false, because TypeScript erases type arguments. A
@@ -267,7 +116,7 @@ func (r Rules) Constructors(s *node.Struct, v rules.View) []rules.Callable {
 			c, _ := b.CallableOf(m)
 			for i := range c.Params {
 				for _, f := range slices.Backward(frames) {
-					c.Params[i].Ref = r.Substitute(c.Params[i].Ref, f.params, f.args)
+					c.Params[i].Ref = rules.Substitute(c.Params[i].Ref, f.params, f.args)
 				}
 			}
 			if out == nil {

@@ -22,25 +22,12 @@ import (
 // identity, as every satellite's refusals open.
 const refusalPrefix = string(typescript.Lang) + ": "
 
-// The builtin and global types that the TypeScript spoke writes.
-const (
-	numberType        = "number"
-	booleanType       = "boolean"
-	stringType        = "string"
-	unknownType       = "unknown"
-	neverType         = "never"
-	voidType          = "void"
-	recordType        = "Record"
-	partialType       = "Partial"
-	mapType           = "Map"
-	asyncIterableType = "AsyncIterable"
-)
-
 // The syntax that the TypeScript spoke writes. A parameter of an arrow
 // type writes its type after paramTypeSep, and a group is an operand in
 // parentheses.
 const (
 	listMark        = "[]"
+	readonlyWord    = "readonly "
 	tupleOpen       = "["
 	tupleClose      = "]"
 	unionSep        = " | "
@@ -71,9 +58,13 @@ const (
 //   - a list as T[], an array of a stated length as a tuple of that many
 //     elements, a tuple as a tuple, a union as a union and an
 //     intersection as an intersection;
+//   - an immutable list, array or tuple with readonly before it, such as
+//     readonly T[];
 //   - a map as Record<K, V> where the spoke spells the key as string or
 //     as number, as Partial<Record<K, V>> for an enum key, and as
 //     Map<K, V> otherwise;
+//   - an immutable map as Readonly<Record<K, V>>, as
+//     Readonly<Partial<Record<K, V>>> and as ReadonlyMap<K, V>;
 //   - a function type as an arrow type whose parameters are p0, p1 and
 //     so on, which returns void without a result and a tuple of two or
 //     more results;
@@ -87,8 +78,10 @@ const (
 //     arguments, which TypeScript writes in angle brackets.
 //
 // Inside a list, an optional, a union and an intersection, the spoke
-// writes a union, an intersection and a function type in parentheses. A
-// global type that the spoke writes does not need an import.
+// writes a union, an intersection and a function type in parentheses.
+// Inside a list, it also writes an immutable list or tuple in
+// parentheses. A global type that the spoke writes does not need an
+// import.
 //
 // Type refuses a synchronous stream, a wildcard with a lower bound, an
 // inline type and an opaque type, because TypeScript has no spelling of
@@ -119,11 +112,11 @@ func tsType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 	case symbol.FormScalar:
 		return scalar(s, p)
 	case symbol.FormBool:
-		return &emit.TypeRef{Spelling: booleanType}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeBoolean}, nil
 	case symbol.FormText:
-		return &emit.TypeRef{Spelling: stringType}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeString}, nil
 	case symbol.FormDynamic:
-		return &emit.TypeRef{Spelling: unknownType}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeUnknown}, nil
 	case symbol.FormBytes:
 		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Bytes))}, nil
 	case symbol.FormOptional, symbol.FormList, symbol.FormBorrow:
@@ -137,17 +130,17 @@ func tsType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 	case symbol.FormFunc:
 		return function(s, spell)
 	case symbol.FormStream:
-		switch {
-		case !s.Async:
+		if !s.Async {
 			return nil, fmt.Errorf("%s has no TypeScript spelling", spoke.Describe(s))
-		case len(s.Elems) != 1:
-			return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
+		}
+		if err := spoke.Arity(s, 1); err != nil {
+			return nil, err
 		}
 		elems, err := spoke.Children(s.Elems, spell)
 		if err != nil {
 			return nil, err
 		}
-		return &emit.TypeRef{Spelling: asyncIterableType, Args: elems}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeAsyncIterable, Args: elems}, nil
 	case symbol.FormWildcard:
 		return wildcard(s, spell)
 	case symbol.FormReference, symbol.FormSum:
@@ -163,9 +156,9 @@ func tsType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 func scalar(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 	switch {
 	case s.Class == rules.ScalarFloat:
-		return &emit.TypeRef{Spelling: numberType}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeNumber}, nil
 	case s.Bits == 8 || s.Bits == 16 || s.Bits == 32:
-		return &emit.TypeRef{Spelling: numberType}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeNumber}, nil
 	case s.Bits == 64 || s.Bits == 0:
 		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Int64))}, nil
 	default:
@@ -174,13 +167,15 @@ func scalar(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 }
 
 // container spells a form of one child: an optional as a union of its
-// type and the choice of [typescript.Absent], a list as T[], and a borrow
-// as its type.
+// type and the choice of [typescript.Absent], a list as T[] with readonly
+// before an immutable one, and a borrow as its type. The [] of a list
+// binds tighter than the readonly of its child, so an immutable list or
+// tuple inside a list is in parentheses.
 func container(
 	s rules.TypeShape, p plugin.Policy, spell func(rules.TypeShape) (*emit.TypeRef, error),
 ) (*emit.TypeRef, error) {
-	if len(s.Elems) != 1 {
-		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
+	if err := spoke.Arity(s, 1); err != nil {
+		return nil, err
 	}
 	child, err := spoke.Child(s.Elems[0], spell)
 	if err != nil {
@@ -190,8 +185,15 @@ func container(
 	case symbol.FormBorrow:
 		return child, nil
 	case symbol.FormList:
+		elem := grouped(child)
+		if child.Mutability == symbol.MutabilityImmutable &&
+			(child.Form == symbol.FormList || child.Form == symbol.FormTuple) {
+
+			elem = groupOpen + elem + groupClose
+		}
 		return &emit.TypeRef{
-			Spelling: grouped(child) + listMark, Form: symbol.FormList, Elems: []*emit.TypeRef{child},
+			Spelling: readonly(s, elem+listMark), Form: symbol.FormList, Mutability: s.Mutability,
+			Elems: []*emit.TypeRef{child},
 		}, nil
 	default:
 		// The spoke writes an optional as a union of its child and the
@@ -205,13 +207,14 @@ func container(
 }
 
 // tuple spells an array of a stated length as a tuple of that many
-// elements. It refuses an array of an unstated length.
+// elements, with readonly before an immutable one. It refuses an array of
+// an unstated length.
 func tuple(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
-	switch {
-	case s.Length == 0:
+	if s.Length == 0 {
 		return nil, errors.New("an array of an unstated length has no TypeScript spelling")
-	case len(s.Elems) != 1:
-		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
+	}
+	if err := spoke.Arity(s, 1); err != nil {
+		return nil, err
 	}
 	repeated := make([]rules.TypeShape, s.Length)
 	for i := range repeated {
@@ -222,11 +225,13 @@ func tuple(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)
 		return nil, err
 	}
 	return &emit.TypeRef{
-		Spelling: tupleOpen + joined(elems, listSep, false) + tupleClose, Form: symbol.FormTuple, Elems: elems,
+		Spelling: readonly(s, tupleOpen+joined(elems, listSep, false)+tupleClose), Form: symbol.FormTuple,
+		Mutability: s.Mutability, Elems: elems,
 	}, nil
 }
 
-// members spells a tuple, a union or an intersection from its members.
+// members spells a tuple, a union or an intersection from its members. An
+// immutable tuple has readonly before it.
 func members(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
 	elems, err := spoke.Children(s.Elems, spell)
 	if err != nil {
@@ -235,43 +240,53 @@ func members(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, erro
 	var text string
 	switch s.Form {
 	case symbol.FormTuple:
-		text = tupleOpen + joined(elems, listSep, false) + tupleClose
+		text = readonly(s, tupleOpen+joined(elems, listSep, false)+tupleClose)
 	case symbol.FormUnion:
 		text = joined(elems, unionSep, true)
 	default:
 		text = joined(elems, intersectionSep, true)
 	}
-	return &emit.TypeRef{Spelling: text, Form: s.Form, Elems: elems}, nil
+	return &emit.TypeRef{Spelling: text, Form: s.Form, Mutability: s.Mutability, Elems: elems}, nil
 }
 
 // mapOf spells a map as a record where the spoke spells the key as
 // string or as number. It spells a map of an enum key as a partial
-// record, and every other map as Map.
+// record, and every other map as Map. An immutable record is inside
+// Readonly, and an immutable Map is a ReadonlyMap.
 func mapOf(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
-	if len(s.Elems) != 2 {
-		return nil, fmt.Errorf("a map takes two children, a key and a value, and the shape has %d", len(s.Elems))
+	if err := spoke.Arity(s, 2); err != nil {
+		return nil, err
 	}
 	elems, err := spoke.Children(s.Elems, spell)
 	if err != nil {
 		return nil, err
 	}
 	key := s.Elems[0]
+	var record *emit.TypeRef
 	switch {
 	case (key.Form == symbol.FormReference || key.Form == symbol.FormSum) && key.Ref.Kind == symbol.KindEnum:
-		return &emit.TypeRef{Spelling: partialType, Args: []*emit.TypeRef{{Spelling: recordType, Args: elems}}}, nil
-	case elems[0].Spelling == stringType || elems[0].Spelling == numberType:
-		return &emit.TypeRef{Spelling: recordType, Args: elems}, nil
+		record = &emit.TypeRef{
+			Spelling: typescript.TypePartial, Args: []*emit.TypeRef{{Spelling: typescript.TypeRecord, Args: elems}},
+		}
+	case elems[0].Spelling == typescript.TypeString || elems[0].Spelling == typescript.TypeNumber:
+		record = &emit.TypeRef{Spelling: typescript.TypeRecord, Args: elems}
+	case s.Mutability == symbol.MutabilityImmutable:
+		return &emit.TypeRef{Spelling: typescript.TypeReadonlyMap, Args: elems}, nil
 	default:
-		return &emit.TypeRef{Spelling: mapType, Args: elems}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeMap, Args: elems}, nil
 	}
+	if s.Mutability == symbol.MutabilityImmutable {
+		return &emit.TypeRef{Spelling: typescript.TypeReadonly, Args: []*emit.TypeRef{record}}, nil
+	}
+	return record, nil
 }
 
 // function spells a function type as an arrow type with the parameters
 // p0, p1 and so on. The arrow type returns void without a result, the
 // result for one result, and a tuple of the results for two or more.
 func function(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
-	if s.Split < 0 || s.Split > len(s.Elems) {
-		return nil, fmt.Errorf("a function type splits its %d children at %d", len(s.Elems), s.Split)
+	if err := spoke.Split(s); err != nil {
+		return nil, err
 	}
 	elems, err := spoke.Children(s.Elems, spell)
 	if err != nil {
@@ -279,14 +294,15 @@ func function(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 	}
 	params := make([]string, s.Split)
 	for i, e := range elems[:s.Split] {
-		params[i] = paramName + strconv.Itoa(i) + paramTypeSep + spellref.Spell(e, argsOpener, argsCloser, unknownType)
+		params[i] = paramName + strconv.Itoa(i) + paramTypeSep +
+			spellref.Spell(e, argsOpener, argsCloser, typescript.TypeUnknown)
 	}
 	var result string
 	switch results := elems[s.Split:]; len(results) {
 	case 0:
-		result = voidType
+		result = typescript.TypeVoid
 	case 1:
-		result = spellref.Spell(results[0], argsOpener, argsCloser, unknownType)
+		result = spellref.Spell(results[0], argsOpener, argsCloser, typescript.TypeUnknown)
 	default:
 		result = tupleOpen + joined(results, listSep, false) + tupleClose
 	}
@@ -301,7 +317,7 @@ func function(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 func wildcard(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
 	switch {
 	case len(s.Elems) == 0:
-		return &emit.TypeRef{Spelling: unknownType}, nil
+		return &emit.TypeRef{Spelling: typescript.TypeUnknown}, nil
 	case s.Variance == symbol.VarianceIn:
 		return nil, errors.New("a wildcard with a lower bound has no TypeScript spelling")
 	}
@@ -323,7 +339,8 @@ func reference(
 		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Duration))}, nil
 	case rules.WellKnownEmpty:
 		return &emit.TypeRef{
-			Spelling: recordType, Args: []*emit.TypeRef{{Spelling: stringType}, {Spelling: neverType}},
+			Spelling: typescript.TypeRecord,
+			Args:     []*emit.TypeRef{{Spelling: typescript.TypeString}, {Spelling: typescript.TypeNever}},
 		}, nil
 	}
 	args, err := spoke.Children(s.Args, spell)
@@ -331,6 +348,15 @@ func reference(
 		return nil, err
 	}
 	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
+}
+
+// readonly returns text with readonly before it where the shape s is
+// immutable, and text alone otherwise.
+func readonly(s rules.TypeShape, text string) string {
+	if s.Mutability == symbol.MutabilityImmutable {
+		return readonlyWord + text
+	}
+	return text
 }
 
 // joined returns the spellings of refs joined by sep, each in
@@ -342,7 +368,7 @@ func joined(refs []*emit.TypeRef, sep string, group bool) string {
 		if group {
 			parts[i] = grouped(r)
 		} else {
-			parts[i] = spellref.Spell(r, argsOpener, argsCloser, unknownType)
+			parts[i] = spellref.Spell(r, argsOpener, argsCloser, typescript.TypeUnknown)
 		}
 	}
 	return strings.Join(parts, sep)
@@ -353,7 +379,7 @@ func joined(refs []*emit.TypeRef, sep string, group bool) string {
 // function type in parentheses, because the operator around the operand
 // binds tighter than they do.
 func grouped(t *emit.TypeRef) string {
-	spelled := spellref.Spell(t, argsOpener, argsCloser, unknownType)
+	spelled := spellref.Spell(t, argsOpener, argsCloser, typescript.TypeUnknown)
 	switch t.Form {
 	case symbol.FormUnion, symbol.FormIntersection, symbol.FormFunc:
 		return groupOpen + spelled + groupClose

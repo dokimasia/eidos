@@ -200,15 +200,16 @@ func TestDecl(t *testing.T) {
 		t.Run("stamps nothing on a member of an inline object type", func(t *testing.T) {
 			t.Parallel()
 
-			gb, _ := parsedSource(t, "export type T = { run?(): void; a: string };\n")
-			assert.Empty(t, gb.StampRecords(), "no identity names the member")
+			gb, found := parsedSource(t, "export type T = { *items(): Iterable<number>; a: string };\n")
+			assert.Empty(t, found, "the generator method of the inline body parses")
+			assert.Empty(t, gb.StampRecords(), "no identity addresses the member")
 		})
 
 		t.Run("stamps a member declared after an inline object type", func(t *testing.T) {
 			t.Parallel()
 
-			gb, i := ifaceBuilt(t, "  a: { b: string };\n  run?(): void;\n")
-			_, stamped := stampOn(gb, i.Methods[0], typescript.OptionalKey)
+			gb, i := ifaceBuilt(t, "  a: { b: string };\n  *items(): Iterable<number>;\n")
+			_, stamped := stampOn(gb, i.Methods[0], typescript.GeneratorKey)
 			assert.True(t, stamped, "the inline body ends before the method")
 		})
 	})

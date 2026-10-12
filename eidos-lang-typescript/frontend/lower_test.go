@@ -18,34 +18,108 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The packages the namespace cases declare into.
+// The packages into which the namespace cases declare.
 const (
 	nsPackage    = aPackage + "/A/B"
 	outerPackage = aPackage + "/A"
 	modulePkg    = "lib"
 )
 
-// The statement walk decides which package each declaration is in and
-// what the module publishes, so its rules are pinned.
+// moreSyntax is the pattern of the finding that counts the syntax errors
+// past the cap.
+const moreSyntax = `^and \d+ more syntax errors$`
+
+// The statement walk decides the package of each declaration and what the
+// module publishes. The cases pin its rules, the sweep over the comments
+// that no declaration takes, and the findings of syntax errors.
 func TestLower(t *testing.T) {
 	t.Parallel()
 
 	t.Run("lower", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("declares a script's declarations into the global package", func(t *testing.T) {
+		t.Run("declares the declarations of a script into the global package", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "class A {}\n")
 			assert.Equal(t, packagePaths(gb), []string{""}, "a file without import or export is a script")
 		})
 
-		t.Run("lowers a script's declarations as public", func(t *testing.T) {
+		t.Run("lowers the declarations of a script as public", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "class A {}\n")
 			assert.Equal(t, fileIn(t, gb, "").Decls[0].(*node.Struct).Visibility, symbol.VisibilityPublic,
-				"the global scope is every file's")
+				"every file shares the global scope")
+		})
+
+		t.Run("reports UnaddressedCarrier for a carrier that no declaration takes", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, carrierLine+"\nexport class A {}\n")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
+				"a blank line separates the carrier from the class")
+		})
+
+		t.Run("reports UnaddressedCarrier for a carrier in a namespace that no declaration takes", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export namespace N {\n  "+carrierLine+"\n  export class A {}\n}\n")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
+				"the block of a namespace contains declarations, and the carrier is on none of them")
+		})
+
+		t.Run("reports UnaddressedCarrier for a carrier in a class body that no member takes", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export class A {\n  a = 1;\n\n  "+carrierLine+"\n  b = 2;\n}\n")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "the carrier is on no member")
+		})
+
+		t.Run("reports UnparsedFile at a syntax error", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export class A {\n  a: = ;\n}\n")
+			assert.NotEmpty(t, found, "the error reports")
+			assert.Equal(t, found[0].Code, frontend.UnparsedFile, "the code of a syntax error")
+			assert.Equal(t, found[0].Pos.Line, 2, "the line of the error")
+		})
+
+		t.Run("reports a missing token as missing", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export let x = (1;\n")
+			assert.Length(t, found, 1, "one finding")
+			assert.Contains(t, found[0].Msg, "missing", "the parser inserted the parenthesis")
+		})
+
+		t.Run("quotes at most 32 bytes of the source that does not parse", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export class A {\n  "+strings.Repeat("#", 40)+"\n}\n")
+			assert.NotEmpty(t, found, "the error reports")
+			assert.Contains(t, found[0].Msg, strings.Repeat("#", 32)+"...", "the finding cuts the quote")
+		})
+
+		t.Run("reports one finding more than the cap for the syntax errors of a file", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export {};\n"+strings.Repeat("let = ;\n", 20))
+			assert.Length(t, found, plugin.MaxSyntaxFindings+1, "the findings up to the cap and the count of the rest")
+		})
+
+		t.Run("reports the syntax errors past the cap in one finding", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export {};\n"+strings.Repeat("let = ;\n", 20))
+			assert.Matches(t, found[len(found)-1].Msg, moreSyntax, "the last finding counts the rest")
+		})
+
+		t.Run("keeps every declaration that the parser recovers from a broken file", func(t *testing.T) {
+			t.Parallel()
+
+			decls := declsOf(t, "export class A {}\nexport let = ;\nexport class B {}\n")
+			assert.Length(t, decls, 2, "one bad statement does not erase the file")
 		})
 	})
 
@@ -66,8 +140,8 @@ func TestLower(t *testing.T) {
 
 			gb, _ := parsedSource(t, "import D from './d';\nimport * as N from './n';\n")
 			imports := fileIn(t, gb, aPackage).Imports
-			assert.Equal(t, imports[0].Default, "D", "the default's local name")
-			assert.Equal(t, imports[1].Alias, "N", "the namespace's local name")
+			assert.Equal(t, imports[0].Default, "D", "the local name of the default")
+			assert.Equal(t, imports[1].Alias, "N", "the local name of the namespace")
 		})
 
 		t.Run("records an import-require as a namespace import", func(t *testing.T) {
@@ -75,7 +149,7 @@ func TestLower(t *testing.T) {
 
 			gb, _ := parsedSource(t, "import F = require('f');\nexport {};\n")
 			imp := fileIn(t, gb, aPackage).Imports[0]
-			assert.Equal(t, imp.Alias, "F", "the module's local name")
+			assert.Equal(t, imp.Alias, "F", "the local name of the module")
 			assert.Equal(t, imp.Path, "f", "the module")
 		})
 
@@ -100,10 +174,10 @@ func TestLower(t *testing.T) {
 
 			gb, _ := parsedSource(t, "export * as M from './m';\n")
 			b := fileIn(t, gb, aPackage).Exports[0].Names[0]
-			assert.Equal(t, b.Name+" "+b.Alias, "* M", "the module's namespace, published as M")
+			assert.Equal(t, b.Name+" "+b.Alias, "* M", "the namespace of the module, published as M")
 		})
 
-		t.Run("records the default export's local name", func(t *testing.T) {
+		t.Run("records the local name of the default export", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "class A {}\nexport default A;\n")
@@ -121,17 +195,17 @@ func TestLower(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, exportClass)
-			assert.Empty(t, fileIn(t, gb, aPackage).Exports, "the declaration's export is its visibility")
+			assert.Empty(t, fileIn(t, gb, aPackage).Exports, "the export of the declaration is its visibility")
 		})
 
 		t.Run("records an anonymous default export under default", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export default class {}\n")
-			assert.Equal(t, fileIn(t, gb, aPackage).Exports[0].Default, "default", "the class's name is default")
+			assert.Equal(t, fileIn(t, gb, aPackage).Exports[0].Default, "default", "the name of the class is default")
 		})
 
-		t.Run("records a default-exported declaration's name as the default export", func(t *testing.T) {
+		t.Run("records the name of a default-exported declaration as the default export", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export default class Foo {}\n")
@@ -155,14 +229,14 @@ func TestLower(t *testing.T) {
 			})
 		}
 
-		t.Run("skips a comment among an import's names", func(t *testing.T) {
+		t.Run("skips a comment among the names of an import", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "import { A, /* and */ B } from './x';\n")
 			assert.Length(t, fileIn(t, gb, aPackage).Imports[0].Names, 2, "a comment binds nothing")
 		})
 
-		t.Run("skips a comment among an export clause's names", func(t *testing.T) {
+		t.Run("skips a comment among the names of an export clause", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export { A, /* and */ B } from './x';\n")
@@ -173,23 +247,24 @@ func TestLower(t *testing.T) {
 	t.Run("namespace", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("declares a dotted namespace's members into its package below the file's", func(t *testing.T) {
-			t.Parallel()
+		t.Run("declares the members of a dotted namespace into its package below the package of the file",
+			func(t *testing.T) {
+				t.Parallel()
 
-			gb, _ := parsedSource(t, "export namespace A.B {\n  export interface I {}\n}\n")
-			assert.Length(t, fileIn(t, gb, nsPackage).Decls, 1, "the interface is in src/a/A/B")
-		})
+				gb, _ := parsedSource(t, "export namespace A.B {\n  export interface I {}\n}\n")
+				assert.Length(t, fileIn(t, gb, nsPackage).Decls, 1, "the interface is in src/a/A/B")
+			})
 
-		t.Run("stamps a namespace's package with its dotted name", func(t *testing.T) {
+		t.Run("stamps the package of a namespace with its dotted name", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export namespace A.B {}\n")
 			s := gb.StampRecords()[0].Stamp
-			assert.Equal(t, s.Key, typescript.NamespaceKey, "under the namespace key")
+			assert.Equal(t, s.Key, typescript.NamespaceKey, "the namespace key")
 			assert.Equal(t, s.Value, any("A.B"), "the dotted name")
 		})
 
-		t.Run("spells a nested namespace's dotted name through its parent", func(t *testing.T) {
+		t.Run("spells the dotted name of a nested namespace through its parent", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export namespace A {\n  export namespace B {}\n}\n")
@@ -204,15 +279,15 @@ func TestLower(t *testing.T) {
 			assert.Length(t, fileIn(t, gb, outerPackage).Decls, 2, "both classes are in one File node")
 		})
 
-		t.Run("lowers a namespace member it does not export as package-visible", func(t *testing.T) {
+		t.Run("lowers a namespace member that the namespace does not export as package-visible", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export namespace A {\n  class Hidden {}\n}\n")
 			assert.Equal(t, fileIn(t, gb, outerPackage).Decls[0].(*node.Struct).Visibility,
-				symbol.VisibilityPackage, "the namespace alone can name it")
+				symbol.VisibilityPackage, "only the namespace can refer to it")
 		})
 
-		t.Run("lowers an ambient namespace's members as public", func(t *testing.T) {
+		t.Run("lowers the members of an ambient namespace as public", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export declare namespace A {\n  class Shown {}\n}\n")
@@ -220,34 +295,34 @@ func TestLower(t *testing.T) {
 				symbol.VisibilityPublic, "an ambient namespace exports implicitly")
 		})
 
-		t.Run("declares an ambient module's members into the package its name spells", func(t *testing.T) {
+		t.Run("declares the members of an ambient module into the package of its name", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "declare module 'lib' {\n  export interface I {}\n}\nexport {};\n")
-			assert.Length(t, fileIn(t, gb, modulePkg).Decls, 1, "a bare import of lib names it")
+			assert.Length(t, fileIn(t, gb, modulePkg).Decls, 1, "a bare import of lib refers to it")
 		})
 
-		t.Run("declares a module block's members into its namespace package", func(t *testing.T) {
+		t.Run("declares the members of a module block into its namespace package", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export {};\nmodule A.B {\n  export class X {}\n}\n")
 			assert.Length(t, fileIn(t, gb, nsPackage).Decls, 1, "module A.B is namespace A.B")
 		})
 
-		t.Run("declares a script's namespace below the global package", func(t *testing.T) {
+		t.Run("declares the namespace of a script below the global package", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "namespace A {\n  class X {}\n}\n")
-			assert.Length(t, fileIn(t, gb, "A").Decls, 1, "the global package's namespace A")
+			assert.Length(t, fileIn(t, gb, "A").Decls, 1, "the namespace A of the global package")
 		})
 
-		t.Run("leaves out a namespace the module does not export at signature depth", func(t *testing.T) {
+		t.Run("leaves out a namespace that the module does not export at signature depth", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedTree(t, fstest.MapFS{aFile: {Data: []byte(
 				"export {};\nnamespace Hidden {\n  export class X {}\n}\n",
 			)}}, aFile, plugin.DepthSignatures)
-			assert.Equal(t, packagePaths(gb), []string{aPackage}, "no other module can name it")
+			assert.Equal(t, packagePaths(gb), []string{aPackage}, "no other module can refer to it")
 		})
 
 		t.Run("stamps typescript.ambient on a member of a declared namespace", func(t *testing.T) {
@@ -266,19 +341,19 @@ func TestLower(t *testing.T) {
 			assert.True(t, stamped, "an ambient module describes one implemented elsewhere")
 		})
 
-		t.Run("stamps no typescript.ambient on a member of a script's namespace", func(t *testing.T) {
+		t.Run("stamps no typescript.ambient on a member of the namespace of a script", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "namespace A {\n  class X {}\n}\n")
 			_, stamped := stampOn(gb, fileIn(t, gb, "A").Decls[0], typescript.AmbientKey)
-			assert.False(t, stamped, "a script's namespace is public and implemented in place")
+			assert.False(t, stamped, "the namespace of a script is public and implemented in place")
 		})
 	})
 
 	t.Run("ambient", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("declares a declare global block's members into the global package", func(t *testing.T) {
+		t.Run("declares the members of a declare global block into the global package", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export {};\ndeclare global {\n  interface Window { x: number }\n}\n")
@@ -297,80 +372,36 @@ func TestLower(t *testing.T) {
 			assert.Length(t, declsOf(t, "export declare /* the A */ class A {}\n"), 1, "the comment declares nothing")
 		})
 
-		t.Run("stamps typescript.ambient on a declare global block's declaration", func(t *testing.T) {
+		t.Run("stamps typescript.ambient on the declaration of a declare global block", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export {};\ndeclare global {\n  interface Window { x: number }\n}\n")
 			_, stamped := stampOn(gb, fileIn(t, gb, "").Decls[0], typescript.AmbientKey)
-			assert.True(t, stamped, "the block describes the global scope's existing members")
-		})
-	})
-
-	t.Run("reportSyntax", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("reports UnparsedFile at a syntax error", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export class A {\n  a: = ;\n}\n")
-			assert.NotEmpty(t, found, "the error reports")
-			assert.Equal(t, found[0].Code, frontend.UnparsedFile, "under the syntax error code")
-			assert.Equal(t, found[0].Pos.Line, 2, "at the line it is on")
-		})
-
-		t.Run("reports a missing token as missing", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export let x = (1;\n")
-			assert.Length(t, found, 1, "one finding")
-			assert.Contains(t, found[0].Msg, "missing", "the parser inserted the parenthesis")
-		})
-
-		t.Run("quotes at most 32 bytes of the source that does not parse", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export class A {\n  "+strings.Repeat("#", 40)+"\n}\n")
-			assert.NotEmpty(t, found, "the error reports")
-			assert.Contains(t, found[0].Msg, strings.Repeat("#", 32)+"...", "the quote is cut")
-		})
-
-		t.Run("reports at most ten syntax errors and counts the remainder once", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "export {};\n"+strings.Repeat("let = ;\n", 20))
-			assert.Length(t, found, 11, "ten errors and the remainder")
-			assert.Contains(t, found[10].Msg, "more", "the last finding counts the rest")
-		})
-
-		t.Run("keeps every declaration a broken file still parses", func(t *testing.T) {
-			t.Parallel()
-
-			decls := declsOf(t, "export class A {}\nexport let = ;\nexport class B {}\n")
-			assert.Length(t, decls, 2, "one bad statement does not erase the file")
+			assert.True(t, stamped, "the block describes the existing members of the global scope")
 		})
 	})
 
 	t.Run("statements", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports no finding for an import or a comment", func(t *testing.T) {
+		t.Run("reports no finding for the statements that declare nothing", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, "// A comment.\nimport { A } from './a';\n")
-			assert.Empty(t, found, "neither declares anything")
+			assert.Empty(t, found, "neither the comment nor the import declares anything")
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier on a statement", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedSource(t, "export {};\n"+carrierLine+"run();\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a statement is no subject")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a statement is not a subject")
 		})
 	})
 }
 
-// packagePaths returns the paths of a builder's packages, in first
-// touch order.
+// packagePaths returns the paths of the packages of a builder, in the order
+// of first use.
 func packagePaths(gb *plugin.GraphBuilder) []string {
 	pkgs := gb.Packages()
 	out := make([]string, 0, len(pkgs))
