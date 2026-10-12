@@ -46,28 +46,30 @@ var stubSchema = directive.Schema{
 	Doc:    "generates a test double that delegates every method of the interface",
 }
 
-// ComposeStubs returns the TypeScript pipeline fixture's composition
-// over root: the TypeScript frontend and rules, one plan of stubgen
-// toward the TypeScript backend, a disk sink at root and the state
-// directory's ledger under root. stubgen doubles each interface under
-// // +acme:stub, and the directive's tag picks the double's family.
-//
-// It returns the error of Build. The fixture's composition builds
-// without one.
-func ComposeStubs(root string) (*workspace.Workspace, error) {
+// ComposePipeline returns the TypeScript pipeline fixture's composition
+// over root without its plan: the TypeScript frontend and rules, the
+// TypeScript target, a disk sink at root and the state directory's
+// ledger under root.
+func ComposePipeline(root string) *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
 		Frontends(tsfrontend.New()).
 		Rules(tsrules.New()).
 		Targets(typescript.Target).
-		Plans(workspace.Plan{
-			Name:       pipelinePlan,
-			Generators: []plugin.Generator{stubgen()},
-			Backend:    tsbackend.New(),
-		}).
 		Output(func() (output.Sink, error) { return output.NewDisk(root, Brand) }).
-		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) }).
-		Build()
+		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) })
+}
+
+// PipelinePlans returns the one plan of the TypeScript pipeline fixture:
+// stubgen toward the TypeScript backend, with new plugin instances on
+// every call. stubgen doubles each interface under // +acme:stub, and the
+// directive's tag picks the double's family.
+func PipelinePlans() []workspace.Plan {
+	return []workspace.Plan{{
+		Name:       pipelinePlan,
+		Generators: []plugin.Generator{stubgen()},
+		Backend:    tsbackend.New(),
+	}}
 }
 
 // stubgen returns the TypeScript pipeline fixture's generator: for each
@@ -76,11 +78,11 @@ func ComposeStubs(root string) (*workspace.Workspace, error) {
 // primary family and a test family, and the directive's tag picks the
 // family.
 func stubgen() plugin.Generator {
-	return generator(eidos.NewPlugin(stubgenID).
+	return eidos.NewPlugin(stubgenID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: stubWord}).
 		Output(plugin.Output{Tag: string(testTag), Per: plugin.PerSource, Word: stubWord}).
 		Handle(eidos.Directive(stubSchema, eidos.OnInterface(stub))).
-		Build())
+		Generator()
 }
 
 // stub emits the double of one interface into the primary family, and
@@ -105,7 +107,7 @@ func double(name string, m *eidos.InterfaceMatch) *emit.Struct {
 	})
 	ctor := &emit.Method{
 		Origin: m.Interface.ID, Name: constructor, Visibility: symbol.VisibilityPublic, Constructs: true,
-		Params: []*emit.Param{{Name: nextField, Type: iface}},
+		Params: emit.SlotOf(&emit.Param{Name: nextField, Type: iface}),
 	}
 	ctor.Body.Stmts = []emit.Stmt{{
 		Kind:  emit.StmtAssign,
@@ -115,8 +117,8 @@ func double(name string, m *eidos.InterfaceMatch) *emit.Struct {
 	d.Methods.Append(ctor)
 	for _, method := range m.Interface.Methods {
 		mirrored := eidos.Mirror(name, method)
-		args := make([]emit.Expr, 0, len(mirrored.Params))
-		for _, p := range mirrored.Params {
+		args := make([]emit.Expr, 0, mirrored.Params.Len())
+		for _, p := range mirrored.Params.Items() {
 			args = append(args, emit.Expr{Kind: emit.ExprName, Name: p.Name})
 		}
 		callee := emit.Expr{Kind: emit.ExprName, Name: thisReceiver + selector + nextField + selector + mirrored.Name}
@@ -127,15 +129,4 @@ func double(name string, m *eidos.InterfaceMatch) *emit.Struct {
 		d.Methods.Append(mirrored)
 	}
 	return d
-}
-
-// generator returns a built plugin as the generator that its emitter
-// rules make it. Every plugin of the package declares emitter rules, so
-// a plugin that is not a generator is a defect in this package.
-func generator(p plugin.Plugin) plugin.Generator {
-	g, held := p.(plugin.Generator)
-	if !held {
-		panic("typescript: a plugin of emitter rules lowers to a generator")
-	}
-	return g
 }

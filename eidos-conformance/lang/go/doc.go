@@ -12,12 +12,12 @@
 // # Fixtures
 //
 //   - [Corpus] is the entry of Go. It has the Go frontend and rules over a
-//     tree that spells every feature of the inventory except method
-//     overloads, which Go does not have.
-//   - [ComposeStubs] composes the end-to-end fixture. stubgen doubles an
-//     interface under //+acme:stub tag=test, an audit weaver calls audit
-//     first in each method of the double, and the Go backend writes the
-//     double beside its source.
+//     tree that contains a spelling of every feature of the inventory
+//     except method overloads, which Go does not have.
+//   - [ComposePipeline] and [PipelinePlans] compose the end-to-end
+//     fixture. stubgen doubles an interface under //+acme:stub tag=test,
+//     an audit weaver calls audit first in each method of the double, and
+//     the Go backend writes the double beside its source.
 //   - [ComposeWorkspace] and [WorkspacePlans] compose the workspace
 //     fixture. [StubsPlan], scoped to svc, doubles the interfaces under the
 //     stub directive. The registry plan, scoped to admin, aliases each
@@ -30,8 +30,8 @@
 //     without a double under [Unstubbed].
 //   - [ComposeAcceptance] composes the binaries of the acceptance fixture
 //     from the plans of the workspace fixture and [Stubbed]. [Crash] is a
-//     command of the binaries that panics, and [CompileAcceptance] compiles
-//     the output of a run with go build.
+//     command of the binaries that panics. The acceptance test compiles
+//     the output of a run through the type check of the Go adapter.
 //   - [ComposeHub] and [HubPlans] compose the cross-language fixture. One
 //     run over a Go workspace writes the double of Store in
 //     svc/store_stub_test.go and a TypeScript client of Session and Store
@@ -49,8 +49,8 @@
 // backend packages of the TypeScript satellite, and the SDK facade. Its
 // tests also import the assert module, cli/acceptancetest,
 // core/frontend/load, core/manifest, sdk/frontendtest, sdk/toolchain, the
-// toolchain adapter of the TypeScript satellite, and the pipeline and
-// workspace kits of the kernel, core/workspace/pipelinetest and
+// toolchain adapters of the Go and TypeScript satellites, and the pipeline
+// and workspace kits of the kernel, core/workspace/pipelinetest and
 // core/workspace/workspacetest. The level checks of the conformance
 // package import golang for the entry of Go. The binaries under
 // testdata/acceptance import cli and golang.

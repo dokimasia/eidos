@@ -25,15 +25,15 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Verdict states what one language does with an inventory feature:
-// the read-side counterpart of the render coverage's verdicts.
+// Verdict is what one language does with a feature of the inventory. It
+// is the read side of the verdicts of the render coverage.
 type Verdict uint8
 
 const (
-	// Loads means the language spells the feature and the corpus
-	// tree contains the spelling, and the expectations must pass.
-	// It is the verdict of a corpus that registers no rules, whose
-	// projections nothing can evaluate.
+	// Loads means that the language spells the feature, the corpus tree
+	// contains the spelling, and the expectations pass. It is the verdict
+	// of a corpus that registers no rules, because no projection of such a
+	// corpus can be evaluated.
 	Loads Verdict = iota + 1
 
 	// Refuses means the language states that it cannot spell the
@@ -42,26 +42,25 @@ const (
 	// contradiction.
 	Refuses
 
-	// Projects means the feature loads and projects whole: every
-	// reference reachable from its declarations folds to a form
-	// other than Opaque or Inline, every callable projects, every
-	// type's member set is complete, and the corpus names no
-	// remainder.
+	// Projects means that the feature loads and projects whole. Every
+	// reference of its declarations folds to a form other than Opaque or
+	// Inline, every callable projects, the member set of every type is
+	// complete, and the corpus lists no remainder.
 	Projects
 
-	// ProjectsPartly means at least one reference folds to Opaque
-	// or Inline or one member set has a gap, and every remainder
-	// key the corpus names for the feature is present on the
-	// declaration the remainder names.
+	// ProjectsPartly means that at least one reference folds to Opaque or
+	// Inline or one member set has a gap. Every remainder key that the
+	// corpus lists for the feature is present on the declaration of the
+	// remainder.
 	ProjectsPartly
 
-	// Opaque means the reference the feature declares itself folds
-	// to Opaque or Inline, an alias of an inline body for instance,
-	// and every remainder key the corpus names is present.
+	// Opaque means that the reference that the feature declares folds to
+	// Opaque or Inline, such as an alias of an inline body. Every
+	// remainder key that the corpus lists is present.
 	Opaque
 )
 
-// String returns the verdict's spelling.
+// String returns the spelling of the verdict.
 func (v Verdict) String() string {
 	switch v {
 	case Loads:
@@ -79,87 +78,88 @@ func (v Verdict) String() string {
 	}
 }
 
-// projected reports whether a verdict is one of the three
-// projection levels, which a corpus states only with rules.
+// projected reports whether a verdict is one of the three projection
+// levels. A corpus states a projection level only with rules.
 func (v Verdict) projected() bool {
 	return v == Projects || v == ProjectsPartly || v == Opaque
 }
 
-// Remainder names one key a feature's residue stamps on one of its
-// declarations: what a language keeps in metadata where the
-// projection cannot represent it.
+// Remainder is one key that a language stamps on a declaration of a
+// feature where the projection cannot represent the feature. The
+// language keeps that part of the feature in metadata.
 type Remainder struct {
-	// Decl locates the declaration with the remainder, the way a
-	// feature's Declares does.
+	// Decl locates the declaration with the remainder, as the Declares of
+	// a feature locates a declaration.
 	Decl Decl
-	// Key is the metadata key the remainder stamps under.
+	// Key is the metadata key of the remainder.
 	Key meta.KeyName
 }
 
-// Coverage maps every inventory feature onto a verdict. Totality
-// is checked at [Run]: a feature without a verdict fails, and a
-// verdict naming no feature fails, so a language cannot go silent
-// on a capability the way the render side's coverage cannot.
+// Coverage maps every feature of the inventory to a verdict. [Run] checks
+// that the map is total: a feature without a verdict fails, and a verdict
+// of a name outside the inventory fails. A language therefore states a
+// verdict for every capability, as the coverage of the render side does.
 type Coverage map[string]Verdict
 
-// Corpus is one language's conformance entry.
+// Corpus is the conformance entry of one language.
 type Corpus struct {
 	// Frontend loads the tree.
 	Frontend plugin.Frontend
 
-	// Sources is the language's corpus tree, features under f/<id>.
+	// Sources is the corpus tree of the language, with each feature under
+	// f/<id>.
 	Sources fs.FS
 
-	// Coverage is the language's verdict per inventory feature.
+	// Coverage is the verdict of the language for each feature of the
+	// inventory.
 	Coverage Coverage
 
-	// Signatures are the roots the frontend suite loads
-	// signature-only, empty when the tree states none.
+	// Signatures are the roots that the frontend suite loads
+	// signature-only, and empty where the tree has none.
 	Signatures []string
 
-	// Dropped lists the identities a signature-only load of the
-	// Signatures roots leaves out, which the frontend suite's depth
-	// check requires in the full graph and absent from the shallow
-	// one. A language whose signature depth keeps every declaration
-	// lists none.
+	// Dropped lists the identities that a signature-only load of the
+	// Signatures roots leaves out. The depth check of the frontend suite
+	// requires each in the full graph and absent from the shallow one. A
+	// language whose signature depth keeps every declaration lists none.
 	Dropped []symbol.Identity
 
-	// Schemas are the directive schemas the tree's carriers write.
+	// Schemas are the directive schemas of the carriers of the tree.
 	Schemas []directive.Schema
 
-	// Keys registers the classification keys the tree's stamps
-	// write.
+	// Keys registers the classification keys of the stamps of the tree.
+	// A nil Keys registers none.
 	Keys func(*meta.Registry) error
 
-	// Rules is the language's projection rules, nil for a corpus
-	// that returns none. With rules, every feature's verdict is a
-	// projection level or a refusal, the rules run through the
-	// rules suite over the tree, and each level is evaluated over
-	// the feature's declarations.
+	// Rules is the projection rules of the language, and nil for a corpus
+	// without rules. With rules, the verdict of every feature is a
+	// projection level or a refusal, the rules suite runs the rules over
+	// the tree, and each level is evaluated over the declarations of the
+	// feature.
 	Rules rules.SourceRules
 
-	// Remainder names, per feature, the keys the language stamps
-	// where the projection cannot represent the feature whole. A
-	// level below Projects requires every named key present, and
-	// Projects admits none.
+	// Remainder lists, for each feature, the keys that the language
+	// stamps where the projection cannot represent the feature whole. A
+	// level below Projects requires every listed key, and Projects admits
+	// none.
 	Remainder map[string][]Remainder
 
-	// PackageOf derives the package path a feature's declarations
-	// load under, sub naming a feature's sibling package and empty
-	// naming its own. Nil derives the corpus convention, f/<id> and
-	// f/<id>/<sub>. A language whose canonical paths differ, such as
-	// a dotted namespace or a module prefix, states its own, and the
-	// join is its own too, because a slash is not every language's
-	// separator.
+	// PackageOf returns the path of the package that the declarations of a
+	// feature load under. sub is the name of a sibling package of the
+	// feature, and empty for the package of the feature itself. A nil
+	// PackageOf follows the corpus convention, f/<id> and f/<id>/<sub>. A
+	// language whose canonical paths differ, such as a dotted namespace or
+	// a module prefix, states its own function, which joins the elements
+	// with the separator of the language.
 	PackageOf func(featureID, sub string) string
 }
 
-// featureRoot is where the corpus convention places features, as a
-// directory and as the default package prefix.
+// featureRoot is the directory of the features under the corpus
+// convention, and the default prefix of their packages.
 const featureRoot = "f/"
 
-// pkg derives one feature package path, sub naming a sibling
-// package and empty naming the feature's own.
+// pkg returns the path of one package of a feature. sub is the name of a
+// sibling package, and empty for the package of the feature itself.
 func (c Corpus) pkg(featureID, sub string) string {
 	if c.PackageOf != nil {
 		return c.PackageOf(featureID, sub)
@@ -170,10 +170,11 @@ func (c Corpus) pkg(featureID, sub string) string {
 	return featureRoot + featureID + "/" + sub
 }
 
-// Run checks one language's corpus against the shared inventory:
-// coverage totality, the frontend conformance suite over the whole
-// tree, every covered feature's expectations against one load, and
-// every refused feature's absence.
+// Run checks the corpus of one language against the shared inventory.
+// It checks that the coverage is total, runs the frontend conformance
+// suite over the whole tree, checks the expectations of every covered
+// feature against one load, and checks that every refused feature is
+// absent.
 func Run(t *testing.T, c Corpus) {
 	t.Helper()
 
@@ -227,15 +228,15 @@ func Run(t *testing.T, c Corpus) {
 	}
 }
 
-// AssertCoveredInventory forces totality: every inventory feature
-// has a verdict, every verdict names an inventory feature, and every
-// verdict is one the corpus may state. A refusal is always one, the
-// load verdict is one without rules, and a projection level is one
-// with them.
+// AssertCoveredInventory checks that the coverage is total. Every feature
+// of the inventory has a verdict, every verdict is of a feature of the
+// inventory, and every verdict is one that the corpus may state. A corpus
+// may always state a refusal. It may state the load verdict without rules,
+// and a projection level with rules.
 //
-// Each feature and each name reports on its own, in inventory order
-// and then in name order, so one run names every silence and every
-// stray.
+// Each feature and each name reports on its own, in the order of the
+// inventory and then in the order of the names, so one run reports every
+// feature without a verdict and every verdict without a feature.
 func AssertCoveredInventory(tb assert.TB, c Corpus) {
 	tb.Helper()
 
@@ -262,9 +263,9 @@ func AssertCoveredInventory(tb assert.TB, c Corpus) {
 	}
 }
 
-// AssertFeature checks one covered feature against its expectations
-// over the corpus graph. A declaration the load lacks reports on its
-// own, and its expectation does not run.
+// AssertFeature checks one covered feature against its expectations over
+// the graph of the corpus. A declaration that the load lacks reports on
+// its own, and its expectation does not run.
 func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
@@ -288,13 +289,13 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 }
 
-// AssertRefusedFeature checks one refusal two ways: the tree
-// contains nothing under the feature's directory, and the load
-// contains no package the feature would occupy. The second check
-// catches a spelling filed somewhere else, such as a shared file or
-// a rehomed tree the directory check never walks, because a
-// refusal's proof is what the graph contains, not where the bytes
-// were. Each file and each package reports on its own.
+// AssertRefusedFeature checks one refusal in two ways. The tree contains
+// nothing under the directory of the feature, and the load contains no
+// package that the feature would occupy. The second check finds a
+// spelling in another place, such as a shared file or a moved tree that
+// the directory check does not walk. The graph proves a refusal, and the
+// place of the bytes does not. Each file and each package reports on its
+// own.
 func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
@@ -322,17 +323,13 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 }
 
-// corpusFixture loads the whole tree once, full depth, into the
-// rules suite's fixture: the sealed graph and the load's stamps
-// under the kernel's and the language's keys. The feature
-// expectations and the levels read it, and the frontend suite drives
-// its own loads.
+// corpusFixture loads the whole tree once at full depth into the fixture
+// of the rules suite. The fixture has the sealed graph and the stamps of
+// the load under the keys of the kernel and the language. The feature
+// expectations and the levels read it, and the frontend suite runs loads
+// of its own.
 func corpusFixture(tb assert.TB, c Corpus) *rulestest.Fixture {
 	tb.Helper()
 
-	keys := c.Keys
-	if keys == nil {
-		keys = func(*meta.Registry) error { return nil }
-	}
-	return rulestest.Loaded(tb, c.Frontend, c.Sources, keys)
+	return rulestest.Loaded(tb, c.Frontend, c.Sources, c.Keys)
 }

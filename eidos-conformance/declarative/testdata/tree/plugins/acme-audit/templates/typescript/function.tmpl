@@ -1,3 +1,3 @@
-  console.{{.Data.Directive.level}}({{printf "%q" .Data.Subject}}{{if not .Data.Options.redact}}{{range .Decl.Params}}, {{.Name}}{{end}}{{end}});
-{{slots}}{{if .Decl.Returns}}  throw new Error({{printf "%q" .Data.Subject}});
+  console.{{.Data.Directive.level}}({{printf "%q" .Data.Subject}}{{if not .Data.Options.redact}}{{range .Decl.Params.Items}}, {{.Name}}{{end}}{{end}});
+{{slots}}{{if .Decl.Returns.Len}}  throw new Error({{printf "%q" .Data.Subject}});
 {{end -}}

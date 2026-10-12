@@ -16,6 +16,7 @@ import (
 	golang "go.dokimi.dev/eidos/conformance/lang/go"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/workspace"
+	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/output"
 )
@@ -33,19 +34,11 @@ const (
 // crashUsage is the help text of the crash command.
 const crashUsage = "usage: crash\n"
 
-// The file that a case adds to a module so that the module does not
-// compile, and the mode of the file.
-const (
-	brokenFile   = "svc/broken.go"
-	brokenSource = "package svc\n\nfunc broken() int { return \"broken\" }\n"
-	fileMode     = 0o644
-)
-
 // The binaries of the acceptance fixture pass the acceptance suite. One
 // binary mounts the kernel commands through cli.Main, and the other binary
-// mounts them under a group of its own dispatcher. CompileAcceptance returns
-// the output of the go command for a module that does not compile, and
-// Crash panics.
+// mounts them under a group of its own dispatcher. The suite compiles the
+// output of a run through the type check of the Go adapter, which compiles
+// every package and every test file. Crash panics.
 func TestAcceptance(t *testing.T) {
 	t.Parallel()
 
@@ -80,7 +73,7 @@ func TestAcceptance(t *testing.T) {
 					Fail: func(root string) error {
 						return os.CopyFS(root, os.DirFS(filepath.FromSlash(checkedTree)))
 					},
-					Compile: golang.CompileAcceptance,
+					Compile: gotesting.New().TypeCheck,
 				})
 			})
 		}
@@ -109,23 +102,6 @@ func TestAcceptance(t *testing.T) {
 					"the check reports the one interface outside the sources of the stubs plan")
 				assert.Equal(t, reported[0].Pos.File, auditorFile, "the check reports the interface in admin")
 			})
-	})
-
-	t.Run("CompileAcceptance", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns the output of the go command for a module that does not compile", func(t *testing.T) {
-			t.Parallel()
-
-			root := t.TempDir()
-			copyTree(t, root, acceptanceTree)
-			assert.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(brokenFile)), []byte(brokenSource),
-				fileMode), "the case writes a file that does not compile")
-			err := golang.CompileAcceptance(t.Context(), root)
-			assert.HasError(t, err, "the module does not compile")
-			assert.Contains(t, err.Error(), filepath.FromSlash(brokenFile),
-				"the error has the output of the go command about the file")
-		})
 	})
 
 	t.Run("Crash", func(t *testing.T) {

@@ -35,7 +35,7 @@ const (
 	workspaceTree            = "testdata/workspace/tree"
 	checkedTree              = "testdata/workspace/checked"
 	genTree                  = "testdata/workspace/gen"
-	workspaceWant            = "testdata/workspace/want/"
+	workspaceWant            = "testdata/workspace/want"
 	doubleFile               = "svc/store_stub.go"
 	registryFile             = "admin/registry.go"
 	auditorFile              = "admin/auditor.go"
@@ -82,6 +82,12 @@ func TestWorkspace(t *testing.T) {
 			t.Parallel()
 
 			workspacetest.RunWarmColdSuite(t, workspaceFixture(t))
+		})
+
+		t.Run("writes the goldens of the workspace fixture", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.AssertGolden(t, workspaceFixture(t), t.TempDir(), workspaceWant)
 		})
 
 		t.Run("runs no invocation of the registry plan after an edit that only the stubs plan reads",
@@ -237,22 +243,16 @@ func TestWorkspace(t *testing.T) {
 }
 
 // workspaceFixture returns the workspace suite's fixture: the tree, the
-// composition, the two plans, the two files they generate, and the edit
-// that renames a parameter of Get.
+// composition, the two plans, the goldens under testdata/workspace/want,
+// and the edit that renames a parameter of Get.
 func workspaceFixture(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
-	want := map[string][]byte{}
-	for _, path := range []string{doubleFile, registryFile} {
-		b, err := os.ReadFile(filepath.FromSlash(workspaceWant + path))
-		assert.NoError(t, err, "the golden of "+path+" reads")
-		want[path] = b
-	}
 	return workspacetest.Fixture{
 		Tree:    os.DirFS(workspaceTree),
-		Compose: golang.ComposeWorkspace,
+		Compose: func(root string) (*workspace.Builder, error) { return golang.ComposeWorkspace(root), nil },
 		Plans:   func() []workspace.Plan { return golang.WorkspacePlans() },
-		Want:    want,
+		Want:    workspacetest.Want(t, workspaceWant),
 		Edit:    golang.EditWorkspace,
 	}
 }
@@ -262,7 +262,7 @@ func workspaceFixture(t *testing.T) workspacetest.Fixture {
 // of golang.StubsPlan lists, and records what the reader returned in
 // seen.
 func peek(seen *sight) plugin.Generator {
-	p, held := eidos.NewPlugin(peekID).
+	return eidos.NewPlugin(peekID).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
 			_, own := m.Reader().Lookup(m.Struct.ID)
 			seen.own.Store(own)
@@ -278,11 +278,7 @@ func peek(seen *sight) plugin.Generator {
 			}
 			return nil
 		})).
-		Build().(plugin.Generator)
-	if !held {
-		panic("golang_test: the peek generator lowers to the generator role")
-	}
-	return p
+		Generator()
 }
 
 // copyTree copies a testdata tree into root, beside what root already
@@ -346,7 +342,7 @@ func recorded(t *testing.T, root string) manifest.Manifest {
 	return m
 }
 
-// document returns the manifest document a file of a record states.
+// document returns the manifest document in the file at path.
 func document(t *testing.T, path string) manifest.Shard {
 	t.Helper()
 

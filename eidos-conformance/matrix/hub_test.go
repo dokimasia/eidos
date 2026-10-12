@@ -23,7 +23,7 @@ const (
 	int64Choices = "| typescript.int64: bigint | none | `bigint` | none | none |\n" +
 		"| typescript.int64: string | none | `string` | none | none |\n" +
 		"| typescript.int64: number | none | `number` | none | none |\n"
-	unspelledRow = "| Bool | none |\n"
+	unspelledRow = "| Bool | refused |\n"
 )
 
 // The rows of the top type, the empty value, the asynchronous stream and
@@ -111,12 +111,12 @@ func TestHub(t *testing.T) {
 				assert.Contains(t, doc, tt.want, "the hub has the row of the spokes' spellings")
 			})
 		}
-		t.Run("writes none in the column of a backend without a spoke", func(t *testing.T) {
+		t.Run("writes refused in the column of a backend that spells no type of another language", func(t *testing.T) {
 			t.Parallel()
 
 			doc, err := matrix.Markdown([]matrix.Entry{{Corpus: gocorpus.Corpus(nil), Backend: bareBackend{}}})
-			assert.NoError(t, err, "the matrix of a backend without a spoke renders")
-			assert.Contains(t, doc, unspelledRow, "a backend without a spoke does not spell a form")
+			assert.NoError(t, err, "the matrix of a backend whose spoke refuses every shape renders")
+			assert.Contains(t, doc, unspelledRow, "the spoke refuses every form")
 		})
 		t.Run("returns an error for a policy without a probe", func(t *testing.T) {
 			t.Parallel()

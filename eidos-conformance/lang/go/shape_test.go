@@ -528,7 +528,7 @@ func errorsOf(report *workspace.Report) []diag.Diag {
 // For each writer, it emits one constant named after the method's type
 // and the method, whose value is the name of the writer's value binding.
 func writers() plugin.Generator {
-	g, _ := eidos.NewPlugin(writersID).
+	return eidos.NewPlugin(writersID).
 		Output(plugin.Output{Per: plugin.PerPlan, Word: consumerWord}).
 		Handle(eidos.Where(shape.Is(shape.Writer),
 			eidos.OnMethod(func(m *eidos.MethodMatch, e *eidos.Emitter) error {
@@ -538,8 +538,7 @@ func writers() plugin.Generator {
 				})
 				return nil
 			}))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // vocabulary returns a generator behind the predicate of every
@@ -548,7 +547,7 @@ func writers() plugin.Generator {
 // shape, mixins and contract roles, which it reads through Of without
 // naming a spec.
 func vocabulary() plugin.Generator {
-	g, _ := eidos.NewPlugin(vocabularyID).
+	return eidos.NewPlugin(vocabularyID).
 		Output(plugin.Output{Per: plugin.PerPlan, Word: consumerWord}).
 		Handle(eidos.Where(shape.Any(),
 			eidos.OnMethod(func(m *eidos.MethodMatch, e *eidos.Emitter) error {
@@ -569,8 +568,7 @@ func vocabulary() plugin.Generator {
 				})
 				return nil
 			}))).
-		Build().(plugin.Generator)
-	return g
+		Generator()
 }
 
 // method returns the identity of a method of a type of the fixture's

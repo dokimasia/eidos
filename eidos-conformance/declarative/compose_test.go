@@ -7,9 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/conformance/declarative"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/workspace"
+	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 	host "go.dokimi.dev/eidos/declarative"
 	golang "go.dokimi.dev/eidos/lang/go"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
@@ -39,13 +38,11 @@ import (
 )
 
 // The tree of the fixture, the goldens of the files that its plans write,
-// the plugin directory inside the tree, and the state directory that a run
-// writes into the tree.
+// and the plugin directory inside the tree.
 const (
 	treeDir   = "testdata/tree"
 	wantDir   = "testdata/want"
 	pluginDir = "plugins/acme-audit"
-	stateDir  = ".acme"
 )
 
 // The interface Ledger of the tree, its package and its file, and the
@@ -73,12 +70,9 @@ const (
 	caseFileMode = 0o600
 )
 
-// The suffix and the module file of the Go files that the toolchain cases
-// lay out.
-const (
-	goSuffix = ".go"
-	modFile  = "go.mod"
-)
+// goSuffix is the suffix of the generated Go files that the toolchain
+// cases check.
+const goSuffix = ".go"
 
 // written lists the files that a run of the fixture writes, in the order of
 // their paths.
@@ -135,13 +129,12 @@ func TestCompose(t *testing.T) {
 		t.Run("writes Go that go vet passes", func(t *testing.T) {
 			t.Parallel()
 
-			adapter := gotesting.New()
-			if !toolchain.Require(t, adapter) {
+			if !toolchain.Require(t, gotesting.New()) {
 				return
 			}
 			root := treeCopy(t)
 			cleanRun(t, root)
-			gotesting.AssertVets(t.Context(), t, adapter, toolchain.Generated{Files: goFiles(t, root)})
+			gotesting.AssertVets(t.Context(), t, workspacetest.Generated(t, root, brand, os.DirFS(treeDir), goSuffix))
 		})
 
 		t.Run("writes Go tests that pass", func(t *testing.T) {
@@ -153,7 +146,8 @@ func TestCompose(t *testing.T) {
 			}
 			root := treeCopy(t)
 			cleanRun(t, root)
-			toolchain.AssertTestsPass(t.Context(), t, adapter, toolchain.Generated{Files: goFiles(t, root)})
+			toolchain.AssertTestsPass(t.Context(), t, adapter,
+				workspacetest.Generated(t, root, brand, os.DirFS(treeDir), goSuffix))
 		})
 
 		refusals := []struct {
@@ -287,30 +281,6 @@ func findings(report *workspace.Report) []string {
 	for d := range report.Sink.All() {
 		out = append(out, fmt.Sprintf("%s %s %s", d.Code, d.Pos, d.Msg))
 	}
-	return out
-}
-
-// goFiles returns the module file and every Go file below root, by its
-// slash-separated path. It leaves out the state directory and the plugin
-// directory.
-func goFiles(t *testing.T, root string) map[string][]byte {
-	t.Helper()
-
-	out := map[string][]byte{}
-	err := fs.WalkDir(os.DirFS(root), ".", func(p string, d fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case d.IsDir() && (p == stateDir || p == path.Dir(pluginDir)):
-			return fs.SkipDir
-		case d.IsDir():
-			return nil
-		case p == modFile || strings.HasSuffix(p, goSuffix):
-			out[p] = read(t, root, p)
-		}
-		return nil
-	})
-	assert.NoError(t, err, "the tree walks")
 	return out
 }
 

@@ -15,16 +15,17 @@ import (
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	eidos "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The cross-language fixture's TypeScript plan, its client generator, the
-// client's family word, and the name of each file of the family. The
-// family's word would otherwise follow the stem, so the plan's layout
-// names the client of svc/store.go svc/store.ts.
+// The TypeScript plan of the cross-language fixture, its client generator,
+// the family word of the client, and the name of each file of the family.
+// Without the name, the family word would follow the stem, so the layout of
+// the plan names the client of svc/store.go svc/store.ts.
 const (
 	clientPlan           = "ts-client"
 	tsclientID plugin.ID = "tsclient"
@@ -39,10 +40,10 @@ const (
 	getByIDInContext  = "Get(ctx context.Context, id string)"
 )
 
-// ComposeHub returns the cross-language fixture's composition over root
-// without its plans: the Go frontend and rules, the Go and TypeScript
-// targets, a disk sink at root and the state directory's ledger under
-// root. [HubPlans] returns the plans that it runs.
+// ComposeHub returns the composition of the cross-language fixture over
+// root without its plans. The composition has the Go frontend and rules,
+// the Go and TypeScript targets, a disk sink at root and the ledger of the
+// state directory under root. [HubPlans] returns the plans that it runs.
 func ComposeHub(root string) *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
@@ -53,7 +54,7 @@ func ComposeHub(root string) *workspace.Builder {
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) })
 }
 
-// HubPlans returns the cross-language fixture's plans over one graph.
+// HubPlans returns the plans of the cross-language fixture over one graph.
 // The plan go-stubs runs stubgen and the audit weaver toward the Go
 // backend, and it writes svc/store_stub_test.go. The plan ts-client,
 // scoped to svc, runs the client generator toward the TypeScript
@@ -78,10 +79,10 @@ func HubPlans() []workspace.Plan {
 	}
 }
 
-// EditHub is the cross-language fixture's edit: it renames the parameter
-// of Get in svc/store.go under root. The double of go-stubs and the
-// client of ts-client change, and the export of go-stubs, which lists no
-// parameter, does not. It reads and writes the one file.
+// EditHub is the edit of the cross-language fixture. It renames the
+// parameter of Get in svc/store.go under root. The double of go-stubs and
+// the client of ts-client change. The export of go-stubs lists no
+// parameter, so it does not change. EditHub reads and writes the one file.
 //
 // Error modes: the error of a file that does not read or write, and an
 // error for a file that declares no Get with the parameter key.
@@ -94,43 +95,38 @@ func EditHub(root string) error {
 // reference to Session, and the plan does not emit a declaration of
 // Session.
 func StoreClient() plugin.Generator {
-	return generator(eidos.NewPlugin(tsclientID).
+	return eidos.NewPlugin(tsclientID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: clientWord}).
 		Handle(eidos.OnInterface(interfaceClient)).
-		Build())
+		Generator()
 }
 
-// tsclient returns the cross-language fixture's client generator. It
+// tsclient returns the client generator of the cross-language fixture. It
 // writes a TypeScript interface for each struct and each interface of
 // its scope, with the exported members alone, and it translates every
 // type through the Emitter. Each declaration that it emits has the Go
 // declaration as its origin, so a name override on the Go declaration
 // applies.
 func tsclient() plugin.Generator {
-	return generator(eidos.NewPlugin(tsclientID).
+	return eidos.NewPlugin(tsclientID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: clientWord}).
 		Handle(eidos.OnStruct(structClient), eidos.OnInterface(interfaceClient)).
-		Build())
+		Generator()
 }
 
 // structClient writes the client interface of one struct, with a
 // property for each exported field. It withholds the interface where the
-// target has no spelling of a field's type, after the Emitter reports
+// target has no spelling of the type of a field, after the Emitter reports
 // the refusal.
 func structClient(m *eidos.StructMatch, e *eidos.Emitter) error {
 	s := m.Struct
-	client := &emit.Interface{Origin: s.ID, Doc: s.Doc, Name: s.Name, Visibility: s.Visibility}
-	for _, f := range s.Fields {
-		if f.Visibility != symbol.VisibilityPublic {
-			continue
-		}
-		t, spelled := e.Type(f.ID, f.Type)
-		if !spelled {
-			return nil
-		}
-		client.Fields.Append(&emit.Field{Origin: f.ID, Doc: f.Doc, Name: f.Name, Visibility: f.Visibility, Type: t})
+	fields, spelled := e.Fields(s.Fields, func(f *node.Field) bool { return f.Visibility == symbol.VisibilityPublic })
+	if !spelled {
+		return nil
 	}
-	e.File().Append(client)
+	e.File().Append(&emit.Interface{
+		Origin: s.ID, Doc: s.Doc, Name: s.Name, Visibility: s.Visibility, Fields: emit.SlotOf(fields...),
+	})
 	return nil
 }
 
@@ -161,7 +157,7 @@ func interfaceClient(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 			if !spelled {
 				return nil
 			}
-			lowered.Params = append(lowered.Params, &emit.Param{Name: p.Name, Type: t})
+			lowered.Params.Append(&emit.Param{Name: p.Name, Type: t})
 		}
 		for _, r := range c.Returns {
 			if r.Role == rules.ReturnError {
@@ -171,7 +167,7 @@ func interfaceClient(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 			if !spelled {
 				return nil
 			}
-			lowered.Returns = append(lowered.Returns, &emit.Return{Type: t})
+			lowered.Returns.Append(&emit.Return{Type: t})
 		}
 		client.Methods.Append(lowered)
 	}

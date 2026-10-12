@@ -17,10 +17,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The mirror fixture: its Go plan over TypeScript source, its generator,
-// the generator's family word, and the import path of the tree's root,
-// from which the Go backend derives the package of each file, because a
-// TypeScript tree has no Go module.
+// The Go plan of the mirror fixture over TypeScript source, its generator,
+// the family word of the generator, and the import path of the root of the
+// tree. The Go backend derives the package of each file from that import
+// path, because a TypeScript tree has no Go module.
 const (
 	mirrorPlan           = "go-mirror"
 	mirrorID   plugin.ID = "gomirror"
@@ -28,15 +28,15 @@ const (
 	mirrorBase           = "example.com/acme"
 )
 
-// ComposeMirror returns the mirror fixture's composition over root: the
-// TypeScript frontend and rules, and one plan whose generator mirrors
-// each TypeScript interface as a Go struct toward the Go backend, with a
-// disk sink at root and the state directory's ledger under root. The
-// generator translates the type of each property through the Emitter,
-// so a type without a Go spelling reports RefusedType at its property.
+// ComposeMirror returns the composition of the mirror fixture over root. It
+// has the TypeScript frontend and rules, one plan whose generator mirrors
+// each TypeScript interface as a Go struct toward the Go backend, a disk
+// sink at root and the ledger of the state directory under root. The
+// generator translates the type of each property through the Emitter, so a
+// type without a Go spelling reports RefusedType at its property.
 //
-// It returns the error of Build. The fixture's composition builds
-// without one.
+// ComposeMirror returns the error of Build, and the composition of the
+// fixture builds without one.
 func ComposeMirror(root string) (*workspace.Workspace, error) {
 	return workspace.New().
 		Brand(Brand).
@@ -54,29 +54,31 @@ func ComposeMirror(root string) (*workspace.Workspace, error) {
 		Build()
 }
 
-// mirror returns the mirror fixture's generator: for each TypeScript
-// interface, a Go struct with a field for each property.
+// mirror returns the generator of the mirror fixture. It writes a Go struct
+// with a field for each property of each TypeScript interface.
 func mirror() plugin.Generator {
-	return generator(eidos.NewPlugin(mirrorID).
+	return eidos.NewPlugin(mirrorID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: mirrorWord}).
 		Handle(eidos.OnInterface(mirrorInterface)).
-		Build())
+		Generator()
 }
 
 // mirrorInterface writes the Go struct of one TypeScript interface, with
-// a field for each property under the property's name and with its type
-// in Go. It withholds the struct where Go has no spelling of a
-// property's type, after the Emitter reports the refusal.
+// a field for each property under the name of the property and with its
+// type in Go. It withholds the struct where Go has no spelling of the type
+// of a property, after the Emitter reports the refusal.
 func mirrorInterface(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	iface := m.Interface
-	s := &emit.Struct{Origin: iface.ID, Doc: iface.Doc, Name: iface.Name, Visibility: iface.Visibility}
-	for _, f := range iface.Fields {
-		t, spelled := e.Type(f.ID, f.Type)
-		if !spelled {
-			return nil
-		}
-		s.Fields.Append(&emit.Field{Origin: f.ID, Doc: f.Doc, Name: f.Name, Visibility: f.Visibility, Type: t})
+	fields, spelled := e.Fields(iface.Fields, nil)
+	if !spelled {
+		return nil
 	}
-	e.File().Append(s)
+	e.File().Append(&emit.Struct{
+		Origin:     iface.ID,
+		Doc:        iface.Doc,
+		Name:       iface.Name,
+		Visibility: iface.Visibility,
+		Fields:     emit.SlotOf(fields...),
+	})
 	return nil
 }

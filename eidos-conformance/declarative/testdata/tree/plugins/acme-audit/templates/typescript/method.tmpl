@@ -1,2 +1,2 @@
-  console.{{.Data.Directive.level}}({{printf "%q" .Decl.Name}}{{if not .Data.Options.redact}}{{range .Decl.Params}}, {{.Name}}{{end}}{{end}});
-{{slots}}  {{if .Decl.Returns}}return {{end}}this.next.{{.Decl.Name}}({{range $i, $p := .Decl.Params}}{{if $i}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});
+  console.{{.Data.Directive.level}}({{printf "%q" .Decl.Name}}{{if not .Data.Options.redact}}{{range .Decl.Params.Items}}, {{.Name}}{{end}}{{end}});
+{{slots}}  {{if .Decl.Returns.Len}}return {{end}}this.next.{{.Decl.Name}}({{range $i, $p := .Decl.Params.Items}}{{if $i}}, {{end}}{{if $p.Variadic}}...{{end}}{{$p.Name}}{{end}});

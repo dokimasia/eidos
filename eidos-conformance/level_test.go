@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/node/nodetest"
 	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -25,6 +26,12 @@ import (
 // goTree is Go's corpus tree in its package under lang, which the level
 // checks grade with Go's rules.
 const goTree = "lang/go/testdata/corpus"
+
+// The feature package of the scripted fixtures, and its one file.
+const (
+	featurePackage = "f/struct_fields"
+	featureFile    = "a.s"
+)
 
 // The levels are predicates over the projections: a feature is at the
 // level its language declared, never above and never below.
@@ -188,41 +195,7 @@ func goFixture(tb assert.TB) *rulestest.Fixture {
 func opaqueCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
 	tb.Helper()
 
-	pkg := "f/struct_fields"
-	blob := &node.Alias{
-		ID: symbol.Identity{
-			Lang:    frontendtest.ScriptedLang,
-			Package: pkg,
-			Name:    "Blob",
-			Kind:    symbol.KindAlias,
-		},
-		Name:   "Blob",
-		Target: &node.TypeRef{Spelling: "struct{}", Form: symbol.FormInline},
-	}
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(&node.Package{
-		ID: symbol.Identity{
-			Lang:    frontendtest.ScriptedLang,
-			Package: pkg,
-			Kind:    symbol.KindPackage,
-		},
-		Path: []string{"f", "struct_fields"},
-		Files: []*node.File{
-			{
-				ID: symbol.Identity{
-					Lang:    frontendtest.ScriptedLang,
-					Package: pkg,
-					Name:    "a.s",
-					Kind:    symbol.KindFile,
-				},
-				Path:  "a.s",
-				Decls: node.Symbols{blob},
-			},
-		},
-	}), "the opaque package is admitted")
-	g.Freeze()
-	c := conformance.Corpus{Frontend: frontendtest.NewScripted(), Rules: rulestest.Scripted()}
-	return c, &rulestest.Fixture{Graph: g, Facts: meta.NewFacts(meta.NewRegistry())}
+	return scriptedFeature(tb, &node.Alias{Name: "Blob", Target: nodetest.Inline(nil, nil)})
 }
 
 // nestedCorpus returns a scripted corpus whose one feature package
@@ -233,39 +206,27 @@ func opaqueCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
 func nestedCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
 	tb.Helper()
 
-	pkg := "f/struct_fields"
-	id := func(owner, name string, kind symbol.Kind) symbol.Identity {
-		return symbol.Identity{
-			Lang: frontendtest.ScriptedLang, Package: pkg, Owner: owner, Name: name, Kind: kind,
-		}
-	}
-	embed := func(owner, spelling string) *node.Embed {
-		return &node.Embed{
-			ID:  id(owner, spelling, symbol.KindEmbed),
-			Ref: &node.TypeRef{Spelling: spelling},
-		}
-	}
 	inner := &node.Struct{
-		ID:     id("Outer", "Inner", symbol.KindStruct),
 		Name:   "Inner",
-		Embeds: []*node.Embed{embed("Outer.Inner", "int"), embed("Outer.Inner", "string")},
+		Embeds: []*node.Embed{{Ref: nodetest.Named("int")}, {Ref: nodetest.Named("string")}},
 	}
-	outer := &node.Struct{
-		ID:     id("", "Outer", symbol.KindStruct),
+	return scriptedFeature(tb, &node.Struct{
 		Name:   "Outer",
-		Embeds: []*node.Embed{embed("Outer", "bool")},
+		Embeds: []*node.Embed{{Ref: nodetest.Named("bool")}},
 		Types:  node.Symbols{inner},
-	}
+	})
+}
+
+// scriptedFeature builds the declarations in the feature package
+// f/struct_fields of the scripted language through nodetest, and returns
+// the scripted corpus and a fixture with the sealed graph of the package.
+func scriptedFeature(tb assert.TB, decls ...symbol.Symbol) (conformance.Corpus, *rulestest.Fixture) {
+	tb.Helper()
+
+	b := nodetest.New(nodetest.Neutral{Language: frontendtest.ScriptedLang, Overloading: true})
+	b.File(featurePackage, featureFile, decls...)
 	g := store.New()
-	assert.NoError(tb, g.AddPackage(&node.Package{
-		ID:   id("", "", symbol.KindPackage),
-		Path: []string{"f", "struct_fields"},
-		Files: []*node.File{{
-			ID:    id("", "a.s", symbol.KindFile),
-			Path:  "a.s",
-			Decls: node.Symbols{outer},
-		}},
-	}), "the nested package is admitted")
+	assert.Total(tb, g.AddPackage, b.Build(tb), "the feature package is admitted")
 	g.Freeze()
 	c := conformance.Corpus{Frontend: frontendtest.NewScripted(), Rules: rulestest.Scripted()}
 	return c, &rulestest.Fixture{Graph: g, Facts: meta.NewFacts(meta.NewRegistry())}

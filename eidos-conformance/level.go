@@ -18,41 +18,41 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// projection is what the level check measured over one feature's
-// declarations.
+// projection contains what the level check measured over the
+// declarations of one feature.
 type projection struct {
 	// opaque counts the references reachable from the declarations
-	// that folded to a form no projection resolves.
+	// that folded to a form that no projection resolves.
 	opaque int
-	// gaps counts the member-set gaps across the feature's types.
+	// gaps counts the member-set gaps across the types of the feature.
 	gaps int
 	// declaredOpaque counts the declared aliases whose own target folded
 	// to Opaque or Inline.
 	declaredOpaque int
-	// callables are the feature's functions and methods in measure order,
-	// each with whether the bound projected it.
+	// callables are the functions and methods of the feature in measure
+	// order, each with whether the bound projected it.
 	callables []callable
 }
 
-// callable is one function or method the level check measured, and
+// callable is one function or method that the level check measured, and
 // whether the bound rules projected it.
 type callable struct {
 	id       symbol.Identity
 	projects bool
 }
 
-// AssertLevel checks one feature against the projection level its
+// AssertLevel checks one feature against the projection level that its
 // language declared, evaluated through the rules over the corpus
-// fixture. A feature that projects worse than declared fails, and
-// so does one that projects better: a capability nobody declared
-// is a capability nobody tested.
+// fixture. A feature that projects worse than declared fails. A feature
+// that projects better fails too, because a capability that nobody
+// declared is a capability that nobody tested.
 //
 // A verdict that is no projection level, and a corpus without rules,
 // stop the check, because nothing can evaluate the level. Every other
-// contract it states reports on its own, so one run names each way the
-// feature misses its level: a remainder the load did not stamp, and for
-// a whole projection each reference, member gap and callable that falls
-// short.
+// contract of the check reports on its own, so one run reports each way
+// in which the feature misses its level. Those are a remainder that the
+// load did not stamp and, for a whole projection, each reference, member
+// gap and callable that falls short.
 func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdict Verdict) {
 	tb.Helper()
 
@@ -60,8 +60,8 @@ func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdi
 	assert.NotNil(tb, c.Rules, fmt.Sprintf("%s states %s under a corpus whose rules evaluate it", f.ID, verdict))
 	reads := store.NewReadSet()
 	reader, err := fx.Graph.Reader(reads, nil)
-	assert.NoError(tb, err, "the corpus graph hands out a reader")
-	view := rules.View{Decls: reader, Facts: fx.Facts, Reads: reads, Kernel: fx.Keys}
+	assert.NoError(tb, err, "the corpus graph returns a reader")
+	view := rules.NewView(reader, fx.Facts, reads, fx.Keys)
 	b := rules.NewBound(c.Rules, view, nil)
 	p := measure(tb, c, fx.Graph, f, b)
 	remainder := c.Remainder[f.ID]
@@ -93,9 +93,9 @@ func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdi
 	}
 }
 
-// measure projects every declaration the feature declares and
-// every declaration in the feature's own package, nested ones
-// included, each once by identity, through the bound rules.
+// measure projects every declaration that the feature declares and every
+// declaration in the package of the feature, nested ones included, once
+// each by identity, through the bound rules.
 func measure(tb assert.TB, c Corpus, g *store.Graph, f Feature, b rules.Bound) projection {
 	tb.Helper()
 
@@ -151,15 +151,15 @@ func measure(tb assert.TB, c Corpus, g *store.Graph, f Feature, b rules.Bound) p
 	return p
 }
 
-// unprojected reports a form no projection resolves: Opaque, and
-// Inline, an inline body the language has no structure for.
+// unprojected reports whether a form is Opaque or Inline. No projection
+// resolves either, and an inline body has no structure in the language.
 func unprojected(form symbol.TypeForm) bool {
 	return form == symbol.FormOpaque || form == symbol.FormInline
 }
 
-// identityOf derives a declared declaration's identity through the
-// corpus convention, under the empty discriminator where the
-// language's frontend reports that it cannot overload.
+// identityOf derives the identity of a declared declaration through the
+// corpus convention. It uses the empty discriminator where the frontend
+// of the language reports that it cannot overload.
 func identityOf(c Corpus, f Feature, d Decl) symbol.Identity {
 	id := symbol.Identity{
 		Lang: c.Frontend.Lang(), Package: c.pkg(f.ID, d.Sub),
@@ -171,8 +171,8 @@ func identityOf(c Corpus, f Feature, d Decl) symbol.Identity {
 	return id
 }
 
-// stampKeys returns the keys of the stamps the load made on a subject,
-// in the seal's order.
+// stampKeys returns the keys of the stamps that the load made on a
+// subject, in the order of the seal.
 func stampKeys(g *store.Graph, id symbol.Identity) []meta.KeyName {
 	stamps := g.StampsOf(id)
 	keys := make([]meta.KeyName, 0, len(stamps))

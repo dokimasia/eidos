@@ -184,9 +184,7 @@ func hub(b *strings.Builder, entries []Entry) error {
 	specs := make([][]plugin.PolicySpec, len(backed))
 	defaults := make([]plugin.Policy, len(backed))
 	for i, e := range backed {
-		if provider, declares := e.Backend.(plugin.PolicyProvider); declares {
-			specs[i] = provider.Policies()
-		}
+		specs[i] = e.Backend.Policies()
 		p, err := plugin.NewPolicy(e.Backend.Target(), specs[i], nil)
 		if err != nil {
 			return err
@@ -229,14 +227,10 @@ func hub(b *strings.Builder, entries []Entry) error {
 }
 
 // spelled returns the cell of one shape in an entry's target under p: the
-// spoke's spelling as code, refused where the spoke refuses the shape,
-// and none where the backend has no spoke.
+// spoke's spelling as code, and refused where the spoke refuses the
+// shape.
 func spelled(e Entry, s rules.TypeShape, p plugin.Policy) string {
-	spoke, spells := e.Backend.(plugin.TypeSpeller)
-	if !spells {
-		return noneCell
-	}
-	t, err := spoke.SpellType(s, p)
+	t, err := e.Backend.SpellType(s, p)
 	if err != nil {
 		return refusedCell
 	}

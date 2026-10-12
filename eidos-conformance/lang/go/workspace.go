@@ -187,13 +187,13 @@ func rename(root, path, from, to string) error {
 // under the stub directive, a double in the primary family, under the
 // name doubleName gives it.
 func doubles() plugin.Generator {
-	return generator(eidos.NewPlugin(stubgenID).
+	return eidos.NewPlugin(stubgenID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: stubWord}).
 		Handle(eidos.Directive(stubSchema, eidos.OnInterface(func(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 			e.File().Append(double(doubleName(m.Interface.Name), m))
 			return nil
 		}))).
-		Build())
+		Generator()
 }
 
 // doubleName returns the name the doubles generator emits for the
@@ -209,10 +209,10 @@ func doubleName(iface string) string { return stubWord + iface }
 // and the rule takes no directive, so a composition without the plan
 // still validates every directive of the tree.
 func registrar() plugin.Generator {
-	return generator(eidos.NewPlugin(registrarID).
+	return eidos.NewPlugin(registrarID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: registryWord}).
 		Handle(eidos.OnStruct(register)).
-		Build())
+		Generator()
 }
 
 // register aliases each double of the stubs plan's export, reading its

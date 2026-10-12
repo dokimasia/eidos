@@ -25,8 +25,9 @@
 // declarative imports core/workspace, the root, frontend, rules and backend
 // packages of the Go satellite, the root and backend packages of the
 // TypeScript satellite, and the output package of the SDK facade. Its tests
-// also import cli, the declarative module, core/frontend/load, the assert
-// module, the toolchain harness of the Go satellite, and the diag,
-// directive, node, plugin, plugintest, position, rules, symbol and
-// toolchain packages of the SDK facade.
+// also import cli, the declarative module, core/frontend/load, the
+// workspace kit core/workspace/workspacetest, the assert module, the
+// toolchain harness of the Go satellite, and the diag, directive, node,
+// plugin, plugintest, position, rules, symbol and toolchain packages of
+// the SDK facade.
 package declarative

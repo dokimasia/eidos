@@ -5,9 +5,6 @@ package golang
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
 
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -19,15 +16,6 @@ import (
 // CrashName is the name of [Crash] in the binaries of the acceptance
 // fixture.
 const CrashName = "crash"
-
-// The go command, the arguments that [CompileAcceptance] passes to it, and
-// the variable that turns off the workspace of the go command.
-const (
-	goCommand = "go"
-	goBuild   = "build"
-	allPkgs   = "./..."
-	noWork    = "GOWORK=off"
-)
 
 // Crash is a command that panics. The binaries of the acceptance fixture
 // mount it, and the acceptance suite runs it to check that a panic exits
@@ -63,20 +51,4 @@ func ComposeAcceptance() *workspace.Builder {
 		Targets(golang.Target).
 		Plans(WorkspacePlans()...).
 		Checks(Stubbed{})
-}
-
-// CompileAcceptance is the Compile of the acceptance fixture. It runs go
-// build over every package of the module in root, outside the workspace of
-// the go command.
-//
-// Error modes: an error with the output of the go command, for a module
-// that does not compile.
-func CompileAcceptance(ctx context.Context, root string) error {
-	cmd := exec.CommandContext(ctx, goCommand, goBuild, allPkgs)
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), noWork)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("golang: compile the output in %s: %w\n%s", root, err, out)
-	}
-	return nil
 }

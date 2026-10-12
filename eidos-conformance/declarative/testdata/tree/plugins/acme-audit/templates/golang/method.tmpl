@@ -1,2 +1,2 @@
-{{.Data.Directive.sink}}({{printf "%q" .Decl.Name}}, {{printf "%q" .Data.Directive.level}}{{if not .Data.Options.redact}}{{range .Decl.Params}}, {{.Name}}{{end}}{{end}})
-{{slots}}{{if .Decl.Returns}}return {{end}}{{.Decl.Receiver.Name}}.next.{{.Decl.Name}}({{range $i, $p := .Decl.Params}}{{if $i}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})
+{{.Data.Directive.sink}}({{printf "%q" .Decl.Name}}, {{printf "%q" .Data.Directive.level}}{{if not .Data.Options.redact}}{{range .Decl.Params.Items}}, {{.Name}}{{end}}{{end}})
+{{slots}}{{if .Decl.Returns.Len}}return {{end}}{{.Decl.Receiver.Name}}.next.{{.Decl.Name}}({{range $i, $p := .Decl.Params.Items}}{{if $i}}, {{end}}{{$p.Name}}{{if $p.Variadic}}...{{end}}{{end}})

@@ -30,12 +30,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The cross-language fixture's tree, its goldens, and the TypeScript file
-// that it generates beside the Go double.
+// The cross-language fixture's tree, its goldens, the TypeScript file that
+// it generates beside the Go double, and the extension of a TypeScript
+// file.
 const (
 	hubTree    = "testdata/hub/tree"
-	hubWant    = "testdata/hub/want/"
+	hubWant    = "testdata/hub/want"
 	clientPath = "svc/store.ts"
+	tsExt      = ".ts"
 )
 
 // The lines of the store that the cases edit, the carriers that they write
@@ -129,10 +131,15 @@ func TestHub(t *testing.T) {
 				return
 			}
 			root := hubRoot(t, "", "")
-			client := cleanClient(t, root, workspace.Config{})
-			toolchain.AssertTypeChecks(t.Context(), t, adapter, toolchain.Generated{
-				Files: map[string][]byte{clientPath: []byte(client)},
-			})
+			cleanClient(t, root, workspace.Config{})
+			toolchain.AssertTypeChecks(t.Context(), t, adapter,
+				workspacetest.Generated(t, root, golang.Brand, nil, tsExt))
+		})
+
+		t.Run("writes the goldens of the cross-language fixture", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.AssertGolden(t, hubFixture(t), t.TempDir(), hubWant)
 		})
 	})
 
@@ -261,7 +268,7 @@ func TestHub(t *testing.T) {
 			expect.Equal(t, first.Value, any(savedName), "the directive's name ranks first")
 			expect.Equal(t, first.Claim.Authority, meta.AuthorityDirective, "the first claim has directive authority")
 			expect.Equal(t, first.Claim.Pos.Line, putCarrier, "the first claim has the carrier's position")
-			expect.True(t, first.Winner, "the directive's claim wins")
+			expect.True(t, first.Winner, "the directive's claim is the winner")
 			expect.Equal(t, second.Value, any(respelledPut), "the lowering's claim is the respelled name")
 			expect.Equal(t, second.Claim.Authority, meta.AuthorityPlugin, "the second claim has plugin authority")
 			expect.Equal(t, second.Claim.Plugin, tsLowering, "the lowering entry makes the second claim")
@@ -320,23 +327,17 @@ func TestHub(t *testing.T) {
 
 // hubFixture returns the workspace suite's fixture of the cross-language
 // composition: the tree, the standard library's context package, the
-// composition, its two plans, the two files that they generate, and the
+// composition, its two plans, the goldens under testdata/hub/want, and the
 // edit that renames a parameter of Get.
 func hubFixture(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
-	want := map[string][]byte{}
-	for _, path := range []string{stubFile, clientPath} {
-		b, err := os.ReadFile(filepath.FromSlash(hubWant + path))
-		assert.NoError(t, err, "the golden of "+path+" reads")
-		want[path] = b
-	}
 	return workspacetest.Fixture{
 		Tree:    os.DirFS(hubTree),
 		Stores:  map[string]fs.FS{gofrontend.GoRootStore: os.DirFS(pipelineRoot)},
-		Compose: golang.ComposeHub,
+		Compose: func(root string) (*workspace.Builder, error) { return golang.ComposeHub(root), nil },
 		Plans:   golang.HubPlans,
-		Want:    want,
+		Want:    workspacetest.Want(t, hubWant),
 		Edit:    golang.EditHub,
 	}
 }

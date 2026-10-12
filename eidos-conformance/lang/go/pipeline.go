@@ -47,29 +47,30 @@ var stubSchema = directive.Schema{
 	Doc:    "generates a test double that delegates every method of the interface",
 }
 
-// ComposeStubs returns the end-to-end fixture's composition over root:
-// the Go frontend and rules, one plan of stubgen and the audit weaver
-// toward the Go backend, a disk sink at root and the state directory's
-// ledger under root. stubgen doubles each interface under
-// //+acme:stub, and the directive's tag picks the double's family. The
-// weaver calls audit first in every method stubgen emits.
-//
-// It returns the error of Build. The fixture's composition builds
-// without one.
-func ComposeStubs(root string) (*workspace.Workspace, error) {
+// ComposePipeline returns the end-to-end fixture's composition over root
+// without its plan: the Go frontend and rules, the Go target, a disk sink
+// at root and the state directory's ledger under root.
+func ComposePipeline(root string) *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
 		Frontends(gofrontend.New(nil)).
 		Rules(gorules.New()).
 		Targets(golang.Target).
-		Plans(workspace.Plan{
-			Name:       pipelinePlan,
-			Generators: []plugin.Generator{stubgen(), audit()},
-			Backend:    gobackend.New(),
-		}).
 		Output(func() (output.Sink, error) { return output.NewDisk(root, Brand) }).
-		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) }).
-		Build()
+		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) })
+}
+
+// PipelinePlans returns the one plan of the end-to-end fixture: stubgen
+// and the audit weaver toward the Go backend, with new plugin instances
+// on every call. stubgen doubles each interface under //+acme:stub, and
+// the directive's tag picks the double's family. The weaver calls audit
+// first in every method stubgen emits.
+func PipelinePlans() []workspace.Plan {
+	return []workspace.Plan{{
+		Name:       pipelinePlan,
+		Generators: []plugin.Generator{stubgen(), audit()},
+		Backend:    gobackend.New(),
+	}}
 }
 
 // stubgen returns the end-to-end fixture's generator: per interface
@@ -78,12 +79,12 @@ func ComposeStubs(root string) (*workspace.Workspace, error) {
 // named apart from its parameters. It declares a primary family and a
 // test family, and the directive's tag picks the family.
 func stubgen() plugin.Generator {
-	return generator(eidos.NewPlugin(stubgenID).
+	return eidos.NewPlugin(stubgenID).
 		Provides(stubsCap).
 		Output(plugin.Output{Per: plugin.PerSource, Word: stubWord}).
 		Output(plugin.Output{Tag: string(testTag), Per: plugin.PerSource, Word: stubWord}).
 		Handle(eidos.Directive(stubSchema, eidos.OnInterface(stub))).
-		Build())
+		Generator()
 }
 
 // stub emits the double of one interface into the primary family, and
@@ -105,8 +106,8 @@ func double(name string, m *eidos.InterfaceMatch) *emit.Struct {
 	})
 	for _, method := range m.Interface.Methods {
 		mirrored := golang.PointerReceiver(eidos.Mirror(name, method))
-		args := make([]emit.Expr, 0, len(mirrored.Params))
-		for _, p := range mirrored.Params {
+		args := make([]emit.Expr, 0, mirrored.Params.Len())
+		for _, p := range mirrored.Params.Items() {
 			args = append(args, emit.Expr{Kind: emit.ExprName, Name: p.Name})
 		}
 		callee := emit.Expr{
@@ -126,19 +127,20 @@ func double(name string, m *eidos.InterfaceMatch) *emit.Struct {
 // through the capability stubgen provides, and calls audit first in
 // every method stubgen emits.
 func audit() plugin.Generator {
-	return generator(eidos.NewPlugin(auditID).
+	return eidos.NewPlugin(auditID).
 		Requires(stubsCap).
 		Handle(eidos.OnEmit(symbol.KindMethod, weave)).
-		Build())
+		Generator()
 }
 
-// weave appends the audit call into one method's prologue through the
-// Emitter, passing the method's first parameter, which names the weaver
-// in the frame of the file the method is written in. A method without a
-// parameter has nothing to pass, and is left as it is.
+// weave appends the audit call into the prologue of one method through
+// the Emitter. The call passes the first parameter of the method as its
+// argument, by the name that the parameter has in the file of the
+// method. A method without a parameter has nothing to pass, and is left
+// as it is.
 func weave(m *eidos.EmitMatch, e *eidos.Emitter) error {
 	method, is := m.Value.(*emit.Method)
-	if !is || len(method.Params) == 0 {
+	if !is || method.Params.Len() == 0 {
 		return nil
 	}
 	callee := emit.Expr{Kind: emit.ExprName, Name: auditCallee}
@@ -147,19 +149,8 @@ func weave(m *eidos.EmitMatch, e *eidos.Emitter) error {
 		Value: emit.Expr{
 			Kind: emit.ExprCall,
 			Fn:   &callee,
-			Args: []emit.Expr{{Kind: emit.ExprName, Name: method.Params[0].Name}},
+			Args: []emit.Expr{{Kind: emit.ExprName, Name: method.Params.Items()[0].Name}},
 		},
 	})
 	return nil
-}
-
-// generator returns a built plugin as the generator its emitter rules
-// make it. Every plugin of the package declares emitter rules, so a
-// plugin that is not a generator is a defect in this package.
-func generator(p plugin.Plugin) plugin.Generator {
-	g, held := p.(plugin.Generator)
-	if !held {
-		panic("golang: a plugin of emitter rules lowers to a generator")
-	}
-	return g
 }

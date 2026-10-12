@@ -45,6 +45,13 @@ const (
 	serviceModule = "example.com/acme"
 )
 
+// The extensions of the files that the server plan and the client plan
+// write.
+const (
+	goExt = ".go"
+	tsExt = ".ts"
+)
+
 // versions are the versions of the service schema, each a directory of
 // the fixture's tree.
 var versions = []string{"proto2", "proto3", "edition2023", "edition2024", "edition2026"}
@@ -118,11 +125,8 @@ func TestService(t *testing.T) {
 			}
 			root := serviceRoot(t, baseVersion)
 			cleanRun(t, root, workspace.Config{})
-			toolchain.AssertTypeChecks(t.Context(), t, adapter, toolchain.Generated{
-				Files: map[string][]byte{
-					clientPath: []byte(files.Read(t, filepath.Join(root, filepath.FromSlash(clientPath)))),
-				},
-			})
+			toolchain.AssertTypeChecks(t.Context(), t, adapter,
+				workspacetest.Generated(t, root, protobuf.Brand, nil, tsExt))
 		})
 
 		t.Run("writes a server that the Go toolchain type-checks", func(t *testing.T) {
@@ -134,12 +138,15 @@ func TestService(t *testing.T) {
 			}
 			root := serviceRoot(t, baseVersion)
 			cleanRun(t, root, workspace.Config{})
-			toolchain.AssertTypeChecks(t.Context(), t, adapter, toolchain.Generated{
-				Files: map[string][]byte{
-					serverPath: []byte(files.Read(t, filepath.Join(root, filepath.FromSlash(serverPath)))),
-				},
-				Module: serviceModule,
-			})
+			g := workspacetest.Generated(t, root, protobuf.Brand, nil, goExt)
+			g.Module = serviceModule
+			toolchain.AssertTypeChecks(t.Context(), t, adapter, g)
+		})
+
+		t.Run("writes the goldens of the service fixture", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.AssertGolden(t, serviceFixture(t, baseVersion), t.TempDir(), serviceWant)
 		})
 	})
 
@@ -207,7 +214,7 @@ func TestService(t *testing.T) {
 			expect.Equal(t, first.Value, any(phaseName), "the directive's name ranks first")
 			expect.Equal(t, first.Claim.Authority, meta.AuthorityDirective, "the first claim has directive authority")
 			expect.Equal(t, first.Claim.Pos.Line, carrierLine, "the first claim has the carrier's position")
-			expect.True(t, first.Winner, "the directive's claim wins")
+			expect.True(t, first.Winner, "the directive's claim is the winner")
 			expect.Equal(t, second.Value, any(flatName), "the lowering's claim is the flat name")
 			expect.Equal(t, second.Claim.Plugin, tsLowering, "the lowering entry makes the second claim")
 		})
@@ -269,20 +276,16 @@ func TestService(t *testing.T) {
 
 // serviceFixture returns the workspace suite's fixture of the service
 // composition over the schema of one version: the version's tree, the
-// composition, its two plans, the two files that every version writes,
-// and the edit that narrows a field of Summary.
+// composition, its two plans, the goldens of the files that every version
+// writes, and the edit that narrows a field of Summary.
 func serviceFixture(t *testing.T, version string) workspacetest.Fixture {
 	t.Helper()
 
-	want := map[string][]byte{}
-	for _, path := range []string{serverPath, clientPath} {
-		want[path] = []byte(files.Read(t, filepath.Join(filepath.FromSlash(serviceWant), filepath.FromSlash(path))))
-	}
 	return workspacetest.Fixture{
 		Tree:    os.DirFS(filepath.Join(filepath.FromSlash(serviceTree), version)),
-		Compose: protobuf.ComposeService,
+		Compose: func(root string) (*workspace.Builder, error) { return protobuf.ComposeService(root), nil },
 		Plans:   protobuf.ServicePlans,
-		Want:    want,
+		Want:    workspacetest.Want(t, serviceWant),
 		Edit:    protobuf.EditService,
 	}
 }

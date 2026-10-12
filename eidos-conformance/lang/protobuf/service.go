@@ -27,17 +27,17 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Brand is the brand that the service fixture stamps its files under. A
-// carrier of the fixture writes it, as in //+acme:typescript.
+// Brand is the brand under which the service fixture stamps its files. A
+// carrier of the fixture starts with it, as in //+acme:typescript.
 const Brand output.Brand = "acme"
 
-// The service fixture's plans, its generators, the family word of each
-// generator, the name of the client's file, and the import path of the
-// tree's root. The Go backend derives the package of each file from that
-// import path, because a tree of schemas has no Go module. The plan's
-// layout gives the client of svc/store.proto the file name store.ts,
-// because the client's file name would otherwise join the stem and the
-// family word.
+// The plans of the service fixture, its generators, the family word of
+// each generator, the name of the file of the client, and the import path
+// of the root of the tree. The Go backend derives the package of each file
+// from that import path, because a tree of schemas has no Go module. The
+// layout of the plan gives the client of svc/store.proto the file name
+// store.ts. Without it, the file name of the client would join the stem and
+// the family word.
 const (
 	serverPlan            = "go-server"
 	clientPlan            = "ts-client"
@@ -59,7 +59,7 @@ const (
 	errorType      = "error"
 )
 
-// The schema that the service fixture's edit changes, the field of
+// The schema that the edit of the service fixture changes, the field of
 // Summary before and after the edit, and the mode of the file that the
 // edit writes.
 const (
@@ -69,10 +69,11 @@ const (
 	schemaMode = 0o644
 )
 
-// ComposeService returns the service fixture's composition over root
-// without its plans: the protobuf frontend and rules, the Go and
-// TypeScript targets, a disk sink at root and the state directory's
-// ledger under root. [ServicePlans] returns the plans that it runs.
+// ComposeService returns the composition of the service fixture over root
+// without its plans. The composition has the protobuf frontend and rules,
+// the Go and TypeScript targets, a disk sink at root and the ledger of the
+// state directory under root. [ServicePlans] returns the plans that it
+// runs.
 func ComposeService(root string) *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
@@ -83,7 +84,7 @@ func ComposeService(root string) *workspace.Builder {
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) })
 }
 
-// ServicePlans returns the service fixture's plans over one graph. The
+// ServicePlans returns the plans of the service fixture over one graph. The
 // plan go-server runs servergen toward the Go backend, and it writes
 // svc/store_server.go. The plan ts-client runs clientgen toward the
 // TypeScript backend, and it writes svc/store.ts. Each call returns new
@@ -107,8 +108,8 @@ func ServicePlans() []workspace.Plan {
 	}
 }
 
-// EditService is the service fixture's edit: it narrows the field size of
-// the message Summary in svc/store.proto under root from int64 to int32.
+// EditService is the edit of the service fixture. It narrows the field size
+// of the message Summary in svc/store.proto under root from int64 to int32.
 // The struct of go-server and the interface of ts-client change, and the
 // export of go-server does not, because the export lists the names of the
 // declarations and their members and not their types. It reads and writes
@@ -138,51 +139,50 @@ func EditService(root string) error {
 	return nil
 }
 
-// servergen returns the service fixture's server generator. It writes a
-// Go struct for each message, a sum for each oneof and an enum for each
-// enum, all under their flat names, and the interface <Service>Server
+// servergen returns the server generator of the service fixture. It writes
+// a Go struct for each message, a sum for each oneof and an enum for each
+// enum, each under its flat name. It writes the interface <Service>Server
 // for each service.
 func servergen() plugin.Generator {
-	return generator(eidos.NewPlugin(servergenID).
+	return eidos.NewPlugin(servergenID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: serverWord}).
 		Handle(
 			eidos.OnStruct(serverMessage), eidos.OnSum(sumOf), eidos.OnEnum(enumOf),
 			eidos.OnInterface(serverService),
 		).
-		Build())
+		Generator()
 }
 
-// clientgen returns the service fixture's client generator. It writes a
-// TypeScript interface for each message, a sum for each oneof and an enum
-// for each enum, all under their flat names, and the interface
+// clientgen returns the client generator of the service fixture. It writes
+// a TypeScript interface for each message, a sum for each oneof and an enum
+// for each enum, each under its flat name. It writes the interface
 // <Service>Client for each service.
 func clientgen() plugin.Generator {
-	return generator(eidos.NewPlugin(clientgenID).
+	return eidos.NewPlugin(clientgenID).
 		Output(plugin.Output{Per: plugin.PerSource, Word: clientWord}).
 		Handle(
 			eidos.OnStruct(clientMessage), eidos.OnSum(sumOf), eidos.OnEnum(enumOf),
 			eidos.OnInterface(clientService),
 		).
-		Build())
+		Generator()
 }
 
 // serverMessage writes the Go struct of one message under its flat name,
 // with a field for each field of the message and a field for each oneof.
-// The Emitter translates the type of each field with its presence. A
-// oneof's field refers to the oneof's sum, whose nil value is the absent
-// one. The reference has the oneof's flat name and the oneof as its
-// target, so the settle follows it to the sum that has the oneof as its
-// origin. It withholds the struct where Go has no spelling of a field's
-// type, after the Emitter reports the refusal.
+// The Emitter translates the type of each field with its presence. The
+// field of a oneof refers to the sum of the oneof, whose nil value is the
+// absent value. The reference has the flat name of the oneof and the oneof
+// as its target, so the settle follows it to the sum that has the oneof as
+// its origin. serverMessage withholds the struct where Go has no spelling
+// of the type of a field, after the Emitter reports the refusal.
 func serverMessage(m *eidos.StructMatch, e *eidos.Emitter) error {
 	s := m.Struct
-	out := &emit.Struct{Origin: s.ID, Doc: s.Doc, Name: s.ID.FlatName(), Visibility: s.Visibility}
-	for _, f := range s.Fields {
-		t, spelled := e.Type(f.ID, f.Type)
-		if !spelled {
-			return nil
-		}
-		out.Fields.Append(&emit.Field{Origin: f.ID, Doc: f.Doc, Name: f.Name, Visibility: f.Visibility, Type: t})
+	fields, spelled := e.Fields(s.Fields, nil)
+	if !spelled {
+		return nil
+	}
+	out := &emit.Struct{
+		Origin: s.ID, Doc: s.Doc, Name: s.ID.FlatName(), Visibility: s.Visibility, Fields: emit.SlotOf(fields...),
 	}
 	for _, nested := range s.Types {
 		if sum, oneof := nested.(*node.Sum); oneof {
@@ -199,24 +199,23 @@ func serverMessage(m *eidos.StructMatch, e *eidos.Emitter) error {
 // clientMessage writes the TypeScript interface of one message under its
 // flat name, with a property for each field of the message and a property
 // for each oneof. A property has a question mark where its field has
-// presence, which the rules of the field's language decide, and a oneof's
-// property always has one. A oneof's property refers to the oneof's sum
-// as the struct of [serverMessage] does. It withholds the interface where
-// TypeScript has no spelling of a field's type, after the Emitter reports
-// the refusal.
+// presence, which the rules of the language of the field decide. The
+// property of a oneof always has one, and it refers to the sum of the
+// oneof as the struct of [serverMessage] does. clientMessage withholds the
+// interface where TypeScript has no spelling of the type of a field, after
+// the Emitter reports the refusal.
 func clientMessage(m *eidos.StructMatch, e *eidos.Emitter) error {
 	s := m.Struct
+	fields, spelled := e.Fields(s.Fields, nil)
+	if !spelled {
+		return nil
+	}
 	bound := m.Rules()
-	out := &emit.Interface{Origin: s.ID, Doc: s.Doc, Name: s.ID.FlatName(), Visibility: s.Visibility}
-	for _, f := range s.Fields {
-		t, spelled := e.Type(f.ID, f.Type)
-		if !spelled {
-			return nil
-		}
-		out.Fields.Append(&emit.Field{
-			Origin: f.ID, Doc: f.Doc, Name: f.Name, Visibility: f.Visibility, Type: t,
-			Optional: bound.FieldTypeOf(f).Form == symbol.FormOptional,
-		})
+	for i, f := range fields {
+		f.Optional = bound.FieldTypeOf(s.Fields[i]).Form == symbol.FormOptional
+	}
+	out := &emit.Interface{
+		Origin: s.ID, Doc: s.Doc, Name: s.ID.FlatName(), Visibility: s.Visibility, Fields: emit.SlotOf(fields...),
 	}
 	for _, nested := range s.Types {
 		if sum, oneof := nested.(*node.Sum); oneof {
@@ -231,9 +230,10 @@ func clientMessage(m *eidos.StructMatch, e *eidos.Emitter) error {
 }
 
 // sumOf writes the sum of one oneof under its flat name, with a variant
-// for each member, whose one field has the member's type. It withholds
-// the sum where the target has no spelling of a member's type, after the
-// Emitter reports the refusal.
+// for each member. The one field of a variant has the type of the member,
+// and no documentation, because the variant has the documentation of the
+// member. sumOf withholds the sum where the target has no spelling of the
+// type of a member, after the Emitter reports the refusal.
 func sumOf(m *eidos.SumMatch, e *eidos.Emitter) error {
 	s := m.Sum
 	out := &emit.Sum{Origin: s.ID, Doc: s.Doc, Name: s.ID.FlatName(), Visibility: s.Visibility}
@@ -265,12 +265,12 @@ func enumOf(m *eidos.EnumMatch, e *eidos.Emitter) error {
 }
 
 // serverService writes the Go interface <Service>Server of one service,
-// with a method for each rpc. A method takes a context before the rpc's
-// request and declares a failure, which the Go backend lowers into the
-// error result, because a Go server reports a failed call through it. A
+// with a method for each rpc. A method takes a context before the request
+// of the rpc and declares a failure. The Go backend lowers the failure into
+// the error result, because a Go server reports a failed call through it. A
 // streaming side translates as an iterator over pairs of a message and an
-// error. It withholds the interface where Go has no spelling of a type,
-// after the Emitter reports the refusal.
+// error. serverService withholds the interface where Go has no spelling of
+// a type, after the Emitter reports the refusal.
 func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	service := m.Interface
 	out := &emit.Interface{
@@ -284,7 +284,7 @@ func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 		ctx := &emit.Param{Name: contextParam, Type: &emit.TypeRef{Spelling: contextType, Package: contextPackage}}
 		lowered := &emit.Method{
 			Origin: method.ID, Doc: method.Doc, Name: method.Name, Visibility: method.Visibility,
-			Params: []*emit.Param{ctx}, Throws: []*emit.TypeRef{{Spelling: errorType}},
+			Params: emit.SlotOf(ctx), Throws: []*emit.TypeRef{{Spelling: errorType}},
 		}
 		if !signature(lowered, c.Params, c.Returns, method.ID, e) {
 			return nil
@@ -297,10 +297,10 @@ func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 
 // clientService writes the TypeScript interface <Service>Client of one
 // service, with a method for each rpc. A method is asynchronous where its
-// rpc is, so the caller awaits a response that is not a stream, and a
-// streaming side translates as an asynchronous iterable. It withholds
-// the interface where TypeScript has no spelling of a type, after the
-// Emitter reports the refusal.
+// rpc is, so the caller awaits a response that is not a stream. A streaming
+// side translates as an asynchronous iterable. clientService withholds the
+// interface where TypeScript has no spelling of a type, after the Emitter
+// reports the refusal.
 func clientService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	service := m.Interface
 	out := &emit.Interface{
@@ -324,9 +324,9 @@ func clientService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 }
 
 // signature appends the translated request and response of one rpc to a
-// method, each translated with the rpc as its owner. It reports false
-// where the target has no spelling of a type, after the Emitter reports
-// the refusal.
+// method. The rpc is the owner of each translation. signature reports
+// false where the target has no spelling of a type, after the Emitter
+// reports the refusal.
 func signature(
 	lowered *emit.Method, params []rules.ParamView, returns []rules.ReturnView, owner symbol.Identity, e *eidos.Emitter,
 ) bool {
@@ -335,25 +335,14 @@ func signature(
 		if !spelled {
 			return false
 		}
-		lowered.Params = append(lowered.Params, &emit.Param{Name: p.Name, Type: t})
+		lowered.Params.Append(&emit.Param{Name: p.Name, Type: t})
 	}
 	for _, r := range returns {
 		t, spelled := e.Type(owner, r.Ref)
 		if !spelled {
 			return false
 		}
-		lowered.Returns = append(lowered.Returns, &emit.Return{Type: t})
+		lowered.Returns.Append(&emit.Return{Type: t})
 	}
 	return true
-}
-
-// generator returns a built plugin as the generator that its emitter
-// rules make it. Every plugin of the package declares emitter rules, so
-// a plugin that is not a generator is a defect in this package.
-func generator(p plugin.Plugin) plugin.Generator {
-	g, held := p.(plugin.Generator)
-	if !held {
-		panic("protobuf: a plugin of emitter rules lowers to a generator")
-	}
-	return g
 }

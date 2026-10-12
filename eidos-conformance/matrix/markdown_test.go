@@ -4,6 +4,7 @@
 package matrix_test
 
 import (
+	"errors"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -55,10 +56,14 @@ const (
 	refusalReason = "the stub has no functions"
 )
 
-// bareBackend is a backend of the target stub that implements only
-// Backend. It does not declare a spoke, a policy, a coverage or a refused
-// kind.
-type bareBackend struct{}
+// errUnspelled is the refusal of the spoke of the bare backend.
+var errUnspelled = errors.New("the stub target spells no type of another language")
+
+// bareBackend is a backend of the target stub. Its spoke refuses every
+// shape, and it declares no policy, coverage or refused kind. The methods
+// of a rendering backend belong to the nil interface that it embeds,
+// which the matrix never calls.
+type bareBackend struct{ plugin.Backend }
 
 // Name returns the plugin's name, stub.
 func (bareBackend) Name() plugin.ID {
@@ -69,6 +74,14 @@ func (bareBackend) Name() plugin.ID {
 func (bareBackend) Target() plugin.Target {
 	return stubTarget
 }
+
+// SpellType refuses every shape.
+func (bareBackend) SpellType(rules.TypeShape, plugin.Policy) (*emit.TypeRef, error) {
+	return nil, errUnspelled
+}
+
+// Policies returns nil.
+func (bareBackend) Policies() []plugin.PolicySpec { return nil }
 
 // coveredBackend is a backend of the target stub that declares a
 // coverage and the kinds that it refuses.
