@@ -14,8 +14,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// variant is one enum variant a cfg predicate keeps in: its node, its
-// attributes, and its comments' parts and trailing comment.
+// variant is one enum variant that a cfg predicate keeps in: its node, its
+// attributes, and the parts and the trailing comment of its comments.
 type variant struct {
 	n       treesitter.Node
 	a       attributes
@@ -23,9 +23,8 @@ type variant struct {
 	comment string
 }
 
-// structItem lowers a struct or a union: its type parameters, its named
-// or positional fields, and its attributes. A union is stamped
-// rust.union.
+// structItem lowers a struct or a union: its type parameters, its named or
+// positional fields, and its attributes. rust.union stamps a union.
 func (l *lowering) structItem(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) {
@@ -48,10 +47,10 @@ func (l *lowering) structItem(n treesitter.Node, c container, a attributes) {
 	l.w.addType(c.pkg, st.Name, st)
 }
 
-// fields lowers a struct's or a variant's fields: a named list's fields
-// by name, and a positional list's unnamed, in order, each with its own
-// visibility, def where it states none, its attributes and its
-// comments.
+// fields lowers the fields of a struct or a variant: the fields of a named
+// list by name, and the fields of a positional list without a name, in
+// order. Each field has its own visibility, and def where it states none,
+// its attributes and its comments.
 func (l *lowering) fields(body treesitter.Node, def symbol.Visibility) []*node.Field {
 	var out []*node.Field
 	var attrs []treesitter.Node
@@ -65,7 +64,7 @@ func (l *lowering) fields(body treesitter.Node, def symbol.Visibility) []*node.F
 			vis = child
 		case k == l.v.fieldDeclaration:
 			if f := l.field(child, child.Child(l.v.fieldName), child.Child(l.v.fieldType),
-				l.firstOf(child, l.v.visibilityModifier), def, attrs); f != nil {
+				child.FirstOf(l.v.visibilityModifier), def, attrs); f != nil {
 				out = append(out, f)
 			}
 			attrs = nil
@@ -80,9 +79,9 @@ func (l *lowering) fields(body treesitter.Node, def symbol.Visibility) []*node.F
 }
 
 // field lowers one field, named where name is a field identifier and
-// positional otherwise, with the visibility its modifier states and def
-// where it states none. It returns nil for a field a cfg predicate keeps
-// out, and for one signature depth leaves out.
+// positional otherwise, with the visibility of its modifier and def where
+// it has no modifier. It returns nil for a field that a cfg predicate
+// keeps out, and for a field that the signature depth leaves out.
 func (l *lowering) field(n, name, typ, vm treesitter.Node, def symbol.Visibility,
 	attrs []treesitter.Node,
 ) *node.Field {
@@ -110,10 +109,12 @@ func (l *lowering) field(n, name, typ, vm treesitter.Node, def symbol.Visibility
 	return f
 }
 
-// enumItem lowers an enum: an Enum where no variant states a payload,
-// each variant's discriminant verbatim, and a Sum where any does, each
-// variant's fields named or positional, because the model splits a
-// variant set by payload. A variant's fields are as public as the enum.
+// enumItem lowers an enum. It is an Enum where no variant has a payload,
+// with the discriminant of each variant verbatim, and a Sum where any
+// variant has one, with the named or positional fields of each variant,
+// because the model splits a set of variants by payload. The integer type
+// of the repr attribute of an Enum, which [representation] lifts, is its
+// underlying type. The fields of a variant are as public as the enum.
 func (l *lowering) enumItem(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) {
@@ -141,9 +142,10 @@ func (l *lowering) enumItem(n treesitter.Node, c container, a attributes) {
 		}
 		decl = sum
 	} else {
+		underlying, annotations := representation(a.annotations, n.Pos())
 		e := &node.Enum{
 			Name: nameNode.Text(), Pos: nameNode.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
-			Annotations: a.annotations,
+			Underlying: underlying, Annotations: annotations,
 		}
 		for _, v := range variants {
 			name := v.n.Child(l.v.fieldName)
@@ -161,9 +163,9 @@ func (l *lowering) enumItem(n treesitter.Node, c container, a attributes) {
 	l.w.addType(c.pkg, nameNode.Text(), decl)
 }
 
-// variantsOf reads an enum body's variants with their attributes and
-// comments, and leaves out a variant a cfg predicate keeps out, with its
-// comments.
+// variantsOf reads the variants of an enum body with their attributes and
+// comments. It leaves out a variant that a cfg predicate keeps out, with
+// its comments.
 func (l *lowering) variantsOf(body treesitter.Node) []variant {
 	var out []variant
 	var attrs []treesitter.Node
@@ -188,17 +190,16 @@ func (l *lowering) variantsOf(body treesitter.Node) []variant {
 	return out
 }
 
-// payload reports whether a variant states a payload, named or
-// positional.
+// payload reports whether a variant has a payload, named or positional.
 func (l *lowering) payload(v variant) bool {
 	return !v.n.Child(l.v.fieldBody).IsZero()
 }
 
-// traitItem lowers a trait as an Interface: its supertraits as what it
-// extends, a method without a body as abstract and one with a body as
-// having a default, an associated type as an Alias without a target
-// among its types, and an associated constant as a Constant among them.
-// Signature depth keeps a public trait's items whole.
+// traitItem lowers a trait as an Interface. Its supertraits are what it
+// extends. A method without a body is abstract, and a method with a body
+// has a default. An associated type is an Alias without a target among the
+// types of the Interface, and an associated constant is a Constant among
+// them. The signature depth keeps the items of a public trait whole.
 func (l *lowering) traitItem(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) {
@@ -247,8 +248,8 @@ func (l *lowering) traitItem(n treesitter.Node, c container, a attributes) {
 }
 
 // associated lowers an associated type as an Alias whose target the
-// implementation supplies: nil, or the default the trait states, which
-// the grammar parses as a type item.
+// implementation supplies. The target is nil, or the default of the trait,
+// which the grammar parses as a type item.
 func (l *lowering) associated(n treesitter.Node, a attributes) *node.Alias {
 	nameNode := n.Child(l.v.fieldName)
 	parts, comment := l.declParts(n, a)
@@ -262,7 +263,8 @@ func (l *lowering) associated(n treesitter.Node, a attributes) *node.Alias {
 	return alias
 }
 
-// function lowers a free function, or one an extern block declares.
+// function lowers a free function, or a function that an extern block
+// declares.
 func (l *lowering) function(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) {
@@ -282,13 +284,13 @@ func (l *lowering) function(n treesitter.Node, c container, a attributes) {
 	l.lifetimes(fn, lifetimes)
 }
 
-// methodOf builds a method of a trait or an impl: its receiver, the
-// type level for one without self, async, its signature and its
+// methodOf builds a method of a trait or an impl: its receiver, the type
+// level for a method without self, async, its signature and its
 // attributes. Its carriers attach, and def is its visibility where the
-// item states none.
+// item has no modifier.
 func (l *lowering) methodOf(n treesitter.Node, a attributes, def symbol.Visibility) *node.Method {
 	vis, spelled := def, ""
-	if vm := l.firstOf(n, l.v.visibilityModifier); !vm.IsZero() {
+	if vm := n.FirstOf(l.v.visibilityModifier); !vm.IsZero() {
 		vis, spelled = l.visibilityOf(vm)
 	}
 	nameNode := n.Child(l.v.fieldName)
@@ -308,13 +310,13 @@ func (l *lowering) methodOf(n treesitter.Node, a attributes, def symbol.Visibili
 	return m
 }
 
-// async reports whether a function's modifiers include async.
+// async reports whether the modifiers of a function include async.
 func (l *lowering) async(n treesitter.Node) bool {
-	return l.token(l.firstOf(n, l.v.functionModifiers), keywordAsync)
+	return n.FirstOf(l.v.functionModifiers).HasToken(keywordAsync)
 }
 
-// returns lowers a function's return type into its one result, and
-// nothing for a function that states none.
+// returns lowers the return type of a function into its one result, and
+// returns nothing for a function without a return type.
 func (l *lowering) returns(n treesitter.Node) []*node.Return {
 	rt := n.Child(l.v.fieldReturnType)
 	if rt.IsZero() {
@@ -323,12 +325,13 @@ func (l *lowering) returns(n treesitter.Node) []*node.Return {
 	return []*node.Return{{Pos: rt.Pos(), Type: l.typeRef(rt)}}
 }
 
-// params lowers a parameter list: each parameter's name where its
+// params lowers a parameter list. Each parameter has its name where its
 // pattern is an identifier, its type and its attributes, and a variadic
-// one of an extern function as positionally variadic. A parameter a cfg
-// predicate keeps out is left out, and the carriers of a parameter's
-// comments are refused. The self parameter is the receiver, returned
-// apart, typed Self behind the reference it states.
+// parameter of an extern function is positionally variadic. A parameter
+// that a cfg predicate keeps out is left out, and the carriers of the
+// comments of a parameter report under [UnaddressedCarrier]. params
+// returns the self parameter apart as the receiver, with the type Self
+// behind the reference of the parameter.
 func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver *node.Param) {
 	var attrs []treesitter.Node
 	for p := range list.NamedChildren() {
@@ -373,8 +376,8 @@ func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver 
 	return params, receiver
 }
 
-// selfSpelling spells a self parameter's type: Self behind the reference,
-// the lifetime and the mutability the parameter states. A mut self
+// selfSpelling spells the type of a self parameter: Self behind the
+// reference, the lifetime and the mutability of the parameter. A mut self
 // parameter is a mutable binding of a value, whose type is Self.
 func (l *lowering) selfSpelling(p treesitter.Node) string {
 	var b strings.Builder
@@ -391,10 +394,10 @@ func (l *lowering) selfSpelling(p treesitter.Node) string {
 	return b.String() + keywordSelfType
 }
 
-// typeParams lowers an item's generic parameters: a type parameter with
-// its bounds and default, and the bounds its where clause adds, and a
-// const parameter as const with its type and default. It returns the
-// lifetime parameters apart, as written.
+// typeParams lowers the generic parameters of an item: a type parameter
+// with its bounds, its default and the bounds that its where clause adds,
+// and a const parameter as const with its type and its default. It returns
+// the lifetime parameters apart, as written.
 func (l *lowering) typeParams(n treesitter.Node) ([]*node.TypeParam, []string) {
 	var out []*node.TypeParam
 	var lifetimes []string
@@ -419,7 +422,7 @@ func (l *lowering) typeParams(n treesitter.Node) ([]*node.TypeParam, []string) {
 			})
 		}
 	}
-	for pred := range l.firstOf(n, l.v.whereClause).NamedChildren() {
+	for pred := range n.FirstOf(l.v.whereClause).NamedChildren() {
 		if tp := byName[pred.Child(l.v.fieldLeft).Text()]; tp != nil {
 			tp.Bounds = append(tp.Bounds, l.bounds(pred.Child(l.v.fieldBounds))...)
 		}
@@ -427,10 +430,10 @@ func (l *lowering) typeParams(n treesitter.Node) ([]*node.TypeParam, []string) {
 	return out, lifetimes
 }
 
-// bounds lowers a bound list's types, the lifetimes left out.
+// bounds lowers the types of a bound list, without the lifetimes.
 func (l *lowering) bounds(list treesitter.Node) []*node.TypeRef {
 	var out []*node.TypeRef
-	for _, b := range l.children(list) {
+	for b := range list.Content() {
 		if b.Kind() != l.v.lifetime {
 			out = append(out, l.typeRef(b))
 		}
@@ -438,8 +441,8 @@ func (l *lowering) bounds(list treesitter.Node) []*node.TypeRef {
 	return out
 }
 
-// lifetimes stamps a declaration's lifetime parameters, which the model
-// has no type parameter for.
+// lifetimes stamps the lifetime parameters of a declaration, for which the
+// model has no type parameter.
 func (l *lowering) lifetimes(decl symbol.Symbol, lifetimes []string) {
 	if len(lifetimes) > 0 {
 		l.w.stamp(decl, rust.LifetimeParamsKey, lifetimes, decl.Position())
@@ -447,7 +450,7 @@ func (l *lowering) lifetimes(decl symbol.Symbol, lifetimes []string) {
 }
 
 // constant lowers a const item. An anonymous const, named _, declares
-// nothing, because no path names it.
+// nothing, because no path refers to it.
 func (l *lowering) constant(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) || n.Child(l.v.fieldName).Text() == discardName {
@@ -457,8 +460,9 @@ func (l *lowering) constant(n treesitter.Node, c container, a attributes) {
 	c.file.Decls = append(c.file.Decls, l.constantOf(n, a, vis, spelled))
 }
 
-// constantOf builds a constant: its type and its value verbatim. Its
-// carriers attach, and a restricted visibility's spelling is stamped.
+// constantOf builds a constant with its type and its value verbatim. Its
+// carriers attach, and the lowering stamps the spelling of a restricted
+// visibility.
 func (l *lowering) constantOf(n treesitter.Node, a attributes, vis symbol.Visibility, spelled string) *node.Constant {
 	nameNode := n.Child(l.v.fieldName)
 	parts, comment := l.declParts(n, a)
@@ -471,8 +475,8 @@ func (l *lowering) constantOf(n treesitter.Node, a attributes, vis symbol.Visibi
 	return k
 }
 
-// static lowers a static item as a Variable: mutable for static mut,
-// and immutable otherwise.
+// static lowers a static item as a Variable: mutable for static mut, and
+// immutable otherwise.
 func (l *lowering) static(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) {
@@ -487,13 +491,13 @@ func (l *lowering) static(n treesitter.Node, c container, a attributes) {
 		Type:       l.typeRef(n.Child(l.v.fieldType)), Value: n.Child(l.v.fieldValue).Text(),
 		Annotations: a.annotations,
 	}
-	if !l.firstOf(n, l.v.mutableSpecifier).IsZero() {
+	if !n.FirstOf(l.v.mutableSpecifier).IsZero() {
 		v.Mutability = symbol.MutabilityMutable
 	}
 	l.declare(c, v, parts, spelled, a)
 }
 
-// typeAlias lowers a type item as an Alias of the type it names.
+// typeAlias lowers a type item as an Alias of its type.
 func (l *lowering) typeAlias(n treesitter.Node, c container, a attributes) {
 	vis, spelled := l.visibility(n)
 	if !l.kept(vis) {

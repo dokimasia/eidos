@@ -5,6 +5,7 @@ package backend
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -16,73 +17,71 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names are constants, so a template and its helper
-// spell one name.
+// The names of the vocabulary are constants, so a template and the map
+// of its helpers use the same name. The names that every backend declares
+// are the names of the render package.
 const (
-	// FuncDocs writes a declaration's documentation.
-	FuncDocs = "docs"
-	// FuncMemberDocs writes a member's documentation at the member's
-	// depth.
+	// FuncDocs is the template name of [Docs].
+	FuncDocs = render.HelperDocs
+	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
-	// FuncSpell writes a type reference.
-	FuncSpell = "spell"
-	// FuncTypeParams writes a type definition's parameter list.
-	FuncTypeParams = "typeparams"
-	// FuncImplParams writes an impl block's parameter list.
+	// FuncSpell is the template name of [Speller.Spell].
+	FuncSpell = render.HelperSpell
+	// FuncTypeParams is the template name of [Speller.TypeParams].
+	FuncTypeParams = render.HelperTypeParams
+	// FuncImplParams is the template name of [Speller.ImplParams].
 	FuncImplParams = "implparams"
-	// FuncFnParams writes a function's, a method's or an associated
-	// type's parameter list.
+	// FuncFnParams is the template name of [Speller.FnParams].
 	FuncFnParams = "fnparams"
-	// FuncBinder writes an impl block's binder.
+	// FuncBinder is the template name of [Binder].
 	FuncBinder = "binder"
-	// FuncParams writes a parameter list.
-	FuncParams = "params"
-	// FuncResults writes a return annotation.
-	FuncResults = "results"
-	// FuncVis writes a declaration's visibility.
+	// FuncParams is the template name of [Speller.Params].
+	FuncParams = render.HelperParams
+	// FuncResults is the template name of [Speller.Results].
+	FuncResults = render.HelperResults
+	// FuncVis is the template name of [Vis].
 	FuncVis = "vis"
-	// FuncStructMods writes a struct's keywords.
+	// FuncStructMods is the template name of [StructMods].
 	FuncStructMods = "structmods"
-	// FuncFnMods writes a free function's keywords.
+	// FuncFnMods is the template name of [FnMods].
 	FuncFnMods = "fnmods"
-	// FuncTraitFn writes a trait method's keywords.
+	// FuncTraitFn is the template name of [TraitFn].
 	FuncTraitFn = "traitfn"
-	// FuncImplFn writes an impl method's keywords.
+	// FuncImplFn is the template name of [ImplFn].
 	FuncImplFn = "implfn"
 
-	// FuncTypeNames writes a parameter list's names alone, for an
-	// impl block's target.
+	// FuncTypeNames is the template name of [TypeNames].
 	FuncTypeNames = "typenames"
-	// FuncSelfParams writes a method's parameter list with its
-	// receiver.
+	// FuncSelfParams is the template name of [Speller.SelfParams].
 	FuncSelfParams = "selfparams"
-	// FuncFieldMods writes a field's keywords.
+	// FuncFieldMods is the template name of [FieldMods].
 	FuncFieldMods = "fieldmods"
-	// FuncAttrs writes a declaration's attribute lines.
+	// FuncAttrs is the template name of [Attrs].
 	FuncAttrs = "attrs"
-	// FuncMemberAttrs writes a member's attribute lines at the member's
-	// depth.
+	// FuncMemberAttrs is the template name of [MemberAttrs].
 	FuncMemberAttrs = "memberattrs"
-	// FuncSupertraits writes a trait's supertrait bounds.
+	// FuncSupertraits is the template name of [Speller.Supertraits].
 	FuncSupertraits = "supertraits"
-	// FuncEnumMods writes an enum's keywords.
+	// FuncEnumMods is the template name of [EnumMods].
 	FuncEnumMods = "enummods"
-	// FuncAssocType writes a trait's associated type.
+	// FuncAssocType is the template name of [Speller.AssocType].
 	FuncAssocType = "assoctype"
-	// FuncSumMods writes a data enum's keywords.
+	// FuncSumMods is the template name of [SumMods].
 	FuncSumMods = "summods"
-	// FuncSumPayload writes a data enum variant's payload.
+	// FuncSumPayload is the template name of [Speller.SumPayload].
 	FuncSumPayload = "sumpayload"
-	// FuncAliasMods writes a type alias's keywords.
+	// FuncAliasMods is the template name of [AliasMods].
 	FuncAliasMods = "aliasmods"
-	// FuncConstType writes a constant's stated type, refusing an
-	// unstated type and a missing value.
+	// FuncConstType is the template name of [Speller.ConstType].
 	FuncConstType = "consttype"
+	// FuncRepr is the template name of [Speller.Repr].
+	FuncRepr = "repr"
 )
 
-// Every receiver binds selfName. A borrowed receiver spells in one of
-// two shorthand forms, any other receiver type behind the prefix of the
-// typed form, and the shorthand forms abbreviate three receiver types.
+// Every receiver has the name selfName. A borrowed receiver has one of
+// two shorthand forms, and every other receiver type follows the prefix
+// of the typed form. The shorthand forms abbreviate the three receiver
+// types selfType, selfRefType and selfMutType.
 const (
 	selfName       = "self"
 	receiverRef    = "&self"
@@ -93,9 +92,9 @@ const (
 	selfMutType    = "&mut Self"
 )
 
-// The vocabulary writes an argument list in angle brackets, the unit
-// type where the shared speller states no result, and the discard
-// pattern an unnamed parameter binds.
+// genericsOpener and genericsCloser enclose an argument list.
+// unitSpelling is the spelling of a missing type in the shared speller,
+// and discardName is the pattern of an unnamed parameter.
 const (
 	genericsOpener = "<"
 	genericsCloser = ">"
@@ -106,31 +105,33 @@ const (
 // pathSep separates the segments of a Rust path.
 const pathSep = "::"
 
-// docMark opens a line of an outer doc comment, and attrOpen and
-// attrClose enclose an outer attribute.
+// docMark starts a line of an outer doc comment, and attrOpen and
+// attrClose enclose an outer attribute. reprOpen and reprClose enclose the
+// integer type of a repr attribute.
 const (
 	docMark   = "/// "
 	attrOpen  = "#["
 	attrClose = "]"
+	reprOpen  = "repr("
+	reprClose = ")"
 )
 
-// asyncKeyword marks an asynchronous function, with the space that
-// follows it.
+// asyncKeyword is the keyword of an async function, with the space after
+// it.
 const asyncKeyword = "async "
 
-// unstatedType is the reason a reference that states no type
-// refuses.
+// unstatedType is the refusal of a reference without a type.
 const unstatedType = "a declaration states no type, and Rust spells none in its place"
 
-// refusalPrefix opens every refusal the backend returns: the
-// language's identity, as every backend's refusals open.
+// refusalPrefix is the start of every refusal of the backend. It is the
+// identity of the language, as in the refusals of every backend.
 const refusalPrefix = string(rust.Lang) + ": "
 
-// builtinTypes maps each type name Rust declares without a
+// builtinTypes maps each type name that Rust declares without a
 // declaration in the workspace to whether the type is numeric. The
-// numeric primitives convert into one another by cast. bool, char,
-// str and the prelude's String convert through traits and methods.
-// No such name is a type parameter or a tuple struct.
+// numeric primitives convert into one another by a cast. bool, char, str
+// and the String of the prelude convert through traits and methods. None
+// of the names is a type parameter or a tuple struct.
 var builtinTypes = map[string]bool{
 	"bool": false, "char": false, "str": false, "String": false,
 	"i8": true, "i16": true, "i32": true, "i64": true, "i128": true, "isize": true,
@@ -138,13 +139,17 @@ var builtinTypes = map[string]bool{
 	"f32": true, "f64": true,
 }
 
-// Speller spells type references for one file. An item a spelling
-// names from another module is used through the file's import set,
-// under its own name or a numbered one where another use or a
-// declaration of the file takes that name, and the spelling names it
-// through the bound name. The module is the reference's target's
-// where the target is a Rust declaration, and the one the reference
-// records where it has no target.
+// reprTypes are the integer types of Rust, which a repr attribute of an
+// enum takes.
+var reprTypes = []string{"i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize"}
+
+// Speller writes the type references of one file. For an item of
+// another module, it adds a use declaration to the import set of the
+// file. The use binds the name of the item, or a numbered name where
+// another use or a declaration of the file already has that name. The
+// written reference then uses the bound name. The module is the module
+// of the target where the target is a Rust declaration, and the module
+// that the reference records where it has no target.
 //
 // # Concurrency
 //
@@ -152,37 +157,37 @@ var builtinTypes = map[string]bool{
 //
 // # Allocation contract
 //
-// Each method allocates the text it writes and nothing else, so a name
-// spelled as written and an item whose use is bound allocate nothing.
-// Binding an item's use for the first time allocates in the set. A
-// method that joins more than two parts also allocates its list of
-// parts, because Go places a list of at most two strings on the stack.
-// A trailing comment allocates its block comment and the part it ends.
-// A refusal allocates its error.
+// Each method allocates the text that it writes and nothing else, so a
+// name in its written form and an item with a bound use allocate
+// nothing. The first use of an item allocates in the set. A method that
+// joins more than two parts also allocates its list of parts, because Go
+// places a list of at most two strings on the stack. A trailing comment
+// allocates its block comment and the part that it ends. A refusal
+// allocates its error.
 type Speller struct {
 	set *render.ImportSet
 }
 
-// NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil. It allocates nothing.
+// NewSpeller returns the speller of the file with the import set set.
+// set must not be nil. NewSpeller allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
-// Spell writes a type reference and uses the item it names: the
-// source spelling where the reference names no item of another
-// module, and behind a reference with arguments the argument list in
-// angle brackets. A reference that states no type, itself or in an
-// argument list at any depth, refuses: Rust has no spelling for an
-// absent type, and the unit type in its place compiles and changes
-// what the declaration states. A structural reference keeps its
-// written spelling, and Spell returns an error where an item inside
-// it is used under another name, because Rust's composite spelling
-// does not follow from its structure.
+// Spell writes the type reference t and adds a use of its item. It
+// returns the source spelling where t does not refer to an item of
+// another module. A reference with arguments gets the argument list in
+// angle brackets after the name. Spell returns an error for a reference
+// without a type, at any depth of its argument lists, because Rust has
+// no spelling for a missing type. The unit type in its place compiles
+// and changes the declaration. A structural reference keeps its written
+// spelling. Spell returns an error where an item inside a structural
+// reference has a use under another name, because the composite spelling
+// of Rust does not follow from its structure.
 //
-// Spell allocates nothing for a name spelled as written, a used item
-// and a structural reference. A reference with arguments writes into
-// one buffer, one allocation where every bound name is as long as its
-// written spelling. A path inside a used item allocates the path behind
-// the bound name.
+// Spell allocates nothing for a name in its written form, an item with a
+// use and a structural reference. A reference with arguments writes into
+// one buffer, which is one allocation where every bound name is as long
+// as its written spelling. A path inside an item with a use allocates
+// the path after the bound name.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	if !complete(t) {
 		return "", refuse(unstatedType)
@@ -194,11 +199,11 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return out, nil
 }
 
-// ConstType writes a constant's stated type. It refuses a constant
-// without a type, because rustc requires the annotation and no
-// formatter catches its absence, and a constant without a value,
-// because const X: T = ; declares nothing. It allocates what
-// [Speller.Spell] allocates for the type.
+// ConstType writes the type of the constant c. It returns an error for a
+// constant without a type, because rustc requires the annotation and a
+// formatter does not detect its absence. It returns an error for a
+// constant without a value, because const X: T = ; declares nothing. It
+// allocates what [Speller.Spell] allocates for the type.
 func (s Speller) ConstType(c *emit.Constant) (string, error) {
 	switch {
 	case c.Type == nil || c.Type.Spelling == "":
@@ -209,49 +214,69 @@ func (s Speller) ConstType(c *emit.Constant) (string, error) {
 	return s.Spell(c.Type)
 }
 
-// TypeParams writes a type definition's parameter list in angle
-// brackets, or nothing for a declaration stating none: bounds joined
-// by plus signs behind a colon, the default behind an equals sign,
-// and a value parameter in the const form with its value's type.
-// Variance refuses, because Rust infers it from use and a
-// declaration states none.
+// Repr writes the repr attribute of the enum e on a line of its own, such
+// as #[repr(u8)], where e has an underlying type, and nothing otherwise.
+// It returns an error for an underlying type that is not an integer type
+// of Rust, because a repr attribute of an enum takes an integer type. It
+// allocates the attribute and what [Speller.Spell] allocates, and nothing
+// for an enum without an underlying type. A refusal allocates its error.
+func (s Speller) Repr(e *emit.Enum) (string, error) {
+	if e.Underlying == nil {
+		return "", nil
+	}
+	spelled, err := s.Spell(e.Underlying)
+	if err != nil {
+		return "", err
+	}
+	if !slices.Contains(reprTypes, spelled) {
+		return "", refuse("a repr takes an integer type, and %s states %s", e.Name, spelled)
+	}
+	return attrOpen + reprOpen + spelled + reprClose + attrClose + "\n", nil
+}
+
+// TypeParams writes the type parameter list ps of a type definition in
+// angle brackets, and nothing for an empty list. The bounds of a
+// parameter follow a colon, joined by plus signs, and its default
+// follows an equals sign. A value parameter has the const form with the
+// type of its value. TypeParams returns an error for a variance, because
+// Rust infers variance from use and a declaration cannot declare it.
 //
-// TypeParams allocates one spelling for each clause a parameter
-// states, which is its bounds, its default or its value type, and the
-// joined bounds of more than one. It allocates the joined list and its
-// brackets, and what each type's spelling allocates: four allocations
-// for a parameter of two bounds beside an unbounded one.
+// Each clause of a parameter allocates one spelling. The clauses are the
+// bounds, the default and the value type. TypeParams also allocates the
+// joined bounds of more than one bound, the joined list with its
+// brackets, and what the spelling of each type allocates. A parameter
+// with two bounds and a parameter without a bound allocate four times.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return s.typeParams(ps, definitionPosition)
 }
 
-// ImplParams writes an impl block's parameter list: a type
-// definition's parameters with their bounds and without their
-// defaults, because the definition states the defaults and rustc
-// refuses one on an impl. It allocates what [Speller.TypeParams]
-// allocates for the list without its defaults.
+// ImplParams writes the type parameter list ps of an impl block. It
+// writes the parameters of the type definition with their bounds and
+// without their defaults, because the definition declares the defaults
+// and rustc refuses a default on an impl. It allocates what
+// [Speller.TypeParams] allocates for the list without its defaults.
 func (s Speller) ImplParams(ps []*emit.TypeParam) (string, error) {
 	return s.typeParams(ps, implPosition)
 }
 
-// FnParams writes a function's, a method's or an associated type's
-// parameter list. A stated default refuses, because Rust takes a
-// default on a type definition's parameter alone. It allocates what
-// [Speller.TypeParams] allocates.
+// FnParams writes the type parameter list ps of a function, a method or
+// an associated type. It returns an error for a default, because Rust
+// allows a default only on a parameter of a type definition. It
+// allocates what [Speller.TypeParams] allocates.
 func (s Speller) FnParams(ps []*emit.TypeParam) (string, error) {
 	return s.typeParams(ps, callablePosition)
 }
 
-// AssocType writes one associated type: the name behind the
-// keyword, its parameter list in angle brackets where the type is
-// generic, which is what a trait declares and an implementation
-// supplies. Only a transparent alias without a target spells that
-// way, so anything else nested in a trait refuses. A stated
-// visibility refuses, because a trait item takes the trait's
-// visibility, and so does a target or definedness, because an alias
-// with a target is a default the stable language does not take.
-// AssocType allocates the declaration, one allocation, and what its
-// parameter list allocates.
+// AssocType writes the associated type d of a trait. The name follows
+// the keyword type, and a generic type has its parameter list in angle
+// brackets. A trait declares the associated type, and an implementation
+// supplies it. Only a transparent alias without a target has this form,
+// so AssocType returns an error for any other declaration in a trait. It
+// returns an error for a visibility, because a trait item has the
+// visibility of the trait. It also returns an error for a target and for
+// a defined type, because an alias with a target is a default that
+// stable Rust does not allow. AssocType allocates the declaration once,
+// and what its parameter list allocates.
 func (s Speller) AssocType(d symbol.Symbol) (string, error) {
 	a, is := d.(*emit.Alias)
 	if !is {
@@ -275,16 +300,17 @@ func (s Speller) AssocType(d symbol.Symbol) (string, error) {
 	return "type " + a.Name + params + ";", nil
 }
 
-// SumPayload writes one variant's payload: nothing for an empty
-// variant, named fields in braces for a struct variant, bare
-// types in parentheses for a tuple variant. A payload mixing
-// named and unnamed entries refuses, and so does an entry stating
-// anything an inline spelling cannot express.
+// SumPayload writes the payload of the variant v. It writes nothing for
+// an empty variant, named fields in braces for a struct variant, and
+// bare types in parentheses for a tuple variant. It returns an error for
+// a payload with named and unnamed entries, and for an entry with a fact
+// that an inline entry cannot express.
 //
 // SumPayload allocates the spelling of each named entry, the joined
-// entries of more than one, and the payload in its delimiters, with
-// what each type's spelling allocates: two allocations for one named
-// entry, one for one unnamed entry, and nothing for an empty payload.
+// entries of more than one entry, the payload in its delimiters, and
+// what the spelling of each type allocates. One named entry allocates
+// twice, one unnamed entry allocates once, and an empty payload
+// allocates nothing.
 func (s Speller) SumPayload(v *emit.SumVariant) (string, error) {
 	fields := v.Fields.Items()
 	if len(fields) == 0 {
@@ -316,17 +342,14 @@ func (s Speller) SumPayload(v *emit.SumVariant) (string, error) {
 	return "(" + strings.Join(parts, ", ") + ")", nil
 }
 
-// Supertraits writes a trait's supertrait bounds behind a colon,
-// joined by plus signs, or nothing where none are stated. An
-// embed refuses, because a trait widens through supertraits
-// alone. Supertraits allocates the joined bounds of more than one and
-// the bounds behind their colon, with what each bound's spelling
-// allocates: two allocations for two supertraits, one for one, and
-// nothing for none.
+// Supertraits writes the supertrait bounds of the trait i after a colon,
+// joined by plus signs, and nothing for a trait without supertraits. A
+// trait extends other traits only through supertraits, so the coverage
+// refuses an embed, and Supertraits writes none. Supertraits allocates the
+// joined bounds of more than one bound, the bounds after their colon, and
+// what the spelling of each bound allocates. Two supertraits allocate
+// twice, one allocates once, and none allocate nothing.
 func (s Speller) Supertraits(i *emit.Interface) (string, error) {
-	if len(i.Embeds) > 0 {
-		return "", refuse("a trait widens through supertraits alone, and %s states embeds", i.Name)
-	}
 	if len(i.Extends) == 0 {
 		return "", nil
 	}
@@ -341,18 +364,18 @@ func (s Speller) Supertraits(i *emit.Interface) (string, error) {
 	return ": " + strings.Join(parts, " + "), nil
 }
 
-// SelfParams writes a method's parameter list with its receiver: the
-// stated receiver where the method states one, the shared borrow
-// &self where it states none, and the parameters alone for an
-// associated function at type level, which refuses a stated
+// SelfParams writes the parameter list of the method m with its
+// receiver. It writes the receiver of m where m has one, and the shared
+// borrow &self where it has none. An associated function at type level
+// gets its parameters alone, and SelfParams returns an error for its
 // receiver.
 //
-// SelfParams allocates what [Speller.Params] allocates, and the
-// receiver joined before the parameters: four allocations for two
-// parameters, and nothing for the shared borrow alone. A receiver in
-// the typed form allocates its spelling.
+// SelfParams allocates what [Speller.Params] allocates, and the receiver
+// joined before the parameters. Two parameters allocate four times, and
+// the shared borrow alone allocates nothing. A receiver in the typed form
+// allocates its spelling.
 func (s Speller) SelfParams(m *emit.Method) (string, error) {
-	params, err := s.Params(m.Params)
+	params, err := s.Params(&m.Params)
 	if err != nil {
 		return "", err
 	}
@@ -374,15 +397,18 @@ func (s Speller) SelfParams(m *emit.Method) (string, error) {
 	return recv + ", " + params, nil
 }
 
-// Params writes a parameter list. An unnamed parameter binds to
-// the discard pattern, which is the spelling Rust accepts, and a
-// parameter that states no type refuses. Params allocates each
-// parameter's spelling and the joined list of more than one, with what
-// each type's spelling allocates: three allocations for two
-// parameters, and nothing for none.
-func (s Speller) Params(ps []*emit.Param) (string, error) {
-	parts := make([]string, 0, len(ps))
-	for _, p := range ps {
+// Params writes the parameter list in the slot ps. A template passes the
+// slot by address, as in {{params .Params}}, so the call reads the slot
+// without a reflective method call. An unnamed parameter gets the
+// discard pattern, because Rust requires a pattern. Params returns an
+// error for a parameter without a type. It allocates the spelling of
+// each parameter, the joined list of more than one parameter, and what
+// the spelling of each type allocates. Two parameters allocate three
+// times, and an empty list allocates nothing.
+func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
+	items := ps.Items()
+	parts := make([]string, 0, len(items))
+	for _, p := range items {
 		name := p.Name
 		if name == "" {
 			name = discardName
@@ -396,14 +422,16 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 	return strings.Join(parts, ", "), nil
 }
 
-// Results writes a return annotation: nothing for none, the type
-// for one, and a tuple for several, which is how Rust returns
-// more than one value. A result that states no type refuses.
-// Results allocates the annotation it writes and the joined tuple of
-// more than one result, with what each type's spelling allocates: one
-// allocation for one result, two for a tuple of two, and nothing for
-// none.
-func (s Speller) Results(rs []*emit.Return) (string, error) {
+// Results writes the return annotation of the results in the slot
+// results. It writes nothing for no result, the type for one result, and
+// a tuple for two or more, because Rust returns two or more values as a
+// tuple. A template passes the slot by address, as Params describes.
+// Results returns an error for a result without a type. It allocates the
+// annotation, the joined tuple of more than one result, and what the
+// spelling of each type allocates. One result allocates once, a tuple of
+// two allocates twice, and no result allocates nothing.
+func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
+	rs := results.Items()
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
 		typ, err := s.Spell(r.Type)
@@ -422,13 +450,13 @@ func (s Speller) Results(rs []*emit.Return) (string, error) {
 	}
 }
 
-// qualify is [Speller.use] in the form [spellref.Qualify] takes. It
-// returns no error.
+// qualify returns [Speller.use] of t in the form of [spellref.Qualify].
+// It never returns an error.
 func (s Speller) qualify(t *emit.TypeRef) (string, error) { return s.use(t), nil }
 
-// use returns the spelling of a named reference through its use: the
-// first segment of a path spelling is the item the module declares,
-// and the rest names an item inside it.
+// use returns the spelling of the named reference t through its use. The
+// first segment of a path is the item that the module declares, and the
+// rest is a path inside that item.
 func (s Speller) use(t *emit.TypeRef) string {
 	module := spellref.PackageOf(t, rust.Lang)
 	if module == "" {
@@ -442,7 +470,7 @@ func (s Speller) use(t *emit.TypeRef) string {
 	return local + pathSep + rest
 }
 
-// typeParams writes a parameter list in one position.
+// typeParams writes the type parameter list ps for the position at.
 func (s Speller) typeParams(ps []*emit.TypeParam, at paramsPosition) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -466,9 +494,9 @@ func (s Speller) typeParams(ps []*emit.TypeParam, at paramsPosition) (string, er
 	return genericsOpener + strings.Join(parts, ", ") + genericsCloser, nil
 }
 
-// typeParam writes one parameter: the const form with its value
-// type, or the name behind its bounds, each with its default where
-// defaults is set.
+// typeParam writes the type parameter p. A value parameter has the const
+// form with its value type, and any other parameter has its name and its
+// bounds. Where defaults is true, typeParam adds the default.
 func (s Speller) typeParam(p *emit.TypeParam, defaults bool) (string, error) {
 	if p.Const {
 		typ, err := s.Spell(p.Type)
@@ -503,11 +531,11 @@ func (s Speller) typeParam(p *emit.TypeParam, defaults bool) (string, error) {
 	return part, nil
 }
 
-// receiver writes a stated receiver from its type: Self as self,
-// &Self as &self, &mut Self as &mut self, and any other type, such
-// as Box<Self> or &'a Self, in the typed form self: T. Its trailing
-// comment follows as a block comment. A receiver binds self alone,
-// so a stated name other than self refuses.
+// receiver writes the receiver p of method from its type. It writes Self
+// as self, &Self as &self and &mut Self as &mut self. It writes any
+// other type, such as Box<Self> or &'a Self, in the typed form self: T.
+// The trailing comment follows as a block comment. A receiver has the
+// name self alone, so receiver returns an error for another name.
 func (s Speller) receiver(method string, p *emit.Param) (string, error) {
 	if p.Name != "" && p.Name != selfName {
 		return "", refuse("a receiver binds self, and %s names its receiver %s", method, p.Name)
@@ -530,27 +558,28 @@ func (s Speller) receiver(method string, p *emit.Param) (string, error) {
 	return spelled + textfmt.Inline(p.Comment), nil
 }
 
-// paramsPosition is the position a type parameter list is written
-// in. The positions differ in what Rust accepts: a type definition
-// takes a default, an impl block restates the definition's
-// parameters without their defaults, and a function, a method and an
-// associated type take none.
+// paramsPosition is the position of a type parameter list. Rust accepts
+// a different list in each position. A type definition takes defaults,
+// an impl block restates the parameters of the definition without their
+// defaults, and a function, a method and an associated type take no
+// defaults.
 type paramsPosition uint8
 
-// The three positions.
+// definitionPosition, implPosition and callablePosition are the three
+// positions.
 const (
 	definitionPosition paramsPosition = iota
 	implPosition
 	callablePosition
 )
 
-// Funcs returns the shared template vocabulary the kind templates
-// call, bound to one file's import set: every item a helper names from
-// another module is used there. Every helper takes a fixed list of
-// arguments, because text/template allocates the list of a variadic
-// call and a value for each string argument that a template writes.
-// Funcs allocates the map of twenty-six helpers, four allocations, and
-// the speller's eleven bound helpers.
+// Funcs returns the template vocabulary that the kind templates call. The
+// helpers add a use of every item of another module that they write to
+// set, the import set of one file. Every helper takes a
+// fixed list of arguments, because text/template allocates the list of a
+// variadic call and a value for each string argument in a template.
+// Funcs allocates the map of twenty-seven helpers in four allocations,
+// and the twelve bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -580,30 +609,32 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 		FuncSumPayload:  s.SumPayload,
 		FuncAliasMods:   AliasMods,
 		FuncConstType:   s.ConstType,
+		FuncRepr:        s.Repr,
 	}
 }
 
-// Docs writes a declaration's documentation as outer doc comments at
-// the top level. It allocates what [textfmt.LineDocs] allocates: the
-// lines, sized once, and nothing for no lines.
+// Docs writes the documentation lines of a declaration as outer doc
+// comments at the top level. It allocates what [textfmt.LineDocs]
+// allocates. That is the lines, sized once, and nothing for no lines.
 func Docs(lines []string) string {
 	return textfmt.LineDocs(lines, docMark)
 }
 
-// MemberDocs writes a member's documentation as the outer doc comments
-// of [Docs], each behind the member indent of a block. It allocates
-// what Docs allocates.
+// MemberDocs writes the documentation lines of a member as the outer doc
+// comments of [Docs]. Each line starts with the member indent of a
+// block. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.LineDocs(lines, docMark, memberIndent)
 }
 
-// TypeNames writes a parameter list's names alone, the form an
-// impl block's target repeats: the impl's own parameter list states
-// the bounds, and the target names the type they apply to.
+// TypeNames writes the names of the type parameters ps alone, in the
+// form that the target of an impl block repeats. The parameter list of
+// the impl declares the bounds, and the target is the type that the
+// bounds apply to.
 //
-// TypeNames allocates the joined names and the list in its brackets:
-// two allocations for two parameters, one for one, and nothing for
-// none. More than two names also allocate their list, because Go
+// TypeNames allocates the joined names and the list in its brackets. Two
+// parameters allocate twice, one allocates once, and none allocate
+// nothing. More than two names also allocate their list, because Go
 // places a list of at most two strings on the stack.
 func TypeNames(ps []*emit.TypeParam) string {
 	if len(ps) == 0 {
@@ -616,23 +647,23 @@ func TypeNames(ps []*emit.TypeParam) string {
 	return genericsOpener + strings.Join(parts, ", ") + genericsCloser
 }
 
-// Binder writes the impl binder of a receiver's type parameters, or
-// nothing for a receiver taking none. An argument binds where its
-// target is a type parameter. Every other argument is concrete and
-// binds nothing: a declaration, an instantiation, a path, a
-// structural form, a primitive, String, and a bare name without a
-// target, such as a standard type the resolution left open. Link
-// targets every reference to a type parameter it resolves, and a
-// generator building a parameter reference by hand sets its target
-// to the parameter. A method on Box<T> therefore opens impl<T>
-// Box<T>, and a method on Wrapper<String> opens impl
-// Wrapper<String>. The methods state the bounds, the way Rust
-// practice bounds functions and not type definitions.
+// Binder writes the impl binder of the type parameters of the receiver
+// type t, and nothing for a receiver without type arguments. An argument
+// binds a parameter where its target is a type parameter. Every other
+// argument is concrete and binds nothing. Concrete arguments are a
+// declaration, an instantiation, a path, a structural form, a primitive,
+// String, and a bare name without a target, such as a standard type that
+// the resolution left open. Link sets the target of every reference to a
+// type parameter that it resolves. A generator that builds such a
+// reference by hand sets its target to the parameter. A method on Box<T>
+// therefore opens impl<T> Box<T>, and a method on Wrapper<String> opens
+// impl Wrapper<String>. The methods declare the bounds, because Rust code
+// bounds functions and not type definitions.
 //
-// Binder allocates the binder it writes, one allocation for one bound
-// parameter, and nothing for a receiver that binds none. More than one
-// bound parameter also allocates the joined names, and more than two
-// their list. A refusal allocates its error.
+// Binder allocates once for one bound parameter, and nothing for a
+// receiver that binds none. More than one bound parameter also allocates
+// the joined names, and more than two allocate their list. A refusal
+// allocates its error.
 func Binder(t *emit.TypeRef) (string, error) {
 	if t == nil || len(t.Args) == 0 {
 		return "", nil
@@ -652,13 +683,13 @@ func Binder(t *emit.TypeRef) (string, error) {
 	return genericsOpener + strings.Join(params, ", ") + genericsCloser, nil
 }
 
-// Vis writes a declaration's visibility: pub for public or
-// unstated, because a generated API is consumed, pub(crate) for
-// internal, nothing for package scope, which is Rust's
-// module-private default. Private and protected refuse: Rust
-// scopes by module, never by type or by subclass. Vis returns a
-// constant spelling and allocates nothing, and a refusal allocates its
-// error.
+// Vis writes the visibility v of the declaration name. It writes pub for
+// a public or unknown visibility, because other code uses a generated
+// API. It writes pub(crate) for internal. It writes nothing for package
+// scope, because the default of Rust is private to the module. It
+// returns an error for private and protected, because Rust scopes by
+// module and not by type or subclass. Vis returns a constant spelling
+// and allocates nothing. A refusal allocates its error.
 func Vis(v symbol.Visibility, name string) (string, error) {
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
@@ -673,25 +704,27 @@ func Vis(v symbol.Visibility, name string) (string, error) {
 	}
 }
 
-// StructMods writes a struct's keywords: its visibility alone. An
-// abstract struct refuses, because every Rust struct can be made. A
-// final struct passes, because nothing subclasses. Supertypes and
-// embeds refuse, because a struct neither inherits nor promotes.
-// StructMods allocates nothing, and a refusal allocates its error.
+// StructMods writes the keywords of the struct s, which consist of its
+// visibility alone. It returns an error for an abstract struct, because
+// code can construct every Rust struct. It accepts a final struct,
+// because Rust has no subclasses. It returns an error for supertypes,
+// because a struct does not inherit. A struct does not promote either, so
+// the coverage refuses an embed. StructMods allocates nothing. A refusal
+// allocates its error.
 func StructMods(s *emit.Struct) (string, error) {
 	switch {
 	case s.Abstract:
 		return "", refuse("every struct can be made, and %s states abstract", s.Name)
-	case len(s.Extends) > 0 || len(s.Implements) > 0 || len(s.Embeds) > 0:
-		return "", refuse("a struct neither inherits nor promotes, and %s states supertypes", s.Name)
+	case len(s.Extends) > 0 || len(s.Implements) > 0:
+		return "", refuse("a struct does not inherit, and %s states supertypes", s.Name)
 	}
 	return Vis(s.Visibility, s.Name)
 }
 
-// EnumMods writes an enum's keywords: its visibility alone. An
-// enum with fields or methods refuses, because Rust puts state in
-// variants and behaviour in impl blocks. EnumMods allocates nothing,
-// and a refusal allocates its error.
+// EnumMods writes the keywords of the enum e, which consist of its
+// visibility alone. It returns an error for an enum with fields or
+// methods, because Rust puts state in variants and behaviour in impl
+// blocks. EnumMods allocates nothing. A refusal allocates its error.
 func EnumMods(e *emit.Enum) (string, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return "", refuse("an enum has variants alone, and %s states members", e.Name)
@@ -699,10 +732,10 @@ func EnumMods(e *emit.Enum) (string, error) {
 	return Vis(e.Visibility, e.Name)
 }
 
-// SumMods writes a data enum's keywords: its visibility alone. A
-// sum with methods refuses, because Rust puts behaviour in impl
-// blocks. SumMods allocates nothing, and a refusal allocates its
-// error.
+// SumMods writes the keywords of the data enum s, which consist of its
+// visibility alone. It returns an error for a sum with methods, because
+// Rust puts behaviour in impl blocks. SumMods allocates nothing. A
+// refusal allocates its error.
 func SumMods(s *emit.Sum) (string, error) {
 	if s.Methods.Len() > 0 {
 		return "", refuse("a data enum has variants alone, and %s states methods", s.Name)
@@ -710,9 +743,10 @@ func SumMods(s *emit.Sum) (string, error) {
 	return Vis(s.Visibility, s.Name)
 }
 
-// AliasMods writes a type alias's keywords: its visibility alone.
-// A defined type refuses, because a Rust alias is transparent.
-// AliasMods allocates nothing, and a refusal allocates its error.
+// AliasMods writes the keywords of the type alias a, which consist of its
+// visibility alone. It returns an error for a defined type, because a
+// Rust alias is transparent. AliasMods allocates nothing. A refusal
+// allocates its error.
 func AliasMods(a *emit.Alias) (string, error) {
 	if a.Defined {
 		return "", refuse("an alias is transparent, and %s states a defined type", a.Name)
@@ -720,10 +754,9 @@ func AliasMods(a *emit.Alias) (string, error) {
 	return Vis(a.Visibility, a.Name)
 }
 
-// FnMods writes a free function's keywords: its visibility, then
-// async where the declaration states it. FnMods allocates the keywords
-// of an async function, one allocation, and nothing otherwise. A
-// refusal allocates its error.
+// FnMods writes the visibility of the free function f, followed by async
+// for an async function. FnMods allocates once for an async function and
+// nothing otherwise. A refusal allocates its error.
 func FnMods(f *emit.Function) (string, error) {
 	part, err := Vis(f.Visibility, f.Name)
 	if err != nil {
@@ -735,15 +768,15 @@ func FnMods(f *emit.Function) (string, error) {
 	return part, nil
 }
 
-// TraitFn writes a trait method's keywords: async where stated,
-// and nothing else. A trait item takes the trait's own visibility,
-// so a stated scope refuses. An abstract method passes, because a
-// trait method without a default is a signature, and a body on
-// such a method refuses, because the signature cannot place it.
-// Final refuses, because every implementation may override a trait
-// method, and override refuses, because a trait method overrides
-// nothing. TraitFn allocates nothing, and a refusal allocates its
-// error.
+// TraitFn writes the keywords of the trait method m. It writes async for
+// an async method and nothing otherwise. A trait item has the visibility
+// of the trait, so TraitFn returns an error for a visibility. It accepts
+// an abstract method, because a trait method without a default is a
+// signature. It returns an error for a body on such a method, because a
+// signature has no body. It returns an error for final, because every
+// implementation can override a trait method, and for override, because
+// a trait method overrides nothing. TraitFn allocates nothing. A refusal
+// allocates its error.
 func TraitFn(m *emit.Method) (string, error) {
 	switch {
 	case !m.HasDefault && !m.Body.IsZero():
@@ -762,13 +795,13 @@ func TraitFn(m *emit.Method) (string, error) {
 	return "", nil
 }
 
-// ImplFn writes an impl method's keywords: its visibility, then
-// async where stated. Abstract and default refuse, because an impl
-// method states its body outright, and override refuses, because an
-// inherent method overrides nothing. Final passes, because nothing
-// overrides an inherent method. ImplFn allocates the keywords of an
-// async method, one allocation, and nothing otherwise. A refusal
-// allocates its error.
+// ImplFn writes the visibility of the impl method m, followed by async
+// for an async method. It returns an error for abstract and for a
+// default, because an impl method has its body. It returns an error for
+// override, because an inherent method overrides nothing. It accepts
+// final, because nothing overrides an inherent method. ImplFn allocates
+// once for an async method and nothing otherwise. A refusal allocates
+// its error.
 func ImplFn(m *emit.Method) (string, error) {
 	switch {
 	case m.Abstract:
@@ -788,11 +821,12 @@ func ImplFn(m *emit.Method) (string, error) {
 	return part, nil
 }
 
-// FieldMods writes a field's keywords: its visibility alone. A
-// type-level field refuses, because Rust declares statics outside
-// types. An immutable field refuses, because mutability follows the
-// binding of the struct value. An initializer refuses, because a
-// struct declares no field defaults. FieldMods allocates nothing, and a
+// FieldMods writes the keywords of the field f, which consist of its
+// visibility alone. It returns an error for a type-level field, because
+// Rust declares statics outside types. It returns an error for an
+// immutable field, because the binding of the struct value decides
+// mutability. It returns an error for an initializer, because a struct
+// does not declare field defaults. FieldMods allocates nothing. A
 // refusal allocates its error.
 func FieldMods(f *emit.Field) (string, error) {
 	switch {
@@ -807,24 +841,24 @@ func FieldMods(f *emit.Field) (string, error) {
 	return Vis(f.Visibility, f.Name)
 }
 
-// Attrs writes a declaration's attribute lines at the top level, one
-// per annotation: the name in an outer attribute, its argument
-// spellings verbatim in parentheses where any are stated. It allocates
-// what [textfmt.Marked] allocates: the lines, sized once, and nothing
-// for no annotations.
+// Attrs writes one attribute line at the top level for each annotation
+// of a. A line has the name in an outer attribute, and the arguments
+// verbatim in parentheses where the annotation has any. It allocates
+// what [textfmt.Marked] allocates. That is the lines, sized once, and
+// nothing for no annotations.
 func Attrs(a symbol.Annotations) string {
 	return textfmt.Marked(a, attrOpen, attrClose)
 }
 
-// MemberAttrs writes a member's attribute lines as [Attrs] writes them,
-// each behind the member indent of a block. It allocates what Attrs
-// allocates.
+// MemberAttrs writes the attribute lines of a member as [Attrs] writes
+// them. Each line starts with the member indent of a block. It allocates
+// what Attrs allocates.
 func MemberAttrs(a symbol.Annotations) string {
 	return textfmt.Marked(a, attrOpen, attrClose, memberIndent)
 }
 
-// complete reports whether a reference states its type, itself and
-// in every argument list at any depth.
+// complete reports whether the reference t and every reference in its
+// argument lists, at any depth, have a type.
 func complete(t *emit.TypeRef) bool {
 	if t == nil || t.Spelling == "" {
 		return false
@@ -837,14 +871,14 @@ func complete(t *emit.TypeRef) bool {
 	return true
 }
 
-// typeParameter reports whether a receiver argument names a type
-// parameter: its target is one.
+// typeParameter reports whether the target of the receiver argument a is
+// a type parameter.
 func typeParameter(a *emit.TypeRef) bool {
 	return a.Target.Kind == symbol.KindTypeParam
 }
 
-// bareName returns the name a reference spells where it is a bare
-// name the resolution left open, and nothing for a declaration, an
+// bareName returns the spelling of t where t is a bare name that the
+// resolution left open. It returns nothing for a declaration, an
 // instantiation or a structural form.
 func bareName(t *emit.TypeRef) string {
 	if t == nil || !t.Target.IsZero() || t.Form != symbol.FormNamed || len(t.Args) > 0 {
@@ -853,9 +887,9 @@ func bareName(t *emit.TypeRef) string {
 	return t.Spelling
 }
 
-// inlineEntry refuses the payload facts an inline spelling cannot
-// express: a payload entry spells as a name and a type alone, on
-// the variant's own line.
+// inlineEntry returns an error for a fact of the payload entry f that an
+// inline entry cannot express. An inline entry consists of a name and a
+// type alone, on the line of its variant.
 func inlineEntry(variant string, f *emit.Field) error {
 	switch {
 	case len(f.Doc) > 0 || f.Comment != "" || len(f.Annotations) > 0:
@@ -877,7 +911,7 @@ func inlineEntry(variant string, f *emit.Field) error {
 	return nil
 }
 
-// refuse builds a refusal under [refusalPrefix].
+// refuse returns a refusal that starts with [refusalPrefix].
 func refuse(format string, args ...any) error {
 	return fmt.Errorf(refusalPrefix+format, args...)
 }

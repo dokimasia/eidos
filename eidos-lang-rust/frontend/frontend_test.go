@@ -19,9 +19,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The whole-contract fixture's signature root and its crate, the one
-// item the crate does not publish, which a signature-only load drops,
-// and the declaration a reference names only through a pub use.
+// The signature root of the whole-contract fixture and its crate, the one
+// item that the crate does not publish, which a signature-only load drops,
+// and the declaration that a reference reaches only through a pub use.
 const (
 	depRoot       = "dep"
 	depCrate      = "dep"
@@ -30,23 +30,24 @@ const (
 	personName    = "Person"
 )
 
-// The spellings of the codes the frontend registers, which findings
-// persist.
+// The spelling of the code of a syntax error, which findings persist, and
+// the claim pattern that leaves out the build output of Cargo.
 const (
 	unparsedCode = "RUST-0001"
 	targetClaim  = "!**/target/**"
 )
 
-// newAllocs is the frontend New returns for nil options: the empty
-// options, the frontend's state with its vocabulary and its parse hook,
-// the version, the syntax's two, and the kit's four, its list of key
-// registrations included.
-const newAllocs = 1 + 3 + 1 + 2 + 4
+// newAllocs is the cost of New for nil options: the empty options, the
+// state of the frontend with its vocabulary and its parse hook, the six
+// functions of the comment walk that capture the vocabulary, the version,
+// two allocations of the syntax, and four of the kit with its list of key
+// registrations.
+const newAllocs = 1 + 3 + 6 + 1 + 2 + 4
 
-// allocCall is one call that an allocation test and a benchmark share:
-// the method it calls, which names its benchmark, the case it measures
-// where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves.
+// allocCall is one call that an allocation test and a benchmark share: the
+// method that it calls, which is the name of its benchmark, the case that
+// it measures where the method has more than one call, its allocation
+// ceiling, the call, and the check of the result of the call.
 type allocCall struct {
 	name     string
 	caseName string
@@ -55,8 +56,8 @@ type allocCall struct {
 	check    func(tb testing.TB)
 }
 
-// The frontend runs the conformance suite every frontend runs, over real
-// Rust source.
+// The frontend runs the conformance suite of every frontend over real Rust
+// source.
 func TestFrontend(t *testing.T) {
 	t.Parallel()
 
@@ -84,7 +85,7 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			_, exports := frontend.New(nil).(plugin.Exporter)
-			assert.True(t, exports, "a Rust module publishes the names its use declarations bind")
+			assert.True(t, exports, "a Rust module publishes the names that its use declarations bind")
 		})
 
 		t.Run("returns a frontend whose language cannot overload", func(t *testing.T) {
@@ -93,13 +94,13 @@ func TestFrontend(t *testing.T) {
 			assert.False(t, frontend.New(nil).Overloads(), "every Rust callable takes the empty discriminator")
 		})
 
-		t.Run("returns a version that folds the frontend's version", func(t *testing.T) {
+		t.Run("returns a version that folds the version of the frontend", func(t *testing.T) {
 			t.Parallel()
 
 			assert.HasPrefix(t, versionOf(t), rust.FrontendVersion, "a graph change bumps what the unit keys fold")
 		})
 
-		t.Run("returns a version that folds the grammar's version", func(t *testing.T) {
+		t.Run("returns a version that folds the version of the grammar", func(t *testing.T) {
 			t.Parallel()
 
 			assert.HasSuffix(t, versionOf(t), rustgrammar.Grammar.Version(),
@@ -120,25 +121,26 @@ func TestFrontend(t *testing.T) {
 
 			_, found := parsedSource(t, "pub struct {\n")
 			assert.NotEmpty(t, found, "the syntax error reports")
-			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
+			assert.Equal(t, found[0].Code.String(), unparsedCode,
+				"the code has the prefix of the satellite and number 1")
 		})
 
 		t.Run("returns a frontend that claims no file under a target directory", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Contains(t, frontend.New(nil).Selection(), targetClaim, "Cargo's build output is not source")
+			assert.Contains(t, frontend.New(nil).Selection(), targetClaim, "the build output of Cargo is not source")
 		})
 	})
 }
 
-// The construction allocates the frontend the kit builds. The ordinary
-// run, which runs no benchmark, checks that ceiling here.
+// The construction allocates the frontend that the kit builds. The
+// ordinary run, which runs no benchmark, checks that ceiling here.
 func TestFrontendAllocs(t *testing.T) {
 	checkAllocs(t, frontendCalls())
 }
 
-// BenchmarkFrontend measures the construction a composition makes once
-// per load.
+// BenchmarkFrontend measures the construction that a composition makes
+// once per load.
 func BenchmarkFrontend(b *testing.B) {
 	benchCalls(b, frontendCalls())
 }
@@ -159,8 +161,8 @@ func frontendCalls() []allocCall {
 	}
 }
 
-// checkAllocs checks the ceiling of every call in the ordinary run, and
-// the result each call leaves.
+// checkAllocs checks the ceiling of every call in the ordinary run, and the
+// result of each call.
 func checkAllocs(t *testing.T, calls []allocCall) {
 	t.Helper()
 
@@ -174,9 +176,9 @@ func checkAllocs(t *testing.T, calls []allocCall) {
 	}
 }
 
-// benchCalls measures every call under the bench contract at its
-// ceiling: one sub-benchmark for each method, in the order the methods
-// first appear, and inside it one for each case of a method with cases.
+// benchCalls measures every call under the bench contract at its ceiling:
+// one sub-benchmark for each method, in the order of the first call of
+// each method, and inside it one for each case of a method with cases.
 func benchCalls(b *testing.B, calls []allocCall) {
 	b.Helper()
 
@@ -202,9 +204,9 @@ func benchCalls(b *testing.B, calls []allocCall) {
 	}
 }
 
-// benchCall measures one call under the bench contract at its ceiling,
-// and checks the result the last call leaves. The contract warms up with
-// one call, so what the first call initialises stays out of the count.
+// benchCall measures one call under the bench contract at its ceiling, and
+// checks the result of the last call. The contract warms up with one call,
+// so the count leaves out what the first call initialises.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
@@ -216,10 +218,10 @@ func benchCall(b *testing.B, tt allocCall) {
 	tt.check(b)
 }
 
-// rustTree is the whole-contract fixture: a crate whose modules
-// reference each other, a carrier, an integration test, a signature
-// root, a file that does not parse, and a module that publishes through
-// a pub use what its private child module declares.
+// rustTree is the whole-contract fixture: a crate whose modules reference
+// each other, a carrier, an integration test, a signature root, a file
+// that does not parse, and a module that publishes through a pub use what
+// its private child module declares.
 func rustTree() fstest.MapFS {
 	return fstest.MapFS{
 		manifestPath: {Data: []byte("[package]\nname = \"app\"\n")},
@@ -239,10 +241,14 @@ func rustTree() fstest.MapFS {
 	}
 }
 
-// setup is the suite's entry over the whole-contract fixture.
+// setup is the entry of the suite over the whole-contract fixture.
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	return frontend.New(nil), &frontendtest.Fixture{
-		Sources:    rustTree(),
+		Sources: rustTree(),
+		Empty: fstest.MapFS{
+			manifestPath: {Data: []byte("[package]\nname = \"app\"\n")},
+			libRoot:      {Data: []byte("// The crate declares nothing.\n")},
+		},
 		Signatures: []string{depRoot},
 		Dropped: []symbol.Identity{
 			{Lang: frontend.Lang, Package: depCrate, Name: hiddenName, Kind: symbol.KindFunction},

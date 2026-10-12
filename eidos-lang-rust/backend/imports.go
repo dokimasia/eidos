@@ -4,6 +4,8 @@
 package backend
 
 import (
+	"path"
+
 	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/render"
 )
@@ -17,4 +19,16 @@ import (
 // empty set.
 func Imports(set *render.ImportSet) string {
 	return textfmt.ImportLines(set.Entries(), "use", "::")
+}
+
+// TemplateImport returns the binding of an import that a template states
+// through the use builtin. An import without a name binds the module
+// under the last segment of its path, as a use statement of the module
+// does. A named import binds the item of that name from the module. It
+// does not allocate.
+func TemplateImport(module, name string) (local, item string, ok bool) {
+	if name == "" {
+		return path.Base(module), "", true
+	}
+	return name, name, true
 }

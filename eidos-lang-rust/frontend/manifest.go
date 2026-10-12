@@ -11,25 +11,26 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"go.dokimi.dev/eidos/lang/rust"
 )
 
 // The names Cargo's layout is spelled with: the manifest, the
 // directories its targets are in, the crate root files, and the build
 // script.
 const (
-	manifestName  = "Cargo.toml"
-	srcDir        = "src"
-	binDir        = "src/bin"
-	testsDir      = "tests"
-	examplesDir   = "examples"
-	benchesDir    = "benches"
-	libRoot       = "src/lib.rs"
-	mainRoot      = "src/main.rs"
-	mainFile      = "main.rs"
-	modFile       = "mod.rs"
-	buildScript   = "build.rs"
-	buildCrate    = "build_script_build"
-	rustExtension = ".rs"
+	manifestName = "Cargo.toml"
+	srcDir       = "src"
+	binDir       = "src/bin"
+	testsDir     = "tests"
+	examplesDir  = "examples"
+	benchesDir   = "benches"
+	libRoot      = "src/lib.rs"
+	mainRoot     = "src/main.rs"
+	mainFile     = "main.rs"
+	modFile      = "mod.rs"
+	buildScript  = "build.rs"
+	buildCrate   = "build_script_build"
 )
 
 // role is what a crate target is to Cargo.
@@ -160,7 +161,7 @@ func autoTarget(dir, f string) (string, bool) {
 	if !under {
 		return "", false
 	}
-	if name, file := strings.CutSuffix(rest, rustExtension); file && !strings.Contains(name, "/") {
+	if name, file := strings.CutSuffix(rest, rust.Extension); file && !strings.Contains(name, "/") {
 		return name, true
 	}
 	if name, main := strings.CutSuffix(rest, "/"+mainFile); main && !strings.Contains(name, "/") {
@@ -197,7 +198,7 @@ func owner(targets []target, crate, f string) target {
 	if t, placed := home(targets, f); placed {
 		return t
 	}
-	name := strings.TrimSuffix(f, rustExtension)
+	name := strings.TrimSuffix(f, rust.Extension)
 	return target{role: roleShared, name: path.Join(crate, name), root: f}
 }
 

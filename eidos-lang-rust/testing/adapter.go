@@ -7,53 +7,52 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/sdk/symbol"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The Rust toolchain's spellings.
+// The spellings of the Rust toolchain.
 const (
 	cargoBinary   = "cargo"
 	rustfmtBinary = "rustfmt"
 	manifestFile  = "Cargo.toml"
 	edition       = "2024"
-	// defaultCrate names the crate when the fixture's Module is empty,
-	// so the laid-out project always has a name that tests import it
-	// by.
+	// scratchPattern names the scratch directory of a laid-out crate.
+	scratchPattern = "eidos-rust-*"
+	// defaultCrate names the crate when the Module of the fixture is empty,
+	// so the laid-out project always has a name under which tests import
+	// it.
 	defaultCrate = "eidos_generated"
-	// targetDir is where cargo builds: a directory no generated path
-	// uses, left out of the project's own sources.
+	// targetDir is the directory into which cargo builds. No generated path
+	// uses it, and the project leaves it out of its own sources.
 	targetDir = "eidos-target"
-	// libRoot and binRoot are the crate roots cargo reads, the library
+	// libRoot and binRoot are the crate roots that cargo reads, the library
 	// first.
 	libRoot = "src/lib.rs"
 	binRoot = "src/main.rs"
-	// dirPerm and filePerm keep the scratch project private to the
-	// user running the check.
-	dirPerm  = 0o700
-	filePerm = 0o600
-	// unsatisfied is rustc's code for an unsatisfied trait bound, the
-	// one refusal that makes a satisfaction probe report false.
-	// codedError opens every error rustc reports with a code.
+	// rootMode is the mode with which the satisfaction check writes the
+	// crate root, private to the user who runs the check.
+	rootMode = 0o600
+	// unsatisfied is the code of rustc for an unsatisfied trait bound, the
+	// one refusal that makes a satisfaction probe report false. codedError
+	// opens every error that rustc reports with a code.
 	unsatisfied = "error[E0277]"
 	codedError  = "error[E"
-	// probeModule is the module the satisfaction check writes and
+	// probeModule is the module that the satisfaction check writes and
 	// removes.
 	probeModule = "zz_eidos_probe"
 )
 
-// The test harness's summary lines, which the tally reads: one per
-// test binary and one for the doc tests.
+// The summary lines of the test harness, which the tally reads: one for
+// each test binary and one for the doc tests.
 const (
 	resultLine  = "test result: "
 	passedWord  = " passed"
@@ -62,83 +61,45 @@ const (
 	fieldSep    = ";"
 )
 
-// runTimeout bounds one toolchain invocation, so a compiler that
-// never returns fails the check with an error and leaves the suite
-// running.
-const runTimeout = 5 * time.Minute
-
-// adapter drives cargo and rustfmt over generated Rust. It has no
-// state, so one value serves every check.
+// adapter drives cargo and rustfmt over generated Rust. It has no state, so
+// one value serves every check.
 type adapter struct{}
 
 // New returns the Rust toolchain adapter.
 func New() toolchain.Adapter { return adapter{} }
 
-// Lang returns [rust.Lang], which the kernel's assertions name in
-// their failure messages.
+// Lang returns [rust.Lang], with which the messages of the assertions of
+// the kernel start.
 func (adapter) Lang() symbol.Lang { return rust.Lang }
 
-// Available reports whether cargo and rustfmt are both on PATH, and
-// names the first binary it did not find.
-func (adapter) Available() (bool, string) {
-	for _, binary := range []string{cargoBinary, rustfmtBinary} {
-		if _, err := exec.LookPath(binary); err != nil {
-			return false, fmt.Sprintf("%s is not on PATH: %v", binary, err)
-		}
-	}
-	return true, ""
-}
+// Available reports whether cargo and rustfmt are both on PATH, and names
+// the first binary that it did not find.
+func (adapter) Available() (bool, string) { return toolchain.LookPaths(cargoBinary, rustfmtBinary) }
 
-// Layout writes the generated output as a crate in a scratch
-// directory: every file at its own path, and a Cargo.toml at the root
-// declaring the fixture's module as the crate's name, or
-// eidos_generated for a fixture stating none, unless the output has
-// one there already. A write that fails, a path escaping the
-// directory among them, returns an error and removes the directory.
+// Layout writes the generated output as a crate in a scratch directory.
+// Every file is at its own path. A Cargo.toml at the root declares the
+// module of the fixture as the name of the crate, or eidos_generated for a
+// fixture without a module, unless the output has a Cargo.toml there. A
+// write that fails, such as the write of a path that leaves the directory,
+// returns an error and removes the directory.
 func (adapter) Layout(g toolchain.Generated) (string, error) {
-	dir, err := os.MkdirTemp("", "eidos-rust-*")
-	if err != nil {
-		return "", fmt.Errorf("testing: %w", err)
+	crate := g.Module
+	if crate == "" {
+		crate = defaultCrate
 	}
-	for path, body := range g.Files {
-		if err := write(dir, path, body); err != nil {
-			return "", errors.Join(err, os.RemoveAll(dir))
-		}
-	}
-	if _, stated := g.Files[manifestFile]; !stated {
-		crate := g.Module
-		if crate == "" {
-			crate = defaultCrate
-		}
-		manifest := "[package]\nname = " + strconv.Quote(crate) + "\nversion = \"0.0.0\"\nedition = " +
-			strconv.Quote(edition) + "\n\n[dependencies]\n"
-		if err := write(dir, manifestFile, []byte(manifest)); err != nil {
-			return "", errors.Join(err, os.RemoveAll(dir))
-		}
-	}
-	return dir, nil
+	manifest := "[package]\nname = " + strconv.Quote(crate) + "\nversion = \"0.0.0\"\nedition = " +
+		strconv.Quote(edition) + "\n\n[dependencies]\n"
+	return toolchain.Scratch(scratchPattern, g, map[string][]byte{manifestFile: []byte(manifest)})
 }
 
-// Parse reads every Rust source's syntax through rustfmt, which
-// parses a file and resolves nothing, and returns an error naming the
-// first file rustfmt cannot parse, with its position. A project with
-// no Rust file returns an error, because a parse of nothing proves
-// nothing. Rust has no parser in Go, so the parse needs the
-// toolchain, and a caller passes [toolchain.Require] first.
+// Parse reads the syntax of every Rust source through rustfmt, which parses
+// a file and resolves nothing. It returns an error that contains the first
+// file that rustfmt cannot parse, with its position. A project without a
+// Rust file returns an error, because a parse of nothing proves nothing.
+// Rust has no parser in Go, so the parse needs the toolchain, and a caller
+// passes [toolchain.Require] first.
 func (adapter) Parse(ctx context.Context, dir string) error {
-	var sources []string
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && d.Name() == targetDir {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() && filepath.Ext(path) == rust.Extension {
-			sources = append(sources, path)
-		}
-		return nil
-	})
+	sources, err := toolchain.Sources(dir, []string{rust.Extension}, targetDir)
 	if err != nil {
 		return err
 	}
@@ -146,23 +107,24 @@ func (adapter) Parse(ctx context.Context, dir string) error {
 		return errors.New("testing: the laid-out project has no Rust file to parse")
 	}
 	for _, source := range sources {
-		if _, err := run(ctx, dir, rustfmtBinary, "--edition", edition, "--emit", "stdout", source); err != nil {
+		_, err := toolchain.Run(ctx, dir, nil, rustfmtBinary, "--edition", edition, "--emit", "stdout", source)
+		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// TypeCheck checks every target of the crate, its tests included,
-// with cargo check, which is Rust's type check.
+// TypeCheck checks every target of the crate, its tests included, with
+// cargo check, which is the type check of Rust.
 func (adapter) TypeCheck(ctx context.Context, dir string) error {
 	_, err := cargo(ctx, dir, "check", "--all-targets")
 	return err
 }
 
-// RunTests runs the crate's tests with cargo test, every failing test
-// run through, and reads the counts off each test binary's summary
-// line. A failure the summaries do not report, such as a compile
+// RunTests runs the tests of the crate with cargo test. It runs every
+// failing test and reads the counts from the summary line of each test
+// binary. A failure that the summaries do not report, such as a compile
 // error, returns an error.
 func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, error) {
 	out, err := cargo(ctx, dir, "test", "--no-fail-fast")
@@ -173,14 +135,17 @@ func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, 
 	return report, nil
 }
 
-// Satisfies asks rustc whether one type implements one trait: a probe
-// module, declared from the crate root, calls a function bounded by
-// the trait with the type, and the crate is checked again. The probe
-// imports the crate root's names, so a root type is spelled by its
-// name and any other by its path, such as crate::row::Row or
-// std::fmt::Display. A probe that rustc refuses with unsatisfied
-// trait bounds alone reports false. Any other refusal returns an
-// error, and so does a crate that does not check without the probe.
+// Satisfies asks rustc whether one type implements one trait. A probe
+// module, which the crate root declares for the check, calls a function
+// bounded by the trait with the type, and cargo checks the crate again. The
+// probe imports the names of the crate root, so a root type is spelled by
+// its name and any other type by its path, such as crate::row::Row or
+// std::fmt::Display.
+//
+// A probe that rustc refuses with unsatisfied trait bounds alone reports
+// false. Satisfies returns an error for any other refusal, with the source
+// of the probe, and for a crate that does not check without the probe. It
+// restores the crate root after the check.
 func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
 	if err := a.TypeCheck(ctx, dir); err != nil {
 		return false, fmt.Errorf("the crate does not check, so nothing can be asked of it: %w", err)
@@ -198,35 +163,41 @@ func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) 
 	if err != nil {
 		return false, fmt.Errorf("testing: %w", err)
 	}
-	probe := filepath.Join(filepath.Dir(root), probeModule+rust.Extension)
+	probe := path.Join(path.Dir(filepath.ToSlash(root)), probeModule+rust.Extension)
 	source := "#![allow(dead_code, unused_imports)]\nuse super::*;\n\n" +
 		"fn eidos_probe<T: ?Sized + " + contract + ">() {}\n\n" +
 		"fn eidos_probe_check() {\n    eidos_probe::<" + typeName + ">();\n}\n"
-	err = r.WriteFile(probe, []byte(source), filePerm)
-	if err != nil {
-		return false, fmt.Errorf("testing: %w", err)
-	}
-	defer func() { _ = r.Remove(probe) }()
 	declared := slices.Concat(original, []byte("\nmod "+probeModule+";\n"))
-	err = r.WriteFile(root, declared, filePerm)
+	var (
+		out      string
+		checkErr error
+	)
+	err = toolchain.Probe(dir, probe, source, func() error {
+		if declareErr := r.WriteFile(root, declared, rootMode); declareErr != nil {
+			return fmt.Errorf("testing: %w", declareErr)
+		}
+		out, checkErr = cargo(ctx, dir, "check")
+		if restoreErr := r.WriteFile(root, original, rootMode); restoreErr != nil {
+			return fmt.Errorf("testing: %w", restoreErr)
+		}
+		return nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("testing: %w", err)
+		return false, err
 	}
-	defer func() { _ = r.WriteFile(root, original, filePerm) }()
-
-	out, err := cargo(ctx, dir, "check")
-	if err == nil {
+	if checkErr == nil {
 		return true, nil
 	}
 	if refused := strings.Count(out, unsatisfied); refused > 0 && strings.Count(out, codedError) == refused {
 		return false, nil
 	}
-	return false, fmt.Errorf("the probe does not check for a reason other than the trait: %w", err)
+	return false, fmt.Errorf("the probe does not check for a reason other than the trait: %w\nthe probe is:\n%s",
+		checkErr, source)
 }
 
-// crateRoot returns the name of the file in r that declares the crate's
-// top-level modules: the library root, or the binary root where the
-// crate has no library. A crate with neither returns an error.
+// crateRoot returns the name of the file in r that declares the top-level
+// modules of the crate. It is the library root, or the binary root where
+// the crate has no library. A crate with neither returns an error.
 func crateRoot(r *os.Root) (string, error) {
 	for _, candidate := range []string{libRoot, binRoot} {
 		name := filepath.FromSlash(candidate)
@@ -237,67 +208,18 @@ func crateRoot(r *os.Root) (string, error) {
 	return "", errors.New("testing: the laid-out crate has no src/lib.rs or src/main.rs to probe from")
 }
 
-// write writes one fixture file under the scratch directory, and
-// returns an error for a path that climbs out of it.
-func write(dir, path string, body []byte) error {
-	target := filepath.Join(dir, filepath.FromSlash(path))
-	rel, err := filepath.Rel(dir, target)
-	if err != nil {
-		return fmt.Errorf("testing: %w", err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("the generated path %q climbs out of the scratch project", path)
-	}
-	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-		return fmt.Errorf("testing: %w", err)
-	}
-	if err := os.WriteFile(target, body, filePerm); err != nil {
-		return fmt.Errorf("testing: %w", err)
-	}
-	return nil
-}
-
-// cargo runs one cargo command over the crate under ctx, offline and
-// building into [targetDir], so a check makes no network request and
+// cargo runs one cargo command over the crate under ctx. cargo runs offline
+// and builds into [targetDir], so a check makes no network request and
 // writes its build inside the scratch directory.
 func cargo(ctx context.Context, dir, command string, args ...string) (string, error) {
 	full := append([]string{command, "--offline", "--manifest-path", filepath.Join(dir, manifestFile)}, args...)
-	return run(ctx, dir, cargoBinary, full...)
+	env := []string{"CARGO_TARGET_DIR=" + filepath.Join(dir, targetDir), "CARGO_TERM_COLOR=never"}
+	return toolchain.Run(ctx, dir, env, cargoBinary, full...)
 }
 
-// run runs one toolchain binary in dir under ctx and returns its
-// combined output. A failure wraps that output, so the error contains
-// what the tool reported. The run is bounded by [runTimeout] as well,
-// and a run that ctx or the bound ends returns an error that wraps the
-// context's error.
-func run(ctx context.Context, dir, binary string, args ...string) (string, error) {
-	bounded, cancel := context.WithTimeout(ctx, runTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(bounded, binary, args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "CARGO_TARGET_DIR="+filepath.Join(dir, targetDir), "CARGO_TERM_COLOR=never")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctx.Err() != nil {
-			return string(out), fmt.Errorf(
-				"testing: %s %s stopped with its caller: %w", binary, strings.Join(args, " "), ctx.Err(),
-			)
-		}
-		if bounded.Err() != nil {
-			return string(out), fmt.Errorf(
-				"testing: %s %s did not return within %s: %w",
-				binary, strings.Join(args, " "), runTimeout, bounded.Err(),
-			)
-		}
-		return string(out), fmt.Errorf("%s %s: %w\n%s", binary, strings.Join(args, " "), err, out)
-	}
-	return string(out), nil
-}
-
-// tally sums the counts of every summary line, such as
-// "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0
-// filtered out; finished in 0.00s".
+// tally sums the counts of every summary line, such as "test result: ok. 1
+// passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in
+// 0.00s".
 func tally(stream string) toolchain.TestReport {
 	report := toolchain.TestReport{Output: stream}
 	for line := range strings.Lines(stream) {
@@ -320,9 +242,9 @@ func tally(stream string) toolchain.TestReport {
 	return report
 }
 
-// number reads the count in front of a summary field's label: the
-// last word before it, after a status such as "ok." in the first
-// field. A count that does not read is zero.
+// number reads the count in front of the label of a summary field. The
+// count is the last word before the label, after a status such as "ok." in
+// the first field. A count that does not parse is zero.
 func number(field, label string) int {
 	words := strings.Fields(strings.TrimSuffix(field, label))
 	if len(words) == 0 {

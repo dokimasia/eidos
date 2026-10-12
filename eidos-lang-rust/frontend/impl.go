@@ -10,10 +10,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// pendingConst is an inherent impl's associated constant, lowered as a
-// field of the type level, with the comments' parts, the restricted
-// visibility's spelling and the attributes, whose carriers and stamps
-// apply once the field has a home.
+// unmodeledConst describes an associated constant without a place in the
+// model, in the refusal of its carriers and its markers.
+const unmodeledConst = "an associated constant the model does not contain"
+
+// pendingConst is an associated constant of an inherent impl, lowered as a
+// field at the type level, with the parts of its comments, the spelling of
+// its restricted visibility and its attributes. Its carriers and its
+// stamps apply once the field has a place.
 type pendingConst struct {
 	field   *node.Field
 	parts   plugin.CommentParts
@@ -21,10 +25,10 @@ type pendingConst struct {
 	a       attributes
 }
 
-// pendingImpl is one impl block, lowered and waiting to fold onto the
-// type it names once every module is lowered: the scope and File node
-// of the module that states it, the type it names, its trait for a
-// trait impl, and an inherent impl's methods and associated constants.
+// pendingImpl is one impl block, lowered and waiting to fold onto its type
+// once every module is lowered: the scope and the File node of its module,
+// its type, its trait for a trait impl, and the methods and the associated
+// constants of an inherent impl.
 type pendingImpl struct {
 	scope   *scope
 	file    *node.File
@@ -34,13 +38,14 @@ type pendingImpl struct {
 	consts  []pendingConst
 }
 
-// implItem lowers an impl block, whose own attributes are a. A trait
-// impl records its trait, and its items declare nothing, because the
-// trait declares them, so a carrier or a marker on one is refused. An
-// inherent impl lowers its methods, a function without self at the type
-// level, and its associated constants as fields of the type level that
-// are immutable. Signature depth leaves out an item that is not public.
-// A carrier or a marker on the block itself is refused.
+// implItem lowers an impl block, whose own attributes are a. A trait impl
+// records its trait, and its items declare nothing, because the trait
+// declares them, so a carrier or a marker on one reports under
+// [UnaddressedCarrier]. An inherent impl lowers its methods, a function
+// without self at the type level, and its associated constants as fields
+// at the type level that are immutable. The signature depth leaves out an
+// item that is not public. A carrier or a marker on the block itself
+// reports under [UnaddressedCarrier].
 func (l *lowering) implItem(n treesitter.Node, c container, a attributes) {
 	l.refuse(n, a, "an impl block")
 	impl := pendingImpl{scope: c.scope, file: c.file, self: l.typeRef(n.Child(l.v.fieldType))}
@@ -101,16 +106,16 @@ func (l *lowering) implItem(n treesitter.Node, c container, a attributes) {
 	l.w.impls = append(l.w.impls, impl)
 }
 
-// fold folds every impl block onto the type it names, in the order the
-// crate's modules lowered them. The type is the first candidate the
-// impl's module resolves the type's name to that the crate declares. A
-// trait impl adds its trait to a struct's Implements, and an enum has no
-// list of implemented traits. An inherent impl adds its methods to the
-// type, and its constants to a struct's or an enum's fields. A data
-// enum has no field list, so its constants report under
-// [UnmodeledItem]. An inherent impl of a type the crate does not
-// declare lowers its methods as declared outside their type, which
-// receives them, and its constants report under [UnmodeledItem].
+// fold folds every impl block onto its type, in the order in which the
+// modules of the crate lowered them. The type is the first candidate of
+// the name of the type in the module of the impl that the crate declares.
+// A trait impl adds its trait to the Implements of a struct, and an enum
+// has no list of implemented traits. An inherent impl adds its methods to
+// the type, and its constants to the fields of a struct or an enum. A data
+// enum has no field list, so its constants report under [UnmodeledItem].
+// An inherent impl of a type that the crate does not declare lowers its
+// methods as methods declared outside their type, which receives them, and
+// its constants report under [UnmodeledItem].
 func (w *crate) fold() {
 	for _, impl := range w.impls {
 		owner := w.ownerOf(impl)
@@ -140,10 +145,10 @@ func (w *crate) fold() {
 	}
 }
 
-// ownerOf returns the declaration an impl block's type names: the first
-// candidate its module's scope resolves the type's spelling to that the
-// crate declares, and nil where the crate declares none of them, as for
-// a reference, whose spelling names no declaration.
+// ownerOf returns the declaration of the type of an impl block: the first
+// candidate of the spelling of the type in the scope of its module that
+// the crate declares. It returns nil where the crate declares none of
+// them, as for a reference, whose spelling has no declaration.
 func (w *crate) ownerOf(impl pendingImpl) symbol.Symbol {
 	for _, tier := range impl.scope.candidates(impl.self.Spelling) {
 		for _, c := range tier {
@@ -155,8 +160,8 @@ func (w *crate) ownerOf(impl pendingImpl) symbol.Symbol {
 	return nil
 }
 
-// placed returns the fields of constants that found a home, their
-// carriers attached and their stamps recorded.
+// placed returns the fields of the constants that found a place, with
+// their carriers attached and their stamps recorded.
 func (w *crate) placed(consts []pendingConst) []*node.Field {
 	out := make([]*node.Field, 0, len(consts))
 	for _, k := range consts {
@@ -166,12 +171,13 @@ func (w *crate) placed(consts []pendingConst) []*node.Field {
 	return out
 }
 
-// unmodeled reports each associated constant the model has no home for,
-// at its position, and refuses its carriers and its markers.
+// unmodeled reports each associated constant without a place in the model
+// at its position, and its carriers and its markers under
+// [UnaddressedCarrier].
 func (w *crate) unmodeled(consts []pendingConst, why string) {
 	for _, k := range consts {
 		w.u.Infof(UnmodeledItem, k.field.Pos, "the associated constant %s is not in the model: %s", k.field.Name, why)
-		refuseCarriers(w.u, k.parts.Carriers, "an associated constant the model does not contain")
-		refuseMarkers(w.u, k.a.sugars, "an associated constant the model does not contain")
+		w.u.RefuseCarriers(UnaddressedCarrier, k.parts.Carriers, unmodeledConst)
+		w.u.RefuseSugar(UnaddressedCarrier, k.a.sugars, pathSeparator, unmodeledConst)
 	}
 }

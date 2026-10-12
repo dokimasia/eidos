@@ -7,14 +7,17 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/rust/backend"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
-// The use cases name a standard library module and an item of it.
+// The use cases name a standard library module, the name that a use of
+// it binds, and an item of it.
 const (
 	collectionsModule = "std/collections"
+	collectionsName   = "collections"
 	hashMapName       = "HashMap"
 	svcModule         = "svc/store"
 )
@@ -66,11 +69,42 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "no block")
 		})
 	})
+
+	t.Run("TemplateImport", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name      string
+			giveName  string
+			wantLocal string
+			wantItem  string
+		}{
+			{
+				name:      "binds a module without a name under the last segment of its path",
+				wantLocal: collectionsName,
+			},
+			{
+				name:     "binds the item that the template names",
+				giveName: hashMapName, wantLocal: hashMapName, wantItem: hashMapName,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				local, item, ok := backend.TemplateImport(collectionsModule, tt.giveName)
+				expect.True(t, ok, "a use statement binds a name")
+				expect.Equal(t, local, tt.wantLocal, "TemplateImport returns the name that the use binds")
+				expect.Equal(t, item, tt.wantItem, "TemplateImport returns the item that the name refers to")
+			})
+		}
+	})
 }
 
 // A block allocates its sorted entries and its statements, and an
-// empty set nothing. The ordinary run, which runs no benchmark, checks
-// those ceilings here.
+// empty set nothing. The binding of a template's import allocates
+// nothing. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
 func TestImportsAllocs(t *testing.T) {
 	checkAllocs(t, importsCalls())
 }
@@ -100,6 +134,12 @@ func importsCalls() []allocCall {
 			name: "Imports", caseName: "an empty set",
 			call:  func() { out = backend.Imports(&empty) },
 			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+		{
+			name:     "TemplateImport",
+			caseName: "an import without a name",
+			call:     func() { out, _, _ = backend.TemplateImport(collectionsModule, "") },
+			check:    func(tb assert.TB) { assert.Equal(tb, out, collectionsName, "TemplateImport binds the last segment") },
 		},
 	}
 }

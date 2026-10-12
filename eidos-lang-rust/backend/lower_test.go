@@ -43,9 +43,9 @@ const (
 // The allocations of a lowering.
 const (
 	// wrapAllocs is a function of one result announcing one failure: the
-	// folded return, its Result reference, its two arguments, and its list
-	// of one.
-	wrapAllocs = 1 + 1 + 1 + 1
+	// folded return, its Result reference and the list of its two
+	// arguments. The fold reuses the storage of the one result.
+	wrapAllocs = 1 + 1 + 1
 )
 
 // The lowering folds an announced failure into the Result return,
@@ -62,7 +62,7 @@ func TestLower(t *testing.T) {
 
 			f := thrower(nil)
 			lowered(t, f)
-			assert.Empty(t, f.Returns, "no return is added")
+			assert.Empty(t, f.Returns.Items(), "no return is added")
 		})
 
 		t.Run("passes a method with a receiver through unchanged", func(t *testing.T) {
@@ -78,8 +78,8 @@ func TestLower(t *testing.T) {
 			f := thrower([]*emit.Return{{Type: valued}}, fetchError)
 			failure := f.Throws[0]
 			lowered(t, f)
-			assert.Length(t, f.Returns, 1, "into the one wrapped return")
-			wrapped := f.Returns[0].Type
+			assert.Length(t, f.Returns.Items(), 1, "into the one wrapped return")
+			wrapped := f.Returns.Items()[0].Type
 			assert.Equal(t, wrapped.Spelling, resultType, "as a Result")
 			assert.Length(t, wrapped.Args, 2, "of value and failure")
 			expect.Equal(t, wrapped.Args[0], valued,
@@ -101,7 +101,7 @@ func TestLower(t *testing.T) {
 			f := thrower([]*emit.Return{{Type: &emit.TypeRef{Spelling: rowType}, Comment: rowComment}},
 				fetchError)
 			lowered(t, f)
-			assert.Equal(t, f.Returns[0].Comment, rowComment, "the comment follows the value")
+			assert.Equal(t, f.Returns.Items()[0].Comment, rowComment, "the comment follows the value")
 		})
 
 		t.Run("wraps the unit type for a member method announcing a failure without a result", func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestLower(t *testing.T) {
 			lowered(t, host)
 			m := host.Methods.Items()[0]
 			assert.Empty(t, m.Throws, "a host's member methods lower with it")
-			assert.Equal(t, m.Returns[0].Type.Args[0].Spelling, unitType,
+			assert.Equal(t, m.Returns.Items()[0].Type.Args[0].Spelling, unitType,
 				"nothing returned wraps the unit type")
 		})
 
@@ -236,7 +236,7 @@ func BenchmarkLower(b *testing.B) {
 				c.Excluding(func() { f = valuedThrower() })
 			}
 			lowered(b, f)
-			assert.Equal(b, f.Returns[0].Type.Spelling, resultType, "Lower folds the failure into a Result")
+			assert.Equal(b, f.Returns.Items()[0].Type.Spelling, resultType, "Lower folds the failure into a Result")
 		})
 	})
 }
@@ -244,7 +244,7 @@ func BenchmarkLower(b *testing.B) {
 // thrower returns a function announcing the given failures beside
 // the given results.
 func thrower(returns []*emit.Return, failures ...string) *emit.Function {
-	f := &emit.Function{Name: fetchName, Returns: returns}
+	f := &emit.Function{Name: fetchName, Returns: emit.SlotOf(returns...)}
 	for _, name := range failures {
 		f.Throws = append(f.Throws, &emit.TypeRef{Spelling: name})
 	}

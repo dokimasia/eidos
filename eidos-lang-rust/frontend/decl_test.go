@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/frontend"
@@ -16,8 +17,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Each Rust item lowers to one model kind, so the shape of every kind's
-// declaration is pinned.
+// TestDecl pins the declaration that each Rust item lowers to. Each item
+// lowers to one kind of the model.
 func TestDecl(t *testing.T) {
 	t.Parallel()
 
@@ -132,6 +133,34 @@ func TestDecl(t *testing.T) {
 				assert.Equal(t, e.Variants[0].Value, "", "an implicit discriminant")
 				assert.Equal(t, e.Variants[1].Value, "1 << 2", "an explicit one as written")
 			})
+
+		t.Run("lifts the integer type of a repr attribute as the underlying type", func(t *testing.T) {
+			t.Parallel()
+
+			e := named[*node.Enum](t, declsOf(t, "#[repr(u8)]\npub enum E {\n    A,\n}\n"), "E")
+			assert.NotNil(t, e.Underlying, "the enum has an underlying type")
+			expect.Equal(t, e.Underlying.Spelling, "u8", "the underlying type is the integer type of the repr")
+			expect.Empty(t, e.Annotations, "the repr of the integer type alone leaves no annotation")
+		})
+
+		t.Run("keeps the other arguments of a repr attribute as its annotation", func(t *testing.T) {
+			t.Parallel()
+
+			e := named[*node.Enum](t, declsOf(t, "#[repr(C, i32)]\npub enum E {\n    A,\n}\n"), "E")
+			assert.NotNil(t, e.Underlying, "the enum has an underlying type")
+			expect.Equal(t, e.Underlying.Spelling, "i32", "the underlying type is the integer type of the repr")
+			expect.Equal(t, e.Annotations, symbol.Annotations{{Name: "repr", Args: []string{"C"}}},
+				"the repr keeps its other argument")
+		})
+
+		t.Run("leaves an enum without an integer repr without an underlying type", func(t *testing.T) {
+			t.Parallel()
+
+			e := named[*node.Enum](t, declsOf(t, "#[repr(C)]\npub enum E {\n    A,\n}\n"), "E")
+			expect.Nil(t, e.Underlying, "the repr states no integer type")
+			expect.Equal(t, e.Annotations, symbol.Annotations{{Name: "repr", Args: []string{"C"}}},
+				"the repr stays an annotation")
+		})
 
 		t.Run("lowers an enum with a payload as a Sum", func(t *testing.T) {
 			t.Parallel()

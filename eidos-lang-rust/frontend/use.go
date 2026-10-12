@@ -13,10 +13,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// useEntry is one name a use tree binds: the path it names as segments,
-// the local name it binds, _ for an import that binds none, whether it
-// is a glob, which binds every name of its path, and where it is
-// written.
+// useEntry is one name that a use tree binds: the path of the name as
+// segments, the local name that the tree binds, _ for an import that binds
+// none, whether it is a glob, which binds every name of its path, and its
+// position.
 type useEntry struct {
 	path  []string
 	local string
@@ -24,10 +24,11 @@ type useEntry struct {
 	at    position.Pos
 }
 
-// importsOf groups a use declaration's names by the module each comes
-// from, one Import per module in source order: a name's module is its
-// path without its last segment, and a glob's is its whole path, each
-// spelled as the first package path the module's scope gives it.
+// importsOf groups the names of a use declaration by their module, one
+// Import per module in source order. The module of a name is its path
+// without its last segment, and the module of a glob is its whole path.
+// The path of each Import is the first package path that the scope of the
+// module gives the module.
 func importsOf(at position.Pos, entries []useEntry, sc *scope) []*node.Import {
 	var out []*node.Import
 	byPath := map[string]*node.Import{}
@@ -70,14 +71,15 @@ func exportsOf(imports []*node.Import) []*node.Export {
 	return out
 }
 
-// record reads a module's boundary before its items lower, because an
-// item's types resolve through every binding of its module wherever the
-// module states it: the child modules its mod items declare, the crates
-// its extern crate declarations bind under another name, and the names
-// its use declarations bind, into the module's scope. The use and
-// extern crate declarations then become the File node's imports, in
-// source order, and a pub use declaration its exports too. A
-// declaration a cfg predicate keeps out binds nothing.
+// record reads the boundary of a module before its items lower, because
+// the types of an item resolve through every binding of its module,
+// wherever the module states it. The boundary is the child modules that
+// its mod items declare, the crates that its extern crate declarations
+// bind under another name, and the names that its use declarations bind,
+// which record writes into the scope of the module. The use and the extern
+// crate declarations then become the imports of the File node, in source
+// order, and a pub use declaration also becomes its exports. A declaration
+// that a cfg predicate keeps out binds nothing.
 func (l *lowering) record(list treesitter.Node, c container) {
 	var pending []treesitter.Node
 	var entries [][]useEntry
@@ -129,16 +131,16 @@ func (l *lowering) record(list treesitter.Node, c container) {
 	}
 }
 
-// useTree flattens a use tree below a path prefix into the names it
+// useTree flattens a use tree below a path prefix into the names that it
 // binds, in source order. A path binds its last segment, and self in a
-// list binds the list's own path, as in use a::{self}. A glob binds
-// every name of its path, and a glob of no path binds nothing.
+// list binds the path of the list, as in use a::{self}. A glob binds every
+// name of its path, and a glob of no path binds nothing. The path of a
+// glob is its one named child that is not a comment.
 func (l *lowering) useTree(n treesitter.Node, prefix []string) []useEntry {
 	switch n.Kind() {
 	case l.v.useList:
-		children := l.children(n)
-		out := make([]useEntry, 0, len(children))
-		for _, child := range children {
+		var out []useEntry
+		for child := range n.Content() {
 			out = append(out, l.useTree(child, prefix)...)
 		}
 		return out
@@ -146,8 +148,8 @@ func (l *lowering) useTree(n treesitter.Node, prefix []string) []useEntry {
 		return l.useTree(n.Child(l.v.fieldList), l.extend(prefix, n.Child(l.v.fieldPath)))
 	case l.v.useWildcard:
 		target := prefix
-		if inner := l.children(n); len(inner) > 0 {
-			target = l.extend(prefix, inner[0])
+		for inner := range n.Content() {
+			target = l.extend(prefix, inner)
 		}
 		if len(target) == 0 {
 			return nil
@@ -163,8 +165,8 @@ func (l *lowering) useTree(n treesitter.Node, prefix []string) []useEntry {
 	}
 }
 
-// extend returns a prefix followed by a path node's segments, in a new
-// slice. A lone self below a prefix names the prefix itself.
+// extend returns a prefix followed by the segments of a path node, in a
+// new slice. A lone self below a prefix refers to the prefix itself.
 func (*lowering) extend(prefix []string, p treesitter.Node) []string {
 	segments := strings.Split(p.Compact(), pathSeparator)
 	if len(prefix) > 0 && len(segments) == 1 && segments[0] == keywordSelf {

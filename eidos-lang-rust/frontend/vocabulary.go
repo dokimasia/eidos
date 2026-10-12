@@ -5,12 +5,15 @@ package frontend
 
 import "go.dokimi.dev/eidos/lang/treesitter"
 
-// vocabulary is the Rust grammar's node kinds and field names that the
-// lowering compares, resolved once when the frontend is built, so a
-// walk compares ids and a grammar that renames a kind fails at
-// construction.
+// vocabulary is the node kinds and the field names of the Rust grammar
+// that the lowering compares. The frontend resolves them once when it is
+// built, so a walk compares ids, and a grammar that renames a kind fails
+// at construction.
 type vocabulary struct {
 	grammar *treesitter.Grammar
+	// comments is the comment walk of the grammar, which the lowering of
+	// each file copies.
+	comments treesitter.Comments
 
 	// The file, its comments and attributes, and the items that declare
 	// nothing.
@@ -29,7 +32,7 @@ type vocabulary struct {
 	identifier, typeIdentifier, scopedIdentifier, scopedTypeIdentifier, self, visibilityModifier,
 	functionModifiers, mutableSpecifier treesitter.Kind
 
-	// Signatures and the function bodies the sweep passes over.
+	// Signatures and the function bodies that the sweep passes over.
 	parameter, selfParameter, variadicParameter, typeParameter, lifetimeParameter, constParameter,
 	lifetime, whereClause, block treesitter.Kind
 
@@ -43,18 +46,19 @@ type vocabulary struct {
 	// Literals.
 	stringLiteral, rawStringLiteral, integerLiteral, floatLiteral, booleanLiteral treesitter.Kind
 
-	// The fields the lowering reads children by.
+	// The fields by which the lowering reads children.
 	fieldName, fieldBody, fieldType, fieldTypeParameters, fieldParameters, fieldReturnType,
 	fieldTrait, fieldBounds, fieldValue, fieldAlias, fieldArgument, fieldPath, fieldList,
 	fieldPattern, fieldElement, fieldLength, fieldArguments, fieldDefaultType, fieldTypeArguments,
 	fieldLeft, fieldInner, fieldOuter treesitter.Field
 }
 
-// newVocabulary resolves the vocabulary from the Rust grammar. It
-// panics on a kind or field the grammar does not declare, through
-// [treesitter.Grammar.Kind] and [treesitter.Grammar.Field].
+// newVocabulary resolves the vocabulary from the Rust grammar, and the
+// comment walk over its kinds. It panics on a kind or a field that the
+// grammar does not declare, through [treesitter.Grammar.Kind] and
+// [treesitter.Grammar.Field].
 func newVocabulary(g *treesitter.Grammar) *vocabulary {
-	return &vocabulary{
+	v := &vocabulary{
 		grammar: g,
 
 		lineComment:        g.Kind("line_comment"),
@@ -148,4 +152,6 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		fieldInner:          g.Field("inner"),
 		fieldOuter:          g.Field("outer"),
 	}
+	v.comments = commentWalk(v)
+	return v
 }

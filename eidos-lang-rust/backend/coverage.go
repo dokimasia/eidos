@@ -8,32 +8,39 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Coverage declares Rust's fact coverage, the feature table as
-// data: the render's guard reads it, and the conformance suite
-// checks it total and the rendered findings against it.
+// Coverage declares the fact coverage of Rust, the feature table as data:
+// the guard of the render reads it, and the conformance suite checks it
+// total and the rendered findings against it.
 //
-//   - Final takes the [render.Holds] verdict, because nothing
-//     subclasses a struct and nothing overrides an inherent method.
-//     A trait method's final refuses through its keyword helper,
-//     because every implementation may override a trait method.
-//   - A trait widens through supertraits, so an interface's extends
-//     renders while a struct's refuses. Implements refuses, because
-//     the backend writes no impl block for a stated contract.
-//   - A trait's nested types render as associated types where every
-//     other kind's refuse, because Rust nests nothing else.
-//   - Throws renders through the Result fold the lowering spells.
-//   - An enum variant's value renders as its discriminant where a
-//     field's initializer refuses, because a struct declares no
-//     field defaults.
-//   - A type parameter's default renders on a type definition. On a
-//     function, a method and an associated type it refuses through
-//     the parameter-list helper, because Rust takes none there.
+//   - Final takes the [render.Holds] verdict, because nothing subclasses a
+//     struct and nothing overrides an inherent method. The final of a trait
+//     method refuses through its keyword helper, because every
+//     implementation may override a trait method.
+//   - A trait widens through supertraits, so the extends of an interface
+//     renders while the extends of a struct refuses. Implements refuses,
+//     because the backend writes no impl block for a stated contract.
+//   - The nested types of a trait render as associated types where the
+//     nested types of every other kind refuse, because Rust nests nothing
+//     else.
+//   - Throws renders through the Result fold that the lowering spells.
+//   - The value of an enum variant renders as its discriminant where the
+//     initializer of a field refuses, because a struct declares no field
+//     defaults.
+//   - The default of a type parameter renders on a type definition. On a
+//     function, a method and an associated type it refuses through the
+//     helper of the parameter list, because Rust takes none there.
+//   - Nothing promotes members, so the coverage refuses an embed with
+//     every fact on it.
+//   - The underlying type of an enum renders as its repr attribute. A
+//     computed member has no name in Rust, so the declaration does not
+//     render with the fact or without it.
 //
-// Coverage builds the table on every call, which the caller keeps: the
-// fact map's four allocations, and the exception map's two with its six
-// kinds' two each, 18 allocations.
+// Coverage builds the table on every call, which the caller keeps: four
+// allocations of the fact map, and two of the exception map with two for
+// each of its five kinds, 16 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
+		RefusesEmbeds: true,
 		Facts: map[symbol.Fact]render.Verdict{
 			symbol.FactVisibility:       render.Renders,
 			symbol.FactAsync:            render.Renders,
@@ -73,14 +80,10 @@ func Coverage() render.Coverage {
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactTypeParamDefault: render.Renders,
 			symbol.FactConstParam:       render.Renders,
+			symbol.FactComputed:         render.Rejects,
+			symbol.FactUnderlying:       render.Renders,
 		},
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
-			// An embed refuses whole, so the facts on it refuse with it.
-			symbol.KindEmbed: {
-				symbol.FactComment:     render.Refuses,
-				symbol.FactTag:         render.Refuses,
-				symbol.FactAnnotations: render.Refuses,
-			},
 			symbol.KindField: {
 				symbol.FactLevel: render.Refuses, // no statics inside types
 			},

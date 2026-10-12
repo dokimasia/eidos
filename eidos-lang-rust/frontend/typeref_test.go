@@ -12,9 +12,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// A type reference is what the resolution step resolves and what a
-// backend spells, so its spelling, form, children and package are
-// pinned.
+// TestTypeRef pins the spelling, the form, the children and the package
+// of a type reference. The resolution step resolves a reference, and a
+// backend spells it.
 func TestTypeRef(t *testing.T) {
 	t.Parallel()
 
@@ -90,6 +90,31 @@ func TestTypeRef(t *testing.T) {
 			assert.Equal(t, ref.Spelling, "&'a mut u8", "spelled with its lifetime and mutability")
 			assert.Equal(t, spellingsOf(ref.Elems), []string{"u8"}, "of its one child")
 		})
+
+		borrows := []struct {
+			name string
+			give string
+			want symbol.Mutability
+		}{
+			{
+				name: "lowers a mutable reference as a mutable Borrow",
+				give: "&'a mut u8",
+				want: symbol.MutabilityMutable,
+			},
+			{
+				name: "lowers a shared reference as an immutable Borrow",
+				give: "&'a u8",
+				want: symbol.MutabilityImmutable,
+			},
+		}
+		for _, tt := range borrows {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, typeOf(t, tt.give).Mutability, tt.want,
+					"a holder can write through a borrow only where it is mut")
+			})
+		}
 
 		t.Run("lowers an array as an Array with its literal length", func(t *testing.T) {
 			t.Parallel()

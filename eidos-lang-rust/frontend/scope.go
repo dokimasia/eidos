@@ -15,17 +15,17 @@ import (
 // pathSeparator joins the segments of a Rust path, as in std::io::Read.
 const pathSeparator = "::"
 
-// qualifiedOpen opens a qualified path's first segment, as in
-// <T as Trait>::Item, which names an associated item of a type.
+// qualifiedOpen opens the first segment of a qualified path, as in
+// <T as Trait>::Item, which refers to an associated item of a type.
 const qualifiedOpen = "<"
 
-// scope is what one module records for the resolution step: the
-// package paths of its crate and of itself, the child modules its mod
-// items declare, the path each name its use declarations bind names,
-// the paths its glob imports name, and the crate each extern crate
+// scope is what one module records for the resolution step: the package
+// paths of its crate and of the module, the child modules that its mod
+// items declare, the path that each name of its use declarations binds,
+// the paths of its glob imports, and the crate that each extern crate
 // declaration binds under another name. The parse fills it before the
-// module's items lower, and it is read-only once the parse returns, so
-// the resolution step reads it from any goroutine.
+// items of the module lower, and it is read-only once the parse returns,
+// so the resolution step reads it from any goroutine.
 type scope struct {
 	crate    string
 	module   string
@@ -43,9 +43,9 @@ func newScope(crate, module string) *scope {
 	}
 }
 
-// bind records the names a use declaration binds: each local name to the
-// path it names, a name's first binding kept, and the path of each glob.
-// An import as _ binds no name.
+// bind records the names that a use declaration binds: each local name to
+// its path, with the first binding of a name kept, and the path of each
+// glob. An import as _ binds no name.
 func (s *scope) bind(entries []useEntry) {
 	for _, e := range entries {
 		switch {
@@ -59,16 +59,16 @@ func (s *scope) bind(entries []useEntry) {
 	}
 }
 
-// candidates returns the tiers a spelling names in the module, as
-// [resolve] describes them.
+// candidates returns the tiers of a spelling in the module, as [resolve]
+// describes them.
 func (s *scope) candidates(spelling string) plugin.Candidates {
 	return s.named(strings.Split(spelling, pathSeparator), 0)
 }
 
-// named returns the tiers a path names after hops use bindings were
-// followed. An acyclic chain of bindings follows each binding of the
-// module at most once, so a chain longer than the module's bindings is
-// a cycle, which names nothing more.
+// named returns the tiers of a path after the resolution followed hops use
+// bindings. An acyclic chain of bindings follows each binding of the
+// module at most once, so a chain longer than the bindings of the module
+// is a cycle, which yields nothing more.
 func (s *scope) named(segments []string, hops int) plugin.Candidates {
 	name := segments[len(segments)-1]
 	if len(segments) > 1 {
@@ -79,37 +79,38 @@ func (s *scope) named(segments []string, hops int) plugin.Candidates {
 	if p, met := s.uses[name]; met && hops < len(s.uses) {
 		bound = s.named(p, hops+1)
 	}
-	return append(zip([]plugin.Candidates{own, bound}), s.globbed(name)...)
+	return append(plugin.Zip(own, bound), s.globbed(name)...)
 }
 
-// globbed returns the tiers a name has through the module's glob imports,
-// each glob's tiers zipped, so two globs that both name a declaration
-// compete, which Rust reports as an ambiguity.
+// globbed returns the tiers of a name through the glob imports of the
+// module, with the tiers of the globs zipped. Two globs that both import a
+// declaration of the name compete, which Rust reports as an ambiguity.
 func (s *scope) globbed(name string) plugin.Candidates {
 	sources := make([]plugin.Candidates, 0, len(s.globs))
 	for _, g := range s.globs {
 		sources = append(sources, candidatesIn(s.packages(g, 0), name))
 	}
-	return zip(sources)
+	return plugin.Zip(sources...)
 }
 
-// packages returns the packages a module path names, one tier each,
-// after hops use bindings were followed:
+// packages returns the packages of a module path, one tier each, after the
+// resolution followed hops use bindings:
 //
-//   - a path from crate, self or super names a module below the crate
-//     root, the module itself and its parent
+//   - a path from crate, self or super refers to a module below the crate
+//     root, to the module itself and to its parent
 //   - a path from a child module that a mod item of the module declares
-//     names a module below that child
-//   - a path from a name a use declaration binds names what the binding
-//     names, and one from a crate an extern crate declaration binds
-//     under another name names that crate's module
-//   - a path from :: or from any other name names an external crate's
-//     module, and then a child module that no mod item the parse read
-//     declares, such as one a macro declares
+//     refers to a module below that child
+//   - a path from a name that a use declaration binds refers to the target
+//     of the binding, and a path from a crate that an extern crate
+//     declaration binds under another name refers to a module of that
+//     crate
+//   - a path from :: or from any other name refers to a module of an
+//     external crate, and then to a child module that no mod item that the
+//     parse read declares, such as one that a macro declares
 //
-// It returns nothing for a path from Self and for a qualified path,
-// which name an associated item of a type, for super above the crate
-// root, and for a cycle of use bindings.
+// It returns nothing for a path from Self and for a qualified path, which
+// refer to an associated item of a type, for super above the crate root,
+// and for a cycle of use bindings.
 func (s *scope) packages(segments []string, hops int) []string {
 	head, rest := segments[0], strings.Join(segments[1:], "/")
 	switch {
@@ -146,11 +147,11 @@ func (s *scope) packages(segments []string, hops int) []string {
 	return []string{external, join(s.module, external)}
 }
 
-// packageOf returns the package path of the module a reference's
-// spelling names its declaration in, for the reference's Package: the
-// module a path names, the module of the path a use binding gives a bare
-// name, and empty for any other bare name, which the module declares or
-// no import binds.
+// packageOf returns the package path of the module of the declaration of a
+// spelling, for the Package of a reference. It is the module of a path,
+// the module of the path that a use binding gives a bare name, and the
+// empty string for any other bare name, which the module declares or no
+// import binds.
 func (s *scope) packageOf(spelling string) string {
 	segments := strings.Split(spelling, pathSeparator)
 	if len(segments) == 1 {
@@ -163,8 +164,8 @@ func (s *scope) packageOf(spelling string) string {
 	return s.first(segments[:len(segments)-1])
 }
 
-// first returns the first package a module path names, and empty for
-// the empty path and for a path that names none.
+// first returns the first package of a module path, and the empty string
+// for the empty path and for a path without a package.
 func (s *scope) first(module []string) string {
 	if len(module) == 0 {
 		return ""
@@ -175,15 +176,16 @@ func (s *scope) first(module []string) string {
 	return ""
 }
 
-// resolve returns what a spelling could mean in one module, in Rust's
-// scope order, through the bindings the parse recorded. A file whose
-// parse recorded no scope resolves nothing.
+// resolve returns the candidates of a spelling in one module, in the scope
+// order of Rust, through the bindings that the parse recorded. A file
+// whose parse recorded no scope resolves nothing.
 //
-// A bare name names the module's own item and what the module's use
-// binding of it names in one tier, because Rust refuses a module that
-// declares a name and imports it too, and then what the module's glob
-// imports name. A path names its last segment in the module its other
-// segments name, as [scope.packages] places a module path.
+// A bare name refers to the own item of the module and to the target of
+// the use binding of the name in the module in one tier, because Rust
+// refuses a module that declares a name and imports it too. It then refers
+// to the names that the glob imports of the module import. A path refers
+// to its last segment in the module of its other segments, as
+// [scope.packages] places a module path.
 func resolve(s plugin.ImportScope, spelling string) plugin.Candidates {
 	sc, _ := s.Bindings.(*scope)
 	if sc == nil {
@@ -192,12 +194,12 @@ func resolve(s plugin.ImportScope, spelling string) plugin.Candidates {
 	return sc.candidates(spelling)
 }
 
-// exports returns what a module publishes under a name it does not
-// declare: what its use binding of the name names, in the binding's
-// tiers, and then what its glob imports name. A use declaration without
-// pub publishes too, because a private binding is visible to the
-// module's descendants, which super::Name and use super::* read, and
-// the compiler refuses a reference to it from anywhere else.
+// exports returns what a module publishes under a name that it does not
+// declare: the target of its use binding of the name, in the tiers of the
+// binding, and then the names that its glob imports import. A use
+// declaration without pub publishes too, because the descendants of the
+// module see a private binding, which super::Name and use super::* read.
+// The compiler refuses a reference to it from anywhere else.
 func exports(s plugin.ImportScope, name string) plugin.Candidates {
 	sc, _ := s.Bindings.(*scope)
 	if sc == nil {
@@ -216,22 +218,6 @@ func candidatesIn(pkgs []string, name string) plugin.Candidates {
 	out := make(plugin.Candidates, 0, len(pkgs))
 	for _, pkg := range pkgs {
 		out = append(out, []symbol.Identity{{Lang: Lang, Package: pkg, Name: name}})
-	}
-	return out
-}
-
-// zip merges several sources' tiers by position: the first tier of
-// each, then the second of each, so the sources compete within a tier
-// and each source's own order applies across tiers.
-func zip(sources []plugin.Candidates) plugin.Candidates {
-	var out plugin.Candidates
-	for _, src := range sources {
-		for i, tier := range src {
-			for len(out) <= i {
-				out = append(out, nil)
-			}
-			out[i] = append(out[i], tier...)
-		}
 	}
 	return out
 }

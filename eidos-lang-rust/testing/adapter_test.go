@@ -18,8 +18,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The files a healthy fixture contains, the manifest cargo reads, and
-// the names the satisfaction cases pass to Satisfies.
+// The files of a healthy fixture, the manifest that cargo reads, and the
+// names that the satisfaction cases pass to Satisfies.
 const (
 	libFile      = "src/lib.rs"
 	rowTestFile  = "tests/row.rs"
@@ -30,7 +30,7 @@ const (
 	nowhereTrait = "Nowhere"
 )
 
-// The sources the fixtures are built from.
+// The sources of the fixtures.
 const (
 	libSource = `/// Reader is what a Row satisfies.
 pub trait Reader {
@@ -66,25 +66,20 @@ fn disagrees() {
 	typeErrorSource = "pub fn value() -> i32 {\n    \"text\"\n}\n"
 )
 
-// The kernel's assertions drive the adapter, so the crate it lays out
-// and the meaning of each result are its contract. The layout needs
-// no toolchain, and every case that runs one skips locally where it
-// is absent and fails in CI.
+// TestAdapter checks the adapter through the assertions of the kernel, so
+// the crate that it lays out and the meaning of each result are its
+// contract. The layout needs no toolchain. Every case that runs one skips
+// locally where it is absent, and fails in CI.
 func TestAdapter(t *testing.T) {
 	t.Parallel()
 
 	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns an adapter that passes the kernel's toolchain suite", func(t *testing.T) {
+		t.Run("returns an adapter that passes the toolchain suite of the kernel", func(t *testing.T) {
 			t.Parallel()
 
-			if !toolchain.Require(t, adapter()) {
-				return
-			}
-			toolchain.RunToolchainSuite(t, func(toolchain.TB) (toolchain.Adapter, toolchain.Generated) {
-				return adapter(), healthy()
-			})
+			toolchain.RunToolchainSuite(t, adapter(), healthy())
 		})
 	})
 
@@ -101,7 +96,7 @@ func TestAdapter(t *testing.T) {
 	t.Run("Available", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("names the binary it did not find", func(t *testing.T) {
+		t.Run("returns a reason that contains the missing binary", func(t *testing.T) {
 			t.Parallel()
 
 			present, why := adapter().Available()
@@ -123,14 +118,14 @@ func TestAdapter(t *testing.T) {
 				"the generated file is on disk with its own bytes")
 		})
 
-		t.Run("writes a manifest naming the default crate for a fixture stating none", func(t *testing.T) {
+		t.Run("writes a manifest with the default crate for a fixture without a module", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Contains(t, files.Read(t, filepath.Join(laidOut(t, healthy()), manifestFile)),
 				`name = "eidos_generated"`, "tests import the crate by that name")
 		})
 
-		t.Run("writes a manifest naming the fixture's module", func(t *testing.T) {
+		t.Run("writes a manifest with the module of the fixture", func(t *testing.T) {
 			t.Parallel()
 
 			g := healthy()
@@ -139,7 +134,7 @@ func TestAdapter(t *testing.T) {
 				"the module names the crate")
 		})
 
-		t.Run("keeps a manifest the output wrote", func(t *testing.T) {
+		t.Run("keeps a manifest that the output wrote", func(t *testing.T) {
 			t.Parallel()
 
 			own := "[package]\nname = \"own\"\nversion = \"1.0.0\"\nedition = \"2024\"\n"
@@ -147,12 +142,12 @@ func TestAdapter(t *testing.T) {
 				"the harness states nothing the output already did")
 		})
 
-		t.Run("returns an error for a path climbing out of the scratch project", func(t *testing.T) {
+		t.Run("returns an error for a path that leaves the scratch directory", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := adapter().Layout(only("../escape.rs", "pub fn f() {}\n"))
-			assert.HasError(t, err, "a fixture is not a place to write from")
-			assert.Contains(t, err.Error(), "climbs out", "the refusal names the escape")
+			assert.HasError(t, err, "a fixture writes only inside its project")
+			assert.Contains(t, err.Error(), "leaves the directory", "the error contains the reason")
 		})
 	})
 
@@ -168,7 +163,7 @@ func TestAdapter(t *testing.T) {
 			assert.NoError(t, adapter().Parse(t.Context(), laidOut(t, healthy())), "the healthy output parses")
 		})
 
-		t.Run("returns an error naming the file of a syntax error", func(t *testing.T) {
+		t.Run("returns an error that contains the file of a syntax error", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -189,7 +184,7 @@ func TestAdapter(t *testing.T) {
 			assert.NoError(t, err, "a type error is no syntax error")
 		})
 
-		t.Run("returns an error for a crate with no Rust file", func(t *testing.T) {
+		t.Run("returns an error for a crate without a Rust file", func(t *testing.T) {
 			t.Parallel()
 
 			err := adapter().Parse(t.Context(), laidOut(t, only("src/lib.txt", "pub fn f() {}\n")))
@@ -197,7 +192,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "no Rust file", "the refusal names why")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -212,7 +207,7 @@ func TestAdapter(t *testing.T) {
 	t.Run("TypeCheck", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("passes a healthy crate", func(t *testing.T) {
+		t.Run("returns nil for a healthy crate", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -221,7 +216,7 @@ func TestAdapter(t *testing.T) {
 			assert.NoError(t, adapter().TypeCheck(t.Context(), laidOut(t, healthy())), "the output checks")
 		})
 
-		t.Run("returns an error naming rustc's code", func(t *testing.T) {
+		t.Run("returns an error that contains the code of rustc", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -242,7 +237,7 @@ func TestAdapter(t *testing.T) {
 			assert.HasError(t, adapter().TypeCheck(t.Context(), dir), "every target is checked, the tests included")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -325,7 +320,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "E0308", "the compiler's refusal returns")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -342,7 +337,7 @@ func TestAdapter(t *testing.T) {
 	t.Run("Satisfies", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports true for a type implementing the trait", func(t *testing.T) {
+		t.Run("reports true for a type that implements the trait", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -353,7 +348,7 @@ func TestAdapter(t *testing.T) {
 			assert.True(t, got, "a Row implements Reader")
 		})
 
-		t.Run("reports false for a type not implementing the trait", func(t *testing.T) {
+		t.Run("reports false for a type that does not implement the trait", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -377,7 +372,7 @@ func TestAdapter(t *testing.T) {
 				"the root declares no probe module afterwards")
 		})
 
-		t.Run("returns an error for a trait the crate does not declare", func(t *testing.T) {
+		t.Run("returns an error for a trait that the crate does not declare", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -423,7 +418,7 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "no src/lib.rs", "the refusal names the missing root")
 		})
 
-		t.Run("returns the context's error for a context that ended", func(t *testing.T) {
+		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
 			if !toolchain.Require(t, adapter()) {
@@ -438,8 +433,8 @@ func TestAdapter(t *testing.T) {
 	})
 }
 
-// healthy returns generated output that parses, checks and whose one
-// test passes.
+// healthy returns generated output that parses and checks, with one test
+// that passes.
 func healthy() toolchain.Generated {
 	return toolchain.Generated{Files: map[string][]byte{
 		libFile:     []byte(libSource),
@@ -461,7 +456,7 @@ func only(path, body string) toolchain.Generated {
 	return toolchain.Generated{Files: map[string][]byte{path: []byte(body)}}
 }
 
-// adapter is the harness under test.
+// adapter returns the harness under test.
 func adapter() toolchain.Adapter { return rusttesting.New() }
 
 // laidOut lays a fixture out and removes it when the case ends.

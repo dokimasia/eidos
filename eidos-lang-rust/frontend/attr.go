@@ -13,22 +13,25 @@ import (
 	"go.dokimi.dev/eidos/lang/numeric"
 	"go.dokimi.dev/eidos/lang/treesitter"
 	"go.dokimi.dev/eidos/sdk/directive"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The attributes the lowering reads beside recording them: the
+// The attributes that the lowering reads beside recording them: the
 // documentation attribute, the module path attribute, the test marker,
-// and conditional compilation.
+// conditional compilation, and the representation of an enum.
 const (
 	attrDoc  = "doc"
 	attrPath = "path"
 	attrTest = "test"
 	attrCfg  = "cfg"
+	attrRepr = "repr"
 )
 
 // The parts of a cfg predicate: the combinators, the feature key, the
-// separators of a predicate list and of a key's value, and the test
+// separators of a predicate list and of the value of a key, and the test
 // option, which every load sets.
 const (
 	cfgAll       = "all"
@@ -40,10 +43,11 @@ const (
 	cfgTest      = "test"
 )
 
-// The parts of a numeric literal of Rust that a marker's argument lifts:
+// The parts of a Rust numeric literal that the argument of a marker lifts:
 // the minus sign before it, the separator between its digits, the zero
-// that opens the prefix of another radix, the bit that an ASCII letter
-// sets in lower case, and the letters of the radix prefixes.
+// that opens the prefix of another radix, the bit that an ASCII letter sets
+// in lower case, the letters of the radix prefixes, and the width of the
+// value.
 const (
 	minusSign  = "-"
 	separator  = "_"
@@ -55,7 +59,7 @@ const (
 	numberBits = 64
 )
 
-// The type suffixes of Rust's integer and float literals.
+// The type suffixes of the integer and the float literals of Rust.
 var (
 	integerSuffixes = []string{
 		"u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
@@ -63,15 +67,15 @@ var (
 	floatSuffixes = []string{"f32", "f64"}
 )
 
-// attributes is what an item's outer attributes, or a module's inner
-// ones, contain. Its fields are:
+// attributes is what the outer attributes of an item, or the inner
+// attributes of a module, contain. Its fields are:
 //
 //   - the annotations that the attributes lower to;
 //   - the documentation that #[doc] attributes add;
-//   - a module's path attribute;
+//   - the path attribute of a module;
 //   - whether #[test] or #[cfg(test)] marks the item;
-//   - the first cfg predicate that the load's set does not satisfy, and
-//     the empty predicate where the set satisfies them all;
+//   - the first cfg predicate that the set of the load does not satisfy,
+//     and the empty predicate where the set satisfies them all;
 //   - the markers of the brand among the attributes.
 type attributes struct {
 	annotations symbol.Annotations
@@ -82,17 +86,17 @@ type attributes struct {
 	sugars      []plugin.Sugar
 }
 
-// attributes reads an item's outer attributes, or a module's inner
-// ones. Each is an annotation of its name and its arguments verbatim,
-// except a #[doc] attribute that assigns a string literal, whose text
-// is documentation, one line per line of the text. A #[cfg] attribute
-// is evaluated as well. An attribute whose path starts with the unit's
-// brand is a marker of a directive as well, which [lowering.marker]
-// lifts.
+// attributes reads the outer attributes of an item, or the inner
+// attributes of a module. Each attribute is an annotation of its name and
+// its arguments verbatim. A #[doc] attribute that assigns a string literal
+// is documentation instead, one line per line of the text. The lowering
+// also evaluates a #[cfg] attribute. An attribute whose path starts with
+// the brand of the unit is also the marker of a directive, which
+// [lowering.marker] lifts.
 func (l *lowering) attributes(items []treesitter.Node) attributes {
 	var a attributes
 	for _, item := range items {
-		name, args, value := l.attributeParts(l.firstOf(item, l.v.attribute))
+		name, args, value := l.attributeParts(item.FirstOf(l.v.attribute))
 		switch name {
 		case attrDoc:
 			if text, ok := l.literal(value); ok {
@@ -130,11 +134,11 @@ func (l *lowering) attributes(items []treesitter.Node) attributes {
 }
 
 // marker returns the marker of an attribute of the brand. Its path is the
-// attribute's path split at ::, and its arguments are the arguments of
-// the attribute's token tree, lifted from the syntax. An argument
-// key = value lifts as a keyed argument, and any other argument as a
-// positional one, by [lowering.argument]. The marker's Refusal describes
-// the first argument that does not lift, and an attribute that assigns a
+// path of the attribute split at ::. Its arguments are the arguments of
+// the token tree of the attribute, which [lowering.argument] lifts from the
+// syntax. An argument key = value lifts as a keyed argument, and any other
+// argument as a positional one. The Refusal of the marker describes the
+// first argument that does not lift, and an attribute that assigns a
 // value, which is not the form of a marker.
 func (l *lowering) marker(item treesitter.Node, name string, args, value treesitter.Node) plugin.Sugar {
 	s := plugin.Sugar{Path: strings.Split(name, pathSeparator), Pos: item.Pos()}
@@ -161,13 +165,13 @@ func (l *lowering) marker(item treesitter.Node, name string, args, value treesit
 // argument lifts the tokens of one argument of a marker into a directive
 // value:
 //
-//   - a string literal to its content, as [lowering.literal] reads it;
-//   - an integer or a float literal, with at most one minus sign, to its
-//     decimal text, as [number] writes it;
+//   - a string literal to its content, which [lowering.literal] reads;
+//   - an integer or a float literal, with at most one minus sign, to the
+//     decimal text that [number] writes;
 //   - true, false and a name as written.
 //
-// argument returns the reason that an argument does not lift, or the
-// empty string when it lifts.
+// argument returns the reason why an argument does not lift, and the empty
+// string for an argument that lifts.
 func (l *lowering) argument(tokens []treesitter.Node) (directive.RawValue, string) {
 	sign, operand := "", tokens
 	if len(tokens) == 2 && !tokens[0].Named() && tokens[0].Text() == minusSign {
@@ -192,9 +196,9 @@ func (l *lowering) argument(tokens []treesitter.Node) (directive.RawValue, strin
 		tokens[0].TextThrough(tokens[len(tokens)-1]))
 }
 
-// literal returns the value a string literal states: the literal
-// unquoted where its escapes are also Go's, and its content as written
-// otherwise, as a raw string's is. It reports false for any other
+// literal returns the value of a string literal: the literal unquoted where
+// its escapes are also escapes of Go, and its content as written
+// otherwise, as for a raw string. It reports false for any other
 // expression, such as a macro invocation.
 func (l *lowering) literal(n treesitter.Node) (string, bool) {
 	if text, err := strconv.Unquote(n.Text()); err == nil {
@@ -205,13 +209,14 @@ func (l *lowering) literal(n treesitter.Node) (string, bool) {
 	}
 	var b strings.Builder
 	for part := range n.NamedChildren() {
-		b.WriteString(part.Text())
+		b.Write(part.Bytes())
 	}
 	return b.String(), true
 }
 
-// attributeParts returns an attribute's name as written, its argument
-// token tree, and the value it assigns, each zero where it states none.
+// attributeParts returns the name of an attribute as written, its argument
+// token tree, and the value that it assigns, each zero where the attribute
+// has none.
 func (l *lowering) attributeParts(attr treesitter.Node) (name string, args, value treesitter.Node) {
 	for child := range attr.NamedChildren() {
 		if child.Kind() == l.v.identifier || child.Kind() == l.v.scopedIdentifier {
@@ -222,9 +227,9 @@ func (l *lowering) attributeParts(attr treesitter.Node) (name string, args, valu
 	return name, attr.Child(l.v.fieldArguments), attr.Child(l.v.fieldValue)
 }
 
-// predicates splits a token tree's contents at its top-level commas:
-// one node list per argument, without the delimiters, the comments and
-// the empty argument a trailing comma leaves.
+// predicates splits the contents of a token tree at its top-level commas:
+// one node list per argument, without the delimiters, the comments and the
+// empty argument that a trailing comma leaves.
 func (*lowering) predicates(tt treesitter.Node) [][]treesitter.Node {
 	var tokens []treesitter.Node
 	for child := range tt.AllChildren() {
@@ -253,7 +258,7 @@ func (*lowering) predicates(tt treesitter.Node) [][]treesitter.Node {
 	return out
 }
 
-// contents returns a token tree's contents as written, between its
+// contents returns the contents of a token tree as written, between its
 // delimiters.
 func (l *lowering) contents(tt treesitter.Node) string {
 	preds := l.predicates(tt)
@@ -264,11 +269,11 @@ func (l *lowering) contents(tt treesitter.Node) string {
 	return preds[0][0].TextThrough(last[len(last)-1])
 }
 
-// satisfied evaluates one cfg predicate against the load's options: all,
-// any and not over their predicates, feature = "x" where the load
+// satisfied evaluates one cfg predicate against the options of the load:
+// all, any and not over their predicates, feature = "x" where the load
 // enables the feature x, any other key = "value" and any other option
-// where the load sets it as written, and test always, so a test item
-// loads and is marked. A predicate of any other shape is false.
+// where the load sets it as written, and test always, so a test item loads
+// and is marked. A predicate of any other shape is false.
 func (l *lowering) satisfied(pred []treesitter.Node) bool {
 	name := pred[0].Text()
 	switch {
@@ -296,11 +301,41 @@ func (l *lowering) satisfied(pred []treesitter.Node) bool {
 	return false
 }
 
-// number returns the decimal text of an integer or a float literal of
-// Rust, with its separators and its type suffix dropped. An integer of
-// another radix is converted, and an integer beyond 64 bits keeps every
-// digit. A float is the shortest decimal text that parses back to its
-// double. number reports false for a float beyond the range of a double.
+// representation returns the integer type of the repr attribute among the
+// annotations of an enum, such as the u8 of #[repr(u8)], at the position
+// at. It also returns the annotations without that type. A repr attribute
+// with other arguments, such as the C of #[repr(C, u8)], keeps them, and
+// a repr attribute without other arguments leaves the annotations. The
+// integer types of Rust are the names of [integerSuffixes].
+// representation returns a nil type and the annotations unchanged where
+// no repr attribute states an integer type.
+func representation(annotations symbol.Annotations, at position.Pos) (*node.TypeRef, symbol.Annotations) {
+	for i, an := range annotations {
+		if an.Name != attrRepr {
+			continue
+		}
+		j := slices.IndexFunc(an.Args, func(arg string) bool { return slices.Contains(integerSuffixes, arg) })
+		if j < 0 {
+			continue
+		}
+		underlying := &node.TypeRef{Spelling: an.Args[j], Pos: at}
+		rest := slices.Delete(slices.Clone(an.Args), j, j+1)
+		out := slices.Clone(annotations)
+		if len(rest) == 0 {
+			return underlying, slices.Delete(out, i, i+1)
+		}
+		out[i] = symbol.Annotation{Name: an.Name, Args: rest}
+		return underlying, out
+	}
+	return nil, annotations
+}
+
+// number returns the decimal text of a Rust integer or float literal
+// without its separators and its type suffix. number converts an integer
+// of another radix, and keeps every digit of an integer that needs more
+// than 64 bits. A float is the shortest decimal text that parses back to
+// its double. number reports false for a float outside the range of a
+// double.
 func number(text string, float bool) (string, bool) {
 	digits := strings.ReplaceAll(text, separator, "")
 	if float {

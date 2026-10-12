@@ -361,6 +361,40 @@ func TestType(t *testing.T) {
 				want: "rust: a borrow of another language has no lifetime, and a Rust borrow needs one",
 			},
 			{
+				name: "returns an error for a mutable borrow",
+				give: rules.TypeShape{
+					Form: symbol.FormBorrow, Spelling: "T", Mutability: symbol.MutabilityMutable,
+					Elems: []rules.TypeShape{text},
+				},
+				want: "rust: a borrow of another language has no lifetime, and a Rust borrow needs one",
+			},
+			{
+				name: "returns an error for an immutable list",
+				give: rules.TypeShape{
+					Form: symbol.FormList, Spelling: "readonly string[]", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text},
+				},
+				want: "rust: a read-only list has no Rust spelling",
+			},
+			{
+				name: "returns an error for an immutable tuple",
+				give: rules.TypeShape{
+					Form:       symbol.FormTuple,
+					Spelling:   "readonly [string, string]",
+					Mutability: symbol.MutabilityImmutable,
+					Elems:      []rules.TypeShape{text, text},
+				},
+				want: "rust: a read-only tuple has no Rust spelling",
+			},
+			{
+				name: "returns an error for an immutable map",
+				give: rules.TypeShape{
+					Form: symbol.FormMap, Spelling: "ReadonlyMap", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text, text},
+				},
+				want: "rust: a read-only map has no Rust spelling",
+			},
+			{
 				name: "returns an error for a wildcard with a lower bound",
 				give: rules.TypeShape{
 					Form: symbol.FormWildcard, Spelling: "? super Session", Variance: symbol.VarianceIn,
@@ -409,7 +443,7 @@ func TestType(t *testing.T) {
 			{
 				name: "returns an error for a map of one child",
 				give: rules.TypeShape{Form: symbol.FormMap, Spelling: "map[string]", Elems: []rules.TypeShape{text}},
-				want: "rust: a map takes two children, a key and a value, and the shape has 1",
+				want: "rust: a map takes two children, and the shape has 1",
 			},
 			{
 				name: "returns an error for a function type of more parameters than children",

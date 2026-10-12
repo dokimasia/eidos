@@ -89,8 +89,8 @@ func TestTemplates(t *testing.T) {
 			i.Types.Append(&emit.Alias{Name: "Item", Comment: "what get yields"})
 			i.Methods.Append(&emit.Method{
 				Name: "get", Comment: "by key",
-				Params:  []*emit.Param{{Name: "key", Type: ref("String"), Comment: "the row key"}},
-				Returns: []*emit.Return{{Type: ref("String"), Comment: "the row"}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("String"), Comment: "the row key"}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("String"), Comment: "the row"}),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"pub trait Store {\n"+
@@ -147,7 +147,7 @@ func TestTemplates(t *testing.T) {
 				&emit.Method{Name: "close"},
 				&emit.Method{
 					Name:    "load",
-					Params:  []*emit.Param{{Name: "key", Type: ref("String")}},
+					Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("String")}),
 					Returns: returning(rowName),
 				},
 			)
@@ -202,7 +202,7 @@ func TestTemplates(t *testing.T) {
 			}}
 			i.Methods.Append(&emit.Method{
 				Name:    "pick",
-				Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("K")}),
 				Returns: returning("K"),
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
@@ -215,7 +215,7 @@ func TestTemplates(t *testing.T) {
 
 			f := &emit.Function{
 				Name: "sort", TypeParams: codecBound("T"),
-				Params: []*emit.Param{{Name: "items", Type: ref("T")}}, Returns: returning("T"),
+				Params: emit.SlotOf(&emit.Param{Name: "items", Type: ref("T")}), Returns: returning("T"),
 			}
 			assert.Equal(t, execute(t, kind(symbol.KindFunction), f),
 				"pub fn sort<T: Codec>(items: T) -> T {\n"+bodyStub+"}\n", "the function's list")
@@ -316,6 +316,19 @@ func TestTemplates(t *testing.T) {
 					"    Closed = 9, // terminal\n"+
 					"}\n",
 				"a stated value as its discriminant")
+		})
+
+		t.Run("writes the repr attribute of an underlying type after the other attributes", func(t *testing.T) {
+			t.Parallel()
+
+			e := &emit.Enum{
+				Name: "Phase", Underlying: ref("u8"),
+				Annotations: symbol.Annotations{{Name: "derive", Args: []string{"Debug"}}},
+			}
+			e.Variants.Append(&emit.EnumVariant{Name: "Open"})
+			assert.Equal(t, execute(t, kind(symbol.KindEnum), e),
+				"#[derive(Debug)]\n#[repr(u8)]\npub enum Phase {\n    Open,\n}\n",
+				"the enum keeps its representation")
 		})
 
 		t.Run("writes each sum variant in its payload's form", func(t *testing.T) {
@@ -466,5 +479,7 @@ func codecBound(name string) []*emit.TypeParam {
 	return []*emit.TypeParam{{Name: name, Bounds: []*emit.TypeRef{ref("Codec")}}}
 }
 
-// returning returns the return list of one result.
-func returning(spelling string) []*emit.Return { return []*emit.Return{{Type: ref(spelling)}} }
+// returning returns the return slot of one result of the type spelling.
+func returning(spelling string) emit.Slot[*emit.Return] {
+	return emit.SlotOf(&emit.Return{Type: ref(spelling)})
+}

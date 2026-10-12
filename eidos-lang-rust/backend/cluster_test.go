@@ -129,8 +129,8 @@ func TestCluster(t *testing.T) {
 
 			fold := methodOn(generic("Box", paramRef("T")), "fold", ret)
 			fold.TypeParams = []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}}
-			fold.Params = []*emit.Param{{Name: "item", Type: ref("U")}}
-			fold.Returns = []*emit.Return{{Type: ref("U")}}
+			fold.Params = emit.SlotOf(&emit.Param{Name: "item", Type: ref("U")})
+			fold.Returns = emit.SlotOf(&emit.Return{Type: ref("U")})
 			assert.Equal(t, implOf(t, fold),
 				"impl<T> Box<T> {\n    pub fn fold<U: Codec>(&self, item: U) -> U {\n"+implBodyStub+"    }\n}\n",
 				"the method's own parameters behind its name")
@@ -149,7 +149,7 @@ func TestCluster(t *testing.T) {
 			t.Parallel()
 
 			load := methodOn(ref("Store"), "load", ret)
-			load.Params = []*emit.Param{{Name: "row", Type: imported(storeModule, rowName)}}
+			load.Params = emit.SlotOf(&emit.Param{Name: "row", Type: imported(storeModule, rowName)})
 			_, set, err := renderImpl(t, load)
 			assert.NoError(t, err, "the template executes")
 			assert.Equal(t, set.Paths(), []string{storeModule}, "the item's use")

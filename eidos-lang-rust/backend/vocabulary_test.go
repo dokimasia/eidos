@@ -80,9 +80,10 @@ const (
 	// selfParamsAllocs is a method of two parameters: the parameter list,
 	// and the receiver joined before it.
 	selfParamsAllocs = paramsAllocs + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-six
-	// helpers, four allocations, and the speller's eleven bound helpers.
-	funcsAllocs = 4 + 11
+	// funcsAllocs is the vocabulary of a file: the map of twenty-seven
+	// helpers, four allocations, and the twelve bound helpers of the
+	// speller.
+	funcsAllocs = 4 + 12
 	// typeNamesAllocs is two parameter names: the joined list, and its
 	// brackets.
 	typeNamesAllocs = 1 + 1
@@ -419,22 +420,23 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			assert.Equal(t, must(t)(s.Params([]*emit.Param{{Name: "key", Type: ref("String")}})), "key: String",
-				"the Rust order")
+			assert.Equal(t, must(t)(s.Params(new(emit.SlotOf(&emit.Param{Name: "key", Type: ref("String")})))),
+				"key: String", "the Rust order")
 		})
 
 		t.Run("binds an unnamed parameter to the discard pattern", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			assert.Equal(t, must(t)(s.Params([]*emit.Param{{Type: ref("u32")}})), "_: u32", "the discard pattern")
+			assert.Equal(t, must(t)(s.Params(new(emit.SlotOf(&emit.Param{Type: ref("u32")})))), "_: u32",
+				"the discard pattern")
 		})
 
 		t.Run("returns an error for a parameter that states no type", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Params([]*emit.Param{{Name: "key"}})
+			_, err := s.Params(new(emit.SlotOf(&emit.Param{Name: "key"})))
 			assert.HasError(t, err, "the list is refused")
 		})
 	})
@@ -446,29 +448,30 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			assert.Equal(t, must(t)(s.Results(nil)), "", "no annotation")
+			assert.Equal(t, must(t)(s.Results(&emit.Slot[*emit.Return]{})), "", "no annotation")
 		})
 
 		t.Run("writes one result behind the arrow", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			assert.Equal(t, must(t)(s.Results([]*emit.Return{{Type: ref(rowName)}})), " -> Row", "the annotation")
+			assert.Equal(t, must(t)(s.Results(new(emit.SlotOf(&emit.Return{Type: ref(rowName)})))), " -> Row",
+				"the annotation")
 		})
 
 		t.Run("writes several results as one tuple", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			assert.Equal(t, must(t)(s.Results([]*emit.Return{{Type: ref(rowName)}, {Type: ref("Error")}})),
-				" -> (Row, Error)", "a tuple")
+			pair := new(emit.SlotOf(&emit.Return{Type: ref(rowName)}, &emit.Return{Type: ref("Error")}))
+			assert.Equal(t, must(t)(s.Results(pair)), " -> (Row, Error)", "a tuple")
 		})
 
 		t.Run("returns an error for a result that states no type", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Results([]*emit.Return{{Name: "row"}})
+			_, err := s.Results(new(emit.SlotOf(&emit.Return{Name: "row"})))
 			assert.HasError(t, err, "the annotation is refused")
 		})
 	})
@@ -549,28 +552,21 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, must(t)(s.Supertraits(store)), ": Keyed + Ord", "the bounds joined")
 		})
 
-		tests := []struct {
-			name string
-			give *emit.Interface
-		}{
-			{
-				name: "returns an error for an embed",
-				give: &emit.Interface{Name: "Store", Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
-			},
-			{
-				name: "returns an error for a supertrait that states no type",
-				give: &emit.Interface{Name: "Store", Extends: []*emit.TypeRef{nil}},
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("writes no bound for an embed", func(t *testing.T) {
+			t.Parallel()
 
-				s, _ := speller()
-				_, err := s.Supertraits(tt.give)
-				assert.HasError(t, err, "a trait cannot state it")
-			})
-		}
+			s, _ := speller()
+			store := &emit.Interface{Name: "Store", Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})}
+			assert.Equal(t, must(t)(s.Supertraits(store)), "", "the coverage refuses an embed")
+		})
+
+		t.Run("returns an error for a supertrait that states no type", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.Supertraits(&emit.Interface{Name: "Store", Extends: []*emit.TypeRef{nil}})
+			assert.HasError(t, err, "a trait cannot state it")
+		})
 	})
 
 	t.Run("FnMods", func(t *testing.T) {
@@ -714,7 +710,7 @@ func TestVocabulary(t *testing.T) {
 	t.Run("SelfParams", func(t *testing.T) {
 		t.Parallel()
 
-		key := []*emit.Param{{Name: "key", Type: ref("String")}}
+		key := emit.SlotOf(&emit.Param{Name: "key", Type: ref("String")})
 		tests := []struct {
 			name    string
 			give    *emit.Method
@@ -776,7 +772,7 @@ func TestVocabulary(t *testing.T) {
 			},
 			{
 				name:    "returns an error for a parameter that states no type",
-				give:    &emit.Method{Name: "get", Params: []*emit.Param{{Name: "key"}}},
+				give:    &emit.Method{Name: "get", Params: emit.SlotOf(&emit.Param{Name: "key"})},
 				wantErr: true,
 			},
 		}
@@ -1014,6 +1010,42 @@ func TestVocabulary(t *testing.T) {
 		})
 	})
 
+	t.Run("Repr", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes the repr attribute of an underlying integer type", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			got := must(t)(backend.NewSpeller(&set).Repr(&emit.Enum{Name: phaseName, Underlying: ref("u8")}))
+			assert.Equal(t, got, "#[repr(u8)]\n", "Repr writes the attribute on a line of its own")
+		})
+
+		t.Run("returns nothing for an enum without an underlying type", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			got := must(t)(backend.NewSpeller(&set).Repr(&emit.Enum{Name: phaseName}))
+			assert.Equal(t, got, "", "Repr writes no attribute")
+		})
+
+		t.Run("returns an error for an underlying type that is not an integer type", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := backend.NewSpeller(&set).Repr(&emit.Enum{Name: phaseName, Underlying: ref("String")})
+			assert.HasError(t, err, "a repr attribute of an enum takes an integer type")
+		})
+
+		t.Run("returns an error for an underlying type without a spelling", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := backend.NewSpeller(&set).Repr(&emit.Enum{Name: phaseName, Underlying: &emit.TypeRef{}})
+			assert.HasError(t, err, "Rust spells no missing type")
+		})
+	})
+
 	t.Run("EnumMods", func(t *testing.T) {
 		t.Parallel()
 
@@ -1086,10 +1118,13 @@ func vocabularyCalls() []allocCall {
 	assoc := &emit.Alias{Name: itemAlias}
 	payload := variantOf(&emit.Field{Name: idName, Type: bare})
 	trait := &emit.Interface{Name: storeTrait, Extends: []*emit.TypeRef{ref(cloneTrait), ref(sendTrait)}}
-	args := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: ref(stringType)}}
-	three := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: bare}, {Name: loadName, Type: bare}}
-	method := &emit.Method{Name: putName, Params: args}
-	result := []*emit.Return{{Type: bare}}
+	args := new(emit.SlotOf(&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: ref(stringType)}))
+	three := new(emit.SlotOf(
+		&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: bare},
+		&emit.Param{Name: loadName, Type: bare},
+	))
+	method := &emit.Method{Name: putName, Params: *args}
+	result := new(emit.SlotOf(&emit.Return{Type: bare}))
 	doc := []string{rowDoc}
 	box := generic(boxName, paramRef(itemParam))
 	async := &emit.Function{Name: loadName, Async: true}
@@ -1162,7 +1197,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 26, "Funcs returns the twenty-six helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 27, "Funcs returns the twenty-seven helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,

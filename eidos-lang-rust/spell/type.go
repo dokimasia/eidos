@@ -22,6 +22,9 @@ import (
 // as every satellite's refusals open.
 const typeRefusal = string(rust.Lang) + ": "
 
+// rustName is the name of the language in a refusal.
+const rustName = "Rust"
+
 // The types and the syntax that the Rust spoke writes. An array writes
 // its length after arrayLength, and a tuple of one member closes with
 // singleClose.
@@ -89,9 +92,11 @@ var (
 // Type refuses a union, an intersection, a stream, an inline type and an
 // opaque type, because Rust has no spelling of them. It refuses the top
 // type, because Rust does not have a type of every value. It refuses a
-// borrow, because a Rust borrow needs a lifetime, and a type of another
-// language has none. It refuses a wildcard with a lower bound
-// or without a bound, a scalar of another width, and an array of an
+// borrow of either mutability, because a Rust borrow needs a lifetime,
+// and a type of another language has none. It refuses an immutable list,
+// array, tuple and map, because a holder can write through a Rust
+// collection in a mutable binding. It refuses a wildcard with a lower
+// bound or without a bound, a scalar of another width, and an array of an
 // unstated length. It refuses a form whose child it refuses, and the
 // error contains the source spelling of the child.
 //
@@ -124,8 +129,11 @@ func rustType(s rules.TypeShape) (*emit.TypeRef, error) {
 	case symbol.FormOptional, symbol.FormList, symbol.FormArray:
 		return container(s)
 	case symbol.FormMap:
-		if len(s.Elems) != 2 {
-			return nil, fmt.Errorf("a map takes two children, a key and a value, and the shape has %d", len(s.Elems))
+		if err := spoke.ReadOnly(s, rustName); err != nil {
+			return nil, err
+		}
+		if err := spoke.Arity(s, 2); err != nil {
+			return nil, err
 		}
 		args, err := spoke.Children(s.Elems, rustType)
 		if err != nil {
@@ -133,6 +141,9 @@ func rustType(s rules.TypeShape) (*emit.TypeRef, error) {
 		}
 		return &emit.TypeRef{Spelling: hashMapType, Package: collectionsModule, Args: args}, nil
 	case symbol.FormTuple:
+		if err := spoke.ReadOnly(s, rustName); err != nil {
+			return nil, err
+		}
 		elems, err := spoke.Children(s.Elems, rustType)
 		if err != nil {
 			return nil, err
@@ -178,13 +189,16 @@ func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // container spells a form of one child: an optional as Option<T>, a list
 // as Vec<T>, and an array as [T; n]. It refuses an array of an unstated
-// length.
+// length, and an immutable list or array.
 func container(s rules.TypeShape) (*emit.TypeRef, error) {
-	switch {
-	case s.Form == symbol.FormArray && s.Length == 0:
+	if s.Form == symbol.FormArray && s.Length == 0 {
 		return nil, errors.New("an array of an unstated length has no Rust spelling")
-	case len(s.Elems) != 1:
-		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
+	}
+	if err := spoke.ReadOnly(s, rustName); err != nil {
+		return nil, err
+	}
+	if err := spoke.Arity(s, 1); err != nil {
+		return nil, err
 	}
 	elems, err := spoke.Children(s.Elems, rustType)
 	if err != nil {
@@ -209,8 +223,8 @@ func container(s rules.TypeShape) (*emit.TypeRef, error) {
 // follow it as a tuple, and a function type without a result has no
 // arrow.
 func function(s rules.TypeShape) (*emit.TypeRef, error) {
-	if s.Split < 0 || s.Split > len(s.Elems) {
-		return nil, fmt.Errorf("a function type splits its %d children at %d", len(s.Elems), s.Split)
+	if err := spoke.Split(s); err != nil {
+		return nil, err
 	}
 	elems, err := spoke.Children(s.Elems, rustType)
 	if err != nil {

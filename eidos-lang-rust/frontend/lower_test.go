@@ -4,8 +4,8 @@
 package frontend_test
 
 import (
-	"strings"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
@@ -17,16 +17,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The messages the syntax cases expect: the one that counts the
-// findings past the cap, and the marks of a quoted line cut short.
-const (
-	moreSyntax = "and more syntax errors"
-	cutMark    = "..."
-)
-
-// A module's items lower into its package through one walk, so the
-// module's header, its items, and what an item's visibility keeps, is
-// pinned.
+// The items of a module lower into its package through one walk. The cases
+// pin the header of the module, its items, and what the visibility of an
+// item keeps.
 func TestLower(t *testing.T) {
 	t.Parallel()
 
@@ -37,10 +30,10 @@ func TestLower(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "#![doc = \"Crate.\"]\n")
-			assert.Equal(t, packageIn(t, gb, crateName).Doc, []string{"Crate."}, "the attribute's text")
+			assert.Equal(t, packageIn(t, gb, crateName).Doc, []string{"Crate."}, "the text of the attribute")
 		})
 
-		t.Run("attaches the carriers of a module's inner doc comments to its package", func(t *testing.T) {
+		t.Run("attaches the carriers of the inner doc comments of a module to its package", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "//! +fixture:gen:table name=t\n")
@@ -49,7 +42,7 @@ func TestLower(t *testing.T) {
 			assert.True(t, onPackage, "a module is a package")
 		})
 
-		t.Run("annotates a module's File node with its inner attributes", func(t *testing.T) {
+		t.Run("annotates the File node of a module with its inner attributes", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "#![allow(dead_code)]\n")
@@ -57,7 +50,7 @@ func TestLower(t *testing.T) {
 				symbol.Annotations{{Name: "allow", Args: []string{"dead_code"}}}, "the inner attribute")
 		})
 
-		t.Run("stamps a module #![cfg(test)] marks rust.test", func(t *testing.T) {
+		t.Run("stamps rust.test on a module that #![cfg(test)] marks", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "#![cfg(test)]\npub struct A;\n")
@@ -69,7 +62,7 @@ func TestLower(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "pub mod a {\n    //! The a.\n}\n")
-			assert.Equal(t, packageIn(t, gb, crateName+"/a").Doc, []string{"The a."}, "the block's inner comment")
+			assert.Equal(t, packageIn(t, gb, crateName+"/a").Doc, []string{"The a."}, "the inner comment of the block")
 		})
 
 		t.Run("documents a module with its outer doc comments before its inner ones", func(t *testing.T) {
@@ -78,7 +71,8 @@ func TestLower(t *testing.T) {
 			gb, _ := parsedTree(t, crateTree(map[string]string{
 				libRoot: "/// Outer.\npub mod a;\n", "src/a.rs": "//! Inner.\n",
 			}), libRoot, plugin.DepthFull, nil)
-			assert.Equal(t, packageIn(t, gb, crateName+"/a").Doc, []string{"Outer.", "Inner."}, "rustdoc's order")
+			assert.Equal(t, packageIn(t, gb, crateName+"/a").Doc, []string{"Outer.", "Inner."},
+				"the order of rustdoc")
 		})
 
 		t.Run("leaves out an inline module whose inner cfg predicate is false", func(t *testing.T) {
@@ -87,20 +81,20 @@ func TestLower(t *testing.T) {
 			src := "pub mod gated {\n    #![cfg(feature = \"y\")]\n    //! Gated.\n    pub struct A;\n}\n"
 			gb, _ := parsedSource(t, src)
 			assert.Empty(t, fileIn(t, gb, crateName+"/gated").Decls, "its items are kept out")
-			assert.Empty(t, packageIn(t, gb, crateName+"/gated").Doc, "and so is its documentation")
+			assert.Empty(t, packageIn(t, gb, crateName+"/gated").Doc, "the module has no documentation")
 			assert.Equal(t, stampsOf(gb, string(rust.CfgKey)), []any{[]string{"feature = \"y\""}},
-				"and the file records the predicate")
+				"the file records the predicate")
 		})
 	})
 
 	t.Run("items", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("passes over a shebang and an empty item", func(t *testing.T) {
+		t.Run("passes over the items that declare nothing", func(t *testing.T) {
 			t.Parallel()
 
 			gb, found := parsedSource(t, "#!/usr/bin/env rust-script\n;\npub struct A;\n")
-			assert.Empty(t, found, "neither reports")
+			assert.Empty(t, found, "neither the shebang nor the empty item reports")
 			named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "A")
 		})
 	})
@@ -113,7 +107,7 @@ func TestLower(t *testing.T) {
 
 			gb, found := parsedSource(t, "m!();\nmacro_rules! n { () => {} }\n")
 			assert.Empty(t, found, "a macro without a carrier reports nothing")
-			assert.Empty(t, fileIn(t, gb, crateName).Decls, "and declares nothing")
+			assert.Empty(t, fileIn(t, gb, crateName).Decls, "the macro declares nothing")
 		})
 
 		t.Run("stamps the file with each cfg predicate that keeps one of its items out", func(t *testing.T) {
@@ -124,8 +118,8 @@ func TestLower(t *testing.T) {
 				"the predicates in source order")
 		})
 
-		t.Run("leaves out the members below the file a path attribute names for a module a cfg predicate keeps "+
-			"out", func(t *testing.T) {
+		t.Run("leaves out the members below the file of the path attribute of a module that a cfg predicate "+
+			"keeps out", func(t *testing.T) {
 			t.Parallel()
 
 			_, found := parsedTree(t, crateTree(map[string]string{
@@ -134,27 +128,27 @@ func TestLower(t *testing.T) {
 				"src/other/g/inner.rs": publicStruct,
 			}), libRoot, plugin.DepthFull, nil)
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.ExcludedFile, frontend.ExcludedFile},
-				"the module's file and the member below it")
+				"the file of the module and the member below it")
 		})
 
-		t.Run("keeps an item in for a feature the load enables", func(t *testing.T) {
+		t.Run("keeps an item in for a feature that the load enables", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedTree(t, crateTree(map[string]string{libRoot: "#[cfg(feature = \"x\")]\npub struct A;\n"}),
 				libRoot, plugin.DepthFull, &frontend.Options{Features: []string{"x"}})
 			named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "A")
-			assert.Empty(t, stampsOf(gb, string(rust.CfgKey)), "and records no predicate")
+			assert.Empty(t, stampsOf(gb, string(rust.CfgKey)), "the file records no predicate")
 		})
 	})
 
 	t.Run("module", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("names a module's package after its mod item", func(t *testing.T) {
+		t.Run("names the package of a module after its mod item", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "pub mod store {}\n")
-			assert.Equal(t, packageIn(t, gb, crateName+"/store").Name, "store", "the module's name")
+			assert.Equal(t, packageIn(t, gb, crateName+"/store").Name, "store", "the name of the module")
 		})
 
 		t.Run("documents a module with the doc comments above its mod item", func(t *testing.T) {
@@ -164,16 +158,16 @@ func TestLower(t *testing.T) {
 			assert.Equal(t, packageIn(t, gb, crateName+"/store").Doc, []string{"The store."}, "the outer comment")
 		})
 
-		t.Run("attaches the carriers above a mod item to the module's package", func(t *testing.T) {
+		t.Run("attaches the carriers above a mod item to the package of the module", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, carrierPlain+"pub mod store {}\n")
 			assert.Length(t, gb.Attachments(), 1, "one directive")
 			_, onPackage := gb.Attachments()[0].Subject.(*node.Package)
-			assert.True(t, onPackage, "on the module's package")
+			assert.True(t, onPackage, "the subject is the package of the module")
 		})
 
-		t.Run("stamps a module #[cfg(test)] marks rust.test", func(t *testing.T) {
+		t.Run("stamps rust.test on a module that #[cfg(test)] marks", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "#[cfg(test)]\nmod tests {}\n")
@@ -187,7 +181,7 @@ func TestLower(t *testing.T) {
 			named[*node.Struct](t, fileIn(t, gb, crateName+"/a/b").Decls, "C")
 		})
 
-		t.Run("loads a private module's pub items at signature depth", func(t *testing.T) {
+		t.Run("loads the pub items of a private module at signature depth", func(t *testing.T) {
 			t.Parallel()
 
 			tree := crateTree(map[string]string{libRoot: "mod inner {\n    pub struct A;\n    struct B;\n}\n"})
@@ -195,6 +189,18 @@ func TestLower(t *testing.T) {
 			decls := fileIn(t, gb, crateName+"/inner").Decls
 			assert.Length(t, decls, 1, "a pub use can publish A")
 			named[*node.Struct](t, decls, "A")
+		})
+
+		t.Run("passes the sweep over an inline module that its inner cfg predicate keeps out", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedTree(t, fstest.MapFS{
+				manifestPath: {Data: []byte(manifestSrc)},
+				libRoot: {Data: []byte("mod gated {\n    #![cfg(feature = \"x\")]\n    " + carrierPlain +
+					"    pub struct A;\n}\n")},
+			}, libRoot, plugin.DepthFull, nil)
+			assert.Empty(t, found, "the carrier leaves with the module")
+			assert.Empty(t, gb.Attachments(), "the carrier attaches nowhere")
 		})
 	})
 
@@ -208,16 +214,16 @@ func TestLower(t *testing.T) {
 				libRoot: "pub mod a;\n", "src/a.rs": publicStruct, "src/a/mod.rs": "pub struct B;\n",
 			}), libRoot, plugin.DepthFull, nil)
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnlinkedFile}, "mod.rs loads as unlinked")
-			assert.Equal(t, found[0].Pos.File, "src/a/mod.rs", "the file the walk did not take")
-			assert.Length(t, packageIn(t, gb, crateName+"/a").Files, 2, "under the module both name")
+			assert.Equal(t, found[0].Pos.File, "src/a/mod.rs", "the finding is at the file that the walk did not take")
+			assert.Length(t, packageIn(t, gb, crateName+"/a").Files, 2, "both files are in the package of the module")
 		})
 
-		t.Run("walks no file for a path attribute that names no member", func(t *testing.T) {
+		t.Run("walks no file for a path attribute without a member", func(t *testing.T) {
 			t.Parallel()
 
 			gb, found := parsedSource(t, "#[path = \"missing.rs\"]\npub mod x;\n")
 			assert.Empty(t, found, "the missing file reports nothing")
-			assert.Empty(t, packageIn(t, gb, crateName+"/x").Files, "and the module has no File node")
+			assert.Empty(t, packageIn(t, gb, crateName+"/x").Files, "the module has no File node")
 		})
 	})
 
@@ -234,15 +240,15 @@ func TestLower(t *testing.T) {
 			{name: "lowers pub(crate) as internal", give: "pub(crate)", want: symbol.VisibilityInternal},
 			{name: "lowers no modifier as private", give: "", want: symbol.VisibilityPrivate},
 			{
-				name: "lowers pub(super) as internal and stamps it", give: "pub(super)",
+				name: "lowers pub(super) as internal with a stamp", give: "pub(super)",
 				want: symbol.VisibilityInternal, spelled: []any{"pub(super)"},
 			},
 			{
-				name: "lowers pub(self) as internal and stamps it", give: "pub(self)",
+				name: "lowers pub(self) as internal with a stamp", give: "pub(self)",
 				want: symbol.VisibilityInternal, spelled: []any{"pub(self)"},
 			},
 			{
-				name: "lowers pub(in path) as internal and stamps it as written", give: "pub( in crate :: a )",
+				name: "lowers pub(in path) as internal with a stamp as written", give: "pub( in crate :: a )",
 				want: symbol.VisibilityInternal, spelled: []any{"pub(in crate::a)"},
 			},
 		}
@@ -253,7 +259,7 @@ func TestLower(t *testing.T) {
 				gb, _ := parsedSource(t, tt.give+" fn f() {}\n")
 				fn := named[*node.Function](t, fileIn(t, gb, crateName).Decls, "f")
 				assert.Equal(t, fn.Visibility, tt.want, "the visibility")
-				assert.Equal(t, stampsOf(gb, string(rust.VisibilityKey)), tt.spelled, "and the restriction's spelling")
+				assert.Equal(t, stampsOf(gb, string(rust.VisibilityKey)), tt.spelled, "the spelling of the restriction")
 			})
 		}
 	})
@@ -270,43 +276,7 @@ func TestLower(t *testing.T) {
 		t.Run("leaves out a pub(crate) item at signature depth", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Empty(t, shallowDecls(t, "pub(crate) fn f() {}\n"), "the crate alone can name it")
-		})
-	})
-
-	t.Run("reportSyntax", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("reports a MISSING node as missing", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "pub struct A {\n    a: u8\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnparsedFile}, "the missing brace reports")
-			assert.HasSuffix(t, found[0].Msg, "is missing here", "as missing")
-		})
-
-		t.Run("reports an ERROR node quoting its source", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "pub struct A;\n%% bad\n")
-			assert.NotEmpty(t, found, "the error reports")
-			assert.Contains(t, found[0].Msg, "%%", "quoting the source")
-		})
-
-		t.Run("quotes at most the first line of an ERROR node, cut at its cap", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "%% "+strings.Repeat("x", 40)+"\n")
-			assert.NotEmpty(t, found, "the error reports")
-			assert.Contains(t, found[0].Msg, cutMark, "the quote is cut")
-		})
-
-		t.Run("caps a file's syntax findings and reports the rest once", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, strings.Repeat("%% x;\n", 12))
-			assert.Length(t, found, 11, "ten findings and the remainder")
-			assert.Equal(t, found[10].Msg, moreSyntax, "counted once")
+			assert.Empty(t, shallowDecls(t, "pub(crate) fn f() {}\n"), "only the crate can refer to it")
 		})
 	})
 }

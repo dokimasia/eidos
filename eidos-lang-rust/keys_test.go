@@ -14,23 +14,23 @@ import (
 	"go.dokimi.dev/eidos/sdk/meta"
 )
 
-// rivalPlugin is a second registrant, and rivalKey the key it tries
-// to register under the satellite's namespace.
+// rivalPlugin is a second registrant, and rivalKey is the key that it
+// tries to register under the namespace of the satellite.
 const (
 	rivalPlugin              = "rival"
 	rivalKey    meta.KeyName = "rust.rival"
 )
 
-// keysAllocs is a registration into a fresh registry: the three kind
-// lists of the keys, and ten allocations of the registry, its namespace
-// claim and the growth of its spec list, type list and name map to five
-// keys.
+// keysAllocs is the cost of a registration into a fresh registry: the
+// three kind lists of the keys, and ten allocations of the registry for
+// its namespace claim and the growth of its spec list, type list and name
+// map to six keys.
 const keysAllocs = 3 + 10
 
-// The frontend stamps these keys, and a composition registers them
-// once. The registration is pinned: every key resolves, the namespace
-// is the satellite's, a second registration of one registrant repeats
-// the first, and a claim of another registrant fails.
+// The frontend stamps these keys, and a composition registers them once.
+// The cases pin the registration: every key resolves, the namespace
+// belongs to the satellite, a second registration of one registrant
+// repeats the first, and a claim of another registrant fails.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -43,21 +43,22 @@ func TestKeys(t *testing.T) {
 			r := meta.NewRegistry()
 			assert.NoError(t, rust.Keys(r), "the vocabulary registers")
 			for _, key := range []meta.KeyName{
-				rust.TestKey, rust.CfgKey, rust.UnionKey, rust.VisibilityKey, rust.LifetimeParamsKey,
+				rust.TestKey, rust.GeneratedKey, rust.CfgKey, rust.UnionKey, rust.VisibilityKey,
+				rust.LifetimeParamsKey,
 			} {
 				_, known := r.Resolve(key)
 				assert.True(t, known, string(key)+" resolves")
 			}
 		})
 
-		t.Run("claims the namespace for the handle's registrant", func(t *testing.T) {
+		t.Run("claims the namespace for the registrant of the handle", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
 			assert.NoError(t, rust.Keys(r.For(string(rust.Name))),
-				"the vocabulary registers through the plugin's handle")
+				"the vocabulary registers through the handle of the plugin")
 			_, err := meta.Register[bool](r.For(rivalPlugin), meta.KeySpec{
-				Name: rivalKey, Doc: "a key under another plugin's namespace",
+				Name: rivalKey, Doc: "a key under the namespace of another plugin",
 			})
 			assert.HasError(t, err, "another plugin registers no key under the namespace")
 		})
@@ -80,19 +81,19 @@ func TestKeys(t *testing.T) {
 	})
 }
 
-// A registration allocates its kind lists and the registry's growth.
-// The ordinary run, which runs no benchmark, checks that ceiling here,
-// each call into a registry of its own, built outside the count. The
-// count keeps the first error of its calls, which cmp.Or returns without
-// allocating.
+// A registration allocates its kind lists and the growth of the registry.
+// The ordinary run, which runs no benchmark, checks that ceiling here. Each
+// call registers into a registry of its own, which the setup builds
+// outside the count. The count keeps the first error of its calls, which
+// cmp.Or returns without allocating.
 func TestKeysAllocs(t *testing.T) {
 	var err error
 	assert.MaxAllocsWithSetup(t, meta.NewRegistry, func(r *meta.Registry) { err = cmp.Or(err, rust.Keys(r)) },
-		keysAllocs, "Keys allocates the kind lists and the registry's growth")
+		keysAllocs, "Keys allocates the kind lists and the growth of the registry")
 	assert.NoError(t, err, "Keys registers the vocabulary")
 }
 
-// BenchmarkKeys measures the registration a composition makes once,
+// BenchmarkKeys measures the registration that a composition makes once,
 // each into a registry of its own.
 func BenchmarkKeys(b *testing.B) {
 	b.Run("Keys", func(b *testing.B) {

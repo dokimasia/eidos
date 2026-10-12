@@ -10,30 +10,32 @@ import (
 	"slices"
 	"strings"
 
+	"go.dokimi.dev/eidos/sdk/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// rootDir is the workspace's root directory, where a manifest probe ends.
+// rootDir is the directory that path.Dir returns for a path at the root of
+// the workspace.
 const rootDir = "."
 
 // partition groups the claimed files into crate targets, because an
-// inherent impl block anywhere in a crate adds methods to a type the
-// crate declares, and the module tree starts at the crate root. Each
-// file belongs to the package of the nearest Cargo.toml above it, which
-// is every member's shared input, and to the target Cargo's layout and
-// the manifest place it in. A unit's first member is its crate root. A
-// shared module directory under tests, examples or benches that no
-// target roots is a unit of its own, its mod.rs first. A file without a
-// Cargo.toml above it is a crate of its own. A manifest that does not
-// parse, and one that names no package, as a virtual workspace manifest
-// does, states no target, so each of its files is a unit of its own,
-// and the parse reports a manifest that does not parse.
+// inherent impl block anywhere in a crate adds methods to a type of the
+// crate, and the module tree starts at the crate root. Each file belongs
+// to the package of the nearest Cargo.toml above it, which is the shared
+// input of every member, and to the target in which the layout of Cargo
+// and the manifest place it. The first member of a unit is its crate
+// root. A shared module directory under tests, examples or benches that no
+// target roots is a unit of its own, with its mod.rs first. A file without
+// a Cargo.toml above it is a crate of its own. A manifest that does not
+// parse, and a manifest that names no package, as a virtual workspace
+// manifest does, states no target. Each of its files is then a unit of its
+// own, and the parse reports a manifest that does not parse.
 func partition(_ context.Context, files []plugin.SourceRef, r plugin.FileReader) ([][]plugin.SourceRef, error) {
-	nearest := map[string]string{}
+	seen := map[string]string{}
 	byManifest := map[string][]string{}
 	var loose []string
 	for _, ref := range files {
-		m := governing(r, path.Dir(ref.Path), nearest)
+		m := frontend.Nearest(r, path.Dir(ref.Path), manifestName, seen)
 		if m == "" {
 			loose = append(loose, ref.Path)
 			continue
@@ -57,36 +59,9 @@ func partition(_ context.Context, files []plugin.SourceRef, r plugin.FileReader)
 	return out, nil
 }
 
-// governing returns the nearest Cargo.toml above a directory, and empty
-// where no directory up to the root has one. It caches the result for
-// every directory the probe visited.
-func governing(r plugin.FileReader, dir string, nearest map[string]string) string {
-	var visited []string
-	found := ""
-	for at := dir; ; at = path.Dir(at) {
-		if m, met := nearest[at]; met {
-			found = m
-			break
-		}
-		visited = append(visited, at)
-		candidate := path.Join(at, manifestName)
-		if _, err := r.Read(candidate); err == nil {
-			found = candidate
-			break
-		}
-		if at == rootDir {
-			break
-		}
-	}
-	for _, at := range visited {
-		nearest[at] = found
-	}
-	return found
-}
-
-// units groups one package's files into its targets' units, each
-// member declaring the manifest as its shared input and each unit's
-// crate root first.
+// units groups the files of one package into the units of its targets.
+// Each member declares the manifest as its shared input, and the crate
+// root of each unit comes first.
 func units(mpath string, m *manifest, files []string) [][]plugin.SourceRef {
 	dir := path.Dir(mpath)
 	rel := make(map[string]bool, len(files))
@@ -125,9 +100,9 @@ func units(mpath string, m *manifest, files []string) [][]plugin.SourceRef {
 	return out
 }
 
-// relative returns a file's path relative to a package's directory. A
-// workspace path never opens with ./, so a file below the root is its
-// own path.
+// relative returns the path of a file relative to the directory of a
+// package. A workspace path never starts with ./, so the path of a file
+// below the root is its own path.
 func relative(dir, f string) string {
 	return strings.TrimPrefix(f, dir+"/")
 }
