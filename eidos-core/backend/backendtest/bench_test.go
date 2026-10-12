@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -124,11 +125,14 @@ func TestBench(t *testing.T) {
 			t.Parallel()
 
 			rendered := 0
-			setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-				return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-					rendered++
-					return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
-				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
+			setup := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				return &fake{
+					Backend: wellBackend(tb),
+					render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+						rendered++
+						return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
+					},
+				}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
 			result := benchRender(setup, roomy)
 			assert.NotEqual(t, result.N, 0, "the benchmark ran")
@@ -165,7 +169,7 @@ func TestBench(t *testing.T) {
 			t.Parallel()
 
 			var built *backendtest.Fixture
-			setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			setup := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
 				r, f := wellRendered(tb)
 				built = f
 				return r, f
@@ -197,14 +201,17 @@ func TestBench(t *testing.T) {
 			t.Parallel()
 
 			rendered := 0
-			aborting := func(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-				return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-					rendered++
-					// The files arrive whole, so the error is the only
-					// thing left to stop on.
-					return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}},
-						errors.New(abortMessage)
-				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
+			aborting := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				return &fake{
+					Backend: wellBackend(tb),
+					render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+						rendered++
+						// The files arrive whole, so the error is the only
+						// thing left to stop on.
+						return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}},
+							errors.New(abortMessage)
+					},
+				}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
 			result := benchRender(aborting, roomy)
 			assert.Equal(t, result.N, 0, "an aborted render records no number")
@@ -215,11 +222,14 @@ func TestBench(t *testing.T) {
 			t.Parallel()
 
 			rendered := 0
-			empty := func(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-				return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-					rendered++
-					return nil, nil
-				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
+			empty := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				return &fake{
+					Backend: wellBackend(tb),
+					render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+						rendered++
+						return nil, nil
+					},
+				}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
 			result := benchRender(empty, roomy)
 			assert.Equal(t, result.N, 0,
@@ -260,18 +270,6 @@ func TestBench(t *testing.T) {
 			assert.Equal(t, setups, 1, "the setup ran once and the guard read it")
 		})
 
-		t.Run("records nothing for a renderer declaring no seams", func(t *testing.T) {
-			t.Parallel()
-
-			seamless := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-				return nil, nil
-			})
-			result := benchSettle(seamless, roomy)
-			assert.Equal(t, result.N, 0,
-				"the settle takes the backend's declared seams, and a "+
-					"hand-rolled renderer declares none")
-		})
-
 		t.Run("records nothing for a lowering that drops its input's origin", func(t *testing.T) {
 			t.Parallel()
 
@@ -293,7 +291,7 @@ func TestBench(t *testing.T) {
 // guard that stopped before the fixture was built from one that
 // stopped after.
 func counted(s backendtest.Setup, calls *int) backendtest.Setup {
-	return func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	return func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
 		*calls++
 		return s(tb)
 	}

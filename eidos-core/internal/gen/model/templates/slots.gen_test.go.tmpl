@@ -10,18 +10,22 @@ import (
 {{- template "model" .}}
 )
 
-// slotsCase is one measured call of a slot accessor: the
+// sealedHook is the name of the slot that a body declares before the
+// seal cases seal it.
+const sealedHook = "hook"
+
+// slotsCase is one measured call of a slot accessor or of the seal: the
 // sub-benchmark's name, the call, and the check on what the last call
-// returned. An accessor allocates nothing.
+// returned. An accessor and the seal allocate nothing.
 type slotsCase struct {
 	name  string
 	call  func()
 	check func(testing.TB)
 }
 
-// A slot accessor is the composition seam between plugins, so what
-// it hands back is contract: the value's own storage, never a copy
-// and never nil.
+// TestSlots checks that a slot accessor returns the storage of the value,
+// never a copy and never nil, and that Seal seals every slot of a kind. A
+// slot accessor is the composition seam between plugins.
 func TestSlots(t *testing.T) {
 	t.Parallel()
 {{- range .Views}}{{$v := .}}
@@ -49,10 +53,56 @@ func TestSlots(t *testing.T) {
 	})
 {{- end}}
 {{- end}}
+
+	t.Run("Seal", func(t *testing.T) {
+		t.Parallel()
+{{- range .Views}}{{$v := .}}
+{{- if .Slots}}
+
+		t.Run("seals every slot of a {{.Name}}", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{.Name}}{}
+			sealed := true
+			Seal(subject, &sealed)
+{{- range .Slots}}
+			assert.Panics(t, func() { subject.{{.Accessor}}().Append({{.Child}}) },
+				"an append into the sealed {{.Name}} slot panics")
+{{- end}}
+		})
+
+		t.Run("keeps every slot of a {{.Name}} open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{.Name}}{}
+			open := false
+			Seal(subject, &open)
+{{- range .Slots}}
+			subject.{{.Accessor}}().Append({{.Child}})
+			assert.Equal(t, subject.{{.Storage}}.Len(), 1, "the {{.Name}} slot takes the append")
+{{- end}}
+		})
+{{- end}}
+{{- range .Bodies}}
+
+		t.Run("seals every slot of the {{.}} of a {{$v.Name}}", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{$v.Name}}{}
+			hook := subject.{{.}}.Declare(sealedHook)
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.{{.}}.Prologue.Append(Stmt{}) }, "an append into the sealed prologue panics")
+			assert.Panics(t, func() { subject.{{.}}.Epilogue.Append(Stmt{}) }, "an append into the sealed epilogue panics")
+			assert.Panics(t, func() { hook.Append(Stmt{}) }, "an append into the sealed declared slot panics")
+		})
+{{- end}}
+{{- end}}
+	})
 }
 
-// The accessors allocate nothing in the ordinary run, which runs no
-// benchmark.
+// TestSlotsAllocs checks in the ordinary run that the accessors and the
+// seal allocate nothing.
 func TestSlotsAllocs(t *testing.T) {
 	for _, tt := range slotsCases() {
 		assert.MaxAllocs(t, tt.call, 0, tt.name+" allocates nothing")
@@ -60,7 +110,8 @@ func TestSlotsAllocs(t *testing.T) {
 	}
 }
 
-// BenchmarkSlots measures every slot accessor.
+// BenchmarkSlots measures every slot accessor and the seal of every kind
+// with slots.
 func BenchmarkSlots(b *testing.B) {
 	for _, tt := range slotsCases() {
 		b.Run(tt.name, func(b *testing.B) {
@@ -74,7 +125,8 @@ func BenchmarkSlots(b *testing.B) {
 	}
 }
 
-// slotsCases returns one case for every slot accessor of every kind.
+// slotsCases returns one case for every slot accessor of every kind, and
+// one case for the seal of every kind with slots.
 func slotsCases() []slotsCase {
 	var cases []slotsCase
 {{- range .Views}}{{$v := .}}
@@ -88,6 +140,20 @@ func slotsCases() []slotsCase {
 			check: func(tb testing.TB) {
 				assert.Equal(tb, slot, &subject.{{.Storage}}, "{{.Accessor}} returns the value's own storage",
 					assert.ByIdentity())
+			},
+		})
+	}
+{{- end}}
+{{- if .Slots}}{{$first := index .Slots 0}}
+	{
+		subject := &{{.Name}}{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.{{.Name}}",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.{{$first.Accessor}}().Append({{$first.Child}}) },
+					"Seal seals the {{$first.Name}} slot")
 			},
 		})
 	}

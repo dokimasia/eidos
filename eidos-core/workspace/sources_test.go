@@ -28,9 +28,9 @@ import (
 // of the fixture loads.
 const otherLang symbol.Lang = "proto"
 
-// The packages, modules and plan the scope cases declare: a package at
-// the tree's root and two below svc, a package a store provides, two
-// module paths, and the plan the cases scope.
+// The packages, modules and plan of the scope cases. They are a package
+// at the root of the tree and two below svc, a package that a store
+// provides, two module paths, and the plan that the cases scope.
 const (
 	rootPkg    = "root"
 	svcPkg     = "svc"
@@ -41,19 +41,20 @@ const (
 	scopedPlan = "scoped"
 )
 
-// outsideSource is a file of the store package outside the store
-// package's directory.
+// outsideSource is a file of the store package outside the directory of
+// the store package.
 const outsideSource = "other/col.zz"
 
-// relocatorID is the annotator that stamps the store package's module.
+// relocatorID is the name of the annotator that stamps the module of the
+// store package.
 const relocatorID plugin.ID = "relocator"
 
 // billedLine is the line of the struct that moves the store package into
 // the billing module.
 const billedLine = "type Billed int\n"
 
-// contextFile is the one file of the package a store provides: a path
-// qualified with the store's name.
+// contextFile is the one file of the package that a store provides, a
+// path qualified with the name of the store.
 var contextFile = plugin.StorePath("goroot", "context/context.go")
 
 // billedID is the struct whose presence moves the store package into the
@@ -62,8 +63,8 @@ var billedID = symbol.Identity{
 	Lang: frontendtest.ScriptedLang, Package: storePkg, Name: "Billed", Kind: symbol.KindStruct,
 }
 
-// probe is a generator recording the package paths its reader returns:
-// what its plan's scope admits.
+// probe is a generator that records the package paths that its reader
+// returns, which are the packages that the scope of its plan admits.
 type probe struct {
 	seen []string
 }
@@ -82,28 +83,28 @@ func (p *probe) Generate(ctx *plugin.GeneratorContext) error {
 }
 
 // relocator is an annotator that implements its role directly. It stamps
-// the store package's module: the billing module where the package
-// declares Billed, and the shared module otherwise.
+// the module of the store package. The module is the billing module
+// where the package declares Billed, and the shared module otherwise.
 type relocator struct{}
 
-// Name returns the relocator's name.
+// Name returns the name of the relocator.
 func (relocator) Name() plugin.ID { return relocatorID }
 
-// Annotate looks Billed up and stamps the store package's module.
+// Annotate looks Billed up and stamps the module of the store package.
 func (relocator) Annotate(ctx *plugin.AnnotatorContext) error {
 	module := sharedMod
 	if _, billed := ctx.Reader.Lookup(billedID); billed {
 		module = billingMod
 	}
-	claim := meta.Claim{Subject: storePackage, Bucket: ctx.Bucket, Plugin: relocatorID}
+	claim := meta.Claim{Subject: storePackage, Turn: ctx.Turn, Plugin: relocatorID}
 	return meta.Stamp(ctx.Facts, ctx.Kernel.Module, module, claim)
 }
 
-// A plan's sources decide which packages its generators see: Build
-// checks the fields against the registries, and each run binds them to
-// the graph and its facts. A warm run whose sources admit or refuse a
-// package otherwise than the generation did leaves the files of a cold
-// run.
+// TestSources tests the sources of a plan, which decide the packages
+// that its generators see. Build checks the fields against the
+// registries, and each run binds them to the graph and its facts. A warm
+// run whose sources admit or refuse a package otherwise than the
+// generation did leaves the files of a cold run.
 func TestSources(t *testing.T) {
 	t.Parallel()
 
@@ -267,7 +268,7 @@ func TestSources(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
-				Name: scopedPlan, Generators: []plugin.Generator{planMirror()}, Backend: printer(t, "fixture"),
+				Name: scopedPlan, Generators: []plugin.Generator{planMirror()}, Backend: fixturePrinter(),
 				Layout: layout.Config{Dir: planDir}, Sources: workspace.Sources{Packages: []string{"svc/..."}},
 			}))
 			sealedRun(t, w, workspace.Input{Tree: statsTree()})
@@ -328,8 +329,9 @@ func TestSources(t *testing.T) {
 	})
 }
 
-// pkgIn returns a package of one language and path whose one file, at
-// each of files, declares one struct named after the file.
+// pkgIn returns a package of one language and path with a file at each
+// path of files. Each file declares one struct named after its
+// directory.
 func pkgIn(lang symbol.Lang, pkg string, files ...string) *node.Package {
 	p := &node.Package{ID: symbol.Identity{Lang: lang, Package: pkg, Kind: symbol.KindPackage}}
 	for _, file := range files {
@@ -348,7 +350,7 @@ func pkgIn(lang symbol.Lang, pkg string, files ...string) *node.Package {
 	return p
 }
 
-// moduled stamps a package's module fact the way a frontend stamps it,
+// moduled stamps the module fact of a package as a frontend stamps it,
 // for the run to replay.
 func moduled(t *testing.T, g *store.Graph, p *node.Package, module string) {
 	t.Helper()
@@ -358,7 +360,7 @@ func moduled(t *testing.T, g *store.Graph, p *node.Package, module string) {
 }
 
 // graphOf returns an unfrozen graph of the packages, with the module
-// facts a stamp map names.
+// facts of modules.
 func graphOf(t *testing.T, modules map[*node.Package]string, pkgs ...*node.Package) *store.Graph {
 	t.Helper()
 
@@ -373,7 +375,7 @@ func graphOf(t *testing.T, modules map[*node.Package]string, pkgs ...*node.Packa
 }
 
 // outsideTree returns the rounds tree with a file of the store package
-// outside the store package's directory.
+// outside the directory of the store package.
 func outsideTree() fstest.MapFS {
 	tree := roundsTree(rowLine, userLine)
 	tree[outsideSource] = &fstest.MapFile{Data: []byte("package svc/store\n" + colLine)}
@@ -381,24 +383,24 @@ func outsideTree() fstest.MapFS {
 }
 
 // relocating returns a composition over the scripted frontend that
-// records into a fresh memory ledger: the relocator, and one plan over the
-// sources whose mirror mirrors every struct.
+// records into a new memory ledger. It has the relocator, and one plan
+// over the sources whose mirror mirrors every struct.
 func relocating(tb assert.TB, sources workspace.Sources) *workspace.Workspace {
 	tb.Helper()
 
 	return built(tb, roundsBuilder(tb, ledger.NewMem(), sources, mirror(mirrorID)).Annotators(relocator{}))
 }
 
-// scopedPlanOf returns the plan the scope cases compose: the probe
-// under sources, toward the fixture's target.
+// scopedPlanOf returns the plan that the scope cases compose, the probe
+// under sources toward the target fixture.
 func scopedPlanOf(sources workspace.Sources, p *probe) workspace.Plan {
 	plan := planTo(scopedPlan, "fixture", p)
 	plan.Sources = sources
 	return plan
 }
 
-// admitted runs one plan of the probe under sources over the graph,
-// and returns the package paths its reader returned.
+// admitted runs one plan of the probe under sources over the graph, and
+// returns the package paths that its reader returned.
 func admitted(t *testing.T, sources workspace.Sources, g *store.Graph) []string {
 	t.Helper()
 

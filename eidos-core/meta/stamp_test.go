@@ -15,19 +15,22 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// fakeNamespace is the namespace the stamp fixture's keys register
-// under.
+// fakeNamespace is the namespace of the keys of the stamp fixture.
 const fakeNamespace = "fake"
 
-// rawFirstClaimAllocs is a raw stamp's first claim on a new subject:
-// the bag, the boxed identity and the sync.Map entry. The value arrives
-// boxed. The trie nodes sync.Map adds where two hashes share a prefix
-// average below 0.4 per subject, which the mean over a check's calls
-// rounds down.
+// rawFirstClaimAllocs is the count of the first claim of a raw stamp on
+// a new subject. The claim allocates the bag, the boxed identity and the
+// sync.Map entry, and the value arrives boxed. sync.Map also adds a trie
+// node where the hashes of two subjects share a prefix. At 200,000
+// subjects the trie nodes average 0.38 per subject, and the mean of the
+// benchmark rounds them down. The test counts each claim in a fresh
+// store of one subject, where a claim adds a trie node in about one call
+// of 15.
 const rawFirstClaimAllocs = 3
 
-// The raw path is the classification stamp's: a pre-claim that
-// crossed a phase as data, checked the way a typed write is.
+// The classification of a frontend stamps through the raw path. A raw
+// stamp is a pre-claim that crossed a phase as data, and the store
+// checks it as it checks a typed write.
 func TestStamp(t *testing.T) {
 	t.Parallel()
 
@@ -169,38 +172,39 @@ func TestStamp(t *testing.T) {
 }
 
 // A raw stamp allocates what the store keeps of a first claim, and
-// nothing for an identical re-stamp, in the ordinary run, which runs no
-// benchmark. Each counted first claim is on a subject of its own, which
-// the setup takes outside the count. The check runs alone, because the
-// count includes every goroutine's allocations.
+// nothing for an identical re-stamp. The ordinary run checks both
+// counts, because it runs no benchmark. Each counted first claim goes
+// into a fresh store of one subject, and the setup builds the store
+// outside the count. The test does not call t.Parallel, because the
+// count includes the allocations of every goroutine.
 func TestStampAllocs(t *testing.T) {
-	_, f, _, _ := fixture(t)
+	r, _, _, _ := fixture(t)
 	raw := meta.RawStamp{Key: "shape.role", Value: "writer"}
-	assert.NoError(t, f.StampRaw(raw, on(sibling, "shape", 0)),
-		"a claim outside the counted subjects creates the store's map and index")
-	claims := firstClaims(allocSubjects)
+	claim := by("shape", 0)
 
 	// Each count keeps the first error of its calls, which cmp.Or
 	// returns without allocating.
 	var err error
-	at := 0
-	next := func() meta.Claim {
-		at++
-		return claims[at-1]
+	fresh := func() *meta.Facts {
+		f := meta.NewFacts(r)
+		err = cmp.Or(err, f.StampRaw(raw, on(sibling, "shape", 0)))
+		return f
 	}
-	assert.MaxAllocsWithSetup(t, next, func(claim meta.Claim) { err = cmp.Or(err, f.StampRaw(raw, claim)) },
+	assert.MaxAllocsWithSetup(t, fresh, func(f *meta.Facts) { err = cmp.Or(err, f.StampRaw(raw, claim)) },
 		rawFirstClaimAllocs, "StampRaw allocates the bag, the boxed identity and the map entry of a first claim")
 	assert.NoError(t, err, "every first claim is admitted")
 
-	assert.MaxAllocs(t, func() { err = cmp.Or(err, f.StampRaw(raw, claims[0])) }, 0,
+	f := fresh()
+	assert.NoError(t, f.StampRaw(raw, claim), "the first stamp is admitted")
+	assert.MaxAllocs(t, func() { err = cmp.Or(err, f.StampRaw(raw, claim)) }, 0,
 		"StampRaw allocates nothing for an identical re-stamp")
 	assert.NoError(t, err, "every re-stamp is accepted")
 }
 
-// BenchmarkStamp measures the raw stamps a frontend's classification
-// makes: a first claim on each of 200,000 subjects, the store built
-// again outside the measurement when the subjects run out, and an
-// identical re-stamp.
+// BenchmarkStamp measures the raw stamps of the classification of a
+// frontend. It measures a first claim on each of 200,000 subjects and an
+// identical re-stamp. When the subjects run out, the benchmark builds
+// the store again outside the measurement.
 func BenchmarkStamp(b *testing.B) {
 	raw := meta.RawStamp{Key: "shape.role", Value: "writer"}
 
@@ -263,7 +267,7 @@ func stampFixture(tb assert.TB) (*meta.Facts, meta.Key[bool]) {
 	return meta.NewFacts(r), key
 }
 
-// subjectFile is the fixture's one stamped subject.
+// subjectFile returns the one stamped subject of the fixture.
 func subjectFile() symbol.Identity {
 	return symbol.Identity{
 		Lang: "fake", Package: "svc", Name: "svc/a_test.zz", Kind: symbol.KindFile,

@@ -9,33 +9,36 @@ import (
 	"go.dokimi.dev/eidos/core/position"
 )
 
-// Origin names whoever reported a finding or wrote a claim: a
-// plugin's declared name, or one of the kernel phases below. The
-// service provider interface spells it plugin.ID where plugins are
-// the subject; the definition sits here so the layers beneath that
-// interface can carry it.
+// Origin is the name of the reporter of a finding or of the writer of a
+// claim. It is the declared name of a plugin or one of the kernel phases
+// that follow. The service provider interface declares the same type as
+// plugin.ID for plugins. This package declares it so that the layers
+// below that interface can use it.
 type Origin string
 
-// The kernel phases that report findings. A phase is an origin like
-// any plugin, so a consumer filtering by origin needs no second rule
-// for the kernel.
+// These constants are the kernel phases that report findings. A phase is
+// an origin as a plugin is, so a consumer that filters by origin needs no
+// second rule for the kernel.
 const (
 	// PhaseBuild composes the workspace and populates its registries.
 	PhaseBuild Origin = "build"
-	// PhaseLoad is the frontends parsing units into the graph.
+	// PhaseLoad is the phase in which the frontends parse units into the
+	// graph.
 	PhaseLoad Origin = "load"
 	// PhaseLink resolves type spellings into canonical identities.
 	PhaseLink Origin = "link"
 	// PhaseFreeze seals the graph and builds its indexes.
 	PhaseFreeze Origin = "freeze"
-	// PhaseAnnotate is the annotators stamping facts.
+	// PhaseAnnotate is the phase in which the annotators stamp facts.
 	PhaseAnnotate Origin = "annotate"
-	// PhaseGenerate is a plan's generators producing emit trees.
+	// PhaseGenerate is the phase in which the generators of a plan
+	// produce emit trees.
 	PhaseGenerate Origin = "generate"
-	// PhaseLayout routes a plan's settled declarations to the files
-	// they are written in.
+	// PhaseLayout routes the settled declarations of a plan to the files
+	// that contain them.
 	PhaseLayout Origin = "layout"
-	// PhaseRender is a backend spelling an emit tree as source.
+	// PhaseRender is the phase in which a backend writes an emit tree as
+	// source.
 	PhaseRender Origin = "render"
 	// PhaseClose merges the manifests, checks for collisions and
 	// sweeps.
@@ -44,34 +47,42 @@ const (
 
 // Diag is one finding.
 //
-// Every field is API: consumers script against them, tests assert on
-// the code, and machine output carries them under a versioned
-// schema.
+// Every field is API. Consumers write scripts against the fields, tests
+// assert on the code, and the machine output contains the fields under a
+// versioned schema.
 type Diag struct {
 	// Code identifies the finding across releases.
 	Code Code
-	// Severity decides what the finding means for the run. The zero
-	// value is [SeverityError].
+	// Severity is the effect of the finding on the run. The zero value is
+	// [SeverityError].
 	Severity Severity
-	// Pos locates the declaration that caused the finding. It is
-	// never zero: a finding without a position is a defect in
-	// whatever reported it.
+	// Pos is the position of the declaration or the file that caused the
+	// finding. It is never zero, because a finding without a position is
+	// a defect of its reporter.
 	Pos position.Pos
-	// Msg is one sentence in the present tense, naming the thing and
-	// the refusal or the finding.
+	// Msg is one sentence in the present tense. It contains the name of
+	// the subject and the refusal or the finding.
 	Msg string
 	// Origin is the plugin, or the kernel phase, that reported it.
 	Origin Origin
-	// Related holds secondary positions, such as the colliding twin
-	// or the export a refusal depends on.
+	// Related contains secondary positions, such as the position of the
+	// other declaration of a collision, or the position of the export that
+	// causes a refusal.
 	Related []position.Pos
 }
 
+// Positioned reports whether the finding has a position that a reader
+// can open: a file. A finding about a declaration also has the line and
+// the column of the declaration. A finding about a whole file has the
+// file alone. Every test kit checks the position of a finding through
+// it.
+func (d Diag) Positioned() bool { return d.Pos.File != "" }
+
 // Compare orders two findings by position, then code, then message,
-// then origin, returning a negative number, zero or a positive one
-// as d sorts before, with or after o. It is the canonical order a
-// producer reporting from parallel workers merges its findings in,
-// so the report does not depend on which worker finished first.
+// then origin. It returns a negative number, zero or a positive number
+// as d sorts before, with or after o. A producer that reports from
+// parallel workers merges its findings in this order, so the report does
+// not depend on the order in which the workers finish.
 func (d Diag) Compare(o Diag) int {
 	return cmp.Or(
 		d.Pos.Compare(o.Pos),

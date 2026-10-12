@@ -257,6 +257,13 @@ func TestSymbols(t *testing.T) {
 				expect.Contains(t, string(encoded), `"kind":"Embed"`,
 					"with its kind, so a decoder can place it")
 			}
+
+			{
+				encoded, err := EncodeJSON(&TagEntry{})
+				assert.NoError(t, err, "every kind encodes")
+				expect.Contains(t, string(encoded), `"kind":"TagEntry"`,
+					"with its kind, so a decoder can place it")
+			}
 		})
 
 		t.Run("leaves the kind out of a concretely typed field", func(t *testing.T) {
@@ -351,6 +358,7 @@ func TestSymbols(t *testing.T) {
 				&TypeRef{},
 				&TypeParam{},
 				&Embed{},
+				&TagEntry{},
 			}
 			for _, subject := range subjects {
 				t.Run(subject.Kind().String(), func(t *testing.T) {
@@ -437,6 +445,7 @@ func TestSymbols(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -588,7 +597,7 @@ func TestSymbols(t *testing.T) {
 				{name: "a Struct body it cannot read", data: `{"kind":"Struct","id":"nope"}`},
 				{name: "a Interface body it cannot read", data: `{"kind":"Interface","id":"nope"}`},
 				{name: "a Alias body it cannot read", data: `{"kind":"Alias","id":"nope"}`},
-				{name: "a TypeRef body it cannot read", data: `{"kind":"TypeRef","id":"nope"}`},
+				{name: "a TypeRef body it cannot read", data: `{"kind":"TypeRef","pos":"nope"}`},
 				{name: "a TypeParam body it cannot read", data: `{"kind":"TypeParam","id":"nope"}`},
 				{name: "a Embed body it cannot read", data: `{"kind":"Embed","id":"nope"}`},
 			}
@@ -638,6 +647,7 @@ func TestSymbols(t *testing.T) {
 				&TypeRef{},
 				&TypeParam{},
 				&Embed{},
+				&TagEntry{},
 			}
 			encoded, err := json.Marshal(subjects)
 			assert.NoError(t, err, "the list marshals")
@@ -725,6 +735,7 @@ func FuzzDecodeJSON(f *testing.F) {
 		`{"kind":"TypeRef"}`,
 		`{"kind":"TypeParam"}`,
 		`{"kind":"Embed"}`,
+		`{"kind":"TagEntry"}`,
 		`null`, `{}`, `[]`, `{"kind":"Nonexistent"}`,
 	} {
 		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(seed))), seed...))
@@ -916,6 +927,7 @@ func symbolsList() Symbols {
 	}
 	{
 		subject := &Enum{}
+		subject.Underlying = &TypeRef{}
 		subject.Variants = append(subject.Variants, &EnumVariant{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
@@ -999,6 +1011,10 @@ func symbolsList() Symbols {
 	{
 		subject := &Embed{}
 		subject.Ref = &TypeRef{}
+		out = append(out, subject)
+	}
+	{
+		subject := &TagEntry{}
 		out = append(out, subject)
 	}
 	return out

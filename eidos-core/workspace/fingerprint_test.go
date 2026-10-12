@@ -90,10 +90,10 @@ func TestFingerprint(t *testing.T) {
 			b1, _ := flagged()
 			w1, err := b1.Build()
 			assert.NoError(t, err, "the flagged composition composes")
-			extra, _ := eidos.NewPlugin("extra").
+			extra := eidos.NewPlugin("extra").
 				Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error {
 					return nil
-				})).Build().(plugin.Annotator)
+				})).Annotator()
 			b2, _ := flagged()
 			w2, err := b2.Annotators(extra).Build()
 			assert.NoError(t, err, "the widened composition composes")
@@ -342,14 +342,10 @@ func scriptedAs(name plugin.ID) *frontendtest.Scripted {
 // templated returns a generator that mirrors every struct in the gen
 // family and declares tree as its template tree for every target.
 func templated(name plugin.ID, tree fs.FS) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Templates(tree).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(mirrored)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Handle(eidos.OnStruct(mirrored)).Generator()
 }
 
 // templatedBuilder returns a composition of one plan whose generator

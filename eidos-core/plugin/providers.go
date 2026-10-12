@@ -8,74 +8,93 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 )
 
-// The capability surfaces: interfaces the composition asserts on a
-// plugin to learn what it declared. Each returns data built once;
-// none is invoked during a phase. A slice that one of these interfaces
-// returns is the plugin's own storage, and a caller does not change it.
+// The provider interfaces are the declarations that the workspace reads
+// off a plugin when it composes. Each returns data that the plugin built
+// once, and no phase calls one. A slice that one of these interfaces
+// returns is the storage of the plugin, and a caller does not change it.
 
-// DirectiveProvider declares the schemas a plugin owns, for
-// registration at composition.
+// DirectiveProvider declares the schemas of a plugin, which the workspace
+// registers when it composes.
 type DirectiveProvider interface {
 	Directives() []directive.Schema
 }
 
-// KeyProvider registers the plugin's metadata keys at composition.
-// The call runs once per workspace, and the plugin keeps the typed
-// handles it is returned: they are composition constants, the same
-// class as a directive schema, not run state. It takes the
-// registry rather than returning data because registration returns
-// the handles back, which data cannot. Faults are collected by the
-// caller, so the error names what failed rather than stopping the
-// collection.
+// KeyProvider registers the metadata keys of a plugin when the workspace
+// composes. The call runs once for each workspace, and the plugin keeps
+// the typed handles that the registry returns. The handles are constants
+// of the composition, of the same class as a directive schema, and not run
+// state. Keys takes the registry instead of returning data, because the
+// registry returns the handles. The workspace collects the error as a
+// fault, so the error names what failed and the collection continues.
 type KeyProvider interface {
 	Keys(r *meta.Registry) error
 }
 
-// KeyBinder binds the plugin's predicates on named key handles, the
-// handles with the name of a key of another registrant. The workspace
-// calls BindKeys once, after it seals the key registry and before the
-// first phase call. The message of the error contains the plugin and each
-// key that the registry does not contain under the handle's value type,
-// and the workspace collects the error as a fault of the composition.
+// KeyBinder binds the named key handles of a plugin to the registry of one
+// workspace. BindKeys returns a plugin with the bound ids, and leaves the
+// receiver unchanged, so one built plugin serves any number of workspaces.
+//
+// The workspace calls BindKeys on each annotator and generator that
+// implements it, once, after it seals the key registry and before the
+// first phase call. The workspace schedules the plugin that BindKeys
+// returns, and refuses a returned plugin of another type or another name
+// than the receiver.
+//
+// Error modes: one error for each name that r does not contain under the
+// value type of its handle. The message of each error contains the plugin
+// and the key, and the workspace collects the error as a fault of the
+// composition.
 type KeyBinder interface {
-	BindKeys(r *meta.Registry) error
+	BindKeys(r *meta.Registry) (Plugin, error)
 }
 
-// OutputProvider declares the file families a generator emits.
+// OutputProvider declares the file families that a generator emits.
 type OutputProvider interface {
 	Outputs() []Output
 }
 
-// PolicyProvider declares the lowering policies that a backend's spoke
-// reads. The workspace resolves them for each plan of the backend, and
-// derives the target's policy keys and the params of the target's
-// directive from them.
+// PolicyProvider declares the lowering policies that the spoke of a
+// backend reads. The workspace resolves them for each plan of the backend,
+// and derives the policy keys of the target and the params of the
+// directive of the target from them.
 type PolicyProvider interface {
 	Policies() []PolicySpec
 }
 
-// CapabilityProvider orders a plugin: a priority per role,
-// plus the capability topology inside one priority bucket.
+// CapabilityProvider orders a plugin. It returns a priority for each role,
+// and the capabilities that order the plugins of one priority. The
+// workspace refuses a plugin that implements some of these methods and
+// lacks others, and names the methods that it lacks.
 type CapabilityProvider interface {
+	// Priority returns the priority of the plugin in the role r. A plugin
+	// with a lower priority runs first.
 	Priority(r Role) int
+	// Provides returns the capabilities that the plugin provides. A
+	// capability has one provider in a composition.
 	Provides() []Capability
+	// Requires returns the capabilities that must be present in the
+	// composition, and whose providers run before the plugin.
 	Requires() []Capability
+	// After returns the capabilities whose providers run before the
+	// plugin where the composition contains them. Build checks no
+	// presence for them.
+	After() []Capability
 }
 
-// OptionsProvider declares a typed options struct: a pointer whose
-// exported fields are the options, whose tags document them, and
-// whose constructed values are the defaults. The composition
-// populates it; the workspace folds it into the composition
-// fingerprint a load keys units by.
+// OptionsProvider declares a typed options struct. Options returns a
+// pointer whose exported fields are the options, whose tags document them,
+// and whose constructed values are the defaults. The workspace writes the
+// values of the config into it, and the composition fingerprint includes
+// it, so a load keys units by its values.
 type OptionsProvider interface {
 	Options() any
 }
 
-// Versioned declares a behavior version. Bump it with any change
-// to what the plugin produces: a frontend's version folds into
-// every unit key, and every version folds into the composition
-// fingerprint, so a stale version serves stale cached work with
-// nothing reporting why.
+// Versioned declares the version of the behaviour of a component. Raise it
+// with every change to what the component produces. The version of a
+// frontend is part of every unit key, and every version is part of the
+// composition fingerprint. A stale version therefore serves stale cached
+// work without a report.
 type Versioned interface {
 	Version() string
 }

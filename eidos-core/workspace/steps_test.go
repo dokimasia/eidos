@@ -5,6 +5,7 @@ package workspace_test
 
 import (
 	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -17,13 +18,12 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
-	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The values the refinement cases refine a plan with: an output
+// The values with which the refinement cases refine a plan, an output
 // directory, an import base and a pattern.
 const (
 	refinedDir        = "gen"
@@ -32,9 +32,10 @@ const (
 )
 
 // The binding fixture beside [flaggerID], the annotator that registers
-// and stamps the flag key: the annotator that gates on the key through a
-// named handle, the capability that orders the two, the key, and a name
-// that nothing registers.
+// and stamps the flag key. auditID is the annotator that gates on the
+// key through a named handle, flagsCap is the capability that orders
+// the two, flagKeyName is the key, and ghostFlagName is a name that
+// nothing registers.
 const (
 	auditID       plugin.ID         = "audit"
 	flagsCap      plugin.Capability = "flags"
@@ -49,7 +50,7 @@ const (
 )
 
 // keyedFrontend is the scripted frontend under another language, which
-// registers its language's keys through register.
+// registers the keys of its language through register.
 type keyedFrontend struct {
 	*frontendtest.Scripted
 	lang     symbol.Lang
@@ -75,18 +76,9 @@ type convertedOptions struct {
 	Bound convertedBound `opt:"bound" doc:"the bounds of a file"`
 }
 
-// framing is a backend stating a comment syntax and rendering
-// nothing: what a writing composition refuses at Build.
-type framing struct{ fakeBackend }
-
-// Syntax returns the line comment form the fixture frames through.
-func (framing) Syntax() plugin.CommentSyntax {
-	return plugin.CommentSyntax{Line: []string{"//"}}
-}
-
-// nameless is a hand-rolled annotator returning no name. The facade
-// cannot spell one, and the roster still refuses it, because
-// findings, units and claims all key on the name.
+// nameless is a hand-rolled annotator that returns no name. The facade
+// cannot build one. The roster refuses it, because findings, units and
+// claims all use the name as their key.
 type nameless struct{}
 
 // Name returns the empty name.
@@ -95,11 +87,10 @@ func (nameless) Name() plugin.ID { return "" }
 // Annotate stamps nothing.
 func (nameless) Annotate(*plugin.AnnotatorContext) error { return nil }
 
-// handmade is a hand-rolled annotator passed as a struct value with
-// a slice field, so its type is not comparable. The facade builds
-// pointers, and the composition still reads a plugin that arrives
-// through the service provider interface in any shape the interface
-// admits.
+// handmade is a hand-rolled annotator that a case passes as a struct
+// value with a slice field, so its type is not comparable. The facade
+// builds pointers. The composition reads a plugin of any shape that the
+// service provider interface admits.
 type handmade struct {
 	name   plugin.ID
 	labels []string
@@ -111,15 +102,15 @@ func (h handmade) Name() plugin.ID { return h.name }
 // Annotate stamps nothing.
 func (handmade) Annotate(*plugin.AnnotatorContext) error { return nil }
 
-// declaring is a hand-rolled annotator returning its capability
-// lists verbatim, duplicates and empty labels included. The facade
-// refuses an empty label at its own Build, and the composition
-// still checks one that arrives through the service provider
-// interface.
+// declaring is a hand-rolled annotator that returns its capability lists
+// verbatim, with duplicates and empty labels. The facade refuses an empty
+// label at its own typed build. The composition checks a label that
+// arrives through the service provider interface.
 type declaring struct {
 	name     plugin.ID
 	provides []plugin.Capability
 	requires []plugin.Capability
+	after    []plugin.Capability
 }
 
 // Name returns the declared name.
@@ -137,9 +128,69 @@ func (d *declaring) Provides() []plugin.Capability { return d.provides }
 // Requires returns the required labels verbatim.
 func (d *declaring) Requires() []plugin.Capability { return d.requires }
 
-// The steps' output is the schedule, and the schedule is
-// observable twice over: the order handlers run in, and the bucket
-// number every claim records.
+// After returns the labels that the annotator runs after, verbatim.
+func (d *declaring) After() []plugin.Capability { return d.after }
+
+// partial is a hand-rolled annotator that implements Priority and Provides
+// of [plugin.CapabilityProvider], and lacks After and Requires.
+type partial struct{}
+
+// Name returns the name partial.
+func (partial) Name() plugin.ID { return "partial" }
+
+// Annotate stamps nothing.
+func (partial) Annotate(*plugin.AnnotatorContext) error { return nil }
+
+// Priority places every role at priority one.
+func (partial) Priority(plugin.Role) int { return 1 }
+
+// Provides returns no label.
+func (partial) Provides() []plugin.Capability { return nil }
+
+// treeless is a hand-rolled generator that implements Templates of
+// [plugin.TemplateProvider], and lacks its three other methods.
+type treeless struct{}
+
+// Name returns the name treeless.
+func (treeless) Name() plugin.ID { return "treeless" }
+
+// Generate emits nothing.
+func (treeless) Generate(*plugin.GeneratorContext) error { return nil }
+
+// Templates returns no tree.
+func (treeless) Templates(plugin.Target) (fs.FS, bool) { return nil, false }
+
+// misspelled is a hand-rolled annotator whose After has another signature
+// than the method of [plugin.CapabilityProvider].
+type misspelled struct{ partial }
+
+// Name returns the name misspelled.
+func (misspelled) Name() plugin.ID { return "misspelled" }
+
+// Requires returns no label.
+func (misspelled) Requires() []plugin.Capability { return nil }
+
+// After returns no label, as plain strings.
+func (misspelled) After() []string { return nil }
+
+// rebinding is a hand-rolled annotator whose BindKeys returns a plugin of
+// another type.
+type rebinding struct{}
+
+// Name returns the name rebinding.
+func (rebinding) Name() plugin.ID { return "rebinding" }
+
+// Annotate stamps nothing.
+func (rebinding) Annotate(*plugin.AnnotatorContext) error { return nil }
+
+// BindKeys returns a hand-made annotator of the same name.
+func (rebinding) BindKeys(*meta.Registry) (plugin.Plugin, error) {
+	return handmade{name: "rebinding"}, nil
+}
+
+// TestSteps tests the steps of Build, whose output is the schedule. A
+// case observes the schedule in the order in which the handlers run,
+// and in the turn that every claim records.
 func TestSteps(t *testing.T) {
 	t.Parallel()
 
@@ -333,6 +384,62 @@ func TestSteps(t *testing.T) {
 			assert.Equal(t, strings.Count(err.Error(), `requires capability "missing"`), 1,
 				"the gap is reported once")
 		})
+
+		t.Run("returns an error naming a plugin that runs after an empty label", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(&declaring{name: "trailing", after: caps("")}).Build()
+			assert.HasError(t, err, "the composition fails")
+			expect.That(t, err.Error()).
+				Contains("runs after an empty capability label", "the error names the side").
+				Contains("trailing", "the error names the plugin")
+		})
+
+		t.Run("returns no error for a label that a plugin runs after and nothing provides", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(&declaring{name: "trailing", after: caps("absent")}).Build()
+			assert.NoError(t, err, "a label that the plugin runs after needs no provider")
+		})
+	})
+
+	t.Run("partialProviders", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name    string
+			compose func() *workspace.Builder
+			want    string
+		}{
+			{
+				name:    "returns an error naming the methods that a partial capability provider lacks",
+				compose: func() *workspace.Builder { return valid().Annotators(partial{}) },
+				want:    "partial implements Priority and Provides of plugin.CapabilityProvider, and lacks After and Requires",
+			},
+			{
+				name: "returns an error naming the methods that a partial template provider lacks",
+				compose: func() *workspace.Builder {
+					return valid().Plans(planTo("second", "fixture", treeless{}))
+				},
+				want: "treeless implements Templates of plugin.TemplateProvider, " +
+					"and lacks Overrides and TemplateFuncs and TemplateTargets",
+			},
+			{
+				name:    "returns an error naming a method of another signature as lacking",
+				compose: func() *workspace.Builder { return valid().Annotators(misspelled{}) },
+				want: "misspelled implements Priority and Provides and Requires of plugin.CapabilityProvider, " +
+					"and lacks After",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := tt.compose().Build()
+				assert.HasError(t, err, "the composition fails")
+				assert.Contains(t, err.Error(), tt.want, "the error names what the plugin implements and lacks")
+			})
+		}
 	})
 
 	t.Run("configure", func(t *testing.T) {
@@ -640,7 +747,7 @@ func TestSteps(t *testing.T) {
 			plans := built(t, extended(mirror("added"))).Describe().Plans
 			assert.Length(t, plans, 1, "the composition has one plan")
 			assert.Equal(t, plans[0].Generate,
-				[]workspace.Component{{Name: "added", Bucket: 1}, {Name: "mirror", Bucket: 2}},
+				[]workspace.Component{{Name: "added", Turn: 1}, {Name: "mirror", Turn: 2}},
 				"the plan runs the generator that it declares and the generator of the config")
 		})
 
@@ -657,10 +764,10 @@ func TestSteps(t *testing.T) {
 				"second": {Generators: []plugin.Generator{added}},
 			}})).Describe().Plans
 			assert.Length(t, plans, 2, "the composition has two plans")
-			expect.Contains(t, plans[0].Generate, workspace.Component{Name: "added", Bucket: 1},
-				"the first plan runs the generator in the first bucket")
-			expect.Contains(t, plans[1].Generate, workspace.Component{Name: "added", Bucket: 1},
-				"the second plan runs the generator in the same bucket as the first plan")
+			expect.Contains(t, plans[0].Generate, workspace.Component{Name: "added", Turn: 1},
+				"the first plan runs the generator in the first turn")
+			expect.Contains(t, plans[1].Generate, workspace.Component{Name: "added", Turn: 1},
+				"the second plan runs the generator in the same turn as the first plan")
 		})
 
 		t.Run("populates the options of a generator of the config", func(t *testing.T) {
@@ -686,47 +793,6 @@ func TestSteps(t *testing.T) {
 				"the fingerprint folds the declared generator")
 			assert.Equal(t, built(t, extended(mirror("added"))).Fingerprint(), want.Fingerprint(),
 				"the extended composition has the same fingerprint as the composition that declares the generator")
-		})
-	})
-
-	t.Run("stampable", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns an error naming a backend that does not render", func(t *testing.T) {
-			t.Parallel()
-
-			_, err := workspace.New().
-				Brand(fixtureBrand).
-				Annotators(stamper("noter", quiet)).
-				Targets("fixture").
-				Plans(workspace.Plan{
-					Name:       "plan",
-					Generators: []plugin.Generator{mirror("mirror")},
-					Backend:    framing{fakeBackend{name: "framer", target: "fixture"}},
-				}).
-				Output(memOutput).
-				Build()
-			assert.HasError(t, err, "a writing composition needs every backend to render")
-			assert.Contains(t, err.Error(), "does not render", "the error names the cause")
-			assert.Contains(t, err.Error(), "framer", "the error names the backend")
-		})
-
-		t.Run("returns an error naming a backend that spells no filenames", func(t *testing.T) {
-			t.Parallel()
-
-			_, err := workspace.New().
-				Brand(fixtureBrand).
-				Annotators(stamper("noter", quiet)).
-				Targets("fixture").
-				Plans(workspace.Plan{
-					Name:       "plan",
-					Generators: []plugin.Generator{mirror("mirror")},
-					Backend:    framing{fakeBackend{name: "framer", target: "fixture"}},
-				}).
-				Output(memOutput).
-				Build()
-			assert.HasError(t, err, "a writing composition needs every backend to name its files")
-			assert.Contains(t, err.Error(), "spells no filenames", "the error names the cause")
 		})
 	})
 
@@ -766,7 +832,54 @@ func TestSteps(t *testing.T) {
 			assert.Equal(t, calls, []plugin.ID{"alph", "beta"}, "the names break the tie")
 		})
 
-		t.Run("numbers each claim's bucket by its schedule position", func(t *testing.T) {
+		t.Run("runs a provider before a plugin that runs after it within one priority", func(t *testing.T) {
+			t.Parallel()
+
+			var calls []plugin.ID
+			runOrdering(t,
+				following("follows", 1, &calls),
+				ordered("gives", 1, caps("cap"), nil, &calls),
+			)
+			assert.Equal(t, calls, []plugin.ID{"gives", "follows"}, "the names do not decide")
+		})
+
+		t.Run("returns an error naming a plugin that runs after a capability at a later priority", func(t *testing.T) {
+			t.Parallel()
+
+			var calls []plugin.ID
+			_, err := valid().Annotators(following("follows", 1, &calls), ordered("gives", 2, caps("cap"), nil, &calls)).
+				Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Contains(t, err.Error(),
+				`annotator follows runs after capability "cap" at priority 1, and gives provides it at priority 2`,
+				"the error names both plugins and both priorities")
+		})
+
+		t.Run("returns an error naming an annotator that runs after a capability of a generator", func(t *testing.T) {
+			t.Parallel()
+
+			var calls []plugin.ID
+			_, err := valid().
+				Annotators(following("follows", 1, &calls)).
+				Plans(planTo("second", "fixture", provider("maker", "cap"))).
+				Build()
+			assert.HasError(t, err, "the composition fails")
+			want := `annotator follows runs after capability "cap", which the generator maker provides`
+			assert.Contains(t, err.Error(), want, "the error names the annotator and the generator")
+		})
+
+		t.Run("returns an error naming the plugins of a cycle through a followed capability", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(
+				&declaring{name: "first", provides: caps("x"), after: caps("y")},
+				&declaring{name: "second", provides: caps("y"), requires: caps("x")},
+			).Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Contains(t, err.Error(), "capabilities cycle among first and second", "the error names the cycle")
+		})
+
+		t.Run("numbers the turn of each claim by its schedule position", func(t *testing.T) {
 			t.Parallel()
 
 			var rank meta.Key[string]
@@ -794,20 +907,20 @@ func TestSteps(t *testing.T) {
 				Targets("fixture").
 				Plans(planTo("plan", "fixture", mirror("mirror"))).
 				Build()
-			assert.NoError(t, err, "the bucket fixture composes")
+			assert.NoError(t, err, "the turn fixture composes")
 			g, s := alpha(t)
 			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
-			assert.NoError(t, err, "the bucket fixture runs")
+			assert.NoError(t, err, "the turn fixture runs")
 
 			got, held := meta.Get(report.Facts, s.Identity(), rank)
 			assert.True(t, held, "the fact is stamped")
-			assert.Equal(t, got, "first", "the earlier bucket outranks the later")
-			buckets := map[plugin.ID]int{}
+			assert.Equal(t, got, "first", "the earlier turn outranks the later turn")
+			turns := map[plugin.ID]int{}
 			for view := range report.Facts.Claims(s.Identity(), rank.ID()) {
-				buckets[view.Claim.Plugin] = view.Claim.Bucket
+				turns[view.Claim.Plugin] = view.Claim.Turn
 			}
-			assert.Equal(t, buckets, map[plugin.ID]int{"first": 1, "second": 2},
-				"each claim has its plugin's schedule position")
+			assert.Equal(t, turns, map[plugin.ID]int{"first": 2, "second": 3},
+				"each claim has the schedule position of its plugin after the lowering entry of the target")
 		})
 	})
 
@@ -876,23 +989,31 @@ func TestSteps(t *testing.T) {
 		t.Run("returns one error for a key that two rules of an annotator gate on", func(t *testing.T) {
 			t.Parallel()
 
-			twice, held := eidos.NewPlugin(auditID).
+			twice := eidos.NewPlugin(auditID).
 				Handle(eidos.Where(eidos.HasKey(meta.Named[bool](flagKeyName)),
 					eidos.OnStruct(quiet),
 					eidos.OnInterface(func(*eidos.InterfaceMatch, *eidos.Stamper) error { return nil }),
 				)).
-				Build().(plugin.Annotator)
-			assert.True(t, held, "a stamper rule lowers to the annotator role")
+				Annotator()
 			_, err := valid().Annotators(flagger(caps(flagsCap)), twice).Build()
 			assert.HasError(t, err, "the composition fails")
 			assert.Equal(t, strings.Count(err.Error(), string(flagKeyName)), 1, "the gate on the key is refused once")
+		})
+
+		t.Run("returns an error naming a plugin whose BindKeys returns a plugin of another type", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(rebinding{}).Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Contains(t, err.Error(), "rebinding returns a plugin of another type or another name from BindKeys",
+				"the error names the plugin")
 		})
 	})
 
 	t.Run("compilePlans", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("runs a plan's generators in bucket order", func(t *testing.T) {
+		t.Run("runs a plan's generators in turn order", func(t *testing.T) {
 			t.Parallel()
 
 			var calls []plugin.ID
@@ -1069,12 +1190,8 @@ func TestSteps(t *testing.T) {
 	})
 }
 
-// memOutput opens a fresh in-memory sink for every run.
-func memOutput() (output.Sink, error) { return output.NewMem(), nil }
-
-// runOrdering composes the annotators over the one-struct fixture
-// and runs, so each role's handler runs exactly once, in schedule
-// order.
+// runOrdering composes the annotators and runs them over the fixture of
+// one struct, so the handler of each role runs once, in schedule order.
 func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 	t.Helper()
 
@@ -1090,17 +1207,30 @@ func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 	assert.NoError(t, err, "the ordering fixture runs")
 }
 
-// capable spells one hand-rolled annotator's capability lists
-// inline.
+// capable returns a hand-rolled annotator with the capability lists
+// provides and requires.
 func capable(name plugin.ID, provides, requires []plugin.Capability) plugin.Annotator {
 	return &declaring{name: name, provides: provides, requires: requires}
+}
+
+// following returns an annotator at the priority pri that runs after the
+// capability cap and records its runs into calls.
+func following(name plugin.ID, pri int, calls *[]plugin.ID) plugin.Annotator {
+	return eidos.NewPlugin(name).
+		Priority(plugin.RoleAnnotator, pri).
+		After("cap").
+		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error {
+			*calls = append(*calls, name)
+			return nil
+		})).
+		Annotator()
 }
 
 // flagger returns an annotator that provides the capabilities provides,
 // registers the flag key and stamps it on every struct.
 func flagger(provides []plugin.Capability) plugin.Annotator {
 	var flag meta.Key[bool]
-	p, held := eidos.NewPlugin(flaggerID).
+	return eidos.NewPlugin(flaggerID).
 		Provides(provides...).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace(flagKeyName.Namespace()); err != nil {
@@ -1114,38 +1244,26 @@ func flagger(provides []plugin.Capability) plugin.Annotator {
 			eidos.Stamp(st, flag, true)
 			return nil
 		})).
-		Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
+		Annotator()
 }
 
 // auditing returns an annotator that requires the capabilities requires,
 // and that appends the name of each struct that gate admits to visited.
 func auditing(gate eidos.Pred, requires []plugin.Capability, visited *[]string) plugin.Annotator {
-	p, held := eidos.NewPlugin(auditID).
+	return eidos.NewPlugin(auditID).
 		Requires(requires...).
 		Handle(eidos.Where(gate, eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
 			*visited = append(*visited, m.Struct.Name)
 			return nil
 		}))).
-		Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
+		Annotator()
 }
 
 // keyed returns an annotator whose key provider runs register.
 func keyed(name plugin.ID, register func(*meta.Registry) error) plugin.Annotator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Keys(register).
-		Handle(eidos.OnStruct(quiet)).Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
+		Handle(eidos.OnStruct(quiet)).Annotator()
 }
 
 // keyedKeys claims the namespace of [keyedLang] and registers
@@ -1158,41 +1276,33 @@ func keyedKeys(r *meta.Registry) error {
 	return err
 }
 
-// schemad returns a generator declaring s, so the registration step
-// meets a plugin's own schema.
+// schemad returns a generator that declares s, so the registration step
+// meets the schema of a plugin.
 func schemad(name plugin.ID, s directive.Schema) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
 		Handle(eidos.Directive(s, eidos.OnEmit(symbol.KindStruct,
 			func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
-		Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Generator()
 }
 
-// slotted returns a one-template tree whose template places the
-// slots, the smallest tree the template rules admit.
+// slotted returns a tree of one template that places the slots, the
+// smallest tree that the template rules admit.
 func slotted() fstest.MapFS {
 	return fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")}}
 }
 
-// styled returns the generator a presentation declaration builds,
-// with one family and a rule that emits nothing.
+// styled returns the generator that the declaration b builds, with one
+// family and a rule that emits nothing.
 func styled(b *eidos.Builder) plugin.Generator {
-	p, held := b.
+	return b.
 		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
-		Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Generator()
 }
 
-// sectioned returns a composition with one config section for one
-// plugin's options struct.
+// sectioned returns a composition with one config section for the
+// options struct of one plugin.
 func sectioned(name string, cfg any, section map[string]any) *workspace.Builder {
 	return valid().
 		Plans(planTo("second", "fixture", tuned(plugin.ID(name), cfg))).

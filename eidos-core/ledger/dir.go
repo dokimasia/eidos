@@ -71,7 +71,6 @@ type Dir struct {
 var (
 	_ Ledger      = (*Dir)(nil)
 	_ GroupWriter = (*Dir)(nil)
-	_ Locker      = (*Dir)(nil)
 )
 
 // OpenDir returns the ledger of the state directory .<brand>/ under

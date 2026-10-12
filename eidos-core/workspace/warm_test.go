@@ -32,7 +32,7 @@ import (
 
 // The annotators of the warm composition. The sizer stamps the width of
 // every struct, and provides the capability that puts the watcher in the
-// next bucket. The watcher copies the width of the row onto the reader.
+// next turn. The watcher copies the width of the row onto the reader.
 // The warner reports a warning on the row, and the counter implements its
 // role directly.
 const (
@@ -51,11 +51,11 @@ const copierID plugin.ID = "copier"
 // directive, at the directive's authority.
 const labelerID plugin.ID = "labeler"
 
-// labelLine attaches the labeler's directive to the struct on the line
+// labelLine is the directive of the labeler on the struct of the line
 // before it.
 const labelLine = "+labeler:label\n"
 
-// copyLine attaches the copier's directive to the struct on the line
+// copyLine is the directive of the copier on the struct of the line
 // before it.
 const copyLine = "+copier:copy\n"
 
@@ -84,17 +84,17 @@ const (
 var warmWarning = diag.Code{Prefix: "tst", Number: 9}
 
 // warmEdit is the modification time of each file that an edit changes,
-// as an editor's write moves it.
+// as the write of an editor sets it.
 var warmEdit = time.Date(2026, time.October, 7, 12, 0, 0, 0, time.UTC)
 
-// copySchema is the copier's directive. The copier's one rule runs on each
-// struct with the directive.
+// copySchema is the directive of the copier. The one rule of the copier
+// runs on each struct with the directive.
 var copySchema = directive.Schema{
 	Plugin: string(copierID), Name: "copy", Doc: "copies the width of the row onto the struct",
 }
 
-// labelSchema is the labeler's directive. The labeler's one rule runs on
-// each struct with the directive.
+// labelSchema is the directive of the labeler. The one rule of the
+// labeler runs on each struct with the directive.
 var labelSchema = directive.Schema{
 	Plugin: string(labelerID), Name: "label", Doc: "stamps the width of the struct",
 }
@@ -133,10 +133,11 @@ func (c counter) Annotate(ctx *plugin.AnnotatorContext) error {
 	return nil
 }
 
-// A warm run executes again only the validations and annotator
-// invocations that read what an edit changed. Its facts and its findings
-// equal those of a cold run over the edited tree. A generator invocation
-// that read a fact whose winner did not change does not run again.
+// TestWarm tests a warm run. A warm run runs again only the validations
+// and annotator invocations that read what an edit changed. Its facts
+// and its findings equal those of a cold run over the edited tree. A
+// generator invocation that read a fact whose winner did not change
+// does not run again.
 func TestWarm(t *testing.T) {
 	t.Parallel()
 
@@ -385,12 +386,12 @@ func TestWarm(t *testing.T) {
 // warmBuilder returns the builder of the warm composition, which records
 // into a ledger. The sizer stamps the width of every struct, and the
 // watcher copies the width of the row onto the reader in the next
-// bucket. The plan's generator mirrors each struct that has the mark.
-// extra lists more annotators of the composition.
+// turn. The generator of the plan mirrors each struct that has the
+// mark. extra lists more annotators of the composition.
 func warmBuilder(tb assert.TB, l ledger.Ledger, keys *warmKeys, extra ...plugin.Annotator) *workspace.Builder {
 	tb.Helper()
 
-	sizer, held := eidos.NewPlugin(sizerID).
+	sizer := eidos.NewPlugin(sizerID).
 		Provides(sized).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("size"); err != nil {
@@ -403,9 +404,8 @@ func warmBuilder(tb assert.TB, l ledger.Ledger, keys *warmKeys, extra ...plugin.
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 			eidos.Stamp(st, keys.width, int64(len(m.Struct.Fields)))
 			return nil
-		})).Build().(plugin.Annotator)
-	assert.True(tb, held, "the sizer lowers to the annotator role")
-	watcher, held := eidos.NewPlugin(watcherID).
+		})).Annotator()
+	watcher := eidos.NewPlugin(watcherID).
 		Requires(sized).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("watch"); err != nil {
@@ -423,18 +423,16 @@ func warmBuilder(tb assert.TB, l ledger.Ledger, keys *warmKeys, extra ...plugin.
 				eidos.Stamp(st, keys.seen, width)
 			}
 			return nil
-		})).Build().(plugin.Annotator)
-	assert.True(tb, held, "the watcher lowers to the annotator role")
-	marker, held := eidos.NewPlugin(markerID).
+		})).Annotator()
+	marker := eidos.NewPlugin(markerID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.Directive(markSchema, eidos.OnStruct(mirrored))).Build().(plugin.Generator)
-	assert.True(tb, held, "the marker lowers to the generator role")
+		Handle(eidos.Directive(markSchema, eidos.OnStruct(mirrored))).Generator()
 	return workspace.New().
 		Brand(fixtureBrand).
 		Frontends(frontendtest.NewScripted()).
 		Annotators(append([]plugin.Annotator{sizer, watcher}, extra...)...).
 		Targets("fixture").
-		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{marker}, Backend: printer(tb, "fixture")}).
+		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{marker}, Backend: fixturePrinter()}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
 }
@@ -445,7 +443,7 @@ func warmBuilder(tb assert.TB, l ledger.Ledger, keys *warmKeys, extra ...plugin.
 func copying(tb assert.TB, keys *warmKeys) workspace.Plan {
 	tb.Helper()
 
-	copier, held := eidos.NewPlugin(copierID).
+	copier := eidos.NewPlugin(copierID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "copy"}).
 		Handle(eidos.Directive(copySchema, eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			width, _ := eidos.FactOf(m, rowID, keys.width)
@@ -453,18 +451,17 @@ func copying(tb assert.TB, keys *warmKeys) workspace.Plan {
 				Origin: m.Struct.Identity(), Name: "Copy" + m.Struct.Name, Doc: []string{strconv.FormatInt(width, 10)},
 			})
 			return nil
-		}))).Build().(plugin.Generator)
-	assert.True(tb, held, "the copier lowers to the generator role")
-	return sealedPlan(tb, "copies", copier)
+		}))).Generator()
+	return sealedPlan("copies", copier)
 }
 
 // labeler returns the annotator of the label directive. On each struct
 // with the directive, it stamps the width of the struct under
-// label.width, which has the directive's authority.
+// label.width at the authority of the directive.
 func labeler(tb assert.TB, keys *warmKeys) plugin.Annotator {
 	tb.Helper()
 
-	p, held := eidos.NewPlugin(labelerID).
+	return eidos.NewPlugin(labelerID).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("label"); err != nil {
 				return err
@@ -478,9 +475,7 @@ func labeler(tb assert.TB, keys *warmKeys) plugin.Annotator {
 		Handle(eidos.Directive(labelSchema, eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 			eidos.Stamp(st, keys.labeled, int64(len(m.Struct.Fields)))
 			return nil
-		}))).Build().(plugin.Annotator)
-	assert.True(tb, held, "the labeler lowers to the annotator role")
-	return p
+		}))).Annotator()
 }
 
 // warner returns an annotator that reports a warning on the row.

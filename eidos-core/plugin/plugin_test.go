@@ -24,6 +24,17 @@ func (p named) Name() plugin.ID { return p.name }
 func TestPlugin(t *testing.T) {
 	t.Parallel()
 
+	t.Run("ContractVersion", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the first version of the contract", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.ContractVersion, 1,
+				"the manifests and the sealed states that record the version keep reading")
+		})
+	})
+
 	t.Run("Name", func(t *testing.T) {
 		t.Parallel()
 

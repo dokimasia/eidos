@@ -12,20 +12,21 @@ import (
 
 // FunctionMatch is the OnFunction subject.
 type FunctionMatch struct {
-	match
+	subjectMatch
 	Function *node.Function
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released FunctionMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released FunctionMatch
+// values.
 func (m *FunctionMatch) unbind() any {
 	*m = FunctionMatch{}
 	return (*FunctionMatch)(nil)
 }
 
-// OnFunction fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnFunction runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnFunction[E Effect](h func(*FunctionMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -45,20 +46,21 @@ func OnFunction[E Effect](h func(*FunctionMatch, E) error) Rule {
 
 // MethodMatch is the OnMethod subject.
 type MethodMatch struct {
-	match
+	subjectMatch
 	Method *node.Method
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released MethodMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released MethodMatch
+// values.
 func (m *MethodMatch) unbind() any {
 	*m = MethodMatch{}
 	return (*MethodMatch)(nil)
 }
 
-// OnMethod fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnMethod runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -78,20 +80,21 @@ func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 
 // ParamMatch is the OnParam subject.
 type ParamMatch struct {
-	match
+	subjectMatch
 	Param *node.Param
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released ParamMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released ParamMatch
+// values.
 func (m *ParamMatch) unbind() any {
 	*m = ParamMatch{}
 	return (*ParamMatch)(nil)
 }
 
-// OnParam fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnParam runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -111,20 +114,21 @@ func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
 
 // ReturnMatch is the OnReturn subject.
 type ReturnMatch struct {
-	match
+	subjectMatch
 	Return *node.Return
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released ReturnMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released ReturnMatch
+// values.
 func (m *ReturnMatch) unbind() any {
 	*m = ReturnMatch{}
 	return (*ReturnMatch)(nil)
 }
 
-// OnReturn fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnReturn runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -144,20 +148,21 @@ func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
 
 // EnumMatch is the OnEnum subject.
 type EnumMatch struct {
-	match
+	subjectMatch
 	Enum *node.Enum
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released EnumMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released EnumMatch
+// values.
 func (m *EnumMatch) unbind() any {
 	*m = EnumMatch{}
 	return (*EnumMatch)(nil)
 }
 
-// OnEnum fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnEnum runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -177,20 +182,21 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 
 // SumMatch is the OnSum subject.
 type SumMatch struct {
-	match
+	subjectMatch
 	Sum *node.Sum
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released SumMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released SumMatch
+// values.
 func (m *SumMatch) unbind() any {
 	*m = SumMatch{}
 	return (*SumMatch)(nil)
 }
 
-// OnSum fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnSum runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnSum[E Effect](h func(*SumMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -210,20 +216,21 @@ func OnSum[E Effect](h func(*SumMatch, E) error) Rule {
 
 // FieldMatch is the OnField subject.
 type FieldMatch struct {
-	match
+	subjectMatch
 	Field *node.Field
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released FieldMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released FieldMatch
+// values.
 func (m *FieldMatch) unbind() any {
 	*m = FieldMatch{}
 	return (*FieldMatch)(nil)
 }
 
-// OnField fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnField runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnField[E Effect](h func(*FieldMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -243,20 +250,21 @@ func OnField[E Effect](h func(*FieldMatch, E) error) Rule {
 
 // VariableMatch is the OnVariable subject.
 type VariableMatch struct {
-	match
+	subjectMatch
 	Variable *node.Variable
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released VariableMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released VariableMatch
+// values.
 func (m *VariableMatch) unbind() any {
 	*m = VariableMatch{}
 	return (*VariableMatch)(nil)
 }
 
-// OnVariable fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnVariable runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnVariable[E Effect](h func(*VariableMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -276,20 +284,21 @@ func OnVariable[E Effect](h func(*VariableMatch, E) error) Rule {
 
 // ConstantMatch is the OnConstant subject.
 type ConstantMatch struct {
-	match
+	subjectMatch
 	Constant *node.Constant
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released ConstantMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released ConstantMatch
+// values.
 func (m *ConstantMatch) unbind() any {
 	*m = ConstantMatch{}
 	return (*ConstantMatch)(nil)
 }
 
-// OnConstant fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnConstant runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnConstant[E Effect](h func(*ConstantMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -309,20 +318,21 @@ func OnConstant[E Effect](h func(*ConstantMatch, E) error) Rule {
 
 // StructMatch is the OnStruct subject.
 type StructMatch struct {
-	match
+	subjectMatch
 	Struct *node.Struct
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released StructMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released StructMatch
+// values.
 func (m *StructMatch) unbind() any {
 	*m = StructMatch{}
 	return (*StructMatch)(nil)
 }
 
-// OnStruct fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnStruct runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnStruct[E Effect](h func(*StructMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -342,20 +352,21 @@ func OnStruct[E Effect](h func(*StructMatch, E) error) Rule {
 
 // InterfaceMatch is the OnInterface subject.
 type InterfaceMatch struct {
-	match
+	subjectMatch
 	Interface *node.Interface
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released InterfaceMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released InterfaceMatch
+// values.
 func (m *InterfaceMatch) unbind() any {
 	*m = InterfaceMatch{}
 	return (*InterfaceMatch)(nil)
 }
 
-// OnInterface fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnInterface runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule {
 	return Rule{leaf: &leaf{
@@ -375,20 +386,21 @@ func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule {
 
 // AliasMatch is the OnAlias subject.
 type AliasMatch struct {
-	match
+	subjectMatch
 	Alias *node.Alias
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released AliasMatch values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released AliasMatch
+// values.
 func (m *AliasMatch) unbind() any {
 	*m = AliasMatch{}
 	return (*AliasMatch)(nil)
 }
 
-// OnAlias fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// OnAlias runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func OnAlias[E Effect](h func(*AliasMatch, E) error) Rule {
 	return Rule{leaf: &leaf{

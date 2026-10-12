@@ -53,6 +53,16 @@ type Ledger interface {
 	// List returns the blobs whose names begin with dir and a slash,
 	// sorted by name, and none where nothing wrote under dir.
 	List(ctx context.Context, dir string) ([]Blob, error)
+	// Lock takes the lock of the ledger for h, and returns the function
+	// that releases it. A ledger admits one holder at a time, such as one
+	// run over a state directory. Lock does not wait: where another
+	// holder has the lock, it returns a *[LockedError] that names that
+	// holder.
+	//
+	// Error modes: a *LockedError, which wraps [ErrLocked], the error of
+	// the context, and the error of the operating system where the files
+	// of the lock cannot be created, opened or written.
+	Lock(ctx context.Context, h Holder) (release func() error, err error)
 }
 
 // GroupWriter is the interface of a [Ledger] that writes many blobs in

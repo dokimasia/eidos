@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // EnumRules projects an enumeration.
@@ -46,7 +47,7 @@ type EnumInfo struct {
 	Form       EnumForm      // where a variant's text comes from
 	Variants   []VariantText // in declaration order
 	Zero       string        // the variant whose value is the type's zero; "" when none
-	Duplicate  string        // the first text two variants share; "" when none
+	Duplicate  string        // the identifier of the first variant whose value a later one repeats; "" when none
 	OutOfRange emit.Value    // a value outside the declared set; zero when none derives
 	Foreign    []string      // packages declaring variants outside the type's own, sorted
 }
@@ -76,16 +77,24 @@ type TagRules interface {
 	Tag(f *node.Field, key string) (string, bool)
 }
 
-// GenericsRules reasons about type parameters.
+// WellKnownRules is the optional capability of a language that declares
+// a type of its standard library as a well-known type, such as Go's
+// time.Time. The fold calls the rules of the language of a target before
+// it classifies the target.
+type WellKnownRules interface {
+	// WellKnown returns the well-known identity of the declaration id,
+	// and reports false for a declaration that the registry does not
+	// bless. It does not allocate.
+	WellKnown(id symbol.Identity) (symbol.Identity, bool)
+}
+
+// GenericsRules reasons about type parameters. The kernel substitutes
+// arguments for parameters itself, through [Substitute].
 type GenericsRules interface {
-	// Derive returns a witness for one parameter the author left
-	// unstated, and reports false where the bound's type set is
-	// not knowable without loading the declaring package.
+	// Derive returns a witness for one parameter that the author left
+	// unstated. It reports false where the type set of the bound is not
+	// knowable without loading the declaring package.
 	Derive(p *node.TypeParam, v View) (*node.TypeRef, bool)
-	// Substitute rewrites a reference with each parameter replaced
-	// by its argument, copying what it rewrites, and returns the
-	// reference unchanged where it names no parameter.
-	Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef
 	// Reified reports whether the language keeps type arguments at
 	// runtime. A Java backend lowers differently under erasure.
 	Reified() bool

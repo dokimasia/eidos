@@ -30,6 +30,9 @@ const (
 	wide      plugin.Choice    = "wide"
 )
 
+// panicReason is what the handlers of the panic cases panic with.
+const panicReason = "t: the handler panics"
+
 // keyRecorder is a journal that keeps the match key of every
 // invocation a phase call hands it.
 type keyRecorder struct{ keys []plugin.MatchKey }
@@ -51,10 +54,11 @@ func (choiceSpoke) SpellType(_ rules.TypeShape, p plugin.Policy) (*emit.TypeRef,
 	return &emit.TypeRef{Spelling: string(p.Choice(widthKey))}, nil
 }
 
-// The fixture is the run's read side built by hand, so what a
-// phase call sees through it is contract: loaded packages,
-// validated gates, stamped facts, seeded units, the selection and
-// the journal, and the roles it refuses to hand a phase call to.
+// The fixture is the read side of a run, built by hand, so everything
+// that a phase call receives through it is contract: the loaded
+// packages, the validated gates, the stamped facts, the seeded units,
+// the selection and the journal, and the roles that it does not hand to
+// a phase call.
 func TestFixture(t *testing.T) {
 	t.Parallel()
 
@@ -72,7 +76,7 @@ func TestFixture(t *testing.T) {
 					eidos.Stamp(st, key, true)
 					return nil
 				})).
-				Build()
+				Annotator()
 			return p, key
 		}
 
@@ -114,10 +118,27 @@ func TestFixture(t *testing.T) {
 						visited = append(visited, m.Struct.Name)
 						return nil
 					}))).
-				Build()
+				Annotator()
 
 			assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Alpha"}, "the gate admits the stamped subject through the name")
+		})
+
+		t.Run("fails the test for a phase that panics", func(t *testing.T) {
+			t.Parallel()
+
+			failure := assert.Rejects(t, "a handler that panics must fail the test",
+				func(tb assert.TB) {
+					f, _, _ := twoStructs(tb)
+					p := eidos.NewPlugin("t").
+						Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error {
+							panic(panicReason)
+						})).
+						Annotator()
+					f.Annotate(tb, p)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{"the annotate phase runs without a panic"},
+				"the failure names the panic")
 		})
 	})
 
@@ -134,7 +155,7 @@ func TestFixture(t *testing.T) {
 					visited = append(visited, m.Struct.Name)
 					return nil
 				})).
-				Build()
+				Generator()
 			f.Select = &plugin.Selection{Matches: []plugin.MatchKey{{Plugin: "t", Subject: beta.ID}}}
 			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Beta"}, "the listed subject alone runs")
@@ -146,7 +167,7 @@ func TestFixture(t *testing.T) {
 			f, alpha, beta := twoStructs(t)
 			p := eidos.NewPlugin("t").
 				Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
-				Build()
+				Generator()
 			rec := &keyRecorder{}
 			f.Journal = rec
 			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
@@ -165,7 +186,7 @@ func TestFixture(t *testing.T) {
 					visited = append(visited, m.Struct.Name)
 					return nil
 				})).
-				Build()
+				Generator()
 
 			r := f.Generate(t, p)
 			assert.NoError(t, r.Err, "the phase call passes")
@@ -173,7 +194,7 @@ func TestFixture(t *testing.T) {
 				"the loaded declarations dispatch in identity order")
 		})
 
-		t.Run("sees seeded units the way a later bucket does", func(t *testing.T) {
+		t.Run("sees seeded units the way a later turn does", func(t *testing.T) {
 			t.Parallel()
 
 			f, alpha, _ := twoStructs(t)
@@ -192,10 +213,10 @@ func TestFixture(t *testing.T) {
 							"the seeded value names its origin")
 						return nil
 					})).
-				Build()
+				Generator()
 
 			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
-			assert.Equal(t, visited, 1, "the seeded unit is the earlier bucket")
+			assert.Equal(t, visited, 1, "the seeded unit belongs to the earlier turn")
 		})
 
 		t.Run("gates on the validated table", func(t *testing.T) {
@@ -214,7 +235,7 @@ func TestFixture(t *testing.T) {
 						visited = append(visited, m.Struct.Name)
 						return nil
 					}))).
-				Build()
+				Generator()
 
 			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Alpha"},
@@ -235,7 +256,7 @@ func TestFixture(t *testing.T) {
 					kernel = m.Kernel()
 					return nil
 				})).
-				Build()
+				Generator()
 
 			r := f.Generate(t, p)
 			assert.NoError(t, r.Err, "the phase call passes")
@@ -259,7 +280,7 @@ func TestFixture(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, f.Generate(tb, p).Err, "the phase call passes")
 			return got
 		}
@@ -302,11 +323,28 @@ func TestFixture(t *testing.T) {
 								return nil
 							},
 						)).
-						Build()
+						Annotator()
 					f.Generate(tb, p)
 				})
 			assert.Equal(t, coretest.Contracts(failure), []string{"the plugin implements the generator role"},
 				"the refusal names the missing role")
+		})
+
+		t.Run("fails the test for a phase that panics", func(t *testing.T) {
+			t.Parallel()
+
+			failure := assert.Rejects(t, "a handler that panics must fail the test",
+				func(tb assert.TB) {
+					f, _, _ := twoStructs(tb)
+					p := eidos.NewPlugin("t").
+						Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+							panic(panicReason)
+						})).
+						Generator()
+					f.Generate(tb, p)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{"the generate phase runs without a panic"},
+				"the failure names the panic")
 		})
 	})
 
@@ -327,11 +365,11 @@ func TestFixture(t *testing.T) {
 						visited = append(visited, m.Struct.Name)
 						return nil
 					}))).
-				Build()
+				Generator()
 
 			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Alpha"},
-				"the stamped subject alone carries the gate")
+				"the gate admits the stamped subject alone")
 		})
 	})
 

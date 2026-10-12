@@ -12,13 +12,35 @@ import (
 	"go.dokimi.dev/eidos/core/position"
 )
 
-// mergeVocabulary folds the plugins' helpers over the shared
-// bucket: schedule order, latest wins, and plugins the schedule
-// does not hold merge first, in name order, so a fixture without a
-// schedule stays deterministic. A shared name shadowed without a
-// declared override is refused and reported, and a reserved name
-// is refused the same way, so the shared helper and the builtin
-// stand.
+// The names of the vocabulary helpers that every backend declares under the
+// same name, so one template text serves each target. Each backend binds
+// its own function under each name.
+const (
+	// HelperDocs writes the documentation of a declaration in the comment
+	// form of the target.
+	HelperDocs = "docs"
+	// HelperSpell writes a type reference as the target spells it.
+	HelperSpell = "spell"
+	// HelperTypeParams writes the type parameter list of a declaration.
+	HelperTypeParams = "typeparams"
+	// HelperParams writes the parameter list of a callable.
+	HelperParams = "params"
+	// HelperResults writes the results of a callable.
+	HelperResults = "results"
+)
+
+// mergeVocabulary folds the helpers of the plugins over the shared
+// vocabulary. It merges in schedule order, so the helper of a later
+// plugin replaces the helper of an earlier one. Plugins that the
+// schedule does not list merge first, in name order, so a fixture
+// without a schedule merges in one order. The merge reports and leaves
+// out three kinds of helper:
+//
+//   - A helper that shadows a shared name without a declared override.
+//     The shared helper keeps the name.
+//   - A helper that claims the name of a builtin. The builtin keeps the
+//     name.
+//   - A helper that text/template cannot call.
 func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 	merged := template.FuncMap{}
 	scheduled := map[plugin.ID]bool{}
@@ -46,20 +68,25 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 		fm := ctx.Funcs[id]
 		for _, name := range slices.Sorted(maps.Keys(fm)) {
 			_, shared := f.pass.shared[name]
-			switch admit(name, shared, declared[name]) {
+			switch admit(name, fm[name], shared, declared[name]) {
 			case claimsBuiltin:
 				f.sink.Errorf(UndeclaredOverride, at, f.origin,
-					"%s claims %q, which is a builtin, and the builtin stands",
+					"%s claims %q, which is a builtin, so the builtin keeps the name",
 					id, name)
 			case shadowsUndeclared:
 				f.sink.Errorf(UndeclaredOverride, at, f.origin,
-					"%s shadows the shared helper %q without declaring the override, and the shared helper stands",
+					"%s shadows the shared helper %q without declaring the override, "+
+						"so the shared helper keeps the name",
+					id, name)
+			case unbindable:
+				f.sink.Errorf(UnbindableHelper, at, f.origin,
+					"%s registers the helper %q, which text/template cannot call, so the render leaves it out",
 					id, name)
 			case admitted:
 				if !shared {
 					if owner, taken := owners[name]; taken {
 						f.sink.Errorf(HelperCollision, at, f.origin,
-							"%s and %s both register the helper %q, and %s's stands",
+							"%s and %s both register the helper %q, so the helper of %s keeps the name",
 							owner, id, name, owner)
 						continue
 					}
@@ -73,19 +100,37 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 }
 
 // admission classifies one plugin helper against the shared
-// vocabulary. The render's merge and the lint read the one rule, so
-// a helper the lint admits is a helper the render binds.
+// vocabulary. The merge of the render and the lint apply the same
+// rule, so the render binds every helper that the lint admits.
 type admission uint8
 
-// admit classifies a helper name: whether the shared vocabulary
-// defines the name, and whether the plugin declared the override.
-func admit(name string, shared, declared bool) admission {
+// admit classifies the helper fn under name. shared reports that the
+// shared vocabulary defines the name, and declared reports that the
+// plugin declared the override.
+func admit(name string, fn any, shared, declared bool) admission {
 	switch {
 	case reserved(name):
 		return claimsBuiltin
 	case shared && !declared:
 		return shadowsUndeclared
+	case !binds(name, fn):
+		return unbindable
 	default:
 		return admitted
 	}
+}
+
+// binds reports whether text/template binds fn as a template function
+// under name. text/template panics on a name that is not an
+// identifier, on a value that is not a function, and on a function
+// whose results a template cannot use. binds recovers that panic, so
+// the caller reports the helper instead of failing.
+func binds(name string, fn any) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	template.New(name).Funcs(template.FuncMap{name: fn})
+	return true
 }

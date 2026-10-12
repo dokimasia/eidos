@@ -4,7 +4,6 @@
 package workspacetest
 
 import (
-	"context"
 	"io/fs"
 	"maps"
 	"math"
@@ -31,10 +30,10 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/internal/rundir"
 )
 
-// The key the audit check promises, and the documentation it registers
-// with. The suite claims the key's namespace under a registrant of the
-// namespace's name, so a composition that claims the namespace fails
-// Build.
+// These constants are the key that the audit check promises and the
+// documentation of the key. The suite claims the namespace of the key
+// under a registrant with the name of the namespace, so a composition
+// that claims the namespace fails Build.
 const (
 	auditNamespace              = "workspacetest"
 	auditKey       meta.KeyName = "workspacetest.audited"
@@ -58,7 +57,7 @@ const memoLimit = math.MaxInt64
 // the past, so the record of the file is not racily clean.
 const age = time.Hour
 
-// claim is the filename that a plan's backend spells for one part of a
+// claim is the file name that the backend of a plan gives one part of a
 // claimed unit, and the plugin of the unit.
 type claim struct {
 	plugin plugin.ID
@@ -90,8 +89,8 @@ func AssertGenerated(tb assert.TB, f Fixture, root string) {
 
 // AssertCollision runs the fixture's plans in root, an empty directory,
 // with a copy of the first plan under another name, and checks that the
-// two collide: the run reports PlanCollision naming both plans, no plan
-// commits, and the run records nothing.
+// two collide. The run reports a PlanCollision with the names of both
+// plans, no plan commits, and the run records nothing.
 func AssertCollision(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
@@ -100,7 +99,7 @@ func AssertCollision(tb assert.TB, f Fixture, root string) {
 	twin := plans[0]
 	twin.Name = copyPlan
 	w := built(tb, f, root, append(plans, twin), nil)
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	collisions := codes(report, workspace.PlanCollision)
 	assert.NotEmpty(tb, collisions, "the run reports a PlanCollision for a copy of plan "+plans[0].Name)
 	for _, d := range collisions {
@@ -130,7 +129,7 @@ func AssertIsolated(tb assert.TB, f Fixture, root string) {
 	last := &plans[len(plans)-1]
 	last.Generators = append(slices.Clone(last.Generators), failure{at: at})
 	again := built(tb, f, root, plans, nil)
-	report, err := ran(f, again, root)
+	report, err := ran(tb, f, again, root)
 	expect.ErrorIs(tb, err, workspace.ErrRunFailed, "the seeded failure fails the run")
 	for _, p := range report.Plans {
 		if p.Name == last.Name {
@@ -156,10 +155,10 @@ func AssertIsolated(tb assert.TB, f Fixture, root string) {
 // its sources, and every recorded file exports a declaration.
 //
 // A file of a family that claims its files does not export a
-// declaration, because its records are data for the family's template.
-// The check exempts a recorded file whose name the plan's backend spells
-// for a part of a claimed unit of the plan's store, where the record of
-// the file lists the plugin of the unit.
+// declaration, because its records are data for the template of the
+// family. The check exempts a recorded file whose name the backend of
+// the plan gives a part of a claimed unit of the store of the plan,
+// where the record of the file lists the plugin of the unit.
 func AssertExported(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
@@ -170,15 +169,13 @@ func AssertExported(tb assert.TB, f Fixture, root string) {
 		"the probe reads the export of each plan it depends on")
 	record := rundir.Record(tb, root, run.brand)
 	for _, p := range plans {
-		speller, spells := p.Backend.(plugin.FileSpeller)
-		assert.True(tb, spells, "the backend of plan "+p.Name+" spells filenames")
 		var claimed []claim
 		for u := range run.report.Emits[p.Name].Units() {
 			if u.Template == "" {
 				continue
 			}
-			for _, part := range speller.SplitUnit(u) {
-				claimed = append(claimed, claim{plugin: part.Plugin, name: speller.FileName(part)})
+			for _, part := range p.Backend.SplitUnit(u) {
+				claimed = append(claimed, claim{plugin: part.Plugin, name: p.Backend.FileName(part)})
 			}
 		}
 		exportedIn(tb, run.exports[p.Name], entriesOf(record, p.Name), claimed)
@@ -187,9 +184,9 @@ func AssertExported(tb assert.TB, f Fixture, root string) {
 
 // AssertCycleRefused builds the fixture over root with copies of the
 // first plan under two names that depend on each other, and checks that
-// Build returns an error naming both. It builds the fixture's own plans
-// first, so a composition that does not build fails the check under its
-// own error.
+// Build returns an error that contains both names. It builds the plans
+// of the fixture first, so a composition that does not build fails the
+// check with its own error.
 func AssertCycleRefused(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
@@ -224,7 +221,7 @@ func AssertSwept(tb assert.TB, f Fixture, root string) {
 	}
 	_, after := withoutLast(tb, f, root)
 	expect.Equal(tb, after, want, "the run without the last plan removes its files and changes no other")
-	_, err := ran(f, built(tb, f, root, plansOf(tb, f), nil), root)
+	_, err := ran(tb, f, built(tb, f, root, plansOf(tb, f), nil), root)
 	assert.NoError(tb, err, "the fixture's plans run clean again")
 	kept := gone[0].Path
 	edited := drifted(tb, root, kept, w.Brand())
@@ -239,10 +236,10 @@ func AssertSwept(tb assert.TB, f Fixture, root string) {
 }
 
 // AssertAudited runs the fixture's plans in root, an empty directory,
-// then runs them again with a key whose completeness contract promises
-// it at Warning severity on the kind of the first plan's first origin,
-// which no annotator stamps. It checks that the run reports an
-// UnmetContract Warning naming that origin and commits every plan.
+// then runs them again with a key that no annotator stamps. The key has a
+// completeness contract at Warning severity on the kind of the first
+// origin of the first plan. The check requires an UnmetContract Warning
+// for that origin, and a commit of every plan.
 func AssertAudited(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
@@ -264,7 +261,7 @@ func AssertAudited(tb assert.TB, f Fixture, root string) {
 		return err
 	}
 	audited := built(tb, f, root, plansOf(tb, f), func(b *workspace.Builder) { b.Keys(promise) })
-	promised, err := ran(f, audited, root)
+	promised, err := ran(tb, f, audited, root)
 	expect.NoError(tb, err, "a Warning fails no run")
 	var unmet []string
 	for _, d := range codes(promised, workspace.UnmetContract) {
@@ -298,7 +295,7 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 	w := built(tb, f, root, append(plans, seeded), func(b *workspace.Builder) {
 		b.Checks(blocked, reading)
 	})
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	expect.ErrorIs(tb, err, workspace.ErrRunFailed, "the seeded failure fails the run")
 	expect.Empty(tb, blocked.called, "the check that reads the failed plan does not run")
 	var reported []diag.Diag
@@ -341,12 +338,12 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 //   - the exports that the probe reads
 //
 // The rest of the state directory differs between the two runs. The
-// sealed state lists what each run read, and a disk ledger names the
-// workspace of each manifest document after its directory.
+// sealed state lists the reads of each run, and a disk ledger derives the
+// name of the workspace of each manifest document from its directory.
 func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	assert.NotNil(tb, f.Edit, "the fixture has an edit")
 	first := plansOf(tb, f)[0].Name
 	copied(tb, f, warm)
 	before := probed(tb, f, warm, false)
@@ -373,7 +370,7 @@ func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
 }
 
 // AssertWarmUnchanged runs the fixture's plans in root, an empty
-// directory, as [settled] states, and then once more without a change. It
+// directory, through [settled], and then once more without a change. It
 // checks that the last run reads the sealed state, hashes no file, parses
 // no unit, decodes no region, runs no invocation and calls no check, and
 // that it leaves every file under root as it was: the outputs, the
@@ -386,7 +383,7 @@ func AssertWarmUnchanged(tb assert.TB, f Fixture, root string) {
 		report *workspace.Report
 		err    error
 	)
-	files.Unchanged(tb, os.DirFS(root), func() { report, err = ran(f, w, root) },
+	files.Unchanged(tb, os.DirFS(root), func() { report, err = ran(tb, f, w, root) },
 		"the run over an unchanged tree leaves every file under the root as it was")
 	assert.NoError(tb, err, "the run over an unchanged tree is clean")
 	s := report.Stats
@@ -400,8 +397,8 @@ func AssertWarmUnchanged(tb assert.TB, f Fixture, root string) {
 	}
 }
 
-// AssertTouched runs the fixture's plans in root, an empty directory, as
-// [settled] states, moves the modification time of a file of the
+// AssertTouched runs the fixture's plans in root, an empty directory,
+// through [settled], moves the modification time of a file of the
 // fixture's tree to the present without changing its bytes, and runs
 // again. It checks that the run reads the sealed state, hashes that one
 // file, and parses no unit. The file is the first input of the load of
@@ -424,7 +421,7 @@ func AssertTouched(tb assert.TB, f Fixture, root string) {
 	now := time.Now()
 	assert.NoError(tb, os.Chtimes(rundir.Path(root, touched), now, now),
 		"the modification time of "+touched+" moves to the present")
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the run after the touch is clean")
 	expect.False(tb, report.Stats.Cold, "the run after the touch reads the sealed state")
 	expect.Equal(tb, report.Stats.Hashed, 1, "the run after the touch hashes the touched file once")
@@ -442,7 +439,7 @@ func AssertDamaged(tb assert.TB, f Fixture, root string) {
 	_, w, _ := clean(tb, f, root)
 	var report *workspace.Report
 	assert.Pure(tb, func() map[string]string { return rundir.Framed(tb, root, w.Brand()) }, func() {
-		ctx := context.Background()
+		ctx := assert.Context(tb)
 		l, err := ledger.OpenDir(root, w.Brand())
 		assert.NoError(tb, err, "the state directory's ledger opens")
 		segments, err := l.List(ctx, segmentDir)
@@ -453,7 +450,7 @@ func AssertDamaged(tb assert.TB, f Fixture, root string) {
 			assert.NoError(tb, readErr, "the segment "+s.Name+" reads")
 			assert.NoError(tb, l.Write(ctx, s.Name, body[:1]), "the segment "+s.Name+" is cut to its first byte")
 		}
-		report, err = ran(f, w, root)
+		report, err = ran(tb, f, w, root)
 		assert.NoError(tb, err, "the run over the damaged state is clean")
 	}, "the run over the damaged state leaves the files that the first run left")
 	cold := codes(report, workspace.ColdState)
@@ -473,14 +470,14 @@ func AssertDamaged(tb assert.TB, f Fixture, root string) {
 func AssertRestored(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	assert.NotNil(tb, f.Edit, "the fixture has an edit")
 	plans := plansOf(tb, f)
 	copied(tb, f, root)
 	w := built(tb, f, root, plans, func(b *workspace.Builder) { b.Memo(workspace.Memo{Limit: memoLimit}) })
-	_, err := ran(f, w, root)
+	_, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the fixture's plans run clean")
 	assert.NoError(tb, f.Edit(root), "the fixture's edit applies")
-	edited, err := ran(f, w, root)
+	edited, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the run after the edit is clean")
 	assert.InRange(tb, edited.Stats.Parsed, 1, math.Inf(1), "the run after the edit parses the edited units")
 	assert.NotNil(tb, edited.Load, "the run after the edit loads the tree")
@@ -491,7 +488,7 @@ func AssertRestored(tb assert.TB, f Fixture, root string) {
 		}
 	}
 	files.Write(tb, root, treeOf(tb, f))
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the run after the revert is clean")
 	expect.Equal(tb, report.Stats.Restored, restorable,
 		"the run after the revert restores each restorable unit that the edit made the run parse")
@@ -510,17 +507,17 @@ func AssertRestored(tb assert.TB, f Fixture, root string) {
 func AssertExportCutoff(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	assert.NotNil(tb, f.Edit, "the fixture has an edit")
 	plans, p := withCutoff(plansOf(tb, f))
 	first := plans[0].Name
 	copied(tb, f, root)
 	w := built(tb, f, root, plans, nil)
-	cold, err := ran(f, w, root)
+	cold, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the fixture's plans and the probes run clean")
 	assert.Equal(tb, invokedIn(cold, cutoffPlan), 1, "the cold run runs the cutoff plan's invocation")
 	before := p.got[first]
 	assert.NoError(tb, f.Edit(root), "the fixture's edit applies")
-	warm, err := ran(f, w, root)
+	warm, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the run after the edit is clean")
 	assert.False(tb, warm.Stats.Cold, "the run after the edit reads the sealed state")
 	var written []string
@@ -546,15 +543,15 @@ func AssertExportCutoff(tb assert.TB, f Fixture, root string) {
 func AssertWarmChecked(tb assert.TB, f Fixture, warm, cold string) {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Edit, "the fixture states an edit")
+	assert.NotNil(tb, f.Edit, "the fixture has an edit")
 	first := plansOf(tb, f)[0].Name
 	warmCheck := &check{name: readingCheck, reads: []string{first}}
 	copied(tb, f, warm)
 	w := built(tb, f, warm, plansOf(tb, f), func(b *workspace.Builder) { b.Checks(warmCheck) })
-	_, err := ran(f, w, warm)
+	_, err := ran(tb, f, w, warm)
 	assert.NoError(tb, err, "the fixture's plans and the check run clean")
 	assert.NoError(tb, f.Edit(warm), "the fixture's edit applies in the warm directory")
-	after, err := ran(f, w, warm)
+	after, err := ran(tb, f, w, warm)
 	assert.NoError(tb, err, "the run after the edit is clean")
 	assert.False(tb, after.Stats.Cold, "the run after the edit reads the sealed state")
 	assert.Length(tb, warmCheck.called, 2, "the run after the edit calls the check again")
@@ -563,7 +560,7 @@ func AssertWarmChecked(tb assert.TB, f Fixture, warm, cold string) {
 	copied(tb, f, cold)
 	assert.NoError(tb, f.Edit(cold), "the fixture's edit applies in the cold directory")
 	c := built(tb, f, cold, plansOf(tb, f), func(b *workspace.Builder) { b.Checks(coldCheck) })
-	_, err = ran(f, c, cold)
+	_, err = ran(tb, f, c, cold)
 	assert.NoError(tb, err, "the cold run over the edited tree is clean")
 	assert.Length(tb, coldCheck.called, 1, "the cold run calls the check once")
 	got, want := warmCheck.called[1].Plans[0], coldCheck.called[0].Plans[0]
@@ -620,7 +617,7 @@ func withoutLast(tb assert.TB, f Fixture, root string) (*workspace.Report, map[s
 
 	plans := plansOf(tb, f)
 	w := built(tb, f, root, plans[:len(plans)-1], nil)
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the run without the last plan is clean")
 	return report, rundir.Framed(tb, root, w.Brand())
 }
@@ -630,8 +627,9 @@ func withoutLast(tb assert.TB, f Fixture, root string) (*workspace.Report, map[s
 // two runs, it moves the modification time of every file under root
 // outside the state directory into the past, as the files of a tree that
 // nobody edits are, so no record of the sealed state is racily clean. The
-// warm run hashes each file that the cold run wrote, whose record proves
-// nothing yet, so every record proves its file after it. It returns the
+// warm run hashes each file that the cold run wrote, because a record of
+// the cold run does not yet show that its file is unchanged. After the
+// warm run, every record shows its file unchanged. It returns the
 // workspace and the report of the warm run, and stops the check where a
 // run returns an error.
 func settled(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *workspace.Report) {
@@ -641,10 +639,10 @@ func settled(tb assert.TB, f Fixture, root string) (*workspace.Workspace, *works
 	copied(tb, f, root)
 	w := built(tb, f, root, plans, nil)
 	aged(tb, root, w.Brand())
-	_, err := ran(f, w, root)
+	_, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the fixture's plans run clean")
 	aged(tb, root, w.Brand())
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the warm run that settles the records is clean")
 	return w, report
 }

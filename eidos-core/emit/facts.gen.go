@@ -49,7 +49,7 @@ func statedFacts(
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindFunction, symbol.FactTypeParams)
 		}
-		if len(x.Returns) > 1 {
+		if x.Returns.Len() > 1 {
 			f(host, symbol.KindFunction, symbol.FactMultiReturn)
 		}
 		if len(x.Throws) > 0 {
@@ -61,10 +61,10 @@ func statedFacts(
 		for _, child := range x.TypeParams {
 			statedFacts(x, child, f)
 		}
-		for _, child := range x.Params {
+		for _, child := range x.Params.Items() {
 			statedFacts(x, child, f)
 		}
-		for _, child := range x.Returns {
+		for _, child := range x.Returns.Items() {
 			statedFacts(x, child, f)
 		}
 	case *Method:
@@ -104,10 +104,19 @@ func statedFacts(
 		if x.Hard {
 			f(host, symbol.KindMethod, symbol.FactHardPrivate)
 		}
+		if x.Optional {
+			f(host, symbol.KindMethod, symbol.FactOptional)
+		}
+		if x.Mutability != 0 {
+			f(host, symbol.KindMethod, symbol.FactMutability)
+		}
+		if x.Computed {
+			f(host, symbol.KindMethod, symbol.FactComputed)
+		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindMethod, symbol.FactTypeParams)
 		}
-		if len(x.Returns) > 1 {
+		if x.Returns.Len() > 1 {
 			f(host, symbol.KindMethod, symbol.FactMultiReturn)
 		}
 		if len(x.Throws) > 0 {
@@ -122,10 +131,10 @@ func statedFacts(
 		for _, child := range x.TypeParams {
 			statedFacts(x, child, f)
 		}
-		for _, child := range x.Params {
+		for _, child := range x.Params.Items() {
 			statedFacts(x, child, f)
 		}
-		for _, child := range x.Returns {
+		for _, child := range x.Returns.Items() {
 			statedFacts(x, child, f)
 		}
 	case *Param:
@@ -167,6 +176,9 @@ func statedFacts(
 		}
 		if x.Const {
 			f(host, symbol.KindEnum, symbol.FactConstEnum)
+		}
+		if x.Underlying != nil {
+			f(host, symbol.KindEnum, symbol.FactUnderlying)
 		}
 		if x.Fields.Len() > 0 {
 			f(host, symbol.KindEnum, symbol.FactFields)
@@ -250,10 +262,13 @@ func statedFacts(
 		if x.Optional {
 			f(host, symbol.KindField, symbol.FactOptional)
 		}
+		if x.Computed {
+			f(host, symbol.KindField, symbol.FactComputed)
+		}
 		if x.Value != "" {
 			f(host, symbol.KindField, symbol.FactValue)
 		}
-		if x.Tag != "" {
+		if x.Tags.Len() > 0 {
 			f(host, symbol.KindField, symbol.FactTag)
 		}
 		if len(x.Annotations) > 0 {
@@ -310,7 +325,7 @@ func statedFacts(
 		if x.Types.Len() > 0 {
 			f(host, symbol.KindStruct, symbol.FactTypes)
 		}
-		if len(x.Embeds) > 0 {
+		if x.Embeds.Len() > 0 {
 			f(host, symbol.KindStruct, symbol.FactEmbeds)
 		}
 		if len(x.Extends) > 0 {
@@ -337,7 +352,7 @@ func statedFacts(
 		for _, child := range x.Types.Items() {
 			statedFacts(x, child, f)
 		}
-		for _, child := range x.Embeds {
+		for _, child := range x.Embeds.Items() {
 			statedFacts(x, child, f)
 		}
 	case *Interface:
@@ -359,7 +374,7 @@ func statedFacts(
 		if x.Types.Len() > 0 {
 			f(host, symbol.KindInterface, symbol.FactTypes)
 		}
-		if len(x.Embeds) > 0 {
+		if x.Embeds.Len() > 0 {
 			f(host, symbol.KindInterface, symbol.FactEmbeds)
 		}
 		if len(x.Extends) > 0 {
@@ -383,7 +398,7 @@ func statedFacts(
 		for _, child := range x.Types.Items() {
 			statedFacts(x, child, f)
 		}
-		for _, child := range x.Embeds {
+		for _, child := range x.Embeds.Items() {
 			statedFacts(x, child, f)
 		}
 	case *Alias:
@@ -456,6 +471,9 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactIndexer,
 			symbol.FactConstructs,
 			symbol.FactHardPrivate,
+			symbol.FactOptional,
+			symbol.FactMutability,
+			symbol.FactComputed,
 			symbol.FactTypeParams,
 			symbol.FactMultiReturn,
 			symbol.FactThrows,
@@ -480,6 +498,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactConstEnum,
+			symbol.FactUnderlying,
 			symbol.FactFields,
 			symbol.FactMethods,
 			symbol.FactAnnotations,
@@ -507,6 +526,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactMutability,
 			symbol.FactHardPrivate,
 			symbol.FactOptional,
+			symbol.FactComputed,
 			symbol.FactValue,
 			symbol.FactTag,
 			symbol.FactAnnotations,

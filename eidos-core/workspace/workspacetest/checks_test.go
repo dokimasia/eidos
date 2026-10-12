@@ -32,11 +32,12 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 )
 
-// What the broken fixtures add: a file no plan generates, the plan and
-// the plugin a rewriting ledger records files under, the digest of no
-// bytes, which a rewriting ledger records for an added file, and the
-// namespace the audit check claims, pinned so a composition can claim
-// it first.
+// These constants are the parts that the broken fixtures add. They are a
+// file that no plan generates, the plan and the plugin of the files that
+// a rewriting ledger records, the digest of no bytes that a rewriting
+// ledger records for an added file, the namespace of the audit check,
+// which a composition can claim first, and the name of a declaration
+// that the tree does not declare.
 const (
 	missingFile                = "svc/store/missing.txt"
 	otherPlan                  = "elsewhere"
@@ -50,31 +51,33 @@ const (
 // change the export of the plan that mirrors Row.
 const renamedSource = "package svc/store\ntype Record int string\n"
 
-// A config file at the root of a tree, which no frontend claims, and its
-// bytes.
+// configFile is a config file at the root of a tree, which no frontend
+// claims, and configBody is its content.
 const (
 	configFile = ".fixture.yaml"
 	configBody = "version: 1\n"
 )
 
-// The template of a family that claims its files, and its text, which
-// writes one struct for each record.
+// claimTemplate is the template of a family that claims its files, and
+// claimText is its text, which writes one struct for each record.
 const (
 	claimTemplate = "stub.tmpl"
 	claimText     = "{{range .Records}}type {{.Decl.Name}} struct{}\n{{end}}"
 )
 
-// The sealed state's directory inside the brand's state directory, which
-// one fixture's edit removes, the ordinal of the cold run among the runs
-// over one fixture, and the generator that reports the run it runs in.
+// stateDir is the directory of the sealed state inside the state
+// directory of the brand, which the edit of one fixture removes. coldRun
+// is the ordinal of the cold run among the runs over one fixture, because
 // AssertWarmEdited runs twice in its warm directory before the cold run.
+// noterID is the generator that reports the number of its run.
 const (
 	stateDir           = "state"
 	coldRun            = 3
 	noterID  plugin.ID = "noter"
 )
 
-// The contracts of the checks that more than one case pins.
+// These constants are the contracts of the checks that more than one case
+// pins.
 const (
 	builds    = "the fixture's composition builds"
 	generated = "the files under the brand's frame are the fixture's wanted files, byte for byte"
@@ -84,10 +87,15 @@ const (
 // not declare, which a rewriting ledger records as every file's source.
 var otherSource = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: rowPkg, Name: otherDeclaration}.String()
 
-// errLocked is what the locked ledger's open returns.
+// errLocked is the error that the open of the locked ledger returns.
 var errLocked = errors.New("workspacetest_test: the state directory is locked")
 
-// runCode is the code the run-counting generators report under.
+// errUnconfigured is the error of a composition whose config does not
+// decode.
+var errUnconfigured = errors.New("workspacetest_test: the config file does not decode")
+
+// runCode is the code of the findings of the generators that count their
+// runs.
 var runCode = diag.MustRegister(diag.Prefix("WSWARM"), diag.CodeSpec{
 	Number:  1,
 	Meaning: "a warm-check fixture reports the run its generator runs in",
@@ -103,15 +111,15 @@ type importing struct {
 func (*importing) ImportOf(_ plugin.ImportScope, file string) string { return file }
 
 // The checks exist to catch compositions that break the workspace
-// frame, so the broken ones are composed and each check's own failure is
-// asserted.
+// frame, so each case composes a broken composition and asserts the
+// failure of the check.
 func TestChecks(t *testing.T) {
 	t.Parallel()
 
 	t.Run("AssertGenerated", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a fixture that states no tree", func(t *testing.T) {
+		t.Run("rejects a fixture without a tree", func(t *testing.T) {
 			t.Parallel()
 
 			bare := fixture(t)
@@ -120,8 +128,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to copy", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, bare, root)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states a tree"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has a tree"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects a directory that already contains the tree", func(t *testing.T) {
@@ -135,7 +143,7 @@ func TestChecks(t *testing.T) {
 				"the rejection names the step that failed")
 		})
 
-		t.Run("rejects a fixture that states no plans", func(t *testing.T) {
+		t.Run("rejects a fixture without plans", func(t *testing.T) {
 			t.Parallel()
 
 			planless := fixture(t)
@@ -144,8 +152,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to compose", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, planless, root)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states its plans"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has plans"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects a fixture of one plan", func(t *testing.T) {
@@ -163,7 +171,7 @@ func TestChecks(t *testing.T) {
 			assert.Equal(t, got, any(1), "the record shows the fixture's one plan")
 		})
 
-		t.Run("rejects a fixture that states no composition", func(t *testing.T) {
+		t.Run("rejects a fixture without a composition", func(t *testing.T) {
 			t.Parallel()
 
 			bare := fixture(t)
@@ -172,8 +180,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to run", func(tb assert.TB) {
 				workspacetest.AssertGenerated(tb, bare, root)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states a composition"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has a composition"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects a composition that does not build", func(t *testing.T) {
@@ -186,12 +194,28 @@ func TestChecks(t *testing.T) {
 			assert.Equal(t, coretest.Contracts(records), []string{builds}, "the rejection names the step that failed")
 		})
 
+		t.Run("rejects a composition that returns an error", func(t *testing.T) {
+			t.Parallel()
+
+			unconfigured := fixture(t)
+			unconfigured.Compose = func(string) (*workspace.Builder, error) { return nil, errUnconfigured }
+			root := t.TempDir()
+			records := assert.Rejects(t, "a composition whose config does not decode", func(tb assert.TB) {
+				workspacetest.AssertGenerated(tb, unconfigured, root)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture's composition configures"},
+				"the rejection names the step that failed")
+			got, _ := records[0].Got()
+			err, _ := got.(error)
+			assert.ErrorIs(t, err, errUnconfigured, "the record contains the error of the composition")
+		})
+
 		t.Run("rejects plans that do not run clean", func(t *testing.T) {
 			t.Parallel()
 
 			locked := fixture(t)
-			locked.Compose = func(root string) *workspace.Builder {
-				return onDisk(root).Ledger(func() (ledger.Ledger, error) { return nil, errLocked })
+			locked.Compose = func(root string) (*workspace.Builder, error) {
+				return onDisk(root).Ledger(func() (ledger.Ledger, error) { return nil, errLocked }), nil
 			}
 			root := t.TempDir()
 			records := assert.Rejects(t, "a ledger that does not open", func(tb assert.TB) {
@@ -300,7 +324,7 @@ func TestChecks(t *testing.T) {
 				},
 			},
 			{
-				name: "rejects a record that names another plugin",
+				name: "rejects a record that lists another plugin",
 				edit: func(_ int, m manifest.Manifest) manifest.Manifest {
 					for i := range m.Files {
 						m.Files[i].Plugins = []plugin.ID{otherPlugin}
@@ -331,7 +355,9 @@ func TestChecks(t *testing.T) {
 					if !slices.ContainsFunc(m.Files, func(e manifest.Entry) bool { return e.Path == missingFile }) {
 						missing := manifest.Entry{Path: missingFile, Plan: mirrorsPlan, Hash: emptyDigest}
 						m.Files = append(m.Files, missing)
-						slices.SortFunc(m.Files, byPath)
+						slices.SortFunc(m.Files, func(a, b manifest.Entry) int {
+							return strings.Compare(a.Path, b.Path)
+						})
 					}
 					return m
 				},
@@ -391,7 +417,7 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Equal(t, coretest.Contracts(records),
 				[]string{"the fixture's last plan " + idlePlan + " routes a file"},
-				"the rejection names what the last plan owes")
+				"the rejection reports the missing file of the last plan")
 		})
 	})
 
@@ -407,15 +433,15 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Equal(t, coretest.Contracts(records),
 				[]string{"the fixture's first plan emits a unit that derives from a source declaration"},
-				"the rejection names what the first plan owes")
+				"the rejection reports the missing unit of the first plan")
 		})
 
 		t.Run("rejects a composition that claims the suite's namespace", func(t *testing.T) {
 			t.Parallel()
 
 			claiming := fixture(t)
-			claiming.Compose = func(root string) *workspace.Builder {
-				return onDisk(root).Keys(func(r *meta.Registry) error { return r.ClaimNamespace(suiteNamespace) })
+			claiming.Compose = func(root string) (*workspace.Builder, error) {
+				return onDisk(root).Keys(func(r *meta.Registry) error { return r.ClaimNamespace(suiteNamespace) }), nil
 			}
 			root := t.TempDir()
 			records := assert.Rejects(t, "a composition the suite's key cannot register in", func(tb assert.TB) {
@@ -426,7 +452,8 @@ func TestChecks(t *testing.T) {
 			got, _ := records[0].Got()
 			err, _ := got.(error)
 			assert.HasError(t, err, "the record contains Build's error")
-			assert.Contains(t, err.Error(), suiteNamespace, "which names the namespace claimed twice")
+			assert.Contains(t, err.Error(), suiteNamespace,
+				"the error contains the namespace that two registrants claim")
 		})
 	})
 
@@ -443,7 +470,7 @@ func TestChecks(t *testing.T) {
 				workspacetest.AssertChecked(tb, empty, root)
 			})
 			assert.Equal(t, coretest.Contracts(records), []string{"the fixture's tree contains a file"},
-				"the rejection names what the tree owes")
+				"the rejection reports the missing file of the tree")
 		})
 
 		t.Run("rejects a record that lists the read files under another plan", func(t *testing.T) {
@@ -468,7 +495,7 @@ func TestChecks(t *testing.T) {
 			workspacetest.AssertWarmEdited(t, fixture(t), t.TempDir(), t.TempDir())
 		})
 
-		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+		t.Run("rejects a fixture without an edit", func(t *testing.T) {
 			t.Parallel()
 
 			uneditable := fixture(t)
@@ -477,8 +504,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
 				workspacetest.AssertWarmEdited(tb, uneditable, warm, cold)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has an edit"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects an edit that leaves the first plan's files unchanged", func(t *testing.T) {
@@ -546,9 +573,10 @@ func TestChecks(t *testing.T) {
 				t.Parallel()
 
 				warm, cold := t.TempDir(), t.TempDir()
-				records := assert.Rejects(t, "a run that tells the warm run from the cold one", func(tb assert.TB) {
-					workspacetest.AssertWarmEdited(tb, tt.fixture(t), warm, cold)
-				})
+				records := assert.Rejects(t, "a run whose warm result differs from its cold result",
+					func(tb assert.TB) {
+						workspacetest.AssertWarmEdited(tb, tt.fixture(t), warm, cold)
+					})
 				assert.Equal(t, coretest.Contracts(records), tt.want,
 					"the rejection names what the two runs disagree on")
 			})
@@ -569,6 +597,7 @@ func TestChecks(t *testing.T) {
 				"the run over an unchanged tree reads the sealed state",
 				"the run over an unchanged tree hashes no file",
 				"the run over an unchanged tree parses no unit",
+				"the run over an unchanged tree runs no invocation of " + string(loweringID),
 				"the run over an unchanged tree runs no invocation of " + string(mirrorID),
 				"the run over an unchanged tree runs no invocation of " + string(stubberID),
 			}, "the rejection names the work that the cold run does")
@@ -612,7 +641,7 @@ func TestChecks(t *testing.T) {
 				workspacetest.AssertTouched(tb, unclaimed, root)
 			})
 			assert.Equal(t, coretest.Contracts(records), []string{"a frontend claims a file of the fixture's tree"},
-				"the rejection names what the tree owes")
+				"the rejection reports the missing claim of the tree")
 		})
 	})
 
@@ -623,12 +652,12 @@ func TestChecks(t *testing.T) {
 			t.Parallel()
 
 			stateless := fixture(t)
-			stateless.Compose = func(root string) *workspace.Builder {
+			stateless.Compose = func(root string) (*workspace.Builder, error) {
 				return workspace.New().
 					Brand(fixtureBrand).
 					Frontends(frontendtest.NewScripted()).
 					Targets(fixtureTarget).
-					Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) })
+					Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }), nil
 			}
 			root := t.TempDir()
 			records := assert.Rejects(t, "a composition without a ledger", func(tb assert.TB) {
@@ -642,7 +671,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertRestored", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+		t.Run("rejects a fixture without an edit", func(t *testing.T) {
 			t.Parallel()
 
 			uneditable := fixture(t)
@@ -651,8 +680,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to revert", func(tb assert.TB) {
 				workspacetest.AssertRestored(tb, uneditable, root)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has an edit"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects an edit that leaves the tree unchanged", func(t *testing.T) {
@@ -672,13 +701,13 @@ func TestChecks(t *testing.T) {
 			t.Parallel()
 
 			importer := fixture(t)
-			importer.Compose = func(root string) *workspace.Builder {
+			importer.Compose = func(root string) (*workspace.Builder, error) {
 				return workspace.New().
 					Brand(fixtureBrand).
 					Frontends(&importing{frontendtest.NewScripted()}).
 					Targets(fixtureTarget).
 					Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
-					Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
+					Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) }), nil
 			}
 			workspacetest.AssertRestored(t, importer, t.TempDir())
 		})
@@ -687,7 +716,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertExportCutoff", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+		t.Run("rejects a fixture without an edit", func(t *testing.T) {
 			t.Parallel()
 
 			uneditable := fixture(t)
@@ -696,8 +725,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
 				workspacetest.AssertExportCutoff(tb, uneditable, root)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has an edit"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects an edit that changes the first plan's export", func(t *testing.T) {
@@ -719,7 +748,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertWarmChecked", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+		t.Run("rejects a fixture without an edit", func(t *testing.T) {
 			t.Parallel()
 
 			uneditable := fixture(t)
@@ -728,8 +757,8 @@ func TestChecks(t *testing.T) {
 			records := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
 				workspacetest.AssertWarmChecked(tb, uneditable, warm, cold)
 			})
-			assert.Equal(t, coretest.Contracts(records), []string{"the fixture states an edit"},
-				"the rejection names what the fixture owes")
+			assert.Equal(t, coretest.Contracts(records), []string{"the fixture has an edit"},
+				"the rejection reports the missing part of the fixture")
 		})
 
 		rejections := []struct {
@@ -754,7 +783,7 @@ func TestChecks(t *testing.T) {
 				t.Parallel()
 
 				warm, cold := t.TempDir(), t.TempDir()
-				records := assert.Rejects(t, "a run that tells the warm call from the cold one", func(tb assert.TB) {
+				records := assert.Rejects(t, "a call whose warm reads differ from its cold reads", func(tb assert.TB) {
 					workspacetest.AssertWarmChecked(tb, tt.fixture(t), warm, cold)
 				})
 				assert.Equal(t, coretest.Contracts(records), tt.want,
@@ -770,8 +799,8 @@ func forgetful(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
 	f := fixture(t)
-	f.Compose = func(root string) *workspace.Builder {
-		return onDisk(root).Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil })
+	f.Compose = func(root string) (*workspace.Builder, error) {
+		return onDisk(root).Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil }), nil
 	}
 	return f
 }
@@ -792,7 +821,7 @@ func unbranded(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
 	f := fixture(t)
-	f.Compose = func(string) *workspace.Builder { return workspace.New() }
+	f.Compose = func(string) (*workspace.Builder, error) { return workspace.New(), nil }
 	return f
 }
 
@@ -805,10 +834,10 @@ func rewritten(t *testing.T, edit coretest.Edit) workspacetest.Fixture {
 
 	f := fixture(t)
 	var runs atomic.Int64
-	f.Compose = func(root string) *workspace.Builder {
+	f.Compose = func(root string) (*workspace.Builder, error) {
 		return onDisk(root).Ledger(func() (ledger.Ledger, error) {
 			return coretest.NewRewriting(t.Context(), root, fixtureBrand, int(runs.Add(1)), edit)
-		})
+		}), nil
 	}
 	return f
 }
@@ -830,11 +859,6 @@ func forgetting(plan string) coretest.Edit {
 		}
 		return m
 	}
-}
-
-// byPath orders two entries by path, the order a record keeps.
-func byPath(a, b manifest.Entry) int {
-	return strings.Compare(a.Path, b.Path)
 }
 
 // writeRow writes Row's source file under root.
@@ -891,24 +915,27 @@ func recordedOtherCold(t *testing.T) workspacetest.Fixture {
 	})
 }
 
-// packagedPerRun returns the fixture whose first plan's backend names
-// the package of each file it routes after the number of files it routed,
-// so the two runs leave the same files and export different packages.
+// packagedPerRun returns the fixture whose backend names the package of
+// each file that it routes after the number of files that it routed, so
+// the two runs leave the same files and export different packages. Both
+// plans render through the backend, as a target renders through one
+// backend.
 func packagedPerRun(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
 	f := fixture(t)
 	var routed atomic.Int64
 	f.Plans = func() []workspace.Plan {
-		first := mirrors()
-		first.Backend = printing(plugin.ID(mirrorsPlan + "-printer")).
+		packaged := printing().
 			Packages(func(at plugin.Placement) (symbol.Identity, error) {
 				pkg := at.Origin
 				pkg.Name = fmt.Sprintf("routed%d", routed.Add(1))
 				return pkg, nil
 			}).
 			Build()
-		return []workspace.Plan{first, stubs()}
+		first, second := mirrors(), stubs()
+		first.Backend, second.Backend = packaged, packaged
+		return []workspace.Plan{first, second}
 	}
 	return f
 }
@@ -917,29 +944,23 @@ func packagedPerRun(t *testing.T) workspacetest.Fixture {
 // per-package family of stubber that claims its files through
 // [claimTemplate], and that depends on mirrors.
 func claimedStubs() workspace.Plan {
-	p, held := eidos.NewPlugin(stubberID).
+	p := eidos.NewPlugin(stubberID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: stubWord, Template: claimTemplate}).
 		Templates(fstest.MapFS{claimTemplate: {Data: []byte(claimText)}}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-			e.PackageFile().Record(m.Struct.Name, &emit.Struct{Origin: m.Struct.Identity(), Name: m.Struct.Name + "Stub"})
+			stub := &emit.Struct{Origin: m.Struct.Identity(), Name: m.Struct.Name + "Stub"}
+			e.PackageFile().Record(m.Struct.Name, stub)
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspacetest_test: an emitter rule lowers to the generator role")
-	}
+		})).Generator()
 	return planOf(stubsPlan, p, mirrorsPlan)
 }
 
 // counting returns a generator named id that calls report once per struct
 // in scope and emits nothing.
 func counting(id plugin.ID, report func(*eidos.StructMatch)) plugin.Generator {
-	p, held := eidos.NewPlugin(id).
+	return eidos.NewPlugin(id).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
 			report(m)
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspacetest_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }

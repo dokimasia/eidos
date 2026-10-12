@@ -102,6 +102,11 @@ type KeySpec struct {
 	// Doc states the key's semantics. Registration refuses an empty
 	// one.
 	Doc string
+	// Derived is true for a key whose value the registrant derives from
+	// other keys, such as a summary of a set of keys. A meta directive
+	// cannot drop a derived key, so a drop removes the facts that every
+	// reader reads.
+	Derived bool
 }
 
 // Completeness is a coverage promise: the key is stamped on every

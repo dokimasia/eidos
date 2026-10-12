@@ -57,7 +57,8 @@
 // [AmbiguousOverride], [NoDestination], [EscapingPath],
 // [PathCollision], [UnderivedPackage] and [UntranslatedReference]. A
 // contradiction in the configuration is a fault [Config.Check] returns
-// at Build, and never a finding.
+// at Build, and never a finding. [Describe] names a declaration in these
+// findings, and the workspace names a file's first declaration with it.
 //
 // # Dependency position
 //

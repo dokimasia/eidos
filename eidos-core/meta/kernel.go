@@ -22,9 +22,9 @@ const (
 // frontend's own namespace.
 const (
 	// ModuleKey is a package's toolchain-module identity: a Go
-	// module path, a Maven artifact, a crate name. A package
-	// outside every module has none, which is what a bare directory
-	// tree loads as.
+	// module path, a Maven artifact, a crate name or the name of an
+	// npm package. A package outside every module has none, which is
+	// what a bare directory tree loads as.
 	ModuleKey KeyName = "gen.module"
 
 	// ModuleRootKey is the workspace-relative directory the

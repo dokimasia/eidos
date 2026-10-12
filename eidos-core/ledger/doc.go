@@ -21,9 +21,10 @@
 //
 // # The lock
 //
-// A [Locker] admits one holder at a time. [Dir.Lock] takes the operating
-// system's lock on the directory's lock file, which ends with the
-// holder's process, and [Mem.Lock] takes a lock within the process. The
+// A [Ledger] admits one holder of its lock at a time. [Dir.Lock] takes
+// the lock of the operating system on the lock file of the directory,
+// which ends with the process of the holder, and [Mem.Lock] takes a lock
+// within the process. The
 // holder records itself as a [Holder] in lock.json beside the lock file
 // until its release, and a contender that finds the lock taken returns a
 // [LockedError] that names the holder. [LockPath] is the lock file of a

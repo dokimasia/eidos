@@ -22,19 +22,20 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// stampAllocs is an annotate phase call over the invocation fixture
-// whose invocations each stamp a second key on a target with a claim:
-// each target's map of keys with its first group and the claim's state,
-// three allocations, and the key's index, which allocates twelve times
-// to contain 100 members. A first claim on a target also inserts into
-// the fact store's sync.Map, whose trie grows by a number of nodes the
-// hashes decide, so the cases stamp a second key, whose count is exact.
+// stampAllocs counts the allocations of an annotate phase call over the
+// invocation fixture, whose invocations each stamp a second key on a
+// target with a claim. Each target allocates its map of keys with its
+// first group and the state of the claim, three allocations, and the
+// index of the key allocates twelve times to contain 100 members. A first
+// claim on a target also inserts into the sync.Map of the fact store,
+// whose trie grows by a number of nodes that the hashes decide, so the
+// cases stamp a second key, whose count is exact.
 const stampAllocs = 3*invocationStructs + 12
 
-// stampCase is one annotate phase call over the invocation fixture,
-// named as its benchmark is. fresh returns a context of the call's
-// own, whose fact store has the first key's claim on every target, and
-// targets lists the identities the call stamps the second key on.
+// stampCase is one annotate phase call over the invocation fixture, with
+// the name of its benchmark. fresh returns a context of the call, whose
+// fact store has the claim of the first key on every target, and targets
+// lists the identities on which the call stamps the second key.
 type stampCase struct {
 	name    string
 	ann     plugin.Annotator
@@ -55,9 +56,10 @@ func (c stampCase) check(tb assert.TB, ctx *plugin.AnnotatorContext) {
 	}
 }
 
-// The stamper binds the claim envelope once, for every plugin: the
-// rank fields, the canonical sequence and the derivation are what
-// arbitration and attribution read, so each is contract.
+// TestStamper tests that the stamper binds the envelope of a claim once,
+// for every plugin. The rank fields, the canonical sequence and the
+// derivation are what the arbitration and the attribution read, so each
+// is a contract.
 func TestStamper(t *testing.T) {
 	t.Parallel()
 
@@ -78,10 +80,10 @@ func TestStamper(t *testing.T) {
 					eidos.Stamp(st, key, true)
 					return nil
 				})).
-				Build()
+				Annotator()
 
 			ctx := annContext(t, facts, ix)
-			assert.NoError(t, annotatorOf(t, p).Annotate(ctx), "the phase call passes")
+			assert.NoError(t, p.Annotate(ctx), "the phase call passes")
 			assert.False(t, ctx.Sink.Failed(), "nothing is refused")
 
 			got, held := meta.Get(facts, alpha.ID, key)
@@ -95,7 +97,7 @@ func TestStamper(t *testing.T) {
 			assert.Length(t, views, 1, "one claim is on the first subject")
 			claim := views[0].Claim
 			assert.Equal(t, claim.Plugin, plugin.ID("classify"), "the claim has the context's plugin")
-			assert.Equal(t, claim.Bucket, 1, "the claim has the context's bucket")
+			assert.Equal(t, claim.Turn, 1, "the claim has the turn of the context")
 			assert.Equal(t, claim.Authority, meta.AuthorityPlugin, "the claim has plugin authority")
 			assert.Equal(t, claim.Pos, position.Pos{}, "a claim without a gating instance has no position")
 			assert.Equal(t, claim.Order, meta.Order{Subject: alpha.ID},
@@ -120,8 +122,8 @@ func TestStamper(t *testing.T) {
 					eidos.Stamp(st, key, true)
 					return nil
 				}))).
-				Build()
-			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)), "the phase call passes")
+				Annotator()
+			assert.NoError(t, p.Annotate(annContext(t, facts, ix)), "the phase call passes")
 
 			views := slices.Collect(facts.Claims(alpha.ID, key.ID()))
 			assert.Length(t, views, 1, "the gating instance makes one claim")
@@ -143,9 +145,8 @@ func TestStamper(t *testing.T) {
 					eidos.Stamp(st, key, true)
 					return nil
 				})).
-				Build()
-			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
-				"the phase call passes")
+				Annotator()
+			assert.NoError(t, p.Annotate(annContext(t, facts, ix)), "the phase call passes")
 
 			for _, subject := range []symbol.Identity{alpha.ID, beta.ID} {
 				var views []meta.ClaimView
@@ -188,9 +189,8 @@ func TestStamper(t *testing.T) {
 					eidos.Stamp(st, keys[2], true)
 					return nil
 				})).
-				Build()
-			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
-				"the phase call passes")
+				Annotator()
+			assert.NoError(t, p.Annotate(annContext(t, facts, ix)), "the phase call passes")
 
 			derived := func(k meta.Key[bool]) []meta.Read {
 				for v := range facts.Claims(alpha.ID, k.ID()) {
@@ -236,9 +236,8 @@ func TestStamper(t *testing.T) {
 						return nil
 					}),
 				).
-				Build()
-			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
-				"the phase call passes")
+				Annotator()
+			assert.NoError(t, p.Annotate(annContext(t, facts, ix)), "the phase call passes")
 
 			for i, key := range keys {
 				for v := range facts.Claims(beta.ID, key.ID()) {
@@ -285,9 +284,9 @@ func TestStamper(t *testing.T) {
 					eidos.Stamp(st, named, true)
 					return nil
 				})).
-				Build()
+				Annotator()
 			ctx := annContext(t, facts, ix)
-			assert.NoError(t, annotatorOf(t, p).Annotate(ctx), "the refused stamp does not stop the phase")
+			assert.NoError(t, p.Annotate(ctx), "the refused stamp does not stop the phase")
 			assert.Contains(t, coretest.Codes(ctx.Sink), eidos.RefusedStamp, "the stamp is refused")
 			_, held := meta.Get(facts, alpha.ID, key)
 			assert.False(t, held, "a named handle writes nothing")
@@ -298,8 +297,9 @@ func TestStamper(t *testing.T) {
 		t.Parallel()
 
 		// stampOn annotates the fixture graph with a plugin whose handler
-		// stamps the flag on the identity target returns, through the
-		// first subject's stamper, and returns the context and the facts.
+		// stamps the flag on the identity that target returns, through the
+		// stamper of the first subject, and returns the context and the
+		// facts.
 		stampOn := func(tb assert.TB, target func(alpha, beta *node.Struct) symbol.Identity) (
 			*plugin.AnnotatorContext, *meta.Facts, meta.Key[bool],
 		) {
@@ -316,9 +316,9 @@ func TestStamper(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Annotator()
 			ctx := annContext(tb, facts, ix)
-			assert.NoError(tb, annotatorOf(tb, p).Annotate(ctx), "the phase call passes")
+			assert.NoError(tb, p.Annotate(ctx), "the phase call passes")
 			return ctx, facts, key
 		}
 
@@ -358,12 +358,12 @@ func TestStamper(t *testing.T) {
 	})
 }
 
-// A stamp allocates what the fact store keeps for the claim in the
-// ordinary run, which runs no benchmark. Each counted call takes a
-// context built outside the count, because a call leaves its claims in
-// its fact store. Each count keeps the first error of its calls, which
-// cmp.Or returns without allocating. The check runs alone, because the
-// count includes every goroutine's allocations.
+// TestStamperAllocs checks in the ordinary run, which runs no benchmark,
+// that a stamp allocates what the fact store keeps for the claim. Each
+// counted call takes a context built outside the count, because a call
+// leaves its claims in its fact store. Each count keeps the first error of
+// its calls, which cmp.Or returns without allocating. The check runs
+// alone, because the count includes the allocations of every goroutine.
 func TestStamperAllocs(t *testing.T) {
 	for _, tt := range stampCases(t) {
 		var (
@@ -381,8 +381,8 @@ func TestStamperAllocs(t *testing.T) {
 }
 
 // BenchmarkStamper measures an annotate phase call over the invocation
-// fixture that stamps the second key once per invocation, through each
-// stamping function.
+// fixture that stamps the second key once for each invocation, through
+// each stamping function.
 func BenchmarkStamper(b *testing.B) {
 	for _, tt := range stampCases(b) {
 		b.Run(tt.name, func(b *testing.B) {
@@ -409,22 +409,13 @@ func annContext(tb assert.TB, facts *meta.Facts, ix *plugin.Index) *plugin.Annot
 		Facts:  facts,
 		Sink:   diag.NewSink(),
 		Plugin: "classify",
-		Bucket: 1,
+		Turn:   1,
 	}
 }
 
-// annotatorOf builds and asserts the annotator role of a plugin.
-func annotatorOf(tb assert.TB, p plugin.Plugin) plugin.Annotator {
-	tb.Helper()
-
-	ann, ok := p.(plugin.Annotator)
-	assert.True(tb, ok, "stamper rules make the value an annotator")
-	return ann
-}
-
 // refusingRun annotates the fixture graph with a plugin whose every
-// invocation stamps a false boolean, and returns the context, the
-// visit count, the first subject's position and the phase's error.
+// invocation stamps a false boolean. It returns the context, the visit
+// count, the position of the first subject and the error of the phase.
 func refusingRun(tb assert.TB) (*plugin.AnnotatorContext, int, position.Pos, error) {
 	tb.Helper()
 
@@ -440,15 +431,15 @@ func refusingRun(tb assert.TB) (*plugin.AnnotatorContext, int, position.Pos, err
 			eidos.Stamp(st, key, false)
 			return nil
 		})).
-		Build()
+		Annotator()
 	ctx := annContext(tb, facts, ix)
-	err = annotatorOf(tb, p).Annotate(ctx)
+	err = p.Annotate(ctx)
 	return ctx, visited, alpha.Pos, err
 }
 
 // stampCases returns an annotate phase call over the invocation fixture
-// for each stamping function: Stamp on each subject, and StampOn on a
-// type parameter each subject declares.
+// for each stamping function, which are Stamp on each subject and StampOn
+// on a type parameter that each subject declares.
 func stampCases(tb assert.TB) []stampCase {
 	tb.Helper()
 
@@ -479,21 +470,21 @@ func stampCases(tb assert.TB) []stampCase {
 	return []stampCase{
 		{
 			name: "Stamp", fresh: claimed(subjects), targets: subjects, second: second,
-			ann: annotatorOf(tb, eidos.NewPlugin("classify").
+			ann: eidos.NewPlugin("classify").
 				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
 					eidos.Stamp(st, second, true)
 					return nil
 				})).
-				Build()),
+				Annotator(),
 		},
 		{
 			name: "StampOn", fresh: claimed(params), targets: params, second: second,
-			ann: annotatorOf(tb, eidos.NewPlugin("classify").
+			ann: eidos.NewPlugin("classify").
 				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 					eidos.StampOn(st, owned(m.Struct), second, true)
 					return nil
 				})).
-				Build()),
+				Annotator(),
 		},
 	}
 }

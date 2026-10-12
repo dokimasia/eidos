@@ -38,8 +38,8 @@ type Function struct {
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Async       bool               `eidos:"both,fact=Async"`
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
-	Params      []*Param           `eidos:"both,walk"`
-	Returns     []*Return          `eidos:"both,walk,fact=MultiReturn"`
+	Params      []*Param           `eidos:"both,walk,slot=params"`
+	Returns     []*Return          `eidos:"both,walk,slot=returns,fact=MultiReturn"`
 	Throws      []*TypeRef         `eidos:"both,walk,fact=Throws"`
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 	Body        Body               `eidos:"emit"`
@@ -75,6 +75,14 @@ type Function struct {
 // asynchronous result in the language's own form, and the failure
 // types the declaration announces.
 //
+// Optional marks a method that a value of its type may lack, which
+// TypeScript writes as run?(). Mutability states for an index signature
+// whether a holder of the value can assign its entries, which
+// TypeScript writes as a readonly index signature. Every other method
+// leaves it unknown. Computed marks a name that is an expression of the
+// language, such as TypeScript's [Symbol.iterator], and the name is the
+// source text of the expression.
+//
 // The node model records the signature and never a body, and the
 // emit model records a generated body in its Body field.
 //
@@ -97,11 +105,14 @@ type Method struct {
 	Indexer     bool               `eidos:"both,fact=Indexer"`     // an index signature: one key parameter, one result
 	Constructs  bool               `eidos:"both,fact=Constructs"`  // a construct signature on an interface
 	Hard        bool               `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
+	Optional    bool               `eidos:"both,fact=Optional"`    // a value of the type may lack it: TypeScript's ?
+	Mutability  symbol.Mutability  `eidos:"both,fact=Mutability"`  // an index signature: whether a holder can assign its entries
+	Computed    bool               `eidos:"both,fact=Computed"`    // the name is an expression: TypeScript's [expr]
 	Receiver    *Param             `eidos:"both,walk"`             // nil where the receiver is implicit
 	Receives    *TypeRef           `eidos:"both,walk"`             // set when declared outside the type it attaches to
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
-	Params      []*Param           `eidos:"both,walk"`
-	Returns     []*Return          `eidos:"both,walk,fact=MultiReturn"`
+	Params      []*Param           `eidos:"both,walk,slot=params"`
+	Returns     []*Return          `eidos:"both,walk,slot=returns,fact=MultiReturn"`
 	Throws      []*TypeRef         `eidos:"both,walk,fact=Throws"`
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 	Body        Body               `eidos:"emit"`

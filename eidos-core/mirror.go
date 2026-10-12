@@ -9,25 +9,32 @@ import (
 	"go.dokimi.dev/eidos/core/rules"
 )
 
-// Mirror returns an emit method mirroring a node method's
-// signature, type spellings verbatim, origin set. The signature is
-// the name, the visibility, the level, the type parameters, the
-// parameters with their labels, defaults, optional and variadic
-// forms, the results, the async flag and the announced failure
-// types. Receives names host, so the settle scopes the method under
-// its host as it scopes a parsed method.
+// Mirror returns an emit method with the signature of the node method
+// m. It copies the spelling of each type verbatim and sets the origin
+// to the identity of m. The signature consists of the name, the
+// visibility, the level, the type parameters, the parameters, the
+// results, the async flag and the declared failure types. It also
+// consists of the optional mark, the accessor, the index and the
+// construct forms, the hard privacy, the mutability of an index
+// signature and the computed mark. Each parameter keeps its label, its
+// default and its optional and variadic forms. Mirror leaves out the
+// facts of an implementation: abstract, final, override and a default
+// body, because the generator writes the implementation. The Receives
+// field of the result is host, so the settle scopes the method under
+// host as it scopes a parsed method.
 //
-// The receiver is left unset, because its spelling is the target's:
-// a Go stub states a pointer receiver through the Go satellite's
-// helper, and Rust spells self. Imports are collected at render as a
-// side effect of spelling types, so Mirror infers none.
+// Mirror leaves the receiver unset, because each target writes it in
+// its own form. The Go satellite sets a pointer receiver on a stub
+// through its own helper, and the Rust backend renders self. The render
+// collects the imports when it renders the types, so Mirror adds no
+// import.
 //
 // # Allocation contract
 //
-// Mirror allocates the method and its receiving type, and for each
-// list of the signature that has entries the list, each entry and each
-// entry's restated type. A method of one parameter and one return
-// allocates eight times.
+// Mirror allocates the method and its Receives type. For each list of
+// the signature that has entries, it allocates the list, each entry and
+// the restated type of each entry. A method with one parameter and one
+// return allocates eight times.
 func Mirror(host string, m *node.Method) *emit.Method {
 	params := make([]*emit.Param, 0, len(m.Params))
 	for _, p := range m.Params {
@@ -60,28 +67,37 @@ func Mirror(host string, m *node.Method) *emit.Method {
 		Visibility: m.Visibility,
 		Level:      m.Level,
 		Async:      m.Async,
+		Accessor:   m.Accessor,
+		Indexer:    m.Indexer,
+		Constructs: m.Constructs,
+		Hard:       m.Hard,
+		Optional:   m.Optional,
+		Mutability: m.Mutability,
+		Computed:   m.Computed,
 		Receives:   &emit.TypeRef{Spelling: host},
 		TypeParams: MirrorTypeParams(m.TypeParams),
-		Params:     params,
-		Returns:    returns,
+		Params:     emit.SlotOf(params...),
+		Returns:    emit.SlotOf(returns...),
 		Throws:     throws,
 	}
 }
 
 // MirrorTypeParams returns the emit form of the node type parameters tps,
-// in order: each parameter's name, variance, bounds, default, value type
-// and default value, with each type reference restated through
-// [rules.EmitRef]. It returns nil for no parameters. A generator lifts the
-// type parameters of a generic declaration onto the declaration that it
-// emits for it, such as the mock of a generic interface, whose methods
-// name the parameters.
+// in order. Each result has the name, the variance, the bounds, the
+// default, the value type and the default value of its parameter. It
+// restates each type reference through [rules.EmitRef], and returns nil
+// for no parameters. A generator copies the type parameters of a generic
+// declaration to the declaration that it emits for it. The mock of a
+// generic interface needs them, because its methods refer to the
+// parameters.
 //
 // # Allocation contract
 //
 // MirrorTypeParams allocates nothing for no parameters. Otherwise it
-// allocates the list, each parameter, the list of each parameter's bounds,
-// and what [rules.EmitRef] allocates for each bound, default and value
-// type. One parameter with one bound allocates four times.
+// allocates the list, each parameter and the bound list of each
+// parameter. It also allocates what [rules.EmitRef] allocates for each
+// bound, default and value type. One parameter with one bound allocates
+// four times.
 func MirrorTypeParams(tps []*node.TypeParam) []*emit.TypeParam {
 	if len(tps) == 0 {
 		return nil
@@ -93,14 +109,14 @@ func MirrorTypeParams(tps []*node.TypeParam) []*emit.TypeParam {
 	return out
 }
 
-// TypeArgs returns the type parameters tps as the arguments of a
-// reference inside the declaration that declares them, in order, and nil
-// for no parameters. Each argument has the name of its parameter and no
-// target. [Emitter.Type] translates a reference to a type parameter the
-// same way. A generator writes the arguments where a generic declaration
-// that it emits refers to itself or to the declaration that it derives
-// from, such as the interface that the mock of a generic interface
-// implements.
+// TypeArgs returns the type parameters tps, in order, as the type
+// arguments of a reference inside the declaration that declares them.
+// It returns nil for no parameters. Each argument has the name of its
+// parameter and no target. [Emitter.Type] translates a reference to a
+// type parameter the same way. A generator uses the arguments where a
+// generic declaration that it emits refers to itself or to the
+// declaration that it derives from. The mock of a generic interface
+// uses them in the reference to the interface that it implements.
 //
 // # Allocation contract
 //
@@ -117,8 +133,8 @@ func TypeArgs(tps []*emit.TypeParam) []*emit.TypeRef {
 	return out
 }
 
-// mirrorTypeParam restates a node type parameter in the emit model,
-// bounds, default and value type included.
+// mirrorTypeParam returns the emit form of the node type parameter tp,
+// with its bounds, its default and its value type.
 func mirrorTypeParam(tp *node.TypeParam) *emit.TypeParam {
 	out := &emit.TypeParam{
 		Name:         tp.Name,

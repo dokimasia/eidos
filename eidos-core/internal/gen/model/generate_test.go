@@ -22,44 +22,45 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
-// schemaGoMod is the go.mod of a written schema's module.
-// schemaMarker opens every written schema with the marker type, which
-// a field uses to admit any kind.
+// schemaGoMod is the go.mod of the module of a written schema.
+// schemaMarker opens every written schema with the marker type. A field
+// of the marker type admits any kind.
 const (
 	schemaGoMod  = "module example.test/schema\n\ngo 1.27.0\n"
 	schemaMarker = "package schema\n\ntype " + model.MarkerName + " any\n\n"
 )
 
-// The fingerprint's pins: the file that declares it, and the
-// declaration its value follows.
+// fingerprintFile is the file that declares the fingerprint.
+// fingerprintDecl is the declaration that precedes its value.
 const (
 	fingerprintFile = "node/fingerprint.gen.go"
 	fingerprintDecl = "ModelFingerprint = \""
 )
 
-// The enum fixture: a schema that imports the module's symbol
-// package, the symbol sources a case varies, and the file names they
-// arrive under.
+// The enum fixture has a schema that imports the symbol package of the
+// module, the symbol sources that the cases vary, and the names of
+// their files.
 const (
-	// enumSchema imports the symbol package through a field typed by
-	// its anchor, which every symbol source declares.
+	// enumSchema imports the symbol package through a field of the type
+	// Anchor. Every symbol source declares Anchor.
 	enumSchema = "package schema\n\nimport \"example.test/schema/symbol\"\n\n" +
 		"type " + model.MarkerName + " any\n\n" +
 		"// Thing has an anchor.\ntype Thing struct {\n" +
 		"\tAnchor symbol.Anchor `eidos:\"both\"`\n}\n"
-	// factSchema is enumSchema with an emit field stating a fact.
+	// factSchema is enumSchema with an emit field that has a fact tag.
 	factSchema = "package schema\n\nimport \"example.test/schema/symbol\"\n\n" +
 		"type " + model.MarkerName + " any\n\n" +
 		"// Thing has an anchor.\ntype Thing struct {\n" +
 		"\tAnchor symbol.Anchor `eidos:\"both\"`\n" +
 		"\tAsync  bool          `eidos:\"emit,fact=Async\"`\n}\n"
-	// symbolHead opens every symbol source with the anchor type,
-	// which declares no constant and so no enum.
+	// symbolHead opens every symbol source with the type Anchor. Anchor
+	// has no constants, so it is no enum.
 	symbolHead = "package symbol\n\n// Anchor is what the schema imports the package for.\ntype Anchor uint8\n\n"
 	// toneSource declares a two-constant enum.
 	toneSource = symbolHead + "// Tone is a pitch.\ntype Tone uint8\n\n" +
 		"const (\n\tToneLow Tone = iota\n\tToneHigh\n)\n"
-	// toneMidSource inserts a constant into toneSource's list.
+	// toneMidSource is toneSource with a constant in the middle of the
+	// list.
 	toneMidSource = symbolHead + "// Tone is a pitch.\ntype Tone uint8\n\n" +
 		"const (\n\tToneLow Tone = iota\n\tToneMid\n\tToneHigh\n)\n"
 	// toneDocSource is toneSource with other documentation.
@@ -71,47 +72,45 @@ const (
 	// pitchSource is toneSource with the type renamed.
 	pitchSource = symbolHead + "// Pitch is a pitch.\ntype Pitch uint8\n\n" +
 		"const (\n\tToneLow Pitch = iota\n\tToneHigh\n)\n"
-	// wideSource and narrowSource declare a string-typed constant,
-	// which is no enum, at two values.
+	// wideSource and narrowSource declare a string constant with two
+	// different values. A string constant is no enum.
 	wideSource   = toneSource + "\n// Width is a span.\ntype Width string\n\nconst WidthOne Width = \"wide\"\n"
 	narrowSource = toneSource + "\n// Width is a span.\ntype Width string\n\nconst WidthOne Width = \"narrow\"\n"
 	// foreignSource is toneSource with an integer constant of a type
-	// another package declares.
+	// that another package declares.
 	foreignSource = "package symbol\n\nimport \"time\"\n\n" +
 		"// Anchor is what the schema imports the package for.\ntype Anchor uint8\n\n" +
 		"// Tone is a pitch.\ntype Tone uint8\n\nconst (\n\tToneLow Tone = iota\n\tToneHigh\n)\n\n" +
 		"// Tick is a period.\nconst Tick time.Duration = 5\n"
-	// modeOneSource and modeTwoSource are a generated file's enum at
-	// two values.
+	// modeOneSource and modeTwoSource are the enum of a generated file
+	// with two different values.
 	modeOneSource = "package symbol\n\n// Mode is generated.\ntype Mode uint8\n\nconst ModeOne Mode = 1\n"
 	modeTwoSource = "package symbol\n\n// Mode is generated.\ntype Mode uint8\n\nconst ModeOne Mode = 2\n"
-	// symbolFile and generatedSymbolFile are the names the symbol
-	// sources arrive under.
+	// symbolFile and generatedSymbolFile are the file names of the
+	// symbol sources.
 	symbolFile          = "symbol.go"
 	generatedSymbolFile = "mode" + genfile.GeneratedSuffix
 )
 
-// The ceilings of a generation, each measured over 24 fresh processes
-// after one generation, and allowing eight standard deviations above
-// the mean.
+// The allocation budgets of a generation. Each budget is a round number
+// about 5% above one measurement with Go 1.27.2.
 const (
-	// generateAllocs is one generation over the kernel's own schema, the
-	// lowering, every template's execution and every file's formatting:
-	// 2,384,435 on average with a standard deviation of 28.
-	generateAllocs = 2_384_435 + 8*28
+	// generateAllocs is one generation over the kernel's own schema. It
+	// runs the lowering, the execution of every template and the
+	// formatting of every file, and it measured 2,383,183 allocations.
+	generateAllocs = 2_500_000
 	// generateOneKindAllocs is one generation over a schema of one walked
-	// kind: the same templates over a smaller model, 56,447 on average
-	// with a standard deviation of 5.
-	generateOneKindAllocs = 56_447 + 8*5
-	// regenerateOneKindAllocs is one regeneration over the same schema:
-	// the generation and the write of each file, 56,635 on average with
-	// a standard deviation of 4.
-	regenerateOneKindAllocs = 56_635 + 8*4
+	// kind. It runs the same templates over a smaller model, and it
+	// measured 57,967 allocations.
+	generateOneKindAllocs = 61_000
+	// regenerateOneKindAllocs is one regeneration over the same schema.
+	// It adds the write of each file, and it measured 58,142 allocations.
+	regenerateOneKindAllocs = 61_000
 )
 
-// symbolModule is one module a fingerprint case generates from: the
-// schema, the symbol package's hand-written source, and a generated
-// symbol file, empty for none.
+// symbolModule is a module that a fingerprint case generates. It has
+// the schema, the hand-written source of the symbol package, and a
+// generated symbol file. An empty generated file means none.
 type symbolModule struct {
 	schema    string
 	symbol    string
@@ -133,9 +132,9 @@ func (m symbolModule) write(t *testing.T) string {
 	return files.Workspace(t, tree)
 }
 
-// The generator's output set, its bytes across runs, its fingerprint
-// and its refusals are what every mirror guard and unit key reads,
-// so each is contract.
+// Every mirror guard and unit key reads the output set of the
+// generator, its bytes across runs, its fingerprint and its errors.
+// Each of them is part of the contract.
 func TestGenerate(t *testing.T) {
 	t.Parallel()
 
@@ -199,7 +198,7 @@ func TestGenerate(t *testing.T) {
 			set, err := model.Generate(root)
 			assert.NoError(t, err, "the schema generates")
 			assert.NoError(t, genfile.Verify(root, set, model.OwnedDirs),
-				"the committed tree matches the schema; run `make generate` and commit")
+				"the committed tree matches the schema. Run `make generate` and commit the result")
 		})
 
 		fingerprints := []struct {
@@ -277,8 +276,8 @@ func TestGenerate(t *testing.T) {
 			_, err := model.Generate(schemaModule(t, ""))
 			assert.HasError(t, err, "a schema declaring nothing but the marker generates nothing")
 			assert.That(t, err.Error()).
-				Contains("symbols.gen_test.go", "naming the file that could not render against it").
-				HasPrefix("model: ", "under the package prefix")
+				Contains("symbols.gen_test.go", "the error names the file that could not render").
+				HasPrefix("model: ", "the error starts with the package prefix")
 		})
 
 		t.Run("returns an error for a fact stated on a shape the rendering does not model", func(t *testing.T) {
@@ -290,15 +289,15 @@ func TestGenerate(t *testing.T) {
 			assert.HasError(t, err,
 				"a fact whose statedness has no expression fails the generation")
 			assert.That(t, err.Error()).
-				Contains("facts.gen.go", "naming the file whose traversal would otherwise have walked wrong").
-				HasPrefix("genfile: ", "under the prefix of the step that refused it")
+				Contains("facts.gen.go", "the error names the file of the facts traversal").
+				HasPrefix("genfile: ", "the error starts with the prefix of the step that refused the fact")
 		})
 	})
 
 	t.Run("Regenerate", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("writes the models into the module it ran inside", func(t *testing.T) {
+		t.Run("writes the models into the module of its directory", func(t *testing.T) {
 			t.Parallel()
 
 			root := schemaModule(t, reachSchema)
@@ -308,7 +307,7 @@ func TestGenerate(t *testing.T) {
 			set, err := model.Generate(root)
 			assert.NoError(t, err, "the same schema generates in memory")
 			assert.NoError(t, genfile.Verify(root, set, model.OwnedDirs),
-				"and the bytes on disk are what the generator produces")
+				"the bytes on disk are the bytes that the generator produces")
 		})
 
 		t.Run("writes models that a second run reproduces", func(t *testing.T) {
@@ -329,19 +328,19 @@ func TestGenerate(t *testing.T) {
 				"\tCount int `eidos:\"emit,fact=Counted\"`\n}\n")
 			var err error
 			files.Unchanged(t, os.DirFS(root), func() { err = model.Regenerate(root) },
-				"no file is written: a refused render leaves no half-generated tree")
-			assert.HasError(t, err, "a file that cannot render refuses the run")
+				"a refused render writes no file")
+			assert.HasError(t, err, "a file that cannot render fails the run")
 		})
 	})
 }
 
-// A generation and a regeneration of a schema of one kind allocate
-// within their ceilings in the ordinary run, which runs no benchmark.
-// The kernel's own generation takes too long to repeat 101 times, so
-// only [BenchmarkGenerate] checks its ceiling. Each count keeps the
-// first error of its calls, which cmp.Or returns without allocating. The
-// check runs alone, because the count includes every goroutine's
-// allocations.
+// TestGenerateAllocs checks the budgets of a generation and a
+// regeneration of a schema of one kind in a run without benchmarks. The
+// kernel's own generation takes too long to repeat 101 times, so only
+// [BenchmarkGenerate] checks its budget. Each count keeps the first
+// error of its calls with cmp.Or, and cmp.Or does not allocate. The
+// check does not run in parallel, because the count includes the
+// allocations of every goroutine.
 func TestGenerateAllocs(t *testing.T) {
 	root := schemaModule(t, reachSchema)
 	var (
@@ -352,20 +351,20 @@ func TestGenerateAllocs(t *testing.T) {
 		var gerr error
 		set, gerr = model.Generate(root)
 		err = cmp.Or(err, gerr)
-	}, generateOneKindAllocs, "Generate allocates the lowering, the rendering and the formatting")
+	}, generateOneKindAllocs, "Generate allocates within its budget")
 	assert.NoError(t, err, "the schema generates")
-	assert.NotEmpty(t, set, "every output")
+	assert.NotEmpty(t, set, "the set contains every output")
 	dir := filepath.Join(root, model.SchemaDir)
 	assert.MaxAllocs(t, func() { err = cmp.Or(err, model.Regenerate(dir)) }, regenerateOneKindAllocs,
-		"Regenerate allocates the generation and the writes")
+		"Regenerate allocates within its budget")
 	assert.NoError(t, err, "the schema regenerates")
 }
 
-// BenchmarkGenerate measures one whole generation over the kernel's
-// own schema and over a schema of one kind, and a regeneration of the
-// one kind: the lowering, every template's execution and every file's
-// formatting, which the go:generate wrapper and each mirror guard run.
-// Each case runs one iteration before the measurement.
+// BenchmarkGenerate measures one generation over the kernel's own
+// schema and over a schema of one kind, and one regeneration of the
+// schema of one kind. The go:generate wrapper and each mirror guard run
+// the same lowering, templates and formatting. Each case runs one
+// iteration before the measurement.
 func BenchmarkGenerate(b *testing.B) {
 	generations := []struct {
 		name   string
@@ -388,7 +387,7 @@ func BenchmarkGenerate(b *testing.B) {
 					set, err = model.Generate(tt.root)
 				}
 				assert.NoError(b, err, "the schema generates")
-				assert.NotEmpty(b, set, "every output")
+				assert.NotEmpty(b, set, "the set contains every output")
 			})
 		}
 	})
@@ -407,8 +406,8 @@ func BenchmarkGenerate(b *testing.B) {
 	})
 }
 
-// moduleRoot returns the kernel's module root, which every case
-// here generates against.
+// moduleRoot returns the root of the kernel's module. Most cases
+// generate from its schema.
 func moduleRoot(tb assert.TB) string {
 	tb.Helper()
 
@@ -417,8 +416,8 @@ func moduleRoot(tb assert.TB) string {
 	return root
 }
 
-// schemaModule writes one schema into a fresh module root and
-// returns the root, so a case can generate from a schema form the
+// schemaModule writes one schema into a fresh module root and returns
+// the root. A case uses it to generate from a schema form that the
 // kernel's own schema does not contain.
 func schemaModule(tb testing.TB, schema string) string {
 	tb.Helper()
@@ -429,8 +428,8 @@ func schemaModule(tb testing.TB, schema string) string {
 	})
 }
 
-// fingerprintIn returns the value of the fingerprint a generated set
-// declares.
+// fingerprintIn returns the value of the fingerprint that a generated
+// set declares.
 func fingerprintIn(tb assert.TB, set genfile.Set) string {
 	tb.Helper()
 

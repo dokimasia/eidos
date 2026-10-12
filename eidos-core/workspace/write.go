@@ -34,7 +34,8 @@ type stagedFile struct {
 	// the file is positioned.
 	at position.Pos
 	// first is the file's first declaration, which a finding about the
-	// file names through describe, and nil for a file without one.
+	// file names through [layout.Describe], and nil for a file without
+	// one.
 	first symbol.Symbol
 	// pkg is the package the file declares, and findings are what the
 	// render reported about the file. A recording run's groups set group,
@@ -50,24 +51,17 @@ type stagedFile struct {
 // source tree, renders the files and stamps each one. others are the
 // names of the plan's files that a warm run keeps, and nil for a store
 // that contains the whole plan. It returns the stamped files, and the
-// routed files that rendered at the same places. A backend that spells no
-// filenames is a declaration defect the composition already refused, so
-// the assertion here returns an error and does not panic, and so does a
-// defect in the routing's inputs.
+// routed files that rendered at the same places. A defect in the inputs
+// of the routing returns an error.
 func (w *Workspace) write(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink, others plugin.Names,
 ) ([]stagedFile, []plugin.File, error) {
-	speller, spells := pl.backend.(plugin.FileSpeller)
-	if !spells {
-		return nil, nil, fmt.Errorf("backend %s writes output and spells no filenames", pl.backend.Name())
-	}
-	packager, _ := pl.backend.(plugin.Packager)
 	in := layout.Input{
 		Emit:       into,
 		Config:     pl.routing,
 		Outputs:    pl.outputs,
-		Speller:    speller,
-		Packager:   packager,
+		Speller:    pl.backend,
+		Packager:   pl.backend,
 		Index:      ix,
 		Residents:  src.residents,
 		Directives: w.directives,
@@ -86,19 +80,11 @@ func (w *Workspace) write(
 // render drives one plan's backend over the files its layout routed
 // and returns what the backend produced, stamped through the plan's
 // contract, at each file's routed path and in path order. It also returns
-// the routed files the backend rendered, at the same places. A backend
-// that does not render is a declaration defect the composition already
-// refused, so the assertion here returns an error and does not panic.
+// the routed files the backend rendered, at the same places.
 func render(
 	pl *compiledPlan, ix *plugin.Index, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) ([]stagedFile, []plugin.File, error) {
-	renderer, renders := pl.backend.(plugin.Renderer)
-	if !renders {
-		return nil, nil, fmt.Errorf(
-			"backend %s writes output and does not render", pl.backend.Name(),
-		)
-	}
-	rendered, err := renderer.Render(renderContext(pl, into, files, sink))
+	rendered, err := pl.backend.Render(renderContext(pl, into, files, sink))
 	if err != nil {
 		return nil, nil, fmt.Errorf("render: %w", err)
 	}
@@ -161,19 +147,6 @@ func describeFile(staged *stagedFile, f *plugin.File, ix *plugin.Index) {
 			staged.at = pos
 		}
 	}
-}
-
-// describe names a declaration in a finding: its kind and its name, its
-// kind alone for a declaration without a name, and the empty string for
-// none.
-func describe(d symbol.Symbol) string {
-	if d == nil {
-		return ""
-	}
-	if name := emit.DeclaredName(d); name != "" {
-		return d.Kind().String() + " " + name
-	}
-	return d.Kind().String()
 }
 
 // renderContext assembles what the pass reads: the settled store, the

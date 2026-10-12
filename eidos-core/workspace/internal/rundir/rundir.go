@@ -4,7 +4,6 @@
 package rundir
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
@@ -20,8 +19,8 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 )
 
-// digestPrefix names the digest a record's entry states a file's hash
-// in, ahead of the hex digits.
+// digestPrefix is the name of the digest algorithm before the hex digits
+// of the hash of a file in an entry of a record.
 const digestPrefix = "sha256:"
 
 // Files returns the slash-separated path of every file under root,
@@ -41,16 +40,17 @@ func Files(tb assert.TB, root string) []string {
 	return out
 }
 
-// Path returns the operating system's spelling of a slash-separated
-// path under root.
+// Path returns a slash-separated path under root in the form of the
+// operating system.
 func Path(root, slash string) string {
 	return filepath.Join(root, filepath.FromSlash(slash))
 }
 
 // Sealed reports whether a slash-separated path relative to root is in
-// the brand's sealed state: the state directory outside the manifest's
-// documents, which a run rewrites as it records what it read. A warm
-// run and a cold run over one tree may leave different bytes there.
+// the sealed state of the brand. The sealed state is the state directory
+// outside the documents of the manifest, which a run rewrites as it
+// records its reads. A warm run and a cold run over one tree may leave
+// different bytes there.
 func Sealed(brand output.Brand, path string) bool {
 	return strings.HasPrefix(path, ledger.StateDir(brand)+"/") &&
 		!strings.HasPrefix(path, ledger.ManifestPath(brand)+"/")
@@ -58,7 +58,8 @@ func Sealed(brand output.Brand, path string) bool {
 
 // Framed returns the text of every file under root that has the
 // brand's frame, keyed by its slash-separated path relative to root. A
-// file another brand framed is not the run's, and it is absent.
+// file in the frame of another brand is not an output of the run, and
+// the result does not contain it.
 func Framed(tb assert.TB, root string, brand output.Brand) map[string]string {
 	tb.Helper()
 
@@ -73,8 +74,8 @@ func Framed(tb assert.TB, root string, brand output.Brand) map[string]string {
 	return out
 }
 
-// Texts returns a fixture's wanted files as text, keyed as the fixture
-// keys them, so a comparison with [Framed] shows a mismatch as a diff.
+// Texts returns the wanted files of a fixture as text, under the keys of
+// the fixture, so a comparison with [Framed] shows a mismatch as a diff.
 func Texts(want map[string][]byte) map[string]string {
 	out := make(map[string]string, len(want))
 	for path, b := range want {
@@ -84,8 +85,8 @@ func Texts(want map[string][]byte) map[string]string {
 }
 
 // Digest returns the digest of the file at a slash-separated path under
-// root, spelled the way a record's entry states it. It stops the check
-// where the file does not read.
+// root, in the form of the hash in an entry of a record. It stops the
+// check where the file does not read.
 func Digest(tb assert.TB, root, path string) string {
 	tb.Helper()
 
@@ -95,11 +96,12 @@ func Digest(tb assert.TB, root, path string) string {
 	return digestPrefix + hex.EncodeToString(sum[:])
 }
 
-// Record returns the record in the brand's state directory under root:
-// the documents of its manifest, joined, and the empty manifest where
-// the directory contains no document, which is how an empty record is
-// stored. It stops the check where root does not open or a document
-// does not decode.
+// Record returns the record in the state directory of the brand under
+// root, which is the join of the documents of its manifest. It returns
+// the empty manifest where the directory contains no document, because
+// an empty record is stored as no document. It reads the record under
+// the context of tb. It stops the check where root does not open or a
+// document does not decode.
 func Record(tb assert.TB, root string, brand output.Brand) manifest.Manifest {
 	tb.Helper()
 
@@ -108,7 +110,7 @@ func Record(tb assert.TB, root string, brand output.Brand) manifest.Manifest {
 	if err != nil {
 		return manifest.Manifest{}
 	}
-	m, _, err := state.ReadManifest(context.Background(), l)
+	m, _, err := state.ReadManifest(assert.Context(tb), l)
 	assert.NoError(tb, err, "the record's documents decode")
 	return m
 }

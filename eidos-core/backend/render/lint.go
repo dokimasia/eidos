@@ -25,6 +25,9 @@ import (
 //     would strand a pending contribution.
 //   - A helper that shadows a shared name without a declared override,
 //     which the render refuses too.
+//   - A helper that text/template cannot call: a name that is not an
+//     identifier, a value that is not a function, or a function whose
+//     results a template cannot use. The render refuses it too.
 //   - A declared override that replaces no shared name.
 //
 // files are the paths of the file templates of the tree, from the
@@ -49,7 +52,7 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides, files []strin
 	maps.Copy(vocabulary, p.shared)
 	for _, name := range slices.Sorted(maps.Keys(funcs)) {
 		_, shared := p.shared[name]
-		switch admit(name, shared, declared[name]) {
+		switch admit(name, funcs[name], shared, declared[name]) {
 		case claimsBuiltin:
 			findings = append(findings, fmt.Errorf(
 				"render: the helper %q claims a builtin's name", name,
@@ -58,6 +61,10 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides, files []strin
 			findings = append(findings, fmt.Errorf(
 				"render: the helper %q shadows %s's shared vocabulary without declaring the override",
 				name, p.name,
+			))
+		case unbindable:
+			findings = append(findings, fmt.Errorf(
+				"render: the helper %q is not a function that a template can call", name,
 			))
 		case admitted:
 			vocabulary[name] = funcs[name]

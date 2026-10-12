@@ -22,16 +22,16 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The target every settle backend renders to, the backend's name,
-// and the plugin the name stamps speak for.
+// The target of every settle backend, the name of the backend, and the
+// plugin of the name stamps.
 const (
 	settleTarget  plugin.Target = "t"
 	settleBackend plugin.ID     = "golang"
 	stampPlugin                 = "fixture"
 )
 
-// The documentation the name key registers with, the name the
-// override cases write, and the name a kept file settles row to.
+// The documentation of the name key, the name that the override cases
+// write, and the settled name of row in a kept file.
 const (
 	nameDoc      = "a declaration's name in the test target"
 	overrideName = "Record"
@@ -42,33 +42,49 @@ const (
 // name is boxState.
 var nestedState = symbol.Identity{Lang: "fixture", Package: "svc", Owner: "box", Name: "state", Kind: symbol.KindEnum}
 
-// The store the allocation check and the benchmark settle, and the
-// allocations of one settle of it through a respell hook that keeps
-// every name.
+// The store that the allocation check and the benchmark settle, and the
+// allocations of one settle of the store through hooks that keep every
+// construct and every name.
 const (
-	// settleUnits is the number of units the store has.
+	// settleUnits is the number of units of the store.
 	settleUnits = 100
-	// keepingSettleAllocs is the per-kind index rebuilt, a list for each
-	// unit and kind and the kinds' maps as they grow, 224 allocations,
-	// and the plan of the names with the tables the references follow,
-	// each sized once to the store, 19 allocations.
+	// keepingSettleAllocs is the allocation count of a settle through
+	// hooks that keep everything. The rebuilt per-kind index allocates
+	// 224 objects, a list for each unit and kind and the maps of the
+	// kinds as they grow. The plan of the names and the tables that the
+	// references follow allocate 19, each sized once to the store.
 	keepingSettleAllocs = 224 + 19
-	// readLogAllocs is what SettleWith adds to a settle of a store whose
-	// units read nothing: the read log.
+	// readLogAllocs is the allocation count that SettleWith adds to a
+	// settle of a store whose units read nothing. SettleWith allocates
+	// the read log.
 	readLogAllocs = 1
 )
 
-// hookless is the backend without hooks: a name and a target, and
-// nothing the settle would run.
-type hookless struct{ name plugin.ID }
+// hookless is a backend without hooks. It has a name and a target, and
+// its Lower and Respell keep every construct and every name. The methods
+// of a rendering backend belong to the nil interface that it embeds, and
+// the settle calls none of them.
+type hookless struct {
+	plugin.Backend
+	name plugin.ID
+}
 
-// Name returns the backend's name, the origin of its findings.
+// Name returns the name of the backend. The settle reports its findings
+// under this name.
 func (b *hookless) Name() plugin.ID { return b.name }
 
-// Target returns the target every case renders to.
+// Target returns the target of every case.
 func (*hookless) Target() plugin.Target { return settleTarget }
 
-// loweringOnly declares the construct seam alone.
+// Lower keeps the declaration.
+func (*hookless) Lower(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }
+
+// Respell returns the name unchanged.
+func (*hookless) Respell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return name, nil
+}
+
+// loweringOnly is a backend with a lowering hook and no respell hook.
 type loweringOnly struct {
 	hookless
 	fn plugin.Lower
@@ -77,7 +93,7 @@ type loweringOnly struct {
 // Lower lowers one declaration through the case's function.
 func (b *loweringOnly) Lower(s symbol.Symbol) ([]symbol.Symbol, error) { return b.fn(s) }
 
-// respellingOnly declares the name seam alone.
+// respellingOnly is a backend with a respell hook and no lowering hook.
 type respellingOnly struct {
 	hookless
 	fn plugin.Respell
@@ -104,8 +120,8 @@ func respelling(fn plugin.Respell) *respellingOnly {
 	return b
 }
 
-// prefixing returns a backend whose respell hook prefixes every name
-// it is handed, so a case reads the settled spelling off the emitted
+// prefixing returns a backend whose respell hook puts prefix before
+// every name, so a case can derive the settled spelling from the emitted
 // one.
 func prefixing(prefix string) *respellingOnly {
 	return respelling(func(_, _ symbol.Kind, _ symbol.Visibility, n string) (string, error) {
@@ -113,22 +129,22 @@ func prefixing(prefix string) *respellingOnly {
 	})
 }
 
-// capitalizing returns a backend whose respell hook upper-cases a
-// name's first letter, the convention the override cases settle
-// under.
+// capitalizing returns a backend whose respell hook raises the first
+// letter of a name. The override cases settle under this convention.
 func capitalizing() *respellingOnly {
 	return respelling(func(_, _ symbol.Kind, _ symbol.Visibility, n string) (string, error) {
 		return strings.ToUpper(n[:1]) + n[1:], nil
 	})
 }
 
-// respelledStore is the reference-following fixture after its
-// settle: a struct whose field names it and whose method's body
-// reads a local and a parameter, an alias resolved to the struct, a
-// variable of a composite spelling without structure, two variables
-// whose bare references to the struct's name state a package, another
-// one and the struct's own, and variables of structural references
-// over the struct's name.
+// respelledStore is the fixture of the reference cases after its
+// settle. It has a struct whose field refers to the struct and whose
+// method body reads a local and a parameter. It has an alias that
+// resolves to the struct, and a variable of a composite spelling without
+// structure. Two variables have bare references to the name of the
+// struct with a package, one with another package and one with the
+// package of the struct. The other variables have structural references
+// over the name of the struct.
 type respelledStore struct {
 	box       *emit.Struct
 	fetch     *emit.Method
@@ -144,9 +160,9 @@ type respelledStore struct {
 	qualified *emit.Variable
 }
 
-// settleRespelled builds the reference-following fixture and settles
-// it under a hook that marks each name by its place: T at file
-// level, p on a parameter and m on a member.
+// settleRespelled builds the fixture of the reference cases and settles
+// it under a hook that marks each name by its place. The hook puts T
+// before a file-level name, p before a parameter and m before a member.
 func settleRespelled(t *testing.T) respelledStore {
 	t.Helper()
 
@@ -155,7 +171,7 @@ func settleRespelled(t *testing.T) respelledStore {
 	box.Fields.Append(&emit.Field{Name: "item", Type: &emit.TypeRef{Spelling: "box"}})
 	fetch := &emit.Method{
 		Name:   "fetch",
-		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		Params: emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 		Body: emit.Body{Stmts: []emit.Stmt{
 			{
 				Kind: emit.StmtAssign, Names: []string{"state"}, Declare: true,
@@ -231,9 +247,9 @@ func settleRespelled(t *testing.T) respelledStore {
 	}
 }
 
-// ambiguousRow returns a hook that settles a struct and a function
-// of one emitted name apart, and the two declarations in two units,
-// so a bare reference to the name matches diverging spellings.
+// ambiguousRow returns a hook that settles a struct and a function of
+// one emitted name to two names. It also returns the two declarations in
+// two units, so a bare reference to the name matches two spellings.
 func ambiguousRow(extra ...symbol.Symbol) (*respellingOnly, []plugin.Unit) {
 	b := respelling(func(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 		if kind == symbol.KindStruct {
@@ -248,8 +264,8 @@ func ambiguousRow(extra ...symbol.Symbol) (*respellingOnly, []plugin.Unit) {
 	return b, []plugin.Unit{settleUnit("svc", "svc/a.src", append([]symbol.Symbol{rowStruct}, extra...)...), other}
 }
 
-// protectedRefusing returns a hook that refuses a protected name and
-// prefixes a parameter with p.
+// protectedRefusing returns a hook that returns an error for a protected
+// name and puts p before a parameter.
 func protectedRefusing() *respellingOnly {
 	return respelling(func(_, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
 		if v == symbol.VisibilityProtected {
@@ -263,12 +279,12 @@ func protectedRefusing() *respellingOnly {
 }
 
 // verbatimLoad returns a function whose verbatim body reads its
-// parameter, under a hook that respells a parameter to snake case.
+// parameter, and a hook that lowers a parameter name and appends _p.
 func verbatimLoad() (*emit.Function, *respellingOnly) {
 	load := &emit.Function{
 		Origin: settleOrigin("load", symbol.KindFunction),
 		Name:   "load",
-		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		Params: emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 		Body:   emit.Body{Verbatim: "\tuse(rowCount)\n"},
 	}
 	b := respelling(func(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
@@ -280,9 +296,9 @@ func verbatimLoad() (*emit.Function, *respellingOnly) {
 	return load, b
 }
 
-// The settle is the stage between a plan's schedule and its render:
-// constructs lower, names respell, references follow, and the store
-// marks itself settled once.
+// TestSettle tests the settle. The settle runs between the schedule of
+// a plan and its render. It lowers the constructs, respells the names,
+// rewrites the references and marks the store settled.
 func TestSettle(t *testing.T) {
 	t.Parallel()
 
@@ -296,6 +312,18 @@ func TestSettle(t *testing.T) {
 				&emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}))
 			settled(t, e, prefixing("p"))
 			assert.True(t, e.Settled(), "the store marks settled")
+		})
+
+		t.Run("lifts the seal of the slots of the store", func(t *testing.T) {
+			t.Parallel()
+
+			row := &emit.Struct{Origin: settleOrigin("Row", symbol.KindStruct), Name: "Row"}
+			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+			assert.Panics(t, func() { row.Fields.Append(&emit.Field{Name: "id"}) },
+				"the store seals the slots of the struct until the settle")
+			settled(t, e, prefixing("p"))
+			row.Fields.Append(&emit.Field{Name: "id"})
+			assert.Equal(t, row.Fields.Len(), 1, "a lowering hook appends into the struct after the settle starts")
 		})
 
 		t.Run("runs no hook over a settled store", func(t *testing.T) {
@@ -493,7 +521,7 @@ func TestSettle(t *testing.T) {
 			},
 			{
 				name: "respells a parameter under its callable",
-				got:  func(s respelledStore) string { return s.fetch.Params[0].Name }, want: "prowCount",
+				got:  func(s respelledStore) string { return s.fetch.Params.Items()[0].Name }, want: "prowCount",
 			},
 			{
 				name: "rewrites a resolved reference to its origin's settled name",
@@ -575,6 +603,21 @@ func TestSettle(t *testing.T) {
 				&emit.Constant{Origin: settleOrigin("beta", symbol.KindConstant), Name: "beta", Value: "2"},
 			))
 			coretest.AssertCodes(t, settled(t, e, respelling(same)), plugin.CollidingNames)
+		})
+
+		t.Run("reports CollidingNames for two declarations that a lowering gives one name", func(t *testing.T) {
+			t.Parallel()
+
+			twin := lowering(func(s symbol.Symbol) ([]symbol.Symbol, error) {
+				c, is := s.(*emit.Constant)
+				if !is {
+					return nil, nil
+				}
+				return []symbol.Symbol{c, &emit.Constant{Origin: c.Origin, Name: c.Name, Value: c.Value}}, nil
+			})
+			e := storeOf(t, settleUnit("svc", "svc/a.src",
+				&emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}))
+			coretest.AssertCodes(t, settled(t, e, twin), plugin.CollidingNames)
 		})
 
 		// claimedRecord returns a unit of a family that claims its
@@ -761,7 +804,7 @@ func TestSettle(t *testing.T) {
 			load, b := verbatimLoad()
 			e := storeOf(t, settleUnit("svc", "svc/a.src", load))
 			settled(t, e, b)
-			assert.Equal(t, load.Params[0].Name, "rowCount", "the spelling the text reads")
+			assert.Equal(t, load.Params.Items()[0].Name, "rowCount", "the spelling the text reads")
 		})
 
 		t.Run("leaves a verbatim body's text untouched", func(t *testing.T) {
@@ -780,7 +823,7 @@ func TestSettle(t *testing.T) {
 				Origin:   settleOrigin("scan", symbol.KindMethod),
 				Name:     "Scan",
 				Receives: &emit.TypeRef{Spelling: "row"},
-				Params:   []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+				Params:   emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 				Body:     emit.Body{Verbatim: "\tuse(rowCount)\n"},
 			}
 			b := respelling(func(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
@@ -809,7 +852,7 @@ func TestSettle(t *testing.T) {
 			load := &emit.Function{
 				Origin: settleOrigin("load", symbol.KindFunction),
 				Name:   "load",
-				Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+				Params: emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 			}
 			grown := false
 			// A hook that edits the declaration it is handed is a
@@ -818,15 +861,17 @@ func TestSettle(t *testing.T) {
 			b := respelling(func(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 				if kind == symbol.KindParam && !grown {
 					grown = true
-					load.Params = append(load.Params,
-						&emit.Param{Name: "limit", Type: &emit.TypeRef{Spelling: "int"}})
+					load.Params.Append(&emit.Param{Name: "limit", Type: &emit.TypeRef{Spelling: "int"}})
 				}
 				return "p" + name, nil
 			})
 			e := storeOf(t, settleUnit("svc", "svc/a.src", load))
 			coretest.AssertCodes(t, settled(t, e, b))
-			assert.Equal(t, []string{load.Name, load.Params[0].Name, load.Params[1].Name},
-				[]string{"pload", "prowCount", "limit"}, "the planned names settle, and the added one does not")
+			params := load.Params.Items()
+			assert.Length(t, params, 2, "the hook added one parameter")
+			expect.Equal(t, load.Name, "pload", "the planned name of the function settles")
+			expect.Equal(t, params[0].Name, "prowCount", "the planned name of the parameter settles")
+			expect.Equal(t, params[1].Name, "limit", "the added parameter keeps the name that the hook gave it")
 		})
 
 		guarded := []struct {
@@ -923,7 +968,7 @@ func TestSettle(t *testing.T) {
 			load := &emit.Function{
 				Origin: settleOrigin("load", symbol.KindFunction),
 				Name:   "load",
-				Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+				Params: emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 				Body: emit.Body{Stmts: []emit.Stmt{{
 					Kind: emit.StmtReturn, Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"},
 				}}},
@@ -966,12 +1011,12 @@ func TestSettle(t *testing.T) {
 
 			box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
 			box.Methods.Append(
-				&emit.Method{Name: "get", Params: []*emit.Param{
-					{Name: "id", Type: &emit.TypeRef{Spelling: "int"}},
-				}},
-				&emit.Method{Name: "get", Params: []*emit.Param{
-					{Name: "key", Type: &emit.TypeRef{Spelling: "string"}},
-				}},
+				&emit.Method{Name: "get", Params: emit.SlotOf(
+					&emit.Param{Name: "id", Type: &emit.TypeRef{Spelling: "int"}},
+				)},
+				&emit.Method{Name: "get", Params: emit.SlotOf(
+					&emit.Param{Name: "key", Type: &emit.TypeRef{Spelling: "string"}},
+				)},
 			)
 			e := storeOf(t, settleUnit("svc", "svc/a.src", box))
 			coretest.AssertCodes(t, settled(t, e, prefixing("p")))
@@ -1345,29 +1390,39 @@ func TestSettle(t *testing.T) {
 			assert.Empty(t, got.Facts, "no claim can name an unregistered key")
 		})
 
-		t.Run("returns a NameRead for a bare reference when the backend has no respell hook", func(t *testing.T) {
-			t.Parallel()
-
-			e := storeOf(t, settleUnit("svc", "svc/a.src", variableOf("holder", &emit.TypeRef{Spelling: "row"})))
-			assert.Equal(t, readsOf(t, e, plain, nil).Read,
-				[]plugin.NameRead{{Key: plugin.NameKey{Package: "svc", Emitted: "row"}}},
-				"the layout resolves the bare reference")
-		})
-
-		t.Run("returns no NameRead for a resolved reference when the backend has no respell hook", func(t *testing.T) {
+		t.Run("returns a NameRead for a resolved reference that no unit declares", func(t *testing.T) {
 			t.Parallel()
 
 			e := storeOf(t, settleUnit("svc", "svc/a.src",
 				variableOf("holder", &emit.TypeRef{Spelling: "row", Target: rowOrigin})))
-			assert.Empty(t, readsOf(t, e, plain, nil).Read, "a reference with a target reads no name")
+			assert.Equal(t, readsOf(t, e, plain, nil).Read,
+				[]plugin.NameRead{{Key: plugin.NameKey{Origin: rowOrigin, Emitted: "row"}}},
+				"an override of the struct can change the name that the reference renders")
 		})
 
-		t.Run("returns no NameRead for a qualified reference when the backend has no respell hook", func(t *testing.T) {
+		t.Run("returns a NameRead for a bare reference without a backend", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src", variableOf("holder", &emit.TypeRef{Spelling: "row"})))
+			assert.Equal(t, readsOf(t, e, nil, nil).Read,
+				[]plugin.NameRead{{Key: plugin.NameKey{Package: "svc", Emitted: "row"}}},
+				"the layout resolves the bare reference")
+		})
+
+		t.Run("returns no NameRead for a resolved reference without a backend", func(t *testing.T) {
+			t.Parallel()
+
+			e := storeOf(t, settleUnit("svc", "svc/a.src",
+				variableOf("holder", &emit.TypeRef{Spelling: "row", Target: rowOrigin})))
+			assert.Empty(t, readsOf(t, e, nil, nil).Read, "a reference with a target reads no name")
+		})
+
+		t.Run("returns no NameRead for a qualified reference without a backend", func(t *testing.T) {
 			t.Parallel()
 
 			e := storeOf(t, settleUnit("svc", "svc/a.src",
 				variableOf("holder", &emit.TypeRef{Spelling: "box", Package: "elsewhere"})))
-			assert.Empty(t, readsOf(t, e, plain, nil).Read, "a reference into another package reads no name")
+			assert.Empty(t, readsOf(t, e, nil, nil).Read, "a reference into another package reads no name")
 		})
 
 		t.Run("returns the zero Settled for a nil store", func(t *testing.T) {
@@ -1380,13 +1435,15 @@ func TestSettle(t *testing.T) {
 	})
 }
 
-// A settle allocates nothing for a backend without hooks, and the
-// rebuilt index with the plan of the names for a respell hook, in the
-// ordinary run, which runs no benchmark. SettleWith adds its read log.
-// Each counted settle takes a store of its own, built outside the
-// count, and the count keeps the first error of its settles, which
-// cmp.Or returns without allocating. The check runs alone, because the
-// count includes every goroutine's allocations.
+// TestSettleAllocs checks the allocation ceilings of a settle, because
+// the ordinary run runs no benchmark. A settle without a backend
+// allocates nothing. A settle through hooks that keep everything
+// allocates the rebuilt index and the plan of the names. SettleWith adds
+// its read log. Each counted settle takes a store of its own, which the
+// setup builds outside the count. The count keeps the first error of its
+// settles, which cmp.Or returns without allocating. The test does not
+// run in parallel, because the count includes the allocations of every
+// goroutine.
 func TestSettleAllocs(t *testing.T) {
 	for _, tt := range settleCases() {
 		sink := diag.NewSink()
@@ -1403,8 +1460,9 @@ func TestSettleAllocs(t *testing.T) {
 	}
 }
 
-// BenchmarkSettle measures one plan's settle over a store of a hundred
-// units, each settle on a store built outside the measurement.
+// BenchmarkSettle measures the settle of one plan over a store of a
+// hundred units. Each settle takes a store that the benchmark builds
+// outside the measurement.
 func BenchmarkSettle(b *testing.B) {
 	b.Run("Settle", func(b *testing.B) {
 		for _, tt := range settleCases() {
@@ -1466,7 +1524,8 @@ func settleUnit(pkg, key string, decls ...symbol.Symbol) plugin.Unit {
 	}
 }
 
-// storeOf returns a store with the units, refusing nothing.
+// storeOf returns a store with the units, and fails the test where the
+// store does not add one.
 func storeOf(t *testing.T, units ...plugin.Unit) *plugin.Emit {
 	t.Helper()
 
@@ -1475,8 +1534,8 @@ func storeOf(t *testing.T, units ...plugin.Unit) *plugin.Emit {
 	return e
 }
 
-// settled settles a store under a backend without facts and
-// returns the sink the settle reported to.
+// settled settles a store through a backend without facts, and returns
+// the sink of the findings of the settle.
 func settled(t *testing.T, e *plugin.Emit, b plugin.Backend) *diag.Sink {
 	t.Helper()
 
@@ -1485,8 +1544,9 @@ func settled(t *testing.T, e *plugin.Emit, b plugin.Backend) *diag.Sink {
 	return sink
 }
 
-// settledWith settles a store under a backend without facts against
-// the names of kept files, and returns the sink the settle reported to.
+// settledWith settles a store through a backend without facts against
+// the names of kept files, and returns the sink of the findings of the
+// settle.
 func settledWith(t *testing.T, e *plugin.Emit, b plugin.Backend, kept plugin.Names) *diag.Sink {
 	t.Helper()
 
@@ -1496,8 +1556,8 @@ func settledWith(t *testing.T, e *plugin.Emit, b plugin.Backend, kept plugin.Nam
 	return sink
 }
 
-// readsOf settles a store under a backend without facts against the
-// names of kept files, and returns what the settle read.
+// readsOf settles a store through a backend without facts against the
+// names of kept files, and returns the reads of the settle.
 func readsOf(t *testing.T, e *plugin.Emit, b plugin.Backend, kept plugin.Names) plugin.Settled {
 	t.Helper()
 
@@ -1506,18 +1566,17 @@ func readsOf(t *testing.T, e *plugin.Emit, b plugin.Backend, kept plugin.Names) 
 	return got
 }
 
-// linkedRow returns a struct named row of an origin, whose field next
-// names the struct.
+// linkedRow returns a struct named row of the origin, with a field next
+// that refers to the struct.
 func linkedRow(origin symbol.Identity) *emit.Struct {
 	row := &emit.Struct{Origin: origin, Name: "row"}
 	row.Fields.Append(&emit.Field{Name: "next", Type: &emit.TypeRef{Spelling: "row"}})
 	return row
 }
 
-// messages returns a sink's findings as their message text, in
-// report order. A case about the order findings arrive in compares
-// against this, because the codes alone cannot tell one collision
-// from another.
+// messages returns the message text of the findings of a sink, in
+// report order. A case about the order of the findings compares the
+// texts, because the codes cannot tell one collision from another.
 func messages(s *diag.Sink) []string {
 	var out []string
 	for d := range s.All() {
@@ -1565,8 +1624,8 @@ func overridden(t *testing.T, name string, a meta.Authority) string {
 	return row.Name
 }
 
-// structural returns a structural reference of a form, spelled as
-// written, over elements.
+// structural returns a structural reference of the form with the
+// spelling, over elems.
 func structural(form symbol.TypeForm, spelling string, elems ...*emit.TypeRef) *emit.TypeRef {
 	return &emit.TypeRef{Form: form, Spelling: spelling, Elems: elems}
 }
@@ -1576,10 +1635,10 @@ func variableOf(name string, t *emit.TypeRef) *emit.Variable {
 	return &emit.Variable{Origin: settleOrigin(name, symbol.KindVariable), Name: name, Type: t}
 }
 
-// settleGuarded builds a callable whose body reads its parameter
-// under a guard and a package constant from its prologue, a declared
-// slot and its epilogue, settles it under a prefixing hook, and
-// returns the callable.
+// settleGuarded builds a callable whose body reads its parameter under
+// a guard and in its epilogue, and a package constant in its prologue
+// and in a declared slot. It settles the callable under a prefixing hook
+// and returns it.
 func settleGuarded(t *testing.T) *emit.Function {
 	t.Helper()
 
@@ -1608,7 +1667,7 @@ func settleGuarded(t *testing.T) *emit.Function {
 	load := &emit.Function{
 		Origin: settleOrigin("load", symbol.KindFunction),
 		Name:   "load",
-		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		Params: emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 		Body:   body,
 	}
 	limit := &emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}
@@ -1617,16 +1676,16 @@ func settleGuarded(t *testing.T) *emit.Function {
 	return load
 }
 
-// settleReassigned builds a callable that reassigns its parameter
-// and returns it, settles it under a prefixing hook, and returns its
-// body's statements.
+// settleReassigned builds a callable that reassigns its parameter and
+// returns it. It settles the callable under a prefixing hook and returns
+// the statements of its body.
 func settleReassigned(t *testing.T) []emit.Stmt {
 	t.Helper()
 
 	load := &emit.Function{
 		Origin: settleOrigin("load", symbol.KindFunction),
 		Name:   "load",
-		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		Params: emit.SlotOf(&emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}),
 		Body: emit.Body{Stmts: []emit.Stmt{
 			{
 				Kind: emit.StmtAssign, Names: []string{"rowCount"},
@@ -1654,9 +1713,9 @@ func protectedBox() *emit.Struct {
 	return box
 }
 
-// settleCases returns the backends the allocation check and the
-// benchmark settle through, with the allocations of one Settle and of
-// one SettleWith of [settleStore].
+// settleCases returns the backends of the allocation check and the
+// benchmark, with the allocation counts of one Settle and one SettleWith
+// of [settleStore].
 func settleCases() []struct {
 	name       string
 	backend    plugin.Backend
@@ -1670,7 +1729,7 @@ func settleCases() []struct {
 		withAllocs uint64
 	}{
 		{
-			name: "a backend without hooks", backend: &hookless{name: "printer"},
+			name: "no backend", backend: nil,
 			allocs: 0, withAllocs: readLogAllocs,
 		},
 		{
@@ -1681,7 +1740,7 @@ func settleCases() []struct {
 }
 
 // keeping returns a backend whose respell hook keeps every name, so a
-// settle measures the kernel's work and none of the hook's.
+// settle measures the work of the kernel alone.
 func keeping() *respellingOnly {
 	return respelling(func(_, _ symbol.Kind, _ symbol.Visibility, n string) (string, error) {
 		return n, nil
@@ -1732,7 +1791,8 @@ func clearAsync(s symbol.Symbol) ([]symbol.Symbol, error) {
 	return nil, nil
 }
 
-// refuseSum refuses a sum and keeps any other declaration.
+// refuseSum returns an error for a sum and keeps every other
+// declaration.
 func refuseSum(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if _, is := s.(*emit.Sum); is {
 		return nil, errors.New("go: no idiom spells a sum")

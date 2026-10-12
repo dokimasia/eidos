@@ -101,7 +101,7 @@ func (b *Builder) KindTemplates(ts map[symbol.Kind]string) *Builder {
 // skips a declaration of a refused kind and reports the reason
 // under [render.RefusedKind]. A kind the language lowers into other
 // kinds before any template runs is neither spelt nor refused. The
-// built backend implements [render.Refuser].
+// built backend returns the refusals through [render.Refuser].
 func (b *Builder) RefusedKinds(rs map[symbol.Kind]string) *Builder {
 	for _, k := range slices.Sorted(maps.Keys(rs)) {
 		if _, taken := b.lang.Refused[k]; taken {
@@ -133,9 +133,9 @@ func (b *Builder) MemberIndent(indent string) *Builder {
 	return b
 }
 
-// Funcs registers part of the language's shared template vocabulary
-// into the overrideable bucket: a function returning the helpers
-// bound to one file's import set, so a helper that spells a type
+// Funcs registers part of the language's shared template vocabulary,
+// which a declared override can replace name by name. The part is a
+// function returning the helpers bound to one file's import set, so a helper that spells a type
 // records the import the spelling needs. It is repeatable, the parts
 // merging, one helper per name. The kit calls each part once here,
 // with a set of its own, to read the names it declares. A plugin's
@@ -211,6 +211,15 @@ func (b *Builder) Imports(r func(set *render.ImportSet) string) *Builder {
 	return b
 }
 
+// TemplateImport declares the binding of an import that a template
+// states through the use builtin, as [render.Language.TemplateImport]
+// describes it. Without it, a template's import does not bind a name in
+// the name assignment of the file.
+func (b *Builder) TemplateImport(fn func(path, name string) (local, item string, ok bool)) *Builder {
+	b.lang.TemplateImport = fn
+	return b
+}
+
 // Finalise sets the language formatter, run last per file. A
 // failure at render is a positioned finding that names the file it
 // could not format, and the pass continues with the remaining
@@ -222,7 +231,7 @@ func (b *Builder) Finalise(f func(src []byte) ([]byte, error)) *Builder {
 
 // Coverage declares the language's fact coverage: one verdict per
 // fact, with per-kind exceptions. It arms the render's guard, and
-// the built backend implements [render.Coverer], which the
+// the built backend returns it through [render.Coverer], which the
 // conformance suite reads to check the declaration total and the
 // rendered findings.
 func (b *Builder) Coverage(c render.Coverage) *Builder {
@@ -232,17 +241,17 @@ func (b *Builder) Coverage(c render.Coverage) *Builder {
 
 // Lower sets the construct lowering the settle applies: one
 // declaration in, the target's declaration shapes out, before any
-// name respells. The built backend implements [plugin.Lowerer],
-// and its Render refuses an unsettled store.
+// name respells. The built backend lowers through it, and its Render
+// refuses an unsettled store.
 func (b *Builder) Lower(l plugin.Lower) *Builder {
 	b.lower = l
 	return b
 }
 
 // Respell sets the name convention the settle applies: every
-// declared name spells through it, and references follow. The
-// built backend implements [plugin.Respeller], and its Render
-// refuses an unsettled store.
+// declared name spells through it, and references follow. The built
+// backend respells through it, and its Render refuses an unsettled
+// store.
 func (b *Builder) Respell(r plugin.Respell) *Builder {
 	b.respell = r
 	return b
@@ -264,14 +273,27 @@ func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
 	return b
 }
 
-// Build freezes the declaration and returns the lowered backend,
-// which implements [plugin.Backend], [plugin.Renderer],
-// [plugin.FileSpeller], [plugin.Packager], [plugin.TypeSpeller] and
-// [plugin.PolicyProvider]. Its Render is the render pass over the
-// declared language and nothing more, so a kit backend and a
-// hand-rolled pass over the same language return the same bytes. A
-// backend without a declared spoke refuses every shape, and one without
-// declared policies serves none.
+// Backend is a backend that the kit built. It is the backend of the
+// SPI, with the fact coverage that the guard of the render reads and the
+// kinds that the language refuses, which the backend suite checks.
+type Backend interface {
+	plugin.Backend
+	render.Coverer
+	render.Refuser
+}
+
+// Build freezes the declaration and returns the lowered backend. Its
+// Render is the render pass over the declared language and nothing
+// more, so a kit backend and a hand-rolled pass over the same language
+// return the same bytes. A method whose part the backend does not
+// declare behaves as follows:
+//
+//   - Lower keeps every declaration;
+//   - Respell returns every name unchanged;
+//   - SpellType returns an error that the target does not spell the
+//     types of other languages;
+//   - PackageAt returns the origin package of the file;
+//   - Policies returns nil.
 //
 // Build panics on a declaration defect, because a wrong declaration
 // is a bug in the backend's own constructor, and the panic comes on
@@ -287,7 +309,7 @@ func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
 //   - every fault [render.New] joins, such as an empty kind-template
 //     set, a kind both spelt and refused, a template that does not
 //     parse and a missing formatter.
-func (b *Builder) Build() plugin.Backend {
+func (b *Builder) Build() Backend {
 	if b.name == "" {
 		panic("backend: New with an empty name")
 	}
@@ -307,21 +329,11 @@ func (b *Builder) Build() plugin.Backend {
 		panic("backend: " + name + " declares a language the pass refuses:\n" +
 			err.Error())
 	}
-	base := &builtBackend{
+	return &builtBackend{
 		name: b.name, target: b.target, syntax: b.syntax,
 		version: b.version, pass: pass, packages: b.packages,
-		seams: b.lower != nil || b.respell != nil,
+		lower: b.lower, respell: b.respell,
 		types: b.types, policies: b.policies,
-	}
-	switch {
-	case b.lower != nil && b.respell != nil:
-		return &settlingBackend{builtBackend: base, lower: b.lower, respell: b.respell}
-	case b.lower != nil:
-		return &loweringBackend{builtBackend: base, lower: b.lower}
-	case b.respell != nil:
-		return &respellingBackend{builtBackend: base, respell: b.respell}
-	default:
-		return base
 	}
 }
 
@@ -336,15 +348,19 @@ type builtBackend struct {
 	// packages is the declared package rule, nil where the backend
 	// declares none.
 	packages plugin.PackageRule
-	// seams reports whether the backend declares a lowering or a
-	// respell seam. Render refuses an unsettled store when it does.
-	seams bool
+	// lower and respell are the declared hooks of the settle, nil where
+	// the backend declares none. Render refuses an unsettled store
+	// where the backend declares either.
+	lower   plugin.Lower
+	respell plugin.Respell
 	// types is the declared spoke, nil where the backend declares none.
 	types func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
 	// policies are the declared lowering policies, in declaration
 	// order.
 	policies []plugin.PolicySpec
 }
+
+var _ Backend = (*builtBackend)(nil)
 
 // Name returns the backend's one identity.
 func (b *builtBackend) Name() plugin.ID { return b.name }
@@ -407,7 +423,8 @@ func (b *builtBackend) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 // never settled, and rendering it would write the wrong bytes
 // without a finding.
 func (b *builtBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	if b.seams && ctx != nil && ctx.Emit != nil && !ctx.Emit.Settled() {
+	seams := b.lower != nil || b.respell != nil
+	if seams && ctx != nil && ctx.Emit != nil && !ctx.Emit.Settled() {
 		return nil, errors.New("backend: " + string(b.name) +
 			" declares a lowering seam, and the store is unsettled: " +
 			"the plan settles once before the render")
@@ -415,49 +432,23 @@ func (b *builtBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile,
 	return b.pass.Render(ctx)
 }
 
-// loweringBackend is a built backend declaring the construct
-// lowering seam.
-type loweringBackend struct {
-	*builtBackend
-	lower plugin.Lower
-}
-
-// Lower implements [plugin.Lowerer] through the declared hook.
-func (b *loweringBackend) Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+// Lower implements [plugin.Lowerer] through the declared hook. A
+// backend without the hook returns nil and no error, which keeps the
+// declaration, and allocates nothing.
+func (b *builtBackend) Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	if b.lower == nil {
+		return nil, nil
+	}
 	return b.lower(s)
 }
 
-// respellingBackend is a built backend declaring the name respell
-// seam.
-type respellingBackend struct {
-	*builtBackend
-	respell plugin.Respell
-}
-
-// Respell implements [plugin.Respeller] through the declared hook.
-func (b *respellingBackend) Respell(
-	host, kind symbol.Kind, v symbol.Visibility, name string,
-) (string, error) {
-	return b.respell(host, kind, v, name)
-}
-
-// settlingBackend is a built backend declaring both lowering
-// seams.
-type settlingBackend struct {
-	*builtBackend
-	lower   plugin.Lower
-	respell plugin.Respell
-}
-
-// Lower implements [plugin.Lowerer] through the declared hook.
-func (b *settlingBackend) Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
-	return b.lower(s)
-}
-
-// Respell implements [plugin.Respeller] through the declared hook.
-func (b *settlingBackend) Respell(
-	host, kind symbol.Kind, v symbol.Visibility, name string,
-) (string, error) {
+// Respell implements [plugin.Respeller] through the declared hook. A
+// backend without the hook returns the name unchanged, and allocates
+// nothing.
+func (b *builtBackend) Respell(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+	if b.respell == nil {
+		return name, nil
+	}
 	return b.respell(host, kind, v, name)
 }
 

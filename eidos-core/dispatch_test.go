@@ -144,7 +144,7 @@ func emitRun(tb assert.TB, g *store.Graph, units, perUnit int) dispatchRun {
 			visited++
 			return nil
 		})).
-		Build()
+		Generator()
 	r := dispatchRun{
 		gen:     generatorOf(tb, p),
 		ctx:     dispatchContext(tb, g, facts, nil, benchEmitStore(tb, units, perUnit), benchPlugin),
@@ -173,7 +173,7 @@ func factGatedRun(tb assert.TB, g *store.Graph, units, perUnit int) dispatchRun 
 				visited++
 				return nil
 			}))).
-		Build()
+		Generator()
 	r := dispatchRun{
 		gen:     generatorOf(tb, p),
 		ctx:     dispatchContext(tb, g, facts, nil, benchEmitStore(tb, units, perUnit), benchPlugin),
@@ -196,7 +196,7 @@ func bareRun(tb assert.TB, g *store.Graph, structs int) dispatchRun {
 			visited++
 			return nil
 		})).
-		Build()
+		Generator()
 	r := dispatchRun{
 		gen:     generatorOf(tb, p),
 		ctx:     dispatchContext(tb, g, facts, nil, plugin.NewEmit(), benchPlugin),
@@ -222,7 +222,7 @@ func directiveGatedRun(tb assert.TB, packages, decls int) dispatchRun {
 			visited++
 			return nil
 		}))).
-		Build()
+		Generator()
 	r := dispatchRun{
 		gen:     generatorOf(tb, p),
 		ctx:     dispatchContext(tb, g, facts, validated, plugin.NewEmit(), gatePlugin),
@@ -274,7 +274,7 @@ func TestDispatch(t *testing.T) {
 					})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			var units []plugin.Unit
 			for u := range ctx.Emit.Units() {
@@ -313,7 +313,7 @@ func TestDispatch(t *testing.T) {
 				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 					return boom
 				})).
-				Build()
+				Generator()
 
 			err := generatorOf(t, p).Generate(genContext(t, g, facts, nil))
 			assert.ErrorIs(t, err, boom, "the handler's error stops the phase")
@@ -336,7 +336,7 @@ func TestDispatch(t *testing.T) {
 					e.PackageFile().Append(&emit.Struct{Origin: m.Struct.ID, Name: "For" + m.Struct.Name})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			return slices.Collect(ctx.Emit.Units())
 		}
@@ -389,7 +389,7 @@ func TestDispatch(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Generator()
 			err := generatorOf(tb, p).Generate(ctx)
 			return messages(ctx.Sink), err
 		}
@@ -429,7 +429,7 @@ func TestDispatch(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Generator()
 			got := assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
 				"the panic propagates to the caller")
 			assert.Equal(t, got, any(errFirst), "with the handler's own value", assert.ByIdentity())
@@ -474,7 +474,7 @@ func TestDispatch(t *testing.T) {
 						_, found = m.Reader().Lookup(gamma.ID)
 						return nil
 					})).
-					Build()
+					Generator()
 				assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
 				assert.True(t, found, "the reader reads this call's graph and not the earlier call's")
 			}
@@ -493,7 +493,7 @@ func TestDispatch(t *testing.T) {
 						eidos.OnStruct(nothing[*eidos.Emitter]),
 						eidos.OnStruct(nothing[*eidos.Emitter]),
 					).
-					Build()
+					Generator()
 				rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 				assert.Length(t, rec.invoked, 6, "three rules each match two subjects")
 			}
@@ -537,7 +537,7 @@ func TestDispatch(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Generator()
 			for range reuses {
 				assert.Panics(t, func() {
 					_ = generatorOf(t, panicking).Generate(on(genContext(t, g, facts, nil), eightWorkers))
@@ -603,7 +603,7 @@ func TestDispatch(t *testing.T) {
 					Handle(tt.rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 						return boom
 					})).
-					Build()
+					Generator()
 
 				err := generatorOf(t, p).Generate(genContext(t, g, facts, validated))
 				assert.ErrorIs(t, err, boom, "the handler's error stops the phase")
@@ -700,7 +700,7 @@ func TestDispatch(t *testing.T) {
 							}
 							return nil
 						}))).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, instances, []int{0, 1}, "the instances run in source order")
 		})
@@ -716,7 +716,7 @@ func TestDispatch(t *testing.T) {
 					e.PlanFile("nope")
 					return nil
 				})).
-				Build()
+				Generator()
 
 			assert.Panics(t, func() {
 				_ = generatorOf(t, p).Generate(genContext(t, g, facts, nil))
@@ -749,12 +749,12 @@ func TestDispatch(t *testing.T) {
 							return nil
 						}),
 				).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			return visited
 		}
 
-		t.Run("visits an earlier bucket's unit", func(t *testing.T) {
+		t.Run("visits the unit of an earlier turn", func(t *testing.T) {
 			t.Parallel()
 
 			assert.NotEqual(t, ownRun(t), 0, "the seeded unit is visited")
@@ -785,7 +785,7 @@ func TestDispatch(t *testing.T) {
 						})
 						return nil
 					})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, other.Methods.Len(), 1, "the other plugin's slot has the appended method")
@@ -810,7 +810,7 @@ func TestDispatch(t *testing.T) {
 							origins = append(origins, m.Origin().Name)
 							return nil
 						}))).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, origins, []string{"Alpha"}, "only the stamped origin's value is visited")
@@ -834,7 +834,7 @@ func TestDispatch(t *testing.T) {
 						origins = append(origins, m.Origin().Name)
 						return nil
 					})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, origins, []string{"Alpha"}, "the skipped origin's value is not visited")
@@ -855,7 +855,7 @@ func TestDispatch(t *testing.T) {
 						origins = append(origins, m.Origin().Name)
 						return nil
 					})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, origins, []string{"Alpha"}, "the negated origin's value is not visited")
@@ -876,7 +876,7 @@ func TestDispatch(t *testing.T) {
 						m.Warnf(testCode, "flagged")
 						return nil
 					})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			findings := slices.Collect(ctx.Sink.All())
@@ -902,7 +902,7 @@ func TestDispatch(t *testing.T) {
 						})
 						return nil
 					})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			var flushed []plugin.Unit
@@ -973,7 +973,7 @@ func TestDispatch(t *testing.T) {
 						instances = append(instances, m.Directive().Instance)
 						return nil
 					}))).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
 				"the phase call passes")
@@ -1037,7 +1037,7 @@ func TestDispatch(t *testing.T) {
 						gates = append(gates, m.Directive().Name)
 						return nil
 					}))).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
 				"the phase call passes")
@@ -1248,11 +1248,11 @@ func TestDispatch(t *testing.T) {
 						return nil
 					}),
 				).
-				Build()
+				Dual()
 
-			assert.NoError(tb, annotatorOf(tb, p).Annotate(annContext(tb, facts, ix)), "the annotate call passes")
+			assert.NoError(tb, p.Annotate(annContext(tb, facts, ix)), "the annotate call passes")
 			stamped[0], emittedCount[0] = stamps, emits
-			assert.NoError(tb, generatorOf(tb, p).Generate(genContext(tb, g, facts, nil)), "the generate call passes")
+			assert.NoError(tb, p.Generate(genContext(tb, g, facts, nil)), "the generate call passes")
 			stamped[1], emittedCount[1] = stamps, emits
 			return stamped, emittedCount
 		}
@@ -1286,10 +1286,10 @@ func TestDispatch(t *testing.T) {
 
 			p := eidos.NewPlugin("planner").
 				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-					m.Errorf(testCode, alpha.Pos, "graph-wide finding")
+					m.ErrorfAt(testCode, alpha.Pos, "graph-wide finding")
 					return nil
 				})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.True(t, ctx.Sink.Failed(), "the Error fails the run")
@@ -1311,7 +1311,7 @@ func TestDispatch(t *testing.T) {
 					assert.True(t, held, "the reader finds the declaration")
 					return nil
 				})).
-				Build()
+				Generator()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 		})
@@ -1412,7 +1412,7 @@ func BenchmarkNodeDispatch(b *testing.B) {
 
 	b.Run("annotate stamps three facts after three reads per subject", func(b *testing.B) {
 		reg, keys := annotateKeys(b, "t.first", "t.second", "t.third")
-		p := eidos.NewPlugin(benchPlugin).
+		ann := eidos.NewPlugin(benchPlugin).
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 				for _, key := range keys {
 					eidos.Fact(m, key)
@@ -1422,8 +1422,7 @@ func BenchmarkNodeDispatch(b *testing.B) {
 				}
 				return nil
 			})).
-			Build()
-		ann := annotatorOf(b, p)
+			Annotator()
 		var ctx *plugin.AnnotatorContext
 		fresh := func() { ctx = annotateContext(b, g, reg) }
 		c := bench.Start(b).Warmup(1).MaxAllocs(annotateThreeAllocs)
@@ -1439,13 +1438,12 @@ func BenchmarkNodeDispatch(b *testing.B) {
 
 	b.Run("annotate stamps 200k subjects", func(b *testing.B) {
 		reg, keys := annotateKeys(b, "t.flag")
-		p := eidos.NewPlugin(benchPlugin).
+		ann := eidos.NewPlugin(benchPlugin).
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 				eidos.Stamp(st, keys[0], true)
 				return nil
 			})).
-			Build()
-		ann := annotatorOf(b, p)
+			Annotator()
 		var ctx *plugin.AnnotatorContext
 		fresh := func() { ctx = annotateContext(b, g, reg) }
 		c := bench.Start(b).Warmup(1).MaxAllocs(annotateOneAllocs)
@@ -1504,18 +1502,18 @@ func genContext(
 		Emit:   plugin.NewEmit(),
 		Sink:   diag.NewSink(),
 		Plugin: contextPlugin,
-		Bucket: 2,
+		Turn:   2,
 	}
 }
 
-// seed adds one earlier-bucket unit with decls to ctx.Emit.
+// seed adds one unit of an earlier turn with decls to ctx.Emit.
 func seed(tb assert.TB, ctx *plugin.GeneratorContext, decls ...symbol.Symbol) {
 	tb.Helper()
 
 	assert.NoError(tb, ctx.Emit.Add(plugin.Unit{
 		Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
 		Key: "a.go", Decls: decls,
-	}), "the earlier bucket's unit is added")
+	}), "the unit of the earlier turn is added")
 }
 
 // emitted returns an origined emit struct for one node subject.
@@ -1554,7 +1552,7 @@ func flushCase(tb assert.TB, g *store.Graph) phaseCase {
 			e.PlanFile().Append(payload...)
 			return nil
 		})).
-		Build()
+		Generator()
 	return phaseCase{
 		name:   "flush of 10k placed declarations",
 		allocs: flushAllocs,
@@ -1562,7 +1560,7 @@ func flushCase(tb assert.TB, g *store.Graph) phaseCase {
 		fresh: func() *plugin.GeneratorContext {
 			return &plugin.GeneratorContext{
 				Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-				Sink: diag.NewSink(), Plugin: benchPlugin, Bucket: 1,
+				Sink: diag.NewSink(), Plugin: benchPlugin, Turn: 1,
 			}
 		},
 		check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
@@ -1582,7 +1580,7 @@ func visitingStructs(name plugin.ID, rule func(emitHandler) eidos.Rule) (plugin.
 			visited = append(visited, m.Struct.Name)
 			return nil
 		})).
-		Build()
+		Generator()
 	return p, &visited
 }
 
@@ -1718,7 +1716,7 @@ func invocationContexts(
 	fresh := func() *plugin.GeneratorContext {
 		ctx := &plugin.GeneratorContext{
 			Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
-			Plugin: contextPlugin, Bucket: 2, Rules: registry, Exports: exports,
+			Plugin: contextPlugin, Turn: 2, Rules: registry, Exports: exports,
 		}
 		if seeded {
 			values := make([]symbol.Symbol, 0, len(structs))
@@ -1794,7 +1792,7 @@ func benchDispatch(b *testing.B, r dispatchRun) {
 }
 
 // dispatchContext returns a generator context over g in the first
-// bucket, running as name, with its own sink and the emit store e.
+// turn, running as name, with its own sink and the emit store e.
 func dispatchContext(
 	tb assert.TB, g *store.Graph, facts *meta.Facts, validated plugin.ValidatedMap, e *plugin.Emit, name plugin.ID,
 ) *plugin.GeneratorContext {
@@ -1802,5 +1800,5 @@ func dispatchContext(
 
 	ix, err := plugin.NewIndex(g, facts, validated, nil)
 	assert.NoError(tb, err, "the routing surface builds")
-	return &plugin.GeneratorContext{Index: ix, Facts: facts, Emit: e, Sink: diag.NewSink(), Plugin: name, Bucket: 1}
+	return &plugin.GeneratorContext{Index: ix, Facts: facts, Emit: e, Sink: diag.NewSink(), Plugin: name, Turn: 1}
 }

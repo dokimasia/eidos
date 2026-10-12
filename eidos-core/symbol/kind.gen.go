@@ -33,6 +33,7 @@ const (
 	KindTypeRef
 	KindTypeParam
 	KindEmbed
+	KindTagEntry
 )
 
 // kindNames backs [Kind.String].
@@ -60,6 +61,7 @@ var kindNames = [...]string{
 	KindTypeRef:     "TypeRef",
 	KindTypeParam:   "TypeParam",
 	KindEmbed:       "Embed",
+	KindTagEntry:    "TagEntry",
 }
 
 // kindByName backs [ParseKind].
@@ -86,6 +88,7 @@ var kindByName = map[string]Kind{
 	"TypeRef":     KindTypeRef,
 	"TypeParam":   KindTypeParam,
 	"Embed":       KindEmbed,
+	"TagEntry":    KindTagEntry,
 }
 
 // String names the kind, or "Kind(n)" for a value outside the set.

@@ -60,7 +60,7 @@ func TestTrigger(t *testing.T) {
 							"a bare match has no gating instance")
 						return nil
 					})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.True(t, ran, "the handler ran")
 		})
@@ -90,7 +90,7 @@ func TestTrigger(t *testing.T) {
 						ran = true
 						return nil
 					})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.False(t, ran, "a value without an origin is not a subject")
 		})
@@ -121,71 +121,70 @@ func TestTrigger(t *testing.T) {
 						"nothing gated the graph rule, by construction")
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
 			assert.True(t, ran, "the handler ran")
 		})
 	})
 
-	t.Run("GraphMatch.Warnf", func(t *testing.T) {
+	t.Run("GraphMatch", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports a Warning at the position the handler names", func(t *testing.T) {
+		t.Run("WarnfAt", func(t *testing.T) {
 			t.Parallel()
 
-			at := position.Pos{File: "chosen.go", Line: 11, Col: 2}
-			ctx := graphRun(t, func(m *eidos.GraphMatch) {
-				m.Warnf(graphReported, at, "the graph carries %d packages", 1)
-			})
+			t.Run("reports a Warning at the position that the handler passes", func(t *testing.T) {
+				t.Parallel()
 
-			coretest.AssertCodes(t, ctx.Sink, graphReported)
-			one := onlyFinding(t, ctx.Sink)
-			assert.Equal(t, one.Severity, diag.SeverityWarning,
-				"Warnf reports at Warning severity, which never fails a run")
-			assert.Equal(t, one.Pos, at,
-				"a graph match has no subject, so the handler's position stands")
-			assert.False(t, ctx.Sink.Failed(),
-				"a Warning leaves the run passing")
-			assert.Contains(t, one.Msg, "1 packages",
-				"the handler's own formatting arrives verbatim")
+				at := position.Pos{File: "chosen.go", Line: 11, Col: 2}
+				ctx := graphRun(t, func(m *eidos.GraphMatch) {
+					m.WarnfAt(graphReported, at, "the graph contains %d packages", 1)
+				})
+
+				coretest.AssertCodes(t, ctx.Sink, graphReported)
+				one := onlyFinding(t, ctx.Sink)
+				assert.Equal(t, one.Severity, diag.SeverityWarning, "WarnfAt reports at Warning severity")
+				assert.Equal(t, one.Pos, at, "the finding has the position that the handler passed")
+				assert.False(t, ctx.Sink.Failed(), "a Warning leaves the run passing")
+				assert.Contains(t, one.Msg, "1 packages", "the message has the formatting of the handler")
+			})
 		})
-	})
 
-	t.Run("GraphMatch.Infof", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("reports an Info finding at the position the handler names", func(t *testing.T) {
+		t.Run("InfofAt", func(t *testing.T) {
 			t.Parallel()
 
-			at := position.Pos{File: "chosen.go", Line: 3, Col: 4}
-			ctx := graphRun(t, func(m *eidos.GraphMatch) {
-				m.Infof(graphReported, at, "the graph phase ran")
-			})
+			t.Run("reports an Info finding at the position that the handler passes", func(t *testing.T) {
+				t.Parallel()
 
-			one := onlyFinding(t, ctx.Sink)
-			assert.Equal(t, one.Severity, diag.SeverityInfo, "Infof reports at Info severity")
-			assert.Equal(t, one.Pos, at, "at the position the handler named")
-			assert.False(t, ctx.Sink.Failed(),
-				"an Info finding leaves the run passing")
+				at := position.Pos{File: "chosen.go", Line: 3, Col: 4}
+				ctx := graphRun(t, func(m *eidos.GraphMatch) {
+					m.InfofAt(graphReported, at, "the graph phase ran")
+				})
+
+				one := onlyFinding(t, ctx.Sink)
+				assert.Equal(t, one.Severity, diag.SeverityInfo, "InfofAt reports at Info severity")
+				assert.Equal(t, one.Pos, at, "the finding has the position that the handler passed")
+				assert.False(t, ctx.Sink.Failed(), "an Info finding leaves the run passing")
+			})
 		})
-	})
 
-	t.Run("GraphMatch.Errorf", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("reports an Error at the position the handler names", func(t *testing.T) {
+		t.Run("ErrorfAt", func(t *testing.T) {
 			t.Parallel()
 
-			at := position.Pos{File: "chosen.go", Line: 5, Col: 6}
-			ctx := graphRun(t, func(m *eidos.GraphMatch) {
-				m.Errorf(graphReported, at, "the graph is refused")
-			})
+			t.Run("reports an Error at the position that the handler passes", func(t *testing.T) {
+				t.Parallel()
 
-			one := onlyFinding(t, ctx.Sink)
-			assert.Equal(t, one.Severity, diag.SeverityError, "Errorf reports at Error severity")
-			assert.Equal(t, one.Pos, at, "at the position the handler named")
-			assert.True(t, ctx.Sink.Failed(), "an Error fails the run")
+				at := position.Pos{File: "chosen.go", Line: 5, Col: 6}
+				ctx := graphRun(t, func(m *eidos.GraphMatch) {
+					m.ErrorfAt(graphReported, at, "the graph is refused")
+				})
+
+				one := onlyFinding(t, ctx.Sink)
+				assert.Equal(t, one.Severity, diag.SeverityError, "ErrorfAt reports at Error severity")
+				assert.Equal(t, one.Pos, at, "the finding has the position that the handler passed")
+				assert.True(t, ctx.Sink.Failed(), "an Error fails the run")
+			})
 		})
 	})
 
@@ -206,7 +205,7 @@ func TestTrigger(t *testing.T) {
 						origin = m.Origin()
 						return nil
 					})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, origin, alpha.ID, "the origin is the node the value derives from")
 		})
@@ -274,7 +273,7 @@ func triggerCases(tb assert.TB) []phaseCase {
 				report(m)
 				return nil
 			})).
-			Build())
+			Generator())
 	}
 	one := func(tb assert.TB, ctx *plugin.GeneratorContext) {
 		assert.Length(tb, slices.Collect(ctx.Sink.All()), 1, "the graph invocation reports one finding")
@@ -285,16 +284,16 @@ func triggerCases(tb assert.TB) []phaseCase {
 	}
 	return []phaseCase{
 		{
-			name: "GraphMatch.Errorf", allocs: graphReportAllocs, fresh: fresh, check: one,
-			gen: reporting(func(m *eidos.GraphMatch) { m.Errorf(graphReported, at, "the graph is refused") }),
+			name: "GraphMatch.ErrorfAt", allocs: graphReportAllocs, fresh: fresh, check: one,
+			gen: reporting(func(m *eidos.GraphMatch) { m.ErrorfAt(graphReported, at, "the graph is refused") }),
 		},
 		{
-			name: "GraphMatch.Warnf", allocs: graphReportAllocs, fresh: fresh, check: one,
-			gen: reporting(func(m *eidos.GraphMatch) { m.Warnf(graphReported, at, "the graph is noted") }),
+			name: "GraphMatch.WarnfAt", allocs: graphReportAllocs, fresh: fresh, check: one,
+			gen: reporting(func(m *eidos.GraphMatch) { m.WarnfAt(graphReported, at, "the graph is noted") }),
 		},
 		{
-			name: "GraphMatch.Infof", allocs: graphReportAllocs, fresh: fresh, check: one,
-			gen: reporting(func(m *eidos.GraphMatch) { m.Infof(graphReported, at, "the graph phase ran") }),
+			name: "GraphMatch.InfofAt", allocs: graphReportAllocs, fresh: fresh, check: one,
+			gen: reporting(func(m *eidos.GraphMatch) { m.InfofAt(graphReported, at, "the graph phase ran") }),
 		},
 		{
 			name: "EmitMatch.Origin", allocs: orderAllocs, fresh: seeded,
@@ -303,7 +302,7 @@ func triggerCases(tb assert.TB) []phaseCase {
 					assert.True(tb, origins[m.Origin()], "Origin returns an identity the fixture declares")
 					return nil
 				})).
-				Build()),
+				Generator()),
 			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
 				assert.False(tb, ctx.Sink.Failed(), "the emit call reports nothing")
 			},
@@ -335,7 +334,7 @@ func graphRun(
 			report(m)
 			return nil
 		})).
-		Build()
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	assert.True(tb, ran, "the graph handler ran")
 	return ctx

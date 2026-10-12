@@ -44,7 +44,7 @@ func resolvePolicies(plans []Plan, cfg Config) ([]plugin.Policy, map[plugin.ID]b
 		if b == nil {
 			continue
 		}
-		specs := policiesOf(b)
+		specs := b.Policies()
 		defective, done := checked[b.Name()]
 		if !done && len(specs) > 0 {
 			for _, s := range specs {

@@ -126,7 +126,7 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 //     it evaluates every candidate. The run first withdraws the claims of
 //     each invocation that the call runs again. A plugin that implements
 //     its role directly runs whole when the run found any change. The run
-//     first withdraws the claims of that plugin in its bucket, on the
+//     first withdraws the claims of that plugin in its turn, on the
 //     facts that the plugin claimed in the generation.
 //  5. After the stamps and after each annotator call, each fact whose
 //     winner differs from the winner in the generation makes its fact
@@ -417,7 +417,7 @@ func (r *warmRun) withdrawAll(id symbol.Identity, touched []meta.FactRef) ([]met
 // withdrawStamps withdraws the classification stamps that the generation
 // recorded on a subject, and appends the facts that they covered to
 // touched. A frontend makes the claim of a stamp at plugin authority, in
-// bucket zero and under rule zero, and ranks it by the subject itself.
+// turn zero and under rule zero, and ranks it by the subject itself.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that
 // does not read whole, and the fact store's error for a withdrawal that
@@ -430,7 +430,7 @@ func (r *warmRun) withdrawStamps(id symbol.Identity, touched []meta.FactRef) ([]
 	for _, sc := range claims {
 		c := sc.Claim
 		_, stamp := r.frontends[c.Plugin]
-		if !stamp || sc.Group != "" || sc.Drop || c.Authority != meta.AuthorityPlugin || c.Bucket != 0 ||
+		if !stamp || sc.Group != "" || sc.Drop || c.Authority != meta.AuthorityPlugin || c.Turn != 0 ||
 			c.Order.Rule != 0 || c.Order.Subject != id {
 
 			continue
@@ -448,7 +448,7 @@ func (r *warmRun) withdrawStamps(id symbol.Identity, touched []meta.FactRef) ([]
 	return touched, nil
 }
 
-// annotate runs the annotate schedule in bucket order over one
+// annotate runs the annotate schedule in turn order over one
 // whole-graph index. Each call runs over the records that are dirty when
 // the call starts. annotate counts the invocations of each call into the
 // run's stats, and counts zero for a call that did not run.
@@ -506,7 +506,7 @@ func (r *warmRun) annotate(ctx context.Context) error {
 // annotateWhole runs the call of a plugin that implements its role
 // directly. Such a plugin journals no invocation, so its call runs whole
 // when the run found any change. annotateWhole first withdraws the claims
-// of the plugin in its bucket, on the facts that the call claimed in the
+// of the plugin in its turn, on the facts that the call claimed in the
 // generation. It records the call under [plugin.WholeCall]. It returns the
 // facts that the call touched, and reports whether the call ran.
 //
@@ -526,7 +526,7 @@ func (r *warmRun) annotateWhole(
 		}
 		touched = append(touched, f)
 		for v := range r.facts.Claims(f.Subject, key) {
-			if v.Claim.Plugin != s.name || v.Claim.Bucket != s.bucket {
+			if v.Claim.Plugin != s.name || v.Claim.Turn != s.turn {
 				continue
 			}
 			r.rec.Withdrew(f.Subject)
@@ -581,9 +581,9 @@ func (r *warmRun) annotateSelected(ix *plugin.Index, s annEntry, counted *tally)
 			r.rec.Withdrew(f.Subject)
 			// The invocation claimed at plugin authority, or at directive
 			// authority where a directive gated it, so the withdrawal finds
-			// its claims by their bucket, plugin and order.
+			// its claims by their turn, plugin and order.
 			for v := range r.facts.Claims(f.Subject, key) {
-				if v.Claim.Plugin != s.name || v.Claim.Bucket != s.bucket || v.Claim.Order != order {
+				if v.Claim.Plugin != s.name || v.Claim.Turn != s.turn || v.Claim.Order != order {
 					continue
 				}
 				if err := r.facts.Withdraw(key, v.Claim); err != nil {

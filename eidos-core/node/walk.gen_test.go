@@ -201,6 +201,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			subject := &Enum{}
+			subject.Underlying = &TypeRef{}
 			subject.Variants = append(subject.Variants, &EnumVariant{})
 			subject.Fields = append(subject.Fields, &Field{})
 			subject.Methods = append(subject.Methods, &Method{})
@@ -210,7 +211,7 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 4,
+			assert.Equal(t, seen, 5,
 				"the walk descends into every traversed field")
 		})
 
@@ -511,6 +512,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -824,6 +826,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -1149,6 +1152,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -1375,6 +1379,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -1641,6 +1646,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -1965,6 +1971,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})

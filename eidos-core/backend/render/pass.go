@@ -53,6 +53,9 @@ type Pass struct {
 	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
 	coverage Coverage
+	// templateImport is the language's [Language.TemplateImport], which
+	// the use builtin calls.
+	templateImport func(path, name string) (local, item string, ok bool)
 	// memberIndent is the language's [Language.MemberIndent], which the
 	// memberbody builtin writes before each line of a member's content.
 	memberIndent string
@@ -164,7 +167,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		groups: groups, file: file, shared: shared,
 		vocab: l.Funcs, spell: l.Naming, split: l.Split, cluster: l.Cluster,
 		scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
-		coverage: l.Coverage, memberIndent: l.MemberIndent,
+		coverage: l.Coverage, memberIndent: l.MemberIndent, templateImport: l.TemplateImport,
 	}, nil
 }
 
@@ -367,6 +370,10 @@ const (
 	// shadowsUndeclared replaces a shared helper without declaring
 	// the override.
 	shadowsUndeclared
+	// unbindable is a helper that text/template refuses to bind: a
+	// name that is not an identifier, a value that is not a function,
+	// or a function whose results a template cannot use.
+	unbindable
 )
 
 // bound is one render call's executable templates: the kind
@@ -423,21 +430,35 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 	}, nil
 }
 
-// use records one import path into the file under render; it is
-// the builtin a kind template qualifies with. A second argument
-// records the name the import binds, such as an alias or a
-// side-effect blank, for the languages whose import form binds one.
-// More than one returns an error, because one call records one
-// binding.
+// use records one import path into the file under render. It is the
+// builtin that a template imports a package or a declaration with. A
+// second argument is the name that the import binds, such as an alias
+// or a side-effect blank. The language's TemplateImport returns the
+// binding, and [ImportSet.Use] binds it in the name assignment of the
+// file. An import that does not bind a name is recorded outside the
+// assignment.
+//
+// Error modes: more than one name returns an error, because one call
+// records one binding. A name that the file binds to another import or
+// declaration returns the error of [ImportSet.Use].
 func (f *frame) use(path string, name ...string) (string, error) {
-	switch len(name) {
-	case 0:
-		f.set.Add(path)
-	case 1:
-		f.set.AddNamed(path, name[0])
-	default:
+	if len(name) > 1 {
 		return "", fmt.Errorf("render: use records one binding, got %d", len(name))
 	}
+	stated := ""
+	if len(name) == 1 {
+		stated = name[0]
+	}
+	if f.pass.templateImport != nil {
+		if local, item, ok := f.pass.templateImport(path, stated); ok {
+			return "", f.set.Use(path, local, item)
+		}
+	}
+	if len(name) == 0 {
+		f.set.Add(path)
+		return "", nil
+	}
+	f.set.AddNamed(path, stated)
 	return "", nil
 }
 

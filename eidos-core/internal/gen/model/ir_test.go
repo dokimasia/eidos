@@ -19,7 +19,7 @@ import (
 // wantKinds is the number of declaration kinds in the schema. The
 // number is a literal, so adding a kind takes an edit here as well
 // as in the schema.
-const wantKinds = 22
+const wantKinds = 23
 
 // validSchema is the fixture schema every contract case departs
 // from.

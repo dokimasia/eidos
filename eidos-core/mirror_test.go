@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
@@ -58,9 +59,9 @@ const (
 	typeArgsAllocs = 1 + 2
 )
 
-// Mirror copies a signature once, in the framework, so the copy is
-// contract: every field arrives, spellings copy over verbatim, and
-// the receiver is the target's to state.
+// TestMirror pins that Mirror copies every fact of a signature and the
+// spellings of its types verbatim, and that it leaves the facts of an
+// implementation and the receiver to the target.
 func TestMirror(t *testing.T) {
 	t.Parallel()
 
@@ -76,6 +77,13 @@ func TestMirror(t *testing.T) {
 				Visibility: symbol.VisibilityPackage,
 				Level:      symbol.LevelType,
 				Async:      true,
+				Accessor:   symbol.AccessorGet,
+				Indexer:    true,
+				Constructs: true,
+				Hard:       true,
+				Optional:   true,
+				Mutability: symbol.MutabilityImmutable,
+				Computed:   true,
 				TypeParams: []*node.TypeParam{{
 					Name:     keyParam,
 					Variance: symbol.VarianceOut,
@@ -102,13 +110,20 @@ func TestMirror(t *testing.T) {
 				Visibility: symbol.VisibilityPackage,
 				Level:      symbol.LevelType,
 				Async:      true,
+				Accessor:   symbol.AccessorGet,
+				Indexer:    true,
+				Constructs: true,
+				Hard:       true,
+				Optional:   true,
+				Mutability: symbol.MutabilityImmutable,
+				Computed:   true,
 				Receives:   &emit.TypeRef{Spelling: mirrorHost},
 				TypeParams: []*emit.TypeParam{{
 					Name:     keyParam,
 					Variance: symbol.VarianceOut,
 					Bounds:   []*emit.TypeRef{{Spelling: keyBound}},
 				}},
-				Params: []*emit.Param{{
+				Params: emit.SlotOf(&emit.Param{
 					Name:     keysParam,
 					Label:    keysLabel,
 					Default:  keysDefault,
@@ -119,8 +134,8 @@ func TestMirror(t *testing.T) {
 						Form:     symbol.FormList,
 						Elems:    []*emit.TypeRef{{Spelling: keyParam}},
 					},
-				}},
-				Returns: []*emit.Return{{Name: foundResult, Type: &emit.TypeRef{Spelling: intType}}},
+				}),
+				Returns: emit.SlotOf(&emit.Return{Name: foundResult, Type: &emit.TypeRef{Spelling: intType}}),
 				Throws:  []*emit.TypeRef{{Spelling: notFound}},
 			}, "every signature field copies over, and Receives names the host")
 		})
@@ -138,8 +153,8 @@ func TestMirror(t *testing.T) {
 				}},
 			}
 			got := eidos.Mirror(mirrorHost, m)
-			assert.Length(t, got.Returns, 1, "the results mirror")
-			assert.Equal(t, got.Returns[0].Type,
+			assert.Length(t, got.Returns.Items(), 1, "the results mirror")
+			assert.Equal(t, got.Returns.Items()[0].Type,
 				&emit.TypeRef{
 					Spelling: userMap,
 					Args:     []*emit.TypeRef{{Spelling: stringType}, {Spelling: userType}},
@@ -151,6 +166,18 @@ func TestMirror(t *testing.T) {
 
 			got := eidos.Mirror(mirrorHost, &node.Method{Name: getMethod})
 			assert.Nil(t, got.Receiver, "a pointer receiver is Go's spelling, and Rust spells self")
+		})
+
+		t.Run("leaves out the facts of an implementation", func(t *testing.T) {
+			t.Parallel()
+
+			got := eidos.Mirror(mirrorHost, &node.Method{
+				Name: getMethod, Abstract: true, Final: true, Override: true, HasDefault: true,
+			})
+			expect.False(t, got.Abstract, "the generator writes the implementation of the mirror")
+			expect.False(t, got.Final, "the mirror states no final")
+			expect.False(t, got.Override, "the mirror overrides nothing")
+			expect.False(t, got.HasDefault, "the mirror states no default body")
 		})
 	})
 
@@ -217,7 +244,7 @@ func TestMirrorAllocs(t *testing.T) {
 	var got *emit.Method
 	assert.MaxAllocs(t, func() { got = eidos.Mirror(mirrorHost, signed) }, mirrorAllocs,
 		"Mirror allocates the method and the parts of its signature")
-	assert.Length(t, got.Params, 1, "Mirror returns the parameter")
+	assert.Length(t, got.Params.Items(), 1, "Mirror returns the parameter")
 	assert.MaxAllocs(t, func() { got = eidos.Mirror(mirrorHost, bare) }, bareMirrorAllocs,
 		"Mirror allocates the method and its receiving type for a method without a signature")
 	assert.Equal(t, got.Name, getMethod, "Mirror returns the method's name")
@@ -245,7 +272,7 @@ func BenchmarkMirror(b *testing.B) {
 			for c.Loop() {
 				got = eidos.Mirror(mirrorHost, m)
 			}
-			assert.Length(b, got.Returns, 1, "Mirror returns the return")
+			assert.Length(b, got.Returns.Items(), 1, "Mirror returns the return")
 		})
 
 		b.Run("a method without a signature", func(b *testing.B) {

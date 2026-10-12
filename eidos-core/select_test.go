@@ -246,7 +246,7 @@ func TestSelect(t *testing.T) {
 					visited = append(visited, s.Name)
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, visited, []string{"GenAlpha", "GenBeta"}, "both values run")
 		})
@@ -269,7 +269,7 @@ func TestSelect(t *testing.T) {
 			}
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnStruct(visit("first")), eidos.OnStruct(visit("second"))).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, ran, []string{"second"}, "the first rule lists no match")
 		})
@@ -309,7 +309,7 @@ func TestSelect(t *testing.T) {
 			}
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnStruct(warn("first")), eidos.OnStruct(warn("second"))).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, messages(ctx.Sink), []string{
 				"first Alpha", "first Beta", "second Alpha", "second Beta",
@@ -371,11 +371,11 @@ func TestSelect(t *testing.T) {
 					eidos.Stamp(st, key, true)
 					return nil
 				})).
-				Build()
+				Annotator()
 			ctx := annContext(tb, facts, ix)
 			ctx.Plugin = contextPlugin
 			ctx.Select = selection(alpha.ID, beta.ID)
-			assert.NoError(tb, annotatorOf(tb, p).Annotate(ctx), "the phase call passes")
+			assert.NoError(tb, p.Annotate(ctx), "the phase call passes")
 			return slices.Collect(facts.ByKey(key.ID()))
 		}
 
@@ -403,11 +403,11 @@ func TestSelect(t *testing.T) {
 					eidos.Stamp(st, key, true)
 					return nil
 				})).
-				Build()
+				Annotator()
 			ctx := annContext(t, facts, ix)
 			ctx.Plugin = contextPlugin
 			ctx.Select = &plugin.Selection{Matches: []plugin.MatchKey{keyOf(beta.ID)}}
-			assert.NoError(t, annotatorOf(t, p).Annotate(ctx), "the phase call passes")
+			assert.NoError(t, p.Annotate(ctx), "the phase call passes")
 			assert.Equal(t, slices.Collect(facts.ByKey(key.ID())), []symbol.Identity{beta.ID},
 				"the unlisted subject is not stamped")
 			_, held := meta.Get(facts, alpha.ID, key)
@@ -436,7 +436,7 @@ func BenchmarkSelect(b *testing.B) {
 			visited++
 			return nil
 		})).
-		Build()
+		Generator()
 	gen := generatorOf(b, p)
 	run := func(b *testing.B, sel *plugin.Selection) {
 		b.Helper()
@@ -446,7 +446,7 @@ func BenchmarkSelect(b *testing.B) {
 			visited = 0
 			ctx = &plugin.GeneratorContext{
 				Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
-				Plugin: "bench", Bucket: 1, Select: sel,
+				Plugin: "bench", Turn: 1, Select: sel,
 			}
 		}
 		c := bench.Start(b).Warmup(1).MaxAllocs(0)
@@ -509,7 +509,7 @@ func selectedInstances(tb assert.TB, selection func(subject symbol.Identity) *pl
 			visited = append(visited, m.Directive().Instance)
 			return nil
 		}))).
-		Build()
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	return visited
 }
@@ -529,7 +529,7 @@ func graphCalls(tb assert.TB, sel *plugin.Selection) int {
 			calls++
 			return nil
 		})).
-		Build()
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	return calls
 }
@@ -551,7 +551,7 @@ func registryUnits(tb assert.TB, workers int, sel *plugin.Selection) []plugin.Un
 			e.PackageFile().Append(&emit.Struct{Origin: m.Struct.ID, Name: "For" + m.Struct.Name})
 			return nil
 		})).
-		Build()
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	return slices.Collect(ctx.Emit.Units())
 }

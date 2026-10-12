@@ -29,11 +29,11 @@ const (
 	// lowerMiniAllocs is one lowering of the mini kernel: the go.mod
 	// check, and the parse of each curated package's files. It is the
 	// average of 100 calls, with eight allocations of headroom.
-	lowerMiniAllocs = 1_698 + 8*1
-	// lowerKernelAllocs is a budget for one lowering of the kernel's 22
-	// curated packages, about 5% above the 319,050 allocations of one
+	lowerMiniAllocs = 1_777 + 8*1
+	// lowerKernelAllocs is a budget for one lowering of the kernel's 23
+	// curated packages, about 5% above the 363,050 allocations of one
 	// measured run.
-	lowerKernelAllocs = 335_000
+	lowerKernelAllocs = 381_000
 )
 
 // A lowering establishes what the renderer assumes. The curated

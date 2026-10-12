@@ -9,13 +9,19 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// rejectedCode is the persisted spelling of [render.RejectedFact], which
+// a suppression names.
+const rejectedCode = "EID-0074"
 
 // excepted is a coverage whose base verdict renders a field's value
 // and whose exception refuses it on a field.
@@ -28,10 +34,10 @@ var excepted = render.Coverage{
 	},
 }
 
-// The coverage is the feature table as data: verdicts resolve
-// through exceptions then the base, and the render's guard reports
-// what the declaration refuses or misses without withholding the
-// declaration.
+// TestCoverage pins the resolution of a verdict through the exceptions
+// and then the base, and the findings of the guard of the render. The
+// guard renders a declaration whose stated fact is refused or missed, and
+// leaves out a declaration whose stated fact is rejected.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +68,39 @@ func TestCoverage(t *testing.T) {
 				t.Parallel()
 
 				assert.Equal(t, excepted.Of(tt.kind, tt.fact), tt.want, "the verdict for the fact on the kind")
+			})
+		}
+
+		unpromoted := render.Coverage{
+			Facts: map[symbol.Fact]render.Verdict{
+				symbol.FactComment: render.Renders, symbol.FactEmbeds: render.Renders,
+			},
+			RefusesEmbeds: true,
+		}
+		embeds := []struct {
+			name string
+			kind symbol.Kind
+			fact symbol.Fact
+			want render.Verdict
+		}{
+			{
+				name: "returns Refuses for a fact on an embed where the coverage refuses embeds",
+				kind: symbol.KindEmbed, fact: symbol.FactComment, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for the embeds of a struct where the coverage refuses embeds",
+				kind: symbol.KindStruct, fact: symbol.FactEmbeds, want: render.Refuses,
+			},
+			{
+				name: "returns the base verdict for a fact off an embed where the coverage refuses embeds",
+				kind: symbol.KindStruct, fact: symbol.FactComment, want: render.Renders,
+			},
+		}
+		for _, tt := range embeds {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, unpromoted.Of(tt.kind, tt.fact), tt.want, "the verdict for the fact on the kind")
 			})
 		}
 	})
@@ -114,6 +153,61 @@ func TestCoverage(t *testing.T) {
 			}), seeded(t, abstract()...))
 			assert.Length(t, files, 1, "the declaration renders without the fact")
 			assert.False(t, sink.Failed(), "a refusal is a warning, not a failure")
+		})
+
+		rejecting := map[symbol.Fact]render.Verdict{
+			symbol.FactAbstract: render.Rejects, symbol.FactFinal: render.Refuses,
+		}
+
+		t.Run("reports RejectedFact for a rejected stated fact", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := runPass(t, covered(rejecting), seeded(t, abstract()...))
+			diags := slices.Collect(sink.All())
+			assert.Length(t, diags, 1, "one finding per stated rejected fact")
+			expect.Equal(t, diags[0].Code, render.RejectedFact, "the finding has the rejection code")
+			expect.Equal(t, diags[0].Code.String(), rejectedCode, "the code keeps its persisted spelling")
+			expect.Equal(t, diags[0].Severity, diag.SeverityError, "a rejection is an error")
+			expect.Contains(t, diags[0].Msg, "with or without "+symbol.FactAbstract.String(),
+				"the finding names the rejected fact")
+		})
+
+		t.Run("leaves out the declaration whose stated fact is rejected", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf("gen", "svc/row.go", "Row", "Other")
+			u.Decls[0].(*emit.Struct).Abstract = true
+			files, sink := runPass(t, covered(rejecting), seeded(t, u))
+			assert.True(t, sink.Failed(), "a rejection fails the run")
+			assert.Length(t, files, 1, "the file renders with the other declaration")
+			expect.NotContains(t, string(files[0].Body), "Row", "the rejected declaration does not render")
+			expect.Contains(t, string(files[0].Body), "Other", "the declaration beside it renders")
+		})
+
+		t.Run("reports every refusal and rejection of one declaration", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf("gen", "svc/row.go", "Row")
+			s := u.Decls[0].(*emit.Struct)
+			s.Abstract, s.Final = true, true
+			_, sink := runPass(t, covered(rejecting), seeded(t, u))
+			assert.Permutation(t, coretest.Codes(sink), []diag.Code{render.RejectedFact, render.RefusedFact},
+				"the guard reports each stated fact before it answers")
+		})
+
+		t.Run("leaves out a cluster with a rejected member", func(t *testing.T) {
+			t.Parallel()
+
+			l := covered(rejecting)
+			l.Cluster = func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: blockGroup, Decls: decls}}
+			}
+			l.Groups = map[render.GroupName]string{blockGroup: "{{range .Decls}}type {{.Name}} struct{}\n{{end}}"}
+			u := unitOf("gen", "svc/row.go", "Row", "Other")
+			u.Decls[0].(*emit.Struct).Abstract = true
+			files, sink := runPass(t, l, seeded(t, u))
+			assert.True(t, sink.Failed(), "a rejection fails the run")
+			assert.Empty(t, files, "the cluster does not render without its rejected member")
 		})
 
 		t.Run("reports a member's refused fact under the member's kind", func(t *testing.T) {

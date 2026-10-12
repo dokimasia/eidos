@@ -12,16 +12,17 @@ import (
 	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// paramName is the type parameter the fold cases reference.
+// paramName is the type parameter that the fold cases reference.
 const paramName = "T"
 
-// The spellings the shape constructors are driven with.
+// The spellings that the cases pass to the shape constructors.
 const (
 	int32Spelling = "int32"
 	int32Bits     = 32
@@ -29,17 +30,18 @@ const (
 	unknownName   = "Unknown"
 )
 
-// referenceArgsAllocs is a reference with one type argument: the list of
-// arguments, which the shape keeps.
+// referenceArgsAllocs is a reference with one type argument. It allocates
+// the list of arguments that the shape keeps.
 const referenceArgsAllocs = 1
 
-// bytesLang classifies "byte" as the eight-bit unsigned scalar, the
-// way a language with the spelling does.
+// bytesLang classifies "byte" as the eight-bit unsigned scalar, as a
+// language with that spelling does.
 type bytesLang struct {
 	rules.SourceRules
 }
 
-// Builtin classifies byte and defers the rest.
+// Builtin classifies byte and passes every other spelling to the rules
+// that it wraps.
 func (b bytesLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	if ref.Spelling == "byte" {
 		return rules.Scalar(ref.Spelling, rules.ScalarUint, 8)
@@ -56,16 +58,17 @@ const (
 	wrappedSpelling = "Wrapped"
 )
 
-// genericLang classifies library types that take type arguments, as a
-// language's Builtin classifies TypeScript's Array and Record. It returns
-// Array as a list, Record as a map, Pair as a tuple and Fn as a function,
-// each without children, and Wrapped as an optional with a child of text.
-// It hands every other spelling to the rules that it wraps.
+// genericLang classifies library types that take type arguments, as the
+// Builtin of TypeScript classifies Array and Record. It returns Array as a
+// list, Record as a map, Pair as a tuple and Fn as a function, each
+// without children, and Wrapped as an optional with a child of text. It
+// passes every other spelling to the rules that it wraps.
 type genericLang struct {
 	rules.SourceRules
 }
 
-// Builtin classifies the library types and hands the rest on.
+// Builtin classifies the library types and passes every other spelling
+// on.
 func (g genericLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	switch ref.Spelling {
 	case arraySpelling:
@@ -86,27 +89,53 @@ func (g genericLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	}
 }
 
-// counting counts how often the language's Builtin is asked.
+// counting counts the calls of the Builtin of the language.
 type counting struct {
 	rules.SourceRules
 	asked int
 }
 
-// Builtin counts the call and returns the wrapped rules' shape.
+// Builtin counts the call and returns the shape of the wrapped rules.
 func (c *counting) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	c.asked++
 	return c.SourceRules.Builtin(ref, v)
 }
 
-// The kernel folds every structural form with its children and folds a
-// type parameter to opaque. It classifies a resolved name by its
-// declaration and sends an unresolved one to the language, whose
-// Builtin returns through the constructors.
+// blessing is the scripted rules of a language that blesses the
+// declaration rowName as the well-known timestamp.
+type blessing struct{ rules.SourceRules }
+
+var _ rules.WellKnownRules = blessing{}
+
+// WellKnown blesses every declaration named rowName as the timestamp.
+func (blessing) WellKnown(id symbol.Identity) (symbol.Identity, bool) {
+	if id.Name != rowName {
+		return symbol.Identity{}, false
+	}
+	return rules.WellKnownTimestamp, true
+}
+
+// TestShape checks the fold of the kernel. The kernel folds every
+// structural form with its children and folds a type parameter to opaque.
+// It classifies a resolved name by its declaration, or by the well-known
+// identity that the rules of its language bless it as, and passes an
+// unresolved name to the Builtin of the language, which returns through
+// the constructors.
 func TestShape(t *testing.T) {
 	t.Parallel()
 
 	t.Run("TypeOf", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("folds a target that its rules bless to the well-known identity", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
+			b := rules.NewBound(blessing{scripted()}, v, nil)
+			s := b.TypeOf(named(svcPath, rowName, symbol.KindStruct))
+			assert.Equal(t, s.Form, symbol.FormReference, "a blessed target folds to a reference")
+			assert.Equal(t, s.Ref, rules.WellKnownTimestamp, "to the well-known identity")
+		})
 
 		t.Run("folds every structural form with its children", func(t *testing.T) {
 			t.Parallel()
@@ -128,7 +157,7 @@ func TestShape(t *testing.T) {
 				Elems: []*node.TypeRef{builtin(strSpelling), builtin(intSpelling)},
 			}
 			m := b.TypeOf(mapped)
-			assert.Equal(t, m.Elems[0].Form, symbol.FormText, "a map's key folds")
+			assert.Equal(t, m.Elems[0].Form, symbol.FormText, "the key of a map folds")
 			assert.Equal(t, m.Elems[1].Form, symbol.FormScalar, "and its value")
 
 			fn := &node.TypeRef{
@@ -163,6 +192,27 @@ func TestShape(t *testing.T) {
 			assert.True(t, s.Async, "an asynchronous stream folds to an asynchronous stream")
 			assert.Equal(t, s.Elems[0].Ref, coretest.ID(svcPath, rowName, symbol.KindStruct), "of its element")
 		})
+
+		mutabilities := []struct {
+			name string
+			form symbol.TypeForm
+			give symbol.Mutability
+		}{
+			{name: "keeps the immutability of a list", form: symbol.FormList, give: symbol.MutabilityImmutable},
+			{name: "keeps the mutability of a borrow", form: symbol.FormBorrow, give: symbol.MutabilityMutable},
+		}
+		for _, tt := range mutabilities {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+				ref := &node.TypeRef{
+					Spelling: "T", Form: tt.form, Mutability: tt.give, Elems: []*node.TypeRef{builtin(intSpelling)},
+				}
+				assert.Equal(t, b.TypeOf(ref).Mutability, tt.give,
+					"the shape keeps whether a holder can write through the reference")
+			})
+		}
 
 		t.Run("folds a stream without the mark to a synchronous stream", func(t *testing.T) {
 			t.Parallel()
@@ -216,8 +266,8 @@ func TestShape(t *testing.T) {
 			s := b.TypeOf(named(svcPath, paramName, symbol.KindTypeParam))
 			assert.Equal(t, s.Form, symbol.FormOpaque,
 				"a use of a parameter states no argument, so no read decides its shape")
-			assert.Equal(t, s.Spelling, paramName, "and the leaf keeps the parameter's spelling")
-			assert.Empty(t, slices.Collect(reads.Identities()), "the target's kind alone decides")
+			assert.Equal(t, s.Spelling, paramName, "the leaf keeps the spelling of the parameter")
+			assert.Empty(t, slices.Collect(reads.Identities()), "the kind of the target alone decides")
 		})
 
 		t.Run("sends an unresolved name to the language", func(t *testing.T) {
@@ -304,9 +354,10 @@ func TestShape(t *testing.T) {
 				for _, child := range s.Elems {
 					children = append(children, child.Form)
 				}
-				expect.Equal(t, s.Form, tt.form, "the form is the language's, or opaque for a count it does not take")
+				expect.Equal(t, s.Form, tt.form,
+					"the form is the form of the language, or opaque for a count of arguments that it does not take")
 				expect.Equal(t, children, tt.children, "the children are the folded arguments")
-				expect.Equal(t, s.Spelling, tt.give.Spelling, "the shape keeps the reference's spelling")
+				expect.Equal(t, s.Spelling, tt.give.Spelling, "the shape keeps the spelling of the reference")
 			})
 		}
 
@@ -323,10 +374,10 @@ func TestShape(t *testing.T) {
 			g := coretest.Frozen(t, hierarchy(), coretest.Package(depPath, coretest.Struct(depPath, "Far")))
 			reads := store.NewReadSet()
 			reader, err := g.Reader(reads, func(pkg symbol.Identity) bool { return pkg.Package == svcPath })
-			assert.NoError(t, err, "a scoped reader mints")
-			b := rules.NewBound(scripted(), rules.View{Decls: reader, Reads: reads}, nil)
+			assert.NoError(t, err, "the graph returns a scoped reader")
+			b := rules.NewBound(scripted(), rules.NewView(reader, nil, reads, meta.KernelKeys{}), nil)
 			s := b.TypeOf(named(depPath, "Far", symbol.KindStruct))
-			assert.Equal(t, s.Form, symbol.FormOpaque, "what the plan could never read folds opaque")
+			assert.Equal(t, s.Form, symbol.FormOpaque, "a target that the plan cannot read folds to opaque")
 		})
 
 		t.Run("memoises per reference", func(t *testing.T) {
@@ -358,7 +409,7 @@ func TestShape(t *testing.T) {
 	t.Run("Opaque", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns FormOpaque with the reference's spelling", func(t *testing.T) {
+		t.Run("returns FormOpaque with the spelling of the reference", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, rules.Opaque(builtin(unknownName)),
@@ -368,7 +419,8 @@ func TestShape(t *testing.T) {
 		t.Run("returns FormOpaque without a spelling for a nil reference", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, rules.Opaque(nil), rules.TypeShape{Form: symbol.FormOpaque}, "nothing spells nothing")
+			assert.Equal(t, rules.Opaque(nil), rules.TypeShape{Form: symbol.FormOpaque},
+				"a nil reference has no spelling")
 		})
 	})
 
@@ -450,7 +502,7 @@ func TestShape(t *testing.T) {
 					t,
 					rules.IsWellKnown(tt.give),
 					tt.want,
-					"IsWellKnown reports whether the registry blesses it",
+					"IsWellKnown reports whether the registry contains the identity",
 				)
 			})
 		}
@@ -479,10 +531,10 @@ func TestShape(t *testing.T) {
 	})
 }
 
-// Each constructor returns its shape by value, and allocates only the
-// list of type arguments a reference keeps, in the ordinary run, which
-// runs no benchmark. The check runs alone, because the count includes
-// every goroutine's allocations.
+// TestShapeAllocs checks in the ordinary run that each constructor
+// returns its shape by value and allocates only the list of type
+// arguments that a reference keeps. The test does not run in parallel,
+// because the count includes the allocations of every goroutine.
 func TestShapeAllocs(t *testing.T) {
 	ref, arg := builtin(unknownName), rules.Scalar(intSpelling, rules.ScalarInt, 0)
 	class, id := rules.ScalarFloat, coretest.ID(svcPath, rowName, symbol.KindStruct)
@@ -511,8 +563,9 @@ func TestShapeAllocs(t *testing.T) {
 	assert.Equal(t, spelled, "float", "ScalarClass.String spells ScalarFloat")
 }
 
-// BenchmarkShape measures each constructor a language's Builtin returns
-// through, the registry check, and the spelling of a scalar class.
+// BenchmarkShape measures each constructor through which the Builtin of a
+// language returns, the registry check, and the spelling of a scalar
+// class.
 func BenchmarkShape(b *testing.B) {
 	b.Run("Opaque", func(b *testing.B) {
 		ref := builtin(unknownName)

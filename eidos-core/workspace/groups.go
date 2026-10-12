@@ -64,9 +64,7 @@ func (j *touchJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 // the files its layout routed and its render rendered, in path order,
 // with their staged forms at the same places, what each invocation
 // touched, what the settle read, and the names of the plan's files that a
-// warm run keeps, nil for a store that contains the whole plan. placed
-// reports that the backend derives each file's package from the
-// residents of its directory and from the modules.
+// warm run keeps, nil for a store that contains the whole plan.
 type planGroups struct {
 	plan    string
 	emit    *plugin.Emit
@@ -75,7 +73,6 @@ type planGroups struct {
 	touches []touch
 	settled plugin.Settled
 	others  plugin.Names
-	placed  bool
 }
 
 // record records the plan's groups into lane, and sets the group and the
@@ -98,7 +95,7 @@ type planGroups struct {
 //     directives and position the layout reads, and the files edge of the
 //     package of each per-package unit, whose directory the layout reads
 //   - the residents of the directory of each of its files and the modules,
-//     where the backend places its files against them
+//     against which the backend places its files
 //
 // Its findings are those that the render reported for its files.
 func (pg *planGroups) record(lane *state.Lane) {
@@ -190,9 +187,7 @@ func (pg *planGroups) record(lane *state.Lane) {
 		fileGroup[fi] = find(i)
 		g := group(i)
 		g.Files = append(g.Files, f.Path)
-		if pg.placed {
-			g.Reads = append(g.Reads, state.DirectoryEdge(path.Dir(f.Path)), state.ModulesEdge)
-		}
+		g.Reads = append(g.Reads, state.DirectoryEdge(path.Dir(f.Path)), state.ModulesEdge)
 	}
 	// hit lists the groups that one invocation touched, each once. An
 	// invocation touches few units, so a scan of the list finds a repeat.

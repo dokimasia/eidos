@@ -80,6 +80,7 @@ var Surfaces = []Surface{
 	{Rel: "plugin/plugintest", Name: "plugintest"},
 	{Rel: "rules", Name: "rules"},
 	{Rel: "rules/rulestest", Name: "rulestest"},
+	{Rel: "node/nodetest", Name: "nodetest"},
 	{Rel: "authored", Name: "authored"},
 	{Rel: "toolchain", Name: "toolchain"},
 	{Rel: "jsonschema", Name: "jsonschema"},

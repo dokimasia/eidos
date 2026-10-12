@@ -18,6 +18,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/internal/state"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -274,9 +275,10 @@ func executable(recorded state.Executable) (state.Executable, error) {
 // writes one. A run over a caller's graph and a composition without a
 // ledger read and write nothing. A run with Cold set, and a ledger
 // without a live generation, run cold and report nothing. A generation
-// that does not open, and one of another composition or executable, is
-// reported under [ColdState] and the run runs cold. So is an executable
-// the run cannot read, and the run then writes no generation.
+// that does not open, and one of another contract version, composition or
+// executable, is reported under [ColdState] and the run runs cold. So is
+// an executable that the run cannot read, and the run then writes no
+// generation.
 //
 // Error modes: a ledger that fails to read, wrapped.
 func (w *Workspace) openSealed(ctx context.Context, rec *record, in Input, sink *diag.Sink) (*sealedState, error) {
@@ -303,7 +305,8 @@ func (w *Workspace) openSealed(ctx context.Context, rec *record, in Input, sink 
 		return &sealedState{}, nil
 	}
 	s := &sealedState{
-		ledger: rec.ledger, header: state.Header{Composition: w.composition(), Executable: exe}, tree: in.Tree,
+		ledger: rec.ledger, tree: in.Tree,
+		header: state.Header{Contract: plugin.ContractVersion, Composition: w.composition(), Executable: exe},
 	}
 	if gen != nil && w.usable(gen, s.header, sink) {
 		s.gen, s.prior = gen, gen.Load(ctx)
@@ -315,10 +318,15 @@ func (w *Workspace) openSealed(ctx context.Context, rec *record, in Input, sink 
 	return s, nil
 }
 
-// usable reports whether a generation's header records the run's own
-// composition and executable, and reports the difference under
-// [ColdState] where it does not.
+// usable reports whether the header of a generation records the contract
+// version, the composition and the executable of the run, and reports the
+// difference under [ColdState] where it does not.
 func (w *Workspace) usable(gen *state.Generation, run state.Header, sink *diag.Sink) bool {
+	if gen.Header.Contract != run.Contract {
+		w.coldState(sink, "the sealed state has contract version %d, and the kernel has contract version %d",
+			gen.Header.Contract, run.Contract)
+		return false
+	}
 	if gen.Header.Composition != run.Composition {
 		w.coldState(sink, "the composition changed since the sealed state was recorded")
 		return false
@@ -356,7 +364,7 @@ func (p *planRun) recordFiles() {
 	for i, e := range p.entries() {
 		f := &p.files[i]
 		p.lane.Artifact(state.Artifact{
-			Entry: e, Pkg: f.pkg, Group: f.group, At: f.at, First: describe(f.first),
+			Entry: e, Pkg: f.pkg, Group: f.group, At: f.at, First: layout.Describe(f.first),
 			Export: exported[f.path], Names: f.names,
 		})
 	}

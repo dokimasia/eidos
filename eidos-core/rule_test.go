@@ -17,38 +17,42 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// fixtureNamespace is the namespace the root package's fixture keys
-// register under.
+// fixtureNamespace is the namespace of the fixture keys of the root
+// package.
 const fixtureNamespace = "t"
 
-// The two values the equality gate tells apart. The cases need a
-// string key: the fact store refuses a false bool, because absence
-// is the negative, so a bool key cannot have two values to compare.
+// wantedRank and otherRank are the two values that the equality gate
+// distinguishes. The fact store refuses a false bool, because an absent
+// fact is the negative, so the cases take a string key with two values.
 const (
 	wantedRank = "first"
 	otherRank  = "second"
 )
 
-// The allocations of the scoping wrappers and the predicates.
+// These constants are the allocation counts of the scoping wrappers and
+// of the predicates.
 const (
-	// directiveAllocs is a directive wrapper: the copy of its schema and
-	// its list of rules.
+	// directiveAllocs counts the allocations of a directive wrapper, which
+	// are the copy of its schema and its list of rules.
 	directiveAllocs = 2
-	// gatedAllocs is a kernel gate: its list of rules.
+	// gatedAllocs counts the allocation of a kernel gate, which is its list
+	// of rules.
 	gatedAllocs = 1
-	// whereAllocs is a fact gate: its list of predicates and its list of
-	// rules.
+	// whereAllocs counts the allocations of a fact gate, which are its list
+	// of predicates and its list of rules.
 	whereAllocs = 2
-	// predAllocs is a predicate: its test's closure over the key.
+	// predAllocs counts the allocation of a predicate, which is the closure
+	// of its test over the key.
 	predAllocs = 1
-	// namedPredAllocs is a predicate on a named handle: its test's
-	// closure over the key and the closure that binds the name.
+	// namedPredAllocs counts the allocations of a predicate on a named
+	// handle, which are the closure of its test over the key and the
+	// closure that binds the name.
 	namedPredAllocs = 2
 )
 
-// ruleCall is one construction of a wrapper or a predicate, named as
-// its benchmark is, what it allocates, and a check of what the last
-// construction built.
+// ruleCall is one construction of a wrapper or a predicate. It has the
+// name of its benchmark, its allocation count, and a check of what the
+// last construction built.
 type ruleCall struct {
 	name   string
 	allocs uint64
@@ -56,9 +60,9 @@ type ruleCall struct {
 	check  func(tb assert.TB)
 }
 
-// A rule's gates lower to subscription records, which is the whole
-// point of declarative gating: the engine reads them without running
-// a handler, so their shape is contract.
+// TestRule tests that the gates of a rule lower to subscription records.
+// The engine reads the records without running a handler, so their shape
+// is a contract.
 func TestRule(t *testing.T) {
 	t.Parallel()
 
@@ -246,10 +250,10 @@ func TestRule(t *testing.T) {
 	})
 }
 
-// Each wrapper allocates its lists, and each predicate its test, in the
-// ordinary run, which runs no benchmark. A predicate on a named handle
-// also allocates its bind. The check runs alone, because the count
-// includes every goroutine's allocations.
+// TestRuleAllocs checks in the ordinary run, which runs no benchmark, that
+// each wrapper allocates its lists and each predicate its test. A
+// predicate on a named handle also allocates its bind. The check runs
+// alone, because the count includes the allocations of every goroutine.
 func TestRuleAllocs(t *testing.T) {
 	for _, tt := range ruleCalls(t) {
 		msg := tt.name + " allocates its rule"
@@ -271,8 +275,9 @@ func TestRuleAllocs(t *testing.T) {
 		"KeyEquals returns a gate that waits for the workspace to bind it")
 }
 
-// BenchmarkRule measures each scoping wrapper around one rule and each
-// predicate's construction: what a plugin's constructor declares once.
+// BenchmarkRule measures the construction of each scoping wrapper around
+// one rule and of each predicate. The constructor of a plugin declares
+// each of them once.
 func BenchmarkRule(b *testing.B) {
 	for _, tt := range ruleCalls(b) {
 		b.Run(tt.name, func(b *testing.B) {
@@ -287,7 +292,7 @@ func BenchmarkRule(b *testing.B) {
 }
 
 // ruleCalls returns one construction of each wrapper around one emit
-// rule, and of each predicate, with a check of the record the last
+// rule, and of each predicate, with a check of the record that the last
 // construction lowers to.
 func ruleCalls(tb assert.TB) []ruleCall {
 	tb.Helper()
@@ -334,8 +339,8 @@ func ruleCalls(tb assert.TB) []ruleCall {
 	}
 }
 
-// rankKey returns a registered string key and the fact store it was
-// registered in.
+// rankKey returns a registered string key and the fact store of its
+// registry.
 func rankKey(tb assert.TB) (meta.Key[string], *meta.Facts) {
 	tb.Helper()
 
@@ -348,19 +353,21 @@ func rankKey(tb assert.TB) (meta.Key[string], *meta.Facts) {
 	return key, meta.NewFacts(reg)
 }
 
-// subscriptionsOf builds the plugin and returns its gate records.
+// subscriptionsOf builds a generator of rules and returns its gate
+// records.
 func subscriptionsOf(tb assert.TB, rules ...eidos.Rule) []plugin.Subscription {
 	tb.Helper()
 
-	p := eidos.NewPlugin("t").Handle(rules...).Build()
+	p := eidos.NewPlugin("t").Handle(rules...).Generator()
 	subscribed, ok := p.(plugin.Subscribed)
 	assert.True(tb, ok, "a built plugin declares its gates as data")
 	return subscribed.Subscriptions()
 }
 
-// gatedVisits returns the subjects a struct rule under pred visited,
-// in visit order. The plugin binds its gates in the registry of the
-// fact store first, as a workspace binds them when it builds.
+// gatedVisits returns the subjects that a struct rule under pred visits,
+// in visit order. It first binds the gates of the plugin in the registry
+// of the fact store, as a workspace binds them when it builds, and then
+// runs the bound plugin.
 func gatedVisits(
 	tb assert.TB, g *store.Graph, facts *meta.Facts, pred eidos.Pred,
 ) []symbol.Identity {
@@ -373,11 +380,12 @@ func gatedVisits(
 				visited = append(visited, m.Struct.Identity())
 				return nil
 			}))).
-		Build()
+		Generator()
 	binder, binds := p.(plugin.KeyBinder)
 	assert.True(tb, binds, "a built plugin binds its gates")
-	assert.NoError(tb, binder.BindKeys(facts.Registry()), "the gates bind")
-	assert.NoError(tb, generatorOf(tb, p).Generate(genContext(tb, g, facts, nil)),
+	bound, err := binder.BindKeys(facts.Registry())
+	assert.NoError(tb, err, "the gates bind")
+	assert.NoError(tb, generatorOf(tb, bound).Generate(genContext(tb, g, facts, nil)),
 		"the phase call passes")
 	return visited
 }

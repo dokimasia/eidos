@@ -131,8 +131,8 @@ func TestExport(t *testing.T) {
 				Origin:     settleOrigin("load", symbol.KindFunction),
 				Name:       "load",
 				TypeParams: []*emit.TypeParam{{Name: "T"}},
-				Params:     []*emit.Param{{Name: "count", Type: &emit.TypeRef{Spelling: "int"}}},
-				Returns:    []*emit.Return{{Name: "err", Type: &emit.TypeRef{Spelling: "error"}}},
+				Params:     emit.SlotOf(&emit.Param{Name: "count", Type: &emit.TypeRef{Spelling: "int"}}),
+				Returns:    emit.SlotOf(&emit.Return{Name: "err", Type: &emit.TypeRef{Spelling: "error"}}),
 			}
 			doc := exportOf(t, capitalizing(), settleUnit("svc", "svc/a.src", load))
 			assert.Equal(t, emittedNames(doc), []string{"load"}, "the export's names")

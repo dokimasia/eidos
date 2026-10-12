@@ -22,28 +22,28 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The generators of the suppression cases: one that reports a Warning at
-// every struct, and one that reports an Error.
+// The generators of the suppression cases. The flagging mirror reports
+// a Warning at every struct, and the faulting mirror an Error.
 const (
 	flaggingID plugin.ID = "flagging-mirror"
 	faultingID plugin.ID = "faulting-mirror"
 )
 
-// The position of the suppression cases' diag directives: the file that
-// rawDiag positions an instance in, and the line.
+// The position of the diag directives of the suppression cases, the
+// file in which rawDiag positions an instance and the line.
 const (
 	alphaDirectiveFile = "alpha.go"
 	directiveLine      = 2
 )
 
-// suppressible is the code of the suppression cases' findings, which
-// their diag directives name.
+// suppressible is the code of the findings of the suppression cases,
+// which their diag directives name.
 var suppressible = diag.MustRegister(diag.Prefix("SUPPRESSTEST"), diag.CodeSpec{
 	Number: 1, Meaning: "a finding that the suppression cases suppress",
 })
 
-// alphaID is the struct of the graphs that routedIn returns, which the
-// suppression cases' directives annotate.
+// alphaID is the struct of the graphs that routedIn returns. The
+// directives of the suppression cases annotate it.
 var alphaID = coretest.Struct(coretest.StorePath, "Alpha").ID
 
 // suppressingLine is the scripted line that suppresses suppressible at
@@ -51,10 +51,10 @@ var alphaID = coretest.Struct(coretest.StorePath, "Alpha").ID
 var suppressingLine = "+" + string(directive.KernelDiag) + " " + string(directive.DiagOff) + "=" +
 	suppressible.String() + "\n"
 
-// A diag directive removes the findings of its code at its declaration
-// from every sink that decides an outcome, except a kernel Error, and the
-// report counts what each directive removed. Strict reports every Warning
-// that remains as an Error.
+// TestSuppress tests the diag directive. A diag directive removes the
+// findings of its code at its declaration from every sink that decides
+// an outcome, except a kernel Error, and the report counts what each
+// directive removed. Strict reports every remaining Warning as an Error.
 func TestSuppress(t *testing.T) {
 	t.Parallel()
 
@@ -289,20 +289,21 @@ func warningAnnotator() plugin.Annotator {
 }
 
 // flaggedPlan returns the plan of the suppression cases, which runs gen
-// through a printer of its own and writes each file beside its source.
+// through the printer of the target fixture and writes each file beside
+// its source.
 func flaggedPlan(tb assert.TB, gen plugin.Generator) workspace.Plan {
 	tb.Helper()
 
 	return workspace.Plan{
-		Name: "plan", Generators: []plugin.Generator{gen}, Backend: printerAs(tb, "plan-printer", "fixture", ""),
+		Name: "plan", Generators: []plugin.Generator{gen}, Backend: fixturePrinter(),
 	}
 }
 
-// keptSuppression runs the flagging plan twice over the rounds tree with a
-// diag directive on the user, and returns the report of the second run,
-// which keeps every invocation and reports the recorded findings again.
-// It stops the test where the second run executes an invocation of the
-// generator.
+// keptSuppression runs the flagging plan twice over the rounds tree with
+// a diag directive on the user, and returns the report of the second
+// run. That run keeps every invocation and reports the recorded findings
+// again. keptSuppression stops the test where the second run runs an
+// invocation of the generator.
 func keptSuppression(t *testing.T) *workspace.Report {
 	t.Helper()
 

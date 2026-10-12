@@ -19,18 +19,19 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The files the group cases' plans write into the store package's
-// directory: the mirror's family, and the echo's.
+// The files that the plans of the group cases write into the directory
+// of the store package, the family of the mirror and the family of the
+// echo.
 const (
 	mirroredFile = "svc/store/gen.txt"
 	echoedFile   = "svc/store/echo.txt"
 )
 
-// The second mirror, the echo and the slotter of the group cases: a
-// generator that mirrors into the mirror's family file, a generator whose
-// emit-phase rule echoes each mirrored struct into a family of its own,
-// and a generator whose emit-phase rule appends a field into each
-// mirrored struct.
+// The second mirror, the echo and the slotter of the group cases. The
+// twin mirrors into the family file of the mirror. The emit-phase rule
+// of the echo echoes each mirrored struct into a family of its own. The
+// emit-phase rule of the slotter appends a field into each mirrored
+// struct.
 const (
 	twinID    plugin.ID = "twin"
 	echoID    plugin.ID = "echo"
@@ -41,12 +42,13 @@ const (
 // priority, so its emit-phase rule reads their units.
 const echoPriority = 10
 
-// peerName is the type that the referring mirror's field names, which no
-// file declares.
+// peerName is the name of the type of the field of the referring
+// mirror. No file declares it.
 const peerName = "Peer"
 
-// A recording run records each committed file of a plan, the group that
-// generates it, and the names it declares.
+// TestGroups tests the record of the groups. A recording run records
+// each committed file of a plan, the group that generates it, and the
+// names that it declares.
 func TestGroups(t *testing.T) {
 	t.Parallel()
 
@@ -101,7 +103,7 @@ func TestGroups(t *testing.T) {
 
 			mem := ledger.NewMem()
 			w := built(t, sealingPlans(mem, workspace.Plan{
-				Name: "plan", Generators: []plugin.Generator{referring()}, Backend: printer(t, "fixture"),
+				Name: "plan", Generators: []plugin.Generator{referring()}, Backend: fixturePrinter(),
 			}))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			peer := plugin.NameKey{Package: storePackage.Package, Emitted: peerName}
@@ -122,9 +124,12 @@ func TestGroups(t *testing.T) {
 			t.Parallel()
 
 			mem := ledger.NewMem()
+			twin := generator(twinID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Twin" + m.Struct.Name})
+				return nil
+			})
 			w := built(t, sealingPlans(mem, workspace.Plan{
-				Name: "plan", Generators: []plugin.Generator{mirror(mirrorID), mirror(twinID)},
-				Backend: printer(t, "fixture"),
+				Name: "plan", Generators: []plugin.Generator{mirror(mirrorID), twin}, Backend: fixturePrinter(),
 			}))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			g := groupOf(t, mem, mirroredFile)
@@ -139,7 +144,7 @@ func TestGroups(t *testing.T) {
 				mem := ledger.NewMem()
 				w := built(t, sealingPlans(mem, workspace.Plan{
 					Name: "plan", Generators: []plugin.Generator{mirror(mirrorID), echo(t)},
-					Backend: printer(t, "fixture"),
+					Backend: fixturePrinter(),
 				}))
 				sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 				mirrored, echoed := groupOf(t, mem, mirroredFile), groupOf(t, mem, echoedFile)
@@ -154,7 +159,7 @@ func TestGroups(t *testing.T) {
 				mem := ledger.NewMem()
 				w := built(t, sealingPlans(mem, workspace.Plan{
 					Name: "plan", Generators: []plugin.Generator{mirror(mirrorID), slotter(t)},
-					Backend: printer(t, "fixture"),
+					Backend: fixturePrinter(),
 				}))
 				sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 				g := groupOf(t, mem, mirroredFile)
@@ -189,43 +194,39 @@ func TestGroups(t *testing.T) {
 }
 
 // echo returns a generator whose emit-phase rule echoes each struct of an
-// earlier bucket into a family of its own. Its priority places it after a
+// earlier turn into a family of its own. Its priority places it after a
 // generator of the default priority.
 func echo(tb assert.TB) plugin.Generator {
 	tb.Helper()
 
-	g, held := eidos.NewPlugin(echoID).
+	return eidos.NewPlugin(echoID).
 		Priority(plugin.RoleGenerator, echoPriority).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "echo"}).
 		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 			e.PackageFile().Append(&emit.Struct{Origin: m.Origin(), Name: "Echo" + m.Origin().Name})
 			return nil
-		})).Build().(plugin.Generator)
-	assert.True(tb, held, "the echo lowers to the generator role")
-	return g
+		})).Generator()
 }
 
 // slotter returns a generator whose emit-phase rule appends a field into
-// each struct of an earlier bucket. Its priority places it after a
+// each struct of an earlier turn. Its priority places it after a
 // generator of the default priority.
 func slotter(tb assert.TB) plugin.Generator {
 	tb.Helper()
 
-	g, held := eidos.NewPlugin(slotterID).
+	return eidos.NewPlugin(slotterID).
 		Priority(plugin.RoleGenerator, echoPriority).
 		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 			if s, is := m.Value.(*emit.Struct); is {
 				e.Slot(&s.Fields).Append(&emit.Field{Name: "slotted", Type: &emit.TypeRef{Spelling: "int"}})
 			}
 			return nil
-		})).Build().(plugin.Generator)
-	assert.True(tb, held, "the slotter lowers to the generator role")
-	return g
+		})).Generator()
 }
 
-// referring returns a mirror whose struct has a field of the type that
-// peerName spells, so the settle looks the name up in the struct's
-// package.
+// referring returns a mirror whose struct has a field of the type
+// peerName, so the settle looks the name up in the package of the
+// struct.
 func referring() plugin.Generator {
 	return generator(mirrorID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
 		s := &emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name}

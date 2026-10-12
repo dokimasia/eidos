@@ -51,11 +51,11 @@ func (x *Function) Kind() symbol.Kind { return symbol.KindFunction }
 // Position returns where the declaration was written.
 func (x *Function) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Function) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Function) Identity() symbol.Identity { return x.ID }
 
@@ -89,6 +89,14 @@ func (x *Function) Identity() symbol.Identity { return x.ID }
 // asynchronous result in the language's own form, and the failure
 // types the declaration announces.
 //
+// Optional marks a method that a value of its type may lack, which
+// TypeScript writes as run?(). Mutability states for an index signature
+// whether a holder of the value can assign its entries, which
+// TypeScript writes as a readonly index signature. Every other method
+// leaves it unknown. Computed marks a name that is an expression of the
+// language, such as TypeScript's [Symbol.iterator], and the name is the
+// source text of the expression.
+//
 // The node model records the signature and never a body, and the
 // emit model records a generated body in its Body field.
 //
@@ -110,6 +118,9 @@ type Method struct {
 	Indexer     bool               `json:"indexer,omitzero"`    // an index signature: one key parameter, one result
 	Constructs  bool               `json:"constructs,omitzero"` // a construct signature on an interface
 	Hard        bool               `json:"hard,omitzero"`       // runtime-private: TypeScript's # names
+	Optional    bool               `json:"optional,omitzero"`   // a value of the type may lack it: TypeScript's ?
+	Mutability  symbol.Mutability  `json:"mutability,omitzero"` // an index signature: whether a holder can assign its entries
+	Computed    bool               `json:"computed,omitzero"`   // the name is an expression: TypeScript's [expr]
 	Receiver    *Param             `json:"receiver,omitzero"`   // nil where the receiver is implicit
 	Receives    *TypeRef           `json:"receives,omitzero"`   // set when declared outside the type it attaches to
 	TypeParams  []*TypeParam       `json:"typeParams,omitzero"`
@@ -126,11 +137,11 @@ func (x *Method) Kind() symbol.Kind { return symbol.KindMethod }
 // Position returns where the declaration was written.
 func (x *Method) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Method) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Method) Identity() symbol.Identity { return x.ID }
 
@@ -179,16 +190,16 @@ func (x *Param) Kind() symbol.Kind { return symbol.KindParam }
 // Position returns where the declaration was written.
 func (x *Param) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Param) Docs() []string { return nil }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Param) Identity() symbol.Identity { return x.ID }
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *Param) TypeRef() symbol.Symbol {
 	if x.Type == nil {
 		return nil
@@ -220,16 +231,16 @@ func (x *Return) Kind() symbol.Kind { return symbol.KindReturn }
 // Position returns where the declaration was written.
 func (x *Return) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Return) Docs() []string { return nil }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Return) Identity() symbol.Identity { return x.ID }
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *Return) TypeRef() symbol.Symbol {
 	if x.Type == nil {
 		return nil
@@ -264,11 +275,11 @@ func (x *Package) Kind() symbol.Kind { return symbol.KindPackage }
 // Position returns where the declaration was written.
 func (x *Package) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Package) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Package) Identity() symbol.Identity { return x.ID }
 
@@ -298,11 +309,11 @@ func (x *File) Kind() symbol.Kind { return symbol.KindFile }
 // Position returns where the declaration was written.
 func (x *File) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *File) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *File) Identity() symbol.Identity { return x.ID }
 
@@ -344,11 +355,11 @@ func (x *Import) Kind() symbol.Kind { return symbol.KindImport }
 // Position returns where the declaration was written.
 func (x *Import) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Import) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Import) Identity() symbol.Identity { return x.ID }
 
@@ -382,11 +393,11 @@ func (x *Export) Kind() symbol.Kind { return symbol.KindExport }
 // Position returns where the declaration was written.
 func (x *Export) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Export) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Export) Identity() symbol.Identity { return x.ID }
 
@@ -414,11 +425,11 @@ func (x *Binding) Kind() symbol.Kind { return symbol.KindBinding }
 // Position returns where the declaration was written.
 func (x *Binding) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Binding) Docs() []string { return nil }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Binding) Identity() symbol.Identity { return x.ID }
 
@@ -433,6 +444,11 @@ func (x *Binding) Identity() symbol.Identity { return x.ID }
 // declares instance state and behaviour alongside its variants.
 // Most languages leave both empty.
 //
+// Underlying is the representation that the source declares for the
+// values: the target of a Go defined type, such as uint8, and the
+// integer type of a Rust repr attribute. It is nil where the language
+// does not declare one, as in a TypeScript, a protobuf or a Java enum.
+//
 // This is the node spelling of the kind.
 type Enum struct {
 	ID          symbol.Identity    `json:"id,omitzero"`
@@ -441,7 +457,8 @@ type Enum struct {
 	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
-	Const       bool               `json:"const,omitzero"` // inlined at use: TypeScript's const enum
+	Const       bool               `json:"const,omitzero"`      // inlined at use: TypeScript's const enum
+	Underlying  *TypeRef           `json:"underlying,omitzero"` // the declared representation; nil when none
 	Variants    []*EnumVariant     `json:"variants,omitzero"`
 	Fields      []*Field           `json:"fields,omitzero"`  // Java enums carry instance state
 	Methods     []*Method          `json:"methods,omitzero"` // and behaviour
@@ -454,11 +471,11 @@ func (x *Enum) Kind() symbol.Kind { return symbol.KindEnum }
 // Position returns where the declaration was written.
 func (x *Enum) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Enum) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Enum) Identity() symbol.Identity { return x.ID }
 
@@ -480,7 +497,7 @@ func (x *Enum) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
+// EmbedList returns the member list, adapted for neutral code. This kind has no such list, so it returns nil.
 func (x *Enum) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -511,11 +528,11 @@ func (x *EnumVariant) Kind() symbol.Kind { return symbol.KindEnumVariant }
 // Position returns where the declaration was written.
 func (x *EnumVariant) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *EnumVariant) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *EnumVariant) Identity() symbol.Identity { return x.ID }
 
@@ -548,15 +565,15 @@ func (x *Sum) Kind() symbol.Kind { return symbol.KindSum }
 // Position returns where the declaration was written.
 func (x *Sum) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Sum) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Sum) Identity() symbol.Identity { return x.ID }
 
-// FieldList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
+// FieldList returns the member list, adapted for neutral code. This kind has no such list, so it returns nil.
 func (x *Sum) FieldList() []symbol.Symbol {
 	return nil
 }
@@ -570,7 +587,7 @@ func (x *Sum) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
+// EmbedList returns the member list, adapted for neutral code. This kind has no such list, so it returns nil.
 func (x *Sum) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -598,11 +615,11 @@ func (x *SumVariant) Kind() symbol.Kind { return symbol.KindSumVariant }
 // Position returns where the declaration was written.
 func (x *SumVariant) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *SumVariant) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *SumVariant) Identity() symbol.Identity { return x.ID }
 
@@ -615,12 +632,12 @@ func (x *SumVariant) FieldList() []symbol.Symbol {
 	return out
 }
 
-// MethodList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
+// MethodList returns the member list, adapted for neutral code. This kind has no such list, so it returns nil.
 func (x *SumVariant) MethodList() []symbol.Symbol {
 	return nil
 }
 
-// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
+// EmbedList returns the member list, adapted for neutral code. This kind has no such list, so it returns nil.
 func (x *SumVariant) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -634,13 +651,17 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 // TypeScript readonly and Java final, which a generator emitting a
 // data class has to reproduce. A field declared without a name, as
 // a positional Sum variant payload is, leaves Name empty and
-// carries only its type.
+// carries only its type. Computed marks a name that is an expression
+// of the language, such as a TypeScript property declared as [key],
+// and the name is the source text of the expression.
 //
-// Tag holds the tag text in the source language's spelling with
-// its enclosing delimiters stripped, unevaluated, the way
-// [Constant.Value] holds an expression; the target's template
-// supplies the delimiters its language writes. Only languages with
-// per-field tags fill it.
+// On the node side, Tag is the tag text in the spelling of the source
+// language, with its enclosing delimiters stripped and unevaluated, the
+// way [Constant.Value] is an expression. Only languages with per-field
+// tags fill it. On the emit side, Tags is a slot of the entries of the
+// tag, which the target joins into its tag syntax. A plugin appends an
+// entry to the field of another plugin through the slot view of its
+// emitter, so the header of the file names the plugin.
 //
 // This is the node spelling of the kind.
 type Field struct {
@@ -654,9 +675,10 @@ type Field struct {
 	Mutability  symbol.Mutability  `json:"mutability,omitzero"`
 	Hard        bool               `json:"hard,omitzero"`     // runtime-private: TypeScript's # names
 	Optional    bool               `json:"optional,omitzero"` // present-or-absent: TypeScript's ?
+	Computed    bool               `json:"computed,omitzero"` // the name is an expression: TypeScript's [expr]
 	Type        *TypeRef           `json:"type,omitzero"`
 	Value       string             `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
-	Tag         string             `json:"tag,omitzero"`   // tag text without delimiters, "" when none; a later plugin reshapes it through OnEmit
+	Tag         string             `json:"tag,omitzero"`   // tag text without delimiters, "" when none
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
 	Host        symbol.Identity    `json:"host,omitzero"`
 }
@@ -667,16 +689,16 @@ func (x *Field) Kind() symbol.Kind { return symbol.KindField }
 // Position returns where the declaration was written.
 func (x *Field) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Field) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Field) Identity() symbol.Identity { return x.ID }
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *Field) TypeRef() symbol.Symbol {
 	if x.Type == nil {
 		return nil
@@ -694,8 +716,12 @@ func (x *Field) TypeRef() symbol.Symbol {
 //
 // Type is nil when the source states none and the language infers
 // it. That is a declared limit rather than a failure: the
-// declaration still projects, and the language's own metadata
-// carries the inferred spelling for anyone who needs it.
+// declaration still projects, and the metadata of the language
+// contains the inferred spelling for a reader that needs it.
+//
+// Value is source text in the language of the declaration. A backend
+// does not read the text, so a generator whose value names a package
+// imports the package through the use builtin of its template.
 //
 // This is the node spelling of the kind.
 type Variable struct {
@@ -717,16 +743,16 @@ func (x *Variable) Kind() symbol.Kind { return symbol.KindVariable }
 // Position returns where the declaration was written.
 func (x *Variable) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Variable) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Variable) Identity() symbol.Identity { return x.ID }
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *Variable) TypeRef() symbol.Symbol {
 	if x.Type == nil {
 		return nil
@@ -739,9 +765,12 @@ func (x *Variable) TypeRef() symbol.Symbol {
 // const.
 //
 // Type is nil for an untyped constant, which Go has and most
-// languages do not. Value holds the source spelling of the value
-// expression verbatim, unevaluated, the same contract
-// [EnumVariant.Value] carries.
+// languages do not. Value is the source spelling of the value
+// expression, verbatim and unevaluated, as [EnumVariant.Value] is.
+//
+// A backend does not read the text of Value, so a generator whose
+// value names a package imports the package through the use builtin
+// of its template.
 //
 // This is the node spelling of the kind.
 type Constant struct {
@@ -762,16 +791,16 @@ func (x *Constant) Kind() symbol.Kind { return symbol.KindConstant }
 // Position returns where the declaration was written.
 func (x *Constant) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Constant) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Constant) Identity() symbol.Identity { return x.ID }
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *Constant) TypeRef() symbol.Symbol {
 	if x.Type == nil {
 		return nil
@@ -842,11 +871,11 @@ func (x *Struct) Kind() symbol.Kind { return symbol.KindStruct }
 // Position returns where the declaration was written.
 func (x *Struct) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Struct) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Struct) Identity() symbol.Identity { return x.ID }
 
@@ -925,11 +954,11 @@ func (x *Interface) Kind() symbol.Kind { return symbol.KindInterface }
 // Position returns where the declaration was written.
 func (x *Interface) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Interface) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Interface) Identity() symbol.Identity { return x.ID }
 
@@ -995,47 +1024,51 @@ func (x *Alias) Kind() symbol.Kind { return symbol.KindAlias }
 // Position returns where the declaration was written.
 func (x *Alias) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Alias) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Alias) Identity() symbol.Identity { return x.ID }
 
 // TypeRef is a type as a declaration mentions it.
 //
+// A type reference is not a declaration, so it has no identity of its
+// own. Its Target is the identity of the declaration it resolves to.
+//
 // Spelling is the source text verbatim. Target is the canonical
-// identity the spelling resolves to. It is zero until the
-// resolution step runs, and permanently for builtins and types
-// outside the workspace. That is legitimate degradation, so a
+// identity that the resolution step finds for the spelling. It is zero
+// until the resolution step runs, and permanently for builtins and
+// types outside the workspace. That is legitimate degradation, so a
 // consumer checks the target before relying on it.
 //
 // Target is an identity and not a pointer. A key can be stored,
 // compared and kept across runs. A pointer cannot, and following
 // one would make the walk cyclic.
 //
-// Package is what the reference's import names. It is empty for a
-// builtin, for a structural form, whose named children record their
-// own, and for a declaration the file uses without an import. Go
-// records an import path, TypeScript a module specifier, and Java
-// and Rust a slash-separated package or module path, which a backend
-// writes with the language's own separator. Each is the form a
-// declaration identity of the language uses for its package, so a
-// backend reads a target's package and a reference's alike. A proto
-// import names a file and not a package, so protobuf records the
-// path of the imported file that declares the type. A backend
-// imports a type the workspace never loaded through Package,
-// because such a reference has no target.
+// Package is the package that the import of the reference names. It
+// is empty for a builtin, for a structural form and for a declaration
+// that the file uses without an import. The named children of a
+// structural form record their own package. Go records an import path,
+// TypeScript a module specifier, and Java and Rust a slash-separated
+// package or module path. A backend writes such a path with the
+// separator of its language. Each is the form that a declaration
+// identity of the language uses for its package, so a backend reads
+// the package of a target and of a reference alike. A proto import
+// names a file and not a package, so protobuf records the path of the
+// imported file that declares the type. A backend imports a type that
+// the workspace never loaded through Package, because such a reference
+// has no target.
 //
 // Args lists the type arguments of an instantiation, so
-// Map[string, User] has two. A reference with Args has the bare
-// name in Spelling, and a target writes the argument list in its
-// own brackets, so the one instantiation spells Map[K, V] in Go and
-// Map<K, V> in Java.
+// Map[string, User] has two. A reference with Args has the bare name
+// in Spelling. A backend writes the argument list in the brackets of
+// its language. The Go backend writes Map[K, V], and the Java backend
+// writes Map<K, V>.
 //
-// Form and Elems record the structure the frontend parsed, each
-// form's children in its fixed order:
+// Form and Elems record the structure that the frontend parsed, with
+// the children of each form in its fixed order:
 //
 //   - Optional, List, Array, Stream and Borrow: one child.
 //   - Map: the key, then the value.
@@ -1045,43 +1078,59 @@ func (x *Alias) Identity() symbol.Identity { return x.ID }
 //     one.
 //   - Inline and Named: none.
 //
-// The spelling is kept verbatim beside them, so a backend spells what
-// it read, and the resolution step visits the named types inside a
-// composite through the children. A structural reference has no
-// target of its own, and its Named children do. Length is a fixed
-// array length written as a literal, and 0 where the length is an
-// expression the spelling keeps.
+// No element of Elems is nil. A frontend records a child that the source
+// does not state as an empty reference, so the form keeps its arity.
+//
+// The spelling is kept verbatim beside them, so a backend writes the
+// spelling that the frontend read. The resolution step visits the
+// named types inside a composite through the children. A structural
+// reference has no target of its own, and its Named children have
+// targets. Length is a fixed array length that the source writes as a
+// literal. It is 0 when the length is an expression in the spelling.
 //
 // Async marks a Stream whose elements arrive asynchronously, such as a
-// protobuf stream, which delivers its messages over a connection. A
-// frontend sets it from the language's syntax, and the projection's fold
-// copies it into the stream's shape. It is false on every other form.
+// protobuf stream over a connection. A frontend sets it from the syntax
+// of the language, and the fold of the projection copies it into the
+// shape of the stream. It is false on every other form.
 //
-// Fields and Methods are an Inline reference's members: the
-// properties and methods of a TypeScript object type, and the fields
-// of a Go inline struct and the methods of a Go inline interface.
-// They are the nodes a declaration's members are, without
-// identities, so no carrier and no stamp can address them, and the
-// resolution step resolves the references among them. They are the
-// node model's alone: a backend spells an inline body from the
-// reference's spelling.
+// Mutability states for a List, an Array, a Tuple, a Map and a Borrow
+// whether a holder can write through the reference. TypeScript states
+// Immutable for readonly T[] and Mutable for T[], and Rust states
+// Immutable for &T and Mutable for &mut T. A language that does not
+// distinguish the two leaves it unknown, and the fold copies it into
+// the shape.
+//
+// Absent lists the members of the source union that an Optional folds
+// away because they denote absence, in source order: TypeScript's null
+// and undefined in T | null. It is empty for an Optional that the
+// source states with a mark, such as Go's *T or TypeScript's T?. Only
+// the node model has it, because a backend writes the spelling.
+//
+// Fields and Methods are the members of an Inline reference. They are
+// the properties and methods of a TypeScript object type, the fields of
+// a Go inline struct and the methods of a Go inline interface. They are
+// the same nodes as the members of a declaration, without identities.
+// No carrier and no stamp can address them. The resolution step
+// resolves the references among them. Only the node model has them. A
+// backend writes an inline body from the spelling of the reference.
 //
 // This is the node spelling of the kind.
 type TypeRef struct {
-	ID       symbol.Identity `json:"id,omitzero"`
-	Pos      position.Pos    `json:"pos,omitzero"`
-	Spelling string          `json:"spelling,omitzero"` // source text, verbatim
-	Target   symbol.Identity `json:"target,omitzero"`   // zero until resolution, and for builtins, externals and structural forms
-	Package  string          `json:"package,omitzero"`  // what the import names; "" for a builtin, a structural form and a name needing no import
-	Form     symbol.TypeForm `json:"form,omitzero"`     // the structure; FormNamed by default
-	Variance symbol.Variance `json:"variance,omitzero"` // FormWildcard: In for a lower bound, Out for an upper one
-	Async    bool            `json:"async,omitzero"`    // FormStream: the elements arrive asynchronously
-	Elems    []*TypeRef      `json:"elems,omitzero"`    // the form's children, in the form's fixed order
-	Split    int             `json:"split,omitzero"`    // FormFunc: the index in Elems where the returns begin
-	Length   int             `json:"length,omitzero"`   // FormArray: the literal length; 0 when the spelling keeps an expression
-	Args     []*TypeRef      `json:"args,omitzero"`     // the type arguments of an instantiation
-	Fields   []*Field        `json:"fields,omitzero"`   // FormInline: the body's fields, without identities
-	Methods  []*Method       `json:"methods,omitzero"`  // FormInline: the body's methods, without identities
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Spelling   string            `json:"spelling,omitzero"`   // source text, verbatim
+	Target     symbol.Identity   `json:"target,omitzero"`     // zero until resolution, and for builtins, externals and structural forms
+	Package    string            `json:"package,omitzero"`    // what the import names; "" for a builtin, a structural form and a name needing no import
+	Form       symbol.TypeForm   `json:"form,omitzero"`       // the structure; FormNamed by default
+	Variance   symbol.Variance   `json:"variance,omitzero"`   // FormWildcard: In for a lower bound, Out for an upper one
+	Async      bool              `json:"async,omitzero"`      // FormStream: the elements arrive asynchronously
+	Mutability symbol.Mutability `json:"mutability,omitzero"` // List, Array, Tuple, Map and Borrow: whether a holder can write through it
+	Elems      []*TypeRef        `json:"elems,omitzero"`      // the form's children, in the form's fixed order
+	Split      int               `json:"split,omitzero"`      // FormFunc: the index in Elems where the returns begin
+	Length     int               `json:"length,omitzero"`     // FormArray: the literal length; 0 when the spelling keeps an expression
+	Args       []*TypeRef        `json:"args,omitzero"`       // the type arguments of an instantiation
+	Absent     []*TypeRef        `json:"absent,omitzero"`     // FormOptional: the members of the source union that denote absence
+	Fields     []*Field          `json:"fields,omitzero"`     // FormInline: the body's fields, without identities
+	Methods    []*Method         `json:"methods,omitzero"`    // FormInline: the body's methods, without identities
 }
 
 // Kind returns [symbol.KindTypeRef].
@@ -1090,13 +1139,13 @@ func (x *TypeRef) Kind() symbol.Kind { return symbol.KindTypeRef }
 // Position returns where the declaration was written.
 func (x *TypeRef) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *TypeRef) Docs() []string { return nil }
 
-// Identity returns the declaration's canonical identity, which stays
-// zero until the resolution step assigns one.
-func (x *TypeRef) Identity() symbol.Identity { return x.ID }
+// Identity returns the zero identity. The kind does not declare an
+// identity field, because it is not a declaration.
+func (x *TypeRef) Identity() symbol.Identity { return symbol.Identity{} }
 
 // FieldList returns the member list, adapted for neutral code.
 func (x *TypeRef) FieldList() []symbol.Symbol {
@@ -1116,7 +1165,7 @@ func (x *TypeRef) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
+// EmbedList returns the member list, adapted for neutral code. This kind has no such list, so it returns nil.
 func (x *TypeRef) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -1125,10 +1174,10 @@ func (x *TypeRef) EmbedList() []symbol.Symbol {
 //
 // Variance is Invariant for Go and Rust, and the declared variance
 // for Kotlin, C# and Java wildcards. Bounds lists the constraint as
-// type references: a Go constraint interface, a Java or Kotlin
-// upper bound, a Rust trait bound. What a bound cannot express in
-// references, such as a Go constraint's full type set, is language
-// metadata.
+// type references, such as a Go constraint interface, a Java or Kotlin
+// upper bound, or a Rust trait bound. Language metadata records what a
+// bound cannot express in references, such as the full type set of a
+// Go constraint.
 //
 // Default is the type argument used when a caller supplies none,
 // which TypeScript writes as "<T = string>". It is nil where the
@@ -1158,16 +1207,16 @@ func (x *TypeParam) Kind() symbol.Kind { return symbol.KindTypeParam }
 // Position returns where the declaration was written.
 func (x *TypeParam) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *TypeParam) Docs() []string { return nil }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *TypeParam) Identity() symbol.Identity { return x.ID }
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *TypeParam) TypeRef() symbol.Symbol {
 	if x.Type == nil {
 		return nil
@@ -1175,18 +1224,18 @@ func (x *TypeParam) TypeRef() symbol.Symbol {
 	return x.Type
 }
 
-// Embed is one embedded type in a declaration that promotes
-// members: a Go embedded field or embedded interface, a PHP trait
+// Embed is one embedded type in a declaration that promotes members,
+// such as a Go embedded field, a Go embedded interface or a PHP trait
 // use.
 //
-// Embedding differs from nominal supertyping because the members
-// arrive promoted and not inherited. Which members a type has
-// across its embeds is a language rule and not a model one.
+// Embedding differs from nominal supertyping because the members are
+// promoted and not inherited. The set of members that a type has
+// across its embeds is a rule of the language and not of the model.
 //
-// An embed is a declaration in its own right: it has the
-// documentation, trailing comment, tag and annotations an embedded
-// field takes like any field, and its identity, named by the
-// embedded type's bare name, is what a directive attaches to.
+// An embed is a declaration in its own right. It has the
+// documentation, trailing comment, tag and annotations of an embedded
+// field. Its identity has the bare name of the embedded type, and a
+// directive attaches to that identity.
 //
 // This is the node spelling of the kind.
 type Embed struct {
@@ -1206,10 +1255,33 @@ func (x *Embed) Kind() symbol.Kind { return symbol.KindEmbed }
 // Position returns where the declaration was written.
 func (x *Embed) Position() position.Pos { return x.Pos }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *Embed) Docs() []string { return x.Doc }
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *Embed) Identity() symbol.Identity { return x.ID }
+
+// TagEntry is one entry of the struct tag of an emitted field: a key and
+// its value. A target joins the entries of a field into its tag syntax,
+// such as json:"name,omitempty" in Go. A target without tags refuses a
+// field with entries.
+//
+// This is the node spelling of the kind.
+type TagEntry struct {
+}
+
+// Kind returns [symbol.KindTagEntry].
+func (x *TagEntry) Kind() symbol.Kind { return symbol.KindTagEntry }
+
+// Position returns where the declaration was written.
+func (x *TagEntry) Position() position.Pos { return position.Pos{} }
+
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
+func (x *TagEntry) Docs() []string { return nil }
+
+// Identity returns the zero identity. The kind does not declare an
+// identity field, because it is not a declaration.
+func (x *TagEntry) Identity() symbol.Identity { return symbol.Identity{} }

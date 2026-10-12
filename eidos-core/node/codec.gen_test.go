@@ -227,6 +227,13 @@ func TestCodec(t *testing.T) {
 				assert.NoError(t, err, "a nil *Embed encodes")
 				assert.Equal(t, encoded, []byte{0}, "as one zero byte")
 			}
+
+			{
+				var none *TagEntry
+				encoded, err := AppendBinary(nil, none, nil)
+				assert.NoError(t, err, "a nil *TagEntry encodes")
+				assert.Equal(t, encoded, []byte{0}, "as one zero byte")
+			}
 		})
 
 		t.Run("returns an error for a symbol the model does not declare", func(t *testing.T) {
@@ -425,6 +432,9 @@ func populated() []symbol.Symbol {
 		subject.Indexer = true
 		subject.Constructs = true
 		subject.Hard = true
+		subject.Optional = true
+		subject.Mutability = 18
+		subject.Computed = true
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Receiver = &Param{}
@@ -523,6 +533,7 @@ func populated() []symbol.Symbol {
 		subject.Visibility = 6
 		subject.Const = true
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Underlying = &TypeRef{}
 		subject.Variants = append(subject.Variants, &EnumVariant{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
@@ -578,6 +589,7 @@ func populated() []symbol.Symbol {
 		subject.Mutability = 8
 		subject.Hard = true
 		subject.Optional = true
+		subject.Computed = true
 		subject.Value = "Value"
 		subject.Tag = "Tag"
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
@@ -670,14 +682,14 @@ func populated() []symbol.Symbol {
 	}
 	{
 		subject := &TypeRef{}
-		subject.ID = symbol.Identity{Lang: "lang", Package: "pkg/ID", Owner: "Owner", Name: "ID", Kind: symbol.KindStruct, Disc: "disc"}
-		subject.Pos = position.Pos{File: "Pos.go", Line: 2, Col: 2}
+		subject.Pos = position.Pos{File: "Pos.go", Line: 1, Col: 1}
 		subject.Spelling = "Spelling"
 		subject.Target = symbol.Identity{Lang: "lang", Package: "pkg/Target", Owner: "Owner", Name: "Target", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Package = "Package"
-		subject.Form = 6
-		subject.Variance = 7
+		subject.Form = 5
+		subject.Variance = 6
 		subject.Async = true
+		subject.Mutability = 8
 		subject.Split = -10
 		subject.Length = -11
 		subject.Elems = append(subject.Elems, &TypeRef{})
@@ -709,6 +721,10 @@ func populated() []symbol.Symbol {
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Ref = &TypeRef{}
+		out = append(out, subject)
+	}
+	{
+		subject := &TagEntry{}
 		out = append(out, subject)
 	}
 	return out

@@ -26,11 +26,11 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The files of the explained trees beside the store's source: the source
-// of a second package, a file that the scripted frontend refuses, which
-// declares a struct before its package line, a path that no plan
-// generates, and the source of the package whose last path element
-// contains a dot.
+// The files of the explained trees beside the source of the store. They
+// are the source of a second package, a file that the scripted frontend
+// refuses because it declares a struct before its package line, a path
+// that no plan generates, and the source of the package whose last path
+// element contains a dot.
 const (
 	otherSource    = "svc/other/other.zz"
 	refusedSource  = "svc/bad/bad.zz"
@@ -50,9 +50,10 @@ const (
 	bindingsPlan = "bindings"
 )
 
-// The plugins of the explanation cases: a generator that writes a second
-// declaration into the file of a plan, a generator of a dependent plan that
-// reads the export of the plan, and a check that enumerates.
+// The plugins of the explanation cases. also writes a second declaration
+// into the file of a plan, binder is the generator of a dependent plan
+// that reads the export of the plan, and lister is a check that
+// enumerates.
 const (
 	alsoID   plugin.ID = "also"
 	binderID plugin.ID = "binder"
@@ -62,8 +63,8 @@ const (
 // bogusID is the ID of a record that no run records.
 const bogusID = 1
 
-// The positions that the explanation cases name: the row's declaration,
-// the mark on the row, and the first line of the refused file.
+// The positions that the explanation cases name, the declaration of the
+// row, the mark on the row and the first line of the refused file.
 var (
 	rowAt     = position.Pos{File: sealedSource, Line: 2}
 	markAt    = position.Pos{File: sealedSource, Line: 3}
@@ -71,9 +72,9 @@ var (
 )
 
 // explainedRows are the rows of the explained run that the damage cases
-// break: the path of the marker's file, the key of its group's row, the
-// key of its contributor's row, and the key of the readers row of the
-// contributor's unit.
+// break. They are the path of the file of the marker, the key of the row
+// of its group, the key of the row of its contributor and the key of the
+// readers row of the unit of the contributor.
 type explainedRows struct {
 	path        string
 	group       []byte
@@ -90,12 +91,12 @@ type damageCase struct {
 	target func(r explainedRows) workspace.Target
 }
 
-// Explain reads what the last generation records about a target, and runs
-// nothing.
+// TestExplain tests the explanation of a target. Explain reads what the
+// last generation records about a target, and runs nothing.
 func TestExplain(t *testing.T) {
 	t.Parallel()
 
-	t.Run("RecordKind", func(t *testing.T) {
+	t.Run("ExecutionKind", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("String", func(t *testing.T) {
@@ -103,19 +104,27 @@ func TestExplain(t *testing.T) {
 
 			tests := []struct {
 				name string
-				give workspace.RecordKind
+				give workspace.ExecutionKind
 				want string
 			}{
-				{name: "returns validation for RecordValidation", give: workspace.RecordValidation, want: "validation"},
-				{name: "returns invocation for RecordInvocation", give: workspace.RecordInvocation, want: "invocation"},
-				{name: "returns check for RecordCheck", give: workspace.RecordCheck, want: "check"},
-				{name: "returns group for RecordGroup", give: workspace.RecordGroup, want: "group"},
-				{name: "returns audit for RecordAudit", give: workspace.RecordAudit, want: "audit"},
-				{name: "returns region for RecordRegion", give: workspace.RecordRegion, want: "region"},
+				{
+					name: "returns validation for ExecutionValidation",
+					give: workspace.ExecutionValidation,
+					want: "validation",
+				},
+				{
+					name: "returns invocation for ExecutionInvocation",
+					give: workspace.ExecutionInvocation,
+					want: "invocation",
+				},
+				{name: "returns check for ExecutionCheck", give: workspace.ExecutionCheck, want: "check"},
+				{name: "returns group for ExecutionGroup", give: workspace.ExecutionGroup, want: "group"},
+				{name: "returns audit for ExecutionAudit", give: workspace.ExecutionAudit, want: "audit"},
+				{name: "returns region for ExecutionRegion", give: workspace.ExecutionRegion, want: "region"},
 				{
 					name: "returns the number of an undeclared kind",
-					give: workspace.RecordKind(7),
-					want: "RecordKind(7)",
+					give: workspace.ExecutionKind(7),
+					want: "ExecutionKind(7)",
 				},
 			}
 			for _, tt := range tests {
@@ -182,16 +191,16 @@ func TestExplain(t *testing.T) {
 			expect.Equal(t, got.Files[0].Contributors[0].Subject, rowID, "on the row")
 		})
 
-		t.Run("returns the records of a generated file's group and of its contributor", func(t *testing.T) {
+		t.Run("returns the group and the contributor of a generated file", func(t *testing.T) {
 			t.Parallel()
 
 			w, _, path := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Path: path})
 			assert.NoError(t, err, "the generation explains the file")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{workspace.RecordGroup, workspace.RecordInvocation},
-				"the group's record comes before the contributor's")
-			expect.Equal(t, got.Records[0].Plan, planName, "the group is the plan's")
-			expect.Equal(t, got.Records[1].Match.Plugin, markerID, "the contributor is the marker's invocation")
+			want := []workspace.ExecutionKind{workspace.ExecutionGroup, workspace.ExecutionInvocation}
+			assert.Equal(t, kindsOf(got), want, "the group comes before its contributor")
+			expect.Equal(t, got.Executions[0].Plan, planName, "the group is the plan's")
+			expect.Equal(t, got.Executions[1].Match.Plugin, markerID, "the contributor is the marker's invocation")
 		})
 
 		t.Run("identifies the declaration read of a contributor", func(t *testing.T) {
@@ -200,9 +209,9 @@ func TestExplain(t *testing.T) {
 			w, _, path := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Path: path})
 			assert.NoError(t, err, "the generation explains the file")
-			assert.Length(t, got.Records, 2, "the group and the contributor")
-			assert.Contains(t, got.Records[1].Reads, workspace.Read{Grain: workspace.ReadDeclaration, Subject: rowID},
-				"the marker read the row")
+			assert.Length(t, got.Executions, 2, "the group and the contributor")
+			row := workspace.Read{Grain: workspace.ReadDeclaration, Subject: rowID}
+			assert.Contains(t, got.Executions[1].Reads, row, "the marker read the row")
 		})
 
 		t.Run("identifies the fact read of a contributor", func(t *testing.T) {
@@ -211,8 +220,8 @@ func TestExplain(t *testing.T) {
 			w, _, path := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Path: path})
 			assert.NoError(t, err, "the generation explains the file")
-			assert.Length(t, got.Records, 2, "the group and the contributor")
-			assert.Contains(t, got.Records[1].Reads,
+			assert.Length(t, got.Executions, 2, "the group and the contributor")
+			assert.Contains(t, got.Executions[1].Reads,
 				workspace.Read{Grain: workspace.ReadFact, Subject: rowID, Key: flagName}, "the marker read the flag")
 		})
 
@@ -222,17 +231,20 @@ func TestExplain(t *testing.T) {
 			w, _, path := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Path: path})
 			assert.NoError(t, err, "the generation explains the file")
-			assert.Length(t, got.Records, 2, "the group and the contributor")
-			assert.InRange(t, got.Records[0].Unidentified, 1, math.Inf(1), "the group read its unit's edge")
+			assert.Length(t, got.Executions, 2, "the group and the contributor")
+			assert.InRange(t, got.Executions[0].Unidentified, 1, math.Inf(1), "the group read its unit's edge")
 		})
 
 		t.Run("identifies the kind read of a check", func(t *testing.T) {
 			t.Parallel()
 
 			got := listed(t)
-			at := slices.IndexFunc(got.Records, func(r workspace.ExplainedRecord) bool { return r.Check == listerID })
+			at := slices.IndexFunc(
+				got.Executions,
+				func(r workspace.ExplainedExecution) bool { return r.Check == listerID },
+			)
 			assert.InRange(t, at, 0, math.Inf(1), "the lister read the row")
-			assert.Contains(t, got.Records[at].Reads,
+			assert.Contains(t, got.Executions[at].Reads,
 				workspace.Read{Grain: workspace.ReadKind, Kind: symbol.KindStruct}, "the lister enumerated the structs")
 		})
 
@@ -240,9 +252,12 @@ func TestExplain(t *testing.T) {
 			t.Parallel()
 
 			got := listed(t)
-			at := slices.IndexFunc(got.Records, func(r workspace.ExplainedRecord) bool { return r.Check == listerID })
+			at := slices.IndexFunc(
+				got.Executions,
+				func(r workspace.ExplainedExecution) bool { return r.Check == listerID },
+			)
 			assert.InRange(t, at, 0, math.Inf(1), "the lister read the row")
-			assert.Contains(t, got.Records[at].Reads,
+			assert.Contains(t, got.Executions[at].Reads,
 				workspace.Read{Grain: workspace.ReadDirective, Directive: markSchema.Canonical()},
 				"the lister enumerated the carriers of the mark")
 		})
@@ -255,16 +270,16 @@ func TestExplain(t *testing.T) {
 				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Bound" + m.Struct.Name})
 				return nil
 			})
-			bindings := sealedPlan(t, bindingsPlan, binder)
+			bindings := sealedPlan(bindingsPlan, binder)
 			bindings.DependsOn = []string{planName}
-			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, planName, mirror(mirrorID)), bindings))
+			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(planName, mirror(mirrorID)), bindings))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
 			assert.NoError(t, err, "the generation explains the row")
-			bound := func(r workspace.ExplainedRecord) bool { return r.Match.Plugin == binderID }
-			at := slices.IndexFunc(got.Records, bound)
+			bound := func(r workspace.ExplainedExecution) bool { return r.Match.Plugin == binderID }
+			at := slices.IndexFunc(got.Executions, bound)
 			assert.InRange(t, at, 0, math.Inf(1), "the binder ran on the row")
-			assert.Contains(t, got.Records[at].Reads, workspace.Read{Grain: workspace.ReadExport, Plan: planName},
+			assert.Contains(t, got.Executions[at].Reads, workspace.Read{Grain: workspace.ReadExport, Plan: planName},
 				"the binder read the plan's export")
 		})
 
@@ -277,7 +292,7 @@ func TestExplain(t *testing.T) {
 			assert.NoError(t, err, "the generation explains the file")
 			assert.Length(t, got.Files, 1, "the explanation lists the file")
 			expect.Empty(t, got.Files[0].Contributors, "the file has no recorded contributor")
-			expect.Empty(t, got.Records, "and no recorded group")
+			expect.Empty(t, got.Executions, "the explanation has no group")
 		})
 
 		t.Run("returns no file for a path that no plan generated", func(t *testing.T) {
@@ -288,7 +303,7 @@ func TestExplain(t *testing.T) {
 			assert.NoError(t, err, "the generation explains the path")
 			expect.NotEmpty(t, got.Generation, "the explanation names the generation")
 			expect.Empty(t, got.Files, "no plan generated the path")
-			expect.Empty(t, got.Records, "and no record produced it")
+			expect.Empty(t, got.Executions, "no execution produced the path")
 		})
 
 		t.Run("returns the claim on the fact of a declaration", func(t *testing.T) {
@@ -297,25 +312,38 @@ func TestExplain(t *testing.T) {
 			w, _, _ := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
 			assert.NoError(t, err, "the generation explains the row")
-			assert.Length(t, got.Claims, 1, "the flagger stamped one fact on the row")
-			expect.Equal(t, got.Claims[0].Key, flagName, "the fact is the flag")
-			expect.Equal(t, got.Claims[0].Claim.Plugin, flaggerID, "the flagger claims it")
-			expect.Equal(t, got.Claims[0].Value, any(true), "with the flagger's value")
-			expect.True(t, got.Claims[0].Winner, "and the claim ranks first")
+			at := slices.IndexFunc(got.Claims, func(c workspace.ExplainedClaim) bool { return c.Key == flagName })
+			assert.InRange(t, at, 0, math.Inf(1), "the flagger stamped the flag on the row")
+			expect.Equal(t, got.Claims[at].Claim.Plugin, flaggerID, "the flagger claims the flag")
+			expect.Equal(t, got.Claims[at].Value, any(true), "the claim has the value of the flagger")
+			expect.True(t, got.Claims[at].Winner, "the claim ranks first")
 		})
 
-		t.Run("returns the records that read a declaration", func(t *testing.T) {
+		t.Run("returns the claim of the lowering entry on the name of a declaration in the target", func(t *testing.T) {
 			t.Parallel()
 
 			w, _, _ := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
 			assert.NoError(t, err, "the generation explains the row")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{
-				workspace.RecordValidation,
-				workspace.RecordInvocation,
-				workspace.RecordInvocation,
-				workspace.RecordCheck,
-				workspace.RecordGroup,
+			name := plugin.Target("fixture").NameKey()
+			at := slices.IndexFunc(got.Claims, func(c workspace.ExplainedClaim) bool { return c.Key == name })
+			assert.InRange(t, at, 0, math.Inf(1), "the lowering entry stamped the name of the row in the target")
+			expect.Equal(t, got.Claims[at].Claim.Plugin, fixtureLowering, "the lowering entry claims the name")
+			expect.Equal(t, got.Claims[at].Value, any(rowID.Name), "the backend keeps the name of the row")
+		})
+
+		t.Run("returns the executions that read a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, _ := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
+			assert.NoError(t, err, "the generation explains the row")
+			assert.Equal(t, kindsOf(got), []workspace.ExecutionKind{
+				workspace.ExecutionValidation,
+				workspace.ExecutionInvocation,
+				workspace.ExecutionInvocation,
+				workspace.ExecutionCheck,
+				workspace.ExecutionGroup,
 			}, "the mark's validation, the flagger, the marker, the lookup and the mirror's group read the row")
 		})
 
@@ -339,7 +367,7 @@ func TestExplain(t *testing.T) {
 			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
 				Name:       planName,
 				Generators: []plugin.Generator{mirror(mirrorID), also},
-				Backend:    printerAs(t, planName+"-printer", "fixture", planName+".txt"),
+				Backend:    fixturePrinter(),
 			}))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
@@ -380,7 +408,7 @@ func TestExplain(t *testing.T) {
 			row.Package = dottedPath
 			want, err := w.Explain(t.Context(), workspace.Target{Identity: row})
 			assert.NoError(t, err, "the generation explains the row")
-			assert.NotEmpty(t, want.Records, "records read the row")
+			assert.NotEmpty(t, want.Executions, "executions read the row")
 			target, err := w.ParseTarget(row.String())
 			assert.NoError(t, err, "the spelling of the row parses")
 			got, err := w.Explain(t.Context(), target)
@@ -398,18 +426,18 @@ func TestExplain(t *testing.T) {
 			assert.Equal(t, got.Claims[0].Claim.Subject, rowID, "the claim is on the row")
 		})
 
-		t.Run("returns the record that read the fact of a key at a position", func(t *testing.T) {
+		t.Run("returns the execution that read the fact of a key at a position", func(t *testing.T) {
 			t.Parallel()
 
 			w, _, _ := explained(t)
 			got, err := w.Explain(t.Context(), workspace.Target{Key: flagName, At: rowAt})
 			assert.NoError(t, err, "the generation explains the fact")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{workspace.RecordInvocation},
-				"one record read the flag")
-			assert.Equal(t, got.Records[0].Match.Plugin, markerID, "the marker read it")
+			assert.Equal(t, kindsOf(got), []workspace.ExecutionKind{workspace.ExecutionInvocation},
+				"one execution read the flag")
+			assert.Equal(t, got.Executions[0].Match.Plugin, markerID, "the marker read it")
 		})
 
-		t.Run("returns the record of a validation that reported a code at a position", func(t *testing.T) {
+		t.Run("returns the validation that reported a code at a position", func(t *testing.T) {
 			t.Parallel()
 
 			var flag meta.Key[bool]
@@ -418,21 +446,21 @@ func TestExplain(t *testing.T) {
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the unknown key fails the run")
 			got, err := w.Explain(t.Context(), workspace.Target{Code: directive.UnknownKey, At: markAt})
 			assert.NoError(t, err, "the generation explains the finding")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{workspace.RecordValidation},
+			assert.Equal(t, kindsOf(got), []workspace.ExecutionKind{workspace.ExecutionValidation},
 				"the validation reported it")
-			assert.Equal(t, got.Records[0].Subject, rowID, "on the row's mark")
+			assert.Equal(t, got.Executions[0].Subject, rowID, "on the row's mark")
 		})
 
-		t.Run("returns the record of an invocation that reported a code at a position", func(t *testing.T) {
+		t.Run("returns the invocation that reported a code at a position", func(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, warmBuilder(t, ledger.NewMem(), &warmKeys{}, warner()))
 			sealedRun(t, w, workspace.Input{Tree: warmTree(rowLine, colLine)})
 			got, err := w.Explain(t.Context(), workspace.Target{Code: warmWarning, At: rowAt})
 			assert.NoError(t, err, "the generation explains the finding")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{workspace.RecordInvocation},
+			assert.Equal(t, kindsOf(got), []workspace.ExecutionKind{workspace.ExecutionInvocation},
 				"an invocation reported it")
-			assert.Equal(t, got.Records[0].Match.Plugin, warnerID, "the warner's invocation")
+			assert.Equal(t, got.Executions[0].Match.Plugin, warnerID, "the warner's invocation")
 		})
 
 		t.Run("returns the audit finding of a code at a position", func(t *testing.T) {
@@ -442,8 +470,8 @@ func TestExplain(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			got, err := w.Explain(t.Context(), workspace.Target{Code: workspace.UnmetContract, At: rowAt})
 			assert.NoError(t, err, "the generation explains the finding")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{workspace.RecordAudit}, "the audit reported it")
-			assert.Equal(t, got.Records[0].Subject, rowID, "on the row")
+			assert.Equal(t, kindsOf(got), []workspace.ExecutionKind{workspace.ExecutionAudit}, "the audit reported it")
+			assert.Equal(t, got.Executions[0].Subject, rowID, "on the row")
 		})
 
 		t.Run("returns the region that reported a code at a position", func(t *testing.T) {
@@ -457,12 +485,12 @@ func TestExplain(t *testing.T) {
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refused file fails the run")
 			got, err := w.Explain(t.Context(), workspace.Target{Code: frontendtest.ScriptedBadFile, At: refusedAt})
 			assert.NoError(t, err, "the generation explains the finding")
-			assert.Equal(t, kindsOf(got), []workspace.RecordKind{workspace.RecordRegion},
+			assert.Equal(t, kindsOf(got), []workspace.ExecutionKind{workspace.ExecutionRegion},
 				"the load's region reported it")
-			assert.Length(t, got.Records[0].Findings, 1, "with the refused file's finding")
+			assert.Length(t, got.Executions[0].Findings, 1, "with the refused file's finding")
 		})
 
-		t.Run("returns no record for a code at another column", func(t *testing.T) {
+		t.Run("returns no execution for a code at another column", func(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, warmBuilder(t, ledger.NewMem(), &warmKeys{}, warner()))
@@ -471,7 +499,7 @@ func TestExplain(t *testing.T) {
 			elsewhere.Col = 9
 			got, err := w.Explain(t.Context(), workspace.Target{Code: warmWarning, At: elsewhere})
 			assert.NoError(t, err, "the generation explains the position")
-			assert.Empty(t, got.Records, "the warning is at the line's start")
+			assert.Empty(t, got.Executions, "the warning is at the line's start")
 		})
 
 		t.Run("takes the lock for workspace.Explain as the caller", func(t *testing.T) {
@@ -724,7 +752,7 @@ func damageCases() []damageCase {
 
 // explained runs the recording composition over the tree of the marked
 // row, which the marker mirrors, and returns the workspace, its ledger and
-// the path of the marker's file.
+// the path of the file of the marker.
 func explained(t *testing.T) (*workspace.Workspace, *ledger.Mem, string) {
 	t.Helper()
 
@@ -736,8 +764,8 @@ func explained(t *testing.T) (*workspace.Workspace, *ledger.Mem, string) {
 	return w, mem, report.Manifest.Files[0].Path
 }
 
-// markedTree returns the tree of the store package whose row has the mark,
-// with the mark's arguments after its name, beside a package of one
+// markedTree returns the tree of the store package whose row has the
+// mark, with args after the name of the mark, beside a package of one
 // unmarked struct.
 func markedTree(args string) fstest.MapFS {
 	return fstest.MapFS{
@@ -746,8 +774,8 @@ func markedTree(args string) fstest.MapFS {
 	}
 }
 
-// kindlessRow returns the row's identity without its kind, as symbol.Parse
-// reads the row's spelling.
+// kindlessRow returns the identity of the row without its kind, as
+// symbol.Parse reads the spelling of the row.
 func kindlessRow() symbol.Identity {
 	id := rowID
 	id.Kind = symbol.KindInvalid
@@ -775,10 +803,11 @@ func listed(t *testing.T) *workspace.Explanation {
 	return got
 }
 
-// kindsOf returns the kind of each record of an explanation, in its order.
-func kindsOf(e *workspace.Explanation) []workspace.RecordKind {
-	kinds := make([]workspace.RecordKind, 0, len(e.Records))
-	for _, r := range e.Records {
+// kindsOf returns the kind of each execution of an explanation, in its
+// order.
+func kindsOf(e *workspace.Explanation) []workspace.ExecutionKind {
+	kinds := make([]workspace.ExecutionKind, 0, len(e.Executions))
+	for _, r := range e.Executions {
 		kinds = append(kinds, r.Kind)
 	}
 	return kinds

@@ -61,14 +61,28 @@ type fixture struct {
 	load  *node.Function
 }
 
-// fakeBackend is a backend by name and target alone.
-type fakeBackend struct{}
+// fakeBackend is a backend by name and target alone. Its settle keeps
+// every construct and every name, and it declares no policy. The methods
+// of a rendering backend belong to the nil interface that it embeds, so
+// a test that renders through it panics.
+type fakeBackend struct{ plugin.Backend }
 
 // Name returns the backend's fixed name.
 func (fakeBackend) Name() plugin.ID { return "printer" }
 
 // Target returns the fixture target.
 func (fakeBackend) Target() plugin.Target { return "fixture" }
+
+// Policies returns nil.
+func (fakeBackend) Policies() []plugin.PolicySpec { return nil }
+
+// Lower keeps the declaration.
+func (fakeBackend) Lower(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }
+
+// Respell returns the name unchanged.
+func (fakeBackend) Respell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return name, nil
+}
 
 // fixtureRules is the scripted rules registered under the fixture's
 // language, resolving a type name as a struct in the fixture
@@ -106,9 +120,9 @@ func (fixtureRules) Resolve(
 	return nil, fmt.Errorf("nothing in %s is named %s", pkgPath, name)
 }
 
-// SamplesOf returns the scripted rules' samples.
-func (fixtureRules) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
-	return rulestest.Scripted().SamplesOf(ref, hint, v)
+// DeriveSamples returns the scripted rules' samples.
+func (fixtureRules) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+	return rulestest.Scripted().DeriveSamples(ref, hint, v)
 }
 
 // ZeroValue returns the scripted rules' zero value.
@@ -119,11 +133,6 @@ func (fixtureRules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool
 // LiteralFor returns the scripted rules' literal for text.
 func (fixtureRules) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
 	return rulestest.Scripted().LiteralFor(f, ref, text, v)
-}
-
-// TypeName returns the scripted rules' type name.
-func (fixtureRules) TypeName(word, base string) string {
-	return rulestest.Scripted().TypeName(word, base)
 }
 
 // The sample annotator stamps the text an author wrote under the
@@ -288,11 +297,10 @@ func build(tb assert.TB) fixture {
 func composed(tb assert.TB) *workspace.Workspace {
 	tb.Helper()
 
-	gen, held := eidos.NewPlugin("mirror").
+	gen := eidos.NewPlugin("mirror").
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
-		Build().(plugin.Generator)
-	assert.True(tb, held, "an emitter handler makes a generator")
+		Generator()
 	w, err := workspace.New().
 		Brand(fixtureBrand).
 		Annotators(authored.Sample(), authored.Witness()).

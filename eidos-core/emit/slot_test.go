@@ -6,7 +6,9 @@ package emit_test
 import (
 	"cmp"
 	"encoding/json"
+	"runtime"
 	"testing"
+	"weak"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
@@ -43,8 +45,8 @@ const (
 	decodeStateAllocs = 5
 )
 
-// A slot is the composition point every contributing plugin appends
-// through, so its order, its emptiness and its codec are contract.
+// TestSlot pins the order, the emptiness, the seal and the codec of a
+// slot. Every contributing plugin appends through a slot.
 func TestSlot(t *testing.T) {
 	t.Parallel()
 
@@ -76,6 +78,82 @@ func TestSlot(t *testing.T) {
 			var slot emit.Slot[int]
 			slot.Append()
 			assert.Equal(t, slot.Len(), 0, "appending nothing changes nothing")
+		})
+
+		t.Run("panics on a sealed slot", func(t *testing.T) {
+			t.Parallel()
+
+			host, sealed := &emit.Struct{}, true
+			emit.Seal(host, &sealed)
+			got := assert.Panics(t, func() { host.Fields.Append(&emit.Field{Name: "ID"}) },
+				"a direct append into a sealed slot panics")
+			text, isText := got.(string)
+			assert.True(t, isText, "the panic is a message")
+			assert.HasPrefix(t, text, "emit: ", "the message starts with the name of the package")
+		})
+
+		t.Run("adds a value after the seal lifts", func(t *testing.T) {
+			t.Parallel()
+
+			host, sealed := &emit.Struct{}, true
+			emit.Seal(host, &sealed)
+			sealed = false
+			host.Fields.Append(&emit.Field{Name: "ID"})
+			assert.Equal(t, host.Fields.Len(), 1, "the slot takes the append once the flag is false")
+		})
+	})
+
+	t.Run("Replace", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("sets the contents to the values in order", func(t *testing.T) {
+			t.Parallel()
+
+			slot := concrete()
+			slot.Replace("c", "d", "e")
+			assert.Equal(t, slot.Items(), []string{"c", "d", "e"}, "Replace returns the new contents in order")
+		})
+
+		t.Run("empties the slot for no values", func(t *testing.T) {
+			t.Parallel()
+
+			slot := concrete()
+			slot.Replace()
+			assert.Equal(t, slot.Len(), 0, "a replace with no values empties the slot")
+		})
+
+		t.Run("releases a value past the new contents", func(t *testing.T) {
+			t.Parallel()
+
+			host := &emit.Struct{}
+			host.Fields.Append(&emit.Field{Name: "Kept"}, &emit.Field{Name: "Removed"})
+			gone := weak.Make(host.Fields.Items()[1])
+			host.Fields.Replace(&emit.Field{Name: "Kept"})
+			runtime.GC()
+			assert.Nil(t, gone.Value(), "the storage of the slot keeps no reference to the removed field")
+			runtime.KeepAlive(host)
+		})
+
+		t.Run("panics on a sealed slot", func(t *testing.T) {
+			t.Parallel()
+
+			host, sealed := &emit.Struct{}, true
+			emit.Seal(host, &sealed)
+			assert.Panics(t, func() { host.Fields.Replace(&emit.Field{Name: "ID"}) },
+				"a replace in a sealed slot panics")
+		})
+	})
+
+	t.Run("AppendSealed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("adds a value to a sealed slot", func(t *testing.T) {
+			t.Parallel()
+
+			host, sealed := &emit.Struct{}, true
+			emit.Seal(host, &sealed)
+			emit.AppendSealed(&host.Fields, &emit.Field{Name: "ID"})
+			assert.Equal(t, host.Fields.Len(), 1, "the kernel appends past the seal")
 		})
 	})
 
@@ -206,13 +284,14 @@ func TestSlot(t *testing.T) {
 	})
 }
 
-// A first append allocates the slot's storage, the reads allocate
-// nothing, and the codec allocates within its ceilings, in the ordinary
-// run, which runs no benchmark. Each first append takes a declaration
-// built outside the count, because an append changes the slot it writes.
-// Each count keeps the first error of its calls, which cmp.Or returns
-// without allocating. The check runs alone, because the count includes
-// every goroutine's allocations.
+// TestSlotAllocs checks in the ordinary run that a first append
+// allocates the storage of the slot, that the reads and a replace that
+// fits allocate nothing, and that the codec allocates within its
+// ceilings. Each first append takes a declaration built outside the
+// count, because an append changes the slot that it writes. Each count
+// keeps the first error of its calls, which cmp.Or returns without
+// allocating. The test does not run in parallel, because the count
+// includes the allocations of every goroutine.
 func TestSlotAllocs(t *testing.T) {
 	field := &emit.Field{Name: "ID"}
 	var appended *emit.Struct
@@ -222,8 +301,17 @@ func TestSlotAllocs(t *testing.T) {
 			appended = s
 		}, 1, "Append allocates the storage of an empty slot")
 	assert.Equal(t, appended.Fields.Len(), 1, "the slot holds the field")
+	assert.MaxAllocsWithSetup(t, func() *emit.Struct { return &emit.Struct{} },
+		func(s *emit.Struct) {
+			emit.AppendSealed(&s.Fields, field)
+			appended = s
+		}, 1, "AppendSealed allocates the storage of an empty slot")
+	assert.Equal(t, appended.Fields.Len(), 1, "the slot holds the field")
 
 	slot := concrete()
+	replacement := []string{"a", "b"}
+	assert.MaxAllocs(t, func() { slot.Replace(replacement...) }, 0, "Replace allocates nothing where the values fit")
+	assert.Equal(t, slot.Items(), replacement, "Replace sets the contents")
 	var items []string
 	assert.MaxAllocs(t, func() { items = slot.Items() }, 0, "Items allocates nothing")
 	assert.Equal(t, items, []string{"a", "b"}, "Items returns the contents")
@@ -267,8 +355,9 @@ func TestSlotAllocs(t *testing.T) {
 	assert.Equal(t, decodedDeclarations.Len(), 2, "into the declarations")
 }
 
-// BenchmarkSlot measures a first append, the slot's reads, and its
-// codec over a concrete slot and a declaration slot. Each codec case
+// BenchmarkSlot measures a first append, a first append past the seal, a
+// replace, the reads of a slot, and its codec over a concrete slot and a
+// declaration slot. Each codec case
 // runs one iteration before the measurement, which pools the encoder's
 // or the decoder's state, and its ceiling allows that state once more
 // for a run of one iteration.
@@ -285,6 +374,28 @@ func BenchmarkSlot(b *testing.B) {
 			}
 			assert.Equal(b, s.Fields.Len(), 1, "the slot holds the field")
 		})
+	})
+
+	b.Run("Replace", func(b *testing.B) {
+		slot, replacement := concrete(), []string{"c", "d"}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			slot.Replace(replacement...)
+		}
+		assert.Equal(b, slot.Items(), replacement, "Replace sets the contents")
+	})
+
+	b.Run("AppendSealed", func(b *testing.B) {
+		field := &emit.Field{Name: "ID"}
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var s *emit.Struct
+		for c.Loop() {
+			c.Excluding(func() { s = &emit.Struct{} })
+			emit.AppendSealed(&s.Fields, field)
+		}
+		assert.Equal(b, s.Fields.Len(), 1, "the slot holds the field")
 	})
 
 	b.Run("Items", func(b *testing.B) {

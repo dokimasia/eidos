@@ -144,6 +144,17 @@ type Sink interface {
 	// refuses a call after Prepare, and every call after Commit or
 	// Discard with [ErrFinished].
 	Delete(path string) error
+	// Overwrite lets Commit write over the files of the verdicts given,
+	// [FoundDrifted], [FoundForeign] or both. A drifted file is the
+	// brand's output edited since its stamp, and a foreign file has no
+	// frame of the brand. Commit never writes over a directory, which
+	// Prepare reports as foreign, and a staged removal still deletes only
+	// the brand's intact output.
+	//
+	// Error modes: a verdict other than FoundDrifted and FoundForeign,
+	// which allows nothing, a call after Prepare, and [ErrFinished] after
+	// Commit or Discard.
+	Overwrite(found ...Found) error
 	// Prepare reads the destination and returns, per staged path in
 	// path order, the action Commit takes and what the path contains
 	// now. It writes nothing. A sink prepares once, before Commit or
@@ -153,31 +164,16 @@ type Sink interface {
 	// file, write-if-changed: identical bytes leave the file and
 	// its mtime untouched. A sink over a destination that has files
 	// of its own, such as [Disk], refuses to overwrite a file its
-	// brand did not write, unless it implements [Overwriter] and
-	// Overwrite allowed the file's verdict. It removes a staged
-	// removal's file only where the file is the brand's intact output,
-	// and leaves any other file in place without a record. Commit
-	// returns one record per file it wrote or removed, sorted by path,
-	// and keeps going past a file that fails, joining the errors.
+	// brand did not write, unless Overwrite allowed the verdict of the
+	// file. It removes the file of a staged removal only where the file
+	// is the brand's intact output, and leaves any other file in place
+	// without a record. Commit returns one record per file it wrote or
+	// removed, sorted by path, and keeps going past a file that fails,
+	// joining the errors.
 	Commit() ([]Written, error)
 	// Discard drops the staged files without touching the
 	// destination.
 	Discard() error
-}
-
-// Overwriter is a sink whose commit can write over a file that its
-// brand did not write intact: a file edited since its stamp, and a file
-// without the brand's frame. [Disk], [Mem] and [Tee] implement it.
-type Overwriter interface {
-	// Overwrite lets Commit write over the files of the verdicts given,
-	// [FoundDrifted], [FoundForeign] or both. Commit never writes over a
-	// directory, which Prepare reports as foreign, and a staged removal
-	// still deletes only the brand's intact output.
-	//
-	// Error modes: a verdict other than FoundDrifted and FoundForeign,
-	// which allows nothing, a call after Prepare, and [ErrFinished] after
-	// Commit or Discard.
-	Overwrite(found ...Found) error
 }
 
 // staging is the bookkeeping every sink shares: the staged bytes and

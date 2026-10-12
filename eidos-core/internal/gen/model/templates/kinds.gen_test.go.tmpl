@@ -9,9 +9,8 @@ import (
 {{- template "model" .}}
 )
 
-// Every kind satisfies the vocabulary's interfaces. The assertions
-// fail to compile rather than to run, which is where an unsatisfied
-// interface belongs.
+// Every kind satisfies the interfaces of the vocabulary. An unsatisfied
+// interface fails the compilation of these assertions, not a run.
 var (
 {{- range .Views}}
 	_ symbol.Symbol = (*{{.Name}})(nil)
@@ -33,17 +32,17 @@ var (
 {{- end}}
 )
 
-// The values the accessor cases give a subject: a position, two
-// lines of documentation and an identity.
+// The accessor cases give a subject a position, two lines of
+// documentation and an identity.
 var (
 	kindsAt    = position.Pos{File: "svc/store.go", Line: 41, Col: 2}
 	kindsLines = []string{"one", "two"}
 	kindsID    = symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
 )
 
-// kindsCase is one measured call of one kind's accessor: the
-// sub-benchmark's name, its allocation ceiling, the call, and the
-// check on what the last call returned.
+// kindsCase is one measured call of an accessor of one kind. It has
+// the name of the sub-benchmark, the allocation ceiling, the call, and
+// the check of the result of the last call.
 type kindsCase struct {
 	name   string
 	allocs uint64
@@ -51,9 +50,9 @@ type kindsCase struct {
 	check  func(testing.TB)
 }
 
-// Every kind implements the shared vocabulary: it returns its own
-// kind, where it was written, its documentation, its identity, its
-// type reference and its member lists.
+// Every kind implements the shared vocabulary. It returns its own kind,
+// its position, its documentation, its identity, its type reference and
+// its member lists.
 func TestKinds(t *testing.T) {
 	t.Parallel()
 
@@ -91,7 +90,7 @@ func TestKinds(t *testing.T) {
 {{- else}}
 
 			assert.Equal(t, (&{{.Name}}{}).Position(), position.Pos{},
-				"a {{.Name}} carries no position and returns the zero position")
+				"a {{.Name}} without a position field returns the zero position")
 {{- end}}
 {{- end}}
 		})
@@ -110,7 +109,7 @@ func TestKinds(t *testing.T) {
 {{- else}}
 
 			assert.Nil(t, (&{{.Name}}{}).Docs(),
-				"a {{.Name}} carries no documentation and returns nil")
+				"a {{.Name}} without a documentation field returns nil")
 {{- end}}
 {{- end}}
 		})
@@ -126,7 +125,7 @@ func TestKinds(t *testing.T) {
 {{- if .IDStorage}}
 
 			assert.Equal(t, (&{{.Name}}{ID: kindsID}).Identity(), kindsID,
-				"a named {{.Name}} returns the identity it was assigned")
+				"a {{.Name}} returns the identity that the resolution step assigned")
 {{- end}}
 {{- end}}
 		})
@@ -138,6 +137,17 @@ func TestKinds(t *testing.T) {
 
 			assert.Equal(t, (&{{.Name}}{}).Identity(), symbol.Identity{},
 				"an unassigned {{.Name}} returns the zero identity")
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("returns the zero identity for a kind without an identity field", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .ZeroIdentity}}
+
+			assert.Equal(t, (&{{.Name}}{}).Identity(), symbol.Identity{},
+				"a {{.Name}} is not a declaration, so it returns the zero identity")
 {{- end}}
 {{- end}}
 		})
@@ -153,7 +163,7 @@ func TestKinds(t *testing.T) {
 {{- if .TypeRefStorage}}
 
 			assert.Nil(t, (&{{.Name}}{}).TypeRef(),
-				"a {{.Name}} stating no type returns nil")
+				"a {{.Name}} without a type returns nil")
 {{- end}}
 {{- end}}
 		})
@@ -164,7 +174,7 @@ func TestKinds(t *testing.T) {
 {{- if .TypeRefStorage}}
 
 			assert.NotNil(t, (&{{.Name}}{Type: &TypeRef{}}).TypeRef(),
-				"a {{.Name}} stating a type returns the declared reference")
+				"a {{.Name}} with a type returns its type reference")
 {{- end}}
 {{- end}}
 		})
@@ -182,7 +192,7 @@ func TestKinds(t *testing.T) {
 {{- if and (eq .Method $method) (not .Items)}}
 
 			assert.Nil(t, (&{{$v.Name}}{}).{{$method}}(),
-				"a {{$v.Name}} has no such list and returns nil")
+				"a {{$v.Name}} has no such list, so it returns nil")
 {{- end}}
 {{- end}}
 {{- end}}
@@ -210,9 +220,9 @@ func TestKinds(t *testing.T) {
 {{- end}}
 }
 
-// The accessors allocate within their ceilings in the ordinary run,
-// which runs no benchmark: a member list allocates its one slice, and
-// every other accessor nothing.
+// TestKindsAllocs checks the allocation ceilings of the accessors in a
+// run without benchmarks. A member list allocates one slice. Every
+// other accessor allocates nothing.
 func TestKindsAllocs(t *testing.T) {
 	for _, tt := range kindsCases() {
 		assert.MaxAllocs(t, tt.call, tt.allocs, tt.name+" allocates within its ceiling")
@@ -235,9 +245,9 @@ func BenchmarkKinds(b *testing.B) {
 	}
 }
 
-// kindsCases returns one case for every accessor of every kind, each
-// over a subject with a position, documentation, an identity, a type
-// reference and one child in every traversed field.
+// kindsCases returns one case for every accessor of every kind. Each
+// subject has a position, documentation, an identity, a type reference
+// and one child in every traversed field.
 func kindsCases() []kindsCase {
 	var cases []kindsCase
 {{- range .Views}}{{$v := .}}
@@ -262,7 +272,7 @@ func kindsCases() []kindsCase {
 			kind symbol.Kind
 			pos  position.Pos
 			docs []string
-{{- if .IDStorage}}
+{{- if or .IDStorage .ZeroIdentity}}
 			id symbol.Identity
 {{- end}}
 {{- if .TypeRefStorage}}
@@ -308,6 +318,14 @@ func kindsCases() []kindsCase {
 				call: func() { id = subject.Identity() },
 				check: func(tb testing.TB) {
 					assert.Equal(tb, id, kindsID, "Identity returns the assigned identity")
+				},
+			},
+{{- else if .ZeroIdentity}}
+			kindsCase{
+				name: "{{.Name}}.Identity",
+				call: func() { id = subject.Identity() },
+				check: func(tb testing.TB) {
+					assert.Equal(tb, id, symbol.Identity{}, "Identity returns the zero identity")
 				},
 			},
 {{- end}}

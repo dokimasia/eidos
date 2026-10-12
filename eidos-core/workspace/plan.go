@@ -13,6 +13,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/internal/state"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
@@ -216,9 +217,9 @@ func exportsOf(deps []*planRun) (map[string]plugin.ExportDoc, error) {
 	return out, nil
 }
 
-// runPlan runs one plan's roles in bucket order, which is what an
-// emit-triggered rule's visibility is defined against: the store
-// contains earlier buckets' units when a later role runs. The plan's
+// runPlan runs the roles of one plan in turn order. The visibility of
+// an emit-triggered rule depends on that order, because the store
+// contains the units of the earlier turns when a later role runs. The plan's
 // sources bind its scope over the run's graph and facts, every
 // generator reads the exports of the plans it depends on, and a journal
 // counts each generator's invocations into the plan's run. Where the
@@ -281,17 +282,16 @@ func (w *Workspace) runPlan(
 	}
 	staged, rendered, err := w.write(pl, ix, src, p.emit, p.sink, nil)
 	if err == nil && touches != nil && !p.sink.Failed() {
-		_, placed := pl.backend.(plugin.Packager)
 		pg := planGroups{
 			plan: pl.name, emit: p.emit, files: rendered, staged: staged,
-			touches: touches.touches, settled: settled, placed: placed,
+			touches: touches.touches, settled: settled,
 		}
 		pg.record(p.lane)
 	}
 	return staged, rendered, err
 }
 
-// generate runs the plan's generator calls in bucket order into the
+// generate runs the plan's generator calls in turn order into the
 // plan's store, each over a tracked reader of its own, with the exports
 // of the plans it depends on, and counts each call's invocations into
 // the plan's run. sel restricts each call to what a warm run executes
@@ -305,7 +305,7 @@ func (w *Workspace) runPlan(
 // findings.
 //
 // Error modes: the context's error, a reader the index refuses, and a
-// generator's returned error, wrapped with the generator's bucket.
+// generator's returned error, wrapped with the turn of the generator.
 func (w *Workspace) generate(
 	ctx context.Context, ix *plugin.Index, facts *meta.Facts, p *planRun,
 	exports map[string]plugin.ExportDoc, sel *plugin.Selection, next plugin.Journal,
@@ -335,13 +335,13 @@ func (w *Workspace) generate(
 			Rules:   w.rules,
 			Kernel:  w.kernel,
 			Plugin:  s.name,
-			Bucket:  s.bucket,
+			Turn:    s.turn,
 			Workers: w.workers,
 			Exports: exports,
 			Select:  sel,
 			Journal: counted,
 			Target:  pl.backend.Target(),
-			Types:   pl.types,
+			Types:   pl.backend,
 			Policy:  pl.policy,
 		}
 		err = s.run.Generate(call)
@@ -358,7 +358,7 @@ func (w *Workspace) generate(
 			}
 		}
 		if err != nil {
-			return fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
+			return fmt.Errorf("generator %s in turn %d: %w", s.name, s.turn, err)
 		}
 		p.invoked = append(p.invoked, Invoked{
 			Plan: pl.name, Plugin: s.name, Phase: plugin.PhaseGenerate, Count: counted.count,
@@ -371,10 +371,9 @@ func (w *Workspace) generate(
 // of its own and prepares it. A plan removes only the stale paths no
 // plan routes a file to in this run and no plan keeps, so a file that
 // moved between plans is written by its new plan and never removed by
-// its old one. Each sink that implements [output.Overwriter] writes over
-// the files of the allowed verdicts. A plan stages the changes that the
-// narrowing withholds into a second sink, which it prepares and discards.
-// A skipped plan stages nothing.
+// its old one. Each sink writes over the files of the allowed verdicts.
+// A plan stages the changes that the narrowing withholds into a second
+// sink, which it prepares and discards. A skipped plan stages nothing.
 func (w *Workspace) stageAll(
 	ctx context.Context, runs []*planRun, rec *record, allowed []output.Found, n narrowing,
 ) {
@@ -398,9 +397,9 @@ func (w *Workspace) stageAll(
 }
 
 // stage opens one plan's sink, lets it write over the files of the
-// allowed verdicts where it implements [output.Overwriter], writes every
-// file the plan rendered, stages the removal of its stale entries,
-// prepares, and reports what the preparation found. Where the narrowing
+// allowed verdicts, writes every file the plan rendered, stages the
+// removal of its stale entries, prepares, and reports what the
+// preparation found. Where the narrowing
 // withholds a change, it stages that change into a second sink instead,
 // which it prepares for the plan's withheld changes and discards. A plan
 // whose sink refuses, a plan the preparation fails, and a plan the run
@@ -415,8 +414,8 @@ func (w *Workspace) stage(
 		return
 	}
 	var overwritten []output.Found
-	if o, overwrites := out.(output.Overwriter); overwrites && len(allowed) > 0 {
-		if err = o.Overwrite(allowed...); err != nil {
+	if len(allowed) > 0 {
+		if err = out.Overwrite(allowed...); err != nil {
 			p.err = discarding(out, fmt.Errorf("let the output write over drifted or foreign files: %w", err))
 			return
 		}
@@ -541,7 +540,7 @@ func (w *Workspace) verdicts(p *planRun, rec *record, overwritten []output.Found
 			p.refused = append(p.refused, c)
 			p.sink.Errorf(ForeignFile, f.at, diag.PhaseClose,
 				"%s is a file the %s brand did not write, and plan %q routes %s there",
-				c.Path, w.brand, p.plan.name, describe(f.first))
+				c.Path, w.brand, p.plan.name, layout.Describe(f.first))
 		case !write:
 			kept(p.sink, c, w.brand)
 		}

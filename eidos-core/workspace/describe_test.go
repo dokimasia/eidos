@@ -15,8 +15,8 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The names of the described composition: the workspace, the scope and
-// the routing of its server plan.
+// The names of the described composition, which are the name of the
+// workspace and the scope and routing of its server plan.
 const (
 	describedName      = "platform"
 	describedPattern   = "svc/..."
@@ -25,8 +25,8 @@ const (
 	describedFile      = "mirror.go"
 )
 
-// A description lists the composition as Build compiled it, and runs
-// nothing.
+// TestDescribe tests the description of a composition. A description
+// lists the composition as Build compiled it, and runs nothing.
 func TestDescribe(t *testing.T) {
 	t.Parallel()
 
@@ -44,20 +44,22 @@ func TestDescribe(t *testing.T) {
 				Frontends: []workspace.Component{
 					{Name: frontendtest.ScriptedID, Version: frontendtest.NewScripted().Version()},
 				},
-				Annotate: []workspace.Component{{Name: "early", Bucket: 1}, {Name: "late", Bucket: 2}},
+				Annotate: []workspace.Component{
+					{Name: fixtureLowering, Turn: 1}, {Name: "early", Turn: 2}, {Name: "late", Turn: 3},
+				},
 				Plans: []workspace.PlanDescription{
 					{
 						Name:      "bindings",
 						DependsOn: []string{"server"},
-						Generate:  []workspace.Component{{Name: "bindings-mirror", Bucket: 1}},
-						Backend:   workspace.Component{Name: "bindings-printer"},
+						Generate:  []workspace.Component{{Name: "bindings-mirror", Turn: 1}},
+						Backend:   workspace.Component{Name: "fixture" + printerSuffix},
 						Target:    "fixture",
 					},
 					{
 						Name:     "server",
 						Sources:  workspace.Sources{Packages: []string{describedPattern}},
-						Generate: []workspace.Component{{Name: "server-mirror", Bucket: 2}},
-						Backend:  workspace.Component{Name: "server-printer"},
+						Generate: []workspace.Component{{Name: "server-mirror", Turn: 2}},
+						Backend:  workspace.Component{Name: "fixture" + printerSuffix},
 						Target:   "fixture",
 						Layout: layout.Config{
 							Policy:  layout.PolicyCentralised,
@@ -115,11 +117,11 @@ func TestDescribe(t *testing.T) {
 	})
 }
 
-// described returns the composition that the description cases describe: a
-// named workspace with a frontend, two annotators that their priorities
-// order against their declaration, two plans that commit in the opposite
-// order of their declaration, the second scoped and routed, and a check
-// that reads the second plan.
+// described returns the composition of the description cases. It is a
+// named workspace with a frontend and two annotators, whose priorities
+// order them against their declaration. Its two plans commit in the
+// opposite order of their declaration, and the second has a scope and a
+// routing. A check reads the second plan.
 func described() *workspace.Builder {
 	server := planTo("server", "fixture", mirror("server-mirror"))
 	server.Sources = workspace.Sources{Packages: []string{describedPattern}}

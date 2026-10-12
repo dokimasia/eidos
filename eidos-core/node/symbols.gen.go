@@ -54,6 +54,7 @@ var newByKind = [...]func() symbol.Symbol{
 	symbol.KindTypeRef:     func() symbol.Symbol { return new(TypeRef) },
 	symbol.KindTypeParam:   func() symbol.Symbol { return new(TypeParam) },
 	symbol.KindEmbed:       func() symbol.Symbol { return new(Embed) },
+	symbol.KindTagEntry:    func() symbol.Symbol { return new(TagEntry) },
 }
 
 // Symbols is the type of a field that admits declarations of any

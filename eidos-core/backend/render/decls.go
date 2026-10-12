@@ -72,7 +72,9 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) bool {
 		f.unspelt(d.Kind(), "the declaration")
 		return false
 	}
-	f.guard(d)
+	if !f.guard(d) {
+		return false
+	}
 	f.scratch.Reset()
 	mark := f.set.mark()
 	if err := t.Execute(&f.scratch, d); err != nil {
@@ -112,8 +114,12 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) bool {
 			f.pass.name, len(c.Decls), c.Group)
 		return false
 	}
+	renders := true
 	for _, d := range c.Decls {
-		f.guard(d)
+		renders = f.guard(d) && renders
+	}
+	if !renders {
+		return false
 	}
 	f.scratch.Reset()
 	mark := f.set.mark()
@@ -140,23 +146,33 @@ func (f *frame) adopt() {
 	f.out.Write(f.scratch.Bytes())
 }
 
-// guard reports the stated facts the declared coverage refuses or
-// misses, before a declaration's template runs: a refused fact is
-// a warning that keeps the narrowing loud, and an undeclared one
-// is an error naming a defect in the backend's own declaration.
-// The template still runs, so the output is what the template
-// writes: most declarations render without the refused fact, and a
-// vocabulary helper refusing the combination outright reports
-// beside the warning. An undeclared coverage leaves the guard off.
-func (f *frame) guard(d symbol.Symbol) {
+// guard reports the stated facts that the declared coverage refuses,
+// rejects or misses, before a declaration's template runs, and reports
+// whether the declaration renders. A refused fact is a warning that keeps
+// the narrowing loud. A rejected fact is an error, and the declaration
+// does not render, because the target can write it neither with the fact
+// nor without it. An undeclared fact is an error that names a defect in
+// the backend's own declaration. The guard reports every stated fact
+// before it answers, so one declaration reports all its refusals and
+// rejections at once. Where no fact is rejected, the template runs:
+// most declarations render without the refused fact, and a vocabulary
+// helper that refuses the combination outright reports beside the
+// warning. An undeclared coverage leaves the guard off.
+func (f *frame) guard(d symbol.Symbol) bool {
 	if !f.pass.coverage.Declared() {
-		return
+		return true
 	}
+	renders := true
 	emit.Facts(d, func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
 		switch f.pass.coverage.Of(kind, fact) {
 		case Refuses:
 			f.sink.Warnf(RefusedFact, f.at, f.origin,
 				"%s declares no spelling for %s stated on a %s",
+				f.pass.name, fact, kind)
+		case Rejects:
+			renders = false
+			f.sink.Errorf(RejectedFact, f.at, f.origin,
+				"%s cannot render the declaration with or without %s stated on a %s",
 				f.pass.name, fact, kind)
 		case VerdictUndeclared:
 			f.sink.Errorf(UndeclaredFact, f.at, f.origin,
@@ -165,6 +181,7 @@ func (f *frame) guard(d symbol.Symbol) {
 		case Renders, Holds:
 		}
 	})
+	return renders
 }
 
 // nested renders one nested declaration through its kind template,

@@ -58,22 +58,22 @@ func TestBag(t *testing.T) {
 			assert.Equal(t, got, "declared", "authority outranks arrival order")
 		})
 
-		t.Run("the earlier bucket wins within one authority", func(t *testing.T) {
+		t.Run("the earlier turn wins within one authority", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
 			late := by("weaver", 1)
-			late.Bucket = 2
-			assert.NoError(t, meta.Stamp(f, role, "late", late), "the later bucket stamps first")
+			late.Turn = 2
+			assert.NoError(t, meta.Stamp(f, role, "late", late), "the later turn stamps first")
 			early := by("classifier", 1)
-			early.Bucket = 1
+			early.Turn = 1
 			assert.NoError(t, meta.Stamp(f, role, "early", early), "the earlier stamps second")
 
 			got, _ := meta.Get(f, subject, role)
-			assert.Equal(t, got, "early", "the earlier capability bucket wins")
+			assert.Equal(t, got, "early", "the earlier turn wins")
 		})
 
-		t.Run("the alphabetically first plugin wins within one bucket", func(t *testing.T) {
+		t.Run("the alphabetically first plugin wins within one turn", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
@@ -143,7 +143,7 @@ func TestBag(t *testing.T) {
 				{"c", by("beta", 2)},
 				{"d", func() meta.Claim {
 					c := by("gamma", 1)
-					c.Bucket = 1
+					c.Turn = 1
 					return c
 				}()},
 			}
@@ -181,7 +181,7 @@ func TestBag(t *testing.T) {
 // claimRecord is one fuzz-decoded write.
 type claimRecord struct {
 	authority meta.Authority
-	bucket    int
+	turn      int
 	plugin    diag.Origin
 	seq       int
 	drop      bool
@@ -191,7 +191,7 @@ type claimRecord struct {
 // rankSource is the identity arbitration refuses duplicates under.
 type rankSource struct {
 	authority meta.Authority
-	bucket    int
+	turn      int
 	plugin    diag.Origin
 	seq       int
 }
@@ -224,13 +224,13 @@ func arbitrates(c *prop.Case) {
 	for i := 0; i+record <= len(in) && len(records) < 32; i += record {
 		r := claimRecord{
 			authority: meta.Authority(in[i] % 3),
-			bucket:    int(in[i+1] % 3),
+			turn:      int(in[i+1] % 3),
 			plugin:    plugins[int(in[i+2])%len(plugins)],
 			seq:       int(in[i+3] % 4),
 			drop:      in[i+4]%2 == 1,
 			value:     values[int(in[i+5])%len(values)],
 		}
-		source := rankSource{r.authority, r.bucket, r.plugin, r.seq}
+		source := rankSource{r.authority, r.turn, r.plugin, r.seq}
 		if _, held := seen[source]; held {
 			continue
 		}
@@ -243,7 +243,7 @@ func arbitrates(c *prop.Case) {
 		for _, r := range ordered {
 			claim := by(r.plugin, r.seq)
 			claim.Authority = r.authority
-			claim.Bucket = r.bucket
+			claim.Turn = r.turn
 			var err error
 			if r.drop {
 				err = facts.DropKey(role.ID(), claim)

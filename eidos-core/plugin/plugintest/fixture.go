@@ -17,51 +17,54 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Fixture is a hand-built run: the graph, the fact store, the
-// validated directive table and the scope one plugin's phase calls
-// see. Build it, load packages, stamp facts, then hand a plugin to
-// [Fixture.Annotate] or [Fixture.Generate].
+// Fixture is a run that a test builds by hand. It has the graph, the fact
+// store, the table of validated directives and the scope that the phase
+// calls of one plugin see. A test creates it with [New], loads packages,
+// stamps facts, and then passes a plugin to [Fixture.Annotate] or
+// [Fixture.Generate].
 //
-// The graph freezes on the first phase call, so every load and
-// attach comes before it. A later structural write fails the test
-// through the store's error. A Fixture belongs to one test and is
-// not safe for concurrent use.
+// The graph freezes on the first phase call, so every load and attach
+// comes before it. A later structural write fails the test with the error
+// of the store. A Fixture belongs to one test, and it is not safe for
+// concurrent use.
 type Fixture struct {
 	Graph *store.Graph
 	Keys  *meta.Registry
 	Facts *meta.Facts
-	// Directives is the validated table dispatch gates on, keyed by
-	// subject, position order per subject.
+	// Directives is the table of validated directives that the dispatch
+	// gates on. Its key is the subject, and the directives of a subject are
+	// in position order.
 	Directives map[symbol.Identity][]directive.Directive
-	// Scope filters what phase calls see. A nil scope admits
+	// Scope filters what the phase calls see, and a nil scope admits
 	// everything.
 	Scope store.Scope
-	// Rules is the registry of language rules a phase call binds
-	// the kernel's walks over. A nil registry binds every language
-	// to the absent rules.
+	// Rules is the registry of the language rules that a phase call binds
+	// the walks of the kernel over. A nil registry binds every language to
+	// the absent rules.
 	Rules *rules.Registry
-	// Kernel is the kernel's key handles. [New] registers them
-	// under Keys, the way a composition registers them before any
-	// plugin's.
+	// Kernel contains the key handles of the kernel. [New] registers them
+	// under Keys, as a composition registers them before the keys of any
+	// plugin.
 	Kernel meta.KernelKeys
-	// Languages maps each target to the render language the template
-	// check lints declared trees against. A fixture without one skips
-	// the check.
+	// Languages maps each target to the render language against which the
+	// template check lints the declared trees. A fixture without languages
+	// skips the check.
 	Languages map[plugin.Target]render.Language
-	// Bucket is the priority bucket phase calls claim to run in.
-	Bucket int
-	// Workers is how many invocations each phase call runs at once.
-	// Zero and one dispatch sequentially.
+	// Turn is the turn in the schedule at which the phase calls run.
+	Turn int
+	// Workers is the number of invocations that each phase call runs at
+	// once. Zero and one dispatch one invocation at a time.
 	Workers int
-	// Select restricts each phase call to what a warm run executes
-	// again, and nil runs every match.
+	// Select restricts each phase call to the matches that a warm run
+	// executes again, and nil runs every match.
 	Select *plugin.Selection
-	// Journal receives each phase call's records, and nil keeps none.
+	// Journal receives the records of each phase call, and a nil journal
+	// keeps none.
 	Journal plugin.Journal
-	// Target is the target of the plan of a generator's phase call.
-	// Types is the spoke of the plan's backend, and Policy is the plan's
-	// resolved policy. A fixture without a spoke refuses every type of
-	// another language that a generator translates.
+	// Target is the target of the plan of the phase call of a generator.
+	// Types is the spoke of the backend of the plan, and Policy is the
+	// resolved policy of the plan. A fixture without a spoke refuses every
+	// type of another language that a generator translates.
 	Target plugin.Target
 	Types  plugin.TypeSpeller
 	Policy plugin.Policy
@@ -70,8 +73,8 @@ type Fixture struct {
 	claimed map[string]bool
 }
 
-// New returns an empty fixture at bucket one, with the kernel's
-// keys registered.
+// New returns an empty fixture at turn one, with the keys of the kernel
+// registered.
 func New(tb assert.TB) *Fixture {
 	tb.Helper()
 
@@ -83,7 +86,7 @@ func New(tb assert.TB) *Fixture {
 		Keys:    keys,
 		Facts:   meta.NewFacts(keys),
 		Kernel:  kernel,
-		Bucket:  1,
+		Turn:    1,
 		claimed: map[string]bool{},
 	}
 }
@@ -96,8 +99,8 @@ func (f *Fixture) Load(tb assert.TB, pkgs ...*node.Package) *Fixture {
 	return f
 }
 
-// Attach records raw directive instances on a subject, before the
-// first phase call seals the graph.
+// Attach records raw directive instances on a subject, before the first
+// phase call seals the graph.
 func (f *Fixture) Attach(
 	tb assert.TB, subject symbol.Identity, raws ...directive.Raw,
 ) *Fixture {
@@ -108,12 +111,12 @@ func (f *Fixture) Attach(
 	return f
 }
 
-// Validated sets a subject's typed instances, as validation returns
-// them: position order, canonical names. It also attaches one raw
-// instance per directive, because dispatch routes a gate through the
-// store's spelled-name index, and only raw attachments feed that
-// index. A real load attaches at parse and validates at the seal.
-// Validated performs both steps.
+// Validated sets the typed instances of a subject, in position order and
+// with canonical names, as the validation returns them. It also attaches
+// one raw instance for each directive, because the dispatch routes a gate
+// through the index of spelled names of the store, and only raw
+// attachments enter that index. A load attaches at the parse and
+// validates at the seal, and Validated performs both steps.
 func (f *Fixture) Validated(
 	tb assert.TB, subject symbol.Identity, ds ...directive.Directive,
 ) *Fixture {
@@ -131,9 +134,9 @@ func (f *Fixture) Validated(
 	return f
 }
 
-// Seed adds earlier-bucket units to the emit store that the next
-// [Fixture.Generate] call reads. A weaver's fixture seeds the units
-// of the plugins that run before the weaver.
+// Seed adds units of earlier turns to the emit store that the next
+// [Fixture.Generate] call reads. The fixture of a weaver seeds the units of
+// the plugins that run before the weaver.
 func (f *Fixture) Seed(tb assert.TB, units ...plugin.Unit) *Fixture {
 	tb.Helper()
 
@@ -141,8 +144,8 @@ func (f *Fixture) Seed(tb assert.TB, units ...plugin.Unit) *Fixture {
 	return f
 }
 
-// Key registers a typed key under the fixture's registry, claiming
-// the name's namespace on first use.
+// Key registers a typed key in the registry of the fixture. The first key
+// of a namespace claims the namespace.
 func Key[T meta.FactValue](
 	tb assert.TB, f *Fixture, name meta.KeyName, doc string,
 ) meta.Key[T] {
@@ -159,8 +162,8 @@ func Key[T meta.FactValue](
 	return key
 }
 
-// Stamp records one subject-bound fact at plugin authority, as an
-// earlier annotator's stamp records it.
+// Stamp records one fact on a subject at the authority of a plugin, as the
+// stamp of an earlier annotator records it.
 func Stamp[T meta.FactValue](
 	tb assert.TB, f *Fixture, k meta.Key[T], subject symbol.Identity, v T,
 ) {
@@ -170,7 +173,7 @@ func Stamp[T meta.FactValue](
 		"the fixture fact stamps")
 }
 
-// Result is what one phase call left behind: the plan's emit store,
+// Result is what one phase call leaves. It has the emit store of the plan,
 // the findings, and the fatal error where the phase returned one.
 type Result struct {
 	Emit *plugin.Emit
@@ -178,81 +181,96 @@ type Result struct {
 	Err  error
 }
 
-// Annotate runs one plugin's annotate phase over the fixture. It binds
-// the plugin's gates on named handles in the fixture's registry first. A
-// plugin that does not implement [plugin.Annotator] fails the test.
+// Annotate runs the annotate phase of one plugin over the fixture. It
+// first binds the gates of the plugin on named handles in the registry of
+// the fixture, and then runs the bound plugin. A plugin that does not
+// implement [plugin.Annotator] fails the test. A panic of the phase fails
+// the test through [assert.NotPanics], so the other tests of the binary
+// still run.
 func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
-	ann, implemented := p.(plugin.Annotator)
+	ann, implemented := f.bind(tb, p).(plugin.Annotator)
 	assert.True(tb, implemented, "the plugin implements the annotator role")
-	f.bind(tb, p)
 	ix := f.index(tb)
 	sink := diag.NewSink()
-	err := ann.Annotate(&plugin.AnnotatorContext{
-		Index:   ix,
-		Reader:  mintReader(tb, ix),
-		Facts:   f.Facts,
-		Sink:    sink,
-		Rules:   f.Rules,
-		Kernel:  f.Kernel,
-		Plugin:  p.Name(),
-		Bucket:  f.Bucket,
-		Workers: f.Workers,
-		Select:  f.Select,
-		Journal: f.Journal,
-	})
+	var err error
+	assert.NotPanics(tb, func() {
+		err = ann.Annotate(&plugin.AnnotatorContext{
+			Index:   ix,
+			Reader:  mintReader(tb, ix),
+			Facts:   f.Facts,
+			Sink:    sink,
+			Rules:   f.Rules,
+			Kernel:  f.Kernel,
+			Plugin:  p.Name(),
+			Turn:    f.Turn,
+			Workers: f.Workers,
+			Select:  f.Select,
+			Journal: f.Journal,
+		})
+	}, "the annotate phase runs without a panic")
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
 
-// Generate runs one plugin's generate phase over the fixture. It binds
-// the plugin's gates on named handles in the fixture's registry first. A
-// plugin that does not implement [plugin.Generator] fails the test.
-// The emit store persists across calls, so successive Generate calls
-// see earlier flushes the way later buckets do. The call translates
-// types with the fixture's target, spoke and policy.
+// Generate runs the generate phase of one plugin over the fixture. It
+// first binds the gates of the plugin on named handles in the registry of
+// the fixture, and then runs the bound plugin. A plugin that does not
+// implement [plugin.Generator] fails the test. A panic of the phase fails
+// the test through [assert.NotPanics], so the other tests of the binary
+// still run. The emit store persists across calls, so a later Generate
+// call sees the earlier flushes, as a later turn does. The call
+// translates types with the target, the spoke and the policy of the
+// fixture.
 func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
-	gen, implemented := p.(plugin.Generator)
+	gen, implemented := f.bind(tb, p).(plugin.Generator)
 	assert.True(tb, implemented, "the plugin implements the generator role")
-	f.bind(tb, p)
 	ix := f.index(tb)
 	sink := diag.NewSink()
-	err := gen.Generate(&plugin.GeneratorContext{
-		Index:   ix,
-		Reader:  mintReader(tb, ix),
-		Facts:   f.Facts,
-		Emit:    f.store(),
-		Sink:    sink,
-		Rules:   f.Rules,
-		Kernel:  f.Kernel,
-		Plugin:  p.Name(),
-		Bucket:  f.Bucket,
-		Workers: f.Workers,
-		Select:  f.Select,
-		Journal: f.Journal,
-		Target:  f.Target,
-		Types:   f.Types,
-		Policy:  f.Policy,
-	})
+	var err error
+	assert.NotPanics(tb, func() {
+		err = gen.Generate(&plugin.GeneratorContext{
+			Index:   ix,
+			Reader:  mintReader(tb, ix),
+			Facts:   f.Facts,
+			Emit:    f.store(),
+			Sink:    sink,
+			Rules:   f.Rules,
+			Kernel:  f.Kernel,
+			Plugin:  p.Name(),
+			Turn:    f.Turn,
+			Workers: f.Workers,
+			Select:  f.Select,
+			Journal: f.Journal,
+			Target:  f.Target,
+			Types:   f.Types,
+			Policy:  f.Policy,
+		})
+	}, "the generate phase runs without a panic")
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
 
-// bind binds the gates of a plugin that implements [plugin.KeyBinder] in
-// the fixture's registry, as a workspace binds them when it builds. A
-// name that the registry does not contain fails the test.
-func (f *Fixture) bind(tb assert.TB, p plugin.Plugin) {
+// bind returns the plugin that p binds in the registry of the fixture, as
+// a workspace binds it when it builds, and p itself where p does not
+// implement [plugin.KeyBinder]. A name that the registry does not contain
+// fails the test.
+func (f *Fixture) bind(tb assert.TB, p plugin.Plugin) plugin.Plugin {
 	tb.Helper()
 
-	if kb, binds := p.(plugin.KeyBinder); binds {
-		assert.NoError(tb, kb.BindKeys(f.Keys), "the plugin's gates on named handles bind")
+	kb, binds := p.(plugin.KeyBinder)
+	if !binds {
+		return p
 	}
+	bound, err := kb.BindKeys(f.Keys)
+	assert.NoError(tb, err, "the gates of the plugin on named handles bind")
+	return bound
 }
 
-// index seals the graph on first use, and returns the routing surface
-// that a phase call dispatches through. The index reads the validated
-// table of the fixture.
+// index seals the graph on its first call, and returns the routing surface
+// through which a phase call dispatches. The index reads the table of
+// validated directives of the fixture.
 func (f *Fixture) index(tb assert.TB) *plugin.Index {
 	tb.Helper()
 
@@ -262,8 +280,8 @@ func (f *Fixture) index(tb assert.TB) *plugin.Index {
 	return ix
 }
 
-// mintReader returns the phase call's tracked read handle: the
-// whole-call grain a hand-rolled plugin reads at.
+// mintReader returns the tracked read handle of a phase call. Its grain is
+// the whole call, at which a hand-rolled plugin reads.
 func mintReader(tb assert.TB, ix *plugin.Index) *store.Reader {
 	tb.Helper()
 
@@ -272,7 +290,8 @@ func mintReader(tb assert.TB, ix *plugin.Index) *store.Reader {
 	return r
 }
 
-// store returns the fixture's emit store, created on first use.
+// store returns the emit store of the fixture, and creates it on its first
+// call.
 func (f *Fixture) store() *plugin.Emit {
 	if f.emit == nil {
 		f.emit = plugin.NewEmit()

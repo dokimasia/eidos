@@ -13,8 +13,19 @@
 // effective [MemberSet] under the language's [MemberPolicy], with
 // provenance per member and a [Gap] for every contributor it could
 // not follow. A language returns [SourceRules]: the decisions
-// inside those walks, what a spelling names in a scope, the values
-// of a type, and the naming join.
+// inside those walks, what a spelling names in a scope, and the values
+// of a type.
+//
+// # Resolution
+//
+// [Resolve] is the walk of the resolution of a directive's spelling that
+// the languages with members share. A language states the probe of its
+// scope, the members that a subject can use, the placeholders of its
+// types and the type of a value through a [Resolver], and its
+// [SourceRules.Resolve] calls the walk. A refusal of the walk is a
+// [ResolveError] under the language. [Unaliased] follows the transparent
+// aliases of a reference, which a language reads before it classifies a
+// type.
 //
 // # Optional capabilities
 //

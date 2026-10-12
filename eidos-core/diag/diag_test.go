@@ -100,6 +100,31 @@ func TestDiag(t *testing.T) {
 		assert.Equal(t, base.Compare(twin), 0, "a finding compares equal to its copy")
 	})
 
+	t.Run("Positioned", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give position.Pos
+			want bool
+		}{
+			{
+				name: "reports true for the file, the line and the column of a declaration",
+				give: position.Pos{File: "svc/store.go", Line: 7, Col: 6}, want: true,
+			},
+			{name: "reports true for a whole file", give: position.Pos{File: "svc/store.go"}, want: true},
+			{name: "reports false for a line without a file", give: position.Pos{Line: 7, Col: 6}},
+			{name: "reports false for the zero position"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, diag.Diag{Pos: tt.give}.Positioned(), tt.want, "a reader opens a finding by its file")
+			})
+		}
+	})
+
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
 
@@ -133,18 +158,21 @@ func TestDiag(t *testing.T) {
 	})
 }
 
-// A comparison allocates nothing in the ordinary run, which runs no
-// benchmark.
+// A comparison and the position check allocate nothing in the ordinary
+// run, which runs no benchmark.
 func TestDiagAllocs(t *testing.T) {
 	first, second := ordered()
 	var got int
 	assert.MaxAllocs(t, func() { got = first.Compare(second) }, 0, "Compare allocates nothing")
 	assert.Equal(t, got, -1, "Compare orders the earlier finding first")
+	var positioned bool
+	assert.MaxAllocs(t, func() { positioned = first.Positioned() }, 0, "Positioned allocates nothing")
+	assert.True(t, positioned, "Positioned reports true for a finding with a file")
 }
 
 // BenchmarkDiag measures the canonical order of two findings that
 // differ in their message alone, so the comparison reads every key up
-// to the message.
+// to the message, and the position check of a finding.
 func BenchmarkDiag(b *testing.B) {
 	b.Run("Compare", func(b *testing.B) {
 		first, second := ordered()
@@ -155,6 +183,17 @@ func BenchmarkDiag(b *testing.B) {
 			got = first.Compare(second)
 		}
 		assert.Equal(b, got, -1, "the earlier message sorts first")
+	})
+
+	b.Run("Positioned", func(b *testing.B) {
+		d, _ := ordered()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = d.Positioned()
+		}
+		assert.True(b, got, "a finding with a file is positioned")
 	})
 }
 

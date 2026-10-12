@@ -33,7 +33,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The sink failures the write cases inject, and the unclaimed
+// The sink failures that the write cases inject, and the unclaimed
 // directive that makes a run report an Error.
 var (
 	errDiskFull   = errors.New("disk full")
@@ -43,8 +43,8 @@ var (
 )
 
 // partialSink stages every write and commits the first staged file
-// before failing: the shape of a disk commit refused part-way
-// through a tree.
+// before it fails, as a disk commit fails part of the way through a
+// tree.
 type partialSink struct{ staged []string }
 
 // Write stages the path.
@@ -55,6 +55,9 @@ func (s *partialSink) Write(path string, _ []byte) error {
 
 // Delete stages nothing.
 func (*partialSink) Delete(string) error { return nil }
+
+// Overwrite allows every verdict.
+func (*partialSink) Overwrite(...output.Found) error { return nil }
 
 // Prepare reports every staged path as a file to create.
 func (s *partialSink) Prepare() ([]output.Change, error) {
@@ -88,6 +91,9 @@ func (*refusingSink) Write(string, []byte) error { return errReadOnly }
 // Delete returns errReadOnly.
 func (*refusingSink) Delete(string) error { return errReadOnly }
 
+// Overwrite returns errReadOnly.
+func (*refusingSink) Overwrite(...output.Found) error { return errReadOnly }
+
 // Prepare prepares nothing.
 func (*refusingSink) Prepare() ([]output.Change, error) { return nil, nil }
 
@@ -100,8 +106,8 @@ func (s *refusingSink) Discard() error {
 	return nil
 }
 
-// opener counts the sinks a composition's output opens, one fresh
-// in-memory sink per call. It is safe for concurrent runs.
+// opener records the sinks that the output of a composition opens, a
+// new memory sink for each call. It is safe for concurrent runs.
 type opener struct {
 	mu    sync.Mutex
 	sinks []*output.Mem
@@ -123,18 +129,18 @@ func (o *opener) opened() []*output.Mem {
 	return append([]*output.Mem(nil), o.sinks...)
 }
 
-// wordHelper is the shared helper the vocal backend's struct
-// template spells a name through, and the name an override
-// replaces.
+// wordHelper is the name of the shared helper through which the struct
+// template of the vocal backend spells a name. An override replaces the
+// helper.
 const wordHelper = "word"
 
-// alphaFile is the source file the routing fixture declares Alpha in,
-// inside its package's own directory.
+// alphaFile is the source file of Alpha in the routing fixture, in the
+// directory of its package.
 const alphaFile = coretest.StorePath + "/alpha.go"
 
-// The write is the plan's last step: the render's stamped files go to
-// a sink the plan opens for itself, and the report records what each
-// plan's commit wrote to the destination.
+// TestWrite tests the write, the last step of a plan. The stamped files
+// of the render go to a sink that the plan opens, and the report records
+// what the commit of each plan wrote to the destination.
 func TestWrite(t *testing.T) {
 	t.Parallel()
 
@@ -306,21 +312,20 @@ func TestWrite(t *testing.T) {
 	})
 }
 
-// printer is a kit backend spelling one kind and framing its files
-// through the fixture language's comment syntax, which is what the
-// output contract stamps through.
-func printer(tb assert.TB, target plugin.Target) plugin.Backend {
-	tb.Helper()
+// fixturePrinter returns the printer of the target fixture. Every call
+// returns one value, so the plans of a composition share the backend of
+// their target, as a target renders through one backend. A kit backend
+// keeps no state of a run, so parallel tests share the value.
+var fixturePrinter = sync.OnceValue(func() plugin.Backend {
+	return printerAs("printer", "fixture", "")
+})
 
-	return printerAs(tb, "printer", target, "")
-}
-
-// printerAs is the printer under a name of its own, for a composition
-// of more than one plan. It names every file file, or after its family
-// word where file is empty.
-func printerAs(tb assert.TB, name plugin.ID, target plugin.Target, file string) plugin.Backend {
-	tb.Helper()
-
+// printerAs returns a kit backend of target that spells one kind and
+// frames its files through the comment syntax of the fixture language,
+// which the output contract stamps through. It names every file file,
+// or after its family word where file is empty. Each call returns a new
+// backend.
+func printerAs(name plugin.ID, target plugin.Target, file string) plugin.Backend {
 	return backend.New(name, target,
 		plugin.CommentSyntax{Line: []string{"//"}}).
 		KindTemplates(map[symbol.Kind]string{
@@ -341,8 +346,8 @@ func printerAs(tb assert.TB, name plugin.ID, target plugin.Target, file string) 
 		Build()
 }
 
-// totalCoverage renders every fact, which the fixture's one
-// template kind states none of.
+// totalCoverage returns a verdict of Renders for every fact. The one
+// kind template of the fixture states no fact.
 func totalCoverage() map[symbol.Fact]render.Verdict {
 	out := map[symbol.Fact]render.Verdict{}
 	for _, f := range symbol.Facts() {
@@ -351,9 +356,9 @@ func totalCoverage() map[symbol.Fact]render.Verdict {
 	return out
 }
 
-// vocal is a kit backend with one shared helper: its struct template
-// spells the name through wordHelper, which returns the name as it
-// is.
+// vocal returns a kit backend with one shared helper. Its struct
+// template spells the name through wordHelper, which returns the name
+// unchanged.
 func vocal(tb assert.TB, target plugin.Target) plugin.Backend {
 	tb.Helper()
 
@@ -375,17 +380,16 @@ func vocal(tb assert.TB, target plugin.Target) plugin.Backend {
 }
 
 // shouting returns a composition whose one plan renders through the
-// vocal backend, with one generator that overrides wordHelper for
-// the given target, into the output open returns.
+// vocal backend into the output that open returns. The one generator of
+// the plan overrides wordHelper for the target overridden.
 func shouting(tb assert.TB, overridden plugin.Target, open func() (output.Sink, error)) *workspace.Workspace {
 	tb.Helper()
 
-	shouter, held := eidos.NewPlugin("shouter").
+	shouter := eidos.NewPlugin("shouter").
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		For(overridden, eidos.Overrides(template.FuncMap{wordHelper: strings.ToUpper})).
 		Handle(eidos.OnStruct(mirrored)).
-		Build().(plugin.Generator)
-	assert.True(tb, held, "an emitter rule lowers to the generator role")
+		Generator()
 	w, err := workspace.New().
 		Brand(fixtureBrand).
 		Annotators(stamper("noter", quiet)).
@@ -401,8 +405,8 @@ func shouting(tb assert.TB, overridden plugin.Target, open func() (output.Sink, 
 	return w
 }
 
-// renderedBody runs a composition over the one-struct fixture and
-// returns the one file its one sink committed.
+// renderedBody runs a composition over the fixture of one struct, and
+// returns the one file that its one sink committed.
 func renderedBody(t *testing.T, w *workspace.Workspace, o *opener) string {
 	t.Helper()
 
@@ -418,7 +422,7 @@ func renderedBody(t *testing.T, w *workspace.Workspace, o *opener) string {
 }
 
 // writing returns a composition whose one plan renders through the
-// printer backend into the output open returns.
+// printer of the target fixture into the output that open returns.
 func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspace {
 	tb.Helper()
 
@@ -429,7 +433,7 @@ func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspac
 		Plans(workspace.Plan{
 			Name:       "plan",
 			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(tb, "fixture"),
+			Backend:    fixturePrinter(),
 		}).
 		Output(open).
 		Build()
@@ -437,8 +441,8 @@ func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspac
 	return w
 }
 
-// routedAlpha returns an unfrozen one-package graph whose one file
-// is in the package's directory, and the struct it declares.
+// routedAlpha returns an unfrozen graph of one package whose one file
+// is in the directory of the package, and the struct of the file.
 func routedAlpha(tb assert.TB) (*store.Graph, *node.Struct) {
 	tb.Helper()
 
@@ -452,8 +456,8 @@ func routedAlpha(tb assert.TB) (*store.Graph, *node.Struct) {
 }
 
 // routing returns a composition whose one plan mirrors every struct
-// through the printer backend under the given layout, into the output
-// open returns.
+// through the printer of the target fixture under the layout cfg, into
+// the output that open returns.
 func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) *workspace.Workspace {
 	tb.Helper()
 
@@ -464,7 +468,7 @@ func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) 
 		Plans(workspace.Plan{
 			Name:       "plan",
 			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(tb, "fixture"),
+			Backend:    fixturePrinter(),
 			Layout:     cfg,
 		}).
 		Output(open).
@@ -473,8 +477,8 @@ func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) 
 	return w
 }
 
-// writtenPaths runs a composition over g and returns the paths its one
-// sink committed, in the order the sink's map ranges them.
+// writtenPaths runs a composition over g, and returns the paths that its
+// one sink committed in the order of the map of the sink.
 func writtenPaths(t *testing.T, w *workspace.Workspace, g *store.Graph, o *opener) []string {
 	t.Helper()
 

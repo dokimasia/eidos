@@ -19,17 +19,17 @@ type Component struct {
 	// Version is the version that the plugin declares. It is empty for a
 	// plugin that does not declare a version.
 	Version string
-	// Bucket is the position of an annotator or a generator in the schedule
+	// Turn is the position of an annotator or a generator in the schedule
 	// of its role, counted from one. Every claim and every unit of the plugin
-	// records this bucket. Bucket is zero for a frontend, a backend and a
+	// records this turn. Turn is zero for a frontend, a backend and a
 	// check.
-	Bucket int
+	Turn int
 }
 
 // component returns the description of one plugin: its name, the version
-// that it declares when it implements [plugin.Versioned], and its bucket.
-func component(name plugin.ID, run any, bucket int) Component {
-	c := Component{Name: name, Bucket: bucket}
+// that it declares when it implements [plugin.Versioned], and its turn.
+func component(name plugin.ID, run any, turn int) Component {
+	c := Component{Name: name, Turn: turn}
 	if v, versioned := run.(plugin.Versioned); versioned {
 		c.Version = v.Version()
 	}
@@ -46,7 +46,7 @@ type PlanDescription struct {
 	// DependsOn lists the plans whose exports the plan reads, in the order
 	// that the plan declares them.
 	DependsOn []string
-	// Generate lists the generators of the plan in bucket order.
+	// Generate lists the generators of the plan in turn order.
 	Generate []Component
 	// Backend is the backend of the plan, and Target is the target that the
 	// backend renders.
@@ -82,7 +82,7 @@ type Description struct {
 	Fingerprint []byte
 	// Frontends lists the frontends in load order.
 	Frontends []Component
-	// Annotate lists the annotators in bucket order. The lowering entries
+	// Annotate lists the annotators in turn order. The lowering entries
 	// of the targets come first, without a version.
 	Annotate []Component
 	// Plans lists the plans in composition order.
@@ -118,7 +118,7 @@ func (w *Workspace) Describe() Description {
 		d.Frontends = append(d.Frontends, component(f.Name(), f, 0))
 	}
 	for _, a := range w.annotate {
-		d.Annotate = append(d.Annotate, component(a.name, a.run, a.bucket))
+		d.Annotate = append(d.Annotate, component(a.name, a.run, a.turn))
 	}
 	for i := range w.plans {
 		p := &w.plans[i]
@@ -138,9 +138,9 @@ func (w *Workspace) Describe() Description {
 			plan.DependsOn = append(plan.DependsOn, w.plans[dep].name)
 		}
 		for _, g := range p.entries {
-			plan.Generate = append(plan.Generate, component(g.name, g.run, g.bucket))
+			plan.Generate = append(plan.Generate, component(g.name, g.run, g.turn))
 		}
-		if specs := policiesOf(p.backend); len(specs) > 0 {
+		if specs := p.backend.Policies(); len(specs) > 0 {
 			plan.Policies = make(map[plugin.PolicyKey]plugin.Choice, len(specs))
 			for _, s := range specs {
 				plan.Policies[s.Key] = p.policy.Choice(s.Key)

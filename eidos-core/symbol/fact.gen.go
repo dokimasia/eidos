@@ -27,16 +27,18 @@ const (
 	FactIndexer
 	FactConstructs
 	FactHardPrivate
+	FactOptional
+	FactMutability
+	FactComputed
 	FactLabel
 	FactParamDefault
-	FactOptional
 	FactVariadic
 	FactNamedReturn
 	FactConstEnum
+	FactUnderlying
 	FactFields
 	FactMethods
 	FactValue
-	FactMutability
 	FactTag
 	FactSealed
 	FactTypes
@@ -70,16 +72,18 @@ var factNames = [...]string{
 	FactIndexer:          "Indexer",
 	FactConstructs:       "Constructs",
 	FactHardPrivate:      "HardPrivate",
+	FactOptional:         "Optional",
+	FactMutability:       "Mutability",
+	FactComputed:         "Computed",
 	FactLabel:            "Label",
 	FactParamDefault:     "ParamDefault",
-	FactOptional:         "Optional",
 	FactVariadic:         "Variadic",
 	FactNamedReturn:      "NamedReturn",
 	FactConstEnum:        "ConstEnum",
+	FactUnderlying:       "Underlying",
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
 	FactValue:            "Value",
-	FactMutability:       "Mutability",
 	FactTag:              "Tag",
 	FactSealed:           "Sealed",
 	FactTypes:            "Types",
@@ -122,16 +126,18 @@ func Facts() []Fact {
 		FactIndexer,
 		FactConstructs,
 		FactHardPrivate,
+		FactOptional,
+		FactMutability,
+		FactComputed,
 		FactLabel,
 		FactParamDefault,
-		FactOptional,
 		FactVariadic,
 		FactNamedReturn,
 		FactConstEnum,
+		FactUnderlying,
 		FactFields,
 		FactMethods,
 		FactValue,
-		FactMutability,
 		FactTag,
 		FactSealed,
 		FactTypes,

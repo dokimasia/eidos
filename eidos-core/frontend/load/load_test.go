@@ -243,13 +243,6 @@ func TestLoad(t *testing.T) {
 			assert.Contains(t, err.Error(), `"Own"`, "the error names the brand")
 		})
 
-		t.Run("returns an error for a frontend without a version", func(t *testing.T) {
-			t.Parallel()
-
-			err := refuse(t, stdTree(), with(versionless{frontendtest.NewScripted()}))
-			assert.Contains(t, err.Error(), "version", "every unit key folds the declared version")
-		})
-
 		t.Run("returns an error naming an options field the key cannot see", func(t *testing.T) {
 			t.Parallel()
 
@@ -1321,45 +1314,6 @@ func (hiddenOptions) Options() any {
 		Tag    string
 		secret string
 	}{}
-}
-
-// versionless hides the fake's version, which the driver must
-// refuse.
-type versionless struct {
-	f *frontendtest.Scripted
-}
-
-// Name returns the wrapped frontend's name.
-func (v versionless) Name() plugin.ID { return v.f.Name() }
-
-// Lang returns the wrapped frontend's language.
-func (v versionless) Lang() symbol.Lang { return v.f.Lang() }
-
-// Syntax returns the wrapped frontend's comment syntax.
-func (v versionless) Syntax() plugin.CommentSyntax { return v.f.Syntax() }
-
-// Overloads reports whether the wrapped frontend's language
-// overloads.
-func (v versionless) Overloads() bool { return v.f.Overloads() }
-
-// Selection returns the wrapped frontend's claim.
-func (v versionless) Selection() []string { return v.f.Selection() }
-
-// Parse lowers the unit through the wrapped frontend.
-func (v versionless) Parse(ctx context.Context, u *plugin.SourceUnit) error {
-	return v.f.Parse(ctx, u)
-}
-
-// Partition groups the files through the wrapped frontend.
-func (v versionless) Partition(
-	ctx context.Context, files []plugin.SourceRef, r plugin.FileReader,
-) ([][]plugin.SourceRef, error) {
-	return v.f.Partition(ctx, files, r)
-}
-
-// Resolve probes a spelling through the wrapped frontend.
-func (v versionless) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
-	return v.f.Resolve(scope, spelling)
 }
 
 // optionless hides the fake's options, which is the shape of a

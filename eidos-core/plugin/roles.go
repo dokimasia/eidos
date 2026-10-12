@@ -64,7 +64,7 @@ type WorkspaceCheck interface {
 // The two read surfaces split by rule: Index is the dispatcher's
 // routing path and records nothing, and Reader is the plugin's
 // tracked path, recording into the phase's read set. Plugin and
-// Bucket are the arbitration rank fields of every stamp made under
+// Turn are the arbitration rank fields of every stamp made under
 // this call.
 type AnnotatorContext struct {
 	Index  *Index
@@ -80,9 +80,9 @@ type AnnotatorContext struct {
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the rank's plugin field.
 	Plugin ID
-	// Bucket is the priority bucket this call runs in: the rank's
-	// bucket field.
-	Bucket int
+	// Turn is the turn of this call in the schedule, which the rank
+	// of every stamp of the call reads.
+	Turn int
 	// Workers is how many invocations the call may run at once. Zero
 	// and one mean sequentially. A plugin implementing the role
 	// directly may ignore it, and a plugin that runs work on
@@ -116,10 +116,10 @@ type GeneratorContext struct {
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the emit attribution.
 	Plugin ID
-	// Bucket is the priority bucket this call runs in, which
-	// decides what an emit-triggered rule can see: the store contains
-	// earlier buckets' units.
-	Bucket int
+	// Turn is the turn of this call in the schedule. It decides what
+	// an emit-triggered rule can see, because the store contains the
+	// units of the earlier turns.
+	Turn int
 	// Workers is how many invocations the call may run at once, with
 	// the meaning [AnnotatorContext.Workers] states.
 	Workers int

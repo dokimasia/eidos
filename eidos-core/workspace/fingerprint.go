@@ -170,7 +170,7 @@ func (b *Builder) fingerprint(
 		}
 		sb.WriteString("backend\x00")
 		sb.WriteString(pluginEntry(p.backend.Name(), p.backend, options[p.backend.Name()]))
-		for _, s := range policiesOf(p.backend) {
+		for _, s := range p.backend.Policies() {
 			sb.WriteByte(0)
 			sb.WriteString(string(s.Key))
 			sb.WriteByte('=')

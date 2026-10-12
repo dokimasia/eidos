@@ -6,6 +6,7 @@ package plugintest_test
 import (
 	"fmt"
 	"io/fs"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,6 +38,13 @@ const (
 	wordHelper                  = "word"
 	templateName                = "method1.tpl"
 	slotsMarker                 = "{{slots}}"
+)
+
+// The contracts of the declaration check that more than one case
+// expects.
+const (
+	secondReadContract  = "every read of one build returns the same declarations"
+	secondBuildContract = "a second build declares the same values"
 )
 
 // suiteCode is a code for the fixture plugins' findings.
@@ -137,7 +145,7 @@ func (w workerStamper) Annotate(ctx *plugin.AnnotatorContext) error {
 			continue
 		}
 		err := meta.Stamp(ctx.Facts, w.key, true, meta.Claim{
-			Subject: decl.Identity(), Authority: meta.AuthorityPlugin, Bucket: ctx.Bucket, Plugin: ctx.Plugin,
+			Subject: decl.Identity(), Authority: meta.AuthorityPlugin, Turn: ctx.Turn, Plugin: ctx.Plugin,
 		})
 		if err != nil {
 			return err
@@ -199,8 +207,11 @@ func (forgetful) Generate(ctx *plugin.GeneratorContext) error {
 }
 
 // unattributed is an SPI spelling of the auditing weaver that appends
-// into the seeded struct's field slot and names itself among no unit's
-// contributors: the twin the twins check must expose.
+// into the field slot of the seeded struct and names itself among the
+// contributors of no unit. It is the twin that the twins check must
+// expose. The slot is sealed, so the weaver appends through
+// emit.AppendSealed, as only a hand-rolled plugin outside the
+// repository can.
 type unattributed struct{}
 
 // Name returns the weaver's name, which the facade spelling shares.
@@ -210,14 +221,15 @@ func (unattributed) Name() plugin.ID { return "weaver" }
 func (unattributed) Generate(ctx *plugin.GeneratorContext) error {
 	for s := range ctx.Emit.ByKind(symbol.KindStruct) {
 		if host, held := s.(*emit.Struct); held {
-			host.Fields.Append(&emit.Field{Name: auditedField})
+			emit.AppendSealed(&host.Fields, &emit.Field{Name: auditedField})
 		}
 	}
 	return nil
 }
 
-// attributed is the SPI spelling of the auditing weaver: it appends
-// into the seeded struct's field slot and names itself among the
+// attributed is the SPI spelling of the auditing weaver. It appends into
+// the field slot of the seeded struct through emit.AppendSealed, as the
+// emitter applies a buffered append, and names itself among the
 // contributors of the unit that contains the struct.
 type attributed struct{}
 
@@ -229,10 +241,104 @@ func (attributed) Name() plugin.ID { return "weaver" }
 func (attributed) Generate(ctx *plugin.GeneratorContext) error {
 	for s := range ctx.Emit.ByKind(symbol.KindStruct) {
 		if host, held := s.(*emit.Struct); held {
-			host.Fields.Append(&emit.Field{Name: auditedField})
+			emit.AppendSealed(&host.Fields, &emit.Field{Name: auditedField})
 			ctx.Emit.Contribute(host, ctx.Plugin)
 		}
 	}
+	return nil
+}
+
+// nameless is a hand-rolled generator without a name.
+type nameless struct{ spare }
+
+// Name returns the empty name.
+func (nameless) Name() plugin.ID { return "" }
+
+// drifting is a hand-rolled generator whose version counts its reads, so
+// a second read returns another version.
+type drifting struct {
+	spare
+	reads *int
+}
+
+// Version returns the number of reads so far.
+func (d drifting) Version() string {
+	*d.reads++
+	return strconv.Itoa(*d.reads)
+}
+
+// shifting is a hand-rolled generator whose capabilities count their
+// reads, so a second read returns other capabilities.
+type shifting struct {
+	spare
+	reads *int
+}
+
+// Priority returns zero for every role.
+func (shifting) Priority(plugin.Role) int { return 0 }
+
+// Provides returns one capability that has the number of reads so far in
+// its label.
+func (s shifting) Provides() []plugin.Capability {
+	*s.reads++
+	return []plugin.Capability{plugin.Capability("read" + strconv.Itoa(*s.reads))}
+}
+
+// Requires returns no capability.
+func (shifting) Requires() []plugin.Capability { return nil }
+
+// After returns no capability.
+func (shifting) After() []plugin.Capability { return nil }
+
+// oneTarget is a hand-rolled generator whose template lookup panics for
+// a target other than the fixture target.
+type oneTarget struct{ spare }
+
+// Templates returns the tree of the fixture target, and panics for any
+// other target.
+func (oneTarget) Templates(t plugin.Target) (fs.FS, bool) {
+	if t != fixtureTarget {
+		panic("oneTarget: no tree serves " + string(t))
+	}
+	return treeOf(slotsMarker), true
+}
+
+// TemplateTargets returns the fixture target.
+func (oneTarget) TemplateTargets() []plugin.Target { return []plugin.Target{fixtureTarget} }
+
+// TemplateFuncs returns no helper.
+func (oneTarget) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
+
+// Overrides returns no override.
+func (oneTarget) Overrides(plugin.Target) []string { return nil }
+
+// eager is a hand-rolled generator that reads the first struct of the
+// graph without a check, so it panics over an empty graph.
+type eager struct{}
+
+// Name returns the generator's name.
+func (eager) Name() plugin.ID { return "eager" }
+
+// Generate flushes one plan unit whose word is the kind of the first
+// struct of the graph.
+func (eager) Generate(ctx *plugin.GeneratorContext) error {
+	first := slices.Collect(ctx.Reader.ByKind(symbol.KindStruct))[0]
+	return ctx.Emit.Add(plugin.Unit{Plugin: "eager", Per: plugin.PerPlan, Word: first.Kind().String()})
+}
+
+// lonely is a hand-rolled generator that reports an Error over a graph
+// without a struct.
+type lonely struct{ at position.Pos }
+
+// Name returns the generator's name.
+func (lonely) Name() plugin.ID { return "lonely" }
+
+// Generate reports an Error where the graph has no struct.
+func (l lonely) Generate(ctx *plugin.GeneratorContext) error {
+	for range ctx.Reader.ByKind(symbol.KindStruct) {
+		return nil
+	}
+	ctx.Sink.Errorf(suiteCode, l.at, ctx.Plugin, "finds no struct")
 	return nil
 }
 
@@ -326,7 +432,7 @@ func TestSuite(t *testing.T) {
 						}
 						return nil
 					})).
-					Build()
+					Annotator()
 				return p, f
 			}
 			failure := assert.Rejects(t, "a fact the second pass adds must fail the check",
@@ -359,7 +465,7 @@ func TestSuite(t *testing.T) {
 						})
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, f
 			}
 
@@ -457,7 +563,7 @@ func TestSuite(t *testing.T) {
 						m.Warnf(suiteCode, "visited %s", m.Struct.Name)
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, reversed(tb)
 			})
 		})
@@ -476,7 +582,7 @@ func TestSuite(t *testing.T) {
 						})
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, reversed(tb)
 			}
 			failure := assert.Rejects(t, "emit that varies with the order of invocations must fail the check",
@@ -500,7 +606,7 @@ func TestSuite(t *testing.T) {
 						eidos.Stamp(st, key, strconv.Itoa(order))
 						return nil
 					})).
-					Build()
+					Annotator()
 				return p, f
 			}
 			failure := assert.Rejects(t, "facts that vary with the order of invocations must fail the check",
@@ -522,7 +628,7 @@ func TestSuite(t *testing.T) {
 						m.Warnf(suiteCode, "visited %d", order)
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, reversed(tb)
 			}
 			failure := assert.Rejects(t, "findings that vary with the order of invocations must fail the check",
@@ -580,7 +686,7 @@ func TestSuite(t *testing.T) {
 					}{}).
 					Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
 					Handle(quietRule()).
-					Build()
+					Generator()
 				return p, f
 			}
 
@@ -633,7 +739,7 @@ func TestSuite(t *testing.T) {
 					Templates(treeOf(slotsMarker)).
 					For(vocalTarget, eidos.Overrides(template.FuncMap{wordHelper: strings.ToUpper})).
 					Handle(quietRule()).
-					Build()
+					Generator()
 				return p, f
 			})
 		})
@@ -659,7 +765,7 @@ func TestSuite(t *testing.T) {
 				p := eidos.NewPlugin("bare").
 					Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
 					Handle(quietRule()).
-					Build()
+					Generator()
 				return p, f
 			}
 			failure := assert.Rejects(t, "a lint over nothing must fail the check",
@@ -682,10 +788,10 @@ func TestSuite(t *testing.T) {
 				f, _, _ := twoStructs(tb)
 				p := eidos.NewPlugin("cheat").
 					Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-						m.Warnf(suiteCode, position.Pos{}, "nowhere in particular")
+						m.WarnfAt(suiteCode, position.Pos{}, "nowhere in particular")
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, f
 			}
 
@@ -736,7 +842,7 @@ func TestSuite(t *testing.T) {
 							}
 							return nil
 						})).
-					Build()
+					Generator()
 				return p, f
 			})
 		})
@@ -757,15 +863,182 @@ func TestSuite(t *testing.T) {
 					b.Handle(eidos.OnEmit(symbol.KindStruct,
 						func(m *eidos.EmitMatch, e *eidos.Emitter) error { return nil }))
 				}
-				return b.Build(), f
+				return b.Generator(), f
 			}
 
 			failure := assert.Rejects(t, "a varying declaration must fail the check",
 				func(tb assert.TB) {
 					plugintest.AssertStableDeclaration(tb, unstable)
 				})
-			assert.Equal(t, coretest.Contracts(failure), []string{"the gate records are stable across builds"},
+			assert.Equal(t, coretest.Contracts(failure), []string{secondBuildContract},
 				"the check names the stability rule")
+		})
+
+		t.Run("passes a dual-role plugin", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertStableDeclaration(t, wellBehaved)
+		})
+
+		t.Run("fails a plugin without a name", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return nameless{}, f
+			}
+			failure := assert.Rejects(t, "a plugin without a name must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertStableDeclaration(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{"the plugin has a name"},
+				"the check names the missing name")
+		})
+
+		t.Run("fails a version that changes between reads", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return drifting{reads: new(int)}, f
+			}
+			failure := assert.Rejects(t, "a version that changes between reads must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertStableDeclaration(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{secondReadContract},
+				"the check names the read that changed")
+		})
+
+		t.Run("fails capabilities that change between reads", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return shifting{reads: new(int)}, f
+			}
+			failure := assert.Rejects(t, "capabilities that change between reads must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertStableDeclaration(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{secondReadContract},
+				"the check names the read that changed")
+		})
+
+		t.Run("fails a template tree that differs between builds", func(t *testing.T) {
+			t.Parallel()
+
+			var builds int
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				builds++
+				p := eidos.NewPlugin("treed").
+					Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+					Templates(treeOf(slotsMarker + strconv.Itoa(builds))).
+					Handle(quietRule()).
+					Generator()
+				return p, f
+			}
+			failure := assert.Rejects(t, "a tree that differs between builds must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertStableDeclaration(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{secondBuildContract},
+				"the check names the build that differs")
+		})
+
+		t.Run("fails a template lookup that panics for a target that no backend claims", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				f.Languages = map[plugin.Target]render.Language{fixtureTarget: fixtureLanguage()}
+				return oneTarget{}, f
+			}
+			failure := assert.Rejects(t, "a lookup that panics must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertStableDeclaration(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"every declaration of the plugin reads without a panic"},
+				"the check names the panic")
+		})
+	})
+
+	t.Run("AssertCleanRun", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes a warning over the fixture", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertCleanRun(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, alpha, _ := twoStructs(tb)
+				return workerReporter{at: alpha.Pos}, f
+			})
+		})
+
+		t.Run("fails an Error over the fixture", func(t *testing.T) {
+			t.Parallel()
+
+			refusing := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				p := eidos.NewPlugin("cheat").
+					Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+						m.Errorf(suiteCode, "refuses %s", m.Struct.Name)
+						return nil
+					})).
+					Generator()
+				return p, f
+			}
+			failure := assert.Rejects(t, "an Error over the fixture must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertCleanRun(tb, refusing)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{
+				"a run over the fixture reports no Error: refuses Alpha",
+				"a run over the fixture reports no Error: refuses Beta",
+			}, "the check names each Error")
+		})
+	})
+
+	t.Run("AssertEmptyRun", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes a weaver over an empty store", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertEmptyRun(t, weaving)
+		})
+
+		t.Run("fails a generator that panics over an empty graph", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return eager{}, f
+			}
+			failure := assert.Rejects(t, "a panic over an empty graph must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertEmptyRun(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{"the generate phase runs without a panic"},
+				"the check names the panic")
+		})
+
+		t.Run("fails an Error over an empty graph", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, alpha, _ := twoStructs(tb)
+				return lonely{at: alpha.Pos}, f
+			}
+			failure := assert.Rejects(t, "an Error over an empty graph must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertEmptyRun(tb, setup)
+				})
+			assert.Equal(t, coretest.Contracts(failure),
+				[]string{"a run over an empty fixture reports no Error: finds no struct"},
+				"the check names the Error")
 		})
 	})
 
@@ -786,7 +1059,7 @@ func TestSuite(t *testing.T) {
 						})
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, f
 			}
 			plugintest.AssertTwins(t, facade, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
@@ -831,7 +1104,7 @@ func TestSuite(t *testing.T) {
 						m.Struct.Name = "Rewritten"
 						return nil
 					})).
-					Build()
+					Generator()
 				return p, f
 			}
 
@@ -859,9 +1132,9 @@ func twoStructs(tb assert.TB) (*plugintest.Fixture, *node.Struct, *node.Struct) 
 	return f, alpha, beta
 }
 
-// wellBehaved is a dual-role plugin: its annotator half classifies
-// and its generator half emits for the classified subjects, the
-// weave the suite passes.
+// wellBehaved returns a dual plugin over the fixture. Its annotator half
+// classifies the subjects, and its generator half emits for the classified
+// subjects, which is the weave that the suite passes.
 func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 	tb.Helper()
 
@@ -886,7 +1159,7 @@ func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 					return nil
 				})),
 		).
-		Build()
+		Dual()
 	return p, f
 }
 
@@ -943,12 +1216,12 @@ func treed(tree fs.FS) plugintest.Setup {
 			Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
 			For(fixtureTarget, eidos.Templates(tree)).
 			Handle(quietRule()).
-			Build()
+			Generator()
 		return p, f
 	}
 }
 
-// seeded returns the two-struct fixture with an earlier bucket's unit
+// seeded returns the two-struct fixture with the unit of an earlier turn
 // that contains one struct for alpha.
 func seeded(tb assert.TB) *plugintest.Fixture {
 	tb.Helper()
@@ -973,11 +1246,11 @@ func auditing(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 			}
 			return nil
 		})).
-		Build()
+		Generator()
 	return p, seeded(tb)
 }
 
-// weaving is a weaver over an earlier bucket's struct whose origin has
+// weaving is a weaver over a struct of an earlier turn whose origin has
 // many instances of one repeatable directive: every instance appends a
 // field into the one struct's slot through the Emitter.
 func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
@@ -1004,7 +1277,7 @@ func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				e.Slot(&s.Fields).Append(&emit.Field{Name: "audit" + strconv.Itoa(m.Directive().Instance)})
 				return nil
 			}))).
-		Build()
+		Generator()
 	return p, f
 }
 

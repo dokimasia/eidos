@@ -32,12 +32,13 @@ const (
 	// slot and the body's list of slots.
 	declareAllocs = 2
 	// encodeAllocs is the encoding of a method whose body has a
-	// prologue statement and a scaffold statement: four boxed slot values
-	// the encoder passes to the slots' MarshalJSON, one value the encoder
-	// allocates by reflection, the encoder's copy of its output and of
-	// the slot's own encoding, the slot's encoding, and the spliced
-	// result.
-	encodeAllocs = 9
+	// prologue statement and a scaffold statement. The encoder copies
+	// its output, and EncodeJSON allocates the spliced result. The
+	// prologue slot boxes its items for the encoder, the encoder copies
+	// them by reflection, and it copies the encoding of the slot. The
+	// encoder also boxes a Body and a Value by reflection for their
+	// omitzero checks, because their IsZero methods have value receivers.
+	encodeAllocs = 7
 	// encodeStateAllocs is the encoder's state, which it takes from a
 	// pool per processor. A collection, or a move of the goroutine to
 	// another processor, leaves the pool empty, and the next encoding

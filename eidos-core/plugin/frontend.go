@@ -30,6 +30,10 @@ const (
 // kit lowers to this role and the exotic case implements it
 // directly. The conformance suite runs the same checks over both.
 type Frontend interface {
+	// Versioned states the behavior version of the frontend, which
+	// folds into the key of every unit that the frontend parses.
+	Versioned
+
 	// Name is the frontend's one identity: the origin its findings
 	// report under and its classification stamps record.
 	Name() ID
@@ -146,6 +150,47 @@ type Exporter interface {
 // imports, returns them in one tier, so two candidates the graph
 // contains report as an ambiguity.
 type Candidates [][]symbol.Identity
+
+// Zip merges the tiers of sources by position: the first tier of each
+// source, then the second tier of each, and so on. The candidates of the
+// sources compete inside a tier, and each source keeps its own order
+// across the tiers. A language whose scope offers names from several
+// sources at once, such as the imports and the declarations of a module,
+// zips them. A merged tier without candidates is nil, and Zip returns nil
+// where no source has a tier.
+//
+// # Allocation contract
+//
+// Zip allocates the list of tiers and each merged tier that has
+// candidates, each once at its final size.
+func Zip(sources ...Candidates) Candidates {
+	depth := 0
+	for _, src := range sources {
+		depth = max(depth, len(src))
+	}
+	if depth == 0 {
+		return nil
+	}
+	out := make(Candidates, depth)
+	for i := range out {
+		n := 0
+		for _, src := range sources {
+			if i < len(src) {
+				n += len(src[i])
+			}
+		}
+		if n == 0 {
+			continue
+		}
+		out[i] = make([]symbol.Identity, 0, n)
+		for _, src := range sources {
+			if i < len(src) {
+				out[i] = append(out[i], src[i]...)
+			}
+		}
+	}
+	return out
+}
 
 // SourceRef names a file without opening it: the
 // workspace-relative path, and the shared inputs whose bytes fold

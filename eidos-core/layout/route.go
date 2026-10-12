@@ -106,7 +106,7 @@ func Route(in Input) ([]plugin.File, error) {
 	if err := in.check(); err != nil {
 		return nil, err
 	}
-	// A plan routes about one bucket and one file per unit, so the
+	// A plan routes about one batch and one file per unit, so the
 	// unit count sizes both.
 	n := 0
 	for range in.Emit.Units() {
@@ -116,7 +116,7 @@ func Route(in Input) ([]plugin.File, error) {
 		in:      in,
 		units:   slices.AppendSeq(make([]plugin.Unit, 0, n), in.Emit.Units()),
 		dirs:    map[symbol.Identity]packageDir{},
-		buckets: make([]bucket, 0, n),
+		batches: make([]batch, 0, n),
 		at:      make(map[destKey]int, n),
 		files:   make([]building, 0, n),
 		byPath:  make(map[string]int, n),
@@ -146,9 +146,9 @@ type router struct {
 	spread map[placement]map[string]struct{}
 	// dirs caches each package's source directory.
 	dirs map[symbol.Identity]packageDir
-	// buckets are the destinations in the order their first
+	// batches are the destinations in the order their first
 	// declaration arrived, and at indexes them.
-	buckets []bucket
+	batches []batch
 	at      map[destKey]int
 	// files are the routed files, sorted by path, and byPath indexes
 	// them.
@@ -191,7 +191,7 @@ type destination struct {
 // index returns the fields that tell two destinations apart: a
 // family's cardinality, word and file template follow from its plugin
 // and tag, and a unit's package from its language and path. The key is
-// under the size a map stores inline, so creating a bucket allocates
+// under the size a map stores inline, so creating a batch allocates
 // nothing for its key.
 func (d destination) index() destKey {
 	return destKey{
@@ -200,7 +200,7 @@ func (d destination) index() destKey {
 	}
 }
 
-// destKey indexes a destination's bucket.
+// destKey indexes the batch of a destination.
 type destKey struct {
 	plugin plugin.ID
 	tag    string
@@ -211,8 +211,8 @@ type destKey struct {
 	file   string
 }
 
-// bucket is the declarations of one destination, in store order.
-type bucket struct {
+// batch is the declarations of one destination, in store order.
+type batch struct {
 	dest  destination
 	decls []symbol.Symbol
 	// first is the first source unit that contributed, and more lists
@@ -271,9 +271,9 @@ func (r *router) readOverrides() {
 }
 
 // place decides every declaration's destination and gathers the
-// declarations into one bucket per destination. A unit whose family
+// declarations into one batch per destination. A unit whose family
 // its plugin does not declare, and a declaration a finding refuses,
-// join no bucket. A unit without an overridden declaration routes
+// join no batch. A unit without an overridden declaration routes
 // whole to its family's file for its key.
 func (r *router) place() {
 	var dests []destination
@@ -346,7 +346,7 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 		moved, known := familyOf(r.in.Outputs[u.Plugin], ov.tag)
 		if !known {
 			r.errorf(UnknownTag, ov.tagAt, nil,
-				"tag %q names no family %s declares, and %s is refused", ov.tag, u.Plugin, describe(d))
+				"tag %q names no family %s declares, and %s is refused", ov.tag, u.Plugin, Describe(d))
 			return destination{}, false
 		}
 		fam = moved
@@ -357,7 +357,7 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 		if !found {
 			r.errorf(NoDestination, r.positionOf(origin, u), nil,
 				"%s moves to family %q, and no %s key derives for it without a workspace source",
-				describe(d), fam.Tag, fam.Per)
+				Describe(d), fam.Tag, fam.Per)
 			return destination{}, false
 		}
 		key, pkg = k, owner
@@ -380,19 +380,19 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 	}
 	if !found {
 		r.errorf(NoDestination, ov.pathAt, nil,
-			"out=%s resolves against the source directory of %s, which has none", ov.path, describe(d))
+			"out=%s resolves against the source directory of %s, which has none", ov.path, Describe(d))
 		return destination{}, false
 	}
 	dir, file, inside := redirect(base, ov.path)
 	switch {
 	case !inside:
 		r.errorf(EscapingPath, ov.pathAt, nil,
-			"out=%s is absolute or leaves the workspace root, and %s is refused", ov.path, describe(d))
+			"out=%s is absolute or leaves the workspace root, and %s is refused", ov.path, Describe(d))
 		return destination{}, false
 	case file != "" && len(r.spread[placement{origin: origin, plugin: u.Plugin}]) > 1:
 		r.errorf(AmbiguousOverride, ov.pathAt, nil,
 			"out=%s names one file for %s, and %s emits into more than one family from %s: "+
-				"add tag= to pick one", ov.path, describe(d), u.Plugin, origin)
+				"add tag= to pick one", ov.path, Describe(d), u.Plugin, origin)
 		return destination{}, false
 	}
 	dest.dir = dir
@@ -433,10 +433,10 @@ func (r *router) target(p plugin.ID, fam plugin.Output, key string, pkg symbol.I
 func (r *router) sourceless(u *plugin.Unit, d symbol.Symbol) {
 	origin, _ := emit.OriginOf(d)
 	r.errorf(NoDestination, r.positionOf(origin, u), nil,
-		"%s has no workspace source to be written beside", describe(d))
+		"%s has no workspace source to be written beside", Describe(d))
 }
 
-// gather adds one unit's routed declarations to their buckets. A unit
+// gather adds one unit's routed declarations to their batches. A unit
 // whose declarations all route to one destination joins it whole,
 // without a copy.
 func (r *router) gather(unit int, dests []destination, routed []bool) {
@@ -459,21 +459,21 @@ func (r *router) gather(unit int, dests []destination, routed []bool) {
 	}
 }
 
-// add appends declarations of one source unit to the bucket of a
-// destination, creating the bucket on first use.
+// add appends declarations of one source unit to the batch of a
+// destination, and creates the batch on first use.
 func (r *router) add(dest destination, unit int, decls []symbol.Symbol, whole bool) {
 	k := dest.index()
 	at, reached := r.at[k]
 	if !reached {
-		r.at[k] = len(r.buckets)
-		b := bucket{dest: dest, first: unit, whole: whole, shared: whole, decls: decls}
+		r.at[k] = len(r.batches)
+		b := batch{dest: dest, first: unit, whole: whole, shared: whole, decls: decls}
 		if !whole {
 			b.decls = slices.Clone(decls)
 		}
-		r.buckets = append(r.buckets, b)
+		r.batches = append(r.batches, b)
 		return
 	}
-	b := &r.buckets[at]
+	b := &r.batches[at]
 	b.whole = b.whole && whole
 	if b.first != unit && (len(b.more) == 0 || b.more[len(b.more)-1] != unit) {
 		b.more = append(b.more, unit)
@@ -484,11 +484,11 @@ func (r *router) add(dest destination, unit int, decls []symbol.Symbol, whole bo
 	b.decls = append(b.decls, decls...)
 }
 
-// name splits each bucket through the target's speller, spells each
+// name splits each batch through the target's speller, spells each
 // part's filename, and gathers the parts by path, sorted.
 func (r *router) name() error {
-	for bi := range r.buckets {
-		b := &r.buckets[bi]
+	for bi := range r.batches {
+		b := &r.batches[bi]
 		u := plugin.Unit{
 			Plugin: b.dest.plugin, Tag: b.dest.tag, Per: b.dest.per, Word: b.dest.word,
 			Key: b.dest.key, Pkg: b.dest.pkg, Decls: b.decls, Origins: r.originsOf(b),
@@ -689,10 +689,10 @@ func (r *router) sourceFile(origin symbol.Identity) (string, bool) {
 }
 
 // originsOf returns a routed unit's provenance: the source unit's own
-// where the bucket is one whole unit, the source units' own where it
+// where the batch is one whole unit, the source units' own where it
 // is several whole units, and the distinct origins of its declarations
 // otherwise.
-func (r *router) originsOf(b *bucket) []symbol.Identity {
+func (r *router) originsOf(b *batch) []symbol.Identity {
 	if b.whole && len(b.more) == 0 {
 		return r.units[b.first].Origins
 	}
@@ -716,12 +716,13 @@ func (r *router) originsOf(b *bucket) []symbol.Identity {
 	return slices.Compact(origins)
 }
 
-// contributorsOf returns the plugins that appended into slots of a
-// bucket's declarations, sorted and distinct: the contributors of
-// every source unit the bucket takes declarations from. A unit records
+// contributorsOf returns the plugins that appended into slots of the
+// declarations of a batch, sorted and distinct. They are the
+// contributors of every source unit that the batch takes declarations
+// from. A unit records
 // its contributors whole, so a declaration a tag moves takes its
 // unit's contributors along.
-func (r *router) contributorsOf(b *bucket) []plugin.ID {
+func (r *router) contributorsOf(b *batch) []plugin.ID {
 	if len(b.more) == 0 {
 		return r.units[b.first].Contributors
 	}
@@ -736,12 +737,12 @@ func (r *router) contributorsOf(b *bucket) []plugin.ID {
 	return slices.Compact(contributors)
 }
 
-// dataOf returns the data of the records of a bucket by origin. For a
-// bucket of one unit it returns the data of that unit. For a bucket of
+// dataOf returns the data of the records of a batch by origin. For a
+// batch of one unit it returns the data of that unit. For a batch of
 // several units it merges their data, and where two units have data for
 // one origin, the data of the earlier unit applies. It returns nil where
 // no contributing unit has data, and it allocates the merged map alone.
-func (r *router) dataOf(b *bucket) map[symbol.Identity]any {
+func (r *router) dataOf(b *batch) map[symbol.Identity]any {
 	if len(b.more) == 0 {
 		return r.units[b.first].Data
 	}
@@ -839,9 +840,16 @@ func unitAt(u *plugin.Unit) position.Pos {
 	return position.Pos{File: string(u.Plugin)}
 }
 
-// describe names a declaration in a finding: its kind and its name,
-// or its kind alone for a declaration without a name.
-func describe(d symbol.Symbol) string {
+// Describe names a declaration in a finding and in the record of a
+// written file: its kind and its name, such as "method Close", and its
+// kind alone for a declaration without a name. It returns the empty
+// string for a nil declaration. A method has its own name, which
+// [emit.DeclaredName] leaves out. Describe allocates the joined text, one
+// allocation, and nothing for a declaration without a name.
+func Describe(d symbol.Symbol) string {
+	if d == nil {
+		return ""
+	}
 	name := emit.DeclaredName(d)
 	if m, method := d.(*emit.Method); method {
 		name = m.Name

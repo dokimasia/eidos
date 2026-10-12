@@ -75,10 +75,9 @@ type Language struct {
 	File string
 	// Funcs returns the language's shared template vocabulary bound
 	// to one file's import set, so a helper that spells a type
-	// records the import the spelling needs. It is the overrideable
-	// bucket: every kind template, file skeleton and reference
-	// template calls it, and a declared override replaces one name
-	// for all of them. The pass calls it once per worker with the
+	// records the import the spelling needs. Every kind template,
+	// file skeleton and reference template calls it, and a declared
+	// override replaces one name for all of them. The pass calls it once per worker with the
 	// worker's set, which the pass resets per file, and once at
 	// [New] with a set of its own to read the names for the parse,
 	// so every call returns the same names. A nil Funcs declares no
@@ -112,13 +111,22 @@ type Language struct {
 	// language's own formatter would leave: grouping and sorting
 	// are language facts.
 	Imports func(set *ImportSet) string
+	// TemplateImport returns the binding of an import that a template
+	// states through the use builtin. name is the name that the template
+	// states, and empty where it states none. local is the name that the
+	// import binds in the file. item is the declaration of path that local
+	// refers to, and empty where local refers to the whole package.
+	// TemplateImport reports false for an import that does not bind a
+	// name. With a nil TemplateImport, the use builtin records every import
+	// outside the name assignment.
+	TemplateImport func(path, name string) (local, item string, ok bool)
 	// Finalise is the language formatter, run last per file.
 	Finalise func(src []byte) ([]byte, error)
-	// Coverage is the language's declared fact coverage. Declared,
-	// it arms the guard: a stated fact the declaration refuses
-	// reports and the declaration renders without it, and one the
-	// declaration misses reports a defect. Left empty, the guard is
-	// off.
+	// Coverage is the declared fact coverage of the language. A declared
+	// coverage arms the guard. A refused fact reports, and the declaration
+	// renders without it. A rejected fact reports, and the declaration is
+	// left out. A fact that the coverage misses reports a defect. An empty
+	// coverage leaves the guard off.
 	Coverage Coverage
 }
 

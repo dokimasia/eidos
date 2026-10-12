@@ -102,3 +102,11 @@ var MixedClaim = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 var HelperCollision = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 36, Meaning: "two plugins register one template helper name",
 })
+
+// UnbindableHelper reports a plugin helper that text/template cannot
+// call: a name that is not an identifier, a value that is not a
+// function, or a function whose results a template cannot use. The
+// render leaves the helper out of the merged vocabulary.
+var UnbindableHelper = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 73, Meaning: "a plugin registers a template helper that text/template cannot call",
+})

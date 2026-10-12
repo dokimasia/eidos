@@ -644,6 +644,15 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 					name, spec.Key, raw.Text, v.metadataCandidates())
 				return Value{}, false
 			}
+			if id, held := v.keys.Resolve(meta.KeyName(raw.Text)); held {
+				if key, _ := v.keys.Spec(id); key.Derived {
+					v.report(DerivedMetadataKey, v.at,
+						"%s param %s names %q, whose value its registrant derives from other keys. "+
+							"Name the group of those keys instead",
+						name, spec.Key, raw.Text)
+					return Value{}, false
+				}
+			}
 			return Value{Kind: TypeReference, Ref: raw.Text}, true
 		}
 		if v.resolve == nil {

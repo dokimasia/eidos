@@ -17,7 +17,7 @@ import (
 // walkVisits is what a walk over every kind's populated subject
 // visits: each subject and the one child in each of its traversed
 // fields.
-const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 4 + 2 + 2 + 2 + 2 + 9 + 8 + 3 + 3 + 4 + 2
+const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 5 + 1 + 4 + 2 + 2 + 2 + 2 + 9 + 8 + 3 + 3 + 4 + 2 + 1
 
 // walkOriginated is how many kinds carry origin storage.
 const walkOriginated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
@@ -54,8 +54,8 @@ func TestWalk(t *testing.T) {
 
 			subject := &Function{}
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-			subject.Params = append(subject.Params, &Param{})
-			subject.Returns = append(subject.Returns, &Return{})
+			subject.ParamsSlot().Append(&Param{})
+			subject.ReturnsSlot().Append(&Return{})
 			subject.Throws = append(subject.Throws, &TypeRef{})
 
 			var seen int
@@ -74,8 +74,8 @@ func TestWalk(t *testing.T) {
 			subject.Receiver = &Param{}
 			subject.Receives = &TypeRef{}
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-			subject.Params = append(subject.Params, &Param{})
-			subject.Returns = append(subject.Returns, &Return{})
+			subject.ParamsSlot().Append(&Param{})
+			subject.ReturnsSlot().Append(&Return{})
 			subject.Throws = append(subject.Throws, &TypeRef{})
 
 			var seen int
@@ -121,6 +121,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			subject := &Enum{}
+			subject.Underlying = &TypeRef{}
 			subject.VariantsSlot().Append(&EnumVariant{})
 			subject.FieldsSlot().Append(&Field{})
 			subject.MethodsSlot().Append(&Method{})
@@ -130,7 +131,7 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 4,
+			assert.Equal(t, seen, 5,
 				"the walk descends into every traversed field")
 		})
 
@@ -219,7 +220,7 @@ func TestWalk(t *testing.T) {
 			subject.FieldsSlot().Append(&Field{})
 			subject.MethodsSlot().Append(&Method{})
 			subject.TypesSlot().Append(&Struct{})
-			subject.Embeds = append(subject.Embeds, &Embed{})
+			subject.EmbedsSlot().Append(&Embed{})
 			subject.Extends = append(subject.Extends, &TypeRef{})
 			subject.Implements = append(subject.Implements, &TypeRef{})
 			subject.Permits = append(subject.Permits, &TypeRef{})
@@ -241,7 +242,7 @@ func TestWalk(t *testing.T) {
 			subject.FieldsSlot().Append(&Field{})
 			subject.MethodsSlot().Append(&Method{})
 			subject.TypesSlot().Append(&Interface{})
-			subject.Embeds = append(subject.Embeds, &Embed{})
+			subject.EmbedsSlot().Append(&Embed{})
 			subject.Extends = append(subject.Extends, &TypeRef{})
 			subject.Permits = append(subject.Permits, &TypeRef{})
 
@@ -324,8 +325,8 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Function{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -341,8 +342,8 @@ func TestWalk(t *testing.T) {
 				subject.Receiver = &Param{}
 				subject.Receives = &TypeRef{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -379,6 +380,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -459,7 +461,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -478,7 +480,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var seen int
@@ -553,8 +555,8 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Function{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -574,8 +576,8 @@ func TestWalk(t *testing.T) {
 				subject.Receiver = &Param{}
 				subject.Receives = &TypeRef{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -624,6 +626,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -728,7 +731,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -751,7 +754,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var walked int
@@ -842,8 +845,8 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Function{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -859,8 +862,8 @@ func TestWalk(t *testing.T) {
 				subject.Receiver = &Param{}
 				subject.Receives = &TypeRef{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -897,6 +900,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -977,7 +981,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -996,7 +1000,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var yielded int
@@ -1067,8 +1071,8 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Function{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -1087,8 +1091,8 @@ func TestWalk(t *testing.T) {
 				subject.Receiver = &Param{}
 				subject.Receives = &TypeRef{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -1104,6 +1108,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -1142,7 +1147,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -1164,7 +1169,7 @@ func TestWalk(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var yielded int
@@ -1408,6 +1413,14 @@ func TestWalk(t *testing.T) {
 			assert.False(t, held,
 				"a kind reports true exactly when it carries origin storage")
 		})
+
+		t.Run("reports false for TagEntry", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := OriginOf(&TagEntry{})
+			assert.False(t, held,
+				"a kind reports true exactly when it carries origin storage")
+		})
 	})
 }
 
@@ -1500,8 +1513,8 @@ func walkSubjects() []symbol.Symbol {
 	{
 		subject := &Function{}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-		subject.Params = append(subject.Params, &Param{})
-		subject.Returns = append(subject.Returns, &Return{})
+		subject.ParamsSlot().Append(&Param{})
+		subject.ReturnsSlot().Append(&Return{})
 		subject.Throws = append(subject.Throws, &TypeRef{})
 		out = append(out, subject)
 	}
@@ -1510,8 +1523,8 @@ func walkSubjects() []symbol.Symbol {
 		subject.Receiver = &Param{}
 		subject.Receives = &TypeRef{}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-		subject.Params = append(subject.Params, &Param{})
-		subject.Returns = append(subject.Returns, &Return{})
+		subject.ParamsSlot().Append(&Param{})
+		subject.ReturnsSlot().Append(&Return{})
 		subject.Throws = append(subject.Throws, &TypeRef{})
 		out = append(out, subject)
 	}
@@ -1547,6 +1560,7 @@ func walkSubjects() []symbol.Symbol {
 	}
 	{
 		subject := &Enum{}
+		subject.Underlying = &TypeRef{}
 		subject.VariantsSlot().Append(&EnumVariant{})
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
@@ -1589,7 +1603,7 @@ func walkSubjects() []symbol.Symbol {
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Struct{})
-		subject.Embeds = append(subject.Embeds, &Embed{})
+		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
 		subject.Implements = append(subject.Implements, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
@@ -1601,7 +1615,7 @@ func walkSubjects() []symbol.Symbol {
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Interface{})
-		subject.Embeds = append(subject.Embeds, &Embed{})
+		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		out = append(out, subject)
@@ -1628,6 +1642,10 @@ func walkSubjects() []symbol.Symbol {
 	{
 		subject := &Embed{}
 		subject.Ref = &TypeRef{}
+		out = append(out, subject)
+	}
+	{
+		subject := &TagEntry{}
 		out = append(out, subject)
 	}
 	return out

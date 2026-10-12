@@ -5,6 +5,7 @@ package render
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strconv"
 )
@@ -199,6 +200,68 @@ func (s *ImportSet) Claim(path, name string) bool {
 	}
 	s.bind(Entry{Path: path, Name: name}, name, bound)
 	return true
+}
+
+// Use records the import of path that a template states and binds the
+// name local in the name assignment of the file. item is the declaration
+// of path that local refers to, and empty where local refers to the
+// whole package. A later [ImportSet.Bind] of path, or a later
+// [ImportSet.BindItem] of the item, returns local. A later binding of
+// another path that asks for local takes the name with the lowest free
+// numeric suffix. A second Use of the same binding under the same name
+// records nothing.
+//
+// Use returns an error where local binds another path, another item or
+// a declaration of the file, and where the file binds the import under
+// another name. The template refers to the import by local, so a suffix
+// would break the reference. For the file's own package and for an
+// empty path, Use does not record an entry and returns nil.
+//
+// # Allocation contract
+//
+// Use allocates what Bind allocates for a new binding, and nothing for a
+// binding that it made before under local.
+func (s *ImportSet) Use(path, local, item string) error {
+	if path == "" || path == s.home {
+		return nil
+	}
+	bound := binding{path: path, item: item}
+	if cur, held := s.locals[local]; held {
+		if cur != bound {
+			return fmt.Errorf(
+				"render: the template imports %q as %s, which the file binds to another import or declaration",
+				path,
+				local,
+			)
+		}
+		return nil
+	}
+	if item == "" {
+		if other, held := s.packages[path]; held {
+			return fmt.Errorf(
+				"render: the template imports %q as %s, and the file imports it as %s",
+				path,
+				local,
+				other,
+			)
+		}
+		if s.packages == nil {
+			s.packages = map[string]string{}
+		}
+		s.packages[path] = local
+		s.bind(Entry{Path: path, Name: local}, local, bound)
+		return nil
+	}
+	if other, held := s.items[bound]; held {
+		return fmt.Errorf("render: the template imports %s of %q as %s, and the file imports it as %s",
+			item, path, local, other)
+	}
+	if s.items == nil {
+		s.items = map[binding]string{}
+	}
+	s.items[bound] = local
+	s.bind(itemEntry(path, item, local, false), local, bound)
+	return nil
 }
 
 // Add records one bare import path; recording a path twice records

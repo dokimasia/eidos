@@ -20,9 +20,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The canonical benchmark scale. Every backend measures over the
-// same corpus shape, so two backends' numbers mean one thing and
-// a regression names a code change, never a fixture change.
+// These constants are the canonical benchmark scale. Every backend
+// measures over the same corpus shape, so the numbers of two backends
+// are comparable, and a regression points to a code change and never to
+// a fixture change.
 const (
 	// BenchPackages is the number of packages in the scaled fixture.
 	BenchPackages = 1_000
@@ -37,14 +38,14 @@ const (
 // nameKeyDoc documents the name key the settle benchmark registers.
 const nameKeyDoc = "a declaration's name in the target, read by the settle"
 
-// Budget is what a satellite pins its benchmark to. An allocation
-// count does not move with machine load, so exceeding the ceiling
-// names a real code change. Latency bounds belong beside the pinned
-// baseline gates, where the machine is fixed.
+// Budget is the ceiling of a satellite benchmark. An allocation count
+// does not move with machine load, so a count above the ceiling
+// indicates a real code change. A budget has no latency bound, because
+// latency depends on the machine.
 type Budget struct {
-	// MaxAllocs bounds allocations per rendered corpus. Zero is
-	// refused: a benchmark without a ceiling records numbers
-	// nobody reads.
+	// MaxAllocs is the ceiling of the allocations per rendered corpus.
+	// The benchmark refuses zero, because a benchmark without a ceiling
+	// records numbers that nobody checks.
 	MaxAllocs uint64
 }
 
@@ -63,15 +64,13 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
 	assert.NotEqual(b, budget.MaxAllocs, 0, "the budget states a ceiling")
-	r, f := setup(b)
+	bk, f := setup(b)
 	assert.NotNil(b, f, "the setup returns a fixture")
 	assert.NotNil(b, f.Emit, "the fixture contains a store")
-	if bk, held := r.(plugin.Backend); held {
-		settleSink := diag.NewSink()
-		assert.NoError(b, plugin.Settle(f.Emit, bk, nil, settleSink), "the settle completes")
-		assert.False(b, settleSink.Failed(), "the corpus settles clean, because a ceiling over a "+
-			"partial settle measures the wrong thing")
-	}
+	settleSink := diag.NewSink()
+	assert.NoError(b, plugin.Settle(f.Emit, bk, nil, settleSink), "the settle completes")
+	assert.False(b, settleSink.Failed(), "the corpus settles clean, because a ceiling over a "+
+		"partial settle measures the wrong thing")
 
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
@@ -82,7 +81,7 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	)
 	for c.Loop() {
 		sink := diag.NewSink()
-		files, renderErr := r.Render(f.context(r, sink))
+		files, renderErr := bk.Render(f.Context(bk, sink))
 		err = cmp.Or(err, renderErr)
 		empty = empty || len(files) == 0
 		failed = failed || sink.Failed()
@@ -120,13 +119,9 @@ func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 			sink  *diag.Sink
 		)
 		c.Excluding(func() {
-			var r plugin.Renderer
-			r, f = setup(b)
+			bk, f = setup(b)
 			assert.NotNil(b, f, "the setup returns a fixture")
 			assert.NotNil(b, f.Emit, "the fixture contains a store")
-			var held bool
-			bk, held = r.(plugin.Backend)
-			assert.True(b, held, "the settle takes the backend's declared seams")
 			sink = diag.NewSink()
 			facts = nameFacts(b, bk.Target())
 		})
@@ -199,7 +194,7 @@ func ScaledFixture(tb assert.TB, refused map[symbol.Kind]string) *Fixture {
 	}
 }
 
-// scaledPackageID is one benchmark package's identity.
+// scaledPackageID returns the identity of one benchmark package.
 func scaledPackageID(p int) symbol.Identity {
 	name := "p" + strconv.Itoa(p)
 	return symbol.Identity{
@@ -210,7 +205,7 @@ func scaledPackageID(p int) symbol.Identity {
 	}
 }
 
-// scaledKey is one benchmark unit's routing key.
+// scaledKey returns the routing key of one benchmark unit.
 func scaledKey(p, file int) string {
 	return fixturePackage + "/p" + strconv.Itoa(p) +
 		"/f" + strconv.Itoa(file) + keyExt
@@ -269,9 +264,9 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			Name:       "row" + i,
 			TypeParams: []*emit.TypeParam{{Name: "T"}},
 		}
-		// The canonical fixture states the field tag; the scaled
-		// corpus leaves it out, so a target refusing tags measures
-		// its render and not a warning per struct.
+		// The canonical fixture sets the field tag, and the scaled
+		// corpus leaves it out. A target that refuses tags then
+		// measures its render and not a warning per struct.
 		s.Fields.Append(&emit.Field{
 			Origin:  memberOf("row"+i, "name", symbol.KindField),
 			Comment: "unique per store",
@@ -296,8 +291,8 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 		iface.Methods.Append(&emit.Method{
 			Origin:  memberOf("store"+i, "get", symbol.KindMethod),
 			Name:    "get",
-			Params:  []*emit.Param{{Name: keyName, Type: typeRef("string")}},
-			Returns: []*emit.Return{{Type: typeRef("string")}},
+			Params:  emit.SlotOf(&emit.Param{Name: keyName, Type: typeRef("string")}),
+			Returns: emit.SlotOf(&emit.Return{Type: typeRef("string")}),
 		})
 		return iface
 	case symbol.KindFunction:

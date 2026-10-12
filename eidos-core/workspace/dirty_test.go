@@ -23,8 +23,8 @@ import (
 )
 
 // The plugins of the probing composition, and the capability that puts
-// the tagger in the bucket after the looker. The pointer is the generator
-// whose directive resolves a reference.
+// the tagger in the turn after the looker. The pointer is the
+// generator with a directive that resolves a reference.
 const (
 	lookerID  plugin.ID         = "looker"
 	taggerID  plugin.ID         = "tagger"
@@ -33,30 +33,31 @@ const (
 )
 
 // The row with one field, which the looker does not sample, and the
-// pointer's directive on the row, which resolves Col.
+// directive of the pointer on the row, which resolves Col.
 const (
 	narrowRow  = "type Row int\n"
 	pointAtCol = "+pointer:at to=Col\n"
 )
 
-// The generators of the edge cases: the enumerator counts the structs of
-// its plan's scope, and the packager takes the api package whole.
+// The generators of the edge cases. The enumerator counts the structs of
+// the scope of its plan, and the packager takes the api package whole.
 const (
 	enumeratorID plugin.ID = "enumerator"
 	packagerID   plugin.ID = "packager"
 )
 
-// The lines of the edge cases: the directives of the enumerator and the
-// packager, which attach to the struct on the line before them, and a
-// struct that an edit adds to the api package.
+// The lines of the edge cases. The directives of the enumerator and the
+// packager attach to the struct on the line before them, and the last
+// line declares a struct that an edit adds to the api package.
 const (
 	countLine   = "+enumerator:count\n"
 	sumLine     = "+packager:sum\n"
 	accountLine = "type Account int\n"
 )
 
-// pointerSchema is the pointer's directive. Its one param resolves a
-// struct of the subject's package, so its validation reads the struct.
+// pointerSchema is the directive of the pointer. Its one param resolves
+// a struct of the package of the subject, so its validation reads the
+// struct.
 var pointerSchema = directive.Schema{
 	Plugin: string(pointerID), Name: "at",
 	Params: []directive.ParamSpec{{
@@ -66,8 +67,8 @@ var pointerSchema = directive.Schema{
 	Doc: "points at a struct of the same package",
 }
 
-// The directives of the enumerator and the packager. Each generator's one
-// rule runs on each struct with its directive.
+// The directives of the enumerator and the packager. The one rule of
+// each generator runs on each struct with its directive.
 var (
 	countSchema = directive.Schema{
 		Plugin: string(enumeratorID), Name: "count", Doc: "counts the structs of the plan's scope",
@@ -81,12 +82,13 @@ var (
 // takes whole.
 var apiPackage = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Kind: symbol.KindPackage}
 
-// A warm run reads the records that each dirty edge routes, and probes
-// each candidate for its own annotator invocations, so it executes again
-// what an edit changed and withdraws what the edit removed. A membership
-// edge routes a plan's reader only where the plan's sources admit a
-// package in which the membership changed, and a package edge routes the
-// reader that took the package whole.
+// TestDirty tests the dirty edges of a warm run. A warm run reads the
+// records that each dirty edge routes, and probes each candidate for its
+// own annotator invocations. It runs again what an edit changed and
+// withdraws what the edit removed. A membership edge routes the reader
+// of a plan only where the sources of the plan admit a package in which
+// the membership changed. A package edge routes the reader that took the
+// package whole.
 func TestDirty(t *testing.T) {
 	t.Parallel()
 
@@ -203,23 +205,21 @@ func TestDirty(t *testing.T) {
 func pointing(tb assert.TB, l ledger.Ledger) *workspace.Builder {
 	tb.Helper()
 
-	pointer, held := eidos.NewPlugin(pointerID).
+	pointer := eidos.NewPlugin(pointerID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.Directive(pointerSchema, eidos.OnStruct(
 			func(*eidos.StructMatch, *eidos.Emitter) error { return nil },
-		))).Build().(plugin.Generator)
-	assert.True(tb, held, "the pointer lowers to the generator role")
-	marker, held := eidos.NewPlugin(markerID).
+		))).Generator()
+	marker := eidos.NewPlugin(markerID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.Directive(markSchema, eidos.OnStruct(mirrored))).Build().(plugin.Generator)
-	assert.True(tb, held, "the marker lowers to the generator role")
+		Handle(eidos.Directive(markSchema, eidos.OnStruct(mirrored))).Generator()
 	return workspace.New().
 		Brand(fixtureBrand).
 		Frontends(frontendtest.NewScripted()).
 		Rules(rulestest.Scripted()).
 		Targets("fixture").
 		Plans(workspace.Plan{
-			Name: "plan", Generators: []plugin.Generator{pointer, marker}, Backend: printer(tb, "fixture"),
+			Name: "plan", Generators: []plugin.Generator{pointer, marker}, Backend: fixturePrinter(),
 		}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
@@ -228,17 +228,18 @@ func pointing(tb assert.TB, l ledger.Ledger) *workspace.Builder {
 // probing returns the builder of a composition over the scripted
 // frontend that records into a ledger. The looker looks the row up from
 // the reader. While the row has two fields or more, it stamps the field
-// count of the row as the kernel's sample on the reader. The tagger runs
-// in the next bucket on each struct that has a sample, and stamps the tag
-// that it registers into tag. The tagger's fact gate takes the kernel's
-// handles from a fresh registry, which registers the kernel's keys first
-// as the composition does, so both name the same keys.
+// count of the row as the sample of the kernel on the reader. The tagger
+// runs in the next turn on each struct that has a sample, and stamps
+// the tag that it registers into tag. The fact gate of the tagger takes
+// the handles of the kernel from a new registry. That registry registers
+// the keys of the kernel first, as the composition does, so both have
+// the same keys.
 func probing(tb assert.TB, l ledger.Ledger, tag *meta.Key[bool]) *workspace.Builder {
 	tb.Helper()
 
 	kernel, err := meta.Kernel(meta.NewRegistry())
 	assert.NoError(tb, err, "the kernel's keys register")
-	looker, held := eidos.NewPlugin(lookerID).
+	looker := eidos.NewPlugin(lookerID).
 		Provides(looked).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 			if m.Struct.Name != readerID.Name {
@@ -249,9 +250,8 @@ func probing(tb assert.TB, l ledger.Ledger, tag *meta.Key[bool]) *workspace.Buil
 				eidos.Stamp(st, m.Kernel().Sample, strconv.Itoa(n))
 			}
 			return nil
-		})).Build().(plugin.Annotator)
-	assert.True(tb, held, "the looker lowers to the annotator role")
-	tagger, held := eidos.NewPlugin(taggerID).
+		})).Annotator()
+	tagger := eidos.NewPlugin(taggerID).
 		Requires(looked).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("tag"); err != nil {
@@ -266,25 +266,24 @@ func probing(tb assert.TB, l ledger.Ledger, tag *meta.Key[bool]) *workspace.Buil
 				eidos.Stamp(st, *tag, true)
 				return nil
 			},
-		))).Build().(plugin.Annotator)
-	assert.True(tb, held, "the tagger lowers to the annotator role")
+		))).Annotator()
 	return workspace.New().
 		Brand(fixtureBrand).
 		Frontends(frontendtest.NewScripted()).
 		Annotators(looker, tagger).
 		Targets("fixture").
-		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)}, Backend: printer(tb, "fixture")}).
+		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)}, Backend: fixturePrinter()}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
 }
 
 // enumerating returns the enumerator. On each struct with the count
-// directive, it counts the structs of its plan's scope, and mirrors the
-// struct with the count as its documentation.
+// directive, it counts the structs of the scope of its plan, and mirrors
+// the struct with the count as its documentation.
 func enumerating(tb assert.TB) plugin.Generator {
 	tb.Helper()
 
-	p, held := eidos.NewPlugin(enumeratorID).
+	return eidos.NewPlugin(enumeratorID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "count"}).
 		Handle(eidos.Directive(countSchema, eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			n := 0
@@ -295,9 +294,7 @@ func enumerating(tb assert.TB) plugin.Generator {
 				Origin: m.Struct.Identity(), Name: "Count" + m.Struct.Name, Doc: []string{strconv.Itoa(n)},
 			})
 			return nil
-		}))).Build().(plugin.Generator)
-	assert.True(tb, held, "the enumerator lowers to the generator role")
-	return p
+		}))).Generator()
 }
 
 // packaging returns the packager. On each struct with the sum directive,
@@ -306,7 +303,7 @@ func enumerating(tb assert.TB) plugin.Generator {
 func packaging(tb assert.TB) plugin.Generator {
 	tb.Helper()
 
-	p, held := eidos.NewPlugin(packagerID).
+	return eidos.NewPlugin(packagerID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "sum"}).
 		Handle(eidos.Directive(sumSchema, eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			n := 0
@@ -319,7 +316,5 @@ func packaging(tb assert.TB) plugin.Generator {
 				Origin: m.Struct.Identity(), Name: "Sum" + m.Struct.Name, Doc: []string{strconv.Itoa(n)},
 			})
 			return nil
-		}))).Build().(plugin.Generator)
-	assert.True(tb, held, "the packager lowers to the generator role")
-	return p
+		}))).Generator()
 }

@@ -15,8 +15,9 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The walk is the kernel's and the shadowing is the language's, so
-// each rule, each gap and the provenance are pinned here.
+// TestMembers pins each rule, each gap and the provenance of the member
+// walk. The walk belongs to the kernel, and the shadowing belongs to the
+// language.
 func TestMembers(t *testing.T) {
 	t.Parallel()
 
@@ -43,6 +44,37 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, set.Members[1].Owner, coretest.ID(svcPath, baseName, symbol.KindStruct),
 				"owned by the declaration that declared it")
 		})
+
+		computed := []struct {
+			name  string
+			setup func(*node.Struct)
+		}{
+			{name: "reports GapComputed for a computed field", setup: func(s *node.Struct) {
+				f := field(svcPath, derivedName, "[key]", builtin(intSpelling))
+				f.Computed = true
+				s.Fields = append(s.Fields, f)
+			}},
+			{name: "reports GapComputed for a computed method", setup: func(s *node.Struct) {
+				m := method(svcPath, derivedName, "[Symbol.iterator]")
+				m.Computed = true
+				s.Methods = append(s.Methods, m)
+			}},
+		}
+		for _, tt := range computed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s := coretest.Struct(svcPath, derivedName)
+				s.Fields = []*node.Field{field(svcPath, derivedName, "id", builtin(intSpelling))}
+				tt.setup(s)
+				b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, s)))
+				set, _ := b.MembersOf(s)
+				assert.Equal(t, names(set), []string{"id"}, "the walk leaves out a member that an expression names")
+				assert.Equal(t, reasons(set), []rules.GapReason{rules.GapComputed},
+					"the walk reports the computed member as a gap")
+				assert.Equal(t, set.Gaps[0].Host, s.ID, "the gap names the type that declares the member")
+			})
+		}
 
 		t.Run("lets a declared member shadow a promoted one", func(t *testing.T) {
 			t.Parallel()
@@ -213,9 +245,8 @@ func TestMembers(t *testing.T) {
 		t.Run("binds a generic contributor's arguments", func(t *testing.T) {
 			t.Parallel()
 
-			box := coretest.Struct(svcPath, "Box")
-			box.TypeParams = []*node.TypeParam{{Name: "T"}}
-			box.Fields = []*node.Field{field(svcPath, "Box", "item", builtin("T"))}
+			box, boxT := genericStruct(svcPath, "Box", "T")
+			box.Fields = []*node.Field{field(svcPath, "Box", "item", boxT)}
 			holder := coretest.Struct(svcPath, "Holder")
 			ref := named(svcPath, "Box", symbol.KindStruct)
 			ref.Args = []*node.TypeRef{builtin(intSpelling)}
@@ -233,20 +264,33 @@ func TestMembers(t *testing.T) {
 			v, _, _ := viewOver(t, g)
 			plain := rules.NewBound(nongeneric{scripted()}, v, nil)
 			set, _ = plain.MembersOf(holder)
+			assert.Equal(t, set.Members[0].Symbol.(*node.Field).Type.Spelling, intSpelling,
+				"a language without the generics capability binds the argument too")
+		})
+
+		t.Run("reports a gap for a count of arguments that differs from the parameters", func(t *testing.T) {
+			t.Parallel()
+
+			box, boxT := genericStruct(svcPath, "Box", "T")
+			box.Fields = []*node.Field{field(svcPath, "Box", "item", boxT)}
+			holder := coretest.Struct(svcPath, "Holder")
+			ref := named(svcPath, "Box", symbol.KindStruct)
+			ref.Args = []*node.TypeRef{builtin(intSpelling), builtin(strSpelling)}
+			holder.Embeds = []*node.Embed{{Ref: ref}}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, box, holder)))
+			set, _ := b.MembersOf(holder)
 			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapGeneric},
-				"a language without the generics capability reports the contributor")
+				"two arguments do not bind one parameter")
 		})
 
 		t.Run("binds a generic contributor's own contributors", func(t *testing.T) {
 			t.Parallel()
 
-			inner := coretest.Struct(svcPath, "Inner")
-			inner.TypeParams = []*node.TypeParam{{Name: "U"}}
-			inner.Fields = []*node.Field{field(svcPath, "Inner", "item", builtin("U"))}
-			mid := coretest.Struct(svcPath, "Mid")
-			mid.TypeParams = []*node.TypeParam{{Name: "T"}}
+			inner, innerU := genericStruct(svcPath, "Inner", "U")
+			inner.Fields = []*node.Field{field(svcPath, "Inner", "item", innerU)}
+			mid, midT := genericStruct(svcPath, "Mid", "T")
 			innerRef := named(svcPath, "Inner", symbol.KindStruct)
-			innerRef.Args = []*node.TypeRef{builtin("T")}
+			innerRef.Args = []*node.TypeRef{midT}
 			mid.Embeds = []*node.Embed{{Ref: innerRef}}
 			outer := coretest.Struct(svcPath, "Outer")
 			midRef := named(svcPath, "Mid", symbol.KindStruct)
@@ -580,6 +624,15 @@ func TestMembers(t *testing.T) {
 			set, _ := b.MembersOf(host)
 			assert.Contains(t, asked, symbol.Lang("proto"), "the contributor's language is asked for its policy")
 			assert.Equal(t, names(set), []string{"id"}, "and its declared members arrive under it")
+
+			var viaView []symbol.Lang
+			inner := rules.NewBound(scripted(), v.WithRules(func(lang symbol.Lang) rules.SourceRules {
+				viaView = append(viaView, lang)
+				return rules.Absent(lang)
+			}), nil)
+			_, _ = inner.MembersOf(host)
+			assert.Contains(t, viaView, symbol.Lang("proto"),
+				"a binding without a resolver of its own resolves through the resolver of the view")
 		})
 
 		t.Run("reports false for a symbol that is not a type", func(t *testing.T) {
@@ -738,6 +791,7 @@ func TestMembers(t *testing.T) {
 			{name: "returns cyclic for GapCyclic", give: rules.GapCyclic, want: "cyclic"},
 			{name: "returns generic for GapGeneric", give: rules.GapGeneric, want: "generic"},
 			{name: "returns conflict for GapConflict", give: rules.GapConflict, want: "conflict"},
+			{name: "returns computed for GapComputed", give: rules.GapComputed, want: "computed"},
 			{name: "returns the number of an undeclared reason", give: rules.GapReason(9), want: "9"},
 		}
 		for _, tt := range tests {
@@ -812,4 +866,14 @@ func reasons(set rules.MemberSet) []rules.GapReason {
 		out = append(out, g.Reason)
 	}
 	return out
+}
+
+// genericStruct returns a struct with one type parameter, and a
+// reference that targets the parameter, as the resolution step writes a
+// reference to a type parameter in scope.
+func genericStruct(path, name, param string) (*node.Struct, *node.TypeRef) {
+	s := coretest.Struct(path, name)
+	id := coretest.MemberID(path, name, param, symbol.KindTypeParam)
+	s.TypeParams = []*node.TypeParam{{ID: id, Name: param}}
+	return s, &node.TypeRef{Spelling: param, Target: id}
 }

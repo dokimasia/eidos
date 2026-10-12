@@ -4,32 +4,31 @@
 package backendtest
 
 import (
+	"cmp"
 	"slices"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/output"
-	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// AssertStamped renders the fixture and takes every file through
-// the output contract: each one stamps, the body survives byte
-// for byte inside the frame, and the frame verifies whole under
-// the same contract, with the derivation the file declared.
+// AssertStamped renders the fixture and checks every file against the
+// output contract. Each file stamps, the frame contains the body byte
+// for byte, and the frame verifies whole under the same contract with
+// the derivation that the file declares.
 //
-// It is not part of [RunBackendSuite], because a brand is the
-// consumer's to state and the suite's [Setup] states none. A
-// satellite runs this beside the suite with the contract its own
-// binary ships.
+// It is not part of [RunBackendSuite], because the consumer chooses the
+// brand and a [Setup] has none. A satellite runs it beside the suite
+// with the contract of its own binary.
 //
-// Every file reports on its own, so one run names each file the frame
-// refuses. A file that does not stamp, or whose frame does not verify,
-// skips the checks that read the frame.
+// Every file reports on its own, so one run reports each file that the
+// contract refuses. The checks of the frame skip a file that does not
+// stamp or whose frame does not verify.
 func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 	tb.Helper()
 
-	files, _ := runRender(tb, setup)
+	files, _ := Rendered(tb, setup)
 	for _, f := range files {
 		stamped, err := c.Stamp(f)
 		expect.NoError(tb, err, "the rendered file stamps: "+f.Path)
@@ -38,9 +37,9 @@ func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 		}
 		expect.Contains(tb, stamped, f.Body, "the frame contains the body byte for byte: "+f.Path)
 
-		expect.Equal(tb, f.Plugins, sortedIDs(f.Plugins),
+		expect.Equal(tb, f.Plugins, sortedDistinct(f.Plugins),
 			"the file's derivation is distinct and sorted: "+f.Path)
-		expect.Equal(tb, f.Sources, sortedStrings(f.Sources),
+		expect.Equal(tb, f.Sources, sortedDistinct(f.Sources),
 			"the file's sources are distinct and sorted: "+f.Path)
 
 		record, err := c.Verify(stamped)
@@ -55,21 +54,13 @@ func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 	}
 }
 
-// sortedIDs and sortedStrings return what a rendered file's
-// derivation is documented to be: distinct and sorted. The stamp
-// sorts on the way past, so without this comparison a renderer
-// computing its derivation ad hoc would pass here and fail the
-// byte-identity check instead, where the cause is further away.
-func sortedIDs(ids []plugin.ID) []plugin.ID {
-	if len(ids) == 0 {
-		return nil
-	}
-	out := slices.Clone(ids)
-	slices.Sort(out)
-	return slices.Compact(out)
-}
-
-func sortedStrings(values []string) []string {
+// sortedDistinct returns a sorted copy of values without duplicates, and
+// nil for an empty list. A rendered file lists its plugins and its
+// sources distinct and sorted. The stamp sorts both lists itself, so a
+// renderer that lists them unsorted passes the stamp and fails the
+// byte-identity check, far from the cause. AssertStamped compares each
+// list with this copy to report the cause at the file.
+func sortedDistinct[T cmp.Ordered](values []T) []T {
 	if len(values) == 0 {
 		return nil
 	}

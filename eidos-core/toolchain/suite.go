@@ -5,42 +5,33 @@ package toolchain
 
 import "testing"
 
-// Setup builds the adapter under test and the generated output it
-// runs over, fresh per check, so no check reads another check's
-// scratch project.
-type Setup func(tb TB) (Adapter, Generated)
-
-// RunToolchainSuite is the minimum every satellite's harness runs:
-// the generated output parses, it type-checks, and its own tests
-// pass.
+// RunToolchainSuite runs the three checks of the kit over g with the
+// adapter a: the generated output parses, it type-checks, and its own
+// tests pass. It is the minimum that the harness of every satellite runs.
 //
-// The three checks gate on the toolchain once, because a language such
-// as TypeScript parses through its toolchain: absent locally they skip
-// with the reason the adapter gave, and absent in CI they fail, so a
-// regression cannot hide behind a missing compiler. A satellite adds its
-// own assertions in its own test, beside this call, because the kernel
-// set is the minimum every satellite runs. Each check runs the toolchain
-// under its own test's context.
-func RunToolchainSuite(t *testing.T, setup Setup) {
+// The checks gate on the toolchain once, because a language such as
+// TypeScript parses through its toolchain. Absent locally, the checks skip
+// with the reason that the adapter gave. Absent in CI, they fail, so a
+// regression cannot hide behind a missing compiler. Each check runs in a
+// parallel subtest under the context of that subtest, and lays g out in a
+// scratch directory of its own. No check changes a or g, so the checks
+// share them. A satellite adds its own assertions in its own test, beside
+// this call.
+func RunToolchainSuite(t *testing.T, a Adapter, g Generated) {
 	t.Helper()
 
-	a, _ := setup(t)
-	if !Require(t, a) {
-		return
+	if Require(t, a) {
+		t.Run("the generated output parses", func(t *testing.T) {
+			t.Parallel()
+			AssertParses(t.Context(), t, a, g)
+		})
+		t.Run("the generated output type-checks", func(t *testing.T) {
+			t.Parallel()
+			AssertTypeChecks(t.Context(), t, a, g)
+		})
+		t.Run("the generated tests pass", func(t *testing.T) {
+			t.Parallel()
+			AssertTestsPass(t.Context(), t, a, g)
+		})
 	}
-	t.Run("the generated output parses", func(t *testing.T) {
-		t.Parallel()
-		a, g := setup(t)
-		AssertParses(t.Context(), t, a, g)
-	})
-	t.Run("the generated output type-checks", func(t *testing.T) {
-		t.Parallel()
-		a, g := setup(t)
-		AssertTypeChecks(t.Context(), t, a, g)
-	})
-	t.Run("the generated tests pass", func(t *testing.T) {
-		t.Parallel()
-		a, g := setup(t)
-		AssertTestsPass(t.Context(), t, a, g)
-	})
 }

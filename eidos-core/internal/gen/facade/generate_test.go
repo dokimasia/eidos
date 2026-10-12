@@ -31,15 +31,15 @@ const (
 	// generateMiniAllocs is one generation of the mini kernel's facade:
 	// the lowering, each surface's re-exports and spec, and gofmt's run
 	// over each file.
-	generateMiniAllocs = 15_389 + 8*1
+	generateMiniAllocs = 16_063 + 8*1
 	// generateKernelAllocs is a budget for one generation of the facade
-	// of the kernel's 22 curated packages, about 5% above the 507,400
+	// of the kernel's 23 curated packages, about 5% above the 572,950
 	// allocations of one measured run.
-	generateKernelAllocs = 533_000
+	generateKernelAllocs = 602_000
 	// regenerateMiniAllocs is one regeneration of the mini kernel's
 	// facade: the module check, the generation, and the write of each
 	// file.
-	regenerateMiniAllocs = 15_675 + 8*1
+	regenerateMiniAllocs = 16_361 + 8*1
 )
 
 // The facade is generated from the kernel, so the files it renders,
@@ -87,7 +87,7 @@ func TestGenerate(t *testing.T) {
 			set, err := facade.Generate(repoRoot(t))
 			assert.NoError(t, err, "the kernel generates")
 			root := string(set["eidos-sdk/facade.gen.go"])
-			assert.Contains(t, root, "// NewPlugin starts a plugin declaration.",
+			assert.Contains(t, root, "// NewPlugin starts the declaration of a plugin named name.",
 				"a wrapper keeps its kernel docblock")
 			kit := string(set["eidos-sdk/backendtest/facade.gen.go"])
 			assert.Contains(t, kit,

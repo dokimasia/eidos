@@ -33,10 +33,10 @@ const jsonFixedPoint = "DecodeJSON must return an error or a declaration whose e
 // of 10 runs: encoding/json's encoder and decoder state, boxed values
 // and buffers, and the decoded declarations' own values.
 const (
-	symbolsEncodeAllocs    = 156
-	symbolsDecodeAllocs    = 130
-	symbolsMarshalAllocs   = 158
-	symbolsUnmarshalAllocs = 160
+	symbolsEncodeAllocs    = 157
+	symbolsDecodeAllocs    = 132
+	symbolsMarshalAllocs   = 159
+	symbolsUnmarshalAllocs = 163
 )
 
 // symbolsPoolAllocs is the headroom of a JSON ceiling. encoding/json
@@ -249,6 +249,13 @@ func TestSymbols(t *testing.T) {
 				expect.Contains(t, string(encoded), `"kind":"Embed"`,
 					"with its kind, so a decoder can place it")
 			}
+
+			{
+				encoded, err := EncodeJSON(&TagEntry{})
+				assert.NoError(t, err, "every kind encodes")
+				expect.Contains(t, string(encoded), `"kind":"TagEntry"`,
+					"with its kind, so a decoder can place it")
+			}
 		})
 
 		t.Run("leaves the kind out of a concretely typed field", func(t *testing.T) {
@@ -343,6 +350,7 @@ func TestSymbols(t *testing.T) {
 				&TypeRef{},
 				&TypeParam{},
 				&Embed{},
+				&TagEntry{},
 			}
 			for _, subject := range subjects {
 				t.Run(subject.Kind().String(), func(t *testing.T) {
@@ -364,8 +372,8 @@ func TestSymbols(t *testing.T) {
 			{
 				subject := &Function{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Function with every child the original has", assert.EquateEmpty())
@@ -376,8 +384,8 @@ func TestSymbols(t *testing.T) {
 				subject.Receiver = &Param{}
 				subject.Receives = &TypeRef{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.Params = append(subject.Params, &Param{})
-				subject.Returns = append(subject.Returns, &Return{})
+				subject.ParamsSlot().Append(&Param{})
+				subject.ReturnsSlot().Append(&Return{})
 				subject.Throws = append(subject.Throws, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Method with every child the original has", assert.EquateEmpty())
@@ -399,6 +407,7 @@ func TestSymbols(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -449,7 +458,7 @@ func TestSymbols(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -463,7 +472,7 @@ func TestSymbols(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
@@ -548,6 +557,7 @@ func TestSymbols(t *testing.T) {
 				{name: "a TypeRef body it cannot read", data: `{"kind":"TypeRef","spelling":[]}`},
 				{name: "a TypeParam body it cannot read", data: `{"kind":"TypeParam","name":[]}`},
 				{name: "a Embed body it cannot read", data: `{"kind":"Embed","doc":"nope"}`},
+				{name: "a TagEntry body it cannot read", data: `{"kind":"TagEntry","key":[]}`},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
@@ -595,6 +605,7 @@ func TestSymbols(t *testing.T) {
 				&TypeRef{},
 				&TypeParam{},
 				&Embed{},
+				&TagEntry{},
 			}
 			encoded, err := json.Marshal(subjects)
 			assert.NoError(t, err, "the list marshals")
@@ -682,6 +693,7 @@ func FuzzDecodeJSON(f *testing.F) {
 		`{"kind":"TypeRef"}`,
 		`{"kind":"TypeParam"}`,
 		`{"kind":"Embed"}`,
+		`{"kind":"TagEntry"}`,
 		`null`, `{}`, `[]`, `{"kind":"Nonexistent"}`,
 	} {
 		f.Add(append(binary.LittleEndian.AppendUint16(nil, uint16(len(seed))), seed...))
@@ -819,8 +831,8 @@ func symbolsList() Symbols {
 	{
 		subject := &Function{}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-		subject.Params = append(subject.Params, &Param{})
-		subject.Returns = append(subject.Returns, &Return{})
+		subject.ParamsSlot().Append(&Param{})
+		subject.ReturnsSlot().Append(&Return{})
 		subject.Throws = append(subject.Throws, &TypeRef{})
 		out = append(out, subject)
 	}
@@ -829,8 +841,8 @@ func symbolsList() Symbols {
 		subject.Receiver = &Param{}
 		subject.Receives = &TypeRef{}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-		subject.Params = append(subject.Params, &Param{})
-		subject.Returns = append(subject.Returns, &Return{})
+		subject.ParamsSlot().Append(&Param{})
+		subject.ReturnsSlot().Append(&Return{})
 		subject.Throws = append(subject.Throws, &TypeRef{})
 		out = append(out, subject)
 	}
@@ -866,6 +878,7 @@ func symbolsList() Symbols {
 	}
 	{
 		subject := &Enum{}
+		subject.Underlying = &TypeRef{}
 		subject.VariantsSlot().Append(&EnumVariant{})
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
@@ -908,7 +921,7 @@ func symbolsList() Symbols {
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Struct{})
-		subject.Embeds = append(subject.Embeds, &Embed{})
+		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
 		subject.Implements = append(subject.Implements, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
@@ -920,7 +933,7 @@ func symbolsList() Symbols {
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Interface{})
-		subject.Embeds = append(subject.Embeds, &Embed{})
+		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		out = append(out, subject)
@@ -947,6 +960,10 @@ func symbolsList() Symbols {
 	{
 		subject := &Embed{}
 		subject.Ref = &TypeRef{}
+		out = append(out, subject)
+	}
+	{
+		subject := &TagEntry{}
 		out = append(out, subject)
 	}
 	return out

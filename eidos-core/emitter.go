@@ -21,10 +21,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Tag selects a declared output family; the zero value is the
-// primary. Addressing a family the plugin never declared panics:
-// the family set is the plugin's own declaration, so the mismatch
-// is a defect and panics on the first matching test.
+// Tag selects a declared output family. The zero value selects the
+// primary family. An emitter call with a family that the plugin did not
+// declare panics. The plugin declares its families itself, so the
+// mismatch is a defect, and the first matching test panics.
 type Tag string
 
 // TagTest is the well-known tag of a test companion. A target spells a
@@ -33,19 +33,20 @@ type Tag string
 // untyped, so it is a [Tag] and the tag of a [plugin.Output] alike.
 const TagTest = "test"
 
-// Emitter is a handler's write surface, scoped to its subject.
+// Emitter is the write surface of a handler for its subject.
 //
-// Each accessor returns a handle onto the one accumulator for its
-// cardinality key and family, created on first touch and appended to
-// thereafter, so two interfaces in one source file assemble one
-// per-source unit and a package's matches assemble one registry. At
-// most one tag per call; more is a defect and panics.
+// Each accessor returns a handle to the one accumulator for its
+// cardinality key and family. The first touch creates the accumulator,
+// and later touches append to it. Two interfaces in one source file
+// therefore assemble one per-source unit, and the matches of a package
+// assemble one registry. A call takes at most one tag, and more than one
+// panics.
 //
-// Every write through the Emitter is buffered with the invocation and
-// applies when the phase call's rules have run, in canonical match
-// order, so the output is the same whether the phase call runs its
+// Every write through the Emitter is buffered with the invocation. It
+// applies in canonical match order when the rules of the phase call have
+// run. The output is therefore the same whether the phase call runs its
 // invocations one after another or on several workers. A handler sees
-// the plan's store and the slots as they were when its phase call
+// the store of the plan and the slots as they were when its phase call
 // began.
 //
 // # Concurrency
@@ -55,48 +56,50 @@ const TagTest = "test"
 //
 // # Allocation contract
 //
-// The phase call's buffers and the invocation's handles are pooled, so
-// an accessor, an append and a slot view allocate nothing per
-// invocation once the call's state is warm. What a call's effects leave
-// in the store allocates when they apply: the units, their lists of
-// declarations and origins, and the slots' values.
+// The buffers of the phase call and the handles of the invocation are
+// pooled, so an accessor, an append and a slot view allocate nothing per
+// invocation once the state of the call is warm. When the effects of a
+// call apply, they allocate the units, their lists of declarations and
+// origins, and the values of the slots.
 type Emitter struct {
 	rs *runState
 	m  *match
 }
 
-// File returns the accumulator for the subject's source file and
-// the family, keyed by the subject's position: a subject without
-// one keys the empty string. It allocates nothing for an invocation's
-// first four handles, and a handle each after them.
+// File returns the accumulator for the source file of the subject and
+// the family. The key is the file of the subject's position, and the
+// empty string for a subject without a position. It allocates nothing
+// for the first four handles of an invocation, and one handle for each
+// later handle.
 func (e *Emitter) File(tags ...Tag) *Out {
 	return e.out(plugin.PerSource, e.m.pos.File, tags)
 }
 
-// PackageFile returns the accumulator for the subject's package and
-// the family, keyed by the language and the package path the
-// subject's identity names. It allocates nothing for an invocation's
-// first four handles, and a handle each after them.
+// PackageFile returns the accumulator for the package of the subject and
+// the family. The key is the language and the package path of the
+// subject's identity. It allocates nothing for the first four handles of
+// an invocation, and one handle for each later handle.
 func (e *Emitter) PackageFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPackage, e.m.subject.Package, tags)
 }
 
-// PlanFile returns the accumulator for the plan and the family. A
-// plan has one output per family, so its key is empty. It allocates
-// nothing for an invocation's first four handles, and a handle each
-// after them.
+// PlanFile returns the accumulator for the plan and the family. A plan
+// has one output per family, so its key is empty. It allocates nothing
+// for the first four handles of an invocation, and one handle for each
+// later handle.
 func (e *Emitter) PlanFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPlan, "", tags)
 }
 
-// Slot returns the invocation's write view of one slot: a slot of a
-// value this plugin creates, or, through [OnEmit], a slot of a value
-// an earlier bucket placed. Appends through the view apply when the
-// phase call's rules have run, in canonical match order, and an append
-// into a slot of an earlier bucket's value names the plugin among the
-// contributors of the unit that contains the value. The view is valid
-// during the handler call. A nil slot panics, because the view would
-// append nowhere. Slot returns the view by value and allocates nothing.
+// Slot returns the write view of the invocation for one slot. The slot
+// belongs to a value that this plugin creates. In an [OnEmit] handler,
+// it can also belong to a value that a plugin of an earlier turn placed.
+// Appends through the view apply in canonical match order when the rules
+// of the phase call have run. An append into a slot of a value of an
+// earlier turn adds the plugin to the contributors of the unit that contains
+// the value. The view is valid during the handler call. A nil slot
+// panics, because the view would append nowhere. Slot returns the view
+// by value and allocates nothing.
 func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] {
 	if s == nil {
 		panic("eidos: " + string(e.rs.plugin) + " asks for the view of a nil slot")
@@ -104,38 +107,37 @@ func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] {
 	return SlotView[T]{rs: e.rs, seq: e.m.seq, host: e.m.host, slot: s}
 }
 
-// JoinName joins a family word onto a base name, the way a
-// generated identifier derives from the declaration it serves: the
-// base, then the word with its first letter raised, so the boundary
-// between them survives. The result is in the neutral convention
-// every emitted name takes, and the plan's backend spells it in the
-// target's case when the plan settles: store and stub join as
-// storeStub, which a Go plan spells StoreStub for a public
-// declaration. An empty word returns the base, and an empty base
-// returns the word, without allocating. A join allocates the joined
-// name, one allocation.
-func (*Emitter) JoinName(word, base string) string {
-	if word == "" {
-		return base
+// JoinName returns head followed by tail, with the first letter of tail
+// raised, so the boundary between the two words survives.
+// JoinName("stub", "store") returns storeStub. A generated identifier
+// derives from the declaration that it serves this way. The result is
+// in the neutral convention of every emitted name, and the backend of
+// the plan writes it in the case of the target when the plan settles.
+// A Go plan writes storeStub as StoreStub for a public declaration. An
+// empty tail returns head, and an empty head returns tail, without
+// allocating. A join allocates the joined name, one allocation.
+func (*Emitter) JoinName(tail, head string) string {
+	if tail == "" {
+		return head
 	}
-	if base == "" {
-		return word
+	if head == "" {
+		return tail
 	}
-	first, size := utf8.DecodeRuneInString(word)
+	first, size := utf8.DecodeRuneInString(tail)
 	var joined strings.Builder
-	joined.Grow(len(base) + utf8.UTFMax + len(word) - size)
-	joined.WriteString(base)
+	joined.Grow(len(head) + utf8.UTFMax + len(tail) - size)
+	joined.WriteString(head)
 	joined.WriteRune(unicode.ToUpper(first))
-	joined.WriteString(word[size:])
+	joined.WriteString(tail[size:])
 	return joined.String()
 }
 
-// Ref returns a reference to one of this plugin's templates, for a
-// body to claim: the render resolves the name in this plugin's tree
-// for the plan's target, wherever the body is placed, a slot of
-// another plugin's declaration included. Data is the payload the
-// template executes over. Ref allocates the reference, which the body
-// keeps, one allocation.
+// Ref returns a reference to one of the templates of this plugin, for a
+// body to claim. The render resolves the name in the tree of this plugin
+// for the target of the plan, wherever the body is placed. That includes
+// a slot of a declaration of another plugin. data is the payload of the
+// template. Ref allocates the reference that the body keeps, one
+// allocation.
 func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 	return &emit.TemplateRef{Name: name, Data: data, Owner: e.rs.plugin}
 }
@@ -148,35 +150,37 @@ func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 // A reference in the language of the plan's target translates as
 // written, through [rules.EmitRef]. A reference to a type parameter
 // translates to a reference that has the parameter's name and no target.
-// Every other reference folds into its shape under the rules of owner's
-// language, over the invocation's view, so each declaration that the
-// fold reads records on the invocation. Where owner is a field of the
-// graph and ref is that field's type, the fold is [rules.Bound.FieldTypeOf],
-// so the field's presence translates as an optional. The plan's spoke
-// spells the shape under the plan's policy. When the spoke reads the choice of a
-// policy key, the policy first reads the key's value at directive
-// authority on owner, then on the match's subject, and then on owner's
-// package. The first value that it finds is the choice. Each of these
-// reads records on the invocation, so the invocation records the
+// Every other reference folds into its shape under the rules of the
+// language of owner. The fold reads through the view of the invocation,
+// so each declaration that it reads records on the invocation. Where
+// owner is a field of the graph and ref is the type of that field, the
+// fold is [rules.Bound.FieldTypeOf], so the presence of the field
+// translates as an optional. The spoke of the plan spells the shape
+// under the policy of the plan. When the spoke reads the choice of a
+// policy key, the policy first reads the value of the key at directive
+// authority on owner, then on the subject of the match, and then on the
+// package of owner. The first value that it finds is the choice. Each of
+// these reads records on the invocation, so the invocation records the
 // overrides of the keys that the type depends on and no others.
 //
-// A refusal reports an Error under [RefusedType] at owner's position.
-// The message contains the target, the source spelling and the spoke's
-// reason. A plan whose backend does not implement a spoke refuses every
-// reference of another language.
+// A refusal reports an Error under [RefusedType] at the position of
+// owner. The message contains the target, the source spelling and the
+// reason of the spoke. A plan whose backend does not implement a spoke
+// refuses every reference of another language.
 //
 // # Allocation contract
 //
 // Type allocates what [rules.EmitRef] allocates for a reference in the
 // target's language, and one reference for a type parameter. For any
 // other reference it allocates what the fold allocates and the reference
-// that the spoke returns. The lookup of a field owner allocates only where
-// the invocation's read set grows. The fold allocates the binding's memo on the
-// invocation's first fold in the subject's language, and on every call
-// where owner's language is not the subject's. A refusal allocates its
-// message. The match makes its reader of overrides on its first
-// translation in a phase call, one allocation, and an override read
-// allocates only where the invocation's read set grows.
+// that the spoke returns. The lookup of a field owner allocates only
+// where the read set of the invocation grows. The fold allocates the memo
+// of the binding on the first fold of the invocation in the subject's
+// language, and on every call where the language of owner is not the
+// subject's. A refusal allocates its message. The match makes its reader
+// of overrides on its first translation in a phase call, one allocation,
+// and an override read allocates only where the read set of the
+// invocation grows.
 func (e *Emitter) Type(owner symbol.Identity, ref *node.TypeRef) (*emit.TypeRef, bool) {
 	if ref == nil {
 		return nil, true
@@ -217,8 +221,41 @@ func (e *Emitter) Type(owner symbol.Identity, ref *node.TypeRef) (*emit.TypeRef,
 	return spelled, true
 }
 
-// out resolves the family, buffers the accumulator's touch, and
-// returns the subject-bound handle.
+// Fields translates the type of each field of fields that keep reports,
+// with the field as the owner, as [Emitter.Type] does. It returns the emit
+// fields in the order of fields, and a nil keep keeps every field. Each
+// emit field has the origin, the documentation, the name, the visibility
+// and the translated type of its field.
+//
+// Fields reports false for a field whose type has no spelling in the
+// target, after Type reports the refusal, and then returns no fields. The
+// caller withholds its declaration, as a generator withholds a declaration
+// that it cannot write whole. A caller passes the result to [emit.SlotOf]
+// in the composite literal of the declaration, which keeps the list as the
+// storage of the slot.
+//
+// # Allocation contract
+//
+// Fields allocates the list of the emit fields at the length of fields,
+// each emit field, and what Type allocates for each type. It allocates no
+// list for no fields.
+func (e *Emitter) Fields(fields []*node.Field, keep func(*node.Field) bool) ([]*emit.Field, bool) {
+	out := make([]*emit.Field, 0, len(fields))
+	for _, f := range fields {
+		if keep != nil && !keep(f) {
+			continue
+		}
+		t, spelled := e.Type(f.ID, f.Type)
+		if !spelled {
+			return nil, false
+		}
+		out = append(out, &emit.Field{Origin: f.ID, Doc: f.Doc, Name: f.Name, Visibility: f.Visibility, Type: t})
+	}
+	return out, true
+}
+
+// out resolves the family, buffers the touch of the accumulator, and
+// returns the handle for the subject.
 func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	tag := oneTag(tags)
 	fam, declared := e.rs.b.outByTag[tag]
@@ -248,10 +285,10 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	return &Out{rs: e.rs, seq: e.m.seq, touch: at}
 }
 
-// fieldOf returns the field that owner identifies, read through the
-// invocation's view v so the read records, and false for an owner of
-// another kind and for one that the view does not contain. It allocates
-// only where the read set grows.
+// fieldOf returns the field that owner identifies. It reads through the
+// view v of the invocation, so the read records. It returns false for an
+// owner of another kind and for an owner that the view does not contain.
+// It allocates only where the read set grows.
 func fieldOf(v rules.View, owner symbol.Identity) (*node.Field, bool) {
 	if owner.Kind != symbol.KindField {
 		return nil, false
@@ -264,8 +301,8 @@ func fieldOf(v rules.View, owner symbol.Identity) (*node.Field, bool) {
 	return f, is
 }
 
-// oneTag returns the selected family: none means the primary, and
-// more than one is a defect.
+// oneTag returns the selected family. No tag selects the primary
+// family, and more than one tag panics.
 func oneTag(tags []Tag) Tag {
 	switch len(tags) {
 	case 0:
@@ -277,28 +314,28 @@ func oneTag(tags []Tag) Tag {
 	}
 }
 
-// Out is one accumulator seen from one match. The handle records the
-// invocation's sequence and its accessor call, which records the
-// match's subject and gating instance, so an append is attributed and
-// ordered without shared mutable state: two matches have two handles
-// onto one accumulator.
+// Out is one accumulator as one match sees it. The handle records the
+// sequence of the invocation and its accessor call. The accessor call
+// records the subject of the match and the gating instance. An append is
+// therefore attributed and ordered without shared mutable state, and two
+// matches have two handles to one accumulator.
 type Out struct {
 	rs    *runState
 	seq   int
 	touch int
 }
 
-// Append places emit declarations under the handle's subject; with
-// none it is a no-op and records nothing. The placements apply when
-// the phase call's rules have run, and the flush orders a unit's
-// declarations by origin identity, then by the gating instance's
-// source order under a repeatable directive, then by canonical match
-// order and the order of the appends, so output order is canonical
-// and never schedule order. The call copies the declarations, so the
-// caller may reuse the slice it passed. It buffers them in the phase
-// call's pooled storage and allocates nothing once the call's state is
-// warm. The flush allocates the unit's lists of declarations and
-// origins.
+// Append places emit declarations under the subject of the handle. A
+// call without declarations does nothing and records nothing. The
+// placements apply when the rules of the phase call have run. The flush
+// orders the declarations of a unit by origin identity, then by the
+// source order of the gating instance under a repeatable directive, then
+// by canonical match order and the order of the appends. The output
+// order is therefore canonical and never the order of the schedule. The
+// call copies the declarations, so the caller may reuse the slice that it
+// passed. It buffers them in the pooled storage of the phase call and
+// allocates nothing once the state of the call is warm. The flush
+// allocates the lists of declarations and origins of the unit.
 func (o *Out) Append(decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
@@ -306,15 +343,15 @@ func (o *Out) Append(decls ...symbol.Symbol) {
 	o.rs.fx.place(o.seq, o.touch, decls, nil)
 }
 
-// Record places emit declarations under the handle's subject as
+// Record places emit declarations under the subject of the handle as
 // [Out.Append] does, and attaches data to the origin of each of them,
 // for a family that claims its files through [plugin.Output.Template].
-// The family's file template reads each declaration as a record, with
-// the data of its origin beside it. Where two calls attach data to one
-// origin of a unit, the data of the first call in canonical match order
-// applies. With no declaration Record is a no-op and records nothing.
-// It buffers as Append does, and the flush allocates the unit's map of
-// data.
+// The file template of the family reads each declaration as a record,
+// with the data of its origin beside it. Where two calls attach data to
+// one origin of a unit, the data of the first call in canonical match
+// order applies. A call without declarations does nothing and records
+// nothing. It buffers as Append does, and the flush allocates the map of
+// data of the unit.
 func (o *Out) Record(data any, decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
@@ -322,9 +359,9 @@ func (o *Out) Record(data any, decls ...symbol.Symbol) {
 	o.rs.fx.place(o.seq, o.touch, decls, data)
 }
 
-// SlotView is one invocation's write access to one slot, returned by
-// [Emitter.Slot]. Its zero value has no invocation to buffer with,
-// and appending through it panics.
+// SlotView is the write access of one invocation to one slot.
+// [Emitter.Slot] returns it. Its zero value has no invocation, so an
+// append through it panics.
 type SlotView[T any] struct {
 	rs   *runState
 	seq  int
@@ -333,12 +370,12 @@ type SlotView[T any] struct {
 }
 
 // Append buffers values for the slot, in order. They apply when the
-// phase call's rules have run, after the values of every invocation
+// rules of the phase call have run, after the values of every invocation
 // earlier in canonical match order. An append of no values is not
-// recorded. The buffer is the phase call's pooled storage, so an append
-// allocates nothing once the call's state is warm. The slot grows when
-// the values apply, and the store records the plugin among the host
-// unit's contributors.
+// recorded. The buffer is the pooled storage of the phase call, so an
+// append allocates nothing once the state of the call is warm. The slot
+// grows when the values apply, and the store adds the plugin to the
+// contributors of the host unit.
 func (v SlotView[T]) Append(values ...T) {
 	if v.rs == nil {
 		panic("eidos: a zero SlotView appends nowhere; Emitter.Slot returns the view to append through")
@@ -350,9 +387,9 @@ func (v SlotView[T]) Append(values ...T) {
 	appendSlot(&v.rs.fx, v.seq, v.slot, values)
 }
 
-// accKey addresses one accumulator: a family under one cardinality
-// key. A per-package key includes the language, because two
-// languages may spell one package path.
+// accKey is the key of one accumulator. It is a family under one
+// cardinality key. A per-package key includes the language, because two
+// languages can have the same package path.
 type accKey struct {
 	tag  Tag
 	per  plugin.Cardinality
@@ -360,10 +397,10 @@ type accKey struct {
 	key  string
 }
 
-// accumulator gathers one output entity's contributions until the
-// phase call's effects have applied and the flush orders them. It
-// keeps no origin set of its own: the flush reads the unique origins
-// off the sorted contributions, so a placement costs no map entry.
+// accumulator gathers the contributions of one output entity until the
+// effects of the phase call have applied and the flush orders them. It
+// keeps no origin set of its own. The flush reads the unique origins
+// from the sorted contributions, so a placement costs no map entry.
 type accumulator struct {
 	out    plugin.Output
 	key    string
@@ -371,8 +408,9 @@ type accumulator struct {
 	places []placed
 }
 
-// placed is one appended declaration, its ordering key, and the data
-// that a [Out.Record] call attached to it, nil for [Out.Append].
+// placed is one appended declaration with its ordering key and the data
+// that an [Out.Record] call attached to it. The data is nil for
+// [Out.Append].
 type placed struct {
 	origin   symbol.Identity
 	instance int
@@ -381,9 +419,8 @@ type placed struct {
 	data     any
 }
 
-// originsOf returns the distinct nonzero origins of places sorted
-// in canonical order: counted first, so the slice is allocated at
-// its exact size.
+// originsOf returns the distinct nonzero origins of places in canonical
+// order. It counts them first, so the slice has its exact size.
 func originsOf(places []placed) []symbol.Identity {
 	distinct := 0
 	prev := symbol.Identity{}
@@ -407,12 +444,12 @@ func originsOf(places []placed) []symbol.Identity {
 	return out
 }
 
-// accFor returns the accumulator for one key, bound on first touch
-// with its family, which the key's tag names, and its namespace
-// resolved once. It binds an accumulator an earlier call released where
-// the call's state has one, so its placements append into storage that
-// call grew, and allocates one otherwise. The first touch of a state
-// creates the map, so a call that touches nothing allocates none.
+// accFor returns the accumulator for one key. The first touch binds it
+// to the family of the tag of the key and resolves its namespace once.
+// It reuses an accumulator that an earlier call released where the state
+// of the call has one, so its placements append into storage that the
+// earlier call grew. Otherwise it allocates one. The first touch of a
+// state creates the map, so a call that touches nothing allocates none.
 func (c *phaseCall) accFor(k accKey, subject symbol.Identity) *accumulator {
 	if acc, held := c.accs[k]; held {
 		return acc
@@ -437,16 +474,17 @@ func (c *phaseCall) accFor(k accKey, subject symbol.Identity) *accumulator {
 	return acc
 }
 
-// flush turns every touched accumulator into a unit, contributions
-// in canonical order, and arrives them in the plan's store. The
-// accumulators flush in key order, so refusals arrive in one order. A
-// call that touched nothing flushes nothing and allocates nothing.
+// flush turns every touched accumulator into a unit with its
+// contributions in canonical order, and adds each unit to the store of
+// the plan. The accumulators flush in key order, so refusals arrive in
+// one order. A call that touched nothing flushes nothing and allocates
+// nothing.
 //
 // # Allocation contract
 //
-// The keys sort in the call's own buffer. Each unit allocates its
-// declarations and, where they have origins, its origins, both of which
-// the store keeps.
+// The keys sort in the buffer of the call. Each unit allocates its
+// declarations and, where they have origins, its origins. The store
+// keeps both.
 func (c *phaseCall) flush(into *plugin.Emit) error {
 	if len(c.accs) == 0 {
 		return nil

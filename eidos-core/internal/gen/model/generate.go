@@ -27,35 +27,37 @@ const (
 	templateGlob = "*.tmpl"
 )
 
-// generatorName is the name the preamble's generated-code marker
-// gives this generator.
+// generatorName is the name of this generator in the generated-code
+// marker of the preamble.
 const generatorName = "model"
 
-// output is one file the generator writes: which template renders
-// it, into which package, and where it arrives.
+// output is one file that the generator writes. Its fields are the
+// path, the template, the package, the model side and the tested
+// package.
 type output struct {
-	// Path is the file's module-relative slash path.
+	// Path is the module-relative slash path of the file.
 	Path string
-	// Template names its template within the embedded tree.
+	// Template is the name of its template in the embedded tree.
 	Template string
-	// Package is the Go package the file declares.
+	// Package is the Go package that the file declares.
 	Package string
-	// Side is the model the file belongs to, empty for a file that
-	// belongs to neither.
+	// Side is the model of the file. It is empty for a file of neither
+	// model.
 	Side string
-	// Model is the package a black-box test file checks and imports
-	// under the dot, so the test spells the package's declarations
-	// the way the package does. It is empty for a file of production
-	// code, and for a test file that qualifies what it imports.
+	// Model is the package that a black-box test file checks and
+	// imports under the dot. The test then writes the declarations of
+	// the package as the package writes them. It is empty for a file of
+	// production code and for a test file that qualifies its imports.
 	Model string
 }
 
-// outputs lists every file the generator writes. [Generate] keys
-// its result by path, so the order of the list changes no output.
+// outputs lists every file that the generator writes. [Generate] keys
+// its result by path, so the order of the list does not change the
+// output.
 //
-// The mirror guard reads the list too. A generated file under one
-// of these packages that the list does not name is a stray, and the
-// guard reports it.
+// The mirror guard reads the list too. A generated file under one of
+// these packages that is not in the list is a stray, and the guard
+// reports it.
 var outputs = []output{
 	{Path: "emit/symbols.gen.go", Template: "symbols.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{
@@ -129,56 +131,57 @@ var outputs = []output{
 	},
 }
 
-// OwnedDirs are the directories the generator writes into. The
+// OwnedDirs are the directories that the generator writes into. The
 // module root is one of them, because the match file is there. The
 // mirror guard scans each directory for strays, and in the module
 // root it scans only the files directly under the root.
 var OwnedDirs = []string{".", SymbolPackage, NodePackage, EmitPackage}
 
-// data is what a template renders against.
+// data is the input of a template.
 type data struct {
-	// Header is the preamble every generated file opens with.
+	// Header is the preamble of every generated file.
 	Header string
-	// Package is the Go package the file declares.
+	// Package is the Go package that the file declares.
 	Package string
-	// Model is the package a black-box test file checks and imports
-	// under the dot, empty for every other file.
+	// Model is the package that a black-box test file checks and
+	// imports under the dot. It is empty for every other file.
 	Model string
-	// Kinds are the lowered kinds in schema order, independent of
-	// any model side.
+	// Kinds are the lowered kinds in schema order. They do not depend
+	// on a model side.
 	Kinds []KindSpec
-	// Views are the kinds prepared for this file's model side.
+	// Views are the kinds as the model side of this file declares
+	// them.
 	Views []view
 	// NeedsSymbol reports whether the rendered file uses the symbol
 	// package, so a template imports that package only when the
 	// file needs it.
 	NeedsSymbol bool
 	// Identified reports whether every kind on this side has an
-	// identity, which the Declaration interface and the traversal
-	// typed by it require.
+	// identity. The Declaration interface and its traversal require
+	// one.
 	Identified bool
 	// Originated reports whether any kind on this side has origin
 	// storage. A side with origin storage gets the OriginOf
 	// function.
 	Originated bool
-	// Facts are the declared fact constant suffixes, first
-	// encounter across kinds in schema order.
+	// Facts are the suffixes of the declared fact constants, in the
+	// order of first use across the kinds in schema order.
 	Facts []string
-	// Fingerprint is the node model's shape hash, which every unit
-	// key folds.
+	// Fingerprint is the hash of the shape of the node model. Every
+	// unit key folds it.
 	Fingerprint string
 }
 
 // Generate renders every generated file from the schema under
 // modRoot.
 //
-// It returns the whole output in memory, keyed by module-relative
-// slash path, and writes nothing. A caller puts it on disk with
-// [genfile.Write] or compares it with [genfile.Verify], which is
-// what makes the mirror guard a plain test.
+// It returns the whole output in memory and writes nothing. The keys
+// are module-relative slash paths. A caller writes the output with
+// [genfile.Write] or compares it with [genfile.Verify], so the mirror
+// guard is a plain test.
 //
-// Nothing is returned unless every file rendered and formatted, so
-// a template fault cannot leave a half-generated tree.
+// Generate returns nothing unless every file rendered and formatted,
+// so a template fault cannot leave a half-generated tree.
 func Generate(modRoot string) (genfile.Set, error) {
 	schema, err := Lower(path.Join(modRoot, SchemaDir), modRoot)
 	if err != nil {
@@ -194,12 +197,12 @@ func Generate(modRoot string) (genfile.Set, error) {
 	})
 }
 
-// Regenerate renders the models from the schema of the module
-// enclosing dir and writes them into it.
+// Regenerate renders the models from the schema of the module that
+// contains dir, and writes them into that module.
 //
-// The go:generate wrapper calls Regenerate and reports only its
-// exit status. A directory outside any module is refused, and
-// nothing is written unless every file rendered.
+// The go:generate wrapper calls Regenerate and reports only its exit
+// status. Regenerate returns an error for a directory outside any
+// module. It writes nothing unless every file rendered.
 func Regenerate(dir string) error {
 	root, err := gosource.ModuleRoot(dir)
 	if err != nil {
@@ -208,16 +211,16 @@ func Regenerate(dir string) error {
 	return genfile.Regenerate(root, Generate)
 }
 
-// fingerprintOf hashes the node model's shape: every kind and every
-// node-side field, name and type spelling, in schema order, then the
-// facts in schema order, then every enum of the symbol package with
-// its constants' names and values.
+// fingerprintOf hashes the shape of the node model. It hashes every
+// kind and the name and type of every node-side field in schema order,
+// then the facts in schema order, then every enum of the symbol package
+// with the names and values of its constants.
 //
 // The hash covers the lowered schema only, so a documentation edit
-// leaves it unchanged. A schema change that alters the graph the
-// same source produces changes the hash, and so does a change to an
-// enum's values, which an encoded graph writes as integers. The
-// kinds and facts in schema order fix the values of the generated
+// leaves it unchanged. A schema change that alters the graph of the
+// same source changes the hash. A change of the values of an enum
+// changes it too, because an encoded graph writes them as integers.
+// The kinds and facts in schema order fix the values of the generated
 // Kind and Fact constants. Every unit key folds the result, so a
 // recorded graph is never served across either change.
 func fingerprintOf(schema Schema) string {
@@ -244,8 +247,8 @@ func fingerprintOf(schema Schema) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// slotsUseSymbol reports whether any slot's values are typed by the
-// symbol package, which decides whether the slots file imports it.
+// slotsUseSymbol reports whether the values of any slot have a type of
+// the symbol package. The slots file imports that package only then.
 func slotsUseSymbol(views []view) bool {
 	for _, v := range views {
 		for _, slot := range v.Slots {
@@ -257,14 +260,15 @@ func slotsUseSymbol(views []view) bool {
 	return false
 }
 
-// viewsIdentified reports whether every kind has an identity.
+// viewsIdentified reports whether every kind has an identity: an ID
+// field, or the zero identity of a kind without one.
 //
 // The predicate is "every". A traversal typed by the Declaration
 // interface visits only the kinds that satisfy it, so a side
 // declares the interface only when every kind does.
 func viewsIdentified(views []view) bool {
 	for _, v := range views {
-		if v.IDStorage == "" {
+		if v.IDStorage == "" && !v.ZeroIdentity {
 			return false
 		}
 	}
@@ -273,7 +277,7 @@ func viewsIdentified(views []view) bool {
 
 // viewsOriginated reports whether any kind has origin storage.
 //
-// The predicate is "any", the opposite of [viewsIdentified].
+// The predicate is "any", unlike the "every" of [viewsIdentified].
 // OriginOf returns false for a kind without origin storage, so one
 // kind with it is enough to declare the function.
 func viewsOriginated(views []view) bool {
@@ -299,8 +303,8 @@ type renderer struct {
 // newRenderer parses every template and prepares the shared data.
 func newRenderer(schema Schema) (*renderer, error) {
 	tmpl, err := template.New(templateDir).Funcs(template.FuncMap{
-		// firstNamed returns the first kind declaring its own name,
-		// which the generated tests build their shared cases over.
+		// firstNamed returns the first kind that declares its own name.
+		// The generated tests build their shared cases over it.
 		"firstNamed": func(views []view) *view {
 			for i := range views {
 				if views[i].NameStorage != "" {
@@ -309,8 +313,9 @@ func newRenderer(schema Schema) (*renderer, error) {
 			}
 			return nil
 		},
-		// memberMethods returns the Membered interface's method names,
-		// which the generated tests group their member cases under.
+		// memberMethods returns the names of the methods of the
+		// Membered interface. The generated tests group their member
+		// cases by these names.
 		"memberMethods": func() []string {
 			names := make([]string, 0, len(memberMethods))
 			for _, m := range memberMethods {
@@ -337,7 +342,7 @@ func newRenderer(schema Schema) (*renderer, error) {
 	return r, nil
 }
 
-// render executes one output's template.
+// render executes the template of one output.
 func (r *renderer) render(out output) ([]byte, error) {
 	views := r.views[out.Side]
 	var buf bytes.Buffer

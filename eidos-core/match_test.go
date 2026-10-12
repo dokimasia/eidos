@@ -59,7 +59,7 @@ func TestMatch(t *testing.T) {
 					assert.False(t, held, "a graph match has no subject fact")
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
 			assert.True(t, ran, "the handler ran")
@@ -87,7 +87,7 @@ func TestMatch(t *testing.T) {
 					assert.True(t, got, "the value is the stamped one")
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
 			assert.True(t, ran, "the handler ran")
@@ -108,7 +108,7 @@ func TestMatch(t *testing.T) {
 					got, held = eidos.FactOf(m, alpha.ID, meta.Named[bool](key.Name()))
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
 			assert.True(t, held, "the name resolves in the registry of the fact store")
@@ -155,6 +155,44 @@ func TestMatch(t *testing.T) {
 		})
 	})
 
+	t.Run("WarnfAt", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports a Warning at the given position", func(t *testing.T) {
+			t.Parallel()
+
+			carrier := position.Pos{File: "svc/store/row.go", Line: 42, Col: 3}
+			ctx, _ := reportingRun(t, func(m *eidos.StructMatch) {
+				m.WarnfAt(reported, carrier, "the carrier on %s is noted", m.Struct.Name)
+			})
+
+			coretest.AssertCodes(t, ctx.Sink, reported)
+			one := onlyFinding(t, ctx.Sink)
+			assert.Equal(t, one.Severity, diag.SeverityWarning, "the finding is a Warning")
+			assert.Equal(t, one.Pos, carrier, "the position is the given one")
+			assert.False(t, ctx.Sink.Failed(), "the run passes")
+		})
+	})
+
+	t.Run("InfofAt", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports an Info finding at the given position", func(t *testing.T) {
+			t.Parallel()
+
+			carrier := position.Pos{File: "svc/store/row.go", Line: 43, Col: 3}
+			ctx, _ := reportingRun(t, func(m *eidos.StructMatch) {
+				m.InfofAt(reported, carrier, "the carrier on %s was visited", m.Struct.Name)
+			})
+
+			coretest.AssertCodes(t, ctx.Sink, reported)
+			one := onlyFinding(t, ctx.Sink)
+			assert.Equal(t, one.Severity, diag.SeverityInfo, "the finding is at Info severity")
+			assert.Equal(t, one.Pos, carrier, "the position is the given one")
+			assert.False(t, ctx.Sink.Failed(), "the run passes")
+		})
+	})
+
 	t.Run("Infof", func(t *testing.T) {
 		t.Parallel()
 
@@ -191,7 +229,7 @@ func TestMatch(t *testing.T) {
 					onGraph = m.Lang()
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(genContext(tb, g, facts, nil)), "the phase call passes")
 			return onStruct, onGraph
 		}
@@ -228,7 +266,7 @@ func TestMatch(t *testing.T) {
 					got, held = m.Export(plan)
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			return got, held
 		}
@@ -263,8 +301,8 @@ func TestMatch(t *testing.T) {
 					_, held = m.Export(exportingPlan)
 					return nil
 				})).
-				Build()
-			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)), "the phase call passes")
+				Annotator()
+			assert.NoError(t, p.Annotate(annContext(t, facts, ix)), "the phase call passes")
 			assert.True(t, ran, "the handler ran")
 			assert.False(t, held, "an annotator reads no export")
 		})
@@ -296,7 +334,7 @@ func TestMatch(t *testing.T) {
 					assert.Equal(t, again.Source().Lang(), b.Source().Lang(), "the second call returns the binding")
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.True(t, ran, "the handler ran")
 			assert.NotContains(t, coretest.Codes(ctx.Sink), rules.AbsentRules,
@@ -321,7 +359,7 @@ func TestMatch(t *testing.T) {
 					assert.True(tb, rules.IsAbsent(m.Rules().Source()), "a graph match binds the absent rules")
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			return ctx
 		}
@@ -374,7 +412,7 @@ func matchMethodCases(tb assert.TB) []phaseCase {
 				assert.True(tb, h(m), "the method returns the fixture's value on every invocation")
 				return nil
 			})).
-			Build())
+			Generator())
 	}
 	quiet := func(assert.TB, *plugin.GeneratorContext) {}
 	findings := func(tb assert.TB, ctx *plugin.GeneratorContext) {
@@ -463,6 +501,26 @@ func matchMethodCases(tb assert.TB) []phaseCase {
 				return true
 			}),
 		},
+		{
+			name:   "WarnfAt",
+			allocs: reportAllocs,
+			fresh:  fresh,
+			check:  findings,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				m.WarnfAt(reported, at, "the carrier is noted")
+				return true
+			}),
+		},
+		{
+			name:   "InfofAt",
+			allocs: reportAllocs,
+			fresh:  fresh,
+			check:  findings,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				m.InfofAt(reported, at, "the carrier was visited")
+				return true
+			}),
+		},
 	}
 }
 
@@ -504,7 +562,7 @@ func reportingRun(
 			report(m)
 			return nil
 		})).
-		Build()
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	assert.True(tb, ran, "the reporting handler ran")
 	return ctx, alpha

@@ -31,8 +31,8 @@ import (
 )
 
 // The target of the lowering composition, its lowering entry, its name
-// key, and the width policy that its backend declares with the policy's
-// choices.
+// key, and the width policy that its backend declares with the choices
+// of the policy.
 const (
 	lowerTarget plugin.Target    = "tsx"
 	lowerEntry  plugin.ID        = "tsx-lowering"
@@ -76,35 +76,37 @@ var widthPolicy = plugin.PolicySpec{
 	Doc: "the width of a declaration in the fixture target",
 }
 
-// A target's lowering entry stamps the target's name on each declaration
-// of another language that a plan of the target admits, and the values of
-// the target's directive on its subjects. A warm run stamps again the
-// packages and the instances that an edit changed, and leaves the facts
-// that a cold run over the edited tree leaves.
+// TestLowering tests the lowering entry of a target. The entry stamps the
+// name in the target on each declaration of another language that a
+// plan of the target admits, and the values of the directive of the
+// target on its subjects. A warm run stamps again the packages and the
+// instances that an edit changed, and leaves the facts that a cold run
+// over the edited tree leaves.
 func TestLowering(t *testing.T) {
 	t.Parallel()
 
 	t.Run("lowerings", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns an error listing two backends of a target whose backend respells names", func(t *testing.T) {
+		t.Run("returns an error listing two backends of one target", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := lowerComposition(t, workspace.Sources{}).Plans(workspace.Plan{
 				Name: "plain", Generators: []plugin.Generator{mirror("plain-mirror")},
-				Backend: printerAs(t, "plain-printer", lowerTarget, ""),
+				Backend: printerAs("plain-printer", lowerTarget, ""),
 			}).Build()
 			assert.HasError(t, err, "the composition fails")
 			assert.Contains(t, err.Error(), `target "tsx" renders through tsx-printer and plain-printer`,
 				"the error lists the target and both backends")
 		})
 
-		t.Run("returns no error for two backends of a target without a respell or a policy", func(t *testing.T) {
+		t.Run("returns an entry for a backend that declares no respell hook and no policy", func(t *testing.T) {
 			t.Parallel()
 
-			w := built(t, valid().Plans(planTo("second", "fixture", mirror("second-mirror"))))
-			assert.Equal(t, w.Describe().Annotate, []workspace.Component{{Name: "noter", Bucket: 1}},
-				"the composition schedules no lowering entry")
+			w := built(t, valid())
+			assert.Equal(t, w.Describe().Annotate,
+				[]workspace.Component{{Name: fixtureLowering, Turn: 1}, {Name: "noter", Turn: 2}},
+				"every target has a lowering entry")
 		})
 
 		t.Run("returns an error for a plugin named after the lowering entry", func(t *testing.T) {
@@ -120,7 +122,7 @@ func TestLowering(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, policyComposition(t))
-			assert.Equal(t, w.Describe().Annotate, []workspace.Component{{Name: lowerEntry, Bucket: 1}},
+			assert.Equal(t, w.Describe().Annotate, []workspace.Component{{Name: lowerEntry, Turn: 1}},
 				"the composition schedules the lowering entry")
 		})
 
@@ -135,7 +137,7 @@ func TestLowering(t *testing.T) {
 					Backend: lowerBackend(t, "ts-printer", "ts", camel),
 				}))
 			want := []workspace.Component{
-				{Name: "ts-lowering", Bucket: 1}, {Name: lowerEntry, Bucket: 2}, {Name: "early", Bucket: 3},
+				{Name: "ts-lowering", Turn: 1}, {Name: lowerEntry, Turn: 2}, {Name: "early", Turn: 3},
 			}
 			assert.Equal(t, w.Describe().Annotate, want, "the entries run first, in name order")
 		})
@@ -158,12 +160,12 @@ func TestLowering(t *testing.T) {
 			expect.True(t, chosen, "the policy key is registered")
 		})
 
-		t.Run("does not register a name key for a backend that does not respell names", func(t *testing.T) {
+		t.Run("registers the name key for a backend that keeps every name", func(t *testing.T) {
 			t.Parallel()
 
 			report := lowerRun(t, policyComposition(t), lowerTree(rowLine))
 			_, named := meta.Lookup[string](report.Facts.Registry(), lowerName)
-			assert.False(t, named, "the name key is not registered")
+			assert.True(t, named, "every target has a name key")
 		})
 
 		t.Run("registers the target's keys beside the keys of its language's frontend", func(t *testing.T) {
@@ -254,13 +256,14 @@ func TestLowering(t *testing.T) {
 			assert.Contains(t, refused[0].Msg, "narrow, wide, full", "the finding lists the choices")
 		})
 
-		t.Run("returns a directive without a name param for a backend that does not respell names", func(t *testing.T) {
+		t.Run("returns a directive with a name param for a backend that keeps every name", func(t *testing.T) {
 			t.Parallel()
 
-			report, err := built(t, policyComposition(t)).
-				Run(t.Context(), workspace.Input{Tree: lowerTree(rowLine, renamedLine)})
-			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the unknown param fails the run")
-			assert.Length(t, findings(report.Sink, directive.UnknownKey), 1, "the run reports the name param")
+			report := lowerRun(t, policyComposition(t), lowerTree(rowLine, renamedLine))
+			key, _ := meta.Lookup[string](report.Facts.Registry(), lowerName)
+			got, held := meta.GetAtLeast(report.Facts, rowID, key, meta.AuthorityDirective)
+			assert.True(t, held, "the row has the name of the directive")
+			assert.Equal(t, got, "fetch", "the directive overrides the name that the backend keeps")
 		})
 
 		t.Run("returns an error for a target named after a directive of the kernel", func(t *testing.T) {
@@ -556,8 +559,9 @@ func TestLowering(t *testing.T) {
 	})
 }
 
-// camel spells a name with its first letter in lower case, as the fixture
-// target writes names. It refuses a name that opens with refusedStart.
+// camel returns a name with its first letter in lower case, as the
+// fixture target writes names. It returns an error for a name that
+// starts with refusedStart.
 func camel(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	if strings.HasPrefix(name, refusedStart) {
 		return "", errors.New("the fixture target does not spell a name that starts with " + refusedStart)
@@ -565,9 +569,8 @@ func camel(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	return strings.ToLower(name[:1]) + name[1:], nil
 }
 
-// lowerBackend returns a printer of target under name, which declares
-// the policies and respells names through respell, where respell is not
-// nil.
+// lowerBackend returns a printer of target under name. It declares
+// policies, and respells names through respell where respell is not nil.
 func lowerBackend(
 	tb assert.TB, name plugin.ID, target plugin.Target, respell plugin.Respell, policies ...plugin.PolicySpec,
 ) plugin.Backend {
@@ -589,10 +592,10 @@ func lowerBackend(
 	return b.Build()
 }
 
-// lowerComposition returns the builder of the lowering composition: the
-// scripted frontend, and the client plan, which mirrors each struct of
-// sources through a printer of the fixture target that respells names
-// and declares the width policy.
+// lowerComposition returns the builder of the lowering composition. It
+// has the scripted frontend and the client plan, which mirrors each
+// struct of sources through a printer of the fixture target. The printer
+// respells names and declares the width policy.
 func lowerComposition(tb assert.TB, sources workspace.Sources) *workspace.Builder {
 	tb.Helper()
 
@@ -607,8 +610,8 @@ func lowerComposition(tb assert.TB, sources workspace.Sources) *workspace.Builde
 }
 
 // lowerFrontend returns the scripted frontend under the name of a
-// frontend of the fixture target's language, beside the composition's
-// scripted frontend.
+// frontend of the language of the fixture target, beside the scripted
+// frontend of the composition.
 func lowerFrontend() *frontendtest.Scripted {
 	f := frontendtest.NewScripted()
 	f.ID = "tsxfront"
@@ -616,7 +619,7 @@ func lowerFrontend() *frontendtest.Scripted {
 }
 
 // policyComposition returns the lowering composition with a printer that
-// declares the width policy and does not respell names.
+// declares the width policy and keeps every name.
 func policyComposition(tb assert.TB) *workspace.Builder {
 	tb.Helper()
 
@@ -661,8 +664,8 @@ func lowerRun(t *testing.T, b *workspace.Builder, tree fstest.MapFS) *workspace.
 }
 
 // targetFacts returns the value of a string key on each subject that has
-// it in a run's facts. The subject's name keys each value, after the name
-// of its owner and a dot for a member.
+// it in the facts of a run. The map key of each value is the name of its
+// subject, after the name of the owner and a dot for a member.
 func targetFacts(tb assert.TB, facts *meta.Facts, name meta.KeyName) map[string]string {
 	tb.Helper()
 
@@ -683,8 +686,8 @@ func targetFacts(tb assert.TB, facts *meta.Facts, name meta.KeyName) map[string]
 // everyNamedKind returns the every-kind package with a member of each
 // list that rule 0 of the lowering entry covers: a nested type with a
 // field in the struct and in the interface, a field of the interface, a
-// field and a method of the enum, a field of the sum's variant, a method
-// of the sum, and a method at file level.
+// field and a method of the enum, a field of the variant of the sum, a
+// method of the sum, and a method at file level.
 func everyNamedKind() *node.Package {
 	const path = coretest.StorePath
 	pkg := coretest.EveryKind(path)

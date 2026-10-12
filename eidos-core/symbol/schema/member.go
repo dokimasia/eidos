@@ -17,13 +17,17 @@ import (
 // TypeScript readonly and Java final, which a generator emitting a
 // data class has to reproduce. A field declared without a name, as
 // a positional Sum variant payload is, leaves Name empty and
-// carries only its type.
+// carries only its type. Computed marks a name that is an expression
+// of the language, such as a TypeScript property declared as [key],
+// and the name is the source text of the expression.
 //
-// Tag holds the tag text in the source language's spelling with
-// its enclosing delimiters stripped, unevaluated, the way
-// [Constant.Value] holds an expression; the target's template
-// supplies the delimiters its language writes. Only languages with
-// per-field tags fill it.
+// On the node side, Tag is the tag text in the spelling of the source
+// language, with its enclosing delimiters stripped and unevaluated, the
+// way [Constant.Value] is an expression. Only languages with per-field
+// tags fill it. On the emit side, Tags is a slot of the entries of the
+// tag, which the target joins into its tag syntax. A plugin appends an
+// entry to the field of another plugin through the slot view of its
+// emitter, so the header of the file names the plugin.
 //
 //eidos:subject
 type Field struct {
@@ -38,9 +42,11 @@ type Field struct {
 	Mutability  symbol.Mutability  `eidos:"both,fact=Mutability"`
 	Hard        bool               `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
 	Optional    bool               `eidos:"both,fact=Optional"`    // present-or-absent: TypeScript's ?
+	Computed    bool               `eidos:"both,fact=Computed"`    // the name is an expression: TypeScript's [expr]
 	Type        *TypeRef           `eidos:"both,walk"`
-	Value       string             `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
-	Tag         string             `eidos:"both,fact=Tag"`   // tag text without delimiters, "" when none; a later plugin reshapes it through OnEmit
+	Value       string             `eidos:"both,fact=Value"`         // initializer's source spelling, unevaluated; "" when none
+	Tag         string             `eidos:"node"`                    // tag text without delimiters, "" when none
+	Tags        []*TagEntry        `eidos:"emit,slot=tags,fact=Tag"` // the entries of the tag, in order
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 	Host        symbol.Identity    `eidos:"node"`
 }
@@ -55,8 +61,12 @@ type Field struct {
 //
 // Type is nil when the source states none and the language infers
 // it. That is a declared limit rather than a failure: the
-// declaration still projects, and the language's own metadata
-// carries the inferred spelling for anyone who needs it.
+// declaration still projects, and the metadata of the language
+// contains the inferred spelling for a reader that needs it.
+//
+// Value is source text in the language of the declaration. A backend
+// does not read the text, so a generator whose value names a package
+// imports the package through the use builtin of its template.
 //
 //eidos:subject
 type Variable struct {
@@ -78,9 +88,12 @@ type Variable struct {
 // const.
 //
 // Type is nil for an untyped constant, which Go has and most
-// languages do not. Value holds the source spelling of the value
-// expression verbatim, unevaluated, the same contract
-// [EnumVariant.Value] carries.
+// languages do not. Value is the source spelling of the value
+// expression, verbatim and unevaluated, as [EnumVariant.Value] is.
+//
+// A backend does not read the text of Value, so a generator whose
+// value names a package imports the package through the use builtin
+// of its template.
 //
 //eidos:subject
 type Constant struct {

@@ -21,27 +21,28 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// subjectPlugin is the identity every plugin here declares under.
+// subjectPlugin is the name of every plugin of these tests.
 const subjectPlugin = "subjects"
 
-// matchAllocs is one constructor call: the rule's leaf, and the
-// closure that binds the handler to the subject's kind.
+// matchAllocs counts the allocations of one constructor call, which are
+// the leaf of the rule and the closure that binds the handler to the kind
+// of the subject.
 const matchAllocs = 2
 
-// matchCase is one measured call of a constructor: the
-// sub-benchmark's name, the call, and the check on the rule the last
-// call returned.
+// matchCase is one measured call of a constructor. It has the name of the
+// sub-benchmark, the call, and the check of the rule that the last call
+// returned.
 type matchCase struct {
 	name  string
 	call  func()
 	check func(testing.TB)
 }
 
-// Every subject kind's constructor lowers one way: the effect
-// parameter picks the phase, the record states the kind, and the
-// handler sees the subjects of its kind and nothing else. The
-// fixtures come from the every-kind package, so a kind the lowering
-// adds without a fixture fails to compile.
+// TestMatches tests that the constructor of every subject kind lowers one
+// way. The effect parameter selects the phase, the record states the kind,
+// and the handler sees the subjects of its kind alone. The fixtures come
+// from the every-kind package, so a kind that the lowering adds without a
+// fixture fails to compile.
 func TestMatches(t *testing.T) {
 	t.Parallel()
 
@@ -65,7 +66,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Function in the graph").
@@ -91,7 +92,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindFunction)))
 			assert.False(t, ran,
@@ -106,9 +107,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnFunction(func(m *eidos.FunctionMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -123,11 +122,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnFunction(func(m *eidos.FunctionMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -151,7 +148,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Method in the graph").
@@ -177,7 +174,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindMethod)))
 			assert.False(t, ran,
@@ -192,9 +189,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnMethod(func(m *eidos.MethodMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -209,11 +204,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnMethod(func(m *eidos.MethodMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -237,7 +230,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Param in the graph").
@@ -263,7 +256,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindParam)))
 			assert.False(t, ran,
@@ -278,9 +271,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnParam(func(m *eidos.ParamMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -295,11 +286,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnParam(func(m *eidos.ParamMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -323,7 +312,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Return in the graph").
@@ -349,7 +338,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindReturn)))
 			assert.False(t, ran,
@@ -364,9 +353,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnReturn(func(m *eidos.ReturnMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -381,11 +368,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnReturn(func(m *eidos.ReturnMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -409,7 +394,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Enum in the graph").
@@ -435,7 +420,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindEnum)))
 			assert.False(t, ran,
@@ -450,9 +435,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnEnum(func(m *eidos.EnumMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -467,11 +450,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnEnum(func(m *eidos.EnumMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -495,7 +476,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Sum in the graph").
@@ -521,7 +502,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindSum)))
 			assert.False(t, ran,
@@ -536,9 +517,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnSum(func(m *eidos.SumMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -553,11 +532,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnSum(func(m *eidos.SumMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -581,7 +558,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Field in the graph").
@@ -607,7 +584,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindField)))
 			assert.False(t, ran,
@@ -622,9 +599,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnField(func(m *eidos.FieldMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -639,11 +614,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnField(func(m *eidos.FieldMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -667,7 +640,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Variable in the graph").
@@ -693,7 +666,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindVariable)))
 			assert.False(t, ran,
@@ -708,9 +681,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnVariable(func(m *eidos.VariableMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -725,11 +696,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnVariable(func(m *eidos.VariableMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -753,7 +722,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Constant in the graph").
@@ -779,7 +748,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindConstant)))
 			assert.False(t, ran,
@@ -794,9 +763,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnConstant(func(m *eidos.ConstantMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -811,11 +778,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnConstant(func(m *eidos.ConstantMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -839,7 +804,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Struct in the graph").
@@ -865,7 +830,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindStruct)))
 			assert.False(t, ran,
@@ -880,9 +845,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -897,11 +860,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -925,7 +886,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Interface in the graph").
@@ -951,7 +912,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindInterface)))
 			assert.False(t, ran,
@@ -966,9 +927,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnInterface(func(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -983,11 +942,9 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnInterface(func(m *eidos.InterfaceMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 
@@ -1011,7 +968,7 @@ func TestMatches(t *testing.T) {
 					handles = append(handles, m)
 					return nil
 				})).
-				Build(), store, cache)
+				Generator(), store, cache)
 
 			assert.That(t, subjects).
 				Length(want, "the rule runs once per Alias in the graph").
@@ -1037,7 +994,7 @@ func TestMatches(t *testing.T) {
 					ran = true
 					return nil
 				})).
-				Build(),
+				Generator(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.KindAlias)))
 			assert.False(t, ran,
@@ -1052,9 +1009,7 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnAlias(func(m *eidos.AliasMatch, e *eidos.Emitter) error {
 					return nil
 				})).
-				Build()
-			_, generates := emits.(plugin.Generator)
-			assert.True(t, generates, "an emitter handler makes a generator")
+				Generator()
 			subscribed, held := emits.(plugin.Subscribed)
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
@@ -1069,17 +1024,15 @@ func TestMatches(t *testing.T) {
 				Handle(eidos.OnAlias(func(m *eidos.AliasMatch, st *eidos.Stamper) error {
 					return nil
 				})).
-				Build()
-			_, annotates := stamps.(plugin.Annotator)
-			assert.True(t, annotates, "a stamper handler makes an annotator")
-			_, alsoGenerates := stamps.(plugin.Generator)
-			assert.False(t, alsoGenerates, "and only an annotator")
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
 		})
 	})
 }
 
-// The constructors allocate within their ceiling in the ordinary run,
-// which runs no benchmark.
+// TestMatchesAllocs checks in the ordinary run, which runs no benchmark,
+// that the constructors allocate within their ceiling.
 func TestMatchesAllocs(t *testing.T) {
 	for _, tt := range matchCases() {
 		assert.MaxAllocs(t, tt.call, matchAllocs, tt.name+" allocates the rule")
@@ -1087,7 +1040,7 @@ func TestMatchesAllocs(t *testing.T) {
 	}
 }
 
-// BenchmarkMatches measures every subject kind's constructor.
+// BenchmarkMatches measures the constructor of every subject kind.
 func BenchmarkMatches(b *testing.B) {
 	for _, tt := range matchCases() {
 		b.Run(tt.name, func(b *testing.B) {
@@ -1101,23 +1054,21 @@ func BenchmarkMatches(b *testing.B) {
 	}
 }
 
-// dispatched runs p's generate phase over a graph of pkgs, and fails
-// the test unless the phase call passes.
-func dispatched(tb assert.TB, p plugin.Plugin, pkgs ...*node.Package) {
+// dispatched runs the generate phase of gen over a graph of pkgs, and
+// fails the test unless the phase call passes.
+func dispatched(tb assert.TB, gen plugin.Generator, pkgs ...*node.Package) {
 	tb.Helper()
 
 	facts := meta.NewFacts(meta.NewRegistry())
 	ix, err := plugin.NewIndex(coretest.Frozen(tb, pkgs...), facts, nil, nil)
 	assert.NoError(tb, err, "the routing surface builds")
-	gen, generates := p.(plugin.Generator)
-	assert.True(tb, generates, "an emitter handler makes a generator")
 	assert.NoError(tb, gen.Generate(&plugin.GeneratorContext{
 		Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-		Sink: diag.NewSink(), Plugin: subjectPlugin, Bucket: 1,
+		Sink: diag.NewSink(), Plugin: subjectPlugin, Turn: 1,
 	}), "the phase call passes")
 }
 
-// matchCases returns one case for every subject kind's constructor,
+// matchCases returns one case for the constructor of every subject kind,
 // each over a handler built once.
 func matchCases() []matchCase {
 	var cases []matchCase
@@ -1128,7 +1079,7 @@ func matchCases() []matchCase {
 			name: "OnFunction",
 			call: func() { rule = eidos.OnFunction(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnFunction returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindFunction,
 					"the rule triggers on its kind")
@@ -1142,7 +1093,7 @@ func matchCases() []matchCase {
 			name: "OnMethod",
 			call: func() { rule = eidos.OnMethod(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnMethod returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindMethod,
 					"the rule triggers on its kind")
@@ -1156,7 +1107,7 @@ func matchCases() []matchCase {
 			name: "OnParam",
 			call: func() { rule = eidos.OnParam(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnParam returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindParam,
 					"the rule triggers on its kind")
@@ -1170,7 +1121,7 @@ func matchCases() []matchCase {
 			name: "OnReturn",
 			call: func() { rule = eidos.OnReturn(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnReturn returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindReturn,
 					"the rule triggers on its kind")
@@ -1184,7 +1135,7 @@ func matchCases() []matchCase {
 			name: "OnEnum",
 			call: func() { rule = eidos.OnEnum(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnEnum returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindEnum,
 					"the rule triggers on its kind")
@@ -1198,7 +1149,7 @@ func matchCases() []matchCase {
 			name: "OnSum",
 			call: func() { rule = eidos.OnSum(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnSum returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindSum,
 					"the rule triggers on its kind")
@@ -1212,7 +1163,7 @@ func matchCases() []matchCase {
 			name: "OnField",
 			call: func() { rule = eidos.OnField(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnField returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindField,
 					"the rule triggers on its kind")
@@ -1226,7 +1177,7 @@ func matchCases() []matchCase {
 			name: "OnVariable",
 			call: func() { rule = eidos.OnVariable(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnVariable returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindVariable,
 					"the rule triggers on its kind")
@@ -1240,7 +1191,7 @@ func matchCases() []matchCase {
 			name: "OnConstant",
 			call: func() { rule = eidos.OnConstant(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnConstant returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindConstant,
 					"the rule triggers on its kind")
@@ -1254,7 +1205,7 @@ func matchCases() []matchCase {
 			name: "OnStruct",
 			call: func() { rule = eidos.OnStruct(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnStruct returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindStruct,
 					"the rule triggers on its kind")
@@ -1268,7 +1219,7 @@ func matchCases() []matchCase {
 			name: "OnInterface",
 			call: func() { rule = eidos.OnInterface(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnInterface returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindInterface,
 					"the rule triggers on its kind")
@@ -1282,7 +1233,7 @@ func matchCases() []matchCase {
 			name: "OnAlias",
 			call: func() { rule = eidos.OnAlias(handler) },
 			check: func(tb testing.TB) {
-				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnAlias returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindAlias,
 					"the rule triggers on its kind")

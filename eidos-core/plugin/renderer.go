@@ -61,7 +61,7 @@ type RenderContext struct {
 	// render renders. Each file whose declarations render returns one
 	// [RenderedFile], and a context with no files renders nothing.
 	Files []File
-	// Schedule is the plan's generators in bucket order: what
+	// Schedule is the plan's generators in turn order: what
 	// declared template overrides resolve against, passed as data
 	// so the pass decides nothing.
 	Schedule []ID

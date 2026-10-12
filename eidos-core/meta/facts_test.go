@@ -20,57 +20,64 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The scale the store is sized for: two hundred thousand subjects,
-// which is dozens of lifted keys across a large workspace's
-// declarations.
+// benchSubjects is the number of subjects that a benchmark stamps. A
+// large workspace has as many declarations, and the store is sized for
+// them.
 const benchSubjects = 200_000
 
-// allocSubjects is the number of subjects an allocation check stamps.
-// Each check calls its write once per subject on a hundred and one
-// subjects, so the checks of one store take disjoint ranges of these.
+// allocSubjects is the number of subjects that an allocation check
+// stamps. Each check calls its write on 101 subjects, one call for each,
+// so the checks of one store take disjoint ranges of the subjects.
 const allocSubjects = 1_000
 
-// stampBatch is the number of first claims one iteration of the
+// stampBatch is the number of first claims that one iteration of the
 // first-claim benchmark stamps into an empty store.
 const stampBatch = 1_000
 
-// The allocations of the store's construction and of each write that
-// keeps something, which TestFactsAllocs checks in the ordinary run and
-// BenchmarkFacts in a benchmark run.
+// These constants are the allocations of the construction of the store
+// and of each write that keeps something. TestFactsAllocs checks them in
+// the ordinary run, and BenchmarkFacts checks them in a benchmark run.
 const (
-	// newFactsAllocs is an empty store: the store and its table of the
-	// keys' groups and kind restrictions.
+	// newFactsAllocs is the count of an empty store. NewFacts allocates
+	// the store and the table of the groups and kind restrictions of the
+	// keys.
 	newFactsAllocs = 2
-	// firstClaimAllocs is a first claim on a new subject: the bag, the
-	// boxed identity, the sync.Map entry and the boxed string. The trie
-	// nodes sync.Map adds where two hashes share a prefix average below
-	// 0.4 per subject, which the mean over a check's calls rounds down.
+	// firstClaimAllocs is the count of a first claim on a new subject.
+	// The claim allocates the bag, the boxed identity, the sync.Map entry
+	// and the boxed string. sync.Map also adds a trie node where the
+	// hashes of two subjects share a prefix. In a store of one subject
+	// that happens in about one claim of 15. Over 300 runs the mean of a
+	// check measured 4.07, and the highest mean was 4.17.
 	firstClaimAllocs = 4
-	// secondKeyAllocs is the first claim on a second key of a subject:
-	// the bag's key map, the map's first group and the key's state. A
-	// boolean boxes without allocating.
+	// secondKeyAllocs is the count of the first claim on a second key of
+	// a subject. The claim allocates the key map of the bag, the first
+	// group of the map and the state of the key. Go boxes a boolean
+	// without an allocation.
 	secondKeyAllocs = 3
-	// secondSourceAllocs is a claim from a second rank source on a
-	// fact: the fact's claim slice and the boxed string.
+	// secondSourceAllocs is the count of a claim from a second rank
+	// source on a fact. The claim allocates the claim slice of the fact
+	// and the boxed string.
 	secondSourceAllocs = 2
-	// dropAllocs is a drop on a stamped fact: the fact's claim slice. A
-	// drop has no value to box.
+	// dropAllocs is the count of a drop on a stamped fact. The drop
+	// allocates the claim slice of the fact and has no value to box.
 	dropAllocs = 1
-	// groupDropAllocs is the first group drop on a stamped subject: the
-	// bag's group map, the map's first group and the group's state.
+	// groupDropAllocs is the count of the first group drop on a stamped
+	// subject. The drop allocates the group map of the bag, the first
+	// group of the map and the state of the group.
 	groupDropAllocs = 3
-	// firstClaimsAllocs is one iteration of the first-claim benchmark:
-	// 4,000 for the batch's first claims, at most 21 for the index's map
-	// growing to 1,001 members, and the trie nodes sync.Map adds at
-	// random, which averaged 360 with a standard deviation of 10 over 300
-	// runs. The ceiling allows 440 trie nodes, eight standard deviations
-	// above the mean.
+	// firstClaimsAllocs is the count of one iteration of the first-claim
+	// benchmark. The first claims of the batch allocate 4,000 times. The
+	// map of the index allocates at most 21 times as it grows to 1,001
+	// members. sync.Map adds trie nodes at random. Over 300 runs they
+	// averaged 360 with a standard deviation of 10. The ceiling allows 440
+	// trie nodes, which is eight standard deviations above the mean.
 	firstClaimsAllocs = stampBatch*firstClaimAllocs + 21 + 440
 )
 
-// The fixture vocabulary: one struct subject, a struct of its package
-// that sorts before it, a function the role key does not admit, and the
-// carrier the claims about them are authored at.
+// These variables are the fixture vocabulary. subject is a struct, and
+// sibling is a struct of the same package that sorts before it. function
+// is a function that the role key does not admit. carrier is the
+// position of the claims about them.
 var (
 	subject = symbol.Identity{
 		Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct,
@@ -94,15 +101,15 @@ func (r *recorder) RecordFact(subject symbol.Identity, key meta.KeyName) {
 	r.reads = append(r.reads, meta.Read{Subject: subject, Key: key})
 }
 
-// counter counts fact reads and keeps none, so a benchmark of [meta.Fact]
-// measures the store's read alone. It allocates nothing.
+// counter counts fact reads and keeps no read, so a benchmark of
+// [meta.Fact] measures the read of the store alone. It allocates nothing.
 type counter int
 
 // RecordFact counts the read.
 func (c *counter) RecordFact(symbol.Identity, meta.KeyName) { *c++ }
 
-// Every plugin writes and reads facts through the store, so what a write
-// keeps and what a read returns are contract.
+// Every plugin writes and reads facts through the store, so the contract
+// covers what a write keeps and what a read returns.
 func TestFacts(t *testing.T) {
 	t.Parallel()
 
@@ -116,7 +123,7 @@ func TestFacts(t *testing.T) {
 			f := meta.NewFacts(r)
 			_, held := meta.Get(f, subject, role)
 			assert.False(t, held, "no fact reads present")
-			assert.Empty(t, slices.Collect(f.ByKey(role.ID())), "and no key lists a subject")
+			assert.Empty(t, slices.Collect(f.ByKey(role.ID())), "no key lists a subject")
 		})
 	})
 
@@ -132,7 +139,7 @@ func TestFacts(t *testing.T) {
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the fact then reads present")
-			assert.Equal(t, got, "writer", "with the claimed value")
+			assert.Equal(t, got, "writer", "Get returns the claimed value")
 		})
 
 		t.Run("returns an error for a zero key", func(t *testing.T) {
@@ -142,7 +149,7 @@ func TestFacts(t *testing.T) {
 			var unregistered meta.Key[string]
 			err := meta.Stamp(f, unregistered, "writer", by("shape", 1))
 			assert.HasError(t, err, "a key that was never registered stamps nothing")
-			assert.HasPrefix(t, err.Error(), "meta: ", "under the package prefix")
+			assert.HasPrefix(t, err.Error(), "meta: ", "the error starts with the package prefix")
 		})
 
 		t.Run("returns an error for a named handle", func(t *testing.T) {
@@ -162,7 +169,7 @@ func TestFacts(t *testing.T) {
 			assert.HasError(t, err, "the key admits structs alone")
 
 			_, held := meta.Get(f, function, role)
-			assert.False(t, held, "and nothing was recorded")
+			assert.False(t, held, "the store records nothing")
 		})
 
 		t.Run("records a claim on any kind for a key that lists no kinds", func(t *testing.T) {
@@ -191,19 +198,20 @@ func TestFacts(t *testing.T) {
 			assert.NoError(t, meta.Stamp(f, role, "writer", claim), "the re-stamp is accepted")
 
 			assert.Length(t, slices.Collect(f.Claims(subject, role.ID())), 1,
-				"the store keeps one claim, which is what early cutoff prunes on")
+				"the store keeps one claim, so early cutoff sees no change")
 		})
 	})
 
 	t.Run("Registry", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the registry the store was created over", func(t *testing.T) {
+		t.Run("returns the registry that NewFacts received", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
 			f := meta.NewFacts(r)
-			assert.Equal(t, f.Registry(), r, "a reader resolves keys by name against it", assert.ByIdentity())
+			assert.Equal(t, f.Registry(), r, "Registry returns the registry that NewFacts received",
+				assert.ByIdentity())
 		})
 	})
 
@@ -219,7 +227,7 @@ func TestFacts(t *testing.T) {
 				"the stamp arrives second")
 
 			_, held := meta.Get(f, subject, role)
-			assert.False(t, held, "the drop outranks the stamp that arrived after it")
+			assert.False(t, held, "the drop outranks the later stamp")
 		})
 
 		t.Run("ranks below a later manual write", func(t *testing.T) {
@@ -233,7 +241,7 @@ func TestFacts(t *testing.T) {
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "manual outranks the drop")
-			assert.Equal(t, got, "kept", "and the fact reads the manual value")
+			assert.Equal(t, got, "kept", "the fact reads the manual value")
 		})
 
 		tests := []struct {
@@ -262,7 +270,7 @@ func TestFacts(t *testing.T) {
 			_, f, role, _ := fixture(t)
 			drop := dropBy("defaults", 1)
 			assert.NoError(t, f.DropGroup("shape.writer", drop), "the drop arrives")
-			assert.NoError(t, f.DropGroup("shape.writer", drop), "and repeats")
+			assert.NoError(t, f.DropGroup("shape.writer", drop), "the drop arrives again")
 
 			assert.Length(t, slices.Collect(f.Claims(subject, role.ID())), 1,
 				"the store keeps one tombstone")
@@ -290,7 +298,7 @@ func TestFacts(t *testing.T) {
 				"a key outside the group stamps")
 
 			_, held := meta.Get(f, subject, flag)
-			assert.True(t, held, "and reads present")
+			assert.True(t, held, "the key reads present")
 		})
 
 		t.Run("ranks below a later write of higher authority", func(t *testing.T) {
@@ -301,20 +309,20 @@ func TestFacts(t *testing.T) {
 			manual := by("migrate", 1)
 			manual.Authority = meta.AuthorityManual
 			assert.NoError(t, meta.Stamp(f, role, "kept", manual),
-				"a manual write on a member arrives after it")
+				"a manual write on a member arrives after the drop")
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held,
 				"a tombstone covering the group is still a claim, and rank decides it")
-			assert.Equal(t, got, "kept", "so the fact reads the outranking value")
+			assert.Equal(t, got, "kept", "the fact reads the outranking value")
 		})
 
-		t.Run("returns an error for a group nothing registered into", func(t *testing.T) {
+		t.Run("returns an error for a group without registered keys", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, _, _ := fixture(t)
 			assert.HasError(t, f.DropGroup("shape.nonexistent", dropBy("defaults", 1)),
-				"a group nothing registered into drops nothing")
+				"a group without registered keys drops nothing")
 		})
 	})
 
@@ -331,7 +339,7 @@ func TestFacts(t *testing.T) {
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the fact remains present")
-			assert.Equal(t, got, "reader", "under the remaining claim")
+			assert.Equal(t, got, "reader", "the fact reads the value of the remaining claim")
 			assert.Length(t, slices.Collect(f.Claims(subject, role.ID())), 1, "one claim remains")
 		})
 
@@ -355,7 +363,7 @@ func TestFacts(t *testing.T) {
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the fact reads present")
-			assert.Equal(t, got, "reader", "with the second plugin's value")
+			assert.Equal(t, got, "reader", "the fact reads the value of the second plugin")
 		})
 
 		t.Run("returns nil for a claim the store does not contain", func(t *testing.T) {
@@ -365,7 +373,7 @@ func TestFacts(t *testing.T) {
 			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the plugin stamps")
 			assert.NoError(t, f.Withdraw(role.ID(), by("alpha", 2)), "another instance made no claim")
 			_, held := meta.Get(f, subject, role)
-			assert.True(t, held, "and the stamped claim remains")
+			assert.True(t, held, "the stamped claim remains")
 		})
 
 		t.Run("returns nil for a subject nothing claimed", func(t *testing.T) {
@@ -379,7 +387,8 @@ func TestFacts(t *testing.T) {
 			t.Parallel()
 
 			_, f, _, _ := fixture(t)
-			assert.HasError(t, f.Withdraw(meta.KeyID(999), by("alpha", 1)), "the key is refused")
+			assert.HasError(t, f.Withdraw(meta.KeyID(999), by("alpha", 1)),
+				"Withdraw returns an error for an unregistered key")
 		})
 	})
 
@@ -397,8 +406,8 @@ func TestFacts(t *testing.T) {
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "the member reads present again")
-			assert.Equal(t, got, "writer", "with its value")
-			assert.Equal(t, slices.Collect(f.ByKey(role.ID())), []symbol.Identity{subject}, "and ByKey lists it")
+			assert.Equal(t, got, "writer", "the member reads its value")
+			assert.Equal(t, slices.Collect(f.ByKey(role.ID())), []symbol.Identity{subject}, "ByKey lists the member")
 		})
 
 		t.Run("returns nil for a drop the store does not contain", func(t *testing.T) {
@@ -408,11 +417,12 @@ func TestFacts(t *testing.T) {
 			assert.NoError(t, f.WithdrawGroup("shape.writer", dropBy("defaults", 1)), "no drop is no error")
 		})
 
-		t.Run("returns an error for a group nothing registered into", func(t *testing.T) {
+		t.Run("returns an error for a group without registered keys", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, _, _ := fixture(t)
-			assert.HasError(t, f.WithdrawGroup("shape.nonexistent", dropBy("defaults", 1)), "the group is refused")
+			assert.HasError(t, f.WithdrawGroup("shape.nonexistent", dropBy("defaults", 1)),
+				"WithdrawGroup returns an error for a group without registered keys")
 		})
 	})
 
@@ -437,7 +447,7 @@ func TestFacts(t *testing.T) {
 			_, f, role, _ := fixture(t)
 			got, held := meta.Get(f, subject, role)
 			assert.False(t, held, "a fact nobody wrote reads absent, and absence is legitimate")
-			assert.Equal(t, got, "", "with the zero value")
+			assert.Equal(t, got, "", "Get returns the zero value")
 		})
 
 		t.Run("returns the value of a named handle", func(t *testing.T) {
@@ -478,7 +488,7 @@ func TestFacts(t *testing.T) {
 			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the plugin stamps")
 			got, held := meta.GetAtLeast(f, subject, role, meta.AuthorityPlugin)
 			assert.True(t, held, "a plugin's claim reads present at the floor of plugin authority")
-			assert.Equal(t, got, "writer", "with the claimed value")
+			assert.Equal(t, got, "writer", "GetAtLeast returns the claimed value")
 		})
 
 		t.Run("reports false for a claim below the floor's authority", func(t *testing.T) {
@@ -488,7 +498,7 @@ func TestFacts(t *testing.T) {
 			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the plugin stamps")
 			got, held := meta.GetAtLeast(f, subject, role, meta.AuthorityDirective)
 			assert.False(t, held, "a plugin's claim is not an override")
-			assert.Equal(t, got, "", "with the zero value")
+			assert.Equal(t, got, "", "GetAtLeast returns the zero value")
 		})
 
 		t.Run("returns the value of a directive claim that ranks above a plugin's claim", func(t *testing.T) {
@@ -501,7 +511,7 @@ func TestFacts(t *testing.T) {
 			assert.NoError(t, meta.Stamp(f, role, "reader", override), "the directive stamps")
 			got, held := meta.GetAtLeast(f, subject, role, meta.AuthorityDirective)
 			assert.True(t, held, "the directive's claim reads present")
-			assert.Equal(t, got, "reader", "with the directive's value")
+			assert.Equal(t, got, "reader", "GetAtLeast returns the value of the directive")
 		})
 
 		t.Run("reports false where a drop ranks first", func(t *testing.T) {
@@ -562,9 +572,9 @@ func TestFacts(t *testing.T) {
 			rec := &recorder{}
 			got, held := meta.Fact(f, rec, subject, role)
 			assert.True(t, held, "the tracked read returns the fact")
-			assert.Equal(t, got, "writer", "with its value")
+			assert.Equal(t, got, "writer", "the tracked read returns the stamped value")
 			assert.Equal(t, rec.reads, []meta.Read{{Subject: subject, Key: "shape.role"}},
-				"and records the read at (subject, key)")
+				"Fact records the read at (subject, key)")
 		})
 
 		t.Run("records the read of a fact never stamped", func(t *testing.T) {
@@ -574,8 +584,7 @@ func TestFacts(t *testing.T) {
 			rec := &recorder{}
 			_, held := meta.Fact(f, rec, subject, role)
 			assert.False(t, held, "the fact is absent")
-			assert.Length(t, rec.reads, 1,
-				"and the read still records, so the reader runs again when the fact appears")
+			assert.Length(t, rec.reads, 1, "Fact records the read, so the reader runs again when the fact appears")
 		})
 
 		t.Run("records nothing on a kind the key does not admit", func(t *testing.T) {
@@ -585,7 +594,7 @@ func TestFacts(t *testing.T) {
 			rec := &recorder{}
 			_, held := meta.Fact(f, rec, function, role)
 			assert.False(t, held, "the fact is absent, because Stamp refuses the kind")
-			assert.Empty(t, rec.reads, "and no read records, because the fact can never appear")
+			assert.Empty(t, rec.reads, "Fact records no read, because the fact can never appear")
 		})
 
 		t.Run("returns the value of a named handle", func(t *testing.T) {
@@ -623,9 +632,10 @@ func TestFacts(t *testing.T) {
 
 // Each write allocates what the store keeps, and each read allocates
 // nothing. Every check counts the mean over a hundred calls, each on a
-// subject of its own, so the trie nodes sync.Map adds at random round
-// down. The check runs alone, because the count includes every
-// goroutine's allocations.
+// subject of its own. A counted first claim goes into a fresh store of
+// one subject, so sync.Map adds a trie node in about one call of 15. The
+// test does not call t.Parallel, because the count includes the
+// allocations of every goroutine.
 func TestFactsAllocs(t *testing.T) {
 	subjects := benchIdentities(allocSubjects)
 	f, role, flag := stamped(t, subjects)
@@ -638,22 +648,28 @@ func TestFactsAllocs(t *testing.T) {
 		assert.ByIdentity())
 
 	// Each count keeps the first error of its calls, which cmp.Or
-	// returns without allocating. Each counted call takes the next index
-	// of its range of subjects, which next returns outside the count.
+	// returns without allocating. fresh builds the store of each counted
+	// first claim outside the count.
 	var err error
-	empty := meta.NewFacts(f.Registry())
-	at := 0
-	next := func() int {
-		at++
-		return at - 1
+	fresh := func() *meta.Facts {
+		s := meta.NewFacts(f.Registry())
+		err = cmp.Or(err, meta.Stamp(s, role, "writer", by("shape", 0)))
+		return s
 	}
-	assert.MaxAllocsWithSetup(t, next, func(i int) {
-		err = cmp.Or(err, meta.Stamp(empty, role, "writer", on(subjects[i], "shape", i)))
+	assert.MaxAllocsWithSetup(t, fresh, func(s *meta.Facts) {
+		err = cmp.Or(err, meta.Stamp(s, role, "writer", on(subjects[0], "shape", 0)))
 	}, firstClaimAllocs, "Stamp allocates the bag, its key, the map entry and the value of a first claim")
 	assert.NoError(t, err, "every first claim is admitted")
 
 	assert.NoError(t, meta.Stamp(f, flag, true, on(subjects[0], "shape", 0)), "the flag's index exists")
-	at = 1
+
+	// Each counted call takes the next index of its range of subjects,
+	// which next returns outside the count.
+	at := 1
+	next := func() int {
+		at++
+		return at - 1
+	}
 	assert.MaxAllocsWithSetup(t, next, func(i int) {
 		err = cmp.Or(err, meta.Stamp(f, flag, true, on(subjects[i], "shape", i)))
 	}, secondKeyAllocs, "Stamp allocates the key map and the state of a subject's second key")
@@ -743,10 +759,11 @@ func TestFactsAllocs(t *testing.T) {
 	assert.NotNil(t, registry, "the store has its registry")
 }
 
-// BenchmarkFacts measures each method of the store at the scale it is
-// sized for: 200,000 subjects with one fact each. A write that consumes
-// its subject's state takes the next subject, and the store is built
-// again outside the measurement when the subjects run out.
+// BenchmarkFacts measures each method of the store over 200,000 subjects
+// with one fact each. The store is sized for that scale. A write that
+// consumes the state of its subject takes the next subject. When the
+// subjects run out, the benchmark builds the store again outside the
+// measurement.
 func BenchmarkFacts(b *testing.B) {
 	subjects := benchIdentities(benchSubjects)
 	absent := absentIdentities(benchSubjects)
@@ -1053,12 +1070,12 @@ func BenchmarkFacts(b *testing.B) {
 	})
 }
 
-// BenchmarkFactsParallel measures contention on GOMAXPROCS goroutines:
-// writers of first claims on distinct subjects, and readers of stamped
-// facts. Bags lock per subject, so neither serializes. A read allocates
-// nothing. The writers state no ceiling: once b.N passes the 200,000
-// subjects, a writer's claim is a second claim on its subject, which
-// allocates what BenchmarkFacts states for a second source.
+// BenchmarkFactsParallel measures contention on GOMAXPROCS goroutines.
+// Writers stamp first claims on distinct subjects, and readers read
+// stamped facts. Each bag has its own lock, so neither side serializes.
+// A read allocates nothing. The writers have no ceiling. Once b.N passes
+// 200,000, the claim of a writer is a second claim on its subject, and
+// it allocates what BenchmarkFacts states for a second source.
 func BenchmarkFactsParallel(b *testing.B) {
 	subjects := benchIdentities(benchSubjects)
 
@@ -1123,7 +1140,7 @@ func by(plugin diag.Origin, instance int) meta.Claim {
 	}
 }
 
-// on returns what [by] does on another subject.
+// on returns the claim of [by] with id as its subject.
 func on(id symbol.Identity, plugin diag.Origin, instance int) meta.Claim {
 	c := by(plugin, instance)
 	c.Subject = id
@@ -1131,7 +1148,7 @@ func on(id symbol.Identity, plugin diag.Origin, instance int) meta.Claim {
 }
 
 // dropBy returns a directive-authority claim on the fixture subject at
-// one instance of its order, the authority a drop is made at.
+// one instance of its order. Drops have directive authority.
 func dropBy(plugin diag.Origin, instance int) meta.Claim {
 	c := by(plugin, instance)
 	c.Authority = meta.AuthorityDirective
@@ -1170,9 +1187,9 @@ func absentIdentities(n int) []symbol.Identity {
 	return out
 }
 
-// stamped returns a fact store with the role fact on every subject,
-// each claimed by the shape plugin at the subject's index, and the
-// store's two keys.
+// stamped returns a fact store and its two keys. The store has the role
+// fact on every subject, and the shape plugin claims each fact at the
+// index of its subject.
 func stamped(tb assert.TB, subjects []symbol.Identity) (*meta.Facts, meta.Key[string], meta.Key[bool]) {
 	tb.Helper()
 

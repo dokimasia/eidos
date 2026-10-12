@@ -11,88 +11,125 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// View is what a projection reads through: the invocation's tracked
-// declaration reader, the run's arbitrated facts and the read set both
-// record into, and the kernel's own keys for the authored values the
-// walks read first. The workspace builds one per invocation.
+// View is what a projection reads through. It has the tracked declaration
+// reader of the invocation, the arbitrated facts of the run, the read set
+// into which both record, and the keys of the kernel for the authored
+// values that the walks read first. The workspace builds one for each
+// invocation with [NewView].
+//
+// A view reads a fact through [Fact] alone, which records the read. A
+// rules implementation reads a key of another registrant through a handle
+// from [meta.Named], which [Fact] resolves by its name. The fact store of
+// the view is not exported, so no read bypasses the read set.
 //
 // The zero View reads nothing. A read of an untracked graph would record
-// no edge, so a projection handed the zero View refuses.
+// no edge, so a projection that receives the zero View refuses.
 //
 // # Concurrency
 //
-// A View is not safe for concurrent use. The read set it records into is
-// not.
+// A View is not safe for concurrent use, because the read set into which it
+// records is not.
 //
 // # Allocation contract
 //
 // A read allocates only to record a new edge in the read set.
 // [View.Authored] states what it allocates to lift a stated value.
 type View struct {
-	Decls  *store.Reader   // the tracked declaration reader; nil in the zero View
-	Facts  *meta.Facts     // the run's arbitrated facts; nil reads no fact
-	Reads  meta.Recorder   // the read set a fact read records into; nil reads untracked
-	Kernel meta.KernelKeys // the kernel's keys for authored values
+	decls  *store.Reader
+	facts  *meta.Facts
+	reads  meta.Recorder
+	kernel meta.KernelKeys
+	// forLang returns the rules of another language for a binding that a
+	// rules implementation makes through the view, and is nil where the
+	// view resolves no rules.
+	forLang func(symbol.Lang) SourceRules
+}
+
+// NewView returns a view over decls and facts, whose fact reads record into
+// reads. With a nil recorder the view reads without tracking, as only the
+// walks of the kernel do. kernel contains the keys of the kernel for the
+// authored values. A nil decls returns the zero view, and a nil facts
+// reads no fact. NewView allocates nothing.
+func NewView(decls *store.Reader, facts *meta.Facts, reads meta.Recorder, kernel meta.KernelKeys) View {
+	return View{decls: decls, facts: facts, reads: reads, kernel: kernel}
+}
+
+// WithRules returns a copy of v whose bindings resolve the rules of
+// another language through forLang. [NewBound] reads it where its own
+// forLang is nil, so a binding that a rules implementation makes through
+// the view resolves the rules that the match resolves. WithRules does
+// not allocate.
+func (v View) WithRules(forLang func(symbol.Lang) SourceRules) View {
+	v.forLang = forLang
+	return v
 }
 
 // IsZero reports whether the view reads nothing. It allocates nothing.
-func (v View) IsZero() bool { return v.Decls == nil }
+func (v View) IsZero() bool { return v.decls == nil }
+
+// Reader returns the tracked declaration reader of the view, and nil for
+// the zero view. It allocates nothing.
+func (v View) Reader() *store.Reader { return v.decls }
+
+// Kernel returns the keys of the kernel under which the view reads the
+// authored values. It allocates nothing.
+func (v View) Kernel() meta.KernelKeys { return v.kernel }
 
 // Lookup returns one declaration by identity, and records the read. The
 // zero view and the zero identity return nothing. It allocates what the
 // read set allocates to record a new edge.
 func (v View) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
-	if v.Decls == nil || id.IsZero() {
+	if v.decls == nil || id.IsZero() {
 		return nil, false
 	}
-	return v.Decls.Lookup(id)
+	return v.decls.Lookup(id)
 }
 
-// PackageOf returns the package a declaration is in, and records the
+// PackageOf returns the package that a declaration is in, and records the
 // read. The zero view and the zero identity return nothing. It allocates
 // what the read set allocates to record a new edge.
 func (v View) PackageOf(id symbol.Identity) (*node.Package, bool) {
-	if v.Decls == nil || id.IsZero() {
+	if v.decls == nil || id.IsZero() {
 		return nil, false
 	}
-	return v.Decls.PackageOf(id)
+	return v.decls.PackageOf(id)
 }
 
-// Authored returns the two values an author stated for a value of a
-// type. Each half reads the declaration that has the type first,
-// then the declaration the type names. The two halves resolve
-// independently. A half neither declaration states is the zero
-// [Sample], for the caller to derive. A zero subject and a reference
-// without a target state nothing. Every fact read records on the
-// view.
+// Authored returns the two values that an author stated for a value of a
+// type. Each half reads the declaration that has the type first, and then
+// the declaration that the type names. The two halves resolve
+// independently. A half that neither declaration states is the zero
+// [Sample], which the caller derives. A zero subject and a reference
+// without a target state nothing. Every fact read records on the view.
 //
-// A stated text lifts by the shape src folds for the type, with an
-// alias followed to the type it names:
+// A stated text lifts by the shape that src folds for the type, with an
+// alias followed to the type that it names:
 //   - Text lifts to a string literal of the text.
 //   - A boolean lifts to a truth value.
-//   - A scalar lifts to a number at the shape's width.
+//   - A scalar lifts to a number at the width of the shape.
 //   - Every other form lifts to raw text in the language of the
-//     declaration that states it, which only that language's
-//     backend spells.
+//     declaration that states it, which only the backend of that language
+//     spells.
 //
-// The kernel reads a type's authored values here before it asks the
-// language to derive. A language's composite walk reads the values
-// of each element here before it derives the element. The type
-// folds only where a half is stated.
+// The kernel reads the authored values of a type here before it asks the
+// language to derive. The composite walk of a language reads the values of
+// each element here before it derives the element. The type folds only
+// where a half is stated.
 //
 // # Allocation contract
 //
-// Authored allocates nothing where no declaration states a value. A
-// stated value allocates the fold of its type in a binding of its own:
-// the binding's memo, the memo's first group and the shape, three
-// allocations for a builtin type, and the children of a structural one.
+// Authored allocates nothing where no declaration states a value. A stated
+// value allocates the fold of its type in a binding of its own, which is
+// the memo of the binding, the first group of the memo and the shape,
+// three allocations for a builtin type, and the children of a structural
+// one.
 func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeRef) (Sample, Sample) {
 	var target symbol.Identity
 	if ref != nil {
 		target = ref.Target
 	}
-	sample, sampleLang, sampled := v.stated(v.Kernel.Sample, subject, target)
-	alternate, alternateLang, alternated := v.stated(v.Kernel.Alternate, subject, target)
+	sample, sampleLang, sampled := v.stated(v.kernel.Sample, subject, target)
+	alternate, alternateLang, alternated := v.stated(v.kernel.Alternate, subject, target)
 	if !sampled && !alternated {
 		return Sample{}, Sample{}
 	}
@@ -107,9 +144,9 @@ func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeR
 	return s, a
 }
 
-// stated returns the text one authored key states on the declaration
-// that has a type, else on the declaration the type names, with the
-// language of the declaration that states it.
+// stated returns the text that one authored key states on the declaration
+// that has a type, or else on the declaration that the type names, with
+// the language of the declaration that states it.
 func (v View) stated(k meta.Key[string], subject, target symbol.Identity) (string, symbol.Lang, bool) {
 	if text, held := Fact(v, subject, k); held {
 		return text, subject.Lang, true
@@ -120,25 +157,49 @@ func (v View) stated(k meta.Key[string], subject, target symbol.Identity) (strin
 	return "", "", false
 }
 
-// Fact returns the value arbitration selects for a subject and a key,
-// and records the read where the view has a read set. A view without
-// facts, a zero key and a zero subject read nothing. It allocates what
-// the read set allocates to record a new edge.
+// Fact returns the value that the arbitration selects for a subject and a
+// key, and records the read where the view has a read set. A named handle
+// from [meta.Named] resolves by its name in the registry of the facts, and
+// a name that the registry does not contain under T reads nothing. A view
+// without facts, a zero key and a zero subject read nothing. It allocates
+// what the read set allocates to record a new edge.
 func Fact[T meta.FactValue](v View, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	var zero T
-	if v.Facts == nil || k.IsZero() || id.IsZero() {
+	if v.facts == nil || k.IsZero() || id.IsZero() {
 		return zero, false
 	}
-	if v.Reads == nil {
-		return meta.Get(v.Facts, id, k)
+	if v.reads == nil {
+		return meta.Get(v.facts, id, k)
 	}
-	return meta.Fact(v.Facts, v.Reads, id, k)
+	return meta.Fact(v.facts, v.reads, id, k)
 }
 
-// authoredValue returns authored text as a value of a shape: a
-// string literal for text, a truth value for a boolean, a number at
-// the shape's width for a scalar, and raw text in lang for every
-// other form.
+// Unaliased follows a chain of transparent aliases that the view
+// declares, and returns the reference at its end. A defined type is a
+// type of its own, so the walk stops at one, and at an alias without a
+// target. It follows at most eight aliases, so an alias cycle in a broken
+// source ends. A nil reference returns nil, and every lookup records its
+// read. Unaliased allocates what the read set allocates to record a new
+// edge.
+func Unaliased(ref *node.TypeRef, v View) *node.TypeRef {
+	for range aliasDepth {
+		if ref == nil || ref.Target.Kind != symbol.KindAlias {
+			return ref
+		}
+		sym, _ := v.Lookup(ref.Target)
+		alias, isAlias := sym.(*node.Alias)
+		if !isAlias || alias.Defined || alias.Target == nil {
+			return ref
+		}
+		ref = alias.Target
+	}
+	return ref
+}
+
+// authoredValue returns authored text as a value of a shape. It returns a
+// string literal for text, a truth value for a boolean, a number at the
+// width of the shape for a scalar, and raw text in lang for every other
+// form.
 func authoredValue(lang symbol.Lang, shape TypeShape, text string) emit.Value {
 	switch shape.Form {
 	case symbol.FormText:

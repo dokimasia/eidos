@@ -14,20 +14,108 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// slotsCase is one measured call of a slot accessor: the
+// sealedHook is the name of the slot that a body declares before the
+// seal cases seal it.
+const sealedHook = "hook"
+
+// slotsCase is one measured call of a slot accessor or of the seal: the
 // sub-benchmark's name, the call, and the check on what the last call
-// returned. An accessor allocates nothing.
+// returned. An accessor and the seal allocate nothing.
 type slotsCase struct {
 	name  string
 	call  func()
 	check func(testing.TB)
 }
 
-// A slot accessor is the composition seam between plugins, so what
-// it hands back is contract: the value's own storage, never a copy
-// and never nil.
+// TestSlots checks that a slot accessor returns the storage of the value,
+// never a copy and never nil, and that Seal seals every slot of a kind. A
+// slot accessor is the composition seam between plugins.
 func TestSlots(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Function.ParamsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Function{}
+			slot := subject.ParamsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&Param{})
+			assert.Equal(t, subject.Params.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.ParamsSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
+
+	t.Run("Function.ReturnsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Function{}
+			slot := subject.ReturnsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&Return{})
+			assert.Equal(t, subject.Returns.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.ReturnsSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
+
+	t.Run("Method.ParamsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Method{}
+			slot := subject.ParamsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&Param{})
+			assert.Equal(t, subject.Params.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.ParamsSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
+
+	t.Run("Method.ReturnsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Method{}
+			slot := subject.ReturnsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&Return{})
+			assert.Equal(t, subject.Returns.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.ReturnsSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
 
 	t.Run("Enum.VariantsSlot", func(t *testing.T) {
 		t.Parallel()
@@ -155,6 +243,27 @@ func TestSlots(t *testing.T) {
 		})
 	})
 
+	t.Run("Field.TagsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Field{}
+			slot := subject.TagsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&TagEntry{})
+			assert.Equal(t, subject.Tags.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.TagsSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
+
 	t.Run("Struct.FieldsSlot", func(t *testing.T) {
 		t.Parallel()
 
@@ -213,6 +322,27 @@ func TestSlots(t *testing.T) {
 			assert.Equal(t, subject.Types.Len(), 1,
 				"what a plugin appends through the accessor is what the value holds")
 			assert.Equal(t, slot, subject.TypesSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
+
+	t.Run("Struct.EmbedsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Struct{}
+			slot := subject.EmbedsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&Embed{})
+			assert.Equal(t, subject.Embeds.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.EmbedsSlot(),
 				"and a second call addresses the same storage, so two plugins "+
 					"appending through it append into one list", assert.ByIdentity())
 		})
@@ -280,10 +410,263 @@ func TestSlots(t *testing.T) {
 					"appending through it append into one list", assert.ByIdentity())
 		})
 	})
+
+	t.Run("Interface.EmbedsSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Interface{}
+			slot := subject.EmbedsSlot()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append(&Embed{})
+			assert.Equal(t, subject.Embeds.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.Equal(t, slot, subject.EmbedsSlot(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list", assert.ByIdentity())
+		})
+	})
+
+	t.Run("Seal", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("seals every slot of a Function", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Function{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.ParamsSlot().Append(&Param{}) },
+				"an append into the sealed Params slot panics")
+			assert.Panics(t, func() { subject.ReturnsSlot().Append(&Return{}) },
+				"an append into the sealed Returns slot panics")
+		})
+
+		t.Run("keeps every slot of a Function open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Function{}
+			open := false
+			Seal(subject, &open)
+			subject.ParamsSlot().Append(&Param{})
+			assert.Equal(t, subject.Params.Len(), 1, "the Params slot takes the append")
+			subject.ReturnsSlot().Append(&Return{})
+			assert.Equal(t, subject.Returns.Len(), 1, "the Returns slot takes the append")
+		})
+
+		t.Run("seals every slot of the Body of a Function", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Function{}
+			hook := subject.Body.Declare(sealedHook)
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.Body.Prologue.Append(Stmt{}) }, "an append into the sealed prologue panics")
+			assert.Panics(t, func() { subject.Body.Epilogue.Append(Stmt{}) }, "an append into the sealed epilogue panics")
+			assert.Panics(t, func() { hook.Append(Stmt{}) }, "an append into the sealed declared slot panics")
+		})
+
+		t.Run("seals every slot of a Method", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Method{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.ParamsSlot().Append(&Param{}) },
+				"an append into the sealed Params slot panics")
+			assert.Panics(t, func() { subject.ReturnsSlot().Append(&Return{}) },
+				"an append into the sealed Returns slot panics")
+		})
+
+		t.Run("keeps every slot of a Method open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Method{}
+			open := false
+			Seal(subject, &open)
+			subject.ParamsSlot().Append(&Param{})
+			assert.Equal(t, subject.Params.Len(), 1, "the Params slot takes the append")
+			subject.ReturnsSlot().Append(&Return{})
+			assert.Equal(t, subject.Returns.Len(), 1, "the Returns slot takes the append")
+		})
+
+		t.Run("seals every slot of the Body of a Method", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Method{}
+			hook := subject.Body.Declare(sealedHook)
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.Body.Prologue.Append(Stmt{}) }, "an append into the sealed prologue panics")
+			assert.Panics(t, func() { subject.Body.Epilogue.Append(Stmt{}) }, "an append into the sealed epilogue panics")
+			assert.Panics(t, func() { hook.Append(Stmt{}) }, "an append into the sealed declared slot panics")
+		})
+
+		t.Run("seals every slot of a Enum", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Enum{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.VariantsSlot().Append(&EnumVariant{}) },
+				"an append into the sealed Variants slot panics")
+			assert.Panics(t, func() { subject.FieldsSlot().Append(&Field{}) },
+				"an append into the sealed Fields slot panics")
+			assert.Panics(t, func() { subject.MethodsSlot().Append(&Method{}) },
+				"an append into the sealed Methods slot panics")
+		})
+
+		t.Run("keeps every slot of a Enum open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Enum{}
+			open := false
+			Seal(subject, &open)
+			subject.VariantsSlot().Append(&EnumVariant{})
+			assert.Equal(t, subject.Variants.Len(), 1, "the Variants slot takes the append")
+			subject.FieldsSlot().Append(&Field{})
+			assert.Equal(t, subject.Fields.Len(), 1, "the Fields slot takes the append")
+			subject.MethodsSlot().Append(&Method{})
+			assert.Equal(t, subject.Methods.Len(), 1, "the Methods slot takes the append")
+		})
+
+		t.Run("seals every slot of a Sum", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Sum{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.VariantsSlot().Append(&SumVariant{}) },
+				"an append into the sealed Variants slot panics")
+			assert.Panics(t, func() { subject.MethodsSlot().Append(&Method{}) },
+				"an append into the sealed Methods slot panics")
+		})
+
+		t.Run("keeps every slot of a Sum open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Sum{}
+			open := false
+			Seal(subject, &open)
+			subject.VariantsSlot().Append(&SumVariant{})
+			assert.Equal(t, subject.Variants.Len(), 1, "the Variants slot takes the append")
+			subject.MethodsSlot().Append(&Method{})
+			assert.Equal(t, subject.Methods.Len(), 1, "the Methods slot takes the append")
+		})
+
+		t.Run("seals every slot of a SumVariant", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &SumVariant{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.FieldsSlot().Append(&Field{}) },
+				"an append into the sealed Fields slot panics")
+		})
+
+		t.Run("keeps every slot of a SumVariant open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &SumVariant{}
+			open := false
+			Seal(subject, &open)
+			subject.FieldsSlot().Append(&Field{})
+			assert.Equal(t, subject.Fields.Len(), 1, "the Fields slot takes the append")
+		})
+
+		t.Run("seals every slot of a Field", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Field{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.TagsSlot().Append(&TagEntry{}) },
+				"an append into the sealed Tags slot panics")
+		})
+
+		t.Run("keeps every slot of a Field open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Field{}
+			open := false
+			Seal(subject, &open)
+			subject.TagsSlot().Append(&TagEntry{})
+			assert.Equal(t, subject.Tags.Len(), 1, "the Tags slot takes the append")
+		})
+
+		t.Run("seals every slot of a Struct", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Struct{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.FieldsSlot().Append(&Field{}) },
+				"an append into the sealed Fields slot panics")
+			assert.Panics(t, func() { subject.MethodsSlot().Append(&Method{}) },
+				"an append into the sealed Methods slot panics")
+			assert.Panics(t, func() { subject.TypesSlot().Append(&Struct{}) },
+				"an append into the sealed Types slot panics")
+			assert.Panics(t, func() { subject.EmbedsSlot().Append(&Embed{}) },
+				"an append into the sealed Embeds slot panics")
+		})
+
+		t.Run("keeps every slot of a Struct open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Struct{}
+			open := false
+			Seal(subject, &open)
+			subject.FieldsSlot().Append(&Field{})
+			assert.Equal(t, subject.Fields.Len(), 1, "the Fields slot takes the append")
+			subject.MethodsSlot().Append(&Method{})
+			assert.Equal(t, subject.Methods.Len(), 1, "the Methods slot takes the append")
+			subject.TypesSlot().Append(&Struct{})
+			assert.Equal(t, subject.Types.Len(), 1, "the Types slot takes the append")
+			subject.EmbedsSlot().Append(&Embed{})
+			assert.Equal(t, subject.Embeds.Len(), 1, "the Embeds slot takes the append")
+		})
+
+		t.Run("seals every slot of a Interface", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Interface{}
+			sealed := true
+			Seal(subject, &sealed)
+			assert.Panics(t, func() { subject.FieldsSlot().Append(&Field{}) },
+				"an append into the sealed Fields slot panics")
+			assert.Panics(t, func() { subject.MethodsSlot().Append(&Method{}) },
+				"an append into the sealed Methods slot panics")
+			assert.Panics(t, func() { subject.TypesSlot().Append(&Interface{}) },
+				"an append into the sealed Types slot panics")
+			assert.Panics(t, func() { subject.EmbedsSlot().Append(&Embed{}) },
+				"an append into the sealed Embeds slot panics")
+		})
+
+		t.Run("keeps every slot of a Interface open while the flag is false", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Interface{}
+			open := false
+			Seal(subject, &open)
+			subject.FieldsSlot().Append(&Field{})
+			assert.Equal(t, subject.Fields.Len(), 1, "the Fields slot takes the append")
+			subject.MethodsSlot().Append(&Method{})
+			assert.Equal(t, subject.Methods.Len(), 1, "the Methods slot takes the append")
+			subject.TypesSlot().Append(&Interface{})
+			assert.Equal(t, subject.Types.Len(), 1, "the Types slot takes the append")
+			subject.EmbedsSlot().Append(&Embed{})
+			assert.Equal(t, subject.Embeds.Len(), 1, "the Embeds slot takes the append")
+		})
+	})
 }
 
-// The accessors allocate nothing in the ordinary run, which runs no
-// benchmark.
+// TestSlotsAllocs checks in the ordinary run that the accessors and the
+// seal allocate nothing.
 func TestSlotsAllocs(t *testing.T) {
 	for _, tt := range slotsCases() {
 		assert.MaxAllocs(t, tt.call, 0, tt.name+" allocates nothing")
@@ -291,7 +674,8 @@ func TestSlotsAllocs(t *testing.T) {
 	}
 }
 
-// BenchmarkSlots measures every slot accessor.
+// BenchmarkSlots measures every slot accessor and the seal of every kind
+// with slots.
 func BenchmarkSlots(b *testing.B) {
 	for _, tt := range slotsCases() {
 		b.Run(tt.name, func(b *testing.B) {
@@ -305,9 +689,82 @@ func BenchmarkSlots(b *testing.B) {
 	}
 }
 
-// slotsCases returns one case for every slot accessor of every kind.
+// slotsCases returns one case for every slot accessor of every kind, and
+// one case for the seal of every kind with slots.
 func slotsCases() []slotsCase {
 	var cases []slotsCase
+	{
+		subject := &Function{}
+		var slot *Slot[*Param]
+		cases = append(cases, slotsCase{
+			name: "Function.ParamsSlot",
+			call: func() { slot = subject.ParamsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Params, "ParamsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Function{}
+		var slot *Slot[*Return]
+		cases = append(cases, slotsCase{
+			name: "Function.ReturnsSlot",
+			call: func() { slot = subject.ReturnsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Returns, "ReturnsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Function{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Function",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.ParamsSlot().Append(&Param{}) },
+					"Seal seals the Params slot")
+			},
+		})
+	}
+	{
+		subject := &Method{}
+		var slot *Slot[*Param]
+		cases = append(cases, slotsCase{
+			name: "Method.ParamsSlot",
+			call: func() { slot = subject.ParamsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Params, "ParamsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Method{}
+		var slot *Slot[*Return]
+		cases = append(cases, slotsCase{
+			name: "Method.ReturnsSlot",
+			call: func() { slot = subject.ReturnsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Returns, "ReturnsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Method{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Method",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.ParamsSlot().Append(&Param{}) },
+					"Seal seals the Params slot")
+			},
+		})
+	}
 	{
 		subject := &Enum{}
 		var slot *Slot[*EnumVariant]
@@ -345,6 +802,18 @@ func slotsCases() []slotsCase {
 		})
 	}
 	{
+		subject := &Enum{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Enum",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.VariantsSlot().Append(&EnumVariant{}) },
+					"Seal seals the Variants slot")
+			},
+		})
+	}
+	{
 		subject := &Sum{}
 		var slot *Slot[*SumVariant]
 		cases = append(cases, slotsCase{
@@ -369,6 +838,18 @@ func slotsCases() []slotsCase {
 		})
 	}
 	{
+		subject := &Sum{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Sum",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.VariantsSlot().Append(&SumVariant{}) },
+					"Seal seals the Variants slot")
+			},
+		})
+	}
+	{
 		subject := &SumVariant{}
 		var slot *Slot[*Field]
 		cases = append(cases, slotsCase{
@@ -377,6 +858,42 @@ func slotsCases() []slotsCase {
 			check: func(tb testing.TB) {
 				assert.Equal(tb, slot, &subject.Fields, "FieldsSlot returns the value's own storage",
 					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &SumVariant{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.SumVariant",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.FieldsSlot().Append(&Field{}) },
+					"Seal seals the Fields slot")
+			},
+		})
+	}
+	{
+		subject := &Field{}
+		var slot *Slot[*TagEntry]
+		cases = append(cases, slotsCase{
+			name: "Field.TagsSlot",
+			call: func() { slot = subject.TagsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Tags, "TagsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Field{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Field",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.TagsSlot().Append(&TagEntry{}) },
+					"Seal seals the Tags slot")
 			},
 		})
 	}
@@ -417,6 +934,30 @@ func slotsCases() []slotsCase {
 		})
 	}
 	{
+		subject := &Struct{}
+		var slot *Slot[*Embed]
+		cases = append(cases, slotsCase{
+			name: "Struct.EmbedsSlot",
+			call: func() { slot = subject.EmbedsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Embeds, "EmbedsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Struct{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Struct",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.FieldsSlot().Append(&Field{}) },
+					"Seal seals the Fields slot")
+			},
+		})
+	}
+	{
 		subject := &Interface{}
 		var slot *Slot[*Field]
 		cases = append(cases, slotsCase{
@@ -449,6 +990,30 @@ func slotsCases() []slotsCase {
 			check: func(tb testing.TB) {
 				assert.Equal(tb, slot, &subject.Types, "TypesSlot returns the value's own storage",
 					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Interface{}
+		var slot *Slot[*Embed]
+		cases = append(cases, slotsCase{
+			name: "Interface.EmbedsSlot",
+			call: func() { slot = subject.EmbedsSlot() },
+			check: func(tb testing.TB) {
+				assert.Equal(tb, slot, &subject.Embeds, "EmbedsSlot returns the value's own storage",
+					assert.ByIdentity())
+			},
+		})
+	}
+	{
+		subject := &Interface{}
+		sealed := true
+		cases = append(cases, slotsCase{
+			name: "Seal.Interface",
+			call: func() { Seal(subject, &sealed) },
+			check: func(tb testing.TB) {
+				assert.Panics(tb, func() { subject.FieldsSlot().Append(&Field{}) },
+					"Seal seals the Fields slot")
 			},
 		})
 	}

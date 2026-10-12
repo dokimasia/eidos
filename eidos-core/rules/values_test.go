@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -17,36 +18,38 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// ghostName is a declaration the fixture never declares.
+// ghostName is the name of a declaration that the fixture does not
+// declare.
 const ghostName = "Ghost"
 
-// otherParamName is the second type parameter the witness cases
-// declare, beside paramName.
+// otherParamName is the second type parameter that the witness cases
+// declare, after paramName.
 const otherParamName = "U"
 
-// The generic reference the restatement case reads: a map from
-// string to List[int].
+// The generic reference of the restatement case. It is a map from string
+// to List[int].
 const (
 	listName    = "List"
 	mapSpelling = "map[string]List[int]"
 )
 
-// outsidePackage and outsideName name a type outside the workspace,
-// which a witness or a reference imports without a target.
+// outsidePackage and outsideName are the package and the name of a type
+// outside the workspace. A witness or a reference imports that type
+// without a target.
 const (
 	outsidePackage = "time"
 	outsideName    = "Duration"
 )
 
-// The texts and the width the pair constructors are driven with.
+// The texts and the width that the cases pass to the pair constructors.
 const (
 	pairSample    = "on"
 	pairAlternate = "off"
 	pairBits      = 32
 )
 
-// The pair the scripted language derives for an int, and the values
-// the precedence cases state beside it.
+// The pair that the scripted language derives for an int, and the values
+// that the precedence cases stamp beside it.
 const (
 	derivedInt           = "42"
 	derivedAlternateInt  = "7"
@@ -58,25 +61,27 @@ const (
 	threeText            = "3"
 )
 
-// emitRefAllocs is the restatement of a reference without children: the
-// emit reference.
+// emitRefAllocs is the restatement of a reference without children. It
+// allocates the emit reference.
 const emitRefAllocs = 1
 
-// deriving counts the calls to the language's SamplesOf, so a case
-// proves the kernel derives only what no author stated.
+// deriving counts the calls to the DeriveSamples of the language, so a
+// case proves that the kernel derives only what no author stated.
 type deriving struct {
 	rules.SourceRules
 	asked int
 }
 
-// SamplesOf counts the call and returns the wrapped rules' pair.
-func (d *deriving) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+// DeriveSamples counts the call and returns the pair of the wrapped
+// rules.
+func (d *deriving) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	d.asked++
-	return d.SourceRules.SamplesOf(ref, hint, v)
+	return d.SourceRules.DeriveSamples(ref, hint, v)
 }
 
-// Authored values take precedence over derived ones by contract, and
-// every refusal names its reason, which a check generator reads.
+// TestValues checks that authored values take precedence over derived
+// values, and that every refusal has a reason. A check generator reads
+// the reason.
 func TestValues(t *testing.T) {
 	t.Parallel()
 
@@ -137,10 +142,10 @@ func TestValues(t *testing.T) {
 
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			subject := rowField(nameField)
-			stamp(t, facts, b.View().Kernel.Sample, subject, authoredText)
+			stamp(t, facts, b.View().Kernel().Sample, subject, authoredText)
 			sample, _ := b.SamplesOf(subject, builtin(strSpelling), nameField)
 			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralString, authoredText),
-				"a backend quotes the text the author wrote between quotes")
+				"a backend writes the text of the author between quotes")
 		})
 
 		t.Run("returns both authored halves", func(t *testing.T) {
@@ -150,15 +155,15 @@ func TestValues(t *testing.T) {
 			refused := rules.Refused(rules.RefusedDepth)
 			b := rules.NewBound(fixedSamples{scripted(), refused, refused}, v, nil)
 			subject := rowField(countField)
-			stamp(t, facts, v.Kernel.Sample, subject, authoredCount)
-			stamp(t, facts, v.Kernel.Alternate, subject, authoredOtherCount)
+			stamp(t, facts, v.Kernel().Sample, subject, authoredCount)
+			stamp(t, facts, v.Kernel().Alternate, subject, authoredOtherCount)
 			sample, alternate := b.SamplesOf(subject, builtin(intSpelling), countField)
 			assert.Equal(t, [2]rules.Sample{sample, alternate},
 				[2]rules.Sample{
 					rules.Of(emit.Literal(emit.LiteralInt, authoredCount)),
 					rules.Of(emit.Literal(emit.LiteralInt, authoredOtherCount)),
 				},
-				"the derivation's refusal plays no part")
+				"the refusal of the derivation has no effect")
 		})
 
 		t.Run("derives nothing where both halves are authored", func(t *testing.T) {
@@ -167,36 +172,36 @@ func TestValues(t *testing.T) {
 			v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
 			d := &deriving{SourceRules: scripted()}
 			subject := rowField(countField)
-			stamp(t, facts, v.Kernel.Sample, subject, authoredCount)
-			stamp(t, facts, v.Kernel.Alternate, subject, authoredOtherCount)
+			stamp(t, facts, v.Kernel().Sample, subject, authoredCount)
+			stamp(t, facts, v.Kernel().Alternate, subject, authoredOtherCount)
 			rules.NewBound(d, v, nil).SamplesOf(subject, builtin(intSpelling), countField)
 			assert.Equal(t, d.asked, 0, "the language is asked only for a missing half")
 		})
 
-		t.Run("returns the values authored on the type's declaration", func(t *testing.T) {
+		t.Run("returns the values authored on the declaration of the type", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			typ := coretest.ID(svcPath, rowName, symbol.KindStruct)
-			stamp(t, facts, b.View().Kernel.Sample, typ, authoredRow)
-			stamp(t, facts, b.View().Kernel.Alternate, typ, authoredRowAlternate)
+			stamp(t, facts, b.View().Kernel().Sample, typ, authoredRow)
+			stamp(t, facts, b.View().Kernel().Alternate, typ, authoredRowAlternate)
 			sample, alternate := b.SamplesOf(symbol.Identity{}, named(svcPath, rowName, symbol.KindStruct), rowName)
 			assert.Equal(t, [2]rules.Sample{sample, alternate},
 				[2]rules.Sample{
 					rules.Of(emit.Raw(coretest.Lang, authoredRow)),
 					rules.Of(emit.Raw(coretest.Lang, authoredRowAlternate)),
 				},
-				"a struct's values are raw text in the language that declares it")
+				"the values of a struct are raw text in the language that declares it")
 		})
 
-		t.Run("derives the halves no author stated", func(t *testing.T) {
+		t.Run("derives the halves that no author stated", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			sample, alternate := b.SamplesOf(symbol.Identity{}, builtin(intSpelling), countField)
 			wantSample, wantAlternate := rules.Pair(emit.LiteralInt, derivedInt, derivedAlternateInt)
 			assert.Equal(t, [2]rules.Sample{sample, alternate}, [2]rules.Sample{wantSample, wantAlternate},
-				"the scripted language's pair")
+				"the pair of the scripted language")
 		})
 
 		t.Run("pairs an authored sample with the derived value that differs", func(t *testing.T) {
@@ -204,7 +209,7 @@ func TestValues(t *testing.T) {
 
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			subject := rowField(countField)
-			stamp(t, facts, b.View().Kernel.Sample, subject, derivedAlternateInt)
+			stamp(t, facts, b.View().Kernel().Sample, subject, derivedAlternateInt)
 			_, alternate := b.SamplesOf(subject, builtin(intSpelling), countField)
 			assert.Equal(t, alternate.Value, emit.Literal(emit.LiteralInt, derivedInt),
 				"the derived alternate equals the authored sample, so the derived sample pairs")
@@ -215,7 +220,7 @@ func TestValues(t *testing.T) {
 
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			subject := rowField(countField)
-			stamp(t, facts, b.View().Kernel.Alternate, subject, derivedInt)
+			stamp(t, facts, b.View().Kernel().Alternate, subject, derivedInt)
 			sample, _ := b.SamplesOf(subject, builtin(intSpelling), countField)
 			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralInt, derivedAlternateInt),
 				"the derived sample equals the authored alternate, so the derived alternate pairs")
@@ -228,20 +233,20 @@ func TestValues(t *testing.T) {
 			one := rules.Of(emit.Literal(emit.LiteralInt, oneText))
 			b := rules.NewBound(fixedSamples{scripted(), one, one}, v, nil)
 			subject := rowField(countField)
-			stamp(t, facts, v.Kernel.Sample, subject, oneText)
+			stamp(t, facts, v.Kernel().Sample, subject, oneText)
 			_, alternate := b.SamplesOf(subject, builtin(intSpelling), countField)
 			assert.Equal(t, alternate.Refusal, rules.RefusedNoLiteral, "no distinguishable value remains")
 		})
 
-		t.Run("returns RefusedUnresolved for a type the view does not contain", func(t *testing.T) {
+		t.Run("returns RefusedUnresolved for a type that the view does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			sample, _ := b.SamplesOf(symbol.Identity{}, named(svcPath, ghostName, symbol.KindStruct), ghostName)
-			assert.Equal(t, sample.Refusal, rules.RefusedUnresolved, "the language names the reason")
+			assert.Equal(t, sample.Refusal, rules.RefusedUnresolved, "the language returns the reason")
 		})
 
-		t.Run("returns RefusedNoLiteral for a type the language writes no literal for", func(t *testing.T) {
+		t.Run("returns RefusedNoLiteral for a type without a literal in the language", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
@@ -256,7 +261,7 @@ func TestValues(t *testing.T) {
 			sample, alternate := b.SamplesOf(symbol.Identity{}, builtin(intSpelling), countField)
 			wantSample, wantAlternate := rules.RefusedPair(rules.RefusedNoView)
 			assert.Equal(t, [2]rules.Sample{sample, alternate}, [2]rules.Sample{wantSample, wantAlternate},
-				"no view, no read")
+				"the zero view reads nothing")
 		})
 	})
 
@@ -352,7 +357,7 @@ func TestValues(t *testing.T) {
 					tt.giveSample, tt.giveAlternate, tt.giveDerived, tt.giveDerivedAlternate,
 				)
 				assert.Equal(t, [2]rules.Sample{sample, alternate}, [2]rules.Sample{tt.wantSample, tt.wantAlternate},
-					"the pair Complete returns")
+					"the pair that Complete returns")
 			})
 		}
 	})
@@ -417,7 +422,7 @@ func TestValues(t *testing.T) {
 				want: rules.RefusedUnresolved,
 			},
 			{
-				name: "returns RefusedNoLiteral where a part without a value states no reason",
+				name: "returns RefusedNoLiteral where a part without a value has no reason",
 				give: []rules.Sample{valued, {}},
 				want: rules.RefusedNoLiteral,
 			},
@@ -430,7 +435,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, rules.FirstRefusal(tt.give...), tt.want, "the refusal a composite reports")
+				assert.Equal(t, rules.FirstRefusal(tt.give...), tt.want, "the refusal that a composite reports")
 			})
 		}
 	})
@@ -482,7 +487,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, tt.give.String(), tt.want, "a finding names the refusal by this spelling")
+				assert.Equal(t, tt.give.String(), tt.want, "a finding contains this spelling of the refusal")
 			})
 		}
 	})
@@ -497,26 +502,26 @@ func TestValues(t *testing.T) {
 			}
 		}
 
-		t.Run("returns the authored witness for a parameter the author names", func(t *testing.T) {
+		t.Run("returns the authored witness of a parameter that has one", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			ps := params()
 			row := coretest.ID(svcPath, rowName, symbol.KindStruct)
-			assert.NoError(t, stampWitness(facts, b.View(), ps[0].ID, row), "the author names one witness")
+			assert.NoError(t, stampWitness(facts, b.View(), ps[0].ID, row), "the author states one witness")
 			got := b.Witnesses(ps)
 			assert.Length(t, got, len(ps), "the list is whole")
 			assert.Equal(t, got[0], &node.TypeRef{Spelling: rowName, Target: row},
-				"the named declaration, spelled by its bare name")
+				"the declaration of the witness, with its bare name as the spelling")
 		})
 
-		t.Run("derives the witness of a parameter no author names", func(t *testing.T) {
+		t.Run("derives the witness of a parameter without an authored witness", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			ps := params()
 			assert.NoError(t, stampWitness(facts, b.View(), ps[0].ID, coretest.ID(svcPath, rowName, symbol.KindStruct)),
-				"the author names one witness")
+				"the author states one witness")
 			got := b.Witnesses(ps)
 			assert.Length(t, got, len(ps), "the list is whole")
 			assert.Equal(t, got[1].Spelling, intSpelling, "the scripted language derives int")
@@ -528,7 +533,8 @@ func TestValues(t *testing.T) {
 			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
 			ps := params()[:1]
 			outside := symbol.Identity{Lang: coretest.Lang, Package: outsidePackage, Name: outsideName}
-			assert.NoError(t, stampWitness(facts, b.View(), ps[0].ID, outside), "the author names an outside type")
+			assert.NoError(t, stampWitness(facts, b.View(), ps[0].ID, outside),
+				"the author states a type outside the workspace")
 			assert.Equal(t, b.Witnesses(ps), []*node.TypeRef{{Spelling: outsideName, Package: outsidePackage}},
 				"a backend imports the package and spells the bare name")
 		})
@@ -538,7 +544,7 @@ func TestValues(t *testing.T) {
 
 			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
 			b := rules.NewBound(nongeneric{scripted()}, v, nil)
-			assert.Nil(t, b.Witnesses(params()), "nothing derives the parameters")
+			assert.Nil(t, b.Witnesses(params()), "no capability derives the witnesses")
 		})
 
 		t.Run("returns nil for no parameters", func(t *testing.T) {
@@ -559,14 +565,14 @@ func TestValues(t *testing.T) {
 			t.Parallel()
 
 			b := rules.NewBound(scripted(), rules.View{}, nil)
-			assert.Nil(t, b.Witnesses(params()), "no view, no read")
+			assert.Nil(t, b.Witnesses(params()), "the zero view reads nothing")
 		})
 	})
 
 	t.Run("EmitRef", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("restates a reference's structure", func(t *testing.T) {
+		t.Run("restates the structure of a reference", func(t *testing.T) {
 			t.Parallel()
 
 			list := coretest.ID(svcPath, listName, symbol.KindStruct)
@@ -586,32 +592,42 @@ func TestValues(t *testing.T) {
 			}, "the form, the children, their targets and their arguments")
 		})
 
-		t.Run("restates a reference's package", func(t *testing.T) {
+		t.Run("restates the package of a reference", func(t *testing.T) {
 			t.Parallel()
 
 			got := rules.EmitRef(&node.TypeRef{Spelling: outsideName, Package: outsidePackage})
-			assert.Equal(t, got.Package, outsidePackage, "the import a backend records is kept")
+			assert.Equal(t, got.Package, outsidePackage, "the import that a backend records is kept")
+		})
+
+		t.Run("restates the asynchrony and the mutability of a reference", func(t *testing.T) {
+			t.Parallel()
+
+			got := rules.EmitRef(&node.TypeRef{
+				Spelling: mapSpelling, Form: symbol.FormStream, Async: true, Mutability: symbol.MutabilityImmutable,
+			})
+			expect.True(t, got.Async, "a stream keeps the asynchrony of its elements")
+			expect.Equal(t, got.Mutability, symbol.MutabilityImmutable, "a reference keeps its mutability")
 		})
 
 		t.Run("returns nil for a nil reference", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Nil(t, rules.EmitRef(nil), "nothing restates as nothing")
+			assert.Nil(t, rules.EmitRef(nil), "a nil reference restates as nil")
 		})
 	})
 }
 
-// The constructors and combinators of a sample return values without
-// allocating, and a restated reference allocates itself, in the ordinary
-// run, which runs no benchmark. The check runs alone, because the count
-// includes every goroutine's allocations.
+// TestValuesAllocs checks in the ordinary run that the constructors and
+// combinators of a sample allocate nothing, and that a restated reference
+// allocates only itself. The test does not run in parallel, because the
+// count includes the allocations of every goroutine.
 func TestValuesAllocs(t *testing.T) {
 	checkCalls(t, valueCalls(t))
 }
 
-// BenchmarkValues measures each constructor and combinator a language's
-// sample derivation returns through, the spelling of a refusal, and the
-// restatement of a reference a value's type takes.
+// BenchmarkValues measures each constructor and combinator through which
+// the sample derivation of a language returns, the spelling of a refusal,
+// and the restatement of the reference of the type of a value.
 func BenchmarkValues(b *testing.B) {
 	for _, tt := range valueCalls(b) {
 		b.Run(tt.name, func(b *testing.B) {
@@ -702,8 +718,8 @@ func valueCalls(tb assert.TB) []allocCall {
 	}
 }
 
-// stampWitness states one authored witness on a type parameter, the
-// way the witness annotator stamps it.
+// stampWitness stamps one authored witness on a type parameter, as the
+// witness annotator stamps it.
 func stampWitness(facts *meta.Facts, v rules.View, param, witness symbol.Identity) error {
-	return meta.Stamp(facts, v.Kernel.Witness, witness, meta.Claim{Subject: param})
+	return meta.Stamp(facts, v.Kernel().Witness, witness, meta.Claim{Subject: param})
 }

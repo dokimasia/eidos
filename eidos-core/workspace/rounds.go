@@ -217,10 +217,9 @@ func (wp *warmPlan) run(
 		}
 		p.emit = filtered
 		if !p.sink.Failed() {
-			_, placed := pl.backend.(plugin.Packager)
 			pg := planGroups{
 				plan: pl.name, emit: filtered, files: rendered, staged: staged,
-				touches: touches.touches, settled: settled, others: names, placed: placed,
+				touches: touches.touches, settled: settled, others: names,
 			}
 			pg.record(p.lane)
 		}

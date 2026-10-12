@@ -23,7 +23,7 @@ import (
 // Format is the version of the kernel's encoding of every generation,
 // table, run and region. A generation of another format is unusable,
 // and the run that meets it goes cold.
-const Format = 1
+const Format = 2
 
 // ErrFormat reports a generation written in another format than
 // [Format]: its tables and regions do not read under the kernel's
@@ -53,6 +53,9 @@ type Executable struct {
 type Header struct {
 	// Format is the encoding the generation is written in.
 	Format uint64
+	// Contract is the contract version of the kernel that wrote the
+	// generation, [go.dokimi.dev/eidos/core/plugin.ContractVersion].
+	Contract uint64
 	// Composition folds everything the composition reads from outside
 	// the executable.
 	Composition [sha256.Size]byte
@@ -196,6 +199,7 @@ func appendGeneration(dst []byte, g *Generation) []byte {
 	start := len(dst)
 	e := &encoder{buf: dst}
 	e.uvarint(g.Header.Format)
+	e.uvarint(g.Header.Contract)
 	e.digest(g.Header.Composition)
 	e.digest(g.Header.Executable.Digest)
 	e.text(g.Header.Executable.Path)
@@ -248,6 +252,7 @@ func decodeGeneration(b []byte) (*Generation, error) {
 	if d.Err() == nil && g.Header.Format != Format {
 		return nil, fmt.Errorf("%w: format %d, and the kernel reads format %d", ErrFormat, g.Header.Format, Format)
 	}
+	g.Header.Contract = d.Uvarint()
 	g.Header.Composition = d.Digest()
 	g.Header.Executable.Digest = d.Digest()
 	g.Header.Executable.Path = d.text()

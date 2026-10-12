@@ -511,8 +511,7 @@ func (u *unit) report() UnitReport {
 }
 
 // check refuses a configuration the load cannot run: no tree, no
-// sink, a brand outside the grammar, a frontend without a version, or
-// a store it cannot address.
+// sink, a brand outside the grammar, or a store it cannot address.
 func check(cfg Config) error {
 	if cfg.FS == nil {
 		return errors.New("load: no tree to read")
@@ -525,11 +524,6 @@ func check(cfg Config) error {
 			"load: %q is not a brand, and carriers and outputs are read under the composition's brand",
 			string(cfg.Brand),
 		)
-	}
-	for _, f := range cfg.Frontends {
-		if _, versioned := f.(plugin.Versioned); !versioned {
-			return fmt.Errorf("load: frontend %s declares no version, which every unit key folds", f.Name())
-		}
 	}
 	return checkStores(cfg.Stores)
 }
@@ -599,8 +593,7 @@ func (l *loader) partitionAll(inputs [][]string) ([]*unit, error) {
 		}
 		l.doors[f.Name()] = append(l.doors[f.Name()], record)
 		door := record.fold()
-		versioned, _ := f.(plugin.Versioned) // asserted when the load began
-		version := versioned.Version()
+		version := f.Version()
 		for _, part := range record.Units {
 			units = append(units, &unit{
 				frontend: f,

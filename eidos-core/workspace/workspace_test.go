@@ -18,16 +18,29 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// fixtureBrand is the brand every fixture composition declares.
+// fixtureBrand is the brand of every fixture composition.
 const fixtureBrand output.Brand = "fixture"
 
-// fakeBackend is the smallest backend: a name and the target its
-// plan resolves at composition. Nothing invokes it, which is the
-// scope's own rule.
+// The names that the workspace derives for the target fixture.
+// printerSuffix follows the spelling of a target in the name of the
+// fake backend of the target, and fixtureLowering is the name of the
+// lowering entry of the target fixture.
+const (
+	printerSuffix             = "-printer"
+	fixtureLowering plugin.ID = "fixture-lowering"
+)
+
+// fakeBackend is the smallest backend, with a name and the target that
+// its plan resolves at composition. Its settle keeps every construct and
+// every name, and it declares no policy. The methods of a rendering
+// backend belong to the nil interface that it embeds, so a test that
+// renders through it panics.
 type fakeBackend struct {
+	plugin.Backend
 	name   plugin.ID
 	target plugin.Target
 }
@@ -38,8 +51,20 @@ func (b fakeBackend) Name() plugin.ID { return b.name }
 // Target returns the target the backend renders.
 func (b fakeBackend) Target() plugin.Target { return b.target }
 
-// A Workspace is the composition's frozen form. Its accessors return
-// what the composition declared and the keys Build registered.
+// Policies returns nil.
+func (fakeBackend) Policies() []plugin.PolicySpec { return nil }
+
+// Lower keeps the declaration.
+func (fakeBackend) Lower(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }
+
+// Respell returns the name unchanged.
+func (fakeBackend) Respell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return name, nil
+}
+
+// TestWorkspace tests the frozen form of a composition. Its accessors
+// return what the composition declared and the keys that Build
+// registered.
 func TestWorkspace(t *testing.T) {
 	t.Parallel()
 
@@ -68,8 +93,8 @@ func TestWorkspace(t *testing.T) {
 	})
 }
 
-// The accessors allocate nothing in the ordinary run, which runs no
-// benchmark.
+// TestWorkspaceAllocs checks that the accessors allocate nothing,
+// because the ordinary run runs no benchmark.
 func TestWorkspaceAllocs(t *testing.T) {
 	w, err := valid().Build()
 	assert.NoError(t, err, "the fixture composition is valid")
@@ -107,33 +132,25 @@ func BenchmarkWorkspace(b *testing.B) {
 	})
 }
 
-// quiet is an annotator handler stamping nothing.
+// quiet is an annotator handler that stamps nothing.
 func quiet(*eidos.StructMatch, *eidos.Stamper) error { return nil }
 
-// stamper returns a facade-built annotator running h once per
+// stamper returns an annotator of the facade that runs h once for each
 // struct in scope.
 func stamper(name plugin.ID, h func(*eidos.StructMatch, *eidos.Stamper) error) plugin.Annotator {
-	p, held := eidos.NewPlugin(name).Handle(eidos.OnStruct(h)).Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
+	return eidos.NewPlugin(name).Handle(eidos.OnStruct(h)).Annotator()
 }
 
-// generator returns a facade-built generator running h once per
-// struct in scope, emitting into the "gen" family.
+// generator returns a generator of the facade that runs h once for each
+// struct in scope and emits into the family gen.
 func generator(name plugin.ID, h func(*eidos.StructMatch, *eidos.Emitter) error) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Handle(eidos.OnStruct(h)).Generator()
 }
 
-// mirrored appends one struct named after the subject: the handler
-// every mirroring generator runs.
+// mirrored appends one struct named after the subject. Every mirroring
+// generator runs it.
 func mirrored(m *eidos.StructMatch, e *eidos.Emitter) error {
 	e.PackageFile().Append(&emit.Struct{
 		Origin: m.Struct.Identity(),
@@ -142,16 +159,16 @@ func mirrored(m *eidos.StructMatch, e *eidos.Emitter) error {
 	return nil
 }
 
-// mirror returns a generator emitting one struct per subject.
+// mirror returns a generator that emits one struct for each subject.
 func mirror(name plugin.ID) plugin.Generator {
 	return generator(name, mirrored)
 }
 
-// caps spells a capability list inline.
+// caps returns its capabilities as a list.
 func caps(cs ...plugin.Capability) []plugin.Capability { return cs }
 
-// ordered returns an annotator placed by priority and capabilities,
-// recording its runs into calls.
+// ordered returns an annotator that its priority and its capabilities
+// place, and that records its runs into calls.
 func ordered(
 	name plugin.ID, pri int, provides, requires []plugin.Capability, calls *[]plugin.ID,
 ) plugin.Annotator {
@@ -162,34 +179,34 @@ func ordered(
 		})
 }
 
-// stamperAt returns a facade-built annotator with its ordering
-// inputs declared.
+// stamperAt returns an annotator of the facade with its priority and
+// its capabilities.
 func stamperAt(
 	name plugin.ID, pri int, provides, requires []plugin.Capability,
 	h func(*eidos.StructMatch, *eidos.Stamper) error,
 ) plugin.Annotator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Priority(plugin.RoleAnnotator, pri).
 		Provides(provides...).
 		Requires(requires...).
-		Handle(eidos.OnStruct(h)).Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
+		Handle(eidos.OnStruct(h)).Annotator()
 }
 
-// planTo returns a plan running gens toward a backend naming target.
+// planTo returns a plan that runs gens and renders through the fake
+// backend of target. The plans of one target take equal backend values,
+// so the composition admits the backend once, as a target renders
+// through one backend.
 func planTo(name string, target plugin.Target, gens ...plugin.Generator) workspace.Plan {
 	return workspace.Plan{
 		Name:       name,
 		Generators: gens,
-		Backend:    fakeBackend{name: plugin.ID(name) + "-printer", target: target},
+		Backend:    fakeBackend{name: plugin.ID(target) + printerSuffix, target: target},
 	}
 }
 
-// valid returns the smallest whole composition: the fixture brand,
-// one annotator, one plan with one generator, one registered target.
+// valid returns the smallest whole composition. It has the fixture
+// brand, one annotator, one plan with one generator and one registered
+// target.
 func valid() *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
@@ -198,7 +215,7 @@ func valid() *workspace.Builder {
 		Plans(planTo("plan", "fixture", mirror("mirror")))
 }
 
-// alpha returns an unfrozen one-package graph with one positioned
+// alpha returns an unfrozen graph of one package with one positioned
 // struct.
 func alpha(tb assert.TB) (*store.Graph, *node.Struct) {
 	tb.Helper()
@@ -211,7 +228,7 @@ func alpha(tb assert.TB) (*store.Graph, *node.Struct) {
 	return g, s
 }
 
-// units collects an emit store's units in their total order.
+// units returns the units of an emit store in their total order.
 func units(e *plugin.Emit) []plugin.Unit {
 	var out []plugin.Unit
 	for u := range e.Units() {

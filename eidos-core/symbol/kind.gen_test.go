@@ -42,6 +42,7 @@ var kindNamings = []struct {
 	{kind: KindTypeRef, want: "TypeRef"},
 	{kind: KindTypeParam, want: "TypeParam"},
 	{kind: KindEmbed, want: "Embed"},
+	{kind: KindTagEntry, want: "TagEntry"},
 }
 
 // A kind crosses a boundary that carries names, so String and

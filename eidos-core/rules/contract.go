@@ -16,9 +16,9 @@ import (
 )
 
 // SourceRules is the read-side contract of one language: the decisions
-// inside the kernel's walks, what a spelling names in a scope, the
-// values of a type, and the naming join. A language the composition
-// registers rules for implements it.
+// inside the kernel's walks, what a spelling names in a scope, and the
+// values of a type. A language the composition registers rules for
+// implements it.
 //
 // # Concurrency
 //
@@ -59,13 +59,13 @@ type SourceRules interface {
 	// it looked for.
 	Resolve(scope Scope, name string, kind directive.ResolutionKind, v View) (symbol.Symbol, error)
 
-	// SamplesOf returns two distinct values of a type, or two
+	// DeriveSamples returns two distinct values of a type, or two
 	// refusals with the reason. The kernel reads the values an
 	// author stated for the type before it asks. A composite's walk
 	// reads the authored values of each element through
 	// [View.Authored] before it derives the element, and pairs a
 	// stated half with a derived one through [Complete].
-	SamplesOf(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
+	DeriveSamples(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
 
 	// ZeroValue returns the type's zero value, and reports false
 	// where the language has no spelling for it.
@@ -75,10 +75,6 @@ type SourceRules interface {
 	// language's quoting into a value of a type, and reports false
 	// where the text cannot be one.
 	LiteralFor(f *node.File, ref *node.TypeRef, text string, v View) (emit.Value, bool)
-
-	// TypeName joins a generator's word onto an author's base name
-	// the way the language spells a derived type name.
-	TypeName(word, base string) string
 }
 
 // Scope is where a spelling is read: the subject the spelling is
@@ -398,8 +394,8 @@ func (a absent) Resolve(_ Scope, name string, kind directive.ResolutionKind, _ V
 	return nil, fmt.Errorf("rules: no rules registered for %s resolve %q at %v", a.lang, name, kind)
 }
 
-// SamplesOf refuses both halves with [RefusedNoRules].
-func (absent) SamplesOf(*node.TypeRef, string, View) (Sample, Sample) {
+// DeriveSamples refuses both halves with [RefusedNoRules].
+func (absent) DeriveSamples(*node.TypeRef, string, View) (Sample, Sample) {
 	return Refused(RefusedNoRules), Refused(RefusedNoRules)
 }
 
@@ -412,6 +408,3 @@ func (absent) ZeroValue(*node.TypeRef, View) (emit.Value, bool) {
 func (absent) LiteralFor(*node.File, *node.TypeRef, string, View) (emit.Value, bool) {
 	return emit.Value{}, false
 }
-
-// TypeName joins the word onto the base unchanged.
-func (absent) TypeName(word, base string) string { return base + word }

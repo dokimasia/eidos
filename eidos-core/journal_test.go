@@ -24,57 +24,59 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The journal methods a recorder lists, in the order a phase call made
-// them.
+// invokedCall and evaluatedCall are the journal methods that a recorder
+// lists, in the order of the calls of a phase call.
 const (
 	invokedCall   = "Invoked"
 	evaluatedCall = "Evaluated"
 )
 
-// The plans whose exports the export case hands a generator, and a
-// plan it reads that the generator's plan does not depend on.
+// basePlan and corePlan are the plans whose exports the export case passes
+// to a generator. absentPlan is a plan that the generator reads and that
+// the plan of the generator does not depend on.
 const (
 	basePlan   = "base"
 	corePlan   = "core"
 	absentPlan = "absent"
 )
 
-// registryTag is the tag of the per-package family the unit case
+// registryTag is the tag of the family for each package that the unit case
 // touches.
 const registryTag = "reg"
 
-// seededUnit is the reference of the unit seed adds.
+// seededUnit is the reference of the unit that seed adds.
 var seededUnit = plugin.UnitRef{Plugin: "earlier", Key: "a.go"}
 
-// journaled is one invocation a recorder received, with the edges of
-// its read set listed in place of the set.
+// journaled is one invocation that a recorder received, with the edges of
+// its read set in place of the set.
 type journaled struct {
 	plugin.Invocation
-	// read reports whether the invocation handed a read set.
+	// read reports whether the invocation passed a read set.
 	read bool
-	// identities and facts are the set's declaration and fact edges.
+	// identities and facts are the declaration edges and the fact edges of
+	// the set.
 	identities []symbol.Identity
 	facts      []meta.FactRef
 }
 
-// evaluation is one candidate's matches a recorder received.
+// evaluation is the matches of one candidate that a recorder received.
 type evaluation struct {
 	subject symbol.Identity
 	matches []plugin.MatchKey
 }
 
-// recorder is a journal that keeps what a phase call hands it. It copies
-// each invocation's slices and lists its read set while Invoked runs,
-// because both are the call's own only until Invoked returns.
+// recorder is a journal that keeps what a phase call passes it. It copies
+// the slices of each invocation and lists its read set while Invoked runs,
+// because the call reuses both after Invoked returns.
 type recorder struct {
 	invoked   []journaled
 	evaluated []evaluation
-	// calls lists the journal's methods in the order the call made them.
+	// calls lists the methods of the journal in the order of the calls.
 	calls []string
 }
 
-// Invoked keeps one invocation, with its slices copied and its read
-// set's edges listed.
+// Invoked keeps one invocation, with copies of its slices and the edges of
+// its read set.
 func (r *recorder) Invoked(inv plugin.Invocation) {
 	j := journaled{Invocation: inv, read: inv.Reads != nil}
 	j.Exports = slices.Clone(inv.Exports)
@@ -93,14 +95,14 @@ func (r *recorder) Invoked(inv plugin.Invocation) {
 	r.calls = append(r.calls, invokedCall)
 }
 
-// Evaluated keeps one candidate's matches.
+// Evaluated keeps the matches of one candidate.
 func (r *recorder) Evaluated(subject symbol.Identity, matches []plugin.MatchKey) {
 	r.evaluated = append(r.evaluated, evaluation{subject: subject, matches: slices.Clone(matches)})
 	r.calls = append(r.calls, evaluatedCall)
 }
 
-// keys returns the match key of every invocation the recorder received,
-// in the order it received them.
+// keys returns the match key of every invocation that the recorder
+// received, in the order of their arrival.
 func (r *recorder) keys() []plugin.MatchKey {
 	out := make([]plugin.MatchKey, len(r.invoked))
 	for i, j := range r.invoked {
@@ -109,8 +111,9 @@ func (r *recorder) keys() []plugin.MatchKey {
 	return out
 }
 
-// lines returns one line for each invocation the recorder received: its
-// key, the edges it read, what it touched and the messages it reported.
+// lines returns one line for each invocation that the recorder received.
+// A line has the key, the edges that the invocation read, what it touched
+// and the messages that it reported.
 func (r *recorder) lines() []string {
 	out := make([]string, len(r.invoked))
 	for i, j := range r.invoked {
@@ -120,8 +123,8 @@ func (r *recorder) lines() []string {
 	return out
 }
 
-// tally is a journal that counts the invocations it receives, the
-// least a consumer of the journal does.
+// tally is a journal that counts the invocations that it receives, which
+// is the least that a consumer of the journal does.
 type tally struct{ invoked int }
 
 // Invoked counts one invocation.
@@ -130,9 +133,10 @@ func (t *tally) Invoked(plugin.Invocation) { t.invoked++ }
 // Evaluated counts nothing.
 func (*tally) Evaluated(symbol.Identity, []plugin.MatchKey) {}
 
-// The journal is what a warm run keys re-execution on: one record for
-// each invocation in canonical match order, with what the invocation
-// read and touched, and each candidate's matches.
+// TestJournal tests the journal, on which a warm run keys the execution of
+// matches again. The journal receives one record for each invocation in
+// canonical match order, with what the invocation read and touched, and
+// the matches of each candidate.
 func TestJournal(t *testing.T) {
 	t.Parallel()
 
@@ -144,7 +148,7 @@ func TestJournal(t *testing.T) {
 
 			g, structs := manySubjects(t, manyStructs)
 			_, facts := boolKey(t)
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			want := make([]plugin.MatchKey, len(structs))
 			for i, s := range structs {
@@ -168,7 +172,7 @@ func TestJournal(t *testing.T) {
 			assert.Equal(t, origins, []symbol.Identity{beta.ID, alpha.ID}, "the store enumerates in the unit's order")
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
 				{Plugin: contextPlugin, Subject: alpha.ID, Host: plugin.EmitRef{Unit: seededUnit, Index: 1}},
@@ -183,7 +187,7 @@ func TestJournal(t *testing.T) {
 			_, facts := boolKey(t)
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnStruct(nothing[*eidos.Emitter]), eidos.OnStruct(nothing[*eidos.Emitter])).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
 				{Plugin: contextPlugin, Rule: 0, Subject: alpha.ID},
@@ -202,7 +206,7 @@ func TestJournal(t *testing.T) {
 			schema.Repeatable = true
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.Directive(schema, eidos.OnStruct(nothing[*eidos.Emitter]))).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, repeated(alpha.ID, schema, scheduled)), p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
 				{Plugin: contextPlugin, Subject: alpha.ID, Instance: 0},
@@ -220,7 +224,7 @@ func TestJournal(t *testing.T) {
 			seed(t, ctx, emitted(alpha), emitted(beta))
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
 				{Plugin: contextPlugin, Subject: alpha.ID, Host: plugin.EmitRef{Unit: seededUnit, Index: 0}},
@@ -240,7 +244,7 @@ func TestJournal(t *testing.T) {
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.Directive(schema,
 					eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			key := func(instance, place int) plugin.MatchKey {
 				return plugin.MatchKey{
@@ -270,7 +274,7 @@ func TestJournal(t *testing.T) {
 			assert.NoError(t, ctx.Emit.Add(later), "the unit whose reference sorts first is added")
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
 				{Plugin: contextPlugin, Subject: alpha.ID, Host: plugin.EmitRef{Unit: later.Ref()}},
@@ -307,7 +311,7 @@ func TestJournal(t *testing.T) {
 					m.Reader().Lookup(other)
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			assert.Length(t, rec.invoked, 2, "both subjects' invocations are recorded")
 			expect.Equal(t, rec.invoked[0].identities, []symbol.Identity{beta.ID},
@@ -326,7 +330,7 @@ func TestJournal(t *testing.T) {
 					eidos.Fact(m, key)
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			assert.Equal(t, rec.invoked[0].facts, []meta.FactRef{{Subject: alpha.ID, Key: key.Name()}},
 				"the record lists the fact read, a miss included")
@@ -347,7 +351,7 @@ func TestJournal(t *testing.T) {
 					m.Export(absentPlan)
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.invoked[0].Exports, []string{basePlan, corePlan},
 				"the record lists each export read once, sorted, and no plan without an export")
@@ -389,7 +393,7 @@ func TestJournal(t *testing.T) {
 					e.Slot(&s.Fields).Append(&emit.Field{Name: "audited"})
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.invoked[0].Hosts, []plugin.EmitRef{{Unit: seededUnit, Index: 0}},
 				"the record names the value whose slot received the append")
@@ -408,7 +412,7 @@ func TestJournal(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			assert.Length(t, rec.invoked, 2, "both subjects' invocations are recorded")
 			expect.Equal(t, findingMessages(rec.invoked[0].Findings), []string{"second", "first"},
@@ -429,7 +433,7 @@ func TestJournal(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			got := make([][]string, len(rec.invoked))
 			for i, j := range rec.invoked {
@@ -448,7 +452,7 @@ func TestJournal(t *testing.T) {
 					m.Rules()
 					return nil
 				})).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
 			assert.Length(t, rec.invoked, 2, "both subjects' invocations are recorded")
 			expect.Equal(t, findingCodes(rec.invoked[0].Findings), []diag.Code{rules.AbsentRules},
@@ -487,8 +491,8 @@ func TestJournal(t *testing.T) {
 						e.PackageFile().Append(&emit.Struct{Origin: m.Struct.ID, Name: "For" + m.Struct.Name})
 						return nil
 					})).
-					Build()
-				assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+					Generator()
+				assert.NoError(tb, p.Generate(ctx), "the phase call passes")
 				return slices.Collect(ctx.Emit.Units())
 			}
 			assert.Equal(t, placeAll(t, &recorder{}), placeAll(t, nil), "journaling changes no output")
@@ -507,8 +511,8 @@ func TestJournal(t *testing.T) {
 					m.Warnf(testCode, "visited")
 					return errFirst
 				})).
-				Build()
-			assert.ErrorIs(t, generatorOf(t, p).Generate(ctx), errFirst, "the handler's error stops the call")
+				Generator()
+			assert.ErrorIs(t, p.Generate(ctx), errFirst, "the handler's error stops the call")
 			assert.Empty(t, rec.calls, "a failed call journals nothing")
 		})
 
@@ -522,7 +526,7 @@ func TestJournal(t *testing.T) {
 				Matches:    []plugin.MatchKey{{Plugin: contextPlugin, Subject: alpha.ID}},
 				Candidates: []symbol.Identity{beta.ID},
 			}
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.calls, []string{invokedCall, invokedCall, evaluatedCall},
 				"the candidates' records follow the invocations")
@@ -535,7 +539,7 @@ func TestJournal(t *testing.T) {
 			_, facts := boolKey(t)
 			ctx := genContext(t, g, facts, nil)
 			ctx.Select = &plugin.Selection{Candidates: []symbol.Identity{beta.ID}}
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.evaluated, []evaluation{{
 				subject: beta.ID, matches: []plugin.MatchKey{{Plugin: contextPlugin, Subject: beta.ID}},
@@ -550,7 +554,7 @@ func TestJournal(t *testing.T) {
 			ctx := genContext(t, g, facts, nil)
 			ghost := coretest.ID(coretest.StorePath, "Ghost", symbol.KindStruct)
 			ctx.Select = &plugin.Selection{Candidates: []symbol.Identity{ghost}}
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.evaluated, []evaluation{{subject: ghost}}, "a gone candidate has no match")
 		})
@@ -564,7 +568,7 @@ func TestJournal(t *testing.T) {
 			ctx.Select = &plugin.Selection{Candidates: []symbol.Identity{alpha.ID, beta.ID}}
 			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnStruct(nothing[*eidos.Emitter]), eidos.OnStruct(nothing[*eidos.Emitter])).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			keys := func(subject symbol.Identity) []plugin.MatchKey {
 				return []plugin.MatchKey{
@@ -585,7 +589,7 @@ func TestJournal(t *testing.T) {
 			_, facts := boolKey(t)
 			ctx := genContext(t, g, facts, nil)
 			ctx.Select = &plugin.Selection{Candidates: []symbol.Identity{beta.ID, beta.ID}}
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.evaluated, []evaluation{{
 				subject: beta.ID, matches: []plugin.MatchKey{{Plugin: contextPlugin, Subject: beta.ID}},
@@ -600,7 +604,7 @@ func TestJournal(t *testing.T) {
 			ctx := genContext(t, g, facts, nil)
 			ghost := coretest.ID(coretest.StorePath, "Ghost", symbol.KindStruct)
 			ctx.Select = &plugin.Selection{Candidates: []symbol.Identity{alpha.ID, ghost}}
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Length(t, rec.evaluated, 2, "both candidates have a record")
 			assert.Nil(t, rec.evaluated[1].matches, "the gone candidate's record lists no match")
@@ -618,7 +622,7 @@ func TestJournal(t *testing.T) {
 			_, facts := boolKey(t)
 			ctx := genContext(t, g, facts, nil)
 			ctx.Select = &plugin.Selection{Candidates: []symbol.Identity{reader.ID}}
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.evaluated, []evaluation{{subject: reader.ID}},
 				"an interface has no struct rule's match")
@@ -638,7 +642,7 @@ func TestJournal(t *testing.T) {
 					eidos.OnStruct(nothing[*eidos.Emitter]),
 					eidos.Directive(schema, eidos.OnStruct(nothing[*eidos.Emitter])),
 				).
-				Build()
+				Generator()
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.evaluated, []evaluation{{subject: alpha.ID, matches: []plugin.MatchKey{
 				{Plugin: contextPlugin, Rule: 0, Subject: alpha.ID},
@@ -670,7 +674,7 @@ func TestJournal(t *testing.T) {
 					}
 					return nil
 				})).
-				Build()
+				Annotator()
 			rec := journaledAnnotate(t, g, facts, p)
 			want := slices.SortedFunc(slices.Values([]meta.FactRef{
 				{Subject: alpha.ID, Key: first.Name()},
@@ -690,7 +694,7 @@ func TestJournal(t *testing.T) {
 					eidos.Stamp(st, key, false)
 					return nil
 				})).
-				Build()
+				Annotator()
 			rec := journaledAnnotate(t, g, facts, p)
 			assert.Empty(t, rec.invoked[0].Claimed, "a refused stamp claims nothing")
 			assert.Equal(t, findingCodes(rec.invoked[0].Findings), []diag.Code{eidos.RefusedStamp},
@@ -702,7 +706,7 @@ func TestJournal(t *testing.T) {
 
 			g, alpha, beta := fixtureGraph(t)
 			_, facts := boolKey(t)
-			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Stamper])).Build()
+			p := eidos.NewPlugin(contextPlugin).Handle(eidos.OnStruct(nothing[*eidos.Stamper])).Annotator()
 			rec := journaledAnnotate(t, g, facts, p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
 				{Plugin: contextPlugin, Subject: alpha.ID},
@@ -714,10 +718,10 @@ func TestJournal(t *testing.T) {
 
 // BenchmarkJournal measures a journaled phase call over the 200,000
 // structs of the bench workspace, each invocation reading one fact. The
-// call allocates nothing: its records, its read log and the delivery's
-// buffers are the state an earlier call released, which the warm-up call
-// grew. The context, the emit store and the sink that each iteration
-// hands the call are built outside the measurement.
+// call allocates nothing, because its records, its read log and the
+// buffers of the delivery are the state that an earlier call released,
+// which the warm-up call grew. The setup builds the context, the emit
+// store and the sink of each iteration outside the measurement.
 func BenchmarkJournal(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
@@ -726,20 +730,19 @@ func BenchmarkJournal(b *testing.B) {
 		key, facts := boolKey(b)
 		ix, err := plugin.NewIndex(g, facts, nil, nil)
 		assert.NoError(b, err, "the routing surface builds")
-		p := eidos.NewPlugin("bench").
+		gen := eidos.NewPlugin("bench").
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
 				eidos.Fact(m, key)
 				return nil
 			})).
-			Build()
-		gen := generatorOf(b, p)
+			Generator()
 		count := &tally{}
 		var ctx *plugin.GeneratorContext
 		fresh := func() {
 			count.invoked = 0
 			ctx = &plugin.GeneratorContext{
 				Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
-				Plugin: "bench", Bucket: 1, Journal: count,
+				Plugin: "bench", Turn: 1, Journal: count,
 			}
 		}
 		// The warm-up call builds the graph's index of the kind and grows
@@ -759,20 +762,20 @@ func BenchmarkJournal(b *testing.B) {
 // dispatch records and not about what a handler does.
 func nothing[E eidos.Effect](*eidos.StructMatch, E) error { return nil }
 
-// journaledGenerate runs p's generate phase over ctx with a recorder as
-// its journal, and returns the recorder.
-func journaledGenerate(tb assert.TB, ctx *plugin.GeneratorContext, p plugin.Plugin) *recorder {
+// journaledGenerate runs the generate phase of gen over ctx with a
+// recorder as its journal, and returns the recorder.
+func journaledGenerate(tb assert.TB, ctx *plugin.GeneratorContext, gen plugin.Generator) *recorder {
 	tb.Helper()
 
 	rec := &recorder{}
 	ctx.Journal = rec
-	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	assert.NoError(tb, gen.Generate(ctx), "the phase call passes")
 	return rec
 }
 
-// journaledAnnotate runs p's annotate phase over g with a recorder as
-// its journal, as the context plugin, and returns the recorder.
-func journaledAnnotate(tb assert.TB, g *store.Graph, facts *meta.Facts, p plugin.Plugin) *recorder {
+// journaledAnnotate runs the annotate phase of ann over g with a recorder
+// as its journal, as the context plugin, and returns the recorder.
+func journaledAnnotate(tb assert.TB, g *store.Graph, facts *meta.Facts, ann plugin.Annotator) *recorder {
 	tb.Helper()
 
 	ix, err := plugin.NewIndex(g, facts, nil, nil)
@@ -781,7 +784,7 @@ func journaledAnnotate(tb assert.TB, g *store.Graph, facts *meta.Facts, p plugin
 	ctx.Plugin = contextPlugin
 	rec := &recorder{}
 	ctx.Journal = rec
-	assert.NoError(tb, annotatorOf(tb, p).Annotate(ctx), "the phase call passes")
+	assert.NoError(tb, ann.Annotate(ctx), "the phase call passes")
 	return rec
 }
 
@@ -799,13 +802,13 @@ func lookupRun(tb assert.TB) (*recorder, *node.Struct, *node.Struct) {
 			}
 			return nil
 		})).
-		Build()
+		Generator()
 	return journaledGenerate(tb, genContext(tb, g, facts, nil), p), alpha, beta
 }
 
-// touchRun journals a generator whose handler, on the first fixture
-// struct, touches its package's registry and twice appends to its
-// source file's stub, and returns the recorder and the context.
+// touchRun journals a generator whose handler touches the registry of the
+// package of the first fixture struct, and appends twice to the stub of
+// its source file. It returns the recorder and the context.
 func touchRun(tb assert.TB) (*recorder, *plugin.GeneratorContext) {
 	tb.Helper()
 
@@ -824,13 +827,13 @@ func touchRun(tb assert.TB) (*recorder, *plugin.GeneratorContext) {
 			e.File().Append(&emit.Struct{Origin: m.Struct.ID, Name: "Mock"})
 			return nil
 		})).
-		Build()
+		Generator()
 	return journaledGenerate(tb, ctx, p), ctx
 }
 
-// readingRun journals a generator over n subjects on the given workers,
-// whose handler looks up the next subject, reads a fact and reports a
-// warning, and returns the recorder's lines.
+// readingRun journals a generator over n subjects on workers, and returns
+// the lines of the recorder. The handler of the generator looks up the
+// next subject, reads a fact and reports a warning.
 func readingRun(tb assert.TB, workers, n int) []string {
 	tb.Helper()
 
@@ -845,7 +848,7 @@ func readingRun(tb assert.TB, workers, n int) []string {
 			m.Warnf(testCode, "%s", m.Struct.Name)
 			return nil
 		})).
-		Build()
+		Generator()
 	return journaledGenerate(tb, ctx, p).lines()
 }
 

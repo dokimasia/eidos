@@ -15,19 +15,18 @@ import (
 	"go.dokimi.dev/eidos/core/position"
 )
 
-// noTypeParams is what a refusal lists for a declaration without
-// type parameters.
+// noTypeParams is what a refusal lists for a declaration without type
+// parameters.
 const noTypeParams = "none"
 
-// Witness returns the annotator behind the witness directive. It
-// runs once per validated instance on every generic kind, a
-// struct, an interface, a function, a method, an alias and a sum,
-// and stamps each key's resolved type under gen.witness on the
-// type parameter the key names. A key naming none of the
-// declaration's parameters is refused under [UnknownWitnessParam]
-// at the carrier, and the rest still stamp.
+// Witness returns the annotator of the witness directive. It runs once
+// for each validated instance on a struct, an interface, a function, a
+// method, an alias or a sum. For each key, it stamps the resolved type
+// under gen.witness on the type parameter that the key names. It refuses
+// a key that names none of the parameters of the declaration under
+// [UnknownWitnessParam] at the carrier, and stamps the other keys.
 func Witness() plugin.Annotator {
-	p := eidos.NewPlugin(WitnessPlugin).
+	return eidos.NewPlugin(WitnessPlugin).
 		Handle(eidos.Gated(directive.KernelWitness,
 			eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 				return stampWitness(m, st, m.Struct.TypeParams)
@@ -48,21 +47,20 @@ func Witness() plugin.Annotator {
 				return stampWitness(m, st, m.Sum.TypeParams)
 			}),
 		)).
-		Build()
-	return annotator(p)
+		Annotator()
 }
 
-// reporter is the finding surface a witness handler needs beside
-// the carrier: a refusal positioned at the directive's own line.
+// reporter is the part of a match that a witness handler needs beside the
+// carrier. It reports a refusal at the line of the directive.
 type reporter interface {
 	carrier
 	ErrorfAt(c diag.Code, at position.Pos, format string, a ...any)
 }
 
-// stampWitness stamps one instance's keys onto the declaration's
-// type parameters, in key order so the findings arrive
-// deterministically. A key is a type parameter's name, and the
-// reserved routing keys are never read as one.
+// stampWitness stamps the keys of one instance on the type parameters of
+// the declaration, in key order, so the findings are deterministic. A key
+// is the name of a type parameter, and stampWitness skips the reserved
+// routing keys.
 func stampWitness(m reporter, st *eidos.Stamper, params []*node.TypeParam) error {
 	d := m.Directive()
 	keys := make([]string, 0, len(d.Params))
@@ -92,7 +90,7 @@ func stampWitness(m reporter, st *eidos.Stamper, params []*node.TypeParam) error
 	return nil
 }
 
-// paramNamed returns the type parameter with one name, or nil.
+// paramNamed returns the type parameter named name, or nil.
 func paramNamed(params []*node.TypeParam, name string) *node.TypeParam {
 	for _, tp := range params {
 		if tp != nil && tp.Name == name {
@@ -102,8 +100,8 @@ func paramNamed(params []*node.TypeParam, name string) *node.TypeParam {
 	return nil
 }
 
-// spellParams lists the type parameters' names for a refusal, and
-// [noTypeParams] for a declaration without any.
+// spellParams returns the names of the type parameters for a refusal, and
+// [noTypeParams] for a declaration without type parameters.
 func spellParams(params []*node.TypeParam) string {
 	names := make([]string, 0, len(params))
 	for _, tp := range params {

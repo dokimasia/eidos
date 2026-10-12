@@ -24,43 +24,48 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The files the statistics cases add to the sealed-state cases' tree: a
-// second package the scripted frontend claims, and a file no frontend
-// claims.
+// The files that the statistics cases add to the tree of the sealed
+// cases, a second package that the scripted frontend claims and a file
+// that no frontend claims.
 const (
 	apiSource = "svc/api/user.zz"
 	readme    = "README.md"
 )
 
-// planMirrorID is the generator that mirrors every struct into one plan
-// file.
+// planMirrorID is the name of the generator that mirrors every struct
+// into one plan file.
 const planMirrorID plugin.ID = "plan-mirror"
 
 // planDir is the output directory of the plan file of planMirrorID.
 const planDir = "gen"
 
-// The counts the cases expect of the tree: every file the gate stats,
-// the claimed files a cold gate hashes, and the structs the files
-// declare, Row and User.
+// The counts that the cases expect of the tree.
 const (
-	treeFiles    = 3
+	// treeFiles is the number of files that the gate stats.
+	treeFiles = 3
+	// claimedFiles is the number of claimed files that a cold gate hashes.
 	claimedFiles = 2
-	treeStructs  = 2
+	// treeStructs is the number of structs of the files, Row and User.
+	treeStructs = 2
+	// treePackages is the number of packages of the files, svc/store and
+	// svc/api. The lowering entry of the target journals one invocation
+	// for each.
+	treePackages = 2
 )
 
-// The files of the coupled tree: one package the files of two
-// directories declare.
+// The files of the coupled tree, two directories whose files declare one
+// package.
 const (
 	firstShared  = "a/one.zz"
 	secondShared = "b/two.zz"
 )
 
-// editTime is the modification time an edited file takes, as an
-// editor's write moves it.
+// editTime is the modification time of an edited file, as the write of
+// an editor sets it.
 var editTime = time.Unix(1, 0)
 
-// Stats are what a probe asserts about a run, so each count states what
-// the run executed and nothing else.
+// TestStats tests the statistics of a run. Each count is the number of
+// things that the run did, and nothing else.
 func TestStats(t *testing.T) {
 	t.Parallel()
 
@@ -178,24 +183,26 @@ func TestStats(t *testing.T) {
 
 			report := sealedRun(t, sealing(t, ledger.NewMem(), "plan"), workspace.Input{Tree: statsTree()})
 			assert.Equal(t, report.Stats.Invoked, []workspace.Invoked{
+				{Plugin: fixtureLowering, Phase: plugin.PhaseAnnotate, Count: treePackages},
 				{Plugin: noterID, Phase: plugin.PhaseAnnotate, Count: treeStructs},
 				{Plan: "plan", Plugin: mirrorID, Phase: plugin.PhaseGenerate, Count: treeStructs},
-			}, "the annotator and the generator each run once for each struct")
+			}, "the lowering entry runs once for each package, and the annotator and the generator once for each struct")
 		})
 
 		t.Run("counts the plans' generator calls after the annotators in composition order", func(t *testing.T) {
 			t.Parallel()
 
-			second := sealedPlan(t, "second", mirror("second-mirror"))
-			first := sealedPlan(t, "first", mirror("first-mirror"))
+			second := sealedPlan("second", mirror("second-mirror"))
+			first := sealedPlan("first", mirror("first-mirror"))
 			report := sealedRun(t, built(t, sealingPlans(ledger.NewMem(), second, first)),
 				workspace.Input{Tree: statsTree()})
 			calls := make([]plugin.ID, 0, len(report.Stats.Invoked))
 			for _, c := range report.Stats.Invoked {
 				calls = append(calls, c.Plugin)
 			}
-			assert.Equal(t, calls, []plugin.ID{noterID, second.Generators[0].Name(), first.Generators[0].Name()},
-				"the annotator, then the plans as the composition lists them")
+			assert.Equal(t, calls,
+				[]plugin.ID{fixtureLowering, noterID, second.Generators[0].Name(), first.Generators[0].Name()},
+				"the lowering entry and the annotator, then the plans as the composition lists them")
 		})
 
 		t.Run("counts the files the plans rendered", func(t *testing.T) {
@@ -258,9 +265,9 @@ func TestStats(t *testing.T) {
 	})
 }
 
-// coupledTree returns one package two directories' files declare,
-// which the scripted language makes two units: the first declares Twin,
-// and the second the given body, written at the given time.
+// coupledTree returns one package whose files are in two directories,
+// so the scripted language makes two units. The first declares Twin,
+// and the second has the body second, written at the time written.
 func coupledTree(second string, written time.Time) fstest.MapFS {
 	return fstest.MapFS{
 		firstShared:  {Data: []byte("package shared\ntype Twin string\n")},
@@ -268,7 +275,7 @@ func coupledTree(second string, written time.Time) fstest.MapFS {
 	}
 }
 
-// statsTree returns the tree the statistics cases load.
+// statsTree returns the tree that the statistics cases load.
 func statsTree() fstest.MapFS {
 	tree := sealedTree()
 	tree[apiSource] = &fstest.MapFile{Data: []byte("package svc/api\ntype User string\n")}
@@ -276,8 +283,8 @@ func statsTree() fstest.MapFS {
 	return tree
 }
 
-// editedStatsTree returns the statistics cases' tree after an edit that
-// adds a struct to the api package.
+// editedStatsTree returns the tree of the statistics cases after an edit
+// that adds a struct to the api package.
 func editedStatsTree() fstest.MapFS {
 	tree := statsTree()
 	tree[apiSource] = &fstest.MapFile{
@@ -288,12 +295,12 @@ func editedStatsTree() fstest.MapFS {
 
 // planMirroring returns the builder of a composition over the scripted
 // frontend that records into a ledger, whose one plan mirrors every
-// struct into one file under the plan's output directory.
+// struct into one file under the output directory of the plan.
 func planMirroring(tb assert.TB, l ledger.Ledger) *workspace.Builder {
 	tb.Helper()
 
 	return sealingPlans(l, workspace.Plan{
-		Name: "plan", Generators: []plugin.Generator{planMirror()}, Backend: printer(tb, "fixture"),
+		Name: "plan", Generators: []plugin.Generator{planMirror()}, Backend: fixturePrinter(),
 		Layout: layout.Config{Dir: planDir},
 	})
 }
@@ -301,14 +308,10 @@ func planMirroring(tb assert.TB, l ledger.Ledger) *workspace.Builder {
 // planMirror returns a generator that mirrors every struct into one plan
 // file, so one group contains the mirror of every struct.
 func planMirror() plugin.Generator {
-	p, held := eidos.NewPlugin(planMirrorID).
+	return eidos.NewPlugin(planMirrorID).
 		Output(plugin.Output{Per: plugin.PerPlan, Word: "all"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			e.PlanFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name})
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }

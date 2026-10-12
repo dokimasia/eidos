@@ -87,6 +87,11 @@ const (
 	// and the match makes its resolver of other languages and its reader
 	// of policy overrides.
 	typeAllocs = 4*invocationStructs + 3
+	// fieldsAllocs is the count of a call whose invocations each translate
+	// one field with a builtin type of another language. Each invocation
+	// allocates what typeAllocs counts for it, the emit field and the list
+	// of fields.
+	fieldsAllocs = typeAllocs + 2*invocationStructs
 )
 
 // The translation fixture's target, the key of its one lowering policy,
@@ -109,11 +114,14 @@ const (
 	paramSpelling  = "T"
 )
 
-// The names of the translation fixture's struct and of its fields.
+// The names of the translation fixture's struct and of its fields, and the
+// documentation of its count field.
 const (
 	sessionName = "Session"
 	expiresName = "Expires"
+	countName   = "Count"
 	noteName    = "Note"
+	countDoc    = "Count is the number of reads."
 )
 
 // errUnspelled is the reason of the translation fixture's spoke for a
@@ -144,15 +152,17 @@ func (sp *tsxSpoke) SpellType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef
 }
 
 // translationFixture is a generator context over a session struct of
-// the fixture's language, whose expires field the cases translate types
-// for. Its note field is a string with the optional mark. The context's
-// plan targets tsx through spoke, under the default choice of the width
-// policy. width is the handle that an override stamps through.
+// the fixture's language. The cases translate types for its expires field,
+// which is an int. Its count field is a string with documentation, and its
+// note field is a string with the optional mark. The context's plan targets
+// tsx through spoke, under the default choice of the width policy. width is
+// the handle that an override stamps through.
 type translationFixture struct {
 	ctx     *plugin.GeneratorContext
 	width   meta.Key[string]
 	session *node.Struct
 	expires *node.Field
+	count   *node.Field
 	note    *node.Field
 	spoke   *tsxSpoke
 }
@@ -165,10 +175,14 @@ func newTranslationFixture(tb assert.TB) translationFixture {
 	session := coretest.Struct(coretest.StorePath, sessionName)
 	session.Pos = position.Pos{File: "session.go", Line: 3, Col: 6}
 	expires := coretest.Field(coretest.StorePath, sessionName, expiresName)
+	expires.Type = &node.TypeRef{Spelling: intSpelling}
 	expires.Pos = position.Pos{File: "session.go", Line: 5, Col: 2}
+	count := coretest.Field(coretest.StorePath, sessionName, countName)
+	count.Type, count.Doc = &node.TypeRef{Spelling: stringSpelling}, []string{countDoc}
 	note := coretest.Field(coretest.StorePath, sessionName, noteName)
 	note.Type, note.Optional = &node.TypeRef{Spelling: stringSpelling}, true
-	session.Fields = []*node.Field{expires, note}
+	note.Pos = position.Pos{File: "session.go", Line: 7, Col: 2}
+	session.Fields = []*node.Field{expires, count, note}
 	g := coretest.Frozen(tb, coretest.Package(coretest.StorePath, session))
 	reg := meta.NewRegistry()
 	target := reg.For(string(tsxTarget))
@@ -190,9 +204,9 @@ func newTranslationFixture(tb assert.TB) translationFixture {
 	return translationFixture{
 		ctx: &plugin.GeneratorContext{
 			Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(), Rules: registry,
-			Plugin: contextPlugin, Bucket: 2, Target: tsxTarget, Types: spoke, Policy: policy,
+			Plugin: contextPlugin, Turn: 2, Target: tsxTarget, Types: spoke, Policy: policy,
 		},
-		width: width, session: session, expires: expires, note: note, spoke: spoke,
+		width: width, session: session, expires: expires, count: count, note: note, spoke: spoke,
 	}
 }
 
@@ -221,7 +235,30 @@ func (f translationFixture) translate(tb assert.TB, owner symbol.Identity, ref *
 			ran = true
 			return nil
 		})).
-		Build()
+		Generator()
+	assert.NoError(tb, generatorOf(tb, p).Generate(f.ctx), "the phase call passes")
+	assert.True(tb, ran, "the handler ran")
+	return got, ok
+}
+
+// lowerFields runs one phase call over the fixture. Its handler translates
+// the fields of the session struct that keep reports. It returns what the
+// translation returned.
+func (f translationFixture) lowerFields(tb assert.TB, keep func(*node.Field) bool) ([]*emit.Field, bool) {
+	tb.Helper()
+
+	var (
+		got []*emit.Field
+		ok  bool
+		ran bool
+	)
+	p := eidos.NewPlugin(contextPlugin).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			got, ok = e.Fields(m.Struct.Fields, keep)
+			ran = true
+			return nil
+		})).
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(f.ctx), "the phase call passes")
 	assert.True(tb, ran, "the handler ran")
 	return got, ok
@@ -249,7 +286,7 @@ func TestEmitter(t *testing.T) {
 					e.PlanFile("x", "x")
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.Panics(t, func() {
 				_ = generatorOf(t, p).Generate(genContext(t, g, facts, nil))
 			}, "two tags address nothing")
@@ -266,7 +303,7 @@ func TestEmitter(t *testing.T) {
 					e.PlanFile()
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.Panics(t, func() {
 				_ = generatorOf(t, p).Generate(genContext(t, g, facts, nil))
 			}, "a per-source family is not a plan file")
@@ -293,7 +330,7 @@ func TestEmitter(t *testing.T) {
 					})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			byTag := map[string]plugin.Unit{}
@@ -331,7 +368,7 @@ func TestEmitter(t *testing.T) {
 					})
 				}
 				return nil
-			})).Build()
+			})).Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			units := slices.Collect(ctx.Emit.Units())
@@ -364,7 +401,7 @@ func TestEmitter(t *testing.T) {
 						e.PlanFile().Append()
 						return nil
 					})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			var flushed []plugin.Unit
@@ -399,7 +436,7 @@ func TestEmitter(t *testing.T) {
 			p := eidos.NewPlugin(contextPlugin).
 				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
 				Handle(eidos.Directive(schema, eidos.OnStruct(placing("A")), eidos.OnStruct(placing("B")))).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			var names []string
@@ -433,7 +470,7 @@ func TestEmitter(t *testing.T) {
 					record(m, e.PlanFile())
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			units := slices.Collect(ctx.Emit.Units())
 			assert.Length(t, units, 1, "the plugin flushes one unit of the plan")
@@ -501,7 +538,7 @@ func TestEmitter(t *testing.T) {
 					})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			byKey := map[string]plugin.Unit{}
@@ -531,7 +568,7 @@ func TestEmitter(t *testing.T) {
 					})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			var tags []string
@@ -561,7 +598,7 @@ func TestEmitter(t *testing.T) {
 					})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			keys := map[string]int{}
@@ -599,7 +636,7 @@ func TestEmitter(t *testing.T) {
 					})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 
 			var langs []symbol.Lang
@@ -618,21 +655,21 @@ func TestEmitter(t *testing.T) {
 
 		tests := []struct {
 			name string
-			word string
-			base string
+			tail string
+			head string
 			want string
 		}{
-			{name: "joins the word after the base", word: "stub", base: "store", want: "storeStub"},
-			{name: "keeps the case of the base", word: "stub", base: "Store", want: "StoreStub"},
-			{name: "raises a first letter of several bytes", word: "éclair", base: "store", want: "storeÉclair"},
-			{name: "returns the base for an empty word", word: "", base: "store", want: "store"},
-			{name: "returns the word for an empty base", word: "stub", base: "", want: "stub"},
+			{name: "joins the tail after the head", tail: "stub", head: "store", want: "storeStub"},
+			{name: "keeps the case of the head", tail: "stub", head: "Store", want: "StoreStub"},
+			{name: "raises a first letter of several bytes", tail: "éclair", head: "store", want: "storeÉclair"},
+			{name: "returns the head for an empty tail", tail: "", head: "store", want: "store"},
+			{name: "returns the tail for an empty head", tail: "stub", head: "", want: "stub"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, (&eidos.Emitter{}).JoinName(tt.word, tt.base), tt.want,
+				assert.Equal(t, (&eidos.Emitter{}).JoinName(tt.tail, tt.head), tt.want,
 					"the join is the neutral spelling")
 			})
 		}
@@ -765,7 +802,7 @@ func TestEmitter(t *testing.T) {
 					_, ok = e.Type(f.expires.ID, &node.TypeRef{Spelling: intSpelling})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(f.ctx), "the phase call passes")
 			assert.True(t, ok, "the spoke spells the scalar")
 			assert.Equal(t, f.spoke.last.Form, symbol.FormScalar, "the builtin folds under the scripted rules")
@@ -848,7 +885,7 @@ func TestEmitter(t *testing.T) {
 					e.Type(f.expires.ID, &node.TypeRef{Spelling: intSpelling})
 					return nil
 				})).
-				Build()
+				Generator()
 			read := widthReads(t, journaledGenerate(t, f.ctx, p))
 			assert.Permutation(t, read,
 				[]symbol.Identity{f.expires.ID, f.session.ID, coretest.PackageID(coretest.StorePath)},
@@ -864,7 +901,7 @@ func TestEmitter(t *testing.T) {
 					e.Type(f.expires.ID, &node.TypeRef{Spelling: stringSpelling})
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.Empty(t, widthReads(t, journaledGenerate(t, f.ctx, p)),
 				"an override of a key that the spoke does not read changes nothing")
 		})
@@ -878,7 +915,7 @@ func TestEmitter(t *testing.T) {
 					e.Type(m.Struct.ID, &node.TypeRef{Spelling: intSpelling})
 					return nil
 				})).
-				Build()
+				Generator()
 			read := widthReads(t, journaledGenerate(t, f.ctx, p))
 			assert.Permutation(t, read, []symbol.Identity{f.session.ID, coretest.PackageID(coretest.StorePath)},
 				"the invocation reads the subject and the package, each once")
@@ -922,6 +959,61 @@ func TestEmitter(t *testing.T) {
 		})
 	})
 
+	t.Run("Fields", func(t *testing.T) {
+		t.Parallel()
+
+		// required keeps the fields of the session without the optional note,
+		// which the spoke of the fixture cannot spell, and optional keeps the
+		// note alone.
+		required := func(f *node.Field) bool { return !f.Optional }
+		optional := func(f *node.Field) bool { return f.Optional }
+
+		t.Run("returns an emit field for each field that keep reports", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := f.lowerFields(t, required)
+			assert.True(t, ok, "the spoke spells the int and the string")
+			assert.Equal(t, got, []*emit.Field{
+				{
+					Origin: f.expires.ID, Name: expiresName, Visibility: symbol.VisibilityPublic,
+					Type: &emit.TypeRef{Spelling: string(narrow)},
+				},
+				{
+					Origin: f.count.ID, Doc: []string{countDoc}, Name: countName, Visibility: symbol.VisibilityPublic,
+					Type: &emit.TypeRef{Spelling: textSpelling},
+				},
+			}, "Fields returns the expires and count fields in order, with their translated types")
+		})
+
+		t.Run("translates every field for a nil keep", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			_, ok := f.lowerFields(t, nil)
+			assert.False(t, ok, "a nil keep translates the note, which the spoke cannot spell")
+		})
+
+		t.Run("returns no fields for a field without a spelling", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := f.lowerFields(t, optional)
+			assert.False(t, ok, "the spoke cannot spell the optional note")
+			assert.Nil(t, got, "Fields returns no fields after a refusal")
+		})
+
+		t.Run("reports RefusedType at the position of the field without a spelling", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.lowerFields(t, optional)
+			one := onlyFinding(t, f.ctx.Sink)
+			expect.Equal(t, one.Code, eidos.RefusedType, "the refusal reports under the code of a refused type")
+			expect.Equal(t, one.Pos, f.note.Pos, "the finding is at the field without a spelling")
+		})
+	})
+
 	t.Run("Slot", func(t *testing.T) {
 		t.Parallel()
 
@@ -952,9 +1044,28 @@ func TestEmitter(t *testing.T) {
 					e.Slot[*emit.Field](nil)
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
 				"a view of no slot would append nowhere")
+		})
+
+		t.Run("is the only path into a slot of a value in the store", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			seed(t, ctx, emitted(alpha))
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, _ *eidos.Emitter) error {
+					host, held := m.Value.(*emit.Struct)
+					assert.True(t, held, "a struct rule receives structs")
+					host.Fields.Append(&emit.Field{Name: "unattributed"})
+					return nil
+				})).
+				Generator()
+			assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
+				"a direct append into the host panics, because the store sealed its slots")
 		})
 	})
 
@@ -990,10 +1101,10 @@ func TestEmitterAllocs(t *testing.T) {
 	var joined string
 	assert.MaxAllocs(t, func() { joined = e.JoinName("stub", "store") }, joinNameAllocs,
 		"JoinName allocates the joined name")
-	assert.Equal(t, joined, "storeStub", "JoinName joins the word after the base")
+	assert.Equal(t, joined, "storeStub", "JoinName joins the tail after the head")
 	assert.MaxAllocs(t, func() { joined = e.JoinName("", "store") }, 0,
-		"JoinName allocates nothing for an empty word")
-	assert.Equal(t, joined, "store", "JoinName returns the base for an empty word")
+		"JoinName allocates nothing for an empty tail")
+	assert.Equal(t, joined, "store", "JoinName returns the head for an empty tail")
 }
 
 // BenchmarkEmitter measures a phase call over the invocation fixture
@@ -1004,24 +1115,24 @@ func BenchmarkEmitter(b *testing.B) {
 
 	e := &eidos.Emitter{}
 	b.Run("JoinName", func(b *testing.B) {
-		b.Run("a word and a base", func(b *testing.B) {
+		b.Run("a tail and a head", func(b *testing.B) {
 			c := bench.Start(b).MaxAllocs(joinNameAllocs)
 			defer c.End()
 			var got string
 			for c.Loop() {
 				got = e.JoinName("stub", "store")
 			}
-			assert.Equal(b, got, "storeStub", "JoinName joins the word after the base")
+			assert.Equal(b, got, "storeStub", "JoinName joins the tail after the head")
 		})
 
-		b.Run("an empty word", func(b *testing.B) {
+		b.Run("an empty tail", func(b *testing.B) {
 			c := bench.Start(b).MaxAllocs(0)
 			defer c.End()
 			var got string
 			for c.Loop() {
 				got = e.JoinName("", "store")
 			}
-			assert.Equal(b, got, "store", "JoinName returns the base for an empty word")
+			assert.Equal(b, got, "store", "JoinName returns the head for an empty tail")
 		})
 	})
 }
@@ -1039,7 +1150,7 @@ func referenced(t *testing.T) *emit.TemplateRef {
 			got = e.Ref(refTemplate, refPayload)
 			return nil
 		})).
-		Build()
+		Generator()
 	assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
 	assert.NotNil(t, got, "the handler ran")
 	return got
@@ -1068,7 +1179,7 @@ func woven(tb assert.TB, fields int) (*emit.Struct, plugin.Unit) {
 			view.Append()
 			return nil
 		})).
-		Build()
+		Generator()
 	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	var earlier plugin.Unit
 	for u := range ctx.Emit.Units() {
@@ -1096,7 +1207,7 @@ func emitterCases(tb assert.TB) []phaseCase {
 				h(m, e)
 				return nil
 			})).
-			Build())
+			Generator())
 	}
 	weaver := func(h func(*emit.Struct, *eidos.Emitter)) plugin.Generator {
 		return generatorOf(tb, eidos.NewPlugin(contextPlugin).
@@ -1106,7 +1217,7 @@ func emitterCases(tb assert.TB) []phaseCase {
 				h(s, e)
 				return nil
 			})).
-			Build())
+			Generator())
 	}
 	oneUnit := func(per plugin.Cardinality, decls int) func(assert.TB, *plugin.GeneratorContext) {
 		return func(tb assert.TB, ctx *plugin.GeneratorContext) {
@@ -1134,6 +1245,11 @@ func emitterCases(tb assert.TB) []phaseCase {
 	}
 	scalar := &node.TypeRef{Spelling: intSpelling}
 	var typed *emit.TypeRef
+	lowered := []*node.Field{{
+		ID: coretest.MemberID(coretest.StorePath, sessionName, expiresName, symbol.KindField), Name: expiresName,
+		Type: scalar,
+	}}
+	var translated []*emit.Field
 	return []phaseCase{
 		{
 			name: "File", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerSource, 0),
@@ -1164,6 +1280,16 @@ func emitterCases(tb assert.TB) []phaseCase {
 			gen: families(func(m *eidos.StructMatch, e *eidos.Emitter) { typed, _ = e.Type(m.Struct.ID, scalar) }),
 			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
 				assert.Equal(tb, typed.Spelling, string(narrow), "the spoke spells the scalar under the policy")
+				assert.False(tb, ctx.Sink.Failed(), "no translation is refused")
+			},
+		},
+		{
+			name: "Fields", allocs: fieldsAllocs, fresh: translating,
+			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { translated, _ = e.Fields(lowered, nil) }),
+			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
+				assert.Length(tb, translated, 1, "Fields returns the one field")
+				spelled := translated[0].Type.Spelling
+				assert.Equal(tb, spelled, string(narrow), "the spoke spells the scalar under the policy")
 				assert.False(tb, ctx.Sink.Failed(), "no translation is refused")
 			},
 		},

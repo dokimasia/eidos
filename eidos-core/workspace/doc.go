@@ -14,7 +14,7 @@
 // the roster, the config's refinements of the plans, each plan's
 // lowering policy, the targets' lowering entries, the registries with
 // the kernel's own keys and schemas registered first and every registry
-// sealed, the schedule of priority buckets, the binding of each
+// sealed, the schedule of turns, the binding of each
 // predicate on a named key handle, the options and their canonical
 // encoding, the plans and their compiled schedule, with every generator
 // that declares templates serving its plan's target, each plan's
@@ -27,7 +27,7 @@
 // human-typed name in the composition. Nothing after it fails on a name.
 //
 // [Workspace.Describe] returns the composition as data. The description
-// contains the frontends, the schedule of each role with the bucket and the
+// contains the frontends, the schedule of each role with the turn and the
 // version of each plugin, the sources, dependencies, backend and layout of
 // each plan, the commit order and the checks. Describe runs nothing, so a
 // command can print the composition without a run.
@@ -106,7 +106,7 @@
 // registry seals, Build binds each such gate through
 // [plugin.KeyBinder], and refuses a name that the registry does not
 // contain under the handle's value type. An annotator that gates on a
-// key that another annotator registers runs in a later bucket than that
+// key that another annotator registers runs in a later turn than that
 // annotator. Build refuses the composition otherwise, and the message of
 // the error contains the capabilities that the gating annotator can
 // require.
@@ -118,7 +118,7 @@
 // then loads the input's tree with the composition's frontends under
 // its brand, or seals the graph the caller handed over. Per-subject
 // directive validation, the stamp replay, the kernel meta drops and
-// the annotate schedule in bucket order follow. The plans then run in
+// the annotate schedule in turn order follow. The plans then run in
 // parallel: each generates, settles, routes, renders and stamps over
 // its own emit store, scoped index, readers and findings, and a plan
 // that depends on others starts after them. Plans exchange exports
@@ -130,9 +130,9 @@
 // Build, and every mutable structure a run touches, its sink included,
 // is created per call.
 //
-// A run takes the lock of the composition's ledger, where the ledger
-// implements [ledger.Locker], before it reads the previous record, and
-// releases it after the record, so one run at a time works in a state
+// A run takes the lock of the composition's ledger before it reads the
+// previous record, and releases it after the record, so one run at a
+// time works in a state
 // directory. [Input.Caller] describes the run in the holder's record. A
 // run that finds the lock taken reports [StateLocked], marks every plan
 // failed and writes nothing.
@@ -223,8 +223,8 @@
 // removal of its stale outputs, and prepares. The preparation reports
 // what each staged path contains, and a drifted or foreign file where
 // the plan writes is an Error of that plan. [Input.OverwriteDrift] and
-// [Input.Adopt] let a sink that implements [output.Overwriter] write over
-// a drifted file and a foreign one, and the run then reports neither.
+// [Input.Adopt] let the sink write over a drifted file and a foreign one,
+// and the run then reports neither.
 // Close then runs on one
 // goroutine: two plans routing a file to one path are [PlanCollision],
 // the outputs of plans the composition no longer declares are swept,
@@ -286,7 +286,7 @@
 // phase, so it describes the last run that wrote a generation. The
 // generation stores each read as a hash. Explain computes the hashes of the
 // edges that it can construct, and identifies the reads with those hashes.
-// Each [ExplainedRecord] contains the identified reads and the number of
+// Each [ExplainedExecution] contains the identified reads and the number of
 // the other reads. Explain returns [ErrNoGeneration] for a ledger without a
 // generation.
 //

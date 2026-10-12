@@ -13,32 +13,51 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// declared is a fixture plugin declaring every provider surface.
+// declared is a fixture plugin that implements every provider.
 type declared struct {
 	named
 }
 
+// Directives returns one fixture schema.
 func (declared) Directives() []directive.Schema {
 	return []directive.Schema{{Plugin: "stubgen", Name: "stub", Doc: "a fixture"}}
 }
 
+// Keys registers nothing.
 func (declared) Keys(*meta.Registry) error { return nil }
 
-func (declared) BindKeys(*meta.Registry) error { return nil }
+// BindKeys returns the receiver, which has no named handle.
+func (d declared) BindKeys(*meta.Registry) (plugin.Plugin, error) { return d, nil }
 
+// Outputs returns one family for each plan.
 func (declared) Outputs() []plugin.Output {
 	return []plugin.Output{{Per: plugin.PerPlan, Word: "registry"}}
 }
-func (declared) Priority(r plugin.Role) int    { return int(r) }
+
+// Priority returns the number of the role r as its priority.
+func (declared) Priority(r plugin.Role) int { return int(r) }
+
+// Provides returns the capability a.
 func (declared) Provides() []plugin.Capability { return []plugin.Capability{"a"} }
+
+// Requires returns the capability b.
 func (declared) Requires() []plugin.Capability { return []plugin.Capability{"b"} }
-func (declared) Options() any                  { return nil }
-func (declared) Version() string               { return "1.0.0" }
+
+// After returns the capability c.
+func (declared) After() []plugin.Capability { return []plugin.Capability{"c"} }
+
+// Options returns no options struct.
+func (declared) Options() any { return nil }
+
+// Version returns the version 1.0.0.
+func (declared) Version() string { return "1.0.0" }
+
+// Policies returns the fixture specs.
 func (declared) Policies() []plugin.PolicySpec { return policySpecs() }
 
-// The providers are how the composition learns what a plugin
-// declared, so their shapes are contract: each returns data, and a
-// plugin declares by satisfying the interface.
+// TestProviders tests the provider interfaces, through which the
+// composition reads what a plugin declares. Each returns data, and a
+// plugin declares by implementing the interface.
 func TestProviders(t *testing.T) {
 	t.Parallel()
 

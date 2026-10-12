@@ -228,8 +228,7 @@ func (r *rounds) identity() ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	versioned, _ := r.frontend.(plugin.Versioned) // asserted when the load began
-	return config, versioned.Version(), nil
+	return config, r.frontend.Version(), nil
 }
 
 // shared returns the shared inputs the frontend's partition declared

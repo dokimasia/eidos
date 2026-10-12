@@ -26,8 +26,8 @@ const (
 	PhaseAnnotate Phase = iota + 1
 	// PhaseGenerate runs over node subjects, within a plan.
 	PhaseGenerate
-	// PhaseEmit runs over emit values earlier buckets produced in
-	// the same plan.
+	// PhaseEmit runs over emit values that plugins of earlier turns
+	// produced in the same plan.
 	PhaseEmit
 )
 

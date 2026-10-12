@@ -128,6 +128,29 @@ func TestBuiltins(t *testing.T) {
 				"the binding is rendered beside its path")
 		})
 
+		t.Run("reports RefusedTemplate for a use whose name another use binds", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Imports = namedImports
+			l.TemplateImport = func(_, name string) (string, string, bool) { return name, "", name != "" }
+			l.Kinds[symbol.KindStruct] = use(storePkg, storeName) + use(legacyPkg, storeName) + structTpl
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), strconv.Quote(legacyPkg),
+				"the finding names the import whose name the file binds already")
+		})
+
+		t.Run("records a use that binds no name outside the name assignment", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.TemplateImport = func(_, name string) (string, string, bool) { return name, "", name != "" }
+			l.Kinds[symbol.KindStruct] = use(fmtPkg) + structTpl
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, string(files[0].Body), "import ("+fmtPkg+")", "the bare path is recorded")
+		})
+
 		t.Run("reports RefusedTemplate for a use that binds two names", func(t *testing.T) {
 			t.Parallel()
 

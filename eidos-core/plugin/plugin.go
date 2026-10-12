@@ -28,6 +28,15 @@ type Plugin interface {
 	Name() ID
 }
 
+// ContractVersion is the version of the contract between the kernel and
+// its components. The contract is the SPI, the authoring API and the
+// formats that cross the boundary of a binary, and a change that breaks a
+// component raises the version. Go links one version of the kernel into a
+// binary, so only what crosses that boundary records the version. The
+// declarative loader refuses a manifest of another version, and a run over
+// a sealed state of another version runs cold.
+const ContractVersion = 1
+
 // Role names one phase role a plugin can hold.
 //
 // Priorities are per role: one shared number cannot place a
@@ -65,6 +74,6 @@ func (r Role) String() string {
 // The provider exports it as a constant and requirers reference
 // that constant, so a misspelled requirement is a compile error in
 // a typed plugin and a collected fault only for what a manifest
-// spelled. Capability topology orders execution inside one
-// priority bucket.
+// spelled. Capability topology orders the plugins of one
+// priority.
 type Capability string

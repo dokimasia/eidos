@@ -6,6 +6,7 @@ package pipelinetest_test
 import (
 	"errors"
 	"io/fs"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -20,10 +21,11 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/core/workspace/pipelinetest"
+	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 )
 
-// The brand, the target and the plan every fixture composition
-// declares, and the generator the plan runs.
+// These constants are the brand, the target and the plan of every
+// fixture composition, and the generator that the plan runs.
 const (
 	fixtureBrand  output.Brand  = "fixture"
 	fixtureTarget plugin.Target = "fixture"
@@ -31,8 +33,9 @@ const (
 	mirrorID      plugin.ID     = "mirror"
 )
 
-// The plain fixture's tree, which declares Row, and the file its plan
-// generates beside Row's source, frame included.
+// These constants are the tree of the plain fixture, which declares Row,
+// and the file that its plan generates beside the source of Row, with
+// its frame.
 const (
 	rowFile    = "svc/store/row.zz"
 	rowSource  = "package svc/store\ntype Row int string\n"
@@ -45,10 +48,11 @@ const (
 		"// fixture:provenance sha256:4404d869611c27ccb644bbccc50ca9a36c455d69d54c72eec8e8b9428ad46b48\n"
 )
 
-// The dependent fixture's tree, whose User spells a type of a package
-// only its store declares, the store's one file, and the file the
-// plan generates beside User's source, which names the type the
-// reference resolved to.
+// These constants are the tree of the dependent fixture, whose User has a
+// type of a package that only its store declares, the one file of the
+// store, and the file that the plan generates beside the source of User.
+// The generated file contains the name of the type that the reference
+// resolved to.
 const (
 	userFile    = "svc/api/user.zz"
 	userSource  = "package svc/api\nimport ext ext/lib\ntype User ext.Lib\n"
@@ -64,13 +68,28 @@ const (
 		"// fixture:provenance sha256:9364e921b5b45a0e083608a1358d6f8b03f7659a7b42c35780baf5bb14bca749\n"
 )
 
-// errNoStatements is what the printer's scaffold returns: the fixture
-// emits no statement.
+// errNoStatements is the error of the scaffold of the printer. The
+// fixture emits no statement.
 var errNoStatements = errors.New("pipelinetest_test: the fixture spells no statements")
 
-// The suite is the pipeline's conformance bar, so a plan that generates,
-// records and regenerates the files its fixture states passes every
-// check.
+// fixturePrinter returns the printer of the target fixture, which spells
+// a struct as one line, names every file after its family word and
+// frames the file through a line comment. Every call returns one value,
+// so the plans of a composition share the backend of their target, as a
+// target renders through one backend.
+var fixturePrinter = sync.OnceValue(func() plugin.Backend {
+	return backend.New("printer", fixtureTarget, plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) { return nil, errNoStatements }).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: everyFact()}).
+		Build()
+})
+
+// TestSuite tests the pipeline suite. A plan that generates, records and
+// generates again the files that its fixture wants passes every check.
 func TestSuite(t *testing.T) {
 	t.Parallel()
 
@@ -91,20 +110,17 @@ func TestSuite(t *testing.T) {
 	})
 }
 
-// generator returns a generator under a name, running h once per struct
-// in scope and emitting into the gen family.
+// generator returns a generator of a name that runs h once for each
+// struct in scope and emits into the family gen.
 func generator(name plugin.ID, h func(*eidos.StructMatch, *eidos.Emitter) error) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
-	if !held {
-		panic("pipelinetest_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Handle(eidos.OnStruct(h)).Generator()
 }
 
-// naming returns a generator under a name, emitting per struct one
-// struct that name spells from the subject.
+// naming returns a generator of the name id that emits one struct for
+// each struct in scope, under the name that name returns for the
+// subject.
 func naming(id plugin.ID, name func(subject *eidos.StructMatch) string) plugin.Generator {
 	return generator(id, func(m *eidos.StructMatch, e *eidos.Emitter) error {
 		e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name(m)})
@@ -112,27 +128,14 @@ func naming(id plugin.ID, name func(subject *eidos.StructMatch) string) plugin.G
 	})
 }
 
-// mirror returns the fixture's generator, emitting ForRow for Row.
+// mirror returns the generator of the fixture, which emits ForRow for
+// Row.
 func mirror() plugin.Generator {
 	return naming(mirrorID, func(m *eidos.StructMatch) string { return "For" + m.Struct.Name })
 }
 
-// printer returns a backend under a name that spells a struct as one
-// line and names every file after its family word, framed through a
-// line comment.
-func printer(name plugin.ID) plugin.Backend {
-	return backend.New(name, fixtureTarget, plugin.CommentSyntax{Line: []string{"//"}}).
-		KindTemplates(map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"}).
-		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
-		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) { return nil, errNoStatements }).
-		Imports(func(*render.ImportSet) string { return "" }).
-		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
-		Coverage(render.Coverage{Facts: everyFact()}).
-		Build()
-}
-
-// everyFact renders every fact, which the printer's one template states
-// none of.
+// everyFact returns a verdict of Renders for every fact. The one template
+// of the printer writes no fact.
 func everyFact() map[symbol.Fact]render.Verdict {
 	out := map[symbol.Fact]render.Verdict{}
 	for _, f := range symbol.Facts() {
@@ -141,19 +144,19 @@ func everyFact() map[symbol.Fact]render.Verdict {
 	return out
 }
 
-// plan returns a plan under a name, running gen toward a printer of its
-// own and writing every file beside its source.
+// plan returns a plan of a name that runs gen through the printer of the
+// target fixture and writes every file beside its source.
 func plan(name string, gen plugin.Generator) workspace.Plan {
 	return workspace.Plan{
 		Name:       name,
 		Generators: []plugin.Generator{gen},
-		Backend:    printer(plugin.ID(name + "-printer")),
+		Backend:    fixturePrinter(),
 	}
 }
 
-// onDisk returns a composition over root without its plans: the
-// fixture's brand and target, the frontend, a disk sink at root and the
-// state directory's ledger under root.
+// onDisk returns a composition over root without its plans. It has the
+// brand and the target of the fixture, the frontend, a disk sink at root
+// and the ledger of the state directory under root.
 func onDisk(root string, front plugin.Frontend) *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
@@ -163,41 +166,52 @@ func onDisk(root string, front plugin.Frontend) *workspace.Builder {
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
 }
 
-// compose is the plain fixture's composition over root: the scripted
-// language, and one plan mirroring every struct.
-func compose(root string) (*workspace.Workspace, error) {
-	return onDisk(root, frontendtest.NewScripted()).Plans(plan(planName, mirror())).Build()
+// compose is the composition of the plain fixture over root, with the
+// scripted language and without its plan.
+func compose(root string) (*workspace.Builder, error) {
+	return onDisk(root, frontendtest.NewScripted()), nil
 }
 
-// fixture returns the plain fixture: Row's source, the composition that
-// mirrors it, and the one file the run generates.
-func fixture() pipelinetest.Fixture {
-	return pipelinetest.Fixture{
+// mirrorPlans returns the one plan of the plain fixture, which mirrors
+// every struct.
+func mirrorPlans() []workspace.Plan {
+	return []workspace.Plan{plan(planName, mirror())}
+}
+
+// fixture returns the plain fixture, with the source of Row, the
+// composition and the plan that mirror it, and the one file that the run
+// generates.
+func fixture() workspacetest.Fixture {
+	return workspacetest.Fixture{
 		Tree:    fstest.MapFS{rowFile: {Data: []byte(rowSource)}},
 		Compose: compose,
+		Plans:   mirrorPlans,
 		Want:    map[string][]byte{genFile: []byte(genStamped)},
 	}
 }
 
-// dependentFixture returns the fixture whose load reads a store: User's
-// source, the store declaring Lib, and a composition of the scripted
-// language in the dependent role whose plan names each struct after the
-// type its first field resolves to, in the workspace's package alone.
-// A run that does not read the store resolves nothing, and generates
-// another name.
-func dependentFixture() pipelinetest.Fixture {
+// dependentFixture returns the fixture whose load reads a store. It has
+// the source of User, the store that declares Lib, and a composition of
+// the scripted language in the dependent role. Its plan names each
+// struct after the type that its first field resolves to, in the package
+// of the workspace alone. A run that does not read the store resolves
+// nothing, and generates another name.
+func dependentFixture() workspacetest.Fixture {
 	resolving := naming(mirrorID, func(m *eidos.StructMatch) string {
 		return "For" + m.Struct.Name + "Of" + m.Struct.Fields[0].Type.Target.Name
 	})
-	return pipelinetest.Fixture{
+	return workspacetest.Fixture{
 		Tree: fstest.MapFS{userFile: {Data: []byte(userSource)}},
 		Stores: map[string]fs.FS{
 			frontendtest.ScriptedStore: fstest.MapFS{libFile: {Data: []byte(libSource)}},
 		},
-		Compose: func(root string) (*workspace.Workspace, error) {
+		Compose: func(root string) (*workspace.Builder, error) {
+			return onDisk(root, frontendtest.NewScriptedDependent()), nil
+		},
+		Plans: func() []workspace.Plan {
 			scoped := plan(planName, resolving)
 			scoped.Sources = workspace.Sources{Packages: []string{userPath}}
-			return onDisk(root, frontendtest.NewScriptedDependent()).Plans(scoped).Build()
+			return []workspace.Plan{scoped}
 		},
 		Want: map[string][]byte{userGen: []byte(userStamped)},
 	}

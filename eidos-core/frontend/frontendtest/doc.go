@@ -13,6 +13,10 @@
 // load that skips validation accepts an invalid directive without a
 // finding.
 //
+// The suite files each stamp under [meta.LoadClaim] in a key registry
+// from [Registry], as a workspace run does. A test that applies the
+// stamps of a load outside the suite calls both.
+//
 // # Skips
 //
 // A fixture that cannot state a check skips it, and the suite reports
@@ -30,6 +34,14 @@
 //     without stores, skips the dependency check.
 //   - A frontend outside the [plugin.Exporter] role, or a fixture that
 //     lists no re-exported declaration, skips the re-export check.
+//   - A fixture without an [Fixture.Empty] tree skips the empty-load
+//     check.
+//
+// [AssertEmptyLoad] loads a tree whose claimed files declare nothing,
+// such as a file with a package clause alone. The load calls a frontend
+// only for a file that its selection claims, so the tree claims at least
+// one file, and the check requires each claimed file in the graph without
+// a declaration and no Error.
 //
 // A granular assertion called directly over a fixture that cannot state
 // it fails where the fixture broke a promise, such as classification

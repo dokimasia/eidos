@@ -156,7 +156,7 @@ func (e *encoder) storedClaim(c *meta.StoredClaim) error {
 	e.text(string(c.Key))
 	e.text(string(c.Group))
 	e.uvarint(uint64(c.Claim.Authority))
-	e.varint(int64(c.Claim.Bucket))
+	e.varint(int64(c.Claim.Turn))
 	e.text(string(c.Claim.Plugin))
 	e.varint(int64(c.Claim.Order.Rule))
 	e.identity(c.Claim.Order.Subject)
@@ -177,7 +177,7 @@ func (d *decoder) storedClaim(subject symbol.Identity) meta.StoredClaim {
 	out.Claim = meta.Claim{
 		Subject:   subject,
 		Authority: meta.Authority(d.Enum()),
-		Bucket:    int(d.Varint()),
+		Turn:      int(d.Varint()),
 		Plugin:    diag.Origin(d.text()),
 		Order:     meta.Order{Rule: int(d.Varint()), Subject: d.identity(), Instance: int(d.Varint())},
 		Pos:       d.pos(),

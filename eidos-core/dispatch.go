@@ -79,7 +79,7 @@ type phaseCall struct {
 	sink    *diag.Sink
 	emit    *plugin.Emit
 	plugin  plugin.ID
-	bucket  int
+	turn    int
 	rules   *rules.Registry
 	kernel  meta.KernelKeys
 	workers int
@@ -168,11 +168,11 @@ var calls = sync.Pool{New: func() any { return new(phaseCall) }}
 // allocates itself and its first lane's scratch.
 func newPhaseCall(
 	b *built, ix *plugin.Index, facts *meta.Facts, sink *diag.Sink, em *plugin.Emit,
-	id plugin.ID, bucket int, rs *rules.Registry, kernel meta.KernelKeys, workers int,
+	id plugin.ID, turn int, rs *rules.Registry, kernel meta.KernelKeys, workers int,
 ) *phaseCall {
 	c, _ := calls.Get().(*phaseCall)
 	c.b, c.index, c.facts, c.sink, c.emit = b, ix, facts, sink, em
-	c.plugin, c.bucket, c.rules, c.kernel, c.workers = id, bucket, rs, kernel, workers
+	c.plugin, c.turn, c.rules, c.kernel, c.workers = id, turn, rs, kernel, workers
 	c.collects = workers > 1
 	if len(c.lanes) == 0 {
 		c.first = runState{phaseCall: c, fx: effects{lastHost: -1}}

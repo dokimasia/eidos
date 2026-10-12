@@ -42,6 +42,9 @@ func (refusing) Write(string, []byte) error { return errRefused }
 // Delete refuses the removal with errRefused.
 func (refusing) Delete(string) error { return errRefused }
 
+// Overwrite refuses the verdicts with errRefused.
+func (refusing) Overwrite(...output.Found) error { return errRefused }
+
 // Prepare refuses the preparation with errRefused.
 func (refusing) Prepare() ([]output.Change, error) { return nil, errRefused }
 
@@ -92,11 +95,11 @@ func TestTee(t *testing.T) {
 			assert.Equal(t, string(m.Files()[storeFile]), next, "and so does the memory sink")
 		})
 
-		t.Run("returns an error for a sink that does not overwrite", func(t *testing.T) {
+		t.Run("returns the error of a sink that refuses the verdict", func(t *testing.T) {
 			t.Parallel()
 
 			tee := output.NewTee(output.NewMem(), refusing{})
-			assert.HasError(t, tee.Overwrite(output.FoundDrifted), "the refusing sink would refuse the file")
+			assert.ErrorIs(t, tee.Overwrite(output.FoundDrifted), errRefused, "the tee joins the error of the sink")
 		})
 	})
 

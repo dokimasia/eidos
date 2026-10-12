@@ -131,7 +131,7 @@ func (r *router) qualifyDecl(
 				origin, _ := emit.OriginOf(d)
 				r.errorf(UntranslatedReference, r.positionOf(origin, u), nil,
 					"%s references %s of %s, which the plan does not emit, and is refused",
-					describe(d), t.Spelling, t.Target)
+					Describe(d), t.Spelling, t.Target)
 				r.refused[d] = struct{}{}
 				return
 			}
@@ -147,7 +147,7 @@ func (r *router) qualifyDecl(
 			origin, _ := emit.OriginOf(d)
 			r.errorf(UnderivedPackage, r.positionOf(origin, u), nil,
 				"%s references %s in %s, a file the target derives no package for, and is refused: %v",
-				describe(d), t.Spelling, home.file.Path, home.reason)
+				Describe(d), t.Spelling, home.file.Path, home.reason)
 			r.refused[d] = struct{}{}
 			return
 		case home.file.Pkg.Package != f.file.Pkg.Package:

@@ -19,8 +19,8 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The scripted language's rules are the kernel's own proving
-// ground, so each decision it returns is pinned.
+// TestScripted pins each decision that the rules of the scripted language
+// return. The kernel tests its walks against these rules.
 func TestScripted(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +41,7 @@ func TestScripted(t *testing.T) {
 	t.Run("roles", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("call everything input and value under no error model", func(t *testing.T) {
+		t.Run("return input and value roles without an error model", func(t *testing.T) {
 			t.Parallel()
 
 			s := rulestest.Scripted()
@@ -70,7 +70,7 @@ func TestScripted(t *testing.T) {
 	t.Run("Resolve", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("finds a bare name in the subject's package", func(t *testing.T) {
+		t.Run("finds a bare name in the package of the subject", func(t *testing.T) {
 			t.Parallel()
 
 			v, _ := recordingView(t)
@@ -80,7 +80,7 @@ func TestScripted(t *testing.T) {
 			assert.NoError(t, err, "the struct resolves")
 			assert.Equal(t, decl.Kind(), symbol.KindStruct, "as itself")
 			_, err = s.Resolve(scope, "Nope", directive.ResolveCallableInScope, v)
-			assert.HasError(t, err, "and a name the package does not declare errors")
+			assert.HasError(t, err, "a name that the package does not declare returns an error")
 			assert.HasPrefix(t, err.Error(), "rulestest: ", "under the package prefix")
 		})
 	})
@@ -92,24 +92,24 @@ func TestScripted(t *testing.T) {
 			t.Parallel()
 
 			s := rulestest.Scripted()
-			sample, alternate := s.SamplesOf(&node.TypeRef{Spelling: "string"}, "name", rules.View{})
+			sample, alternate := s.DeriveSamples(&node.TypeRef{Spelling: "string"}, "name", rules.View{})
 			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralString, "test-name"),
 				"a string sample contains the hint")
 			assert.Equal(t, alternate.Value, emit.Literal(emit.LiteralString, "other-name"), "twice")
-			sample, _ = s.SamplesOf(&node.TypeRef{Spelling: "bool"}, "", rules.View{})
+			sample, _ = s.DeriveSamples(&node.TypeRef{Spelling: "bool"}, "", rules.View{})
 			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralBool, "true"), "a bool")
-			sample, _ = s.SamplesOf(nil, "", rules.View{})
+			sample, _ = s.DeriveSamples(nil, "", rules.View{})
 			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, "nothing has no value")
 			row := &node.TypeRef{Spelling: "Row", Target: symbol.Identity{
 				Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "Row", Kind: symbol.KindStruct,
 			}}
-			sample, _ = s.SamplesOf(row, "", rules.View{})
+			sample, _ = s.DeriveSamples(row, "", rules.View{})
 			assert.Equal(t, sample.Refusal, rules.RefusedUnresolved,
-				"a named type the view does not contain refuses as unresolved")
+				"a named type that the view does not contain refuses as unresolved")
 			v, reads := recordingView(t)
-			sample, _ = s.SamplesOf(row, "", v)
+			sample, _ = s.DeriveSamples(row, "", v)
 			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral,
-				"and one the view contains refuses with no literal, because no composite is written")
+				"a named type that the view contains refuses with no literal")
 			assert.Equal(t, slices.Collect(reads.Identities()), []symbol.Identity{row.Target},
 				"after reading the declaration through the view")
 
@@ -125,52 +125,37 @@ func TestScripted(t *testing.T) {
 			assert.True(t, held, "an integer parses")
 			assert.Equal(t, lit.Text, "12", "to its own text")
 			_, held = s.LiteralFor(nil, &node.TypeRef{Spelling: "int"}, "x", rules.View{})
-			assert.False(t, held, "and text that is no integer refuses")
+			assert.False(t, held, "text that is not an integer has no literal")
 			_, held = s.LiteralFor(nil, &node.TypeRef{Spelling: "bool"}, "true", rules.View{})
 			assert.False(t, held, "a bool takes no literal from text")
 			_, held = s.LiteralFor(nil, nil, "x", rules.View{})
 			assert.False(t, held, "nor does nothing")
-			assert.Equal(t, s.TypeName("Builder", "Row"), "RowBuilder", "the join concatenates")
 		})
 	})
 
 	t.Run("generics", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("derive an int witness and substitute by position", func(t *testing.T) {
+		t.Run("derive an int witness for every parameter", func(t *testing.T) {
 			t.Parallel()
 
 			s := rulestest.Scripted().(rules.GenericsRules)
 			ref, held := s.Derive(&node.TypeParam{Name: "T"}, rules.View{})
 			assert.True(t, held, "every parameter has a witness")
-			assert.Equal(t, ref.Spelling, "int", "an int")
-			assert.False(t, s.Reified(), "and nothing is kept at runtime")
-
-			params := []*node.TypeParam{{Name: "T"}}
-			args := []*node.TypeRef{{Spelling: "string"}}
-			list := &node.TypeRef{Spelling: "[]T", Form: symbol.FormList, Elems: []*node.TypeRef{{Spelling: "T"}}}
-			got := s.Substitute(list, params, args)
-			assert.Length(t, got.Elems, 1, "the form keeps its element")
-			assert.Equal(t, got.Elems[0].Spelling, "string", "the parameter inside a form rewrites")
-			assert.NotEqual(t, got, list, "on a copy", assert.ByIdentity())
-			assert.Equal(t, s.Substitute(&node.TypeRef{Spelling: "int"}, params, args).Spelling, "int",
-				"a reference naming no parameter is returned as it is")
-			assert.Nil(t, s.Substitute(nil, params, args), "and nil returns nil")
-			same := &node.TypeRef{Spelling: "T"}
-			assert.Equal(t, s.Substitute(same, params, nil), same, "a list mismatch rewrites nothing",
-				assert.ByIdentity())
+			assert.Equal(t, ref.Spelling, "int", "the witness is an int")
+			assert.False(t, s.Reified(), "the language keeps no type argument at runtime")
 		})
 	})
 }
 
-// recordingView mints a view over the scripted tree with a fresh
-// read set, and returns the set so a case can check the reads.
+// recordingView returns a view over the scripted tree with a fresh read
+// set, and returns the set, so that a case can check the reads.
 func recordingView(tb assert.TB) (rules.View, *store.ReadSet) {
 	tb.Helper()
 
 	_, f := setup(tb)
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
-	assert.NoError(tb, err, "the graph hands out a reader")
-	return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}, reads
+	assert.NoError(tb, err, "the graph returns a reader")
+	return rules.NewView(reader, f.Facts, reads, f.Keys), reads
 }

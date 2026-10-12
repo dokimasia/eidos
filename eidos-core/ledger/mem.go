@@ -59,7 +59,6 @@ type memBlob struct {
 var (
 	_ Ledger      = (*Mem)(nil)
 	_ GroupWriter = (*Mem)(nil)
-	_ Locker      = (*Mem)(nil)
 )
 
 // NewMem returns an empty ledger in memory.

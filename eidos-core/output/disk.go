@@ -49,10 +49,7 @@ type Disk struct {
 	brand Brand
 }
 
-var (
-	_ Sink       = (*Disk)(nil)
-	_ Overwriter = (*Disk)(nil)
-)
+var _ Sink = (*Disk)(nil)
 
 // NewDisk opens a sink over an existing directory that writes as
 // one brand. It refuses a brand outside [Brand.Valid], because the
@@ -80,9 +77,9 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 }
 
 // Overwrite lets Commit write over the drifted files, the foreign files
-// or both, as [Overwriter] states, and allocates nothing.
+// or both, as [Sink.Overwrite] states, and allocates nothing.
 //
-// Error modes are the ones [Overwriter.Overwrite] lists.
+// Error modes are the ones [Sink.Overwrite] lists.
 func (d *Disk) Overwrite(found ...Found) error { return d.allow(found) }
 
 // Write stages one file. Nothing is written to the tree until Commit.

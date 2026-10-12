@@ -223,6 +223,28 @@ func TestVocabulary(t *testing.T) {
 			assert.Contains(t, body, "\t"+contentCall+"()\n", "the body builtin places the content")
 		})
 
+		t.Run("reports UnbindableHelper for a helper that is not a function", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := runMerged(t, shouting(), &plugin.RenderContext{
+				Emit:     seeded(t, unitOf(emitter, storeKey, alphaName)),
+				Schedule: []plugin.ID{emitter},
+				Funcs:    map[plugin.ID]template.FuncMap{emitter: {markHelper: markData}},
+			})
+			coretest.AssertCodes(t, sink, render.UnbindableHelper)
+		})
+
+		t.Run("renders without a helper whose name is not an identifier", func(t *testing.T) {
+			t.Parallel()
+
+			body, _ := runMerged(t, shouting(), &plugin.RenderContext{
+				Emit:     seeded(t, unitOf(emitter, storeKey, alphaName)),
+				Schedule: []plugin.ID{emitter},
+				Funcs:    map[plugin.ID]template.FuncMap{emitter: {dashedHelper: strings.ToUpper}},
+			})
+			assert.Contains(t, body, shouted, "the shared helper spells the name")
+		})
+
 		t.Run("reports HelperCollision for a helper two plugins register", func(t *testing.T) {
 			t.Parallel()
 

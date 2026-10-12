@@ -191,7 +191,8 @@ func TestContract(t *testing.T) {
 		t.Run("returns rules that refuse both samples with RefusedNoRules", func(t *testing.T) {
 			t.Parallel()
 
-			sample, alternate := rules.Absent(unregistered).SamplesOf(builtin(intSpelling), countField, rules.View{})
+			absent := rules.Absent(unregistered)
+			sample, alternate := absent.DeriveSamples(builtin(intSpelling), countField, rules.View{})
 			assert.Equal(t, [2]rules.Sample{sample, alternate},
 				[2]rules.Sample{rules.Refused(rules.RefusedNoRules), rules.Refused(rules.RefusedNoRules)},
 				"both halves refuse for want of rules")
@@ -209,13 +210,6 @@ func TestContract(t *testing.T) {
 
 			_, held := rules.Absent(unregistered).LiteralFor(nil, builtin(intSpelling), "1", rules.View{})
 			assert.False(t, held, "LiteralFor reports false")
-		})
-
-		t.Run("returns rules that append the word to the base", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, rules.Absent(unregistered).TypeName("Builder", rowName), "RowBuilder",
-				"the join is a concatenation")
 		})
 
 		t.Run("returns rules without an optional capability", func(t *testing.T) {

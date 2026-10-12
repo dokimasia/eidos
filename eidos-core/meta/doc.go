@@ -30,7 +30,7 @@
 //
 // Every write comes with a [Claim], and rank decides the winner,
 // never arrival order: higher [Authority] first, then the earlier
-// capability bucket, then the plugin name alphabetically, then the
+// turn in the schedule, then the plugin name alphabetically, then the
 // first claim in canonical match order, which the claim's [Order]
 // states as the rule, the invocation's subject and the gating instance.
 // A claim that loses on rank changes nothing, whenever it arrives.

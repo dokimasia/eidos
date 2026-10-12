@@ -20,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
+	"go.dokimi.dev/eidos/core/plugin"
 )
 
 // The ledger directories of the sealed state the cases inspect.
@@ -134,6 +135,8 @@ func TestCommit(t *testing.T) {
 			l := ledger.NewMem()
 			g := committed(t, l, past, "alpha")
 			assert.Equal(t, g.Header.Composition, header(past).Composition, "the header is the commit's")
+			assert.Equal(t, g.Header.Contract, header(past).Contract,
+				"the header has the contract version of the commit")
 			assert.Equal(t, g.Header.Sequence, uint64(1), "a cold run's generation is the first")
 			assert.Equal(t, g.Header.Parent, "", "and has no parent")
 			assert.Equal(t, g.Header.Format, uint64(state.Format), "in the kernel's format")
@@ -601,10 +604,12 @@ func BenchmarkCommit(b *testing.B) {
 	})
 }
 
-// header returns a header anchored at an instant, with the composition
-// the cases share.
+// header returns a header anchored at an instant, with the contract
+// version of the kernel and the composition that the cases share.
 func header(anchor time.Time) state.Header {
-	return state.Header{Composition: sha256.Sum256([]byte("composition")), Anchor: anchor}
+	return state.Header{
+		Contract: plugin.ContractVersion, Composition: sha256.Sum256([]byte("composition")), Anchor: anchor,
+	}
 }
 
 // committed writes one commit of puts to the checks table, over a parent

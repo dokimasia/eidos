@@ -37,6 +37,9 @@ const (
 	otherIndexPayload = "stubgen:index mode=fast"
 	dropPayload       = "meta drop=shape.role"
 	writerPayload     = "shaper:shape writer reads=[a, b]"
+	// derivedKey is a key of the fixture whose value its registrant
+	// derives, so a meta directive cannot drop it.
+	derivedKey = "shape.shape"
 )
 
 // The variants of the variant fixture: writer, which requires the fields
@@ -331,6 +334,12 @@ func TestValidate(t *testing.T) {
 				payloads: []string{"meta drop=shape.nonexistent"},
 				want:     directive.UnknownMetadataKey,
 				naming:   "shape.role",
+			},
+			{
+				name:     "reports DerivedMetadataKey for a drop of a derived key",
+				payloads: []string{"meta drop=" + derivedKey},
+				want:     directive.DerivedMetadataKey,
+				naming:   derivedKey,
 			},
 			{
 				name:     "reports UnknownCode naming a code that does not parse",
@@ -1325,7 +1334,7 @@ func validationBench(tb assert.TB) (*directive.Registry, *meta.Registry, []direc
 }
 
 // keyed returns a metadata registry with shape.role in the group
-// shape.writer, for drop resolution.
+// shape.writer, and the derived key shape.shape, for drop resolution.
 func keyed(tb assert.TB) *meta.Registry {
 	tb.Helper()
 
@@ -1335,6 +1344,10 @@ func keyed(tb assert.TB) *meta.Registry {
 		Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
 	})
 	assert.NoError(tb, err, "the fixture key registers")
+	_, err = meta.Register[string](r, meta.KeySpec{
+		Name: derivedKey, Doc: "the name of the classification", Derived: true,
+	})
+	assert.NoError(tb, err, "the derived key registers")
 	return r
 }
 

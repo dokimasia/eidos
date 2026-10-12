@@ -202,7 +202,7 @@ func (f *Facts) DropGroup(g GroupName, c Claim) error {
 }
 
 // Withdraw removes the claim on (c.Subject, k) that has c's rank
-// source, meaning its authority, bucket, plugin and order, and ranks the
+// source, meaning its authority, turn, plugin and order, and ranks the
 // remaining claims again: what a warm run does before it executes a
 // match again, and for a match that disappeared. A fact whose presence
 // the withdrawal changes moves in [Facts.ByKey].

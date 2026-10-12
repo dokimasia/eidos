@@ -25,6 +25,14 @@ var UndeclaredFact = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 35, Meaning: "the backend declares no coverage verdict for a stated fact",
 })
 
+// RejectedFact reports a stated fact whose declaration the target
+// cannot render with the fact or without it, such as a member whose
+// name is an expression of another language. It is an error, and the
+// render leaves the declaration out.
+var RejectedFact = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 74, Meaning: "the target cannot render a declaration with a stated fact or without it",
+})
+
 // Verdict says what a backend does with one stated fact.
 //
 // The zero value is [VerdictUndeclared], so a fact left out of a
@@ -45,6 +53,10 @@ const (
 	// reports the stated fact and the declaration renders without
 	// it.
 	Refuses
+	// Rejects means the target cannot render the declaration with the
+	// fact or without it: the render reports the stated fact as an
+	// error and leaves the declaration out.
+	Rejects
 )
 
 // Coverage is a backend's declared fact coverage: one verdict per
@@ -60,12 +72,22 @@ type Coverage struct {
 	// consulted before Facts: a field's initializer may refuse
 	// where a variable's renders.
 	Except map[symbol.Kind]map[symbol.Fact]Verdict
+	// RefusesEmbeds marks a language that has no promotion. The coverage
+	// refuses an embed whole, with every fact on it, so the declaration
+	// renders without its embeds, and the vocabulary needs no refusal of
+	// its own.
+	RefusesEmbeds bool
 }
 
-// Of returns the verdict for one fact stated on one kind:
-// the kind's exception where one is declared, the base verdict
-// otherwise, and [VerdictUndeclared] where neither speaks.
+// Of returns the verdict for one fact stated on one kind. It returns
+// [Refuses] for the embeds of a declaration and for every fact on an
+// embed where the coverage refuses embeds, the exception of the kind where
+// one is declared, the base verdict otherwise, and [VerdictUndeclared]
+// where neither speaks. Of allocates nothing.
 func (c Coverage) Of(kind symbol.Kind, fact symbol.Fact) Verdict {
+	if c.RefusesEmbeds && (kind == symbol.KindEmbed || fact == symbol.FactEmbeds) {
+		return Refuses
+	}
 	if v, held := c.Except[kind][fact]; held {
 		return v
 	}

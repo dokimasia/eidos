@@ -95,12 +95,12 @@ func (scripted) Resolve(
 	return nil, fmt.Errorf("rulestest: %q names nothing in %s at %v", name, scope.Subject.Package, kind)
 }
 
-// SamplesOf derives a pair for a builtin and refuses the rest: a
+// DeriveSamples derives a pair for a builtin and refuses the rest: a
 // named type the view does not contain as unresolved, and every
 // other type with no literal, because the scripted language writes
 // no composite. The declaration a named type targets decides the
 // refusal, so the lookup records it on the view.
-func (scripted) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+func (scripted) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	if ref == nil {
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
@@ -157,48 +157,12 @@ func (scripted) LiteralFor(_ *node.File, ref *node.TypeRef, text string, _ rules
 	}
 }
 
-// TypeName joins by concatenation, the base first.
-func (scripted) TypeName(word, base string) string { return base + word }
-
 // Derive returns an int witness for every parameter: the scripted
 // language states no bounds, so every type set is open.
 func (scripted) Derive(*node.TypeParam, rules.View) (*node.TypeRef, bool) {
 	return &node.TypeRef{Spelling: scriptedInt}, true
 }
 
-// Substitute rewrites a reference naming a parameter into the
-// argument at its position, copying what it rewrites.
-func (scripted) Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef {
-	if ref == nil || len(params) != len(args) {
-		return ref
-	}
-	for i, p := range params {
-		if p != nil && ref.Spelling == p.Name && args[i] != nil {
-			c := *args[i]
-			return &c
-		}
-	}
-	if len(ref.Elems) == 0 && len(ref.Args) == 0 {
-		return ref
-	}
-	c := *ref
-	c.Elems = substituteAll(scripted{}, ref.Elems, params, args)
-	c.Args = substituteAll(scripted{}, ref.Args, params, args)
-	return &c
-}
-
-// substituteAll rewrites every reference in a list.
-func substituteAll(s scripted, refs []*node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) []*node.TypeRef {
-	if len(refs) == 0 {
-		return nil
-	}
-	out := make([]*node.TypeRef, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, s.Substitute(r, params, args))
-	}
-	return out
-}
-
-// Reified reports that the scripted language keeps nothing at
-// runtime, there being no runtime.
+// Reified reports that the scripted language keeps nothing at runtime,
+// because it has no runtime.
 func (scripted) Reified() bool { return false }

@@ -330,7 +330,7 @@ func stampedFacts(tb testing.TB) (*meta.Facts, phaseKeys) {
 	derived.Derived = []meta.Read{{Subject: siblingSubject}, {Subject: siblingSubject, Key: keys.flag.Name()}}
 	drop := claimBy("defaults", 1)
 	drop.Authority = meta.AuthorityDirective
-	drop.Bucket = 3
+	drop.Turn = 3
 	assert.NoError(tb, meta.Stamp(facts, keys.role, "reader", claimBy("alpha", 1)), "the role is stamped")
 	assert.NoError(tb, meta.Stamp(facts, keys.count, int64(-7), claimBy("alpha", 1)), "the count is stamped")
 	assert.NoError(tb, meta.Stamp(facts, keys.count, int64(9), derived), "and again by beta")

@@ -63,7 +63,7 @@ func TestRoles(t *testing.T) {
 			a := &annotator{name: "classify"}
 			var p plugin.Annotator = a
 
-			ctx := &plugin.AnnotatorContext{Plugin: "classify", Bucket: 2}
+			ctx := &plugin.AnnotatorContext{Plugin: "classify", Turn: 2}
 			assert.NoError(t, p.Annotate(ctx), "the fixture call passes")
 			assert.Equal(t, a.got, ctx, "the phase call touches exactly what its context carries", assert.ByIdentity())
 		})
@@ -79,7 +79,7 @@ func TestRoles(t *testing.T) {
 			var p plugin.Generator = g
 
 			ctx := &plugin.GeneratorContext{
-				Plugin: "stubgen", Bucket: 1, Emit: plugin.NewEmit(),
+				Plugin: "stubgen", Turn: 1, Emit: plugin.NewEmit(),
 			}
 			assert.NoError(t, p.Generate(ctx), "the fixture call passes")
 			assert.Equal(t, g.got, ctx, "the phase call touches exactly what its context carries", assert.ByIdentity())

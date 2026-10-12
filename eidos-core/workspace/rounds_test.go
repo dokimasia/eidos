@@ -32,18 +32,18 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The files the mirror generates in the store package and in the api
-// package of the rounds tree.
+// The files that the mirror generates in the store package and in the
+// api package of the rounds tree.
 const (
 	storeGenerated = "svc/store/gen.txt"
 	apiGenerated   = "svc/api/gen.txt"
 )
 
-// The lines of the rounds tree besides the warm tree's: the api package's
-// user before and after an edit that widens it, and a struct the failing
-// mirror refuses. The mirror spells the user's mirror as the first line of
-// the api package's generated file, and an edit by hand replaces it with
-// the second.
+// The lines of the rounds tree beside the lines of the warm tree. They
+// are the user of the api package before and after an edit that widens
+// it, and a struct that the failing mirror refuses. The mirror writes
+// the mirror of the user as the first line of the generated file of the
+// api package, and an edit by hand replaces it with the second.
 const (
 	userLine     = "type User int\n"
 	widerUser    = "type User int bool\n"
@@ -52,8 +52,8 @@ const (
 	editedUser   = "type ForUser struct{ Edited bool }"
 )
 
-// The plans of the export cases: the producer, and the two dependents
-// whose seers read the producer's export.
+// The plans of the export cases, the producer and the two dependents
+// whose seers read the export of the producer.
 const (
 	producerPlan                 = "first"
 	dependentPlan                = "second"
@@ -61,12 +61,12 @@ const (
 	seerID             plugin.ID = "seer"
 )
 
-// idleID names the generator whose one rule matches no declaration of the
-// rounds tree.
+// idleID is the name of the generator whose one rule matches no
+// declaration of the rounds tree.
 const idleID plugin.ID = "idle"
 
-// columnMirrorID names the generator that mirrors the column alone into a
-// family of its own.
+// columnMirrorID is the name of the generator that mirrors the column
+// alone into a family of its own.
 const columnMirrorID plugin.ID = "column-mirror"
 
 // The generator that mirrors each struct into two families, and the tag
@@ -77,50 +77,36 @@ const (
 )
 
 // caseSource is a file of a package whose directory differs from the
-// store package's directory only in case.
+// directory of the store package only in case.
 const caseSource = "svc/Store/col.zz"
 
 // readerName is the name of the struct that the reader line declares.
 const readerName = "Reader"
 
-// The lines of the weaving cases: the weaver's directive, which attaches
-// to the struct on the line before it.
+// auditLine is the directive of the weaver on the struct of the line
+// before it.
 const auditLine = "+weaver:audit\n"
 
-// The codes the rounds' generators report under: the warning of the
-// warning mirror on the user, and the error of the failing mirror on the
-// struct it refuses.
+// The codes of the findings of the generators of the rounds cases, the
+// warning of the warning mirror on the user and the error of the failing
+// mirror on the struct that it refuses.
 var (
 	roundsWarning = diag.Code{Prefix: "tst", Number: 10}
 	roundsError   = diag.Code{Prefix: "tst", Number: 11}
 )
 
-// errRender is the failure that the refusing backend's render returns.
+// errRender is the error that the render of the refusing backend
+// returns.
 var errRender = errors.New("the render refuses the reader's mirror")
 
-// refusing is the printer with a render that refuses each file with the
-// reader's mirror.
+// refusing is a printer whose render returns errRender for each file
+// with the mirror of the reader.
 type refusing struct {
 	plugin.Backend
 }
 
-// Syntax returns the printer's comment syntax.
-func (r refusing) Syntax() plugin.CommentSyntax {
-	return r.Backend.(plugin.SyntaxProvider).Syntax()
-}
-
-// SplitUnit splits a unit as the printer does.
-func (r refusing) SplitUnit(u plugin.Unit) []plugin.Unit {
-	return r.Backend.(plugin.FileSpeller).SplitUnit(u)
-}
-
-// FileName names a unit's file as the printer does.
-func (r refusing) FileName(u plugin.Unit) string {
-	return r.Backend.(plugin.FileSpeller).FileName(u)
-}
-
-// Render returns errRender for files that contain the reader's mirror, and
-// renders them through the printer otherwise.
+// Render returns errRender for files that contain the mirror of the
+// reader, and renders through the printer otherwise.
 func (r refusing) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	for _, f := range ctx.Files {
 		for _, u := range f.Units {
@@ -131,12 +117,12 @@ func (r refusing) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, erro
 			}
 		}
 	}
-	return r.Backend.(plugin.Renderer).Render(ctx)
+	return r.Backend.Render(ctx)
 }
 
-// A warm run executes again the groups of a plan that an edit makes dirty
-// and keeps the plan's other files. It leaves what a cold run over the
-// edited tree leaves.
+// TestRounds tests the groups of a warm run. A warm run runs again the
+// groups of a plan that an edit makes dirty, and keeps the other files
+// of the plan. It leaves what a cold run over the edited tree leaves.
 func TestRounds(t *testing.T) {
 	t.Parallel()
 
@@ -249,7 +235,7 @@ func TestRounds(t *testing.T) {
 			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
 				Name:       "plan",
 				Generators: []plugin.Generator{mirror(mirrorID)},
-				Backend:    refusing{printer(t, "fixture")},
+				Backend:    refusing{fixturePrinter()},
 			}))
 			_, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
 				roundsTree(rowLine+colLine+readerLine, userLine))
@@ -339,8 +325,8 @@ func TestRounds(t *testing.T) {
 		t.Run("renders no file of a dependent plan whose producer's export is unchanged", func(t *testing.T) {
 			t.Parallel()
 
-			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
-				seeing(t, dependentPlan)))
+			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(producerPlan, mirror(mirrorID)),
+				seeing(dependentPlan)))
 			narrow, wide := roundsTree(rowLine+colLine, userLine), roundsTree(widerRow+colLine, userLine)
 			report, err := warmAfter(t, w, narrow, wide)
 			assert.NoError(t, err, "the run is clean")
@@ -350,8 +336,8 @@ func TestRounds(t *testing.T) {
 		t.Run("renders the file of a dependent plan whose producer's export changed", func(t *testing.T) {
 			t.Parallel()
 
-			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
-				seeing(t, dependentPlan)))
+			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(producerPlan, mirror(mirrorID)),
+				seeing(dependentPlan)))
 			report, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
 				roundsTree(rowLine+colLine+readerLine, userLine))
 			assert.NoError(t, err, "the run is clean")
@@ -362,12 +348,12 @@ func TestRounds(t *testing.T) {
 			t.Parallel()
 
 			after := roundsTree(rowLine+colLine+readerLine, userLine)
-			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
-				seeing(t, dependentPlan)))
+			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(producerPlan, mirror(mirrorID)),
+				seeing(dependentPlan)))
 			warm, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine), after)
 			assert.NoError(t, err, "the warm run is clean")
-			cold := sealedRun(t, built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
-				seeing(t, dependentPlan))), workspace.Input{Tree: after})
+			cold := sealedRun(t, built(t, sealingPlans(ledger.NewMem(), sealedPlan(producerPlan, mirror(mirrorID)),
+				seeing(dependentPlan))), workspace.Input{Tree: after})
 			assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
 				"the dependent counts the kept file's rows and the rendered file's rows of the export")
 		})
@@ -375,8 +361,8 @@ func TestRounds(t *testing.T) {
 		t.Run("renders the file of each dependent plan whose producer's export changed", func(t *testing.T) {
 			t.Parallel()
 
-			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(t, producerPlan, mirror(mirrorID)),
-				seeing(t, dependentPlan), seeing(t, otherDependentPlan)))
+			w := built(t, sealingPlans(ledger.NewMem(), sealedPlan(producerPlan, mirror(mirrorID)),
+				seeing(dependentPlan), seeing(otherDependentPlan)))
 			report, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
 				roundsTree(rowLine+colLine+readerLine, userLine))
 			assert.NoError(t, err, "the run is clean")
@@ -487,8 +473,8 @@ func TestRounds(t *testing.T) {
 	})
 }
 
-// roundsTree returns a tree of the store package's row file and the api
-// package's user file, each with its lines.
+// roundsTree returns a tree of the row file of the store package and the
+// user file of the api package, each with its lines.
 func roundsTree(store, api string) fstest.MapFS {
 	return fstest.MapFS{
 		sealedSource: {Data: []byte("package svc/store\n" + store)},
@@ -497,7 +483,8 @@ func roundsTree(store, api string) fstest.MapFS {
 }
 
 // caseTree returns the rounds tree with a file of a package whose
-// directory differs from the store package's directory only in case.
+// directory differs from the directory of the store package only in
+// case.
 func caseTree() fstest.MapFS {
 	tree := roundsTree(rowLine, userLine)
 	tree[caseSource] = &fstest.MapFile{Data: []byte("package svc/Store\n" + colLine)}
@@ -505,8 +492,8 @@ func caseTree() fstest.MapFS {
 }
 
 // roundsBuilder returns the builder of a composition over the scripted
-// frontend that records into a ledger and renders one plan into memory:
-// the plan named plan, over the sources, whose generators are gens.
+// frontend that records into a ledger and renders one plan into memory.
+// The plan is named plan, takes the sources and runs gens.
 func roundsBuilder(
 	tb assert.TB, l ledger.Ledger, sources workspace.Sources, gens ...plugin.Generator,
 ) *workspace.Builder {
@@ -517,14 +504,14 @@ func roundsBuilder(
 		Frontends(frontendtest.NewScripted()).
 		Targets("fixture").
 		Plans(workspace.Plan{
-			Name: "plan", Sources: sources, Generators: gens, Backend: printer(tb, "fixture"),
+			Name: "plan", Sources: sources, Generators: gens, Backend: fixturePrinter(),
 		}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
 }
 
 // sealingOnDisk returns the builder of the sealing composition over the
-// directory root: its output and its ledger are on disk under root.
+// directory root, with its output and its ledger on disk under root.
 func sealingOnDisk(tb assert.TB, root string) *workspace.Builder {
 	tb.Helper()
 
@@ -536,31 +523,23 @@ func sealingOnDisk(tb assert.TB, root string) *workspace.Builder {
 // idle returns a generator whose one rule runs on enums, which the rounds
 // tree does not declare, so each of its calls runs no invocation.
 func idle() plugin.Generator {
-	p, held := eidos.NewPlugin(idleID).
+	return eidos.NewPlugin(idleID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "idle"}).
-		Handle(eidos.OnEnum(func(*eidos.EnumMatch, *eidos.Emitter) error { return nil })).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Handle(eidos.OnEnum(func(*eidos.EnumMatch, *eidos.Emitter) error { return nil })).Generator()
 }
 
 // columnMirror returns a generator that mirrors the column alone into a
-// family of its own: a file in the store package's scope and outside the
-// mirror's group.
+// family of its own, a file in the scope of the store package and
+// outside the group of the mirror.
 func columnMirror() plugin.Generator {
-	p, held := eidos.NewPlugin(columnMirrorID).
+	return eidos.NewPlugin(columnMirrorID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "col"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			if m.Struct.Name == colID.Name {
 				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Only" + m.Struct.Name})
 			}
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
 // twofold returns a generator that mirrors each struct into its primary
@@ -568,22 +547,19 @@ func columnMirror() plugin.Generator {
 // groups of a package, because no file contains the units of both
 // families.
 func twofold() plugin.Generator {
-	p, held := eidos.NewPlugin(twofoldID).
+	return eidos.NewPlugin(twofoldID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Output(plugin.Output{Tag: string(stubTag), Per: plugin.PerPackage, Word: "stub"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name})
 			e.PackageFile(stubTag).Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Stub" + m.Struct.Name})
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
-// lowering returns the printer with a lowering hook that returns the
-// reader's mirror without its origin, which the settle refuses.
+// lowering returns a printer with a lowering hook that returns the
+// mirror of the reader without its origin. The settle refuses the
+// result.
 func lowering(tb assert.TB) plugin.Backend {
 	tb.Helper()
 
@@ -606,8 +582,9 @@ func lowering(tb assert.TB) plugin.Backend {
 }
 
 // weaving returns a composition over the scripted frontend that records
-// into a ledger, with one plan toward the listing backend: the mirror,
-// which provides the capability that the weaver requires, and the weaver.
+// into a ledger, with one plan of the listing backend. The plan runs the
+// mirror, which provides the capability that the weaver requires, and
+// the weaver.
 func weaving(tb assert.TB, l ledger.Ledger, mirrorer plugin.Generator) *workspace.Workspace {
 	tb.Helper()
 
@@ -620,7 +597,7 @@ func weaving(tb assert.TB, l ledger.Ledger, mirrorer plugin.Generator) *workspac
 // requires, which mirrors the row alone, and only while the store package
 // declares Col.
 func conditional() plugin.Generator {
-	p, held := eidos.NewPlugin("mirror").
+	return eidos.NewPlugin("mirror").
 		Provides(mirroredCapability).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
@@ -631,11 +608,7 @@ func conditional() plugin.Generator {
 				return nil
 			}
 			return mirrored(m, e)
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
 // receiving returns a generator that mirrors each struct and declares a
@@ -651,8 +624,8 @@ func receiving() plugin.Generator {
 	})
 }
 
-// receivers is a kit backend that spells each struct and each method that
-// attaches to a struct by its receiver.
+// receivers returns a kit backend that spells each struct, and each
+// method that attaches to a struct by its receiver.
 func receivers(tb assert.TB) plugin.Backend {
 	tb.Helper()
 
@@ -671,8 +644,8 @@ func receivers(tb assert.TB) plugin.Backend {
 		Build()
 }
 
-// commentingMirror returns a mirror that states a comment on the user's
-// mirror.
+// commentingMirror returns a mirror that puts a comment on the mirror of
+// the user.
 func commentingMirror() plugin.Generator {
 	return generator(mirrorID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
 		s := &emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name}
@@ -684,8 +657,8 @@ func commentingMirror() plugin.Generator {
 	})
 }
 
-// uncommented returns the printer under a coverage that refuses comments,
-// so the render warns about each struct that states one.
+// uncommented returns a printer with a coverage that refuses comments,
+// so the render warns about each struct with a comment.
 func uncommented(tb assert.TB) plugin.Backend {
 	tb.Helper()
 
@@ -725,12 +698,10 @@ func failingMirror() plugin.Generator {
 }
 
 // seeing returns a dependent plan of a name, which depends on the
-// producer. Its seer, named after the plan, counts the declarations of the
-// producer's export on the column, and renders the count into a file named
-// after the plan.
-func seeing(tb assert.TB, name string) workspace.Plan {
-	tb.Helper()
-
+// producer. Its seer counts the declarations of the export of the
+// producer on the column. The layout of the plan routes the count into a
+// file named after the plan.
+func seeing(name string) workspace.Plan {
 	seer := generator(plugin.ID(name)+"-"+seerID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
 		if m.Struct.Name != colID.Name {
 			return nil
@@ -741,7 +712,8 @@ func seeing(tb assert.TB, name string) workspace.Plan {
 	})
 	return workspace.Plan{
 		Name: name, DependsOn: []string{producerPlan}, Generators: []plugin.Generator{seer},
-		Backend: printerAs(tb, plugin.ID(name)+"-printer", "fixture", name+".txt"),
+		Backend: fixturePrinter(),
+		Layout:  layout.Config{Plugins: map[plugin.ID]layout.Refinement{seer.Name(): {File: name + ".txt"}}},
 	}
 }
 
@@ -757,8 +729,9 @@ func replaceIn(t *testing.T, path, from, to string) {
 		"the edited file writes")
 }
 
-// generatedBy returns the number of invocations that a run's statistics
-// list for a generator, and zero for a generator that they do not list.
+// generatedBy returns the number of invocations that the statistics of a
+// run list for a generator, and zero for a generator that they do not
+// list.
 func generatedBy(report *workspace.Report, p plugin.ID) int {
 	n := 0
 	for _, c := range report.Stats.Invoked {

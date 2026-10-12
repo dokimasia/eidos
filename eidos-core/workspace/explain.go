@@ -36,46 +36,47 @@ const explainCaller = "workspace.Explain"
 // no ledger.
 var ErrNoGeneration = errors.New("workspace: the ledger contains no generation to explain")
 
-// RecordKind is the kind of execution that an [ExplainedRecord] describes.
-// The zero value is not a valid kind.
-type RecordKind uint8
+// ExecutionKind is the kind of execution that an [ExplainedExecution]
+// describes. The zero value is not a valid kind.
+type ExecutionKind uint8
 
 const (
-	// RecordValidation is the validation of the directives of one subject.
-	RecordValidation RecordKind = 1
-	// RecordInvocation is one invocation of the phase call of an annotator
+	// ExecutionValidation is the validation of the directives of one subject.
+	ExecutionValidation ExecutionKind = 1
+	// ExecutionInvocation is one invocation of the phase call of an annotator
 	// or a generator.
-	RecordInvocation RecordKind = 2
-	// RecordCheck is one call of a workspace check.
-	RecordCheck RecordKind = 3
-	// RecordGroup is one group of files of a plan, which the run executes
+	ExecutionInvocation ExecutionKind = 2
+	// ExecutionCheck is one call of a workspace check.
+	ExecutionCheck ExecutionKind = 3
+	// ExecutionGroup is one group of files of a plan, which the run executes
 	// together.
-	RecordGroup RecordKind = 4
-	// RecordAudit is an audit finding on a declaration that lacks a fact
+	ExecutionGroup ExecutionKind = 4
+	// ExecutionAudit is an audit finding on a declaration that lacks a fact
 	// that a contract requires.
-	RecordAudit RecordKind = 5
-	// RecordRegion is the parse and the link of one unit of the load.
-	RecordRegion RecordKind = 6
+	ExecutionAudit ExecutionKind = 5
+	// ExecutionRegion is the parse and the link of one unit of the load.
+	ExecutionRegion ExecutionKind = 6
 )
 
 // String returns the name of the kind for a report, such as "validation".
-// For an undeclared kind, it returns the number in the form RecordKind(n).
-func (k RecordKind) String() string {
+// For an undeclared kind, it returns the number in the form
+// ExecutionKind(n).
+func (k ExecutionKind) String() string {
 	switch k {
-	case RecordValidation:
+	case ExecutionValidation:
 		return "validation"
-	case RecordInvocation:
+	case ExecutionInvocation:
 		return "invocation"
-	case RecordCheck:
+	case ExecutionCheck:
 		return "check"
-	case RecordGroup:
+	case ExecutionGroup:
 		return "group"
-	case RecordAudit:
+	case ExecutionAudit:
 		return "audit"
-	case RecordRegion:
+	case ExecutionRegion:
 		return "region"
 	default:
-		return "RecordKind(" + strconv.Itoa(int(k)) + ")"
+		return "ExecutionKind(" + strconv.Itoa(int(k)) + ")"
 	}
 }
 
@@ -150,9 +151,9 @@ type Explanation struct {
 	// Claims lists the claims on the facts of the target. The claims of each
 	// fact are in rank order, and the winner comes first.
 	Claims []ExplainedClaim
-	// Records lists the records of the executions that produced the target,
-	// read it, or reported its findings.
-	Records []ExplainedRecord
+	// Executions lists the executions that produced the target, read it, or
+	// reported its findings.
+	Executions []ExplainedExecution
 }
 
 // ExplainedFile is one generated file.
@@ -179,9 +180,9 @@ type ExplainedClaim struct {
 	Winner bool
 }
 
-// ExplainedRecord is the record of one execution in a generation.
-type ExplainedRecord struct {
-	Kind RecordKind
+// ExplainedExecution is one execution in a generation.
+type ExplainedExecution struct {
+	Kind ExecutionKind
 	// Plan is the plan of an invocation or a group of a plan. It is empty for
 	// the invocation of an annotator and for every other kind.
 	Plan string
@@ -234,7 +235,7 @@ type ExplainedRecord struct {
 //   - the export edge of each plan
 //
 // Explain counts the reads that match no edge in
-// [ExplainedRecord.Unidentified].
+// [ExplainedExecution.Unidentified].
 //
 // Error modes:
 //
@@ -334,7 +335,7 @@ type explainer struct {
 // reads. It contains the record, the hashes of the edges that the execution
 // read, and the units that an invocation placed declarations into.
 type recorded struct {
-	ExplainedRecord
+	ExplainedExecution
 	reads []state.EdgeHash
 	units []plugin.UnitRef
 }
@@ -444,13 +445,13 @@ func (x *explainer) finding(code diag.Code, at position.Pos) error {
 	}
 	for _, a := range audits {
 		if found := matching([]diag.Diag{a.Finding}, code, at); len(found) > 0 {
-			audit := ExplainedRecord{Kind: RecordAudit, Subject: a.Subject, Findings: found}
-			x.out.Records = append(x.out.Records, audit)
+			audit := ExplainedExecution{Kind: ExecutionAudit, Subject: a.Subject, Findings: found}
+			x.out.Executions = append(x.out.Executions, audit)
 		}
 	}
 	for _, u := range x.units {
 		if found := matching(u.Findings, code, at); len(found) > 0 {
-			x.out.Records = append(x.out.Records, ExplainedRecord{Kind: RecordRegion, Findings: found})
+			x.out.Executions = append(x.out.Executions, ExplainedExecution{Kind: ExecutionRegion, Findings: found})
 		}
 	}
 	return nil
@@ -622,7 +623,7 @@ func (x *explainer) records(ref state.RecordRef) ([]recorded, error) {
 		vs, err := x.phases.Validations(ref)
 		for _, v := range vs {
 			out = append(out, recorded{
-				Kind: RecordValidation, Subject: v.Subject, Findings: v.Findings, reads: v.Reads,
+				Kind: ExecutionValidation, Subject: v.Subject, Findings: v.Findings, reads: v.Reads,
 			})
 		}
 		return out, err
@@ -630,7 +631,7 @@ func (x *explainer) records(ref state.RecordRef) ([]recorded, error) {
 		invs, err := x.phases.Invocations(ref)
 		for _, inv := range invs {
 			out = append(out, recorded{
-				Kind: RecordInvocation, Plan: inv.Plan, Match: inv.Match, Subject: inv.Match.Subject,
+				Kind: ExecutionInvocation, Plan: inv.Plan, Match: inv.Match, Subject: inv.Match.Subject,
 				Findings: inv.Findings, reads: inv.Reads, units: inv.Units,
 			})
 		}
@@ -638,14 +639,14 @@ func (x *explainer) records(ref state.RecordRef) ([]recorded, error) {
 	case state.RecordCheck:
 		checks, err := x.phases.Checks(ref)
 		for _, c := range checks {
-			out = append(out, recorded{Kind: RecordCheck, Check: c.Name, Findings: c.Findings, reads: c.Reads})
+			out = append(out, recorded{Kind: ExecutionCheck, Check: c.Name, Findings: c.Findings, reads: c.Reads})
 		}
 		return out, err
 	default:
 		groups, err := x.phases.Groups(ref)
 		for _, g := range groups {
 			out = append(out, recorded{
-				Kind: RecordGroup, Plan: g.Plan, Group: g.Key, Findings: g.Findings, reads: g.Reads,
+				Kind: ExecutionGroup, Plan: g.Plan, Group: g.Key, Findings: g.Findings, reads: g.Reads,
 			})
 		}
 		return out, err
@@ -659,7 +660,7 @@ func (x *explainer) records(ref state.RecordRef) ([]recorded, error) {
 // not count as a read.
 func (x *explainer) explained(records []recorded, targets ...symbol.Identity) {
 	for _, r := range records {
-		out := r.ExplainedRecord
+		out := r.ExplainedExecution
 		subjects := append([]symbol.Identity{r.Subject}, targets...)
 		for _, h := range r.reads {
 			if h == state.FindingsEdge {
@@ -677,7 +678,7 @@ func (x *explainer) explained(records []recorded, targets ...symbol.Identity) {
 				cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Directive, b.Directive), cmp.Compare(a.Plan, b.Plan),
 			)
 		})
-		x.out.Records = append(x.out.Records, out)
+		x.out.Executions = append(x.out.Executions, out)
 	}
 }
 

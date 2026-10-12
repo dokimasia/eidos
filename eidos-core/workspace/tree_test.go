@@ -56,7 +56,7 @@ func (widthModuler) Annotate(ctx *plugin.AnnotatorContext) error {
 			width = len(s.Fields)
 		}
 	}
-	claim := meta.Claim{Subject: storePackage, Bucket: ctx.Bucket, Plugin: widthModulerID}
+	claim := meta.Claim{Subject: storePackage, Turn: ctx.Turn, Plugin: widthModulerID}
 	if err := meta.Stamp(ctx.Facts, ctx.Kernel.Module, fmt.Sprintf("example.test/w%d", width), claim); err != nil {
 		return err
 	}

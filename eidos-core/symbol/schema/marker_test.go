@@ -215,6 +215,7 @@ func everyKind() map[string]reflect.Type {
 		"Struct":      reflect.TypeFor[schema.Struct](),
 		"Sum":         reflect.TypeFor[schema.Sum](),
 		"SumVariant":  reflect.TypeFor[schema.SumVariant](),
+		"TagEntry":    reflect.TypeFor[schema.TagEntry](),
 		"TypeParam":   reflect.TypeFor[schema.TypeParam](),
 		"TypeRef":     reflect.TypeFor[schema.TypeRef](),
 		"Variable":    reflect.TypeFor[schema.Variable](),

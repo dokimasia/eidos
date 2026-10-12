@@ -16,14 +16,14 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// kindSlots spans every value of a [symbol.Kind]: the kind is a uint8,
-// so an array this long counts by kind without depending on the
-// generated kind count.
+// kindSlots is the number of values of a [symbol.Kind], which is a
+// uint8. An array of this length counts by kind without depending on the
+// generated count of kinds.
 const kindSlots = math.MaxUint8 + 1
 
-// Cardinality is how many outputs a family produces. The zero
-// value addresses nothing: every declared family states its
-// cardinality, and [Emit.Add] refuses a unit that does not.
+// Cardinality is the number of outputs that a family produces. The zero
+// value addresses nothing. Every declared family states its cardinality,
+// and [Emit.Add] refuses a unit that does not.
 type Cardinality uint8
 
 const (
@@ -35,8 +35,8 @@ const (
 	PerPlan
 )
 
-// String returns the cardinality's spelling in a diagnostic:
-// per-source, per-package or per-plan. A cardinality outside the three
+// String returns the spelling of the cardinality in a diagnostic, which
+// is per-source, per-package or per-plan. A cardinality outside the three
 // returns its number. String allocates nothing for a declared
 // cardinality.
 func (c Cardinality) String() string {
@@ -52,81 +52,79 @@ func (c Cardinality) String() string {
 	}
 }
 
-// Output declares one file family a generator emits.
+// Output declares one file family that a generator emits.
 //
-// The target spells the join and extension of Word at render, which
-// is why neither appears here: one declaration serves store_stub.go
-// and store.stub.ts alike.
+// The target spells the join and the extension of Word at render, so one
+// declaration serves store_stub.go and store.stub.ts alike.
 type Output struct {
-	// Tag selects the family; "" is the primary.
+	// Tag selects the family, and "" selects the primary family.
 	Tag string
 	Per Cardinality
-	// Word is the family's word, e.g. "stub".
+	// Word is the word of the family, such as "stub".
 	Word string
 	// Template is the slash-separated path of the file template that
-	// writes each file of the family, in the plugin's template tree for
-	// the plan's target. A family with a template claims its files: the
-	// template writes the declarations of each file, and the target's
-	// kind templates write none of them. The empty Template leaves the
-	// files to the kind templates.
+	// writes each file of the family, in the template tree of the plugin
+	// for the target of the plan. A family with a template claims its
+	// files. The template writes the declarations of each file, and the
+	// kind templates of the target write none of them. The empty Template
+	// leaves the files to the kind templates.
 	Template string
 }
 
-// Unit is one accumulated output entity: everything one plugin
-// contributed to one (family, cardinality key) in one phase call.
-// It contains the full routing key, so no consumer re-derives any
-// part of it from the declarations.
+// Unit is one accumulated output entity. It contains everything that one
+// plugin contributed to one family and cardinality key in one phase
+// call. It contains the full routing key, so no consumer derives any
+// part of the key from the declarations again.
 type Unit struct {
-	// Plugin is the contributor: the attribution a manifest names,
-	// and part of what makes one accumulator's flush unique.
+	// Plugin is the contributor. A manifest names it in the attribution,
+	// and it is part of what makes the flush of one accumulator unique.
 	Plugin ID
-	// Tag selects the declared family; "" is the primary.
+	// Tag selects the declared family, and "" selects the primary family.
 	Tag string
 	Per Cardinality
-	// Word is the family's word; the target spells its join and
+	// Word is the word of the family. The target spells its join and its
 	// extension at render.
 	Word string
-	// Key addresses the accumulator: the subject's source file path
-	// for PerSource, the package path for PerPackage, and "" for
-	// PerPlan. The per-source key is the same field a rendered
-	// filename's stem derives from, so the key and the filename
-	// cannot disagree.
+	// Key addresses the accumulator. It is the source file path of the
+	// subject for PerSource, the package path for PerPackage, and "" for
+	// PerPlan. The stem of a rendered filename derives from the
+	// per-source key, so the key and the filename cannot disagree.
 	Key string
-	// Pkg is the identity of the unit's package for per-source and
-	// per-package units, zero for a plan unit: the namespace half of
-	// the routing key.
+	// Pkg is the identity of the package of a per-source or a per-package
+	// unit, and zero for a plan unit. It is the namespace half of the
+	// routing key.
 	Pkg symbol.Identity
-	// Decls are the emit declarations, ordered by origin identity,
-	// then instance order under a repeatable directive, then
-	// insertion, so contributions arrive in canonical subject order
-	// and never in dispatch order.
+	// Decls are the emit declarations, ordered by origin identity, then
+	// by instance order under a repeatable directive, then by insertion,
+	// so contributions arrive in canonical subject order and never in
+	// dispatch order.
 	Decls []symbol.Symbol
-	// Origins are the node identities whose matches contributed,
-	// sorted and deduplicated: the provenance a manifest records.
+	// Origins are the node identities whose matches contributed, sorted
+	// and deduplicated. A manifest records them as the provenance.
 	Origins []symbol.Identity
-	// Contributors are the plugins that appended into slots of the
-	// unit's declarations through their Emitter, sorted, without the
-	// unit's own plugin: the attribution a weaver gets in the file's
-	// frame and its manifest entry beside the unit's plugin.
+	// Contributors are the plugins other than the plugin of the unit that
+	// appended into slots of its declarations through their Emitter,
+	// sorted. The frame of the file and its manifest entry name a weaver
+	// from this list beside the plugin of the unit.
 	Contributors []ID
-	// Template is the file template of the unit's family, from its
+	// Template is the file template of the family of the unit, from its
 	// [Output.Template], and empty for a family that claims no file. The
-	// declarations of a unit with a template are records: data for the
-	// template, which the settle respells and no reference, collision
-	// check or export reads as a declaration of the file.
+	// declarations of a unit with a template are records. They are data
+	// for the template, which the settle respells, and no reference,
+	// collision check or export reads them as declarations of the file.
 	Template string
-	// Data contains the data that the unit's plugin attached to the
-	// declarations of each origin, which the file template reads beside
-	// each record. It is nil for a unit whose plugin attached none.
+	// Data contains the data that the plugin of the unit attached to the
+	// declarations of each origin. The file template reads it beside each
+	// record. It is nil for a unit whose plugin attached none.
 	Data map[symbol.Identity]any
 }
 
-// FileKey returns the routing key a unit's filename takes its stem
-// from: the source path of a per-source unit, and the empty string for
-// a per-package or per-plan unit, whose filename joins its family word
-// and tag alone. A target's filename spelling reads the stem through
-// it, so no target spells a package path into a filename. It allocates
-// nothing.
+// FileKey returns the routing key from which the filename of a unit
+// takes its stem. That is the source path of a per-source unit, and the
+// empty string for a per-package or per-plan unit, whose filename joins
+// its family word and its tag alone. The filename spelling of a target
+// reads the stem through FileKey, so no target spells a package path into
+// a filename. It allocates nothing.
 func (u Unit) FileKey() string {
 	if u.Per != PerSource {
 		return ""
@@ -134,48 +132,59 @@ func (u Unit) FileKey() string {
 	return u.Key
 }
 
-// Ref returns the unit's reference: the key one phase call flushes the
-// unit under. It allocates nothing.
+// Ref returns the reference of the unit, which is the key under which one
+// phase call flushes the unit. It allocates nothing.
 func (u Unit) Ref() UnitRef {
 	return UnitRef{Plugin: u.Plugin, Tag: u.Tag, Pkg: u.Pkg, Key: u.Key}
 }
 
-// Emit contains one plan's accumulated units, plus a per-kind index
-// over their declarations that is maintained at [Emit.Add]: each
-// unit's tree is walked once when it arrives, so an emit-triggered
-// rule enumerates its matches and not the whole emit graph.
+// Emit contains the accumulated units of one plan, and a per-kind index
+// over their declarations that [Emit.Add] maintains. Add walks the tree
+// of each unit once when it arrives, so an emit-triggered rule
+// enumerates its matches and not the whole emit graph.
 //
-// An Emit is not safe for concurrent use: annotators and generators
-// run sequentially, and a unit arriving mid-enumeration would race
-// the index it is being read from.
+// The store seals every slot of each declaration that [Emit.Add]
+// receives, through [emit.Seal]. Until the settle starts, a direct
+// append into such a slot panics, so a plugin writes into a value of the
+// store through the slot view of its emitter alone. The settle lifts the
+// seal, so the lowering hooks of the backend rewrite the declarations.
+//
+// # Concurrency
+//
+// An Emit is not safe for concurrent use. Annotators and generators run
+// one after another, and a unit that arrives during an enumeration
+// would race the index that the enumeration reads.
 type Emit struct {
 	units []Unit
 	held  map[UnitRef]struct{}
-	// byKind maps a kind to the declarations with an origin that each
-	// unit's tree contains, in walk order, keyed by the unit's index
-	// into units.
+	// byKind maps a kind to the declarations with an origin that the
+	// tree of each unit contains, in walk order, keyed by the index of
+	// the unit in units.
 	byKind map[symbol.Kind]map[int][]symbol.Symbol
-	// order caches the unit indexes in Units order; nil after a
-	// unit arrived since it was built.
+	// order caches the unit indexes in the order of Units. It is nil after
+	// a unit arrived since the cache was built.
 	order []int
-	// holders maps each declaration the per-kind index lists to its
-	// unit's index into units. The first [Emit.Contribute] after a
+	// holders maps each declaration that the per-kind index lists to the
+	// index of its unit in units. The first [Emit.Contribute] after a
 	// unit arrived builds it, so a plan without contributions never
 	// builds it.
 	holders map[symbol.Symbol]int
-	// refs maps each declaration of the walked units' trees to its
-	// reference, and walked counts those units, in arrival order. [Emit.Ref]
-	// walks the units that arrived since its last call, so a plan whose
-	// phase calls journal nothing never builds the map.
+	// refs maps each declaration of the trees of the walked units to its
+	// reference, and walked counts those units, in arrival order.
+	// [Emit.Ref] walks the units that arrived since its last call, so a
+	// plan whose phase calls journal nothing never builds the map.
 	refs   map[symbol.Symbol]EmitRef
 	walked int
-	// settled reports that the store passed through [Settle]: the backend's
-	// lowering seams ran, and the declarations the readers see are
-	// the ones that render.
+	// sealed is the flag that every sealed slot of the store reads. It is
+	// true from [NewEmit] until the settle starts.
+	sealed bool
+	// settled reports that the store passed through [Settle]. The
+	// lowering seams of the backend ran, and the declarations that the
+	// readers see are the declarations that render.
 	settled bool
 	// translates reports that the settle found a type reference whose
-	// target is a declaration of another language than the backend's
-	// target.
+	// target is a declaration of another language than the target of the
+	// backend.
 	translates bool
 	// emitted maps each declaration whose name the settle changed to the
 	// name it was emitted under, which [NewExport] keys an export on. The
@@ -184,10 +193,12 @@ type Emit struct {
 	emitted map[symbol.Symbol]string
 }
 
-// NewEmit returns an empty emit store. It allocates three times: the
-// store, its set of accumulator keys and its map of kinds.
+// NewEmit returns an empty emit store, which seals the declarations that
+// it receives. It allocates three times: the store, its set of
+// accumulator keys and its map of kinds.
 func NewEmit() *Emit {
 	return &Emit{
+		sealed: true,
 		held:   map[UnitRef]struct{}{},
 		byKind: map[symbol.Kind]map[int][]symbol.Symbol{},
 	}
@@ -208,15 +219,16 @@ func (e *Emit) Settled() bool { return e.settled }
 // backend settled, report false. It allocates nothing.
 func (e *Emit) Translates() bool { return e.translates }
 
-// Add records one unit and indexes its tree.
+// Add records one unit, indexes its tree and seals every slot of its
+// declarations. A direct append into such a slot then panics until the
+// settle starts.
 //
 // A second unit under the same (plugin, tag, package, key) is
 // refused as the defect it is: one phase call flushes each
-// accumulator once. A
-// zero cardinality and an empty word are refused the same way,
-// because a unit missing either cannot be routed, and so is a plan
-// unit naming a key, because a plan has one output and its key is
-// empty.
+// accumulator once. A zero cardinality and an empty word are refused
+// the same way, because a unit missing either cannot be routed, and so
+// is a plan unit naming a key, because a plan has one output and its
+// key is empty.
 func (e *Emit) Add(u Unit) error {
 	if u.Per == 0 {
 		return fmt.Errorf("plugin: %s flushes a unit with no cardinality", u.Plugin)
@@ -250,24 +262,27 @@ func (e *Emit) Add(u Unit) error {
 	at := len(e.units)
 	e.units = append(e.units, u)
 	e.index(at, u.Decls)
+	for _, d := range u.Decls {
+		emit.Seal(d, &e.sealed)
+	}
 	e.order, e.holders = nil, nil
 	return nil
 }
 
-// Contribute records that a plugin appended into a slot of a
-// declaration the store contains: the unit whose tree contains host
-// names the plugin among its [Unit.Contributors]. It reports false for
-// a host the per-kind index does not list, which is a declaration
-// without an origin or one no unit contains. The unit's own plugin is
-// not recorded, and a plugin is recorded once.
+// Contribute records that a plugin appended into a slot of a declaration
+// that the store contains. The unit whose tree contains host adds the
+// plugin to its [Unit.Contributors]. Contribute reports false for a host
+// that the per-kind index does not list, which is a declaration without
+// an origin or a declaration that no unit contains. It does not record
+// the plugin of the unit itself, and it records a plugin once.
 //
 // # Allocation contract
 //
 // The first contribution after a unit arrived allocates the map from
 // each indexed declaration to its unit, sized to the declarations, so
 // it does not grow while it fills. A contribution that records a plugin
-// new to its unit grows the unit's list of contributors, and any other
-// contribution allocates nothing.
+// new to its unit grows the list of contributors of the unit, and any
+// other contribution allocates nothing.
 func (e *Emit) Contribute(host symbol.Symbol, p ID) bool {
 	if e.holders == nil {
 		indexed := 0
@@ -299,12 +314,13 @@ func (e *Emit) Contribute(host symbol.Symbol, p ID) bool {
 	return true
 }
 
-// Ref returns the reference of a declaration in a unit of the store: the
-// unit's reference, and the declaration's place in the depth-first walk
-// of the unit's declarations. It reports false for a declaration no unit
-// contains. A declaration that two units contain, or that one unit's
-// tree contains twice, returns the place the walk visited first, in the
-// order the units arrived.
+// Ref returns the reference of a declaration in a unit of the store. The
+// reference is the reference of the unit and the index of the declaration
+// in the depth-first walk of the declarations of the unit. Ref reports
+// false for a declaration that no unit contains. A declaration that two
+// units contain, or that the tree of one unit contains twice, returns the
+// index that the walk visited first, in the order in which the units
+// arrived.
 //
 // A call walks the trees of the units that arrived since the previous
 // call, and the settle discards every reference, because it may replace
@@ -334,9 +350,9 @@ func (e *Emit) Ref(d symbol.Symbol) (EmitRef, bool) {
 	return r, held
 }
 
-// Units enumerates every unit: by plugin, then cardinality, then
-// key, then package, then tag. The order is total, so two runs
-// agree whatever order the units arrived in.
+// Units enumerates every unit by plugin, then by cardinality, key,
+// package and tag. The order is total, so two runs agree whatever the
+// order in which the units arrived.
 func (e *Emit) Units() iter.Seq[Unit] {
 	return func(yield func(Unit) bool) {
 		for _, at := range e.sorted() {
@@ -347,13 +363,14 @@ func (e *Emit) Units() iter.Seq[Unit] {
 	}
 }
 
-// ByKind enumerates the emit declarations of one kind across every
-// unit, in [Emit.Units] order, each unit's tree walked depth first.
+// ByKind enumerates the emit declarations of one kind across every unit,
+// in the order of [Emit.Units], with the tree of each unit walked depth
+// first.
 //
-// Only values with a nonzero origin are returned, because every
-// emit-trigger mechanism resolves through the origin: predicates,
-// skip and reporting alike. A value whose producer left the origin
-// zero still arrives in its unit; it is just not a subject.
+// It returns only values with a nonzero origin, because the predicates,
+// the skips and the reports of every emit trigger resolve through the
+// origin. A value whose producer left the origin zero still arrives in
+// its unit, but it is not a subject.
 func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		per := e.byKind[k]
@@ -370,9 +387,9 @@ func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// index walks one unit's declarations into the per-kind index. A first
-// walk counts the indexed declarations of each kind, so the unit's list
-// of each kind is allocated once, at its final length.
+// index walks the declarations of one unit into the per-kind index. A
+// first walk counts the indexed declarations of each kind, so the list of
+// each kind of the unit is allocated once, at its final length.
 func (e *Emit) index(at int, decls []symbol.Symbol) {
 	var counts [kindSlots]int
 	for _, d := range decls {
@@ -402,16 +419,16 @@ func (e *Emit) index(at int, decls []symbol.Symbol) {
 	}
 }
 
-// indexed reports whether the per-kind index lists a declaration: one
-// that carries a nonzero origin, the one thing every emit trigger
-// resolves through.
+// indexed reports whether the per-kind index lists a declaration. The
+// index lists a declaration with a nonzero origin, because every emit
+// trigger resolves through the origin.
 func indexed(s symbol.Symbol) bool {
 	origin, carries := emit.OriginOf(s)
 	return carries && !origin.IsZero()
 }
 
 // reindex rebuilds the per-kind index over the settled units, so a
-// reader after the settle never meets a kind a lowering replaced.
+// reader after the settle never meets a kind that a lowering replaced.
 func (e *Emit) reindex() {
 	e.byKind = map[symbol.Kind]map[int][]symbol.Symbol{}
 	for i := range e.units {
@@ -420,9 +437,10 @@ func (e *Emit) reindex() {
 	e.order, e.holders, e.refs, e.walked = nil, nil, nil, 0
 }
 
-// respelled records the name a declaration was emitted under, which the
-// settle replaced with another spelling. The first record allocates the
-// map, and a later record of the same declaration replaces the earlier.
+// respelled records the name under which a declaration was emitted,
+// where the settle replaced that name with another spelling. The first
+// record allocates the map, and a later record of the same declaration
+// replaces the earlier record.
 func (e *Emit) respelled(d symbol.Symbol, emitted string) {
 	if e.emitted == nil {
 		e.emitted = map[symbol.Symbol]string{}
@@ -430,7 +448,7 @@ func (e *Emit) respelled(d symbol.Symbol, emitted string) {
 	e.emitted[d] = emitted
 }
 
-// sorted returns the unit indexes in Units order, rebuilding the
+// sorted returns the unit indexes in the order of Units. It rebuilds the
 // cache after a unit arrived.
 func (e *Emit) sorted() []int {
 	if e.order != nil {

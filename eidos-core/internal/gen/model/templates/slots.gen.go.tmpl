@@ -1,7 +1,23 @@
 {{template "header" .}}
-{{if .NeedsSymbol}}
 import "go.dokimi.dev/eidos/core/symbol"
-{{end}}
+
+// Seal shares flag with every slot of every declaration in the tree of
+// root, including the slots of nested declarations, of members and of
+// bodies. [Slot.Append] and [Slot.Replace] panic on such a slot while
+// *flag is true. The store of a plan seals each declaration that a unit
+// places. Seal is reserved to the kernel, and the lint rule of the
+// repository refuses a call from outside the kernel. It allocates
+// nothing.
+func Seal(root symbol.Symbol, flag *bool) {
+	for s := range All(root) {
+		switch x := s.(type) {
+{{- range .Views}}{{if or .Slots .Bodies}}
+		case *{{.Name}}:
+			x.seal(flag)
+{{- end}}{{end}}
+		}
+	}
+}
 {{- range .Views}}{{$v := .}}
 {{- range .Slots}}
 
@@ -13,5 +29,18 @@ import "go.dokimi.dev/eidos/core/symbol"
 // {{.}}
 {{- end}}
 func (x *{{$v.Name}}) {{.Accessor}}() *{{.Decl}} { return &x.{{.Storage}} }
+{{- end}}
+{{- if or .Slots .Bodies}}
+
+// seal shares flag with every slot of a {{.Name}}{{if .Bodies}}, and with the slots
+// of its body{{end}}.
+func (x *{{.Name}}) seal(flag *bool) {
+{{- range .Slots}}
+	x.{{.Storage}}.seal = flag
+{{- end}}
+{{- range .Bodies}}
+	x.{{.}}.seal(flag)
+{{- end}}
+}
 {{- end}}
 {{- end}}

@@ -15,9 +15,8 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Every kind satisfies the vocabulary's interfaces. The assertions
-// fail to compile rather than to run, which is where an unsatisfied
-// interface belongs.
+// Every kind satisfies the interfaces of the vocabulary. An unsatisfied
+// interface fails the compilation of these assertions, not a run.
 var (
 	_ symbol.Symbol   = (*Function)(nil)
 	_ symbol.Symbol   = (*Method)(nil)
@@ -41,6 +40,7 @@ var (
 	_ symbol.Symbol   = (*TypeRef)(nil)
 	_ symbol.Symbol   = (*TypeParam)(nil)
 	_ symbol.Symbol   = (*Embed)(nil)
+	_ symbol.Symbol   = (*TagEntry)(nil)
 	_ symbol.Membered = (*Enum)(nil)
 	_ symbol.Membered = (*Sum)(nil)
 	_ symbol.Membered = (*SumVariant)(nil)
@@ -75,19 +75,20 @@ var (
 	_ Declaration     = (*TypeRef)(nil)
 	_ Declaration     = (*TypeParam)(nil)
 	_ Declaration     = (*Embed)(nil)
+	_ Declaration     = (*TagEntry)(nil)
 )
 
-// The values the accessor cases give a subject: a position, two
-// lines of documentation and an identity.
+// The accessor cases give a subject a position, two lines of
+// documentation and an identity.
 var (
 	kindsAt    = position.Pos{File: "svc/store.go", Line: 41, Col: 2}
 	kindsLines = []string{"one", "two"}
 	kindsID    = symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
 )
 
-// kindsCase is one measured call of one kind's accessor: the
-// sub-benchmark's name, its allocation ceiling, the call, and the
-// check on what the last call returned.
+// kindsCase is one measured call of an accessor of one kind. It has
+// the name of the sub-benchmark, the allocation ceiling, the call, and
+// the check of the result of the last call.
 type kindsCase struct {
 	name   string
 	allocs uint64
@@ -95,9 +96,9 @@ type kindsCase struct {
 	check  func(testing.TB)
 }
 
-// Every kind implements the shared vocabulary: it returns its own
-// kind, where it was written, its documentation, its identity, its
-// type reference and its member lists.
+// Every kind implements the shared vocabulary. It returns its own kind,
+// its position, its documentation, its identity, its type reference and
+// its member lists.
 func TestKinds(t *testing.T) {
 	t.Parallel()
 
@@ -130,6 +131,7 @@ func TestKinds(t *testing.T) {
 			{subject: &TypeRef{}, want: symbol.KindTypeRef},
 			{subject: &TypeParam{}, want: symbol.KindTypeParam},
 			{subject: &Embed{}, want: symbol.KindEmbed},
+			{subject: &TagEntry{}, want: symbol.KindTagEntry},
 		}
 		for _, tt := range tests {
 			t.Run("returns "+tt.want.String()+" for its kind", func(t *testing.T) {
@@ -212,6 +214,9 @@ func TestKinds(t *testing.T) {
 
 			assert.Equal(t, (&Embed{Pos: kindsAt}).Position(), kindsAt,
 				"a located Embed returns where it was written")
+
+			assert.Equal(t, (&TagEntry{}).Position(), position.Pos{},
+				"a TagEntry without a position field returns the zero position")
 		})
 	})
 
@@ -228,10 +233,10 @@ func TestKinds(t *testing.T) {
 				"a documented Method returns its documentation")
 
 			assert.Nil(t, (&Param{}).Docs(),
-				"a Param carries no documentation and returns nil")
+				"a Param without a documentation field returns nil")
 
 			assert.Nil(t, (&Return{}).Docs(),
-				"a Return carries no documentation and returns nil")
+				"a Return without a documentation field returns nil")
 
 			assert.Length(t, (&Package{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Package returns its documentation")
@@ -246,7 +251,7 @@ func TestKinds(t *testing.T) {
 				"a documented Export returns its documentation")
 
 			assert.Nil(t, (&Binding{}).Docs(),
-				"a Binding carries no documentation and returns nil")
+				"a Binding without a documentation field returns nil")
 
 			assert.Length(t, (&Enum{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Enum returns its documentation")
@@ -279,13 +284,16 @@ func TestKinds(t *testing.T) {
 				"a documented Alias returns its documentation")
 
 			assert.Nil(t, (&TypeRef{}).Docs(),
-				"a TypeRef carries no documentation and returns nil")
+				"a TypeRef without a documentation field returns nil")
 
 			assert.Nil(t, (&TypeParam{}).Docs(),
-				"a TypeParam carries no documentation and returns nil")
+				"a TypeParam without a documentation field returns nil")
 
 			assert.Length(t, (&Embed{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Embed returns its documentation")
+
+			assert.Nil(t, (&TagEntry{}).Docs(),
+				"a TagEntry without a documentation field returns nil")
 		})
 	})
 
@@ -296,70 +304,67 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, (&Function{ID: kindsID}).Identity(), kindsID,
-				"a named Function returns the identity it was assigned")
+				"a Function returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Method{ID: kindsID}).Identity(), kindsID,
-				"a named Method returns the identity it was assigned")
+				"a Method returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Param{ID: kindsID}).Identity(), kindsID,
-				"a named Param returns the identity it was assigned")
+				"a Param returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Return{ID: kindsID}).Identity(), kindsID,
-				"a named Return returns the identity it was assigned")
+				"a Return returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Package{ID: kindsID}).Identity(), kindsID,
-				"a named Package returns the identity it was assigned")
+				"a Package returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&File{ID: kindsID}).Identity(), kindsID,
-				"a named File returns the identity it was assigned")
+				"a File returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Import{ID: kindsID}).Identity(), kindsID,
-				"a named Import returns the identity it was assigned")
+				"a Import returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Export{ID: kindsID}).Identity(), kindsID,
-				"a named Export returns the identity it was assigned")
+				"a Export returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Binding{ID: kindsID}).Identity(), kindsID,
-				"a named Binding returns the identity it was assigned")
+				"a Binding returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Enum{ID: kindsID}).Identity(), kindsID,
-				"a named Enum returns the identity it was assigned")
+				"a Enum returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&EnumVariant{ID: kindsID}).Identity(), kindsID,
-				"a named EnumVariant returns the identity it was assigned")
+				"a EnumVariant returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Sum{ID: kindsID}).Identity(), kindsID,
-				"a named Sum returns the identity it was assigned")
+				"a Sum returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&SumVariant{ID: kindsID}).Identity(), kindsID,
-				"a named SumVariant returns the identity it was assigned")
+				"a SumVariant returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Field{ID: kindsID}).Identity(), kindsID,
-				"a named Field returns the identity it was assigned")
+				"a Field returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Variable{ID: kindsID}).Identity(), kindsID,
-				"a named Variable returns the identity it was assigned")
+				"a Variable returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Constant{ID: kindsID}).Identity(), kindsID,
-				"a named Constant returns the identity it was assigned")
+				"a Constant returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Struct{ID: kindsID}).Identity(), kindsID,
-				"a named Struct returns the identity it was assigned")
+				"a Struct returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Interface{ID: kindsID}).Identity(), kindsID,
-				"a named Interface returns the identity it was assigned")
+				"a Interface returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Alias{ID: kindsID}).Identity(), kindsID,
-				"a named Alias returns the identity it was assigned")
-
-			assert.Equal(t, (&TypeRef{ID: kindsID}).Identity(), kindsID,
-				"a named TypeRef returns the identity it was assigned")
+				"a Alias returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&TypeParam{ID: kindsID}).Identity(), kindsID,
-				"a named TypeParam returns the identity it was assigned")
+				"a TypeParam returns the identity that the resolution step assigned")
 
 			assert.Equal(t, (&Embed{ID: kindsID}).Identity(), kindsID,
-				"a named Embed returns the identity it was assigned")
+				"a Embed returns the identity that the resolution step assigned")
 		})
 
 		t.Run("returns the zero identity before it is assigned", func(t *testing.T) {
@@ -422,14 +427,21 @@ func TestKinds(t *testing.T) {
 			assert.Equal(t, (&Alias{}).Identity(), symbol.Identity{},
 				"an unassigned Alias returns the zero identity")
 
-			assert.Equal(t, (&TypeRef{}).Identity(), symbol.Identity{},
-				"an unassigned TypeRef returns the zero identity")
-
 			assert.Equal(t, (&TypeParam{}).Identity(), symbol.Identity{},
 				"an unassigned TypeParam returns the zero identity")
 
 			assert.Equal(t, (&Embed{}).Identity(), symbol.Identity{},
 				"an unassigned Embed returns the zero identity")
+		})
+
+		t.Run("returns the zero identity for a kind without an identity field", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, (&TypeRef{}).Identity(), symbol.Identity{},
+				"a TypeRef is not a declaration, so it returns the zero identity")
+
+			assert.Equal(t, (&TagEntry{}).Identity(), symbol.Identity{},
+				"a TagEntry is not a declaration, so it returns the zero identity")
 		})
 	})
 
@@ -440,44 +452,44 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Param{}).TypeRef(),
-				"a Param stating no type returns nil")
+				"a Param without a type returns nil")
 
 			assert.Nil(t, (&Return{}).TypeRef(),
-				"a Return stating no type returns nil")
+				"a Return without a type returns nil")
 
 			assert.Nil(t, (&Field{}).TypeRef(),
-				"a Field stating no type returns nil")
+				"a Field without a type returns nil")
 
 			assert.Nil(t, (&Variable{}).TypeRef(),
-				"a Variable stating no type returns nil")
+				"a Variable without a type returns nil")
 
 			assert.Nil(t, (&Constant{}).TypeRef(),
-				"a Constant stating no type returns nil")
+				"a Constant without a type returns nil")
 
 			assert.Nil(t, (&TypeParam{}).TypeRef(),
-				"a TypeParam stating no type returns nil")
+				"a TypeParam without a type returns nil")
 		})
 
 		t.Run("returns the declared type reference", func(t *testing.T) {
 			t.Parallel()
 
 			assert.NotNil(t, (&Param{Type: &TypeRef{}}).TypeRef(),
-				"a Param stating a type returns the declared reference")
+				"a Param with a type returns its type reference")
 
 			assert.NotNil(t, (&Return{Type: &TypeRef{}}).TypeRef(),
-				"a Return stating a type returns the declared reference")
+				"a Return with a type returns its type reference")
 
 			assert.NotNil(t, (&Field{Type: &TypeRef{}}).TypeRef(),
-				"a Field stating a type returns the declared reference")
+				"a Field with a type returns its type reference")
 
 			assert.NotNil(t, (&Variable{Type: &TypeRef{}}).TypeRef(),
-				"a Variable stating a type returns the declared reference")
+				"a Variable with a type returns its type reference")
 
 			assert.NotNil(t, (&Constant{Type: &TypeRef{}}).TypeRef(),
-				"a Constant stating a type returns the declared reference")
+				"a Constant with a type returns its type reference")
 
 			assert.NotNil(t, (&TypeParam{Type: &TypeRef{}}).TypeRef(),
-				"a TypeParam stating a type returns the declared reference")
+				"a TypeParam with a type returns its type reference")
 		})
 	})
 
@@ -488,7 +500,7 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Sum{}).FieldList(),
-				"a Sum has no such list and returns nil")
+				"a Sum has no such list, so it returns nil")
 		})
 
 		t.Run("returns the members of a kind with the list", func(t *testing.T) {
@@ -496,6 +508,7 @@ func TestKinds(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -556,7 +569,7 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&SumVariant{}).MethodList(),
-				"a SumVariant has no such list and returns nil")
+				"a SumVariant has no such list, so it returns nil")
 		})
 
 		t.Run("returns the members of a kind with the list", func(t *testing.T) {
@@ -564,6 +577,7 @@ func TestKinds(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
@@ -626,16 +640,16 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Enum{}).EmbedList(),
-				"a Enum has no such list and returns nil")
+				"a Enum has no such list, so it returns nil")
 
 			assert.Nil(t, (&Sum{}).EmbedList(),
-				"a Sum has no such list and returns nil")
+				"a Sum has no such list, so it returns nil")
 
 			assert.Nil(t, (&SumVariant{}).EmbedList(),
-				"a SumVariant has no such list and returns nil")
+				"a SumVariant has no such list, so it returns nil")
 
 			assert.Nil(t, (&TypeRef{}).EmbedList(),
-				"a TypeRef has no such list and returns nil")
+				"a TypeRef has no such list, so it returns nil")
 		})
 
 		t.Run("returns the members of a kind with the list", func(t *testing.T) {
@@ -671,9 +685,9 @@ func TestKinds(t *testing.T) {
 	})
 }
 
-// The accessors allocate within their ceilings in the ordinary run,
-// which runs no benchmark: a member list allocates its one slice, and
-// every other accessor nothing.
+// TestKindsAllocs checks the allocation ceilings of the accessors in a
+// run without benchmarks. A member list allocates one slice. Every
+// other accessor allocates nothing.
 func TestKindsAllocs(t *testing.T) {
 	for _, tt := range kindsCases() {
 		assert.MaxAllocs(t, tt.call, tt.allocs, tt.name+" allocates within its ceiling")
@@ -696,9 +710,9 @@ func BenchmarkKinds(b *testing.B) {
 	}
 }
 
-// kindsCases returns one case for every accessor of every kind, each
-// over a subject with a position, documentation, an identity, a type
-// reference and one child in every traversed field.
+// kindsCases returns one case for every accessor of every kind. Each
+// subject has a position, documentation, an identity, a type reference
+// and one child in every traversed field.
 func kindsCases() []kindsCase {
 	var cases []kindsCase
 	{
@@ -1117,6 +1131,7 @@ func kindsCases() []kindsCase {
 		subject.Pos = kindsAt
 		subject.Doc = kindsLines
 		subject.ID = kindsID
+		subject.Underlying = &TypeRef{}
 		subject.Variants = append(subject.Variants, &EnumVariant{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
@@ -1709,7 +1724,6 @@ func kindsCases() []kindsCase {
 	{
 		subject := &TypeRef{}
 		subject.Pos = kindsAt
-		subject.ID = kindsID
 		subject.Elems = append(subject.Elems, &TypeRef{})
 		subject.Args = append(subject.Args, &TypeRef{})
 		subject.Fields = append(subject.Fields, &Field{})
@@ -1747,7 +1761,7 @@ func kindsCases() []kindsCase {
 				name: "TypeRef.Identity",
 				call: func() { id = subject.Identity() },
 				check: func(tb testing.TB) {
-					assert.Equal(tb, id, kindsID, "Identity returns the assigned identity")
+					assert.Equal(tb, id, symbol.Identity{}, "Identity returns the zero identity")
 				},
 			},
 			kindsCase{
@@ -1867,6 +1881,45 @@ func kindsCases() []kindsCase {
 				call: func() { id = subject.Identity() },
 				check: func(tb testing.TB) {
 					assert.Equal(tb, id, kindsID, "Identity returns the assigned identity")
+				},
+			},
+		)
+	}
+	{
+		subject := &TagEntry{}
+		var (
+			kind symbol.Kind
+			pos  position.Pos
+			docs []string
+			id   symbol.Identity
+		)
+		cases = append(cases,
+			kindsCase{
+				name: "TagEntry.Kind",
+				call: func() { kind = subject.Kind() },
+				check: func(tb testing.TB) {
+					assert.Equal(tb, kind, symbol.KindTagEntry, "Kind returns the kind's constant")
+				},
+			},
+			kindsCase{
+				name: "TagEntry.Position",
+				call: func() { pos = subject.Position() },
+				check: func(tb testing.TB) {
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
+				},
+			},
+			kindsCase{
+				name: "TagEntry.Docs",
+				call: func() { docs = subject.Docs() },
+				check: func(tb testing.TB) {
+					assert.Nil(tb, docs, "Docs returns nil")
+				},
+			},
+			kindsCase{
+				name: "TagEntry.Identity",
+				call: func() { id = subject.Identity() },
+				check: func(tb testing.TB) {
+					assert.Equal(tb, id, symbol.Identity{}, "Identity returns the zero identity")
 				},
 			},
 		)

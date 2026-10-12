@@ -1,0 +1,205 @@
+// Copyright Dokimasia B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
+package plugintest_test
+
+import (
+	"io/fs"
+	"testing"
+	"testing/fstest"
+
+	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/plugin/plugintest"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The scripted tree of the source cases. Its first package declares User
+// under the table directive of the gen plugin, and its file has the stamp
+// of a test. Its second package declares Row.
+const (
+	userFile      = "svc/api/user.zz"
+	rowFile       = "svc/store/row.zz"
+	apiPackage    = "svc/api"
+	storePackage  = "svc/store"
+	absentPackage = "svc/absent"
+	userSource    = "package svc/api\nstamp fake.testFile yes\ntype User string\n+gen:table name=users\n"
+	rowSource     = "package svc/store\ntype Row int string\n"
+	stampValue    = "yes"
+	tableName     = "gen:table"
+	genID         = "gen"
+	sealedKey     = "late.key"
+	sealedDoc     = "a key that a test registers after the seal"
+)
+
+// keyedFront is the scripted frontend that registers its classification
+// key through its own role.
+type keyedFront struct{ *frontendtest.Scripted }
+
+// Keys registers the scripted classification key.
+func (keyedFront) Keys(r *meta.Registry) error { return frontendtest.ScriptedKeys(r) }
+
+// tabling is the plugin that declares the table directive of the scripted
+// language.
+type tabling struct{}
+
+// Name returns the name of the plugin, gen.
+func (tabling) Name() plugin.ID { return genID }
+
+// Directives returns the table directive.
+func (tabling) Directives() []directive.Schema { return frontendtest.ScriptedSchemas() }
+
+// A plugin author tests a plugin over real source, so Loaded loads a tree,
+// stamps it and validates its directives as a workspace does before the
+// first phase call.
+func TestSource(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Loaded", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("adds every package of the load to the graph", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.Loaded(t, source(nil))
+			assert.Equal(t, packagesOf(f), []string{apiPackage, storePackage}, "the graph has both packages")
+		})
+
+		t.Run("adds the packages that the source names to the graph", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.Loaded(t, source([]string{storePackage}))
+			assert.Equal(t, packagesOf(f), []string{storePackage}, "the graph has the named package")
+		})
+
+		t.Run("files the classification stamps of the load", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.Loaded(t, source(nil))
+			key, registered := meta.Lookup[string](f.Keys, frontendtest.ScriptedTestKey)
+			assert.True(t, registered, "the frontend registers its key")
+			got, held := meta.Get(f.Facts, fileID(t, f, userFile), key)
+			assert.True(t, held, "the stamp of the file applies")
+			assert.Equal(t, got, stampValue, "the fact has the value of the stamp")
+		})
+
+		t.Run("validates the directives of the plugins", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.Loaded(t, source(nil))
+			user := symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: apiPackage, Name: "User", Kind: symbol.KindStruct,
+			}
+			assert.Length(t, f.Directives[user], 1, "User has one validated directive")
+			assert.Equal(t, f.Directives[user][0].Name, directive.Name(tableName), "the directive is the table")
+		})
+
+		t.Run("seals the key registry", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.Loaded(t, source(nil))
+			_, err := meta.Register[bool](f.Keys, meta.KeySpec{Name: sealedKey, Doc: sealedDoc})
+			assert.HasError(t, err, "a key registers in no sealed registry")
+		})
+
+		t.Run("stops the test where the load returns an error", func(t *testing.T) {
+			t.Parallel()
+
+			s := source(nil)
+			s.Tree = fstest.MapFS{}
+			s.Stores = map[string]fs.FS{"go:mod": fstest.MapFS{}}
+			records := assert.Rejects(t, "a store that no frontend loads", func(tb assert.TB) {
+				plugintest.Loaded(tb, s)
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the source tree loads"},
+				"the rejection names the load")
+		})
+
+		t.Run("fails an Error of the load", func(t *testing.T) {
+			t.Parallel()
+
+			s := source(nil)
+			s.Tree = fstest.MapFS{rowFile: {Data: []byte("type Lost string\n")}}
+			records := assert.Rejects(t, "a file without a package line", func(tb assert.TB) {
+				plugintest.Loaded(tb, s)
+			})
+			assert.NotEmpty(t, records, "the check fails")
+			assert.HasPrefix(t, records[0].Contract, "the load of the source tree reports no Error, and reports "+
+				frontendtest.ScriptedBadFile.String(), "the rejection names the finding of the load")
+		})
+
+		t.Run("fails an Error of the validation", func(t *testing.T) {
+			t.Parallel()
+
+			s := source(nil)
+			s.Tree = fstest.MapFS{userFile: {Data: []byte("package svc/api\ntype User string\n+gen:table wrong=x\n")}}
+			records := assert.Rejects(t, "a directive with a key that its schema does not declare", func(tb assert.TB) {
+				plugintest.Loaded(tb, s)
+			})
+			assert.NotEmpty(t, records, "the check fails")
+			assert.HasPrefix(t, records[0].Contract, "the validation of the directives reports no Error, and reports ",
+				"the rejection names the validation")
+		})
+
+		t.Run("stops the test where the load does not declare a named package", func(t *testing.T) {
+			t.Parallel()
+
+			records := assert.Rejects(t, "a source that names a package of no file", func(tb assert.TB) {
+				plugintest.Loaded(tb, source([]string{apiPackage, absentPackage}))
+			})
+			assert.Equal(t, coretest.Contracts(records), []string{"the load declares the package " + absentPackage},
+				"the rejection names the package")
+		})
+	})
+}
+
+// source returns the scripted source of the cases, which contains the
+// packages in packages.
+func source(packages []string) plugintest.Source {
+	return plugintest.Source{
+		Tree: fstest.MapFS{
+			userFile: {Data: []byte(userSource)},
+			rowFile:  {Data: []byte(rowSource)},
+		},
+		Brand:     frontendtest.Brand,
+		Frontends: []plugin.Frontend{keyedFront{frontendtest.NewScripted()}},
+		Plugins:   []plugin.Plugin{tabling{}},
+		Packages:  packages,
+	}
+}
+
+// packagesOf seals the graph of f, as the first phase call does, and
+// returns the path of each package of the graph in the order of the graph.
+func packagesOf(f *plugintest.Fixture) []string {
+	f.Graph.Freeze()
+	var out []string
+	for pkg := range f.Graph.Packages() {
+		out = append(out, pkg.ID.Package)
+	}
+	return out
+}
+
+// fileID seals the graph of f, as the first phase call does, and returns
+// the identity of the file at path in the graph. It stops the test where
+// the graph has no such file.
+func fileID(tb assert.TB, f *plugintest.Fixture, path string) symbol.Identity {
+	tb.Helper()
+
+	f.Graph.Freeze()
+	var found []*node.File
+	for pkg := range f.Graph.Packages() {
+		for _, file := range pkg.Files {
+			if file.Path == path {
+				found = append(found, file)
+			}
+		}
+	}
+	assert.Length(tb, found, 1, "the graph has the file "+path)
+	return found[0].ID
+}

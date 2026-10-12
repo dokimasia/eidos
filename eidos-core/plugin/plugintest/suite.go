@@ -6,6 +6,7 @@ package plugintest
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"maps"
 	"slices"
 	"testing"
@@ -15,11 +16,12 @@ import (
 
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
-	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -35,21 +37,34 @@ type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 // the parallel dispatch check.
 const parallelWorkers = 8
 
-// RunPluginSuite runs the conformance checks a fixture needs no
-// workspace for: declaration stability, byte-equal emit across
-// isolated runs, the same output under parallel dispatch, the same
-// output under a selection of every match, annotator idempotence,
-// positioned diagnostics, attribution, declared tags, the options
-// schema, the template lint, and no panics. It skips the checks for a
-// role or a surface the plugin does not implement.
+// unclaimedTarget is a target that no backend claims. The declaration
+// check reads the template declarations of a plugin for it, beside the
+// targets of the fixture, so a lookup for a target that the plugin does
+// not serve runs too.
+const unclaimedTarget plugin.Target = "plugintest-unclaimed"
+
+// RunPluginSuite runs the conformance checks that need no workspace: the
+// populated fixture, declaration stability, the options schema, the
+// template lint, byte-equal emit across isolated runs, attribution and
+// declared tags, annotator idempotence, a clean run, a run over an empty
+// input, the same output under parallel dispatch, the same output under
+// a selection of every match, positioned diagnostics, no structural
+// write, and no panic. A check of a role or a surface that the plugin
+// does not implement runs as a skipped subtest with the reason.
+// The suite reads the surfaces of one build first, and a panic of that
+// read fails the suite.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
 	probe, fixture := setup(t)
 	_, annotates := probe.(plugin.Annotator)
 	_, generates := probe.(plugin.Generator)
-	options, optioned := probe.(plugin.OptionsProvider)
-	templated := declaresTree(probe, fixture)
+	var optioned, templated bool
+	assert.NotPanics(t, func() {
+		options, provides := probe.(plugin.OptionsProvider)
+		optioned = provides && options.Options() != nil
+		templated = declaresTree(probe, fixture)
+	}, "the plugin declares its surfaces without a panic")
 
 	t.Run("populated fixture", func(t *testing.T) {
 		t.Parallel()
@@ -59,34 +74,49 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertStableDeclaration(t, setup)
 	})
-	if optioned && options.Options() != nil {
-		t.Run("options schema", func(t *testing.T) {
-			t.Parallel()
-			AssertOptionsSchema(t, setup)
-		})
-	}
-	if templated {
-		t.Run("template lint", func(t *testing.T) {
-			t.Parallel()
-			AssertTemplates(t, setup)
-		})
-	}
-	if generates {
-		t.Run("deterministic emit", func(t *testing.T) {
-			t.Parallel()
-			AssertDeterministicEmit(t, setup)
-		})
-		t.Run("attribution and declared tags", func(t *testing.T) {
-			t.Parallel()
-			AssertAttributedEmit(t, setup)
-		})
-	}
-	if annotates {
-		t.Run("annotator idempotence", func(t *testing.T) {
-			t.Parallel()
-			AssertIdempotentAnnotate(t, setup)
-		})
-	}
+	t.Run("options schema", func(t *testing.T) {
+		t.Parallel()
+		if !optioned {
+			t.Skip("the plugin declares no options struct")
+		}
+		AssertOptionsSchema(t, setup)
+	})
+	t.Run("template lint", func(t *testing.T) {
+		t.Parallel()
+		if !templated {
+			t.Skip("the plugin declares no template tree for a target of the fixture")
+		}
+		AssertTemplates(t, setup)
+	})
+	t.Run("deterministic emit", func(t *testing.T) {
+		t.Parallel()
+		if !generates {
+			t.Skip("the plugin is not in the generator role")
+		}
+		AssertDeterministicEmit(t, setup)
+	})
+	t.Run("attribution and declared tags", func(t *testing.T) {
+		t.Parallel()
+		if !generates {
+			t.Skip("the plugin is not in the generator role")
+		}
+		AssertAttributedEmit(t, setup)
+	})
+	t.Run("annotator idempotence", func(t *testing.T) {
+		t.Parallel()
+		if !annotates {
+			t.Skip("the plugin is not in the annotator role")
+		}
+		AssertIdempotentAnnotate(t, setup)
+	})
+	t.Run("clean run", func(t *testing.T) {
+		t.Parallel()
+		AssertCleanRun(t, setup)
+	})
+	t.Run("empty input", func(t *testing.T) {
+		t.Parallel()
+		AssertEmptyRun(t, setup)
+	})
 	t.Run("parallel dispatch", func(t *testing.T) {
 		t.Parallel()
 		AssertParallelDispatch(t, setup)
@@ -138,35 +168,134 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 		"the fixture graph's files declare something: an empty run passes vacuously and proves nothing")
 }
 
-// AssertStableDeclaration fails unless two builds of one plugin
-// declare the same name, gate records, outputs and schemas. A
-// declaration that varies between builds breaks every consumer
-// that keys on it.
+// AssertStableDeclaration fails unless the plugin has a name, every read
+// of one build returns the same declarations, and a second build
+// declares the values of the first. The declarations are every
+// value that the workspace reads off a plugin when it composes: the
+// type, the name, the version, the gate records, the families, the
+// schemas, the priorities and the capabilities, the options with their
+// defaults, and the template declarations. The check reads the template
+// declarations for each target of the fixture and for a target that no
+// backend claims. A declaration that varies breaks every consumer that
+// keys on it, and the workspace reads some declarations more than once.
+// A read that panics fails the check.
 func AssertStableDeclaration(tb assert.TB, setup Setup) {
 	tb.Helper()
 
-	first, _ := setup(tb)
+	first, f := setup(tb)
 	second, _ := setup(tb)
-	assert.Equal(tb, second.Name(), first.Name(),
-		"the name is the identity everything durable keys on")
-	if a, held := first.(plugin.Subscribed); held {
-		b, alsoHeld := second.(plugin.Subscribed)
-		assert.True(tb, alsoHeld, "both builds declare their gates")
-		assert.Equal(tb, b.Subscriptions(), a.Subscriptions(),
-			"the gate records are stable across builds")
+	targets := []plugin.Target{unclaimedTarget}
+	if f != nil {
+		targets = append(slices.Sorted(maps.Keys(f.Languages)), unclaimedTarget)
 	}
-	if a, held := first.(plugin.OutputProvider); held {
-		b, alsoHeld := second.(plugin.OutputProvider)
-		assert.True(tb, alsoHeld, "both builds declare their outputs")
-		assert.Equal(tb, b.Outputs(), a.Outputs(),
-			"the families are stable across builds")
+	want := declared(tb, first, targets)
+	assert.NotEmpty(tb, want.name, "the plugin has a name")
+	expect.Deterministic(tb, func(p plugin.Plugin) (declaration, error) {
+		return declared(tb, p, targets), nil
+	}, first, "every read of one build returns the same declarations")
+	expect.Equal(tb, declared(tb, second, targets), want, "a second build declares the same values")
+}
+
+// presentation is what a template provider declares for one target:
+// whether a tree serves the target, the bytes of each file of the tree
+// by path, the names of the helpers, and the shared names that the
+// helpers override.
+type presentation struct {
+	served    bool
+	files     map[string]string
+	helpers   []string
+	overrides []string
+}
+
+// declaration is one read of every declaration that the workspace reads
+// off a plugin. typ is the dynamic type of the plugin, which decides the
+// surfaces that the plugin implements. The field of a surface that the
+// plugin does not implement is zero.
+type declaration struct {
+	typ           string
+	name          plugin.ID
+	version       string
+	subscriptions []plugin.Subscription
+	outputs       []plugin.Output
+	directives    []directive.Schema
+	priorities    map[plugin.Role]int
+	provides      []plugin.Capability
+	requires      []plugin.Capability
+	after         []plugin.Capability
+	options       any
+	targets       []plugin.Target
+	templates     map[plugin.Target]presentation
+}
+
+// declared reads every declaration of p once, and the template
+// declarations of p for each of targets. It fails the test where a read
+// panics or a template tree does not read.
+func declared(tb assert.TB, p plugin.Plugin, targets []plugin.Target) declaration {
+	tb.Helper()
+
+	d := declaration{typ: fmt.Sprintf("%T", p)}
+	assert.NotPanics(tb, func() {
+		d.name = p.Name()
+		if v, held := p.(plugin.Versioned); held {
+			d.version = v.Version()
+		}
+		if s, held := p.(plugin.Subscribed); held {
+			d.subscriptions = s.Subscriptions()
+		}
+		if o, held := p.(plugin.OutputProvider); held {
+			d.outputs = o.Outputs()
+		}
+		if dp, held := p.(plugin.DirectiveProvider); held {
+			d.directives = dp.Directives()
+		}
+		if c, held := p.(plugin.CapabilityProvider); held {
+			d.priorities = map[plugin.Role]int{
+				plugin.RoleAnnotator: c.Priority(plugin.RoleAnnotator),
+				plugin.RoleGenerator: c.Priority(plugin.RoleGenerator),
+			}
+			d.provides, d.requires, d.after = c.Provides(), c.Requires(), c.After()
+		}
+		if o, held := p.(plugin.OptionsProvider); held {
+			d.options = o.Options()
+		}
+		tp, held := p.(plugin.TemplateProvider)
+		if !held {
+			return
+		}
+		d.targets = tp.TemplateTargets()
+		d.templates = make(map[plugin.Target]presentation, len(targets))
+		for _, t := range targets {
+			tree, served := tp.Templates(t)
+			d.templates[t] = presentation{
+				served:    served,
+				files:     filesOf(tb, tree),
+				helpers:   slices.Sorted(maps.Keys(tp.TemplateFuncs(t))),
+				overrides: tp.Overrides(t),
+			}
+		}
+	}, "every declaration of the plugin reads without a panic")
+	return d
+}
+
+// filesOf returns the bytes of each file of tree by path, and nil for a
+// nil tree. It fails the test where the tree does not read.
+func filesOf(tb assert.TB, tree fs.FS) map[string]string {
+	tb.Helper()
+
+	if tree == nil {
+		return nil
 	}
-	if a, held := first.(plugin.DirectiveProvider); held {
-		b, alsoHeld := second.(plugin.DirectiveProvider)
-		assert.True(tb, alsoHeld, "both builds declare their schemas")
-		assert.Equal(tb, b.Directives(), a.Directives(),
-			"the registered schemas are stable across builds")
-	}
+	files := map[string]string{}
+	err := fs.WalkDir(tree, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		body, err := fs.ReadFile(tree, path)
+		files[path] = string(body)
+		return err
+	})
+	assert.NoError(tb, err, "the template tree reads")
+	return files
 }
 
 // declaresTree reports whether the plugin declares a template tree
@@ -391,6 +520,54 @@ func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 		"a repeated pass leaves every fact's value as the first pass left it")
 }
 
+// AssertCleanRun runs every phase the plugin implements over the fixture
+// of the setup, annotate first, and fails on each finding of Error
+// severity. The fixture is an input that the plugin accepts, and an
+// Error fails the run that reports it. Each finding reports on its own.
+func AssertCleanRun(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	p, f := setup(tb)
+	for _, r := range runAll(tb, p, f) {
+		for d := range r.Sink.All() {
+			expect.NotEqual(tb, d.Severity, diag.SeverityError, "a run over the fixture reports no Error: "+d.Msg)
+		}
+	}
+}
+
+// AssertEmptyRun runs every phase the plugin implements, annotate first,
+// over the fixture of the setup without its input: an empty graph, no
+// directives, no facts and an empty emit store, under the keys, the
+// rules, the target, the spoke and the policy of the setup. It fails
+// where a phase panics, returns an error or reports a finding of Error
+// severity. A workspace runs a plugin over every plan, and the scope of a
+// plan can contain nothing that the plugin matches. Each finding reports
+// on its own.
+func AssertEmptyRun(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	p, f := setup(tb)
+	empty := &Fixture{
+		Graph:     store.New(),
+		Keys:      f.Keys,
+		Facts:     meta.NewFacts(f.Keys),
+		Rules:     f.Rules,
+		Kernel:    f.Kernel,
+		Languages: f.Languages,
+		Turn:      f.Turn,
+		Workers:   f.Workers,
+		Target:    f.Target,
+		Types:     f.Types,
+		Policy:    f.Policy,
+		claimed:   f.claimed,
+	}
+	for _, r := range runAll(tb, p, empty) {
+		for d := range r.Sink.All() {
+			expect.NotEqual(tb, d.Severity, diag.SeverityError, "a run over an empty fixture reports no Error: "+d.Msg)
+		}
+	}
+}
+
 // presentFact is one present fact: its subject, its key and the value
 // of its claim that ranks first.
 type presentFact struct {
@@ -416,16 +593,16 @@ func presentFacts(f *Fixture) []presentFact {
 }
 
 // AssertPositionedDiagnostics runs every phase the plugin implements and
-// refuses a finding without a position: a diagnostic nobody can
-// jump to is a defect in whatever reported it. Each finding reports on
-// its own.
+// fails on a finding that [diag.Diag.Positioned] refuses: a diagnostic
+// that no reader can open is a defect in whatever reported it. Each
+// finding reports on its own.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	p, f := setup(tb)
 	for _, r := range runAll(tb, p, f) {
 		for d := range r.Sink.All() {
-			expect.NotEqual(tb, d.Pos, position.Pos{}, "every finding names the position it is about: "+d.Msg)
+			expect.True(tb, d.Positioned(), "every finding names the position it is about: "+d.Msg)
 		}
 	}
 }

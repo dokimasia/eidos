@@ -4,7 +4,6 @@
 package workspacetest
 
 import (
-	"context"
 	"io/fs"
 	"maps"
 	"math"
@@ -21,9 +20,9 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The names of the plans, plugins and checks the suite adds to a
-// fixture's composition. Each opens with the suite's name, so none of
-// them meets a name of the fixture's own.
+// These constants are the names of the plans, plugins and checks that the
+// suite adds to the composition of a fixture. Each starts with the name
+// of the suite, so none of them is equal to a name of the fixture.
 const (
 	copyPlan               = "workspacetest-copy"
 	failingPlan            = "workspacetest-failing"
@@ -42,15 +41,15 @@ const (
 // one invocation.
 const cutoffRule plugin.RuleID = 0
 
-// failureCode is the code the suite's seeded failure reports under.
+// failureCode is the code of the failure that the suite seeds.
 var failureCode = diag.MustRegister(diag.Prefix("WSTEST"), diag.CodeSpec{
 	Number:  1,
 	Meaning: "the workspace suite seeds a failure into a plan",
 })
 
-// Fixture is a multi-plan case: a source tree, the stores its load
-// reads, the composition without its plans, the plans, every file the
-// plans generate, and an edit of the tree.
+// Fixture is a case of more than one plan. It has a source tree, the
+// stores that its load reads, the composition without its plans, the
+// plans, every file that the plans generate, and an edit of the tree.
 type Fixture struct {
 	// Tree is the source tree. A check copies it into each directory it
 	// runs the fixture in.
@@ -62,10 +61,13 @@ type Fixture struct {
 	// the fixture in, with every part of the composition except its
 	// plans: the brand, the frontends, the annotators, the rules, the
 	// targets, a disk sink at root and the state directory's ledger
-	// under root. A check adds plans, checks and keys before it builds.
-	// The suite runs its checks in parallel, so Compose returns fresh
-	// plugin instances on every call and is safe for concurrent use.
-	Compose func(root string) *workspace.Builder
+	// under root. It returns the error of a part that does not
+	// configure, such as a config file that does not decode, and a check
+	// stops on that error. A check adds plans, checks and keys before it
+	// builds. The suite runs its checks in parallel, so Compose returns
+	// fresh plugin instances on every call and is safe for concurrent
+	// use.
+	Compose func(root string) (*workspace.Builder, error)
 	// Plans returns the fixture's plans, with fresh generator and
 	// backend instances on every call: at least two, each routing at
 	// least one file, no two routing a file to one path, the first
@@ -147,9 +149,8 @@ func RunWarmColdSuite(t *testing.T, f Fixture) {
 	})
 }
 
-// failure is a generator that reports one Error at a file of the
-// fixture's tree and emits nothing: the failure the suite seeds into a
-// plan.
+// failure is the generator that the suite seeds into a plan. It reports
+// one Error at a file of the tree of the fixture and emits nothing.
 type failure struct {
 	at position.Pos
 }
@@ -163,8 +164,8 @@ func (g failure) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
-// probe is a generator that records the exports its context hands over
-// and emits nothing: the dependent the export checks compose.
+// probe is the dependent generator that the export checks compose. It
+// records the exports of its context and emits nothing.
 type probe struct {
 	got map[string]plugin.ExportDoc
 }
@@ -228,9 +229,9 @@ func (cutoff) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
-// probeRun is one run of the fixture's plans beside a probe plan that
-// depends on each of them: the run's report, the exports the probe read,
-// and the brand the composition declares.
+// probeRun is one run of the plans of a fixture beside a probe plan that
+// depends on each of them. It has the report of the run, the exports that
+// the probe read, and the brand of the composition.
 type probeRun struct {
 	report  *workspace.Report
 	exports map[string]plugin.ExportDoc
@@ -238,21 +239,22 @@ type probeRun struct {
 }
 
 // probed runs the fixture's plans beside a probe plan that depends on
-// each of them over the tree at root, and ignores the sealed state where
-// cold is set. It stops the check where the composition does not build,
-// and fails it where the run returns an error.
+// each of them over the tree at root, under the context of tb, and
+// ignores the sealed state where cold is set. It stops the check where
+// the composition does not build, and fails it where the run returns an
+// error.
 func probed(tb assert.TB, f Fixture, root string, cold bool) probeRun {
 	tb.Helper()
 
 	plans, p := withProbe(plansOf(tb, f))
 	w := built(tb, f, root, plans, nil)
-	report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: cold})
+	report, err := w.Run(assert.Context(tb), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: cold})
 	assert.NoError(tb, err, "the fixture's plans and the probe run clean")
 	return probeRun{report: report, exports: p.got, brand: w.Brand()}
 }
 
-// check is a workspace check that reads the plans it names and records
-// the contexts it is called with.
+// check is a workspace check that reads the plans in reads and records
+// the context of each call.
 type check struct {
 	name   plugin.ID
 	reads  []string
@@ -262,7 +264,7 @@ type check struct {
 // Name returns the check's name.
 func (c *check) Name() plugin.ID { return c.name }
 
-// Reads returns the plans the check names.
+// Reads returns the plans that the check reads.
 func (c *check) Reads() []string { return c.reads }
 
 // Check records the call.
@@ -272,21 +274,21 @@ func (c *check) Check(ctx *plugin.CheckContext) error {
 }
 
 // copied copies the fixture's tree into root, an empty directory. It
-// stops the check where the fixture states no tree or the tree does not
+// stops the check where the fixture has no tree or the tree does not
 // copy.
 func copied(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Tree, "the fixture states a tree")
+	assert.NotNil(tb, f.Tree, "the fixture has a tree")
 	assert.NoError(tb, os.CopyFS(root, f.Tree), "the fixture's tree copies into the run's directory")
 }
 
 // plansOf returns the fixture's plans. It stops the check where the
-// fixture states no plans, or fewer than two.
+// fixture has no plans, or fewer than two.
 func plansOf(tb assert.TB, f Fixture) []workspace.Plan {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Plans, "the fixture states its plans")
+	assert.NotNil(tb, f.Plans, "the fixture has plans")
 	plans := f.Plans()
 	assert.InRange(tb, len(plans), 2, math.Inf(1), "the suite checks at least two plans")
 	return plans
@@ -303,14 +305,17 @@ func planNames(plans []workspace.Plan) []string {
 
 // composed returns the fixture's composition over root with the plans,
 // edited before it builds, and Build's error. It stops the check where
-// the fixture states no composition.
+// the fixture has no composition, and where its composition returns an
+// error.
 func composed(
 	tb assert.TB, f Fixture, root string, plans []workspace.Plan, edit func(*workspace.Builder),
 ) (*workspace.Workspace, error) {
 	tb.Helper()
 
-	assert.NotNil(tb, f.Compose, "the fixture states a composition")
-	b := f.Compose(root).Plans(plans...)
+	assert.NotNil(tb, f.Compose, "the fixture has a composition")
+	b, err := f.Compose(root)
+	assert.NoError(tb, err, "the fixture's composition configures")
+	b.Plans(plans...)
 	if edit != nil {
 		edit(b)
 	}
@@ -330,10 +335,11 @@ func built(
 	return w
 }
 
-// ran runs a workspace over the tree at root, reading the fixture's
-// stores, and returns the report and the run's error.
-func ran(f Fixture, w *workspace.Workspace, root string) (*workspace.Report, error) {
-	return w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores})
+// ran runs a workspace over the tree at root under the context of tb,
+// reading the fixture's stores, and returns the report and the run's
+// error.
+func ran(tb assert.TB, f Fixture, w *workspace.Workspace, root string) (*workspace.Report, error) {
+	return w.Run(assert.Context(tb), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores})
 }
 
 // clean copies the fixture's tree into root, an empty directory, runs
@@ -345,7 +351,7 @@ func clean(tb assert.TB, f Fixture, root string) ([]workspace.Plan, *workspace.W
 	plans := plansOf(tb, f)
 	copied(tb, f, root)
 	w := built(tb, f, root, plans, nil)
-	report, err := ran(f, w, root)
+	report, err := ran(tb, f, w, root)
 	assert.NoError(tb, err, "the fixture's plans run clean")
 	return plans, w, report
 }

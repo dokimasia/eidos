@@ -28,7 +28,7 @@ func stamperInto(m *match) *Stamper {
 }
 
 // Stamp records v under k on the subject of the match. The claim has the
-// phase call's bucket and plugin, and the invocation's place in
+// phase call's turn and plugin, and the invocation's place in
 // canonical match order, which is the rule, the subject and the gating
 // instance. The invocation's point reads so far are the claim's
 // derivation. In a match that a directive gates, the claim has directive
@@ -78,7 +78,7 @@ func stamp[T meta.FactValue](m *match, target symbol.Identity, k meta.Key[T], v 
 	claim := meta.Claim{
 		Subject:   target,
 		Authority: meta.AuthorityPlugin,
-		Bucket:    m.rs.bucket,
+		Turn:      m.rs.turn,
 		Plugin:    m.rs.plugin,
 		Order:     m.order(),
 		Derived:   m.derived(),

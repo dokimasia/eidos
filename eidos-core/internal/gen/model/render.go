@@ -8,15 +8,15 @@ import (
 	"strings"
 )
 
-// The packages the generator writes into. Each package's generated
-// tests declare its black-box twin.
+// The generator writes into these packages. The generated tests of
+// each package declare its black-box twin.
 const (
 	// SymbolPackage is the package of the Kind and Fact constants.
 	SymbolPackage     = "symbol"
 	SymbolTestPackage = "symbol_test"
 
-	// RootPackage is the authoring surface the match constructors
-	// arrive in.
+	// RootPackage is the authoring surface that contains the match
+	// constructors.
 	RootPackage     = "eidos"
 	RootTestPackage = "eidos_test"
 	// NodePackage is the model a frontend produces.
@@ -27,29 +27,29 @@ const (
 	EmitTestPackage = "emit_test"
 )
 
-// The qualifiers a generated model file names other packages'
-// declarations through.
+// A generated model file qualifies the declarations of other packages
+// with these qualifiers.
 const (
 	symbolQualifier   = SymbolPackage + "."
 	positionQualifier = "position."
 )
 
-// The spellings rendering composes generated expressions from.
+// Rendering composes generated expressions from these spellings.
 const (
-	// receiverName is the receiver every generated method uses.
+	// receiverName is the receiver of every generated method.
 	receiverName = "x"
-	// accessorSuffix names a slot's exported accessor.
+	// accessorSuffix ends the name of the exported accessor of a slot.
 	accessorSuffix = "Slot"
-	// slotType is the storage a slot-tagged field declares.
+	// slotType is the storage type of a slot-tagged field.
 	slotType = "Slot"
-	// itemsMethod, lenMethod and appendMethod are the slot's own
-	// surface, which generated code calls.
+	// itemsMethod, lenMethod and appendMethod are the methods of a
+	// slot that generated code calls.
 	itemsMethod  = "Items"
 	lenMethod    = "Len"
 	appendMethod = "Append"
-	// symbolsType is the named slice a marker-typed field declares.
-	// Its codec reads a child's kind before it allocates one, which a
-	// plain interface slice cannot.
+	// symbolsType is the named slice type of a marker-typed field. Its
+	// codec reads the kind of a child before it allocates the child. A
+	// plain interface slice cannot do that.
 	symbolsType = "Symbols"
 	// sliceMarker and pointerMarker open a Go type spelling.
 	sliceMarker   = "[]"
@@ -60,10 +60,10 @@ const (
 	addressOf   = "&"
 )
 
-// The codecs a node-side field's value encodes through in the binary
-// codec, which its template switches on. A field whose type matches
-// none renders text gofmt refuses, so a schema type the codec cannot
-// write fails the generation.
+// The binary codec writes the value of a node-side field with one of
+// these codecs, and its template switches on them. A field whose type
+// matches none renders text that gofmt refuses, so a schema type that
+// the codec cannot write fails the generation.
 const (
 	codecString      = "string"
 	codecBool        = "bool"
@@ -78,7 +78,7 @@ const (
 	codecSymbols     = "symbols"
 )
 
-// The schema spellings of the types the binary codec writes by name.
+// The binary codec writes the types of these schema spellings by name.
 const (
 	stringType   = "string"
 	boolType     = "bool"
@@ -88,31 +88,31 @@ const (
 	stringsType  = sliceMarker + stringType
 )
 
-// Field names the models treat by convention and not by tag.
-// Lowering passes them through and rendering recognizes them.
+// The models treat these field names by convention and not by tag.
+// Lowering passes them through, and rendering recognizes them.
 const (
-	// docField is a declaration's documentation.
+	// docField is the documentation of a declaration.
 	docField = "Doc"
-	// posField is a node symbol's source position.
+	// posField is the source position of a node symbol.
 	posField = "Pos"
-	// idField is a node declaration's canonical identity, which is
-	// what makes the kind satisfy the Declaration interface.
+	// idField is the canonical identity of a node declaration. The
+	// generated Identity method returns it.
 	idField = "ID"
-	// originField is an emit value's node identity, which is what
-	// the generated OriginOf returns.
+	// originField is the node identity of an emit value. The generated
+	// OriginOf returns it.
 	originField = "Origin"
-	// typeField is a declaration's own type reference, which is what
-	// makes a kind satisfy the Typed interface.
+	// typeField is the type reference of a declaration. A kind with it
+	// satisfies the Typed interface.
 	typeField = "Type"
-	// typeRefKind is the kind such a field references.
+	// typeRefKind is the kind that such a field references.
 	typeRefKind = "TypeRef"
-	// visField is a declaration's normalized visibility, which the
-	// respell traversal hands the hook.
+	// visField is the normalized visibility of a declaration. The
+	// respell traversal passes it to the hook.
 	visField = "Visibility"
 )
 
-// memberMethods are the Membered interface's methods, against the
-// field names that satisfy each one.
+// memberMethods are the methods of the Membered interface, each with
+// the field names that satisfy it.
 var memberMethods = []struct {
 	Method string
 	Fields []string
@@ -122,17 +122,16 @@ var memberMethods = []struct {
 	{Method: "EmbedList", Fields: []string{"Embeds"}},
 }
 
-// view is one kind prepared for a template.
+// view is one kind, prepared for a template.
 //
-// Every spelling a template needs is computed here, so the
-// templates range over data and decide nothing. The lowering is
-// free of layout concerns, and a template never asks which side it
-// is on.
+// The view computes every spelling that a template needs, so the
+// templates range over data and decide nothing. The lowering has no
+// layout concerns, and a template does not depend on its side.
 type view struct {
 	Name string
-	// Doc is the schema's documentation for the kind.
+	// Doc is the documentation of the kind in the schema.
 	Doc []string
-	// Fields are the struct's fields, in declaration order.
+	// Fields are the fields of the struct in declaration order.
 	Fields []fieldView
 	// PosExpr and DocExpr satisfy the Symbol interface, and HasPos
 	// and HasDoc report whether the kind has the field they read.
@@ -140,66 +139,75 @@ type view struct {
 	DocExpr string
 	HasPos  bool
 	HasDoc  bool
-	// Subject marks a kind the dispatch surface triggers on, which
-	// is what the match template ranges over.
+	// Subject marks a kind that the dispatch surface triggers on. The
+	// match template ranges over these kinds.
 	Subject bool
 	// Fallible reports whether the binary encoding of the kind can
-	// fail: the kind has a field that admits any kind, or a field of a
-	// kind whose encoding can fail. Only a symbol from outside the
-	// model fails an encoding.
+	// fail. It can fail when the kind has a field that admits any kind,
+	// or a field of a kind whose encoding can fail. Only a symbol from
+	// outside the model fails an encoding.
 	Fallible bool
+	// ZeroIdentity reports a node-side kind without an ID field. Its
+	// Identity method returns the zero identity, so the kind still
+	// satisfies the Declaration interface.
+	ZeroIdentity bool
 	// Members satisfy the Membered interface. The slice is empty for
 	// a kind without a member list, and an entry with an empty Items
 	// returns nil.
 	Members []memberView
-	// TypeRefStorage is the field returning the Typed interface,
-	// empty when the kind is not typed.
+	// TypeRefStorage is the field that the TypeRef method returns. It
+	// is empty when the kind is not typed.
 	TypeRefStorage string
-	// IDStorage is the field returning the identity accessor, empty
-	// on the emit side, which has an origin instead.
+	// IDStorage is the field that the identity accessor returns. It is
+	// empty for an emit kind and for a node kind without an ID field.
 	IDStorage string
-	// OriginStorage is the field returning OriginOf, empty on the
-	// node side and on emit kinds that derive from nothing.
+	// OriginStorage is the field that OriginOf returns. It is empty on
+	// the node side and on emit kinds that derive from nothing.
 	OriginStorage string
 	// Walked are the fields the traversal descends into.
 	Walked []fieldView
 	// Slots are the fields that become slot storage.
 	Slots []fieldView
+	// Bodies are the storage names of the body fields of an emit kind.
+	// The generated seal of the kind seals the slots of each body beside
+	// the slots of the kind.
+	Bodies []string
 	// Children are the statements a test uses to give the subject
 	// one child in every traversed field.
 	Children []string
-	// WalkVisits is how many declarations a walk over that subject
-	// visits, the subject included.
+	// WalkVisits is the number of declarations that a walk over that
+	// subject visits, including the subject.
 	WalkVisits int
-	// NameStorage is the field of the kind's own declared name, empty
-	// when the kind declares none, and VisStorage the field of its
-	// visibility, empty when it has none.
+	// NameStorage is the field of the declared name of the kind. It is
+	// empty when the kind declares no name. VisStorage is the field of
+	// its visibility, and it is empty when the kind has none.
 	NameStorage string
 	VisStorage  string
 	// NameWalked are the traversed fields that lead to a declared
-	// name: the respell traversal's descent set.
+	// name. They are the descent set of the respell traversal.
 	NameWalked []fieldView
-	// NameChildren are the statements a test uses to give the
-	// subject one named child per descent field, and NameVisits is
-	// how many names the respell traversal then visits.
+	// NameChildren are the statements that give the subject of a test
+	// one named child per descent field. NameVisits is the number of
+	// names that the respell traversal then visits.
 	NameChildren []string
 	NameVisits   int
-	// Facts are the stated facts of the kind's own fields, in schema
-	// field order, and FactWalked the traversed fields that lead to a
-	// kind stating facts: the facts traversal's descent set.
+	// Facts are the facts of the fields of the kind, in schema field
+	// order. FactWalked are the traversed fields that lead to a kind
+	// with facts. They are the descent set of the facts traversal.
 	Facts      []factView
 	FactWalked []fieldView
-	// FactChildren build one child stating one fact per descent
-	// field that leads to a kind stating facts, with what the
-	// traversal yields for each; empty where no descent field does.
+	// FactChildren build one child with one fact per descent field
+	// that leads to a kind with facts, and record what the traversal
+	// yields for each. It is empty when no descent field leads to such
+	// a kind.
 	FactChildren []factChildView
-	// Malformed is an encoding naming this kind whose first field
-	// has the wrong JSON type, so a decoder places the kind and then
+	// Malformed is an encoding of this kind whose first field has the
+	// wrong JSON type. A decoder therefore selects the kind and then
 	// fails on its body.
 	Malformed string
-	// Populate are the statements a test uses to give the subject a
-	// value other than the zero value in every field the binary codec
-	// writes as a value, each field a value of its own.
+	// Populate are the statements that give the subject of a test a
+	// value other than the zero value in every field that the binary
+	// codec writes as a value. Each field gets a value of its own.
 	Populate []string
 }
 
@@ -218,64 +226,65 @@ type memberView struct {
 
 // factView is one stated fact as the facts traversal reads it.
 type factView struct {
-	// Fact is the generated constant's suffix, from the schema tag.
+	// Fact is the suffix of the generated constant, from the schema
+	// tag.
 	Fact string
-	// Stated is the expression reporting the fact stated, read off
-	// the traversal's receiver.
+	// Stated is the expression that reports the fact as stated. It
+	// reads the receiver of the traversal.
 	Stated string
-	// Set is the statement a test uses to state the fact on its
-	// subject.
+	// Set is the statement that states the fact on the subject of a
+	// test.
 	Set string
 }
 
-// factChildView is the statements a test uses to give a subject
-// one child stating one fact, with what the traversal then yields.
+// factChildView is the statements that give the subject of a test one
+// child with one fact. It also records what the traversal then yields.
 type factChildView struct {
-	// Field is the descent field that contains the child, which names
-	// the generated case.
+	// Field is the descent field that contains the child. The
+	// generated case has its name.
 	Field string
 	Stmts []string
 	Kind  string
 	Fact  string
 }
 
-// multiReturnFact is the one fact whose statedness is not the
-// field's own shape: a callable returns several values when the
-// list has more than one entry, so the threshold is two and not
-// presence.
+// multiReturnFact is the one fact whose statedness does not follow the
+// shape of the field. A callable returns several values when the list
+// has more than one entry, so the threshold is two and not presence.
 const multiReturnFact = "MultiReturn"
 
 // fieldView is one field as one model side declares it.
 type fieldView struct {
-	// Doc and Comment are the schema's documentation for the field.
+	// Doc and Comment are the documentation of the field in the
+	// schema.
 	Doc     []string
 	Comment string
-	// Name is the schema's field name; Storage is how the struct
-	// declares it, which differs for a slot.
+	// Name is the name of the field in the schema. Storage is the name
+	// that the struct declares, and it differs for a slot.
 	Name    string
 	Storage string
-	// Decl is the type the struct declares.
+	// Decl is the type that the struct declares.
 	Decl string
-	// Elem is the referenced kind, empty when the field references
-	// none.
+	// Elem is the referenced kind. It is empty when the field
+	// references no kind.
 	Elem string
-	// Items ranges over the field's values, and Len sizes them.
+	// Items ranges over the values of the field, and Len sizes them.
 	Items string
 	Len   string
-	// Accessor is the exported slot method, empty when the field is
-	// not a slot, and Child the expression constructing one value
-	// the slot admits.
+	// Accessor is the exported slot method. It is empty when the field
+	// is not a slot. Child is the expression that constructs one value
+	// that the slot admits.
 	Accessor string
 	Child    string
-	// JSONName is the field's key in encoded form.
+	// JSONName is the key of the field in encoded form.
 	JSONName string
-	// JSONType is the type the field's value decodes into: the
-	// declared type, with a slice of the marker spelled as the
+	// JSONType is the type that the value of the field decodes into.
+	// It is the declared type, and a slice of the marker becomes the
 	// kind-discriminated [symbolsType] slice.
 	JSONType string
-	// Codec is how the binary codec writes the field, one of the codec
-	// constants, and empty for a type it cannot write. Fallible
-	// reports whether writing the field can fail.
+	// Codec is one of the codec constants, and the binary codec writes
+	// the field with it. It is empty for a type that the codec cannot
+	// write. Fallible reports whether the write of the field can fail.
 	Codec    string
 	Fallible bool
 	// Slice and Pointer describe the shape the traversal walks.
@@ -299,10 +308,10 @@ func viewsFor(kinds []KindSpec, side string) []view {
 	return out
 }
 
-// fillCodec prepares the binary codec's views on the node side: which
-// kinds and fields can fail to encode, and the statements that give
-// every field the codec writes as a value a value of its own. It runs
-// after viewOf, because fallibility follows the fields of every kind.
+// fillCodec prepares the views of the binary codec on the node side. It
+// marks the kinds and fields whose encoding can fail, and writes the
+// statements that give each field a value of its own. It runs after
+// viewOf, because fallibility follows the fields of every kind.
 func fillCodec(kinds []KindSpec, side string, views []view) {
 	if side != NodePackage {
 		return
@@ -322,10 +331,10 @@ func fillCodec(kinds []KindSpec, side string, views []view) {
 	}
 }
 
-// fallibleReach computes which kinds' binary encodings can fail: every
-// kind with a node-side field that admits any kind, because only a
-// symbol from outside the model fails, and every kind with a node-side
-// field of such a kind.
+// fallibleReach computes the kinds whose binary encoding can fail. Such
+// a kind has a node-side field that admits any kind, or a node-side
+// field of a kind whose encoding can fail. Only a symbol from outside
+// the model fails an encoding.
 func fallibleReach(kinds []KindSpec) map[string]bool {
 	fallible := map[string]bool{}
 	for _, k := range kinds {
@@ -354,9 +363,10 @@ func fallibleReach(kinds []KindSpec) map[string]bool {
 	return fallible
 }
 
-// codecOf returns how the binary codec writes a field: by the shape of
-// a field that references kinds, and by the type of any other. It
-// returns the empty string for a type the codec cannot write.
+// codecOf returns the codec that writes a field. It decides by the
+// shape of a field that references kinds, and by the type of any other
+// field. It returns the empty string for a type that the codec cannot
+// write.
 func codecOf(field FieldSpec) string {
 	switch {
 	case field.IsSymbol && field.Slice:
@@ -385,11 +395,12 @@ func codecOf(field FieldSpec) string {
 	return ""
 }
 
-// populateOf writes the statement a test uses to give one field a
-// value other than the zero value, distinct from every other field's:
-// the field's name in a string, the field's ordinal in a number. A
-// field that references kinds gets its value from the children a test
-// builds, so it gets no statement here.
+// populateOf writes the statement that gives one field of a test
+// subject a value other than the zero value. The value differs from the
+// value of every other field. A string gets the name of the field, and
+// a number gets its ordinal. A field that references kinds gets its
+// value from the children of the test, so populateOf writes no
+// statement for it.
 func populateOf(f fieldView, ordinal int) string {
 	target := "subject." + f.Storage
 	n := strconv.Itoa(ordinal + 1)
@@ -416,11 +427,11 @@ func populateOf(f fieldView, ordinal int) string {
 	return ""
 }
 
-// fillFacts prepares the facts traversal's views on the emit side:
-// each kind's own stated facts, the descent fields that lead to a
-// kind stating facts, and one stated child for the generated twin.
-// It runs after viewOf so a child's setter can name any kind's
-// first fact.
+// fillFacts prepares the views of the facts traversal on the emit
+// side. It records the facts of each kind, the descent fields that lead
+// to a kind with facts, and one child with a fact for the generated
+// twin. It runs after viewOf, so the setter of a child can use the
+// first fact of any kind.
 func fillFacts(kinds []KindSpec, side string, views []view) {
 	if side != EmitPackage {
 		return
@@ -458,10 +469,10 @@ func fillFacts(kinds []KindSpec, side string, views []view) {
 	}
 }
 
-// factReach computes which kinds the facts traversal descends
-// into: every kind that states a fact or walks to one. A
-// marker-typed walk field leads to one by construction, because it
-// admits any kind.
+// factReach computes the kinds that the facts traversal descends into.
+// Such a kind states a fact or walks to a kind that does. A
+// marker-typed walk field leads to such a kind by construction,
+// because it admits any kind.
 func factReach(kinds []KindSpec) map[string]bool {
 	reach := map[string]bool{}
 	for _, k := range kinds {
@@ -490,14 +501,14 @@ func factReach(kinds []KindSpec) map[string]bool {
 	return reach
 }
 
-// factStated writes the expression reporting one fact stated, read
-// off the traversal's receiver. Statedness follows the field's
-// shape: a bool is stated true, a string non-empty, a shared
-// vocabulary value non-zero, a reference non-nil, a list
-// non-empty; the several-returns fact alone asks for more than
-// one, because a single result is every language's ordinary case.
-// A shape outside the set renders text gofmt refuses, so a
-// mis-tagged field fails the generation and never walks wrong.
+// factStated writes the expression that reports one fact as stated on
+// the receiver of the traversal. Statedness follows the shape of the
+// field. A bool is stated when true, a string when not empty, a shared
+// vocabulary value when not zero, a reference when not nil, and a list
+// when not empty. The several-returns fact alone needs more than one
+// entry, because a single result is the ordinary case of every
+// language. A shape outside the set renders text that gofmt refuses, so
+// a mis-tagged field fails the generation and never walks wrong.
 func factStated(field FieldSpec, f fieldView) string {
 	switch {
 	case field.Fact == multiReturnFact:
@@ -515,14 +526,17 @@ func factStated(field FieldSpec, f fieldView) string {
 	case f.Pointer:
 		return f.selector() + " != nil"
 	}
-	return "" // gofmt refuses the rendered file, naming the fault
+	return "" // gofmt refuses the rendered file and names the fault
 }
 
-// factSetter writes the statement a test uses to state one fact on
-// the given receiver.
+// factSetter writes the statement that states one fact on the given
+// receiver in a test.
 func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string {
 	target := receiver + "." + f.Storage
 	switch {
+	case field.Fact == multiReturnFact && f.Accessor != "":
+		child := addressOf + field.Elem + zeroLiteral
+		return receiver + "." + f.Accessor + "()." + appendMethod + "(" + child + ", " + child + ")"
 	case field.Fact == multiReturnFact:
 		return target + " = " + qualify(field.Type) + "{{}, {}}"
 	case field.Type == boolType:
@@ -547,18 +561,18 @@ func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string
 		return target + " = " + addressOf +
 			strings.TrimPrefix(qualify(field.Type), pointerMarker) + zeroLiteral
 	}
-	return "" // gofmt refuses the rendered file, naming the fault
+	return "" // gofmt refuses the rendered file and names the fault
 }
 
-// factChildrenOf writes, for every descent field whose element
-// states a fact directly, the statements giving a subject one child
-// stating it, and records what the traversal yields for that child. A
-// descent field that is itself fact-tagged is passed over, because
-// filling it would state the subject's own fact beside the child's.
+// factChildrenOf writes the statements that give a subject one child
+// with a fact, for every descent field whose element states a fact
+// directly. It records what the traversal yields for that child. It
+// skips a descent field that has a fact tag itself, because a value in
+// it would state the fact of the subject beside the fact of the child.
 //
-// Every such field gets an entry, not only the first: each is its
-// own recursion in the generated traversal, and a field no case
-// fills is a descent no test covers.
+// Every such field gets an entry, not only the first. Each is a
+// recursion of its own in the generated traversal, and no test covers
+// a descent that no case fills.
 func factChildrenOf(k KindSpec, first map[string]factView, side string) []factChildView {
 	var out []factChildView
 	for _, f := range k.Fields {
@@ -595,9 +609,9 @@ func factChildrenOf(k KindSpec, first map[string]factView, side string) []factCh
 	return out
 }
 
-// factsOf collects the fact constant suffixes the schema declares,
-// first encounter across kinds in schema order, which is what
-// fixes the generated constants.
+// factsOf collects the suffixes of the fact constants that the schema
+// declares, in the order of first use across the kinds in schema
+// order. That order fixes the values of the generated constants.
 func factsOf(kinds []KindSpec) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -613,11 +627,11 @@ func factsOf(kinds []KindSpec) []string {
 	return out
 }
 
-// nameReach computes which kinds the respell traversal descends
-// into. Its first result contains every kind that declares a name
-// or walks to one, and named maps a kind to its own name field. A
-// marker-typed walk field leads to one by construction, because it
-// admits any kind.
+// nameReach computes the kinds that the respell traversal descends
+// into. Its first result contains every kind that declares a name or
+// walks to a kind that does. named maps a kind to its name field. A
+// marker-typed walk field leads to such a kind by construction,
+// because it admits any kind.
 func nameReach(
 	kinds []KindSpec, side string,
 ) (reach map[string]bool, named map[string]string) {
@@ -709,7 +723,11 @@ func viewOf(kind KindSpec, side string, reach map[string]bool, named map[string]
 			f.Child = childOf(f, kind.Name)
 			v.Slots = append(v.Slots, f)
 		}
+		if side == EmitPackage && field.Type == BodyMarkerName {
+			v.Bodies = append(v.Bodies, f.Storage)
+		}
 	}
+	v.ZeroIdentity = side == NodePackage && v.IDStorage == ""
 	v.Members = membersOf(byName)
 	v.Children, v.WalkVisits = childrenOf(v)
 	v.NameChildren, v.NameVisits = nameChildrenOf(v, named)
@@ -717,12 +735,12 @@ func viewOf(kind KindSpec, side string, reach map[string]bool, named map[string]
 	return v
 }
 
-// nameChildrenOf writes the statements that give a subject one
-// named child per respell descent field, and counts the names a
-// traversal then visits, the subject's own included. A marker
-// field takes a named value of the enclosing kind, the way
-// [childrenOf] fills it; a descent field whose element declares
-// no name of its own contributes a bare child and no visit.
+// nameChildrenOf writes the statements that give a subject one named
+// child per respell descent field. It counts the names that a
+// traversal then visits, including the name of the subject. A marker
+// field takes a named value of the enclosing kind, as [childrenOf]
+// fills it. A descent field whose element declares no name contributes
+// a bare child and no visit.
 func nameChildrenOf(v view, named map[string]string) (stmts []string, visits int) {
 	if v.NameStorage != "" {
 		visits++
@@ -755,10 +773,10 @@ func nameChildrenOf(v view, named map[string]string) (stmts []string, visits int
 	return stmts, visits
 }
 
-// malformedOf writes an encoding that names the kind and then
-// breaks: the first field has a JSON type it cannot decode. A
-// decoder therefore enters the kind's own reader before it fails,
-// which is the path a bad payload takes.
+// malformedOf writes an encoding of the kind whose first field has a
+// JSON type that the field cannot decode. A decoder therefore enters
+// the reader of the kind before it fails. A bad payload takes the same
+// path.
 func malformedOf(v view) string {
 	if len(v.Fields) == 0 {
 		return ""
@@ -774,9 +792,9 @@ func malformedOf(v view) string {
 // childrenOf writes the statements that give a subject one child in
 // every traversed field, and counts what a walk then visits.
 //
-// A child is empty, so it contributes exactly one visit. A field
-// typed by the marker takes a value of the enclosing kind, which is
-// always available and terminates for the same reason.
+// A child is empty, so it contributes exactly one visit. A field of
+// the marker type takes a value of the enclosing kind. Such a value is
+// always available, and it terminates for the same reason.
 func childrenOf(v view) (stmts []string, visits int) {
 	visits = 1
 	const subject = "subject"
@@ -797,10 +815,10 @@ func childrenOf(v view) (stmts []string, visits int) {
 	return stmts, visits
 }
 
-// childOf writes the expression constructing one value a field
-// admits: the kind it references, or the enclosing kind for a
-// marker-typed field, which admits any kind and so always admits a
-// value of the kind that declares it.
+// childOf writes the expression that constructs one value that a field
+// admits. The value is of the kind that the field references. A
+// marker-typed field admits any kind, so it gets a value of the
+// enclosing kind.
 func childOf(f fieldView, enclosing string) string {
 	elem := f.Elem
 	if elem == "" {
@@ -809,9 +827,9 @@ func childOf(f fieldView, enclosing string) string {
 	return addressOf + elem + zeroLiteral
 }
 
-// membersOf returns the Membered methods a kind implements. It
-// returns nothing when the kind has no member list at all, so a
-// kind that is not membered grows no methods.
+// membersOf returns the Membered methods that a kind implements. It
+// returns nil when the kind has no member list, so a kind that is not
+// membered gets no methods.
 func membersOf(byName map[string]fieldView) []memberView {
 	members := make([]memberView, 0, len(memberMethods))
 	found := false
@@ -867,13 +885,12 @@ func fieldOf(field FieldSpec, side string) fieldView {
 	return f
 }
 
-// selector is the field as generated code reads it off the
+// selector returns the expression that reads the field from the
 // receiver.
 func (f fieldView) selector() string { return receiverName + "." + f.Storage }
 
-// unexport lowers a name's leading run of capitals, so an acronym
-// remains one word: ID becomes id, and TypeParams becomes
-// typeParams.
+// unexport lowers the leading run of capitals of a name, so an acronym
+// remains one word. ID becomes id, and TypeParams becomes typeParams.
 func unexport(name string) string {
 	caps := 0
 	for caps < len(name) && name[caps] >= 'A' && name[caps] <= 'Z' {
@@ -887,15 +904,14 @@ func unexport(name string) string {
 	case caps == 1:
 		return strings.ToLower(name[:1]) + name[1:]
 	default:
-		// The last capital opens the next word: IDList becomes idList.
+		// The last capital opens the next word, so IDList becomes idList.
 		return strings.ToLower(name[:caps-1]) + name[caps-1:]
 	}
 }
 
-// qualify renders a schema type spelling as a model package spells
-// it: the marker becomes the shared Symbol interface, and a kind
-// name remains bare because the model declares it in the same
-// package.
+// qualify renders a schema type spelling as a model package writes it.
+// The marker becomes the shared Symbol interface. A kind name remains
+// bare, because the model declares it in the same package.
 func qualify(spelling string) string {
 	prefix, bare := "", spelling
 	for {

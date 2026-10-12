@@ -33,6 +33,11 @@ const (
 	crossSource  = "package svc/store\nimport api svc/api\ntype Row api.User int\n"
 	singleSource = "package svc/api\ntype User string\ntype Row User int\n"
 
+	// emptyFile is the one file of the tree that declares nothing, and
+	// emptySource its package statement alone.
+	emptyFile   = "svc/empty/empty.zz"
+	emptySource = "package svc/empty\n"
+
 	// carrierStatement is the carrier line as a scripted statement,
 	// for a case appending one to a source the fixtures share.
 	carrierStatement = "+" + carrierLine + "\n"
@@ -182,7 +187,8 @@ func singleFixture() *frontendtest.Fixture {
 // fixture is the scripted language's whole-contract tree: two
 // packages, a cross-package reference, a builtin, members, a
 // directive carrier, a classification stamp, a signature root and
-// a broken file that reports.
+// a broken file that reports, beside a tree whose one file declares
+// nothing.
 func fixture() *frontendtest.Fixture {
 	return &frontendtest.Fixture{
 		Sources: fstest.MapFS{
@@ -200,6 +206,7 @@ func fixture() *frontendtest.Fixture {
 			)},
 			badFile: {Data: []byte("type Lost string\n")},
 		},
+		Empty:      fstest.MapFS{emptyFile: {Data: []byte(emptySource)}},
 		Signatures: []string{depRoot},
 		Dropped:    []symbol.Identity{depIdentity(hiddenConst, symbol.KindConstant)},
 		Schemas:    frontendtest.ScriptedSchemas(),

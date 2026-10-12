@@ -60,12 +60,17 @@ const (
 	// GapCyclic is a contributor already on the path, or one past
 	// the depth budget.
 	GapCyclic
-	// GapGeneric is a contributor with type arguments the walk could
-	// not bind.
+	// GapGeneric is a contributor whose type arguments differ in number
+	// from the type parameters of its declaration.
 	GapGeneric
 	// GapConflict is two arrivals of one name on an interface with
 	// different signatures.
 	GapConflict
+	// GapComputed is a member whose name is an expression of its
+	// language, such as TypeScript's [Symbol.iterator]. No other
+	// language can call such a member by name, so the walk leaves it
+	// out. Host is the type that declares the member.
+	GapComputed
 )
 
 // String returns the reason's spelling, and the decimal number of an
@@ -82,6 +87,8 @@ func (r GapReason) String() string {
 		return "generic"
 	case GapConflict:
 		return "conflict"
+	case GapComputed:
+		return "computed"
 	default:
 		return strconv.Itoa(int(r))
 	}
@@ -236,7 +243,8 @@ func (w *walk) release() {
 // visit records a type's declared members at the current depth and
 // descends into its contributors under the policy that applies to
 // it. The members record in list order: fields, embedded fields
-// where the policy records them, then methods. via is the
+// where the policy records them, then methods. A field or a method
+// whose name is computed records a gap in its place. via is the
 // contributor that reached the type, nil at the root.
 func (w *walk) visit(
 	t membered, policy MemberPolicy, source SourceRules,
@@ -247,10 +255,15 @@ func (w *walk) visit(
 		defer delete(w.visiting, t.id)
 	}
 	for _, f := range t.fields {
-		if f != nil && f.Name != "" {
-			m := Member{Symbol: f, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-			w.record(f.Name, m, via)
+		if f == nil || f.Name == "" {
+			continue
 		}
+		if f.Computed {
+			w.gaps = append(w.gaps, Gap{Host: t.id, Contributor: via, Reason: GapComputed})
+			continue
+		}
+		m := Member{Symbol: f, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
+		w.record(f.Name, m, via)
 	}
 	if policy.EmbedsAreFields && !t.iface {
 		for _, e := range t.embeds {
@@ -261,10 +274,15 @@ func (w *walk) visit(
 		}
 	}
 	for _, m := range t.methods {
-		if m != nil && m.Name != "" {
-			mem := Member{Symbol: m, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-			w.record(m.Name, mem, via)
+		if m == nil || m.Name == "" {
+			continue
 		}
+		if m.Computed {
+			w.gaps = append(w.gaps, Gap{Host: t.id, Contributor: via, Reason: GapComputed})
+			continue
+		}
+		mem := Member{Symbol: m, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
+		w.record(m.Name, mem, via)
 	}
 	budget := policy.Depth
 	if budget <= 0 {
@@ -327,7 +345,7 @@ func (w *walk) descend(
 		return
 	}
 	if len(target.Args) > 0 || len(inner.params) > 0 {
-		bound, ok := bind(inner, target, source)
+		bound, ok := bind(inner, target)
 		if !ok {
 			w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: GapGeneric})
 			return
@@ -359,17 +377,15 @@ func namedUnder(ref *node.TypeRef) *node.TypeRef {
 	return ref
 }
 
-// bind restates a generic contributor's members and its own
-// contributors with the reference's arguments substituted through
-// the language's generics capability, so a chain of generic
-// contributors binds each level to the arguments of the level
-// above. It reports false where the language has no generics
-// capability, and where the reference's arguments differ in number
-// from the contributor's parameters. It allocates the restated lists
-// and each restated member.
-func bind(inner membered, ref *node.TypeRef, source SourceRules) (membered, bool) {
-	generics, held := source.(GenericsRules)
-	if !held || len(ref.Args) != len(inner.params) {
+// bind restates the members and the contributors of a generic
+// contributor with the arguments of the reference substituted through
+// [Substitute], so a chain of generic contributors binds each level to
+// the arguments of the level above. It reports false where the
+// arguments of the reference differ in number from the parameters of
+// the contributor. It allocates each restated member, the lists of
+// members, and the lists of contributors that refer to a parameter.
+func bind(inner membered, ref *node.TypeRef) (membered, bool) {
+	if len(ref.Args) != len(inner.params) {
 		return membered{}, false
 	}
 	out := inner
@@ -379,18 +395,18 @@ func bind(inner membered, ref *node.TypeRef, source SourceRules) (membered, bool
 			continue
 		}
 		c := *e
-		c.Ref = generics.Substitute(e.Ref, inner.params, ref.Args)
+		c.Ref = Substitute(e.Ref, inner.params, ref.Args)
 		out.embeds = append(out.embeds, &c)
 	}
-	out.extends = substituteRefs(generics, inner.extends, inner.params, ref.Args)
-	out.implements = substituteRefs(generics, inner.implements, inner.params, ref.Args)
+	out.extends, _ = substituteAll(inner.extends, inner.params, ref.Args)
+	out.implements, _ = substituteAll(inner.implements, inner.params, ref.Args)
 	out.fields = make([]*node.Field, 0, len(inner.fields))
 	for _, f := range inner.fields {
 		if f == nil {
 			continue
 		}
 		c := *f
-		c.Type = generics.Substitute(f.Type, inner.params, ref.Args)
+		c.Type = Substitute(f.Type, inner.params, ref.Args)
 		out.fields = append(out.fields, &c)
 	}
 	out.methods = make([]*node.Method, 0, len(inner.methods))
@@ -399,63 +415,11 @@ func bind(inner membered, ref *node.TypeRef, source SourceRules) (membered, bool
 			continue
 		}
 		c := *m
-		c.Params = substituteParams(generics, m.Params, inner.params, ref.Args)
-		c.Returns = substituteReturns(generics, m.Returns, inner.params, ref.Args)
+		c.Params = substituteParams(m.Params, inner.params, ref.Args)
+		c.Returns = substituteReturns(m.Returns, inner.params, ref.Args)
 		out.methods = append(out.methods, &c)
 	}
 	return out, true
-}
-
-// substituteRefs restates a reference list with arguments bound.
-func substituteRefs(
-	g GenericsRules, refs []*node.TypeRef, params []*node.TypeParam, args []*node.TypeRef,
-) []*node.TypeRef {
-	if len(refs) == 0 {
-		return nil
-	}
-	out := make([]*node.TypeRef, 0, len(refs))
-	for _, r := range refs {
-		if r != nil {
-			out = append(out, g.Substitute(r, params, args))
-		}
-	}
-	return out
-}
-
-// substituteParams restates a parameter list with arguments bound.
-func substituteParams(g GenericsRules, ps []*node.Param, params []*node.TypeParam, args []*node.TypeRef) []*node.Param {
-	if len(ps) == 0 {
-		return nil
-	}
-	out := make([]*node.Param, 0, len(ps))
-	for _, p := range ps {
-		if p == nil {
-			continue
-		}
-		c := *p
-		c.Type = g.Substitute(p.Type, params, args)
-		out = append(out, &c)
-	}
-	return out
-}
-
-// substituteReturns restates a return list with arguments bound.
-func substituteReturns(
-	g GenericsRules, rs []*node.Return, params []*node.TypeParam, args []*node.TypeRef,
-) []*node.Return {
-	if len(rs) == 0 {
-		return nil
-	}
-	out := make([]*node.Return, 0, len(rs))
-	for _, r := range rs {
-		if r == nil {
-			continue
-		}
-		c := *r
-		c.Type = g.Substitute(r.Type, params, args)
-		out = append(out, &c)
-	}
-	return out
 }
 
 // record files one arrival under its name.

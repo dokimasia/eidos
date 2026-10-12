@@ -11,24 +11,24 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// aliasDepth bounds the alias chain an authored value's shape
-// follows, so an alias cycle in a broken source ends.
+// aliasDepth bounds the alias chain that the shape of an authored value
+// and [Unaliased] follow, so an alias cycle in a broken source ends.
 const aliasDepth = 8
 
-// Sample is one value of a type a generated check writes, or the
-// reason none could be derived.
+// Sample is one value of a type that a generated check writes, or the
+// reason why no value derives.
 //
 // # Allocation contract
 //
 // The constructors and combinators of a Sample return it by value and
 // allocate nothing of their own.
 type Sample struct {
-	Value   emit.Value // the derived value; zero for a refused sample
-	Refusal Refusal    // why no value derived; RefusedNone for a sample with a value
+	Value   emit.Value // the derived value, and zero for a refused sample
+	Refusal Refusal    // the reason why no value derived, and RefusedNone for a sample with a value
 }
 
-// OK reports whether the sample has a derived value: no refusal,
-// and a value with a kind. It allocates nothing.
+// OK reports whether the sample has no refusal and a value with a kind.
+// It allocates nothing.
 func (s Sample) OK() bool { return s.Refusal == RefusedNone && !s.Value.IsZero() }
 
 // Of returns a sample with a value. It allocates nothing.
@@ -66,13 +66,16 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 	return Of(wrap(s.Value))
 }
 
-// Complete returns a pair from the halves an author stated and the
-// halves a language derived. A stated half is kept. A half no author
-// stated takes the derived value of its own position where that
-// value differs from the stated half, the other derived value where
-// that one differs, and a [RefusedNoLiteral] refusal where neither
-// does. The pair is then two distinct values. With no half stated,
-// the derived pair returns as it is. It allocates nothing.
+// Complete returns a pair from the halves that an author stated and the
+// halves that a language derived. Complete keeps a stated half. A half
+// that no author stated takes the first of these values that applies:
+//   - the derived value of its own position, where that value differs
+//     from the stated half
+//   - the other derived value, where that value differs
+//   - a [RefusedNoLiteral] refusal, where neither differs
+//
+// The pair then contains two distinct values. Where no half is stated,
+// Complete returns the derived pair unchanged. It allocates nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
 	switch {
 	case sample.OK() && alternate.OK():
@@ -86,10 +89,10 @@ func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Samp
 	}
 }
 
-// differing returns the derived candidate that pairs with a stated
-// half: first, unless it has the stated value, then second, and
-// [RefusedNoLiteral] where neither differs. A refused first
-// candidate returns as it is, with its reason.
+// differing returns the derived candidate that pairs with a stated half.
+// It returns first unless first has the stated value, then second, and
+// [RefusedNoLiteral] where neither differs. It returns a refused first
+// candidate unchanged, with its reason.
 func differing(stated, first, second Sample) Sample {
 	if !first.OK() || !sameLiteral(stated.Value, first.Value) {
 		return first
@@ -100,9 +103,9 @@ func differing(stated, first, second Sample) Sample {
 	return Refused(RefusedNoLiteral)
 }
 
-// Refusal names why a sample has no value. Only [RefusedNoLiteral]
-// is a fact about the type. The rest describe an input the caller
-// can fix.
+// Refusal is the reason why a sample has no value. Only
+// [RefusedNoLiteral] is a fact about the type. The others describe an
+// input that the caller can fix.
 type Refusal uint8
 
 const (
@@ -116,18 +119,18 @@ const (
 	// RefusedNoLiteral means the type admits no distinguishable
 	// value.
 	RefusedNoLiteral
-	// RefusedUnresolved means a named type the view does not
+	// RefusedUnresolved means a named type that the view does not
 	// contain.
 	RefusedUnresolved
-	// RefusedDepth means a self-referential type past the walk's
-	// budget.
+	// RefusedDepth means a self-referential type past the budget of the
+	// walk.
 	RefusedDepth
 )
 
 // FirstRefusal returns the first refusal among samples, and
-// [RefusedNoLiteral] where none states one. A value built from derived
+// [RefusedNoLiteral] where no sample has one. A value built from derived
 // parts refuses with it when a part has no value. FirstRefusal keeps no
-// sample, so the caller's list of arguments does not escape, and a call
+// sample, so the argument list of the caller does not escape, and a call
 // allocates nothing.
 func FirstRefusal(samples ...Sample) Refusal {
 	for _, s := range samples {
@@ -138,8 +141,8 @@ func FirstRefusal(samples ...Sample) Refusal {
 	return RefusedNoLiteral
 }
 
-// String returns the refusal's spelling, and the decimal number of an
-// undeclared refusal. It allocates nothing for a declared refusal.
+// String returns the spelling of the refusal, and the decimal number of
+// an undeclared refusal. It allocates nothing for a declared refusal.
 func (r Refusal) String() string {
 	switch r {
 	case RefusedNone:
@@ -166,9 +169,11 @@ func sameLiteral(a, b emit.Value) bool {
 	return a.Kind == emit.ValueLiteral && a.Literal == b.Literal && a.Text == b.Text
 }
 
-// EmitRef restates a node reference in the emit model, structure,
-// arguments, target and package included, so a value's Type is what
-// a backend spells and imports. A nil reference returns nil.
+// EmitRef restates a node reference in the emit model, with its
+// structure, its facts, its arguments, its target and its package, so the
+// Type of a value is the reference that a backend spells and imports. The
+// facts are the variance, the asynchrony and the mutability. A nil
+// reference returns nil.
 //
 // # Allocation contract
 //
@@ -180,13 +185,15 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 		return nil
 	}
 	out := &emit.TypeRef{
-		Spelling: ref.Spelling,
-		Target:   ref.Target,
-		Package:  ref.Package,
-		Form:     ref.Form,
-		Split:    ref.Split,
-		Length:   ref.Length,
-		Variance: ref.Variance,
+		Spelling:   ref.Spelling,
+		Target:     ref.Target,
+		Package:    ref.Package,
+		Form:       ref.Form,
+		Split:      ref.Split,
+		Length:     ref.Length,
+		Variance:   ref.Variance,
+		Async:      ref.Async,
+		Mutability: ref.Mutability,
 	}
 	if len(ref.Elems) > 0 {
 		out.Elems = make([]*emit.TypeRef, 0, len(ref.Elems))
@@ -203,8 +210,8 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	return out
 }
 
-// samplesOf returns the halves an author stated, read through
-// [View.Authored], and asks the language to derive only where a half
+// samplesOf returns the halves that an author stated, which
+// [View.Authored] reads. It asks the language to derive only where a half
 // is missing.
 func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
 	if b.view.IsZero() {
@@ -214,16 +221,16 @@ func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string
 	if sample.OK() && alternate.OK() {
 		return sample, alternate
 	}
-	derived, derivedAlternate := b.source.SamplesOf(ref, hint, b.view)
+	derived, derivedAlternate := b.source.DeriveSamples(ref, hint, b.view)
 	return Complete(sample, alternate, derived, derivedAlternate)
 }
 
-// valueShape returns the shape an authored value of a type lifts by.
-// It is the fold's shape, with a reference to an alias followed to
-// the type the alias names. A defined type takes the literals of the
-// type it is defined over, and an alias without a target folds to
-// Opaque. A chain longer than aliasDepth returns the shape it stopped
-// at.
+// valueShape returns the shape by which an authored value of a type
+// lifts. It is the shape of the fold, with a reference to an alias
+// followed to the target of the alias. A defined type takes the literals
+// of the type over which it is defined, and an alias without a target
+// folds to Opaque. A chain longer than aliasDepth returns the shape at
+// which it stopped.
 func (b Bound) valueShape(ref *node.TypeRef) TypeShape {
 	shape := b.typeOf(ref)
 	for range aliasDepth {
@@ -240,10 +247,10 @@ func (b Bound) valueShape(ref *node.TypeRef) TypeShape {
 	return shape
 }
 
-// witnesses reads the authored witness of each parameter first and
-// asks the language's generics capability to derive the rest. The
-// list is whole or nil, because an entry point instantiates every
-// parameter at once.
+// witnesses reads the authored witness of each parameter first, and asks
+// the generics capability of the language to derive the rest. The list
+// is whole or nil, because an entry point instantiates every parameter at
+// once.
 func (b Bound) witnesses(params []*node.TypeParam) []*node.TypeRef {
 	if len(params) == 0 || b.view.IsZero() {
 		return nil
@@ -254,7 +261,7 @@ func (b Bound) witnesses(params []*node.TypeParam) []*node.TypeRef {
 		if p == nil {
 			return nil
 		}
-		if id, authored := Fact(b.view, p.ID, b.view.Kernel.Witness); authored {
+		if id, authored := Fact(b.view, p.ID, b.view.kernel.Witness); authored {
 			out = append(out, b.witnessRef(id))
 			continue
 		}
@@ -270,14 +277,14 @@ func (b Bound) witnesses(params []*node.TypeParam) []*node.TypeRef {
 	return out
 }
 
-// witnessRef lifts an authored witness identity into a reference
-// spelled by its bare name. A witness the graph declares is the
-// reference's target. One the graph does not declare, a type outside
-// the workspace, keeps its package beside the name and no target, so
-// a backend imports it and the language's builtin table classifies
-// it by both. A builtin has neither. The lookup records a read, so a
-// declaration arriving later changes what the witness is. It allocates
-// the reference.
+// witnessRef lifts an authored witness identity into a reference whose
+// spelling is the bare name. A witness that the graph declares is the
+// target of the reference. A witness that the graph does not declare is a
+// type outside the workspace. Its reference keeps the package beside the
+// name and has no target, so a backend imports it and the builtin table
+// of the language classifies it by both. A builtin has neither. The
+// lookup records a read, so a declaration that arrives later changes the
+// witness. It allocates the reference.
 func (b Bound) witnessRef(id symbol.Identity) *node.TypeRef {
 	ref := &node.TypeRef{Spelling: id.Name}
 	if id.Package == "" {

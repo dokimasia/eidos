@@ -29,13 +29,21 @@ import (
 // copies under it.
 const Brand output.Brand = "fixture"
 
-// Fixture is what a frontend brings to the suite: the tree the
-// selection claims from, and what the checks that need more can
-// read. A field left empty skips the checks that need it, and the
-// suite states each skip.
+// Fixture is the input of a frontend to the suite. It has the tree that
+// the selection claims from, and the inputs of the checks that need
+// more. A field left empty skips the checks that need it, and the suite
+// reports each skip as a skipped subtest.
 type Fixture struct {
 	// Sources is the workspace tree the suite loads.
 	Sources fs.FS
+
+	// Empty is a tree whose claimed files declare nothing, such as a file
+	// with a package clause alone, for the empty-load check. The load of
+	// it reports no Error, and each claimed file enters the graph without
+	// a declaration. The load calls a frontend only for a file that its
+	// selection claims, so the load of an empty tree without a claimed
+	// file never calls the frontend.
+	Empty fs.FS
 
 	// Signatures are the directory roots loaded signature-only,
 	// for the depth check.
@@ -57,13 +65,13 @@ type Fixture struct {
 	// stamp application the suite runs in the workspace's place.
 	Keys func(*meta.Registry) error
 
-	// Stores are the named trees outside the workspace the load reads
-	// dependency units from, for the dependency check.
+	// Stores are the named trees outside the workspace from which the
+	// load reads dependency units, for the dependency check.
 	Stores map[string]fs.FS
 
-	// Reexported lists the identities of declarations the fixture's
-	// references name only through a re-export, for the re-export
-	// check: a reference in the graph targets each.
+	// Reexported lists the identities of the declarations that the
+	// references of the fixture resolve to only through a re-export, for
+	// the re-export check. A reference in the graph targets each.
 	Reexported []symbol.Identity
 }
 
@@ -75,15 +83,15 @@ type Setup func(tb assert.TB) (plugin.Frontend, *Fixture)
 // deterministic parses, positioned findings, no silently dropped
 // file, the workspace's own outputs refused, honest unit keys, the
 // jailed read, signature depth, validated directive attachments,
-// resolved references, and for a frontend in the dependent or the
-// exporter role, its dependency units and its re-exports. It drives
-// the SPI, so a kit-built frontend and a hand-rolled one meet the
-// same checks.
+// resolved references, a tree whose files declare nothing, and for a
+// frontend in the dependent or the exporter role, its dependency units
+// and its re-exports. It drives the SPI, so a kit-built frontend and a
+// hand-rolled one meet the same checks.
 //
-// One survey load up front finds what the fixture cannot state:
-// classification keys, a unit loading full beside its signature
-// roots, a second package. The suite states each such skip as a
-// skipped subtest of its own.
+// One survey load at the start finds the facts that the fixture does not
+// contain: the classification keys, a unit that loads full beside its
+// signature roots, and a second package. The suite reports each skip that
+// follows from them as a skipped subtest of its own.
 func RunFrontendSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
@@ -127,14 +135,14 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 	t.Run("loads signature roots shallow", func(t *testing.T) {
 		t.Parallel()
 		if _, fx := setup(t); len(fx.Signatures) == 0 {
-			t.Skip("the fixture states no signature roots")
+			t.Skip("the fixture has no signature roots")
 		}
 		AssertSignatureDepth(t, setup)
 	})
 	t.Run("attaches validated directives", func(t *testing.T) {
 		t.Parallel()
 		if _, fx := setup(t); len(fx.Schemas) == 0 {
-			t.Skip("the fixture states no directive schemas")
+			t.Skip("the fixture has no directive schemas")
 		}
 		AssertAttachedDirectives(t, setup)
 	})
@@ -147,6 +155,13 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 			t.Skip("the fixture declares one package")
 		})
 	}
+	t.Run("loads a tree that declares nothing", func(t *testing.T) {
+		t.Parallel()
+		if _, fx := setup(t); fx.Empty == nil {
+			t.Skip("the fixture has no tree whose files declare nothing")
+		}
+		AssertEmptyLoad(t, setup)
+	})
 	t.Run("loads dependencies through the jail", func(t *testing.T) {
 		t.Parallel()
 		f, fx := setup(t)
@@ -154,7 +169,7 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 			t.Skip("the frontend is not in the dependent role")
 		}
 		if len(fx.Stores) == 0 {
-			t.Skip("the fixture states no stores")
+			t.Skip("the fixture has no stores")
 		}
 		AssertDependencies(t, setup)
 	})
@@ -195,23 +210,23 @@ type loaded struct {
 	sink   *diag.Sink
 }
 
-// drive loads the fixture through the real pipeline, failing the
-// test on a fatal load error.
+// drive loads the fixture through the real pipeline, under the context
+// of tb, failing the test on a fatal load error.
 func drive(
 	tb assert.TB, f plugin.Frontend, fx *Fixture, mutate ...func(*load.Config),
 ) *loaded {
 	tb.Helper()
 
-	got, err := tryDrive(f, fx, mutate...)
+	got, err := tryDrive(assert.Context(tb), f, fx, mutate...)
 	assert.NoError(tb, err, "the fixture loads")
 	return got
 }
 
-// tryDrive loads the fixture under [Brand] and returns the load's
-// own error, for the checks that perturb inputs a language may
+// tryDrive loads the fixture under [Brand] and ctx, and returns the
+// load's own error, for the checks that perturb inputs a language may
 // refuse.
 func tryDrive(
-	f plugin.Frontend, fx *Fixture, mutate ...func(*load.Config),
+	ctx context.Context, f plugin.Frontend, fx *Fixture, mutate ...func(*load.Config),
 ) (*loaded, error) {
 	sink := diag.NewSink()
 	cfg := load.Config{
@@ -225,7 +240,7 @@ func tryDrive(
 	for _, m := range mutate {
 		m(&cfg)
 	}
-	g, report, err := load.Load(context.Background(), cfg)
+	g, report, err := load.Load(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -110,8 +110,8 @@ func (k *keptIndex) pkg(id symbol.Identity) *keptPackage {
 			p.files[d.id] = d.file
 		}
 	}
-	for _, bucket := range p.byBare {
-		slices.SortFunc(bucket, symbol.Identity.Compare)
+	for _, ids := range p.byBare {
+		slices.SortFunc(ids, symbol.Identity.Compare)
 	}
 	k.packages[id] = p
 	return p

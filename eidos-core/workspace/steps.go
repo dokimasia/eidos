@@ -25,26 +25,26 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// annEntry is one scheduled annotator. The bucket number is the
-// role's position in the annotate schedule, and every claim the
-// annotator stamps records the same number as its arbitration
-// rank's bucket.
+// annEntry is one scheduled annotator. Its turn is the position of
+// the role in the annotate schedule, and every claim of the annotator
+// records the same turn in its rank.
 type annEntry struct {
-	bucket int
-	name   plugin.ID
-	run    plugin.Annotator
+	turn int
+	name plugin.ID
+	run  plugin.Annotator
 }
 
-// genEntry is one scheduled generator, numbered across the whole
-// generator role so one plugin serving two plans has one bucket.
+// genEntry is one scheduled generator. The turns count across the
+// whole generator role, so one plugin that serves two plans has one
+// turn.
 type genEntry struct {
-	bucket int
-	name   plugin.ID
-	run    plugin.Generator
+	turn int
+	name plugin.ID
+	run  plugin.Generator
 }
 
 // compiledPlan is one write side as the run executes it: the
-// roles in bucket order, the sources each run binds its scope from,
+// roles in turn order, the sources each run binds its scope from,
 // the plans it depends on, and the name that keys its store in the
 // report.
 type compiledPlan struct {
@@ -57,12 +57,11 @@ type compiledPlan struct {
 	// the plan's export, so a run builds it.
 	exported bool
 	entries  []genEntry
-	backend  plugin.Backend
-	// types is the backend's spoke, nil for a backend that does not
-	// implement [plugin.TypeSpeller], and policy the plan's resolved
-	// lowering policy. Each generator of the plan receives both.
-	types  plugin.TypeSpeller
-	policy plugin.Policy
+	// backend is the backend of the plan, which each generator receives
+	// as the spoke of the plan, and policy the plan's resolved lowering
+	// policy, which each generator receives too.
+	backend plugin.Backend
+	policy  plugin.Policy
 	// routing is the plan's validated layout, and outputs the
 	// families each of its generators declares.
 	routing layout.Config
@@ -98,10 +97,9 @@ var kernelPhases = map[plugin.ID]bool{
 }
 
 // frontendFaults is the frontend step: every registered frontend is
-// present, declares a version, has a name no other frontend has, and
-// is not named after a kernel phase. A frontend may share its name
-// with the backend of its language, because both report under the
-// language's name.
+// present, has a name no other frontend has, and is not named after a
+// kernel phase. A frontend may share its name with the backend of its
+// language, because both report under the language's name.
 func frontendFaults(fs []plugin.Frontend) []error {
 	var faults []error
 	named := map[plugin.ID]bool{}
@@ -111,11 +109,6 @@ func frontendFaults(fs []plugin.Frontend) []error {
 			continue
 		}
 		name := f.Name()
-		if _, versioned := f.(plugin.Versioned); !versioned {
-			faults = append(faults, fmt.Errorf(
-				"workspace: frontend %q declares no version, which every unit key folds", name,
-			))
-		}
 		switch {
 		case name == "":
 			faults = append(faults, errors.New("workspace: a frontend returns an empty name"))
@@ -381,9 +374,80 @@ type registries struct {
 	targets    map[plugin.Target]bool
 }
 
-// capabilities collects the labels: one provider per label, and a
-// provider for every requirement. Both refusals name the plugins,
-// because the label alone does not identify the plugin at fault.
+// providers are the provider interfaces of more than one method. The
+// workspace reads such a provider only from a plugin that implements every
+// method, so it refuses a plugin that implements part of one.
+var providers = []reflect.Type{
+	reflect.TypeFor[plugin.CapabilityProvider](),
+	reflect.TypeFor[plugin.TemplateProvider](),
+}
+
+// partialProviders returns one fault for each plugin of the roster that
+// implements some methods of one of the providers and lacks others. A
+// method counts where the type of the plugin has a method of its name and
+// its signature. The fault names the methods that the plugin implements
+// and the methods that it lacks. A plugin that implements a whole provider,
+// or none of its methods, costs no allocation.
+func partialProviders(roster []plugin.Plugin) []error {
+	var faults []error
+	for _, p := range roster {
+		t := reflect.TypeOf(p)
+		for _, provider := range providers {
+			if t.Implements(provider) {
+				continue
+			}
+			implemented := false
+			for m := range provider.Methods() {
+				implemented = implemented || implements(t, m)
+			}
+			if !implemented {
+				continue
+			}
+			var has, lacks []string
+			for m := range provider.Methods() {
+				if implements(t, m) {
+					has = append(has, m.Name)
+				} else {
+					lacks = append(lacks, m.Name)
+				}
+			}
+			faults = append(faults, fmt.Errorf(
+				"workspace: %s implements %s of %s, and lacks %s",
+				p.Name(), strings.Join(has, " and "), provider, strings.Join(lacks, " and "),
+			))
+		}
+	}
+	return faults
+}
+
+// implements reports whether the concrete type t has a method with the
+// name and the signature of the interface method m. It allocates nothing
+// for a type without a method of that name.
+func implements(t reflect.Type, m reflect.Method) bool {
+	got, held := t.MethodByName(m.Name)
+	if !held || got.Type.NumIn() != m.Type.NumIn()+1 || got.Type.NumOut() != m.Type.NumOut() ||
+		got.Type.IsVariadic() != m.Type.IsVariadic() {
+
+		return false
+	}
+	for i := range m.Type.NumIn() {
+		if got.Type.In(i+1) != m.Type.In(i) {
+			return false
+		}
+	}
+	for i := range m.Type.NumOut() {
+		if got.Type.Out(i) != m.Type.Out(i) {
+			return false
+		}
+	}
+	return true
+}
+
+// capabilities collects the labels. It refuses a label with two
+// providers, a required label without a provider, and an empty label.
+// Each refusal names the plugins, because the label alone does not
+// identify the plugin at fault. A label that a plugin runs after needs no
+// provider.
 func capabilities(roster []plugin.Plugin) []error {
 	var faults []error
 	providers := map[plugin.Capability][]plugin.ID{}
@@ -443,21 +507,33 @@ func capabilities(roster []plugin.Plugin) []error {
 				))
 			}
 		}
+		if slices.Contains(cp.After(), "") {
+			faults = append(faults, fmt.Errorf(
+				"workspace: %s runs after an empty capability label", p.Name(),
+			))
+		}
 	}
 	return faults
 }
 
-// member is one role candidate with its ordering inputs read off
-// the provider surfaces as data.
+// member is one candidate of a role, with the inputs of its order that the
+// workspace reads off its provider as data.
 type member struct {
 	p        plugin.Plugin
 	name     plugin.ID
 	pri      int
 	provides []plugin.Capability
 	requires []plugin.Capability
+	after    []plugin.Capability
 }
 
-// membersOf reads one role's candidates off the roster, in roster
+// orderings are the verbs of the two lists of capabilities whose providers
+// run before a member. The first verb is the verb of the required
+// capabilities, and the second the verb of the capabilities that the
+// member runs after.
+var orderings = [...]string{"requires", "runs after"}
+
+// membersOf reads the candidates of one role off the roster, in roster
 // order.
 func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugin) bool) []member {
 	var out []member
@@ -470,32 +546,33 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 			m.pri = cp.Priority(role)
 			m.provides = cp.Provides()
 			m.requires = cp.Requires()
+			m.after = cp.After()
 		}
 		out = append(out, m)
 	}
 	return out
 }
 
-// lower is the schedule step: each role's members sort by priority,
-// then by capability topology inside one priority, then by name, and a
-// member's bucket number is its position in the result. The lowering
+// lower is the schedule step. The members of each role sort by priority,
+// then by their capabilities inside one priority, then by name, and the
+// turn of a member is its position in the result. The lowering
 // entries run before every annotator, in the order of their names, so
 // each annotator reads every target name. Every generator runs after the
-// annotators, so lower returns a fault for an annotator that requires a
-// capability that only a generator provides.
+// annotators, so lower returns a fault for an annotator that requires or
+// runs after a capability that only a generator provides.
 func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry, []error) {
 	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
 	ann := make([]annEntry, 0, len(entries)+len(annotators))
 	for _, l := range entries {
-		ann = append(ann, annEntry{bucket: len(ann) + 1, name: l.Name(), run: l})
+		ann = append(ann, annEntry{turn: len(ann) + 1, name: l.Name(), run: l})
 	}
 	for _, m := range annotators {
 		run, held := m.p.(plugin.Annotator)
 		if !held {
 			continue // membersOf admitted it, so the plugin implements the role
 		}
-		ann = append(ann, annEntry{bucket: len(ann) + 1, name: m.name, run: run})
+		ann = append(ann, annEntry{turn: len(ann) + 1, name: m.name, run: run})
 	}
 
 	generators, gerr := order("generator", membersOf(roster, plugin.RoleGenerator,
@@ -506,22 +583,24 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 		if !held {
 			continue // membersOf admitted it, so the plugin implements the role
 		}
-		gen = append(gen, genEntry{bucket: i + 1, name: m.name, run: run})
+		gen = append(gen, genEntry{turn: i + 1, name: m.name, run: run})
 	}
 	faults := slices.Concat(aerr, gerr)
 	for _, a := range annotators {
-		for i, c := range a.requires {
-			if slices.Contains(a.requires[:i], c) ||
-				slices.ContainsFunc(annotators, func(p member) bool { return slices.Contains(p.provides, c) }) {
+		for k, caps := range [...][]plugin.Capability{a.requires, a.after} {
+			for i, c := range caps {
+				if slices.Contains(caps[:i], c) || k > 0 && slices.Contains(a.requires, c) ||
+					slices.ContainsFunc(annotators, func(p member) bool { return slices.Contains(p.provides, c) }) {
 
-				continue
-			}
-			for _, g := range generators {
-				if slices.Contains(g.provides, c) {
-					faults = append(faults, fmt.Errorf(
-						"workspace: annotator %s requires capability %q, which the generator %s provides, "+
-							"and every generator runs after the annotators", a.name, c, g.name,
-					))
+					continue
+				}
+				for _, g := range generators {
+					if slices.Contains(g.provides, c) {
+						faults = append(faults, fmt.Errorf(
+							"workspace: annotator %s %s capability %q, which the generator %s provides, "+
+								"and every generator runs after the annotators", a.name, orderings[k], c, g.name,
+						))
+					}
 				}
 			}
 		}
@@ -529,23 +608,46 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 	return ann, gen, faults
 }
 
-// bindKeys is the binding step. Each plugin that implements
-// [plugin.KeyBinder] binds its gates on named key handles in the sealed
-// key registry. An annotator that gates on a key that another annotator
-// registers runs in a later bucket than that annotator, so the gate reads
-// the registrant's stamps whole. The step refuses a gate in an earlier
-// bucket once per annotator and key, and the message of the error
-// contains the capabilities that order the two annotators. The claimant
-// of a key's namespace is the key's registrant.
-func bindKeys(roster []plugin.Plugin, ann []annEntry, keys *meta.Registry) []error {
+// bindKeys is the binding step. Each annotator and generator of the
+// roster that implements [plugin.KeyBinder] binds its gates on named key
+// handles in the sealed key registry. The bound plugin takes the place of
+// the plugin in the roster and in byName, so the schedule runs the bound
+// plugin. The step refuses a bound plugin of another type or another name
+// than its plugin.
+func bindKeys(roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, keys *meta.Registry) []error {
 	var faults []error
-	for _, p := range roster {
-		if kb, binds := p.(plugin.KeyBinder); binds {
-			if err := kb.BindKeys(keys); err != nil {
-				faults = append(faults, err)
-			}
+	for i, p := range roster {
+		kb, binds := p.(plugin.KeyBinder)
+		_, annotates := p.(plugin.Annotator)
+		_, generates := p.(plugin.Generator)
+		if !binds || !annotates && !generates {
+			continue
 		}
+		bound, err := kb.BindKeys(keys)
+		if err != nil {
+			faults = append(faults, err)
+		}
+		if reflect.TypeOf(bound) != reflect.TypeOf(p) || bound.Name() != p.Name() {
+			faults = append(faults, fmt.Errorf(
+				"workspace: %s returns a plugin of another type or another name from BindKeys", p.Name(),
+			))
+			continue
+		}
+		roster[i] = bound
+		byName[p.Name()] = bound
 	}
+	return faults
+}
+
+// gateOrder refuses each annotator that gates on a key of another
+// annotator and does not run after that annotator. Such a gate must read
+// the stamps of the registrant whole, so the registrant runs in an earlier
+// turn. gateOrder returns one fault for each annotator and key, and the
+// message of the fault contains the capabilities that order the two
+// annotators. The claimant of the namespace of a key is the registrant of
+// the key.
+func gateOrder(ann []annEntry, keys *meta.Registry) []error {
+	var faults []error
 	for _, a := range ann {
 		subscribed, declares := a.run.(plugin.Subscribed)
 		if !declares {
@@ -559,7 +661,7 @@ func bindKeys(roster []plugin.Plugin, ann []annEntry, keys *meta.Registry) []err
 			}
 			claimant, _ := keys.Claimant(spec.Name.Namespace())
 			at := slices.IndexFunc(ann, func(e annEntry) bool { return e.name == plugin.ID(claimant) })
-			if at < 0 || ann[at].name == a.name || ann[at].bucket < a.bucket {
+			if at < 0 || ann[at].name == a.name || ann[at].turn < a.turn {
 				continue
 			}
 			registrant := ann[at]
@@ -588,10 +690,10 @@ func requirable(registrant annEntry) string {
 	return "require " + strings.Join(labels, " or ")
 }
 
-// order sorts one role's members into schedule order: priority
-// ascending, capability topology inside one priority, names
-// breaking what remains open. A member that requires a capability
-// whose provider in the role has a later priority would run before its
+// order sorts the members of one role into schedule order. It sorts them
+// by priority, then by their capabilities inside one priority, and then
+// by name. A member that requires or runs after a capability whose
+// provider in the role has a later priority would run before its
 // provider, and order returns one fault for each such pair.
 func order(role string, ms []member) ([]member, []error) {
 	slices.SortFunc(ms, func(a, b member) int {
@@ -613,16 +715,18 @@ func order(role string, ms []member) ([]member, []error) {
 		start = end
 	}
 	for _, m := range ms {
-		for i, c := range m.requires {
-			if slices.Contains(m.requires[:i], c) {
-				continue
-			}
-			for _, p := range ms {
-				if p.pri > m.pri && slices.Contains(p.provides, c) {
-					faults = append(faults, fmt.Errorf(
-						"workspace: %s %s requires capability %q at priority %d, and %s provides it at priority %d, "+
-							"so %s runs after %s", role, m.name, c, m.pri, p.name, p.pri, p.name, m.name,
-					))
+		for k, caps := range [...][]plugin.Capability{m.requires, m.after} {
+			for i, c := range caps {
+				if slices.Contains(caps[:i], c) || k > 0 && slices.Contains(m.requires, c) {
+					continue
+				}
+				for _, p := range ms {
+					if p.pri > m.pri && slices.Contains(p.provides, c) {
+						faults = append(faults, fmt.Errorf(
+							"workspace: %s %s %s capability %q at priority %d, and %s provides it at priority %d, "+
+								"so %s runs after %s", role, m.name, orderings[k], c, m.pri, p.name, p.pri, p.name, m.name,
+						))
+					}
 				}
 			}
 		}
@@ -630,11 +734,12 @@ func order(role string, ms []member) ([]member, []error) {
 	return out, faults
 }
 
-// topo orders one priority group by its capability edges, provider
-// before requirer, smallest ready name first. A cycle is one fault
-// naming the members left in the cycle, and those members append in
-// name order, so the schedule remains total for the steps after
-// this one, which run even on a faulted composition.
+// topo orders one priority group by its capabilities. A provider runs
+// before each member that requires its capability or runs after it, and
+// the smallest ready name runs first. A cycle is one fault that names the
+// members left in the cycle. Those members follow in name order, so the
+// schedule remains total for the steps after this one, which run even on
+// a faulted composition.
 func topo(role string, group []member) ([]member, []error) {
 	if len(group) < 2 {
 		return group, nil
@@ -648,10 +753,12 @@ func topo(role string, group []member) ([]member, []error) {
 	indegree := make([]int, len(group))
 	after := make([][]int, len(group))
 	for i, m := range group {
-		for _, c := range m.requires {
-			for _, p := range providers[c] {
-				after[p] = append(after[p], i)
-				indegree[i]++
+		for _, caps := range [...][]plugin.Capability{m.requires, m.after} {
+			for _, c := range caps {
+				for _, p := range providers[c] {
+					after[p] = append(after[p], i)
+					indegree[i]++
+				}
 			}
 		}
 	}
@@ -909,7 +1016,7 @@ func refine(
 // generator that declares templates serving that target, a layout the
 // plan's generators' families admit, sources in the languages langs
 // contains, dependencies on declared plans, and the roles fixed in
-// bucket order, which is the schedule the run executes as data. Each
+// turn order, which is the schedule the run executes as data. Each
 // plan takes its backend's spoke and the policy of policies at its
 // index. A plan that another plan depends on is marked exported.
 func compilePlans(
@@ -971,7 +1078,7 @@ func compilePlans(
 			))
 		}
 		slices.SortFunc(roles, func(a, b genEntry) int {
-			return cmp.Compare(a.bucket, b.bucket)
+			return cmp.Compare(a.turn, b.turn)
 		})
 		switch {
 		case pl.Backend == nil:
@@ -989,10 +1096,9 @@ func compilePlans(
 		faults = append(faults, pl.Sources.check(pl.Name, langs)...)
 		deps, dfaults := dependencies(pl, at)
 		faults = append(faults, dfaults...)
-		types, _ := pl.Backend.(plugin.TypeSpeller)
 		out = append(out, compiledPlan{
 			name: pl.Name, sources: pl.Sources, deps: deps, entries: roles,
-			backend: pl.Backend, types: types, policy: policies[i], routing: pl.Layout, outputs: outputs,
+			backend: pl.Backend, policy: policies[i], routing: pl.Layout, outputs: outputs,
 		})
 	}
 	for i := range out {
@@ -1226,13 +1332,11 @@ func unserved(pl Plan) []error {
 	return faults
 }
 
-// stampable builds each plan's output contract from the brand and
-// the backend's own comment syntax, and reports what cannot be
-// written: a backend that does not render, a backend that spells no
-// filenames, an invalid brand, or a backend stating no syntax to
-// frame a generated file through. It runs only where a composition
-// declares output, because a run that writes nothing needs no
-// layout, no render and no frame.
+// stampable builds each plan's output contract from the brand and the
+// backend's own comment syntax, and reports a syntax that cannot frame a
+// generated file. It runs only where a composition declares output,
+// because a run that writes nothing needs no layout, no render and no
+// frame.
 func stampable(plans []compiledPlan, brand output.Brand) []error {
 	var faults []error
 	for i := range plans {
@@ -1240,28 +1344,7 @@ func stampable(plans []compiledPlan, brand output.Brand) []error {
 		if pl.backend == nil {
 			continue // the plan's own fault is already collected
 		}
-		if _, renders := pl.backend.(plugin.Renderer); !renders {
-			faults = append(faults, fmt.Errorf(
-				"workspace: plan %q writes output and its backend %s does not render",
-				pl.name, pl.backend.Name(),
-			))
-		}
-		if _, spells := pl.backend.(plugin.FileSpeller); !spells {
-			faults = append(faults, fmt.Errorf(
-				"workspace: plan %q writes output and its backend %s spells no filenames",
-				pl.name, pl.backend.Name(),
-			))
-		}
-		syn, states := pl.backend.(plugin.SyntaxProvider)
-		if !states {
-			faults = append(faults, fmt.Errorf(
-				"workspace: plan %q writes output and its backend %s states no "+
-					"comment syntax to frame a generated file through",
-				pl.name, pl.backend.Name(),
-			))
-			continue
-		}
-		contract, err := output.NewContract(brand, syn.Syntax())
+		contract, err := output.NewContract(brand, pl.backend.Syntax())
 		if err != nil {
 			faults = append(faults, fmt.Errorf("workspace: plan %q: %w", pl.name, err))
 			continue

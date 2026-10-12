@@ -22,38 +22,50 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The kit fixture's name, claim and tree, so a case names what it
-// declares without repeating a literal.
+// The name, the claim and the tree of the kit fixture, so a case refers to
+// what it declares without repeating a literal.
 const (
 	kitName       = "kitfake"
 	anyScripted   = "**/*.zz"
 	storePath     = "svc/store"
+	storeFile     = "svc/store/row.zz"
 	storeTestFile = "svc/store/row_test.zz"
+	testSuffix    = "_test.zz"
 	depPath       = "svc/dep"
 	classified    = "classified"
 	// fakeRoot is the environment variable that the store case reads.
 	fakeRoot = "FAKEROOT"
+	// importedAs opens the import of a file that importOf returns.
+	importedAs = "imported:"
 )
 
-// The ceilings of a declaration's steps.
+// The ceilings of the steps of a declaration.
 const (
-	// newAllocs is one new declaration: the builder.
+	// newAllocs is the count of one new declaration. New allocates the
+	// builder.
 	newAllocs = 1
-	// appendAllocs is the first Match or Classify on a new declaration:
-	// the list it appends to.
+	// appendAllocs is the count of the first Match or Classify on a new
+	// declaration. The call allocates the list to which it appends.
 	appendAllocs = 1
-	// buildAllocs is one Build of a declaration without optional roles:
-	// the lowered frontend.
+	// buildAllocs is the count of one Build of a declaration without
+	// optional roles. Build allocates the lowered frontend.
 	buildAllocs = 1
-	// buildRolesAllocs is one Build of a declaration in every optional
-	// role: the lowered frontend, and the struct that composes it with
-	// the roles.
+	// buildRolesAllocs is the count of one Build of a declaration in every
+	// optional role. Build allocates the lowered frontend and the struct
+	// that composes it with the roles.
 	buildRolesAllocs = 2
+	// testFilesAllocs is the count of one run of the classifier of
+	// TestFiles over a unit with one package and one test file. The test
+	// calls the classifier through a function value, as the kit does. The
+	// run allocates the list of packages and the list of stamps.
+	testFilesAllocs = 2
 )
 
 // setter is one field setter of a declaration, called through a
@@ -63,8 +75,17 @@ type setter struct {
 	set  func(*frontend.Builder) *frontend.Builder
 }
 
+// roleSet contains the optional roles of a declaration other than the
+// importer role.
+type roleSet struct {
+	options      bool
+	dependencies bool
+	exports      bool
+	stores       bool
+}
+
 // setters returns every setter that writes one field of a declaration,
-// each over the scripted frontend's functions.
+// each over the functions of the scripted frontend.
 func setters(inner *frontendtest.Scripted) []setter {
 	partition, parse, resolve, opts := inner.Partition, inner.Parse, inner.Resolve, inner.Opts
 	dependencies := frontendtest.NewScriptedDependent().Dependencies
@@ -81,13 +102,14 @@ func setters(inner *frontendtest.Scripted) []setter {
 			return b.Dependencies(dependencies)
 		}},
 		{name: "Exports", set: func(b *frontend.Builder) *frontend.Builder { return b.Exports(exports) }},
+		{name: "Imports", set: func(b *frontend.Builder) *frontend.Builder { return b.Imports(importOf) }},
 	}
 }
 
-// The kit lowers a declaration to the frontend role, so the built
-// frontend meets the same conformance bar a hand-rolled one does,
-// and the lowering's own seams are pinned beside it: classifier
-// order, fatality and the declaration defects.
+// TestFrontend checks that the kit lowers a declaration to the frontend
+// role, so the built frontend passes the same conformance suite as a
+// hand-written one. It also pins the order of the classifiers, the errors
+// that end a load and the defects of a declaration.
 func TestFrontend(t *testing.T) {
 	t.Parallel()
 
@@ -100,6 +122,7 @@ func TestFrontend(t *testing.T) {
 			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 				return kitFake(), &frontendtest.Fixture{
 					Sources:    kitTree(),
+					Empty:      fstest.MapFS{"svc/empty/empty.zz": {Data: []byte("package svc/empty\n")}},
 					Signatures: []string{depPath},
 					Schemas:    frontendtest.ScriptedSchemas(),
 					Keys:       frontendtest.ScriptedKeys,
@@ -143,74 +166,75 @@ func TestFrontend(t *testing.T) {
 
 		dependent := frontendtest.NewScriptedDependent()
 		exporter := frontendtest.NewScriptedExporter()
-		roles := []struct {
-			name         string
-			options      bool
-			dependencies bool
-			exports      bool
-			stores       bool
+		roleSets := []struct {
+			name string
+			set  roleSet
 		}{
-			{name: "returns a frontend in no optional role for a declaration of none"},
-			{name: "returns a frontend in the options role alone", options: true},
-			{name: "returns a frontend in the dependent role alone", dependencies: true},
-			{name: "returns a frontend in the exporter role alone", exports: true},
+			{name: "no other optional role"},
+			{name: "the options role", set: roleSet{options: true}},
+			{name: "the dependent role", set: roleSet{dependencies: true}},
+			{name: "the exporter role", set: roleSet{exports: true}},
+			{name: "the options and dependent roles", set: roleSet{options: true, dependencies: true}},
+			{name: "the options and exporter roles", set: roleSet{options: true, exports: true}},
+			{name: "the dependent and exporter roles", set: roleSet{dependencies: true, exports: true}},
 			{
-				name:    "returns a frontend in the options role beside the dependent role",
-				options: true, dependencies: true,
+				name: "the options, dependent and exporter roles",
+				set:  roleSet{options: true, dependencies: true, exports: true},
 			},
-			{name: "returns a frontend in the options role beside the exporter role", options: true, exports: true},
+			{name: "the dependent and store roles", set: roleSet{dependencies: true, stores: true}},
 			{
-				name:         "returns a frontend in the dependent role beside the exporter role",
-				dependencies: true, exports: true,
-			},
-			{
-				name:    "returns a frontend in the options, dependent and exporter roles",
-				options: true, dependencies: true, exports: true,
-			},
-			{
-				name:         "returns a frontend in the dependent role beside the store role",
-				dependencies: true, stores: true,
+				name: "the options, dependent and store roles",
+				set:  roleSet{options: true, dependencies: true, stores: true},
 			},
 			{
-				name:    "returns a frontend in the options, dependent and store roles",
-				options: true, dependencies: true, stores: true,
+				name: "the dependent, exporter and store roles",
+				set:  roleSet{dependencies: true, exports: true, stores: true},
 			},
 			{
-				name:         "returns a frontend in the dependent, exporter and store roles",
-				dependencies: true, exports: true, stores: true,
-			},
-			{
-				name:    "returns a frontend in every optional role",
-				options: true, dependencies: true, exports: true, stores: true,
+				name: "the options, dependent, exporter and store roles",
+				set:  roleSet{options: true, dependencies: true, exports: true, stores: true},
 			},
 		}
-		for _, tt := range roles {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		for _, imports := range []bool{false, true} {
+			for _, tt := range roleSets {
+				name := "returns a frontend in exactly " + tt.name
+				if imports {
+					name += " beside the importer role"
+				}
+				t.Run(name, func(t *testing.T) {
+					t.Parallel()
 
-				b := frontend.New(kitName, frontendtest.ScriptedLang, dependent.Syntax()).
-					Version("1").Match(anyScripted).
-					Units(dependent.Partition).Parse(dependent.Parse).Resolve(dependent.Resolve)
-				if tt.options {
-					b.Options(dependent.Opts)
-				}
-				if tt.dependencies {
-					b.Dependencies(dependent.Dependencies)
-				}
-				if tt.exports {
-					b.Exports(exporter.Exports)
-				}
-				if tt.stores {
-					b.Stores(locate)
-				}
-				built := b.Build()
-				_, optioned := built.(plugin.OptionsProvider)
-				_, depends := built.(plugin.Dependent)
-				_, exports := built.(plugin.Exporter)
-				_, locates := built.(plugin.StoreLocator)
-				assert.Equal(t, []bool{optioned, depends, exports, locates},
-					[]bool{tt.options, tt.dependencies, tt.exports, tt.stores}, "exactly the declared roles")
-			})
+					b := frontend.New(kitName, frontendtest.ScriptedLang, dependent.Syntax()).
+						Version("1").Match(anyScripted).
+						Units(dependent.Partition).Parse(dependent.Parse).Resolve(dependent.Resolve)
+					if tt.set.options {
+						b.Options(dependent.Opts)
+					}
+					if tt.set.dependencies {
+						b.Dependencies(dependent.Dependencies)
+					}
+					if tt.set.exports {
+						b.Exports(exporter.Exports)
+					}
+					if tt.set.stores {
+						b.Stores(locate)
+					}
+					if imports {
+						b.Imports(importOf)
+					}
+					built := b.Build()
+					_, optioned := built.(plugin.OptionsProvider)
+					_, depends := built.(plugin.Dependent)
+					_, exports := built.(plugin.Exporter)
+					_, locates := built.(plugin.StoreLocator)
+					_, importing := built.(plugin.Importer)
+					expect.Equal(t, optioned, tt.set.options, "the frontend is in the options role as declared")
+					expect.Equal(t, depends, tt.set.dependencies, "the frontend is in the dependent role as declared")
+					expect.Equal(t, exports, tt.set.exports, "the frontend is in the exporter role as declared")
+					expect.Equal(t, locates, tt.set.stores, "the frontend is in the store role as declared")
+					expect.Equal(t, importing, imports, "the frontend is in the importer role as declared")
+				})
+			}
 		}
 
 		inner := frontendtest.NewScripted()
@@ -367,6 +391,51 @@ func TestFrontend(t *testing.T) {
 		})
 	})
 
+	t.Run("Imports", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns what the declared function returns", func(t *testing.T) {
+			t.Parallel()
+
+			inner := frontendtest.NewScripted()
+			f := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+				Imports(importOf).
+				Build()
+			importer, is := f.(plugin.Importer)
+			assert.True(t, is, "the declaration states the role")
+			assert.Equal(t, importer.ImportOf(plugin.ImportScope{}, storeTestFile), importedAs+storeTestFile,
+				"the resolution step reads the import through the declared function")
+		})
+	})
+
+	t.Run("TestFiles", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stamps the key true on a file that test reports", func(t *testing.T) {
+			t.Parallel()
+
+			u, files := classifiedUnit(t, storeTestFile, storeFile)
+			assert.NoError(t, frontend.TestFiles(frontendtest.ScriptedTestKey, isTestFile)(u), "the classifier runs")
+			stamps := u.Graph().StampRecords()
+			assert.Length(t, stamps, 1, "the one test file is stamped")
+			expect.Equal(t, stamps[0].Subject, symbol.Symbol(files[0]), "the stamp is on the test file",
+				assert.ByIdentity())
+			expect.Equal(t, stamps[0].Stamp, meta.RawStamp{
+				Key: frontendtest.ScriptedTestKey, Value: true, Pos: files[0].Pos,
+			}, "the stamp has the key, true and the position of the file")
+		})
+
+		t.Run("does not stamp a file in a unit without a test file", func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := classifiedUnit(t, storeFile)
+			assert.NoError(t, frontend.TestFiles(frontendtest.ScriptedTestKey, isTestFile)(u), "the classifier runs")
+			assert.Empty(t, u.Graph().StampRecords(), "no file is stamped")
+		})
+	})
+
 	t.Run("Stores", func(t *testing.T) {
 		t.Parallel()
 
@@ -432,7 +501,7 @@ func TestFrontend(t *testing.T) {
 			assert.True(t, held, "the scripted key is registered")
 		})
 
-		t.Run("returns the faults of every registration joined", func(t *testing.T) {
+		t.Run("returns the errors of every registration joined", func(t *testing.T) {
 			t.Parallel()
 
 			early, late := errors.New("kitfake: the early registration fails"),
@@ -450,7 +519,7 @@ func TestFrontend(t *testing.T) {
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("records the classifier's stamp in the store", func(t *testing.T) {
+		t.Run("records the stamp of the classifier in the store", func(t *testing.T) {
 			t.Parallel()
 
 			g, err := loadKit(t, kitFake())
@@ -465,7 +534,7 @@ func TestFrontend(t *testing.T) {
 			assert.Equal(t, stamps[0].Value.(string), classified, "the stamp has the classifier's value")
 		})
 
-		t.Run("returns the declared parse's error", func(t *testing.T) {
+		t.Run("returns the error of the declared parse", func(t *testing.T) {
 			t.Parallel()
 
 			broken := errors.New("kitfake: the parse refuses")
@@ -482,7 +551,7 @@ func TestFrontend(t *testing.T) {
 			assert.ErrorIs(t, err, broken, "the classifiers never run over a unit the parse gave up on")
 		})
 
-		t.Run("returns a classifier's error", func(t *testing.T) {
+		t.Run("returns the error of a classifier", func(t *testing.T) {
 			t.Parallel()
 
 			broken := errors.New("kitfake: the classifier refuses")
@@ -501,12 +570,13 @@ func TestFrontend(t *testing.T) {
 	})
 }
 
-// A declaration allocates its builder, the first entry of each list it
-// appends to, and the lowered frontend, and its setters allocate
-// nothing, in the ordinary run, which runs no benchmark. An append and a
-// Build each take a declaration built outside the count, because each
-// changes or freezes the declaration it is called on. The check runs
-// alone, because the count includes every goroutine's allocations.
+// TestFrontendAllocs checks the ceilings of BenchmarkFrontend. The ordinary
+// run runs no benchmark, so this test checks them. A declaration allocates
+// its builder, the first entry of each list to which it appends, and the
+// lowered frontend, and its setters allocate nothing. An append and a Build
+// each take a declaration that the setup builds outside the count, because
+// each call changes or freezes its declaration. The check does not run in
+// parallel, because the count includes the allocations of every goroutine.
 func TestFrontendAllocs(t *testing.T) {
 	inner := frontendtest.NewScripted()
 	syntax := inner.Syntax()
@@ -543,6 +613,11 @@ func TestFrontendAllocs(t *testing.T) {
 		"Build allocates the lowered frontend and the composition of its roles")
 	_, optioned = built.(plugin.OptionsProvider)
 	assert.True(t, optioned, "the frontend is in the options role")
+
+	stampTests := frontend.TestFiles(frontendtest.ScriptedTestKey, isTestFile)
+	assert.MaxAllocsWithSetup(t, func() *plugin.SourceUnit { u, _ := classifiedUnit(t, storeTestFile); return u },
+		func(u *plugin.SourceUnit) { _ = stampTests(u) }, testFilesAllocs,
+		"the classifier of TestFiles allocates the list of stamps")
 }
 
 // BenchmarkFrontend measures each step of a declaration: the builder,
@@ -575,7 +650,7 @@ func BenchmarkFrontend(b *testing.B) {
 	}
 
 	b.Run("Match", func(b *testing.B) {
-		b.Run("a new declaration's first pattern", func(b *testing.B) {
+		b.Run("the first pattern of a new declaration", func(b *testing.B) {
 			c := bench.Start(b).MaxAllocs(appendAllocs)
 			defer c.End()
 			var builder *frontend.Builder
@@ -590,7 +665,7 @@ func BenchmarkFrontend(b *testing.B) {
 	})
 
 	b.Run("Classify", func(b *testing.B) {
-		b.Run("a new declaration's first classifier", func(b *testing.B) {
+		b.Run("the first classifier of a new declaration", func(b *testing.B) {
 			classify := frontend.Classifier(markTests)
 			c := bench.Start(b).MaxAllocs(appendAllocs)
 			defer c.End()
@@ -604,7 +679,7 @@ func BenchmarkFrontend(b *testing.B) {
 	})
 
 	b.Run("Keys", func(b *testing.B) {
-		b.Run("a new declaration's first registration", func(b *testing.B) {
+		b.Run("the first registration of a new declaration", func(b *testing.B) {
 			register := frontendtest.ScriptedKeys
 			c := bench.Start(b).MaxAllocs(appendAllocs)
 			defer c.End()
@@ -648,11 +723,27 @@ func BenchmarkFrontend(b *testing.B) {
 			assert.True(b, exports, "the frontend has every optional role")
 		})
 	})
+
+	b.Run("TestFiles", func(b *testing.B) {
+		b.Run("a unit with one test file", func(b *testing.B) {
+			// The kit calls each classifier from its list, so the benchmark
+			// calls it from a list too, where the compiler does not inline it.
+			classifiers := []frontend.Classifier{frontend.TestFiles(frontendtest.ScriptedTestKey, isTestFile)}
+			c := bench.Start(b).MaxAllocs(testFilesAllocs)
+			defer c.End()
+			var u *plugin.SourceUnit
+			for c.Loop() {
+				c.Excluding(func() { u, _ = classifiedUnit(b, storeTestFile) })
+				_ = classifiers[0](u)
+			}
+			assert.Length(b, u.Graph().StampRecords(), 1, "the classifier stamps the test file")
+		})
+	})
 }
 
-// kitFake lowers the scripted language through the kit, its
-// test-file stamp moved from a parse statement into a classifier,
-// which is the seam under test.
+// kitFake lowers the scripted language through the kit. Its classifier
+// stamps the test files, which the scripted parse otherwise stamps itself,
+// so the cases test the classifier.
 func kitFake() plugin.Frontend {
 	inner := frontendtest.NewScripted()
 	return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
@@ -672,7 +763,7 @@ func markTests(u *plugin.SourceUnit) error {
 	gb := u.Graph()
 	for _, pkg := range gb.Packages() {
 		for _, f := range pkg.Files {
-			if strings.HasSuffix(f.Path, "_test.zz") {
+			if strings.HasSuffix(f.Path, testSuffix) {
 				gb.Stamp(f, meta.RawStamp{
 					Key: frontendtest.ScriptedTestKey, Value: classified, Pos: f.Pos,
 				})
@@ -682,9 +773,9 @@ func markTests(u *plugin.SourceUnit) error {
 	return nil
 }
 
-// kitTree is the fixture the kit-built frontend loads: two
-// packages, a cross-package reference, a directive statement, a
-// test file for the classifier, and a signature root.
+// kitTree returns the fixture that the frontend of the kit loads. It has
+// two packages, a cross-package reference, a directive statement, a test
+// file for the classifier and a signature root.
 func kitTree() fstest.MapFS {
 	return fstest.MapFS{
 		"mod.zz": {Data: []byte("mod v1\n")},
@@ -703,9 +794,9 @@ func kitTree() fstest.MapFS {
 	}
 }
 
-// loadKit drives one load over the kit tree under the suite's
-// brand with the frontend the case built, under the test's context,
-// and returns the load's own error.
+// loadKit runs one load over the kit tree with the frontend that the case
+// built, under the brand of the suite and the context of the test. It
+// returns the error of the load.
 func loadKit(tb testing.TB, f plugin.Frontend) (*store.Graph, error) {
 	tb.Helper()
 
@@ -727,7 +818,8 @@ func declaration(inner *frontendtest.Scripted, roles bool) *frontend.Builder {
 		b.Options(inner.Opts).
 			Dependencies(frontendtest.NewScriptedDependent().Dependencies).
 			Exports(frontendtest.NewScriptedExporter().Exports).
-			Stores(locate)
+			Stores(locate).
+			Imports(importOf)
 	}
 	return b
 }
@@ -735,4 +827,29 @@ func declaration(inner *frontendtest.Scripted, roles bool) *frontend.Builder {
 // locate locates one empty store under the name of the scripted store.
 func locate(func(string) string) (map[string]fs.FS, error) {
 	return map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{}}, nil
+}
+
+// importOf returns the import of a file as importedAs before its path.
+func importOf(_ plugin.ImportScope, file string) string { return importedAs + file }
+
+// isTestFile reports whether a path ends in the suffix of a test file of
+// the scripted language.
+func isTestFile(path string) bool { return strings.HasSuffix(path, testSuffix) }
+
+// classifiedUnit returns a unit whose one package has a file at each of
+// paths, in order, and the files.
+func classifiedUnit(tb assert.TB, paths ...string) (*plugin.SourceUnit, []*node.File) {
+	tb.Helper()
+
+	inner := frontendtest.NewScripted()
+	u := plugin.NewSourceUnit(nil, kitTree(), plugin.DepthFull, inner.Syntax(), string(frontendtest.Brand),
+		diag.NewSink(), diag.Origin(kitName))
+	pkg := u.Graph().Package(storePath)
+	files := make([]*node.File, 0, len(paths))
+	for _, p := range paths {
+		f := &node.File{Path: p, Pos: position.Pos{File: p, Line: 1, Col: 1}}
+		pkg.Files = append(pkg.Files, f)
+		files = append(files, f)
+	}
+	return u, files
 }

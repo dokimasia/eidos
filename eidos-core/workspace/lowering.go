@@ -37,9 +37,8 @@ const (
 	directiveDoc = "overrides how the %s target spells the declaration"
 )
 
-// lowering is the annotate entry of one rendering target whose backend
-// respells names or declares lowering policies. Its name is the
-// target's spelling followed by -lowering. It runs before every
+// lowering is the annotate entry of one rendering target. Its name is
+// the target's spelling followed by -lowering. It runs before every
 // annotator of the composition, and it stamps two kinds of fact:
 //
 //   - Rule 0 stamps the target's name key on each file-level
@@ -62,8 +61,7 @@ const (
 // Rule 0 leaves out a declaration that a skip excludes from the entry
 // and one whose name the respell hook refuses. Where two declarations
 // of a package share an identity, the first in the package's order sets
-// the stamp. A backend that does not respell names leaves rule 0
-// without a match.
+// the stamp.
 //
 // The entry journals one invocation for each package that rule 0
 // admits, which reads the package whole, and one for each instance of
@@ -88,8 +86,8 @@ type lowering struct {
 	name      plugin.ID
 	target    plugin.Target
 	directive directive.Name
-	// respell is the backend's respell hook, and nil where the backend
-	// does not respell names.
+	// respell is the backend of the target, whose respell hook spells
+	// the names of rule 0.
 	respell plugin.Respeller
 	// policies are the backend's lowering policies, each with its param
 	// and its key, and nil where the backend declares a defective one.
@@ -97,7 +95,7 @@ type lowering struct {
 	// scopes are the sources of the enabled plans of the target.
 	scopes []planScope
 	// nameKey is the handle of the target's name key, which the register
-	// step sets where the backend respells.
+	// step sets.
 	nameKey meta.Key[string]
 }
 
@@ -119,14 +117,13 @@ type planScope struct {
 }
 
 // lowerings is the lowering step. It returns one lowering entry for
-// each target of an enabled plan whose backend respells names or
-// declares lowering policies. The entries are in the order of their
+// each target of an enabled plan. The entries are in the order of their
 // names. Each entry keeps the sources of every enabled plan of its
 // target, and the backend's policies where broken does not list the
 // backend. The step returns an error that lists the backends for two
-// backends of one such target. It returns the roster's error of a
-// duplicate name for an entry whose name a plugin of the roster has. A
-// composition without such a target allocates nothing in the step.
+// backends of one target. It returns the roster's error of a duplicate
+// name for an entry whose name a plugin of the roster has. A composition
+// without a plan allocates nothing in the step.
 func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plugin.ID]bool) ([]*lowering, []error) {
 	var out []*lowering
 	var faults []error
@@ -136,14 +133,10 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 		if b == nil || slices.Contains(seen, b.Target()) {
 			continue
 		}
-		respell, respells := b.(plugin.Respeller)
-		if !respells && len(policiesOf(b)) == 0 {
-			continue
-		}
 		t := b.Target()
 		seen = append(seen, t)
 		l := &lowering{
-			name: plugin.ID(string(t) + loweringSuffix), target: t, directive: directive.Name(t), respell: respell,
+			name: plugin.ID(string(t) + loweringSuffix), target: t, directive: directive.Name(t), respell: b,
 		}
 		var backends []string
 		for _, other := range plans {
@@ -157,8 +150,8 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 		}
 		if len(backends) > 1 {
 			faults = append(faults, fmt.Errorf(
-				"workspace: target %q renders through %s, and a target whose backend respells names or "+
-					"declares policies renders through one backend", t, strings.Join(backends, " and "),
+				"workspace: target %q renders through %s, and a target renders through one backend, "+
+					"which respells its names and declares its policies", t, strings.Join(backends, " and "),
 			))
 			continue
 		}
@@ -167,7 +160,7 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 			continue
 		}
 		if !broken[b.Name()] {
-			for _, spec := range policiesOf(b) {
+			for _, spec := range b.Policies() {
 				l.policies = append(l.policies, policyParam{spec: spec, param: spec.Key.Param()})
 			}
 		}
@@ -175,15 +168,6 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 	}
 	slices.SortFunc(out, func(a, b *lowering) int { return cmp.Compare(a.name, b.name) })
 	return out, faults
-}
-
-// policiesOf returns the lowering policies that a backend declares, and
-// nil for a backend that does not implement [plugin.PolicyProvider].
-func policiesOf(b plugin.Backend) []plugin.PolicySpec {
-	if pp, declares := b.(plugin.PolicyProvider); declares {
-		return pp.Policies()
-	}
-	return nil
 }
 
 // Name returns the entry's name, the target's spelling followed by
@@ -211,24 +195,22 @@ func (l *lowering) Annotate(ctx *plugin.AnnotatorContext) error {
 }
 
 // register registers the target's keys under the target's spelling.
-// These are the name key where the backend respells, and the key of each
-// policy. It keeps each handle, which the entry stamps through, and
-// returns the registry's errors.
+// These are the name key and the key of each policy. It keeps each
+// handle, which the entry stamps through, and returns the registry's
+// errors.
 func (l *lowering) register(keys *meta.Registry) []error {
 	r := keys.For(string(l.target))
 	if err := r.ClaimNamespace(string(l.target)); err != nil {
 		return []error{err}
 	}
 	var faults []error
-	if l.respell != nil {
-		key, err := meta.Register[string](r, meta.KeySpec{
-			Name: l.target.NameKey(), Doc: fmt.Sprintf(nameKeyDoc, l.target),
-		})
-		if err != nil {
-			faults = append(faults, err)
-		}
-		l.nameKey = key
+	key, err := meta.Register[string](r, meta.KeySpec{
+		Name: l.target.NameKey(), Doc: fmt.Sprintf(nameKeyDoc, l.target),
+	})
+	if err != nil {
+		faults = append(faults, err)
 	}
+	l.nameKey = key
 	for i := range l.policies {
 		p := &l.policies[i]
 		key, err := meta.Register[string](r, meta.KeySpec{Name: meta.KeyName(p.spec.Key), Doc: p.spec.Doc})
@@ -241,16 +223,14 @@ func (l *lowering) register(keys *meta.Registry) []error {
 }
 
 // schema returns the target's directive, a kernel schema whose name is
-// the target's spelling. The directive has a name param where the
-// backend respells, and one param for each policy under the policy's
-// name. Each policy's param takes the policy's choices alone.
+// the target's spelling. The directive has a name param, and one param
+// for each policy under the policy's name. Each policy's param takes the
+// policy's choices alone.
 func (l *lowering) schema() directive.Schema {
 	s := directive.Schema{Name: l.directive, Doc: fmt.Sprintf(directiveDoc, l.target)}
-	if l.respell != nil {
-		s.Params = append(s.Params, directive.ParamSpec{
-			Key: plugin.NameParam, Type: directive.TypeString, Doc: fmt.Sprintf(nameParamDoc, l.target),
-		})
-	}
+	s.Params = append(s.Params, directive.ParamSpec{
+		Key: plugin.NameParam, Type: directive.TypeString, Doc: fmt.Sprintf(nameParamDoc, l.target),
+	})
 	for _, p := range l.policies {
 		choices := make([]string, len(p.spec.Choices))
 		for i, c := range p.spec.Choices {
@@ -313,13 +293,11 @@ type nameStamp struct {
 // target's directive.
 func (c *lowerCall) all() error {
 	var err error
-	if c.l.respell != nil {
-		for s := range c.ctx.Index.ByKind(symbol.KindPackage) {
-			// The graph indexes declarations alone.
-			p, _ := s.(node.Declaration)
-			_, perr := c.pkg(p.Identity())
-			err = errors.Join(err, perr)
-		}
+	for s := range c.ctx.Index.ByKind(symbol.KindPackage) {
+		// The graph indexes declarations alone.
+		p, _ := s.(node.Declaration)
+		_, perr := c.pkg(p.Identity())
+		err = errors.Join(err, perr)
 	}
 	for s := range c.ctx.Index.ByDirective(c.l.directive) {
 		d, _ := s.(node.Declaration)
@@ -369,13 +347,11 @@ func (c *lowerCall) selected(sel *plugin.Selection) error {
 	slices.SortFunc(instances, plugin.MatchKey.Compare)
 	var err error
 	var matched []plugin.MatchKey
-	if c.l.respell != nil {
-		for _, id := range slices.Compact(pkgs) {
-			ran, perr := c.pkg(id)
-			err = errors.Join(err, perr)
-			if ran {
-				matched = append(matched, plugin.MatchKey{Plugin: c.ctx.Plugin, Rule: rulePackage, Subject: id})
-			}
+	for _, id := range slices.Compact(pkgs) {
+		ran, perr := c.pkg(id)
+		err = errors.Join(err, perr)
+		if ran {
+			matched = append(matched, plugin.MatchKey{Plugin: c.ctx.Plugin, Rule: rulePackage, Subject: id})
 		}
 	}
 	for _, m := range slices.Compact(instances) {
@@ -443,7 +419,7 @@ func (c *lowerCall) pkg(id symbol.Identity) (bool, error) {
 	for i, n := range c.stamps {
 		derived[i] = meta.Read{Subject: n.subject}
 		claim := meta.Claim{
-			Subject: n.subject, Authority: meta.AuthorityPlugin, Bucket: c.ctx.Bucket, Plugin: c.ctx.Plugin,
+			Subject: n.subject, Authority: meta.AuthorityPlugin, Turn: c.ctx.Turn, Plugin: c.ctx.Plugin,
 			Order: order, Derived: derived[i : i+1 : i+1],
 		}
 		err = errors.Join(err, c.write(c.l.nameKey, n.name, claim))
@@ -541,7 +517,7 @@ func (c *lowerCall) add(host symbol.Kind, id symbol.Identity, kind symbol.Kind, 
 // joined.
 func (c *lowerCall) instance(id symbol.Identity, d *directive.Directive) error {
 	claim := meta.Claim{
-		Subject: id, Authority: meta.AuthorityDirective, Bucket: c.ctx.Bucket, Plugin: c.ctx.Plugin,
+		Subject: id, Authority: meta.AuthorityDirective, Turn: c.ctx.Turn, Plugin: c.ctx.Plugin,
 		Order: meta.Order{Rule: int(ruleInstance), Subject: id, Instance: d.Instance}, Pos: d.Pos,
 	}
 	c.claimed = c.claimed[:0]

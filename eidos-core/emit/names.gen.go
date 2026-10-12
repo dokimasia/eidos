@@ -52,12 +52,12 @@ func respellNames(
 				return err
 			}
 		}
-		for _, child := range x.Params {
+		for _, child := range x.Params.Items() {
 			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
-		for _, child := range x.Returns {
+		for _, child := range x.Returns.Items() {
 			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
@@ -80,12 +80,12 @@ func respellNames(
 				return err
 			}
 		}
-		for _, child := range x.Params {
+		for _, child := range x.Params.Items() {
 			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
-		for _, child := range x.Returns {
+		for _, child := range x.Returns.Items() {
 			if err := respellNames(x, child, f); err != nil {
 				return err
 			}

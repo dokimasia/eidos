@@ -51,11 +51,11 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 )
 
-// runCode is a code for the run fixtures' findings.
+// runCode is the code of the findings of the run fixtures.
 var runCode = diag.Code{Prefix: "tst", Number: 7}
 
-// The lock fixtures: the caller a run records, the record of the lock's
-// holder beside the lock file, and the error of a release that fails.
+// The lock fixtures, the caller that a run records and the record of the
+// holder of the lock beside the lock file.
 const (
 	lockCaller   = "acme run ./svc/..."
 	holderRecord = "lock.json"
@@ -80,87 +80,90 @@ var otherHolder = ledger.Holder{
 	PID: 7, Host: "build-7", Caller: "another run", Since: time.Date(2026, time.October, 8, 9, 0, 0, 0, time.UTC),
 }
 
-// flagGroup is the fact group the fixture key registers into, so a
-// case can drop the group and not the key.
+// flagGroup is the fact group of the fixture key, so a case can drop the
+// group and not the key.
 const flagGroup meta.GroupName = "shape.all"
 
-// The plugin whose directive the negation cases write, and that
-// directive's canonical spelling.
+// The plugin whose directive the negation cases write, and the canonical
+// spelling of that directive.
 const (
 	negatingPlugin plugin.ID      = "mirror"
 	optOutName     directive.Name = "mirror:stub"
 )
 
-// The sizes of the parallel run fixtures: structs in one package, and
-// the instances of the weaver's repeatable directive on one struct.
+// The sizes of the parallel run fixtures, the structs in one package and
+// the instances of the repeatable directive of the weaver on one struct.
 const (
 	parallelSubjects  = 64
 	parallelInstances = 32
 )
 
-// The worker counts the runs hand their phase calls: sequential
-// dispatch, four workers and eight workers.
+// The worker counts that the runs pass to their phase calls, for
+// sequential dispatch, four workers and eight workers.
 const (
 	oneWorker    = 1
 	fourWorkers  = 4
 	eightWorkers = 8
 )
 
-// mirroredCapability is what the providing mirror declares and the
-// weaver requires, which puts the weaver in the later bucket.
+// mirroredCapability is the capability that the providing mirror
+// declares and the weaver requires. It puts the weaver in the later
+// turn.
 const mirroredCapability plugin.Capability = "mirrored"
 
-// auditSchema is the weaver's repeatable directive: each instance on a
-// subject adds one field to the subject's mirrored struct.
+// auditSchema is the repeatable directive of the weaver. Each instance
+// on a subject adds one field to the mirrored struct of the subject.
 var auditSchema = directive.Schema{
 	Plugin: "weaver", Name: "audit", Repeatable: true,
 	Doc: "adds one audited field to the mirrored struct",
 }
 
-// The pipeline corpus at the canonical scale: two hundred structs per
-// package, of which ten in a hundred have the mark the annotator
-// stamps, and three of those ten reference a struct in the next
-// package, so the settle follows resolved references across packages.
-// The names encode the roles, which keeps the corpus deterministic
-// without a seed. The corpus has no raw directives.
+// The pipeline corpus at the canonical scale. A package has two hundred
+// structs, ten in a hundred have the mark that the annotator stamps, and
+// three of those ten refer to a struct in the next package, so the
+// settle follows resolved references across packages. The names encode
+// the roles, which keeps the corpus deterministic without a seed. The
+// corpus has no raw directives.
 const (
-	// pipelinePackages is the benchmark's package count: 200,000
+	// pipelinePackages is the package count of the benchmark, 200,000
 	// structs.
 	pipelinePackages = 1_000
-	// pipelineTestPackages is the share of the corpus the tests run.
+	// pipelineTestPackages is the share of the corpus that the tests run.
 	pipelineTestPackages = 50
-	// pipelineRefs, pipelineMarked and pipelineUnmarked split one
-	// package's structs by role: marked with a cross-package
-	// reference, marked, and unmarked.
+	// pipelineRefs, pipelineMarked and pipelineUnmarked split the structs
+	// of one package by role, marked with a reference to another package,
+	// marked, and unmarked.
 	pipelineRefs     = 6
 	pipelineMarked   = 14
 	pipelineUnmarked = 180
-	// pipelinePathPrefix is the path of every corpus package, before
-	// the package's index.
+	// pipelinePathPrefix is the path of every corpus package, before the
+	// index of the package.
 	pipelinePathPrefix = "example.com/e2e/pkg"
-	// pipelineBrand is the brand the pipeline's composition declares
-	// and stamps its files under.
+	// pipelineBrand is the brand that the composition of the pipeline
+	// declares and stamps its files under.
 	pipelineBrand output.Brand = "e2e"
-	// pipelineMarkedPrefix opens the name of every struct the annotator
-	// marks, pipelineRefPrefix the referencing ones among them, and
-	// pipelineMarkPrefix the others. pipelinePlainPrefix opens the name of
-	// every unmarked struct.
+	// pipelineMarkedPrefix is the first part of the name of every struct
+	// that the annotator marks, pipelineRefPrefix of the referring ones
+	// among them, and pipelineMarkPrefix of the others.
+	// pipelinePlainPrefix is the first part of the name of every unmarked
+	// struct.
 	pipelineMarkedPrefix = "m"
 	pipelineRefPrefix    = "mr"
 	pipelineMarkPrefix   = "mk"
 	pipelinePlainPrefix  = "pl"
-	// pipelineScript is the file that spells a corpus package in the
-	// scripted language, in the package's own directory.
+	// pipelineScript is the file of a corpus package in the scripted
+	// language, in the directory of the package.
 	pipelineScript = "unit.zz"
 	// pipelineStructs is the number of structs of one corpus package.
 	pipelineStructs = pipelineRefs + pipelineMarked + pipelineUnmarked
-	// corpusFields is the number of fields of a struct of the corpus's
-	// tree before an edit widens it.
+	// corpusFields is the number of fields of a struct of the tree of the
+	// corpus before an edit widens it.
 	corpusFields = 2
 )
 
-// The documentation each reader of the edge corpus writes on its mirror:
-// what it read of another package through its edge kind.
+// These constants are the documentation that each reader of the edge
+// corpus writes on its mirror. The documentation contains what the
+// reader read of another package through its edge kind.
 const (
 	lookupDoc     = "%s of the next package has %d fields"
 	factDoc       = "%s of the next package is %d fields wide"
@@ -168,20 +171,20 @@ const (
 	packageDoc    = "the package after the next declares %d fields"
 )
 
-// The package and the structs of the edge corpus, the pipeline corpus's
-// tree that the warm checks edit. In each package, the first four
-// referencing structs read another package through one edge kind each.
-// The mirror of each of them documents what the struct read. Each edit
-// changes the package edgeEdited. The struct that reads the edited
+// The package and the structs of the edge corpus, the tree of the
+// pipeline corpus that the warm checks edit. In each package, the first
+// four referring structs read another package through one edge kind
+// each. The mirror of each of them documents what the struct read. Each
+// edit changes the package edgeEdited. The struct that reads the edited
 // declaration is in a file that no other edge kind of the edit changes.
 const (
-	// edgeEdited is the index of the package each edit changes.
+	// edgeEdited is the index of the package that each edit changes.
 	edgeEdited = 7
 	// edgeLookup looks up edgeLookedUp of the next package.
 	edgeLookup   = "mr0"
 	edgeLookedUp = "mk0"
-	// edgeFact reads the width the annotator stamps on edgeMeasured of
-	// the next package.
+	// edgeFact reads the width that the annotator stamps on edgeMeasured
+	// of the next package.
 	edgeFact     = "mr1"
 	edgeMeasured = "mk1"
 	// edgeMembership counts the structs of its scope, in the first
@@ -190,11 +193,11 @@ const (
 	// edgePackage sums the fields of the package after the next one,
 	// which it reads whole.
 	edgePackage = "mr3"
-	// edgeWidened is a plain struct only the package reader reads,
+	// edgeWidened is a plain struct that only the package reader reads,
 	// edgeLast the last plain struct of a package, and edgeAppended the
-	// struct an edit declares after it. edgeRemoved is a plain struct the
-	// stubs plan stubs, as it stubs every plain struct whose name ends in
-	// edgeStubbed.
+	// struct that an edit declares after it. edgeRemoved is a plain struct
+	// that the stubs plan stubs, as it stubs every plain struct whose name
+	// ends in edgeStubbed.
 	edgeWidened  = "pl7"
 	edgeLast     = "pl179"
 	edgeAppended = "pl180"
@@ -216,15 +219,16 @@ const (
 	corpusWidth     meta.KeyName = "e2e.width"
 )
 
-// documentDir opens the ledger name of every manifest document.
+// documentDir is the first part of the ledger name of every manifest
+// document.
 const documentDir = "manifest/"
 
 // The ceilings of [BenchmarkRun]. Each cold ceiling covers one run whose
 // pooled state the collector emptied before the run began. A run over a
 // corpus of 200,000 declarations has a round budget about 5% above its
-// measured count. One more allocation for each declaration exceeds such a
-// budget, and a drift of a few thousand allocations does not. A run over
-// one declaration has an exact ceiling.
+// measured count. One more allocation for each declaration exceeds such
+// a budget, and a drift of a few thousand allocations does not. A run
+// over one declaration has an exact ceiling.
 const (
 	// coldRunAllocs is one run over the canonical workspace of 200,000
 	// declarations, which measured 1,091,311 allocations. The fact store
@@ -234,22 +238,26 @@ const (
 	// struct, and the phase calls, their journals, the emit store and the
 	// seal allocate about 15,000 times.
 	coldRunAllocs = 1_150_000
-	// oneRunAllocs is one run over one declaration. The frame's own
-	// structures allocate 125 times, among them the seal, the fact store,
-	// the emit store and the phase calls' state. The headroom of 12 is for
-	// the runtime's own allocations, which a fresh process counts at one
-	// iteration: the plan's goroutine, the sudogs whose central cache the
-	// collector cleared, and the type-assertion caches. 200 fresh
-	// processes counted 0 to 8 of them.
-	oneRunAllocs = 125 + 12
+	// oneRunAllocs is one run over one declaration. The structures of the
+	// frame allocate 156 times, among them the seal, the fact store, the
+	// emit store, the state of the phase calls, the lowering entry of the
+	// target and the settle. The headroom of 12 is for the allocations of
+	// the runtime, which a new process counts at one iteration. They are
+	// the goroutine of the plan, the sudogs whose central cache the
+	// collector cleared, and the type-assertion caches. 200 new processes
+	// counted 0 to 8 of them.
+	oneRunAllocs = 156 + 12
 	// warmRunAllocs is one run over one declaration in a process whose
-	// pools already contain the phase calls' state. Most runs allocate 98
-	// times. The seal allocates 24 of them, and the annotation, the plan,
-	// the fact store, the index, the sink, the frame's goroutines and the
-	// report allocate the rest. A collection between two runs can empty
-	// the pool, and the next run then allocates the phase calls' state
-	// again. The mean of 20 runs in one process measured up to 100.
-	warmRunAllocs = 98 + 2
+	// pools already contain the state of the phase calls. Most runs
+	// allocate 129 times. The seal allocates 24 of them. The lowering entry
+	// of the target fixture allocates 17 for its call and the stamp of the
+	// name of the struct. The settle allocates 13 for the plan of the
+	// names, the tables of the references and the rebuilt index. The
+	// annotation, the plan, the fact store, the index, the sink, the
+	// goroutines of the frame and the report allocate the rest. A
+	// collection between two runs can empty the pool, and the next run
+	// then allocates the state of the phase calls again.
+	warmRunAllocs = 129 + 2
 	// pipelineAllocs is one cold run of the pipeline over 200,000
 	// declarations on one worker, which measured 440,246 allocations. A
 	// memory profile attributes about 211,000 to the render, where
@@ -296,8 +304,8 @@ const (
 )
 
 // dropping is a backend whose lowering hook returns a declaration
-// without an origin: the defect the settle refuses, and the one way
-// a plan fails after its schedule ran whole.
+// without an origin. The settle refuses the defect, which is the one way
+// in which a plan fails after its schedule ran whole.
 type dropping struct{ fakeBackend }
 
 // Lower returns one declaration without an origin.
@@ -329,15 +337,11 @@ func (d *documentCounting) WriteAll(ctx context.Context, blobs map[string][]byte
 	return coretest.WriteEach(ctx, d.Write, blobs)
 }
 
-// unlockable is a ledger without a lock: it offers the blobs of the
-// ledger it wraps, and not its lock.
-type unlockable struct{ ledger.Ledger }
-
-// unlocking is a memory ledger whose lock's release fails with
+// unlocking is a memory ledger whose release of the lock fails with
 // [errUnlock] after it returns the lock.
 type unlocking struct{ *ledger.Mem }
 
-// Lock takes the memory ledger's lock, and returns a release that
+// Lock takes the lock of the memory ledger, and returns a release that
 // returns the lock and then fails.
 func (u unlocking) Lock(ctx context.Context, h ledger.Holder) (func() error, error) {
 	release, err := u.Mem.Lock(ctx, h)
@@ -355,16 +359,18 @@ type recordingLock struct {
 	held ledger.Holder
 }
 
-// Lock keeps the holder's record, and takes the memory ledger's lock.
+// Lock keeps the record of the holder, and takes the lock of the memory
+// ledger.
 func (r *recordingLock) Lock(ctx context.Context, h ledger.Holder) (func() error, error) {
 	r.held = h
 	return r.Mem.Lock(ctx, h)
 }
 
 // lockHidden is a workspace root as a file system whose listings leave
-// out the lock file of the fixture's state directory. Windows does not let
-// another handle open the lock file while the lock is taken, so a check
-// that reads the whole tree during a lock reads it through lockHidden.
+// out the lock file of the state directory of the fixture. Windows does
+// not let another handle open the lock file while the lock is taken, so
+// a check that reads the whole tree during a lock reads it through
+// lockHidden.
 type lockHidden struct{ fs.FS }
 
 // ReadDir returns the entries of a directory of the root without the
@@ -376,62 +382,62 @@ func (h lockHidden) ReadDir(name string) ([]fs.DirEntry, error) {
 	}), err
 }
 
-// annotateSeen is a hand-rolled annotator that records the worker
-// count its phase call hands it.
+// annotateSeen is a hand-rolled annotator that records the worker count
+// that its phase call passes it.
 type annotateSeen struct{ seen *atomic.Int64 }
 
-// Name returns the annotator's name.
+// Name returns the name of the annotator.
 func (annotateSeen) Name() plugin.ID { return "annotate-seen" }
 
-// Annotate records the call's worker count.
+// Annotate records the worker count of the call.
 func (a annotateSeen) Annotate(ctx *plugin.AnnotatorContext) error {
 	a.seen.Store(int64(ctx.Workers))
 	return nil
 }
 
-// generateSeen is a hand-rolled generator that records the worker
-// count its phase call hands it.
+// generateSeen is a hand-rolled generator that records the worker count
+// that its phase call passes it.
 type generateSeen struct{ seen *atomic.Int64 }
 
-// Name returns the generator's name.
+// Name returns the name of the generator.
 func (generateSeen) Name() plugin.ID { return "generate-seen" }
 
-// Generate records the call's worker count.
+// Generate records the worker count of the call.
 func (g generateSeen) Generate(ctx *plugin.GeneratorContext) error {
 	g.seen.Store(int64(ctx.Workers))
 	return nil
 }
 
-// native is the scripted rules registered under the fixture's
-// language, resolving a name as a struct in the fixture package and
-// recording the scope it was asked from.
+// native is the scripted rules under the language of the fixture. It
+// resolves a name as a struct of the fixture package, and records the
+// scope of the question.
 type native struct {
 	scope *rules.Scope
 }
 
-// Lang returns the fixture's language.
+// Lang returns the language of the fixture.
 func (native) Lang() symbol.Lang { return coretest.Lang }
 
-// Members returns the scripted rules' member policy.
+// Members returns the member policy of the scripted rules.
 func (native) Members() rules.MemberPolicy { return rulestest.Scripted().Members() }
 
-// ParamRole returns the scripted rules' role for a parameter.
+// ParamRole returns the role of a parameter under the scripted rules.
 func (native) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 	return rulestest.Scripted().ParamRole(p, v)
 }
 
-// ReturnRoles returns the scripted rules' roles for the returns.
+// ReturnRoles returns the roles of the returns under the scripted rules.
 func (native) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	return rulestest.Scripted().ReturnRoles(rs, v)
 }
 
-// Builtin returns the scripted rules' shape for a builtin.
+// Builtin returns the shape of a builtin under the scripted rules.
 func (native) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	return rulestest.Scripted().Builtin(ref, v)
 }
 
-// Resolve returns the fixture package's struct named name, and
-// records the scope it was asked from.
+// Resolve returns the struct named name of the fixture package, and
+// records the scope of the question.
 func (n native) Resolve(
 	scope rules.Scope, name string, _ directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -444,32 +450,29 @@ func (n native) Resolve(
 	return nil, fmt.Errorf("nothing in %s is named %s", coretest.StorePath, name)
 }
 
-// SamplesOf returns the scripted rules' samples.
-func (native) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
-	return rulestest.Scripted().SamplesOf(ref, hint, v)
+// DeriveSamples returns the samples of the scripted rules.
+func (native) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+	return rulestest.Scripted().DeriveSamples(ref, hint, v)
 }
 
-// ZeroValue returns the scripted rules' zero value.
+// ZeroValue returns the zero value of the scripted rules.
 func (native) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	return rulestest.Scripted().ZeroValue(ref, v)
 }
 
-// LiteralFor returns the scripted rules' literal for text.
+// LiteralFor returns the literal of the scripted rules for text.
 func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
 	return rulestest.Scripted().LiteralFor(f, ref, text, v)
 }
 
-// TypeName returns the scripted rules' type name.
-func (native) TypeName(word, base string) string { return rulestest.Scripted().TypeName(word, base) }
-
-// Run is the frame: it loads or takes a graph, seals it, validates the
-// directives, applies the drops, annotates, and runs each plan through
-// its generators, its settle, its render and its commit. The cases pin
-// which inputs stop the frame, which findings fail the run, and what
-// the report records. A warm run after an edit that a generator reads
-// through one edge kind leaves what a cold run over the edited tree
-// leaves, for each edge kind, and its commit writes less than a tenth of
-// the state.
+// TestRun tests the frame of a run. The frame loads or takes a graph,
+// seals it, validates the directives, applies the drops, annotates, and
+// runs each plan through its generators, its settle, its render and its
+// commit. The cases pin which inputs stop the frame, which findings fail
+// the run, and what the report records. A warm run after an edit that a
+// generator reads through one edge kind leaves what a cold run over the
+// edited tree leaves, for each edge kind, and its commit writes less than
+// a tenth of the state.
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -538,7 +541,7 @@ func TestRun(t *testing.T) {
 				Plans(workspace.Plan{
 					Name:       "plan",
 					Generators: []plugin.Generator{mirror("mirror")},
-					Backend:    printer(t, "fixture"),
+					Backend:    fixturePrinter(),
 				}).
 				Output(o.open).
 				Build()
@@ -1183,17 +1186,18 @@ func TestRun(t *testing.T) {
 			files.Absent(t, filepath.Join(root, ledger.StateDir(fixtureBrand), holderRecord), "the release removed it")
 		})
 
-		t.Run("runs over a ledger without a lock", func(t *testing.T) {
+		t.Run("reports StateLocked for a memory ledger that another holder has locked", func(t *testing.T) {
 			t.Parallel()
 
 			mem := ledger.NewMem()
 			release, err := mem.Lock(t.Context(), otherHolder)
-			assert.NoError(t, err, "another holder locks the wrapped ledger")
+			assert.NoError(t, err, "another holder locks the memory ledger")
 			t.Cleanup(func() { assert.NoError(t, release(), "the other holder releases the lock") })
 			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
-				Ledger(func() (ledger.Ledger, error) { return unlockable{mem}, nil }))
-			report := cleanRun(t, w, routedIn(t, coretest.StorePath))
-			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the run takes no lock")
+				Ledger(func() (ledger.Ledger, error) { return mem, nil }))
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the locked run fails")
+			assert.Length(t, findings(report.Sink, workspace.StateLocked), 1, "every ledger has a lock")
 		})
 
 		t.Run("returns the release's error after the run", func(t *testing.T) {
@@ -1293,7 +1297,7 @@ func TestRun(t *testing.T) {
 			report, err := w.Run(ctx, workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, context.Canceled, "the plan returns the cancellation")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCancelled, "the report states the plan's outcome")
-			assert.False(t, later, "the later bucket never ran")
+			assert.False(t, later, "the later turn never ran")
 		})
 
 		grumpyRun := func(t *testing.T) (*workspace.Report, error) {
@@ -1339,7 +1343,7 @@ func TestRun(t *testing.T) {
 		// pointing returns a composition whose one generator records
 		// what the ref directive's param bound to.
 		pointing := func(bound *symbol.Identity) *workspace.Builder {
-			gen, _ := eidos.NewPlugin("refy").
+			gen := eidos.NewPlugin("refy").
 				Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 				Handle(eidos.Directive(refSchema, eidos.OnStruct(
 					func(m *eidos.StructMatch, e *eidos.Emitter) error {
@@ -1347,7 +1351,7 @@ func TestRun(t *testing.T) {
 						*bound = v.Target
 						return nil
 					},
-				))).Build().(plugin.Generator)
+				))).Generator()
 			return workspace.New().
 				Brand(fixtureBrand).
 				Targets("fixture").
@@ -1579,15 +1583,15 @@ func TestRun(t *testing.T) {
 	})
 }
 
-// A run over one declaration allocates within its ceilings in the
-// ordinary run, which runs no benchmark: a warm run over pools that
-// earlier runs filled, and a cold run over pools the collector emptied.
-// Each run takes a graph loaded outside the count, because a run seals
-// the graph it is given, and the cold run's setup empties the pools
-// after the load. The runs over 200,000 declarations take too long to
-// repeat 101 times, so only [BenchmarkRun] checks their ceilings. Each
-// count keeps the first error of its runs, which cmp.Or returns without
-// allocating.
+// TestRunAllocs checks that a run over one declaration allocates within
+// its ceilings, because the ordinary run runs no benchmark. A warm run
+// runs over pools that earlier runs filled, and a cold run over pools
+// that the collector emptied. Each run takes a graph that the setup
+// loads outside the count, because a run seals its graph, and the setup
+// of the cold run empties the pools after the load. The runs over
+// 200,000 declarations take too long to repeat 101 times, so only
+// [BenchmarkRun] checks their ceilings. Each count keeps the first error
+// of its runs, which cmp.Or returns without allocating.
 func TestRunAllocs(t *testing.T) {
 	builder, _ := flagged()
 	w, err := builder.Build()
@@ -1608,25 +1612,25 @@ func TestRunAllocs(t *testing.T) {
 	assert.NoError(t, err, "every cold run succeeds")
 }
 
-// BenchmarkRun takes the frame over graphs it seals. Each iteration
-// loads a fresh graph, because the seal is Run's own, and the load is
-// outside the measurement. The cold cases also empty the pools that
-// hold the phase calls' state, so each iteration counts what the first
-// run of a process allocates.
+// BenchmarkRun measures the frame over graphs that it seals. Each
+// iteration loads a new graph, because Run seals its graph, and the load
+// is outside the measurement. The cold cases also empty the pools of the
+// state of the phase calls, so each iteration counts what the first run
+// of a process allocates.
 //
-// The flagged composition has one annotator stamping every struct
-// through its own key provider, and one plan mirroring the flagged
-// subjects toward a backend that renders nothing. The pipeline
-// composition runs every stage the kernel implements: annotate,
-// generate, settle, layout, render, stamp and commit into a memory
-// sink. Its cases reset the process's peak resident set before they
+// The flagged composition has one annotator that stamps every struct
+// through its own key provider, and one plan that mirrors the flagged
+// subjects through a backend that renders nothing. The pipeline
+// composition runs every stage of the kernel, which are annotate,
+// generate, settle, layout, render, stamp and the commit into a memory
+// sink. Its cases reset the peak resident set of the process before they
 // start and report it beside the counts, so the metric covers the case
-// alone. The tree case runs the edge corpus's composition over a tree,
-// its load inside the measurement, and records the state into a fresh
-// memory ledger on each run. It reports the bytes of the state for each
-// declaration. The warm case runs the same composition over one ledger,
-// so each run reads the generation of the run before it, and reports the
-// invocations of the annotator.
+// alone. The tree case runs the composition of the edge corpus over a
+// tree, its load inside the measurement, and records the state into a
+// new memory ledger on each run. It reports the bytes of the state for
+// each declaration. The warm case runs the same composition over one
+// ledger, so each run reads the generation of the run before it, and
+// reports the invocations of the annotator.
 func BenchmarkRun(b *testing.B) {
 	builder, _ := flagged()
 	w, err := builder.Build()
@@ -1700,7 +1704,7 @@ func rawBareMeta(line int) directive.Raw {
 }
 
 // rawDiag returns a positioned kernel diag instance that suppresses a
-// code, which is a validated directive the drop pass is not about.
+// code. It is a validated directive that the drop pass leaves alone.
 func rawDiag(code diag.Code, line int) directive.Raw {
 	return directive.Raw{
 		Name: directive.KernelDiag,
@@ -1719,30 +1723,26 @@ func rawRef(name string, line int) directive.Raw {
 	}
 }
 
-// generatorAt returns a facade-built generator placed by priority,
-// running h once per struct in scope: two of them in one plan run
-// in the order their priorities fix.
+// generatorAt returns a generator of the facade at the priority pri,
+// which runs h once for each struct in scope. Two of them in one plan run
+// in the order of their priorities.
 func generatorAt(
 	name plugin.ID, pri int, h func(*eidos.StructMatch, *eidos.Emitter) error,
 ) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Priority(plugin.RoleGenerator, pri).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Handle(eidos.OnStruct(h)).Generator()
 }
 
-// flagged returns a composition whose annotator registers and
-// stamps shape.flag through its own key provider, and whose
-// generator mirrors the subjects the flag reads present on. The
-// key handle arrives when Build runs the steps. The handlers read
-// it through their closures, which is the seam under test.
+// flagged returns a composition whose annotator registers and stamps
+// shape.flag through its own key provider, and whose generator mirrors
+// each subject with the flag. Build sets the key handle when it runs the
+// steps. The handlers read the handle through their closures, which is
+// the seam under test.
 func flagged() (*workspace.Builder, *meta.Key[bool]) {
 	var flag meta.Key[bool]
-	shape, _ := eidos.NewPlugin("shape").
+	shape := eidos.NewPlugin("shape").
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("shape"); err != nil {
 				return err
@@ -1756,15 +1756,15 @@ func flagged() (*workspace.Builder, *meta.Key[bool]) {
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 			eidos.Stamp(st, flag, true)
 			return nil
-		})).Build().(plugin.Annotator)
-	flagMirror, _ := eidos.NewPlugin("mirror").
+		})).Annotator()
+	flagMirror := eidos.NewPlugin("mirror").
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			if _, held := eidos.Fact(m, flag); !held {
 				return nil
 			}
 			return mirrored(m, e)
-		})).Build().(plugin.Generator)
+		})).Generator()
 	b := workspace.New().
 		Brand(fixtureBrand).
 		Annotators(shape).
@@ -1777,8 +1777,8 @@ func flagged() (*workspace.Builder, *meta.Key[bool]) {
 	return b, &flag
 }
 
-// keyedRun builds the flagged composition and runs it over the
-// one-struct fixture after attach adds its directives.
+// keyedRun builds the flagged composition and runs it over the fixture
+// of one struct after attach adds its directives.
 func keyedRun(
 	t *testing.T, attach func(*store.Graph, symbol.Identity),
 ) (*workspace.Report, symbol.Identity, meta.Key[bool], error) {
@@ -1798,7 +1798,7 @@ func keyedRun(
 // optingOut returns a composition whose mirror generator declares
 // the stub directive, negatable or not, and mirrors every struct.
 func optingOut(negatable bool) *workspace.Builder {
-	mirrorer, _ := eidos.NewPlugin(negatingPlugin).
+	mirrorer := eidos.NewPlugin(negatingPlugin).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(
 			eidos.OnStruct(mirrored),
@@ -1807,15 +1807,15 @@ func optingOut(negatable bool) *workspace.Builder {
 				Doc: "a fixture directive a subject negates to opt out",
 			}, eidos.OnEmit(symbol.KindStruct,
 				func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })),
-		).Build().(plugin.Generator)
+		).Generator()
 	return workspace.New().
 		Brand(fixtureBrand).
 		Targets("fixture").
 		Plans(planTo("plan", "fixture", mirrorer))
 }
 
-// pair returns an unfrozen one-package graph with two positioned
-// structs, the second negating the mirror's stub directive.
+// pair returns an unfrozen graph of one package with two positioned
+// structs. The second negates the stub directive of the mirror.
 func pair(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	tb.Helper()
 
@@ -1832,9 +1832,9 @@ func pair(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	return g, first, second
 }
 
-// crowded returns an unfrozen graph declaring n structs in one file of
-// the store package's own directory, and that many raw instances of the
-// weaver's audit directive on the first struct.
+// crowded returns an unfrozen graph that declares n structs in one file
+// of the directory of the store package, with instances raw instances of
+// the audit directive of the weaver on the first struct.
 func crowded(tb assert.TB, n, instances int) *store.Graph {
 	tb.Helper()
 
@@ -1860,24 +1860,20 @@ func crowded(tb assert.TB, n, instances int) *store.Graph {
 	return g
 }
 
-// providing returns the mirror generator under the capability the
+// providing returns the mirror generator under the capability that the
 // weaver requires.
 func providing() plugin.Generator {
-	p, held := eidos.NewPlugin("mirror").
+	return eidos.NewPlugin("mirror").
 		Provides(mirroredCapability).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(mirrored)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		Handle(eidos.OnStruct(mirrored)).Generator()
 }
 
-// weaverOf returns the weaver: after the mirror, each instance of its
-// audit directive on a subject appends one field into the subject's
-// mirrored struct through the Emitter.
+// weaverOf returns the weaver. After the mirror, each instance of its
+// audit directive on a subject appends one field into the mirrored
+// struct of the subject through the Emitter.
 func weaverOf() plugin.Generator {
-	p, held := eidos.NewPlugin("weaver").
+	return eidos.NewPlugin("weaver").
 		Requires(mirroredCapability).
 		Handle(eidos.Directive(auditSchema,
 			eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
@@ -1890,15 +1886,11 @@ func weaverOf() plugin.Generator {
 					Type: &emit.TypeRef{Spelling: "int"},
 				})
 				return nil
-			}))).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+			}))).Generator()
 }
 
-// listing is a kit backend whose struct template spells the name of
-// each field, so the order of a struct's field slot shows in the
+// listing returns a kit backend whose struct template spells the name of
+// each field, so the order of the field slot of a struct shows in the
 // rendered bytes.
 func listing(tb assert.TB) plugin.Backend {
 	tb.Helper()
@@ -1917,9 +1909,9 @@ func listing(tb assert.TB) plugin.Backend {
 		Build()
 }
 
-// parallelFiles runs one plan of the given generators toward the
-// listing backend on the given workers over the graph, and returns the
-// files the run committed, by path.
+// parallelFiles runs one plan of gens through the listing backend on
+// workers over the graph, and returns the files that the run committed,
+// by path.
 func parallelFiles(t *testing.T, workers int, g *store.Graph, gens ...plugin.Generator) map[string]string {
 	t.Helper()
 
@@ -1944,8 +1936,8 @@ func parallelFiles(t *testing.T, workers int, g *store.Graph, gens ...plugin.Gen
 func pipelinePath(p int) string { return pipelinePathPrefix + strconv.Itoa(p) }
 
 // pipelineCorpus returns the first n packages of the pipeline corpus.
-// Each package declares its structs in one file inside the package's
-// own directory, so the package's generated file routes beside it.
+// Each package declares its structs in one file in the directory of the
+// package, so the generated file of the package routes beside it.
 func pipelineCorpus(n int) []*node.Package {
 	pkgs := make([]*node.Package, n)
 	for p := range pkgs {
@@ -1967,16 +1959,16 @@ func pipelineCorpus(n int) []*node.Package {
 	return pkgs
 }
 
-// pipelineWorkspace composes the pipeline over a corpus of n packages
-// on the given workers: an annotator that stamps the mark, a generator
-// that mirrors the marked structs with the corpus's share of
-// cross-package references, the pipeline backend, and an output that
-// opens a fresh memory sink for each run.
+// pipelineWorkspace composes the pipeline over a corpus of n packages on
+// workers. It has an annotator that stamps the mark, a generator that
+// mirrors the marked structs with the references across packages of the
+// corpus, the pipeline backend, and an output that opens a new memory
+// sink for each run.
 func pipelineWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
 	tb.Helper()
 
 	var mark meta.Key[bool]
-	marker, held := eidos.NewPlugin("marker").
+	marker := eidos.NewPlugin("marker").
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("e2e"); err != nil {
 				return err
@@ -1992,10 +1984,9 @@ func pipelineWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
 				eidos.Stamp(st, mark, true)
 			}
 			return nil
-		})).Build().(plugin.Annotator)
-	assert.True(tb, held, "the annotator half composes")
+		})).Annotator()
 
-	mirrorer, held := eidos.NewPlugin("mirror").
+	mirrorer := eidos.NewPlugin("mirror").
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			if _, marked := eidos.Fact(m, mark); !marked {
@@ -2018,8 +2009,7 @@ func pipelineWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
 			}
 			e.PackageFile().Append(out)
 			return nil
-		})).Build().(plugin.Generator)
-	assert.True(tb, held, "the generator half composes")
+		})).Generator()
 
 	w, err := workspace.New().
 		Brand(pipelineBrand).
@@ -2046,10 +2036,10 @@ func packageIndex(tb assert.TB, path string) int {
 	return p
 }
 
-// pipelineBackend builds the pipeline's backend: one struct spelling,
-// an upper-first respell so the settle rewrites every name and follows
-// every reference, and a coverage that renders every fact so the guard
-// walks each declaration.
+// pipelineBackend builds the backend of the pipeline. It has one struct
+// template, a respell that raises the first letter so the settle rewrites
+// every name and follows every reference, and a coverage that renders
+// every fact so the guard walks each declaration.
 func pipelineBackend() plugin.Backend {
 	return backend.New("printer", "fixture",
 		plugin.CommentSyntax{Line: []string{"//"}}).
@@ -2080,9 +2070,9 @@ func pipelineBackend() plugin.Backend {
 		Build()
 }
 
-// pipelineHashes runs w over a fresh graph of the tests' share of the
-// corpus, and returns the hashes of the files the run committed, by
-// path.
+// pipelineHashes runs w over a new graph of the share of the corpus that
+// the tests run, and returns the hashes of the files that the run
+// committed, by path.
 func pipelineHashes(t *testing.T, w *workspace.Workspace) map[string]string {
 	t.Helper()
 
@@ -2094,9 +2084,9 @@ func pipelineHashes(t *testing.T, w *workspace.Workspace) map[string]string {
 	return out
 }
 
-// pipelineTree returns the first n packages of the pipeline corpus
-// spelled in the scripted language: per package, one file in the
-// package's own directory that declares each struct with two fields.
+// pipelineTree returns the first n packages of the pipeline corpus in
+// the scripted language. Each package has one file in its directory that
+// declares each struct with two fields.
 func pipelineTree(n int) fstest.MapFS {
 	tree := fstest.MapFS{}
 	for p, pkg := range pipelineCorpus(n) {
@@ -2118,8 +2108,8 @@ func corpusLine(name string) string { return "type " + name + " int string\n" }
 // with a third field.
 func widenedLine(name string) string { return "type " + name + " int string bool\n" }
 
-// corpusEdit returns an edit that replaces the line from of the corpus
-// package p's file under root with to, the way a person edits a source
+// corpusEdit returns an edit that replaces the line from of the file of
+// the corpus package p under root with to, as a person edits a source
 // file. The edit returns the error of a file that does not read or
 // write, and an error for a file without the line.
 func corpusEdit(p int, from, to string) func(root string) error {
@@ -2136,29 +2126,30 @@ func corpusEdit(p int, from, to string) func(root string) error {
 	}
 }
 
-// edgeFixture returns the warm check's fixture over the tests' share of
-// the pipeline corpus's tree: the measuring annotator, a readers plan
-// that mirrors every marked struct and documents what the referencing
-// structs read through each edge kind, a stubs plan that stubs every
-// tenth plain struct, and the edit. Each composition has a measuring
-// annotator of its own, and each plan reads the keys through named
-// handles, so the suite's checks build the fixture in parallel.
+// edgeFixture returns the fixture of the warm check over the share of
+// the tree of the pipeline corpus that the tests run. It has the
+// measuring annotator, a readers plan that mirrors every marked struct
+// and documents what the referring structs read through each edge kind,
+// a stubs plan that stubs every tenth plain struct, and the edit. Each
+// composition has a measuring annotator of its own, and each plan reads
+// the keys through named handles, so the checks of the suite build the
+// fixture in parallel.
 func edgeFixture(edit func(root string) error) workspacetest.Fixture {
 	return workspacetest.Fixture{
 		Tree: pipelineTree(pipelineTestPackages),
-		Compose: func(root string) *workspace.Builder {
+		Compose: func(root string) (*workspace.Builder, error) {
 			return edgeComposition().
 				Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
-				Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
+				Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) }), nil
 		},
 		Plans: func() []workspace.Plan { return edgePlans(pipelineTestPackages) },
 		Edit:  edit,
 	}
 }
 
-// edgeComposition returns the edge corpus's composition without its plans,
-// its output and its ledger: the scripted frontend and a new measuring
-// annotator, which registers the corpus's keys.
+// edgeComposition returns the composition of the edge corpus without its
+// plans, its output and its ledger. It has the scripted frontend and a
+// new measuring annotator, which registers the keys of the corpus.
 func edgeComposition() *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
@@ -2167,31 +2158,33 @@ func edgeComposition() *workspace.Builder {
 		Targets("fixture")
 }
 
-// edgePlans returns the edge corpus's plans over a corpus of n packages:
-// the readers plan, which mirrors every marked struct and documents what
-// the referencing structs read, and the stubs plan.
+// edgePlans returns the plans of the edge corpus over a corpus of n
+// packages. The readers plan mirrors every marked struct and documents
+// what the referencing structs read, and the stubs plan stubs plain
+// structs. Both render through one documenting backend.
 func edgePlans(n int) []workspace.Plan {
+	printer := documenting()
 	return []workspace.Plan{
 		{
 			Name:       "readers",
 			Generators: []plugin.Generator{reading(n)},
-			Backend:    documenting("readers-printer"),
+			Backend:    printer,
 		},
 		{
 			Name:       "stubs",
 			Generators: []plugin.Generator{stubbing()},
-			Backend:    documenting("stubs-printer"),
+			Backend:    printer,
 		},
 	}
 }
 
-// widenedRun runs the edge corpus's composition over the tests' share of
-// its tree into memory, recording into l, and runs it again after an edit
-// that widens edgeWidened of the package edgeEdited, a plain struct that
-// only the package reader reads. It sets the count of l's document writes
-// to zero between the two runs, and returns the report of the second run,
-// which reads the sealed state. It stops the test where a run is not
-// clean.
+// widenedRun runs the composition of the edge corpus over the share of
+// its tree that the tests run into memory, and records into l. It runs
+// the composition again after an edit that widens edgeWidened of the
+// package edgeEdited, a plain struct that only the package reader reads.
+// It sets the count of the document writes of l to zero between the two
+// runs, and returns the report of the second run, which reads the sealed
+// state. It stops the test where a run is not clean.
 func widenedRun(t *testing.T, l *documentCounting) *workspace.Report {
 	t.Helper()
 
@@ -2210,9 +2203,9 @@ func widenedRun(t *testing.T, l *documentCounting) *workspace.Report {
 	return report
 }
 
-// recordedEdges returns the edge corpus's composition over n packages,
-// which writes into memory and records each run into a fresh memory
-// ledger, so every run is cold and records its whole state.
+// recordedEdges returns the composition of the edge corpus over n
+// packages, which writes into memory and records each run into a new
+// memory ledger, so every run is cold and records its whole state.
 func recordedEdges(tb assert.TB, n int) *workspace.Workspace {
 	tb.Helper()
 
@@ -2222,16 +2215,17 @@ func recordedEdges(tb assert.TB, n int) *workspace.Workspace {
 		Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil }))
 }
 
-// measuring returns a new annotator that registers the corpus's keys,
-// and stamps the mark and the width on every struct whose name opens
-// with the marked prefix. The Build of a workspace sets the handles of
-// the annotator, so one annotator builds into one workspace at a time.
+// measuring returns a new annotator that registers the keys of the
+// corpus, and stamps the mark and the width on every struct whose name
+// starts with the marked prefix. The Build of a workspace sets the
+// handles of the annotator, so one annotator builds into one workspace
+// at a time.
 func measuring() plugin.Annotator {
 	var (
 		mark  meta.Key[bool]
 		width meta.Key[int64]
 	)
-	p, held := eidos.NewPlugin(measurerID).
+	return eidos.NewPlugin(measurerID).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace(corpusNamespace); err != nil {
 				return err
@@ -2254,17 +2248,14 @@ func measuring() plugin.Annotator {
 				eidos.Stamp(st, width, int64(len(m.Struct.Fields)))
 			}
 			return nil
-		})).Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
+		})).Annotator()
 }
 
-// reading returns the readers plan's generator over a corpus of n
-// packages: per marked struct, a mirror in the gen family, documented
-// with what the struct reads of another package through its edge kind.
-// It reads the measuring annotator's keys through named handles.
+// reading returns the generator of the readers plan over a corpus of n
+// packages. For each marked struct, it emits a mirror in the gen family,
+// documented with what the struct reads of another package through its
+// edge kind. It reads the keys of the measuring annotator through named
+// handles.
 func reading(n int) plugin.Generator {
 	mark, width := meta.Named[bool](corpusMark), meta.Named[int64](corpusWidth)
 	return generator("reader", func(m *eidos.StructMatch, e *eidos.Emitter) error {
@@ -2284,9 +2275,9 @@ func reading(n int) plugin.Generator {
 	})
 }
 
-// edgeRead returns what a referencing struct of the package with index
-// p reads of another package of a corpus of n packages through its edge
-// kind, as a line of documentation, and nothing for any other struct.
+// edgeRead returns what a referring struct of the package with index p
+// reads of another package of a corpus of n packages through its edge
+// kind, as a line of documentation, and nothing for every other struct.
 // width is the handle of the key that the fact edge reads.
 func edgeRead(m *eidos.StructMatch, width meta.Key[int64], p, n int) []string {
 	other := func(q int, name string) symbol.Identity {
@@ -2321,8 +2312,8 @@ func edgeRead(m *eidos.StructMatch, width meta.Key[int64], p, n int) []string {
 	return nil
 }
 
-// fieldCount returns the number of a struct's fields, and zero for any
-// other declaration and for none.
+// fieldCount returns the number of fields of a struct, and zero for
+// every other declaration and for none.
 func fieldCount(s symbol.Symbol) int {
 	if st, is := s.(*node.Struct); is {
 		return len(st.Fields)
@@ -2330,10 +2321,11 @@ func fieldCount(s symbol.Symbol) int {
 	return 0
 }
 
-// stubbing returns the stubs plan's generator: per plain struct whose
-// name ends in edgeStubbed, a stub in the stub family.
+// stubbing returns the generator of the stubs plan. For each plain
+// struct whose name ends in edgeStubbed, it emits a stub in the stub
+// family.
 func stubbing() plugin.Generator {
-	p, held := eidos.NewPlugin("stubber").
+	return eidos.NewPlugin("stubber").
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "stub"}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			name := m.Struct.Name
@@ -2341,19 +2333,14 @@ func stubbing() plugin.Generator {
 				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name + "Stub"})
 			}
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
-// documenting is a kit backend under a name of its own that spells a
-// struct as one line behind its documentation, so what a generator
-// documents shows in the rendered bytes. It names every file after its
-// family word.
-func documenting(name plugin.ID) plugin.Backend {
-	return backend.New(name, "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
+// documenting returns a kit backend that spells a struct as one line
+// after its documentation, so the documentation of a generator shows in
+// the rendered bytes. It names every file after its family word.
+func documenting() plugin.Backend {
+	return backend.New("documenter", "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
 		KindTemplates(map[symbol.Kind]string{
 			symbol.KindStruct: "{{range .Doc}}// {{.}}\n{{end}}type {{.Name}} struct{}\n",
 		}).
@@ -2367,8 +2354,8 @@ func documenting(name plugin.ID) plugin.Backend {
 		Build()
 }
 
-// benchRun measures w's runs over a fresh graph of pkgs against a
-// ceiling of allocs per run, and returns the last run's report. The
+// benchRun measures the runs of w over a new graph of pkgs against a
+// ceiling of allocs per run, and returns the report of the last run. The
 // warm-up run builds what a process builds once. Each iteration loads
 // its graph and calls reset outside the measurement.
 func benchRun(
@@ -2395,11 +2382,11 @@ func benchRun(
 	return report
 }
 
-// benchTree measures w's cold runs over a tree against a ceiling of
-// allocs per run, and returns the last run's report. The warm-up run
-// builds what a process builds once, and each run records into the fresh
-// ledger w's composition opens. Each iteration empties the process's
-// pools outside the measurement.
+// benchTree measures the cold runs of w over a tree against a ceiling of
+// allocs per run, and returns the report of the last run. The warm-up
+// run builds what a process builds once, and each run records into the
+// new ledger that the composition of w opens. Each iteration empties the
+// pools of the process outside the measurement.
 func benchTree(b *testing.B, w *workspace.Workspace, tree fs.FS, allocs uint64) *workspace.Report {
 	b.Helper()
 
@@ -2417,14 +2404,15 @@ func benchTree(b *testing.B, w *workspace.Workspace, tree fs.FS, allocs uint64) 
 	return report
 }
 
-// benchWarm measures the warm runs of the edge corpus's composition over
-// the tree of n packages against a ceiling of allocs per run, and returns
-// the report of the last run. A cold run before the measurement writes
-// the first generation into the memory ledger that every run records
-// into. The runs alternate between the tree with one widened struct and
-// the tree as it was, so each run reads the generation of the run before
-// it and finds one changed file. Each iteration empties the process's
-// pools outside the measurement, as a new process starts with them empty.
+// benchWarm measures the warm runs of the composition of the edge corpus
+// over the tree of n packages against a ceiling of allocs per run, and
+// returns the report of the last run. A cold run before the measurement
+// writes the first generation into the memory ledger of every run. The
+// runs alternate between the tree with one widened struct and the tree
+// as it was, so each run reads the generation of the run before it and
+// finds one changed file. Each iteration empties the pools of the
+// process outside the measurement, as a new process starts with them
+// empty.
 func benchWarm(b *testing.B, n int, allocs uint64) *workspace.Report {
 	b.Helper()
 
@@ -2460,17 +2448,16 @@ func loaded(tb assert.TB, pkgs []*node.Package) *store.Graph {
 }
 
 // emptyPools empties every sync.Pool of the process. The first
-// collection moves each pool's values to the pool's victim cache, and
-// the second drops the victims.
+// collection moves the values of each pool to its victim cache, and the
+// second drops the victims.
 func emptyPools() {
 	runtime.GC()
 	runtime.GC()
 }
 
-// resetPeakRSS sets the process's peak resident set to its current
-// resident set, which Linux does when 5 is written to
-// /proc/self/clear_refs. Where the file does not exist, it does
-// nothing.
+// resetPeakRSS sets the peak resident set of the process to its current
+// resident set. Linux does so when a process writes 5 to
+// /proc/self/clear_refs. Where the file does not exist, it does nothing.
 func resetPeakRSS() {
 	f, err := os.OpenFile("/proc/self/clear_refs", os.O_WRONLY, 0)
 	if err != nil {
@@ -2480,9 +2467,9 @@ func resetPeakRSS() {
 	_, _ = f.WriteString("5")
 }
 
-// reportPeakRSS reports the process's peak resident set in megabytes as
-// the peak-RSS-MB metric, and nothing where the platform does not
-// expose it.
+// reportPeakRSS reports the peak resident set of the process in
+// megabytes as the peak-RSS-MB metric, and nothing where the platform
+// does not expose it.
 func reportPeakRSS(b *testing.B) {
 	b.Helper()
 
@@ -2491,9 +2478,9 @@ func reportPeakRSS(b *testing.B) {
 	}
 }
 
-// peakRSS returns the process's peak resident set in bytes, which Linux
-// reports as VmHWM in /proc/self/status. It returns zero where the file
-// does not exist or does not contain the value.
+// peakRSS returns the peak resident set of the process in bytes, which
+// Linux reports as VmHWM in /proc/self/status. It returns zero where the
+// file does not exist or does not contain the value.
 func peakRSS() uint64 {
 	f, err := os.Open("/proc/self/status")
 	if err != nil {
@@ -2524,8 +2511,8 @@ func selectingOnDisk(tb assert.TB, root string) *workspace.Builder {
 	tb.Helper()
 
 	return sealingPlans(nil,
-		sealedPlan(tb, selectedPlan, mirror(selectedPlan+"-mirror")),
-		sealedPlan(tb, skippedPlan, mirror(skippedPlan+"-mirror"))).
+		sealedPlan(selectedPlan, mirror(selectedPlan+"-mirror")),
+		sealedPlan(skippedPlan, mirror(skippedPlan+"-mirror"))).
 		Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
 }

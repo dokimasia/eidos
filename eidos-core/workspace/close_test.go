@@ -36,22 +36,24 @@ import (
 // promisedKey is the fixture key whose contract the audit checks.
 const promisedKey meta.KeyName = "audit.seen"
 
-// followerID names the annotator that stamps the promised key on the user.
+// followerID is the name of the annotator that stamps the promised key
+// on the user.
 const followerID plugin.ID = "follower"
 
-// narrowWidth is the number of fields the row has before an edit widens
+// narrowWidth is the number of fields of the row before an edit widens
 // it.
 const narrowWidth = 2
 
-// userID is the struct of the rounds tree's api package.
+// userID is the struct of the api package of the rounds tree.
 var userID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct}
 
-// promise is the fixture key a composition registers, and its handle
-// once the registration ran at Build.
+// promise is the fixture key that a composition registers. key is its
+// handle after the registration ran at Build.
 type promise struct{ key meta.Key[bool] }
 
-// registration returns the registration of promisedKey, promising it
-// on every struct by the end of the annotate phase at a severity.
+// registration returns the registration of promisedKey. Its contract
+// promises the key on every struct by the end of the annotate phase, at
+// severity.
 func (p *promise) registration(severity diag.Severity) func(r *meta.Registry) error {
 	return func(r *meta.Registry) error {
 		if err := r.ClaimNamespace("audit"); err != nil {
@@ -69,8 +71,8 @@ func (p *promise) registration(severity diag.Severity) func(r *meta.Registry) er
 	}
 }
 
-// keeper returns an annotator stamping the promised key on every
-// struct, through the handle the registration fills.
+// keeper returns an annotator that stamps the promised key on every
+// struct, through the handle that the registration sets.
 func (p *promise) keeper() plugin.Annotator {
 	return stamper("keeper", func(_ *eidos.StructMatch, st *eidos.Stamper) error {
 		eidos.Stamp(st, p.key, true)
@@ -80,7 +82,8 @@ func (p *promise) keeper() plugin.Annotator {
 
 // follower is an annotator that implements its role directly. It stamps
 // the promised key on the user where the row is wider than narrowWidth,
-// so an edit of the row changes a fact of a struct the edit leaves alone.
+// so an edit of the row changes a fact of a struct that the edit leaves
+// alone.
 type follower struct{ p *promise }
 
 // Name returns the follower's name.
@@ -94,15 +97,15 @@ func (f follower) Annotate(ctx *plugin.AnnotatorContext) error {
 	if !held || !is || len(s.Fields) <= narrowWidth {
 		return nil
 	}
-	return meta.Stamp(ctx.Facts, f.p.key, true, meta.Claim{Subject: userID, Bucket: ctx.Bucket, Plugin: followerID})
+	return meta.Stamp(ctx.Facts, f.p.key, true, meta.Claim{Subject: userID, Turn: ctx.Turn, Plugin: followerID})
 }
 
-// errCheck is the error the returning check returns.
+// errCheck is the error that the returning check returns.
 var errCheck = errors.New("the check cannot read its records")
 
-// recordingCheck is a workspace check that reads the plans it names,
-// records each context it is called with, appends its name to a log
-// checks share, runs a script over the context and returns err.
+// recordingCheck is a workspace check that reads the plans in reads. On
+// each call it records the context, appends its name to the log that
+// checks share, runs script over the context and returns err.
 type recordingCheck struct {
 	name   plugin.ID
 	reads  []string
@@ -115,7 +118,7 @@ type recordingCheck struct {
 // Name returns the check's name.
 func (c *recordingCheck) Name() plugin.ID { return c.name }
 
-// Reads returns the plans the check names.
+// Reads returns the plans that the check reads.
 func (c *recordingCheck) Reads() []string { return c.reads }
 
 // Check records the call, runs the script and returns the check's
@@ -131,10 +134,10 @@ func (c *recordingCheck) Check(ctx *plugin.CheckContext) error {
 	return c.err
 }
 
-// Close runs over the plans' records on one goroutine: the collisions
-// between plans, the sweep of the plans the composition no longer
-// declares, the audit of the completeness contracts, and the workspace
-// checks.
+// TestClose tests the close of a run. The close runs over the records of
+// the plans on one goroutine. It checks the collisions between plans,
+// sweeps the plans that the composition no longer declares, audits the
+// completeness contracts and runs the workspace checks.
 func TestClose(t *testing.T) {
 	t.Parallel()
 
@@ -162,8 +165,9 @@ func TestClose(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			upper := diskPlan(t, "upper", layout.Config{})
-			upper.Backend = printerAs(t, "upper-printer", "fixture", "GEN.txt")
+			upper := diskPlan(t, "upper", layout.Config{
+				Plugins: map[plugin.ID]layout.Refinement{"upper-mirror": {File: "GEN.txt"}},
+			})
 			w := built(t, onDisk(t, root, diskPlan(t, "lower", layout.Config{}), upper))
 			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the clash fails the run")
@@ -786,26 +790,26 @@ func TestClose(t *testing.T) {
 }
 
 // casePlans returns the builder of a composition of two plans that
-// mirror into files of one name beside their sources: the lower plan
-// scoped to the store package and the api package, and the upper plan
-// scoped to a package whose directory differs from the store's only in
-// case.
+// mirror into files of one name beside their sources. The scope of the
+// lower plan is the store package and the api package. The scope of the
+// upper plan is a package whose directory differs from the directory of
+// the store package only in case.
 func casePlans(tb assert.TB, l ledger.Ledger) *workspace.Builder {
 	tb.Helper()
 
 	lower := workspace.Plan{
 		Name: "lower", Sources: workspace.Sources{Packages: []string{"svc/store", "svc/api"}},
-		Generators: []plugin.Generator{mirror("lower-mirror")}, Backend: printerAs(tb, "lower-printer", "fixture", ""),
+		Generators: []plugin.Generator{mirror("lower-mirror")}, Backend: fixturePrinter(),
 	}
 	upper := workspace.Plan{
 		Name: "upper", Sources: workspace.Sources{Packages: []string{"svc/Store"}},
-		Generators: []plugin.Generator{mirror("upper-mirror")}, Backend: printerAs(tb, "upper-printer", "fixture", ""),
+		Generators: []plugin.Generator{mirror("upper-mirror")}, Backend: fixturePrinter(),
 	}
 	return sealingPlans(l, lower, upper)
 }
 
-// keptAndGone returns a composition of two plans writing under a and
-// b: the first run of every case that removes the second plan.
+// keptAndGone returns a composition of two plans that write under a and
+// b. Every case that removes the second plan runs it first.
 func keptAndGone(tb assert.TB, root string) *workspace.Workspace {
 	tb.Helper()
 

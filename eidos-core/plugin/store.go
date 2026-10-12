@@ -7,30 +7,56 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"runtime"
 	"strings"
 )
 
-// storeSep separates a store's name from the path inside the store in
+// storeSep separates the name of a store from the path inside the store in
 // a qualified path.
 const storeSep = "://"
 
-// ErrStoreAbsent reports a qualified path naming a store the load does
-// not provide. A dependent frontend reads it as that source being off:
-// the composition configured no such tree, which differs from a
-// configured store that lacks a file.
+// The environment variables that contain the home directory of the user,
+// as os.UserHomeDir reads them on each system.
+const (
+	envHome        = "HOME"
+	envPlan9Home   = "home"
+	envUserProfile = "USERPROFILE"
+)
+
+// The systems whose home directory is not in HOME.
+const (
+	goosWindows = "windows"
+	goosPlan9   = "plan9"
+)
+
+// ErrStoreAbsent is the error for a qualified path whose store the load
+// does not provide. A dependent frontend reads it as a source that is off.
+// The composition configured no such tree, which differs from a configured
+// store without the file.
 var ErrStoreAbsent = errors.New("plugin: no such store")
 
-// StorePath returns the qualified path of a file inside a store: the
-// store's name, "://", and the slash path inside the store, as in
-// "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
+// Absent reports whether err means that a read found nothing to read. That
+// is the case when the file does not exist, or when the load does not
+// provide the store of a qualified path. A frontend that probes for an
+// optional file, such as a manifest of a dependency, reads either error as
+// the absence of the file and every other error as a failed read. Absent
+// allocates nothing.
+func Absent(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrStoreAbsent)
+}
+
+// StorePath returns the qualified path of a file inside a store. The path
+// is the name of the store, "://" and the slash path inside the store, as
+// in "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
 // is a qualified path, because [fs.ValidPath] refuses the empty element
-// that "//" spells. StorePath allocates the joined path, one allocation.
+// between the two slashes. StorePath allocates the joined path, one
+// allocation.
 func StorePath(store, path string) string { return store + storeSep + path }
 
-// CutStorePath splits a qualified path into its store and the path
-// inside the store, and reports false for a workspace path. The root
-// of a store is the qualified path with nothing after the separator.
-// It allocates nothing, because both parts share the path's bytes.
+// CutStorePath splits a qualified path into its store and the path inside
+// the store, and reports false for a workspace path. The root of a store is
+// the qualified path with nothing after the separator. It allocates
+// nothing, because both parts share the bytes of the path.
 func CutStorePath(qualified string) (store, path string, ok bool) {
 	store, path, ok = strings.Cut(qualified, storeSep)
 	if !ok || !ValidStoreName(store) {
@@ -39,20 +65,19 @@ func CutStorePath(qualified string) (store, path string, ok bool) {
 	return store, path, true
 }
 
-// ValidStoreName reports whether a name can name a store: it is not
-// empty, and it contains neither the colon nor the slash that a
-// qualified path separates on. It allocates nothing.
+// ValidStoreName reports whether name is a valid store name. A valid name
+// is not empty and contains neither a colon nor a slash, which separate the
+// parts of a qualified path. It allocates nothing.
 func ValidStoreName(name string) bool {
 	return name != "" && !strings.ContainsAny(name, ":/")
 }
 
-// StoreFS is a workspace tree with named stores beside it. The load
-// hands every unit a StoreFS, and a unit resolves a qualified path
-// through it.
+// StoreFS is a workspace tree with named stores beside it. The load passes
+// a StoreFS to every unit, and a unit resolves a qualified path through it.
 type StoreFS interface {
 	fs.FS
 
-	// Store returns one named store, and false for a name the load
+	// Store returns one named store, and false for a name that the load
 	// does not provide.
 	Store(name string) (fs.FS, bool)
 }
@@ -70,10 +95,26 @@ type StoreLocator interface {
 	Stores(getenv func(key string) string) (map[string]fs.FS, error)
 }
 
-// ReadFile returns the bytes of one file: a workspace path from the
-// tree itself, and a qualified path from the store it names, which the
-// tree provides as a [StoreFS]. A qualified path whose store the tree
-// does not provide returns an error wrapping [ErrStoreAbsent].
+// UserHomeVar returns the name of the environment variable that contains
+// the home directory of the user, by the rule of os.UserHomeDir. The
+// variable is USERPROFILE on Windows, home on Plan 9 and HOME on every other
+// system. A [StoreLocator] reads the home directory through its getenv
+// under this name. Where the variable is unset, the error of the locator
+// contains the name. UserHomeVar allocates nothing.
+func UserHomeVar() string {
+	switch runtime.GOOS {
+	case goosWindows:
+		return envUserProfile
+	case goosPlan9:
+		return envPlan9Home
+	}
+	return envHome
+}
+
+// ReadFile returns the bytes of one file. It reads a workspace path from
+// the tree itself, and a qualified path from its store, which the tree
+// provides as a [StoreFS]. For a qualified path whose store the tree does
+// not provide, it returns an error that wraps [ErrStoreAbsent].
 //
 // # Allocation contract
 //
@@ -87,11 +128,10 @@ func ReadFile(fsys fs.FS, path string) ([]byte, error) {
 	return fs.ReadFile(tree, inner)
 }
 
-// ReadDir returns one directory's entries sorted by name, and resolves
-// a qualified path the way [ReadFile] does. The root of a store is its
-// qualified path with nothing after the separator. It allocates what
-// [fs.ReadDir] allocates, and nothing of its own where the store
-// exists.
+// ReadDir returns the entries of one directory sorted by name, and resolves
+// a qualified path as [ReadFile] does. The root of a store is its qualified
+// path with nothing after the separator. It allocates what [fs.ReadDir]
+// allocates, and nothing of its own where the store exists.
 func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	tree, inner, err := treeOf(fsys, path)
 	if err != nil {
@@ -100,9 +140,9 @@ func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	return fs.ReadDir(tree, inner)
 }
 
-// Stat returns the stat of one file, and resolves a qualified path the
-// way [ReadFile] does. It allocates what [fs.Stat] allocates, and
-// nothing of its own where the store exists.
+// Stat returns the stat of one file, and resolves a qualified path as
+// [ReadFile] does. It allocates what [fs.Stat] allocates, and nothing of
+// its own where the store exists.
 func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
 	tree, inner, err := treeOf(fsys, path)
 	if err != nil {
@@ -111,7 +151,7 @@ func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
 	return fs.Stat(tree, inner)
 }
 
-// treeOf returns the tree a path resolves in and the path inside that
+// treeOf returns the tree in which a path resolves and the path inside that
 // tree.
 func treeOf(fsys fs.FS, path string) (fs.FS, string, error) {
 	store, inner, qualified := CutStorePath(path)
@@ -126,5 +166,5 @@ func treeOf(fsys fs.FS, path string) (fs.FS, string, error) {
 			return tree, inner, nil
 		}
 	}
-	return nil, "", fmt.Errorf("%w: %s names store %q", ErrStoreAbsent, path, store)
+	return nil, "", fmt.Errorf("%w: %s is in the store %q", ErrStoreAbsent, path, store)
 }

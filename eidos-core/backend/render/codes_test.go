@@ -68,6 +68,14 @@ func TestCodes(t *testing.T) {
 			name: "RefusedKind", code: render.RefusedKind, spelled: "EID-0046",
 			meaning: "the target language refuses a declaration's kind",
 		},
+		{
+			name: "MixedClaim", code: render.MixedClaim, spelled: "EID-0071",
+			meaning: "a file mixes the units of a family that claims its files with other units",
+		},
+		{
+			name: "UnbindableHelper", code: render.UnbindableHelper, spelled: "EID-0073",
+			meaning: "a plugin registers a template helper that text/template cannot call",
+		},
 	}
 	for _, tt := range codes {
 		t.Run(tt.name, func(t *testing.T) {

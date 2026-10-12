@@ -37,7 +37,8 @@ type Bound struct {
 
 // NewBound binds a language's rules to a view. forLang returns another
 // language's rules for a contributor or a target declared in it. A nil
-// forLang gives every other language [Absent], and nil rules bind
+// forLang takes the resolver of the view from [View.WithRules], and gives
+// every other language [Absent] where the view has none. Nil rules bind
 // [Absent] for the zero language.
 //
 // # Allocation contract
@@ -48,13 +49,17 @@ func NewBound(source SourceRules, view View, forLang func(symbol.Lang) SourceRul
 		source = Absent("")
 	}
 	if forLang == nil {
+		forLang = view.forLang
+	}
+	if forLang == nil {
 		forLang = Absent
 	}
 	return Bound{source: source, forLang: forLang, view: view, memo: map[*node.TypeRef]TypeShape{}}
 }
 
-// Source returns the language's own rules, for the optional capability
-// assertions. It allocates nothing.
+// Source returns the rules of the bound language. A plugin reads the
+// optional capabilities of the rules through the methods of Bound, such
+// as [Bound.Tag], and asserts none itself. It allocates nothing.
 func (b Bound) Source() SourceRules { return b.source }
 
 // View returns the view the binding reads through. It allocates
@@ -144,9 +149,42 @@ func (b Bound) MembersOf(sym symbol.Symbol) (MemberSet, bool) { return b.members
 //
 // SamplesOf allocates nothing of its own. It allocates what
 // [View.Authored] allocates to lift a stated value, and what the
-// language's SamplesOf allocates to derive a missing half.
+// DeriveSamples of the language allocates to derive a missing half.
 func (b Bound) SamplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
 	return b.samplesOf(subject, ref, hint)
+}
+
+// Tag returns the value of the tag of f under key. It reports false
+// where f has no tag under key, for a nil f, and where the language does
+// not implement [TagRules]. It allocates what the Tag of the language
+// allocates.
+func (b Bound) Tag(f *node.Field, key string) (string, bool) {
+	tags, declared := b.source.(TagRules)
+	if !declared || f == nil {
+		return "", false
+	}
+	return tags.Tag(f, key)
+}
+
+// SentinelName returns the name of the error value that a generator
+// derives from base. It reports false where the language does not
+// implement [ErrorValueRules]. It allocates what the SentinelName of the
+// language allocates.
+func (b Bound) SentinelName(base string) (string, bool) {
+	names, declared := b.source.(ErrorValueRules)
+	if !declared {
+		return "", false
+	}
+	return names.SentinelName(base), true
+}
+
+// IsSentinelName reports whether ident follows the convention of the
+// language for the name of an error value. It reports false where the
+// language does not implement [ErrorValueRules]. It allocates what the
+// IsSentinelName of the language allocates.
+func (b Bound) IsSentinelName(ident string) bool {
+	names, declared := b.source.(ErrorValueRules)
+	return declared && names.IsSentinelName(ident)
 }
 
 // ZeroValue returns the type's zero value, and reports false where the
@@ -169,11 +207,6 @@ func (b Bound) LiteralFor(f *node.File, ref *node.TypeRef, text string) (emit.Va
 	}
 	return b.source.LiteralFor(f, ref, text, b.view)
 }
-
-// TypeName joins a generator's word onto a base name the way the
-// language spells a derived type name. It allocates what the language's
-// TypeName allocates: one string for a join by concatenation.
-func (b Bound) TypeName(word, base string) string { return b.source.TypeName(word, base) }
 
 // Witnesses returns one reference per type parameter, the authored
 // witnesses first and the derived ones where the language can. It

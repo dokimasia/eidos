@@ -24,6 +24,8 @@ const (
 	mineHelper = "mine"
 	// mysteryHelper is a name no vocabulary declares.
 	mysteryHelper = "mystery"
+	// dashedHelper is a helper name that is not an identifier.
+	dashedHelper = "dash-ed"
 	// ghostOverride is an override of a name nothing shares.
 	ghostOverride = "ghost"
 	// brokenTpl and bareTpl name the templates a finding reports.
@@ -202,6 +204,37 @@ func TestLint(t *testing.T) {
 			assert.Length(t, findings, 1, "the builtin names are the pass's own")
 			assert.Contains(t, findings[0].Error(), render.BuiltinBody, "naming the claim")
 		})
+
+		unbindable := []struct {
+			name string
+			give template.FuncMap
+			want string
+		}{
+			{
+				name: "returns a finding for a helper whose name is not an identifier",
+				give: template.FuncMap{dashedHelper: identity},
+				want: dashedHelper,
+			},
+			{
+				name: "returns a finding for a helper that is not a function",
+				give: template.FuncMap{mineHelper: mineHelper},
+				want: mineHelper,
+			},
+			{
+				name: "returns a finding for a helper whose results a template cannot use",
+				give: template.FuncMap{mineHelper: func() (string, string) { return "", "" }},
+				want: mineHelper,
+			},
+		}
+		for _, tt := range unbindable {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				findings := linter(t).Lint(tree(refName, slots), tt.give, nil, nil)
+				assert.Length(t, findings, 1, "the helper is one finding")
+				assert.Contains(t, findings[0].Error(), tt.want, "naming the helper")
+			})
+		}
 
 		t.Run("returns a finding for a template the tree cannot open", func(t *testing.T) {
 			t.Parallel()

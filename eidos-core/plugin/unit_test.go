@@ -6,6 +6,7 @@ package plugin_test
 import (
 	"cmp"
 	"io/fs"
+	"iter"
 	"strconv"
 	"testing"
 	"testing/fstest"
@@ -24,14 +25,14 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// unitCode is a code for the source unit fixtures' findings.
+// unitCode is the code of the findings of the source unit fixtures.
 var unitCode = diag.Code{Prefix: "tst", Number: 5}
 
-// frontendOrigin is the origin the fixture unit reports under.
+// frontendOrigin is the origin under which the fixture unit reports.
 const frontendOrigin = diag.Origin("golang")
 
-// The brand the fixture unit reads carriers under, and its three
-// marks as an author writes them.
+// The brand of the carriers of the fixture unit, and its three marks as an
+// author writes them.
 const (
 	unitBrand   = "fixture"
 	bareMark    = "fixture:"
@@ -39,9 +40,10 @@ const (
 	negatedMark = "-fixture:"
 )
 
-// The carriers the attachment cases hand the unit: one the kernel
-// grammar reads, one it refuses, the directive the first names, and
-// the line both are on.
+// The payloads of the attachment cases. The first is a payload that the
+// kernel grammar parses, and the second is a payload that it refuses. The
+// block also has the directive name of the first payload and the line of
+// both.
 const (
 	tablePayload  = "table name=rows"
 	brokenPayload = "=rows"
@@ -57,14 +59,37 @@ const (
 	sugarRefusal = "the argument f() is a call, and a directive value is a literal"
 )
 
-// carrierAt is the position the attachment cases state for their
-// carriers.
+// carrierAt is the position of the carriers of the attachment cases.
 var carrierAt = position.Pos{File: "svc/store/row.go", Line: carrierLine}
 
-// The continued carrier the refusal cases write: its first line's
-// payload, its continuation, the directive a formatter moves under
-// it, and a brand whose hyphen keeps its carriers out of the
-// tool-directive shape.
+// The subject of the refusal cases, which the model cannot address, and
+// the separator of the path of a marker in their findings.
+const (
+	unaddressed = "a parameter"
+	markerSep   = "."
+)
+
+// The sentence of each error in the syntax report cases, and the number
+// of errors past the cap.
+const (
+	syntaxMessage  = "an unexpected token"
+	syntaxOverflow = 5
+)
+
+// The package of the module cases, the module that they stamp and the
+// directory of its manifest, and a second module in another directory.
+const (
+	modulePackage = "svc/store"
+	moduleName    = "example.test/svc"
+	moduleRoot    = "."
+	otherModule   = "example.test/tool"
+	otherRoot     = "tool"
+)
+
+// The continued carrier of the refusal cases. The block has the payload of
+// its first line, its continuation, and the directive that a formatter
+// moves under it. It also has a brand with a hyphen, so the carriers of
+// that brand do not have the tool-directive shape.
 const (
 	continuedPayload = "out user.go \\"
 	continuationLine = "plugin=buildergen"
@@ -72,85 +97,136 @@ const (
 	hyphenBrand      = "fix-ture"
 )
 
-// continuedAt is the line the refusal cases open their comment on.
+// continuedAt is the line at which the comments of the refusal cases open.
 var continuedAt = position.Pos{File: "svc/store/row.go", Line: 4}
 
-// The comments the allocation checks and the benchmarks take apart:
-// three lines of documentation, and documentation above a carrier.
+// The comments that the allocation checks and the benchmarks split. The
+// first has three lines of documentation, and the second has documentation
+// above a carrier.
 const (
 	docComment     = "// Row is one row.\n// It has fields.\n// It has a key."
 	carrierComment = "// Row is one row.\n//fixture:table name=rows"
 )
 
-// The allocations of the source unit's methods, which
-// TestSourceUnitAllocs checks in the ordinary run and
-// BenchmarkSourceUnit in a benchmark run.
+// The allocation counts of the methods of the source unit.
+// TestSourceUnitAllocs checks them in the ordinary run, and
+// BenchmarkSourceUnit checks them in a benchmark run.
 const (
-	// newSourceUnitAllocs is a unit of one file with one shared input:
-	// the unit, its set of readable paths with the set's storage, and the
-	// graph builder with its map of packages.
+	// newSourceUnitAllocs is the count for a unit of one file with one
+	// shared input. NewSourceUnit allocates the unit, its set of readable
+	// paths with the storage of the set, and the graph builder with its map
+	// of packages.
 	newSourceUnitAllocs = 5
-	// commentAllocs is a comment of documentation lines: the list of its
-	// lines and the list of its documentation.
+	// commentAllocs is the count for a comment of documentation lines.
+	// Comment allocates the list of its lines and the list of its
+	// documentation.
 	commentAllocs = 2
-	// carrierCommentAllocs is a comment with a carrier: what
-	// commentAllocs counts and the list of carriers.
+	// carrierCommentAllocs is the count for a comment with a carrier.
+	// Comment allocates what commentAllocs counts and the list of carriers.
 	carrierCommentAllocs = commentAllocs + 1
-	// docAllocs is a comment's documentation: the list of its lines and
-	// the list of its documentation.
+	// docAllocs is the count for the documentation of a comment. Doc
+	// allocates the list of its lines and the list of its documentation.
 	docAllocs = 2
-	// docLinesAllocs is the filtered list of clean lines.
+	// docLinesAllocs is the count of DocLines. DocLines allocates the
+	// filtered list of clean lines.
 	docLinesAllocs = 1
-	// reportAllocs is one finding: its formatted message.
+	// reportAllocs is the count for one finding. The report allocates the
+	// formatted message.
 	reportAllocs = 1
-	// attachCarriersAllocs is a unit's first attached carrier: the
-	// parsed instance's parameters and the list of attachments.
+	// attachCarriersAllocs is the count for the first carrier that a unit
+	// attaches. AttachCarriers allocates the parameters of the parsed
+	// instance and the list of attachments.
 	attachCarriersAllocs = 2
-	// attachSugarAllocs is a unit's first attached marker of the brand
-	// and a name: the list of attachments.
-	attachSugarAllocs = 1
-	// attachPrefixedSugarAllocs is a unit's first attached marker of the
-	// brand, a plugin and a name: the prefixed name and the list of
+	// attachSugarAllocs is the count for the first marker of the brand and
+	// a name that a unit attaches. AttachSugar allocates the list of
 	// attachments.
+	attachSugarAllocs = 1
+	// attachPrefixedSugarAllocs is the count for the first marker of the
+	// brand, a plugin and a name that a unit attaches. AttachSugar
+	// allocates the prefixed name and the list of attachments.
 	attachPrefixedSugarAllocs = 2
-	// firstPackageAllocs is a unit's first package: the path's segments,
-	// the package, the map's first group and the list of paths.
+	// refuseCarrierAllocs is the count for one refused carrier.
+	// RefuseCarriers allocates the quoted text, the boxing of the text and
+	// of the subject, and the message.
+	refuseCarrierAllocs = 4
+	// refuseSugarAllocs is the count for one refused marker. RefuseSugar
+	// allocates the joined path, the boxing of the path and of the subject,
+	// and the message.
+	refuseSugarAllocs = 4
+	// reportSyntaxAllocs is the count for one syntax error. ReportSyntax
+	// allocates the four objects of the loop state that the range over the
+	// iterator moves to the heap, the boxing of the sentence and the
+	// message.
+	reportSyntaxAllocs = 6
+	// stampModuleAllocs is the count for the first module of a unit.
+	// StampModule allocates the boxing of the module and of its root, and
+	// two growths of the list of stamps.
+	stampModuleAllocs = 4
+	// stampModuleAgainAllocs is the count for a second package of the same
+	// module. StampModule allocates one growth of the list of stamps,
+	// because the call reuses the boxing of the module and of its root.
+	stampModuleAgainAllocs = 1
+	// firstPackageAllocs is the count for the first package of a unit.
+	// Package allocates the segments of the path, the package, the first
+	// group of the map and the list of paths.
 	firstPackageAllocs = 4
-	// packagesAllocs is the list of packages.
+	// packagesAllocs is the count of Packages. Packages allocates the list
+	// of packages.
 	packagesAllocs = 1
-	// firstRecordAllocs is a unit's first record of a scope, an
-	// attachment or a stamp: the list of records.
+	// firstRecordAllocs is the count for the first record of a scope, an
+	// attachment or a stamp in a unit. The record allocates the list of
+	// records.
 	firstRecordAllocs = 1
 )
 
-// The fixtures the allocation checks and the benchmarks read and record:
-// the position a comment opens at, and the subject, file, instance and
-// stamp a builder records.
+// The fixtures that the allocation checks and the benchmarks read and
+// record. They are the position at which a comment opens, and the subject,
+// the file, the instance and the stamp that a builder records.
 var (
 	commentAt     = position.Pos{File: "svc/store/row.go", Line: 1}
 	recordSubject = &node.Struct{Name: "Row"}
 	recordFile    = &node.File{Path: "svc/store/row.go"}
+	recordPackage = &node.Package{Files: []*node.File{recordFile}}
+	secondPackage = &node.Package{Pos: position.Pos{File: "svc/store/col.go", Line: 1}}
 	recordRaw     = directive.Raw{Name: tableName}
 	recordStamp   = meta.RawStamp{Key: "fake.testFile", Value: true}
 )
 
-// unitReport is one reporting method of the unit: its name, a call that
-// reports one finding through it, and the severity it reports at.
+// The carrier, the marker and the syntax error that the allocation checks
+// and the benchmarks refuse and report.
+var (
+	refusedCarriers = []plugin.Carrier{{Mark: setMark, Payload: tablePayload, Pos: carrierAt}}
+	refusedSugar    = []plugin.Sugar{{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt}}
+	oneSyntaxError  = syntaxErrors(1)
+)
+
+// unitReport is one reporting method of the unit. It has the name of the
+// method, a call that reports one finding through it, and the severity of
+// the finding.
 type unitReport struct {
 	method string
 	report func(*plugin.SourceUnit)
 	want   diag.Severity
 }
 
-// unitRecord is one method that records into a builder: its name and a
-// call of it.
+// unitRecord is one method that records into a builder. It has the name of
+// the method and a call of it.
 type unitRecord struct {
 	method string
 	record func(*plugin.GraphBuilder)
 }
 
-// The source unit is the one door bytes enter a frontend through,
-// so the jail, the fold and the comment pipeline are pinned here.
+// unitRefusal is one call that refuses or reports through a unit. It has
+// the name of its case, the call, and the allocation count of the call.
+type unitRefusal struct {
+	name   string
+	refuse func(*plugin.SourceUnit)
+	allocs uint64
+}
+
+// TestSourceUnit checks the source unit. A frontend reads every byte
+// through the unit, so the cases pin the jail of Read, the fold of
+// continued carriers and the comment pipeline.
 func TestSourceUnit(t *testing.T) {
 	t.Parallel()
 
@@ -170,7 +246,7 @@ func TestSourceUnit(t *testing.T) {
 	t.Run("Read", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns a member file's bytes", func(t *testing.T) {
+		t.Run("returns the bytes of a member file", func(t *testing.T) {
 			t.Parallel()
 
 			b, err := unitOf(t, unitTree()).Read("svc/store/row.go")
@@ -178,7 +254,7 @@ func TestSourceUnit(t *testing.T) {
 			assert.Equal(t, string(b), "package store\n", "the bytes are the file's")
 		})
 
-		t.Run("returns a declared shared input's bytes", func(t *testing.T) {
+		t.Run("returns the bytes of a declared shared input", func(t *testing.T) {
 			t.Parallel()
 
 			b, err := unitOf(t, unitTree()).Read("go.mod")
@@ -186,7 +262,7 @@ func TestSourceUnit(t *testing.T) {
 			assert.Equal(t, string(b), "module svc\n", "the bytes are the file's")
 		})
 
-		t.Run("returns an error naming a path outside the unit", func(t *testing.T) {
+		t.Run("returns an error for a path outside the unit", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := unitOf(t, unitTree()).Read("svc/other/x.go")
@@ -194,7 +270,7 @@ func TestSourceUnit(t *testing.T) {
 			assert.Contains(t, err.Error(), "svc/other/x.go", "the error names the path")
 		})
 
-		t.Run("returns an error naming a declared file missing from the tree", func(t *testing.T) {
+		t.Run("returns an error for a declared file that the tree does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			u := unitOver([]plugin.SourceRef{{Path: "svc/store/absent.go"}}, plugin.DepthFull, goSyntax())
@@ -203,7 +279,7 @@ func TestSourceUnit(t *testing.T) {
 			assert.Contains(t, err.Error(), "svc/store/absent.go", "the error names the path")
 		})
 
-		t.Run("returns a qualified member's bytes from its store", func(t *testing.T) {
+		t.Run("returns the bytes of a qualified member from its store", func(t *testing.T) {
 			t.Parallel()
 
 			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: qualifiedFile}}, withCache(), plugin.DepthSignatures,
@@ -260,7 +336,7 @@ func TestSourceUnit(t *testing.T) {
 	t.Run("Brand", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the brand that the unit was built with", func(t *testing.T) {
+		t.Run("returns the brand of the unit", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, unitOf(t, unitTree()).Brand(), unitBrand, "the brand is the constructed one")
@@ -294,7 +370,7 @@ func TestSourceUnit(t *testing.T) {
 			})
 		}
 
-		t.Run("returns documentation for another brand's mark", func(t *testing.T) {
+		t.Run("returns documentation for the mark of another brand", func(t *testing.T) {
 			t.Parallel()
 
 			parts := comment(t, "// +gen:table name=rows")
@@ -396,7 +472,7 @@ func TestSourceUnit(t *testing.T) {
 			coretest.AssertCodes(t, sink, plugin.ContinuedCarrier)
 		})
 
-		t.Run("reports the refusal at the carrier's line", func(t *testing.T) {
+		t.Run("reports the refusal at the line of the carrier", func(t *testing.T) {
 			t.Parallel()
 
 			u, sink := reporting(t, unitTree())
@@ -431,7 +507,7 @@ func TestSourceUnit(t *testing.T) {
 			assert.Equal(t, parts.Docs, []string{continuationLine}, "the continuation is read as written")
 		})
 
-		t.Run("returns the carrier a formatter moved under a refused one", func(t *testing.T) {
+		t.Run("returns the carrier that a formatter moved under a refused one", func(t *testing.T) {
 			t.Parallel()
 
 			parts := comment(t, "//"+bareMark+continuedPayload+"\n//"+bareMark+indexPayload)
@@ -590,7 +666,7 @@ func TestSourceUnit(t *testing.T) {
 				name: "cuts a line at the negated mark", line: negatedMark + tablePayload,
 				wantMark: negatedMark, wantPayload: tablePayload, wantOK: true,
 			},
-			{name: "reports false for another brand's mark", line: "+gen:" + tablePayload},
+			{name: "reports false for the mark of another brand", line: "+gen:" + tablePayload},
 			{name: "reports false for a mark without a payload", line: setMark},
 			{name: "reports false for a mark before a digit", line: setMark + "1table"},
 			{name: "reports false for a mark before a space", line: setMark + " " + tablePayload},
@@ -746,7 +822,7 @@ func TestSourceUnit(t *testing.T) {
 				"a marker without a name is not a directive")
 		})
 
-		t.Run("reports false for a marker outside the brand whose arguments did not lift", func(t *testing.T) {
+		t.Run("reports false for a marker outside the brand with a refusal", func(t *testing.T) {
 			t.Parallel()
 
 			u, sink := reporting(t, unitTree())
@@ -755,7 +831,7 @@ func TestSourceUnit(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 		})
 
-		t.Run("reports the refusal of a marker of the brand whose arguments did not lift", func(t *testing.T) {
+		t.Run("reports a marker of the brand with a refusal", func(t *testing.T) {
 			t.Parallel()
 
 			u, sink := reporting(t, unitTree())
@@ -815,6 +891,171 @@ func TestSourceUnit(t *testing.T) {
 		})
 	})
 
+	t.Run("RefuseCarriers", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports each carrier under the given code at its own line", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			next := carrierAt
+			next.Line++
+			u.RefuseCarriers(unitCode, []plugin.Carrier{
+				{Mark: setMark, Payload: tablePayload, Pos: carrierAt},
+				{Mark: negatedMark, Payload: tablePayload, Pos: next},
+			}, unaddressed)
+			coretest.AssertCodes(t, sink, unitCode, unitCode)
+			got := reported(sink)
+			expect.Equal(t, got[0].Pos, carrierAt, "the first finding is at the first carrier")
+			expect.Equal(t, got[1].Pos, next, "the second finding is at the second carrier")
+			expect.Equal(t, got[0].Severity, diag.SeverityError, "the finding is an Error")
+		})
+
+		t.Run("quotes the carrier with its mark", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.RefuseCarriers(unitCode, []plugin.Carrier{{Mark: negatedMark, Payload: tablePayload, Pos: carrierAt}},
+				unaddressed)
+			got := reported(sink)
+			assert.Length(t, got, 1, "one finding is reported")
+			assert.Contains(t, got[0].Msg, strconv.Quote(negatedMark+tablePayload), "the carrier is quoted as written")
+		})
+
+		t.Run("includes the description of the subject", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.RefuseCarriers(unitCode, []plugin.Carrier{{Mark: setMark, Payload: tablePayload, Pos: carrierAt}},
+				unaddressed)
+			got := reported(sink)
+			assert.Length(t, got, 1, "one finding is reported")
+			assert.Contains(t, got[0].Msg, unaddressed, "the finding contains the description of the subject")
+		})
+
+		t.Run("does not attach the carrier", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			u.RefuseCarriers(unitCode, []plugin.Carrier{{Mark: setMark, Payload: tablePayload, Pos: carrierAt}},
+				unaddressed)
+			assert.Empty(t, u.Graph().Attachments(), "a refused carrier attaches nowhere")
+		})
+
+		t.Run("does not report a finding for no carriers", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.RefuseCarriers(unitCode, nil, unaddressed)
+			coretest.AssertCodes(t, sink)
+		})
+	})
+
+	t.Run("RefuseSugar", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports each marker under the given code at its position", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			next := carrierAt
+			next.Line++
+			u.RefuseSugar(unitCode, []plugin.Sugar{
+				{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt},
+				{Path: []string{unitBrand, string(stubName)}, Pos: next},
+			}, markerSep, unaddressed)
+			coretest.AssertCodes(t, sink, unitCode, unitCode)
+			got := reported(sink)
+			expect.Equal(t, got[0].Pos, carrierAt, "the first finding is at the first marker")
+			expect.Equal(t, got[1].Pos, next, "the second finding is at the second marker")
+			expect.Equal(t, got[0].Severity, diag.SeverityError, "the finding is an Error")
+		})
+
+		t.Run("joins the path of the marker with the separator", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.RefuseSugar(unitCode, []plugin.Sugar{{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt}},
+				markerSep, unaddressed)
+			got := reported(sink)
+			assert.Length(t, got, 1, "one finding is reported")
+			assert.Contains(t, got[0].Msg, unitBrand+markerSep+string(stubName),
+				"the finding contains the path as the author wrote it")
+		})
+
+		t.Run("includes the description of the subject", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.RefuseSugar(unitCode, []plugin.Sugar{{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt}},
+				markerSep, unaddressed)
+			got := reported(sink)
+			assert.Length(t, got, 1, "one finding is reported")
+			assert.Contains(t, got[0].Msg, unaddressed, "the finding contains the description of the subject")
+		})
+
+		t.Run("does not report a finding for no markers", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.RefuseSugar(unitCode, nil, markerSep, unaddressed)
+			coretest.AssertCodes(t, sink)
+		})
+	})
+
+	t.Run("ReportSyntax", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports each error at its position", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.ReportSyntax(unitCode, syntaxErrors(2))
+			coretest.AssertCodes(t, sink, unitCode, unitCode)
+			got := reported(sink)
+			expect.Equal(t, got[0].Pos, position.Pos{File: commentAt.File, Line: 1, Col: 1},
+				"the first finding is at the first error")
+			expect.Equal(t, got[1].Pos, position.Pos{File: commentAt.File, Line: 2, Col: 1},
+				"the second finding is at the second error")
+			expect.Equal(t, got[0].Msg, syntaxMessage, "the finding is the sentence of the error")
+			expect.Equal(t, got[0].Severity, diag.SeverityError, "the finding is an Error")
+		})
+
+		t.Run("reports one finding past the cap", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.ReportSyntax(unitCode, syntaxErrors(plugin.MaxSyntaxFindings+syntaxOverflow))
+			got := reported(sink)
+			assert.Length(t, got, plugin.MaxSyntaxFindings+1, "the cap of findings and one more are reported")
+			expect.Equal(t, got[plugin.MaxSyntaxFindings].Pos,
+				position.Pos{File: commentAt.File, Line: plugin.MaxSyntaxFindings + 1, Col: 1},
+				"the last finding is at the first error past the cap")
+			expect.Equal(t, got[plugin.MaxSyntaxFindings].Msg,
+				"and "+strconv.Itoa(syntaxOverflow)+" more syntax errors",
+				"the last finding counts the errors past the cap")
+		})
+
+		t.Run("reports every error up to the cap one by one", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.ReportSyntax(unitCode, syntaxErrors(plugin.MaxSyntaxFindings))
+			got := reported(sink)
+			assert.Length(t, got, plugin.MaxSyntaxFindings, "each error up to the cap is a finding")
+			expect.Equal(t, got[plugin.MaxSyntaxFindings-1].Msg, syntaxMessage,
+				"the last finding is the sentence of the last error")
+		})
+
+		t.Run("does not report a finding for no errors", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.ReportSyntax(unitCode, syntaxErrors(0))
+			coretest.AssertCodes(t, sink)
+		})
+	})
+
 	at := position.Pos{File: "svc/store/row.go", Line: 4, Col: 2}
 	severities := []struct {
 		method string
@@ -823,17 +1064,17 @@ func TestSourceUnit(t *testing.T) {
 		want   diag.Severity
 	}{
 		{
-			method: "Errorf", name: "reports an Error under the frontend's origin",
+			method: "Errorf", name: "reports an Error under the origin of the frontend",
 			report: func(u *plugin.SourceUnit) { u.Errorf(unitCode, at, "the declaration names %s twice", "Row") },
 			want:   diag.SeverityError,
 		},
 		{
-			method: "Warnf", name: "reports a Warning under the frontend's origin",
+			method: "Warnf", name: "reports a Warning under the origin of the frontend",
 			report: func(u *plugin.SourceUnit) { u.Warnf(unitCode, at, "the declaration shadows %s", "Row") },
 			want:   diag.SeverityWarning,
 		},
 		{
-			method: "Infof", name: "reports an Info under the frontend's origin",
+			method: "Infof", name: "reports an Info under the origin of the frontend",
 			report: func(u *plugin.SourceUnit) { u.Infof(unitCode, at, "the declaration %s loaded", "Row") },
 			want:   diag.SeverityInfo,
 		},
@@ -925,7 +1166,7 @@ func TestSourceUnit(t *testing.T) {
 		t.Run(tt.method, func(t *testing.T) {
 			t.Parallel()
 
-			t.Run("reports the finding under the frontend's origin", func(t *testing.T) {
+			t.Run("reports the finding under the origin of the frontend", func(t *testing.T) {
 				t.Parallel()
 
 				u, sink := reporting(t, unitTree())
@@ -951,7 +1192,7 @@ func TestSourceUnit(t *testing.T) {
 				assert.ByIdentity())
 		})
 
-		t.Run("returns the path's segments", func(t *testing.T) {
+		t.Run("returns the segments of the path", func(t *testing.T) {
 			t.Parallel()
 
 			gb := unitOf(t, unitTree()).Graph()
@@ -1051,6 +1292,65 @@ func TestSourceUnit(t *testing.T) {
 		})
 	})
 
+	t.Run("StampModule", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stamps the module and its root at the first file of the package", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			pkg := gb.Package(modulePackage)
+			first := position.Pos{File: "svc/store/row.go", Line: 1, Col: 1}
+			pkg.Files = []*node.File{{Path: first.File, Pos: first}, {Path: "svc/store/col.go"}}
+			gb.StampModule(pkg, moduleName, moduleRoot)
+			assert.Equal(t, gb.StampRecords(), []plugin.StampRecord{
+				{Subject: pkg, Stamp: meta.RawStamp{Key: meta.ModuleKey, Value: moduleName, Pos: first}},
+				{Subject: pkg, Stamp: meta.RawStamp{Key: meta.ModuleRootKey, Value: moduleRoot, Pos: first}},
+			}, "the package has the module and the root of its manifest")
+		})
+
+		t.Run("stamps a package without files at its own position", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			pkg := gb.Package(modulePackage)
+			pkg.Pos = position.Pos{File: "svc/store", Line: 1}
+			gb.StampModule(pkg, moduleName, moduleRoot)
+			stamps := gb.StampRecords()
+			assert.Length(t, stamps, 2, "the module and its root are stamped")
+			expect.Equal(t, stamps[0].Stamp.Pos, pkg.Pos, "the module is at the package's position")
+			expect.Equal(t, stamps[1].Stamp.Pos, pkg.Pos, "the root is at the package's position")
+		})
+
+		t.Run("stamps the module of each call after a call with another module", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			gb.StampModule(recordPackage, moduleName, moduleRoot)
+			gb.StampModule(secondPackage, otherModule, otherRoot)
+			stamps := gb.StampRecords()
+			assert.Length(t, stamps, 4, "each package has its module and its root")
+			expect.Equal(t, stamps[2].Stamp.Value, any(otherModule), "the second package has the second module")
+			expect.Equal(t, stamps[3].Stamp.Value, any(otherRoot), "the second package has the second root")
+		})
+
+		t.Run("does not record a stamp for an empty module", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			gb.StampModule(gb.Package(modulePackage), "", moduleRoot)
+			assert.Empty(t, gb.StampRecords(), "a package outside every module has no module facts")
+		})
+
+		t.Run("panics on a nil package with a module", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			assert.Panics(t, func() { gb.StampModule(nil, moduleName, moduleRoot) },
+				"a module on no package is a frontend defect")
+		})
+	})
+
 	t.Run("Rehome", func(t *testing.T) {
 		t.Parallel()
 
@@ -1076,7 +1376,7 @@ func TestSourceUnit(t *testing.T) {
 				assert.ByIdentity())
 		})
 
-		t.Run("keeps an unrelated subject's attachment", func(t *testing.T) {
+		t.Run("keeps the attachment of an unrelated subject", func(t *testing.T) {
 			t.Parallel()
 
 			gb, _, other := rehomed(t)
@@ -1107,10 +1407,12 @@ func TestSourceUnit(t *testing.T) {
 	})
 }
 
-// Each method of the source unit allocates what it returns or keeps in
-// the ordinary run, which runs no benchmark. Each call that records into
-// its unit takes a unit of its own, built outside the count. The check
-// runs alone, because the count includes every goroutine's allocations.
+// TestSourceUnitAllocs checks that each method of the source unit
+// allocates only what it returns or keeps. The ordinary run runs no
+// benchmark, so this test checks the ceilings. Each call that records into
+// its unit takes a new unit, which the setup builds outside the count. The
+// check does not run in parallel, because the count includes the
+// allocations of every goroutine.
 func TestSourceUnitAllocs(t *testing.T) {
 	refs, tree, syntax, sink := []plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), diag.NewSink()
 	var built *plugin.SourceUnit
@@ -1188,6 +1490,23 @@ func TestSourceUnitAllocs(t *testing.T) {
 		"AttachSugar allocates nothing for a marker outside the brand")
 	assert.False(t, held, "AttachSugar reports a marker outside the brand as metadata")
 
+	assert.MaxAllocs(t, func() { u.RefuseCarriers(unitCode, nil, unaddressed) }, 0,
+		"RefuseCarriers allocates nothing for no carriers")
+	assert.MaxAllocs(t, func() { u.RefuseCarriers(unitCode, refusedCarriers, unaddressed) }, refuseCarrierAllocs,
+		"RefuseCarriers allocates the quoted carrier, the boxed arguments and the message")
+	assert.MaxAllocs(t, func() { u.RefuseSugar(unitCode, nil, markerSep, unaddressed) }, 0,
+		"RefuseSugar allocates nothing for no markers")
+	assert.MaxAllocs(t, func() { u.RefuseSugar(unitCode, refusedSugar, markerSep, unaddressed) }, refuseSugarAllocs,
+		"RefuseSugar allocates the joined path, the boxed arguments and the message")
+	assert.MaxAllocs(t, func() { u.ReportSyntax(unitCode, oneSyntaxError) }, reportSyntaxAllocs,
+		"ReportSyntax allocates its loop state, the boxed sentence and the message of a finding")
+	assert.MaxAllocsWithSetup(t, fresh,
+		func(fu *plugin.SourceUnit) { fu.Graph().StampModule(recordPackage, moduleName, moduleRoot) },
+		stampModuleAllocs, "StampModule allocates the boxed module and root, and the list of stamps")
+	assert.MaxAllocsWithSetup(t, stampedModule(t),
+		func(gb *plugin.GraphBuilder) { gb.StampModule(secondPackage, moduleName, moduleRoot) },
+		stampModuleAgainAllocs, "StampModule reuses the boxed module and root for a second package of the module")
+
 	assert.MaxAllocsWithSetup(t, fresh, func(fu *plugin.SourceUnit) { fu.Graph().Package("svc/store") },
 		firstPackageAllocs, "Package allocates a unit's first package")
 	gb := fresh().Graph()
@@ -1214,10 +1533,11 @@ func TestSourceUnitAllocs(t *testing.T) {
 	expect.Equal(t, stamps, 1, "StampRecords returns the builder's one stamp")
 }
 
-// BenchmarkSourceUnit measures what a frontend's parse calls on its
-// unit: the unit's construction, the comment pipeline once per comment,
-// the reads, the reports and the records, each call that records into
-// its unit on a unit built outside the measurement.
+// BenchmarkSourceUnit measures the calls that the parse of a frontend
+// makes on its unit. They are the construction of the unit, the comment
+// pipeline once for each comment, the reads, the reports and the records.
+// Each call that records into its unit runs on a unit that the benchmark
+// builds outside the measurement.
 func BenchmarkSourceUnit(b *testing.B) {
 	b.Run("NewSourceUnit", func(b *testing.B) {
 		refs, tree, syntax, sink := []plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), diag.NewSink()
@@ -1359,7 +1679,7 @@ func BenchmarkSourceUnit(b *testing.B) {
 	}
 
 	b.Run("AttachCarriers", func(b *testing.B) {
-		b.Run("a unit's first carrier", func(b *testing.B) {
+		b.Run("the first carrier of a unit", func(b *testing.B) {
 			carriers := []plugin.Carrier{{Mark: bareMark, Payload: tablePayload, Pos: carrierAt}}
 			var unit *plugin.SourceUnit
 			fresh := func() { unit = unitOf(b, unitTree()) }
@@ -1380,12 +1700,12 @@ func BenchmarkSourceUnit(b *testing.B) {
 			allocs uint64
 		}{
 			{
-				name:   "a unit's first marker of the brand and a name",
+				name:   "the first marker of the brand and a name",
 				marker: plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt},
 				allocs: attachSugarAllocs,
 			},
 			{
-				name:   "a unit's first marker of the brand, a plugin and a name",
+				name:   "the first marker with a plugin",
 				marker: plugin.Sugar{Path: []string{unitBrand, "stubgen", string(stubName)}, Pos: carrierAt},
 				allocs: attachPrefixedSugarAllocs,
 			},
@@ -1405,8 +1725,81 @@ func BenchmarkSourceUnit(b *testing.B) {
 		}
 	})
 
+	refusals := []struct {
+		method string
+		cases  []unitRefusal
+	}{
+		{method: "RefuseCarriers", cases: []unitRefusal{
+			{
+				name:   "no carriers",
+				refuse: func(ru *plugin.SourceUnit) { ru.RefuseCarriers(unitCode, nil, unaddressed) },
+			},
+			{
+				name: "one carrier", allocs: refuseCarrierAllocs,
+				refuse: func(ru *plugin.SourceUnit) { ru.RefuseCarriers(unitCode, refusedCarriers, unaddressed) },
+			},
+		}},
+		{method: "RefuseSugar", cases: []unitRefusal{
+			{
+				name:   "no markers",
+				refuse: func(ru *plugin.SourceUnit) { ru.RefuseSugar(unitCode, nil, markerSep, unaddressed) },
+			},
+			{
+				name: "one marker", allocs: refuseSugarAllocs,
+				refuse: func(ru *plugin.SourceUnit) { ru.RefuseSugar(unitCode, refusedSugar, markerSep, unaddressed) },
+			},
+		}},
+		{method: "ReportSyntax", cases: []unitRefusal{
+			{
+				name: "one error", allocs: reportSyntaxAllocs,
+				refuse: func(ru *plugin.SourceUnit) { ru.ReportSyntax(unitCode, oneSyntaxError) },
+			},
+		}},
+	}
+	for _, method := range refusals {
+		b.Run(method.method, func(b *testing.B) {
+			for _, tt := range method.cases {
+				b.Run(tt.name, func(b *testing.B) {
+					reporter := unitOf(b, unitTree())
+					c := bench.Start(b).MaxAllocs(tt.allocs)
+					defer c.End()
+					for c.Loop() {
+						tt.refuse(reporter)
+					}
+				})
+			}
+		})
+	}
+
+	b.Run("StampModule", func(b *testing.B) {
+		b.Run("the first module of a unit", func(b *testing.B) {
+			var gb *plugin.GraphBuilder
+			fresh := func() { gb = unitOf(b, unitTree()).Graph() }
+			c := bench.Start(b).MaxAllocs(stampModuleAllocs)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(fresh)
+				gb.StampModule(recordPackage, moduleName, moduleRoot)
+			}
+			assert.Length(b, gb.StampRecords(), 2, "the module and its root are stamped")
+		})
+
+		b.Run("a second package of the module", func(b *testing.B) {
+			stamped := stampedModule(b)
+			var gb *plugin.GraphBuilder
+			fresh := func() { gb = stamped() }
+			c := bench.Start(b).MaxAllocs(stampModuleAgainAllocs)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(fresh)
+				gb.StampModule(secondPackage, moduleName, moduleRoot)
+			}
+			assert.Length(b, gb.StampRecords(), 4, "both packages have the module and its root")
+		})
+	})
+
 	b.Run("Package", func(b *testing.B) {
-		b.Run("a unit's first package", func(b *testing.B) {
+		b.Run("the first package of a unit", func(b *testing.B) {
 			var gb *plugin.GraphBuilder
 			fresh := func() { gb = unitOf(b, unitTree()).Graph() }
 			c := bench.Start(b).MaxAllocs(firstPackageAllocs)
@@ -1446,7 +1839,7 @@ func BenchmarkSourceUnit(b *testing.B) {
 
 	for _, tt := range unitRecords() {
 		b.Run(tt.method, func(b *testing.B) {
-			b.Run("a unit's first record", func(b *testing.B) {
+			b.Run("the first record of a unit", func(b *testing.B) {
 				var gb *plugin.GraphBuilder
 				fresh := func() { gb = unitOf(b, unitTree()).Graph() }
 				c := bench.Start(b).MaxAllocs(firstRecordAllocs)
@@ -1504,9 +1897,9 @@ func BenchmarkSourceUnit(b *testing.B) {
 	})
 }
 
-// goSyntax is the fixture's comment forms: Go's line form and the
-// C-family block with a star gutter, the tool-directive convention
-// declared.
+// goSyntax returns the comment forms of the fixture. They are the line form
+// of Go and the C-family block with a star gutter, and the syntax declares
+// the tool-directive convention.
 func goSyntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line:       []string{"//"},
@@ -1515,10 +1908,10 @@ func goSyntax() plugin.CommentSyntax {
 	}
 }
 
-// nestedSyntax is comment forms whose markers begin with each other,
-// as Rust's do: the plain line form first, because the render side
-// writes it, the outer and inner doc line forms after it, and a plain
-// block before a doc block with a star gutter.
+// nestedSyntax returns comment forms whose markers begin with each other,
+// as the markers of Rust do. The plain line form is first, because the
+// render side writes it, and the outer and inner doc line forms follow it.
+// A plain block is before a doc block with a star gutter.
 func nestedSyntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line: []string{"//", "///", "//!"},
@@ -1529,8 +1922,8 @@ func nestedSyntax() plugin.CommentSyntax {
 	}
 }
 
-// unitTree is the fixture tree: the unit's member, its shared
-// module file, and a file outside the unit.
+// unitTree returns the fixture tree. It contains the member of the unit,
+// its shared module file, and a file outside the unit.
 func unitTree() fstest.MapFS {
 	return fstest.MapFS{
 		"svc/store/row.go": {Data: []byte("package store\n")},
@@ -1539,14 +1932,14 @@ func unitTree() fstest.MapFS {
 	}
 }
 
-// unitFile is the one member the fixture unit declares, with the
-// module file as its shared input.
+// unitFile returns the one member of the fixture unit, with the module file
+// as its shared input.
 func unitFile() plugin.SourceRef {
 	return plugin.SourceRef{Path: "svc/store/row.go", Shared: []string{"go.mod"}}
 }
 
-// unitOf builds a source unit over the given tree, one file with
-// one shared input, full depth.
+// unitOf builds a source unit over the given tree. The unit has one file
+// with one shared input, and it loads at full depth.
 func unitOf(tb assert.TB, tree fstest.MapFS) *plugin.SourceUnit {
 	tb.Helper()
 
@@ -1554,9 +1947,8 @@ func unitOf(tb assert.TB, tree fstest.MapFS) *plugin.SourceUnit {
 	return u
 }
 
-// reporting builds the fixture unit together with the sink its
-// findings arrive in, so a case reads back what the frontend
-// reported.
+// reporting builds the fixture unit together with the sink of its
+// findings, so a case can read what the unit reported.
 func reporting(tb assert.TB, tree fstest.MapFS) (*plugin.SourceUnit, *diag.Sink) {
 	tb.Helper()
 
@@ -1575,8 +1967,8 @@ func unitOver(
 	return plugin.NewSourceUnit(refs, unitTree(), depth, syntax, unitBrand, diag.NewSink(), frontendOrigin)
 }
 
-// reported returns a sink's findings in report order, which is what
-// a case comparing severities and origins reads.
+// reported returns the findings of a sink in report order. A case that
+// compares severities and origins reads them.
 func reported(s *diag.Sink) []diag.Diag {
 	var out []diag.Diag
 	for d := range s.All() {
@@ -1585,17 +1977,17 @@ func reported(s *diag.Sink) []diag.Diag {
 	return out
 }
 
-// comment takes one raw comment apart through the fixture unit, at
-// line 1 of the member.
+// comment splits one raw comment through the fixture unit at line 1 of the
+// member.
 func comment(tb assert.TB, raw string) plugin.CommentParts {
 	tb.Helper()
 
 	return unitOf(tb, unitTree()).Comment(raw, position.Pos{File: "svc/store/row.go", Line: 1})
 }
 
-// unitReports returns each reporting method of the unit, writing one
-// finding with an argument at the fixture's carrier line, with the
-// severity it reports at.
+// unitReports returns each reporting method of the unit. Each call reports
+// one finding with an argument at the line of the carrier fixture, and each
+// entry has the severity of its method.
 func unitReports() []unitReport {
 	return []unitReport{
 		{
@@ -1614,12 +2006,36 @@ func unitReports() []unitReport {
 }
 
 // unitRecords returns one call of each method that records into a
-// builder, each on the record fixtures.
+// builder. Each call records one of the record fixtures.
 func unitRecords() []unitRecord {
 	return []unitRecord{
 		{method: "Scope", record: func(gb *plugin.GraphBuilder) { gb.Scope(recordFile, nil) }},
 		{method: "Attach", record: func(gb *plugin.GraphBuilder) { gb.Attach(recordSubject, recordRaw) }},
 		{method: "Stamp", record: func(gb *plugin.GraphBuilder) { gb.Stamp(recordFile, recordStamp) }},
+	}
+}
+
+// syntaxErrors returns n syntax errors of the fixture member. They are on
+// the lines from line 1, one on each line, and each has the sentence of the
+// fixture.
+func syntaxErrors(n int) iter.Seq2[position.Pos, string] {
+	return func(yield func(position.Pos, string) bool) {
+		for i := range n {
+			if !yield(position.Pos{File: commentAt.File, Line: i + 1, Col: 1}, syntaxMessage) {
+				return
+			}
+		}
+	}
+}
+
+// stampedModule returns a setup that builds a fresh unit whose builder has
+// stamped the module of the fixtures on recordPackage, and returns the
+// builder.
+func stampedModule(tb assert.TB) func() *plugin.GraphBuilder {
+	return func() *plugin.GraphBuilder {
+		gb := unitOf(tb, unitTree()).Graph()
+		gb.StampModule(recordPackage, moduleName, moduleRoot)
+		return gb
 	}
 }
 
@@ -1634,8 +2050,8 @@ func recorded(tb assert.TB) *plugin.GraphBuilder {
 	return gb
 }
 
-// unitRead returns the read of the unit's member beside the read of an
-// equal tree, which the unit's door adds nothing to.
+// unitRead returns the read of the member of the unit and the read of an
+// equal tree. Read allocates no more than the read of the tree.
 func unitRead(u *plugin.SourceUnit) storeRead {
 	var tree fs.FS = unitTree()
 	member := unitFile().Path

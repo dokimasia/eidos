@@ -285,6 +285,20 @@ func TestEmit(t *testing.T) {
 			assert.HasError(t, plugin.NewEmit().Add(u),
 				"a nil declaration would abort a render worker, so the door refuses it")
 		})
+
+		t.Run("seals every slot of a declaration that the unit places", func(t *testing.T) {
+			t.Parallel()
+
+			row, get := &emit.Struct{Name: "Row"}, &emit.Method{Name: "Get"}
+			row.Methods.Append(get)
+			assert.NoError(t, plugin.NewEmit().Add(plugin.Unit{
+				Plugin: "gen", Per: plugin.PerSource, Word: "gen", Key: "a.go", Decls: []symbol.Symbol{row},
+			}), "the unit arrives")
+			assert.Panics(t, func() { row.Fields.Append(&emit.Field{Name: "id"}) },
+				"a direct append into a slot of the placed struct panics")
+			assert.Panics(t, func() { get.Body.Prologue.Append(emit.Stmt{}) },
+				"a direct append into the body of a method of the struct panics")
+		})
 	})
 
 	t.Run("Contribute", func(t *testing.T) {

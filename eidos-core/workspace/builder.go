@@ -87,7 +87,7 @@ type Plan struct {
 	// itself, for a name listed twice and for a cycle. The error for a cycle
 	// lists every plan of the cycle.
 	DependsOn []string
-	// The generators of the plan run in bucket order. Their order in the
+	// The generators of the plan run in turn order. Their order in the
 	// list does not matter.
 	Generators []plugin.Generator
 	// When Extensible is true, Build appends the generators of the plan's
@@ -234,10 +234,11 @@ func (b *Builder) Output(open func() (output.Sink, error)) *Builder {
 
 // Ledger sets the function that opens the ledger. A run reads the record of
 // the previous run from the ledger, and writes its own record to it. open
-// returns a new ledger. A run of a composition with an output calls open
-// once, before the load. A composition without a ledger runs as if no run
-// had committed, so it removes no file and records nothing. Ledger
-// allocates nothing.
+// returns a new ledger. A run calls open once, before the load. A
+// composition without a ledger runs as if no run had committed, so it
+// removes no file and records nothing. Build returns an error for a ledger
+// without an output, because the lock, the record and the parse memo serve
+// a run that writes files. Ledger allocates nothing.
 func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder {
 	b.ledger = open
 	return b
@@ -254,7 +255,7 @@ func (b *Builder) Workspace(id string) *Builder {
 
 // Parallel sets the number of invocations that one phase call runs at the
 // same time. The invocations are the matches of an annotator or a
-// generator inside its bucket. With 0 or 1, the default, a phase call runs
+// generator in its turn. With 0 or 1, the default, a phase call runs
 // one match at a time, and Build returns an error for a negative count.
 //
 // The output does not depend on the count. A phase call applies its
@@ -359,11 +360,18 @@ func (b *Builder) Build() (*Workspace, error) {
 			"workspace: the memo limit %d is negative, and a limit of 0 turns the memo off", b.memo.Limit,
 		))
 	}
+	if b.ledger != nil && b.open == nil {
+		faults = append(faults, errors.New(
+			"workspace: the composition declares a ledger and no output, and a run without an output "+
+				"never opens the ledger: declare an output, or remove the ledger",
+		))
+	}
 	faults = append(faults, frontendFaults(b.frontends)...)
 	fronts, ferr := frontendOptions(b.frontends)
 	faults = append(faults, ferr...)
 	roster, byName, afaults := b.assemble()
 	faults = append(faults, afaults...)
+	faults = append(faults, partialProviders(roster)...)
 	refined, refineFaults := refine(b.plans, b.config.Plans, b.checks)
 	faults = append(faults, refineFaults...)
 	policies, broken, pfaults := resolvePolicies(refined, b.config)
@@ -372,9 +380,10 @@ func (b *Builder) Build() (*Workspace, error) {
 	faults = append(faults, efaults...)
 	reg, rerr := b.register(roster, entries)
 	faults = append(faults, rerr...)
+	faults = append(faults, bindKeys(roster, byName, reg.keys)...)
 	ann, gens, lerr := lower(roster, entries)
 	faults = append(faults, lerr...)
-	faults = append(faults, bindKeys(roster, ann, reg.keys)...)
+	faults = append(faults, gateOrder(ann, reg.keys)...)
 	options, cerr := configure(roster, byName, b.config)
 	faults = append(faults, cerr...)
 	plans, perr := compilePlans(refined, gens, reg.targets, languages(b.frontends, reg.rules), policies)

@@ -10,14 +10,12 @@ import (
 	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/position"
 )
 
 // Codes returns the codes a sink collected, in report order.
 //
-// Report order is the assertion order: a case comparing the whole
-// slice holds both what was reported and how many times, which a
-// membership check does not.
+// A case that compares the whole slice checks what was reported and how
+// many times. A membership check does not check the count.
 func Codes(s *diag.Sink) []diag.Code {
 	out := []diag.Code{}
 	for d := range s.All() {
@@ -29,8 +27,7 @@ func Codes(s *diag.Sink) []diag.Code {
 // AssertCodes fails unless the sink collected exactly want, in
 // order.
 //
-// Passing no codes asserts a clean run, which is the common case
-// and reads better than comparing against an empty slice.
+// A call without codes asserts a clean run, which is the common case.
 func AssertCodes(tb assert.TB, s *diag.Sink, want ...diag.Code) {
 	tb.Helper()
 
@@ -55,24 +52,24 @@ func AssertReports(tb assert.TB, s *diag.Sink, want diag.Code) {
 }
 
 // AssertPositioned fails unless every finding the sink collected
-// has a position and a message, and reports every finding that
-// lacks either.
+// has a position that [diag.Diag.Positioned] accepts and a message,
+// and reports every finding that lacks either.
 //
-// A finding without either cannot be acted on, so this states the
-// contract every reporting path shares, not one path's own.
+// A reader cannot act on a finding without either, so every reporting
+// path shares this contract.
 func AssertPositioned(tb assert.TB, s *diag.Sink) {
 	tb.Helper()
 
 	for d := range s.All() {
-		expect.NotEqual(tb, d.Pos, position.Pos{},
+		expect.True(tb, d.Positioned(),
 			"the "+d.Code.String()+" finding has a position")
 		expect.NotEmpty(tb, d.Msg,
 			"the "+d.Code.String()+" finding has a message")
 	}
 }
 
-// describe renders a sink's findings for a failure message, so a
-// mismatch names what was reported rather than a bare code list.
+// describe writes the findings of a sink for a failure message, so a
+// mismatch shows the reported findings and not only their codes.
 func describe(s *diag.Sink) string {
 	var out strings.Builder
 	out.WriteString("reported [")

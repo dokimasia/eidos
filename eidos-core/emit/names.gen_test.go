@@ -37,8 +37,8 @@ func TestNames(t *testing.T) {
 			subject.Name = "alpha"
 			subject.Visibility = symbol.VisibilityInternal
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-			subject.Params = append(subject.Params, &Param{Name: "beta"})
-			subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+			subject.ParamsSlot().Append(&Param{Name: "beta"})
+			subject.ReturnsSlot().Append(&Return{Name: "beta"})
 			var hosts []symbol.Kind
 			var seen []symbol.Visibility
 			err := RespellNames(subject,
@@ -70,8 +70,8 @@ func TestNames(t *testing.T) {
 			subject := &Function{}
 			subject.Name = "alpha"
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-			subject.Params = append(subject.Params, &Param{Name: "beta"})
-			subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+			subject.ParamsSlot().Append(&Param{Name: "beta"})
+			subject.ReturnsSlot().Append(&Return{Name: "beta"})
 			var carriers []symbol.Symbol
 			var kinds []symbol.Kind
 			err := RespellNames(subject,
@@ -99,8 +99,8 @@ func TestNames(t *testing.T) {
 				subject := &Function{}
 				subject.Name = "alpha"
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-				subject.Params = append(subject.Params, &Param{Name: "beta"})
-				subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+				subject.ParamsSlot().Append(&Param{Name: "beta"})
+				subject.ReturnsSlot().Append(&Return{Name: "beta"})
 				calls := 0
 				err := RespellNames(subject,
 					func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
@@ -124,8 +124,8 @@ func TestNames(t *testing.T) {
 			subject.Visibility = symbol.VisibilityInternal
 			subject.Receiver = &Param{Name: "beta"}
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-			subject.Params = append(subject.Params, &Param{Name: "beta"})
-			subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+			subject.ParamsSlot().Append(&Param{Name: "beta"})
+			subject.ReturnsSlot().Append(&Return{Name: "beta"})
 			var hosts []symbol.Kind
 			var seen []symbol.Visibility
 			err := RespellNames(subject,
@@ -158,8 +158,8 @@ func TestNames(t *testing.T) {
 			subject.Name = "alpha"
 			subject.Receiver = &Param{Name: "beta"}
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-			subject.Params = append(subject.Params, &Param{Name: "beta"})
-			subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+			subject.ParamsSlot().Append(&Param{Name: "beta"})
+			subject.ReturnsSlot().Append(&Return{Name: "beta"})
 			var carriers []symbol.Symbol
 			var kinds []symbol.Kind
 			err := RespellNames(subject,
@@ -188,8 +188,8 @@ func TestNames(t *testing.T) {
 				subject.Name = "alpha"
 				subject.Receiver = &Param{Name: "beta"}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-				subject.Params = append(subject.Params, &Param{Name: "beta"})
-				subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+				subject.ParamsSlot().Append(&Param{Name: "beta"})
+				subject.ReturnsSlot().Append(&Return{Name: "beta"})
 				calls := 0
 				err := RespellNames(subject,
 					func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
@@ -1356,8 +1356,8 @@ func namesSubjects() []symbol.Symbol {
 		subject := &Function{}
 		subject.Name = "alpha"
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.Params = append(subject.Params, &Param{Name: "beta"})
-		subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+		subject.ParamsSlot().Append(&Param{Name: "beta"})
+		subject.ReturnsSlot().Append(&Return{Name: "beta"})
 		out = append(out, subject)
 	}
 	{
@@ -1365,8 +1365,8 @@ func namesSubjects() []symbol.Symbol {
 		subject.Name = "alpha"
 		subject.Receiver = &Param{Name: "beta"}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.Params = append(subject.Params, &Param{Name: "beta"})
-		subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+		subject.ParamsSlot().Append(&Param{Name: "beta"})
+		subject.ReturnsSlot().Append(&Return{Name: "beta"})
 		out = append(out, subject)
 	}
 	{

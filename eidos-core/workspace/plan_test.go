@@ -31,19 +31,20 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The paths the disk fixtures write: the store package's file beside
-// its source, and the cache package's, where the store's moves.
+// The paths that the disk fixtures write, the file of the store package
+// beside its source and the file of the cache package, where the file
+// of the store moves.
 const (
 	storeGen = coretest.StorePath + "/gen.txt"
 	cacheGen = coretest.CachePath + "/gen.txt"
 )
 
-// alphaAt is where every disk fixture declares Alpha.
+// alphaAt is the position of Alpha in every disk fixture.
 var alphaAt = position.Pos{File: alphaFile, Line: 3, Col: 1}
 
-// faulty is an in-memory sink with scripted faults: a staging, a
-// preparation, a commit or a discard that fails, a verdict it reports
-// on every path, and a cancellation it delivers when it stages a file.
+// faulty is a memory sink with scripted faults. A staging, a
+// preparation, a commit or a discard can fail, it can report one verdict
+// on every path, and it can cancel a context when it stages a file.
 type faulty struct {
 	*output.Mem
 	writeErr, prepareErr, commitErr, discardErr error
@@ -93,16 +94,18 @@ func (f *faulty) Discard() error {
 	return f.discardErr
 }
 
-// plainSink is a sink that does not write over a drifted or foreign
-// file: it offers the methods of the sink it wraps that [output.Sink]
-// declares, and not Overwrite.
-type plainSink struct{ output.Sink }
+// overwriteRefusing is a sink that returns errReadOnly for every
+// overwrite, and stages through the sink that it wraps otherwise.
+type overwriteRefusing struct{ output.Sink }
 
-// errBroken is the error the broken plan's generator returns.
+// Overwrite returns errReadOnly.
+func (overwriteRefusing) Overwrite(...output.Found) error { return errReadOnly }
+
+// errBroken is the error that the generator of the broken plan returns.
 var errBroken = errors.New("the generator is broken")
 
-// exportReader is a generator recording whether it ran and the
-// exports its context handed over.
+// exportReader is a generator that records whether it ran and the
+// exports of its context.
 type exportReader struct {
 	name plugin.ID
 	ran  bool
@@ -118,8 +121,8 @@ func (r *exportReader) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
-// contextReader is a generator recording the target, the spoke and the
-// policy that its context handed over.
+// contextReader is a generator that records the target, the spoke and
+// the policy of its context.
 type contextReader struct {
 	name   plugin.ID
 	target plugin.Target
@@ -136,9 +139,9 @@ func (r *contextReader) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
-// A plan stages its files and the removal of its stale outputs into a
-// sink of its own, and what the destination contains decides whether
-// the plan may commit.
+// TestPlan tests the run of a plan. A plan stages its files and the
+// removal of its stale outputs into a sink of its own. The contents of
+// the destination decide whether the plan commits.
 func TestPlan(t *testing.T) {
 	t.Parallel()
 
@@ -155,21 +158,9 @@ func TestPlan(t *testing.T) {
 			}))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
 			expect.Equal(t, reader.target, lowerTarget, "the generator reads the plan's target")
-			expect.Equal(t, reader.types, printer.(plugin.TypeSpeller), "the generator reads the backend's spoke",
+			expect.Equal(t, reader.types, plugin.TypeSpeller(printer), "the generator reads the backend's spoke",
 				assert.ByIdentity())
 			expect.Equal(t, reader.policy.Choice(widthKey), narrow, "the generator reads the plan's policy")
-		})
-
-		t.Run("passes a nil spoke for a backend without the spoke role", func(t *testing.T) {
-			t.Parallel()
-
-			reader := &contextReader{name: "reader"}
-			printer := fakeBackend{name: "printer", target: "fixture"}
-			w := built(t, workspace.New().Brand(fixtureBrand).Targets("fixture").Plans(workspace.Plan{
-				Name: "plan", Generators: []plugin.Generator{reader}, Backend: printer,
-			}))
-			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			assert.Nil(t, reader.types, "the generator does not receive a spoke")
 		})
 
 		t.Run("commits a plan's file beside its source", func(t *testing.T) {
@@ -463,35 +454,17 @@ func TestPlan(t *testing.T) {
 			assert.Length(t, findings(report.Sink, workspace.ForeignFile), 1, "the drift input adopts nothing")
 		})
 
-		t.Run("reports DriftedOutput under OverwriteDrift for a sink that does not overwrite", func(t *testing.T) {
-			t.Parallel()
-
-			root := t.TempDir()
-			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).
-				Output(func() (output.Sink, error) {
-					d, err := output.NewDisk(root, fixtureBrand)
-					return plainSink{d}, err
-				}))
-			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			place(t, root, storeGen, edited(files.Read(t, filepath.Join(root, storeGen))))
-
-			in := workspace.Input{Graph: routedIn(t, coretest.StorePath), OverwriteDrift: true}
-			report, err := w.Run(t.Context(), in)
-			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
-			assert.Length(t, findings(report.Sink, workspace.DriftedOutput), 1, "the sink refuses as before")
-		})
-
 		t.Run("returns the sink's error for an overwrite it refuses", func(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
 				Output(func() (output.Sink, error) {
-					return output.NewTee(output.NewMem(), plainSink{output.NewMem()}), nil
+					return output.NewTee(output.NewMem(), overwriteRefusing{output.NewMem()}), nil
 				}))
 			report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Adopt: true})
-			assert.HasError(t, err, "the tee refuses the overwrite")
-			expect.Contains(t, err.Error(), "does not write over", "the error names the refusal")
-			expect.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "and the plan fails")
+			assert.ErrorIs(t, err, errReadOnly, "the tee returns the refusal of its second sink")
+			expect.Contains(t, err.Error(), "write over drifted or foreign files", "the error names the step")
+			expect.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan fails")
 		})
 
 		t.Run("adopts a file with the staged bytes that no record lists", func(t *testing.T) {
@@ -697,7 +670,7 @@ func TestPlan(t *testing.T) {
 						cancel()
 						return context.Canceled
 					})},
-				Backend: printerAs(t, "plan-printer", "fixture", ""),
+				Backend: fixturePrinter(),
 			}
 			reader := &exportReader{name: "bindings-reader"}
 			w := built(t, onDisk(t, t.TempDir(), cancelled, dependent(t, "bindings", reader, "plan")))
@@ -709,15 +682,15 @@ func TestPlan(t *testing.T) {
 	})
 }
 
-// diskPlan returns a plan mirroring every struct through a printer of
-// its own under a layout.
+// diskPlan returns a plan that mirrors every struct through the printer
+// of the target fixture under the layout cfg.
 func diskPlan(tb assert.TB, name string, cfg layout.Config) workspace.Plan {
 	tb.Helper()
 
 	return workspace.Plan{
 		Name:       name,
 		Generators: []plugin.Generator{mirror(plugin.ID(name + "-mirror"))},
-		Backend:    printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+		Backend:    fixturePrinter(),
 		Layout:     cfg,
 	}
 }
@@ -727,8 +700,8 @@ func centralised(dir string) layout.Config {
 	return layout.Config{Policy: layout.PolicyCentralised, Dir: dir}
 }
 
-// onDisk returns a composition writing its plans into a disk sink at
-// root, with the state directory's ledger under root.
+// onDisk returns a composition that writes its plans into a disk sink at
+// root, with the ledger of the state directory under root.
 func onDisk(tb assert.TB, root string, plans ...workspace.Plan) *workspace.Builder {
 	tb.Helper()
 
@@ -741,8 +714,8 @@ func onDisk(tb assert.TB, root string, plans ...workspace.Plan) *workspace.Build
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
 }
 
-// built builds a composition, failing the test where it does not
-// compose.
+// built builds a composition, and fails the test where the composition
+// does not build.
 func built(tb assert.TB, b *workspace.Builder) *workspace.Workspace {
 	tb.Helper()
 
@@ -752,7 +725,7 @@ func built(tb assert.TB, b *workspace.Builder) *workspace.Workspace {
 }
 
 // routedIn returns an unfrozen graph that declares Alpha in each package
-// of pkgs, in a file of the package's own directory.
+// of pkgs, in a file of the directory of the package.
 func routedIn(tb assert.TB, pkgs ...string) *store.Graph {
 	tb.Helper()
 
@@ -767,8 +740,8 @@ func routedIn(tb assert.TB, pkgs ...string) *store.Graph {
 	return g
 }
 
-// runOver runs a composition over a graph and returns the report and
-// the run's error.
+// runOver runs a composition over a graph, and returns the report and
+// the error of the run.
 func runOver(t *testing.T, w *workspace.Workspace, g *store.Graph) (*workspace.Report, error) {
 	t.Helper()
 
@@ -795,13 +768,13 @@ func place(t *testing.T, root, path, content string) {
 	assert.NoError(t, os.WriteFile(at, []byte(content), 0o644), "the file is placed")
 }
 
-// edited returns a generated file's bytes with its body changed and its
-// trailer kept: what a person's edit of a generated file leaves.
+// edited returns the bytes of a generated file with a changed body and
+// the trailer kept, as the edit of a person leaves a generated file.
 func edited(stamped string) string {
 	return strings.Replace(stamped, "type For", "type Edited", 1)
 }
 
-// recorded returns the record in the root's state directory.
+// recorded returns the record in the state directory of root.
 func recorded(t *testing.T, root string) manifest.Manifest {
 	t.Helper()
 
@@ -810,8 +783,8 @@ func recorded(t *testing.T, root string) manifest.Manifest {
 	return recordIn(t, l)
 }
 
-// recordIn returns the record a ledger contains: its manifest's
-// documents, joined.
+// recordIn returns the record of a ledger, the documents of its manifest
+// joined.
 func recordIn(t *testing.T, l ledger.Ledger) manifest.Manifest {
 	t.Helper()
 
@@ -820,7 +793,7 @@ func recordIn(t *testing.T, l ledger.Ledger) manifest.Manifest {
 	return m
 }
 
-// paths returns the paths a record lists, in its order.
+// paths returns the paths that a record lists, in its order.
 func paths(m manifest.Manifest) []string {
 	out := make([]string, 0, len(m.Files))
 	for _, e := range m.Files {
@@ -840,8 +813,8 @@ func findings(sink *diag.Sink, code diag.Code) []diag.Diag {
 	return out
 }
 
-// faultyOutput returns an output opening a fresh faulty sink shaped by
-// script for every plan.
+// faultyOutput returns an output that opens a new faulty sink for every
+// plan, with the faults that script sets.
 func faultyOutput(script func(*faulty)) func() (output.Sink, error) {
 	return func() (output.Sink, error) {
 		f := &faulty{Mem: output.NewMem()}
@@ -860,14 +833,15 @@ func recording(t *testing.T, entries ...manifest.Entry) *ledger.Mem {
 	return mem
 }
 
-// stageEntry is a previous record's entry under a plan whose path a
-// sink refuses to stage: it ends in the reserved staging suffix.
+// stageEntry returns an entry of a previous record of a plan. A sink
+// refuses to stage its path, because the path ends in the reserved
+// staging suffix.
 func stageEntry(plan string) manifest.Entry {
 	return manifest.Entry{Path: "svc/old.txt.stage", Plan: plan, Hash: "sha256:" + strings.Repeat("ab", 32)}
 }
 
 // dependent returns a plan that depends on deps and runs the reader
-// through a printer of its own. It routes no file.
+// through the printer of the target fixture. It routes no file.
 func dependent(tb assert.TB, name string, r *exportReader, deps ...string) workspace.Plan {
 	tb.Helper()
 
@@ -875,12 +849,13 @@ func dependent(tb assert.TB, name string, r *exportReader, deps ...string) works
 		Name:       name,
 		DependsOn:  deps,
 		Generators: []plugin.Generator{r},
-		Backend:    printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+		Backend:    fixturePrinter(),
 	}
 }
 
 // failing returns a plan whose one generator reports an Error at every
-// struct it sees, through a printer of its own.
+// struct that it sees. The plan renders through the printer of the
+// target fixture.
 func failing(tb assert.TB, name string) workspace.Plan {
 	tb.Helper()
 
@@ -891,12 +866,13 @@ func failing(tb assert.TB, name string) workspace.Plan {
 				m.Errorf(runCode, "%s is refused", m.Struct.Name)
 				return nil
 			})},
-		Backend: printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+		Backend: fixturePrinter(),
 	}
 }
 
 // broken returns a plan whose one generator returns errBroken and
-// reports nothing, through a printer of its own.
+// reports nothing. The plan renders through the printer of the target
+// fixture.
 func broken(tb assert.TB, name string) workspace.Plan {
 	tb.Helper()
 
@@ -904,6 +880,6 @@ func broken(tb assert.TB, name string) workspace.Plan {
 		Name: name,
 		Generators: []plugin.Generator{generator(plugin.ID(name+"-breaker"),
 			func(*eidos.StructMatch, *eidos.Emitter) error { return errBroken })},
-		Backend: printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+		Backend: fixturePrinter(),
 	}
 }

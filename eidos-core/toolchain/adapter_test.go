@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -17,19 +18,21 @@ import (
 	"go.dokimi.dev/eidos/core/toolchain"
 )
 
-// scriptedLang is the language the fixture adapter answers for.
+// scriptedLang is the language of the fixture adapter.
 const scriptedLang symbol.Lang = "scripted"
 
-// The path of the fixture's generated file, and its bytes.
+// generatedFile is the path of the generated file of the fixture, and
+// generatedBody is its content.
 const (
 	generatedFile = "gen/row.s"
 	generatedBody = "row\n"
 )
 
-// scripted is an adapter whose every answer the case states, so the
-// assertions are exercised without a compiler. It records the
-// directory it laid out, which is what the cleanup contract rests
-// on. The gate, suite and assertion specs run against it.
+// scripted is an adapter that returns the answers that the case sets, so
+// the assertions run without a compiler. It records the directory that
+// it laid out, on which the cleanup contract rests, and counts its
+// layouts. The tests of the gate, the suite and the assertions run
+// against it.
 type scripted struct {
 	absent     string
 	layoutErr  error
@@ -41,13 +44,14 @@ type scripted struct {
 	satisfyErr error
 	laidOut    *string
 	sawFiles   *map[string]string
+	layouts    *atomic.Int32
 }
 
 // Lang returns the fixture's language.
 func (scripted) Lang() symbol.Lang { return scriptedLang }
 
-// Available reports the toolchain present, or absent for the reason
-// the case states.
+// Available reports the toolchain present, or absent for the reason of
+// the case.
 func (s scripted) Available() (bool, string) {
 	if s.absent != "" {
 		return false, s.absent
@@ -56,11 +60,14 @@ func (s scripted) Available() (bool, string) {
 }
 
 // Layout returns a fresh temporary directory, or the case's error. It
-// records the directory and the files it was handed where the case
-// asks for them.
+// counts the layout, and records the directory and the files that it
+// received where the case asks for them.
 func (s scripted) Layout(g toolchain.Generated) (string, error) {
 	if s.layoutErr != nil {
 		return "", s.layoutErr
+	}
+	if s.layouts != nil {
+		s.layouts.Add(1)
 	}
 	dir, err := os.MkdirTemp("", "scripted-*")
 	if err != nil {
@@ -105,21 +112,21 @@ func (s scripted) Satisfies(ctx context.Context, _, typeName, contract string) (
 	return s.satisfies, nil
 }
 
-// seat is the seat a case hands the gate: an [assert.Recorder], whose
-// records of the gate's failures the case reads, that also records the
-// skip the gate asks for.
-type seat struct {
+// gateTB is the test role that a case hands the gate. It is an
+// [assert.Recorder], whose records of the failures of the gate the case
+// reads, and it records the skip that the gate asks for.
+type gateTB struct {
 	*assert.Recorder
 	skipped string
 }
 
-// Skip records the skip's reason and returns, so the case reads it.
-func (s *seat) Skip(args ...any) {
+// Skip records the reason of the skip and returns, so the case reads it.
+func (s *gateTB) Skip(args ...any) {
 	s.skipped = fmt.Sprint(args...)
 }
 
-// A run over nothing proves nothing, so the fixture and the report
-// each state their own emptiness, and every assertion reads it.
+// A run over nothing proves nothing, so the fixture and the report each
+// report whether they are empty, and every assertion reads it.
 func TestAdapter(t *testing.T) {
 	t.Parallel()
 
@@ -129,9 +136,9 @@ func TestAdapter(t *testing.T) {
 		t.Run("IsEmpty", func(t *testing.T) {
 			t.Parallel()
 
-			assert.True(t, toolchain.Generated{}.IsEmpty(), "a fixture carrying no file is empty")
+			assert.True(t, toolchain.Generated{}.IsEmpty(), "a fixture without a file is empty")
 			assert.False(t, toolchain.Generated{Files: map[string][]byte{"a.go": nil}}.IsEmpty(),
-				"and one carrying a file is not, whatever the file holds")
+				"a fixture with a file is not empty, whatever the file contains")
 		})
 	})
 
@@ -144,12 +151,12 @@ func TestAdapter(t *testing.T) {
 			assert.False(t, toolchain.TestReport{}.OK(), "a report of no case is not a pass")
 			assert.True(t, toolchain.TestReport{Passed: 1, Skipped: 2}.OK(),
 				"one passing case and no failure is a pass")
-			assert.False(t, toolchain.TestReport{Passed: 3, Failed: 1}.OK(), "and one failure fails it")
+			assert.False(t, toolchain.TestReport{Passed: 3, Failed: 1}.OK(), "a report with a failure is not a pass")
 		})
 	})
 }
 
-// output is a fixture carrying one generated file.
+// output returns a fixture with one generated file.
 func output() toolchain.Generated {
 	return toolchain.Generated{
 		Files:  map[string][]byte{generatedFile: []byte(generatedBody)},

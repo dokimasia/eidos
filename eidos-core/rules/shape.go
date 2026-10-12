@@ -47,17 +47,18 @@ func (c ScalarClass) String() string {
 // A TypeShape is a value of 184 bytes. The constructors return it by
 // value, and allocate only the list of arguments a reference keeps.
 type TypeShape struct {
-	Form     symbol.TypeForm
-	Class    ScalarClass     // Scalar
-	Variance symbol.Variance // Wildcard
-	Async    bool            // Stream
-	Spelling string          // the source spelling, on every form
-	Bits     int             // Scalar: 0 for the platform width
-	Length   int             // Array
-	Split    int             // Func: the index in Elems where the returns begin
-	Elems    []TypeShape     // the form's children, in the form's order
-	Ref      symbol.Identity // Reference and Sum
-	Args     []TypeShape     // Reference type arguments
+	Form       symbol.TypeForm
+	Class      ScalarClass       // Scalar
+	Variance   symbol.Variance   // Wildcard
+	Async      bool              // Stream
+	Mutability symbol.Mutability // List, Array, Tuple, Map and Borrow: whether a holder can write through it
+	Spelling   string            // the source spelling, on every form
+	Bits       int               // Scalar: 0 for the platform width
+	Length     int               // Array
+	Split      int               // Func: the index in Elems where the returns begin
+	Elems      []TypeShape       // the form's children, in the form's order
+	Ref        symbol.Identity   // Reference and Sum
+	Args       []TypeShape       // Reference type arguments
 }
 
 // Opaque returns the shape of a reference the projection cannot
@@ -159,8 +160,8 @@ func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 func (b Bound) fold(ref *node.TypeRef) TypeShape {
 	if ref.Form.Structural() && ref.Form != symbol.FormNamed {
 		return b.children(TypeShape{
-			Form: ref.Form, Spelling: ref.Spelling,
-			Length: ref.Length, Split: ref.Split, Variance: ref.Variance, Async: ref.Async,
+			Form: ref.Form, Spelling: ref.Spelling, Length: ref.Length, Split: ref.Split,
+			Variance: ref.Variance, Async: ref.Async, Mutability: ref.Mutability,
 		}, ref.Elems)
 	}
 	if ref.Target.Kind == symbol.KindTypeParam {
@@ -169,6 +170,9 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		return Opaque(ref)
 	}
 	if !ref.Target.IsZero() {
+		if id, blessed := b.wellKnown(ref.Target); blessed {
+			return Reference(ref.Spelling, id)
+		}
 		if decl, held := b.view.Lookup(ref.Target); held {
 			return b.classify(ref, decl)
 		}
@@ -184,6 +188,22 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		return Opaque(ref)
 	}
 	return b.children(s, ref.Args)
+}
+
+// wellKnown returns the well-known identity that the rules of the
+// language of target bless target as. It reports false where those rules
+// bless none, and where they do not implement [WellKnownRules]. It
+// allocates nothing beyond what the resolver of the binding allocates.
+func (b Bound) wellKnown(target symbol.Identity) (symbol.Identity, bool) {
+	src := b.source
+	if target.Lang != src.Lang() {
+		src = b.forLang(target.Lang)
+	}
+	w, is := src.(WellKnownRules)
+	if !is {
+		return symbol.Identity{}, false
+	}
+	return w.WellKnown(target)
 }
 
 // children returns s with each of refs folded as its children, in order.

@@ -19,6 +19,11 @@ import (
 // declares instance state and behaviour alongside its variants.
 // Most languages leave both empty.
 //
+// Underlying is the representation that the source declares for the
+// values: the target of a Go defined type, such as uint8, and the
+// integer type of a Rust repr attribute. It is nil where the language
+// does not declare one, as in a TypeScript, a protobuf or a Java enum.
+//
 //eidos:subject
 type Enum struct {
 	ID          symbol.Identity    `eidos:"node"`
@@ -28,7 +33,8 @@ type Enum struct {
 	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
-	Const       bool               `eidos:"both,fact=ConstEnum"` // inlined at use: TypeScript's const enum
+	Const       bool               `eidos:"both,fact=ConstEnum"`       // inlined at use: TypeScript's const enum
+	Underlying  *TypeRef           `eidos:"both,walk,fact=Underlying"` // the declared representation; nil when none
 	Variants    []*EnumVariant     `eidos:"both,walk,slot=variants"`
 	Fields      []*Field           `eidos:"both,walk,slot=fields,fact=Fields"`   // Java enums carry instance state
 	Methods     []*Method          `eidos:"both,walk,slot=methods,fact=Methods"` // and behaviour

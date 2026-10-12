@@ -32,6 +32,7 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/state"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
@@ -41,9 +42,9 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The cases read and break these ledger paths: the sealed state's
-// directory, its pointer to the live generation, the directory of its
-// segments, and one manifest document.
+// The ledger paths that the cases read and break. They are the
+// directory of the sealed state, its pointer to the live generation, the
+// directory of its segments and one manifest document.
 const (
 	sealedDir      = "state/"
 	currentBlob    = "state/CURRENT"
@@ -51,17 +52,17 @@ const (
 	brokenDocument = "manifest/ea.json"
 )
 
-// The layout of a generation that the format case writes: the directory
-// of the generations, the offset of the format, and the size of the
-// CRC-32C trailer.
+// The layout of a generation that the format case writes. It has the
+// directory of the generations, the offset of the format and the size of
+// the CRC-32C trailer.
 const (
 	generationDir = "state/gen/"
 	formatAt      = 0
 	trailerSize   = 4
 )
 
-// sealedSource is the source file of the tree the sealed-state cases
-// load.
+// sealedSource is the source file of the tree that the cases of the
+// sealed state load.
 const sealedSource = "svc/store/row.zz"
 
 // producedAPI is the file that the producer plan of the export cases
@@ -71,30 +72,30 @@ const producedAPI = "svc/api/first.txt"
 // undecodableRow is a row that ends inside the uvarint that opens it.
 const undecodableRow = "\xff"
 
-// keySeparator opens the key of an artifact's folded row, and follows the
-// path in lower case inside it.
+// keySeparator is the first byte of the key of a folded artifact row,
+// and it follows the path in lower case inside the key.
 const keySeparator = "\x00"
 
-// The annotator and the generator of the sealed-state composition, whose
-// phase calls the invocation counts name.
+// The annotator and the generator of the composition of the sealed
+// state. The invocation counts name their phase calls.
 const (
 	noterID  plugin.ID = "noter"
 	mirrorID plugin.ID = "mirror"
 )
 
-// The bytes of the template file a generator's tree contains, before and
+// The bytes of the template file in the tree of a generator, before and
 // after an edit.
 const (
 	firstTemplate  = "{{.Name}}\n"
 	editedTemplate = "{{.Name}} edited\n"
 )
 
-// anotherBuild is the path of the executable a forged generation states
-// it was written by.
+// anotherBuild is the executable path in the header of a forged
+// generation.
 const anotherBuild = "/opt/another/build"
 
 // The recording compositions name these plugins and this check. The
-// flagger stamps a flag. The marker runs on each subject that carries the
+// flagger stamps a flag. The marker runs on each subject that has the
 // mark, and reads the flag. The lookup check looks the row up, and the
 // moduler and the direct generator implement their roles directly.
 const (
@@ -105,20 +106,20 @@ const (
 	directID  plugin.ID = "direct"
 )
 
-// The module the moduler states the store package is in, the key whose
-// contract nothing meets, and the mark's spelling in the tree.
+// The module that the moduler gives the store package, the key whose
+// contract nothing meets, and the spelling of the mark in the tree.
 const (
 	storeModule              = "example.test/svc"
 	contractKey meta.KeyName = "shape.audited"
 	markLine                 = "+marker:mark"
 )
 
-// directFinding is the code the moduler, which implements its role
-// directly, reports its finding under.
+// directFinding is the code of the finding that the moduler reports.
 var directFinding = diag.Code{Prefix: "tst", Number: 8}
 
-// The declarations of the sealed tree the recording cases name: the row
-// struct and its package, which the scripted frontend loads.
+// The declarations of the sealed tree that the recording cases name.
+// They are the row struct and its package, which the scripted frontend
+// loads.
 var (
 	rowID = symbol.Identity{
 		Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "Row", Kind: symbol.KindStruct,
@@ -126,10 +127,11 @@ var (
 	storePackage = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/store", Kind: symbol.KindPackage}
 )
 
-// markSchema is the directive whose carriers the marker's rule runs on.
+// markSchema is the directive of the marker. The rule of the marker runs
+// on each subject with the directive.
 var markSchema = directive.Schema{Plugin: string(markerID), Name: "mark", Doc: "marks a row the marker mirrors"}
 
-// errStateRead is the failure the blind ledger returns for a read of
+// errStateRead is the error that the blind ledger returns for a read of
 // the sealed state.
 var errStateRead = errors.New("the state directory does not read")
 
@@ -137,8 +139,8 @@ var errStateRead = errors.New("the state directory does not read")
 // of a byte range that it fails.
 var errReadAt = errors.New("the read of the byte range fails")
 
-// blind is a memory ledger whose reads of the sealed state fail: a
-// ledger failing for a cause outside the source.
+// blind is a memory ledger whose reads of the sealed state fail, for a
+// cause outside the source.
 type blind struct {
 	*ledger.Mem
 }
@@ -192,9 +194,9 @@ func (f *failingRead) ReadAt(ctx context.Context, name string, p []byte, off int
 }
 
 // damageScenario is a warm run whose reads of the sealed state a damage
-// case breaks: the composition that build returns over a ledger, the trees
-// of the cold run before it and of the edited warm run, which before and
-// after return fresh, and the error of the clean warm run, nil for a clean
+// case breaks. build returns its composition over a ledger. before and
+// after return new trees of the cold run before it and of the edited
+// warm run. want is the error of the clean warm run, and nil for a clean
 // run.
 type damageScenario struct {
 	name          string
@@ -203,16 +205,16 @@ type damageScenario struct {
 	want          error
 }
 
-// forgedRow is one row of a generation that a damage case forges: its
-// table and its key.
+// forgedRow is one row of a generation that a damage case forges, with
+// its table and its key.
 type forgedRow struct {
 	table state.Table
 	key   []byte
 }
 
 // unreadable is a template tree that lists its template file and fails
-// to read it: a tree the run cannot fold whole into the generation's
-// header.
+// to read it. The run cannot fold the tree whole into the header of the
+// generation.
 type unreadable struct{ fstest.MapFS }
 
 // Open returns an error wrapping fs.ErrPermission for the template file,
@@ -242,16 +244,16 @@ type counting struct {
 	reads int
 }
 
-// ReadFile adds one to the count of reads and returns the map's bytes
-// for name.
+// ReadFile adds one to the count of reads and returns the bytes of name
+// in the map.
 func (c *counting) ReadFile(name string) ([]byte, error) {
 	c.reads++
 	return c.MapFS.ReadFile(name)
 }
 
 // moduler is an annotator that implements its role directly and journals
-// nothing: it looks the row up, stamps the store package's two module
-// facts, and reports one warning.
+// nothing. It looks the row up, stamps the two module facts of the store
+// package, and reports one warning.
 type moduler struct{}
 
 // Name returns the moduler's name.
@@ -261,7 +263,7 @@ func (moduler) Name() plugin.ID { return modulerID }
 // warning.
 func (moduler) Annotate(ctx *plugin.AnnotatorContext) error {
 	ctx.Reader.Lookup(rowID)
-	claim := meta.Claim{Subject: storePackage, Bucket: ctx.Bucket, Plugin: modulerID}
+	claim := meta.Claim{Subject: storePackage, Turn: ctx.Turn, Plugin: modulerID}
 	if err := meta.Stamp(ctx.Facts, ctx.Kernel.Module, storeModule, claim); err != nil {
 		return err
 	}
@@ -274,7 +276,7 @@ func (moduler) Annotate(ctx *plugin.AnnotatorContext) error {
 }
 
 // direct is a generator that implements its role directly and journals
-// nothing: it declares one family, looks the row up and flushes one unit
+// nothing. It declares one family, looks the row up and flushes one unit
 // of one struct into the family.
 type direct struct{}
 
@@ -295,9 +297,9 @@ func (direct) Generate(ctx *plugin.GeneratorContext) error {
 	})
 }
 
-// The sealed state is what a run over a tree compares the tree with, so
-// when a run reads it, when it ignores it and why, and when it writes
-// the next generation are each pinned.
+// TestSealed tests the sealed state. A run over a tree compares the tree
+// with the sealed state. The cases pin when a run reads the state, when
+// and why it ignores the state, and when it writes the next generation.
 func TestSealed(t *testing.T) {
 	t.Parallel()
 
@@ -413,6 +415,26 @@ func TestSealed(t *testing.T) {
 			assert.Contains(t, cold[0].Msg, "executable changed", "the executable is the cause")
 		})
 
+		t.Run("reports ColdState for a generation of another contract version", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := sealing(t, mem, "plan")
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			g, err := state.Open(t.Context(), mem)
+			assert.NoError(t, err, "the live generation opens")
+			h := g.Header
+			h.Contract = plugin.ContractVersion + 1
+			_, err = state.NewCommit(nil, g.Manifest).Write(t.Context(), mem, h, recordIn(t, mem))
+			assert.NoError(t, err, "the generation of another contract version commits")
+
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			assert.True(t, report.Stats.Cold, "the run ignores the generation")
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states why")
+			assert.Contains(t, cold[0].Msg, "contract version", "the contract version is the cause")
+		})
+
 		t.Run("reads the generation of an executable at another path with the same digest", func(t *testing.T) {
 			t.Parallel()
 
@@ -471,9 +493,9 @@ func TestSealed(t *testing.T) {
 			t.Parallel()
 
 			mem := ledger.NewMem()
-			first := sealedPlan(t, "first",
+			first := sealedPlan("first",
 				templated("first-mirror", fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}))
-			second := sealedPlan(t, "second",
+			second := sealedPlan("second",
 				templated("second-mirror", fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}))
 			sealedRun(t, built(t, sealingPlans(mem, first, second)), workspace.Input{Tree: sealedTree()})
 			report := sealedRun(t, built(t, sealingPlans(mem, second, first)), workspace.Input{Tree: sealedTree()})
@@ -484,9 +506,9 @@ func TestSealed(t *testing.T) {
 			t.Parallel()
 
 			edited := fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}
-			first := sealedPlan(t, "first",
+			first := sealedPlan("first",
 				templated("first-mirror", fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}))
-			second := sealedPlan(t, "second", templated("second-mirror", edited))
+			second := sealedPlan("second", templated("second-mirror", edited))
 			w := built(t, sealingPlans(ledger.NewMem(), first, second))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			edited[templateFile] = &fstest.MapFile{Data: []byte(editedTemplate)}
@@ -501,7 +523,7 @@ func TestSealed(t *testing.T) {
 
 			tree := &counting{MapFS: fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}}
 			shared := templated("shared", tree)
-			first, second := sealedPlan(t, "first", shared), sealedPlan(t, "second", shared)
+			first, second := sealedPlan("first", shared), sealedPlan("second", shared)
 			w := built(t, sealingPlans(ledger.NewMem(), first, second))
 			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
 			assert.Equal(t, tree.reads, 1, "the run folds the shared tree once")
@@ -582,7 +604,7 @@ func TestSealed(t *testing.T) {
 			t.Parallel()
 
 			l := &currentCounting{Mem: ledger.NewMem()}
-			w := built(t, sealingPlans(l, sealedPlan(t, producerPlan, mirror(mirrorID)), seeing(t, dependentPlan)))
+			w := built(t, sealingPlans(l, sealedPlan(producerPlan, mirror(mirrorID)), seeing(dependentPlan)))
 			before := roundsTree(rowLine+colLine, userLine)
 			sealedRun(t, w, workspace.Input{Tree: before})
 			forgeRow(t, l, state.TableArtifacts, []byte(producedAPI))
@@ -598,9 +620,9 @@ func TestSealed(t *testing.T) {
 			t.Parallel()
 
 			l := ledger.NewMem()
-			dependent := sealedPlan(t, dependentPlan, failingMirror())
+			dependent := sealedPlan(dependentPlan, failingMirror())
 			dependent.DependsOn = []string{producerPlan}
-			w := built(t, sealingPlans(l, sealedPlan(t, producerPlan, mirror("producer-mirror")), dependent))
+			w := built(t, sealingPlans(l, sealedPlan(producerPlan, mirror("producer-mirror")), dependent))
 			before := roundsTree(rowLine+colLine+badLine, userLine)
 			_, err := w.Run(t.Context(), workspace.Input{Tree: before})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the dependent refuses Bad and does not commit")
@@ -757,7 +779,7 @@ func TestSealed(t *testing.T) {
 			t.Parallel()
 
 			l := ledger.NewMem()
-			w := built(t, sealingPlans(l, sealedPlan(t, producerPlan, mirror(mirrorID)), seeing(t, dependentPlan)))
+			w := built(t, sealingPlans(l, sealedPlan(producerPlan, mirror(mirrorID)), seeing(dependentPlan)))
 			tree := roundsTree(rowLine+colLine, userLine)
 			sealedRun(t, w, workspace.Input{Tree: tree})
 			forgeRow(t, l, state.TableArtifacts, []byte(producedAPI))
@@ -944,20 +966,21 @@ func TestSealed(t *testing.T) {
 	})
 }
 
-// sealedTree returns a tree of one package the scripted frontend parses.
+// sealedTree returns a tree of one package that the scripted frontend
+// parses.
 func sealedTree() fstest.MapFS {
 	return fstest.MapFS{sealedSource: {Data: []byte("package svc/store\ntype Row int string\n")}}
 }
 
 // phaseRecording returns the builder of a composition over the scripted
-// frontend that records into a ledger: an annotator that stamps a flag on
-// every struct, a plan whose generator mirrors each marked struct after
-// it reads the flag, and a check that looks the row up. The flag's handle
-// arrives in flag when Build registers it.
+// frontend that records into a ledger. An annotator stamps a flag on
+// every struct, the generator of the plan mirrors each marked struct
+// after it reads the flag, and a check looks the row up. Build writes
+// the handle of the flag into flag.
 func phaseRecording(tb assert.TB, l ledger.Ledger, flag *meta.Key[bool]) *workspace.Builder {
 	tb.Helper()
 
-	flagger, held := eidos.NewPlugin(flaggerID).
+	flagger := eidos.NewPlugin(flaggerID).
 		Keys(func(r *meta.Registry) error {
 			if err := r.ClaimNamespace("shape"); err != nil {
 				return err
@@ -969,15 +992,13 @@ func phaseRecording(tb assert.TB, l ledger.Ledger, flag *meta.Key[bool]) *worksp
 		Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
 			eidos.Stamp(st, *flag, true)
 			return nil
-		})).Build().(plugin.Annotator)
-	assert.True(tb, held, "the flagger lowers to the annotator role")
-	marker, held := eidos.NewPlugin(markerID).
+		})).Annotator()
+	marker := eidos.NewPlugin(markerID).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.Directive(markSchema, eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			eidos.Fact(m, *flag)
 			return mirrored(m, e)
-		}))).Build().(plugin.Generator)
-	assert.True(tb, held, "the marker lowers to the generator role")
+		}))).Generator()
 	lookup := &recordingCheck{name: lookupID, reads: []string{"plan"}, script: func(ctx *plugin.CheckContext) {
 		ctx.Reader.Lookup(rowID)
 	}}
@@ -986,7 +1007,7 @@ func phaseRecording(tb assert.TB, l ledger.Ledger, flag *meta.Key[bool]) *worksp
 		Frontends(frontendtest.NewScripted()).
 		Annotators(flagger).
 		Targets("fixture").
-		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{marker}, Backend: printer(tb, "fixture")}).
+		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{marker}, Backend: fixturePrinter()}).
 		Checks(lookup).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
@@ -1003,7 +1024,7 @@ func directly(tb assert.TB, l ledger.Ledger) *workspace.Builder {
 		Frontends(frontendtest.NewScripted()).
 		Annotators(moduler{}).
 		Targets("fixture").
-		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{direct{}}, Backend: printer(tb, "fixture")}).
+		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{direct{}}, Backend: fixturePrinter()}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
 }
@@ -1024,8 +1045,8 @@ func contracted(r *meta.Registry) error {
 	return err
 }
 
-// phasesIn returns the record of the phases of a ledger's live
-// generation.
+// phasesIn returns the record of the phases of the live generation of a
+// ledger.
 func phasesIn(t *testing.T, l ledger.Ledger) *state.PhaseState {
 	t.Helper()
 
@@ -1034,8 +1055,8 @@ func phasesIn(t *testing.T, l ledger.Ledger) *state.PhaseState {
 	return g.Phases(t.Context())
 }
 
-// rowsIn returns how many entries one table of a ledger's live generation
-// keeps: each row's count of entries, summed.
+// rowsIn returns the number of entries of one table of the live
+// generation of a ledger, the sum of the entry counts of its rows.
 func rowsIn(t *testing.T, l ledger.Ledger, table state.Table) int {
 	t.Helper()
 
@@ -1060,8 +1081,8 @@ func sealing(tb assert.TB, l ledger.Ledger, plan string) *workspace.Workspace {
 	return built(tb, sealingBuilder(tb, l, plan))
 }
 
-// sealingBuilder returns the builder of the composition [sealing]
-// returns, for a case that adds to it.
+// sealingBuilder returns the builder of the composition that [sealing]
+// returns, for a case that adds plugins to it.
 func sealingBuilder(tb assert.TB, l ledger.Ledger, plan string) *workspace.Builder {
 	tb.Helper()
 
@@ -1077,7 +1098,7 @@ func sealingOf(tb assert.TB, l ledger.Ledger, plan string, gen plugin.Generator)
 	return sealingPlans(l, workspace.Plan{
 		Name:       plan,
 		Generators: []plugin.Generator{gen},
-		Backend:    printer(tb, "fixture"),
+		Backend:    fixturePrinter(),
 	})
 }
 
@@ -1094,16 +1115,16 @@ func sealingPlans(l ledger.Ledger, plans ...workspace.Plan) *workspace.Builder {
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
 }
 
-// sealedPlan returns a plan of a name whose one generator is gen. A
-// printer named after the plan renders every unit into a file named after
-// the plan, so two plans of one composition never write to one path.
-func sealedPlan(tb assert.TB, name string, gen plugin.Generator) workspace.Plan {
-	tb.Helper()
-
+// sealedPlan returns a plan of a name whose one generator is gen. The
+// plan renders through the printer of the target fixture, and its layout
+// routes every file of gen to a file named after the plan, so two plans
+// of one composition never write to one path.
+func sealedPlan(name string, gen plugin.Generator) workspace.Plan {
 	return workspace.Plan{
 		Name:       name,
 		Generators: []plugin.Generator{gen},
-		Backend:    printerAs(tb, plugin.ID(name)+"-printer", "fixture", name+".txt"),
+		Backend:    fixturePrinter(),
+		Layout:     layout.Config{Plugins: map[plugin.ID]layout.Refinement{gen.Name(): {File: name + ".txt"}}},
 	}
 }
 
@@ -1117,20 +1138,22 @@ func sealedRun(t *testing.T, w *workspace.Workspace, in workspace.Input) *worksp
 	return report
 }
 
-// truncate cuts every segment of the live generation whose count of live
-// regions picks, the region segment where the count is above zero and
-// the run segment where it is zero, to its first byte: the files table's
-// run, which the gate reads first, begins the run segment.
+// truncate cuts each segment of the live generation whose count of live
+// regions pick accepts to its first byte. pick selects the region
+// segment for a count above zero, and the run segment for a count of
+// zero. The run of the files table begins the run segment, and the gate
+// reads it first.
 func truncate(t *testing.T, mem *ledger.Mem, pick func(live int) bool) {
 	t.Helper()
 
 	damageSegment(t, mem, pick, func(body []byte) []byte { return body[:1] })
 }
 
-// flipLastByte inverts the last byte of the live generation's run
-// segment, which ends with the footer of the last table's run: a phase
-// table's, whose rows follow the load's in table order. The load does not
-// read a phase table, so a read of the phases finds the damage.
+// flipLastByte inverts the last byte of the run segment of the live
+// generation. The segment ends with the footer of the run of the last
+// table, a phase table whose rows follow the rows of the load in table
+// order. The load does not read a phase table, so a read of the phases
+// finds the damage.
 func flipLastByte(t *testing.T, mem *ledger.Mem) {
 	t.Helper()
 
@@ -1142,7 +1165,8 @@ func flipLastByte(t *testing.T, mem *ledger.Mem) {
 }
 
 // damageSegment rewrites the one segment of the live generation whose
-// count of live regions picks with the bytes damage makes of it.
+// count of live regions pick accepts, with the bytes that damage returns
+// for it.
 func damageSegment(t *testing.T, mem *ledger.Mem, pick func(live int) bool, damage func(body []byte) []byte) {
 	t.Helper()
 
@@ -1163,12 +1187,12 @@ func damageSegment(t *testing.T, mem *ledger.Mem, pick func(live int) bool, dama
 	assert.Equal(t, damaged, 1, "one segment is damaged")
 }
 
-// damageScenarios returns the warm runs whose reads the damage cases break
-// one at a time. Each takes paths of the warm run that the others do not:
-// a name that joins a scope, an export that changes, the audit and a
-// check, a clash with a kept file, a kept finding, a plan that did not
-// commit, a weaver that appends into a mirror again, and a weaver whose
-// mirror disappears.
+// damageScenarios returns the warm runs whose reads the damage cases
+// break one at a time. Each takes paths of the warm run that the others
+// do not take. The paths are a name that joins a scope, an export that
+// changes, the audit and a check, a clash with a kept file, a kept
+// finding, a plan that did not commit, a weaver that appends into a
+// mirror again, and a weaver whose mirror disappears.
 func damageScenarios() []damageScenario {
 	return []damageScenario{
 		{
@@ -1182,8 +1206,8 @@ func damageScenarios() []damageScenario {
 		{
 			name: "a warm run whose edit changes an export",
 			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
-				producer := sealedPlan(tb, producerPlan, mirror(mirrorID))
-				return built(tb, sealingPlans(l, producer, seeing(tb, dependentPlan)))
+				producer := sealedPlan(producerPlan, mirror(mirrorID))
+				return built(tb, sealingPlans(l, producer, seeing(dependentPlan)))
 			},
 			before: func() fstest.MapFS { return roundsTree(rowLine+colLine, userLine) },
 			after:  func() fstest.MapFS { return roundsTree(rowLine+colLine+readerLine, userLine) },

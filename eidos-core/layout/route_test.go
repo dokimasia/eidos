@@ -290,16 +290,27 @@ func (d directories) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 }
 
 // targeting is a backend of one target without a hook, which settles a
-// store as emitted and records whether the store translates.
-type targeting struct{ target plugin.Target }
-
-var _ plugin.Backend = targeting{}
+// store as emitted and records whether the store translates. The
+// methods of a rendering backend belong to the nil interface that it
+// embeds, which the settle never calls.
+type targeting struct {
+	plugin.Backend
+	target plugin.Target
+}
 
 // Name returns the backend's name.
 func (targeting) Name() plugin.ID { return "targeting" }
 
 // Target returns the backend's target.
 func (b targeting) Target() plugin.Target { return b.target }
+
+// Lower keeps the declaration.
+func (targeting) Lower(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }
+
+// Respell returns the name unchanged.
+func (targeting) Respell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return name, nil
+}
 
 // recording is a target whose package half records each placement it
 // is handed and returns the origin.
@@ -752,6 +763,37 @@ func TestRoute(t *testing.T) {
 				tt.give(&in)
 				_, err := layout.Route(in)
 				assert.HasError(t, err, "the input is a defect")
+			})
+		}
+	})
+
+	t.Run("Describe", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give symbol.Symbol
+			want string
+		}{
+			{
+				name: "returns the kind and the name of a declaration",
+				give: &emit.Struct{Name: "Row"}, want: symbol.KindStruct.String() + " Row",
+			},
+			{
+				name: "returns the kind and the name of a method",
+				give: &emit.Method{Name: "Close"}, want: symbol.KindMethod.String() + " Close",
+			},
+			{
+				name: "returns the kind alone for a declaration without a name",
+				give: &emit.Struct{}, want: symbol.KindStruct.String(),
+			},
+			{name: "returns the empty string for a nil declaration", give: nil, want: ""},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, layout.Describe(tt.give), tt.want, "Describe names the declaration")
 			})
 		}
 	})

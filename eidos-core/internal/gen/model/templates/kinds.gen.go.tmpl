@@ -24,19 +24,24 @@ func (x *{{.Name}}) Kind() symbol.Kind { return symbol.Kind{{.Name}} }
 // Position returns where the declaration was written.
 func (x *{{.Name}}) Position() position.Pos { return {{.PosExpr}} }
 
-// Docs returns the declaration's documentation, nil when it carries
-// none.
+// Docs returns the documentation of the declaration, or nil when it
+// has none.
 func (x *{{.Name}}) Docs() []string { return {{.DocExpr}} }
 {{- if .IDStorage}}
 
-// Identity returns the declaration's canonical identity, which stays
+// Identity returns the canonical identity of the declaration. It is
 // zero until the resolution step assigns one.
 func (x *{{.Name}}) Identity() symbol.Identity { return x.{{.IDStorage}} }
+{{- else if .ZeroIdentity}}
+
+// Identity returns the zero identity. The kind does not declare an
+// identity field, because it is not a declaration.
+func (x *{{.Name}}) Identity() symbol.Identity { return symbol.Identity{} }
 {{- end}}
 {{- range .Members}}
 
 // {{.Method}} returns the member list, adapted for neutral code.
-{{- if not .Items}} This kind carries none, so it returns nil.
+{{- if not .Items}} This kind has no such list, so it returns nil.
 {{- end}}
 func (x *{{$v.Name}}) {{.Method}}() []symbol.Symbol {
 {{- if .Items}}
@@ -52,8 +57,8 @@ func (x *{{$v.Name}}) {{.Method}}() []symbol.Symbol {
 {{- end}}
 {{- if .TypeRefStorage}}
 
-// TypeRef returns the declaration's own type reference, nil when
-// the source states none.
+// TypeRef returns the type reference of the declaration, or nil when
+// the declaration has none.
 func (x *{{.Name}}) TypeRef() symbol.Symbol {
 	if x.{{.TypeRefStorage}} == nil {
 		return nil

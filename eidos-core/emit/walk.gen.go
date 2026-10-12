@@ -15,9 +15,9 @@ import (
 // schema field order.
 //
 // Returning false from visit prunes that subtree and continues.
-// Only containment edges are followed, so the walk is a tree even
-// though the graph is not: a back-pointer is never traversed, and a
-// cross-reference is an identity rather than a pointer.
+// Walk follows only containment edges, so the walk is a tree although
+// the graph is not. It never traverses a back-pointer, and a
+// cross-reference is an identity and not a pointer.
 func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 	if s == nil || !visit(s) {
 		return
@@ -27,10 +27,10 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
 		}
-		for _, child := range x.Params {
+		for _, child := range x.Params.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.Returns {
+		for _, child := range x.Returns.Items() {
 			Walk(child, visit)
 		}
 		for _, child := range x.Throws {
@@ -46,10 +46,10 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
 		}
-		for _, child := range x.Params {
+		for _, child := range x.Params.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.Returns {
+		for _, child := range x.Returns.Items() {
 			Walk(child, visit)
 		}
 		for _, child := range x.Throws {
@@ -64,6 +64,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 			Walk(x.Type, visit)
 		}
 	case *Enum:
+		if x.Underlying != nil {
+			Walk(x.Underlying, visit)
+		}
 		for _, child := range x.Variants.Items() {
 			Walk(child, visit)
 		}
@@ -112,7 +115,7 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Types.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.Embeds {
+		for _, child := range x.Embeds.Items() {
 			Walk(child, visit)
 		}
 		for _, child := range x.Extends {
@@ -137,7 +140,7 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Types.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.Embeds {
+		for _, child := range x.Embeds.Items() {
 			Walk(child, visit)
 		}
 		for _, child := range x.Extends {
@@ -177,10 +180,10 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 	}
 }
 
-// All returns the same traversal as [Walk], as an iterator.
+// All returns the traversal of [Walk] as an iterator.
 //
-// Stopping the range stops the walk, which differs from Walk's own
-// visit: there, false prunes one subtree.
+// A break out of the range stops the whole walk. In [Walk], a visit
+// that returns false prunes only one subtree.
 func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		stopped := false
@@ -197,10 +200,9 @@ func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// OriginOf returns the node identity a generated value derives
-// from, and false for a kind that carries no origin storage. The
-// zero identity still returns true, and claims nothing: carrying
-// the field and carrying a value are different questions.
+// OriginOf returns the node identity that a generated value derives
+// from. It returns false for a kind without origin storage. It returns
+// true for a kind with origin storage, also when the identity is zero.
 func OriginOf(s symbol.Symbol) (symbol.Identity, bool) {
 	switch x := s.(type) {
 	case *Function:

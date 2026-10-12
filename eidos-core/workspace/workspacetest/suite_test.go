@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -26,12 +27,13 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 )
 
-// The brand and the target every fixture composition declares, the
-// two plans and their generators, and the family word each generator
-// emits under.
+// These constants are the brand and the target of every fixture
+// composition, the lowering entry of the target, the plans and their
+// generators, and the family word of each generator.
 const (
 	fixtureBrand  output.Brand  = "fixture"
 	fixtureTarget plugin.Target = "fixture"
+	loweringID    plugin.ID     = "fixture-lowering"
 	mirrorsPlan                 = "mirrors"
 	stubsPlan                   = "stubs"
 	idlePlan                    = "idle"
@@ -42,9 +44,9 @@ const (
 	stubWord                    = "stub"
 )
 
-// The fixture's tree, which declares Row, the source the fixture's edit
-// writes, which gives Row a third field, and the files the two plans
-// generate beside Row's source.
+// These constants are the tree of the fixture, which declares Row, the
+// source that the edit of the fixture writes to give Row a third field,
+// and the files that the two plans generate beside the source of Row.
 const (
 	rowFile   = "svc/store/row.zz"
 	rowSource = "package svc/store\ntype Row int string\n"
@@ -56,13 +58,19 @@ const (
 	stubBody  = "type RowStub struct{}\n"
 )
 
-// errNoStatements is what the printer's scaffold returns: the fixture
-// emits no statement.
+// errNoStatements is the error of the scaffold of the printer. The
+// fixture emits no statement.
 var errNoStatements = errors.New("workspacetest_test: the fixture spells no statements")
 
-// The suite is the conformance bar for a workspace of several plans, so
-// two plans that generate, export, check and sweep the way the frame
-// promises pass every check.
+// fixturePrinter returns the printer of the target fixture. Every call
+// returns one value, so the plans of a composition share the backend of
+// their target, as a target renders through one backend. A kit backend
+// keeps no state of a run, so parallel tests share the value.
+var fixturePrinter = sync.OnceValue(func() plugin.Backend { return printing().Build() })
+
+// TestSuite tests the suites of a workspace of several plans. Two plans
+// that generate, export, check and sweep as the frame requires pass
+// every check.
 func TestSuite(t *testing.T) {
 	t.Parallel()
 
@@ -87,33 +95,26 @@ func TestSuite(t *testing.T) {
 	})
 }
 
-// naming returns a generator named id that emits, per struct in scope,
-// the struct that shape returns for the subject into the per-package
-// file of the word. A nil shape emits nothing.
+// naming returns a generator named id. For each struct in scope, it
+// emits the struct that shape returns for the subject into the
+// per-package file of word. A nil shape emits nothing.
 func naming(id plugin.ID, word string, shape func(*eidos.StructMatch) *emit.Struct) plugin.Generator {
-	p, held := eidos.NewPlugin(id).
+	return eidos.NewPlugin(id).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: word}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
 			if shape != nil {
 				e.PackageFile().Append(shape(m))
 			}
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspacetest_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
-// printer returns the backend [printing] builds.
-func printer(name plugin.ID) plugin.Backend { return printing(name).Build() }
-
-// printing returns the builder of a backend under a name that spells a
-// struct as one line behind its documentation and names every file
-// after its family word, framed through a line comment, for a case that
-// adds to it.
-func printing(name plugin.ID) *backend.Builder {
-	return backend.New(name, fixtureTarget, plugin.CommentSyntax{Line: []string{"//"}}).
+// printing returns the builder of the printer, for a case that adds
+// parts to it. The printer spells a struct as one line after its
+// documentation, names every file after its family word and frames the
+// file through a line comment.
+func printing() *backend.Builder {
+	return backend.New("printer", fixtureTarget, plugin.CommentSyntax{Line: []string{"//"}}).
 		KindTemplates(map[symbol.Kind]string{
 			symbol.KindStruct: "{{range .Doc}}// {{.}}\n{{end}}type {{.Name}} struct{}\n",
 		}).
@@ -124,8 +125,8 @@ func printing(name plugin.ID) *backend.Builder {
 		Coverage(render.Coverage{Facts: everyFact()})
 }
 
-// everyFact renders every fact, which the printer's one template states
-// none of.
+// everyFact returns a verdict of Renders for every fact. The one template
+// of the printer writes no fact.
 func everyFact() map[symbol.Fact]render.Verdict {
 	out := map[symbol.Fact]render.Verdict{}
 	for _, f := range symbol.Facts() {
@@ -134,20 +135,20 @@ func everyFact() map[symbol.Fact]render.Verdict {
 	return out
 }
 
-// planOf returns a plan under a name, running one generator toward a
-// printer of its own and depending on deps.
+// planOf returns a plan of a name that runs gen through the printer of
+// the target fixture and depends on deps.
 func planOf(name string, gen plugin.Generator, deps ...string) workspace.Plan {
 	return workspace.Plan{
 		Name:       name,
 		DependsOn:  deps,
 		Generators: []plugin.Generator{gen},
-		Backend:    printer(plugin.ID(name + "-printer")),
+		Backend:    fixturePrinter(),
 	}
 }
 
-// mirrors returns the plan that emits ForRow for Row, documented with
-// the number of Row's fields, so a new field changes the plan's file and
-// leaves its export unchanged.
+// mirrors returns the plan that emits ForRow for Row, documented with the
+// number of fields of Row, so a new field changes the file of the plan
+// and leaves its export unchanged.
 func mirrors() workspace.Plan {
 	return planOf(mirrorsPlan, naming(mirrorID, genWord, func(m *eidos.StructMatch) *emit.Struct {
 		return &emit.Struct{
@@ -170,9 +171,9 @@ func stubs() workspace.Plan {
 // file.
 func idle() workspace.Plan { return planOf(idlePlan, naming(idleID, genWord, nil)) }
 
-// onDisk returns the composition over root without its plans: the
-// fixture's brand and target, the scripted frontend, a disk sink at root
-// and the state directory's ledger under root.
+// onDisk returns the composition over root without its plans. It has the
+// brand and the target of the fixture, the scripted frontend, a disk
+// sink at root and the ledger of the state directory under root.
 func onDisk(root string) *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
@@ -182,8 +183,8 @@ func onDisk(root string) *workspace.Builder {
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
 }
 
-// stamped returns the bytes the output contract stamps for a body one
-// plugin assembled from Row's package.
+// stamped returns the bytes that the output contract stamps for a body
+// that one plugin assembled from the package of Row.
 func stamped(t *testing.T, path, body string, p plugin.ID) []byte {
 	t.Helper()
 
@@ -196,15 +197,15 @@ func stamped(t *testing.T, path, body string, p plugin.ID) []byte {
 	return b
 }
 
-// fixture returns the fixture: Row's source, the composition without
-// its plans, the two plans, the two files they generate, and the edit
-// that gives Row a third field.
+// fixture returns the fixture. It has the source of Row, the composition
+// without its plans, the two plans, the two files that they generate and
+// the edit that gives Row a third field.
 func fixture(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
 	return workspacetest.Fixture{
 		Tree:    fstest.MapFS{rowFile: {Data: []byte(rowSource)}},
-		Compose: onDisk,
+		Compose: func(root string) (*workspace.Builder, error) { return onDisk(root), nil },
 		Plans:   func() []workspace.Plan { return []workspace.Plan{mirrors(), stubs()} },
 		Want: map[string][]byte{
 			genFile:  stamped(t, genFile, genBody, mirrorID),

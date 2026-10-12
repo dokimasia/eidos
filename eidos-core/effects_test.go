@@ -26,19 +26,20 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The worker counts the effect cases compare: sequential dispatch, the
-// two workers the interleaved schedule needs, and the parallel dispatch
-// the plugin suite runs.
+// These constants are the worker counts that the effect cases compare. One
+// worker dispatches one invocation at a time, the interleaved schedule
+// needs two workers, and the plugin suite dispatches on eight.
 const (
 	oneWorker    = 1
 	twoWorkers   = 2
 	eightWorkers = 8
 )
 
-// The sizes of the effect fixtures: subjects in one package, the
-// instances of one repeatable directive on one subject, the
-// invocations the interleaved schedule places, and subjects enough
-// that a parallel call collects their matches in more than one chunk.
+// These constants are the sizes of the effect fixtures. They are the
+// subjects in one package, the instances of one repeatable directive on
+// one subject, the invocations that the interleaved schedule places, and
+// enough subjects that a parallel call collects their matches in more than
+// one chunk.
 const (
 	manyStructs    = 64
 	manyInstances  = 32
@@ -46,20 +47,20 @@ const (
 	chunkedStructs = 20_000
 )
 
-// schedule makes the effects of a rule's i-th invocation in canonical
-// match order, at the point the schedule assigns them relative to the
-// rule's other invocations.
+// schedule makes the effects of the invocation of a rule at index i in
+// canonical match order, at the point that the schedule assigns them among
+// the other invocations of the rule.
 type schedule func(i int, effects func())
 
-// interleaved places three invocations of one rule on two workers so
-// that the lanes' effects interleave by sequence. The first invocation
-// waits until the second has made its effects, and the second waits
-// until the third has made its effects. One lane therefore runs the
-// first and the third invocation and the other lane runs the second,
-// whatever order the lanes start in. The effects are made in the order
-// second, first, third.
+// interleaved places three invocations of one rule on two workers, so the
+// effects of the lanes interleave by sequence. The first invocation waits
+// until the second has made its effects, and the second waits until the
+// third has made its effects. One lane therefore runs the first and the
+// third invocation, and the other lane runs the second, in any order of
+// the start of the lanes. The effects follow the order second, first,
+// third.
 //
-// A wait gives up after failureWait and records the miss: a dispatcher
+// A wait gives up after failureWait and records the miss. A dispatcher
 // that runs the three invocations on one lane misses both waits.
 type interleaved struct {
 	second chan struct{}
@@ -67,13 +68,14 @@ type interleaved struct {
 	missed atomic.Bool
 }
 
-// interleave returns a schedule none of whose invocations has run.
+// interleave returns a schedule in which no invocation has run.
 func interleave() *interleaved {
 	return &interleaved{second: make(chan struct{}), third: make(chan struct{})}
 }
 
-// run makes the i-th invocation's effects at its place in the schedule.
-// It panics for an invocation outside the three the schedule places.
+// run makes the effects of the invocation at index i at its place in the
+// schedule. It panics for an invocation outside the three that the
+// schedule places.
 func (s *interleaved) run(i int, effects func()) {
 	switch i {
 	case 0:
@@ -100,21 +102,20 @@ func (s *interleaved) await(ch <-chan struct{}) {
 	}
 }
 
-// An invocation's placements, slot appends and findings are buffered
-// with it and apply when its phase call's rules have run, in canonical
-// match order, and its stamps rank by that order, so the output does
-// not depend on the worker count or on the order the workers made the
-// effects in.
+// TestEffects tests that the placements, slot appends and findings of an
+// invocation are buffered with it. They apply in canonical match order
+// when the rules of its phase call have run, and its stamps rank by that
+// order. The output therefore does not depend on the worker count or on
+// the order in which the workers made the effects.
 func TestEffects(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Generate", func(t *testing.T) {
 		t.Parallel()
 
-		// weave appends one field per gating instance into the origin's
-		// emitted struct, through the Emitter, on the given workers, and
-		// returns the struct. The schedule places each invocation's
-		// append.
+		// weave appends one field for each gating instance into the emitted
+		// struct of the origin through the Emitter, on workers, and returns
+		// the struct. The schedule places the append of each invocation.
 		weave := func(tb assert.TB, workers, instances int, place schedule) *emit.Struct {
 			tb.Helper()
 
@@ -136,7 +137,7 @@ func TestEffects(t *testing.T) {
 						})
 						return nil
 					}))).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			return host
 		}
@@ -185,15 +186,15 @@ func TestEffects(t *testing.T) {
 					seen = append(seen, s.Fields.Len())
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.Equal(t, seen, []int{0}, "the handler does not see its own append")
 			assert.Equal(t, fieldNames(host), []string{"audited"}, "the append applies when the call ends")
 		})
 
-		// warnEach reports one warning per subject of n on the given
-		// workers and returns the findings. The schedule places each
-		// invocation's warning.
+		// warnEach reports one warning for each subject of n on workers, and
+		// returns the findings. The schedule places the warning of each
+		// invocation.
 		warnEach := func(tb assert.TB, workers, n int, place schedule) []string {
 			tb.Helper()
 
@@ -206,7 +207,7 @@ func TestEffects(t *testing.T) {
 					place(index[m.Struct.ID], func() { m.Warnf(testCode, "%s", m.Struct.Name) })
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			return messages(ctx.Sink)
 		}
@@ -266,7 +267,7 @@ func TestEffects(t *testing.T) {
 					s.run(index[m.Struct.ID], func() { m.Rules() })
 					return nil
 				})).
-				Build()
+				Generator()
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
 			assert.False(t, s.missed.Load(), "a second worker took a match while the first was busy")
 			var warned []diag.Diag
@@ -283,8 +284,8 @@ func TestEffects(t *testing.T) {
 	t.Run("Annotate", func(t *testing.T) {
 		t.Parallel()
 
-		// stampEach stamps the flag on every subject on the given workers
-		// and returns the stamped subjects.
+		// stampEach stamps the flag on every subject on workers, and returns
+		// the stamped subjects.
 		stampEach := func(tb assert.TB, workers int) []symbol.Identity {
 			tb.Helper()
 
@@ -292,15 +293,14 @@ func TestEffects(t *testing.T) {
 			key, facts := boolKey(tb)
 			ix, err := plugin.NewIndex(g, facts, nil, nil)
 			assert.NoError(tb, err, "the routing surface builds")
-			p, held := eidos.NewPlugin(contextPlugin).
+			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 					eidos.Stamp(st, key, true)
 					return nil
 				})).
-				Build().(plugin.Annotator)
-			assert.True(tb, held, "stamper rules make the value an annotator")
+				Annotator()
 			assert.NoError(tb, p.Annotate(&plugin.AnnotatorContext{
-				Index: ix, Facts: facts, Sink: diag.NewSink(), Plugin: contextPlugin, Bucket: 1, Workers: workers,
+				Index: ix, Facts: facts, Sink: diag.NewSink(), Plugin: contextPlugin, Turn: 1, Workers: workers,
 			}), "the phase call passes")
 			return slices.Collect(facts.ByKey(key.ID()))
 		}
@@ -324,18 +324,17 @@ func TestEffects(t *testing.T) {
 				ix, err := plugin.NewIndex(g, facts, repeated(alpha.ID, schema, scheduled), nil)
 				assert.NoError(t, err, "the routing surface builds")
 				s := interleave()
-				p, held := eidos.NewPlugin(contextPlugin).
+				p := eidos.NewPlugin(contextPlugin).
 					Handle(eidos.Directive(schema,
 						eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 							instance := m.Directive().Instance
 							s.run(instance, func() { eidos.Stamp(st, key, int64(instance)) })
 							return nil
 						}))).
-					Build().(plugin.Annotator)
-				assert.True(t, held, "stamper rules make the value an annotator")
+					Annotator()
 				sink := diag.NewSink()
 				assert.NoError(t, p.Annotate(&plugin.AnnotatorContext{
-					Index: ix, Facts: facts, Sink: sink, Plugin: contextPlugin, Bucket: 1, Workers: twoWorkers,
+					Index: ix, Facts: facts, Sink: sink, Plugin: contextPlugin, Turn: 1, Workers: twoWorkers,
 				}), "the phase call passes")
 				assert.False(t, s.missed.Load(), "a second worker took a match while the first was busy")
 				coretest.AssertCodes(t, sink)
@@ -346,7 +345,8 @@ func TestEffects(t *testing.T) {
 	})
 }
 
-// immediately makes every invocation's effects as the invocation runs.
+// immediately makes the effects of every invocation as the invocation
+// runs.
 func immediately(_ int, effects func()) { effects() }
 
 // manySubjects returns a frozen graph of n structs in the store
@@ -382,8 +382,8 @@ func instanceKey(tb assert.TB) (meta.Key[int64], *meta.Facts) {
 	return key, meta.NewFacts(reg)
 }
 
-// indexOf returns each struct's index into structs, keyed by identity,
-// which is the struct's place in canonical match order.
+// indexOf returns the index of each struct in structs by identity. The
+// index is the place of the struct in canonical match order.
 func indexOf(structs []*node.Struct) map[symbol.Identity]int {
 	index := make(map[symbol.Identity]int, len(structs))
 	for i, s := range structs {
@@ -426,8 +426,8 @@ func on(ctx *plugin.GeneratorContext, workers int) *plugin.GeneratorContext {
 	return ctx
 }
 
-// fieldNames returns the names of the fields a struct's slot contains,
-// in slot order.
+// fieldNames returns the names of the fields of the slot of a struct, in
+// slot order.
 func fieldNames(s *emit.Struct) []string {
 	names := make([]string, 0, s.Fields.Len())
 	for _, f := range s.Fields.Items() {

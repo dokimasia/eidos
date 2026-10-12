@@ -8,20 +8,21 @@ import (
 
 // {{.Name}}Match is the On{{.Name}} subject.
 type {{.Name}}Match struct {
-	match
+	subjectMatch
 	{{.Name}} *node.{{.Name}}
 }
 
-// unbind zeroes the match for its lane's next phase call, and returns
-// the key the lane keeps released {{.Name}}Match values under.
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released {{.Name}}Match
+// values.
 func (m *{{.Name}}Match) unbind() any {
 	*m = {{.Name}}Match{}
 	return (*{{.Name}}Match)(nil)
 }
 
-// On{{.Name}} fires the handler once per subject of its kind in
-// scope, or once per gating instance under a Directive wrapper.
-// The effect parameter picks the role: an Emitter generates, a
+// On{{.Name}} runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
 // Stamper annotates.
 func On{{.Name}}[E Effect](h func(*{{.Name}}Match, E) error) Rule {
 	return Rule{leaf: &leaf{

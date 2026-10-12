@@ -34,15 +34,24 @@ func (t Target) NameKey() meta.KeyName {
 	return meta.KeyName(string(t) + nameKeySuffix)
 }
 
-// Backend is a plan's target role. It names the [Target] the plan
-// renders to. A backend that also implements [Renderer] renders the
-// plan's emit. A plan has exactly one backend, whose target is a
-// registered name. A composition that runs no renderer still
-// validates both, so a plan is whole before anything arrives on
-// disk.
+// Backend renders the files of one target. A plan has exactly one
+// backend, whose target is a registered name, and calls every method of
+// the interface, so a type that implements Backend passes the checks that
+// workspace Build makes on the role. The kit in package backend builds a
+// Backend from declared parts, and an exotic backend implements it
+// directly.
 type Backend interface {
 	Plugin
+	// Target is the target that the backend renders.
 	Target() Target
+	Renderer
+	FileSpeller
+	SyntaxProvider
+	TypeSpeller
+	Packager
+	PolicyProvider
+	Lowerer
+	Respeller
 }
 
 // TypeSpeller is the role of a backend that spells the canonical shape

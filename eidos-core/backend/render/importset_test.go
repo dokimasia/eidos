@@ -368,6 +368,91 @@ func TestImportSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Use", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("binds the name that a later Bind of the path returns", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			assert.NoError(t, s.Use(storePkg, storeLocal2, ""), "the name is free")
+			assert.Equal(t, s.Bind(storePkg, storeLocal), storeLocal2,
+				"a spelling refers to the package by the name of the template")
+			assert.Equal(t, s.Entries(), []render.Entry{{Path: storePkg, Name: storeLocal2}},
+				"the file imports the package once")
+		})
+
+		t.Run("binds the name that a later BindItem of the item returns", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			assert.NoError(t, s.Use(storePkg, rowName2, rowName), "the name is free")
+			assert.Equal(t, s.BindItem(storePkg, rowName, false), rowName2,
+				"a spelling refers to the item by the name of the template")
+			assert.Equal(t, s.Entries(), []render.Entry{{Path: storePkg, Name: rowName2, Item: rowName}},
+				"the file imports the item once under the name of the template")
+		})
+
+		t.Run("suffixes a later binding of another path that asks for the name", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			assert.NoError(t, s.Use(storePkg, storeLocal, ""), "the name is free")
+			assert.Equal(t, s.Bind(legacyPkg, storeLocal), storeLocal2, "the template took the name first")
+		})
+
+		t.Run("returns an error for a name that another path binds", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Bind(legacyPkg, storeLocal)
+			assert.HasError(t, s.Use(storePkg, storeLocal, ""), "a suffix would break the reference of the template")
+			assert.Equal(t, s.Paths(), []string{legacyPkg}, "the refused import records nothing")
+		})
+
+		t.Run("returns an error for a name that a declaration of the file takes", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeLocal)
+			assert.HasError(t, s.Use(storePkg, storeLocal, ""), "the import would shadow the declaration")
+		})
+
+		t.Run("returns an error for a path that the file imports under another name", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Bind(storePkg, storeLocal)
+			assert.HasError(t, s.Use(storePkg, storeLocal2, ""), "the spellings refer to the package by the first name")
+		})
+
+		t.Run("returns an error for an item that the file imports under another name", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.BindItem(storePkg, rowName, false)
+			assert.HasError(t, s.Use(storePkg, rowName2, rowName), "the spellings refer to the item by the first name")
+		})
+
+		t.Run("records one entry for a second use of a binding", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			assert.NoError(t, s.Use(storePkg, storeLocal, ""), "the name is free")
+			assert.NoError(t, s.Use(storePkg, storeLocal, ""), "the name binds the same package")
+			assert.Length(t, s.Entries(), 1, "one import for both uses")
+		})
+
+		t.Run("records no entry for the file's own package", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetHome(storePkg)
+			assert.NoError(t, s.Use(storePkg, storeLocal, ""), "a file refers to its own package without a name")
+			assert.Equal(t, s.Len(), 0, "a file never imports its own package")
+		})
+	})
+
 	t.Run("Add", func(t *testing.T) {
 		t.Parallel()
 
@@ -690,6 +775,14 @@ func importWrites() []importWrite {
 		},
 		{name: "BindItem", write: func(s *render.ImportSet) { s.BindItem(storePkg, rowName, false) }},
 		{name: "Claim", write: func(s *render.ImportSet) { s.Claim(storePkg, rowName) }},
+		{
+			name: "Use",
+			write: func(s *render.ImportSet) {
+				if err := s.Use(storePkg, storeLocal, ""); err != nil {
+					panic(err)
+				}
+			},
+		},
 		{name: "Add", write: func(s *render.ImportSet) { s.Add(storePkg) }},
 		{name: "AddNamed", write: func(s *render.ImportSet) { s.AddNamed(storePkg, rowName) }},
 		{name: "AddType", write: func(s *render.ImportSet) { s.AddType(storePkg, rowName) }},

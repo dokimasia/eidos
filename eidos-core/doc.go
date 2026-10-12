@@ -1,160 +1,161 @@
 // Copyright Dokimasia B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package eidos is the kernel of a code-generation framework:
-// frontends parse source into a language-neutral symbol graph,
-// plugins annotate it and generate output entities, and backends
-// render those into target languages, deterministically and
-// incrementally, across languages in one run.
+// Package eidos is the kernel of a code-generation framework. Frontends
+// parse source into a symbol graph that no language owns, plugins annotate
+// the graph and generate output entities, and backends render the entities
+// in target languages. A run is deterministic and incremental, and spans
+// languages.
 //
-// The kernel is a library. It ships no binary; consumers compose a
-// workspace in their own main and hand it to the command kernels.
-// It knows no language: language support is in satellite modules
-// that implement the projection tiers, and no satellite name,
-// language string, or per-language table appears in the kernel. Its
-// runtime packages import the module's own packages and the
-// standard library alone.
+// The kernel is a library without a binary. A consumer composes a
+// workspace in its own main package and passes it to the command kernels.
+// The kernel knows no language. Language support is in satellite modules
+// that implement the projection tiers, and the kernel contains no name of
+// a satellite, no language string and no table per language. Its runtime
+// packages import the packages of the module and the standard library
+// alone.
 //
 // # Composition model
 //
-// One workspace contains the read side: frontends, annotators and
-// one frozen symbol graph. N plans contain the write side, each with
-// its own generators, layout and exactly one backend, and the
-// composition declares the one output a run writes through. Plans
-// are values, run in parallel, and exchange nothing except declared,
-// versioned exports. Plugins compose at compile time and
-// communicate only through typed metadata on the graph: every write
-// records its authority (plugin < directive < manual) and its
-// provenance, so a human override at the declaration outranks any
-// inference and every fact records what it was derived from.
+// One workspace contains the read side, which is the frontends, the
+// annotators and one frozen symbol graph. Each of N plans contains a write
+// side with its own generators, its layout and exactly one backend, and
+// the composition declares the one output through which a run writes.
+// Plans are values. They run in parallel and exchange nothing except
+// declared, versioned exports. Plugins compose at compile time and
+// communicate only through typed metadata on the graph. Every write
+// records its authority, plugin below directive below manual, and its
+// provenance. A manual override at the declaration therefore outranks any
+// inference, and every fact records what it was derived from.
 //
 // # Authoring model
 //
-// This root package is the authoring surface. A plugin is a value:
-// [NewPlugin] starts the declaration, identity, outputs, priorities
-// and schemas are data built once, and only the handlers, the key
-// registration declared through [Builder.Keys] and the template
-// helpers are functions. Handlers attach to kind-indexed triggers,
-// one generated constructor per subject kind such as [OnInterface],
-// plus [OnGraph] and [OnEmit]. Gates are declarative: [Directive]
-// binds a schema and [Where] binds fact predicates, never a filter
-// inside the handler. A predicate on a key of another plugin takes a
-// handle from [meta.Named], which the workspace binds when it builds,
-// through [plugin.KeyBinder]. The handler's second parameter picks its
-// effect, [Emitter] to generate or [Stamper] to annotate, and
-// [Builder.Build] lowers every rule set to the SPI roles in
-// [go.dokimi.dev/eidos/core/plugin], which remain public for what
-// the facade does not fit.
+// This root package is the authoring surface. A plugin is a value.
+// [NewPlugin] starts the declaration, and the identity, the outputs, the
+// priorities and the schemas are data that the plugin builds once. Only the
+// handlers, the key registrations that [Builder.Keys] declares and the
+// template helpers are functions. Handlers attach to triggers indexed by
+// kind, with one generated constructor for each subject kind, such as
+// [OnInterface], and [OnGraph] and [OnEmit]. Gates are declarative.
+// [Directive] binds a schema and [Where] binds fact predicates, and a
+// handler contains no filter. A predicate on a key of another plugin takes
+// a handle from [meta.Named], which the workspace binds through
+// [plugin.KeyBinder] when it builds.
 //
-// A frontend or backend is declared the same way, in
+// The second parameter of a handler selects its effect, [Emitter] to
+// generate or [Stamper] to annotate. [Builder.Generator],
+// [Builder.Annotator] and [Builder.Dual] lower a rule set to the role of
+// its effects in [go.dokimi.dev/eidos/core/plugin]. That package remains
+// public for what the facade does not fit.
+//
+// A frontend or a backend is declared the same way, in
 // [go.dokimi.dev/eidos/core/frontend] and
-// [go.dokimi.dev/eidos/core/backend]: identity and language facts
-// as data, the role's functions declared once, and a Build that
-// lowers to the same SPI roles.
+// [go.dokimi.dev/eidos/core/backend]. Its identity and its language facts
+// are data, its functions are declared once, and a Build lowers it to the
+// same roles.
 //
 // # Presentation
 //
 // A plugin whose emit names templates declares where they resolve.
-// [Builder.Templates] and [Builder.Funcs] declare the plugin-level
-// tree and helpers, which serve every target, and [Builder.For]
-// layers one target's [Templates], [Funcs] and [Overrides] over
-// them. A plugin that declares trees for named targets alone serves
-// those targets alone, and a composition refuses a plan of any
-// other target at Build. [Emitter.JoinName] joins a family word onto
-// a generated identifier in the neutral convention, and the plan's
-// backend spells the result in the target's case when the plan
-// settles.
+// [Builder.Templates] and [Builder.Funcs] declare the tree and the helpers
+// of the plugin level, which serve every target. [Builder.For] layers the
+// [Templates], [Funcs] and [Overrides] of one target over them. A plugin
+// that declares trees for named targets alone serves those targets alone,
+// and the workspace refuses a plan of any other target at Build.
+// [Emitter.JoinName] joins a family word onto a generated identifier in
+// the neutral convention, and the backend of the plan spells the result in
+// the case of the target when the plan settles.
 //
 // # Translation
 //
-// [Emitter.Type] spells a type of another language in the plan's
-// target. The kit folds the reference into its canonical shape under
-// the rules of the language that declares it, and the spoke of the
-// plan's backend spells the shape under the plan's lowering policy. A
-// value of a policy's key at directive authority overrides the policy's
-// choice. The kit reads it on the declaration with the type, then on the
-// match's subject, and then on the declaration's package. A shape
-// without a spelling in the target reports [RefusedType] at the
+// [Emitter.Type] spells a type of another language in the target of the
+// plan. The kit folds the reference into its canonical shape under the
+// rules of the language that declares it, and the spoke of the backend of
+// the plan spells the shape under the lowering policy of the plan. A value
+// of the key of a policy at directive authority overrides the choice of
+// the policy. The kit reads it on the declaration with the type, then on
+// the subject of the match, and then on the package of the declaration. A
+// shape without a spelling in the target reports [RefusedType] at the
 // declaration with the type, and the plan fails.
 //
 // # Dispatch
 //
-// Dispatch is indexed: a directive-gated rule visits its carriers,
-// a fact-gated rule visits its stamped subjects, and only a bare
-// rule visits the whole graph. A phase call collects each rule's
-// matches before it runs them and numbers them in canonical match
-// order: the rules in declaration order, each rule's subjects in
-// the order its index enumerates them, and a subject's gating
-// instances in source order. Every invocation has its own read set,
-// minted on first read, so a fact write's derivation names what its
-// match read. The kernel skip directive excludes a subject from
-// bare and fact-gated rules, for every plugin or one named plugin,
-// and directive-gated rules run regardless.
+// Dispatch is indexed. A rule that a directive gates visits the carriers
+// of the directive, a rule that a fact gates visits the stamped subjects,
+// and only a bare rule visits the whole graph. A phase call collects the
+// matches of each rule before it runs them, and numbers them in canonical
+// match order. That order is the rules in declaration order, the subjects
+// of each rule in the order of its index, and the gating instances of a
+// subject in source order. Every invocation has its own read set, minted
+// on its first read, so the derivation of a fact write names what its
+// match read. The kernel skip directive excludes a subject from bare rules
+// and rules that a fact gates, for every plugin or for one named plugin.
+// Rules that a directive gates run regardless.
 //
-// A phase call runs a rule's matches on up to the worker count its
-// context names, and one at a time where the count is below two or
-// the rule has one match. An invocation's placements, slot appends
-// and findings are buffered with its sequence number: the
-// declarations an [Out] places, the values a [SlotView] appends and
-// the findings its match reports. The buffers apply when the phase
-// call's rules have run, in canonical match order, so the output does
-// not depend on the worker count, and a handler sees the plan's store
-// and the slots as they were when its phase call began. A stamp
-// arrives in the fact store as it is made, because the store ranks
-// claims by their rule, subject and gating instance and not by
-// arrival. An append through [Emitter.Slot] into a value an earlier
-// bucket placed names the plugin among the contributors of the unit
-// that contains the value.
+// A phase call runs the matches of a rule on up to the worker count of its
+// context, and one at a time where the count is below two or the rule has
+// one match. The placements, slot appends and findings of an invocation
+// are buffered with its sequence number. They are the declarations that
+// an [Out] places, the values that a [SlotView] appends and the findings
+// that its match reports. The buffers apply in canonical match order when
+// the rules of the phase call have run. The output therefore does not
+// depend on the worker count, and a handler sees the store of the plan and
+// the slots as they were when its phase call began. A stamp arrives in the
+// fact store as the handler makes it, because the store ranks claims by
+// their rule, subject and gating instance and not by their arrival. An
+// append through [Emitter.Slot] into a value that a plugin of an earlier
+// turn placed adds the plugin to the contributors of the unit that
+// contains the value.
 //
 // # Selective dispatch
 //
-// A phase context's selection restricts every rule that is not
-// emit-phase to the listed matches its gates still admit and to every
-// match of a candidate, in canonical match order: rule, subject
-// identity, gating instance. A graph rule runs where the selection
-// lists it, and emit-phase rules run over every value of the plan's
-// store. A full call and a selected call order their invocations
-// differently within a rule, and no output depends on that order. A
-// claim ranks by its rule, subject and instance, a unit orders its
-// declarations by origin first, and the invocations that append into
-// one slot share the origin of the slot's value. A selected call
-// reports the findings a full call reports, in the order it runs
-// their invocations. A phase context's journal receives one record
-// for each invocation once the call's effects apply, in canonical
-// match order, then each candidate's matches. A rule's invocations on
-// one worker share one read set, reset between them, and a call that
-// journals copies each invocation's edges into a [store.ReadLog] as
+// The selection of a phase context restricts every rule outside the emit
+// phase to the listed matches that its gates still admit and to every
+// match of a candidate, in canonical match order of rule, subject identity
+// and gating instance. A graph rule runs where the selection lists it, and
+// the rules of the emit phase run over every value of the store of the
+// plan. A full call and a selected call order their invocations
+// differently within a rule, and no output depends on that order. A claim
+// ranks by its rule, subject and instance, a unit orders its declarations
+// by origin first, and the invocations that append into one slot share the
+// origin of the value of the slot. A selected call reports the findings
+// that a full call reports, in the order in which it runs their
+// invocations. The journal of a phase context receives one record for
+// each invocation in canonical match order once the effects of the call
+// apply, and then the matches of each candidate. The invocations of a rule
+// on one worker share one read set, reset between them, and a call that
+// journals copies the edges of each invocation into a [store.ReadLog] as
 // the invocation returns.
 //
 // # Failure semantics
 //
-// A declaration defect panics at [Builder.Build], before any run
-// exists. A handler's per-subject problem goes to the sink through
-// its match and the phase continues. A returned error is fatal to
-// the phase call, wrapped with the plugin and rule. Whatever the
-// worker count, the call returns the error earliest in canonical
-// match order, the findings of the invocations up to that one arrive
-// in the sink, and none of the call's placements or slot appends
-// apply. The stamps already made remain in the fact store, and on
-// more than one worker they can include stamps of invocations after
-// the failed one. A handler's panic is raised again on the calling
-// goroutine, the earliest in canonical match order. A stamp the fact
-// store refuses reports under [RefusedStamp] at the subject's
-// position.
+// A declaration defect panics at the typed build, before any run exists,
+// and so does a rule set whose effects do not fit the role of the build. A
+// problem of a handler with one subject goes to the sink through its
+// match, and the phase continues. A returned error is fatal to the phase
+// call, wrapped with the plugin and the rule. On any worker count, the
+// call returns the error earliest in canonical match order. The findings
+// of the invocations up to that one arrive in the sink, and none of the
+// placements or slot appends of the call apply. The stamps already made
+// remain in the fact store, and on more than one worker they can include
+// stamps of invocations after the failed one. The calling goroutine raises
+// the panic of a handler again, the earliest in canonical match order. A
+// stamp that the fact store refuses reports under [RefusedStamp] at the
+// position of the subject.
 //
 // # Determinism
 //
-// Byte-identity is the contract: the same workspace over the same
-// input produces the same bytes on every machine, warm or cold, on
-// any worker count. Every ordering is defined: units order by
-// plugin, cardinality, key, package and tag, and contributions by
-// origin, gating instance and canonical match order. Output
-// contains no clock reading and nothing from the environment.
+// Byte identity is the contract. The same workspace over the same input
+// produces the same bytes on every machine, warm or cold, on any worker
+// count. Every ordering is defined. Units order by plugin, cardinality,
+// key, package and tag, and contributions by origin, gating instance and
+// canonical match order. Output contains no clock reading and nothing from
+// the environment.
 //
 // # Dependency position
 //
-// The root package imports core/plugin, core/diag,
-// core/directive, core/emit, core/meta, core/node, core/position,
-// core/rules, core/store, core/symbol, core/internal/grow and the Go
-// stdlib. Nothing in the module imports the root package back.
+// The root package imports core/plugin, core/diag, core/directive,
+// core/emit, core/meta, core/node, core/position, core/rules, core/store,
+// core/symbol, core/internal/grow and the Go stdlib. Nothing in the module
+// imports the root package back.
 package eidos

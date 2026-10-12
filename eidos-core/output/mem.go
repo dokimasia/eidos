@@ -28,19 +28,16 @@ type Mem struct {
 	committed map[string][]byte
 }
 
-var (
-	_ Sink       = (*Mem)(nil)
-	_ Overwriter = (*Mem)(nil)
-)
+var _ Sink = (*Mem)(nil)
 
 // NewMem opens a sink over memory. It allocates the sink alone.
 func NewMem() *Mem { return &Mem{} }
 
 // Overwrite records the verdicts whose files Commit writes over, as
-// [Overwriter] states. The empty destination contains no drifted or
+// [Sink.Overwrite] states. The empty destination contains no drifted or
 // foreign file, so it changes no commit. It allocates nothing.
 //
-// Error modes are the ones [Overwriter.Overwrite] lists.
+// Error modes are the ones [Sink.Overwrite] lists.
 func (m *Mem) Overwrite(found ...Found) error { return m.allow(found) }
 
 // Write stages one file. It keeps body without copying it, so the

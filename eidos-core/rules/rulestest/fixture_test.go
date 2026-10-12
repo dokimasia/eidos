@@ -4,7 +4,6 @@
 package rulestest_test
 
 import (
-	"context"
 	"testing"
 	"testing/fstest"
 
@@ -19,15 +18,27 @@ import (
 	"go.dokimi.dev/eidos/core/rules/rulestest"
 )
 
-// The scripted tree the suite runs over: a struct whose fields the
-// language values, one typed by another struct so a reference
-// resolves, a method, a constant, and a generic type whose field
-// names its type parameter.
+// These constants are the scripted tree of the suite. It has a struct
+// whose fields the language values, one field typed by another struct so
+// that a reference resolves, a method, a constant, and a generic type
+// whose field has the type of its type parameter.
 const (
 	apiFile   = "svc/api/user.zz"
 	storeFile = "svc/store/row.zz"
 	apiSource = "package svc/api\ntype User string\nmethod Get int\ntype Box T\ntypeparam T\n"
 	rowSource = "package svc/store\nimport api svc/api\ntype Row api.User int string\nmethod Put int\nconst rowmax\n"
+)
+
+// These constants are the tree whose one reference resolves to two
+// declarations. The alias dual binds two packages that both declare
+// Thing.
+const (
+	leftFile     = "a/left/l.zz"
+	rightFile    = "a/right/r.zz"
+	holderFile   = "svc/hold/h.zz"
+	leftSource   = "package a/left\ntype Thing string\n"
+	rightSource  = "package a/right\ntype Thing string\n"
+	holderSource = "package svc/hold\nimport dual a/left a/right\ntype Holder dual.Thing\n"
 )
 
 // keyedScripted is the scripted frontend that registers its
@@ -37,8 +48,9 @@ type keyedScripted struct{ *frontendtest.Scripted }
 // Keys registers the scripted classification keys.
 func (keyedScripted) Keys(r *meta.Registry) error { return frontendtest.ScriptedKeys(r) }
 
-// The loaded fixture is the suite's entry for a satellite: a tree
-// through its frontend, the kernel's keys and the load's stamps.
+// Loaded is the entry of a satellite to the suite. It loads a tree
+// through the frontend of the satellite, and files the stamps of the
+// load under the keys of the kernel.
 func TestLoaded(t *testing.T) {
 	t.Parallel()
 
@@ -68,6 +80,14 @@ func TestLoaded(t *testing.T) {
 			assert.True(t, held, "the language's key is registered")
 		})
 
+		t.Run("registers nothing for a nil function of keys", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), nil)
+			_, held := f.Facts.Registry().Resolve(frontendtest.ScriptedTestKey)
+			assert.False(t, held, "the language's key is not registered")
+		})
+
 		t.Run("registers the frontend's keys under its language's spelling", func(t *testing.T) {
 			t.Parallel()
 
@@ -90,10 +110,30 @@ func TestLoaded(t *testing.T) {
 			}
 			assert.Equal(t, attached, 1, "the carrier attaches")
 		})
+
+		t.Run("returns the Warning of an ambiguous reference", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, frontendtest.NewScripted(), fstest.MapFS{
+				leftFile:   {Data: []byte(leftSource)},
+				rightFile:  {Data: []byte(rightSource)},
+				holderFile: {Data: []byte(holderSource)},
+			})
+			assert.Length(t, f.Findings, 1, "the load reports one finding")
+			assert.Equal(t, f.Findings[0].Code, load.AmbiguousReference,
+				"the finding is the ambiguity of the reference to Thing")
+		})
+
+		t.Run("returns no finding for a tree that loads clean", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), frontendtest.ScriptedKeys)
+			assert.Empty(t, f.Findings, "the load of the scripted tree reports nothing")
+		})
 	})
 }
 
-// scriptedTree returns the tree.
+// scriptedTree returns the scripted tree.
 func scriptedTree() fstest.MapFS {
 	return fstest.MapFS{
 		apiFile:   {Data: []byte(apiSource)},
@@ -101,13 +141,14 @@ func scriptedTree() fstest.MapFS {
 	}
 }
 
-// setup loads the tree and binds the scripted rules over it with
-// the kernel's keys registered, fresh per call.
+// setup loads the scripted tree under the context of tb, and returns the
+// scripted rules with a fixture whose registry contains the kernel's
+// keys. Each call loads the tree again.
 func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 	tb.Helper()
 
 	sink := diag.NewSink()
-	g, _, err := load.Load(context.Background(), load.Config{
+	g, _, err := load.Load(assert.Context(tb), load.Config{
 		FS:        scriptedTree(),
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      sink,

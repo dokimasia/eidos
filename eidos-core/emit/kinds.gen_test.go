@@ -15,9 +15,8 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Every kind satisfies the vocabulary's interfaces. The assertions
-// fail to compile rather than to run, which is where an unsatisfied
-// interface belongs.
+// Every kind satisfies the interfaces of the vocabulary. An unsatisfied
+// interface fails the compilation of these assertions, not a run.
 var (
 	_ symbol.Symbol   = (*Function)(nil)
 	_ symbol.Symbol   = (*Method)(nil)
@@ -41,6 +40,7 @@ var (
 	_ symbol.Symbol   = (*TypeRef)(nil)
 	_ symbol.Symbol   = (*TypeParam)(nil)
 	_ symbol.Symbol   = (*Embed)(nil)
+	_ symbol.Symbol   = (*TagEntry)(nil)
 	_ symbol.Membered = (*Enum)(nil)
 	_ symbol.Membered = (*Sum)(nil)
 	_ symbol.Membered = (*SumVariant)(nil)
@@ -54,17 +54,17 @@ var (
 	_ symbol.Typed    = (*TypeParam)(nil)
 )
 
-// The values the accessor cases give a subject: a position, two
-// lines of documentation and an identity.
+// The accessor cases give a subject a position, two lines of
+// documentation and an identity.
 var (
 	kindsAt    = position.Pos{File: "svc/store.go", Line: 41, Col: 2}
 	kindsLines = []string{"one", "two"}
 	kindsID    = symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
 )
 
-// kindsCase is one measured call of one kind's accessor: the
-// sub-benchmark's name, its allocation ceiling, the call, and the
-// check on what the last call returned.
+// kindsCase is one measured call of an accessor of one kind. It has
+// the name of the sub-benchmark, the allocation ceiling, the call, and
+// the check of the result of the last call.
 type kindsCase struct {
 	name   string
 	allocs uint64
@@ -72,9 +72,9 @@ type kindsCase struct {
 	check  func(testing.TB)
 }
 
-// Every kind implements the shared vocabulary: it returns its own
-// kind, where it was written, its documentation, its identity, its
-// type reference and its member lists.
+// Every kind implements the shared vocabulary. It returns its own kind,
+// its position, its documentation, its identity, its type reference and
+// its member lists.
 func TestKinds(t *testing.T) {
 	t.Parallel()
 
@@ -107,6 +107,7 @@ func TestKinds(t *testing.T) {
 			{subject: &TypeRef{}, want: symbol.KindTypeRef},
 			{subject: &TypeParam{}, want: symbol.KindTypeParam},
 			{subject: &Embed{}, want: symbol.KindEmbed},
+			{subject: &TagEntry{}, want: symbol.KindTagEntry},
 		}
 		for _, tt := range tests {
 			t.Run("returns "+tt.want.String()+" for its kind", func(t *testing.T) {
@@ -125,70 +126,73 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, (&Function{}).Position(), position.Pos{},
-				"a Function carries no position and returns the zero position")
+				"a Function without a position field returns the zero position")
 
 			assert.Equal(t, (&Method{}).Position(), position.Pos{},
-				"a Method carries no position and returns the zero position")
+				"a Method without a position field returns the zero position")
 
 			assert.Equal(t, (&Param{}).Position(), position.Pos{},
-				"a Param carries no position and returns the zero position")
+				"a Param without a position field returns the zero position")
 
 			assert.Equal(t, (&Return{}).Position(), position.Pos{},
-				"a Return carries no position and returns the zero position")
+				"a Return without a position field returns the zero position")
 
 			assert.Equal(t, (&Package{}).Position(), position.Pos{},
-				"a Package carries no position and returns the zero position")
+				"a Package without a position field returns the zero position")
 
 			assert.Equal(t, (&File{}).Position(), position.Pos{},
-				"a File carries no position and returns the zero position")
+				"a File without a position field returns the zero position")
 
 			assert.Equal(t, (&Import{}).Position(), position.Pos{},
-				"a Import carries no position and returns the zero position")
+				"a Import without a position field returns the zero position")
 
 			assert.Equal(t, (&Export{}).Position(), position.Pos{},
-				"a Export carries no position and returns the zero position")
+				"a Export without a position field returns the zero position")
 
 			assert.Equal(t, (&Binding{}).Position(), position.Pos{},
-				"a Binding carries no position and returns the zero position")
+				"a Binding without a position field returns the zero position")
 
 			assert.Equal(t, (&Enum{}).Position(), position.Pos{},
-				"a Enum carries no position and returns the zero position")
+				"a Enum without a position field returns the zero position")
 
 			assert.Equal(t, (&EnumVariant{}).Position(), position.Pos{},
-				"a EnumVariant carries no position and returns the zero position")
+				"a EnumVariant without a position field returns the zero position")
 
 			assert.Equal(t, (&Sum{}).Position(), position.Pos{},
-				"a Sum carries no position and returns the zero position")
+				"a Sum without a position field returns the zero position")
 
 			assert.Equal(t, (&SumVariant{}).Position(), position.Pos{},
-				"a SumVariant carries no position and returns the zero position")
+				"a SumVariant without a position field returns the zero position")
 
 			assert.Equal(t, (&Field{}).Position(), position.Pos{},
-				"a Field carries no position and returns the zero position")
+				"a Field without a position field returns the zero position")
 
 			assert.Equal(t, (&Variable{}).Position(), position.Pos{},
-				"a Variable carries no position and returns the zero position")
+				"a Variable without a position field returns the zero position")
 
 			assert.Equal(t, (&Constant{}).Position(), position.Pos{},
-				"a Constant carries no position and returns the zero position")
+				"a Constant without a position field returns the zero position")
 
 			assert.Equal(t, (&Struct{}).Position(), position.Pos{},
-				"a Struct carries no position and returns the zero position")
+				"a Struct without a position field returns the zero position")
 
 			assert.Equal(t, (&Interface{}).Position(), position.Pos{},
-				"a Interface carries no position and returns the zero position")
+				"a Interface without a position field returns the zero position")
 
 			assert.Equal(t, (&Alias{}).Position(), position.Pos{},
-				"a Alias carries no position and returns the zero position")
+				"a Alias without a position field returns the zero position")
 
 			assert.Equal(t, (&TypeRef{}).Position(), position.Pos{},
-				"a TypeRef carries no position and returns the zero position")
+				"a TypeRef without a position field returns the zero position")
 
 			assert.Equal(t, (&TypeParam{}).Position(), position.Pos{},
-				"a TypeParam carries no position and returns the zero position")
+				"a TypeParam without a position field returns the zero position")
 
 			assert.Equal(t, (&Embed{}).Position(), position.Pos{},
-				"a Embed carries no position and returns the zero position")
+				"a Embed without a position field returns the zero position")
+
+			assert.Equal(t, (&TagEntry{}).Position(), position.Pos{},
+				"a TagEntry without a position field returns the zero position")
 		})
 	})
 
@@ -205,10 +209,10 @@ func TestKinds(t *testing.T) {
 				"a documented Method returns its documentation")
 
 			assert.Nil(t, (&Param{}).Docs(),
-				"a Param carries no documentation and returns nil")
+				"a Param without a documentation field returns nil")
 
 			assert.Nil(t, (&Return{}).Docs(),
-				"a Return carries no documentation and returns nil")
+				"a Return without a documentation field returns nil")
 
 			assert.Length(t, (&Package{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Package returns its documentation")
@@ -217,13 +221,13 @@ func TestKinds(t *testing.T) {
 				"a documented File returns its documentation")
 
 			assert.Nil(t, (&Import{}).Docs(),
-				"a Import carries no documentation and returns nil")
+				"a Import without a documentation field returns nil")
 
 			assert.Nil(t, (&Export{}).Docs(),
-				"a Export carries no documentation and returns nil")
+				"a Export without a documentation field returns nil")
 
 			assert.Nil(t, (&Binding{}).Docs(),
-				"a Binding carries no documentation and returns nil")
+				"a Binding without a documentation field returns nil")
 
 			assert.Length(t, (&Enum{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Enum returns its documentation")
@@ -256,13 +260,16 @@ func TestKinds(t *testing.T) {
 				"a documented Alias returns its documentation")
 
 			assert.Nil(t, (&TypeRef{}).Docs(),
-				"a TypeRef carries no documentation and returns nil")
+				"a TypeRef without a documentation field returns nil")
 
 			assert.Nil(t, (&TypeParam{}).Docs(),
-				"a TypeParam carries no documentation and returns nil")
+				"a TypeParam without a documentation field returns nil")
 
 			assert.Length(t, (&Embed{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Embed returns its documentation")
+
+			assert.Nil(t, (&TagEntry{}).Docs(),
+				"a TagEntry without a documentation field returns nil")
 		})
 	})
 
@@ -273,44 +280,44 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Param{}).TypeRef(),
-				"a Param stating no type returns nil")
+				"a Param without a type returns nil")
 
 			assert.Nil(t, (&Return{}).TypeRef(),
-				"a Return stating no type returns nil")
+				"a Return without a type returns nil")
 
 			assert.Nil(t, (&Field{}).TypeRef(),
-				"a Field stating no type returns nil")
+				"a Field without a type returns nil")
 
 			assert.Nil(t, (&Variable{}).TypeRef(),
-				"a Variable stating no type returns nil")
+				"a Variable without a type returns nil")
 
 			assert.Nil(t, (&Constant{}).TypeRef(),
-				"a Constant stating no type returns nil")
+				"a Constant without a type returns nil")
 
 			assert.Nil(t, (&TypeParam{}).TypeRef(),
-				"a TypeParam stating no type returns nil")
+				"a TypeParam without a type returns nil")
 		})
 
 		t.Run("returns the declared type reference", func(t *testing.T) {
 			t.Parallel()
 
 			assert.NotNil(t, (&Param{Type: &TypeRef{}}).TypeRef(),
-				"a Param stating a type returns the declared reference")
+				"a Param with a type returns its type reference")
 
 			assert.NotNil(t, (&Return{Type: &TypeRef{}}).TypeRef(),
-				"a Return stating a type returns the declared reference")
+				"a Return with a type returns its type reference")
 
 			assert.NotNil(t, (&Field{Type: &TypeRef{}}).TypeRef(),
-				"a Field stating a type returns the declared reference")
+				"a Field with a type returns its type reference")
 
 			assert.NotNil(t, (&Variable{Type: &TypeRef{}}).TypeRef(),
-				"a Variable stating a type returns the declared reference")
+				"a Variable with a type returns its type reference")
 
 			assert.NotNil(t, (&Constant{Type: &TypeRef{}}).TypeRef(),
-				"a Constant stating a type returns the declared reference")
+				"a Constant with a type returns its type reference")
 
 			assert.NotNil(t, (&TypeParam{Type: &TypeRef{}}).TypeRef(),
-				"a TypeParam stating a type returns the declared reference")
+				"a TypeParam with a type returns its type reference")
 		})
 	})
 
@@ -321,7 +328,7 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Sum{}).FieldList(),
-				"a Sum has no such list and returns nil")
+				"a Sum has no such list, so it returns nil")
 		})
 
 		t.Run("returns the members of a kind with the list", func(t *testing.T) {
@@ -329,6 +336,7 @@ func TestKinds(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -349,7 +357,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -363,7 +371,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
@@ -379,7 +387,7 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&SumVariant{}).MethodList(),
-				"a SumVariant has no such list and returns nil")
+				"a SumVariant has no such list, so it returns nil")
 		})
 
 		t.Run("returns the members of a kind with the list", func(t *testing.T) {
@@ -387,6 +395,7 @@ func TestKinds(t *testing.T) {
 
 			{
 				subject := &Enum{}
+				subject.Underlying = &TypeRef{}
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
@@ -409,7 +418,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -423,7 +432,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
@@ -439,13 +448,13 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Enum{}).EmbedList(),
-				"a Enum has no such list and returns nil")
+				"a Enum has no such list, so it returns nil")
 
 			assert.Nil(t, (&Sum{}).EmbedList(),
-				"a Sum has no such list and returns nil")
+				"a Sum has no such list, so it returns nil")
 
 			assert.Nil(t, (&SumVariant{}).EmbedList(),
-				"a SumVariant has no such list and returns nil")
+				"a SumVariant has no such list, so it returns nil")
 		})
 
 		t.Run("returns the members of a kind with the list", func(t *testing.T) {
@@ -457,7 +466,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Struct{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
@@ -471,7 +480,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				subject.TypesSlot().Append(&Interface{})
-				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
@@ -481,9 +490,9 @@ func TestKinds(t *testing.T) {
 	})
 }
 
-// The accessors allocate within their ceilings in the ordinary run,
-// which runs no benchmark: a member list allocates its one slice, and
-// every other accessor nothing.
+// TestKindsAllocs checks the allocation ceilings of the accessors in a
+// run without benchmarks. A member list allocates one slice. Every
+// other accessor allocates nothing.
 func TestKindsAllocs(t *testing.T) {
 	for _, tt := range kindsCases() {
 		assert.MaxAllocs(t, tt.call, tt.allocs, tt.name+" allocates within its ceiling")
@@ -506,17 +515,17 @@ func BenchmarkKinds(b *testing.B) {
 	}
 }
 
-// kindsCases returns one case for every accessor of every kind, each
-// over a subject with a position, documentation, an identity, a type
-// reference and one child in every traversed field.
+// kindsCases returns one case for every accessor of every kind. Each
+// subject has a position, documentation, an identity, a type reference
+// and one child in every traversed field.
 func kindsCases() []kindsCase {
 	var cases []kindsCase
 	{
 		subject := &Function{}
 		subject.Doc = kindsLines
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-		subject.Params = append(subject.Params, &Param{})
-		subject.Returns = append(subject.Returns, &Return{})
+		subject.ParamsSlot().Append(&Param{})
+		subject.ReturnsSlot().Append(&Return{})
 		subject.Throws = append(subject.Throws, &TypeRef{})
 		var (
 			kind symbol.Kind
@@ -553,8 +562,8 @@ func kindsCases() []kindsCase {
 		subject.Receiver = &Param{}
 		subject.Receives = &TypeRef{}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-		subject.Params = append(subject.Params, &Param{})
-		subject.Returns = append(subject.Returns, &Return{})
+		subject.ParamsSlot().Append(&Param{})
+		subject.ReturnsSlot().Append(&Return{})
 		subject.Throws = append(subject.Throws, &TypeRef{})
 		var (
 			kind symbol.Kind
@@ -827,6 +836,7 @@ func kindsCases() []kindsCase {
 	{
 		subject := &Enum{}
 		subject.Doc = kindsLines
+		subject.Underlying = &TypeRef{}
 		subject.VariantsSlot().Append(&EnumVariant{})
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
@@ -1162,7 +1172,7 @@ func kindsCases() []kindsCase {
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Struct{})
-		subject.Embeds = append(subject.Embeds, &Embed{})
+		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
 		subject.Implements = append(subject.Implements, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
@@ -1227,7 +1237,7 @@ func kindsCases() []kindsCase {
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Interface{})
-		subject.Embeds = append(subject.Embeds, &Embed{})
+		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		var (
@@ -1423,6 +1433,37 @@ func kindsCases() []kindsCase {
 				call: func() { docs = subject.Docs() },
 				check: func(tb testing.TB) {
 					assert.Length(tb, docs, len(kindsLines), "Docs returns the documentation")
+				},
+			},
+		)
+	}
+	{
+		subject := &TagEntry{}
+		var (
+			kind symbol.Kind
+			pos  position.Pos
+			docs []string
+		)
+		cases = append(cases,
+			kindsCase{
+				name: "TagEntry.Kind",
+				call: func() { kind = subject.Kind() },
+				check: func(tb testing.TB) {
+					assert.Equal(tb, kind, symbol.KindTagEntry, "Kind returns the kind's constant")
+				},
+			},
+			kindsCase{
+				name: "TagEntry.Position",
+				call: func() { pos = subject.Position() },
+				check: func(tb testing.TB) {
+					assert.Equal(tb, pos, position.Pos{}, "Position returns the zero position")
+				},
+			},
+			kindsCase{
+				name: "TagEntry.Docs",
+				call: func() { docs = subject.Docs() },
+				check: func(tb testing.TB) {
+					assert.Nil(tb, docs, "Docs returns nil")
 				},
 			},
 		)

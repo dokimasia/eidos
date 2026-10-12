@@ -7,6 +7,72 @@ package emit
 
 import "go.dokimi.dev/eidos/core/symbol"
 
+// Seal shares flag with every slot of every declaration in the tree of
+// root, including the slots of nested declarations, of members and of
+// bodies. [Slot.Append] and [Slot.Replace] panic on such a slot while
+// *flag is true. The store of a plan seals each declaration that a unit
+// places. Seal is reserved to the kernel, and the lint rule of the
+// repository refuses a call from outside the kernel. It allocates
+// nothing.
+func Seal(root symbol.Symbol, flag *bool) {
+	for s := range All(root) {
+		switch x := s.(type) {
+		case *Function:
+			x.seal(flag)
+		case *Method:
+			x.seal(flag)
+		case *Enum:
+			x.seal(flag)
+		case *Sum:
+			x.seal(flag)
+		case *SumVariant:
+			x.seal(flag)
+		case *Field:
+			x.seal(flag)
+		case *Struct:
+			x.seal(flag)
+		case *Interface:
+			x.seal(flag)
+		}
+	}
+}
+
+// ParamsSlot returns the Params slot of a Function, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Function) ParamsSlot() *Slot[*Param] { return &x.Params }
+
+// ReturnsSlot returns the Returns slot of a Function, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Function) ReturnsSlot() *Slot[*Return] { return &x.Returns }
+
+// seal shares flag with every slot of a Function, and with the slots
+// of its body.
+func (x *Function) seal(flag *bool) {
+	x.Params.seal = flag
+	x.Returns.seal = flag
+	x.Body.seal(flag)
+}
+
+// ParamsSlot returns the Params slot of a Method, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Method) ParamsSlot() *Slot[*Param] { return &x.Params }
+
+// ReturnsSlot returns the Returns slot of a Method, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Method) ReturnsSlot() *Slot[*Return] { return &x.Returns }
+
+// seal shares flag with every slot of a Method, and with the slots
+// of its body.
+func (x *Method) seal(flag *bool) {
+	x.Params.seal = flag
+	x.Returns.seal = flag
+	x.Body.seal(flag)
+}
+
 // VariantsSlot returns the Variants slot of a Enum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never returns nil.
@@ -22,6 +88,13 @@ func (x *Enum) FieldsSlot() *Slot[*Field] { return &x.Fields }
 // accessor never returns nil.
 func (x *Enum) MethodsSlot() *Slot[*Method] { return &x.Methods }
 
+// seal shares flag with every slot of a Enum.
+func (x *Enum) seal(flag *bool) {
+	x.Variants.seal = flag
+	x.Fields.seal = flag
+	x.Methods.seal = flag
+}
+
 // VariantsSlot returns the Variants slot of a Sum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never returns nil.
@@ -32,10 +105,31 @@ func (x *Sum) VariantsSlot() *Slot[*SumVariant] { return &x.Variants }
 // accessor never returns nil.
 func (x *Sum) MethodsSlot() *Slot[*Method] { return &x.Methods }
 
+// seal shares flag with every slot of a Sum.
+func (x *Sum) seal(flag *bool) {
+	x.Variants.seal = flag
+	x.Methods.seal = flag
+}
+
 // FieldsSlot returns the Fields slot of a SumVariant, which
 // plugins append into. The slot is part of the value, so the
 // accessor never returns nil.
 func (x *SumVariant) FieldsSlot() *Slot[*Field] { return &x.Fields }
+
+// seal shares flag with every slot of a SumVariant.
+func (x *SumVariant) seal(flag *bool) {
+	x.Fields.seal = flag
+}
+
+// TagsSlot returns the Tags slot of a Field, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Field) TagsSlot() *Slot[*TagEntry] { return &x.Tags }
+
+// seal shares flag with every slot of a Field.
+func (x *Field) seal(flag *bool) {
+	x.Tags.seal = flag
+}
 
 // FieldsSlot returns the Fields slot of a Struct, which
 // plugins append into. The slot is part of the value, so the
@@ -52,6 +146,19 @@ func (x *Struct) MethodsSlot() *Slot[*Method] { return &x.Methods }
 // accessor never returns nil.
 func (x *Struct) TypesSlot() *Slot[symbol.Symbol] { return &x.Types }
 
+// EmbedsSlot returns the Embeds slot of a Struct, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Struct) EmbedsSlot() *Slot[*Embed] { return &x.Embeds }
+
+// seal shares flag with every slot of a Struct.
+func (x *Struct) seal(flag *bool) {
+	x.Fields.seal = flag
+	x.Methods.seal = flag
+	x.Types.seal = flag
+	x.Embeds.seal = flag
+}
+
 // FieldsSlot returns the Fields slot of a Interface, which
 // plugins append into. The slot is part of the value, so the
 // accessor never returns nil.
@@ -66,3 +173,16 @@ func (x *Interface) MethodsSlot() *Slot[*Method] { return &x.Methods }
 // plugins append into. The slot is part of the value, so the
 // accessor never returns nil.
 func (x *Interface) TypesSlot() *Slot[symbol.Symbol] { return &x.Types }
+
+// EmbedsSlot returns the Embeds slot of a Interface, which
+// plugins append into. The slot is part of the value, so the
+// accessor never returns nil.
+func (x *Interface) EmbedsSlot() *Slot[*Embed] { return &x.Embeds }
+
+// seal shares flag with every slot of a Interface.
+func (x *Interface) seal(flag *bool) {
+	x.Fields.seal = flag
+	x.Methods.seal = flag
+	x.Types.seal = flag
+	x.Embeds.seal = flag
+}

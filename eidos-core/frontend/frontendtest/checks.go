@@ -35,15 +35,16 @@ import (
 // [Brand].
 const foreignBrand output.Brand = "fixture-foreign"
 
-// The suffixes the stamped copies take beside the file they copy.
+// These constants are the suffixes of the stamped copies beside the file
+// that they copy.
 const (
 	ownedSuffix   = "_owned"
 	foreignSuffix = "_foreign"
 )
 
-// parsed is what one load of a fixture records: the graph's encoding,
-// the attached directives and classification stamps in identity order,
-// and the findings in report order.
+// parsed is the record of one load of a fixture. It has the encoding of
+// the graph, the attached directives and classification stamps in
+// identity order, and the findings in the order of the sink.
 type parsed struct {
 	graph      []byte
 	directives []entry[[]directive.Raw]
@@ -54,9 +55,10 @@ type parsed struct {
 // AssertDeterministicParse loads the fixture once per call of
 // [assert.Deterministic] and compares what each load recorded with
 // what the first one did: the graph byte for byte, the attached
-// directives and classification stamps, and the findings in report
-// order. Reparsing unchanged files yields the same identities, which
-// every later comparison by identity depends on.
+// directives and classification stamps, and the findings in the order
+// of the sink. A parse of unchanged files must return the same
+// identities, because every later comparison by identity depends on
+// them.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -79,7 +81,7 @@ type entry[V any] struct {
 	values  V
 }
 
-// entries collects an enumeration the store makes in identity
+// entries collects an enumeration of the store, which is in identity
 // order.
 func entries[V any](seq iter.Seq2[symbol.Identity, V]) []entry[V] {
 	var out []entry[V]
@@ -89,10 +91,10 @@ func entries[V any](seq iter.Seq2[symbol.Identity, V]) []entry[V] {
 	return out
 }
 
-// AssertPositionedDiagnostics checks every finding's address: a
-// finding without a position or an origin is a defect in the
-// frontend that reported it. Each finding reports on its own, under
-// its code and its message.
+// AssertPositionedDiagnostics checks the position and the origin of
+// every finding. A finding that [diag.Diag.Positioned] refuses, or a
+// finding without an origin, is a defect of the frontend that reported
+// it. Each finding reports on its own, with its code and its message.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -100,14 +102,14 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	got := drive(tb, f, fx)
 	for d := range got.sink.All() {
 		finding := d.Code.String() + " " + d.Msg
-		expect.NotEqual(tb, d.Pos.File, "", "the finding states a position: "+finding)
-		expect.NotEqual(tb, d.Origin, "", "the finding states its origin: "+finding)
+		expect.True(tb, d.Positioned(), "the finding has a position: "+finding)
+		expect.NotEqual(tb, d.Origin, "", "the finding has an origin: "+finding)
 	}
 }
 
-// AssertClassified checks the claim: every selected file
-// either declares into the graph or has a finding naming it, so
-// nothing drops in silence. The recorded stamps apply cleanly under
+// AssertClassified checks the claim: every selected file either
+// declares into the graph or has a finding at its path, so no file is
+// dropped in silence. The recorded stamps apply cleanly under
 // the keys that the frontend registers through its role and the keys
 // that the fixture declares, the way the workspace run applies them. A
 // stamp under a key that neither registers fails, because nothing could
@@ -139,39 +141,40 @@ func AssertClassified(tb assert.TB, setup Setup) {
 		assert.True(tb, stampsAny(got.graph),
 			"the load stamps where the fixture declares classification keys to apply the stamps under")
 	}
-	facts := meta.NewFacts(keyRegistry(tb, f, fx))
+	registry, _ := Registry(tb, f, fx.Keys)
+	facts := meta.NewFacts(registry)
 	for id, stamps := range got.graph.Stamps() {
 		for i, s := range stamps {
-			err := facts.StampRaw(s, meta.Claim{
-				Subject:   id,
-				Authority: meta.AuthorityPlugin,
-				Plugin:    s.Origin,
-				Order:     meta.Order{Subject: id, Instance: i},
-				Pos:       s.Pos,
-			})
-			expect.NoError(tb, err, "a recorded stamp applies under the keys of the frontend and the fixture")
+			expect.NoError(tb, facts.StampRaw(s, meta.LoadClaim(id, i, s)),
+				"a recorded stamp applies under the keys of the frontend and the fixture")
 		}
 	}
 }
 
-// keyRegistry returns the key registry that a workspace builds for the
-// frontend and the fixture. It registers the kernel's keys, then the
-// keys that the frontend registers through its role under its
-// language's spelling, and then the fixture's keys under the handle of
-// the composition.
-func keyRegistry(tb assert.TB, f plugin.Frontend, fx *Fixture) *meta.Registry {
+// Registry returns the key registry that a workspace builds for the
+// frontend f, and the handles of the kernel's keys in it. It registers
+// the kernel's keys first. Then it registers the keys that f registers
+// through its role, under the spelling of the language of f. Last, it
+// calls each function of keys with the handle of the composition. A nil
+// function registers nothing. Registry stops the test where a
+// registration fails.
+func Registry(
+	tb assert.TB, f plugin.Frontend, keys ...func(*meta.Registry) error,
+) (*meta.Registry, meta.KernelKeys) {
 	tb.Helper()
 
 	registry := meta.NewRegistry()
-	_, err := meta.Kernel(registry)
+	kernel, err := meta.Kernel(registry)
 	assert.NoError(tb, err, "the kernel's own keys register, as the workspace registers them")
 	if kp, provides := f.(plugin.KeyProvider); provides {
 		assert.NoError(tb, kp.Keys(registry.For(string(f.Lang()))), "the frontend's keys register")
 	}
-	if fx.Keys != nil {
-		assert.NoError(tb, fx.Keys(registry), "the fixture's keys register")
+	for _, register := range keys {
+		if register != nil {
+			assert.NoError(tb, register(registry), "the fixture's keys register")
+		}
 	}
-	return registry
+	return registry, kernel
 }
 
 // AssertOwnedExcluded checks the one exclusion the kernel makes: a
@@ -179,7 +182,7 @@ func keyRegistry(tb assert.TB, f plugin.Frontend, fx *Fixture) *meta.Registry {
 // workspace's output and never enters a unit, while the same file
 // framed under another brand is ordinary input and loads. The
 // check stamps the copies itself through the language's own
-// comment syntax, so a fixture states nothing.
+// comment syntax, so a fixture needs no copies of its own.
 func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -260,9 +263,7 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 			"the same bytes at two depths key differently")
 	}
 
-	versioned, declares := f.(plugin.Versioned)
-	assert.True(tb, declares, "the driver already refused a versionless frontend")
-	inner := versioned.Version()
+	inner := f.Version()
 	vBase := drive(tb, reversion{Frontend: f, version: inner}, fx)
 	vBump := drive(tb, reversion{Frontend: f, version: inner + "+frontendtest"}, fx)
 	keyed(tb, keysOf(vBase.report), keysOf(vBump.report), false,
@@ -282,7 +283,7 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 	touched[first] = &fstest.MapFile{Data: append(
 		slices.Clone(touched[first].Data), '\n',
 	)}
-	perturbed, err := tryDrive(f, &Fixture{
+	perturbed, err := tryDrive(assert.Context(tb), f, &Fixture{
 		Sources: touched, Signatures: fx.Signatures, Stores: fx.Stores,
 	})
 	if err == nil {
@@ -327,8 +328,8 @@ func keyed(tb assert.TB, before, after map[string][]byte, same bool, why string)
 // returned again over a copy whose every selected file gained a line
 // break, and requires each unit's door fold to move. A dependency unit
 // reads the stores and not the workspace, so the comparison leaves it
-// out. The kernel's side of the door, a read outside the unit refusing
-// and naming the path, is the plugin package's own contract.
+// out. The plugin package checks the side of the kernel: a read outside
+// the unit returns an error that contains the path.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -345,7 +346,7 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 		touched[file] = &fstest.MapFile{Data: append(slices.Clone(touched[file].Data), '\n')}
 	}
 	before := doorFolds(tb, f, warm.report, tree, fx.Stores)
-	after, err := tryDoorFolds(f, warm.report, touched, fx.Stores)
+	after, err := tryDoorFolds(assert.Context(tb), f, warm.report, touched, fx.Stores)
 	if err != nil {
 		// A language refusing the appended bytes read them through a
 		// door: nothing else can read the copy this check made.
@@ -356,31 +357,31 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 }
 
 // doorFolds parses every unit a load reported again, each through a
-// fresh unit of its own over the tree and its stores, and returns each
-// unit's door fold by its first member: the fold of every read its
-// parse made through the unit. A parse that read its members around
-// the door folds none of their bytes, so its fold does not move when
-// the members' bytes do.
+// fresh unit of its own over the tree and its stores, under the context
+// of tb, and returns each unit's door fold by its first member: the fold
+// of every read its parse made through the unit. A parse that read its
+// members around the door folds none of their bytes, so its fold does
+// not move when the members' bytes do.
 func doorFolds(
 	tb assert.TB, f plugin.Frontend, report *load.Report, sources fs.FS, stores map[string]fs.FS,
 ) map[string][]byte {
 	tb.Helper()
 
-	out, err := tryDoorFolds(f, report, sources, stores)
+	out, err := tryDoorFolds(assert.Context(tb), f, report, sources, stores)
 	assert.NoError(tb, err, "every unit parses again")
 	return out
 }
 
-// tryDoorFolds is [doorFolds], returning a parse's own error.
+// tryDoorFolds is [doorFolds] under ctx, returning a parse's own error.
 func tryDoorFolds(
-	f plugin.Frontend, report *load.Report, sources fs.FS, stores map[string]fs.FS,
+	ctx context.Context, f plugin.Frontend, report *load.Report, sources fs.FS, stores map[string]fs.FS,
 ) (map[string][]byte, error) {
 	tree := fixtureTree{FS: sources, stores: stores}
 	out := make(map[string][]byte, len(report.Units))
 	for _, u := range report.Units {
 		door := &foldingTree{tree: tree, sum: sha256.New()}
 		src := plugin.NewSourceUnit(u.Files, door, u.Depth, f.Syntax(), string(Brand), diag.NewSink(), f.Name())
-		if err := f.Parse(context.Background(), src); err != nil {
+		if err := f.Parse(ctx, src); err != nil {
 			return nil, err
 		}
 		out[u.Files[0].Path] = door.sum.Sum(nil)
@@ -437,9 +438,9 @@ func foldField(h hash.Hash, field []byte) {
 	h.Write(field)
 }
 
-// workspaceOnly keeps the entries of the units the partition returned,
-// leaving out the dependency units, whose reads are the stores' and
-// not the workspace's.
+// workspaceOnly keeps the entries of the units that the partition
+// returned. It leaves out the dependency units, which read the stores
+// and not the workspace.
 func workspaceOnly(report *load.Report, byFirst map[string][]byte) map[string][]byte {
 	out := make(map[string][]byte, len(byFirst))
 	for _, u := range report.Units {
@@ -476,7 +477,7 @@ func homeOf(s symbol.Symbol) (string, bool) {
 // AssertSignatureDepth loads the fixture once full and once under
 // its signature roots. The shallow graph's identities are a subset
 // of the full graph's, under the same spellings, and the report
-// states which units loaded shallow. Every identity the fixture
+// lists the units that loaded shallow. Every identity the fixture
 // lists in [Fixture.Dropped] is in the full graph and absent from
 // the shallow one, so a frontend that ignores depth fails a fixture
 // that lists one.
@@ -533,7 +534,7 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 		names[s.Name] = true
 	}
 	assert.Empty(tb, registry.Seal(), "the fixture's registry seals")
-	keys := keyRegistry(tb, f, fx)
+	keys, _ := Registry(tb, f, fx.Keys)
 
 	attached := 0
 	for id, raws := range got.graph.Directives() {
@@ -656,7 +657,7 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 		sources = copied
 	}
 	before := doorFolds(tb, f, got.report, fx.Sources, fx.Stores)
-	after, err := tryDoorFolds(f, got.report, sources, stores)
+	after, err := tryDoorFolds(assert.Context(tb), f, got.report, sources, stores)
 	if err != nil {
 		// A language refusing the appended byte read it through the
 		// unit: nothing else can read the copy this check made.
@@ -667,10 +668,10 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 }
 
 // AssertReexports checks the resolution step's following of
-// re-exports for a frontend in the [plugin.Exporter] role: every
-// identity the fixture lists in [Fixture.Reexported], a declaration
-// the fixture's references name only through a re-export, is the
-// target of a reference in the graph.
+// re-exports for a frontend in the [plugin.Exporter] role. Every
+// identity in [Fixture.Reexported] is a declaration that the
+// references of the fixture resolve to only through a re-export, and
+// the check requires a reference in the graph that targets it.
 func AssertReexports(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -691,6 +692,40 @@ func AssertReexports(tb assert.TB, setup Setup) {
 	}
 	for _, id := range fx.Reexported {
 		expect.Contains(tb, targets, id, "a reference through a re-export targets "+id.String())
+	}
+}
+
+// AssertEmptyLoad loads the fixture's [Fixture.Empty] tree, whose
+// claimed files declare nothing, with the fixture's stores. It fails
+// where the selection claims no file of the tree, because the load then
+// never calls the frontend, where the load returns an error or reports a
+// finding of Error severity, where a claimed file does not enter the
+// graph, and where a claimed file declares something in the graph. The
+// files of a dependency unit belong to a store, so the check leaves them
+// out. Each finding and each file reports on its own.
+func AssertEmptyLoad(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	f, fx := setup(tb)
+	assert.NotNil(tb, fx.Empty, "the fixture has a tree whose files declare nothing")
+	empty := &Fixture{Sources: fx.Empty, Stores: fx.Stores}
+	claimed := selected(tb, f, empty)
+	got := drive(tb, f, empty)
+	for d := range got.sink.All() {
+		expect.NotEqual(tb, d.Severity, diag.SeverityError,
+			"the load of a tree whose files declare nothing reports no Error: "+d.Msg)
+	}
+	files := map[string]*node.File{}
+	for decl := range got.graph.ByKind(symbol.KindFile) {
+		if file, is := decl.(*node.File); is {
+			files[file.Path] = file
+		}
+	}
+	for _, path := range claimed {
+		expect.Contains(tb, files, path, path+" enters the graph as a file")
+		if file, held := files[path]; held {
+			expect.Empty(tb, file.Decls, path+" declares nothing in the graph, as in the empty tree")
+		}
 	}
 }
 
@@ -743,20 +778,11 @@ func (w reversion) Options() any {
 }
 
 // reoption re-declares the frontend's options and keeps the
-// declared version, so a configuration delta is the one difference
-// between two loads.
+// declared version, which the embedded frontend returns, so a
+// configuration delta is the one difference between two loads.
 type reoption struct {
 	plugin.Frontend
 	options any
-}
-
-// Version returns the inner's declared version, and nothing for a
-// frontend the driver would refuse anyway.
-func (w reoption) Version() string {
-	if versioned, declares := w.Frontend.(plugin.Versioned); declares {
-		return versioned.Version()
-	}
-	return ""
 }
 
 // Options returns the wrapper's own.

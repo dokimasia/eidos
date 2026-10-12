@@ -25,23 +25,29 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The allocations of a builder's methods, which TestBuilderAllocs checks
-// in the ordinary run and BenchmarkBuilder in a benchmark run.
+// The allocation counts of the methods of a builder. TestBuilderAllocs
+// checks them in the ordinary run, and BenchmarkBuilder in a benchmark
+// run.
 const (
-	// newBuilderAllocs is the builder.
+	// newBuilderAllocs is the allocation count of New. New allocates the
+	// builder.
 	newBuilderAllocs = 1
-	// listAllocs is the first call of a method that registers values on
-	// a new builder: the list it appends to.
+	// listAllocs is the allocation count of the first call of a method
+	// that registers values on a new builder. The call allocates the list
+	// of the values.
 	listAllocs = 1
-	// buildAllocs is the build of the composition of 64 annotators and 8
-	// plans of 4 generators: 935 allocations for the registries, the
-	// roster, the capability order, the plans' policies, the compiled
-	// plans and the fingerprint, whose fold spells every registered key.
-	// The 8 more are for the runtime's type-assertion caches. An interface
-	// assertion that misses its call site's cache builds a new cache about
-	// once in 1,024 misses, so a run of one iteration counts some of these
-	// builds: 12 fresh processes counted 0 to 3.
-	buildAllocs = 935 + 8
+	// buildAllocs is the allocation count of a Build of the composition of
+	// 64 annotators and 8 plans of 4 generators. Build allocates 1,016
+	// objects for the registries, the roster, the capability order, the
+	// policies of the plans, the compiled plans, the lowering entry of the
+	// target and the fingerprint, whose fold spells every registered key.
+	// The comparisons of the backend value that the 8 plans share run
+	// through reflection and allocate about 23 of them. The 8 more are for
+	// the type-assertion caches of the runtime. An interface assertion that
+	// misses the cache of its call site builds a new cache about once in
+	// 1,024 misses, so a run of one iteration counts some of these builds.
+	// 12 new processes counted 0 to 3.
+	buildAllocs = 1_016 + 8
 )
 
 // mirrorOptions is a valid options struct for the config cases.
@@ -49,17 +55,13 @@ type mirrorOptions struct {
 	Depth int `opt:"depth" doc:"how deep the mirror walks"`
 }
 
-// setter is one method of a builder that registers or sets a value,
-// called with a fixture value, and whether it appends to a list.
+// setter is a method of a builder that registers or sets a value, with
+// a fixture value. list reports whether the method appends to a list.
 type setter struct {
 	name string
 	set  func(*workspace.Builder) *workspace.Builder
 	list bool
 }
-
-// unversioned is a frontend that declares no version: the embedded
-// interface promotes the frontend's methods and not its version.
-type unversioned struct{ plugin.Frontend }
 
 // renamed is a versioned frontend under another name.
 type renamed struct {
@@ -90,9 +92,9 @@ func (hiding) Version() string { return "1" }
 // Options returns options that hide a field from the encoding.
 func (hiding) Options() any { return &hiddenOptions{} }
 
-// Build is the one gate every human-typed name passes: it runs
-// every step and collects, so the composition's author reads every
-// fault at once.
+// TestBuilder tests the builder of a composition. Build checks every
+// name that a person types. It runs every step and joins the faults, so
+// the author of a composition reads every fault at once.
 func TestBuilder(t *testing.T) {
 	t.Parallel()
 
@@ -151,7 +153,7 @@ func TestBuilder(t *testing.T) {
 		t.Run("returns the workspace for a frontend named after its language's backend", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := valid().Frontends(renamed{frontendtest.NewScripted(), "plan-printer"}).Build()
+			_, err := valid().Frontends(renamed{frontendtest.NewScripted(), "fixture" + printerSuffix}).Build()
 			assert.NoError(t, err, "a language's frontend and backend share the language's name")
 		})
 
@@ -160,6 +162,21 @@ func TestBuilder(t *testing.T) {
 
 			_, err := valid().Parallel(0).Build()
 			assert.NoError(t, err, "zero workers dispatch sequentially")
+		})
+
+		t.Run("returns the workspace for a ledger beside an output", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := workspace.New().
+				Brand(fixtureBrand).
+				Targets("fixture").
+				Plans(workspace.Plan{
+					Name: "plan", Generators: []plugin.Generator{mirror("mirror")}, Backend: fixturePrinter(),
+				}).
+				Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+				Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil }).
+				Build()
+			assert.NoError(t, err, "a run with an output opens the ledger")
 		})
 
 		tests := []struct {
@@ -194,6 +211,13 @@ func TestBuilder(t *testing.T) {
 					return valid().Memo(workspace.Memo{Limit: -1})
 				},
 				markers: []string{"memo limit -1", "negative"},
+			},
+			{
+				name: "returns an error naming a ledger without an output",
+				compose: func() *workspace.Builder {
+					return valid().Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil })
+				},
+				markers: []string{"declares a ledger and no output", "declare an output, or remove the ledger"},
 			},
 			{
 				name: "returns an error naming two plugins with one name",
@@ -235,13 +259,10 @@ func TestBuilder(t *testing.T) {
 			{
 				name: "returns an error naming a per-plan family without a directory",
 				compose: func() *workspace.Builder {
-					indexer, held := eidos.NewPlugin("indexer").
+					indexer := eidos.NewPlugin("indexer").
 						Output(plugin.Output{Per: plugin.PerPlan, Word: "index"}).
 						Handle(eidos.OnStruct(mirrored)).
-						Build().(plugin.Generator)
-					if !held {
-						panic("workspace_test: an emitter rule lowers to the generator role")
-					}
+						Generator()
 					return valid().Plans(planTo("second", "fixture", indexer))
 				},
 				markers: []string{`plan "second"`, "indexer", "states none"},
@@ -250,11 +271,8 @@ func TestBuilder(t *testing.T) {
 				name: "returns an error naming a namespace that a plugin and the composition both claim",
 				compose: func() *workspace.Builder {
 					claim := func(r *meta.Registry) error { return r.ClaimNamespace("shape") }
-					claimer, held := eidos.NewPlugin("claimer").Keys(claim).
-						Handle(eidos.OnStruct(quiet)).Build().(plugin.Annotator)
-					if !held {
-						panic("workspace_test: a stamper rule lowers to the annotator role")
-					}
+					claimer := eidos.NewPlugin("claimer").Keys(claim).
+						Handle(eidos.OnStruct(quiet)).Annotator()
 					return valid().Annotators(claimer).Keys(claim)
 				},
 				markers: []string{"claimed twice", `"shape"`, `"claimer"`},
@@ -465,13 +483,6 @@ func TestBuilder(t *testing.T) {
 				markers: []string{"frontend 1 of 1 is nil"},
 			},
 			{
-				name: "returns an error naming a frontend without a version",
-				compose: func() *workspace.Builder {
-					return valid().Frontends(unversioned{frontendtest.NewScripted()})
-				},
-				markers: []string{"declares no version", strconv.Quote(string(frontendtest.ScriptedID))},
-			},
-			{
 				name: "returns an error naming two frontends with one name",
 				compose: func() *workspace.Builder {
 					return valid().Frontends(frontendtest.NewScripted(), frontendtest.NewScripted())
@@ -546,12 +557,13 @@ func TestBuilder(t *testing.T) {
 	})
 }
 
-// Each method of a builder allocates within its ceiling in the ordinary
-// run, which runs no benchmark. A registration and a build each take a
-// builder composed outside the count, because a registration's first
-// call allocates the list it appends to. The count of the builds keeps
-// their first error, which cmp.Or returns without allocating. The check
-// runs alone, because the count includes every goroutine's allocations.
+// TestBuilderAllocs checks that each method of a builder allocates
+// within its ceiling, because the ordinary run runs no benchmark. A
+// registration and a build each take a builder that the setup composes
+// outside the count, because the first call of a registration allocates
+// its list. The count of the builds keeps their first error, which
+// cmp.Or returns without allocating. The test does not run in parallel,
+// because the count includes the allocations of every goroutine.
 func TestBuilderAllocs(t *testing.T) {
 	var built *workspace.Builder
 	assert.MaxAllocs(t, func() { built = workspace.New() }, newBuilderAllocs, "New allocates the builder")
@@ -582,10 +594,10 @@ func TestBuilderAllocs(t *testing.T) {
 	assert.NoError(t, err, "every composition builds")
 }
 
-// BenchmarkBuilder measures a builder's construction, each registration
-// on a new builder, each setter, and the steps over the composition of
-// 64 annotators and 8 plans of 4 generators. The plugin values build
-// once, and the loop measures the steps.
+// BenchmarkBuilder measures New, each registration on a new builder,
+// each setter, and the steps of Build over the composition of 64
+// annotators and 8 plans of 4 generators. The plugin values build once,
+// and the loop measures the steps.
 func BenchmarkBuilder(b *testing.B) {
 	b.Run("New", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(newBuilderAllocs)
@@ -647,7 +659,7 @@ func BenchmarkBuilder(b *testing.B) {
 }
 
 // setters returns each method of a builder that registers or sets a
-// value, called with a fixture value built once.
+// value, with a fixture value that the function builds once.
 func setters(tb assert.TB) []setter {
 	tb.Helper()
 
@@ -695,10 +707,11 @@ func setters(tb assert.TB) []setter {
 	}
 }
 
-// composition returns a function that composes 105 plugins on a new
-// builder: 64 annotators forming one capability chain inside one
-// priority, and 8 plans of 4 generators each behind their backends.
-// Every builder it returns shares the plugin values, which build once.
+// composition returns a function that composes 97 plugins on a new
+// builder. 64 annotators form one capability chain inside one priority,
+// and 8 plans of 4 generators render through the one backend of the
+// target fixture. Every builder that it returns shares the plugin
+// values, which build once.
 func composition() func() *workspace.Builder {
 	const roles, planned, width = 64, 8, 4
 	var order []plugin.ID
@@ -727,38 +740,30 @@ func composition() func() *workspace.Builder {
 	}
 }
 
-// tuned returns a generator declaring cfg as its options struct.
+// tuned returns a generator with cfg as its options struct.
 func tuned(name plugin.ID, cfg any) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Options(cfg).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
 // provider returns a generator named name that provides the capability c.
 func provider(name plugin.ID, c plugin.Capability) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
+	return eidos.NewPlugin(name).
 		Provides(c).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
 			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		})).Generator()
 }
 
-// needy returns a generator whose directive schema requires a name
+// needy returns a generator whose directive schema requires a name that
 // nothing registers.
 func needy() plugin.Generator {
-	p, held := eidos.NewPlugin("needy").
+	return eidos.NewPlugin("needy").
 		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
 		Handle(eidos.Directive(
 			directive.Schema{
@@ -768,9 +773,5 @@ func needy() plugin.Generator {
 			},
 			eidos.OnEmit(symbol.KindStruct,
 				func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }),
-		)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+		)).Generator()
 }

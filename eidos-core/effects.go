@@ -135,10 +135,12 @@ type slotBuffer[T any] struct {
 	appends []slotAppend[T]
 }
 
-// apply appends one buffered call's values into its slot, in order.
+// apply appends the values of one buffered call into its slot, in order.
+// The slot of a value in the store is sealed, so the append goes through
+// [emit.AppendSealed].
 func (b *slotBuffer[T]) apply(at int) {
 	a := b.appends[at]
-	a.slot.Append(b.values[a.from:a.to]...)
+	emit.AppendSealed(a.slot, b.values[a.from:a.to]...)
 }
 
 // reset empties the buffer and keeps its storage. It zeroes the values

@@ -131,6 +131,9 @@ func (w *binaryWriter) symbol(s symbol.Symbol) error {
 	case *Embed:
 		w.encodeEmbed(x)
 		return nil
+	case *TagEntry:
+		w.encodeTagEntry(x)
+		return nil
 	default:
 		return fmt.Errorf("node: encode %v: %T is not a kind of the model", s.Kind(), s)
 	}
@@ -185,6 +188,8 @@ func (r *binaryReader) symbol() symbol.Symbol {
 		return r.decodeTypeParam()
 	case symbol.KindEmbed:
 		return r.decodeEmbed()
+	case symbol.KindTagEntry:
+		return r.decodeTagEntry()
 	default:
 		r.Fail(fmt.Errorf("node: decode: %w: kind %d at byte %d is not a kind of the model",
 			ErrMalformed, k, r.Read()-1))
@@ -305,6 +310,9 @@ func (w *binaryWriter) encodeMethod(x *Method) {
 	w.boolean(x.Indexer)
 	w.boolean(x.Constructs)
 	w.boolean(x.Hard)
+	w.boolean(x.Optional)
+	w.unsigned(uint64(x.Mutability))
+	w.boolean(x.Computed)
 	w.encodeParam(x.Receiver)
 	w.encodeTypeRef(x.Receives)
 	w.unsigned(uint64(len(x.TypeParams)))
@@ -347,6 +355,9 @@ func (r *binaryReader) decodeMethod() *Method {
 	x.Indexer = r.boolean()
 	x.Constructs = r.boolean()
 	x.Hard = r.boolean()
+	x.Optional = r.boolean()
+	x.Mutability = symbol.Mutability(r.unsigned())
+	x.Computed = r.boolean()
 	x.Receiver = ref[*Param](r)
 	x.Receives = ref[*TypeRef](r)
 	if n := r.count(); n > 0 {
@@ -666,6 +677,7 @@ func (w *binaryWriter) encodeEnum(x *Enum) {
 	w.str(x.Name)
 	w.unsigned(uint64(x.Visibility))
 	w.boolean(x.Const)
+	w.encodeTypeRef(x.Underlying)
 	w.unsigned(uint64(len(x.Variants)))
 	for _, child := range x.Variants {
 		w.encodeEnumVariant(child)
@@ -692,6 +704,7 @@ func (r *binaryReader) decodeEnum() *Enum {
 	x.Name = r.str()
 	x.Visibility = symbol.Visibility(r.unsigned())
 	x.Const = r.boolean()
+	x.Underlying = ref[*TypeRef](r)
 	if n := r.count(); n > 0 {
 		x.Variants = make([]*EnumVariant, n)
 		for i := range x.Variants {
@@ -867,6 +880,7 @@ func (w *binaryWriter) encodeField(x *Field) {
 	w.unsigned(uint64(x.Mutability))
 	w.boolean(x.Hard)
 	w.boolean(x.Optional)
+	w.boolean(x.Computed)
 	w.encodeTypeRef(x.Type)
 	w.str(x.Value)
 	w.str(x.Tag)
@@ -888,6 +902,7 @@ func (r *binaryReader) decodeField() *Field {
 	x.Mutability = symbol.Mutability(r.unsigned())
 	x.Hard = r.boolean()
 	x.Optional = r.boolean()
+	x.Computed = r.boolean()
 	x.Type = ref[*TypeRef](r)
 	x.Value = r.str()
 	x.Tag = r.str()
@@ -1249,7 +1264,6 @@ func (w *binaryWriter) encodeTypeRef(x *TypeRef) {
 		return
 	}
 	w.kind(symbol.KindTypeRef)
-	w.identity(x.ID)
 	w.pos(x.Pos)
 	w.str(x.Spelling)
 	w.identity(x.Target)
@@ -1257,6 +1271,7 @@ func (w *binaryWriter) encodeTypeRef(x *TypeRef) {
 	w.unsigned(uint64(x.Form))
 	w.unsigned(uint64(x.Variance))
 	w.boolean(x.Async)
+	w.unsigned(uint64(x.Mutability))
 	w.unsigned(uint64(len(x.Elems)))
 	for _, child := range x.Elems {
 		w.encodeTypeRef(child)
@@ -1265,6 +1280,10 @@ func (w *binaryWriter) encodeTypeRef(x *TypeRef) {
 	w.integer(x.Length)
 	w.unsigned(uint64(len(x.Args)))
 	for _, child := range x.Args {
+		w.encodeTypeRef(child)
+	}
+	w.unsigned(uint64(len(x.Absent)))
+	for _, child := range x.Absent {
 		w.encodeTypeRef(child)
 	}
 	w.unsigned(uint64(len(x.Fields)))
@@ -1281,7 +1300,6 @@ func (w *binaryWriter) encodeTypeRef(x *TypeRef) {
 // of them already read.
 func (r *binaryReader) decodeTypeRef() *TypeRef {
 	x := &TypeRef{}
-	x.ID = r.identity()
 	x.Pos = r.pos()
 	x.Spelling = r.str()
 	x.Target = r.identity()
@@ -1289,6 +1307,7 @@ func (r *binaryReader) decodeTypeRef() *TypeRef {
 	x.Form = symbol.TypeForm(r.unsigned())
 	x.Variance = symbol.Variance(r.unsigned())
 	x.Async = r.boolean()
+	x.Mutability = symbol.Mutability(r.unsigned())
 	if n := r.count(); n > 0 {
 		x.Elems = make([]*TypeRef, n)
 		for i := range x.Elems {
@@ -1301,6 +1320,12 @@ func (r *binaryReader) decodeTypeRef() *TypeRef {
 		x.Args = make([]*TypeRef, n)
 		for i := range x.Args {
 			x.Args[i] = ref[*TypeRef](r)
+		}
+	}
+	if n := r.count(); n > 0 {
+		x.Absent = make([]*TypeRef, n)
+		for i := range x.Absent {
+			x.Absent[i] = ref[*TypeRef](r)
 		}
 	}
 	if n := r.count(); n > 0 {
@@ -1391,5 +1416,22 @@ func (r *binaryReader) decodeEmbed() *Embed {
 	x.Tag = r.str()
 	x.Annotations = r.annotations()
 	x.Host = r.identity()
+	return x
+}
+
+// encodeTagEntry writes one TagEntry behind its kind, and a zero byte
+// for nil.
+func (w *binaryWriter) encodeTagEntry(x *TagEntry) {
+	if x == nil {
+		w.kind(symbol.KindInvalid)
+		return
+	}
+	w.kind(symbol.KindTagEntry)
+}
+
+// decodeTagEntry reads the fields of one TagEntry, the kind in front
+// of them already read.
+func (r *binaryReader) decodeTagEntry() *TagEntry {
+	x := &TagEntry{}
 	return x
 }

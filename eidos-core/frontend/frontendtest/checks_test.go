@@ -27,19 +27,23 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The identity the dangling frontend attaches to, which no load
-// ever declares.
+// ghostPath and ghostName are the identity of the declaration that the
+// dangling frontend attaches to, which no load declares.
 const (
 	ghostPath = "svc/ghost"
 	ghostName = "Ghost"
 )
 
-// The contracts the checks state, as their records state them, for the
-// cases that two checks or two fixtures break alike.
+// These constants are the contracts of the checks, as their records
+// contain them, for the cases that two checks or two fixtures break in
+// the same way.
 const (
 	shallowRoot  = "a stated root loads at least one unit shallow"
 	linksNothing = "the fixture's in-graph spellings resolve: a Resolve that returns no candidate links nothing"
 )
+
+// errRegistration is the error of a registration of keys that fails.
+var errRegistration = errors.New("frontendtest_test: the registration of the keys fails")
 
 // keyedScripted is the scripted frontend that registers its
 // classification keys through its own role.
@@ -48,8 +52,8 @@ type keyedScripted struct{ *frontendtest.Scripted }
 // Keys registers the scripted classification keys.
 func (keyedScripted) Keys(r *meta.Registry) error { return frontendtest.ScriptedKeys(r) }
 
-// The checks exist to catch broken frontends, so the broken ones
-// are simulated and each check's own failure is asserted.
+// The checks exist to catch broken frontends, so each case simulates a
+// broken frontend and asserts the failure of the check.
 func TestChecks(t *testing.T) {
 	t.Parallel()
 
@@ -69,7 +73,7 @@ func TestChecks(t *testing.T) {
 				expect.Equal(t, got[0].Assertion, "deterministic", "on the determinism of the parse")
 				expect.Equal(t, got[0].Contract, "every parse of one fixture encodes the same graph, attaches "+
 					"the same directives and stamps, and reports the same findings in the same order",
-					"under the contract that names what may not drift")
+					"the record has the contract of the check")
 			})
 		}
 	})
@@ -85,7 +89,7 @@ func TestChecks(t *testing.T) {
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, coretest.Contracts(got), "the finding states a position: "+
+			assert.Contains(t, coretest.Contracts(got), "the finding has a position: "+
 				frontendtest.ScriptedBadFile.String()+" a finding with nowhere to point",
 				"the rejection names the finding without a position")
 		})
@@ -99,7 +103,7 @@ func TestChecks(t *testing.T) {
 				}, fixture()))
 			})
 			assert.NotEmpty(t, got, "the check fails")
-			assert.HasPrefix(t, got[0].Contract, "the finding states its origin: ",
+			assert.HasPrefix(t, got[0].Contract, "the finding has an origin: ",
 				"the rejection names the finding without an origin")
 		})
 	})
@@ -154,6 +158,55 @@ func TestChecks(t *testing.T) {
 			frontendtest.AssertClassified(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 				return keyedScripted{frontendtest.NewScripted()}, keyless
 			})
+		})
+	})
+
+	t.Run("Registry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("registers the kernel's keys", func(t *testing.T) {
+			t.Parallel()
+
+			_, kernel := frontendtest.Registry(t, frontendtest.NewScripted())
+			assert.False(t, kernel.IsZero(), "the handles of the kernel's keys are set")
+		})
+
+		t.Run("registers the keys of the frontend under the spelling of its language", func(t *testing.T) {
+			t.Parallel()
+
+			registry, _ := frontendtest.Registry(t, keyedScripted{frontendtest.NewScripted()})
+			claimant, claimed := registry.Claimant(frontendtest.ScriptedTestKey.Namespace())
+			assert.True(t, claimed, "the frontend claims its namespace")
+			assert.Equal(t, claimant, string(frontendtest.ScriptedLang),
+				"the spelling of the language claims the namespace")
+		})
+
+		t.Run("registers the keys of each function", func(t *testing.T) {
+			t.Parallel()
+
+			registry, _ := frontendtest.Registry(t, frontendtest.NewScripted(), frontendtest.ScriptedKeys)
+			_, held := registry.Resolve(frontendtest.ScriptedTestKey)
+			assert.True(t, held, "the key of the function is registered")
+		})
+
+		t.Run("skips a nil function", func(t *testing.T) {
+			t.Parallel()
+
+			registry, _ := frontendtest.Registry(t, frontendtest.NewScripted(), nil)
+			_, held := registry.Resolve(frontendtest.ScriptedTestKey)
+			assert.False(t, held, "the registry has no scripted key")
+		})
+
+		t.Run("stops the test where a function fails", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Rejects(t, "a registration of keys that fails", func(tb assert.TB) {
+				frontendtest.Registry(tb, frontendtest.NewScripted(), func(*meta.Registry) error {
+					return errRegistration
+				})
+			})
+			assert.Equal(t, coretest.Contracts(got), []string{"the fixture's keys register"},
+				"the rejection names the registration")
 		})
 	})
 
@@ -294,7 +347,7 @@ func TestChecks(t *testing.T) {
 				frontendtest.AssertSignatureDepth(tb, setupOver(astray))
 			})
 			assert.Equal(t, coretest.Contracts(got), []string{shallowRoot},
-				"the rejection names what the stated root owes")
+				"the rejection reports the missing shallow unit")
 		})
 
 		t.Run("rejects a stated root that contains no unit beside a dependency unit", func(t *testing.T) {
@@ -436,7 +489,7 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Equal(t, coretest.Contracts(got),
 				[]string{"the fixture declares schemas, so its carriers attach something"},
-				"the rejection names what the declared schemas owe")
+				"the rejection reports the missing attachment")
 		})
 	})
 
@@ -590,7 +643,7 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Equal(t, coretest.Contracts(got), []string{
 				"the fixture lists a declaration a re-export publishes, so the check has something to check",
-			}, "the rejection names what the fixture owes")
+			}, "the rejection reports the missing part of the fixture")
 		})
 
 		t.Run("rejects an exporter whose files publish nothing", func(t *testing.T) {
@@ -608,12 +661,72 @@ func TestChecks(t *testing.T) {
 				"the rejection names each declaration no reference targets")
 		})
 	})
+
+	t.Run("AssertEmptyLoad", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes a tree whose one file declares nothing", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertEmptyLoad(t, setup)
+		})
+
+		t.Run("rejects a fixture without an empty tree", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Rejects(t, "a fixture without an empty tree", func(tb assert.TB) {
+				frontendtest.AssertEmptyLoad(tb, setupOver(plainFixture()))
+			})
+			assert.Equal(t, coretest.Contracts(got), []string{"the fixture has a tree whose files declare nothing"},
+				"the rejection reports the missing part of the fixture")
+		})
+
+		t.Run("rejects an empty tree that the selection does not claim", func(t *testing.T) {
+			t.Parallel()
+
+			unclaimed := fixture()
+			unclaimed.Empty = fstest.MapFS{notesFile: {Data: []byte("not source\n")}}
+			got := assert.Rejects(t, "an empty tree whose load never calls the frontend", func(tb assert.TB) {
+				frontendtest.AssertEmptyLoad(tb, setupOver(unclaimed))
+			})
+			assert.Equal(t, coretest.Contracts(got), []string{"the selection claims something to check"},
+				"the load calls no frontend that claims no file")
+		})
+
+		t.Run("rejects a file of the empty tree that declares something", func(t *testing.T) {
+			t.Parallel()
+
+			declaring := fixture()
+			declaring.Empty = fstest.MapFS{emptyFile: {Data: []byte(emptySource + "type Lost string\n")}}
+			got := assert.Rejects(t, "an empty tree whose file declares a type", func(tb assert.TB) {
+				frontendtest.AssertEmptyLoad(tb, setupOver(declaring))
+			})
+			assert.Equal(t, coretest.Contracts(got),
+				[]string{emptyFile + " declares nothing in the graph, as in the empty tree"},
+				"the rejection names the file")
+		})
+
+		t.Run("rejects an Error over the empty tree", func(t *testing.T) {
+			t.Parallel()
+
+			broken := fixture()
+			broken.Empty = fstest.MapFS{badFile: {Data: []byte("type Lost string\n")}}
+			got := assert.Rejects(t, "an empty tree whose file reports an Error", func(tb assert.TB) {
+				frontendtest.AssertEmptyLoad(tb, setupOver(broken))
+			})
+			assert.Equal(t, coretest.Contracts(got), []string{
+				"the load of a tree whose files declare nothing reports no Error: " + badFile +
+					` opens with "type", not a package line`,
+				badFile + " enters the graph as a file",
+			}, "the rejection names the Error and the file that the load leaves out")
+		})
+	})
 }
 
-// vendored is the scripted language in the dependent role reading
-// each need from the workspace's skip directory, which the claim
-// carves out: the shape of a Go vendor tree, whose dependency members
-// are workspace files.
+// vendored is the scripted language in the dependent role that reads
+// each need from the skip directory of the workspace, which the claim
+// leaves out. It has the shape of a Go vendor tree, whose dependency
+// members are workspace files.
 type vendored struct {
 	*frontendtest.Scripted
 }
@@ -638,10 +751,10 @@ func (*vendored) Dependencies(
 	return out, nil
 }
 
-// unreadDependency is the scripted language in the dependent role
-// declaring each dependency unit's files from their paths alone, the
-// shape of a frontend that reads a dependency around the unit, which
-// the dependency check must expose.
+// unreadDependency is the scripted language in the dependent role that
+// declares the files of each dependency unit from their paths alone. It
+// has the shape of a frontend that reads a dependency around the unit,
+// which the dependency check must expose.
 type unreadDependency struct {
 	*frontendtest.ScriptedDependent
 }
@@ -682,16 +795,16 @@ type silentExporter struct {
 // Exports returns no candidate for any name.
 func (*silentExporter) Exports(plugin.ImportScope, string) plugin.Candidates { return nil }
 
-// The drifts the restless frontend can record.
+// These constants are the drifts that the restless frontend can record.
 const (
 	recordStamp     = "stamp"
 	recordDirective = "directive"
 	recordFinding   = "finding"
 )
 
-// restless records one thing that differs on every load, the stamp
-// value, a directive argument or a finding's wording, as the case
-// chooses, which the determinism check must expose.
+// restless records one value that differs on every load, which the
+// determinism check must expose. The case chooses the value: the stamp
+// value, a directive argument or the text of a finding.
 type restless struct {
 	*frontendtest.Scripted
 	record string
@@ -745,8 +858,8 @@ func (d *drifter) Partition(
 	return [][]plugin.SourceRef{files}, nil
 }
 
-// unread declares each member's file without reading it through
-// the unit, the shape of a frontend reading its bytes some other
+// unread declares the file of each member without a read through the
+// unit. It has the shape of a frontend that reads its bytes in another
 // way, which the door check must expose.
 type unread struct {
 	*frontendtest.Scripted
@@ -810,8 +923,9 @@ func (b *blank) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// over builds the stated frontend over the stated fixture, for a
-// case driving a check against an implementation it must reject.
+// over returns a setup of the frontend f over the fixture fx, for a case
+// that runs a check against an implementation that the check must
+// reject.
 func over(f plugin.Frontend, fx *frontendtest.Fixture) frontendtest.Setup {
 	return func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 		return f, fx
@@ -838,7 +952,7 @@ func (s *swallower) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	return s.ParseFile(u, u.Files()[0].Path)
 }
 
-// unpositioned reports a finding with no address, which the
+// unpositioned reports a finding without a position, which the
 // positioning check must expose.
 type unpositioned struct {
 	*frontendtest.Scripted
@@ -859,9 +973,9 @@ type anonymous struct {
 // Name declares nothing.
 func (*anonymous) Name() plugin.ID { return "" }
 
-// undocumented attaches its carriers and leaves a carrier line in
-// the declaration's documentation, the bare payload unless the case
-// states the line, which the attachment check must expose.
+// undocumented attaches its carriers and leaves a carrier line in the
+// documentation of the declaration, which the attachment check must
+// expose. The line is the bare payload where the case sets no line.
 type undocumented struct {
 	*frontendtest.Scripted
 	line string
@@ -917,14 +1031,14 @@ func (f *dangling) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// errBlankTail is what the strict language refuses, so the key
-// check meets a language the perturbed byte puts outside the
-// grammar.
+// errBlankTail is the error of the strict language for a member that
+// ends in a blank line. The key check then meets a language whose
+// grammar excludes the perturbed byte.
 var errBlankTail = errors.New("frontendtest_test: a source file ends at one newline")
 
-// strict refuses a member ending in a blank line, which is the
-// shape of a language the fingerprint check's perturbation puts
-// outside the grammar.
+// strict refuses a member that ends in a blank line. It has the shape of
+// a language whose grammar excludes the perturbation of the fingerprint
+// check.
 type strict struct {
 	*frontendtest.Scripted
 }

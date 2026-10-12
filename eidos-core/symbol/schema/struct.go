@@ -58,9 +58,9 @@ type Struct struct {
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
 	Fields      []*Field           `eidos:"both,walk,slot=fields"`
 	Methods     []*Method          `eidos:"both,walk,slot=methods"`
-	Types       []Symbol           `eidos:"both,walk,slot=types,fact=Types"` // nested declarations
-	Embeds      []*Embed           `eidos:"both,walk,fact=Embeds"`           // compositional promotion
-	Extends     []*TypeRef         `eidos:"both,walk,fact=Extends"`          // nominal supertypes
+	Types       []Symbol           `eidos:"both,walk,slot=types,fact=Types"`   // nested declarations
+	Embeds      []*Embed           `eidos:"both,walk,slot=embeds,fact=Embeds"` // compositional promotion
+	Extends     []*TypeRef         `eidos:"both,walk,fact=Extends"`            // nominal supertypes
 	Implements  []*TypeRef         `eidos:"both,walk,fact=Implements"`
 	Permits     []*TypeRef         `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
@@ -103,7 +103,7 @@ type Interface struct {
 	Fields      []*Field           `eidos:"both,walk,slot=fields,fact=Properties"` // properties, not just methods
 	Methods     []*Method          `eidos:"both,walk,slot=methods"`
 	Types       []Symbol           `eidos:"both,walk,slot=types,fact=Types"` // nested declarations and associated types
-	Embeds      []*Embed           `eidos:"both,walk,fact=Embeds"`
+	Embeds      []*Embed           `eidos:"both,walk,slot=embeds,fact=Embeds"`
 	Extends     []*TypeRef         `eidos:"both,walk,fact=Extends"`
 	Permits     []*TypeRef         `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`

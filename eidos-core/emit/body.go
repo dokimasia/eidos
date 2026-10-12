@@ -170,3 +170,16 @@ func (b Body) IsZero() bool {
 	return b.Prologue.IsZero() && b.Epilogue.IsZero() && len(b.Slots) == 0 &&
 		len(b.Stmts) == 0 && b.Ref == nil && b.Verbatim == ""
 }
+
+// seal shares flag with the standard slots and with each declared slot
+// of the body, as [Seal] does for the slots of a declaration. A slot
+// that the owner declares after the seal is not sealed. It allocates
+// nothing.
+func (b *Body) seal(flag *bool) {
+	b.Prologue.seal, b.Epilogue.seal = flag, flag
+	for _, s := range b.Slots {
+		if s != nil {
+			s.Slot.seal = flag
+		}
+	}
+}

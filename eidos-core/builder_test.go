@@ -17,43 +17,46 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The allocations of a declaration's methods, which TestBuilderAllocs
-// checks in the ordinary run and BenchmarkBuilder in a benchmark run. A
-// method without a constant allocates nothing.
+// These constants are the allocation counts of the methods of a
+// declaration. TestBuilderAllocs checks them in the ordinary run, and
+// BenchmarkBuilder in a benchmark run. A method without a constant
+// allocates nothing.
 const (
-	// newPluginAllocs is a declaration: the builder and its map of
-	// priorities.
+	// newPluginAllocs counts the allocations of a declaration, which are
+	// the builder and its map of priorities.
 	newPluginAllocs = 2
-	// declareAllocs is the first call of a method that appends to a list
-	// of a new declaration: the list.
+	// declareAllocs counts the allocation of the first call of a method
+	// that appends to a list of a new declaration, which is the list.
 	declareAllocs = 1
-	// priorityAllocs is a declaration's first priority: its map's first
-	// group.
+	// priorityAllocs counts the allocation of the first priority of a
+	// declaration, which is the first group of its map.
 	priorityAllocs = 1
-	// forAllocs is a declaration's first target: its list of targets and
-	// the copy of the target's options.
+	// forAllocs counts the allocations of the first target of a
+	// declaration, which are its list of targets and the copy of the
+	// options of the target.
 	forAllocs = 2
-	// buildAllocs is one Build of the bench declaration: the table of
-	// output families and its entry, the flattened rules growing to three
-	// and the predicates a wrapper hands its rules, the built value with
-	// its copies of the outputs and the priorities, the subscriptions
-	// growing to three, and the role wrapper.
+	// buildAllocs counts the allocations of one typed build of the bench
+	// declaration. They are the table of output families and its entry,
+	// the flattened rules as they grow to three, the predicates that a
+	// wrapper passes to its rules, the built plugin with its copies of the
+	// outputs and the priorities, the subscriptions as they grow to three,
+	// and the role wrapper.
 	buildAllocs = 13
 )
 
-// declaring is one method of a declaration called with a fixture value,
-// named as its benchmark is, and what its call on a new declaration
-// allocates. A method that sets one value takes the same declaration
-// on every call.
+// declaring is one method of a declaration, called with a fixture value.
+// It has the name of its benchmark and the allocation count of its call on
+// a new declaration. A method that sets one value takes the same
+// declaration on every call.
 type declaring struct {
 	name   string
 	allocs uint64
 	set    func(*eidos.Builder) *eidos.Builder
 }
 
-// A plugin declaration is a value and Build freezes it: what it
-// panics on, which roles the rules imply, and what the providers
-// return are all contract.
+// TestBuilder tests the declaration of a plugin and its typed builds. The
+// panics of a build, the role of the built plugin and what its providers
+// return are a contract.
 func TestBuilder(t *testing.T) {
 	t.Parallel()
 
@@ -63,7 +66,7 @@ func TestBuilder(t *testing.T) {
 		t.Run("returns a declaration under the name", func(t *testing.T) {
 			t.Parallel()
 
-			p := eidos.NewPlugin("planner").Handle(emitNothing()).Build()
+			p := eidos.NewPlugin("planner").Handle(emitNothing()).Generator()
 			assert.Equal(t, p.Name(), "planner", "the plugin is named as declared")
 		})
 	})
@@ -81,28 +84,97 @@ func TestBuilder(t *testing.T) {
 		})
 	}
 
-	t.Run("Build", func(t *testing.T) {
+	t.Run("Annotator", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("returns a plugin named by the declaration", func(t *testing.T) {
 			t.Parallel()
 
-			p := eidos.NewPlugin("planner").Handle(emitNothing()).Build()
+			p := eidos.NewPlugin("planner").Handle(eidos.OnStruct(nothing[*eidos.Stamper])).Annotator()
 			assert.Equal(t, p.Name(), "planner", "the name is the declared one")
 		})
 
-		t.Run("returns a generator for an emitter rule", func(t *testing.T) {
+		t.Run("returns a plugin without the generator role", func(t *testing.T) {
 			t.Parallel()
 
-			_, generates := eidos.NewPlugin("planner").Handle(emitNothing()).Build().(plugin.Generator)
-			assert.True(t, generates, "the plugin implements the generator role")
+			p := eidos.NewPlugin("planner").Handle(eidos.OnStruct(nothing[*eidos.Stamper])).Annotator()
+			_, generates := p.(plugin.Generator)
+			assert.False(t, generates, "the plugin does not implement the generator role")
 		})
 
-		t.Run("returns no annotator without a stamper rule", func(t *testing.T) {
+		t.Run("panics on a rule that emits", func(t *testing.T) {
 			t.Parallel()
 
-			_, annotates := eidos.NewPlugin("planner").Handle(emitNothing()).Build().(plugin.Annotator)
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").
+					Handle(eidos.OnStruct(nothing[*eidos.Stamper]), eidos.OnStruct(nothing[*eidos.Emitter])).
+					Annotator()
+			}, "an annotator with a rule that emits panics")
+			assert.Equal(t, got, any("eidos: planner declares a rule that emits, so build it with Generator or Dual"),
+				"the panic names the plugin and the typed builds that fit it")
+		})
+	})
+
+	t.Run("Dual", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a plugin named by the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			p := eidos.NewPlugin("planner").
+				Handle(eidos.OnStruct(nothing[*eidos.Stamper]), eidos.OnStruct(nothing[*eidos.Emitter])).
+				Dual()
+			assert.Equal(t, p.Name(), "planner", "the name is the declared one")
+		})
+
+		t.Run("panics without a rule that stamps facts", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").Handle(eidos.OnStruct(nothing[*eidos.Emitter])).Dual()
+			}, "a dual plugin without a rule that stamps facts panics")
+			assert.Equal(t, got, any("eidos: planner declares no rule that stamps facts, so build it with Generator"),
+				"the panic names the plugin and the typed build that fits it")
+		})
+
+		t.Run("panics without a rule that emits", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").Handle(eidos.OnStruct(nothing[*eidos.Stamper])).Dual()
+			}, "a dual plugin without a rule that emits panics")
+			assert.Equal(t, got, any("eidos: planner declares no rule that emits, so build it with Annotator"),
+				"the panic names the plugin and the typed build that fits it")
+		})
+	})
+
+	t.Run("Generator", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a plugin named by the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			p := eidos.NewPlugin("planner").Handle(emitNothing()).Generator()
+			assert.Equal(t, p.Name(), "planner", "the name is the declared one")
+		})
+
+		t.Run("returns a plugin without the annotator role", func(t *testing.T) {
+			t.Parallel()
+
+			_, annotates := eidos.NewPlugin("planner").Handle(emitNothing()).Generator().(plugin.Annotator)
 			assert.False(t, annotates, "the plugin does not implement the annotator role")
+		})
+
+		t.Run("panics on a rule that stamps facts", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").
+					Handle(eidos.OnStruct(nothing[*eidos.Stamper]), eidos.OnStruct(nothing[*eidos.Emitter])).
+					Generator()
+			}, "a generator with a rule that stamps facts panics")
+			want := any("eidos: planner declares a rule that stamps facts, so build it with Annotator or Dual")
+			assert.Equal(t, got, want, "the panic names the plugin and the typed builds that fit it")
 		})
 
 		t.Run("returns one schema for a wrapper that gates two rules", func(t *testing.T) {
@@ -116,7 +188,7 @@ func TestBuilder(t *testing.T) {
 					eidos.OnEmit(symbol.KindMethod,
 						func(m *eidos.EmitMatch, e *eidos.Emitter) error { return nil }),
 				)).
-				Build()
+				Generator()
 
 			provider, ok := p.(plugin.DirectiveProvider)
 			assert.True(t, ok, "the plugin provides directives")
@@ -129,7 +201,7 @@ func TestBuilder(t *testing.T) {
 			p := eidos.NewPlugin("t").
 				Handle(eidos.Where(eidos.HasKey(meta.Named[bool]("t.flag")),
 					eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
-				Build()
+				Generator()
 			assert.Equal(t, subscribedKeys(t, p), []meta.KeyID{0}, "the gate has no id before the binding")
 		})
 
@@ -146,7 +218,7 @@ func TestBuilder(t *testing.T) {
 					})
 					return err
 				}).
-				Handle(emitNothing()).Build()
+				Handle(emitNothing()).Generator()
 
 			kp, ok := p.(plugin.KeyProvider)
 			assert.True(t, ok, "the plugin provides keys")
@@ -166,38 +238,38 @@ func TestBuilder(t *testing.T) {
 		}{
 			{
 				name:  "panics on an empty name",
-				build: func() { eidos.NewPlugin("").Handle(emitNothing()).Build() },
+				build: func() { eidos.NewPlugin("").Handle(emitNothing()).Generator() },
 			},
 			{
 				name:  "panics on a declaration without rules",
-				build: func() { eidos.NewPlugin("t").Build() },
+				build: func() { eidos.NewPlugin("t").Generator() },
 			},
 			{
 				name:  "panics on the zero rule",
-				build: func() { eidos.NewPlugin("t").Handle(eidos.Rule{}).Build() },
+				build: func() { eidos.NewPlugin("t").Handle(eidos.Rule{}).Generator() },
 			},
 			{
 				name: "panics on a directive wrapper around no rules",
 				build: func() {
-					eidos.NewPlugin("stubgen").Handle(eidos.Directive(stubSchema("stub"))).Build()
+					eidos.NewPlugin("stubgen").Handle(eidos.Directive(stubSchema("stub"))).Generator()
 				},
 			},
 			{
 				name: "panics on a fact wrapper around no rules",
 				build: func() {
-					eidos.NewPlugin("t").Handle(eidos.Where(eidos.Pred{})).Build()
+					eidos.NewPlugin("t").Handle(eidos.Where(eidos.Pred{})).Generator()
 				},
 			},
 			{
 				name: "panics on a kernel gate naming no directive",
 				build: func() {
-					eidos.NewPlugin("t").Handle(eidos.Gated("", onEmit())).Build()
+					eidos.NewPlugin("t").Handle(eidos.Gated("", onEmit())).Generator()
 				},
 			},
 			{
 				name: "panics on a kernel gate naming a plugin's directive",
 				build: func() {
-					eidos.NewPlugin("t").Handle(eidos.Gated("stubgen:stub", onEmit())).Build()
+					eidos.NewPlugin("t").Handle(eidos.Gated("stubgen:stub", onEmit())).Generator()
 				},
 			},
 			{
@@ -206,7 +278,7 @@ func TestBuilder(t *testing.T) {
 					eidos.NewPlugin("t").
 						Output(plugin.Output{Per: plugin.PerPlan, Word: "a"}).
 						Output(plugin.Output{Per: plugin.PerPlan, Word: "b"}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -214,7 +286,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						Output(plugin.Output{Per: plugin.PerPlan}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -222,7 +294,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						Output(plugin.Output{Word: "a"}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -230,25 +302,37 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						Output(plugin.Output{Per: plugin.PerPlan, Word: "a", Template: "../test.tmpl"}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
 				name: "panics on an empty capability label",
 				build: func() {
-					eidos.NewPlugin("t").Provides("").Handle(emitNothing()).Build()
+					eidos.NewPlugin("t").Provides("").Handle(emitNothing()).Generator()
+				},
+			},
+			{
+				name: "panics on an empty required capability label",
+				build: func() {
+					eidos.NewPlugin("t").Requires("").Handle(emitNothing()).Generator()
+				},
+			},
+			{
+				name: "panics on an empty capability label that the plugin runs after",
+				build: func() {
+					eidos.NewPlugin("t").After("").Handle(emitNothing()).Generator()
 				},
 			},
 			{
 				name: "panics on a nil key registration",
 				build: func() {
-					eidos.NewPlugin("t").Keys(nil).Handle(emitNothing()).Build()
+					eidos.NewPlugin("t").Keys(nil).Handle(emitNothing()).Generator()
 				},
 			},
 			{
 				name: "panics on a nil plugin-level tree",
 				build: func() {
-					eidos.NewPlugin("t").Templates(nil).Handle(emitNothing()).Build()
+					eidos.NewPlugin("t").Templates(nil).Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -256,13 +340,13 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						Templates(stubTree()).Templates(stubTree()).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
 				name: "panics on a nil helper map",
 				build: func() {
-					eidos.NewPlugin("t").Funcs(nil).Handle(emitNothing()).Build()
+					eidos.NewPlugin("t").Funcs(nil).Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -271,7 +355,7 @@ func TestBuilder(t *testing.T) {
 					eidos.NewPlugin("t").
 						Funcs(template.FuncMap{toneHelper: shout}).
 						Funcs(template.FuncMap{toneHelper: whisper}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -279,7 +363,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						Funcs(template.FuncMap{toneHelper: 1}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -287,7 +371,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						For("", eidos.Templates(stubTree())).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -296,13 +380,13 @@ func TestBuilder(t *testing.T) {
 					eidos.NewPlugin("t").
 						For(stubTarget, eidos.Templates(stubTree())).
 						For(stubTarget, eidos.Funcs(template.FuncMap{toneHelper: shout})).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
 				name: "panics on a For without options",
 				build: func() {
-					eidos.NewPlugin("t").For(stubTarget).Handle(emitNothing()).Build()
+					eidos.NewPlugin("t").For(stubTarget).Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -310,7 +394,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						For(stubTarget, eidos.TargetOption{}).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -318,7 +402,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						For(stubTarget, eidos.Templates(nil)).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -326,7 +410,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						For(stubTarget, eidos.Templates(stubTree()), eidos.Templates(stubTree())).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -334,7 +418,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").
 						For(stubTarget, eidos.Overrides(nil)).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -344,7 +428,7 @@ func TestBuilder(t *testing.T) {
 						For(stubTarget,
 							eidos.Funcs(template.FuncMap{toneHelper: shout}),
 							eidos.Overrides(template.FuncMap{toneHelper: whisper})).
-						Handle(emitNothing()).Build()
+						Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -353,7 +437,7 @@ func TestBuilder(t *testing.T) {
 					eidos.NewPlugin("stubgen").Handle(
 						eidos.Directive(stubSchema("stub"), onEmit()),
 						eidos.Directive(stubSchema("stub"), onEmit()),
-					).Build()
+					).Generator()
 				},
 			},
 			{
@@ -361,7 +445,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("stubgen").Handle(
 						eidos.Directive(stubSchema("stub"), emitNothing()),
-					).Build()
+					).Generator()
 				},
 			},
 			{
@@ -369,7 +453,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").Handle(
 						eidos.Where(eidos.Pred{}, emitNothing()),
-					).Build()
+					).Generator()
 				},
 			},
 			{
@@ -377,7 +461,7 @@ func TestBuilder(t *testing.T) {
 				build: func() {
 					eidos.NewPlugin("t").Handle(
 						eidos.Where(eidos.Pred{}, onEmit()),
-					).Build()
+					).Generator()
 				},
 			},
 			{
@@ -386,7 +470,7 @@ func TestBuilder(t *testing.T) {
 					var unregistered meta.Key[bool]
 					eidos.NewPlugin("t").Handle(
 						eidos.Where(eidos.HasKey(unregistered), onEmit()),
-					).Build()
+					).Generator()
 				},
 			},
 		}
@@ -394,7 +478,7 @@ func TestBuilder(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Panics(t, tt.build, "the declaration defect panics at Build")
+				assert.Panics(t, tt.build, "the declaration defect panics at the typed build")
 			})
 		}
 
@@ -491,7 +575,7 @@ func TestBuilder(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				schemas := schemasOf(t, eidos.NewPlugin("stubgen").Handle(tt.rules...).Build())
+				schemas := schemasOf(t, eidos.NewPlugin("stubgen").Handle(tt.rules...).Generator())
 				assert.NotEmpty(t, schemas, "the plugin provides the schema of its first wrapper")
 				assert.Equal(t, schemas[0].Kinds, tt.want, "the kinds are the kinds that an instance can affect")
 			})
@@ -503,8 +587,8 @@ func TestBuilder(t *testing.T) {
 			misfit := stubSchema("audit")
 			misfit.Kinds = []symbol.Kind{symbol.KindInterface}
 			got := assert.Panics(t, func() {
-				eidos.NewPlugin("stubgen").Handle(eidos.Directive(misfit, onStruct)).Build()
-			}, "the declaration defect panics at Build")
+				eidos.NewPlugin("stubgen").Handle(eidos.Directive(misfit, onStruct)).Generator()
+			}, "the declaration defect panics at the typed build")
 			assert.Equal(t, got, any("eidos: stubgen handles Struct under directive stubgen:audit, "+
 				"and the kinds of the directive leave it out"),
 				"the panic states the plugin, the kind and the directive")
@@ -512,11 +596,12 @@ func TestBuilder(t *testing.T) {
 	})
 }
 
-// Each method of a declaration allocates within its ceiling in the
-// ordinary run, which runs no benchmark. Each counted call takes a
-// declaration built outside the count, because a method's first call
-// allocates its list and a declaration builds once. The check runs
-// alone, because the count includes every goroutine's allocations.
+// TestBuilderAllocs checks in the ordinary run, which runs no benchmark,
+// that each method of a declaration allocates within its ceiling. Each
+// counted call takes a declaration built outside the count, because the
+// first call of a method allocates its list and a declaration builds once.
+// The check runs alone, because the count includes the allocations of
+// every goroutine.
 func TestBuilderAllocs(t *testing.T) {
 	var declared *eidos.Builder
 	assert.MaxAllocs(t, func() { declared = eidos.NewPlugin("bench") }, newPluginAllocs,
@@ -532,16 +617,16 @@ func TestBuilderAllocs(t *testing.T) {
 	}
 
 	var p plugin.Plugin
-	assert.MaxAllocsWithSetup(t, benchDeclaration(t), func(b *eidos.Builder) { p = b.Build() }, buildAllocs,
-		"Build allocates the lowered rules, the subscriptions and the built value")
-	assert.Equal(t, p.Name(), "bench", "Build returns the declared plugin")
+	assert.MaxAllocsWithSetup(t, benchDeclaration(t), func(b *eidos.Builder) { p = b.Generator() }, buildAllocs,
+		"Generator allocates the lowered rules, the subscriptions and the built plugin")
+	assert.Equal(t, p.Name(), "bench", "Generator returns the declared plugin")
 }
 
-// BenchmarkBuilder measures a declaration's construction, each method
-// on a new declaration, and freezing a declaration of a graph rule and
-// two fact-gated emit rules. Each call takes a declaration built afresh
-// outside the measurement, because a method's first call allocates its
-// list and a Builder freezes once.
+// BenchmarkBuilder measures the construction of a declaration, each method
+// on a new declaration, and the typed build of a declaration of a graph
+// rule and two emit rules under a fact gate. Each call takes a new
+// declaration built outside the measurement, because the first call of a
+// method allocates its list and a Builder builds once.
 func BenchmarkBuilder(b *testing.B) {
 	b.Run("NewPlugin", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(newPluginAllocs)
@@ -569,7 +654,7 @@ func BenchmarkBuilder(b *testing.B) {
 		})
 	}
 
-	b.Run("Build", func(b *testing.B) {
+	b.Run("Generator", func(b *testing.B) {
 		declare := benchDeclaration(b)
 		var declared *eidos.Builder
 		c := bench.Start(b).MaxAllocs(buildAllocs)
@@ -577,14 +662,14 @@ func BenchmarkBuilder(b *testing.B) {
 		var p plugin.Plugin
 		for c.Loop() {
 			c.Excluding(func() { declared = declare() })
-			p = declared.Build()
+			p = declared.Generator()
 		}
-		assert.Equal(b, p.Name(), "bench", "Build returns the declared plugin")
+		assert.Equal(b, p.Name(), "bench", "Generator returns the declared plugin")
 	})
 }
 
-// emitNothing returns a graph rule whose handler does nothing: the
-// smallest rule a plugin can declare.
+// emitNothing returns a graph rule whose handler does nothing, which is
+// the smallest rule that a plugin can declare.
 func emitNothing() eidos.Rule {
 	return eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 		return nil
@@ -600,8 +685,8 @@ func schemasOf(tb assert.TB, p plugin.Plugin) []directive.Schema {
 	return provider.Directives()
 }
 
-// stubSchema returns a schema a plugin registers, for gate
-// fixtures.
+// stubSchema returns a schema that a plugin registers, for the fixtures of
+// gates.
 func stubSchema(name directive.Name) directive.Schema {
 	return directive.Schema{
 		Plugin: "stubgen", Name: name,
@@ -632,6 +717,9 @@ func declarations(tb assert.TB) []declaring {
 		{name: "Requires", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
 			return b.Requires(requiredLabel)
 		}},
+		{name: "After", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
+			return b.After(afterLabel)
+		}},
 		{name: "Options", set: func(b *eidos.Builder) *eidos.Builder { return b.Options(options) }},
 		{name: "Keys", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder { return b.Keys(register) }},
 		{
@@ -649,9 +737,9 @@ func declarations(tb assert.TB) []declaring {
 	}
 }
 
-// benchDeclaration returns a function that declares the bench plugin
-// afresh: one output family, a graph rule, and two emit rules under one
-// fact gate.
+// benchDeclaration returns a function that declares a new bench plugin.
+// The plugin has one output family, a graph rule, and two emit rules under
+// one fact gate.
 func benchDeclaration(tb assert.TB) func() *eidos.Builder {
 	tb.Helper()
 

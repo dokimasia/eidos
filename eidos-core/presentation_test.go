@@ -200,7 +200,7 @@ func stubTree() fstest.MapFS { return stubTreeOf(pluginText) }
 func provider(tb assert.TB, b *eidos.Builder) plugin.TemplateProvider {
 	tb.Helper()
 
-	tp, held := b.Handle(emitNothing()).Build().(plugin.TemplateProvider)
+	tp, held := b.Handle(emitNothing()).Generator().(plugin.TemplateProvider)
 	assert.True(tb, held, "the built value returns the template surface")
 	return tp
 }
