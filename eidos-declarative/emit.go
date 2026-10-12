@@ -349,8 +349,8 @@ func membersOf(m subject, s symbol.Symbol, name string) ([]rules.Member, bool) {
 // type parameter of the struct, has as its name.
 func receiverName(letter string, m *emit.Method, tps []*emit.TypeParam) string {
 	taken := func(name string) bool {
-		return slices.ContainsFunc(m.Params, func(p *emit.Param) bool { return p.Name == name }) ||
-			slices.ContainsFunc(m.Returns, func(r *emit.Return) bool { return r.Name == name }) ||
+		return slices.ContainsFunc(m.Params.Items(), func(p *emit.Param) bool { return p.Name == name }) ||
+			slices.ContainsFunc(m.Returns.Items(), func(r *emit.Return) bool { return r.Name == name }) ||
 			slices.ContainsFunc(m.TypeParams, func(tp *emit.TypeParam) bool { return tp.Name == name }) ||
 			slices.ContainsFunc(tps, func(tp *emit.TypeParam) bool { return tp.Name == name })
 	}
@@ -418,12 +418,13 @@ func (t *translation) typeParams(owner symbol.Identity, tps []*node.TypeParam) [
 	return out
 }
 
-// params returns the parameters ps of owner with their names, labels,
-// defaults and optional and variadic forms, their types translated, and nil
-// for no parameter.
-func (t *translation) params(owner symbol.Identity, ps []*node.Param) []*emit.Param {
+// params returns the slot of the parameters ps of owner. Each parameter
+// keeps its name, its label, its default and its optional and variadic
+// forms, and gets its type translated. The slot is empty for no
+// parameter.
+func (t *translation) params(owner symbol.Identity, ps []*node.Param) emit.Slot[*emit.Param] {
 	if len(ps) == 0 {
-		return nil
+		return emit.Slot[*emit.Param]{}
 	}
 	out := make([]*emit.Param, 0, len(ps))
 	for _, p := range ps {
@@ -436,20 +437,20 @@ func (t *translation) params(owner symbol.Identity, ps []*node.Param) []*emit.Pa
 			Variadic: p.Variadic,
 		})
 	}
-	return out
+	return emit.SlotOf(out...)
 }
 
-// returns translates the results rs of owner. Each result keeps its name,
-// and the translation returns nil for no result.
-func (t *translation) returns(owner symbol.Identity, rs []*node.Return) []*emit.Return {
+// returns builds the slot of the results rs of owner. Each result keeps
+// its name and gets its type translated. The slot is empty for no result.
+func (t *translation) returns(owner symbol.Identity, rs []*node.Return) emit.Slot[*emit.Return] {
 	if len(rs) == 0 {
-		return nil
+		return emit.Slot[*emit.Return]{}
 	}
 	out := make([]*emit.Return, 0, len(rs))
 	for _, r := range rs {
 		out = append(out, &emit.Return{Name: r.Name, Type: t.ref(owner, r.Type)})
 	}
-	return out
+	return emit.SlotOf(out...)
 }
 
 // field returns the mirror of the field or the property f: its

@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "contract": {
+      "description": "The version of the contract between the kernel and its components that the plugin is written against. The loader refuses a manifest of another version. The default is 1, the first version.",
+      "type": "integer"
+    },
     "directives": {
       "description": "The directives of the plugin. A rule with a directive runs only for the subjects that have an instance of the directive.",
       "items": {

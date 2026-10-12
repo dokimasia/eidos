@@ -97,6 +97,15 @@ func TestManifest(t *testing.T) {
 				},
 			},
 			{
+				name: "returns an Error at the contract for a contract version that the kernel does not have",
+				give: "format: 1\ncontract: 2\nname: acme-audit\nversion: 0.3.0\n" + structRule,
+				want: []declarative.Error{{
+					File: manifestFile, Line: 2,
+					Msg: "the plugin acme-audit is written against contract version 2, " +
+						"and the kernel has contract version 1",
+				}},
+			},
+			{
 				name: "returns an Error at the mapping for a manifest without a name",
 				give: "format: 1\nversion: 0.3.0\n" + structRule,
 				want: []declarative.Error{{File: manifestFile, Line: 1, Msg: "the manifest has no name"}},
@@ -160,6 +169,28 @@ func TestManifest(t *testing.T) {
 
 				got := loadFaults(t, files.Tree{manifestFile: files.Text(tt.give)})
 				assert.Equal(t, got, tt.want, "Load returns the faults of the manifest")
+			})
+		}
+
+		accepted := []struct {
+			name string
+			give string
+		}{
+			{
+				name: "returns no error for a manifest that states the contract version of the kernel",
+				give: "format: 1\ncontract: 1\nname: acme-audit\nversion: 0.3.0\n" + structRule,
+			},
+			{
+				name: "returns no error for a manifest without a contract version",
+				give: "format: 1\nname: acme-audit\nversion: 0.3.0\n" + structRule,
+			},
+		}
+		for _, tt := range accepted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := declarative.Load(files.Workspace(t, files.Tree{manifestFile: files.Text(tt.give)}))
+				assert.NoError(t, err, "Load reads the manifest")
 			})
 		}
 	})

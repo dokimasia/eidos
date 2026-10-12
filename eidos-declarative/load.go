@@ -222,7 +222,8 @@ func appendPart[B ~string | ~[]byte](dst []byte, part B) []byte {
 // build returns the generator of the manifest, which the authoring surface
 // builds. dir is the plugin directory, version the version of the plugin
 // with its digest, and trees the targets of the template trees. The
-// manifest passed its checks, so Build does not panic on its declaration.
+// manifest passed its checks, and every rule of a manifest takes the
+// Emitter, so [eidos.Builder.Generator] does not panic on its declaration.
 //
 // The rules of one directive share one [eidos.Directive] wrapper, because
 // the authoring surface registers each directive once. The bare rules come
@@ -278,8 +279,5 @@ func (m *manifest) build(dir, version string, trees []string) plugin.Generator {
 	for _, d := range m.Directives {
 		b.Handle(eidos.Directive(d.schema(m.Name), gated[d.Name]...))
 	}
-	// Build returns a generator for a plugin whose rules take the Emitter,
-	// and every rule of a manifest takes it.
-	g, _ := b.Build().(plugin.Generator)
-	return g
+	return b.Generator()
 }

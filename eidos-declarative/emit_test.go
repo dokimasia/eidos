@@ -21,6 +21,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/node/nodetest"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/plugin/plugintest"
 	"go.dokimi.dev/eidos/core/position"
@@ -212,11 +213,11 @@ func TestEmit(t *testing.T) {
 				"the struct implements the interface")
 			fields := impl.Fields.Items()
 			assert.Length(t, fields, 1, "the struct has one field")
-			expect.Equal(t, fields[0], &emit.Field{
-				Name:       nextField,
-				Visibility: symbol.VisibilityPackage,
-				Type:       &emit.TypeRef{Spelling: ledgerName, Target: ledgerID},
-			}, "the field next has the interface's type")
+			expect.Equal(t, fields[0].Name, nextField, "the field has the name next")
+			expect.Equal(t, fields[0].Visibility, symbol.VisibilityPackage, "the field is private to the package")
+			expect.Equal(t, fields[0].Type, &emit.TypeRef{Spelling: ledgerName, Target: ledgerID},
+				"the field next has the interface's type")
+			expect.Empty(t, fields[0].Tags.Items(), "the field has no tag")
 		})
 
 		t.Run("emits a method of an implementation on a receiver with the letter of the struct", func(t *testing.T) {
@@ -230,7 +231,7 @@ func TestEmit(t *testing.T) {
 			expect.Equal(t, post.Doc, []string{postDoc}, "the method keeps its documentation")
 			expect.Equal(t, post.Receiver, &emit.Param{Name: "l", Type: &emit.TypeRef{Spelling: ledgerAudit}},
 				"the receiver has the first letter of the struct's name and the struct's type")
-			expect.Equal(t, post.Params, []*emit.Param{
+			expect.Equal(t, post.Params.Items(), []*emit.Param{
 				{Name: "account", Type: &emit.TypeRef{Spelling: stringType}},
 				{Name: "cents", Type: &emit.TypeRef{Spelling: intType}},
 			}, "the method keeps the parameters of the interface's method")
@@ -268,7 +269,7 @@ func TestEmit(t *testing.T) {
 			}
 			assert.NotNil(t, mirror, "the rule emits a function")
 			expect.Equal(t, mirror.Name, transferAudit, "the name joins the family's word to the subject's name")
-			expect.Equal(t, mirror.Params, []*emit.Param{
+			expect.Equal(t, mirror.Params.Items(), []*emit.Param{
 				{Name: "from", Type: &emit.TypeRef{Spelling: stringType}},
 				{Name: "cents", Type: &emit.TypeRef{Spelling: intType}},
 			}, "the function keeps the parameters of the subject")
@@ -411,20 +412,19 @@ func TestEmit(t *testing.T) {
 				}
 			}
 			assert.NotNil(t, mirror, "the rule mirrors the interface")
-			expect.Equal(t, mirror.Fields.Items(), []*emit.Field{
-				{
-					Origin: symbol.Identity{
-						Lang:    frontendtest.ScriptedLang,
-						Package: svcPath,
-						Owner:   accountName,
-						Name:    ownerName,
-						Kind:    symbol.KindField,
-					},
-					Name:       ownerName,
-					Visibility: symbol.VisibilityPublic,
-					Type:       &emit.TypeRef{Spelling: stringType},
-				},
-			}, "the mirror has the property of the interface")
+			fields := mirror.Fields.Items()
+			assert.Length(t, fields, 1, "the mirror has the property of the interface")
+			expect.Equal(t, fields[0].Origin, symbol.Identity{
+				Lang:    frontendtest.ScriptedLang,
+				Package: svcPath,
+				Owner:   accountName,
+				Name:    ownerName,
+				Kind:    symbol.KindField,
+			}, "the property derives from the property of the interface")
+			expect.Equal(t, fields[0].Name, ownerName, "the property keeps its name")
+			expect.Equal(t, fields[0].Visibility, symbol.VisibilityPublic, "the property keeps its visibility")
+			expect.Equal(t, fields[0].Type, &emit.TypeRef{Spelling: stringType}, "the property keeps its type")
+			expect.Empty(t, fields[0].Tags.Items(), "the property has no tag")
 			expect.Length(t, mirror.Methods.Items(), 1, "the mirror has the method of the interface")
 		})
 
@@ -438,7 +438,7 @@ func TestEmit(t *testing.T) {
 				}
 			}
 			assert.NotNil(t, mirror, "the bare rule mirrors every function")
-			assert.Empty(t, mirror.Params, "the mirror has no parameter")
+			assert.Empty(t, mirror.Params.Items(), "the mirror has no parameter")
 		})
 
 		t.Run("emits the implementation of a generic interface with its type parameters", func(t *testing.T) {
@@ -672,7 +672,7 @@ func BenchmarkEmit(b *testing.B) {
 					assert.NoError(b, rerr, "the reader of the call mints")
 					ctx = &plugin.GeneratorContext{
 						Index: ix, Reader: r, Facts: f.Facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
-						Rules: f.Rules, Kernel: f.Kernel, Plugin: g.Name(), Bucket: 1, Target: f.Target,
+						Rules: f.Rules, Kernel: f.Kernel, Plugin: g.Name(), Turn: 1, Target: f.Target,
 					}
 				})
 				genErr = cmp.Or(genErr, g.Generate(ctx))
@@ -708,145 +708,81 @@ func ledgerFixture(tb assert.TB, extra ...symbol.Symbol) *plugintest.Fixture {
 	f.Rules = rules.NewRegistry()
 	assert.NoError(tb, f.Rules.Register(rulestest.Scripted()), "the scripted rules register")
 	f.Target = plugin.Target(frontendtest.ScriptedLang)
-	f.Load(tb, ledgerPackage(extra...))
+	f.Load(tb, ledgerPackage(tb, extra...)...)
 	f.Validated(tb, ledgerID, audit(infoLevel, position.Pos{File: ledgerFile, Line: 2, Col: 1}))
 	f.Validated(tb, transferID, audit(warnLevel, position.Pos{File: ledgerFile, Line: 8, Col: 1}))
 	return f
 }
 
-// ledgerPackage returns the package svc of the scripted language: the
-// interface Ledger, the function Transfer, the struct Base and the struct
-// Entry, which embeds Base, and the declarations of extra.
-func ledgerPackage(extra ...symbol.Symbol) *node.Package {
-	lang := frontendtest.ScriptedLang
-	member := func(owner, name string, kind symbol.Kind) symbol.Identity {
-		return symbol.Identity{Lang: lang, Package: svcPath, Owner: owner, Name: name, Kind: kind}
-	}
+// ledgerPackage builds the package svc of the scripted language through
+// nodetest: the interface Ledger, the function Transfer, the struct Base
+// and the struct Entry, which embeds Base, and the declarations of extra.
+func ledgerPackage(tb assert.TB, extra ...symbol.Symbol) []*node.Package {
+	tb.Helper()
+
+	b := nodetest.New(nodetest.Neutral{Language: frontendtest.ScriptedLang})
 	post := &node.Method{
-		ID:         member(ledgerName, postName, symbol.KindMethod),
 		Pos:        position.Pos{File: ledgerFile, Line: 5, Col: 2},
 		Doc:        []string{postDoc},
 		Name:       postName,
 		Visibility: symbol.VisibilityPublic,
 		Level:      symbol.LevelInstance,
 		Abstract:   true,
-		Host:       ledgerID,
 		Params: []*node.Param{
-			{
-				ID:   member(ledgerName+"."+postName, "account", symbol.KindParam),
-				Name: "account",
-				Type: &node.TypeRef{Spelling: stringType},
-			},
-			{
-				ID:   member(ledgerName+"."+postName, "cents", symbol.KindParam),
-				Name: "cents",
-				Type: &node.TypeRef{Spelling: intType},
-			},
+			{Name: "account", Type: nodetest.Named(stringType)},
+			{Name: "cents", Type: nodetest.Named(intType)},
 		},
-		Returns: []*node.Return{
-			{ID: member(ledgerName+"."+postName, "0", symbol.KindReturn), Type: &node.TypeRef{Spelling: stringType}},
-		},
+		Returns: []*node.Return{{Type: nodetest.Named(stringType)}},
 	}
 	ledger := &node.Interface{
-		ID:         ledgerID,
 		Pos:        position.Pos{File: ledgerFile, Line: 3, Col: 1},
 		Name:       ledgerName,
 		Visibility: symbol.VisibilityPublic,
 		Methods:    []*node.Method{post},
 	}
 	transfer := &node.Function{
-		ID:         transferID,
 		Pos:        position.Pos{File: ledgerFile, Line: 9, Col: 1},
 		Name:       transferName,
 		Visibility: symbol.VisibilityPublic,
 		Params: []*node.Param{
-			{
-				ID:   member(transferName, "from", symbol.KindParam),
-				Name: "from",
-				Type: &node.TypeRef{Spelling: stringType},
-			},
-			{
-				ID:   member(transferName, "cents", symbol.KindParam),
-				Name: "cents",
-				Type: &node.TypeRef{Spelling: intType},
-			},
+			{Name: "from", Type: nodetest.Named(stringType)},
+			{Name: "cents", Type: nodetest.Named(intType)},
 		},
 	}
-	baseID := symbol.Identity{Lang: lang, Package: svcPath, Name: baseName, Kind: symbol.KindStruct}
 	base := &node.Struct{
-		ID:         baseID,
 		Pos:        position.Pos{File: ledgerFile, Line: 12, Col: 1},
 		Name:       baseName,
 		Visibility: symbol.VisibilityPackage,
 		Fields: []*node.Field{{
-			ID: member(baseName, createdName, symbol.KindField), Name: createdName, Visibility: symbol.VisibilityPublic,
-			Type: &node.TypeRef{Spelling: intType}, Host: baseID,
+			Name: createdName, Visibility: symbol.VisibilityPublic, Type: nodetest.Named(intType),
 		}},
 	}
 	entry := &node.Struct{
-		ID:         entryID,
 		Pos:        position.Pos{File: ledgerFile, Line: 15, Col: 1},
 		Name:       entryName,
 		Visibility: symbol.VisibilityPublic,
 		Fields: []*node.Field{{
-			ID: member(entryName, idName, symbol.KindField), Name: idName, Visibility: symbol.VisibilityPublic,
-			Type: &node.TypeRef{Spelling: stringType}, Host: entryID,
+			Name: idName, Visibility: symbol.VisibilityPublic, Type: nodetest.Named(stringType),
 		}},
-		Embeds: []*node.Embed{{
-			ID: member(entryName, baseName, symbol.KindEmbed), Host: entryID,
-			Ref: &node.TypeRef{Spelling: baseName, Target: baseID},
-		}},
+		Embeds: []*node.Embed{{Ref: b.Ref(base)}},
 	}
-	decls := append(node.Symbols{ledger, transfer, base, entry}, extra...)
-	return &node.Package{
-		ID:   symbol.Identity{Lang: lang, Package: svcPath, Kind: symbol.KindPackage},
-		Path: []string{svcPath},
-		Files: []*node.File{{
-			ID:    symbol.Identity{Lang: lang, Package: svcPath, Name: ledgerFile, Kind: symbol.KindFile},
-			Path:  ledgerFile,
-			Decls: decls,
-		}},
-	}
+	b.File(svcPath, ledgerFile, append([]symbol.Symbol{ledger, transfer, base, entry}, extra...)...)
+	return b.Build(tb)
 }
 
 // lookup returns the interface Lookup, whose method Get has the parameter
 // l, the first letter of the implementation LookupAudit.
 func lookup() *node.Interface {
-	lang := frontendtest.ScriptedLang
-	id := symbol.Identity{Lang: lang, Package: svcPath, Name: "Lookup", Kind: symbol.KindInterface}
 	return &node.Interface{
-		ID:         id,
 		Pos:        position.Pos{File: ledgerFile, Line: 21, Col: 1},
 		Name:       "Lookup",
 		Visibility: symbol.VisibilityPublic,
-		Methods: []*node.Method{
-			{
-				ID: symbol.Identity{
-					Lang:    lang,
-					Package: svcPath,
-					Owner:   "Lookup",
-					Name:    "Get",
-					Kind:    symbol.KindMethod,
-				},
-				Pos:        position.Pos{File: ledgerFile, Line: 22, Col: 2},
-				Name:       "Get",
-				Visibility: symbol.VisibilityPublic,
-				Host:       id,
-				Params: []*node.Param{
-					{
-						ID: symbol.Identity{
-							Lang:    lang,
-							Package: svcPath,
-							Owner:   "Lookup.Get",
-							Name:    "l",
-							Kind:    symbol.KindParam,
-						},
-						Name: "l",
-						Type: &node.TypeRef{Spelling: stringType},
-					},
-				},
-			},
-		},
+		Methods: []*node.Method{{
+			Pos:        position.Pos{File: ledgerFile, Line: 22, Col: 2},
+			Name:       "Get",
+			Visibility: symbol.VisibilityPublic,
+			Params:     []*node.Param{{Name: "l", Type: nodetest.Named(stringType)}},
+		}},
 	}
 }
 
@@ -854,88 +790,35 @@ func lookup() *node.Interface {
 // the graph does not contain.
 func broken() *node.Interface {
 	return &node.Interface{
-		ID:         brokenID,
 		Pos:        position.Pos{File: ledgerFile, Line: 25, Col: 1},
 		Name:       brokenName,
 		Visibility: symbol.VisibilityPublic,
-		Embeds: []*node.Embed{{
-			ID: symbol.Identity{
-				Lang:    frontendtest.ScriptedLang,
-				Package: svcPath,
-				Owner:   brokenName,
-				Name:    missingName,
-				Kind:    symbol.KindEmbed,
-			},
-			Host: brokenID,
-			Ref:  &node.TypeRef{Spelling: missingName},
-		}},
+		Embeds:     []*node.Embed{{Ref: nodetest.Named(missingName)}},
 	}
 }
 
 // orphan returns the struct Orphan, which embeds the type Missing that the
 // graph does not contain.
 func orphan() *node.Struct {
-	lang := frontendtest.ScriptedLang
-	id := symbol.Identity{Lang: lang, Package: svcPath, Name: orphanName, Kind: symbol.KindStruct}
 	return &node.Struct{
-		ID:         id,
 		Pos:        position.Pos{File: ledgerFile, Line: 27, Col: 1},
 		Name:       orphanName,
 		Visibility: symbol.VisibilityPublic,
-		Embeds: []*node.Embed{
-			{
-				ID: symbol.Identity{
-					Lang:    lang,
-					Package: svcPath,
-					Owner:   orphanName,
-					Name:    missingName,
-					Kind:    symbol.KindEmbed,
-				},
-				Host: id,
-				Ref:  &node.TypeRef{Spelling: missingName},
-			},
-		},
+		Embeds:     []*node.Embed{{Ref: nodetest.Named(missingName)}},
 	}
 }
 
 // account returns the interface Account with the property Owner and the
 // method Close.
 func account() *node.Interface {
-	lang := frontendtest.ScriptedLang
 	return &node.Interface{
-		ID:         accountID,
 		Pos:        position.Pos{File: ledgerFile, Line: 29, Col: 1},
 		Name:       accountName,
 		Visibility: symbol.VisibilityPublic,
-		Fields: []*node.Field{
-			{
-				ID: symbol.Identity{
-					Lang:    lang,
-					Package: svcPath,
-					Owner:   accountName,
-					Name:    ownerName,
-					Kind:    symbol.KindField,
-				},
-				Name:       ownerName,
-				Visibility: symbol.VisibilityPublic,
-				Type:       &node.TypeRef{Spelling: stringType},
-				Host:       accountID,
-			},
-		},
-		Methods: []*node.Method{
-			{
-				ID: symbol.Identity{
-					Lang:    lang,
-					Package: svcPath,
-					Owner:   accountName,
-					Name:    closeName,
-					Kind:    symbol.KindMethod,
-				},
-				Name:       closeName,
-				Visibility: symbol.VisibilityPublic,
-				Host:       accountID,
-			},
-		},
+		Fields: []*node.Field{{
+			Name: ownerName, Visibility: symbol.VisibilityPublic, Type: nodetest.Named(stringType),
+		}},
+		Methods: []*node.Method{{Name: closeName, Visibility: symbol.VisibilityPublic}},
 	}
 }
 
@@ -943,92 +826,40 @@ func account() *node.Interface {
 // whose bound is comparable, and the method Put, which takes a value of s.
 // The type parameter has the first letter of the implementation StoreAudit.
 func store() *node.Interface {
-	lang := frontendtest.ScriptedLang
 	return &node.Interface{
-		ID:         storeID,
 		Pos:        position.Pos{File: ledgerFile, Line: 33, Col: 1},
 		Name:       storeName,
 		Visibility: symbol.VisibilityPublic,
 		TypeParams: []*node.TypeParam{{
-			ID:     storeParamID,
 			Name:   letterParam,
-			Bounds: []*node.TypeRef{{Spelling: boundType}},
+			Bounds: []*node.TypeRef{nodetest.Named(boundType)},
 		}},
-		Methods: []*node.Method{
-			{
-				ID: symbol.Identity{
-					Lang:    lang,
-					Package: svcPath,
-					Owner:   storeName,
-					Name:    putName,
-					Kind:    symbol.KindMethod,
-				},
-				Name:       putName,
-				Visibility: symbol.VisibilityPublic,
-				Host:       storeID,
-				Params: []*node.Param{
-					{
-						ID: symbol.Identity{
-							Lang:    lang,
-							Package: svcPath,
-							Owner:   storeName + "." + putName,
-							Name:    "v",
-							Kind:    symbol.KindParam,
-						},
-						Name: "v",
-						Type: &node.TypeRef{Spelling: letterParam},
-					},
-				},
-			},
-		},
+		Methods: []*node.Method{{
+			Name:       putName,
+			Visibility: symbol.VisibilityPublic,
+			Params:     []*node.Param{{Name: "v", Type: nodetest.Named(letterParam)}},
+		}},
 	}
 }
 
 // sorter returns the interface Sorter with the method Sort, whose type
 // parameter s has the first letter of the implementation SorterAudit.
 func sorter() *node.Interface {
-	lang := frontendtest.ScriptedLang
 	return &node.Interface{
-		ID:         sorterID,
 		Pos:        position.Pos{File: ledgerFile, Line: 37, Col: 1},
 		Name:       sorterName,
 		Visibility: symbol.VisibilityPublic,
-		Methods: []*node.Method{
-			{
-				ID: symbol.Identity{
-					Lang:    lang,
-					Package: svcPath,
-					Owner:   sorterName,
-					Name:    sortName,
-					Kind:    symbol.KindMethod,
-				},
-				Name:       sortName,
-				Visibility: symbol.VisibilityPublic,
-				Host:       sorterID,
-				TypeParams: []*node.TypeParam{{
-					ID: symbol.Identity{
-						Lang:    lang,
-						Package: svcPath,
-						Owner:   sorterName + "." + sortName,
-						Name:    letterParam,
-						Kind:    symbol.KindTypeParam,
-					},
-					Name: letterParam,
-				}},
-			},
-		},
+		Methods: []*node.Method{{
+			Name:       sortName,
+			Visibility: symbol.VisibilityPublic,
+			TypeParams: []*node.TypeParam{{Name: letterParam}},
+		}},
 	}
 }
 
 // reset returns the function Reset without parameters.
 func reset() *node.Function {
 	return &node.Function{
-		ID: symbol.Identity{
-			Lang:    frontendtest.ScriptedLang,
-			Package: svcPath,
-			Name:    resetName,
-			Kind:    symbol.KindFunction,
-		},
 		Pos:        position.Pos{File: ledgerFile, Line: 40, Col: 1},
 		Name:       resetName,
 		Visibility: symbol.VisibilityPublic,

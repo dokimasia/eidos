@@ -20,6 +20,7 @@ import (
 // reports at, and the lists whose elements record their lines.
 const (
 	formatKey     = "format"
+	contractKey   = "contract"
 	nameKey       = "name"
 	versionKey    = "version"
 	providesKey   = "provides"
@@ -37,6 +38,10 @@ type format int
 // currentFormat is the format of the manifest that this package reads.
 const currentFormat format = 1
 
+// firstContract is the contract version of a manifest that states none,
+// the first version of the contract.
+const firstContract = 1
+
 var _ jsonschema.Schemer = currentFormat
 
 // JSONSchema returns the JSON Schema of the format key, a new map on each
@@ -48,6 +53,7 @@ func (format) JSONSchema() map[string]any {
 // manifest is the decoded plugin.yaml of a plugin directory.
 type manifest struct {
 	Format     format              `yaml:"format"     schema:"required" doc:"The format of the manifest. It must be 1."`
+	Contract   int                 `yaml:"contract"                     doc:"The version of the contract between the kernel and its components that the plugin is written against. The loader refuses a manifest of another version. The default is 1, the first version."`
 	Name       string              `yaml:"name"       schema:"required" doc:"The name of the plugin. A config file sets the options of the plugin under this name. A source file writes it before the name of a directive that two plugins declare, as in +acme:acme-audit:audit. A name is a letter followed by letters, digits, hyphens and underscores."`
 	Version    string              `yaml:"version"    schema:"required" doc:"The version of the plugin. The loader appends a plus sign and the SHA-256 of the manifest and the template files. An edit of either makes the next run a cold run."`
 	Priority   int                 `yaml:"priority"                     doc:"The priority of the plugin among the generators of a plan. A generator with a lower priority runs first. The default is 0."`
@@ -61,9 +67,10 @@ type manifest struct {
 	// line is the line of the manifest's mapping, which a fault of a
 	// missing key is at.
 	line int
-	// nameLine, versionLine, providesLine and requiresLine are the lines
-	// of the values of their keys, and 0 for a key that the manifest does
-	// not write.
+	// contractLine, nameLine, versionLine, providesLine and requiresLine
+	// are the lines of the values of their keys, and 0 for a key that the
+	// manifest does not write.
+	contractLine int
 	nameLine     int
 	versionLine  int
 	providesLine int
@@ -127,6 +134,9 @@ func decode(file string, data []byte) (*manifest, []*Error) {
 // of root has one element for each element of its field.
 func (m *manifest) position(root *yaml.Node) {
 	m.line = root.Line
+	if n := value(root, contractKey); n != nil {
+		m.contractLine = n.Line
+	}
 	if n := value(root, nameKey); n != nil {
 		m.nameLine = n.Line
 	}
@@ -158,6 +168,16 @@ func (m *manifest) position(root *yaml.Node) {
 // the template trees that the rules render through.
 func (m *manifest) check(file string, tpl templates) []*Error {
 	var out []*Error
+	if contract := cmp.Or(m.Contract, firstContract); contract != plugin.ContractVersion {
+		out = append(out, &Error{
+			File: file,
+			Line: cmp.Or(m.contractLine, m.line),
+			Msg: fmt.Sprintf(
+				"the plugin %s is written against contract version %d, and the kernel has contract version %d",
+				m.Name, contract, plugin.ContractVersion,
+			),
+		})
+	}
 	// A name is an identifier of the directive grammar, because a source
 	// file writes it before the name of a directive that two plugins
 	// declare. A param key follows the same rule, so the check of a param

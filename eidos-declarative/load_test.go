@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/plugin/plugintest"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/declarative"
 )
@@ -130,14 +131,28 @@ const (
 )
 
 // printer is the backend of the composition that a fingerprint case
-// builds: a name and the target golang. Nothing invokes it.
-type printer struct{}
+// builds: a name and the target golang. Its settle keeps every construct
+// and every name, and it declares no policy. The methods of a rendering
+// backend belong to the nil interface that it embeds, so a test that
+// renders through it panics.
+type printer struct{ plugin.Backend }
 
 // Name returns the name of the backend.
 func (printer) Name() plugin.ID { return "printer" }
 
 // Target returns golang.
 func (printer) Target() plugin.Target { return goTarget }
+
+// Policies returns nil.
+func (printer) Policies() []plugin.PolicySpec { return nil }
+
+// Lower keeps the declaration.
+func (printer) Lower(symbol.Symbol) ([]symbol.Symbol, error) { return nil, nil }
+
+// Respell returns the name unchanged.
+func (printer) Respell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return name, nil
+}
 
 // Load reads a plugin directory into a generator whose version folds the
 // directory, and reports each fault of the directory at its file and line.
