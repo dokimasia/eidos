@@ -10,25 +10,15 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The predeclared spellings the rules classify.
+// The predeclared spellings the rules classify by name. The numeric
+// types classify through [golang.NumericOf].
 const (
-	spellInt     = "int"
-	spellInt8    = "int8"
-	spellInt16   = "int16"
-	spellInt32   = "int32"
-	spellInt64   = "int64"
-	spellRune    = "rune"
-	spellUint    = "uint"
-	spellUintptr = "uintptr"
-	spellUint8   = "uint8"
-	spellByte    = "byte"
-	spellUint16  = "uint16"
-	spellUint32  = "uint32"
-	spellUint64  = "uint64"
-	spellFloat32 = "float32"
-	spellFloat64 = "float64"
-	spellString  = "string"
-	spellAny     = "any"
+	spellInt    = "int"
+	spellRune   = "rune"
+	spellUint8  = "uint8"
+	spellByte   = "byte"
+	spellString = "string"
+	spellAny    = "any"
 )
 
 // The standard library types the rules classify, each by the path of
@@ -80,31 +70,11 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	if ref == nil {
 		return rules.Opaque(nil)
 	}
-	switch nameOf(ref) {
-	case typeName{name: spellInt}:
-		return rules.Scalar(ref.Spelling, rules.ScalarInt, 0)
-	case typeName{name: spellInt8}:
-		return rules.Scalar(ref.Spelling, rules.ScalarInt, 8)
-	case typeName{name: spellInt16}:
-		return rules.Scalar(ref.Spelling, rules.ScalarInt, 16)
-	case typeName{name: spellInt32}, typeName{name: spellRune}:
-		return rules.Scalar(ref.Spelling, rules.ScalarInt, 32)
-	case typeName{name: spellInt64}:
-		return rules.Scalar(ref.Spelling, rules.ScalarInt, 64)
-	case typeName{name: spellUint}, typeName{name: spellUintptr}:
-		return rules.Scalar(ref.Spelling, rules.ScalarUint, 0)
-	case typeName{name: spellUint8}, typeName{name: spellByte}:
-		return rules.Scalar(ref.Spelling, rules.ScalarUint, 8)
-	case typeName{name: spellUint16}:
-		return rules.Scalar(ref.Spelling, rules.ScalarUint, 16)
-	case typeName{name: spellUint32}:
-		return rules.Scalar(ref.Spelling, rules.ScalarUint, 32)
-	case typeName{name: spellUint64}:
-		return rules.Scalar(ref.Spelling, rules.ScalarUint, 64)
-	case typeName{name: spellFloat32}:
-		return rules.Scalar(ref.Spelling, rules.ScalarFloat, 32)
-	case typeName{name: spellFloat64}:
-		return rules.Scalar(ref.Spelling, rules.ScalarFloat, 64)
+	name := nameOf(ref)
+	if n, numeric := golang.NumericOf(name.name); numeric && name.pkg == "" {
+		return rules.Scalar(ref.Spelling, n.Class, n.Width)
+	}
+	switch name {
 	case boolType:
 		return rules.Leaf(symbol.FormBool, ref.Spelling)
 	case typeName{name: spellString}:
@@ -117,6 +87,23 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 		return rules.Reference(ref.Spelling, rules.WellKnownDuration)
 	default:
 		return rules.Opaque(ref)
+	}
+}
+
+// WellKnown returns the well-known identity of the declarations Time and
+// Duration of the package time, and reports false for every other
+// declaration. A run that loads the standard library gives a reference
+// to either a target, and the fold then classifies the target through
+// WellKnown, as [Rules.Builtin] classifies a reference without one. It
+// allocates nothing.
+func (Rules) WellKnown(id symbol.Identity) (symbol.Identity, bool) {
+	switch (typeName{pkg: id.Package, name: id.Name}) {
+	case timeType:
+		return rules.WellKnownTimestamp, true
+	case durationType:
+		return rules.WellKnownDuration, true
+	default:
+		return symbol.Identity{}, false
 	}
 }
 

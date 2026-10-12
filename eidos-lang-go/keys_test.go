@@ -46,8 +46,8 @@ func TestKeys(t *testing.T) {
 			for _, key := range []meta.KeyName{
 				golang.TestFileKey, golang.ConstraintKey, golang.GeneratedKey,
 				golang.CgoKey, golang.TypeSetKey, golang.ConstraintInterfaceKey,
-				golang.EmptyInterfaceKey, golang.ReceiverPointerKey,
-				golang.UnderlyingKey, golang.IterSeqKey, golang.IterSeq2Key,
+				golang.EmptyInterfaceKey, golang.ReceiverIsPointerKey,
+				golang.UnderlyingKindKey, golang.IterSeqKey, golang.IterSeq2Key,
 				golang.ConstValueKey, golang.SatisfiesErrorKey,
 				golang.SatisfiesStringerKey, golang.EmbedsInterfaceKey,
 				golang.ComparableKey,
@@ -81,6 +81,23 @@ func TestKeys(t *testing.T) {
 			_, err = golang.Register(r)
 			assert.HasError(t, err, "a key and a group share no spelling")
 			assert.Contains(t, err.Error(), string(golang.TestFileKey), "the error names the key")
+		})
+
+		t.Run("registers every other key when a group took the spelling of one", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			rival := r.For(rivalPlugin)
+			assert.NoError(t, rival.ClaimNamespace(rivalPlugin), "the rival claims its own namespace")
+			_, err := meta.Register[bool](rival, meta.KeySpec{
+				Name: rivalPlugin + ".grouped", Group: meta.GroupName(golang.TestFileKey), Doc: "a key in a group",
+			})
+			assert.NoError(t, err, "the rival's key registers into a group that spells a golang key")
+			handles, err := golang.Register(r)
+			assert.HasError(t, err, "the first key fails")
+			_, held := r.Resolve(golang.ComparableKey)
+			assert.True(t, held, "the last key registers after the first one fails")
+			assert.False(t, handles.Comparable.IsZero(), "the handle of the last key names its key")
 		})
 
 		t.Run("claims the namespace for the handle's registrant", func(t *testing.T) {

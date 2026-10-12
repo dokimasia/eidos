@@ -18,53 +18,61 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The records the module cache keeps beside a module's download: the
-// hash the go command verified the tree with, and the mark of a
-// download it has not finished.
+// The module cache keeps its downloads under cacheDownload. Beside the
+// download of a module, a .ziphash record has the hash that the go command
+// verified the tree with, and a .partial record marks a download that the
+// go command has not finished.
 const (
 	cacheDownload = "cache/download"
 	zipHashSuffix = ".ziphash"
 	partialSuffix = ".partial"
 )
 
-// versionMark separates a module's escaped path from its escaped
-// version in the name of its module cache directory.
+// versionMark separates the escaped path of a module from its escaped
+// version in the name of its directory in the module cache.
 const versionMark = "@"
 
-// testSuffix ends the name of a test file, which a dependency unit
-// leaves out.
+// testSuffix ends the name of a test file. A dependency unit leaves test
+// files out.
 const testSuffix = "_" + testElement + golang.Extension
 
 // cacheState is what the module cache provides for one module.
 type cacheState uint8
 
-// The module cache has the module's tree, lacks it or an unfinished
-// download of it, or is a store the load does not provide.
+// The module cache has the tree of the module, lacks the tree or has an
+// unfinished download of it, or is a store that the load does not provide.
 const (
 	cacheHas   cacheState = 1
 	cacheLacks cacheState = 2
 	cacheOff   cacheState = 3
 )
 
-// dependencies is the Go frontend's dependency round. It reads the
-// build list from the round's go.mod files and places each need: in the
-// standard library, in the module cache at the selected version, or in
-// the vendor tree of a workspace module when the cache lacks that
-// version. Each placed need is one unit, the package directory's .go
-// files without its tests.
+// dependencies is the dependency round of the Go frontend. It reads the
+// build list from the go.mod files of the round and places each need in
+// the standard library, in the module cache at the selected version, or
+// in the vendor tree of a workspace module where the cache lacks that
+// version. Each placed need is one unit: the .go files of the package
+// directory without its tests.
 //
-// A need the build places nowhere yields no unit, and the round reports
-// it with the reason: an import of a workspace module, whose packages
-// load from the selection alone, an import no selected module provides,
-// which the go command refuses as provided by no required module, a
-// package directory a module or the standard library lacks, and a
-// store the load does not provide, which turns its source off. The
-// import "C" names cgo's preamble and no package, so the round passes
-// over it. A module the go.sum files record no hash for, a module whose
-// cached hash differs from go.sum's, a directory replacement outside
-// the workspace, an inconsistent vendor tree, and a module neither the
-// cache nor a vendor tree provides are errors that name the go command
-// that settles them.
+// A need that the build places nowhere yields no unit, and the round
+// reports it with one of these reasons:
+//
+//   - a workspace module declares it, and its packages load from the
+//     selection alone;
+//   - no selected module provides it, which the go command refuses as
+//     provided by no required module;
+//   - a module or the standard library lacks the package directory;
+//   - the load does not provide the store, which turns its source off.
+//
+// The import "C" refers to the preamble of cgo and to no package, so the
+// round passes over it. These are errors that name the go command that
+// settles them:
+//
+//   - a module whose hash no go.sum file records;
+//   - a module whose cached hash differs from the hash of go.sum;
+//   - a directory replacement outside the workspace;
+//   - an inconsistent vendor tree;
+//   - a module that neither the cache nor a vendor tree provides.
 func (*goFrontend) dependencies(
 	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
@@ -93,10 +101,10 @@ func (*goFrontend) dependencies(
 	return out, nil
 }
 
-// place returns the unit that declares one import path, and for a need
-// the build places nowhere no unit and the reason.
+// place returns the unit that declares one import path. For a need that
+// the build places nowhere, it returns no unit and the reason.
 func (b *buildList) place(r plugin.StoreReader, importPath string) ([]plugin.SourceRef, string, error) {
-	if standard(importPath) {
+	if golang.Standard(importPath) {
 		return packageUnit(r, plugin.StorePath(GoRootStore, importPath), nil)
 	}
 	if b.workspaceModule(importPath) {
@@ -130,13 +138,13 @@ func (b *buildList) place(r plugin.StoreReader, importPath string) ([]plugin.Sou
 		"provides it: run go mod download %s@%s", s.goMod, mod, s.version, s.tree.Path, s.tree.Version)
 }
 
-// fromCache returns the unit of a package directory from the selected
-// module's tree in the module cache, the reason where the module's tree
-// has no unit for the directory, and what the cache provides for the
-// module. The cache has the module when its tree and its hash record
-// exist and no mark of an unfinished download does, which is the go
-// command's rule. The hash record's text is then the hash go.sum
-// records for the tree, or the round fails.
+// fromCache returns the unit of a package directory from the tree of the
+// selected module in the module cache, and what the cache provides for the
+// module. It returns the reason where the tree has no unit for the
+// directory. By the rule of the go command, the cache has the module where
+// its tree and its hash record exist and no mark of an unfinished download
+// does. The text of the hash record is then the hash that go.sum records
+// for the tree, or the round fails.
 func (b *buildList) fromCache(
 	r plugin.StoreReader, s selection, rel string,
 ) ([]plugin.SourceRef, string, cacheState, error) {
@@ -159,12 +167,12 @@ func (b *buildList) fromCache(
 	if err != nil {
 		return nil, "", cacheLacks, err
 	}
-	if _, partialErr := r.Read(download + partialSuffix); !absent(partialErr) {
+	if _, partialErr := r.Read(download + partialSuffix); !plugin.Absent(partialErr) {
 		return nil, "", cacheLacks, partialErr
 	}
 	root := plugin.StorePath(ModCacheStore, escPath+versionMark+escVersion)
 	if _, rootErr := r.ReadDir(root); rootErr != nil {
-		if absent(rootErr) {
+		if plugin.Absent(rootErr) {
 			return nil, "", cacheLacks, nil
 		}
 		return nil, "", cacheLacks, rootErr
@@ -186,12 +194,12 @@ func (b *buildList) fromCache(
 	return unit, reason, cacheHas, err
 }
 
-// fromVendor returns the unit of a package directory from the vendor
-// tree of the first workspace module whose vendor/modules.txt lists the
-// selected module version, the reason where that tree has no unit for
-// the directory, and reports whether one lists it. The list passes the
-// go command's consistency checks against its go.mod first, and a
-// mismatch is an error that names it.
+// fromVendor returns the unit of a package directory from the vendor tree
+// of the first workspace module whose vendor/modules.txt lists the
+// selected module version. It returns the reason where that tree has no
+// unit for the directory, and reports whether a list names the version.
+// The list first passes the consistency checks of the go command against
+// its go.mod, and a mismatch is an error that names it.
 func (b *buildList) fromVendor(
 	r plugin.StoreReader, mod module.Version, importPath string,
 ) ([]plugin.SourceRef, string, bool, error) {
@@ -217,12 +225,12 @@ func (b *buildList) fromVendor(
 	return nil, "", false, nil
 }
 
-// packageUnit returns one package directory's members, its .go files
-// in name order without its tests and without the files the go
-// command ignores, each declaring the shared inputs. A directory
-// without a member returns the reason instead: the directory does not
-// exist, it has no Go file outside its tests, or it is in a store the
-// load does not provide.
+// packageUnit returns the members of one package directory in name order:
+// its .go files without its tests and without the files that the go
+// command ignores. Each member declares the shared inputs. For a directory
+// without a member, packageUnit returns the reason instead. The directory
+// does not exist, has no Go file outside its tests, or is in a store that
+// the load does not provide.
 func packageUnit(r plugin.StoreReader, dir string, shared []string) ([]plugin.SourceRef, string, error) {
 	entries, err := r.ReadDir(dir)
 	switch {
@@ -248,17 +256,4 @@ func packageUnit(r plugin.StoreReader, dir string, shared []string) ([]plugin.So
 		return nil, dir + " has no Go file outside its tests", nil
 	}
 	return unit, "", nil
-}
-
-// absent reports whether a read or a listing found nothing to read:
-// the file does not exist, or the load provides no store for it.
-func absent(err error) bool {
-	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, plugin.ErrStoreAbsent)
-}
-
-// standard reports whether an import path is in the standard library:
-// its first element has no dot, which is the go command's rule.
-func standard(importPath string) bool {
-	first, _, _ := strings.Cut(importPath, "/")
-	return !strings.Contains(first, ".")
 }

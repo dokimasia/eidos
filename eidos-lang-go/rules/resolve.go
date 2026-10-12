@@ -20,320 +20,119 @@ import (
 // qualifies.
 const qualifierSep = "."
 
-// refusalPrefix opens every refusal the rules return: the language's
-// identity, as every satellite's refusals open.
-const refusalPrefix = string(golang.Lang) + ": "
-
-// typeKinds are the kinds a type spelling names.
-var typeKinds = []symbol.Kind{
-	symbol.KindStruct, symbol.KindInterface, symbol.KindAlias, symbol.KindEnum, symbol.KindSum,
-}
-
-// through names the types whose members a member reference of a
-// callable subject resolves among.
-type through uint8
-
-const (
-	// throughValue is the callable's value: the type of its first value
-	// return, then the type of each input parameter.
-	throughValue through = 1
-	// throughHandle is the handle the callable returns: the type of its
-	// first value return.
-	throughHandle through = 2
-)
-
-// Resolve returns the declaration a directive's spelling names from
-// a subject, the way Go scopes it:
+// Resolve returns the declaration that a directive's spelling names from
+// a subject. The kernel's walk, [rules.Resolve], selects the declarations
+// that each resolution kind searches, and the resolver of Go decides the
+// rest:
 //
-//   - A callable resolves among the methods of the type a method
-//     subject belongs to, which the method calls through its receiver,
-//     and then through the probe of the subject's file,
-//     [golang.Scope.Candidates], to a function.
-//   - A package variable and a type in scope resolve through the probe:
-//     the first candidate the view declares at one of the kinds is the
-//     declaration.
-//   - A value field resolves among the fields of the subject's value:
-//     the subject itself for a type, the type a field belongs to, and
-//     for a callable the type of its first value return, then the type
-//     of each input parameter.
-//   - A member on a handle resolves among the fields and the methods of
-//     the subject's handle: the subject itself for a type, the type a
-//     field belongs to, and for a callable the type of its first value
-//     return.
-//   - A host parameter resolves on the subject's own signature.
+//   - A name in scope resolves through [golang.Bindings.Candidates] of
+//     the file of the subject. The first candidate that the view
+//     declares at one of the kinds is the declaration.
+//   - A member resolves only where Go code of the subject's package can
+//     use it, so an unexported member of a type of another package does
+//     not resolve.
+//   - A pointer counts as the type that it points to.
+//   - A predeclared type resolves to a stand-in with the name of the type
+//     and no package. A type whose qualifier binds a package that the view
+//     does not contain resolves to a stand-in with the import path as its
+//     package.
 //
-// A member resolves only where Go code of the subject's package can use
-// it, so an unexported member of a type of another package does not
-// resolve. A pointer counts as the type it points to. A predeclared type
-// resolves to a stand-in with the name of the type and no package. A
-// type whose qualifier binds a package that the view does not contain
-// resolves to a stand-in with the import path as its package. Resolve
-// refuses a spelling that is not a Go name, bare or qualified: []Row is
-// the name of no declaration, and a probe of Row would find another
-// type.
+// Resolve refuses a spelling that is not a Go name, bare or qualified:
+// []Row is the name of no declaration, and a probe of Row would find
+// another type. A refusal is a *[rules.ResolveError].
 //
 // # Allocation contract
 //
 // A resolution through the probe allocates the scope of the subject's
-// file and the list of candidates: four allocations for a file without
-// a dot import. A member resolution allocates the list of the types it
-// searches, the binding the member walk runs on, and what the walk
-// allocates. A callable of a method subject resolves among the members
-// first, and through the probe where no member has the name. A
-// stand-in and a refusal allocate themselves.
+// file and the list of candidates: four allocations for a file without a
+// dot import. A member resolution allocates the list of the types that it
+// searches and what the member walk allocates. A callable of a method
+// subject resolves among the members first, and through the probe where
+// no member has the name. A stand-in and a refusal allocate themselves.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, refuse("nothing to resolve")
-	}
-	switch kind {
-	case directive.ResolveCallableInScope:
-		return r.callable(scope, name, v)
-	case directive.ResolvePackageVar:
-		return inScope(scope, name, v, symbol.KindVariable, symbol.KindConstant)
-	case directive.ResolveValueField:
-		return r.member(scope, name, v, throughValue, symbol.KindField)
-	case directive.ResolveHostParam:
-		return hostParam(scope, name, v)
-	case directive.ResolveMemberOnHandle:
-		return r.member(scope, name, v, throughHandle, symbol.KindField, symbol.KindMethod)
-	case directive.ResolveTypeInScope:
-		return typeInScope(scope, name, v)
-	default:
-		return nil, refuse("%s is not a resolution Go performs", kind)
-	}
+	return rules.Resolve(resolver{}, r, v, scope, name, kind)
 }
 
-// callable resolves a callable from a subject: a method of the type a
-// method subject belongs to, which the method calls through its
-// receiver, before a function the probe of the subject's file finds.
-// Every other subject resolves a function through the probe alone.
-func (r Rules) callable(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
-	sym, _ := v.Lookup(scope.Subject)
-	method, isMethod := sym.(*node.Method)
-	if !isMethod {
-		return inScope(scope, name, v, symbol.KindFunction)
-	}
-	owner, _ := v.Lookup(method.Host)
-	if host, isType := owner.(node.Declaration); isType {
-		b := rules.NewBound(r, v, nil)
-		if sibling, found := memberNamed(b, host, name, scope.Subject.Package, symbol.KindMethod); found {
-			return sibling, nil
-		}
-	}
-	if fn, err := inScope(scope, name, v, symbol.KindFunction); err == nil {
-		return fn, nil
-	}
-	return nil, refuse("%s has no method named %s, and no function named %s is in scope of %s",
-		method.Host, name, name, scope.Subject)
-}
+// resolver is the [rules.Resolver] of Go: the probe of a file's imports,
+// the export of a member by the case of its name, the stand-ins of the
+// types outside the view, and a pointer as its element.
+type resolver struct{}
 
-// inScope resolves a Go name to the first top-level declaration of
-// one of the kinds that the probe of the subject's file finds in the
-// view.
-func inScope(scope rules.Scope, name string, v rules.View, kinds ...symbol.Kind) (symbol.Symbol, error) {
+// InScope resolves a Go name to the first top-level declaration of one of
+// the kinds that the probe of the subject's file finds in the view. A
+// candidate whose package the view does not contain is skipped. It
+// refuses a spelling that is not a Go name, and a name that no candidate
+// declares.
+func (resolver) InScope(scope rules.Scope, name string, kinds []symbol.Kind, v rules.View) (symbol.Symbol, error) {
 	if !goName(name) {
 		return nil, refuse("%s is not a Go name, so it names no declaration", name)
 	}
-	return firstDeclared(scope, scopeOf(scope.File), name, v, kinds...)
-}
-
-// typeInScope resolves a type spelling: a predeclared type to a
-// stand-in naming itself, a qualified name whose import binds a
-// package outside the view to a stand-in naming the import path, and
-// any other Go name to the first type the probe of the subject's file
-// finds in the view.
-func typeInScope(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
-	if golang.Predeclared(name) {
-		return standIn(symbol.Identity{Lang: golang.Lang, Name: name, Kind: symbol.KindAlias}), nil
-	}
-	if !goName(name) {
-		return nil, refuse("%s is not a Go name, so it names no type", name)
-	}
-	s := scopeOf(scope.File)
-	if qualifier, bare, qualified := strings.Cut(name, qualifierSep); qualified {
-		if path, bound := s.Import(qualifier); bound && !inView(path, v) {
-			// A package outside the workspace, the standard library
-			// or a dependency: the type is named by its path, which a
-			// backend qualifies and imports.
-			return standIn(symbol.Identity{
-				Lang: golang.Lang, Package: path, Name: bare, Kind: symbol.KindAlias,
-			}), nil
-		}
-	}
-	return firstDeclared(scope, s, name, v, typeKinds...)
-}
-
-// firstDeclared returns the first candidate of a name, in the
-// scope's probe order, that the view declares at the top level of
-// its package at one of the kinds. A candidate whose package the view
-// does not contain is skipped.
-func firstDeclared(
-	scope rules.Scope, s golang.Scope, name string, v rules.View, kinds ...symbol.Kind,
-) (symbol.Symbol, error) {
-	for _, c := range s.Candidates(scope.Subject.Package, name) {
+	for _, c := range bindingsOf(scope.File).Candidates(scope.Subject.Package, name) {
 		pkg, held := v.PackageOf(packageIdentity(c.Package))
 		if !held {
 			continue
 		}
-		if sym := declared(pkg, c.Name, kinds...); sym != nil {
+		if sym := declared(pkg, c.Name, kinds); sym != nil {
 			return sym, nil
 		}
 	}
 	return nil, refuse("no %s named %s is in scope of %s", kindList(kinds), name, scope.Subject)
 }
 
-// member resolves a name among the effective members of the types that
-// [Rules.holders] returns for the subject, the first type that has a
-// member of the name and one of the kinds deciding.
-func (r Rules) member(
-	scope rules.Scope, name string, v rules.View, via through, kinds ...symbol.Kind,
-) (symbol.Symbol, error) {
-	types, err := r.holders(scope.Subject, v, via)
-	if err != nil {
-		return nil, err
+// Usable reports whether Go code of the subject's package can use a
+// member: an exported member in every package, and an unexported member in
+// the package that declares it.
+func (resolver) Usable(m rules.Member, _ symbol.Identity, scope rules.Scope) bool {
+	decl, names := m.Symbol.(node.Declaration)
+	if !names {
+		return false
 	}
-	b := rules.NewBound(r, v, nil)
-	for _, t := range types {
-		if m, found := memberNamed(b, t, name, scope.Subject.Package, kinds...); found {
-			return m, nil
-		}
-	}
-	searched := make([]string, 0, len(types))
-	for _, t := range types {
-		searched = append(searched, t.Identity().String())
-	}
-	return nil, refuse("%s has no %s member named %s that the package %s can use",
-		strings.Join(searched, " or "), kindList(kinds), name, scope.Subject.Package)
+	id := decl.Identity()
+	return token.IsExported(id.Name) || id.Package == scope.Subject.Package
 }
 
-// holders returns the types whose members a member reference of a
-// subject resolves among: the subject itself for a type, the type a
-// field belongs to, and for a callable the types of its value under
-// via, in the order [Rules.valueTypes] gives. It refuses a subject, or
-// the type of a field, that the view does not declare.
-func (r Rules) holders(subject symbol.Identity, v rules.View, via through) ([]node.Declaration, error) {
-	sym, _ := v.Lookup(subject)
-	if field, isField := sym.(*node.Field); isField {
-		sym, _ = v.Lookup(field.Host)
+// Placeholder returns the stand-in of a predeclared type, which has the
+// name of the type and no package. It returns the stand-in of a qualified
+// type whose qualifier binds a package that the view does not contain,
+// with the import path as its package. It reports false for every other
+// name.
+func (resolver) Placeholder(scope rules.Scope, name string, v rules.View) (symbol.Symbol, bool) {
+	if golang.Predeclared(name) {
+		return standIn(symbol.Identity{Lang: golang.Lang, Name: name, Kind: symbol.KindAlias}), true
 	}
-	switch s := sym.(type) {
-	case *node.Struct, *node.Interface, *node.Enum, *node.Sum:
-		decl, _ := sym.(node.Declaration)
-		return []node.Declaration{decl}, nil
-	case *node.Function:
-		return r.valueTypes(subject, s.Params, s.Returns, v, via)
-	case *node.Method:
-		return r.valueTypes(subject, s.Params, s.Returns, v, via)
-	default:
-		return nil, refuse("%s belongs to no type the view declares", subject)
+	qualifier, bare, qualified := strings.Cut(name, qualifierSep)
+	if !qualified || !goName(name) {
+		return nil, false
 	}
+	path, bound := bindingsOf(scope.File).Import(qualifier)
+	if !bound || inView(path, v) {
+		return nil, false
+	}
+	// A package outside the workspace, the standard library or a
+	// dependency: the type is named by its path, which a backend
+	// qualifies and imports.
+	return standIn(symbol.Identity{Lang: golang.Lang, Package: path, Name: bare, Kind: symbol.KindAlias}), true
 }
 
-// valueTypes returns the declarations of a callable's value: the type
-// of its first value return, then, through the value, the type of each
-// input parameter, in order. A pointer counts as the type it points to.
-// A reference without a declaration in the view, such as a predeclared
-// type, has no members and is left out. A callable whose value has no
-// declaration refuses.
-func (r Rules) valueTypes(
-	subject symbol.Identity, params []*node.Param, returns []*node.Return, v rules.View, via through,
-) ([]node.Declaration, error) {
-	var out []node.Declaration
-	roles, _ := r.ReturnRoles(returns, v)
-	for i, ret := range returns {
-		if ret != nil && roles[i] == rules.ReturnValue {
-			out = appendDeclared(out, ret.Type, v)
-			break
-		}
-	}
-	if via == throughValue {
-		for _, p := range params {
-			if p != nil && r.ParamRole(p, v) == rules.ParamInput {
-				out = appendDeclared(out, p.Type, v)
-			}
-		}
-	}
-	if len(out) == 0 {
-		return nil, refuse("%s has no value of a type the view declares", subject)
-	}
-	return out, nil
-}
-
-// appendDeclared appends the declaration a reference names to out, a
-// pointer counting as the type it points to, and returns out unchanged
-// for a reference without a declaration in the view.
-func appendDeclared(out []node.Declaration, ref *node.TypeRef, v rules.View) []node.Declaration {
+// Value returns the type that a pointer points to, through every level of
+// pointers, and every other reference unchanged.
+func (resolver) Value(ref *node.TypeRef, _ rules.View) *node.TypeRef {
 	for ref != nil && ref.Form == symbol.FormOptional && len(ref.Elems) == 1 {
 		ref = ref.Elems[0]
 	}
-	// A structural reference and an unresolved name have the zero
-	// target, which the view looks up as nothing.
-	var target symbol.Identity
-	if ref != nil {
-		target = ref.Target
-	}
-	sym, held := v.Lookup(target)
-	decl, names := sym.(node.Declaration)
-	if !held || !names {
-		return out
-	}
-	return append(out, decl)
+	return ref
 }
 
-// memberNamed returns the effective member of a type with a name and one
-// of the kinds that Go code of the package from can use, and false where
-// the type has none. An unexported member is usable only in the package
-// that declares it. A symbol that is no type has no members.
-func memberNamed(
-	b rules.Bound, host node.Declaration, name, from string, kinds ...symbol.Kind,
-) (symbol.Symbol, bool) {
-	set, _ := b.MembersOf(host)
-	for _, m := range set.Members {
-		var id symbol.Identity
-		if decl, names := m.Symbol.(node.Declaration); names {
-			id = decl.Identity()
-		}
-		usable := token.IsExported(id.Name) || id.Package == from
-		if id.Name == name && slices.Contains(kinds, id.Kind) && usable {
-			return m.Symbol, true
-		}
-	}
-	return nil, false
-}
-
-// hostParam resolves a parameter on the subject's own signature.
-func hostParam(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
-	sym, held := v.Lookup(scope.Subject)
-	if !held {
-		return nil, refuse("%s is outside the view", scope.Subject)
-	}
-	var params []*node.Param
-	switch c := sym.(type) {
-	case *node.Function:
-		params = c.Params
-	case *node.Method:
-		params = c.Params
-	default:
-		return nil, refuse("%s is no callable, so it has no parameter named %s", scope.Subject, name)
-	}
-	for _, p := range params {
-		if p != nil && p.Name == name {
-			return p, nil
-		}
-	}
-	return nil, refuse("%s declares no parameter named %s", scope.Subject, name)
-}
-
-// scopeOf returns the scope a file's imports bind, and the zero
-// scope, which binds nothing, for a subject without a file.
-func scopeOf(f *node.File) golang.Scope {
+// bindingsOf returns the bindings of the imports of a file. For a
+// subject without a file, it returns the zero Bindings, which binds
+// nothing.
+func bindingsOf(f *node.File) golang.Bindings {
 	if f == nil {
-		return golang.Scope{}
+		return golang.Bindings{}
 	}
-	return golang.NewScope(f.Imports)
+	return golang.NewBindings(f.Imports)
 }
 
 // goName reports whether a spelling is a Go name, bare or qualified:
@@ -360,10 +159,10 @@ func packageIdentity(path string) symbol.Identity {
 	return symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage}
 }
 
-// declared returns a package's top-level declaration of one name
-// and one of the kinds, or nil. It reads each file's top-level
-// declarations and nothing nested inside them.
-func declared(pkg *node.Package, name string, kinds ...symbol.Kind) symbol.Symbol {
+// declared returns a package's top-level declaration of one name and one
+// of the kinds, or nil. It reads each file's top-level declarations and
+// nothing nested inside them.
+func declared(pkg *node.Package, name string, kinds []symbol.Kind) symbol.Symbol {
 	for _, f := range pkg.Files {
 		for _, sym := range f.Decls {
 			var id symbol.Identity
@@ -394,7 +193,8 @@ func kindList(kinds []symbol.Kind) string {
 	return strings.Join(parts, " or ")
 }
 
-// refuse builds a refusal under [refusalPrefix].
+// refuse returns a *[rules.ResolveError] of Go with the reason that
+// format and args write.
 func refuse(format string, args ...any) error {
-	return fmt.Errorf(refusalPrefix+format, args...)
+	return &rules.ResolveError{Lang: golang.Lang, Msg: fmt.Sprintf(format, args...)}
 }

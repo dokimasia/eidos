@@ -11,15 +11,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/position"
 )
 
-// goBuild is the constraint directive, which is configuration and
-// no annotation: the exclusion scan reads it, and nothing else does.
+// goBuild is the constraint directive. It is configuration and not an
+// annotation, so only the exclusion scan reads it.
 const goBuild = "go:build"
 
-// split takes one comment group apart through the unit's own
-// pipeline, then filters the go:build directive out of the
-// annotations. Consecutive line comments feed the pipeline as one
-// text, so a carrier's continuation folds across them the way the
-// author reads it.
+// split takes one comment group apart through the pipeline of the unit,
+// and drops the go:build directive from the annotations. The pipeline
+// reads consecutive line comments as one text, so the continuation of a
+// carrier folds across them as the author reads it.
 func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.CommentParts {
 	var parts plugin.CommentParts
 	if group == nil {
@@ -59,10 +58,10 @@ func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.Co
 	return parts
 }
 
-// skip consumes comment groups without reading them: the comments
-// of a declaration the load leaves out, whose carriers and tool
-// directives belong to that declaration and leave with it. A nil
-// group is skipped.
+// skip marks comment groups as taken without reading them. They are the
+// comments of a declaration that the load leaves out, and their carriers
+// and tool directives leave with the declaration. skip passes over a nil
+// group.
 func (l *lowered) skip(groups ...*ast.CommentGroup) {
 	for _, group := range groups {
 		if group != nil {
@@ -71,9 +70,10 @@ func (l *lowered) skip(groups ...*ast.CommentGroup) {
 	}
 }
 
-// merge folds a group's parts under a spec's own. Carriers and
-// annotations union, because a group's directives apply beside a
-// spec's. The documentation keeps the nearer comment's text.
+// merge joins the parts of a declaration group with the parts of one of
+// its specs. The carriers and the annotations of both apply to the spec.
+// The documentation of the spec is its own text, and the text of the
+// group where the spec has none.
 func merge(own, group plugin.CommentParts) plugin.CommentParts {
 	if len(own.Docs) == 0 {
 		own.Docs = group.Docs
@@ -81,15 +81,4 @@ func merge(own, group plugin.CommentParts) plugin.CommentParts {
 	own.Carriers = append(own.Carriers, group.Carriers...)
 	own.Annotations = append(own.Annotations, group.Annotations...)
 	return own
-}
-
-// refuseCarriers reports every carrier on a subject the model
-// cannot address, quoting it as the author wrote it, so an authored
-// directive never vanishes into silence.
-func refuseCarriers(u *plugin.SourceUnit, cs []plugin.Carrier, what string) {
-	for _, c := range cs {
-		u.Errorf(UnaddressedCarrier, c.Pos,
-			"%q is on %s, which the model cannot address. Move it directly above a declaration",
-			c.Mark+c.Payload, what)
-	}
 }

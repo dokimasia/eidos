@@ -38,3 +38,12 @@ func ImportPath(module, root, dir string) string {
 		return module + "/" + strings.TrimPrefix(dir, root+"/")
 	}
 }
+
+// Standard reports whether an import path names a package of the
+// standard library. The go command's rule decides: the first element of
+// a standard library path contains no dot, and the host of a module path
+// does. Standard allocates nothing.
+func Standard(importPath string) bool {
+	first, _, _ := strings.Cut(importPath, "/")
+	return !strings.Contains(first, ".")
+}

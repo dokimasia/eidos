@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -15,14 +16,18 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// enumAllocs is an enumeration with stamped values: the list of its
-// variants, and the out-of-range value, a conversion of the reference
-// to the type.
+// enumAllocs is the count of an enumeration with stamped values: the list
+// of its variants, and the out-of-range value, which is a conversion of
+// the reference to the type.
 const enumAllocs = 1 + 2
 
-// A generated check reads an enumeration's variants, its zero, its
-// duplicate and its out-of-range value through EnumOf. Each is pinned,
-// with the frontend's exact values and without them.
+// levelName is the name of the enumeration of the cases that state an
+// underlying type.
+const levelName = "Level"
+
+// TestEnum pins the variants, the zero, the duplicate and the
+// out-of-range value that EnumOf returns, with the exact values of the
+// frontend and without them. A generated check reads each of them.
 func TestEnum(t *testing.T) {
 	t.Parallel()
 
@@ -113,6 +118,78 @@ func TestEnum(t *testing.T) {
 
 			assert.Equal(t, sharedInfo(t).OutOfRange.Inner.Text, "6", "the range ends past 5")
 		})
+
+		bounded := []struct {
+			name       string
+			underlying string
+			values     []string
+			want       string
+		}{
+			{
+				name:       "returns one past the largest value that the underlying type holds",
+				underlying: "uint8", values: []string{"0", "254"}, want: "255",
+			},
+			{
+				name:       "returns one below the smallest value where the largest value fills the underlying type",
+				underlying: "uint8", values: []string{"1", "255"}, want: "0",
+			},
+			{
+				name:       "returns one below the smallest value of a signed set that fills the top of its type",
+				underlying: "int8", values: []string{"-5", "127"}, want: "-6",
+			},
+			{
+				name:       "returns one past the largest value of an int within 32 bits",
+				underlying: "int", values: []string{"0", "2147483646"}, want: "2147483647",
+			},
+			{
+				name:       "returns one below the smallest value of an int that fills 32 bits at its top",
+				underlying: "int", values: []string{"0", "2147483647"}, want: "-1",
+			},
+			{
+				name:       "returns one past the largest value of a uint64 within int64",
+				underlying: "uint64", values: []string{"0", "9223372036854775806"}, want: "9223372036854775807",
+			},
+			{
+				name:       "returns one past the largest value of a float type",
+				underlying: "float64", values: []string{"0", "1"}, want: "2",
+			},
+		}
+		for _, tt := range bounded {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				out := boundedInfo(t, tt.underlying, tt.values...).OutOfRange
+				assert.Equal(t, out.Kind, emit.ValueConversion, "the value converts to the type")
+				assert.Equal(t, out.Inner.Text, tt.want, "the underlying type holds the out-of-range value")
+			})
+		}
+
+		filled := []struct {
+			name       string
+			underlying string
+			values     []string
+		}{
+			{
+				name:       "returns no out-of-range value for a set at both ends of uint8",
+				underlying: "uint8", values: []string{"0", "255"},
+			},
+			{
+				name:       "returns no out-of-range value for a set at both ends of int64",
+				underlying: "int64", values: []string{"-9223372036854775808", "9223372036854775807"},
+			},
+			{
+				name:       "returns no out-of-range value for a set at both ends of uint64 within int64",
+				underlying: "uint64", values: []string{"0", "9223372036854775807"},
+			},
+		}
+		for _, tt := range filled {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.True(t, boundedInfo(t, tt.underlying, tt.values...).OutOfRange.IsZero(),
+					"the underlying type holds no value outside the range of the set")
+			})
+		}
 	})
 }
 
@@ -177,6 +254,28 @@ func modeEnum() *node.Enum {
 			nil,
 		},
 	}
+}
+
+// boundedInfo returns the projection of an enumeration over the
+// underlying type of the spelling underlying. The fixture stamps one
+// variant with each of values.
+func boundedInfo(tb assert.TB, underlying string, values ...string) rules.EnumInfo {
+	tb.Helper()
+
+	f := loaded(tb)
+	key, held := f.constKey()
+	assert.True(tb, held, "the fixture registered the constant key")
+	e := &node.Enum{
+		ID: id(fxPath, levelName, symbol.KindEnum), Name: levelName,
+		Underlying: &node.TypeRef{Spelling: underlying},
+	}
+	for i, value := range values {
+		name := levelName + strconv.Itoa(i)
+		variant := &node.EnumVariant{ID: id(fxPath, name, symbol.KindEnumVariant), Name: name}
+		e.Variants = append(e.Variants, variant)
+		stamp(tb, f.Facts, variant.ID, key, value)
+	}
+	return enumRules(tb).EnumOf(e, f.view)
 }
 
 // sharedInfo returns the projection of the two-variant enumeration with

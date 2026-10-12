@@ -14,9 +14,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The capability cases read the sentinel a base spells, the struct tag
-// the fixture's Tagged.Name declares, key by key, and the spellings a
-// substitution binds.
+// The capability cases read the sentinel that a base spells, the struct
+// tag that Tagged.Name of the fixture declares, key by key, and the
+// spellings of the witness and the comparison cases.
 const (
 	// sentinelBase is the base the convention spells as sentinel.
 	sentinelBase = "not found"
@@ -30,8 +30,8 @@ const (
 	xmlKey  = "xml"
 	// witness is the type every admitting bound derives.
 	witness = "int"
-	// paramName is Box's one type parameter, and argSpelling the
-	// argument a substitution binds to it.
+	// paramName is the name of a type parameter without a bound, and
+	// argSpelling a builtin that compares.
 	paramName   = "T"
 	argSpelling = "string"
 	// stampedHost is the struct whose embed the member walk cannot
@@ -48,10 +48,6 @@ const (
 	sentinelAllocs = 2
 	// witnessAllocs is a derived witness: the reference to int.
 	witnessAllocs = 1
-	// substituteAllocs is a list of a bound parameter: the copy of the
-	// argument, the copy of the list's element list, and the copy of
-	// the list.
-	substituteAllocs = 3
 	// settableAllocs is the settable set of a struct that embeds one
 	// type: the binding the member walk runs on, the walk's member list,
 	// the path into the embed, and the list of settable fields.
@@ -62,9 +58,8 @@ const (
 	comparableAllocs = 3
 )
 
-// The kernel asserts the Go rules against the optional capability
-// interfaces. Each method is pinned through the interface that
-// declares it.
+// TestCapabilities pins each method of the optional capability interfaces
+// of the Go rules, through the interface that declares it.
 func TestCapabilities(t *testing.T) {
 	t.Parallel()
 
@@ -171,13 +166,13 @@ func TestCapabilities(t *testing.T) {
 			assert.Equal(t, w.Spelling, witness, "the witness")
 		})
 
-		t.Run("reports false for a type set without the facts", func(t *testing.T) {
+		t.Run("returns int for a constraint interface in a view without facts", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			_, derived := capability[rules.GenericsRules](t).Derive(paramsOf(t, f, "Sized")[0],
-				rules.View{Decls: f.view.Decls})
-			assert.False(t, derived, "no type set is knowable")
+			bare := rules.NewView(f.view.Reader(), nil, nil, f.view.Kernel())
+			_, derived := capability[rules.GenericsRules](t).Derive(paramsOf(t, f, "Sized")[1], bare)
+			assert.True(t, derived, "a view without facts reads no type set, so the empty interface admits int")
 		})
 
 		t.Run("reports false for a missing parameter", func(t *testing.T) {
@@ -203,48 +198,6 @@ func TestCapabilities(t *testing.T) {
 			t.Parallel()
 
 			assert.False(t, capability[rules.GenericsRules](t).Reified(), "Go erases type arguments at run time")
-		})
-	})
-
-	t.Run("Substitute", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("binds the argument inside a composite", func(t *testing.T) {
-			t.Parallel()
-
-			f := loaded(t)
-			got := capability[rules.GenericsRules](t).Substitute(listOfParam(), paramsOf(t, f, "Box"),
-				[]*node.TypeRef{builtin(argSpelling)})
-			assert.Equal(t, got.Elems[0].Spelling, argSpelling, "the argument at the parameter's position")
-		})
-
-		t.Run("leaves the reference it restates unchanged", func(t *testing.T) {
-			t.Parallel()
-
-			f := loaded(t)
-			list := listOfParam()
-			capability[rules.GenericsRules](t).Substitute(list, paramsOf(t, f, "Box"),
-				[]*node.TypeRef{builtin(argSpelling)})
-			assert.Equal(t, list.Elems[0].Spelling, paramName, "the restatement is a copy")
-		})
-
-		t.Run("returns a reference that names no parameter as it is", func(t *testing.T) {
-			t.Parallel()
-
-			f := loaded(t)
-			untouched := builtin(witness)
-			got := capability[rules.GenericsRules](t).Substitute(untouched, paramsOf(t, f, "Box"),
-				[]*node.TypeRef{builtin(argSpelling)})
-			assert.Equal(t, got, untouched, "the same reference", assert.ByIdentity())
-		})
-
-		t.Run("returns the reference as it is for mismatched arguments", func(t *testing.T) {
-			t.Parallel()
-
-			f := loaded(t)
-			item := &node.TypeRef{Spelling: paramName}
-			got := capability[rules.GenericsRules](t).Substitute(item, paramsOf(t, f, "Box"), nil)
-			assert.Equal(t, got, item, "no argument binds", assert.ByIdentity())
 		})
 	})
 
@@ -445,7 +398,6 @@ func capabilityCalls(tb testing.TB) []allocCall {
 	equality := capability[rules.EqualityRules](tb)
 	tagged, box := f.field(tb, "Tagged", "Name"), paramsOf(tb, f, "Box")
 	derived, _ := f.decl(tb, id(fxPath, "Derived", symbol.KindStruct)).(*node.Struct)
-	list, plain, args := listOfParam(), builtin(witness), []*node.TypeRef{builtin(argSpelling)}
 	row, base := ref(fxPath, "Row", symbol.KindStruct), ref(fxPath, "Base", symbol.KindStruct)
 	var (
 		text     string
@@ -474,20 +426,6 @@ func capabilityCalls(tb testing.TB) []allocCall {
 			name: "Derive", allocs: witnessAllocs,
 			call:  func() { got, _ = generics.Derive(box[0], f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, got.Spelling, witness, "Derive returns int") },
-		},
-		{
-			name: "Substitute", caseName: "a reference that names a parameter", allocs: substituteAllocs,
-			call: func() { got = generics.Substitute(list, box, args) },
-			check: func(tb assert.TB) {
-				assert.Equal(tb, got.Elems[0].Spelling, argSpelling, "Substitute binds the argument")
-			},
-		},
-		{
-			name: "Substitute", caseName: "a reference that names no parameter",
-			call: func() { got = generics.Substitute(plain, box, args) },
-			check: func(tb assert.TB) {
-				assert.Equal(tb, got, plain, "Substitute returns the reference as it is", assert.ByIdentity())
-			},
 		},
 		{
 			name:  "Reified",
@@ -572,9 +510,4 @@ func boxOf(arg *node.TypeRef) *node.TypeRef {
 		box.Args = []*node.TypeRef{arg}
 	}
 	return box
-}
-
-// listOfParam returns a list of Box's type parameter.
-func listOfParam() *node.TypeRef {
-	return composite("[]"+paramName, symbol.FormList, &node.TypeRef{Spelling: paramName})
 }

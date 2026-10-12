@@ -11,6 +11,7 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
+	kit "go.dokimi.dev/eidos/sdk/backend"
 	"go.dokimi.dev/eidos/sdk/backendtest"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -21,10 +22,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// These constants name the end-to-end fixture's brand, which the
-// output contract stamps under, the file a unit of svcPkg renders into,
-// the method a stated receiver attaches to its host, and a field of a
-// function type.
+// These constants are the brand of the end-to-end fixture, under which
+// the output contract stamps, the file of a unit of svcPkg, the method
+// that a stated receiver attaches to its host, and a field of a function
+// type.
 const (
 	contractBrand = "golang"
 	unitKey       = svcPkg + "/row.go"
@@ -33,19 +34,23 @@ const (
 	visitName     = "Visit"
 )
 
-// emittedName is a generated struct's name in the neutral convention,
-// and settledName the name the settle gives it for a public
-// declaration.
+// emittedName is the name of a generated struct in the neutral
+// convention, and settledName is the name that the settle gives it for a
+// public declaration.
 const (
 	emittedName = "stubStore"
 	settledName = "StubStore"
 )
 
-// The allocations of a build and of the scaled corpus.
+// svcPackage is the package of the units that the cases render.
+var svcPackage = symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbol.KindPackage}
+
+// These constants are the allocations of a build and of the scaled
+// corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the seven kind templates.
-	newAllocs = 1_588
+	newAllocs = 1_583
 	// renderAllocs is one render of the scaled corpus of 200,000
 	// declarations: text/template's reflective calls, about half of its
 	// allocations, go/format's parse and print of every file, about four
@@ -59,13 +64,13 @@ const (
 	settleAllocs = 1_910_000
 )
 
-// allocCall is one call that an allocation test and a benchmark share:
-// the method it calls, which names its benchmark, the case it measures
-// where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves. A case whose
-// ceiling only a benchmark checks sets bench, which measures the case
-// in place of the call, and no list an allocation test reads contains
-// it.
+// allocCall is one call that an allocation test and a benchmark share.
+// It has the method that it calls, whose name is the name of its
+// benchmark, the case that it measures where the method has more than
+// one call, its allocation ceiling, the call, and the check of the
+// result of the call. A case whose ceiling only a benchmark checks sets
+// bench, which measures the case in place of the call. No list that an
+// allocation test reads contains such a case.
 type allocCall struct {
 	name     string
 	caseName string
@@ -75,10 +80,9 @@ type allocCall struct {
 	bench    func(b *testing.B)
 }
 
-// The backend is the module's write half: the kernel suite runs the
-// render checks over it on the canonical fixture, and the stamp
-// check joins it to the output contract under this module's own
-// comment forms.
+// The backend is the write half of the module. The kernel suite runs the
+// render checks over it on the canonical fixture, and the stamp check
+// joins it to the output contract under the comment forms of the module.
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -102,9 +106,7 @@ func TestNew(t *testing.T) {
 		t.Run("returns a backend whose spoke spells a type of another language", func(t *testing.T) {
 			t.Parallel()
 
-			speller, spells := backend.New().(plugin.TypeSpeller)
-			assert.True(t, spells, "the backend serves the spoke")
-			got, err := speller.SpellType(rules.Leaf(symbol.FormText, "String"), plugin.Policy{})
+			got, err := backend.New().SpellType(rules.Leaf(symbol.FormText, "String"), plugin.Policy{})
 			assert.NoError(t, err, "the spoke spells text")
 			assert.Equal(t, got.Spelling, "string", "the backend's spoke is spell.Type")
 		})
@@ -132,8 +134,9 @@ func TestNew(t *testing.T) {
 		t.Run("returns a backend that imports the package a field's type names", func(t *testing.T) {
 			t.Parallel()
 
-			body, sink := rendered(t, rowOf(&emit.Field{Name: "When", Type: imported(timePkg, timePkg, "Duration")}))
-			assert.Empty(t, collected(sink), "the file renders clean")
+			body, findings := rendered(t, svcPackage,
+				rowOf(&emit.Field{Name: "When", Type: imported(timePkg, timePkg, "Duration")}))
+			assert.Empty(t, findings, "the file renders clean")
 			assert.That(t, body).
 				Contains("import (\n\t\"time\"\n)\n", "the import block").
 				Contains("\tWhen time.Duration\n", "and the qualified field")
@@ -142,11 +145,11 @@ func TestNew(t *testing.T) {
 		t.Run("returns a backend that renders two packages of one name under two names", func(t *testing.T) {
 			t.Parallel()
 
-			body, sink := rendered(t, rowOf(
+			body, findings := rendered(t, svcPackage, rowOf(
 				&emit.Field{Name: "Current", Type: imported(storeName, storePkg, rowName)},
 				&emit.Field{Name: "Legacy", Type: imported(storeName, legacyPkg, rowName)},
 			))
-			assert.Empty(t, collected(sink), "the file renders clean")
+			assert.Empty(t, findings, "the file renders clean")
 			assert.ContainsInOrder(t, body, []string{
 				"\t" + storeName2 + " \"" + legacyPkg + "\"\n",
 				"\t\"" + storePkg + "\"\n",
@@ -155,7 +158,7 @@ func TestNew(t *testing.T) {
 			}, "the second package imports under a suffixed name")
 		})
 
-		t.Run("returns a backend that renders a pointer receiver a generator states", func(t *testing.T) {
+		t.Run("returns a backend that renders the pointer receiver of a generator", func(t *testing.T) {
 			t.Parallel()
 
 			row := rowOf()
@@ -166,8 +169,8 @@ func TestNew(t *testing.T) {
 				Name:     touchName,
 				Receives: &emit.TypeRef{Spelling: rowName},
 			}))
-			body, sink := rendered(t, row)
-			assert.Empty(t, collected(sink), "the file renders clean")
+			body, findings := rendered(t, svcPackage, row)
+			assert.Empty(t, findings, "the file renders clean")
 			assert.Contains(t, body, "func (r *Row) Touch() {", "the receiver points at the host")
 		})
 
@@ -182,21 +185,22 @@ func TestNew(t *testing.T) {
 				Name:     touchName,
 				Receives: &emit.TypeRef{Spelling: emittedName},
 			}))
-			body, sink := rendered(t, double)
-			assert.Empty(t, collected(sink), "the file renders clean")
+			body, findings := rendered(t, svcPackage, double)
+			assert.Empty(t, findings, "the file renders clean")
 			assert.Contains(t, body, "func (s *"+settledName+") Touch() {", "the receiver names the settled host")
 		})
 
 		t.Run("returns a backend that renders a function type over a respelled declaration", func(t *testing.T) {
 			t.Parallel()
 
-			body, sink := rendered(t, structOf(emittedName), rowOf(&emit.Field{Name: visitName, Type: &emit.TypeRef{
+			visit := &emit.Field{Name: visitName, Type: &emit.TypeRef{
 				Form:     symbol.FormFunc,
 				Spelling: "func(next " + emittedName + ") error",
 				Split:    1,
 				Elems:    []*emit.TypeRef{{Spelling: emittedName}, {Spelling: "error"}},
-			}}))
-			assert.Empty(t, collected(sink), "the file renders clean")
+			}}
+			body, findings := rendered(t, svcPackage, structOf(emittedName), rowOf(visit))
+			assert.Empty(t, findings, "the file renders clean")
 			assert.Contains(t, body, "\t"+visitName+" func(next "+settledName+") error\n",
 				"the function type names the settled declaration, its parameter's name as written")
 		})
@@ -204,17 +208,16 @@ func TestNew(t *testing.T) {
 		t.Run("reports a declaration whose reference records no package", func(t *testing.T) {
 			t.Parallel()
 
-			body, sink := rendered(t, rowOf(&emit.Field{Name: "When", Type: ref("time.Duration")}))
-			assert.Length(t, collected(sink), 1, "one finding for the skipped declaration")
+			body, findings := rendered(t, svcPackage, rowOf(&emit.Field{Name: "When", Type: ref("time.Duration")}))
+			assert.Length(t, findings, 1, "one finding for the skipped declaration")
 			assert.NotContains(t, body, "When", "the declaration is skipped")
 		})
 
 		t.Run("reports a file without a package as a refused skeleton", func(t *testing.T) {
 			t.Parallel()
 
-			body, sink := renderedIn(t, symbol.Identity{}, rowOf())
+			body, findings := rendered(t, symbol.Identity{}, rowOf())
 			assert.Equal(t, body, "", "the file is withheld")
-			findings := collected(sink)
 			assert.Length(t, findings, 1, "one finding for the withheld file")
 			assert.Equal(t, findings[0].Code, render.RefusedTemplate, "the skeleton refuses the file")
 			assert.Contains(t, findings[0].Msg, "import base", "the finding names what the plan can state")
@@ -305,8 +308,8 @@ func benchCalls(b *testing.B, calls []allocCall) {
 
 // benchCall measures one call under the bench contract at its ceiling,
 // and checks the result the last call leaves. The call runs once before
-// the contract starts, so what the first call initialises stays out of
-// the count. A case that sets bench runs it instead.
+// the contract starts, so the count leaves out what the first call
+// initialises. A case that sets bench runs it instead.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
@@ -327,22 +330,18 @@ func benchCall(b *testing.B, tt allocCall) {
 // which emits every file-level kind: the backend spells each, lowers
 // the enum into a defined type and constants, and lowers the sum into
 // an interface and its variant structs.
-func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+func setup(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
 	tb.Helper()
 
-	r, held := backend.New().(plugin.Renderer)
-	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.CanonicalFixture(tb)
+	return backend.New(), backendtest.CanonicalFixture(tb)
 }
 
 // benchSetup builds the backend over the suite's scaled corpus of every
 // canonical kind, because the backend refuses none.
-func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+func benchSetup(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
 	tb.Helper()
 
-	r, held := backend.New().(plugin.Renderer)
-	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.ScaledFixture(tb, nil)
+	return backend.New(), backendtest.ScaledFixture(tb, nil)
 }
 
 // structOf returns a struct of svcPkg named name.
@@ -361,47 +360,22 @@ func rowOf(fields ...*emit.Field) *emit.Struct {
 	return row
 }
 
-// rendered settles one unit of svcPkg through the backend and renders
-// it, and returns the file beside the run's findings.
-func rendered(tb assert.TB, decls ...symbol.Symbol) (string, *diag.Sink) {
+// rendered settles one unit of the package pkg through the backend and
+// renders it. It returns the body of the file and the findings of the
+// run. The file declares the package of the unit, so the layout derives
+// no package for a file of the zero package.
+func rendered(tb assert.TB, pkg symbol.Identity, decls ...symbol.Symbol) (string, []diag.Diag) {
 	tb.Helper()
 
-	return renderedIn(tb, symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbol.KindPackage}, decls...)
-}
-
-// renderedIn settles one unit of a package through the backend and
-// renders it, and returns the file beside the run's findings. The file
-// declares the unit's package, so the zero package is a file the
-// layout derives no package for.
-func renderedIn(tb assert.TB, pkg symbol.Identity, decls ...symbol.Symbol) (string, *diag.Sink) {
-	tb.Helper()
-
-	b := backend.New()
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(plugin.Unit{
-		Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey, Pkg: pkg, Decls: decls,
-	}), "the unit is added")
-	sink := diag.NewSink()
-	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles")
-	r, held := b.(plugin.Renderer)
-	assert.True(tb, held, "the built backend renders")
-	s, spells := b.(plugin.FileSpeller)
-	assert.True(tb, spells, "the built backend spells filenames")
-	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Files: backendtest.Files(e, s), Sink: sink, Plugin: golang.Name,
+	files, findings := backendtest.Rendered(tb, func(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
+		e := plugin.NewEmit()
+		assert.NoError(tb, e.Add(plugin.Unit{
+			Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey, Pkg: pkg, Decls: decls,
+		}), "the unit is added")
+		return backend.New(), &backendtest.Fixture{Emit: e}
 	})
-	assert.NoError(tb, err, "the pass renders every file")
 	if len(files) == 0 {
-		return "", sink
+		return "", findings
 	}
-	return string(files[0].Body), sink
-}
-
-// collected returns every finding a sink contains.
-func collected(sink *diag.Sink) []diag.Diag {
-	var out []diag.Diag
-	for d := range sink.All() {
-		out = append(out, d)
-	}
-	return out
+	return string(files[0].Body), findings
 }

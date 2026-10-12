@@ -19,92 +19,69 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// underlying is the defined type an enum lowers over. A variant's
-// stated value spells verbatim against it, so a generator stating
-// values states int-shaped ones.
-const underlying = "int"
+// defaultUnderlying is the underlying type of the defined type of a
+// lowered enum that states none. The lowering writes the value of each
+// variant verbatim as a constant of the defined type.
+const defaultUnderlying = "int"
 
-// errorType is the return an announced failure lowers into, which
-// is how Go declares one, and errorName is the name it takes beside
-// named results.
+// errorType is the type of the return that a declared failure lowers
+// into, because Go returns a failure as an error value. errorName is the
+// name of that return among named results.
 const (
 	errorType = "error"
 	errorName = "err"
 )
 
-// iotaName spells Go's constant counter, which a constant declared
-// alone evaluates to zero.
+// iotaName is the name of the constant counter of Go. In a constant
+// declared alone, iota is zero.
 const iotaName = "iota"
 
-// markerPrefix opens the name of a sum's marker method, and the sum's
-// name follows it.
+// markerPrefix is the start of the name of the marker method of a sum.
+// The name of the sum follows it.
 const markerPrefix = "is"
 
-// The brackets of the type arguments that a variant's receiver restates.
-const (
-	argsOpen  = "["
-	argsClose = "]"
-)
-
-// Lower reshapes the constructs Go states in other declarations: an
-// enum becomes a defined type and its constants, a sum becomes an
-// interface and one struct for each variant, and a callable announcing
-// failure types gains an error return, in place. Each consumes its
-// fact, so a second settle does not change the result. Everything else
-// passes through unchanged.
+// Lower rewrites the constructs that Go expresses through other
+// declarations. An enum becomes a defined type and its constants, and a
+// sum becomes an interface and one struct for each variant. A callable
+// with declared failure types gets an error return, in place. Each
+// rewrite removes the fact that it lowers, so a second settle does not
+// change the result. Every other declaration passes through unchanged.
 //
 // # Allocation contract
 //
-// A declaration that passes through allocates nothing. An enum
-// allocates the list of outputs, the defined type and its target, and
-// per variant the constant, its type and its joined name's two. A
-// variant name without a lower-case letter adds its lower-cased form. A sum
-// allocates what [lowerSum] states. A callable that announces failures
-// allocates the error return, its type and the grown list of returns,
-// and a struct allocates the receiver of each method it fills. A refusal
-// allocates its error.
+// A declaration that passes through allocates nothing. An enum allocates
+// the list of outputs and the defined type, and the target of an enum
+// without an underlying type. Each variant
+// allocates the constant, its type and the two steps of its joined name.
+// A variant name without a lower-case letter also allocates its
+// lower-case form. A sum allocates what [lowerSum] states. A callable
+// with declared failures allocates the error return, its type and the
+// grown storage of its returns. A struct allocates the receiver of each
+// method that it fills. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Enum:
 		return lowerEnum(d)
 	case *emit.Sum:
 		return lowerSum(d)
-	case *emit.Function:
-		d.Returns, d.Throws = thrown(d.Returns, d.Throws), nil
-	case *emit.Method:
-		d.Returns, d.Throws = thrown(d.Returns, d.Throws), nil
-	case *emit.Struct:
-		if err := lowering.UniqueMethods(string(golang.Lang), d.Name, d.Methods.Items()); err != nil {
-			return nil, err
-		}
-		lowerMembers(d.Methods.Items())
+	}
+	if err := lowering.Callables(golang.Lang, s, throw); err != nil {
+		return nil, err
+	}
+	if d, is := s.(*emit.Struct); is {
 		receive(d.Name, d.Origin, d.TypeParams, d.Methods.Items())
-	case *emit.Interface:
-		if err := lowering.UniqueMethods(string(golang.Lang), d.Name, d.Methods.Items()); err != nil {
-			return nil, err
-		}
-		lowerMembers(d.Methods.Items())
 	}
 	return nil, nil
 }
 
-// lowerMembers rewrites a host's member methods the way the
-// file-level callables rewrite, because the lowering receives the
-// host whole.
-func lowerMembers(methods []*emit.Method) {
-	for _, m := range methods {
-		m.Returns, m.Throws = thrown(m.Returns, m.Throws), nil
-	}
-}
-
-// receive gives a struct's member methods their receiver: Go
-// states a method at the package level, so the template spells
-// each one after its type and the receiver has to name that type.
-// The reference names the struct's origin, so the settle
-// respells receiver and type together, and a generic struct's type
-// parameters as its arguments, because Go's receiver restates
-// them. A method stating its own receiver keeps it, which is how a
-// generator asks for a pointer or a named receiver.
+// receive sets the Receives type of the member methods of the struct
+// name. Go declares a method at the package level, so the template
+// renders each method after its type, and the receiver must refer to
+// that type. The reference has the struct origin as its target, so the
+// settle respells the receiver and the type together. A generic struct
+// gets its type parameters as the arguments of the reference, because a
+// Go receiver restates them. A method with its own receiver keeps it, so
+// a generator can request a pointer or a named receiver.
 func receive(name string, origin symbol.Identity, params []*emit.TypeParam, methods []*emit.Method) {
 	for _, m := range methods {
 		if m.Receiver != nil || m.Receives != nil {
@@ -117,27 +94,27 @@ func receive(name string, origin symbol.Identity, params []*emit.TypeParam, meth
 	}
 }
 
-// thrown appends the error return a callable's announced failure
-// types lower into: one error whatever the count, because Go's
-// failures are values of one interface, and a caller recovers the
-// concrete types through errors.As. Where the other results are
-// named, the error takes the first free name of err, err1, err2,
-// because Go refuses a list mixing named and unnamed results. A
-// callable announcing none keeps its returns untouched.
-func thrown(returns []*emit.Return, throws []*emit.TypeRef) []*emit.Return {
-	if len(throws) == 0 {
-		return returns
-	}
+// throw appends one error return to the returns of a callable with
+// declared failure types. [lowering.Callables] calls it for each such
+// callable and clears the failure types. A callable gets one error
+// whatever the count, because Go failures are values of one interface,
+// and a caller recovers the concrete types through errors.As. Where the
+// other results have names, the error gets the first free name of err,
+// err1 and err2, because Go refuses a result list with named and unnamed
+// results. throw cannot fail, so it returns nil.
+func throw(_ string, returns *emit.Slot[*emit.Return], _ []*emit.TypeRef) error {
 	failure := &emit.Return{Type: &emit.TypeRef{Spelling: errorType}}
-	if slices.ContainsFunc(returns, func(r *emit.Return) bool { return r != nil && r.Name != "" }) {
-		failure.Name = freeName(returns, errorName)
+	rs := returns.Items()
+	if slices.ContainsFunc(rs, func(r *emit.Return) bool { return r != nil && r.Name != "" }) {
+		failure.Name = freeName(rs, errorName)
 	}
-	return append(returns, failure)
+	returns.Append(failure)
+	return nil
 }
 
-// freeName returns base where no result is named base, and base
-// with the smallest positive number appended that no result is
-// named otherwise.
+// freeName returns base where no result has the name base. Otherwise it
+// returns base followed by the smallest positive number that gives a
+// name that no result has.
 func freeName(returns []*emit.Return, base string) string {
 	taken := func(name string) bool {
 		return slices.ContainsFunc(returns, func(r *emit.Return) bool { return r != nil && r.Name == name })
@@ -149,28 +126,34 @@ func freeName(returns []*emit.Return, base string) string {
 	return name
 }
 
-// lowerEnum reshapes an enum into a defined type and one typed
-// constant per variant: the type keeps the enum's name, each
-// constant joins the type's name and its variant's in the neutral
-// camel form, and its type references the defined type. Before the
-// join, the lowering lower-cases a variant name without a lower-case
-// letter. The join then title-cases each word, so the protobuf variant
-// UNSPECIFIED of the enum phase becomes the constant phaseUnspecified.
+// lowerEnum rewrites the enum e into a defined type and one typed
+// constant per variant. The type keeps the name of the enum, and its
+// target is the underlying type of the enum, or int for an enum without
+// one. The name of each constant joins the name of the type and the name
+// of its variant in the neutral camel case, and its type refers to the
+// defined type.
+// Before the join, the lowering converts a variant name without a
+// lower-case letter to lower case. The join then title-cases each word,
+// so the protobuf variant UNSPECIFIED of the enum phase becomes the
+// constant phaseUnspecified.
 //
 // A constant declared alone cannot count through iota, so the lowering
-// spells each value the way a Go constant group evaluates it:
+// writes each value as a Go constant group evaluates it:
 //
-//   - A variant without a stated value repeats the last stated value.
-//   - A variant before any stated value takes its ordinal.
-//   - Every iota in a value becomes the variant's position.
+//   - A variant without a value repeats the last value.
+//   - A variant before the first value takes its ordinal.
+//   - Every iota in a value becomes the position of the variant.
 //
-// Every output has the enum's origin, and the outputs replace the enum.
-// The lowering refuses an enum with fields or methods, because a
-// constant group has no members and Go does not declare another closed
-// value set.
+// Every output has the origin of the enum, and the outputs replace the
+// enum. The lowering refuses an enum with fields or methods, because a
+// constant group has no members and Go has no other closed value set.
 func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return nil, refuse("a constant group has no members, and %s states some", e.Name)
+	}
+	target := e.Underlying
+	if target == nil {
+		target = &emit.TypeRef{Spelling: defaultUnderlying}
 	}
 	variants := e.Variants.Items()
 	out := make([]symbol.Symbol, 0, 1+len(variants))
@@ -181,7 +164,7 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 		Name:        e.Name,
 		Visibility:  e.Visibility,
 		Defined:     true,
-		Target:      &emit.TypeRef{Spelling: underlying},
+		Target:      target,
 		Annotations: e.Annotations,
 	})
 	var last string
@@ -216,10 +199,9 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 	return out, nil
 }
 
-// atPosition spells a constant expression with every iota token
-// replaced by its position. The expression is scanned as Go
-// tokens, so an iota inside a string or a longer identifier is
-// kept as written.
+// atPosition returns the constant expression expr with every iota token
+// replaced by position. It scans the expression as Go tokens, so an iota
+// inside a string or a longer identifier stays as written.
 func atPosition(expr string, position int) string {
 	if !strings.Contains(expr, iotaName) {
 		return expr
@@ -246,22 +228,23 @@ func atPosition(expr string, position int) string {
 	return b.String()
 }
 
-// lowerSum reshapes a sum into an interface and one struct for each
+// lowerSum rewrites the sum s into an interface and one struct for each
 // variant, as protobuf-go generates a oneof. The interface keeps the
-// sum's name, documentation, annotations and type parameters. Its one
-// method is the marker: an unexported method named is and the sum's
-// name, without parameters or results. A type of another package cannot
-// declare that method, so only the variant structs and the types that
-// embed one of them implement the interface.
+// name, the documentation, the annotations and the type parameters of
+// the sum. Its one method is the marker, an unexported method without
+// parameters or results whose name joins is and the name of the sum. A
+// type of another package cannot declare that method, so only the
+// variant structs and the types that embed one of them implement the
+// interface.
 //
-// Each variant becomes a struct whose name joins the sum's name and the
-// variant's name in the neutral camel form. The struct has the variant's
-// documentation, annotations and fields. It also has a copy of the sum's
-// type parameters. It implements the marker with an empty body and a
-// pointer receiver. The receiver restates the type parameters as
-// arguments. Its type references the sum's origin, so the settle
-// respells the receiver with the struct. Every output has the sum's
-// origin, and the outputs replace the sum.
+// Each variant becomes a struct whose name joins the name of the sum and
+// the name of the variant in the neutral camel case. The struct has the
+// documentation, the annotations and the fields of the variant, and a
+// copy of the type parameters of the sum. It implements the marker with
+// an empty body and a pointer receiver. The receiver restates the type
+// parameters as arguments. The type of the receiver refers to the origin
+// of the sum, so the settle respells the receiver with the struct. Every
+// output has the origin of the sum, and the outputs replace the sum.
 //
 // The lowering refuses a sum with methods, because no variant struct has
 // a body for them. It refuses a variant field without a name, because a
@@ -270,16 +253,17 @@ func atPosition(expr string, position int) string {
 // # Allocation contract
 //
 // lowerSum allocates six times for the sum: the list of outputs, the
-// interface, its marker method, the method's list and the two steps of
-// the marker's name. Each variant adds ten: its struct, the two steps of
-// its name, the marker method and its list, the receiver, the receiver's
-// pointer type, the type's list of one element, the element and the
-// pointer's spelling. A variant with fields adds the list of its fields.
-// A sum of two variants, one of them with a field, allocates 27 times. A
-// generic sum of n type parameters adds 2n+3 for each variant: the
-// copied list of parameters and each copy with its bounds, the list of
-// the receiver's arguments and each argument, and the spelling of the
-// arguments. A refusal allocates its error.
+// interface, its marker method, the method list and the two steps of the
+// name of the marker. Each variant adds ten allocations: its struct, the
+// two steps of its name, the marker method and its list, the receiver,
+// the pointer type of the receiver, the element list of that type, the
+// element and the spelling of the pointer. A variant with fields adds
+// the list of its fields. A sum of two variants, one of them with a
+// field, allocates 27 times. A generic sum of n type parameters adds
+// 2n+3 allocations for each variant: the copied parameter list and each
+// copy with its bounds, the argument list of the receiver and each
+// argument, and the spelling of the arguments. A refusal allocates its
+// error.
 func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 	if s.Methods.Len() > 0 {
 		return nil, refuse("a variant struct has no body for a sum's methods, and %s states some", s.Name)
@@ -308,14 +292,11 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 	return out, nil
 }
 
-// variantStruct builds the struct of one variant of a sum, with the
-// marker method named marker.
+// variantStruct returns the struct of the variant v of the sum s, with
+// the marker method marker.
 func variantStruct(s *emit.Sum, v *emit.SumVariant, marker string) (*emit.Struct, error) {
-	fields := v.Fields.Items()
-	for _, f := range fields {
-		if f.Name == "" {
-			return nil, refuse("a struct field has a name, and a payload entry in %s states none", v.Name)
-		}
+	if err := lowering.NamedPayload(golang.Lang, v); err != nil {
+		return nil, err
 	}
 	st := &emit.Struct{
 		Origin:      s.Origin,
@@ -326,14 +307,8 @@ func variantStruct(s *emit.Sum, v *emit.SumVariant, marker string) (*emit.Struct
 		TypeParams:  lowering.CopyTypeParams(s.TypeParams),
 		Annotations: v.Annotations,
 	}
-	st.Fields.Append(fields...)
-	host := &emit.TypeRef{Target: s.Origin, Spelling: st.Name}
-	if len(s.TypeParams) > 0 {
-		host.Args = make([]*emit.TypeRef, 0, len(s.TypeParams))
-		for _, p := range s.TypeParams {
-			host.Args = append(host.Args, &emit.TypeRef{Spelling: p.Name})
-		}
-	}
+	st.Fields.Append(v.Fields.Items()...)
+	host := &emit.TypeRef{Target: s.Origin, Spelling: st.Name, Args: lowering.ParamArgs(s.TypeParams)}
 	st.Methods.Append(&emit.Method{
 		Name:       marker,
 		Visibility: symbol.VisibilityPackage,

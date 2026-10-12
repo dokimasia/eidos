@@ -17,10 +17,13 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The cases pin the type an enum lowers over, and the return an
-// announced failure lowers into with the names it takes.
+// underlyingType is the type that an enum without an underlying type
+// lowers over, and byteType the underlying type that an enum states. The
+// other constants are the return that a declared failure lowers into,
+// and the names that the return takes.
 const (
 	underlyingType = "int"
+	byteType       = "uint8"
 	errorType      = "error"
 	errorName      = "err"
 	nextErrorName  = "err1"
@@ -160,6 +163,19 @@ func TestLower(t *testing.T) {
 			assert.True(t, isConstant, "the second variant becomes a constant")
 			assert.Equal(t, second.Name, phaseClosed, "beside the first")
 			assert.Equal(t, second.Value, closedValue, "a stated value spells verbatim")
+		})
+
+		t.Run("lowers an enum over its underlying type", func(t *testing.T) {
+			t.Parallel()
+
+			e := enumOf("")
+			e.Underlying = &emit.TypeRef{Spelling: byteType}
+			out, err := backend.Lower(e)
+			assert.NoError(t, err, "the enum lowers")
+			alias, isAlias := out[0].(*emit.Alias)
+			assert.True(t, isAlias, "the principal output is the defined type")
+			assert.Equal(t, alias.Target, e.Underlying, "the defined type is over the underlying type of the enum",
+				assert.ByIdentity())
 		})
 
 		values := []struct {
@@ -311,8 +327,8 @@ func TestLower(t *testing.T) {
 
 			f := thrower([]*emit.Return{{Type: &emit.TypeRef{Spelling: rowName}}}, notFoundType, timeoutType)
 			lowered(t, f)
-			assert.Length(t, f.Returns, 2, "the error return appends")
-			assert.Equal(t, f.Returns[1].Type.Spelling, errorType,
+			assert.Length(t, f.Returns.Items(), 2, "the error return appends")
+			assert.Equal(t, f.Returns.Items()[1].Type.Spelling, errorType,
 				"one error whatever the announced count, because the "+
 					"concrete types arrive through errors.As")
 		})
@@ -336,7 +352,7 @@ func TestLower(t *testing.T) {
 			lowered(t, host)
 			m := host.Methods.Items()[0]
 			assert.Empty(t, m.Throws, "the member's failures are consumed")
-			assert.Equal(t, m.Returns, []*emit.Return{{Type: &emit.TypeRef{Spelling: errorType}}},
+			assert.Equal(t, m.Returns.Items(), []*emit.Return{{Type: &emit.TypeRef{Spelling: errorType}}},
 				"a bare thrower returns the unnamed error alone")
 		})
 
@@ -347,7 +363,7 @@ func TestLower(t *testing.T) {
 				overflowType)
 			f.Name = countName
 			lowered(t, f)
-			assert.Equal(t, f.Returns[1].Name, errorName,
+			assert.Equal(t, f.Returns.Items()[1].Name, errorName,
 				"Go refuses a list mixing named and unnamed results")
 		})
 
@@ -357,7 +373,7 @@ func TestLower(t *testing.T) {
 			f := thrower([]*emit.Return{{Name: errorName, Type: &emit.TypeRef{Spelling: intResultType}}},
 				overflowType)
 			lowered(t, f)
-			assert.Equal(t, f.Returns[1].Name, nextErrorName, "the next free name")
+			assert.Equal(t, f.Returns.Items()[1].Name, nextErrorName, "the next free name")
 		})
 
 		t.Run("passes a struct through unchanged", func(t *testing.T) {
@@ -510,7 +526,7 @@ func BenchmarkLower(b *testing.B) {
 				c.Excluding(func() { f = thrower(nil, overflowType) })
 			}
 			lowered(b, f)
-			assert.Length(b, f.Returns, 1, "Lower appends the error return")
+			assert.Length(b, f.Returns.Items(), 1, "Lower appends the error return")
 		}},
 		allocCall{name: "Lower", caseName: "a struct", bench: func(b *testing.B) {
 			b.Helper()
@@ -647,7 +663,7 @@ func constantValues(tb assert.TB, e *emit.Enum) []string {
 // thrower returns a function announcing the given failures beside
 // the given results.
 func thrower(returns []*emit.Return, failures ...string) *emit.Function {
-	f := &emit.Function{Name: fetchName, Returns: returns}
+	f := &emit.Function{Name: fetchName, Returns: emit.SlotOf(returns...)}
 	for _, name := range failures {
 		f.Throws = append(f.Throws, &emit.TypeRef{Spelling: name})
 	}

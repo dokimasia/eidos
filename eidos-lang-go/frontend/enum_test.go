@@ -14,9 +14,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The schema names a Go constant group an enum, so the promotion
-// is pinned: what collapses, what moves onto the enum, and what is
-// kept exactly as parsed.
+// TestPromoteEnums pins what the promotion collapses, what it moves onto
+// the enum and what it keeps as parsed.
 func TestPromoteEnums(t *testing.T) {
 	t.Parallel()
 
@@ -38,6 +37,17 @@ func TestPromoteEnums(t *testing.T) {
 		assert.Equal(t, enum.Variants[1].Value, "", "an implicit row's value is empty")
 		assert.Length(t, enum.Methods, 1, "the method set moves onto the enum")
 		assert.Equal(t, enum.Methods[0].Name, "String", "by name")
+	})
+
+	t.Run("sets the target of the defined type as the underlying type of the enum", func(t *testing.T) {
+		t.Parallel()
+
+		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\ntype Level uint8\n\nconst (\n\tLow Level = iota\n\tHigh\n)\n"))
+		enum, promoted := file.Decls[0].(*node.Enum)
+		assert.True(t, promoted, "the defined type and its constants promote to an enum")
+		assert.NotNil(t, enum.Underlying, "the enum has an underlying type")
+		assert.Equal(t, enum.Underlying.Spelling, "uint8", "the underlying type is the target of the defined type")
 	})
 
 	t.Run("re-homes the underlying stamp onto the enum", func(t *testing.T) {
@@ -76,7 +86,7 @@ func TestPromoteEnums(t *testing.T) {
 		assert.True(t, onVariant, "the constant's carrier follows its variant")
 	})
 
-	t.Run("promotes only what the idiom states", func(t *testing.T) {
+	t.Run("promotes only a defined type with typed constants", func(t *testing.T) {
 		t.Parallel()
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,

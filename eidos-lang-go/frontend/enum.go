@@ -9,24 +9,27 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// promoteEnums rewrites one file's idiomatic value sets into the
-// Enum kind the schema names for them: a defined type over an
-// ordered basic type whose constants all name it as their type
-// collapses into one Enum, the constants its variants in
-// declaration order, the type's methods in the file folded in, and
-// the value spellings kept verbatim, iota arithmetic included. A
-// type with no constants, a constant group typed by anything else,
-// and a type whose constants are declared in another file are kept
-// as parsed: promotion reads one file, and [foldMethods] folds the
-// enumeration's methods from the package's other files afterwards.
+// promoteEnums rewrites the idiomatic value sets of one file into the
+// Enum kind. A value set is a defined type over an ordered basic type
+// whose constants all have that type. It becomes one Enum:
 //
-// The rewrite runs after a file lowers, over its own declarations
-// alone, and returns what it replaced two ways: the alias→enum map
-// the deferred underlying stamps read, and the full
-// consumed→replacement map the caller re-homes recorded attachments
-// and stamps through, so authored intent follows the declaration
-// that replaces the consumed one. Folded methods keep their own
-// nodes and need no re-homing.
+//   - the constants become its variants in declaration order, with the
+//     spellings of their values verbatim, iota arithmetic included;
+//   - the target of the defined type, such as uint8, becomes its
+//     underlying type;
+//   - the methods of the type in the file fold into it.
+//
+// A type without constants, a constant group of another type and a type
+// whose constants are in another file stay as parsed, because promotion
+// reads one file. [foldMethods] folds the methods of an enumeration from
+// the other files of the package afterwards.
+//
+// The rewrite runs after a file lowers, over the declarations of that
+// file alone. It returns two maps of what it replaced. The first maps
+// each alias to its enum, and the deferred underlying stamps read it. The
+// second maps each consumed declaration to its replacement, and the
+// caller re-homes the recorded attachments and stamps through it. A
+// folded method keeps its own node and needs no re-homing.
 func promoteEnums(
 	file *node.File,
 ) (map[*node.Alias]*node.Enum, map[symbol.Symbol]symbol.Symbol) {
@@ -93,6 +96,7 @@ func promoteEnums(
 			Pos: alias.Pos, Doc: alias.Doc, Name: alias.Name,
 			Comment:     alias.Comment,
 			Visibility:  alias.Visibility,
+			Underlying:  alias.Target,
 			Variants:    variants[alias.Name],
 			Methods:     methods[alias.Name],
 			Annotations: alias.Annotations,
@@ -105,9 +109,9 @@ func promoteEnums(
 	return promoted, moved
 }
 
-// basicUnderlying reports whether a defined type's target is an
-// ordered basic type, [golang.Ordered]: an integer, a float or a
-// string, the types an idiomatic value set is declared over.
+// basicUnderlying reports whether the target of a defined type is an
+// ordered basic type, which [golang.Ordered] decides: an integer, a float
+// or a string. An idiomatic value set has such a type.
 func basicUnderlying(alias *node.Alias) bool {
 	return alias.Target != nil && len(alias.Target.Args) == 0 && golang.Ordered(alias.Target.Spelling)
 }

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
@@ -22,10 +23,34 @@ const (
 	quoteScratch = 256
 )
 
-// Imports renders the file's collected entries as one
-// parenthesised block in two groups, standard library first, a
-// blank line between, each group sorted — the shape goimports
-// leaves. A named entry spells its name before the path where the
+// The names of the Go imports that do not bind the package's name in
+// the file.
+const (
+	blankImport = "_"
+	dotImport   = "."
+)
+
+// TemplateImport returns the binding of an import that a template states
+// through the use builtin. An import without a name binds the package
+// under [golang.Qualifier] of its path, and a named import binds the
+// package under its name. A blank import and a dot import do not bind
+// the package's name, so TemplateImport reports false for both. It does
+// not allocate.
+func TemplateImport(importPath, name string) (local, item string, ok bool) {
+	switch name {
+	case "":
+		return golang.Qualifier(importPath), "", true
+	case blankImport, dotImport:
+		return "", "", false
+	default:
+		return name, "", true
+	}
+}
+
+// Imports renders the file's collected entries as one parenthesised
+// block in two groups: the standard library first, then a blank line,
+// then the other packages. Each group is sorted, as goimports leaves
+// it. A named entry spells its name before the path where the
 // name differs from the path's last element, which is how a bound
 // name, a blank side-effect import and a dot import render. Two
 // entries that render one line render it once, because Go refuses a
@@ -67,7 +92,7 @@ func writeGroup(b *strings.Builder, entries []render.Entry, external bool) bool 
 	var scratch [quoteScratch]byte
 	wrote := false
 	for i, e := range entries {
-		if isExternal(e.Path) != external || repeats(entries, i) {
+		if golang.Standard(e.Path) == external || repeats(entries, i) {
 			continue
 		}
 		b.WriteString("\t")
@@ -107,17 +132,9 @@ func shownName(e render.Entry) string {
 // standard library.
 func hasExternal(entries []render.Entry) bool {
 	for _, e := range entries {
-		if isExternal(e.Path) {
+		if !golang.Standard(e.Path) {
 			return true
 		}
 	}
 	return false
-}
-
-// isExternal reports whether an import path names a package outside
-// the standard library: its first element contains a dot, which a
-// module path's host does and a standard library path does not.
-func isExternal(importPath string) bool {
-	first, _, _ := strings.Cut(importPath, "/")
-	return strings.Contains(first, ".")
 }

@@ -24,36 +24,34 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// maxSyntaxFindings caps the per-file error flood; the count past
-// the cap reports once.
-const maxSyntaxFindings = 10
-
-// parseMode is how every member parses: with its comments, which
-// contain the documentation and the directives, without go/parser's
-// deprecated identifier resolution, which the lowering never reads,
-// and with every syntax error, because each one reports.
+// parseMode is the mode of the parse of every member. The parse keeps the
+// comments, which contain the documentation and the directives. It skips
+// the deprecated identifier resolution of go/parser, which the lowering
+// does not read. It reports every syntax error, because each error is a
+// finding.
 const parseMode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
 
-// cgoImport is the import path of cgo's pseudo-package: the import
-// marks a file that uses cgo, and names no package.
+// cgoImport is the import path of the pseudo-package of cgo. Its import
+// marks a file that uses cgo and refers to no package.
 const cgoImport = "C"
 
-// pendingUnderlying is one defined type's shape, stamped once the
-// promotion has decided whether an enum replaces the type.
+// pendingUnderlying is the shape of one defined type. The parse stamps it
+// after the promotion decides whether an enum replaces the type.
 type pendingUnderlying struct {
 	alias *node.Alias
 	kind  string
 }
 
-// parse loads one unit: each member through go/parser, lowered
-// into the unit's builder. A syntax error is the source's problem:
-// every error reports positioned and every declaration the parser
-// still recovered loads, because one bad token must not erase a
-// file. A file whose build constraint, spelled or implied by its
-// name, falls outside the load's tag set contributes its file node,
-// its imports and a golang.constraint stamp, and no declarations.
-// Only its package clause and imports parse, as the go command reads
-// such a file, so a syntax error after its imports reports nothing.
+// parse loads one unit. It parses each member with go/parser and lowers
+// it into the builder of the unit. It reports every syntax error at its
+// position and loads every declaration that the parser recovered, so one
+// bad token does not erase a file. A file whose build constraint excludes
+// it from the tag set of the load contributes its file node, its imports
+// and a golang.constraint stamp, and no declarations. The constraint is
+// a go:build line or the suffixes of the file name. Only the package
+// clause and the imports of such a file parse, as the go command reads
+// it, so a syntax error after its imports reports nothing. Every package
+// of the unit has the module of its go.mod.
 func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	place, err := placeUnit(u)
 	if err != nil {
@@ -75,31 +73,19 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		foldMethods(st.batches[pkgPath].files)
 		stampConstValues(u, st.fset, st.batches[pkgPath])
 	}
-	stampModule(u, place.root)
+	gb := u.Graph()
+	for _, pkg := range gb.Packages() {
+		gb.StampModule(pkg, place.root.module, place.root.dir)
+	}
 	return nil
 }
 
-// stampModule stamps every package the unit declared with the
-// kernel's neutral module identity: the module path and the
-// directory of its go.mod. A directory outside every module stamps
-// nothing, because absence is the negative.
-func stampModule(u *plugin.SourceUnit, root moduleRoot) {
-	if root.module == "" {
-		return
-	}
-	gb := u.Graph()
-	for _, pkg := range gb.Packages() {
-		gb.Stamp(pkg, meta.RawStamp{Key: meta.ModuleKey, Value: root.module, Pos: pkg.Pos})
-		gb.Stamp(pkg, meta.RawStamp{Key: meta.ModuleRootKey, Value: root.dir, Pos: pkg.Pos})
-	}
-}
-
-// parseState is one unit's shared parse machinery: the file set
-// every member joins, the spelling intern the lowerings share, the
-// per-package batches the constant evaluation runs over once each,
-// so a constant referencing a sibling file's type still evaluates,
-// the packages a file inside the build has named, and where the
-// unit's package directory loads.
+// parseState is the parse state that the members of one unit share. It
+// has the file set of the members, the spelling intern of the lowerings
+// and one batch for each package. The constant evaluation runs once over
+// each batch, so a constant that refers to a type of a sibling file
+// evaluates. It also records the packages that a file inside the build
+// named, and the place where the package directory of the unit loads.
 type parseState struct {
 	fset    *token.FileSet
 	intern  map[string]string
@@ -109,14 +95,16 @@ type parseState struct {
 	place   unitPlace
 }
 
-// constBatch is one package's included files, parsed and lowered.
+// constBatch has the parsed and the lowered files of one package inside
+// the build.
 type constBatch struct {
 	name   string
 	parsed []*ast.File
 	files  []*node.File
 }
 
-// batch returns the package's batch, created on first touch.
+// batch returns the batch of a package, and creates it on the first call
+// for the package.
 func (st *parseState) batch(pkgPath, name string) *constBatch {
 	if b, held := st.batches[pkgPath]; held {
 		return b
@@ -127,18 +115,8 @@ func (st *parseState) batch(pkgPath, name string) *constBatch {
 	return b
 }
 
-// unitReader adapts the unit's jailed door to the partition's
-// probe, so parse derives the same import paths partition did:
-// the go.mod is a declared shared input, so the read admits.
-type unitReader struct {
-	u *plugin.SourceUnit
-}
-
-// Read reads through the unit's jail.
-func (r unitReader) Read(path string) ([]byte, error) { return r.u.Read(path) }
-
-// parseFile lowers one member. Its package clause and imports parse
-// first, and a file whose constraint excludes it lowers from them
+// parseFile lowers one member. It parses the package clause and the
+// imports first, and a file that its constraint excludes lowers from them
 // alone. Every other file then parses whole.
 func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath string) error {
 	src, err := u.Read(filePath)
@@ -159,9 +137,9 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		reportSyntax(u, filePath, err)
 	}
 	if parsed == nil || parsed.Name == nil || !parsed.Package.IsValid() {
-		// A file without a package clause declares nothing: its
-		// syntax errors are reported, and no position in it anchors
-		// a declaration.
+		// A file without a package clause declares nothing. The parse
+		// reports its syntax errors, and no declaration has a position in
+		// it.
 		return nil
 	}
 	l := &lowered{
@@ -188,11 +166,11 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 			cgo = true
 		}
 	}
-	l.scope = golang.NewScope(file.Imports)
-	gb.Scope(file, l.scope)
+	l.bindings = golang.NewBindings(file.Imports)
+	gb.Scope(file, l.bindings)
 
-	// Tool directives above the package clause are the file's
-	// annotations.
+	// The tool directives above the package clause are the annotations of
+	// the file.
 	parts := l.split(u, parsed.Doc)
 	file.Doc = parts.Docs
 	file.Annotations = append(file.Annotations, parts.Annotations...)
@@ -204,9 +182,9 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		gb.Stamp(file, meta.RawStamp{Key: golang.GeneratedKey, Value: marker, Pos: file.Pos})
 	}
 	if excluded {
-		// A file outside the build speaks for no package: it names
-		// one only where no file inside the build has, and its
-		// package doc and carriers are left out.
+		// A file outside the build names its package only where no file
+		// inside the build did, and the parse leaves out its package doc
+		// and its carriers.
 		if pkg.Name == "" {
 			pkg.Name = pkgName
 		}
@@ -217,9 +195,9 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		return nil
 	}
 	namePackage(u, st, pkg, pkgPath, pkgName, file.Pos)
-	// The package clause's doc belongs to the package: the text
-	// hoists to the first non-empty doc across the unit's files,
-	// and its carriers attach to the package, not the file.
+	// The doc of the package clause is the doc of the package. The package
+	// takes the first doc that is not empty among the files of the unit,
+	// and the carriers attach to the package and not to the file.
 	if len(pkg.Doc) == 0 {
 		pkg.Doc = parts.Docs
 	}
@@ -229,9 +207,10 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	}
 	promoted, moved := promoteEnums(file)
 	for from, to := range moved {
-		// A carrier or stamp recorded against a consumed alias or
-		// constant follows the enum or variant that replaces it, so
-		// the splice never meets a subject the promotion removed.
+		// A carrier or a stamp on an alias or a constant that the
+		// promotion replaced moves to the enum or the variant that
+		// replaces it, so the splice meets no subject that the promotion
+		// removed.
 		gb.Rehome(from, to)
 	}
 	for _, pending := range l.underlyings {
@@ -240,7 +219,7 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 			subject = enum
 		}
 		gb.Stamp(subject, meta.RawStamp{
-			Key: golang.UnderlyingKey, Value: pending.kind, Pos: subject.Position(),
+			Key: golang.UnderlyingKindKey, Value: pending.kind, Pos: subject.Position(),
 		})
 	}
 	if u.Depth() == plugin.DepthSignatures {
@@ -250,12 +229,13 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	batch.parsed = append(batch.parsed, parsed)
 	batch.files = append(batch.files, file)
 
-	// The sweep: a comment no declaration consumed, floating between
-	// declarations or above the package clause, gives its tool
-	// directives to the file and refuses its carriers positioned. Its
-	// prose has no model home and drops. A comment inside a function
-	// body belongs to the body's statements, which the model does not
-	// contain, so the sweep passes over it.
+	// The sweep reads each comment that no declaration took, between
+	// declarations or above the package clause. Its tool directives are
+	// annotations of the file, and its carriers are refused at their
+	// positions. The model has no place for its prose, so the prose is
+	// dropped. A comment inside a function body belongs to the statements
+	// of the body, which the model does not contain, so the sweep passes
+	// over it.
 	bodies := funcBodies(parsed)
 	next := 0
 	for _, group := range parsed.Comments {
@@ -267,18 +247,18 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		}
 		floating := l.split(u, group)
 		file.Annotations = append(file.Annotations, floating.Annotations...)
-		refuseCarriers(u, floating.Carriers, "a comment no declaration takes")
+		u.RefuseCarriers(UnaddressedCarrier, floating.Carriers, "a comment that no declaration takes")
 	}
 	return nil
 }
 
-// span is one function body's extent in a file.
+// span is the extent of one function body in a file.
 type span struct{ from, to token.Pos }
 
-// funcBodies returns the extents of a file's function bodies, a
-// declared function's and a top-level function literal's, in source
-// order. A literal inside a body is inside that body's extent, so no
-// two extents nest.
+// funcBodies returns the extents of the function bodies of a file in
+// source order. A body belongs to a declared function or to a top-level
+// function literal. A literal inside a body is inside the extent of that
+// body, so no two extents nest.
 func funcBodies(parsed *ast.File) []span {
 	var out []span
 	ast.Inspect(parsed, func(n ast.Node) bool {
@@ -297,10 +277,10 @@ func funcBodies(parsed *ast.File) []span {
 	return out
 }
 
-// namePackage gives a package the name a file inside the build
-// declares. The first such file names it, over any name a file
-// outside the build filled in, and a later file declaring another
-// name reports under [MixedPackage] while the first name is kept.
+// namePackage gives a package the name that a file inside the build
+// declares. The first such file names the package, over a name that a file
+// outside the build set. A later file that declares another name reports
+// under [MixedPackage], and the package keeps the first name.
 func namePackage(
 	u *plugin.SourceUnit, st *parseState, pkg *node.Package, pkgPath, name string, at position.Pos,
 ) {
@@ -314,32 +294,30 @@ func namePackage(
 	}
 }
 
-// reportSyntax reports each recovered syntax error at its own
-// position, capped, the remainder counted once.
+// reportSyntax reports the syntax errors of a member through the syntax
+// report of the unit. An error without a list of syntax errors reports at
+// the start of the file.
 func reportSyntax(u *plugin.SourceUnit, filePath string, err error) {
 	var list scanner.ErrorList
 	if !errors.As(err, &list) || len(list) == 0 {
 		u.Errorf(UnparsedFile, position.Pos{File: filePath, Line: 1, Col: 1}, "%v", err)
 		return
 	}
-	for i, e := range list {
-		if i == maxSyntaxFindings {
-			u.Errorf(UnparsedFile,
-				position.Pos{File: filePath, Line: e.Pos.Line, Col: e.Pos.Column},
-				"and %d more syntax errors", len(list)-maxSyntaxFindings)
-			break
+	u.ReportSyntax(UnparsedFile, func(yield func(position.Pos, string) bool) {
+		for _, e := range list {
+			if !yield(position.Pos{File: filePath, Line: e.Pos.Line, Col: e.Pos.Column}, e.Msg) {
+				return
+			}
 		}
-		u.Errorf(UnparsedFile,
-			position.Pos{File: filePath, Line: e.Pos.Line, Col: e.Pos.Column}, "%s", e.Msg)
-	}
+	})
 }
 
-// excluded reports whether a file falls outside the load's tag set,
-// and the constraint that excludes it: a go:build line among the
-// parsed comments before the package clause, or the GOOS and GOARCH
-// suffixes of the filename. A go:build spelling inside a block
-// comment is not a constraint, so the lines come from the parsed
-// comments and not from a scan of the raw source.
+// excluded reports whether a file is outside the tag set of the load, and
+// returns the constraint that excludes it. The constraint is a go:build
+// line among the parsed comments before the package clause, or the GOOS
+// and GOARCH suffixes of the file name. A go:build spelling inside a block
+// comment is not a constraint, so excluded reads the parsed comments and
+// not the raw source.
 func (f *goFrontend) excluded(parsed *ast.File, filePath string) (string, bool) {
 	for _, group := range parsed.Comments {
 		if group.Pos() >= parsed.Package {
@@ -368,13 +346,13 @@ func (f *goFrontend) excluded(parsed *ast.File, filePath string) (string, bool) 
 	return "", false
 }
 
-// satisfies reports whether the load's tag set contains a tag.
+// satisfies reports whether the tag set of the load contains a tag.
 func (f *goFrontend) satisfies(tag string) bool {
 	return slices.Contains(f.opts.Tags, tag)
 }
 
-// generatedMarker returns the Go convention's generated-file
-// marker when one precedes the package clause.
+// generatedMarker returns the marker of a generated file by the convention
+// of Go, where such a marker is before the package clause.
 func generatedMarker(parsed *ast.File) (string, bool) {
 	for _, group := range parsed.Comments {
 		if group.Pos() >= parsed.Package {
@@ -391,26 +369,26 @@ func generatedMarker(parsed *ast.File) (string, bool) {
 	return "", false
 }
 
-// lowerImport records one import on the file, with its doc and its
-// trailing comment. A dot import records as a wildcard. Every other
-// alias records as written, so a blank import keeps its underscore
-// and a side-effect import round-trips as one. The file's
-// [golang.Scope] derives from these records. A carrier on an import
-// refuses positioned, because no rule takes an import as its subject,
-// and a tool directive there is the file's. A standard library file
-// imports a package outside the standard library only from the
-// modules the standard library vendors, and the go command reads it
-// from vendor/, so the record's path is the vendored one.
+// lowerImport records one import of the file, with its doc and its
+// trailing comment. A dot import is a wildcard. Every other alias is
+// recorded as written, so a blank import keeps its underscore and renders
+// again as a side-effect import. [golang.NewBindings] derives the
+// bindings of the file from these records. No rule takes an import as its subject, so a carrier
+// on an import is refused at its position. A tool directive on an import
+// is an annotation of the file. A file of the standard library imports a
+// package outside the standard library only from the modules that the
+// standard library vendors. The go command reads such a package from
+// vendor/, so the record has the vendored path.
 func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, spec *ast.ImportSpec) {
 	imported, err := strconv.Unquote(spec.Path.Value)
 	if err != nil {
 		return
 	}
-	if l.std && !standard(imported) {
+	if l.std && !golang.Standard(imported) {
 		imported = vendorDir + "/" + imported
 	}
 	parts := l.declParts(u, plugin.CommentParts{}, spec.Doc, spec.Comment)
-	refuseCarriers(u, parts.Carriers, "an import")
+	u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "an import")
 	file.Annotations = append(file.Annotations, parts.Annotations...)
 	record := &node.Import{
 		Path: imported, Pos: l.at(spec.Pos()),
@@ -426,19 +404,19 @@ func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, spec *ast.Im
 	file.Imports = append(file.Imports, record)
 }
 
-// lowerDecl lowers one top-level declaration, observing the unit's
-// depth: at signatures, an unexported declaration is left out, and
-// its comments are consumed with it, because they belong to the
-// declaration the load left out. A function no code can address is
-// left out at every depth, and a carrier on it refuses. The doc of
-// an import declaration gives its tool directives to the file and
-// refuses its carriers, as an import's own doc does.
+// lowerDecl lowers one top-level declaration at the depth of the unit. At
+// the signature depth it leaves out an unexported declaration and marks
+// its comments as taken, because they belong to the declaration that the
+// load left out. It leaves out a function that no code can name at every
+// depth, and refuses the carriers on it. The tool directives in the doc of
+// an import declaration are annotations of the file, and its carriers are
+// refused, as on the doc of an import.
 func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File, decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		if unaddressable(d) {
 			parts := l.declParts(u, plugin.CommentParts{}, d.Doc, l.trailing(d.End(), token.NoPos))
-			refuseCarriers(u, parts.Carriers, "a function no code can name")
+			u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "a function that no code can name")
 			return
 		}
 		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(d.Name.Name) {
@@ -449,14 +427,14 @@ func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File
 	case *ast.GenDecl:
 		if d.Tok == token.IMPORT {
 			parts := l.split(u, d.Doc)
-			refuseCarriers(u, parts.Carriers, "an import")
+			u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "an import")
 			file.Annotations = append(file.Annotations, parts.Annotations...)
 			return
 		}
 		group := l.split(u, d.Doc)
-		// An empty const spec repeats the previous one, the type
-		// included: Go's own inheritance rule, applied here so an
-		// implicit iota row still knows what it is typed by.
+		// An empty const spec repeats the previous spec with its type, by
+		// the rule of Go, so an implicit iota row has the type of the row
+		// that it repeats.
 		var inherited ast.Expr
 		for _, spec := range d.Specs {
 			switch s := spec.(type) {
@@ -484,25 +462,26 @@ func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File
 	}
 }
 
-// unaddressable reports a function no Go code can name: a blank
-// function or method, and a package's init, which the language runs
-// and forbids referring to. A package declares any number of
-// either, so lowering them would spell one identity twice.
+// unaddressable reports whether no Go code can name a function. Such a
+// function is a blank function or method, or the init function of a
+// package, which the language runs and forbids to name. A package declares
+// any number of either, so their lowering would produce one identity
+// twice.
 func unaddressable(d *ast.FuncDecl) bool {
 	return d.Name.Name == blankName || d.Recv == nil && d.Name.Name == initName
 }
 
-// The names Go reserves a meaning for at declaration: the blank
-// identifier, which binds nothing, and the package initializer.
+// Go reserves two names in a declaration. The blank identifier binds
+// nothing, and init names the initializer of a package.
 const (
 	blankName = "_"
 	initName  = "init"
 )
 
-// declParts joins a spec's own comments with its group's: the
-// nearer doc text is kept, and carriers and annotations union
-// across the group doc, the spec doc and the trailing comment,
-// because a directive is authored intent wherever it is written.
+// declParts joins the comments of a spec with the comments of its group.
+// The spec keeps the nearer doc text. Its carriers and annotations are
+// those of the group doc, the spec doc and the trailing comment together,
+// because a directive applies wherever the author wrote it.
 func (l *lowered) declParts(
 	u *plugin.SourceUnit, group plugin.CommentParts, doc, trailing *ast.CommentGroup,
 ) plugin.CommentParts {
@@ -513,10 +492,10 @@ func (l *lowered) declParts(
 	return parts
 }
 
-// lowerFunc lowers a function or, with a receiver, a method whose
-// owner is the receiver's named type. A receiver list the parser
-// accepted empty lowers as a function, because there is no type to
-// own it.
+// lowerFunc lowers a function, or a method where the declaration has a
+// receiver. The named type of the receiver is the owner of the method. An
+// empty receiver list, which the parser accepts, lowers as a function,
+// because the method has no owner type.
 func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, d *ast.FuncDecl) {
 	tail := l.trailing(d.End(), token.NoPos)
 	parts := l.declParts(u, plugin.CommentParts{}, d.Doc, tail)
@@ -552,17 +531,16 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 	stampIter(u, m, m.Returns)
 	if _, pointer := unparen(recv.Type).(*ast.StarExpr); pointer {
 		u.Graph().Stamp(m, meta.RawStamp{
-			Key: golang.ReceiverPointerKey, Value: true, Pos: m.Pos,
+			Key: golang.ReceiverIsPointerKey, Value: true, Pos: m.Pos,
 		})
 	}
 }
 
-// stampIter marks a callable whose first result is one of the
-// iterator shapes, read off the package the reference imports and
-// the name it qualifies: iter.Seq and iter.Seq2 are their own
-// announcement, under any alias of the import. An instantiation
-// lowers to the bare name with its arguments split out, so the bare
-// name is the whole comparison.
+// stampIter marks a callable whose first result is iter.Seq or iter.Seq2.
+// It compares the package that the reference imports and the unqualified
+// name, so any alias of the import matches. An instantiation lowers to its
+// bare name with its arguments apart, so the comparison reads the bare
+// name alone.
 func stampIter(u *plugin.SourceUnit, callable symbol.Symbol, returns []*node.Return) {
 	if len(returns) == 0 || returns[0].Type == nil || returns[0].Type.Package != golang.IterPackage {
 		return
@@ -579,7 +557,7 @@ func stampIter(u *plugin.SourceUnit, callable symbol.Symbol, returns []*node.Ret
 	}
 }
 
-// unparen unwraps the parentheses an expression may wear.
+// unparen returns an expression without its parentheses.
 func unparen(e ast.Expr) ast.Expr {
 	for {
 		paren, wrapped := e.(*ast.ParenExpr)
@@ -590,10 +568,10 @@ func unparen(e ast.Expr) ast.Expr {
 	}
 }
 
-// lowerType lowers one type spec. The alias check comes before the
-// shape switch: `type A = struct{...}` states a transparent alias
-// of an inline shape, and lowering it as a defined struct would
-// fabricate type identity the source refused.
+// lowerType lowers one type spec. It checks for an alias before the shape.
+// `type A = struct{...}` is a transparent alias of an inline shape, and a
+// defined struct would give it a type identity that the source does not
+// declare.
 func (f *goFrontend) lowerType(
 	u *plugin.SourceUnit, l *lowered, file *node.File, group plugin.CommentParts, s *ast.TypeSpec,
 ) {
@@ -642,8 +620,8 @@ func (f *goFrontend) lowerType(
 	u.AttachCarriers(declared, parts.Carriers, BadCarrier)
 }
 
-// aliasOf builds the alias shape a type spec lowers to when its
-// target remains a spelling.
+// aliasOf returns the alias that a type spec lowers to where its target is
+// a spelling.
 func (l *lowered) aliasOf(
 	u *plugin.SourceUnit, s *ast.TypeSpec, parts plugin.CommentParts, name string,
 	pos position.Pos, vis symbol.Visibility, tps []*node.TypeParam,
@@ -655,17 +633,16 @@ func (l *lowered) aliasOf(
 	}
 }
 
-// lowerStructBody lowers fields and embeds, unexported fields left
-// out at signature depth. An embedded field is a
-// declaration like any field: its doc, tag, trailing comment and
-// annotations lower with it, and its carriers attach to it. An
-// embed whose named type the source spells nothing for, as one the
-// parser synthesized past the end of a broken file, is left out,
-// because the load names an embed by that spelling. A blank field
-// is padding no code can address, and a struct may declare any
-// number of them, so it is left out. A field of blank names alone
-// leaves its comments unread, so a carrier on it refuses as
-// floating.
+// lowerStructBody lowers the fields and the embeds of a struct body. At
+// the signature depth it leaves out the unexported fields. An embedded
+// field is a declaration like any field. Its doc, tag, trailing comment
+// and annotations lower with it, and its carriers attach to it. The
+// lowering leaves out an embed whose named type has no spelling in the
+// source, such as one that the parser synthesized past the end of a broken
+// file, because the load names an embed by that spelling. It leaves out a
+// blank field, which is padding that no code can name, because a struct
+// can declare any number of them. Nothing reads the comments of a field of
+// blank names alone, so the sweep refuses a carrier on it.
 func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
 	for _, field := range t.Fields.List {
 		if len(field.Names) > 0 && !slices.ContainsFunc(field.Names, named) {
@@ -707,16 +684,16 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 	}
 }
 
-// named reports whether a declared name binds something: every name
-// but the blank identifier.
+// named reports whether a declared name is not the blank identifier, which
+// binds nothing.
 func named(name *ast.Ident) bool { return name.Name != blankName }
 
-// lowerInterfaceBody lowers method signatures and embedded
-// interfaces. A constraint element, such as a union or an
-// approximation, is not an embed. Its verbatim spellings stamp onto
-// the interface as its type set, the language metadata the model
-// routes them to. An embed whose type spells no name is left out, as
-// a struct's is.
+// lowerInterfaceBody lowers the method signatures and the embedded
+// interfaces of an interface body. A constraint element, such as a union
+// or an approximation, is not an embed. A stamp of the language records
+// the verbatim spellings of the constraint elements as the type set of the
+// interface. The lowering leaves out an embed whose type has no name, as
+// it does in a struct.
 func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
 	var terms []string
 	for _, member := range t.Methods.List {
@@ -724,7 +701,7 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 		if len(member.Names) == 0 {
 			if constraintElement(member.Type) {
 				terms = append(terms, l.spelling(member.Type))
-				refuseCarriers(u, parts.Carriers, "a constraint element")
+				u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "a constraint element")
 				continue
 			}
 			if l.spelling(undecorated(member.Type)) == "" {
@@ -745,7 +722,7 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 		}
 		name := member.Names[0].Name
 		if name == blankName {
-			continue // a blank method binds nothing, as blank values do
+			continue // a blank method binds nothing, as a blank value does
 		}
 		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name) {
 			continue
@@ -775,12 +752,11 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 	}
 }
 
-// constraintElement reports a type-set element no embed can
-// represent: a union, an approximation, a predeclared basic type, a
-// type literal other than an interface, or a parenthesized nest of
-// any of them. A named type, qualified or instantiated, remains an
-// embed, because only its declaration shows whether it is an
-// interface.
+// constraintElement reports whether a type-set element is one that no
+// embed can represent. Such an element is a union, an approximation, a
+// predeclared basic type, a type literal other than an interface, or any
+// of them in parentheses. A named type, qualified or instantiated, is an
+// embed, because only its declaration shows whether it is an interface.
 func constraintElement(e ast.Expr) bool {
 	switch t := e.(type) {
 	case *ast.BinaryExpr, *ast.UnaryExpr:
@@ -797,11 +773,11 @@ func constraintElement(e ast.Expr) bool {
 	}
 }
 
-// lowerValues lowers one const or var spec, a declaration per
-// bound name. A blank name binds nothing and is skipped. An implicit
-// constant, a row with no expression of its own, keeps an empty
-// value, unevaluated by contract, and one call initializing several
-// names gives its spelling to each.
+// lowerValues lowers one const or var spec to one declaration for each
+// bound name. It skips a blank name, which binds nothing. An implicit
+// constant is a row without an expression of its own, and it keeps an
+// empty value, which the contract leaves unevaluated. One call that
+// initializes several names gives its spelling to each.
 func (*goFrontend) lowerValues(
 	u *plugin.SourceUnit, l *lowered, file *node.File, group plugin.CommentParts,
 	tok token.Token, s *ast.ValueSpec, specType ast.Expr,
@@ -847,8 +823,8 @@ func (*goFrontend) lowerValues(
 	}
 }
 
-// typeParams lowers a generic parameter list, each bound as a
-// reference.
+// typeParams lowers the type parameter list of a generic declaration, with
+// the bound of each parameter as a reference.
 func (l *lowered) typeParams(fields *ast.FieldList) []*node.TypeParam {
 	if fields == nil {
 		return nil
@@ -865,12 +841,12 @@ func (l *lowered) typeParams(fields *ast.FieldList) []*node.TypeParam {
 	return out
 }
 
-// params lowers a parameter list, one entry per bound name at its
-// own position and one for an unnamed parameter. A comment the
-// parser attaches to a parameter lowers as its trailing comment,
-// read once per field and shared by every name the field binds, as
-// a result's is. A carrier there refuses positioned, because no
-// rule takes a parameter as its subject.
+// params lowers a parameter list, with one entry for each bound name at
+// its own position and one for an unnamed parameter. A comment that the
+// parser attaches to a parameter lowers as its trailing comment. The
+// lowering reads it once for each field, and every name of the field
+// shares it, as for a result. No rule takes a parameter as its subject, so
+// a carrier there is refused at its position.
 func (l *lowered) params(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Param {
 	if fields == nil {
 		return nil
@@ -882,9 +858,9 @@ func (l *lowered) params(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Pa
 	return out
 }
 
-// appendParams appends one field's parameters to out, each with the
-// trailing comment: one per bound name at its own position, and one
-// for an unnamed parameter.
+// appendParams appends the parameters of one field to out, each with the
+// trailing comment. It appends one parameter for each bound name at its
+// own position, and one for an unnamed parameter.
 func (l *lowered) appendParams(out []*node.Param, field *ast.Field, comment string) []*node.Param {
 	if len(field.Names) == 0 {
 		return append(out, l.param(field, comment))
@@ -898,8 +874,8 @@ func (l *lowered) appendParams(out []*node.Param, field *ast.Field, comment stri
 	return out
 }
 
-// param lowers one field into a parameter with a trailing comment,
-// variadic when its type is an ellipsis.
+// param lowers one field to a parameter with a trailing comment. The
+// parameter is variadic where its type is an ellipsis.
 func (l *lowered) param(field *ast.Field, comment string) *node.Param {
 	p := &node.Param{
 		Pos:     l.at(field.Pos()),
@@ -917,10 +893,10 @@ func (l *lowered) param(field *ast.Field, comment string) *node.Param {
 	return p
 }
 
-// returns lowers a result list, blank names kept as written: Go
-// admits a mixed list only fully named, so dropping the
-// underscore would strand the siblings. A comment on a result
-// lowers as its trailing comment, its carriers refused.
+// returns lowers a result list and keeps blank names as written. Go admits
+// a list of named results only where every result has a name, so a
+// dropped underscore would leave the list invalid. A comment on a result
+// lowers as its trailing comment, and its carriers are refused.
 func (l *lowered) returns(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Return {
 	if fields == nil {
 		return nil
@@ -932,17 +908,17 @@ func (l *lowered) returns(u *plugin.SourceUnit, fields *ast.FieldList) []*node.R
 	return out
 }
 
-// appendReturns appends one field's results to out, each with the
-// trailing comment: one per bound name at its own position, and one
-// for an unnamed result.
+// appendReturns appends the results of one field to out, each with the
+// trailing comment. It appends one result for each bound name at its own
+// position, and one for an unnamed result.
 func (l *lowered) appendReturns(out []*node.Return, field *ast.Field, comment string) []*node.Return {
 	if len(field.Names) == 0 {
 		return append(out, &node.Return{Pos: l.at(field.Pos()), Type: l.typeRef(field.Type), Comment: comment})
 	}
 	for _, name := range field.Names {
-		// The underscore is kept: a mixed list re-renders only with
-		// every slot named, and go/parser rejects the half-named form
-		// dropping it would produce.
+		// The result keeps its underscore. A list renders again only where
+		// every result has a name, and go/parser rejects a list where some
+		// results have none.
 		out = append(out, &node.Return{
 			Name: name.Name, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type), Comment: comment,
 		})
@@ -950,13 +926,13 @@ func (l *lowered) appendReturns(out []*node.Return, field *ast.Field, comment st
 	return out
 }
 
-// memberComment lowers a signature member's comments: the doc the
-// parser attached, and the trailing comment on the member's own
-// line inside its list, which the parser leaves free. The prose
-// becomes the trailing comment, and a carrier refuses positioned,
-// naming the member it is written on. An unparenthesized list
-// bounds nothing and takes no trailing comment, because the line
-// it ends on belongs to the declaration that follows.
+// memberComment lowers the comments of a signature member. They are the
+// doc that the parser attached and the trailing comment on the line of the
+// member inside its list, which the parser attaches to nothing. The prose
+// is the trailing comment of the member. A carrier is refused at its
+// position, and the finding names the member through what. A list without
+// parentheses takes no trailing comment, because its last line belongs to
+// the declaration after it.
 func (l *lowered) memberComment(
 	u *plugin.SourceUnit, field *ast.Field, closing token.Pos, what string,
 ) string {
@@ -965,11 +941,12 @@ func (l *lowered) memberComment(
 		tail = l.trailing(field.End(), closing)
 	}
 	parts := l.declParts(u, plugin.CommentParts{}, field.Doc, tail)
-	refuseCarriers(u, parts.Carriers, what)
+	u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, what)
 	return strings.Join(l.split(u, tail).Docs, " ")
 }
 
-// visibilityOf reads Go's visibility off the name's case.
+// visibilityOf returns public for an exported name and package for every
+// other name, because Go decides visibility by the case of a name.
 func visibilityOf(name string) symbol.Visibility {
 	if ast.IsExported(name) {
 		return symbol.VisibilityPublic
@@ -977,8 +954,8 @@ func visibilityOf(name string) symbol.Visibility {
 	return symbol.VisibilityPackage
 }
 
-// tagOf strips a struct tag's delimiters, the text unevaluated:
-// the literal unquotes, whichever quoting the author wrote.
+// tagOf returns the text of a struct tag without its delimiters. It
+// unquotes the literal in either quoting and does not evaluate the text.
 func tagOf(tag *ast.BasicLit) string {
 	if tag == nil {
 		return ""
@@ -990,8 +967,9 @@ func tagOf(tag *ast.BasicLit) string {
 	return unquoted
 }
 
-// commentText returns a trailing comment's documentation text,
-// carriers and directives excluded, empty when nothing remains.
+// commentText returns the documentation text of a trailing comment without
+// its carriers and directives. It returns the empty string where no text
+// is left.
 func commentText(l *lowered, u *plugin.SourceUnit, group *ast.CommentGroup) string {
 	if group == nil {
 		return ""
@@ -999,11 +977,11 @@ func commentText(l *lowered, u *plugin.SourceUnit, group *ast.CommentGroup) stri
 	return strings.Join(l.split(u, group).Docs, " ")
 }
 
-// filenameConstraint returns the GOOS and GOARCH tags a filename
-// implies under the go tool's own rule: the name is cut at its first
-// dot, everything before its first underscore is ignored, and a
-// final test element drops. The last two elements then name an OS
-// and an architecture, or the last names either. linux_amd64.go
+// filenameConstraint returns the GOOS and GOARCH tags that a file name
+// implies by the rule of the go command. The rule cuts the name at its
+// first dot, ignores everything before its first underscore and drops a
+// final test element. The last two elements are then an operating system
+// and an architecture, or the last element is either. linux_amd64.go
 // implies amd64 alone, and x_windows.pb.go implies windows.
 func filenameConstraint(base string) ([]string, bool) {
 	name, _, _ := strings.Cut(base, ".")
@@ -1025,12 +1003,13 @@ func filenameConstraint(base string) ([]string, bool) {
 	return nil, false
 }
 
-// testElement is the filename element the go tool reads as a test
-// file's mark.
+// testElement is the element of a file name that marks a test file for
+// the go command.
 const testElement = "test"
 
-// The go tool's own suffix vocabularies, pinned here because no
-// stdlib package exports them. A new port extends the lists.
+// knownOS and knownArch are the operating systems and the architectures
+// that the go command knows. The standard library exports neither list,
+// so the frontend declares both. A new port extends the lists.
 var knownOS = map[string]bool{
 	"aix": true, "android": true, "darwin": true, "dragonfly": true,
 	"freebsd": true, "hurd": true, "illumos": true, "ios": true,

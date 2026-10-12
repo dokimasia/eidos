@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
@@ -22,6 +23,9 @@ const (
 	sdkPkg    = "go.dokimi.dev/eidos/sdk"
 	sdkAlias  = "eidos"
 	assertPkg = "go.dokimi.dev/assert"
+	// blankName and dotName are the names of a blank and a dot import.
+	blankName = "_"
+	dotName   = "."
 )
 
 // importsAllocs is a block: the sorted entries, and the block sized
@@ -116,17 +120,51 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "gofmt leaves no empty block either")
 		})
 	})
+
+	t.Run("TemplateImport", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name      string
+			givePath  string
+			giveName  string
+			wantLocal string
+			wantOK    bool
+		}{
+			{
+				name:     "binds a package without a name under the qualifier of its path",
+				givePath: yamlPkg, wantLocal: golang.Qualifier(yamlPkg), wantOK: true,
+			},
+			{
+				name:     "binds a package under the name that the template states",
+				givePath: sdkPkg, giveName: sdkAlias, wantLocal: sdkAlias, wantOK: true,
+			},
+			{name: "reports false for a blank import", givePath: sqlPkg, giveName: blankName},
+			{name: "reports false for a dot import", givePath: sqlPkg, giveName: dotName},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				local, item, ok := backend.TemplateImport(tt.givePath, tt.giveName)
+				expect.Equal(t, ok, tt.wantOK, "TemplateImport reports whether the import binds a name")
+				expect.Equal(t, local, tt.wantLocal, "TemplateImport returns the name that the import binds")
+				expect.Equal(t, item, "", "a Go import binds a whole package")
+			})
+		}
+	})
 }
 
 // A block allocates its sorted entries and itself, and an empty set
-// nothing. The ordinary run, which runs no benchmark, checks those
-// ceilings here.
+// nothing. The binding of a template's import allocates nothing. The
+// ordinary run, which runs no benchmark, checks those ceilings here.
 func TestImportsAllocs(t *testing.T) {
 	checkAllocs(t, importsCalls())
 }
 
 // BenchmarkImports measures the block every rendered file that
-// qualifies a name writes.
+// qualifies a name writes, and the binding of each import that a
+// template states.
 func BenchmarkImports(b *testing.B) {
 	benchCalls(b, importsCalls())
 }
@@ -171,6 +209,13 @@ func importsCalls() []allocCall {
 			name: "Imports", caseName: "an empty set",
 			call:  func() { out = backend.Imports(&empty) },
 			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+		{
+			name: "TemplateImport", caseName: "an import without a name",
+			call: func() { out, _, _ = backend.TemplateImport(yamlPkg, "") },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, out, golang.Qualifier(yamlPkg), "TemplateImport binds the qualifier")
+			},
 		},
 	}
 }

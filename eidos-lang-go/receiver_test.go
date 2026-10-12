@@ -65,7 +65,7 @@ func TestReceiver(t *testing.T) {
 					Name:       putMethod,
 					Receives:   &emit.TypeRef{Spelling: storeHost},
 					TypeParams: []*emit.TypeParam{{Name: "s"}},
-					Returns:    []*emit.Return{{Name: "st", Type: &emit.TypeRef{Spelling: sessionTy}}},
+					Returns:    emit.SlotOf(&emit.Return{Name: "st", Type: &emit.TypeRef{Spelling: sessionTy}}),
 				},
 				want: "recv",
 			},
@@ -181,7 +181,7 @@ func BenchmarkReceiver(b *testing.B) {
 func receiving(host string, params ...string) *emit.Method {
 	m := &emit.Method{Name: putMethod, Receives: &emit.TypeRef{Spelling: host}}
 	for _, name := range params {
-		m.Params = append(m.Params, &emit.Param{Name: name, Type: &emit.TypeRef{Spelling: sessionTy}})
+		m.Params.Append(&emit.Param{Name: name, Type: &emit.TypeRef{Spelling: sessionTy}})
 	}
 	return m
 }

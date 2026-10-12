@@ -14,7 +14,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The import paths and qualifiers the cases bind and probe.
+// These constants are the import paths and the qualifiers that the cases
+// bind and probe.
 const (
 	ownPath    = "example.test/own"
 	apiPath    = "example.test/fix/api"
@@ -26,48 +27,49 @@ const (
 	otherAlias = "ren"
 )
 
-// The allocations of a scope.
+// These constants are the allocations of the bindings and of a probe.
 const (
-	// scopeAllocs is the scope of a file without a dot import: the map
-	// of qualifiers, two allocations up to eight imports, and the list of
-	// unaliased imports.
-	scopeAllocs = 2 + 1
-	// candidatesAllocs is the list of candidates a spelling probes.
+	// bindingsAllocs is the count of the bindings of a file without a dot
+	// import. The map of qualifiers costs two allocations up to eight
+	// imports, and the list of unaliased imports costs one.
+	bindingsAllocs = 2 + 1
+	// candidatesAllocs is the count of the list of candidates that a probe
+	// returns.
 	candidatesAllocs = 1
 )
 
-// The load's resolution step, the rules and the frontend all resolve a
-// spelling through a file's scope. What each import binds, and the probe
-// order of every spelling, are pinned.
+// The resolution step of the load, the rules and the frontend resolve a
+// spelling through the bindings of a file, so the contract covers what each
+// import binds and the probe order of every spelling.
 func TestScope(t *testing.T) {
 	t.Parallel()
 
-	t.Run("NewScope", func(t *testing.T) {
+	t.Run("NewBindings", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("binds the later path for a qualifier two imports bind", func(t *testing.T) {
+		t.Run("binds the later path for a qualifier that two imports bind", func(t *testing.T) {
 			t.Parallel()
 
-			s := golang.NewScope([]*node.Import{{Path: apiPath}, {Path: otherPath, Alias: "api"}})
-			path, bound := s.Import("api")
-			assert.True(t, bound, "the qualifier is bound")
-			assert.Equal(t, path, otherPath, "to the later import")
+			b := golang.NewBindings([]*node.Import{{Path: apiPath}, {Path: otherPath, Alias: "api"}})
+			path, bound := b.Import("api")
+			assert.True(t, bound, "an import binds the qualifier")
+			assert.Equal(t, path, otherPath, "the later import binds the qualifier")
 		})
 
 		t.Run("skips a nil import record", func(t *testing.T) {
 			t.Parallel()
 
-			s := golang.NewScope([]*node.Import{nil, {Path: apiPath}})
-			path, bound := s.Import("api")
-			assert.True(t, bound, "the record after the nil one binds")
-			assert.Equal(t, path, apiPath, "its path")
+			b := golang.NewBindings([]*node.Import{nil, {Path: apiPath}})
+			path, bound := b.Import("api")
+			assert.True(t, bound, "the record after the nil record binds its qualifier")
+			assert.Equal(t, path, apiPath, "the qualifier is bound to the path of that record")
 		})
 	})
 
 	t.Run("Import", func(t *testing.T) {
 		t.Parallel()
 
-		s := golang.NewScope(imports())
+		b := golang.NewBindings(imports())
 		tests := []struct {
 			name      string
 			give      string
@@ -98,24 +100,24 @@ func TestScope(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				path, bound := s.Import(tt.give)
-				assert.Equal(t, bound, tt.wantBound, "whether an import binds the qualifier")
-				assert.Equal(t, path, tt.wantPath, "the path it binds")
+				path, bound := b.Import(tt.give)
+				assert.Equal(t, bound, tt.wantBound, "Import reports whether an import binds the qualifier")
+				assert.Equal(t, path, tt.wantPath, "Import returns the path that the import binds")
 			})
 		}
 
-		t.Run("reports false on the zero scope", func(t *testing.T) {
+		t.Run("reports false on the zero Bindings", func(t *testing.T) {
 			t.Parallel()
 
-			_, bound := golang.Scope{}.Import("api")
-			assert.False(t, bound, "the zero scope binds nothing")
+			_, bound := golang.Bindings{}.Import("api")
+			assert.False(t, bound, "the zero Bindings binds nothing")
 		})
 	})
 
 	t.Run("Candidates", func(t *testing.T) {
 		t.Parallel()
 
-		s := golang.NewScope(imports())
+		b := golang.NewBindings(imports())
 		tests := []struct {
 			name string
 			give string
@@ -190,93 +192,95 @@ func TestScope(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, s.Candidates(ownPath, tt.give), tt.want, "the candidates in probe order")
+				assert.Equal(t, b.Candidates(ownPath, tt.give), tt.want,
+					"Candidates returns the candidates in probe order")
 			})
 		}
 
-		t.Run("returns nothing for an unbound qualifier on the zero scope", func(t *testing.T) {
+		t.Run("returns nothing for an unbound qualifier on the zero Bindings", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Empty(t, golang.Scope{}.Candidates(ownPath, "api.User"), "no import can declare the name")
+			assert.Empty(t, golang.Bindings{}.Candidates(ownPath, "api.User"), "no import can declare the name")
 		})
 
-		t.Run("returns the own package for a bare name on the zero scope", func(t *testing.T) {
+		t.Run("returns the own package for a bare name on the zero Bindings", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, golang.Scope{}.Candidates(ownPath, "Thing"),
-				[]symbol.Identity{at(ownPath, "Thing")}, "the own package alone")
+			assert.Equal(t, golang.Bindings{}.Candidates(ownPath, "Thing"),
+				[]symbol.Identity{at(ownPath, "Thing")}, "the zero Bindings probes the own package alone")
 		})
 	})
 }
 
-// A scope allocates its map and its list of unaliased imports, a lookup
-// nothing, and a probe the list it returns. The ordinary run, which runs
-// no benchmark, checks those ceilings here.
+// NewBindings allocates the map and the list of unaliased imports, Import
+// allocates nothing, and Candidates allocates the list that it returns. The
+// ordinary run checks these ceilings, because it runs no benchmark.
 func TestScopeAllocs(t *testing.T) {
-	plain, s := plainImports(), golang.NewScope(imports())
+	plain, b := plainImports(), golang.NewBindings(imports())
 	var (
-		scope golang.Scope
-		path  string
-		bound bool
-		got   []symbol.Identity
+		bindings golang.Bindings
+		path     string
+		bound    bool
+		got      []symbol.Identity
 	)
-	assert.MaxAllocs(t, func() { scope = golang.NewScope(plain) }, scopeAllocs,
-		"NewScope allocates the map and the list of unaliased imports")
-	path, bound = scope.Import("api")
-	assert.True(t, bound, "NewScope binds the imports")
-	assert.Equal(t, path, apiPath, "NewScope binds api to its path")
-	assert.MaxAllocs(t, func() { path, bound = s.Import("api") }, 0, "Import allocates nothing")
+	assert.MaxAllocs(t, func() { bindings = golang.NewBindings(plain) }, bindingsAllocs,
+		"NewBindings allocates the map and the list of unaliased imports")
+	path, bound = bindings.Import("api")
+	assert.True(t, bound, "NewBindings binds the imports")
+	assert.Equal(t, path, apiPath, "NewBindings binds api to its path")
+	assert.MaxAllocs(t, func() { path, bound = b.Import("api") }, 0, "Import allocates nothing")
 	assert.True(t, bound, "Import finds the bound name")
 	assert.Equal(t, path, apiPath, "Import returns the bound path")
-	assert.MaxAllocs(t, func() { got = s.Candidates(ownPath, "Thing") }, candidatesAllocs,
+	assert.MaxAllocs(t, func() { got = b.Candidates(ownPath, "Thing") }, candidatesAllocs,
 		"Candidates allocates the list once")
 	assert.Length(t, got, 3, "Candidates probes the own package and both dot imports")
-	assert.MaxAllocs(t, func() { got = s.Candidates(ownPath, "ghost.X") }, candidatesAllocs,
+	assert.MaxAllocs(t, func() { got = b.Candidates(ownPath, "ghost.X") }, candidatesAllocs,
 		"Candidates allocates the list of unaliased imports once")
 	assert.Length(t, got, 2, "Candidates probes both unaliased imports")
 }
 
-// BenchmarkScope measures the scope the frontend and the rules derive
-// once per file, and the lookup and the probe they make per reference.
+// BenchmarkScope measures the bindings that the frontend and the rules
+// derive once for each file, and the lookup and the probe that they make for
+// each reference.
 func BenchmarkScope(b *testing.B) {
-	b.Run("NewScope", func(b *testing.B) {
+	b.Run("NewBindings", func(b *testing.B) {
 		plain := plainImports()
-		c := bench.Start(b).MaxAllocs(scopeAllocs)
+		c := bench.Start(b).MaxAllocs(bindingsAllocs)
 		defer c.End()
-		var scope golang.Scope
+		var bindings golang.Bindings
 		for c.Loop() {
-			scope = golang.NewScope(plain)
+			bindings = golang.NewBindings(plain)
 		}
-		_, bound := scope.Import("api")
-		assert.True(b, bound, "NewScope binds the imports")
+		_, bound := bindings.Import("api")
+		assert.True(b, bound, "NewBindings binds the imports")
 	})
 
 	b.Run("Import", func(b *testing.B) {
-		s := golang.NewScope(imports())
+		bindings := golang.NewBindings(imports())
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		var path string
 		for c.Loop() {
-			path, _ = s.Import("api")
+			path, _ = bindings.Import("api")
 		}
 		assert.Equal(b, path, apiPath, "Import returns the bound path")
 	})
 
 	b.Run("Candidates", func(b *testing.B) {
-		s := golang.NewScope(imports())
+		bindings := golang.NewBindings(imports())
 		c := bench.Start(b).MaxAllocs(candidatesAllocs)
 		defer c.End()
 		var got []symbol.Identity
 		for c.Loop() {
-			got = s.Candidates(ownPath, "api.User")
+			got = bindings.Candidates(ownPath, "api.User")
 		}
 		assert.Equal(b, got, []symbol.Identity{at(apiPath, "User")}, "Candidates returns the bound import")
 	})
 }
 
-// imports is a file's import records in source order: two
-// unaliased, one aliased, one blank, and a dot import in each of its
-// two recorded forms.
+// imports returns the import records of a file in source order. They are
+// two unaliased imports, one aliased import, one blank import, and a dot
+// import in each of its two recorded forms.
 func imports() []*node.Import {
 	return []*node.Import{
 		{Path: apiPath},
@@ -288,14 +292,13 @@ func imports() []*node.Import {
 	}
 }
 
-// plainImports is a file's import records without a dot import: two
-// unaliased and one aliased.
+// plainImports returns the import records of a file without a dot import.
+// They are two unaliased imports and one aliased import.
 func plainImports() []*node.Import {
 	return []*node.Import{{Path: apiPath}, {Path: otherPath, Alias: otherAlias}, {Path: yamlPath}}
 }
 
-// at returns a candidate identity: a package and a name in Go, with
-// no kind.
+// at returns a candidate identity in Go with a package, a name and no kind.
 func at(pkg, name string) symbol.Identity {
 	return symbol.Identity{Lang: golang.Lang, Package: pkg, Name: name}
 }

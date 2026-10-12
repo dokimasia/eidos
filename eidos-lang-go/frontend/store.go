@@ -11,23 +11,26 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The stores the Go frontend reads dependency units from, under the
-// names a load lists them by.
+// The stores that the Go frontend reads dependency units from, under the
+// names that a load lists them by.
 const (
-	// ModCacheStore is the module cache. A module's tree is under
-	// "<escaped path>@<escaped version>/", and the hash the go command
+	// ModCacheStore is the module cache. The tree of a module is under
+	// "<escaped path>@<escaped version>/". The hash that the go command
 	// verified the tree with is at
 	// "cache/download/<escaped path>/@v/<escaped version>.ziphash".
 	ModCacheStore = "gomod"
-	// GoRootStore is the src directory of GOROOT: the standard
-	// library, and under "vendor/" the packages it vendors.
+	// GoRootStore is the src directory of GOROOT. It has the standard
+	// library, and under "vendor/" the packages that the standard library
+	// vendors.
 	GoRootStore = "goroot"
 )
 
-// The go command's variables Stores reads, and the value of GOENV that
-// turns the go env file off.
+// The variables of the go command that Stores reads, and the value of
+// GOENV that turns the go env file off.
 const (
 	envGoEnv    = "GOENV"
 	envModCache = "GOMODCACHE"
@@ -37,17 +40,16 @@ const (
 	goEnvOff    = "off"
 )
 
-// The variables of the user's directories, as os.UserConfigDir and
-// os.UserHomeDir read them per platform.
+// The variables of the directories of the user, as os.UserConfigDir reads
+// them on each system.
 const (
-	envHome        = "HOME"
-	envPlan9Home   = "home"
-	envUserProfile = "USERPROFILE"
-	envAppData     = "AppData"
-	envXDGConfig   = "XDG_CONFIG_HOME"
+	envHome      = "HOME"
+	envPlan9Home = "home"
+	envAppData   = "AppData"
+	envXDGConfig = "XDG_CONFIG_HOME"
 )
 
-// The platforms whose user directories differ from Unix's.
+// The systems whose user directories differ from those of Unix.
 const (
 	goosWindows = "windows"
 	goosDarwin  = "darwin"
@@ -55,12 +57,12 @@ const (
 	goosPlan9   = "plan9"
 )
 
-// The slash paths under the roots Stores resolves: the user
-// configuration directory under a home directory per platform, the go
-// env file under the configuration directory, the default GOPATH under
-// the home directory, the module cache under a GOPATH entry, the
-// standard library and its runtime package under GOROOT, and the go
-// binary and its suffix on Windows.
+// The slash paths under the roots that Stores resolves. The user
+// configuration directory is under a home directory, differently on each
+// system. The go env file is under the configuration directory, the
+// default GOPATH is under the home directory, and the module cache is
+// under an entry of GOPATH. The standard library and its runtime package
+// are under GOROOT. The go binary has a suffix on Windows.
 const (
 	darwinConfig  = "Library/Application Support"
 	plan9Config   = "lib"
@@ -74,32 +76,32 @@ const (
 	windowsExe    = ".exe"
 )
 
-// Stores returns the module cache and the standard library as the
-// stores the load passes to the Go frontend, under [ModCacheStore] and
-// [GoRootStore], rooted where the go command finds them. It reads the
-// environment through getenv, which is os.Getenv outside a test, and
-// runs no tool.
+// Stores returns the module cache and the standard library under
+// [ModCacheStore] and [GoRootStore], as the stores that the load passes to
+// the Go frontend. Each is rooted where the go command finds it. Stores
+// reads the environment through getenv, which is os.Getenv outside a test,
+// and runs no tool.
 //
-// The module cache is GOMODCACHE, then the go env file's GOMODCACHE,
-// then pkg/mod under the first entry of GOPATH. GOPATH is the
-// environment's, then the go env file's, then go under the home
-// directory. GOROOT is the environment's, then the go env file's,
-// then the directory two levels above the first go binary on PATH
-// where that directory contains src/runtime. Where it does not, GOROOT
-// is the directory two levels above the binary with its symbolic links
+// The module cache is GOMODCACHE of the environment, then GOMODCACHE of
+// the go env file, then pkg/mod under the first entry of GOPATH. GOPATH
+// comes from the environment, then from the go env file, and is otherwise
+// go under the home directory. GOROOT comes from the environment, then
+// from the go env file. Otherwise GOROOT is the directory two levels above
+// the first go binary on PATH where that directory contains src/runtime,
+// and else the same directory above the binary with its symbolic links
 // resolved. The go command finds its own root above its executable the
 // same way. The go env file is GOENV, or go/env under the user
 // configuration directory, and GOENV=off turns it off.
 //
-// Stores returns an error naming the variable to set for a root it
-// cannot resolve.
+// Stores returns an error that names the variable to set for a root that
+// it cannot resolve.
 //
 // # Allocation contract
 //
-// Stores allocates the map of stores, each root as a file system and
-// the standard library's path: five allocations where the environment
-// names both roots. A go env file allocates eight more: five to read
-// the file, its text, and the map of its variables.
+// Stores allocates the map of stores, each root as a file system and the
+// path of the standard library: five allocations where the environment
+// names both roots. A go env file costs eight more: five to read the
+// file, its text, and the map of its variables.
 func Stores(getenv func(string) string) (map[string]fs.FS, error) {
 	env := goEnv{getenv: getenv, file: readEnvFile(getenv)}
 	modCache, err := env.modCache()
@@ -116,14 +118,14 @@ func Stores(getenv func(string) string) (map[string]fs.FS, error) {
 	}, nil
 }
 
-// goEnv reads the go command's variables the way the go command does:
-// the environment first, then the go env file.
+// goEnv reads the variables of the go command as the go command does:
+// from the environment first, then from the go env file.
 type goEnv struct {
 	getenv func(string) string
 	file   map[string]string
 }
 
-// lookup returns a variable's value from the environment, and from
+// lookup returns the value of a variable from the environment, and from
 // the go env file where the environment leaves it empty.
 func (e goEnv) lookup(key string) string {
 	if v := e.getenv(key); v != "" {
@@ -132,14 +134,14 @@ func (e goEnv) lookup(key string) string {
 	return e.file[key]
 }
 
-// modCache returns the module cache's root.
+// modCache returns the root of the module cache.
 func (e goEnv) modCache() (string, error) {
 	if dir := e.lookup(envModCache); dir != "" {
 		return dir, nil
 	}
 	goPath := e.lookup(envGoPath)
 	if goPath == "" {
-		home := homeDir(e.getenv)
+		home := e.getenv(plugin.UserHomeVar())
 		if home == "" {
 			return "", errors.New("frontend: set GOMODCACHE or GOPATH, because the home directory " +
 				"the default GOPATH is under is unset")
@@ -184,9 +186,9 @@ func hasRuntime(root string) bool {
 	return err == nil && info.IsDir()
 }
 
-// onPath returns the first regular file of a name in the directories a
-// PATH value lists, skipping the empty entries, which name the working
-// directory, and reports whether one exists.
+// onPath returns the first regular file named name in the directories
+// that a PATH value lists, and reports whether one exists. It skips the
+// empty entries, which refer to the working directory.
 func onPath(pathList, name string) (string, bool) {
 	for _, dir := range filepath.SplitList(pathList) {
 		if dir == "" {
@@ -200,10 +202,10 @@ func onPath(pathList, name string) (string, bool) {
 	return "", false
 }
 
-// readEnvFile reads the go env file into its variables, and nothing
-// for a file GOENV turns off or that does not read. A line is a
-// variable's name, "=" and its value, as the go command writes it, and
-// a line without "=" is left out.
+// readEnvFile returns the variables of the go env file. It returns nothing
+// for a file that GOENV turns off or that does not read. A line is the
+// name of a variable, "=" and its value, as the go command writes it, and
+// readEnvFile leaves out a line without "=".
 func readEnvFile(getenv func(string) string) map[string]string {
 	name := getenv(envGoEnv)
 	if name == goEnvOff {
@@ -225,11 +227,12 @@ func readEnvFile(getenv func(string) string) map[string]string {
 	return vars
 }
 
-// configDir returns the user configuration directory the go command
-// finds its env file under, by os.UserConfigDir's rule read through
-// getenv: AppData on Windows, Library/Application Support under HOME
-// on Darwin, lib under home on Plan 9, and elsewhere XDG_CONFIG_HOME
-// where it is absolute, or .config under HOME where it is unset.
+// configDir returns the user configuration directory that the go command
+// finds its env file under. It applies the rule of os.UserConfigDir
+// through getenv: AppData on Windows, Library/Application Support under
+// HOME on Darwin and lib under home on Plan 9. On other systems it returns
+// XDG_CONFIG_HOME where it is absolute, or .config under HOME where it is
+// unset.
 func configDir(getenv func(string) string) string {
 	switch runtime.GOOS {
 	case goosWindows:
@@ -249,21 +252,8 @@ func configDir(getenv func(string) string) string {
 	return dir
 }
 
-// homeDir returns the home directory by os.UserHomeDir's rule read
-// through getenv: USERPROFILE on Windows, home on Plan 9, and HOME
-// elsewhere.
-func homeDir(getenv func(string) string) string {
-	switch runtime.GOOS {
-	case goosWindows:
-		return getenv(envUserProfile)
-	case goosPlan9:
-		return getenv(envPlan9Home)
-	}
-	return getenv(envHome)
-}
-
-// under returns a slash path below a directory, and nothing for an
-// unset directory.
+// under returns a slash path below a directory, and the empty string for
+// an unset directory.
 func under(dir, rel string) string {
 	if dir == "" {
 		return ""
@@ -271,8 +261,8 @@ func under(dir, rel string) string {
 	return filepath.Join(dir, filepath.FromSlash(rel))
 }
 
-// exeSuffix returns the suffix of an executable's name: .exe on
-// Windows, and nothing elsewhere.
+// exeSuffix returns the suffix of the name of an executable: .exe on
+// Windows, and the empty string on other systems.
 func exeSuffix() string {
 	if runtime.GOOS == goosWindows {
 		return windowsExe

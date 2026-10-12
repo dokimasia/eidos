@@ -472,6 +472,30 @@ func TestType(t *testing.T) {
 				want: "golang: an array of an unstated length has no Go spelling",
 			},
 			{
+				name: "returns an error for an immutable list",
+				give: rules.TypeShape{
+					Form: symbol.FormList, Spelling: "readonly string[]", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text},
+				},
+				want: "golang: a read-only list has no Go spelling",
+			},
+			{
+				name: "returns an error for an immutable array",
+				give: rules.TypeShape{
+					Form: symbol.FormArray, Spelling: "readonly [number, number]", Length: 2,
+					Mutability: symbol.MutabilityImmutable, Elems: []rules.TypeShape{number},
+				},
+				want: "golang: a read-only array has no Go spelling",
+			},
+			{
+				name: "returns an error for an immutable map",
+				give: rules.TypeShape{
+					Form: symbol.FormMap, Spelling: "ReadonlyMap", Mutability: symbol.MutabilityImmutable,
+					Elems: []rules.TypeShape{text, number},
+				},
+				want: "golang: a read-only map has no Go spelling",
+			},
+			{
 				name: "returns an error for an optional of two children",
 				give: rules.TypeShape{Form: symbol.FormOptional, Spelling: "?", Elems: []rules.TypeShape{text, text}},
 				want: "golang: an optional takes one child, and the shape has 2",
@@ -479,7 +503,7 @@ func TestType(t *testing.T) {
 			{
 				name: "returns an error for a map of one child",
 				give: rules.TypeShape{Form: symbol.FormMap, Spelling: "Record<string>", Elems: []rules.TypeShape{text}},
-				want: "golang: a map takes two children, a key and a value, and the shape has 1",
+				want: "golang: a map takes two children, and the shape has 1",
 			},
 			{
 				name: "returns an error for a function type of more parameters than children",

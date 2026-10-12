@@ -40,22 +40,17 @@ const (
 	foreignContext = "example.test/context"
 )
 
-// rulesAllocs is one projection pass over the fixture tree: 189 at the
-// default benchtime. A memory profile attributes 96 to TypeOf, 43 to
-// SamplesOf, 17 to CallableOf, 16 to MembersOf and 3 to the fresh view
+// rulesAllocs is one projection pass over the fixture tree: 194 at the
+// default benchtime. A memory profile attributes 98 to TypeOf, 44 to
+// SamplesOf, 17 to CallableOf, 17 to MembersOf and 3 to the fresh view
 // and its binding, and it samples the tiny allocations of the rest only
 // in part. The 2 more are for the runtime's own allocations in a run of
 // one iteration: 300 fresh processes counted 0 or 1.
-const rulesAllocs = 189 + 2
+const rulesAllocs = 194 + 2
 
-// The allocations of a signature's classification and a derived name.
-const (
-	// returnRolesAllocs is the list of the returns' roles.
-	returnRolesAllocs = 1
-	// typeNameAllocs is a derived name: the word in Pascal case, and the
-	// word joined onto the base.
-	typeNameAllocs = 2
-)
+// returnRolesAllocs is the classification of a signature: the list of the
+// roles of its returns.
+const returnRolesAllocs = 1
 
 // allocCall is one call that an allocation test and a benchmark share:
 // the method it calls, which names its benchmark, the case it measures
@@ -73,7 +68,7 @@ type allocCall struct {
 	bench    func(b *testing.B)
 }
 
-// fixture loads the tree and hands out a view over it.
+// fixture is a loaded tree with a tracked view over it.
 type fixture struct {
 	*rulestest.Fixture
 	view   rules.View
@@ -97,10 +92,10 @@ func viewOver(tb assert.TB, f *rulestest.Fixture, in symbol.Identity, path strin
 
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
-	assert.NoError(tb, err, "the sealed graph hands out a reader")
+	assert.NoError(tb, err, "the sealed graph returns a reader")
 	fx := &fixture{
 		Fixture: f, reader: reader, reads: reads,
-		view: rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys},
+		view: rules.NewView(reader, f.Facts, reads, f.Keys),
 	}
 	pkg, held := f.Graph.PackageOf(in)
 	assert.True(tb, held, "the package of "+in.String()+" loaded")
@@ -113,7 +108,7 @@ func viewOver(tb assert.TB, f *rulestest.Fixture, in symbol.Identity, path strin
 	return fx
 }
 
-// bound returns the Go rules bound over the fixture's view.
+// bound returns the Go rules bound over the view of the fixture.
 func (f *fixture) bound() rules.Bound { return rules.NewBound(gorules.New(), f.view, nil) }
 
 // decl looks a declaration up by identity.
@@ -141,14 +136,14 @@ func (f *fixture) scope(subject symbol.Identity) rules.Scope {
 	return rules.Scope{Subject: subject, File: f.file}
 }
 
-// constKey returns the handle the fixture's constant values stamp
-// under.
+// constKey returns the handle under which the fixture stamps its constant
+// values.
 func (f *fixture) constKey() (meta.Key[string], bool) {
 	return meta.Lookup[string](f.Facts.Registry(), golang.ConstValueKey)
 }
 
-// The rules value classifies a signature and a member walk for the
-// kernel. Each classification is pinned.
+// TestRules pins each classification of a signature and of a member walk
+// that the rules return to the kernel.
 func TestRules(t *testing.T) {
 	t.Parallel()
 
@@ -339,33 +334,11 @@ func TestRules(t *testing.T) {
 			assert.Equal(t, roles, []rules.ReturnRole{rules.ReturnValue, rules.ReturnValue}, "nothing to read")
 		})
 	})
-
-	t.Run("TypeName", func(t *testing.T) {
-		t.Parallel()
-
-		tests := []struct {
-			name string
-			word string
-			base string
-			want string
-		}{
-			{name: "keeps an exported base exported", word: "check", base: "Row", want: "CheckRow"},
-			{name: "keeps an unexported base unexported", word: "check", base: "row", want: "checkRow"},
-			{name: "keeps an initialism's shape", word: "mock", base: "HTTPClient", want: "MockHTTPClient"},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				assert.Equal(t, gorules.New().TypeName(tt.word, tt.base), tt.want, "the joined name")
-			})
-		}
-	})
 }
 
-// The rules value, its classifications and a derived name allocate
-// only the list of roles and the name. The ordinary run, which runs no
-// benchmark, checks those ceilings here.
+// The rules value and its classifications allocate only the list of
+// roles. The ordinary run, which runs no benchmark, checks those ceilings
+// here.
 func TestRulesAllocs(t *testing.T) {
 	checkAllocs(t, rulesCalls())
 }
@@ -395,7 +368,6 @@ func rulesCalls() []allocCall {
 		policy rules.MemberPolicy
 		role   rules.ParamRole
 		roles  []rules.ReturnRole
-		name   string
 	)
 	return []allocCall{
 		{
@@ -431,12 +403,6 @@ func rulesCalls() []allocCall {
 				assert.Equal(tb, roles, []rules.ReturnRole{rules.ReturnValue, rules.ReturnError},
 					"ReturnRoles classifies the value and the error")
 			},
-		},
-		{
-			name:   "TypeName",
-			allocs: typeNameAllocs,
-			call:   func() { name = r.TypeName("check", "Row") },
-			check:  func(tb assert.TB) { assert.Equal(tb, name, "CheckRow", "TypeName joins the word onto the base") },
 		},
 	}
 }
@@ -608,6 +574,12 @@ type Tagged struct {
 
 // Uncomparable has a slice field.
 type Uncomparable struct{ Items []int }
+
+// Hooked's first exported field has no literal, and its second has one.
+type Hooked struct {
+	OnDone func()
+	Name   string
+}
 
 // The callables.
 func Load(ctx context.Context, id int) (*Row, error) { return nil, nil }

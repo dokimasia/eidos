@@ -5,11 +5,8 @@ package rules
 
 import (
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	golang "go.dokimi.dev/eidos/lang/go"
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -23,11 +20,6 @@ const (
 	contextPackage = "context"
 	contextName    = "Context"
 )
-
-// aliasDepth is the longest chain of transparent aliases that the
-// signature rules follow. Go refuses a cycle of aliases, so the bound
-// only ends a walk over a damaged graph.
-const aliasDepth = 8
 
 // The types a signature's parameters and returns classify by.
 var (
@@ -83,7 +75,7 @@ func (Rules) Members() rules.MemberPolicy {
 // aliased import of context classifies too, and so does a transparent
 // alias of context.Context that the view declares. It allocates nothing.
 func (Rules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
-	if p != nil && p.Type != nil && nameOf(unaliased(p.Type, v)) == contextType {
+	if p != nil && p.Type != nil && nameOf(rules.Unaliased(p.Type, v)) == contextType {
 		return rules.ParamContext
 	}
 	return rules.ParamInput
@@ -104,7 +96,7 @@ func (Rules) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, r
 		if r == nil || r.Type == nil {
 			continue
 		}
-		switch t := nameOf(unaliased(r.Type, v)); {
+		switch t := nameOf(rules.Unaliased(r.Type, v)); {
 		case i == len(rs)-1 && t == errorType:
 			roles[i] = rules.ReturnError
 			model = rules.ErrorsLastReturn
@@ -117,38 +109,6 @@ func (Rules) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, r
 	return roles, model
 }
 
-// TypeName joins a generator's word onto an author's name the way
-// Go spells a derived type: PascalCase, keeping the base's export
-// by its first rune, so "check" on Row is CheckRow and on row is
-// checkRow. It allocates the word's case conversion and the joined
-// name, two allocations, and one more where an unexported base
-// converts.
-func (Rules) TypeName(word, base string) string {
-	if exported(base) {
-		return naming.Pascal(word) + base
-	}
-	return naming.Camel(word) + naming.Pascal(base)
-}
-
-// unaliased returns the target of a transparent alias, after it follows a
-// chain of aliases that the view declares, and the reference itself for
-// any other. A defined type is a type of its own, so the walk stops at
-// one. It reads each alias through the view, and allocates nothing.
-func unaliased(ref *node.TypeRef, v rules.View) *node.TypeRef {
-	for range aliasDepth {
-		if ref.Target.Kind != symbol.KindAlias {
-			return ref
-		}
-		sym, _ := v.Lookup(ref.Target)
-		alias, isAlias := sym.(*node.Alias)
-		if !isAlias || alias.Defined || alias.Target == nil {
-			return ref
-		}
-		ref = alias.Target
-	}
-	return ref
-}
-
 // named returns the spelling a reference names, its whitespace
 // trimmed.
 func named(ref *node.TypeRef) string {
@@ -156,11 +116,4 @@ func named(ref *node.TypeRef) string {
 		return ""
 	}
 	return strings.TrimSpace(ref.Spelling)
-}
-
-// exported reports Go's visibility rule for a name: an upper-case
-// first rune exports.
-func exported(name string) bool {
-	r, _ := utf8.DecodeRuneInString(name)
-	return unicode.IsUpper(r)
 }

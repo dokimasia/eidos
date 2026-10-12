@@ -64,11 +64,33 @@ func TestImportPath(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Standard", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "reports true for a path of one element", give: "fmt", want: true},
+			{name: "reports true for a nested path of the standard library", give: "net/http", want: true},
+			{name: "reports false for a module path", give: acmeModule + "/store", want: false},
+			{name: "reports false for a module root of one element with a dot", give: "gopkg.in", want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, golang.Standard(tt.give), tt.want, "the go command's rule for "+tt.give)
+			})
+		}
+	})
 }
 
 // ImportPath returns a module's root without allocating, and allocates
-// the joined path of a directory below it. The ordinary run, which
-// runs no benchmark, checks those ceilings here.
+// the joined path of a directory below it. Standard allocates nothing.
+// The ordinary run, which runs no benchmark, checks those ceilings here.
 func TestImportPathAllocs(t *testing.T) {
 	var got string
 	assert.MaxAllocs(t, func() { got = golang.ImportPath(acmeModule, "svc", "svc") }, 0,
@@ -77,10 +99,14 @@ func TestImportPathAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = golang.ImportPath(acmeModule, "svc", "svc/store") }, joinedAllocs,
 		"ImportPath allocates the joined path")
 	assert.Equal(t, got, acmeModule+"/store", "ImportPath joins the path")
+	var standard bool
+	assert.MaxAllocs(t, func() { standard = golang.Standard(acmeModule) }, 0, "Standard allocates nothing")
+	assert.False(t, standard, "Standard reports false for a module path")
 }
 
 // BenchmarkImportPath measures the import path the frontend and the
-// backends derive once per directory.
+// backends derive once per directory, and the test of the standard
+// library that they make once per import.
 func BenchmarkImportPath(b *testing.B) {
 	paths := []struct {
 		name   string
@@ -108,5 +134,14 @@ func BenchmarkImportPath(b *testing.B) {
 				assert.Equal(b, got, tt.want, "ImportPath returns the import path")
 			})
 		}
+	})
+	b.Run("Standard", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = golang.Standard(acmeModule)
+		}
+		assert.False(b, got, "Standard reports false for a module path")
 	})
 }

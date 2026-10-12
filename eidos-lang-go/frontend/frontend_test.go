@@ -22,27 +22,28 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The signature root, its package and its one unexported
-// declaration, which a signature-only load drops.
+// The signature root, its package and its one unexported declaration,
+// which a signature-only load drops.
 const (
 	depRoot    = "dep"
 	depPackage = "example.test/fix/dep"
 	hiddenName = "hidden"
 )
 
-// unparsedCode pins the code a syntax error reports under: the
-// satellite's prefix, golang.CodePrefix, and the first number.
+// unparsedCode is the spelling of the code of a syntax error: the prefix
+// of the satellite, golang.CodePrefix, and number 1.
 const unparsedCode = "GOLANG-0001"
 
-// newAllocs is the frontend New returns for nil options: the empty
-// options, the frontend's state and its three hooks, the syntax's two,
-// and the kit's five, its list of key registrations included.
-const newAllocs = 1 + 1 + 3 + 2 + 5
+// newAllocs is the cost of New for nil options: the empty options, the
+// state of the frontend and its three hooks, the classifier of test files,
+// two allocations of the syntax, and five of the kit with its list of key
+// registrations.
+const newAllocs = 1 + 1 + 3 + 1 + 2 + 5
 
-// allocCall is one call that an allocation test and a benchmark share:
-// the method it calls, which names its benchmark, the case it measures
-// where the method has more than one call, its allocation ceiling, the
-// call, and the check of the result the call leaves.
+// allocCall is one call that an allocation test and a benchmark share: the
+// method that it calls, which is the name of its benchmark, the case that
+// it measures where the method has more than one call, its allocation
+// ceiling, the call, and the check of the result of the call.
 type allocCall struct {
 	name     string
 	caseName string
@@ -51,16 +52,16 @@ type allocCall struct {
 	check    func(tb testing.TB)
 }
 
-// treeReader is the partition's recorded door over a test tree.
+// treeReader is the recorded door of the partition over a test tree.
 type treeReader struct {
 	tree fstest.MapFS
 }
 
-// Read returns one file's bytes.
+// Read returns the bytes of one file.
 func (r treeReader) Read(path string) ([]byte, error) { return r.tree.ReadFile(path) }
 
-// The frontend runs the conformance suite every frontend runs, over
-// real Go source.
+// The frontend runs the conformance suite of every frontend over real Go
+// source.
 func TestFrontend(t *testing.T) {
 	t.Parallel()
 
@@ -122,7 +123,7 @@ func TestFrontend(t *testing.T) {
 			f := frontend.New(nil)
 			u := unitOf(t, f, goTree(), "bad/oops.go")
 			assert.NoError(t, f.Parse(t.Context(), u),
-				"a syntax error is the source's problem, not the load's")
+				"a syntax error is a problem of the source, not of the load")
 		})
 
 		t.Run("returns a frontend that reports a syntax error as GOLANG-0001", func(t *testing.T) {
@@ -130,7 +131,8 @@ func TestFrontend(t *testing.T) {
 
 			_, found := parsedFindings(t, nil, plugin.DepthFull, "package bad\n\nfunc ({ nope\n")
 			assert.NotEmpty(t, found, "the syntax error reports")
-			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
+			assert.Equal(t, found[0].Code.String(), unparsedCode,
+				"the code has the prefix of the satellite and number 1")
 		})
 
 		t.Run("returns a frontend whose language cannot overload", func(t *testing.T) {
@@ -139,16 +141,26 @@ func TestFrontend(t *testing.T) {
 			assert.False(t, frontend.New(nil).Overloads(), "Go declares each function and method once by name")
 		})
 
-		t.Run("returns the frontend's own version", func(t *testing.T) {
+		t.Run("returns the version of the frontend", func(t *testing.T) {
 			t.Parallel()
 
 			v, versioned := frontend.New(nil).(plugin.Versioned)
 			assert.True(t, versioned, "the frontend states a version")
 			assert.Equal(t, v.Version(), golang.FrontendVersion,
-				"the version is the frontend's, so a graph change bumps what the unit keys fold")
+				"the version belongs to the frontend, so a graph change bumps what the unit keys fold")
 		})
 
-		t.Run("returns a frontend whose folded method resolves through its own file's imports", func(t *testing.T) {
+		t.Run("returns a frontend that stamps golang.testFile on a test file", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontend.New(nil)
+			u := unitOf(t, f, goTree(), "store/row_test.go")
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
+			assert.Equal(t, stampsOf(u.Graph(), string(golang.TestFileKey)), []any{true},
+				"row_test.go has the stamp, and row.go does not")
+		})
+
+		t.Run("returns a frontend whose folded method resolves through the imports of its file", func(t *testing.T) {
 			t.Parallel()
 
 			fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
@@ -189,14 +201,14 @@ func TestFrontend(t *testing.T) {
 	})
 }
 
-// The construction allocates the frontend the kit builds. The ordinary
-// run, which runs no benchmark, checks that ceiling here.
+// The construction allocates the frontend that the kit builds. The
+// ordinary run, which runs no benchmark, checks that ceiling here.
 func TestFrontendAllocs(t *testing.T) {
 	checkAllocs(t, frontendCalls())
 }
 
-// BenchmarkFrontend measures the construction a composition makes once
-// per load.
+// BenchmarkFrontend measures the construction that a composition makes
+// once per load.
 func BenchmarkFrontend(b *testing.B) {
 	benchCalls(b, frontendCalls())
 }
@@ -217,8 +229,8 @@ func frontendCalls() []allocCall {
 	}
 }
 
-// checkAllocs checks the ceiling of every call in the ordinary run, and
-// the result each call leaves.
+// checkAllocs checks the ceiling of every call in the ordinary run, and the
+// result of each call.
 func checkAllocs(t *testing.T, calls []allocCall) {
 	t.Helper()
 
@@ -232,9 +244,9 @@ func checkAllocs(t *testing.T, calls []allocCall) {
 	}
 }
 
-// benchCalls measures every call under the bench contract at its
-// ceiling: one sub-benchmark for each method, in the order the methods
-// first appear, and inside it one for each case of a method with cases.
+// benchCalls measures every call under the bench contract at its ceiling:
+// one sub-benchmark for each method, in the order of the first call of
+// each method, and inside it one for each case of a method with cases.
 func benchCalls(b *testing.B, calls []allocCall) {
 	b.Helper()
 
@@ -260,9 +272,9 @@ func benchCalls(b *testing.B, calls []allocCall) {
 	}
 }
 
-// benchCall measures one call under the bench contract at its ceiling,
-// and checks the result the last call leaves. The contract warms up with
-// one call, so what the first call initialises stays out of the count.
+// benchCall measures one call under the bench contract at its ceiling, and
+// checks the result of the last call. The contract warms up with one call,
+// so the count leaves out what the first call initialises.
 func benchCall(b *testing.B, tt allocCall) {
 	b.Helper()
 
@@ -274,8 +286,8 @@ func benchCall(b *testing.B, tt allocCall) {
 	tt.check(b)
 }
 
-// goTree is the whole-contract fixture: a module root, two
-// packages, a cross-package reference, a carrier, a test file, a
+// goTree is the whole-contract fixture: a module root, two packages, a
+// reference from one package to the other, a carrier, a test file, a
 // signature root and a file that does not parse.
 func goTree() fstest.MapFS {
 	return fstest.MapFS{
@@ -299,10 +311,14 @@ func goTree() fstest.MapFS {
 	}
 }
 
-// setup is the suite's entry over the whole-contract fixture.
+// setup is the entry of the suite over the whole-contract fixture.
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	return frontend.New(nil), &frontendtest.Fixture{
-		Sources:    goTree(),
+		Sources: goTree(),
+		Empty: fstest.MapFS{
+			"go.mod":         {Data: []byte("module example.test/fix\n")},
+			"empty/empty.go": {Data: []byte("package empty\n")},
+		},
 		Signatures: []string{depRoot},
 		Dropped: []symbol.Identity{
 			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},
@@ -311,8 +327,8 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	}
 }
 
-// unitOf partitions a tree and returns the unit with one file,
-// reading carriers under the suite's brand.
+// unitOf partitions a tree and returns the unit with one file, which reads
+// carriers under the brand of the suite.
 func unitOf(
 	tb testing.TB, f plugin.Frontend, tree fstest.MapFS, member string,
 ) *plugin.SourceUnit {

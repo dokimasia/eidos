@@ -8,14 +8,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// resolve returns what a spelling could mean in one file: the
-// candidates the file's [golang.Scope] probes, as one tier, because
-// Go refuses to compile a file in which two of them declare the name
-// and the resolution step reports that case as an ambiguity. A file
-// whose parse recorded no scope probes its own package alone.
+// resolve returns the candidates of a spelling in one file as one tier.
+// The candidates are the declarations that the [golang.Bindings] of the
+// file probe. Go refuses to compile a file in which two of them declare
+// the name, and the resolution step reports that case as an ambiguity.
+// A file whose parse recorded no bindings probes its own package alone.
 func resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
-	s, _ := scope.Bindings.(golang.Scope)
-	tier := s.Candidates(scope.File.Package, spelling)
+	b, _ := scope.Bindings.(golang.Bindings)
+	tier := b.Candidates(scope.File.Package, spelling)
 	if len(tier) == 0 {
 		return nil
 	}

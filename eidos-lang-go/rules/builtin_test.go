@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -177,6 +178,51 @@ func TestBuiltin(t *testing.T) {
 			f := loaded(t)
 			s := f.bound().TypeOf(composite("[]byte", symbol.FormList, builtin("byte")))
 			assert.Equal(t, s.Form, symbol.FormBytes, "the one rule beyond structure applies to Go's spelling")
+		})
+	})
+
+	t.Run("WellKnown", func(t *testing.T) {
+		t.Parallel()
+
+		known, is := gorules.New().(rules.WellKnownRules)
+		assert.True(t, is, "the Go rules bless the well-known types of the standard library")
+
+		tests := []struct {
+			name     string
+			giveName string
+			wantID   symbol.Identity
+			wantOK   bool
+		}{
+			{
+				name:     "blesses Time of the package time as the timestamp",
+				giveName: "Time",
+				wantID:   rules.WellKnownTimestamp,
+				wantOK:   true,
+			},
+			{
+				name:     "blesses Duration of the package time as the duration",
+				giveName: "Duration",
+				wantID:   rules.WellKnownDuration,
+				wantOK:   true,
+			},
+			{name: "reports false for another declaration of the package time", giveName: "Month"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				give := symbol.Identity{Package: timePath, Name: tt.giveName, Kind: symbol.KindStruct}
+				id, ok := known.WellKnown(give)
+				expect.Equal(t, ok, tt.wantOK, "WellKnown reports whether the registry blesses the declaration")
+				expect.Equal(t, id, tt.wantID, "WellKnown returns the well-known identity")
+			})
+		}
+
+		t.Run("reports false for Time of another package", func(t *testing.T) {
+			t.Parallel()
+
+			_, ok := known.WellKnown(symbol.Identity{Package: foreignTime, Name: "Time", Kind: symbol.KindStruct})
+			assert.False(t, ok, "the import path decides, and the name alone does not")
 		})
 	})
 }

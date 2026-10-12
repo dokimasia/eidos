@@ -18,13 +18,13 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// deriveDepth bounds a derivation through self-referential types:
-// a struct with a pointer to itself derives its field's value
-// this many levels down and refuses past it.
+// deriveDepth bounds a derivation through self-referential types. A
+// struct with a pointer to itself derives the value of its field this
+// many levels down, and refuses below that.
 const deriveDepth = 8
 
-// The fixed pairs the builtin table derives, and the hint a string
-// takes where the caller names nothing.
+// The fixed pairs that the builtin table derives, and the hint of a
+// string where the caller passes none.
 const (
 	sampleInt        = "42"
 	alternateInt     = "7"
@@ -43,42 +43,48 @@ const (
 	stringQuote = `"`
 )
 
-// Go's keyword literals: the absent value and the two truth values.
+// The keyword literals of Go. They are the absent value and the two
+// truth values.
 const (
 	nilSpelling   = "nil"
 	trueSpelling  = "true"
 	falseSpelling = "false"
 )
 
-// platformWidth is the width a platform-sized number states: none,
-// and a float of it writes at float64's precision.
+// platformWidth is the width of a platform-sized number, which has none.
+// A float of that width writes at the precision of float64.
 const platformWidth = 0
 
-// SamplesOf derives a type's two distinguishable values: a builtin's
-// pair from the fixed table, a defined type's as a conversion of
-// its underlying type's, a struct's as a composite setting its
-// first settable exported field, a slice's and an array's as a
-// one-element composite differing in the element, a map's as a
-// one-entry composite differing in the key, a pointer's as the
-// address of its inner composite, time.Time as a call and
-// time.Duration as a conversion. A number states the width of its
-// builtin. An interface, a function type, a channel, an inline body,
-// a predeclared type without a literal and a pointer to anything but
-// a composite refuse with no literal, because Go takes the address
-// of a composite literal alone. A named type outside the view
-// refuses as unresolved.
+// DeriveSamples derives the two distinguishable values of a type:
+//   - the pair of a builtin from the fixed table
+//   - the pair of a defined type as a conversion of the pair of its
+//     underlying type
+//   - the pair of a struct as a composite that sets its first exported
+//     field whose pair derives
+//   - the pair of a slice or an array as a one-element composite that
+//     differs in the element
+//   - the pair of a map as a one-entry composite that differs in the key
+//   - the pair of a pointer as the address of its inner composite
+//   - time.Time as a call, and time.Duration as a conversion
 //
-// A slice's and an array's element, a map's key and value, and a
-// struct's field take the values an author stated for them first,
-// read through [rules.View.Authored]. The derivation completes each
-// half no author stated.
+// A number states the width of its builtin. An interface, a function
+// type, a channel, an inline body, a predeclared type without a literal
+// and a pointer to anything but a composite refuse with no literal,
+// because Go takes the address of a composite literal alone. A named type
+// outside the view refuses as unresolved.
+//
+// The element of a slice or an array, the key and the value of a map, and
+// the field of a struct take the values that an author stated for them
+// first, which [rules.View.Authored] reads. The derivation completes each
+// half that no author stated.
 //
 // # Allocation contract
 //
-// A builtin's pair allocates nothing beyond a string's hinted text. A
-// composite's pair allocates the reference to its type and each
-// composite's list, and a conversion its wrapped value.
-func (r Rules) SamplesOf(
+// The pair of a builtin allocates nothing beyond the hinted text of a
+// string. The pair of a composite allocates the reference to its type and
+// the list of each composite, and a conversion allocates its wrapped
+// value.
+func (r Rules) DeriveSamples(
 	ref *node.TypeRef,
 	hint string,
 	v rules.View,
@@ -86,7 +92,7 @@ func (r Rules) SamplesOf(
 	return r.derive(ref, hint, v, 0)
 }
 
-// derive is [Rules.SamplesOf] with the depth walked so far.
+// derive is [Rules.DeriveSamples] with the depth walked so far.
 func (r Rules) derive(
 	ref *node.TypeRef,
 	hint string,
@@ -126,10 +132,10 @@ func (r Rules) derive(
 	}
 }
 
-// partPair returns the pair of one part of a composite: the values
-// an author stated on the declaration that has the part and on its
-// type, and the derivation for each half no author stated. A list
-// element and a map's key and value have no declaration of their
+// partPair returns the pair of one part of a composite. It takes the
+// values that an author stated on the declaration that has the part and
+// on its type, and derives each half that no author stated. A list
+// element and the key and the value of a map have no declaration of their
 // own, so subject is zero for them.
 func (r Rules) partPair(
 	subject symbol.Identity,
@@ -159,21 +165,26 @@ func (r Rules) declaredPair(
 	}
 	switch d := sym.(type) {
 	case *node.Struct:
+		// Without an exported field, every value of the type is one
+		// value, and a check needs two. Where no field derives, the
+		// refusal of the first field is the reason.
+		why, refused := rules.RefusedNoLiteral, false
 		for _, f := range d.Fields {
-			if f == nil || f.Type == nil || !exported(f.Name) {
+			if f == nil || f.Type == nil || !token.IsExported(f.Name) {
 				continue
 			}
 			sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1)
 			if !sample.OK() || !alternate.OK() {
-				return rules.RefusedPair(rules.FirstRefusal(sample, alternate))
+				if !refused {
+					why, refused = rules.FirstRefusal(sample, alternate), true
+				}
+				continue
 			}
 			t := rules.EmitRef(ref)
 			return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
 				rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
 		}
-		// No settable exported field: every value of the type is
-		// one value, and a check needs two.
-		return rules.RefusedPair(rules.RefusedNoLiteral)
+		return rules.RefusedPair(why)
 	case *node.Alias:
 		if d.Target == nil {
 			return rules.RefusedPair(rules.RefusedNoLiteral)
@@ -196,13 +207,13 @@ func (r Rules) declaredPair(
 	}
 }
 
-// builtinPair derives the pair of a spelling the resolution step
-// left without a target, through the builtin table: a number's pair
-// at the builtin's width, small for byte and rune, a boolean's, a
-// string's with the hint, time.Time's as a call and
-// time.Duration's as a conversion. A predeclared type the table
-// places nowhere refuses with no literal, and any other spelling
-// refuses as unresolved.
+// builtinPair derives the pair of a spelling that the resolution step
+// left without a target, through the builtin table. A number has a pair
+// at the width of its builtin, with small values for byte and rune. A
+// boolean, a string with the hint, time.Time as a call and time.Duration
+// as a conversion have pairs too. A predeclared type that the table does
+// not place refuses with no literal, and any other spelling refuses as
+// unresolved.
 func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.Sample) {
 	shape := r.Builtin(ref, rules.View{})
 	switch shape.Form {
@@ -249,20 +260,15 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 	return rules.RefusedPair(rules.RefusedUnresolved)
 }
 
-// twoVariantValues returns the exact values of an enumeration's
-// first two variants, where the frontend stamped both and they
-// differ.
-func (r Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Value, bool) {
-	key, held := r.constKey(v)
-	if !held {
-		return emit.Value{}, emit.Value{}, false
-	}
+// twoVariantValues returns the exact values of the first two variants of
+// an enumeration, where the frontend stamped both and they differ.
+func (Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Value, bool) {
 	var texts []string
 	for _, variant := range e.Variants {
 		if variant == nil {
 			continue
 		}
-		if text, stamped := rules.Fact(v, variant.ID, key); stamped &&
+		if text, stamped := rules.Fact(v, variant.ID, constValue); stamped &&
 			!slices.Contains(texts, text) {
 
 			texts = append(texts, text)
@@ -274,20 +280,16 @@ func (r Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Va
 	return emit.Value{}, emit.Value{}, false
 }
 
-// enumZero returns the zero of an enumeration's underlying type,
-// read off the first variant value the frontend stamped: the empty
-// string where that value is a string, zero where it is a number,
-// and false where no variant has a stamped value.
-func (r Rules) enumZero(e *node.Enum, v rules.View) (emit.Value, bool) {
-	key, held := r.constKey(v)
-	if !held {
-		return emit.Value{}, false
-	}
+// enumZero returns the zero of the underlying type of an enumeration. It
+// reads the first variant value that the frontend stamped, and returns
+// the empty string where that value is a string and zero where it is a
+// number. It reports false where no variant has a stamped value.
+func (Rules) enumZero(e *node.Enum, v rules.View) (emit.Value, bool) {
 	for _, variant := range e.Variants {
 		if variant == nil {
 			continue
 		}
-		text, stamped := rules.Fact(v, variant.ID, key)
+		text, stamped := rules.Fact(v, variant.ID, constValue)
 		if !stamped {
 			continue
 		}
@@ -299,15 +301,17 @@ func (r Rules) enumZero(e *node.Enum, v rules.View) (emit.Value, bool) {
 	return emit.Value{}, false
 }
 
-// ZeroValue returns the zero value of a type as Go spells it: nil
-// for a pointer, a slice, a map, a function, a channel, an interface
-// and unsafe.Pointer, an empty composite for a struct and an array,
-// the builtin zeros at the builtin's width, a conversion of the
-// underlying zero for a defined type and for an enumeration whose
-// variants' values name its underlying type, and false for a
-// spelling the rules cannot place. A builtin's zero allocates nothing,
-// and a composite or a conversion allocates the reference to its type
-// and its wrapped value.
+// ZeroValue returns the zero value of a type as Go spells it:
+//   - nil for a pointer, a slice, a map, a function, a channel, an
+//     interface and unsafe.Pointer
+//   - an empty composite for a struct and an array
+//   - the builtin zeros at the width of the builtin
+//   - a conversion of the underlying zero for a defined type, and for an
+//     enumeration whose variant values have its underlying type
+//
+// It reports false for a spelling that the rules cannot place. The zero
+// of a builtin allocates nothing, and a composite or a conversion
+// allocates the reference to its type and its wrapped value.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	if ref == nil {
 		return emit.Value{}, false
@@ -353,7 +357,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	}
 }
 
-// builtinZero returns the zero value of a spelling the resolution
+// builtinZero returns the zero value of a spelling that the resolution
 // step left without a target, through the builtin table.
 func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 	shape := r.Builtin(ref, rules.View{})
@@ -386,23 +390,27 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 }
 
 // LiteralFor lifts a Go literal into the value tree, typed by the
-// reference: nil, the two booleans, an integer in any base Go reads,
-// a float, a rune as its integer value, and a quoted or raw string.
-// Go's own scanner reads the text, and the value is written back as
-// canonical decimal text, which every target reads alike. Where the
-// reference names a builtin, directly or through aliases in the
-// view, the value must be one of the builtin: an integer type takes
-// an integral value inside its width, a float type a finite value
-// inside its width, bool a truth value and string a string, and a
-// number states the builtin's width. A value type takes no nil. Any
-// other text is no literal. The file plays no part, because a Go
-// literal reads the same in every scope.
+// reference. A literal is nil, one of the two booleans, an integer in any
+// base that Go reads, a float, a rune as its integer value, or a quoted
+// or raw string. The scanner of Go reads the text, and LiteralFor writes
+// the value back as canonical decimal text, which every target reads
+// alike.
+//
+// Where the reference is a builtin, directly or through aliases in the
+// view, the value must be a value of the builtin:
+//   - An integer type takes an integral value inside its width.
+//   - A float type takes a finite value inside its width.
+//   - bool takes a truth value, and string takes a string.
+//   - A number states the width of the builtin.
+//
+// A value type takes no nil. Any other text is no literal. The file has
+// no effect, because a Go literal reads the same in every scope.
 //
 // # Allocation contract
 //
-// LiteralFor allocates Go's scanner state, the file set and the file,
-// the lists of the tokens it scans, the constant and the canonical
-// text: six allocations for a decimal integer.
+// LiteralFor allocates the state of the scanner, the file set and the
+// file, the lists of the tokens that it scans, the constant and the
+// canonical text. A decimal integer costs six allocations.
 func (r Rules) LiteralFor(
 	_ *node.File,
 	ref *node.TypeRef,
@@ -416,15 +424,15 @@ func (r Rules) LiteralFor(
 	return lit.typed(r.literalShape(ref, v, 0))
 }
 
-// literal is one scanned Go literal: its constant value, and none
-// for nil.
+// literal is one scanned Go literal. value is its constant value, and nil
+// for the literal nil.
 type literal struct {
 	value constant.Value
 }
 
-// scanLiteral reads one Go literal: a keyword among nil, true and
-// false, a number behind at most one sign, a rune or a string. Text
-// with anything else, a comment included, is no literal.
+// scanLiteral reads one Go literal. A literal is one of the keywords nil,
+// true and false, a number after at most one sign, a rune or a string.
+// Text with anything else, a comment included, is no literal.
 func scanLiteral(text string) (literal, bool) {
 	src := []byte(text)
 	fset := token.NewFileSet()
@@ -438,7 +446,7 @@ func scanLiteral(text string) (literal, bool) {
 			break
 		}
 		if tok == token.SEMICOLON && lit == "\n" {
-			continue // the scanner's own line-end semicolon
+			continue // the semicolon that the scanner adds at a line end
 		}
 		toks = append(toks, tok)
 		lits = append(lits, lit)
@@ -524,11 +532,11 @@ func (l literal) typed(shape rules.TypeShape) (emit.Value, bool) {
 	}
 }
 
-// literalShape returns the shape a literal is typed against: a
-// builtin's through the table, a workspace alias's through its
-// target, and a structural reference's form. A reference the rules
-// cannot place, and no reference, return the zero shape, which types
-// nothing.
+// literalShape returns the shape against which a literal is typed. A
+// builtin has the shape of the table, a workspace alias has the shape of
+// its target, and a structural reference has its form. A reference that
+// the rules cannot place, and a nil reference, return the zero shape,
+// which types nothing.
 func (r Rules) literalShape(ref *node.TypeRef, v rules.View, depth int) rules.TypeShape {
 	switch {
 	case ref == nil || depth > deriveDepth:
@@ -560,12 +568,12 @@ func addressed(s rules.Sample) rules.Sample {
 	}
 }
 
-// converted returns the wrap converting a value to a type.
+// converted returns the wrap that converts a value to a type.
 func converted(t *emit.TypeRef) func(emit.Value) emit.Value {
 	return func(inner emit.Value) emit.Value { return emit.Conversion(t, inner) }
 }
 
-// elements returns the wrap placing one value as the one element of a
+// elements returns the wrap that places one value as the one element of a
 // slice or an array of a type.
 func elements(t *emit.TypeRef) func(emit.Value) emit.Value {
 	return func(inner emit.Value) emit.Value {
@@ -573,7 +581,7 @@ func elements(t *emit.TypeRef) func(emit.Value) emit.Value {
 	}
 }
 
-// child returns a structural reference's child, or nil.
+// child returns the child at index i of a structural reference, or nil.
 func child(ref *node.TypeRef, i int) *node.TypeRef {
 	if i < len(ref.Elems) {
 		return ref.Elems[i]

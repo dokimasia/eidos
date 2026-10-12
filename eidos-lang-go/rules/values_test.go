@@ -48,11 +48,13 @@ const (
 	colorType  = "Color"
 	modeType   = "Mode"
 	bareType   = "Bare"
+	hookedType = "Hooked"
 	readerType = "Reader"
 	ghostType  = "Ghost"
 	loopType   = "Loop"
 	idField    = "ID"
 	nextField  = "Next"
+	nameField  = "Name"
 )
 
 // The values the builtin table derives, pinned: the numbers, the
@@ -121,7 +123,7 @@ const (
 func TestValues(t *testing.T) {
 	t.Parallel()
 
-	t.Run("SamplesOf", func(t *testing.T) {
+	t.Run("DeriveSamples", func(t *testing.T) {
 		t.Parallel()
 
 		builtins := []struct {
@@ -336,6 +338,16 @@ func TestValues(t *testing.T) {
 				"a constructor in another package sets the exported field")
 		})
 
+		t.Run("returns a composite setting the next exported field where the first has no literal", func(t *testing.T) {
+			t.Parallel()
+
+			hooked := ref(fxPath, hookedType, symbol.KindStruct)
+			s, _ := pairOf(t, loaded(t), hooked, "")
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(hooked),
+				emit.NamedField(nameField, emit.Literal(emit.LiteralString, nameField+sampleSuffix))),
+				"a function field has no literal, so the string field sets the composite")
+		})
+
 		t.Run("returns a conversion of the underlying pair for a defined type", func(t *testing.T) {
 			t.Parallel()
 
@@ -379,7 +391,7 @@ func TestValues(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			sample, _ := gorules.New().SamplesOf(f.field(t, rowType, nextField).Type, "", f.view)
+			sample, _ := gorules.New().DeriveSamples(f.field(t, rowType, nextField).Type, "", f.view)
 			assert.True(t, sample.OK(), "Row's first field is ID, so the walk ends there")
 		})
 
@@ -814,7 +826,7 @@ func BenchmarkValues(b *testing.B) {
 func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
 	tb.Helper()
 
-	sample, alternate := gorules.New().SamplesOf(ref, hint, f.view)
+	sample, alternate := gorules.New().DeriveSamples(ref, hint, f.view)
 	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
 	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
 	return sample.Value, alternate.Value
@@ -822,7 +834,7 @@ func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Valu
 
 // refusalOf returns the refusal of a reference's sample.
 func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
-	sample, _ := gorules.New().SamplesOf(ref, "", f.view)
+	sample, _ := gorules.New().DeriveSamples(ref, "", f.view)
 	return sample.Refusal
 }
 
@@ -842,27 +854,27 @@ func valueCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "SamplesOf", caseName: "a scalar",
-			call:  func() { sample, _ = r.SamplesOf(scalar, "", f.view) },
-			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "SamplesOf returns 42") },
+			name: "DeriveSamples", caseName: "a scalar",
+			call:  func() { sample, _ = r.DeriveSamples(scalar, "", f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "DeriveSamples returns 42") },
 		},
 		{
-			name: "SamplesOf", caseName: "a struct", allocs: structSamplesAllocs,
-			call:  func() { sample, _ = r.SamplesOf(row, "", f.view) },
-			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives Row") },
+			name: "DeriveSamples", caseName: "a struct", allocs: structSamplesAllocs,
+			call:  func() { sample, _ = r.DeriveSamples(row, "", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "DeriveSamples derives Row") },
 		},
 		{
-			name: "SamplesOf", caseName: "a slice", allocs: sliceSamplesAllocs,
-			call: func() { sample, _ = r.SamplesOf(slice, tagHint, f.view) },
+			name: "DeriveSamples", caseName: "a slice", allocs: sliceSamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(slice, tagHint, f.view) },
 			check: func(tb assert.TB) {
-				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the slice")
+				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "DeriveSamples derives the slice")
 			},
 		},
 		{
-			name: "SamplesOf", caseName: "a map", allocs: mapSamplesAllocs,
-			call: func() { sample, _ = r.SamplesOf(m, keyHint, f.view) },
+			name: "DeriveSamples", caseName: "a map", allocs: mapSamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(m, keyHint, f.view) },
 			check: func(tb assert.TB) {
-				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the map")
+				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "DeriveSamples derives the map")
 			},
 		},
 		{

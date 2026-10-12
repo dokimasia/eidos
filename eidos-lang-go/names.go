@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/rules"
 )
 
 // The alias spellings of Go's two import forms that bind no
@@ -51,6 +52,57 @@ const (
 	// keywordSuffix closes the qualifier of a name that is a keyword.
 	keywordSuffix = "_"
 )
+
+// Numeric is the class and the width in bits of one of Go's predeclared
+// numeric types. A width of 0 is the platform's width.
+type Numeric struct {
+	Class rules.ScalarClass
+	Width int
+}
+
+// numericKinds lists the basic kinds of Go's predeclared numeric types
+// with their class and width, in the order that [NumericName] searches.
+// uintptr follows uint, so the platform's unsigned width is named uint.
+var numericKinds = [...]struct {
+	kind types.BasicKind
+	Numeric
+}{
+	{types.Int, Numeric{Class: rules.ScalarInt, Width: 0}},
+	{types.Int8, Numeric{Class: rules.ScalarInt, Width: 8}},
+	{types.Int16, Numeric{Class: rules.ScalarInt, Width: 16}},
+	{types.Int32, Numeric{Class: rules.ScalarInt, Width: 32}},
+	{types.Int64, Numeric{Class: rules.ScalarInt, Width: 64}},
+	{types.Uint, Numeric{Class: rules.ScalarUint, Width: 0}},
+	{types.Uint8, Numeric{Class: rules.ScalarUint, Width: 8}},
+	{types.Uint16, Numeric{Class: rules.ScalarUint, Width: 16}},
+	{types.Uint32, Numeric{Class: rules.ScalarUint, Width: 32}},
+	{types.Uint64, Numeric{Class: rules.ScalarUint, Width: 64}},
+	{types.Uintptr, Numeric{Class: rules.ScalarUint, Width: 0}},
+	{types.Float32, Numeric{Class: rules.ScalarFloat, Width: 32}},
+	{types.Float64, Numeric{Class: rules.ScalarFloat, Width: 64}},
+}
+
+// NumericOf returns the class and the width of a predeclared numeric
+// type, and false for any other name. byte and rune are the aliases of
+// uint8 and int32, and uintptr has the platform's width. The universe
+// scope of go/types decides which type a name denotes. NumericOf
+// allocates nothing.
+func NumericOf(name string) (Numeric, bool) {
+	tn, is := types.Universe.Lookup(name).(*types.TypeName)
+	if !is {
+		return Numeric{}, false
+	}
+	basic, is := tn.Type().(*types.Basic)
+	if !is {
+		return Numeric{}, false
+	}
+	for _, k := range numericKinds {
+		if k.kind == basic.Kind() {
+			return k.Numeric, true
+		}
+	}
+	return Numeric{}, false
+}
 
 // Predeclared reports whether a name is one of Go's predeclared
 // types: a type name of the universe scope, which no package
@@ -92,6 +144,19 @@ func basicInfo(name string) (types.BasicInfo, bool) {
 		return 0, false
 	}
 	return basic.Info(), true
+}
+
+// NumericName returns the name of the predeclared numeric type of n,
+// and false where Go declares none. An unsigned integer of 8 bits is
+// uint8 and a signed one of 32 bits is int32, so the aliases byte and
+// rune never return. NumericName allocates nothing.
+func NumericName(n Numeric) (string, bool) {
+	for _, k := range numericKinds {
+		if k.Numeric == n {
+			return types.Typ[k.kind].Name(), true
+		}
+	}
+	return "", false
 }
 
 // AssumedName returns the name an import path binds when the import

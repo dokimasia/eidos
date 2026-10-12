@@ -8,105 +8,105 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// FileTemplate is the Go file skeleton: the package clause, the
-// import block the file collected, then its declarations. gofmt
-// settles the blank lines, so the skeleton spells structure and
-// not layout. The generated-code marker is not here: the output
-// contract writes it after the formatter ran.
+// FileTemplate is the skeleton of a Go file. It renders the package
+// clause, the import block of the file and then its declarations. gofmt
+// decides the blank lines, so the skeleton renders structure and not
+// layout. The output contract writes the marker of generated code after
+// the formatter runs, so the template does not contain it.
 const FileTemplate = "package {{" + FuncPackage + " .Pkg}}\n" +
 	"\n{{" + render.BuiltinImports + "}}\n{{" + render.BuiltinDecls + "}}"
 
-// The kind templates, one per emit kind Go declares standalone.
-// A kind Go states inside its host, such as a field or a
-// parameter, is written by the host's template through the
-// vocabulary, never by a template of its own.
+// Each kind template renders one emit kind that Go declares at the top
+// level. The template of a host renders a kind that Go declares inside
+// the host, such as a field or a parameter, through the vocabulary. Such
+// a kind has no template of its own.
 const (
-	// StructTemplate spells a struct and its fields, its type
-	// parameters behind the name: embedded types first, the way Go
-	// promotes members, each under its own docblock and directives
-	// with its tag and trailing comment like a field, the embeds
-	// then the nominal parents, because embedding is Go's one idiom
-	// for both and the promotion gives the members without the
-	// subtyping. A stated Implements spells nothing: satisfaction
-	// is structural, and the methods themselves make the claim.
-	// Fields follow, each under its own docblock, with its tag in
-	// backquotes and its trailing comment where the declaration
-	// states them, and the type's own trailing comment closes the
-	// brace line. Member methods follow the type as package-level
-	// declarations, the receiver the lowering filled, because Go
-	// states a method outside the type it attaches to. The guard
-	// refuses what Go states nowhere before a byte renders.
+	// StructTemplate renders a struct and its fields, with its type
+	// parameters after the name. The embedded types come first, as Go
+	// promotes their members. Each embed has its own docblock and
+	// directives, and its tag and trailing comment as a field has them.
+	// The embeds precede the nominal parents, because Go expresses both
+	// by embedding, and the promotion gives the members without the
+	// subtyping. Implements renders nothing, because Go satisfies an
+	// interface structurally and the methods make the claim. The fields
+	// follow, each with its own docblock, its tag in backquotes and its
+	// trailing comment. The trailing comment of the type ends the line of
+	// the closing brace. The member methods follow the type as
+	// package-level declarations with the receiver that the lowering
+	// set, because Go declares a method outside its type. The guard
+	// refuses every fact that Go cannot express before the template
+	// renders a byte.
 	StructTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
-		"{{- range .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}\t{{spell .Ref}}" +
+		"{{- range embeds .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}\t{{spell .Ref}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
-		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{tag .}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{range .Methods.Items}}\n{{nested \"\" .}}\n{{end}}"
 
-	// InterfaceTemplate spells an interface and the methods it
-	// requires, its type parameters behind the name: embedded
-	// interfaces first, both the embeds and the nominal widening,
-	// because Go spells an interface's supertypes as embedding. An
-	// embed is written under its own docblock and directives with its
-	// trailing comment, as a struct's embed is, and its guard refuses
-	// a tag, which Go gives a struct field alone. Each method follows
-	// under its own docblock. An interface method states no body, no
-	// receiver and no type parameters, which Go refuses on interface
-	// methods, so it is a signature alone under its own guard.
+	// InterfaceTemplate renders an interface and its methods, with its
+	// type parameters after the name. The embedded interfaces come
+	// first, the embeds and then the extended interfaces, because Go
+	// expresses the supertypes of an interface by embedding. Each embed
+	// has its own docblock, directives and trailing comment, as the embed
+	// of a struct has them. Its guard refuses a tag, because only a struct
+	// field has a tag in Go. Each method follows with its own docblock. A
+	// Go interface method has no body, no receiver and no type
+	// parameters, so the template renders a signature alone, after its
+	// own guard.
 	InterfaceTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
-		"{{- range .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}{{embedguard .}}" +
+		"{{- range embeds .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}{{embedguard .}}" +
 		"\t{{spell .Ref}}{{with .Comment}} // {{.}}{{end}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{sigguard .}}" +
 		"\t{{.Name}}({{params .Params}}){{results .Returns}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
-	// FunctionTemplate spells a function, its type parameters
-	// behind the name, and places its body, under the guard. An empty
-	// body is the pair of braces on the signature's line.
+	// FunctionTemplate renders a function with its body, with its type
+	// parameters after the name, after the guard. An empty body is a pair
+	// of braces on the line of the signature.
 	FunctionTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}func {{.Name}}{{typeparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {{with body .}}{\n{{.}}}{{else}}{}{{end}}" +
 		"{{with .Comment}} // {{.}}{{end}}\n"
 
-	// MethodTemplate spells a method: Go states one at the package
-	// level with a receiver, never inside the type it attaches to.
-	// The method's own type parameters spell behind its name, the
-	// form Go accepts since 1.27; the receiver's spell inside the
-	// receiver's reference. An empty body is the pair of braces on
-	// the signature's line, as a sum's marker method is. The guard
-	// refuses what Go states nowhere.
+	// MethodTemplate renders a method at the package level with its
+	// receiver, because Go declares a method outside its type. The type
+	// parameters of the method follow its name, a form that Go accepts
+	// since Go 1.27. The type parameters of the receiver are in the
+	// reference of the receiver. An empty body is a pair of braces on the
+	// line of the signature, as in the marker method of a sum. The guard
+	// refuses every fact that Go cannot express.
 	MethodTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}func ({{receiver .}}) " +
 		"{{.Name}}{{typeparams .TypeParams}}({{params .Params}})" +
 		"{{results .Returns}} {{with body .}}{\n{{.}}}{{else}}{}{{end}}{{with .Comment}} // {{.}}{{end}}\n"
 
-	// AliasTemplate spells a type alias or a defined type, its
-	// type parameters behind the name, under the guard: the equals
-	// sign is the transparent alias's, and a defined type drops it,
-	// which is what makes its constants and methods its own.
+	// AliasTemplate renders a type alias or a defined type, with its type
+	// parameters after the name, after the guard. A transparent alias has
+	// the equals sign. A defined type has none, so its constants and
+	// methods belong to the defined type.
 	AliasTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} " +
 		"{{if not .Defined}}= {{end}}{{spell .Target}}{{with .Comment}} // {{.}}{{end}}\n"
 
-	// ConstantTemplate spells a constant, typed where the
-	// declaration states a type, its trailing comment beside the
-	// value where one is stated, under the guard.
+	// ConstantTemplate renders a constant after the guard. It writes the
+	// type where the declaration has one, and the trailing comment after
+	// the value.
 	ConstantTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}const {{.Name}}" +
 		"{{with .Type}} {{spell .}}{{end}} = {{.Value}}" +
 		"{{with .Comment}} // {{.}}{{end}}\n"
 
-	// VariableTemplate spells a variable, its initializer behind
-	// an equals sign and its trailing comment beside the type
-	// where the declaration states them, under the guard.
+	// VariableTemplate renders a variable after the guard. The
+	// initializer follows an equals sign, and the trailing comment
+	// follows the type or the initializer.
 	VariableTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}var {{.Name}}{{vartype .}}" +
 		"{{with .Value}} = {{.}}{{end}}{{with .Comment}} // {{.}}{{end}}\n"
 )
 
-// KindTemplates maps each emit kind to the template that spells
-// it. A file-level kind absent from the map is one the lowering
-// reshapes, as it does an enum and a sum. It builds the map on every
-// call, which the caller keeps: the map and its one group, two
-// allocations.
+// KindTemplates returns a map from each emit kind to the template that
+// renders it. The lowering reshapes a file-level kind that the map does
+// not contain, as it reshapes an enum and a sum. KindTemplates builds a
+// new map on every call for the caller to keep. The map and its one
+// group allocate twice.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,

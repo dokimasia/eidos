@@ -6,9 +6,8 @@ package spell
 import (
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/spoke"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -17,36 +16,30 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The predeclared types and the syntax that the Go spoke writes. A
-// function type closes its parameters with funcClose, and it writes one
-// result after resultSep, or two or more between resultsOpen and
-// resultsClose.
+// The predeclared types that the Go spoke writes, and the spelling of a
+// byte slice.
 const (
-	boolType     = "bool"
-	stringType   = "string"
-	byteType     = "byte"
-	anyType      = "any"
-	pointerMark  = "*"
-	sliceMark    = "[]"
-	arrayOpen    = "["
-	arrayClose   = "]"
-	mapOpen      = "map["
-	mapClose     = "]"
-	chanMark     = "chan "
-	funcOpen     = "func("
-	funcClose    = ")"
-	resultSep    = " "
-	resultsOpen  = " ("
-	resultsClose = ")"
+	boolType   = "bool"
+	stringType = "string"
+	byteType   = "byte"
+	anyType    = "any"
+	bytesType  = "[]" + byteType
 )
 
 // The brackets of a Go argument list, which a spelled child writes its
-// arguments in, and the separator of a list.
+// arguments in.
 const (
 	argsOpener = "["
 	argsCloser = "]"
-	listSep    = ", "
 )
+
+// goName is the name of the language in a refusal.
+const goName = "Go"
+
+// spelledStack is the number of spellings of children that [restated]
+// keeps on the stack. A function type of more children allocates their
+// list.
+const spelledStack = 4
 
 // The package of Go's time types, and the spellings of the two types
 // that the well-known timestamp and duration take.
@@ -64,14 +57,6 @@ const (
 	iterPackage = "iter"
 	iterType    = "iter.Seq2"
 	errorType   = "error"
-)
-
-// ints and uints are Go's integer types by width in bits, 0 for the
-// platform's width, and floats are Go's floating-point types.
-var (
-	ints   = map[int]string{0: "int", 8: "int8", 16: "int16", 32: "int32", 64: "int64"}
-	uints  = map[int]string{0: "uint", 8: "uint8", 16: "uint16", 32: "uint32", 64: "uint64"}
-	floats = map[int]string{32: "float32", 64: "float64"}
 )
 
 // Type spells the canonical shape s in Go. It is the spoke of the Go
@@ -104,10 +89,11 @@ var (
 // with a lower bound, an inline type and an opaque type, because Go has
 // no spelling of them. A Go pointer aliases and a Go value copies, so
 // neither is a borrow. Type refuses a scalar of another width and an
-// array of an unstated length. It refuses a map key of a list, a map, a
-// function type and bytes, because Go does not compare their values. It
-// refuses a form whose child it refuses, and the error contains the
-// source spelling of the child.
+// array of an unstated length. It refuses an immutable list, array and
+// map, because a holder can write through a Go slice, array and map. It
+// refuses a map key of a list, a map, a function type and bytes, because
+// Go does not compare their values. It refuses a form whose child it
+// refuses, and the error contains the source spelling of the child.
 //
 // # Allocation contract
 //
@@ -137,7 +123,7 @@ func goType(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: anyType}, nil
 	case symbol.FormBytes:
 		return &emit.TypeRef{
-			Spelling: sliceMark + byteType, Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: byteType}},
+			Spelling: bytesType, Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: byteType}},
 		}, nil
 	case symbol.FormOptional, symbol.FormList, symbol.FormArray, symbol.FormStream:
 		return container(s)
@@ -156,18 +142,9 @@ func goType(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // scalar spells a scalar as the predeclared type of its class and width.
 func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
-	var widths map[int]string
-	switch s.Class {
-	case rules.ScalarInt:
-		widths = ints
-	case rules.ScalarUint:
-		widths = uints
-	default:
-		widths = floats
-	}
-	name, held := widths[s.Bits]
+	name, declared := golang.NumericName(golang.Numeric{Class: s.Class, Width: s.Bits})
 	switch {
-	case held:
+	case declared:
 		return &emit.TypeRef{Spelling: name}, nil
 	case s.Bits == 0:
 		return nil, fmt.Errorf("no Go %s type has the platform's width", s.Class)
@@ -181,13 +158,16 @@ func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
 // a list as a slice, an array as an array of its length, a synchronous
 // stream as a channel, and an asynchronous stream as an iterator over
 // pairs of an element and an error. It refuses an array of an unstated
-// length.
+// length, and an immutable list or array.
 func container(s rules.TypeShape) (*emit.TypeRef, error) {
-	switch {
-	case s.Form == symbol.FormArray && s.Length == 0:
+	if s.Form == symbol.FormArray && s.Length == 0 {
 		return nil, errors.New("an array of an unstated length has no Go spelling")
-	case len(s.Elems) != 1:
-		return nil, fmt.Errorf("%s takes one child, and the shape has %d", spoke.Describe(s), len(s.Elems))
+	}
+	if err := spoke.ReadOnly(s, goName); err != nil {
+		return nil, err
+	}
+	if err := spoke.Arity(s, 1); err != nil {
+		return nil, err
 	}
 	elems, err := spoke.Children(s.Elems, goType)
 	if err != nil {
@@ -201,26 +181,17 @@ func container(s rules.TypeShape) (*emit.TypeRef, error) {
 			Spelling: iterType, Package: iterPackage, Args: []*emit.TypeRef{elems[0], {Spelling: errorType}},
 		}, nil
 	}
-	inner := spellref.Spell(elems[0], argsOpener, argsCloser, anyType)
-	t := &emit.TypeRef{Form: s.Form, Elems: elems}
-	switch s.Form {
-	case symbol.FormOptional:
-		t.Spelling = pointerMark + inner
-	case symbol.FormList:
-		t.Spelling = sliceMark + inner
-	case symbol.FormArray:
-		t.Length = s.Length
-		t.Spelling = arrayOpen + strconv.Itoa(s.Length) + arrayClose + inner
-	default:
-		t.Spelling = chanMark + inner
-	}
-	return t, nil
+	return restated(&emit.TypeRef{Form: s.Form, Length: s.Length, Elems: elems})
 }
 
-// mapOf spells a map. It refuses a key whose values Go does not compare.
+// mapOf spells a map. It refuses an immutable map and a key whose values
+// Go does not compare.
 func mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
-	if len(s.Elems) != 2 {
-		return nil, fmt.Errorf("a map takes two children, a key and a value, and the shape has %d", len(s.Elems))
+	if err := spoke.ReadOnly(s, goName); err != nil {
+		return nil, err
+	}
+	if err := spoke.Arity(s, 2); err != nil {
+		return nil, err
 	}
 	switch k := s.Elems[0]; k.Form {
 	case symbol.FormList, symbol.FormMap, symbol.FormFunc, symbol.FormBytes:
@@ -233,36 +204,39 @@ func mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := spellref.Spell(elems[0], argsOpener, argsCloser, anyType)
-	value := spellref.Spell(elems[1], argsOpener, argsCloser, anyType)
-	return &emit.TypeRef{Spelling: mapOpen + key + mapClose + value, Form: symbol.FormMap, Elems: elems}, nil
+	return restated(&emit.TypeRef{Form: symbol.FormMap, Elems: elems})
 }
 
 // function spells a function type: its parameters, then nothing, one
 // result or a parenthesised list of results.
 func function(s rules.TypeShape) (*emit.TypeRef, error) {
-	if s.Split < 0 || s.Split > len(s.Elems) {
-		return nil, fmt.Errorf("a function type splits its %d children at %d", len(s.Elems), s.Split)
+	if err := spoke.Split(s); err != nil {
+		return nil, err
 	}
 	elems, err := spoke.Children(s.Elems, goType)
 	if err != nil {
 		return nil, err
 	}
-	spelled := make([]string, len(elems))
-	for i, e := range elems {
-		spelled[i] = spellref.Spell(e, argsOpener, argsCloser, anyType)
+	return restated(&emit.TypeRef{Form: symbol.FormFunc, Split: s.Split, Elems: elems})
+}
+
+// restated sets the spelling of the structural reference t from the
+// spellings of its children through [golang.Restate], and returns t. A
+// child writes its arguments in the brackets of Go. restated allocates
+// what Restate allocates, and the list of spellings of a function type of
+// more than four children.
+func restated(t *emit.TypeRef) (*emit.TypeRef, error) {
+	var stack [spelledStack]string
+	spelled := stack[:0]
+	for _, e := range t.Elems {
+		spelled = append(spelled, spellref.Spell(e, argsOpener, argsCloser, anyType))
 	}
-	params := strings.Join(spelled[:s.Split], listSep)
-	var text string
-	switch results := spelled[s.Split:]; len(results) {
-	case 0:
-		text = funcOpen + params + funcClose
-	case 1:
-		text = funcOpen + params + funcClose + resultSep + results[0]
-	default:
-		text = funcOpen + params + funcClose + resultsOpen + strings.Join(results, listSep) + resultsClose
+	spelling, err := golang.Restate(t, spelled)
+	if err != nil {
+		return nil, err
 	}
-	return &emit.TypeRef{Spelling: text, Form: symbol.FormFunc, Split: s.Split, Elems: elems}, nil
+	t.Spelling = spelling
+	return t, nil
 }
 
 // wildcard spells a wildcard as any where it has no bound, and as its

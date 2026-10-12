@@ -4,10 +4,12 @@
 package backend_test
 
 import (
+	"reflect"
 	"testing"
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
@@ -61,6 +63,8 @@ const (
 	readerName        = "Reader"
 	rowDoc            = "Row is one record."
 	generateDirective = "go:generate"
+	jsonKey           = "json"
+	dbKey             = "db"
 )
 
 // generateArgs are the arguments of the generate directive the cases
@@ -86,9 +90,12 @@ const (
 	resultsAllocs = 1 + 1 + 1
 	// varTypeAllocs is a variable's type behind its space.
 	varTypeAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of fourteen
-	// helpers, four allocations, and the speller's six bound helpers.
+	// funcsAllocs is the vocabulary of a file: the map of sixteen helpers
+	// in four allocations, and the six bound helpers of the speller.
 	funcsAllocs = 4 + 6
+	// tagAllocs is the tag of a field, built on the stack and allocated
+	// once.
+	tagAllocs = 1
 	// docsAllocs is a docblock, sized once.
 	docsAllocs = 1
 	// directivesAllocs is the directive lines, sized once.
@@ -151,6 +158,31 @@ func TestVocabulary(t *testing.T) {
 
 	t.Run("Spell", func(t *testing.T) {
 		t.Parallel()
+
+		substituted := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "returns an error for a channel without a spelling",
+				give: &emit.TypeRef{Form: symbol.FormStream, Elems: []*emit.TypeRef{ref(rowName)}},
+			},
+			{
+				name: "returns an error for a function type whose last list has no spelling",
+				give: &emit.TypeRef{Form: symbol.FormFunc, Split: 1, Elems: []*emit.TypeRef{
+					{Form: symbol.FormList, Elems: []*emit.TypeRef{ref(rowName)}},
+				}},
+			},
+		}
+		for _, tt := range substituted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.Spell(tt.give)
+				assert.HasError(t, err, "the substitution cleared the spelling that recorded the fact")
+			})
+		}
 
 		t.Run("returns the spelling of a reference that names no package", func(t *testing.T) {
 			t.Parallel()
@@ -312,16 +344,16 @@ func TestVocabulary(t *testing.T) {
 			s, _ := speller()
 			_, err := s.Spell(ref(aliasName + "." + rowName))
 			assert.HasError(t, err, "the import cannot be named")
-			assert.Contains(t, err.Error(), "no package", "naming what is missing")
+			assert.Contains(t, err.Error(), "does not record a package", "the error names what is missing")
 		})
 
-		t.Run("returns an error for a spelling that is no Go type name", func(t *testing.T) {
+		t.Run("returns an error for a spelling that is not a Go type name", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
 			_, err := s.Spell(imported("google.protobuf", "google/protobuf/timestamp.proto", "Timestamp"))
-			assert.HasError(t, err, "another language's qualified name is no Go reference")
-			assert.Contains(t, err.Error(), "no Go type name", "naming the defect")
+			assert.HasError(t, err, "the qualified name of another language is not a Go reference")
+			assert.Contains(t, err.Error(), "not a Go type name", "the error names the defect")
 		})
 
 		t.Run("keeps a composite's written spelling where every child spells as written", func(t *testing.T) {
@@ -585,7 +617,7 @@ func TestVocabulary(t *testing.T) {
 			t.Helper()
 
 			s, _ := speller()
-			got, err := s.Params(ps)
+			got, err := s.Params(new(emit.SlotOf(ps...)))
 			assert.NoError(t, err, "the parameters spell")
 			return got
 		}
@@ -630,7 +662,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Params([]*emit.Param{{Name: "id", Type: ref("x.Y")}})
+			_, err := s.Params(new(emit.SlotOf(&emit.Param{Name: "id", Type: ref("x.Y")})))
 			assert.HasError(t, err, "the list is refused")
 		})
 	})
@@ -642,7 +674,7 @@ func TestVocabulary(t *testing.T) {
 			t.Helper()
 
 			s, _ := speller()
-			got, err := s.Results(rs)
+			got, err := s.Results(new(emit.SlotOf(rs...)))
 			assert.NoError(t, err, "the results spell")
 			return got
 		}
@@ -677,7 +709,7 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
-			_, err := s.Results([]*emit.Return{{Type: ref("x.Y")}})
+			_, err := s.Results(new(emit.SlotOf(&emit.Return{Type: ref("x.Y")})))
 			assert.HasError(t, err, "the list is refused")
 		})
 	})
@@ -924,6 +956,82 @@ func TestVocabulary(t *testing.T) {
 		})
 	})
 
+	t.Run("Tag", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for a field without tag entries", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Tag(&emit.Field{Name: rowName})
+			assert.NoError(t, err, "the field has no tag")
+			assert.Equal(t, got, "", "the helper writes nothing")
+		})
+
+		t.Run("writes one entry as a key and a quoted value in backquotes", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Tag(&emit.Field{
+				Name: idName, Tags: emit.SlotOf(&emit.TagEntry{Key: jsonKey, Value: idName}),
+			})
+			assert.NoError(t, err, "the entry is valid")
+			assert.Equal(t, got, " `json:\"id\"`", "the tag follows the type after a space")
+		})
+
+		t.Run("separates two entries with a space", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Tag(&emit.Field{Name: idName, Tags: emit.SlotOf(
+				&emit.TagEntry{Key: jsonKey, Value: idName + ",omitempty"},
+				&emit.TagEntry{Key: dbKey, Value: idName},
+			)})
+			assert.NoError(t, err, "the entries are valid")
+			assert.Equal(t, got, " `json:\"id,omitempty\" db:\"id\"`", "the entries keep their order")
+		})
+
+		t.Run("writes a tag from which reflect.StructTag reads each value back", func(t *testing.T) {
+			t.Parallel()
+
+			quoted, tabbed, unicode := `a"b\c`, "tab\there", "ünïcode"
+			got, err := backend.Tag(&emit.Field{Name: idName, Tags: emit.SlotOf(
+				&emit.TagEntry{Key: jsonKey, Value: quoted},
+				&emit.TagEntry{Key: dbKey, Value: tabbed},
+				&emit.TagEntry{Key: yamlName, Value: unicode},
+			)})
+			assert.NoError(t, err, "the entries are valid")
+			assert.That(t, got).
+				HasPrefix(" `", "the tag opens with a space and a backquote").
+				HasSuffix("`", "the tag closes with a backquote")
+			tag := reflect.StructTag(got[2 : len(got)-1])
+			expect.Equal(t, tag.Get(jsonKey), quoted, "the quote and the backslash read back")
+			expect.Equal(t, tag.Get(dbKey), tabbed, "the tab reads back")
+			expect.Equal(t, tag.Get(yamlName), unicode, "the letters outside ASCII read back")
+		})
+
+		refusals := []struct {
+			name string
+			give *emit.TagEntry
+		}{
+			{name: "returns an error for an empty key", give: &emit.TagEntry{Value: idName}},
+			{name: "returns an error for a key with a space", give: &emit.TagEntry{Key: "a b", Value: idName}},
+			{name: "returns an error for a key with a colon", give: &emit.TagEntry{Key: "a:b", Value: idName}},
+			{name: "returns an error for a key with a quote", give: &emit.TagEntry{Key: `a"b`, Value: idName}},
+			{name: "returns an error for a key with a backquote", give: &emit.TagEntry{Key: "a`b", Value: idName}},
+			{
+				name: "returns an error for a key with a control character",
+				give: &emit.TagEntry{Key: "a\x7fb", Value: idName},
+			},
+			{name: "returns an error for a value with a backquote", give: &emit.TagEntry{Key: jsonKey, Value: "a`b"}},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := backend.Tag(&emit.Field{Name: idName, Tags: emit.SlotOf(tt.give)})
+				assert.HasError(t, err, "a raw string literal or reflect.StructTag cannot contain the entry")
+			})
+		}
+	})
+
 	t.Run("Directives", func(t *testing.T) {
 		t.Parallel()
 
@@ -1061,16 +1169,22 @@ func vocabularyCalls() []allocCall {
 	bare, qualified := ref(intType), imported(storeName, storePkg, rowName)
 	doc := []string{rowDoc}
 	params := []*emit.TypeParam{{Name: keyParam, Bounds: []*emit.TypeRef{ref(comparableBound)}}, {Name: valueParam}}
-	args := []*emit.Param{
-		{Name: contextName, Type: imported(contextPkg, contextPkg, contextType)}, {Name: idName, Type: ref(intType)},
-	}
-	three := []*emit.Param{{Name: idName, Type: bare}, {Name: countName, Type: bare}, {Name: contextName, Type: bare}}
-	results := []*emit.Return{{Type: qualified}, {Type: ref(errorType)}}
+	args := new(emit.SlotOf(
+		&emit.Param{Name: contextName, Type: imported(contextPkg, contextPkg, contextType)},
+		&emit.Param{Name: idName, Type: ref(intType)},
+	))
+	three := new(emit.SlotOf(
+		&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: countName, Type: bare},
+		&emit.Param{Name: contextName, Type: bare},
+	))
+	results := new(emit.SlotOf(&emit.Return{Type: qualified}, &emit.Return{Type: ref(errorType)}))
 	method := &emit.Method{Name: getName, Receives: ref(rowName)}
 	variable := &emit.Variable{Name: countName, Type: ref(intType)}
 	row := &emit.Struct{Name: rowName}
 	signature := &emit.Method{Name: getName, Abstract: true}
 	embed := &emit.Embed{Ref: ref(readerName)}
+	untagged := &emit.Field{Name: idName}
+	field := &emit.Field{Name: idName, Tags: emit.SlotOf(&emit.TagEntry{Key: jsonKey, Value: idName})}
 	annotations := symbol.Annotations{{Name: generateDirective, Args: generateArgs}}
 	pkg := symbol.Identity{Package: storePkg, Name: storeName}
 	var (
@@ -1119,7 +1233,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 14, "Funcs returns the fourteen helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 16, "Funcs returns the sixteen helpers") },
 		},
 		{
 			name: "Docs", allocs: docsAllocs,
@@ -1133,6 +1247,14 @@ func vocabularyCalls() []allocCall {
 		{name: "Guard", call: func() { out, err = backend.Guard(row) }, check: spells("")},
 		{name: "SigGuard", call: func() { out, err = backend.SigGuard(signature) }, check: spells("")},
 		{name: "EmbedGuard", call: func() { out, err = backend.EmbedGuard(embed) }, check: spells("")},
+		{
+			name: "Tag", caseName: "a field without tag entries",
+			call: func() { out, err = backend.Tag(untagged) }, check: spells(""),
+		},
+		{
+			name: "Tag", caseName: "a field with one tag entry", allocs: tagAllocs,
+			call: func() { out, err = backend.Tag(field) }, check: spells(" `json:\"id\"`"),
+		},
 		{
 			name: "Directives", allocs: directivesAllocs,
 			call:  func() { out = backend.Directives(annotations) },

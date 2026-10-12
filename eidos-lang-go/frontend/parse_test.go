@@ -676,7 +676,7 @@ func TestParse(t *testing.T) {
 			t.Parallel()
 
 			gb := parsedFile(t, nil, plugin.DepthFull, "package p\n\ntype T struct{}\n\nfunc (t *T) M() {}\n")
-			assert.Equal(t, stampValues(gb, golang.ReceiverPointerKey), []any{true}, "the method marks")
+			assert.Equal(t, stampValues(gb, golang.ReceiverIsPointerKey), []any{true}, "the method marks")
 		})
 
 		t.Run("stamps an iter.Seq result", func(t *testing.T) {
@@ -723,7 +723,7 @@ func TestParse(t *testing.T) {
 			t.Parallel()
 
 			gb := parsedFile(t, nil, plugin.DepthFull, "package p\n\ntype Handle uintptr\n")
-			assert.Length(t, stampValues(gb, golang.UnderlyingKey), 1, "the defined type is stamped with its shape")
+			assert.Length(t, stampValues(gb, golang.UnderlyingKindKey), 1, "the defined type is stamped with its shape")
 		})
 
 		t.Run("stamps the package's module identity", func(t *testing.T) {
@@ -864,7 +864,7 @@ func TestParse(t *testing.T) {
 			t.Parallel()
 
 			gb := parsedFile(t, nil, plugin.DepthFull, "package p\n\ntype Cause error\n\ntype Size int\n")
-			assert.Equal(t, stampValues(gb, golang.UnderlyingKey), []any{"named", "basic"},
+			assert.Equal(t, stampValues(gb, golang.UnderlyingKindKey), []any{"named", "basic"},
 				"error is an interface, and int is basic")
 		})
 

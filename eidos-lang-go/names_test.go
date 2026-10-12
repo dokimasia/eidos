@@ -4,15 +4,18 @@
 package golang_test
 
 import (
+	"errors"
 	"go/types"
 	"math"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/rules"
 )
 
 // keywordPath is an import path whose last element is a Go keyword.
@@ -95,6 +98,117 @@ func TestNames(t *testing.T) {
 			for _, name := range []string{"bool", "complex64", "any", "error", "Row"} {
 				assert.False(t, golang.Ordered(name), name+" is not ordered")
 			}
+		})
+	})
+
+	t.Run("NumericOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports every integer and float type of the universe scope", func(t *testing.T) {
+			t.Parallel()
+
+			var count int
+			for _, name := range types.Universe.Names() {
+				tn, is := types.Universe.Lookup(name).(*types.TypeName)
+				if !is {
+					continue
+				}
+				basic, is := tn.Type().(*types.Basic)
+				if !is || basic.Info()&(types.IsInteger|types.IsFloat) == 0 || basic.Info()&types.IsUntyped != 0 {
+					continue
+				}
+				count++
+				_, numeric := golang.NumericOf(name)
+				expect.True(t, numeric, name+" is numeric")
+			}
+			assert.InRange(t, count, 15, math.Inf(1), "the universe scope declares 15 integer and float type names")
+		})
+
+		tests := []struct {
+			name string
+			give string
+			want golang.Numeric
+		}{
+			{name: "returns the platform's width for int", give: "int", want: golang.Numeric{Class: rules.ScalarInt}},
+			{
+				name: "returns an unsigned integer of 8 bits for byte",
+				give: "byte", want: golang.Numeric{Class: rules.ScalarUint, Width: 8},
+			},
+			{
+				name: "returns a signed integer of 32 bits for rune",
+				give: "rune", want: golang.Numeric{Class: rules.ScalarInt, Width: 32},
+			},
+			{
+				name: "returns the platform's width for uintptr",
+				give: "uintptr", want: golang.Numeric{Class: rules.ScalarUint},
+			},
+			{
+				name: "returns a float of 64 bits for float64",
+				give: "float64", want: golang.Numeric{Class: rules.ScalarFloat, Width: 64},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, numeric := golang.NumericOf(tt.give)
+				assert.True(t, numeric, tt.give+" is numeric")
+				assert.Equal(t, got, tt.want, "the class and the width of "+tt.give)
+			})
+		}
+
+		t.Run("reports false for any other name", func(t *testing.T) {
+			t.Parallel()
+
+			for _, name := range []string{"complex64", "string", "bool", "any", "Row", ""} {
+				_, numeric := golang.NumericOf(name)
+				expect.False(t, numeric, name+" is not numeric")
+			}
+		})
+	})
+
+	t.Run("NumericName", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the name of every canonical numeric type", func(t *testing.T) {
+			t.Parallel()
+
+			of := func(name string) (golang.Numeric, error) {
+				n, numeric := golang.NumericOf(name)
+				if !numeric {
+					return n, errors.New(name + " is not numeric")
+				}
+				return n, nil
+			}
+			named := func(n golang.Numeric) (string, error) {
+				name, declared := golang.NumericName(n)
+				if !declared {
+					return "", errors.New("the numeric type has no name")
+				}
+				return name, nil
+			}
+			names := []string{
+				"int", "int8", "int16", "int32", "int64",
+				"uint", "uint8", "uint16", "uint32", "uint64", "float32", "float64",
+			}
+			for _, name := range names {
+				expect.RoundTrip(t, of, named, name, "NumericName returns the name that NumericOf read")
+			}
+		})
+
+		t.Run("returns uint for the platform's unsigned width", func(t *testing.T) {
+			t.Parallel()
+
+			got, declared := golang.NumericName(golang.Numeric{Class: rules.ScalarUint})
+			assert.True(t, declared, "the platform's unsigned width has a name")
+			assert.Equal(t, got, "uint", "uint precedes uintptr")
+		})
+
+		t.Run("reports false for a width that Go does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			_, declared := golang.NumericName(golang.Numeric{Class: rules.ScalarFloat, Width: 16})
+			assert.False(t, declared, "Go declares no float of 16 bits")
 		})
 	})
 
@@ -256,10 +370,22 @@ func BenchmarkNames(b *testing.B) {
 func nameCalls() []nameCall {
 	imp := &node.Import{Path: "gopkg.in/yaml.v3"}
 	var (
-		is   bool
-		name string
+		is      bool
+		name    string
+		numeric golang.Numeric
 	)
+	uint8Type := golang.Numeric{Class: rules.ScalarUint, Width: 8}
 	return []nameCall{
+		{
+			name:  "NumericOf",
+			call:  func() { numeric, is = golang.NumericOf("byte") },
+			check: func(tb assert.TB) { assert.Equal(tb, numeric, uint8Type, "NumericOf returns uint8 for byte") },
+		},
+		{
+			name:  "NumericName",
+			call:  func() { name, is = golang.NumericName(uint8Type) },
+			check: func(tb assert.TB) { assert.Equal(tb, name, "uint8", "NumericName returns uint8") },
+		},
 		{
 			name:  "Predeclared",
 			call:  func() { is = golang.Predeclared("int") },

@@ -78,9 +78,9 @@
 // are kept verbatim, and its methods fold in from every file of the
 // package, as a struct's do.
 // Resolve returns, as one tier, the candidates of the file's
-// [golang.Scope], which the parse derives from the file's import
+// [golang.Bindings], which the parse derives from the file's import
 // records. The rules resolve a directive's spelling through the same
-// scope, and a qualified reference's package is the import path its
+// bindings, and a qualified reference's package is the import path its
 // qualifier binds there. A predeclared type, a constraint term and
 // the shapes no single declaration declares (maps, funcs, channels,
 // inline bodies) return no candidate, and their named element types

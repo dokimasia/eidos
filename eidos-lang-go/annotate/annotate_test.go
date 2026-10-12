@@ -12,12 +12,13 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/annotate"
+	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/nodetest"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/store"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The packages the fixture graph declares: the corpus package, and
@@ -25,6 +26,12 @@ import (
 const (
 	fixPackage   = "fix"
 	otherPackage = "other"
+)
+
+// The builtins of the types of the fixture.
+const (
+	stringType = "string"
+	intType    = "int"
 )
 
 // newAllocs is the annotator New returns: its four handlers, the proof
@@ -52,7 +59,7 @@ func TestAnnotate(t *testing.T) {
 	sink := diag.NewSink()
 	assert.NoError(t, annotator.Annotate(&plugin.AnnotatorContext{
 		Index: index, Reader: reader, Facts: facts,
-		Sink: sink, Plugin: golang.AnnotatorName, Bucket: 0,
+		Sink: sink, Plugin: golang.AnnotatorName, Turn: 0,
 	}), "the annotator runs clean")
 
 	t.Run("New", func(t *testing.T) {
@@ -101,6 +108,10 @@ func TestAnnotate(t *testing.T) {
 			{
 				name: "stamps satisfies-stringer through an embedded interface",
 				key:  golang.SatisfiesStringerKey, subject: "Wrapper", want: true,
+			},
+			{
+				name: "stamps no satisfies-stringer on a struct that embeds two String methods at one depth",
+				key:  golang.SatisfiesStringerKey, subject: "Ambiguous",
 			},
 			{
 				name: "stamps satisfies-stringer on a type whose String returns an alias of string",
@@ -189,11 +200,6 @@ func stamped(tb assert.TB, registry *meta.Registry, facts *meta.Facts, key meta.
 	return out
 }
 
-// id spells a fixture identity in the corpus package.
-func id(owner, name string, kind symbol.Kind) symbol.Identity {
-	return symbol.Identity{Lang: golang.Lang, Package: fixPackage, Owner: owner, Name: name, Kind: kind}
-}
-
 // fixture builds a sealed graph the proofs can read: a type
 // satisfying error through a package-level method, a struct
 // embedding an interface and inheriting its String, a comparable
@@ -201,131 +207,86 @@ func id(owner, name string, kind symbol.Kind) symbol.Identity {
 func fixture(tb assert.TB) *store.Graph {
 	tb.Helper()
 
+	b := nodetest.New(gotesting.Language{})
 	stringer := &node.Interface{
-		ID: id("", "Stringish", symbol.KindInterface), Name: "Stringish",
+		Name: "Stringish",
 		Methods: []*node.Method{{
-			ID: id("Stringish", "String", symbol.KindMethod), Name: "String", Abstract: true,
-			Returns: []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
+			Name: "String", Abstract: true,
+			Returns: []*node.Return{{Type: nodetest.Named(stringType)}},
 		}},
 	}
-	failer := &node.Struct{
-		ID: id("", "Failer", symbol.KindStruct), Name: "Failer",
-	}
+	failer := &node.Struct{Name: "Failer"}
 	errMethod := &node.Method{
-		ID: id("Failer", "Error", symbol.KindMethod), Name: "Error",
-		Receives: &node.TypeRef{Spelling: "Failer"},
-		Returns:  []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
+		Name:     "Error",
+		Receives: b.Ref(failer),
+		Returns:  []*node.Return{{Type: nodetest.Named(stringType)}},
 	}
-	wrapper := &node.Struct{
-		ID: id("", "Wrapper", symbol.KindStruct), Name: "Wrapper",
-		Embeds: []*node.Embed{{
-			Ref: &node.TypeRef{Spelling: "Stringish", Target: stringer.ID},
+	wrapper := &node.Struct{Name: "Wrapper", Embeds: []*node.Embed{{Ref: b.Ref(stringer)}}}
+	// Ambiguous embeds two interfaces that both declare String, so the
+	// selector is ambiguous at one depth and Go promotes neither method.
+	printer := &node.Interface{
+		Name: "Printer",
+		Methods: []*node.Method{{
+			Name: "String", Abstract: true,
+			Returns: []*node.Return{{Type: nodetest.Named(stringType)}},
 		}},
+	}
+	ambiguous := &node.Struct{
+		Name:   "Ambiguous",
+		Embeds: []*node.Embed{{Ref: b.Ref(stringer)}, {Ref: b.Ref(printer)}},
 	}
 	flat := &node.Struct{
-		ID: id("", "Flat", symbol.KindStruct), Name: "Flat",
+		Name: "Flat",
 		Fields: []*node.Field{
-			{ID: id("Flat", "a", symbol.KindField), Name: "a", Type: &node.TypeRef{Spelling: "int"}},
-			{
-				ID: id("Flat", "w", symbol.KindField), Name: "w",
-				Type: &node.TypeRef{Spelling: "Wrapper", Target: wrapper.ID},
-			},
+			{Name: "a", Type: nodetest.Named(intType)},
+			{Name: "w", Type: b.Ref(wrapper)},
 		},
 	}
 	slippery := &node.Struct{
-		ID: id("", "Slippery", symbol.KindStruct), Name: "Slippery",
-		Fields: []*node.Field{{
-			ID: id("Slippery", "xs", symbol.KindField), Name: "xs",
-			Type: &node.TypeRef{Spelling: "[]int"},
-		}},
+		Name:   "Slippery",
+		Fields: []*node.Field{{Name: "xs", Type: nodetest.List(nodetest.Named(intType))}},
 	}
-	leaky := &node.Struct{
-		ID: id("", "Leaky", symbol.KindStruct), Name: "Leaky",
-		Embeds: []*node.Embed{{
-			Ref: &node.TypeRef{Spelling: "Slippery", Target: slippery.ID},
-		}},
-	}
+	leaky := &node.Struct{Name: "Leaky", Embeds: []*node.Embed{{Ref: b.Ref(slippery)}}}
 	holder := &node.Struct{
-		ID: id("", "Holder", symbol.KindStruct), Name: "Holder",
-		Fields: []*node.Field{{
-			ID: id("Holder", "h", symbol.KindField), Name: "h",
-			Type: &node.TypeRef{Spelling: "interfaceHolder"},
-		}},
+		Name:   "Holder",
+		Fields: []*node.Field{{Name: "h", Type: nodetest.Named("interfaceHolder")}},
 	}
-	nested := &node.Interface{
-		ID: id("", "Nested", symbol.KindInterface), Name: "Nested",
-		Embeds: []*node.Embed{{
-			Ref: &node.TypeRef{Spelling: "Stringish", Target: stringer.ID},
-		}},
-	}
-	errno := &node.Alias{
-		ID: id("", "Errno", symbol.KindAlias), Name: "Errno", Defined: true,
-		Target: &node.TypeRef{Spelling: "uintptr"},
-	}
+	nested := &node.Interface{Name: "Nested", Embeds: []*node.Embed{{Ref: b.Ref(stringer)}}}
+	errno := &node.Alias{Name: "Errno", Defined: true, Target: nodetest.Named("uintptr")}
 	errnoMethod := &node.Method{
-		ID: id("Errno", "Error", symbol.KindMethod), Name: "Error",
-		Receives: &node.TypeRef{Spelling: "Errno"},
-		Returns:  []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
+		Name:     "Error",
+		Receives: b.Ref(errno),
+		Returns:  []*node.Return{{Type: nodetest.Named(stringType)}},
 	}
 	// Label is an alias of string, so a String that returns it returns
 	// string. Tag is a defined type over string, and a String that returns
 	// it does not.
-	label := &node.Alias{
-		ID: id("", "Label", symbol.KindAlias), Name: "Label",
-		Target: &node.TypeRef{Spelling: "string"},
-	}
-	tag := &node.Alias{
-		ID: id("", "Tag", symbol.KindAlias), Name: "Tag", Defined: true,
-		Target: &node.TypeRef{Spelling: "string"},
-	}
+	label := &node.Alias{Name: "Label", Target: nodetest.Named(stringType)}
+	tag := &node.Alias{Name: "Tag", Defined: true, Target: nodetest.Named(stringType)}
 	labelled := &node.Struct{
-		ID: id("", "Labelled", symbol.KindStruct), Name: "Labelled",
-		Methods: []*node.Method{{
-			ID: id("Labelled", "String", symbol.KindMethod), Name: "String",
-			Returns: []*node.Return{{Type: &node.TypeRef{Spelling: "Label", Target: label.ID}}},
-		}},
+		Name:    "Labelled",
+		Methods: []*node.Method{{Name: "String", Returns: []*node.Return{{Type: b.Ref(label)}}}},
 	}
 	tagged := &node.Struct{
-		ID: id("", "Tagged", symbol.KindStruct), Name: "Tagged",
-		Methods: []*node.Method{{
-			ID: id("Tagged", "String", symbol.KindMethod), Name: "String",
-			Returns: []*node.Return{{Type: &node.TypeRef{Spelling: "Tag", Target: tag.ID}}},
-		}},
+		Name:    "Tagged",
+		Methods: []*node.Method{{Name: "String", Returns: []*node.Return{{Type: b.Ref(tag)}}}},
 	}
 	// A method in another package whose receiver shares a fixture
 	// type's name attaches to nothing here.
 	foreign := &node.Method{
-		ID: symbol.Identity{
-			Lang: golang.Lang, Package: otherPackage, Owner: "Flat", Name: "Error", Kind: symbol.KindMethod,
-		},
 		Name:     "Error",
-		Receives: &node.TypeRef{Spelling: "Flat"},
-		Returns:  []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
+		Receives: nodetest.Named("Flat"),
+		Returns:  []*node.Return{{Type: nodetest.Named(stringType)}},
 	}
+	b.File(fixPackage, "fix/a.go",
+		stringer, failer, errMethod, wrapper, printer, ambiguous, flat, slippery,
+		leaky, holder, nested, errno, errnoMethod,
+		label, tag, labelled, tagged,
+	)
+	b.File(otherPackage, "other/b.go", foreign)
 
 	g := store.New()
-	assert.NoError(tb, g.AddPackage(&node.Package{
-		ID:   symbol.Identity{Lang: golang.Lang, Package: fixPackage, Kind: symbol.KindPackage},
-		Path: []string{fixPackage},
-		Files: []*node.File{{
-			ID:   symbol.Identity{Lang: golang.Lang, Package: fixPackage, Name: "fix/a.go", Kind: symbol.KindFile},
-			Path: "fix/a.go",
-			Decls: node.Symbols{
-				stringer, failer, errMethod, wrapper, flat, slippery,
-				leaky, holder, nested, errno, errnoMethod,
-				label, tag, labelled, tagged,
-			},
-		}},
-	}), "the fixture loads")
-	assert.NoError(tb, g.AddPackage(&node.Package{
-		ID:   symbol.Identity{Lang: golang.Lang, Package: otherPackage, Kind: symbol.KindPackage},
-		Path: []string{otherPackage},
-		Files: []*node.File{{
-			ID:    symbol.Identity{Lang: golang.Lang, Package: otherPackage, Name: "other/b.go", Kind: symbol.KindFile},
-			Path:  "other/b.go",
-			Decls: node.Symbols{foreign},
-		}},
-	}), "the second package loads")
+	assert.Total(tb, g.AddPackage, b.Build(tb), "the fixture package is admitted")
 	g.Freeze()
 	return g
 }

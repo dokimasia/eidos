@@ -11,36 +11,38 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// lowered is the state one file's lowering reads everywhere: the
-// file's position table, the raw bytes for verbatim spellings, the
-// unit's spelling intern, the comment groups a declaration consumed,
-// so the sweep can refuse a carrier left floating between
-// declarations, and the file's import scope, so a qualified
-// reference names the package its qualifier binds.
+// lowered is the state of the lowering of one file. It has the position
+// table of the file, its bytes for verbatim spellings, the spelling intern
+// of the unit, the comment groups that a declaration took and the import
+// scope of the file. The sweep refuses the carriers of the comment groups
+// that no declaration took. A qualified reference records the package that
+// its qualifier binds in the import scope.
 type lowered struct {
 	file     *token.File
 	src      []byte
 	intern   map[string]string
 	consumed map[*ast.CommentGroup]bool
-	scope    golang.Scope
-	// comments is the file's whole comment list, for the trailing
-	// comment a declaration's closing brace shares a line with,
-	// which the parser attaches to nothing.
+	bindings golang.Bindings
+	// comments is every comment group of the file. The parser attaches the
+	// trailing comment on the line of a closing brace to no node, so this
+	// list is the only one that has it.
 	comments []*ast.CommentGroup
-	// underlyings defer the defined types' shape stamps until the
-	// enum promotion has decided which declaration replaces each
+	// underlyings are the shape stamps of the defined types. They wait
+	// until the enum promotion decides which declaration replaces each
 	// type.
 	underlyings []pendingUnderlying
-	// std reports whether the file is in the standard library, whose
-	// imports of the packages it vendors read from vendor/.
+	// std reports whether the file is in the standard library. A file of
+	// the standard library imports the packages that it vendors from
+	// vendor/.
 	std bool
 }
 
-// at converts one token position through the file's own table.
+// at returns the position of a token position of the file.
 func (l *lowered) at(p token.Pos) position.Pos {
 	if !p.IsValid() {
 		return position.Pos{File: l.file.Name()}
@@ -49,8 +51,9 @@ func (l *lowered) at(p token.Pos) position.Pos {
 	return position.Pos{File: pos.Filename, Line: pos.Line, Col: pos.Column}
 }
 
-// offset returns a position's byte offset, and -1 for one outside
-// the file, which a recovered parse can synthesize.
+// offset returns the byte offset of a token position, and -1 for a
+// position outside the file. A recovered parse can synthesize such a
+// position.
 func (l *lowered) offset(p token.Pos) int {
 	base := token.Pos(l.file.Base())
 	if p < base || p > base+token.Pos(l.file.Size()) {
@@ -59,8 +62,8 @@ func (l *lowered) offset(p token.Pos) int {
 	return l.file.Offset(p)
 }
 
-// spelling returns an expression's verbatim source text, interned
-// so a spelling the unit repeats is one string.
+// spelling returns the verbatim source text of an expression. It interns
+// the text, so a spelling that the unit repeats is one string.
 func (l *lowered) spelling(e ast.Expr) string {
 	from, to := l.offset(e.Pos()), l.offset(e.End())
 	if from < 0 || to < 0 || to > len(l.src) || from >= to {
@@ -75,27 +78,30 @@ func (l *lowered) spelling(e ast.Expr) string {
 	return s
 }
 
-// typeRef lowers one type expression: the verbatim spelling, the
-// structure Go's grammar states, and its children in the form's
-// fixed order. An explicit generic instantiation keeps the bare
-// name in the spelling with its arguments split out, so the target
-// spells its own brackets. A pointer is Optional, a slice a List, a
-// sized array an Array with its literal length, a map a Map, a
-// channel a Stream whose direction is kept in the spelling, a
-// function type a Func with its parameters then its results, and
-// an inline struct or interface body Inline, its members recorded by
-// [lowered.inlineFields] and [lowered.inlineMethods]. A variadic
-// parameter inside a function type is the list it is. A qualified
-// name records the import path its qualifier binds,
-// [lowered.packageOf].
+// typeRef lowers one type expression to a reference with its verbatim
+// spelling, the structure that the grammar of Go states, and its children
+// in the fixed order of the form. It returns nil for a nil expression.
+//
+//   - An explicit instantiation has the bare name as its spelling and its
+//     arguments in Args, so a target writes its own brackets.
+//   - A pointer is Optional, and a slice is a List.
+//   - A sized array is an Array with its literal length.
+//   - A map is a Map, and a channel is a Stream. The spelling keeps the
+//     direction of the channel.
+//   - A function type is a Func of its parameters and then its results.
+//   - An inline struct or interface body is Inline. [lowered.inlineFields]
+//     and [lowered.inlineMethods] record its members.
+//   - A variadic parameter inside a function type is a List.
+//   - A qualified name records the import path that its qualifier binds,
+//     as [lowered.packageOf] reads it.
 func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	if e == nil {
 		return nil
 	}
 	switch t := e.(type) {
 	case *ast.ParenExpr:
-		// The parentheses are punctuation the reference must not
-		// wear: `type P (int)` names int.
+		// The reference drops the parentheses: `type P (int)` refers to
+		// int.
 		return l.typeRef(t.X)
 	case *ast.IndexExpr:
 		return &node.TypeRef{
@@ -130,7 +136,7 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	case *ast.ChanType:
 		return l.structural(e, symbol.FormStream, t.Value)
 	case *ast.FuncType:
-		return l.funcRef(e, t)
+		return plugin.FuncType(l.spelling(e), l.at(e.Pos()), l.fieldTypes(t.Params), l.fieldTypes(t.Results))
 	case *ast.StructType:
 		return &node.TypeRef{
 			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Fields: l.inlineFields(t),
@@ -144,11 +150,12 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	}
 }
 
-// inlineFields lowers an inline struct body's named fields as a
-// declared struct's are, without identities and without their
-// comments, whose carriers the sweep refuses. A blank field binds
-// nothing and an embedded field is no field of the model, so both are
-// left out and the reference's spelling keeps them.
+// inlineFields lowers the named fields of an inline struct body. A field
+// has no identity and no comment, and otherwise lowers as the field of a
+// declared struct. The sweep refuses the carriers in its comments. A blank
+// field binds nothing, and an embedded field is not a field of the model,
+// so the lowering leaves both out. The spelling of the reference keeps
+// them.
 func (l *lowered) inlineFields(t *ast.StructType) []*node.Field {
 	var out []*node.Field
 	for _, field := range t.Fields.List {
@@ -165,11 +172,12 @@ func (l *lowered) inlineFields(t *ast.StructType) []*node.Field {
 	return out
 }
 
-// inlineMethods lowers an inline interface body's methods as a
-// declared interface's are, abstract, without identities and without
-// their comments, whose carriers the sweep refuses. An embedded
-// interface, a constraint element and a blank method are left out, and
-// the reference's spelling keeps them.
+// inlineMethods lowers the methods of an inline interface body. A method
+// is abstract and has no identity and no comment, and otherwise lowers as
+// the method of a declared interface. The sweep refuses the carriers in
+// its comments. The lowering leaves out an embedded interface, a
+// constraint element and a blank method, and the spelling of the
+// reference keeps them.
 func (l *lowered) inlineMethods(t *ast.InterfaceType) []*node.Method {
 	var out []*node.Method
 	for _, member := range t.Methods.List {
@@ -194,12 +202,12 @@ func (l *lowered) inlineMethods(t *ast.InterfaceType) []*node.Method {
 	return out
 }
 
-// packageOf returns the import path a qualified type name's qualifier
-// binds in the file's scope, [golang.Scope.Import]. It returns empty
-// for an unqualified name, which the file's own package or a dot
-// import declares, and for a qualifier no import binds, which a
-// package whose clause declares a name other than its assumed one
-// leaves.
+// packageOf returns the import path that [golang.Bindings.Import] returns
+// for the qualifier of a qualified type name.
+// It returns the empty string for an unqualified name, which the package
+// of the file or a dot import declares. It also returns the empty string
+// for a qualifier that no import binds, such as the qualifier of a package
+// whose clause declares a name other than its assumed name.
 func (l *lowered) packageOf(e ast.Expr) string {
 	sel, qualified := e.(*ast.SelectorExpr)
 	if !qualified {
@@ -209,32 +217,23 @@ func (l *lowered) packageOf(e ast.Expr) string {
 	if !is {
 		return ""
 	}
-	path, _ := l.scope.Import(qualifier.Name)
+	path, _ := l.bindings.Import(qualifier.Name)
 	return path
 }
 
-// structural lowers a composite whose children are the given
-// expressions, in order.
+// structural lowers a composite with the expressions as its children, in
+// order. A child that the source does not state is an empty reference, as
+// [plugin.Composite] builds it.
 func (l *lowered) structural(e ast.Expr, form symbol.TypeForm, children ...ast.Expr) *node.TypeRef {
 	elems := make([]*node.TypeRef, 0, len(children))
 	for _, child := range children {
 		elems = append(elems, l.typeRef(child))
 	}
-	return &node.TypeRef{Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: form, Elems: elems}
+	return plugin.Composite(l.spelling(e), l.at(e.Pos()), form, elems...)
 }
 
-// funcRef lowers a function type: its parameters then its results
-// as children, the split recorded where the results begin.
-func (l *lowered) funcRef(e ast.Expr, t *ast.FuncType) *node.TypeRef {
-	ref := &node.TypeRef{Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormFunc}
-	ref.Elems = append(ref.Elems, l.fieldTypes(t.Params)...)
-	ref.Split = len(ref.Elems)
-	ref.Elems = append(ref.Elems, l.fieldTypes(t.Results)...)
-	return ref
-}
-
-// fieldTypes lowers a field list's types, one per bound name and
-// one for an unnamed entry, the way a signature reads.
+// fieldTypes lowers the types of a field list, one for each bound name
+// and one for an unnamed entry, in the order of the signature.
 func (l *lowered) fieldTypes(fields *ast.FieldList) []*node.TypeRef {
 	if fields == nil {
 		return nil
@@ -249,9 +248,10 @@ func (l *lowered) fieldTypes(fields *ast.FieldList) []*node.TypeRef {
 	return out
 }
 
-// arrayLength reads a literal array length in any form Go's integer
-// literals take, and 0 for a length the spelling keeps as an
-// expression, an ellipsis included.
+// arrayLength returns the length of an array whose length is an integer
+// literal. The literal can have any form of an integer literal of Go.
+// arrayLength returns 0 for a length that the spelling keeps as an
+// expression, such as an ellipsis.
 func arrayLength(e ast.Expr) int {
 	lit, is := e.(*ast.BasicLit)
 	if !is || lit.Kind != token.INT {
@@ -264,14 +264,14 @@ func arrayLength(e ast.Expr) int {
 	return int(n)
 }
 
-// trailing returns the comment group opening on the line a
-// declaration ends on, after its end and before the limit where
-// one is given: the trailing comment of a function or method,
-// which go/ast leaves free, or of a parameter inside its list,
-// whose closing parenthesis is the limit. A group another
-// declaration consumed is not a candidate. Nil when none. The
-// file's comments are in source order, so the search starts at the
-// first group after the end.
+// trailing returns the comment group that opens on the last line of a
+// declaration, after end and before limit where limit is valid. Such a
+// group is the trailing comment of a function or a method, which go/ast
+// attaches to nothing. It is also the trailing comment of a parameter,
+// whose list ends at limit with its closing parenthesis. A group that
+// another declaration took is not a candidate, and trailing returns nil
+// where no group is. The comments of the file are in source order, so the
+// search starts at the first group after end.
 func (l *lowered) trailing(end, limit token.Pos) *ast.CommentGroup {
 	if !end.IsValid() {
 		return nil
@@ -296,9 +296,9 @@ func (l *lowered) trailing(end, limit token.Pos) *ast.CommentGroup {
 	return nil
 }
 
-// bareName returns the named type under a receiver expression:
-// pointer and instantiation unwrapped, because a method's owner is
-// the type's name, never its decoration.
+// bareName returns the name of the type of a receiver expression without
+// its pointer and its instantiation, because the owner of a method is the
+// name of the type.
 func (l *lowered) bareName(e ast.Expr) string {
 	e = undecorated(e)
 	if id, is := e.(*ast.Ident); is {
@@ -307,8 +307,8 @@ func (l *lowered) bareName(e ast.Expr) string {
 	return l.spelling(e)
 }
 
-// undecorated returns the expression under a type's pointer,
-// parentheses and instantiation.
+// undecorated returns the expression of a type without its pointer, its
+// parentheses and its instantiation.
 func undecorated(e ast.Expr) ast.Expr {
 	for {
 		switch t := e.(type) {

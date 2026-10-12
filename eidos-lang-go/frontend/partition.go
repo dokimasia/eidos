@@ -13,19 +13,22 @@ import (
 	"golang.org/x/mod/module"
 
 	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/sdk/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// modFile is the shared input governing a unit's import paths.
+// modFile is the name of the module file, the shared input that governs
+// the import paths of a unit.
 const modFile = "go.mod"
 
-// partition groups the claimed files into package directories and
-// derives each unit's import path from the governing go.mod: the
-// module directive plus the directory's path under the module
-// root. A directory outside any module keeps its workspace path,
-// which is what a fixture tree without modules loads under. Every
-// go.mod probe that reads folds into the resulting unit keys, so a
-// module file appearing or vanishing re-keys what it governs.
+// partition groups the claimed files into package directories. Each member
+// declares the nearest go.mod above its directory as its shared input,
+// which states the module of the package. A directory outside every module
+// declares none and keeps its workspace path, under which a fixture tree
+// without modules loads. Every probe for a go.mod that reads folds into
+// the resulting unit keys, so a module file that appears or vanishes
+// re-keys what it governs. The members of one module share one list of
+// shared inputs.
 func (*goFrontend) partition(
 	_ context.Context, files []plugin.SourceRef, r plugin.FileReader,
 ) ([][]plugin.SourceRef, error) {
@@ -38,111 +41,67 @@ func (*goFrontend) partition(
 		}
 		byDir[dir] = append(byDir[dir], ref)
 	}
-
-	modules := &moduleProbe{reader: r, roots: map[string]moduleRoot{}}
+	seen := map[string]string{}
+	shared := map[string][]string{}
 	out := make([][]plugin.SourceRef, 0, len(dirs))
 	for _, dir := range dirs {
-		root := modules.governing(dir)
+		gomod := frontend.Nearest(r, dir, modFile, seen)
+		if _, met := shared[gomod]; !met && gomod != "" {
+			shared[gomod] = []string{gomod}
+		}
 		unit := make([]plugin.SourceRef, 0, len(byDir[dir]))
 		for _, ref := range byDir[dir] {
-			unit = append(unit, plugin.SourceRef{Path: ref.Path, Shared: root.shared})
+			unit = append(unit, plugin.SourceRef{Path: ref.Path, Shared: shared[gomod]})
 		}
 		out = append(out, unit)
 	}
 	return out, nil
 }
 
-// moduleRoot is one resolved go.mod: its directory, the module it
-// names, and the shared-input list of every governed ref.
+// moduleRoot is one resolved go.mod: its directory and the path of its
+// module.
 type moduleRoot struct {
 	dir    string
 	module string
-	shared []string
 }
 
-// moduleProbe finds and caches governing modules: one read per
-// go.mod, and one probe per directory, however many package
-// directories share an ancestry.
-type moduleProbe struct {
-	reader plugin.FileReader
-	roots  map[string]moduleRoot
-}
-
-// governing walks a directory's ancestry for the nearest go.mod and
-// caches the answer for every directory the walk visited, because
-// each of them has the same nearest go.mod, so a sibling's walk ends
-// at the first ancestor a previous walk visited. A probe that misses
-// is not recorded, because it read nothing, and the cache lasts one
-// partition: the load that finds a new go.mod reads it, and the read
-// re-keys the unit.
-func (p *moduleProbe) governing(dir string) moduleRoot {
-	var visited []string
-	at := dir
-	for {
-		if root, met := p.roots[at]; met {
-			p.remember(visited, root)
-			return root
-		}
-		visited = append(visited, at)
-		candidate := path.Join(at, modFile)
-		if b, err := p.reader.Read(candidate); err == nil {
-			root := moduleRoot{
-				dir:    at,
-				module: modulePath(string(b)),
-				shared: []string{candidate},
-			}
-			p.remember(visited, root)
-			return root
-		}
-		if at == "." {
-			break
-		}
-		at = path.Dir(at)
-	}
-	root := moduleRoot{}
-	p.remember(visited, root)
-	return root
-}
-
-// remember caches one walk's answer for every directory it visited.
-func (p *moduleProbe) remember(dirs []string, root moduleRoot) {
-	for _, dir := range dirs {
-		p.roots[dir] = root
-	}
-}
-
-// importPath derives the path a directory's package loads under,
-// through the derivation the backend routes a written file's package
-// by.
+// importPath derives the import path of the package of a directory,
+// through the derivation by which the backend routes the package of a
+// written file.
 func (r moduleRoot) importPath(dir string) string {
 	return golang.ImportPath(r.module, r.dir, dir)
 }
 
-// unitPlace is where a unit's package directory loads: its import
-// path, the module that governs a workspace directory, and whether the
-// directory is in the standard library, whose files import the
-// packages it vendors under vendor/.
+// unitPlace is the place where the package directory of a unit loads: its
+// import path, the module that governs a workspace directory, and whether
+// the directory is in the standard library, whose files import the
+// packages that it vendors under vendor/.
 type unitPlace struct {
 	importPath string
 	root       moduleRoot
 	std        bool
 }
 
-// placeUnit derives where a unit's package directory loads from its
-// first member's path, through the unit's door. A dependency unit
-// loads under the import path the go command gives its directory,
-// governed by no workspace module:
+// placeUnit derives the place where the package directory of a unit loads
+// from the path of its first member, through the door of the unit. A
+// dependency unit loads under the import path that the go command gives
+// its directory, and no workspace module governs it:
 //
-//   - A directory of [GoRootStore] is the standard library package
-//     its path inside the store names.
-//   - A directory of [ModCacheStore] is the package of the module its
-//     path escapes, under the module's path, or under the original
-//     path of a module the member's go.mod replaces by it.
-//   - A workspace directory under the vendor directory beside the
-//     member's go.mod is the package its path under vendor/ names.
+//   - A directory of [GoRootStore] is the standard library package of its
+//     path inside the store.
+//   - A directory of [ModCacheStore] is the package of the module that
+//     its path escapes, under the path of the module, or under the
+//     original path of a module that the go.mod of the member replaces by
+//     it.
+//   - A workspace directory under the vendor directory beside the go.mod
+//     of the member is the package of its path under vendor/.
 //
-// Every other directory is the workspace's own, under the governing
-// go.mod's module path.
+// Every other directory belongs to the workspace, under the module path of
+// its shared go.mod. A go.mod that does not read leaves the directory
+// under its workspace path.
+//
+// Error modes: placeUnit returns an error for a directory in a store that
+// the Go frontend does not read, and the error of cachedImportPath.
 func placeUnit(u *plugin.SourceUnit) (unitPlace, error) {
 	first := u.Files()[0]
 	if store, inner, qualified := plugin.CutStorePath(first.Path); qualified {
@@ -159,21 +118,30 @@ func placeUnit(u *plugin.SourceUnit) (unitPlace, error) {
 		}
 	}
 	dir := path.Dir(first.Path)
-	if len(first.Shared) == 1 {
-		vendorRoot := path.Join(path.Dir(first.Shared[0]), vendorDir) + "/"
-		if rel, vendored := strings.CutPrefix(dir, vendorRoot); vendored {
-			return unitPlace{importPath: rel}, nil
-		}
+	if len(first.Shared) == 0 {
+		return unitPlace{importPath: dir}, nil
 	}
-	root := (&moduleProbe{reader: unitReader{u}, roots: map[string]moduleRoot{}}).governing(dir)
+	gomod := first.Shared[0]
+	vendorRoot := path.Join(path.Dir(gomod), vendorDir) + "/"
+	if rel, vendored := strings.CutPrefix(dir, vendorRoot); vendored {
+		return unitPlace{importPath: rel}, nil
+	}
+	root := moduleRoot{dir: path.Dir(gomod)}
+	if data, err := u.Read(gomod); err == nil {
+		root.module = modulePath(string(data))
+	}
 	return unitPlace{importPath: root.importPath(dir), root: root}, nil
 }
 
-// cachedImportPath derives the import path of a module cache
-// directory: the module path and version its first elements escape,
-// and the directories under the module. A module the member's go.mod
-// replaces by that module version keeps the original path, which the
-// go.mod states and the parse reads through the unit's door.
+// cachedImportPath derives the import path of a directory of the module
+// cache: the module path and the version that its first elements escape,
+// and the directories under the module. A module that the go.mod of the
+// member replaces by that module version keeps the original path, which
+// the go.mod states and the parse reads through the door of the unit.
+//
+// Error modes: cachedImportPath returns an error for a directory without a
+// module version, for a path or a version that does not unescape, for a
+// go.mod that does not read, and for a go.mod that does not parse.
 func cachedImportPath(u *plugin.SourceUnit, dir string, shared []string) (string, error) {
 	escPath, rest, marked := strings.Cut(dir, versionMark)
 	if !marked {
@@ -211,10 +179,10 @@ func cachedImportPath(u *plugin.SourceUnit, dir string, shared []string) (string
 	return importPath + "/" + rel, nil
 }
 
-// modulePath reads the module directive out of go.mod bytes: the
-// first `module` line, its path bare or quoted. The partition needs the
-// directive alone. A go.mod the go tool would refuse derives an empty
-// path, and the directory keeps its workspace spelling.
+// modulePath reads the module directive out of the bytes of a go.mod: the
+// first module line, with its path bare or quoted. The partition needs the
+// directive alone. A go.mod that the go tool would refuse derives an empty
+// path, and the directory keeps its workspace path.
 func modulePath(src string) string {
 	for line := range strings.SplitSeq(src, "\n") {
 		line = strings.TrimSpace(line)

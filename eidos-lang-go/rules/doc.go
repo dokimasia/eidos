@@ -8,7 +8,7 @@
 // under promotion, reads a context parameter and an error, ok or
 // iterator return, classifies the builtins by name with time.Time
 // and time.Duration through the well-known registry, and resolves a
-// directive's spelling through [golang.Scope], the probe the load's
+// directive's spelling through [golang.Bindings], the probe the load's
 // resolution step uses. A predeclared type classifies by its
 // spelling, and a standard library type by the package its
 // reference's import names and its name, so a reference through an

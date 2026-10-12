@@ -4,20 +4,20 @@
 package golang
 
 import (
+	"errors"
 	"fmt"
 
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// namespace is the metadata namespace every golang key registers
-// under.
+// namespace is the metadata namespace of every golang key.
 const namespace = "golang"
 
-// The satellite's classification and fact keys, declared at the
-// root because one namespace claim serves both roles: the frontend
-// stamps what a parse can see, the annotator what the sealed graph
-// proves.
+// These constants are the classification and fact keys of the
+// satellite. The root declares them because one namespace claim serves
+// both roles. The frontend stamps what a parse can see, and the
+// annotator stamps what the sealed graph proves.
 const (
 	// TestFileKey classifies a file the go tool treats as a test.
 	TestFileKey meta.KeyName = "golang.testFile"
@@ -40,46 +40,48 @@ const (
 	TypeSetKey meta.KeyName = "golang.typeSet"
 
 	// ConstraintInterfaceKey marks an interface with type-set
-	// elements: usable as a bound, never as a value's type.
+	// elements. Such an interface is usable as a bound and never as the
+	// type of a value.
 	ConstraintInterfaceKey meta.KeyName = "golang.constraintInterface"
 
 	// EmptyInterfaceKey marks an interface with no members at all.
 	EmptyInterfaceKey meta.KeyName = "golang.emptyInterface"
 
-	// ReceiverPointerKey marks a method declared on a pointer
+	// ReceiverIsPointerKey marks a method declared on a pointer
 	// receiver.
-	ReceiverPointerKey meta.KeyName = "golang.receiverIsPointer"
+	ReceiverIsPointerKey meta.KeyName = "golang.receiverIsPointer"
 
-	// UnderlyingKey records a defined type's underlying shape:
-	// basic, named, pointer, slice, array, map, chan or func.
-	UnderlyingKey meta.KeyName = "golang.underlyingKind"
+	// UnderlyingKindKey records the kind of the underlying type of a
+	// defined type. The kind is basic, named, pointer, slice, array,
+	// map, chan or func.
+	UnderlyingKindKey meta.KeyName = "golang.underlyingKind"
 
 	// IterSeqKey and IterSeq2Key mark a callable whose first
 	// result is the iterator type of that arity.
 	IterSeqKey  meta.KeyName = "golang.iterSeq"
 	IterSeq2Key meta.KeyName = "golang.iterSeq2"
 
-	// ConstValueKey records a constant's exact evaluated value
-	// where the package's own scope suffices to evaluate it, an iota
-	// row's ordinal arithmetic included.
+	// ConstValueKey records the exact value of a constant where the
+	// scope of its package suffices to evaluate it. The value includes
+	// the ordinal arithmetic of an iota row.
 	ConstValueKey meta.KeyName = "golang.constValue"
 
 	// SatisfiesErrorKey and SatisfiesStringerKey mark a type whose
 	// workspace-visible method set has the interface's one method.
 	// EmbedsInterfaceKey marks a struct embedding a type the graph
 	// declares as an interface. ComparableKey marks a type every
-	// field of which is provably comparable. Each stamps only what
-	// the sealed graph proves: an absent fact is unknown, never a
-	// negative.
+	// field of which is provably comparable. Each key stamps only what
+	// the sealed graph proves, so an absent fact is unknown and never
+	// a negative.
 	SatisfiesErrorKey    meta.KeyName = "golang.satisfiesError"
 	SatisfiesStringerKey meta.KeyName = "golang.satisfiesStringer"
 	EmbedsInterfaceKey   meta.KeyName = "golang.embedsInterface"
 	ComparableKey        meta.KeyName = "golang.comparable"
 )
 
-// Handles are the typed keys the annotator stamps through, returned
-// by [Register] to the role that registers the keys and by [Lookup] to
-// the annotator.
+// Handles contains the typed keys through which the annotator stamps.
+// [Register] returns them to the role that registers the keys, and
+// [Lookup] returns them to the annotator.
 type Handles struct {
 	SatisfiesError    meta.Key[bool]
 	SatisfiesStringer meta.Key[bool]
@@ -100,7 +102,9 @@ func Keys(r *meta.Registry) error {
 //
 // Error modes: the namespace another registrant claimed, a sealed
 // registry, and a key whose spelling a group took. Each is the
-// registry's error, returned as it is.
+// registry's error. A failed claim registers no key. Otherwise Register
+// registers every key that it can, and returns the errors of the others
+// joined.
 //
 // # Allocation contract
 //
@@ -112,6 +116,7 @@ func Register(r *meta.Registry) (Handles, error) {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return h, err
 	}
+	var errs []error
 	file := []symbol.Kind{symbol.KindFile}
 	types := []symbol.Kind{
 		symbol.KindStruct, symbol.KindInterface, symbol.KindAlias,
@@ -147,12 +152,12 @@ func Register(r *meta.Registry) (Handles, error) {
 			Doc: "marks an interface with no members",
 		},
 		{
-			Name: ReceiverPointerKey, Kinds: []symbol.Kind{symbol.KindMethod},
+			Name: ReceiverIsPointerKey, Kinds: []symbol.Kind{symbol.KindMethod},
 			Doc: "marks a method on a pointer receiver",
 		},
 		{
-			Name: UnderlyingKey, Kinds: []symbol.Kind{symbol.KindAlias, symbol.KindEnum},
-			Doc: "records a defined type's underlying shape",
+			Name: UnderlyingKindKey, Kinds: []symbol.Kind{symbol.KindAlias, symbol.KindEnum},
+			Doc: "records the kind of the underlying type of a defined type",
 		},
 		{
 			Name: IterSeqKey, Kinds: []symbol.Kind{symbol.KindFunction, symbol.KindMethod},
@@ -185,7 +190,8 @@ func Register(r *meta.Registry) (Handles, error) {
 	} {
 		key, err := registerKey(r, spec)
 		if err != nil {
-			return h, err
+			errs = append(errs, err)
+			continue
 		}
 		switch spec.Name {
 		case SatisfiesErrorKey:
@@ -200,7 +206,7 @@ func Register(r *meta.Registry) (Handles, error) {
 			// A key that the annotator does not stamp has no handle.
 		}
 	}
-	return h, nil
+	return h, errors.Join(errs...)
 }
 
 // Lookup returns the annotator's handles from a registry in which
@@ -235,7 +241,7 @@ func Lookup(r *meta.Registry) (Handles, error) {
 // the annotator stamps.
 func registerKey(r *meta.Registry, spec meta.KeySpec) (meta.Key[bool], error) {
 	switch spec.Name {
-	case ConstraintKey, GeneratedKey, UnderlyingKey, ConstValueKey:
+	case ConstraintKey, GeneratedKey, UnderlyingKindKey, ConstValueKey:
 		_, err := meta.Register[string](r, spec)
 		return meta.Key[bool]{}, err
 	case TypeSetKey:

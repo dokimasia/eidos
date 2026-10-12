@@ -11,9 +11,11 @@
 // frontend. On every struct,
 // interface, enumeration and alias it stamps golang.satisfiesError
 // and golang.satisfiesStringer when the type's visible method set
-// contains the interface's one method. The set is the type's own
-// methods, the file-level methods of its package that attach to it,
-// and the methods of every embed the graph resolves. It stamps
+// contains the interface's one method. The set is the methods that the
+// Go rules' member walk keeps, which promotes the methods of each embed
+// the graph resolves under Go's shadowing rule, and the file-level
+// methods of the type's package that attach to it. Two promoted
+// methods of one name at one depth cancel each other. It stamps
 // golang.embedsInterface on a struct that embeds an interface the
 // graph declares, and golang.comparable when the Go rules
 // prove the type comparable. A fact stamps only when proven: a type

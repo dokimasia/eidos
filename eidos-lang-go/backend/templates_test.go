@@ -59,7 +59,10 @@ func TestTemplates(t *testing.T) {
 			s := &emit.Struct{Doc: []string{"Row is one record."}, Name: rowName}
 			s.Fields.Append(
 				&emit.Field{Doc: []string{"Key addresses the row."}, Name: "Key", Type: ref("string")},
-				&emit.Field{Name: "N", Type: ref("int"), Tag: `json:"n"`, Comment: "counted"},
+				&emit.Field{
+					Name: "N", Type: ref("int"), Comment: "counted",
+					Tags: emit.SlotOf(&emit.TagEntry{Key: "json", Value: "n"}),
+				},
 			)
 			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
 				"// Row is one record.\n"+
@@ -85,11 +88,11 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			s := &emit.Struct{Name: rowName, Comment: "one per fetch"}
-			s.Embeds = []*emit.Embed{{
+			s.Embeds.Append(&emit.Embed{
 				Doc: []string{"Base declares the shared fields."}, Ref: ref("Base"),
 				Tag: `json:"-"`, Comment: "promoted",
 				Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
-			}}
+			})
 			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
 				"type Row struct {\n"+
 					"\t// Base declares the shared fields.\n"+
@@ -105,8 +108,8 @@ func TestTemplates(t *testing.T) {
 			i := &emit.Interface{Name: "Store", Comment: "read side"}
 			i.Methods.Append(&emit.Method{
 				Name: "Get", Comment: "by key",
-				Params:  []*emit.Param{{Name: "key", Type: ref("string"), Comment: "the row key"}},
-				Returns: []*emit.Return{{Type: ref("string"), Comment: "the row"}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("string"), Comment: "the row key"}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("string"), Comment: "the row"}),
 			})
 			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
 				"type Store interface {\n"+
@@ -151,8 +154,8 @@ func TestTemplates(t *testing.T) {
 			i.Methods.Append(&emit.Method{
 				Doc:     []string{"Load fetches one row."},
 				Name:    "Load",
-				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
-				Returns: []*emit.Return{{Type: ref(rowName)}, {Type: ref("error")}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("string")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}, &emit.Return{Type: ref("error")}),
 			})
 			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
 				"// Store loads rows.\n"+
@@ -167,12 +170,12 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			i := &emit.Interface{Name: "ReadCloser"}
-			i.Embeds = []*emit.Embed{{
+			i.Embeds.Append(&emit.Embed{
 				Doc:         []string{"Reader is the stream side."},
 				Ref:         imported("io", "io", "Reader"),
 				Comment:     "stream side",
 				Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
-			}}
+			})
 			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
 				"type ReadCloser interface {\n"+
 					"\t// Reader is the stream side.\n"+
@@ -186,7 +189,7 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			i := &emit.Interface{Name: "ReadCloser"}
-			i.Embeds = []*emit.Embed{{Ref: ref("io.Reader"), Tag: `json:"r"`}}
+			i.Embeds.Append(&emit.Embed{Ref: ref("io.Reader"), Tag: `json:"r"`})
 			assert.HasError(t, parsed(t, kind(symbol.KindInterface), &render.ImportSet{}).Execute(io.Discard, i),
 				"Go gives a struct field alone a tag")
 		})
@@ -194,7 +197,7 @@ func TestTemplates(t *testing.T) {
 		t.Run("writes a function around its body", func(t *testing.T) {
 			t.Parallel()
 
-			f := &emit.Function{Name: "Load", Returns: []*emit.Return{{Type: ref("error")}}}
+			f := &emit.Function{Name: "Load", Returns: emit.SlotOf(&emit.Return{Type: ref("error")})}
 			assert.Equal(t, executed(t, kind(symbol.KindFunction), f),
 				"func Load() error {\n"+bodyStub+"}\n", "the function's shape")
 		})
@@ -286,7 +289,7 @@ func TestTemplates(t *testing.T) {
 
 			s := &emit.Struct{
 				Name:   rowName,
-				Embeds: []*emit.Embed{{Ref: ref("Base")}, {Ref: imported("sync", "sync", "Mutex")}},
+				Embeds: emit.SlotOf(&emit.Embed{Ref: ref("Base")}, &emit.Embed{Ref: imported("sync", "sync", "Mutex")}),
 			}
 			s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
 			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
@@ -312,8 +315,8 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			i := &emit.Interface{Name: "Store", Extends: []*emit.TypeRef{ref("Closer")}}
-			i.Embeds = []*emit.Embed{{Ref: ref("Reader")}}
-			i.Methods.Append(&emit.Method{Name: "Get", Returns: []*emit.Return{{Type: ref("string")}}})
+			i.Embeds.Append(&emit.Embed{Ref: ref("Reader")})
+			i.Methods.Append(&emit.Method{Name: "Get", Returns: emit.SlotOf(&emit.Return{Type: ref("string")})})
 			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
 				"type Store interface {\n\tReader\n\tCloser\n\tGet() string\n}\n",
 				"both as embedded lines")
@@ -333,8 +336,8 @@ func TestTemplates(t *testing.T) {
 			}
 			i.Methods.Append(&emit.Method{
 				Name:    "Pick",
-				Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
-				Returns: []*emit.Return{{Type: ref("K")}},
+				Params:  emit.SlotOf(&emit.Param{Name: "key", Type: ref("K")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref("K")}),
 			})
 			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
 				"type Keyed[K Codec] interface {\n\tPick(key K) K\n}\n", "an interface's list")
@@ -342,8 +345,8 @@ func TestTemplates(t *testing.T) {
 			f := &emit.Function{
 				Name:       "Sort",
 				TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
-				Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
-				Returns:    []*emit.Return{{Type: ref("T")}},
+				Params:     emit.SlotOf(&emit.Param{Name: "items", Type: ref("T")}),
+				Returns:    emit.SlotOf(&emit.Return{Type: ref("T")}),
 			}
 			assert.Equal(t, executed(t, kind(symbol.KindFunction), f),
 				"func Sort[T Codec](items T) T {\n"+bodyStub+"}\n", "a function's list")
@@ -364,8 +367,8 @@ func TestTemplates(t *testing.T) {
 				Name:       "Fold",
 				Receives:   &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{ref("T")}},
 				TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
-				Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
-				Returns:    []*emit.Return{{Type: ref("U")}},
+				Params:     emit.SlotOf(&emit.Param{Name: "item", Type: ref("U")}),
+				Returns:    emit.SlotOf(&emit.Return{Type: ref("U")}),
 			}
 			assert.Equal(t, executed(t, kind(symbol.KindMethod), m),
 				"func (Box[T]) Fold[U Codec](item U) U {\n"+bodyStub+"}\n",

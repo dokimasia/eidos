@@ -18,27 +18,39 @@
 //
 // [Predeclared] reports Go's predeclared type names, and [Basic] and
 // [Ordered] the basic types among them, read off the universe scope
-// of go/types. [ImportName] and [AssumedName] return the qualifier an
+// of go/types. [NumericOf] returns the class and the width of a
+// predeclared numeric type, which the rules classify, and
+// [NumericName] returns the name of a class and a width, which the
+// spoke spells. [ImportName] and [AssumedName] return the qualifier an
 // import binds, and [Qualifier] returns the qualifier under which a
 // generated file imports a package. [ImportPath] returns the import
 // path under which the package of a workspace directory loads. The
 // frontend loads the package under it, and the backend uses it as the
-// package of a file that it routes into the directory. [TestSuffix] ends
-// a test file's stem and the import path the frontend loads an external
-// test package under, so the backend spells a file of that package as a
-// test file.
+// package of a file that it routes into the directory. [Standard]
+// reports whether an import path names a package of the standard
+// library, for the frontend's load of a dependency and the backend's
+// import groups. [TestSuffix] ends a test file's stem and the import
+// path the frontend loads an external test package under, so the
+// backend spells a file of that package as a test file.
 //
-// [Scope] is what one file's imports bind, and [NewScope] derives it
-// from the file's import records. The load's resolution step, the
-// rules and the frontend's reference lowering all resolve a spelling
-// through it, so Go probes one way everywhere: [Scope.Candidates]
-// returns what a spelling may name in probe order, and
-// [Scope.Import] returns the path a qualifier binds.
+// [Bindings] contains what the imports of one file bind, and
+// [NewBindings] derives the bindings from the import records of the
+// file. The resolution step of the load, the rules and the reference
+// lowering of the frontend resolve a spelling through them, so Go
+// probes one way everywhere. [Bindings.Candidates] returns the
+// declarations that a spelling can refer to in probe order, and
+// [Bindings.Import] returns the path that a qualifier binds.
 //
 // [PointerReceiver] states a pointer receiver on an emit method that
 // receives a type, named apart from the method's signature: what a
 // generator writing Go stubs calls after the kernel's Mirror, which
 // leaves the receiver to the target.
+//
+// [Restate] writes the syntax of a Go composite type from the spellings
+// of its children: a pointer, a slice, an array, a map, a channel and a
+// function type. The spoke spells the composite types of a translation
+// through it, and the backend writes a composite again through it where
+// a child spells otherwise than written.
 //
 // # Packages
 //
@@ -78,7 +90,8 @@
 // # Dependency position
 //
 // The root package imports the sdk's diag, emit, meta, node, plugin
-// and symbol facades and the Go stdlib, go/types among it. The
+// and symbol facades, eidos-lang's spellref, and the Go stdlib,
+// go/types among it. The
 // module's other packages import the kernel's SPI through the sdk
 // facade, the shared helpers of eidos-lang, and the Go stdlib. None
 // imports eidos-lang's grammar packages: the frontend parses with

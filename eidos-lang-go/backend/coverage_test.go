@@ -13,12 +13,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// coverageAllocs is the coverage table: the fact map's four, and the
-// exception map's two with its two kinds' two each.
-const coverageAllocs = 4 + 2 + 2*2
+// coverageAllocs is the count of the coverage table: four for the fact
+// map, and two for the exception map with two for each of its three
+// kinds.
+const coverageAllocs = 4 + 2 + 3*2
 
-// The suite checks the declaration total and the rendered findings
-// against the table, and these cases pin the cells that distinguish Go.
+// TestCoverage pins the verdicts that distinguish Go. The conformance
+// suite checks that the table is total and that the rendered findings
+// match it.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -67,24 +69,61 @@ func TestCoverage(t *testing.T) {
 				name: "returns Renders for a function's annotations",
 				kind: symbol.KindFunction, fact: symbol.FactAnnotations, want: render.Renders,
 			},
+			{
+				name: "returns Rejects for an async function",
+				kind: symbol.KindFunction, fact: symbol.FactAsync, want: render.Rejects,
+			},
+			{
+				name: "returns Rejects for a method's override",
+				kind: symbol.KindMethod, fact: symbol.FactOverride, want: render.Rejects,
+			},
+			{
+				name: "returns Rejects for a method's default body",
+				kind: symbol.KindMethod, fact: symbol.FactDefaultBody, want: render.Rejects,
+			},
+			{
+				name: "returns Rejects for a field at the type level",
+				kind: symbol.KindField, fact: symbol.FactLevel, want: render.Rejects,
+			},
+			{
+				name: "returns Rejects for a computed field",
+				kind: symbol.KindField, fact: symbol.FactComputed, want: render.Rejects,
+			},
+			{
+				name: "returns Rejects for a method's mutability",
+				kind: symbol.KindMethod, fact: symbol.FactMutability, want: render.Rejects,
+			},
+			{
+				name: "returns Renders for a variable's mutability",
+				kind: symbol.KindVariable, fact: symbol.FactMutability, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for an abstract method",
+				kind: symbol.KindMethod, fact: symbol.FactAbstract, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for an enum's underlying type",
+				kind: symbol.KindEnum, fact: symbol.FactUnderlying, want: render.Renders,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want, "the verdict")
+				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want,
+					"Coverage returns the verdict of Go")
 			})
 		}
 	})
 }
 
-// The table allocates its maps. The ordinary run, which runs no
-// benchmark, checks that ceiling here.
+// TestCoverageAllocs checks the ceiling of the table in the ordinary run,
+// which runs no benchmark.
 func TestCoverageAllocs(t *testing.T) {
 	checkAllocs(t, coverageCalls())
 }
 
-// BenchmarkCoverage measures the table the backend reads once per
+// BenchmarkCoverage measures the table that the backend reads once per
 // build.
 func BenchmarkCoverage(b *testing.B) {
 	benchCalls(b, coverageCalls())
