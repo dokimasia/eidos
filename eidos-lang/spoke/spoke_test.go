@@ -17,12 +17,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The source spellings of the shapes in the cases, and the spelling that
-// the fixture spoke returns for text.
+// The source spellings of the shapes in the cases, the spelling that the
+// fixture spoke returns for text, and the language that the read-only
+// cases name.
 const (
 	textSpelling   = "string"
 	numberSpelling = "number"
 	spokeSpelling  = "spelled"
+	goName         = "Go"
 )
 
 // childrenAllocs is the list that Children returns for two shapes that
@@ -44,8 +46,9 @@ func textOnly(s rules.TypeShape) (*emit.TypeRef, error) {
 	return spelled, nil
 }
 
-// TestSpoke checks the noun phrase of each form, and the refusal of a
-// child, which starts with the source spelling of the child.
+// TestSpoke checks the noun phrase of each form, the refusal of a child,
+// which starts with the source spelling of the child, and the refusal of
+// a read-only shape.
 func TestSpoke(t *testing.T) {
 	t.Parallel()
 
@@ -199,6 +202,135 @@ func TestSpoke(t *testing.T) {
 			assert.Nil(t, got, "a refusal returns no reference")
 		})
 	})
+
+	t.Run("Arity", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nil for a shape of the stated number of children", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, spoke.Arity(listOf(1), 1), "a list of one child passes")
+		})
+
+		tests := []struct {
+			name  string
+			give  rules.TypeShape
+			arity int
+			want  string
+		}{
+			{
+				name: "returns an error that counts one child in words", give: listOf(2), arity: 1,
+				want: "a list takes one child, and the shape has 2",
+			},
+			{
+				name: "returns an error that counts two children in words",
+				give: rules.TypeShape{Form: symbol.FormMap, Elems: listOf(1).Elems}, arity: 2,
+				want: "a map takes two children, and the shape has 1",
+			},
+			{
+				name: "returns an error that counts three children in digits", give: listOf(1), arity: 3,
+				want: "a list takes 3 children, and the shape has 1",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := spoke.Arity(tt.give, tt.arity)
+				assert.HasError(t, err, "a shape of another number of children fails")
+				assert.Equal(t, err.Error(), tt.want, "the error names the form and both numbers")
+			})
+		}
+	})
+
+	t.Run("Split", func(t *testing.T) {
+		t.Parallel()
+
+		two := listOf(2).Elems
+		passed := []struct {
+			name string
+			give int
+		}{
+			{name: "returns nil for a split before the first child", give: 0},
+			{name: "returns nil for a split after the last child", give: 2},
+		}
+		for _, tt := range passed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NoError(t, spoke.Split(rules.TypeShape{Form: symbol.FormFunc, Elems: two, Split: tt.give}),
+					"a split inside the children passes")
+			})
+		}
+
+		failed := []struct {
+			name string
+			give int
+			want string
+		}{
+			{
+				name: "returns an error for a split below zero", give: -1,
+				want: "a function type splits its 2 children at -1",
+			},
+			{
+				name: "returns an error for a split past the last child", give: 3,
+				want: "a function type splits its 2 children at 3",
+			},
+		}
+		for _, tt := range failed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := spoke.Split(rules.TypeShape{Form: symbol.FormFunc, Elems: two, Split: tt.give})
+				assert.HasError(t, err, "a split outside the children fails")
+				assert.Equal(t, err.Error(), tt.want, "the error names the children and the split")
+			})
+		}
+	})
+
+	t.Run("ReadOnly", func(t *testing.T) {
+		t.Parallel()
+
+		passed := []struct {
+			name string
+			give symbol.Mutability
+		}{
+			{name: "returns nil for a mutable shape", give: symbol.MutabilityMutable},
+			{name: "returns nil for a shape without a mutability", give: symbol.MutabilityUnknown},
+		}
+		for _, tt := range passed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NoError(t, spoke.ReadOnly(rules.TypeShape{Form: symbol.FormList, Mutability: tt.give}, goName),
+					"a writable spelling keeps the facts of the shape")
+			})
+		}
+
+		failed := []struct {
+			name string
+			give symbol.TypeForm
+			want string
+		}{
+			{
+				name: "returns an error for an immutable list", give: symbol.FormList,
+				want: "a read-only list has no Go spelling",
+			},
+			{
+				name: "returns an error for an immutable array", give: symbol.FormArray,
+				want: "a read-only array has no Go spelling",
+			},
+		}
+		for _, tt := range failed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := spoke.ReadOnly(rules.TypeShape{Form: tt.give, Mutability: symbol.MutabilityImmutable}, goName)
+				assert.HasError(t, err, "a writable spelling drops the constraint of the shape")
+				assert.Equal(t, err.Error(), tt.want, "the error names the form and the language")
+			})
+		}
+	})
 }
 
 // Describe allocates nothing for a declared form, and Children allocates
@@ -225,6 +357,15 @@ func TestSpokeAllocs(t *testing.T) {
 		"Child allocates nothing beyond the spoke")
 	assert.NoError(t, err, "Child spells the shape")
 	assert.Equal(t, child, spelled, "Child returns the spoke's reference", assert.ByIdentity())
+
+	list, fn := listOf(1), rules.TypeShape{Form: symbol.FormFunc, Elems: listOf(2).Elems, Split: 1}
+	assert.MaxAllocs(t, func() { err = spoke.Arity(list, 1) }, 0, "Arity allocates nothing for a valid shape")
+	assert.NoError(t, err, "Arity passes a list of one child")
+	assert.MaxAllocs(t, func() { err = spoke.Split(fn) }, 0, "Split allocates nothing for a valid split")
+	assert.NoError(t, err, "Split passes a split inside the children")
+	assert.MaxAllocs(t, func() { err = spoke.ReadOnly(list, goName) }, 0,
+		"ReadOnly allocates nothing for a shape that is not immutable")
+	assert.NoError(t, err, "ReadOnly passes a list without a mutability")
 }
 
 // BenchmarkSpoke measures the description of a form, which every refusal
@@ -274,4 +415,46 @@ func BenchmarkSpoke(b *testing.B) {
 		assert.NoError(b, err, "Child spells the shape")
 		assert.Equal(b, got, spelled, "Child returns the spoke's reference", assert.ByIdentity())
 	})
+
+	b.Run("Arity", func(b *testing.B) {
+		list := listOf(1)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = spoke.Arity(list, 1)
+		}
+		assert.NoError(b, err, "Arity passes a list of one child")
+	})
+
+	b.Run("Split", func(b *testing.B) {
+		fn := rules.TypeShape{Form: symbol.FormFunc, Elems: listOf(2).Elems, Split: 1}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = spoke.Split(fn)
+		}
+		assert.NoError(b, err, "Split passes a split inside the children")
+	})
+
+	b.Run("ReadOnly", func(b *testing.B) {
+		list := rules.TypeShape{Form: symbol.FormList, Mutability: symbol.MutabilityMutable}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = spoke.ReadOnly(list, goName)
+		}
+		assert.NoError(b, err, "ReadOnly passes a mutable list")
+	})
+}
+
+// listOf returns a list of n children of text.
+func listOf(n int) rules.TypeShape {
+	s := rules.TypeShape{Form: symbol.FormList}
+	for range n {
+		s.Elems = append(s.Elems, rules.Leaf(symbol.FormText, textSpelling))
+	}
+	return s
 }

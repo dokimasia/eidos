@@ -4,6 +4,7 @@
 package lowering_test
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 
@@ -22,6 +23,18 @@ const (
 	shapeHost = "Shape"
 )
 
+// The callables, the failure type, the variant, the field and the type
+// parameters that the cases of the sum and the callable steps name.
+const (
+	readName    = "read"
+	writeName   = "write"
+	ioError     = "IOError"
+	circleName  = "circle"
+	radiusName  = "radius"
+	firstParam  = "T"
+	secondParam = "U"
+)
+
 // stackMethods is the most methods the member check's set holds on the
 // stack.
 const stackMethods = 8
@@ -37,69 +50,71 @@ const (
 	copyRefsAllocs = 3
 	// copyRefAllocs is the copy of a reference without children.
 	copyRefAllocs = 1
+	// paramArgsAllocs is the list of two arguments and the two
+	// references.
+	paramArgsAllocs = 3
 	// uniqueAllocs is the member check of more methods than the stack
 	// holds: the set at its final size.
 	uniqueAllocs = 3
 )
 
-// The copies restate shapes without sharing, and the member check
-// names its language, so both contracts are pinned here.
+// errFold is the refusal of the fold that a case passes to Callables.
+var errFold = errors.New("lowering_test: the fold refuses the callable")
+
+// TestLowering checks that the copies share no node with their input,
+// that the steps of a sum and of a callable lower what their contracts
+// state, and that each error has the prefix of its language.
 func TestLowering(t *testing.T) {
 	t.Parallel()
 
 	t.Run("CopyTypeParams", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns a fresh parameter for each parameter", func(t *testing.T) {
+		t.Run("returns a new parameter for each parameter", func(t *testing.T) {
 			t.Parallel()
 
 			in := boundParams()
 			out := lowering.CopyTypeParams(in)
-			assert.Length(t, out, 1, "one parameter copies")
-			assert.NotEqual(t, out[0], in[0], "as a fresh parameter", assert.ByIdentity())
-			assert.Equal(t, out[0].Name, in[0].Name, "under its name")
+			assert.Length(t, out, 1, "one parameter is copied")
+			assert.NotEqual(t, out[0], in[0], "the copy is a new parameter", assert.ByIdentity())
+			assert.Equal(t, out[0].Name, in[0].Name, "the copy has the name of the parameter")
 		})
 
-		t.Run("returns fresh bounds down to the argument tree", func(t *testing.T) {
+		t.Run("returns new bounds down to the argument tree", func(t *testing.T) {
 			t.Parallel()
 
 			in := boundParams()
 			out := lowering.CopyTypeParams(in)
 			bound := in[0].Bounds[0]
-			assert.NotEqual(t, out[0].Bounds[0], bound, "with a fresh bound", assert.ByIdentity())
-			assert.NotEqual(
-				t,
-				out[0].Bounds[0].Args[0],
-				bound.Args[0],
-				"down to the argument tree",
-				assert.ByIdentity(),
-			)
-			assert.Equal(t, out[0].Bounds[0].Args[0].Spelling, "K", "spelled the same")
+			assert.NotEqual(t, out[0].Bounds[0], bound, "the bound is new", assert.ByIdentity())
+			assert.NotEqual(t, out[0].Bounds[0].Args[0], bound.Args[0], "the argument of the bound is new",
+				assert.ByIdentity())
+			assert.Equal(t, out[0].Bounds[0].Args[0].Spelling, "K", "the argument has the same spelling")
 		})
 
 		t.Run("returns nil for no parameters", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Nil(t, lowering.CopyTypeParams(nil), "emptiness copies to nil")
+			assert.Nil(t, lowering.CopyTypeParams(nil), "the copy of no parameters is nil")
 		})
 	})
 
 	t.Run("CopyTypeRefs", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns a fresh reference for each reference in order", func(t *testing.T) {
+		t.Run("returns a new reference for each reference in order", func(t *testing.T) {
 			t.Parallel()
 
 			in := leaves()
 			out := lowering.CopyTypeRefs(in)
-			assert.Equal(t, out, in, "the copies spell the references in order")
-			assert.NotEqual(t, out[0], in[0], "and share no node with them", assert.ByIdentity())
+			assert.Equal(t, out, in, "the copies have the spellings of the references in order")
+			assert.NotEqual(t, out[0], in[0], "the copies share no node with the references", assert.ByIdentity())
 		})
 
 		t.Run("returns nil for no references", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Nil(t, lowering.CopyTypeRefs(nil), "a nil list copies to nil")
+			assert.Nil(t, lowering.CopyTypeRefs(nil), "the copy of a nil list is nil")
 		})
 	})
 
@@ -110,7 +125,7 @@ func TestLowering(t *testing.T) {
 			t.Parallel()
 
 			in := mapOfUsers()
-			assert.Equal(t, lowering.CopyTypeRef(in), in, "the copy restates the whole tree")
+			assert.Equal(t, lowering.CopyTypeRef(in), in, "the copy has the whole tree of the input")
 		})
 
 		t.Run("returns a tree that shares no node with its input", func(t *testing.T) {
@@ -118,14 +133,201 @@ func TestLowering(t *testing.T) {
 
 			in := mapOfUsers()
 			out := lowering.CopyTypeRef(in)
-			expect.NotEqual(t, out.Elems[1], in.Elems[1], "a child is fresh", assert.ByIdentity())
-			expect.NotEqual(t, out.Elems[1].Elems[0], in.Elems[1].Elems[0], "at any depth", assert.ByIdentity())
+			expect.NotEqual(t, out.Elems[1], in.Elems[1], "a child is new", assert.ByIdentity())
+			expect.NotEqual(t, out.Elems[1].Elems[0], in.Elems[1].Elems[0], "a child of a child is new",
+				assert.ByIdentity())
 		})
 
 		t.Run("returns nil for a nil reference", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Nil(t, lowering.CopyTypeRef(nil), "a nil reference copies to nil")
+			assert.Nil(t, lowering.CopyTypeRef(nil), "the copy of a nil reference is nil")
+		})
+	})
+
+	t.Run("ParamArgs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns one reference for each parameter in order", func(t *testing.T) {
+			t.Parallel()
+
+			args := lowering.ParamArgs([]*emit.TypeParam{{Name: firstParam}, {Name: secondParam}})
+			assert.Equal(t, args, []*emit.TypeRef{{Spelling: firstParam}, {Spelling: secondParam}},
+				"each argument has the name of its parameter")
+		})
+
+		t.Run("returns nil for no parameters", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, lowering.ParamArgs(nil), "no parameters have no arguments")
+		})
+	})
+
+	t.Run("NamedPayload", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nil for a payload whose fields have names", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, lowering.NamedPayload(rustLang, circle(radiusName)), "each field has a name")
+		})
+
+		t.Run("returns nil for a variant without a payload", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, lowering.NamedPayload(rustLang, &emit.SumVariant{Name: circleName}),
+				"a variant without fields has nothing to check")
+		})
+
+		t.Run("returns an error for a payload entry without a name", func(t *testing.T) {
+			t.Parallel()
+
+			err := lowering.NamedPayload(rustLang, circle(""))
+			assert.HasError(t, err, "a field without a name fails")
+			assert.Equal(t, err.Error(),
+				"rust: each field of a variant's declaration has a name, and a payload entry of circle "+
+					"does not have one",
+				"the error has the prefix of the language and the name of the variant")
+		})
+	})
+
+	t.Run("Callables", func(t *testing.T) {
+		t.Parallel()
+
+		iface := &emit.Interface{Name: shapeHost}
+		iface.Methods.Append(failing()...)
+		folded := []struct {
+			name string
+			give symbol.Symbol
+			want []string
+		}{
+			{
+				name: "folds a function with failures",
+				give: &emit.Function{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}},
+				want: []string{readName},
+			},
+			{
+				name: "folds a method with failures",
+				give: &emit.Method{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}},
+				want: []string{readName},
+			},
+			{
+				name: "folds each method of a struct that has failures in order",
+				give: failingStruct(),
+				want: []string{readName, writeName},
+			},
+			{
+				name: "folds each method of an interface that has failures in order",
+				give: iface,
+				want: []string{readName, writeName},
+			},
+		}
+		for _, tt := range folded {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var names []string
+				err := lowering.Callables(rustLang, tt.give,
+					func(name string, _ *emit.Slot[*emit.Return], _ []*emit.TypeRef) error {
+						names = append(names, name)
+						return nil
+					})
+				assert.NoError(t, err, "the fold accepts every callable")
+				assert.Equal(t, names, tt.want, "the fold receives each callable with failures by name")
+			})
+		}
+
+		t.Run("passes the failures of the callable to the fold", func(t *testing.T) {
+			t.Parallel()
+
+			fn := &emit.Function{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}}
+			want := fn.Throws
+			var got []*emit.TypeRef
+			err := lowering.Callables(rustLang, fn,
+				func(_ string, _ *emit.Slot[*emit.Return], throws []*emit.TypeRef) error {
+					got = throws
+					return nil
+				})
+			assert.NoError(t, err, "the fold accepts the function")
+			assert.Equal(t, got, want, "the fold receives the failures of the function", assert.ByIdentity())
+		})
+
+		t.Run("keeps the returns that the fold appends", func(t *testing.T) {
+			t.Parallel()
+
+			fn := &emit.Function{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}}
+			err := lowering.Callables(rustLang, fn,
+				func(_ string, returns *emit.Slot[*emit.Return], throws []*emit.TypeRef) error {
+					returns.Append(&emit.Return{Type: throws[0]})
+					return nil
+				})
+			assert.NoError(t, err, "the fold accepts the function")
+			assert.Length(t, fn.Returns.Items(), 1, "the function has the return that the fold appends")
+		})
+
+		t.Run("clears the failures of a callable once the fold returns nil", func(t *testing.T) {
+			t.Parallel()
+
+			fn := &emit.Function{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}}
+			err := lowering.Callables(rustLang, fn,
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return nil })
+			assert.NoError(t, err, "the fold accepts the function")
+			assert.Nil(t, fn.Throws, "the function has no failures after the fold")
+		})
+
+		t.Run("does not call the fold for a callable without failures", func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			err := lowering.Callables(rustLang, &emit.Function{Name: readName},
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error {
+					called = true
+					return nil
+				})
+			assert.NoError(t, err, "a function without failures has nothing to fold")
+			assert.False(t, called, "the fold does not receive a function without failures")
+		})
+
+		t.Run("returns the error of the fold", func(t *testing.T) {
+			t.Parallel()
+
+			err := lowering.Callables(rustLang, failingStruct(),
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return errFold })
+			assert.ErrorIs(t, err, errFold, "the error of the fold is returned unchanged")
+		})
+
+		t.Run("keeps the failures of a callable whose fold returns an error", func(t *testing.T) {
+			t.Parallel()
+
+			fn := &emit.Function{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}}
+			err := lowering.Callables(rustLang, fn,
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return errFold })
+			assert.ErrorIs(t, err, errFold, "the fold refuses the function")
+			assert.Length(t, fn.Throws, 1, "the function keeps its failure")
+		})
+
+		t.Run("returns an error for a host that declares one method name twice", func(t *testing.T) {
+			t.Parallel()
+
+			twice := &emit.Struct{Name: shapeHost}
+			twice.Methods.Append(&emit.Method{Name: readName}, &emit.Method{Name: readName})
+			err := lowering.Callables(rustLang, twice,
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return nil })
+			assert.HasError(t, err, "a method name declared twice fails")
+			assert.Contains(t, err.Error(), "rust: method read", "the error has the prefix of the language")
+		})
+
+		t.Run("does not call the fold for a declaration that has no callables", func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			err := lowering.Callables(rustLang, &emit.Enum{Name: shapeHost},
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error {
+					called = true
+					return nil
+				})
+			assert.NoError(t, err, "an enum has nothing to fold")
+			assert.False(t, called, "the fold does not receive an enum")
 		})
 	})
 
@@ -136,29 +338,33 @@ func TestLowering(t *testing.T) {
 			t.Parallel()
 
 			assert.NoError(t, lowering.UniqueMethods(rustLang, shapeHost, methods(stackMethods+1)),
-				"every name once passes")
+				"each name once passes")
 		})
 
-		t.Run("returns an error naming the duplicate under the language", func(t *testing.T) {
+		t.Run("returns an error that names the method declared twice", func(t *testing.T) {
 			t.Parallel()
 
 			err := lowering.UniqueMethods(rustLang, shapeHost, []*emit.Method{{Name: "area"}, {Name: "area"}})
 			assert.HasError(t, err, "a name declared twice fails")
-			assert.Contains(t, err.Error(), "rust: method area", "under the language's prefix")
+			assert.Contains(t, err.Error(), "rust: method area", "the error has the prefix of the language")
 		})
 	})
 }
 
-// Each copy allocates what it returns, and the member check allocates
-// its set only past the stack's room, in the ordinary run, which runs
-// no benchmark.
+// Each copy allocates what it returns, the steps of a sum and of a
+// callable allocate what their contracts state, and the member check
+// allocates its set only past the room of the stack. The ordinary run,
+// which runs no benchmark, checks those ceilings here.
 func TestLoweringAllocs(t *testing.T) {
 	params, refs, leaf := boundParams(), leaves(), &emit.TypeRef{Spelling: "string"}
+	pair := []*emit.TypeParam{{Name: firstParam}, {Name: secondParam}}
+	variant := circle(radiusName)
 	few, many := methods(stackMethods), methods(stackMethods+1)
 	var (
 		copiedParams []*emit.TypeParam
 		copiedRefs   []*emit.TypeRef
 		copied       *emit.TypeRef
+		args         []*emit.TypeRef
 		err          error
 	)
 	assert.MaxAllocs(t, func() { copiedParams = lowering.CopyTypeParams(params) }, copyParamsAllocs,
@@ -170,6 +376,18 @@ func TestLoweringAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { copied = lowering.CopyTypeRef(leaf) }, copyRefAllocs,
 		"CopyTypeRef allocates the copy")
 	assert.Equal(t, copied.Spelling, leaf.Spelling, "CopyTypeRef copies the spelling")
+	assert.MaxAllocs(t, func() { args = lowering.ParamArgs(pair) }, paramArgsAllocs,
+		"ParamArgs allocates the list and each argument")
+	assert.Length(t, args, 2, "ParamArgs returns one argument for each parameter")
+	assert.MaxAllocs(t, func() { err = lowering.NamedPayload(rustLang, variant) }, 0,
+		"NamedPayload allocates nothing for fields with names")
+	assert.NoError(t, err, "NamedPayload passes fields with names")
+	assert.MaxAllocsWithSetup(t, failingStruct,
+		func(s *emit.Struct) {
+			err = lowering.Callables(rustLang, s,
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return nil })
+		}, 0, "Callables allocates nothing for a host whose fold allocates nothing")
+	assert.NoError(t, err, "Callables folds the host")
 	assert.MaxAllocs(t, func() { err = lowering.UniqueMethods(rustLang, shapeHost, few) }, 0,
 		"UniqueMethods allocates nothing for methods the stack's set holds")
 	assert.NoError(t, err, "UniqueMethods passes distinct names")
@@ -179,7 +397,8 @@ func TestLoweringAllocs(t *testing.T) {
 }
 
 // BenchmarkLowering measures each copy a backend's lowering makes of a
-// shape, and the member check over a host's methods.
+// shape, the steps of the lowering of a sum and of a callable, and the
+// member check over a host's methods.
 func BenchmarkLowering(b *testing.B) {
 	b.Run("CopyTypeParams", func(b *testing.B) {
 		params := boundParams()
@@ -212,6 +431,41 @@ func BenchmarkLowering(b *testing.B) {
 			got = lowering.CopyTypeRef(leaf)
 		}
 		assert.Equal(b, got.Spelling, leaf.Spelling, "CopyTypeRef copies the spelling")
+	})
+
+	b.Run("ParamArgs", func(b *testing.B) {
+		pair := []*emit.TypeParam{{Name: firstParam}, {Name: secondParam}}
+		c := bench.Start(b).MaxAllocs(paramArgsAllocs)
+		defer c.End()
+		var got []*emit.TypeRef
+		for c.Loop() {
+			got = lowering.ParamArgs(pair)
+		}
+		assert.Length(b, got, 2, "ParamArgs returns one argument for each parameter")
+	})
+
+	b.Run("NamedPayload", func(b *testing.B) {
+		variant := circle(radiusName)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = lowering.NamedPayload(rustLang, variant)
+		}
+		assert.NoError(b, err, "NamedPayload passes fields with names")
+	})
+
+	b.Run("Callables", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			var s *emit.Struct
+			c.Excluding(func() { s = failingStruct() })
+			err = lowering.Callables(rustLang, s,
+				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return nil })
+		}
+		assert.NoError(b, err, "Callables folds the host")
 	})
 
 	tests := []struct {
@@ -272,4 +526,29 @@ func methods(n int) []*emit.Method {
 		out = append(out, &emit.Method{Name: "m" + strconv.Itoa(i)})
 	}
 	return out
+}
+
+// circle returns the variant circle with one field of the given name.
+func circle(field string) *emit.SumVariant {
+	v := &emit.SumVariant{Name: circleName}
+	v.Fields.Append(&emit.Field{Name: field, Type: &emit.TypeRef{Spelling: "f64"}})
+	return v
+}
+
+// failing returns the methods read and write, each with the failure
+// IOError, and between them the method close, which has no failures.
+func failing() []*emit.Method {
+	return []*emit.Method{
+		{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}},
+		{Name: "close"},
+		{Name: writeName, Throws: []*emit.TypeRef{{Spelling: ioError}}},
+	}
+}
+
+// failingStruct returns the struct Shape with the methods that failing
+// returns.
+func failingStruct() *emit.Struct {
+	s := &emit.Struct{Name: shapeHost}
+	s.Methods.Append(failing()...)
+	return s
 }

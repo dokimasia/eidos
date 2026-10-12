@@ -4,7 +4,9 @@
 package spellref
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -14,6 +16,17 @@ import (
 // argSeparator separates the arguments a spelling writes inside its
 // brackets.
 const argSeparator = ", "
+
+// spellingsStack is the number of spellings of children that
+// [SpellRestated] keeps on the stack for one structural reference. A
+// reference with more children allocates their list.
+const spellingsStack = 4
+
+// errUnspelled is the error of [SpellWith] for a structural reference
+// without a spelling. rules.Substitute leaves such a reference where it
+// replaced a type parameter inside it.
+var errUnspelled = errors.New("spellref: a structural type without a written spelling has no spelling " +
+	"that follows from its structure")
 
 // Spell writes one reference: the spelling, and any arguments
 // recursively inside the given brackets. A nil reference or an
@@ -84,8 +97,10 @@ type Qualify func(t *emit.TypeRef) (string, error)
 // inside it spells as written, and SpellWith returns an error where
 // one spells otherwise, because in the languages that call it a
 // composite's spelling does not follow from its structure: a list is
-// an array or a collection type, a map a record or a class. An error
-// qualify returns is returned as it is.
+// an array or a collection type, a map a record or a class. For the same
+// reason, SpellWith returns an error for a structural reference without
+// a spelling, at any depth. An error qualify returns is returned as it
+// is.
 //
 // # Allocation contract
 //
@@ -94,7 +109,7 @@ type Qualify func(t *emit.TypeRef) (string, error)
 // reference with arguments writes into one buffer, one allocation where
 // the qualified names fit the written spellings' length.
 func SpellWith(t *emit.TypeRef, opener, closer, standIn string, qualify Qualify) (string, error) {
-	if t == nil || t.Spelling == "" {
+	if t == nil {
 		return standIn, nil
 	}
 	if t.Form != symbol.FormNamed {
@@ -102,6 +117,9 @@ func SpellWith(t *emit.TypeRef, opener, closer, standIn string, qualify Qualify)
 			return "", err
 		}
 		return t.Spelling, nil
+	}
+	if t.Spelling == "" {
+		return standIn, nil
 	}
 	if len(t.Args) == 0 {
 		return qualify(t)
@@ -120,11 +138,14 @@ func SpellWith(t *emit.TypeRef, opener, closer, standIn string, qualify Qualify)
 func spellWith(
 	b *strings.Builder, t *emit.TypeRef, opener, closer, standIn string, qualify Qualify,
 ) (bool, error) {
-	if t == nil || t.Spelling == "" {
+	if t == nil || (t.Spelling == "" && t.Form == symbol.FormNamed) {
 		write(b, standIn)
 		return true, nil
 	}
 	if t.Form != symbol.FormNamed {
+		if t.Spelling == "" {
+			return false, errUnspelled
+		}
 		for _, c := range t.Elems {
 			written, err := spellWith(nil, c, opener, closer, standIn, qualify)
 			if err != nil {
@@ -167,6 +188,130 @@ func write(b *strings.Builder, s string) {
 	if b != nil {
 		b.WriteString(s)
 	}
+}
+
+// Restate writes a structural reference from the spellings of its
+// children, for a language whose composite spelling follows from its
+// structure. elems has the spelling of each child of t, in the order of
+// t.Elems.
+type Restate func(t *emit.TypeRef, elems []string) (string, error)
+
+// SpellRestated writes one reference as [SpellWith] does, and restates a
+// structural reference through restate where a child spells otherwise
+// than written or where the reference has no spelling. A structural
+// reference with a spelling whose children spell as written keeps its
+// written spelling, so a function type keeps the names of its
+// parameters. An argument and a child spell by the same rules, so a
+// restated child is part of the spelling of its parent. An error of
+// qualify or of restate is returned as it is.
+//
+// # Allocation contract
+//
+// A structural reference whose children spell as written, and a named
+// reference without arguments, return a spelling without allocating
+// beyond what qualify allocates. A named reference with arguments writes
+// into one buffer, one allocation where the qualified names fit the
+// written spellings' length. A restated reference allocates the list of
+// the spellings of its children, and what restate allocates. A structural
+// reference with more than four children allocates their list once more.
+func SpellRestated(
+	t *emit.TypeRef, opener, closer, standIn string, qualify Qualify, restate Restate,
+) (string, error) {
+	out, _, err := spellRestated(t, opener, closer, standIn, qualify, restate)
+	return out, err
+}
+
+// spellRestated returns what [SpellRestated] returns for t, and reports
+// whether it is the written spelling of t: every named reference inside t
+// qualified to its own spelling. It passes each parameter on by itself,
+// so qualify and restate do not escape.
+func spellRestated(
+	t *emit.TypeRef, opener, closer, standIn string, qualify Qualify, restate Restate,
+) (string, bool, error) {
+	switch {
+	case t == nil:
+		return standIn, true, nil
+	case t.Form != symbol.FormNamed:
+		return restatedStructural(t, opener, closer, standIn, qualify, restate)
+	case t.Spelling == "":
+		return standIn, true, nil
+	case len(t.Args) == 0:
+		name, err := qualify(t)
+		if err != nil {
+			return "", false, err
+		}
+		return name, name == t.Spelling, nil
+	}
+	var b strings.Builder
+	b.Grow(spelledLen(t, opener, closer, standIn))
+	written, err := writeRestated(&b, t, opener, closer, standIn, qualify, restate)
+	if err != nil {
+		return "", false, err
+	}
+	return b.String(), written, nil
+}
+
+// writeRestated writes the spelling of t into b, and reports whether it is
+// the written spelling of t. A named reference writes its arguments into
+// b in turn, and every other reference writes what [spellRestated]
+// returns.
+func writeRestated(
+	b *strings.Builder, t *emit.TypeRef, opener, closer, standIn string, qualify Qualify, restate Restate,
+) (bool, error) {
+	if t == nil || t.Spelling == "" || t.Form != symbol.FormNamed {
+		out, written, err := spellRestated(t, opener, closer, standIn, qualify, restate)
+		if err != nil {
+			return false, err
+		}
+		b.WriteString(out)
+		return written, nil
+	}
+	name, err := qualify(t)
+	if err != nil {
+		return false, err
+	}
+	written := name == t.Spelling
+	b.WriteString(name)
+	if len(t.Args) == 0 {
+		return written, nil
+	}
+	b.WriteString(opener)
+	for i, a := range t.Args {
+		if i > 0 {
+			b.WriteString(argSeparator)
+		}
+		argWritten, err := writeRestated(b, a, opener, closer, standIn, qualify, restate)
+		if err != nil {
+			return false, err
+		}
+		written = written && argWritten
+	}
+	b.WriteString(closer)
+	return written, nil
+}
+
+// restatedStructural returns the written spelling of the structural
+// reference t where t has one and each child spells as written, and the
+// restatement of t from the spellings of its children otherwise.
+func restatedStructural(
+	t *emit.TypeRef, opener, closer, standIn string, qualify Qualify, restate Restate,
+) (string, bool, error) {
+	var stack [spellingsStack]string
+	elems := stack[:0]
+	written := true
+	for _, c := range t.Elems {
+		out, childWritten, err := spellRestated(c, opener, closer, standIn, qualify, restate)
+		if err != nil {
+			return "", false, err
+		}
+		written = written && childWritten
+		elems = append(elems, out)
+	}
+	if written && t.Spelling != "" {
+		return t.Spelling, true, nil
+	}
+	out, err := restate(t, slices.Clone(elems))
+	return out, false, err
 }
 
 // PackageOf returns the package of a named reference for a backend of

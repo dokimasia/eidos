@@ -218,6 +218,30 @@ func TestNode(t *testing.T) {
 		})
 	})
 
+	t.Run("Bytes", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the node's source bytes", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind))
+			assert.Equal(t, string(field.Bytes()), cleanField, "the declaration as written")
+		})
+
+		t.Run("returns bytes that an append does not write past", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind))
+			assert.Equal(t, cap(field.Bytes()), len(cleanField), "the slice has no room beyond the node")
+		})
+
+		t.Run("returns nil for the zero Node", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, absent.Bytes(), "an absent node spans no source")
+		})
+	})
+
 	t.Run("TextThrough", func(t *testing.T) {
 		t.Parallel()
 
@@ -475,6 +499,109 @@ func TestNode(t *testing.T) {
 		})
 	})
 
+	t.Run("Content", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("yields the named children without the extras", func(t *testing.T) {
+			t.Parallel()
+
+			body := first(parse(t, commentJava).Root(), g.Kind(classBodyKind))
+			assert.Equal(t, kindsOf(g, slices.Collect(body.Content())), []string{fieldDeclKind},
+				"the comment is an extra and is left out")
+		})
+
+		t.Run("yields nothing for the zero Node", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, slices.Collect(absent.Content()), "an absent node has no child")
+		})
+
+		t.Run("stops when the consumer stops", func(t *testing.T) {
+			t.Parallel()
+
+			body := first(parse(t, cleanJava).Root(), g.Kind(classBodyKind))
+			seen := 0
+			for range body.Content() {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the walk ends at the first break")
+		})
+	})
+
+	t.Run("FirstOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the first named child of one of the kinds", func(t *testing.T) {
+			t.Parallel()
+
+			body := first(parse(t, cleanJava).Root(), g.Kind(classBodyKind))
+			assert.Equal(t, body.FirstOf(g.Kind(methodDeclKind), g.Kind(fieldDeclKind)).Kind(), g.Kind(fieldDeclKind),
+				"the field comes before the method")
+		})
+
+		t.Run("returns the zero Node where no child has one of the kinds", func(t *testing.T) {
+			t.Parallel()
+
+			body := first(parse(t, cleanJava).Root(), g.Kind(classBodyKind))
+			assert.True(t, body.FirstOf(g.Kind(classKind)).IsZero(), "the body declares no class")
+		})
+
+		t.Run("returns the zero Node for the zero Node", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, absent.FirstOf(g.Kind(classKind)).IsZero(), "an absent node has no child")
+		})
+	})
+
+	t.Run("LastNamed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the last named child", func(t *testing.T) {
+			t.Parallel()
+
+			body := first(parse(t, cleanJava).Root(), g.Kind(classBodyKind))
+			assert.Equal(t, body.LastNamed().Kind(), g.Kind(methodDeclKind), "the method is the last member")
+		})
+
+		t.Run("returns the zero Node for a node without a named child", func(t *testing.T) {
+			t.Parallel()
+
+			name := first(parse(t, cleanJava).Root(), g.Kind(identifierKind))
+			assert.True(t, name.LastNamed().IsZero(), "an identifier has no named child")
+		})
+
+		t.Run("returns the zero Node for the zero Node", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, absent.LastNamed().IsZero(), "an absent node has no child")
+		})
+	})
+
+	t.Run("HasToken", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for an unnamed child spelled the text", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind))
+			assert.True(t, field.HasToken(";"), "the terminator is an unnamed child")
+		})
+
+		t.Run("reports false for a named child spelled the text", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind))
+			assert.False(t, field.HasToken("int"), "the type is a named child")
+		})
+
+		t.Run("reports false for the zero Node", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, absent.HasToken(";"), "an absent node has no child")
+		})
+	})
+
 	t.Run("Parent", func(t *testing.T) {
 		t.Parallel()
 
@@ -571,6 +698,7 @@ func nodeCalls(tb testing.TB) []allocCall {
 	method := first(root, g.Kind(methodDeclKind))
 	long := first(parse(tb, longJava).Root(), g.Kind(fieldDeclKind))
 	decl := g.Field(declaratorField)
+	methodKind := g.Kind(methodDeclKind)
 	declarators := slices.Collect(field.Children(decl))
 	var (
 		reported bool
@@ -579,6 +707,7 @@ func nodeCalls(tb testing.TB) []allocCall {
 		at       position.Pos
 		node     treesitter.Node
 		count    int
+		size     int
 	)
 	return []allocCall{
 		{
@@ -616,6 +745,11 @@ func nodeCalls(tb testing.TB) []allocCall {
 			allocs: textAllocs,
 			call:   func() { text = field.Text() },
 			check:  func(tb assert.TB) { assert.Equal(tb, text, cleanField, "Text returns the declaration") },
+		},
+		{
+			name:  "Bytes",
+			call:  func() { size = len(field.Bytes()) },
+			check: func(tb assert.TB) { assert.Equal(tb, size, len(cleanField), "Bytes returns the declaration") },
 		},
 		{
 			name:   "TextThrough",
@@ -679,6 +813,35 @@ func nodeCalls(tb testing.TB) []allocCall {
 				}
 			},
 			check: func(tb assert.TB) { assert.Equal(tb, count, 2, "NamedChildren yields the field and the method") },
+		},
+		{
+			name: "Content",
+			call: func() {
+				count = 0
+				for range body.Content() {
+					count++
+				}
+			},
+			check: func(tb assert.TB) { assert.Equal(tb, count, 2, "Content yields the field and the method") },
+		},
+		{
+			name: "FirstOf",
+			call: func() { node = body.FirstOf(methodKind) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, node.Kind(), methodKind, "FirstOf returns the method")
+			},
+		},
+		{
+			name: "LastNamed",
+			call: func() { node = body.LastNamed() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, node.Kind(), methodKind, "LastNamed returns the method")
+			},
+		},
+		{
+			name:  "HasToken",
+			call:  func() { reported = field.HasToken(";") },
+			check: func(tb assert.TB) { assert.True(tb, reported, "HasToken reports the terminator") },
 		},
 		{
 			name: "Parent",

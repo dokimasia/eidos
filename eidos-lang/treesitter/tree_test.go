@@ -4,7 +4,9 @@
 package treesitter_test
 
 import (
+	"iter"
 	"slices"
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -22,6 +24,24 @@ var (
 	errorAt   = position.Pos{File: javaFile, Line: 2, Col: 3}
 	missingAt = position.Pos{File: javaFile, Line: 3, Col: 25}
 )
+
+// longBrokenJava has an ERROR node whose first line is longer than the
+// quote of a problem, and excerptBytes is the length of the quote.
+const (
+	longBrokenJava = "class A {\n  int a = 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20;\n}\n"
+	excerptBytes   = 32
+)
+
+// problemsAllocs is a range over the problems of the broken source: the
+// iterator and the loop body of the range, the source, the quote and the
+// sentence of its ERROR node, and the sentence of its MISSING node.
+const problemsAllocs = 6
+
+// problem is one problem that [treesitter.Tree.Problems] yields.
+type problem struct {
+	at       position.Pos
+	sentence string
+}
 
 // A tree's nodes are C memory the runtime allocates, and its errors are
 // nodes. Its root, its error walk and its release are pinned over
@@ -87,6 +107,73 @@ func TestTree(t *testing.T) {
 			tree := parse(t, brokenJava)
 			tree.Close()
 			assert.Empty(t, slices.Collect(tree.Errors()), "a closed tree has no nodes")
+		})
+	})
+
+	t.Run("Problems", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("yields the position and the sentence of each problem in document order", func(t *testing.T) {
+			t.Parallel()
+
+			tree := parse(t, brokenJava)
+			errs := slices.Collect(tree.Errors())
+			assert.Length(t, errs, 2, "the source has an ERROR and a MISSING node")
+			var got []problem
+			for at, sentence := range tree.Problems() {
+				got = append(got, problem{at: at, sentence: sentence})
+			}
+			assert.Equal(t, got, []problem{
+				{at: errorAt, sentence: strconv.Quote(errs[0].Text()) + " does not parse"},
+				{at: missingAt, sentence: "; is missing here"},
+			}, "the ERROR node quotes its source, and the MISSING node names its kind")
+		})
+
+		t.Run("cuts the quote of a long line at 32 bytes", func(t *testing.T) {
+			t.Parallel()
+
+			tree := parse(t, longBrokenJava)
+			var long treesitter.Node
+			for n := range tree.Errors() {
+				if n.IsError() && len(n.Text()) > excerptBytes {
+					long = n
+					break
+				}
+			}
+			assert.False(t, long.IsZero(), "the source has an ERROR node of more than 32 bytes")
+			var got string
+			for at, sentence := range tree.Problems() {
+				if at == long.Pos() {
+					got = sentence
+				}
+			}
+			assert.Equal(t, got, strconv.Quote(long.Text()[:excerptBytes]+"...")+" does not parse",
+				"the quote has the first 32 bytes and the mark of a cut")
+		})
+
+		t.Run("stops when the consumer stops", func(t *testing.T) {
+			t.Parallel()
+
+			seen := 0
+			for range parse(t, brokenJava).Problems() {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the walk ends at the first break")
+		})
+
+		t.Run("returns nil for a closed tree", func(t *testing.T) {
+			t.Parallel()
+
+			tree := parse(t, brokenJava)
+			tree.Close()
+			assert.Nil(t, tree.Problems(), "a closed tree has no problems")
+		})
+
+		t.Run("returns nil for a clean tree", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, parse(t, cleanJava).Problems(), "the source fits the grammar")
 		})
 	})
 
@@ -162,10 +249,12 @@ func BenchmarkTree(b *testing.B) {
 func treeCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
-	tree := parse(tb, brokenJava)
+	tree, clean := parse(tb, brokenJava), parse(tb, cleanJava)
 	var (
-		root treesitter.Node
-		errs int
+		root     treesitter.Node
+		errs     int
+		last     string
+		problems iter.Seq2[position.Pos, string]
 	)
 	return []allocCall{
 		{
@@ -182,6 +271,25 @@ func treeCalls(tb testing.TB) []allocCall {
 				}
 			},
 			check: func(tb assert.TB) { assert.Equal(tb, errs, 2, "Errors yields the ERROR and the MISSING node") },
+		},
+		{
+			name: "Problems", caseName: "a tree with an ERROR and a MISSING node", allocs: problemsAllocs,
+			call: func() {
+				errs = 0
+				for _, sentence := range tree.Problems() {
+					errs++
+					last = sentence
+				}
+			},
+			check: func(tb assert.TB) {
+				assert.Equal(tb, errs, 2, "Problems yields the ERROR and the MISSING node")
+				assert.Equal(tb, last, "; is missing here", "Problems yields the sentence of the MISSING node last")
+			},
+		},
+		{
+			name: "Problems", caseName: "a clean tree",
+			call:  func() { problems = clean.Problems() },
+			check: func(tb assert.TB) { assert.Nil(tb, problems, "Problems returns nil for a clean tree") },
 		},
 	}
 }

@@ -39,6 +39,14 @@ const (
 // buffer sized to the result.
 const spelledAllocs = 1
 
+// restatedAllocs is the restatement of a list whose child spells
+// otherwise: the list of the spellings of its children and the text that
+// the fixture's restate returns.
+const restatedAllocs = 2
+
+// errRestate is the refusal of the restate that a case passes.
+var errRestate = errors.New("spellref_test: the restate refuses the composite")
+
 // One walk serves every bracket pair, so the recursion, the stand-in
 // and the composite rule are pinned once.
 func TestSpellRef(t *testing.T) {
@@ -157,6 +165,133 @@ func TestSpellRef(t *testing.T) {
 				assert.ErrorIs(t, err, refusal, "the qualify error wraps through")
 			})
 		}
+
+		unspelled := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "returns an error for a composite without a spelling",
+				give: &emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{named(paramName)}},
+			},
+			{
+				name: "returns an error for a child composite without a spelling",
+				give: &emit.TypeRef{Form: symbol.FormList, Spelling: "T[][]", Elems: []*emit.TypeRef{
+					{Form: symbol.FormList, Elems: []*emit.TypeRef{named(paramName)}},
+				}},
+			},
+		}
+		for _, tt := range unspelled {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := spellref.SpellWith(tt.give, opener, closer, standIn, renaming)
+				assert.HasError(t, err, "the spelling of the composite does not follow from its structure")
+			})
+		}
+	})
+
+	t.Run("SpellRestated", func(t *testing.T) {
+		t.Parallel()
+
+		refused := func(*emit.TypeRef, []string) (string, error) { return "", errRestate }
+		suffixed := func(_ *emit.TypeRef, elems []string) (string, error) {
+			if len(elems) != 1 {
+				return "", errRestate
+			}
+			return elems[0] + "[]", nil
+		}
+		list := func(child *emit.TypeRef) *emit.TypeRef {
+			return &emit.TypeRef{Form: symbol.FormList, Spelling: child.Spelling + "[]", Elems: []*emit.TypeRef{child}}
+		}
+
+		tests := []struct {
+			name string
+			give *emit.TypeRef
+			want string
+		}{
+			{name: "writes a named reference through qualify", give: named(rowName), want: renamed},
+			{name: "writes each argument through qualify", give: generic("List", named(rowName)), want: "List<Row2>"},
+			{name: "writes the stand-in for a missing reference", give: nil, want: standIn},
+			{name: "restates a composite whose child spells otherwise", give: list(named(rowName)), want: "Row2[]"},
+			{
+				name: "restates a composite around a restated child", give: list(list(named(rowName))),
+				want: "Row2[][]",
+			},
+			{
+				name: "restates a composite inside the brackets of an argument",
+				give: generic("Page", list(named(rowName))), want: "Page<Row2[]>",
+			},
+			{
+				name: "restates a composite without a spelling",
+				give: &emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{named(paramName)}},
+				want: paramName + "[]",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spellref.SpellRestated(tt.give, opener, closer, standIn, renaming, suffixed)
+				assert.NoError(t, err, "the reference spells")
+				assert.Equal(t, got, tt.want, "the spelling has each name that qualify returns")
+			})
+		}
+
+		t.Run("keeps the spelling of a composite whose children spell as written", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := spellref.SpellRestated(list(named("Col")), opener, closer, standIn, renaming, refused)
+			assert.NoError(t, err, "the composite spells without restate")
+			assert.Equal(t, got, "Col[]", "the composite keeps its written spelling")
+		})
+
+		t.Run("passes the spelling of each child to restate", func(t *testing.T) {
+			t.Parallel()
+
+			pair := &emit.TypeRef{
+				Form: symbol.FormMap, Spelling: "Map<Row, Col>", Elems: []*emit.TypeRef{named(rowName), named("Col")},
+			}
+			var got []string
+			_, err := spellref.SpellRestated(pair, opener, closer, standIn, renaming,
+				func(_ *emit.TypeRef, elems []string) (string, error) {
+					got = elems
+					return "", nil
+				})
+			assert.NoError(t, err, "the composite spells")
+			assert.Equal(t, got, []string{renamed, "Col"}, "restate receives the children in order")
+		})
+
+		refusal := errors.New("refused")
+		failing := func(t *emit.TypeRef) (string, error) {
+			if t.Spelling == rowName {
+				return "", refusal
+			}
+			return t.Spelling, nil
+		}
+		failed := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{name: "returns the error of qualify for a named reference", give: named(rowName)},
+			{name: "returns the error of qualify for an argument", give: generic("List", named(rowName))},
+			{name: "returns the error of qualify for a child of a composite", give: list(named(rowName))},
+		}
+		for _, tt := range failed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := spellref.SpellRestated(tt.give, opener, closer, standIn, failing, suffixed)
+				assert.ErrorIs(t, err, refusal, "the error of qualify is returned")
+			})
+		}
+
+		t.Run("returns the error of restate", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := spellref.SpellRestated(list(named(rowName)), opener, closer, standIn, renaming, refused)
+			assert.ErrorIs(t, err, errRestate, "the error of restate is returned")
+		})
 	})
 
 	t.Run("PackageOf", func(t *testing.T) {
@@ -226,6 +361,20 @@ func TestSpellRefAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got, err = spellref.SpellWith(list, opener, closer, standIn, asWritten) }, 0,
 		"SpellWith allocates nothing for a composite spelled as written")
 	assert.Equal(t, got, "Row[]", "SpellWith returns the composite's spelling")
+	suffixed := func(_ *emit.TypeRef, elems []string) (string, error) { return elems[0] + "[]", nil }
+	assert.MaxAllocs(t, func() {
+		got, err = spellref.SpellRestated(ref, opener, closer, standIn, asWritten, suffixed)
+	}, spelledAllocs, "SpellRestated allocates the text of a reference with arguments")
+	assert.Equal(t, got, "Map<K, List<V>>", "SpellRestated writes the arguments")
+	assert.MaxAllocs(t, func() {
+		got, err = spellref.SpellRestated(list, opener, closer, standIn, asWritten, suffixed)
+	}, 0, "SpellRestated allocates nothing for a composite spelled as written")
+	assert.Equal(t, got, "Row[]", "SpellRestated returns the written spelling of the composite")
+	assert.MaxAllocs(t, func() {
+		got, err = spellref.SpellRestated(list, opener, closer, standIn, renaming, suffixed)
+	}, restatedAllocs, "SpellRestated allocates the spellings of the children and the restatement")
+	assert.NoError(t, err, "SpellRestated restates the composite")
+	assert.Equal(t, got, "Row2[]", "SpellRestated returns the restatement")
 	assert.MaxAllocs(t, func() { got = spellref.PackageOf(target, lang) }, 0, "PackageOf allocates nothing")
 	assert.Equal(t, got, targetPkg, "PackageOf returns the target's package")
 }
@@ -271,6 +420,44 @@ func BenchmarkSpellRef(b *testing.B) {
 				}
 				assert.NoError(b, err, "SpellWith spells the reference")
 				assert.Equal(b, got, tt.want, "SpellWith writes the reference")
+			})
+		}
+	})
+
+	list := &emit.TypeRef{Form: symbol.FormList, Spelling: "Row[]", Elems: []*emit.TypeRef{named(rowName)}}
+	suffixed := func(_ *emit.TypeRef, elems []string) (string, error) { return elems[0] + "[]", nil }
+	restated := []struct {
+		name    string
+		give    *emit.TypeRef
+		qualify spellref.Qualify
+		allocs  uint64
+		want    string
+	}{
+		{
+			name: "a reference with arguments", give: ref, qualify: asWritten, allocs: spelledAllocs,
+			want: "Map<K, List<V>>",
+		},
+		{name: "a reference without arguments", give: leaf, qualify: asWritten, want: rowName},
+		{name: "a composite spelled as written", give: list, qualify: asWritten, want: "Row[]"},
+		{
+			name: "a composite whose child spells otherwise", give: list, qualify: renaming, allocs: restatedAllocs,
+			want: "Row2[]",
+		},
+	}
+	b.Run("SpellRestated", func(b *testing.B) {
+		for _, tt := range restated {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got string
+					err error
+				)
+				for c.Loop() {
+					got, err = spellref.SpellRestated(tt.give, opener, closer, standIn, tt.qualify, suffixed)
+				}
+				assert.NoError(b, err, "SpellRestated spells the reference")
+				assert.Equal(b, got, tt.want, "SpellRestated writes the reference")
 			})
 		}
 	})

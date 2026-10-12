@@ -6,6 +6,7 @@ package spoke
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -44,6 +45,15 @@ const (
 	unknownForm = "the form "
 )
 
+// The phrases that [Arity] writes for the number of children that a form
+// takes: words for one and two, and digits before children for every
+// other number.
+const (
+	oneChild    = "one child"
+	twoChildren = "two children"
+	children    = " children"
+)
+
 // Describe returns the noun phrase that a refusal uses for the form of
 // s. The phrase has its article, as in a tuple, an inline type or an
 // asynchronous stream. For a form outside the vocabulary, it returns the
@@ -59,6 +69,65 @@ func Describe(s rules.TypeShape) string {
 		return name
 	}
 	return unknownForm + strconv.Itoa(int(s.Form))
+}
+
+// Arity returns an error where s does not have n children, such as "a
+// list takes one child, and the shape has 2". The error starts with the
+// phrase that [Describe] returns for the form of s. It returns nil where s
+// has n children.
+//
+// # Allocation contract
+//
+// Arity allocates nothing for a shape of n children. An error allocates
+// its message.
+func Arity(s rules.TypeShape, n int) error {
+	if len(s.Elems) == n {
+		return nil
+	}
+	var want string
+	switch n {
+	case 1:
+		want = oneChild
+	case 2:
+		want = twoChildren
+	default:
+		want = strconv.Itoa(n) + children
+	}
+	return fmt.Errorf("%s takes %s, and the shape has %d", Describe(s), want, len(s.Elems))
+}
+
+// Split returns an error where the split of the function type s is not
+// between 0 and the number of its children. The error contains the number
+// of children and the split. It returns nil for a split inside the
+// children, the last position included.
+//
+// # Allocation contract
+//
+// Split allocates nothing for a split inside the children. An error
+// allocates its message.
+func Split(s rules.TypeShape) error {
+	if s.Split >= 0 && s.Split <= len(s.Elems) {
+		return nil
+	}
+	return fmt.Errorf("a function type splits its %d children at %d", len(s.Elems), s.Split)
+}
+
+// ReadOnly returns an error where the shape s is immutable, such as "a
+// read-only list has no Go spelling" for the language lang. A spoke whose
+// language writes the form of s as writable refuses such a shape, because
+// a writable spelling drops the constraint of the shape. ReadOnly returns
+// nil where s is not immutable.
+//
+// # Allocation contract
+//
+// ReadOnly allocates nothing for a shape that is not immutable. An error
+// allocates its message.
+func ReadOnly(s rules.TypeShape, lang string) error {
+	if s.Mutability != symbol.MutabilityImmutable {
+		return nil
+	}
+	_, noun, _ := strings.Cut(Describe(s), " ")
+	return fmt.Errorf("a read-only %s has no %s spelling", noun, lang)
 }
 
 // Children spells each shape of a list through spell, in order, and

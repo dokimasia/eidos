@@ -7,6 +7,11 @@
 // [Children] spell the children of a shape through a spoke. The refusal
 // of a child starts with the source spelling of the child. [Describe]
 // returns the noun phrase that a refusal uses for the form of a shape.
+// [Arity] and [Split] are the checks of a shape that every spoke makes
+// before it spells a form: the number of children of the form, and the
+// split of a function type between its parameters and its results.
+// [ReadOnly] is the refusal of an immutable shape that a spoke makes
+// where its language writes the form as writable.
 //
 // # Dependency position
 //
