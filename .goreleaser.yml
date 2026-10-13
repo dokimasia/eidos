@@ -1,0 +1,146 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+#
+# The binary eidos, which the job binaries of release.yml builds after ergon has released the root
+# module. The frontends of TypeScript, Java and Rust parse with the C grammars of tree-sitter, so
+# every target builds with cgo, and the job runs on a macOS runner:
+#
+#   - darwin builds with the clang of the runner, which links the macOS SDK.
+#   - Linux and Windows build with zig as the C compiler: static musl binaries for Linux, and
+#     mingw binaries for Windows. zig contains the C libraries of these targets and no macOS SDK.
+#
+# Go writes the version of the binary from the tag of the root module, so the builds pass no -X flag.
+version: 2
+
+project_name: eidos
+
+before:
+  hooks:
+    - go vet ./...
+
+builds:
+  - id: eidos-darwin
+    dir: .
+    main: ./cmd/eidos
+    binary: eidos
+    env:
+      - CGO_ENABLED=1
+      - CC=clang
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags: &flags
+      - -trimpath
+    ldflags: &ldflags
+      - -s -w
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+  - id: eidos
+    dir: .
+    main: ./cmd/eidos
+    binary: eidos
+    env:
+      - CGO_ENABLED=1
+      # zig writes a cache beside each C source, and the module cache is read-only.
+      - ZIG_GLOBAL_CACHE_DIR=/tmp/eidos-zig
+      - ZIG_LOCAL_CACHE_DIR=/tmp/eidos-zig
+      - >-
+        CC=zig cc -target
+        {{- if eq .Arch "amd64" }} x86_64{{ else }} aarch64{{ end }}
+        {{- if eq .Os "linux" }}-linux-musl{{ else }}-windows-gnu{{ end }}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags: *flags
+    ldflags: *ldflags
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # UPX packs the Linux binaries and the Windows amd64 binary. Gatekeeper rejects a packed
+    # darwin binary after notarisation, and UPX is unstable on windows_arm64.
+    hooks:
+      post:
+        - cmd: sh -c 'case "{{ .Target }}" in linux_*|windows_amd64_*) exec upx --best --lzma "{{ .Path }}" ;; esac'
+          output: true
+
+archives:
+  - id: default
+    formats: ['tar.gz']
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+    files:
+      - LICENSE
+      - NOTICE
+      - README*
+
+source:
+  enabled: true
+  name_template: '{{ .ProjectName }}_{{ .Version }}_source'
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# cosign signs checksums.txt with the OIDC identity of the workflow, without a key, at the version
+# that the section go of .ergon.yaml pins.
+signs:
+  - cmd: ergon
+    signature: '${artifact}.sigstore.json'
+    args: [tool, run, go.cosign, --, sign-blob, '--bundle=${signature}', '${artifact}', --yes]
+    artifacts: checksum
+    output: true
+
+# syft writes an SPDX SBOM of each archive, which checksums.txt lists.
+sboms:
+  - id: archives
+    cmd: ergon
+    args: [tool, run, go.syft, --, '$artifact', --output, 'spdx-json=$document', --enrich, all]
+    artifacts: archive
+
+# ergon creates the release of the tag, and changesets writes its notes.
+changelog:
+  disable: true
+
+homebrew_casks:
+  - name: eidos
+    binaries:
+      - eidos
+    homepage: 'https://github.com/dokimasia/eidos'
+    description: 'Generates code with the declarative plugins of a workspace'
+    # Homebrew keeps com.apple.quarantine on a binary of a cask, and Gatekeeper then stops the
+    # unsigned binary at its first run on Apple Silicon. The hook removes the attribute.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/eidos"]
+          end
+    # The tap is github.com/dokimasia/homebrew-tap. The job binaries of release.yml passes a token of
+    # the GitHub App with contents:write on it as HOMEBREW_TAP_TOKEN.
+    repository:
+      owner: dokimasia
+      name: homebrew-tap
+      branch: main
+      token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    commit_msg_template: 'brew: bump {{ .ProjectName }} to {{ .Tag }}'
+    # A prerelease, such as v1.0.0-rc1, does not update the cask.
+    skip_upload: auto
+
+# The release of the tag exists, because ergon release publish created it. GoReleaser keeps its
+# notes and attaches the assets.
+release:
+  mode: keep-existing
+  prerelease: auto
+
+report_sizes: true

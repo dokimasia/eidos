@@ -3,11 +3,12 @@
 
 go 1.27.2
 
-// The repository root module (go.dokimi.dev/eidos) is deliberately
-// absent: it has no packages and exists only to anchor the module
-// path. CI installs the Go of the go line above. Every ergon
-// per-module command iterates the list below.
+// The repository root module (go.dokimi.dev/eidos) contains the command
+// eidos. Its go.mod has no replace directive, so go install builds the
+// command from published modules. CI installs the Go of the go line
+// above. Every ergon per-module command iterates the list below.
 use (
+	.
 	./eidos-cli
 	./eidos-conformance
 	./eidos-core

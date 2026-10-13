@@ -76,7 +76,8 @@
     {
       "path": ".github/workflows/release.yml",
       "producer": "github",
-      "sha256": "1d5eddbb6be33eae308d36d58ccd5f6182ca9244b9efec6870d2b16daf6ce070"
+      "local": "b77be6ab1a1e4072d0808b6ddfd9914fc643a62868a93d519620427f91191474",
+      "sha256": "38eef03778cf2da19e50c2097150d1a0949017418df84c3acd40f6f6057a931a"
     },
     {
       "path": ".github/workflows/security.yml",

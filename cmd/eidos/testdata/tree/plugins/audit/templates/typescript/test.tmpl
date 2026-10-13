@@ -1,0 +1,5 @@
+{{- range .Records}}
+
+// The methods of {{.Data.Subject}} that {{.Decl.Name}} records.
+export const {{.Decl.Name}}Methods: readonly string[] = [{{range $i, $m := .Decl.Methods.Items}}{{if $i}}, {{end}}{{printf "%q" $m.Name}}{{end}}];
+{{- end}}

@@ -1,0 +1,8 @@
+{{- use "testing"}}
+{{- range .Records}}
+
+// Test{{.Decl.Name}} checks that {{.Decl.Name}} implements {{.Data.Subject}}.
+func Test{{.Decl.Name}}(t *testing.T) {
+	var _ {{.Data.Subject}} = {{.Decl.Name}}{}
+}
+{{- end}}

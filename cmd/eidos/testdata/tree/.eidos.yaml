@@ -1,0 +1,9 @@
+version: 1
+plans:
+    golang:
+        plugins: [plugins/audit]
+    typescript:
+        sources: {lang: golang, packages: [./ops]}
+        plugins: [plugins/audit]
+options:
+    audit: {redact: false}

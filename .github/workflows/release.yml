@@ -1,4 +1,4 @@
-# Managed by ergon init. Add repository settings to .ergon/local/.github/workflows/release.yml and run ergon init sync.
+# Managed by ergon init, with .ergon/local/.github/workflows/release.yml merged in. Change the repository's settings there and run ergon init sync.
 #
 # The publish of the packages of the repository on every push to main. The job select-mode chooses
 # the next job: publish for a commit with a package to publish, such as the merge of the version
@@ -8,22 +8,17 @@
 # the repository before ergon, which build the artifacts.
 
 name: Release
-
 on:
   push:
     branches: [main]
-
 permissions: {}
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
 # Every command runs in bash.
 defaults:
   run:
     shell: bash
-
 jobs:
   select-mode:
     name: Select the mode
@@ -48,7 +43,6 @@ jobs:
           name: publish-plan
           path: publish-plan.json
           if-no-files-found: error
-
   verify:
     name: Verify the gate
     needs: select-mode
@@ -69,7 +63,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           ergon release ci verify
-
   pack:
     name: Pack
     needs: [select-mode, verify]
@@ -103,7 +96,6 @@ jobs:
             publish-plan.json
             dist
           if-no-files-found: error
-
   publish:
     name: Publish
     needs: pack
@@ -129,3 +121,68 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           ergon release publish --from-publish-plan publish-plan.json --from-pack-dir dist
+  # The binary eidos. The frontends of TypeScript, Java and Rust parse with the C grammars of
+  # tree-sitter, so every target builds with cgo, which the GoReleaser of ergon does not build. After
+  # the job publish has released the root module, this job runs .goreleaser.yml on macOS: darwin
+  # builds with the clang of the runner, and Linux and Windows build with zig. GoReleaser attaches the
+  # archives, their SBOMs and the signed checksums to the release of the tag, and commits the cask to
+  # the tap with a token of the GitHub App.
+  binaries:
+    name: Binaries
+    needs: publish
+    if: "contains(needs.publish.outputs.published-packages, '\"name\":\"go.dokimi.dev/eidos\"')"
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      # cosign signs the checksums, and actions/attest attests the archives and the binaries, each
+      # with the OIDC identity of the workflow.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache-dependency-path: "**/go.sum"
+          go-version-file: go.work
+      - uses: ./.github/actions/setup-ergon
+      - name: Set up zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - name: Install UPX
+        run: |
+          brew install upx
+      # The GitHub App of ERGON_APP_CLIENT_ID and ERGON_APP_PRIVATE_KEY, installed on the tap, commits
+      # the cask to it, because GITHUB_TOKEN writes to no other repository.
+      - name: Create a token for the tap
+        id: tap
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.ERGON_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ERGON_APP_PRIVATE_KEY }}
+          owner: dokimasia
+          repositories: homebrew-tap
+          permission-contents: write
+      - name: Release the binaries
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HOMEBREW_TAP_TOKEN: ${{ steps.tap.outputs.token }}
+          PUBLISHED: ${{ needs.publish.outputs.published-packages }}
+        run: |
+          version=$(jq -r '.[] | select(.name == "go.dokimi.dev/eidos") | .version' <<< "$PUBLISHED")
+          GORELEASER_CURRENT_TAG="v${version}" ergon tool run go.goreleaser -- release --clean
+      # The SLSA provenance of the archives and of the binary of each target, so a user can check
+      # the installed binary without its archive with gh attestation verify.
+      - name: Attest the binaries
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/**/eidos
+            dist/**/eidos.exe

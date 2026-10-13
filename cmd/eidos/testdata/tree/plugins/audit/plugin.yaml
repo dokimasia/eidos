@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=../../../../../../eidos-declarative/plugin.schema.json
+format: 1
+name: audit
+version: 0.3.0
+directives:
+    - name: audit
+      doc: Generates code that records each call of the declaration.
+      params:
+          - key: level
+            type: string
+            choices: [debug, info, warn]
+            required: true
+            doc: The level of each record.
+          - key: sink
+            type: reference
+            resolve: callable-in-scope
+            required: true
+            doc: The function that receives each record.
+outputs:
+    - per: source
+      word: audit
+    - tag: test
+      per: source
+      word: audit
+      template: test.tmpl
+provides: [audit]
+options:
+    - key: redact
+      type: bool
+      default: true
+      doc: When true, a record leaves out the arguments of the call.
+rules:
+    - on: interface
+      directive: audit
+      emit: implementation
+      template: method.tmpl
+    - on: function
+      directive: audit
+      emit: mirror
+      template: function.tmpl
+    - on: interface
+      directive: audit
+      output: test
+      emit: mirror
