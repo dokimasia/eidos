@@ -6,7 +6,7 @@ module go.dokimi.dev/eidos/lang/go
 go 1.27.2
 
 require (
-	go.dokimi.dev/assert v0.1.1
+	go.dokimi.dev/assert v0.2.0
 	go.dokimi.dev/eidos/lang v0.1.0
 	go.dokimi.dev/eidos/sdk v0.1.0
 	golang.org/x/mod v0.41.0
