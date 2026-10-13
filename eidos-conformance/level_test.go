@@ -58,16 +58,20 @@ func TestLevel(t *testing.T) {
 		t.Run("pins a partial projection to the second level", func(t *testing.T) {
 			t.Parallel()
 
-			c, fx := goCorpus(), goFixture(t)
-			conformance.AssertLevel(t, c, fx, featureByID(t, "composite_refs"), conformance.ProjectsPartly)
+			c, fx := partialCorpus(t)
+			f := conformance.Feature{
+				ID:       "struct_fields",
+				Declares: []conformance.Decl{{Name: "Holder", Kind: symbol.KindStruct}},
+			}
+			conformance.AssertLevel(t, c, fx, f, conformance.ProjectsPartly)
 			got := assert.Rejects(t, "a partial projection declared whole", func(tb assert.TB) {
-				conformance.AssertLevel(tb, c, fx, featureByID(t, "composite_refs"), conformance.Projects)
+				conformance.AssertLevel(tb, c, fx, f, conformance.Projects)
 			})
 			assert.Equal(t, contracts(got),
-				[]string{"composite_refs projects, so no reference it reaches folds to Opaque or Inline"},
+				[]string{"struct_fields projects, so no reference it reaches folds to Opaque or Inline"},
 				"the check fails naming what fell short")
 			opaque, _ := got[0].Got()
-			assert.NotEqual(t, opaque, any(0), "and how many references fold")
+			assert.Equal(t, opaque, any(1), "and how many references fold")
 		})
 
 		t.Run("pins a remainder to the stamps the load made", func(t *testing.T) {
@@ -196,6 +200,19 @@ func opaqueCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
 	tb.Helper()
 
 	return scriptedFeature(tb, &node.Alias{Name: "Blob", Target: nodetest.Inline(nil, nil)})
+}
+
+// partialCorpus returns a scripted corpus whose one feature package
+// declares a struct with a field of a type that the scripted rules do not
+// classify, and the fixture holding it, so the partial level has a
+// subject.
+func partialCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
+	tb.Helper()
+
+	return scriptedFeature(tb, &node.Struct{
+		Name:   "Holder",
+		Fields: []*node.Field{{Name: "f", Type: nodetest.Named("Unclassified")}},
+	})
 }
 
 // nestedCorpus returns a scripted corpus whose one feature package

@@ -36,7 +36,7 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			"method_overloads":    conformance.Refuses,
 			"constants":           conformance.Projects,
 			"cross_package_ref":   conformance.Projects,
-			"composite_refs":      conformance.ProjectsPartly,
+			"composite_refs":      conformance.Projects,
 			"builtin_ref":         conformance.Projects,
 			"directive_carrier":   conformance.Projects,
 			"test_classification": conformance.Projects,

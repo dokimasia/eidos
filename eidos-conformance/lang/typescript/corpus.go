@@ -44,7 +44,7 @@ const (
 // methods the inventory discriminates alias int to number, so a
 // discriminator spells int, as the inventory's does. The function type
 // of composite_refs returns the global class Error, which the builtin
-// table does not classify, so the feature projects partly.
+// table classifies as the well-known error.
 func Corpus(tree fs.FS) conformance.Corpus {
 	return conformance.Corpus{
 		Frontend: tsfrontend.New(),
@@ -55,7 +55,7 @@ func Corpus(tree fs.FS) conformance.Corpus {
 			"method_overloads":    conformance.Projects,
 			"constants":           conformance.Projects,
 			"cross_package_ref":   conformance.Projects,
-			"composite_refs":      conformance.ProjectsPartly,
+			"composite_refs":      conformance.Projects,
 			"builtin_ref":         conformance.Projects,
 			"directive_carrier":   conformance.Projects,
 			"test_classification": conformance.Projects,

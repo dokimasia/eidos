@@ -59,6 +59,8 @@ const (
 // array, and the number of parameters of the probe's function. Width 0 is
 // the platform's width.
 const (
+	byteBits      = 8
+	shortBits     = 16
 	narrowBits    = 32
 	wideBits      = 64
 	platformBits  = 0
@@ -94,12 +96,17 @@ var (
 // row. The kernel's fold does not return the form Named, so the hub does
 // not have a row of it.
 var probes = []probe{
+	{label: "Scalar int, 8 bits", shape: rules.Scalar(intSource, rules.ScalarInt, byteBits)},
+	{label: "Scalar int, 16 bits", shape: rules.Scalar(intSource, rules.ScalarInt, shortBits)},
 	{label: "Scalar int, 32 bits", shape: rules.Scalar(intSource, rules.ScalarInt, narrowBits)},
 	{label: "Scalar int, 64 bits", shape: wideInt},
 	{label: "Scalar int, platform width", shape: rules.Scalar(intSource, rules.ScalarInt, platformBits)},
+	{label: "Scalar uint, 8 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, byteBits)},
+	{label: "Scalar uint, 16 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, shortBits)},
 	{label: "Scalar uint, 32 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, narrowBits)},
 	{label: "Scalar uint, 64 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, wideBits)},
 	{label: "Scalar uint, platform width", shape: rules.Scalar(uintSource, rules.ScalarUint, platformBits)},
+	{label: "Scalar float, 32 bits", shape: rules.Scalar(realSource, rules.ScalarFloat, narrowBits)},
 	{label: "Scalar float, 64 bits", shape: rules.Scalar(realSource, rules.ScalarFloat, wideBits)},
 	{label: "Bool", shape: boolean},
 	{label: "Text", shape: text},
@@ -157,6 +164,7 @@ var probes = []probe{
 	{label: "Timestamp", shape: timestamp},
 	{label: "Duration", shape: duration},
 	{label: "Empty", shape: rules.Reference(textSource, rules.WellKnownEmpty)},
+	{label: "Error", shape: rules.Reference(textSource, rules.WellKnownError)},
 	{label: "Opaque", shape: rules.Opaque(nil)},
 }
 

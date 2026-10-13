@@ -5,20 +5,25 @@ package matrix
 
 import (
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/conformance"
 	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The document's title, and the sections of the read side, the render
-// side and the sugar.
+// The document's title, and the sections of the read side, the
+// projection side, the render side and the sugar.
 const (
 	title       = "# Support matrix\n"
 	readSection = "\n## Read side\n\nEach cell contains the verdict of a language's conformance corpus on " +
 		"one feature of the inventory.\n\n"
+	projectionSection = "\n## Projection side\n\nEach cell contains the verdict of a language's rules on one " +
+		"optional capability of the projection vocabulary. The matrix finds a capability by asserting it on the " +
+		"rules, as a consumer does.\n\n"
 	renderSection = "\n## Render side\n\nEach cell contains the verdict of a target's backend on one fact " +
 		"of the model or on one kind of declaration. Where the verdict on a fact differs for some kinds, " +
 		"the cell lists those kinds after the base verdict.\n\n"
@@ -29,30 +34,35 @@ const (
 // The headers of the tables' first columns, and of the sugar's two
 // columns of values.
 const (
-	featureHeader  = "Feature"
-	factHeader     = "Fact or kind"
-	languageHeader = "Language"
-	verdictHeader  = "Verdict"
-	markerHeader   = "Marker"
+	featureHeader    = "Feature"
+	capabilityHeader = "Capability"
+	factHeader       = "Fact or kind"
+	languageHeader   = "Language"
+	verdictHeader    = "Verdict"
+	markerHeader     = "Marker"
 )
 
 // These constants build the cells of the tables. noneCell is the cell of
 // a value that an entry does not have. codeOpen and codeClose quote code.
 // A pipe ends a cell, so a pipe inside a cell takes the escape
 // escapedPipe. rendersWord and refusesWord are the words of a kind that a
-// backend renders or refuses. verdictSep, exceptOn and kindSep separate
-// the verdicts that differ for some kinds.
+// backend renders or refuses. implementsWord and absentWord are the words
+// of a capability that the rules of a language satisfy or do not satisfy.
+// verdictSep, exceptOn and kindSep separate the verdicts that differ for
+// some kinds.
 const (
-	noneCell    = "none"
-	codeOpen    = "`"
-	codeClose   = "`"
-	pipe        = "|"
-	escapedPipe = `\|`
-	rendersWord = "renders"
-	refusesWord = "refuses"
-	verdictSep  = "; "
-	exceptOn    = " on "
-	kindSep     = ", "
+	noneCell       = "none"
+	codeOpen       = "`"
+	codeClose      = "`"
+	pipe           = "|"
+	escapedPipe    = `\|`
+	rendersWord    = "renders"
+	refusesWord    = "refuses"
+	implementsWord = "implements"
+	absentWord     = "absent"
+	verdictSep     = "; "
+	exceptOn       = " on "
+	kindSep        = ", "
 )
 
 // These constants build the rows of a table. rowOpen starts a row,
@@ -86,12 +96,57 @@ var renderKinds = []symbol.Kind{
 	symbol.KindConstant, symbol.KindStruct, symbol.KindInterface, symbol.KindAlias,
 }
 
+// capabilities are the optional capabilities of the projection vocabulary,
+// in the order of their declaration in package rules.
+var capabilities = []capability{
+	capabilityOf[rules.EnumRules](),
+	capabilityOf[rules.ErrorValueRules](),
+	capabilityOf[rules.ErrorTypeRules](),
+	capabilityOf[rules.TagRules](),
+	capabilityOf[rules.WellKnownRules](),
+	capabilityOf[rules.SatisfactionRules](),
+	capabilityOf[rules.GenericsRules](),
+	capabilityOf[rules.PropertyRules](),
+	capabilityOf[rules.ConstructRules](),
+	capabilityOf[rules.ThrowsRules](),
+	capabilityOf[rules.OwnershipRules](),
+	capabilityOf[rules.PromotionRules](),
+	capabilityOf[rules.PresenceRules](),
+	capabilityOf[rules.EqualityRules](),
+}
+
+// capability is one optional capability of the projection vocabulary: the
+// name of its interface, and the assertion that finds it on the rules of a
+// language.
+type capability struct {
+	name  string
+	finds func(r rules.SourceRules) bool
+}
+
+// capabilityOf returns the capability of the interface T, named after the
+// interface. Its assertion reports whether rules satisfy T, as the
+// assertion of a consumer does.
+func capabilityOf[T any]() capability {
+	return capability{
+		name: reflect.TypeFor[T]().Name(),
+		finds: func(r rules.SourceRules) bool {
+			_, found := r.(T)
+			return found
+		},
+	}
+}
+
 // Markdown renders the support matrix of entries as a Markdown document
-// of four tables:
+// of five tables:
 //
 //   - The read side has a row for each feature of the conformance
 //     inventory and a column for each language. A cell contains the
 //     verdict of the language's corpus.
+//   - The projection side has a row for each optional capability of the
+//     projection vocabulary and a column for each language. A cell
+//     contains implements where the rules of the language's corpus
+//     satisfy the capability, absent where they do not, and none for a
+//     corpus without rules.
 //   - The render side has a row for each fact of the model and for each
 //     kind of declaration, and a column for each target. A cell contains
 //     the verdict of the target's backend. Where the verdict on a fact
@@ -113,6 +168,7 @@ func Markdown(entries []Entry) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString(title)
 	readSide(&b, entries)
+	projectionSide(&b, entries)
 	renderSide(&b, entries)
 	if err := hub(&b, entries); err != nil {
 		return nil, err
@@ -137,6 +193,32 @@ func readSide(b *strings.Builder, entries []Entry) {
 		rows = append(rows, row)
 	}
 	b.WriteString(readSection)
+	table(b, header, rows)
+}
+
+// projectionSide writes the section of the projection side. A cell asserts
+// one capability on the rules of the corpus of one entry.
+func projectionSide(b *strings.Builder, entries []Entry) {
+	header := append(make([]string, 0, 1+len(entries)), capabilityHeader)
+	for _, e := range entries {
+		header = append(header, string(e.Corpus.Frontend.Lang()))
+	}
+	rows := make([][]string, 0, len(capabilities))
+	for _, c := range capabilities {
+		row := append(make([]string, 0, 1+len(entries)), c.name)
+		for _, e := range entries {
+			cell := noneCell
+			if e.Corpus.Rules != nil {
+				cell = absentWord
+				if c.finds(e.Corpus.Rules) {
+					cell = implementsWord
+				}
+			}
+			row = append(row, cell)
+		}
+		rows = append(rows, row)
+	}
+	b.WriteString(projectionSection)
 	table(b, header, rows)
 }
 

@@ -26,15 +26,25 @@ const (
 	unspelledRow = "| Bool | refused |\n"
 )
 
-// The rows of the top type, the empty value, the asynchronous stream and
-// the choices of the duration's policy.
+// The rows of the top type, the empty value, the error value, the
+// asynchronous stream and the choices of the duration's policy.
 const (
 	dynamicRow = "| Dynamic | `any` | `unknown` | `Object` | refused |\n"
 	emptyRow   = "| Empty | `struct{}` | `Record<string, never>` | refused | `()` |\n"
+	errorRow   = "| Error | `error` | `Error` | `Exception` | `Box<dyn std::error::Error>` |\n"
 	asyncRow   = "| Asynchronous stream of text | `iter.Seq2[string, error]` | `AsyncIterable<string>` | " +
 		"refused | refused |\n"
 	durationChoices = "| typescript.duration: string | none | `string` | none | none |\n" +
 		"| typescript.duration: number | none | `number` | none | none |\n"
+)
+
+// The rows of the integers of 8 and 16 bits and of the float of 32 bits.
+const (
+	int8Row    = "| Scalar int, 8 bits | `int8` | `number` | `byte` | `i8` |\n"
+	int16Row   = "| Scalar int, 16 bits | `int16` | `number` | `short` | `i16` |\n"
+	uint8Row   = "| Scalar uint, 8 bits | `uint8` | `number` | `byte` | `u8` |\n"
+	uint16Row  = "| Scalar uint, 16 bits | `uint16` | `number` | `short` | `u16` |\n"
+	float32Row = "| Scalar float, 32 bits | `float32` | `number` | `float` | `f32` |\n"
 )
 
 // The policy of the stub target that the cases declare, and the error of
@@ -99,8 +109,14 @@ func TestHub(t *testing.T) {
 		}{
 			{name: "writes the top type of each target", want: dynamicRow},
 			{name: "writes the empty value of each target", want: emptyRow},
+			{name: "writes the error value of each target", want: errorRow},
 			{name: "writes the asynchronous stream of each target", want: asyncRow},
 			{name: "writes the spelling of each choice of the duration's policy", want: durationChoices},
+			{name: "writes the integer of 8 bits of each target", want: int8Row},
+			{name: "writes the integer of 16 bits of each target", want: int16Row},
+			{name: "writes the unsigned integer of 8 bits of each target", want: uint8Row},
+			{name: "writes the unsigned integer of 16 bits of each target", want: uint16Row},
+			{name: "writes the float of 32 bits of each target", want: float32Row},
 		}
 		for _, tt := range rows {
 			t.Run(tt.name, func(t *testing.T) {

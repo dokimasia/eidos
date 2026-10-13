@@ -189,12 +189,31 @@ func TestComposeShape(t *testing.T) {
 			expect.False(t, detected, "no detector ran on the method")
 		})
 
-		t.Run("removes the facts of a dropped shape", func(t *testing.T) {
+		t.Run("stamps the declared shape at directive authority", func(t *testing.T) {
 			t.Parallel()
 
+			facts := classified(t)
 			s, _ := shape.SpecOf(shape.Writer)
-			_, held := meta.Get(classified(t), method(overridesType, "Put"), meta.Named[bool](s.Key))
-			assert.False(t, held, "the meta drop removed the writer")
+			id, registered := facts.Registry().Resolve(s.Key)
+			assert.True(t, registered, "the family key of the writer is registered")
+			claims := slices.Collect(facts.Claims(method(overridesType, "Remove"), id))
+			assert.NotEmpty(t, claims, "the method has a claim on the family key")
+			expect.True(t, claims[0].Won, "the first claim ranks first")
+			expect.Equal(t, claims[0].Claim.Authority, meta.AuthorityDirective, "the directive stamps the shape")
+		})
+
+		t.Run("removes every fact of the group of a dropped shape", func(t *testing.T) {
+			t.Parallel()
+
+			facts := classified(t)
+			s, _ := shape.SpecOf(shape.Writer)
+			members := slices.Collect(facts.Registry().Group(s.Group))
+			assert.Length(t, members, 1+len(s.Params)+len(s.Bindings),
+				"the group of the writer has its family key and the key of each param and binding")
+			for _, k := range members {
+				expect.NotContains(t, slices.Collect(facts.ByKey(k)), method(overridesType, "Put"),
+					"the meta drop removes the fact of each key of the group")
+			}
 		})
 
 		t.Run("stamps every form of classification on one method", func(t *testing.T) {
