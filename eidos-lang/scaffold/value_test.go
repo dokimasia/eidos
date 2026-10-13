@@ -27,6 +27,9 @@ const scriptedLang = "scripted"
 // list of eight.
 const wideArgs = 9
 
+// second is the constant that the name cases spell.
+var second = symbol.Identity{Lang: scriptedLang, Package: "time", Name: "Second", Kind: symbol.KindConstant}
+
 // The allocations of the walk under a target whose methods allocate
 // nothing.
 const (
@@ -254,6 +257,11 @@ func TestValue(t *testing.T) {
 					emit.Call(fn("m", "Sum"), integer("3")))),
 				want: "&Weight(Sum(3))",
 			},
+			{name: "writes a name as the target spells a callee", give: emit.Name(second), want: "Second"},
+			{
+				name: "writes a name inside a conversion",
+				give: emit.Conversion(ref("svc", "Weight"), emit.Name(second)), want: "Weight(Second)",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -287,6 +295,15 @@ func TestValue(t *testing.T) {
 				"every reference and callee records its import, the outermost first")
 		})
 
+		t.Run("records the import of a name", func(t *testing.T) {
+			t.Parallel()
+
+			target := &scripted{}
+			_, err := scaffold.Value(target, emit.Name(second))
+			assert.NoError(t, err, "the name spells")
+			assert.Equal(t, target.imported, []string{"time"}, "the name imports its package")
+		})
+
 		walkErrors := []struct {
 			name string
 			give emit.Value
@@ -294,32 +311,44 @@ func TestValue(t *testing.T) {
 		}{
 			{name: "returns a value error for a kind nothing declares", give: emit.Value{}, want: "no spelling"},
 			{
-				name: "returns a value error for a conversion that names no type",
-				give: emit.Value{Kind: emit.ValueConversion, Inner: &emit.Value{}}, want: "names no type",
+				name: "returns a value error for a conversion without a type",
+				give: emit.Value{Kind: emit.ValueConversion, Inner: &emit.Value{}},
+				want: "a conversion value has no type",
 			},
 			{
-				name: "returns a value error for a conversion that wraps nothing",
-				give: emit.Value{Kind: emit.ValueConversion, Type: ref("svc", "W")}, want: "wraps nothing",
+				name: "returns a value error for a conversion without an inner value",
+				give: emit.Value{Kind: emit.ValueConversion, Type: ref("svc", "W")},
+				want: "a conversion value has no inner value",
 			},
 			{
-				name: "returns a value error for a composite that names no type",
-				give: emit.Value{Kind: emit.ValueComposite}, want: "names no type",
+				name: "returns a value error for a composite without a type",
+				give: emit.Value{Kind: emit.ValueComposite}, want: "a composite value has no type",
 			},
 			{
-				name: "returns a value error for a composite whose type spells nothing",
-				give: emit.Composite(&emit.TypeRef{}), want: "spells nothing",
+				name: "returns a value error for a composite whose type has no spelling",
+				give: emit.Composite(&emit.TypeRef{}), want: "the type of a value has no spelling",
 			},
 			{
-				name: "returns a value error for an address that wraps nothing",
-				give: emit.Value{Kind: emit.ValueAddress}, want: "wraps nothing",
+				name: "returns a value error for an address without an inner value",
+				give: emit.Value{Kind: emit.ValueAddress}, want: "an address value has no inner value",
 			},
 			{
-				name: "returns a value error for a call that names no callee",
-				give: emit.Value{Kind: emit.ValueCall}, want: "names no callee",
+				name: "returns a value error for a call without a callee",
+				give: emit.Value{Kind: emit.ValueCall}, want: "a call value has no identity",
 			},
 			{
 				name: "returns a value error for a call of a function without a name",
-				give: emit.Call(symbol.Identity{Lang: scriptedLang, Package: "time"}), want: "spells nothing",
+				give: emit.Call(symbol.Identity{Lang: scriptedLang, Package: "time"}),
+				want: "the identity of a call value has no name",
+			},
+			{
+				name: "returns a value error for a name without an identity",
+				give: emit.Value{Kind: emit.ValueName}, want: "a name value has no identity",
+			},
+			{
+				name: "returns a value error for a name whose identity has no name",
+				give: emit.Name(symbol.Identity{Lang: scriptedLang, Package: "time"}),
+				want: "the identity of a name value has no name",
 			},
 			{
 				name: "returns a value error for a broken value inside a composite",
@@ -377,6 +406,11 @@ func TestValue(t *testing.T) {
 			{
 				name:   "returns the target's error for a callee it has no form for",
 				give:   emit.Call(fn("time", "Now")),
+				target: &unspelling{}, want: "no callee form",
+			},
+			{
+				name:   "returns the target's error for a name it has no form for",
+				give:   emit.Name(second),
 				target: &unspelling{}, want: "no callee form",
 			},
 		}
@@ -468,7 +502,7 @@ func TestValueAllocs(t *testing.T) {
 	lit, conv, addr := integer("42"), emit.Conversion(ref("svc", "Weight"), integer("1")),
 		emit.Address(emit.Composite(ref("svc", "Row")))
 	row, unix, wide := rowValue(), unixCall(), emit.Call(fn("m", "Max"), numbers(wideArgs)...)
-	plain, text := plainLeaves(), emit.Literal(emit.LiteralString, "hi")
+	plain, text, name := plainLeaves(), emit.Literal(emit.LiteralString, "hi"), emit.Name(second)
 	var (
 		got string
 		err error
@@ -491,6 +525,9 @@ func TestValueAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, wide) }, wideCallAllocs,
 		"Value allocates the argument list of a call above eight arguments")
 	assert.Equal(t, got, "Max(1, 2, 3, 4, 5, 6, 7, 8, 9)", "Value spells the wide call")
+	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, name) }, 0,
+		"Value allocates nothing for a name")
+	assert.Equal(t, got, "Second", "Value spells the name")
 	assert.NoError(t, err, "Value spells every tree")
 	assert.MaxAllocs(t, func() { got, err = plain.Literal(lit) }, 0,
 		"Literal allocates nothing for a number without a number spelling")
@@ -512,6 +549,7 @@ func BenchmarkValue(b *testing.B) {
 	}{
 		{name: "a call", give: unixCall(), allocs: callAllocs, want: "Unix(1, 0)"},
 		{name: "a composite", give: rowValue(), allocs: compositeAllocs, want: "Row"},
+		{name: "a name", give: emit.Name(second), want: "Second"},
 	}
 	b.Run("Value", func(b *testing.B) {
 		for _, tt := range trees {

@@ -5,12 +5,12 @@
 // C-family targets share, and normalizes rendered source for the
 // targets that run no formatter of their own.
 //
-// [LineDocs], [BlockDocs], [Inline] and [Marked] write documentation,
-// trailing comments and structured markers. The comment writers split
-// a text at its line breaks or fold it onto one line, and escape a
-// block-comment delimiter inside a block comment, so no text ends a
-// comment early. [ImportLines] writes each distinct import statement
-// that a file's collected entries spell once.
+// [LineDocs], [BlockDocs], [Inline], [Marked] and [MarkedInline] write
+// documentation, trailing comments and structured markers. The comment
+// writers split a text at its line breaks or fold it onto one line, and
+// escape a block-comment delimiter inside a block comment, so no text
+// ends a comment early. [ImportLines] writes each distinct import
+// statement that a file's collected entries spell once.
 //
 // [Normalize] is the finaliser a backend without a hermetic
 // pretty-printer declares. It strips trailing whitespace, collapses

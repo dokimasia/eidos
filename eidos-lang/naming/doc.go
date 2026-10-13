@@ -32,6 +32,11 @@
 // filename from, and [SnakeFilename] joins them in the shape the
 // snake-cased languages share.
 //
+// [Unique] returns the first of its candidate names that a set of taken
+// names does not contain. Where the set contains every candidate, it
+// numbers the last candidate from 0. A backend chooses the name of a
+// receiver or a parameter of a method through it.
+//
 // # Allocation contract
 //
 // [Words] returns substrings of its input, so it allocates the slice
@@ -39,7 +44,8 @@
 // it is rebuilt with U+FFFD per invalid byte. Every style writes
 // through one Builder, so a conversion allocates once for its result
 // beside the words. Recognising an initialism allocates nothing,
-// because the probe upper-cases into a stack buffer.
+// because the probe upper-cases into a stack buffer. [Unique]
+// allocates only the text of a numbered name.
 //
 // # Dependency position
 //

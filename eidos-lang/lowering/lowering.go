@@ -108,9 +108,19 @@ func NamedPayload(lang symbol.Lang, v *emit.SumVariant) error {
 // type. A callable without failures keeps its returns, and every other
 // kind of declaration is left unchanged.
 //
+// The lowering changes the results of a callable and does not rewrite its
+// body. The default body has no statement, and a template renders its
+// body from the lowered results. Verbatim text, scaffolding statements
+// and a return statement in a slot are written for the results before the
+// lowering.
+//
 // Error modes:
 //   - A struct or an interface that declares one method name twice
 //     returns the error of [UniqueMethods] under the prefix of lang.
+//   - A callable with failures whose body has verbatim text or
+//     scaffolding statements, or a slot with a return statement at any
+//     depth, returns an error under the prefix of lang, and the callable
+//     keeps its failures.
 //   - An error of fold is returned unchanged, and the callable keeps its
 //     failures.
 //
@@ -125,9 +135,9 @@ func Callables(lang symbol.Lang, s symbol.Symbol,
 	var methods []*emit.Method
 	switch d := s.(type) {
 	case *emit.Function:
-		return foldThrows(d.Name, &d.Returns, &d.Throws, fold)
+		return foldThrows(lang, d.Name, &d.Body, &d.Returns, &d.Throws, fold)
 	case *emit.Method:
-		return foldThrows(d.Name, &d.Returns, &d.Throws, fold)
+		return foldThrows(lang, d.Name, &d.Body, &d.Returns, &d.Throws, fold)
 	case *emit.Struct:
 		host, methods = d.Name, d.Methods.Items()
 	case *emit.Interface:
@@ -139,7 +149,7 @@ func Callables(lang symbol.Lang, s symbol.Symbol,
 		return err
 	}
 	for _, m := range methods {
-		if err := foldThrows(m.Name, &m.Returns, &m.Throws, fold); err != nil {
+		if err := foldThrows(lang, m.Name, &m.Body, &m.Returns, &m.Throws, fold); err != nil {
 			return err
 		}
 	}
@@ -171,16 +181,39 @@ func UniqueMethods(lang, host string, methods []*emit.Method) error {
 
 // foldThrows calls fold for one callable with failures, and clears the
 // failures once fold returns nil. A callable without failures is left
-// unchanged, and an error of fold is returned unchanged.
-func foldThrows(name string, returns *emit.Slot[*emit.Return], throws *[]*emit.TypeRef,
+// unchanged, and an error of fold is returned unchanged. It returns an
+// error under the prefix of lang, before it calls fold, for a body that
+// [Callables] refuses.
+func foldThrows(lang symbol.Lang, name string, body *emit.Body,
+	returns *emit.Slot[*emit.Return], throws *[]*emit.TypeRef,
 	fold func(name string, returns *emit.Slot[*emit.Return], throws []*emit.TypeRef) error,
 ) error {
 	if len(*throws) == 0 {
 		return nil
+	}
+	written := body.Verbatim != "" || len(body.Stmts) > 0 ||
+		returnsIn(body.Prologue.Items()) || returnsIn(body.Epilogue.Items())
+	for _, s := range body.Slots {
+		written = written || returnsIn(s.Slot.Items())
+	}
+	if written {
+		return fmt.Errorf("%s: the failures of %s move into its results, "+
+			"and the lowering does not rewrite the statements or the text of its body", lang, name)
 	}
 	if err := fold(name, returns, *throws); err != nil {
 		return err
 	}
 	*throws = nil
 	return nil
+}
+
+// returnsIn reports whether a statement of stmts is a return statement or
+// has one among the actions of a guard, at any depth.
+func returnsIn(stmts []emit.Stmt) bool {
+	for _, s := range stmts {
+		if s.Kind == emit.StmtReturn || returnsIn(s.Then) {
+			return true
+		}
+	}
+	return false
 }

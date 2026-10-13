@@ -35,6 +35,13 @@ const (
 	secondParam = "U"
 )
 
+// errName is the value that the guards of the bodies test, and auditSlot
+// is the slot that a body declares.
+const (
+	errName   = "err"
+	auditSlot = "audit"
+)
+
 // stackMethods is the most methods the member check's set holds on the
 // stack.
 const stackMethods = 8
@@ -221,6 +228,22 @@ func TestLowering(t *testing.T) {
 				give: iface,
 				want: []string{readName, writeName},
 			},
+			{
+				name: "folds a function with failures whose body a template renders",
+				give: &emit.Function{
+					Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}},
+					Body: emit.Body{Ref: &emit.TemplateRef{Name: readName}},
+				},
+				want: []string{readName},
+			},
+			{
+				name: "folds a function with failures whose prologue has no return statement",
+				give: &emit.Function{
+					Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}},
+					Body: emit.Body{Prologue: emit.SlotOf(emit.Stmt{Kind: emit.StmtGuard, Name: errName})},
+				},
+				want: []string{readName},
+			},
 		}
 		for _, tt := range folded {
 			t.Run(tt.name, func(t *testing.T) {
@@ -295,6 +318,54 @@ func TestLowering(t *testing.T) {
 				func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error { return errFold })
 			assert.ErrorIs(t, err, errFold, "the error of the fold is returned unchanged")
 		})
+
+		returning := emit.Stmt{Kind: emit.StmtReturn}
+		bodies := []struct {
+			name string
+			give emit.Body
+		}{
+			{
+				name: "returns an error for a callable with failures and verbatim text in its body",
+				give: emit.Body{Verbatim: "return nil"},
+			},
+			{
+				name: "returns an error for a callable with failures and statements in its body",
+				give: emit.Body{Stmts: []emit.Stmt{returning}},
+			},
+			{
+				name: "returns an error for a callable with failures and a guard in its prologue that returns",
+				give: emit.Body{Prologue: emit.SlotOf(emit.Stmt{
+					Kind: emit.StmtGuard, Name: errName, Then: []emit.Stmt{returning},
+				})},
+			},
+			{
+				name: "returns an error for a callable with failures and a return statement in its epilogue",
+				give: emit.Body{Epilogue: emit.SlotOf(returning)},
+			},
+			{
+				name: "returns an error for a callable with failures and a return statement in a declared slot",
+				give: emit.Body{Slots: []*emit.NamedSlot{{Name: auditSlot, Slot: emit.SlotOf(returning)}}},
+			},
+		}
+		for _, tt := range bodies {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				fn := &emit.Function{Name: readName, Throws: []*emit.TypeRef{{Spelling: ioError}}, Body: tt.give}
+				called := false
+				err := lowering.Callables(rustLang, fn,
+					func(string, *emit.Slot[*emit.Return], []*emit.TypeRef) error {
+						called = true
+						return nil
+					})
+				assert.HasError(t, err, "the lowering refuses a body that it does not rewrite")
+				expect.Equal(t, err.Error(), "rust: the failures of read move into its results, "+
+					"and the lowering does not rewrite the statements or the text of its body",
+					"the error has the prefix of the language and the name of the callable")
+				expect.False(t, called, "the fold does not receive the callable")
+				expect.Length(t, fn.Throws, 1, "the function keeps its failure")
+			})
+		}
 
 		t.Run("keeps the failures of a callable whose fold returns an error", func(t *testing.T) {
 			t.Parallel()

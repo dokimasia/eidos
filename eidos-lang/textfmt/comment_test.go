@@ -133,6 +133,39 @@ func TestComment(t *testing.T) {
 			assert.Equal(t, textfmt.Marked(markers()[:1], "@", "", indent), "\t@Override\n",
 				"the prefix opens the line")
 		})
+
+		t.Run("writes the argument of an assigned marker after an equals sign", func(t *testing.T) {
+			t.Parallel()
+
+			assigned := symbol.Annotations{{Name: "deprecated", Args: []string{`"use g"`}, Assigned: true}}
+			assert.Equal(t, textfmt.Marked(assigned, "#[", "]"), "#[deprecated = \"use g\"]\n",
+				"the assigned form of a Rust attribute")
+		})
+	})
+
+	t.Run("MarkedInline", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes each marker followed by a space", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, textfmt.MarkedInline(markers(), "#[", "]"),
+				"#[Override] #[derive(Debug, Clone)] ", "the markers precede the parameter on its line")
+		})
+
+		t.Run("writes nothing for no markers", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, textfmt.MarkedInline(nil, "@", ""), "a parameter without markers has no prefix")
+		})
+
+		t.Run("writes the argument of an assigned marker after an equals sign", func(t *testing.T) {
+			t.Parallel()
+
+			assigned := symbol.Annotations{{Name: "doc", Args: []string{`"the key"`}, Assigned: true}}
+			assert.Equal(t, textfmt.MarkedInline(assigned, "#[", "]"), "#[doc = \"the key\"] ",
+				"the assigned form precedes the parameter")
+		})
 	})
 }
 
@@ -152,6 +185,9 @@ func TestCommentAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = textfmt.Marked(as, "#[", "]", indent) }, commentAllocs,
 		"Marked allocates the markers")
 	assert.Contains(t, got, "\t#[derive(Debug, Clone)]\n", "Marked writes the arguments")
+	assert.MaxAllocs(t, func() { got = textfmt.MarkedInline(as, "@", "") }, commentAllocs,
+		"MarkedInline allocates the markers")
+	assert.Contains(t, got, "@derive(Debug, Clone) ", "MarkedInline writes the arguments")
 }
 
 // BenchmarkComment measures each comment form a backend writes once per
@@ -182,6 +218,11 @@ func BenchmarkComment(b *testing.B) {
 			name:  "Marked",
 			write: func() string { return textfmt.Marked(as, "#[", "]", indent) },
 			want:  "(Debug, Clone)",
+		},
+		{
+			name:  "MarkedInline",
+			write: func() string { return textfmt.MarkedInline(as, "@", "") },
+			want:  "(Debug, Clone) ",
 		},
 	}
 	for _, tt := range forms {

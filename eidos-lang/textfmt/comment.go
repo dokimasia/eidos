@@ -20,8 +20,12 @@ const (
 	carriage     = "\r"
 )
 
-// argSeparator separates a marker's arguments inside its parentheses.
-const argSeparator = ", "
+// argSeparator separates a marker's arguments inside its parentheses, and
+// assignOp separates the name of an assigned marker from its argument.
+const (
+	argSeparator = ", "
+	assignOp     = " = "
+)
 
 // LineDocs writes documentation as line comments: each line behind the
 // given prefix and the marker, which brings its own trailing space. A
@@ -128,9 +132,11 @@ func Inline(text string) string {
 
 // Marked writes structured markers one per line behind the given
 // prefix: the opener, the name, the arguments comma-joined in
-// parentheses where any are stated, and the closer. A Java annotation,
-// a TypeScript decorator and a Rust attribute each pass their own
-// opener and closer.
+// parentheses where any are stated, and the closer. An assigned marker
+// writes its argument after an equals sign in place of the parentheses,
+// as Rust writes #[deprecated = "use g"]. A Java annotation, a
+// TypeScript decorator and a Rust attribute each pass their own opener
+// and closer.
 //
 // # Allocation contract
 //
@@ -138,12 +144,35 @@ func Inline(text string) string {
 // Joining more than one prefix string allocates the joined prefix. An
 // empty list of markers allocates nothing.
 func Marked(as symbol.Annotations, opener, closer string, prefix ...string) string {
-	at := strings.Join(prefix, "")
+	return markers(as, opener, closer, strings.Join(prefix, ""), '\n')
+}
+
+// MarkedInline writes structured markers on one line, each as [Marked]
+// writes it and followed by a space. The annotations of a Java parameter
+// and the attributes of a Rust parameter precede the parameter on its
+// line.
+//
+// # Allocation contract
+//
+// MarkedInline writes into one buffer sized to the result, one
+// allocation. An empty list of markers allocates nothing.
+func MarkedInline(as symbol.Annotations, opener, closer string) string {
+	return markers(as, opener, closer, "", ' ')
+}
+
+// markers writes each marker of as behind at and follows it with end,
+// into one buffer sized to the result. An assigned marker writes its
+// arguments after [assignOp], and any other marker writes them in
+// parentheses.
+func markers(as symbol.Annotations, opener, closer, at string, end byte) string {
 	n := 0
 	for _, a := range as {
 		n += len(at) + len(opener) + len(a.Name) + len(closer) + 1
 		if len(a.Args) > 0 {
 			n += 2 + len(argSeparator)*(len(a.Args)-1)
+			if a.Assigned {
+				n += len(assignOp) - 2
+			}
 			for _, arg := range a.Args {
 				n += len(arg)
 			}
@@ -156,17 +185,23 @@ func Marked(as symbol.Annotations, opener, closer string, prefix ...string) stri
 		b.WriteString(opener)
 		b.WriteString(a.Name)
 		if len(a.Args) > 0 {
-			b.WriteByte('(')
+			if a.Assigned {
+				b.WriteString(assignOp)
+			} else {
+				b.WriteByte('(')
+			}
 			for i, arg := range a.Args {
 				if i > 0 {
 					b.WriteString(argSeparator)
 				}
 				b.WriteString(arg)
 			}
-			b.WriteByte(')')
+			if !a.Assigned {
+				b.WriteByte(')')
+			}
 		}
 		b.WriteString(closer)
-		b.WriteByte('\n')
+		b.WriteByte(end)
 	}
 	return b.String()
 }
