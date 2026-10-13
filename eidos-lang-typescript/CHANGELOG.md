@@ -1,0 +1,176 @@
+# go.dokimi.dev/eidos/lang/typescript
+
+## 0.1.0
+
+### Minor Changes
+
+- 4924138: Set `noUnusedLocals`, `noUnusedParameters` and `exactOptionalPropertyTypes` in the default tsconfig of `testing.New`.
+- 786a060: Add `backend.TemplateImport` to each backend, which binds the name of an import that a template states.
+- 786a060: **Breaking:** Rename `Rules.SamplesOf` to `DeriveSamples`, and remove `Rules.Substitute`.
+- 4ffc162: List the types of an inline type body as the children of its reference, so a backend imports the names inside the body.
+- 4924138: Read the absent members of an optional for its zero value and its literals in place of its spelling.
+- 786a060: **Breaking:** `Speller.Params` and `Speller.Results` take the slot of a declaration by address, as a template passes `.Params` and `.Returns`.
+- 9d3c527: **Breaking:** Return an error from `Decorators` and `MemberDecorators` for an assigned annotation.
+- 11c05a9: **Breaking:** Replace the indentation argument of `docs` and `decorators` with the helpers `memberdocs` and `memberdecorators`, which write at the depth of a member.
+- 4924138: Report `ReadonlyRest` for a rest parameter of a readonly array.
+- 9d3c527: Report `RelativeAugmentation` for a module augmentation of a relative module and load nothing from it.
+- 9d3c527: Record the packages that a tsconfig maps a specifier onto, resolve a directive through them, and add `typescript.IndexModule`, `typescript.DefaultExport` and `typescript.Relative`.
+- 4924138: Add `typescript.Restate`, and spell the references of the backend through `spellref.SpellRestated`.
+- 786a060: **Breaking:** Return `backend.Backend` of the kit from `backend.New`.
+- 4924138: **Breaking:** Remove `typescript.OptionalKey` and `typescript.ReadonlyKey`, and set the optional, readonly, computed and absent facts in the model.
+- df3883d: Add `IsIdentifierStart` and `IsIdentifierPart`, and accept every ECMAScript identifier as a bare name in the settle, the backend and the rules.
+- 4924138: Spell an immutable list, tuple and map as `readonly T[]`, `readonly [A, B]`, `Readonly<Record<K, V>>` and `ReadonlyMap<K, V>`.
+- 786a060: Add `testing.Language`, the spelling adapter of the fixture builder in `nodetest`.
+- 4924138: Stamp `gen.module` and `gen.moduleRoot` from the nearest `package.json`, and report one that does not read under BadPackage.
+- 4924138: Add `GeneratedKey`, and stamp it on a file that a foreign generator wrote.
+- 9d3c527: Stamp `typescript.abstract` and `typescript.conditionalType`, and read the comments of imports and exports.
+- 9d3c527: Fold `Error` to `rules.WellKnownError`, state the error contract of a class that extends an error class, and add `ErrorClass` with the global error classes.
+- 9d3c527: **Breaking:** Take a `rules.Scope` in `Rules.LiteralFor`.
+- 4924138: Write an optional method, a readonly index signature, a computed key and a hard name with its `#`.
+
+### Patch Changes
+
+- 4924138: Attribute a comment to the declaration past a decorator or a visibility on the line of the comment.
+- 9d3c527: Treat a member of a namespace in a script as public only where the namespace exports it.
+- 1f081a5: Gate all three checks of `RunToolchainSuite` on the toolchain, and return the error of a `tsc` that does not run from the TypeScript `Parse`.
+- 5d5eb8f: Refuse a class or an interface that declares a member name twice, unless the members overload an interface method or an abstract method.
+- 5d5eb8f: Refuse a sum variant whose payload has an entry named `kind`, the discriminant of the lowered union.
+- 786a060: Return an error for an absolute path of a fixture in the toolchain adapters.
+- d7c134f: Require `go.dokimi.dev/assert` v0.1.1.
+- 9d3c527: Ignore `baseUrl` and `paths` where a tsconfig chain fails to load.
+- 9d3c527: Return the empty object as the zero of a `Record` and of an object with one index signature.
+- 786a060: Show the source of the probe in the error of a satisfaction probe that fails for a reason other than the contract.
+- 4924138: Warn RefusedFact for an embed and its facts, and render the declaration without them.
+- Updated dependencies [8a44142]
+- Updated dependencies [8a44142]
+- Updated dependencies [79553b5]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [81c58aa]
+- Updated dependencies [4ffc162]
+- Updated dependencies [2bac013]
+- Updated dependencies [d7c134f]
+- Updated dependencies [e28d437]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [354ba3d]
+- Updated dependencies [d7c134f]
+- Updated dependencies [69477f7]
+- Updated dependencies [d7c134f]
+- Updated dependencies [8126b00]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [42fa23a]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [576db82]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [8a44142]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [5c2df17]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [1f081a5]
+- Updated dependencies [38284d3]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [7646457]
+- Updated dependencies [8a44142]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4fd2025]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [8126b00]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [85d4b42]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [1ce59e5]
+- Updated dependencies [60bf040]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [8126b00]
+- Updated dependencies [ebb8f4b]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [ad48d4f]
+- Updated dependencies [8126b00]
+- Updated dependencies [9ff596a]
+- Updated dependencies [4ffc162]
+  - go.dokimi.dev/eidos/core@0.1.0
+  - go.dokimi.dev/eidos/sdk@0.1.0
+  - go.dokimi.dev/eidos/lang@0.1.0

@@ -1,0 +1,161 @@
+# go.dokimi.dev/eidos/lang/java
+
+## 0.1.0
+
+### Minor Changes
+
+- 786a060: Add `backend.TemplateImport` to each backend, which binds the name of an import that a template states.
+- 786a060: **Breaking:** `Speller.Params` and `Speller.Results` take the slot of a declaration by address, as a template passes `.Params` and `.Returns`.
+- cdf6ced: **Breaking:** Return an error from `Annotate` and `MemberAnnotate` for an assigned annotation.
+- 7c41fe7: Refuse an immutable list, array and map in the Java spoke.
+- 54420d5: **Breaking:** Replace the indentation argument of `docs` and `annotate` with the helpers `memberdocs` and `memberannotate`, which write at the depth of a member.
+- 786a060: **Breaking:** Return `backend.Backend` of the kit from `backend.New`.
+- 786a060: Add `testing.Language`, the spelling adapter of the fixture builder in `nodetest`.
+- cdf6ced: Spell `rules.WellKnownError` as `Exception`.
+- 4924138: Add `GeneratedKey`, and stamp it on a file that a foreign generator wrote.
+- cdf6ced: Write the annotations of a parameter before its type.
+
+### Patch Changes
+
+- cdf6ced: Fail the load of a release that no directory of ct.sym lists.
+- cdf6ced: Keep the `Annotation` supertype of an interface that is not an annotation interface.
+- f9af85e: Read the user's home directory from USERPROFILE on Windows for the Maven and Gradle stores.
+- cdf6ced: Refuse the name of a field of no class for the reason that refuses a function of no class.
+- 786a060: Return an error for an absolute path of a fixture in the toolchain adapters.
+- d7c134f: Require `go.dokimi.dev/assert` v0.1.1.
+- 786a060: Show the source of the probe in the error of a satisfaction probe that fails for a reason other than the contract.
+- cdf6ced: Leave the type annotations out of the spelling of a wildcard.
+- 4924138: Warn RefusedFact for an embed and its facts, and render the declaration without them.
+- Updated dependencies [8a44142]
+- Updated dependencies [8a44142]
+- Updated dependencies [79553b5]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [81c58aa]
+- Updated dependencies [4ffc162]
+- Updated dependencies [2bac013]
+- Updated dependencies [d7c134f]
+- Updated dependencies [e28d437]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [354ba3d]
+- Updated dependencies [d7c134f]
+- Updated dependencies [69477f7]
+- Updated dependencies [d7c134f]
+- Updated dependencies [8126b00]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [42fa23a]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [576db82]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [8a44142]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [5c2df17]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [1f081a5]
+- Updated dependencies [38284d3]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [7646457]
+- Updated dependencies [8a44142]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4fd2025]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [8126b00]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [85d4b42]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [1ce59e5]
+- Updated dependencies [60bf040]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [8126b00]
+- Updated dependencies [ebb8f4b]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [ad48d4f]
+- Updated dependencies [8126b00]
+- Updated dependencies [9ff596a]
+- Updated dependencies [4ffc162]
+  - go.dokimi.dev/eidos/core@0.1.0
+  - go.dokimi.dev/eidos/sdk@0.1.0
+  - go.dokimi.dev/eidos/lang@0.1.0
