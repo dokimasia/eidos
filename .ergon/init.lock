@@ -60,8 +60,8 @@
     {
       "path": ".github/workflows/ci.yml",
       "producer": "github",
-      "local": "4d41bb995f5c089c6f8deb101cdb7a0c7e12f425e7f8ed046e0dd5ab16759a79",
-      "sha256": "af502190a7e69e5aab88b22b8b5ab6981d7ccb1bb1dd3aac2bce8f050f1ed0ac"
+      "local": "ede79b3f8a0c98011f16c036f69c2116dba7545fd9224b0f7422e036402b7016",
+      "sha256": "aaaec6538121a089386b553c4337485660bd3f09e2e30f461a6f5b70dd53827b"
     },
     {
       "path": ".github/workflows/codeql.yml",

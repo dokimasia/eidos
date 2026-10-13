@@ -243,8 +243,10 @@ jobs:
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
   # The canary ring. The program internal/ring of eidos-reference tests the published version of
-  # each module that requires the kernel against the kernel and the SDK facade of the checkout. The
-  # job sets up the toolchains that the tests of the satellites run, and the job result requires it.
+  # each module that requires the kernel against the kernel and the SDK facade of the checkout. It
+  # reads the tree of each release from its tag, so the checkout fetches the whole history with the
+  # tags. The job sets up the toolchains that the tests of the satellites run, and the job result
+  # requires it.
   ring:
     name: Ring
     needs: skip
@@ -256,6 +258,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
