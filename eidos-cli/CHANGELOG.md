@@ -1,5 +1,23 @@
 # go.dokimi.dev/eidos/cli
 
+## 0.2.0
+
+### Minor Changes
+
+- a2d0d64: Locate the stores of a frontend through `Input.Getenv` only when the tree has an input file of the frontend.
+- a044621: Read the options of the command line from the config file of the workspace and from environment variables, and add `-C` to run a command in another directory.
+- a044621: **Breaking:** Run the command line of a binary as an app of `go.stealthscale.io/cli`, with `New`, `Prepare`, `Mount`, `Main`, `Run`, `IOOf` and `Global` in place of `Kernels`, `Command`, `Flags` and `ProcessIO`.
+- a044621: Render the error of a store locator in the pass of `watch` and run the next pass.
+
+### Patch Changes
+
+- 4644a2b: Update `go.dokimi.dev/assert` to v0.2.0.
+- Updated dependencies [a2d0d64]
+- Updated dependencies [a2d0d64]
+- Updated dependencies [4644a2b]
+  - go.dokimi.dev/eidos/core@0.2.0
+  - go.dokimi.dev/eidos/declarative@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

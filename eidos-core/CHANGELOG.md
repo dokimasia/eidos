@@ -1,5 +1,16 @@
 # go.dokimi.dev/eidos/core
 
+## 0.2.0
+
+### Minor Changes
+
+- a2d0d64: Accept an extensible plan without a generator.
+- a2d0d64: Locate the stores of a frontend through `Input.Getenv` only when the tree has an input file of the frontend.
+
+### Patch Changes
+
+- 4644a2b: Update `go.dokimi.dev/assert` to v0.2.0.
+
 ## 0.1.0
 
 ### Minor Changes
