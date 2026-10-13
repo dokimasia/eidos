@@ -20,18 +20,18 @@ import (
 )
 
 // The exit statuses of the ring. statusOK reports a run in which no module
-// failed. statusFailed reports a module that failed, or a run that could
-// not test the modules. statusUsage reports a command line or a checkout
-// that does not read. A Go panic exits with status 2, which no status of
-// the ring takes.
+// failed. statusFailed reports a module that failed or a run that could not
+// test the modules. statusUsage reports a command line or a checkout that
+// does not read. A Go panic exits with status 2. No status of the ring has
+// that value.
 const (
 	statusOK     = 0
 	statusFailed = 1
 	statusUsage  = 64
 )
 
-// The name of the command, and its flag of the root of the checkout with
-// the default and the usage of the flag.
+// The name of the command, the flag of the root of the checkout, and the
+// default and the usage of the flag.
 const (
 	commandName = "ring"
 	rootFlag    = "root"
@@ -47,11 +47,11 @@ const (
 )
 
 // scratchPattern is the pattern of the name of the scratch directory of a
-// run, in the temporary directory of the system.
+// run. The directory is in the temporary directory of the system.
 const scratchPattern = "eidos-ring-*"
 
 // main runs the ring with the working directory, the arguments and the
-// environment of the process, and exits the process with the status of the
+// environment of the process. It exits the process with the status of the
 // run. The first interrupt or termination signal cancels the run. A working
 // directory that does not resolve ends the process with statusUsage.
 func main() {
@@ -66,18 +66,18 @@ func main() {
 	os.Exit(status)
 }
 
-// run runs the ring under ctx over the checkout that the flags of args
-// name, and returns the exit status. dir is the absolute working directory,
-// against which a relative root resolves. env is the environment of the go
-// command.
+// run runs the ring under ctx over the checkout of the flag -root in args.
+// It returns the exit status. A relative root resolves against the absolute
+// working directory dir. env is the environment of the go command and of
+// git.
 //
 // run reads the checkout and queries the module proxy for the latest version
-// of each module of the ring. It tests each published version against the
-// kernel and the SDK facade of the checkout. It writes the line of each
-// module to stdout in the order of the module paths. It writes the errors
-// of the command line and of the checkout to stderr. Each module has a
-// directory of its own in the scratch directory of the run. run removes
-// the scratch directory before it returns.
+// of each module of the ring. It tests each published version from the tree
+// of its release tag against the kernel and the SDK facade of the checkout.
+// It writes the line of each module to stdout in the order of the module
+// paths. It writes the errors of the command line and of the checkout to
+// stderr. The tree of each release has a directory of its own in the scratch
+// directory of the run. run removes the scratch directory before it returns.
 func run(ctx context.Context, dir string, args, env []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -86,7 +86,7 @@ func run(ctx context.Context, dir string, args, env []string, stdout, stderr io.
 		return statusUsage
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintf(stderr, "%s: the command takes no arguments, and has %s\n", commandName,
+		fmt.Fprintf(stderr, "%s: the command does not take the arguments %s\n", commandName,
 			strings.Join(flags.Args(), " "))
 		return statusUsage
 	}
@@ -100,34 +100,35 @@ func run(ctx context.Context, dir string, args, env []string, stdout, stderr io.
 		fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
 		return statusFailed
 	}
-	// The scratch directory contains the scratch modules alone, and a
-	// directory that a run leaves behind changes no later run.
+	// The scratch directory contains the trees of the releases alone. A
+	// directory that a run leaves behind does not change a later run.
 	defer func() { _ = os.RemoveAll(scratch) }()
 
 	status := statusOK
-	for i, mod := range c.ring {
-		version, refusal, err := latest(ctx, env, scratch, mod)
+	for i, m := range c.ring {
+		version, refusal, err := latest(ctx, env, scratch, m.path)
 		unserved := slices.ContainsFunc(notServed, func(line string) bool { return strings.Contains(refusal, line) })
 		switch {
 		case err != nil:
-			fmt.Fprintf(stdout, "%s %s: %v\n", failWord, mod, err)
+			fmt.Fprintf(stdout, "%s %s: %v\n", failWord, m.path, err)
 			status = statusFailed
 		case unserved:
-			fmt.Fprintf(stdout, "%s %s: %s\n", unpublishedWord, mod, refusal)
+			fmt.Fprintf(stdout, "%s %s: %s\n", unpublishedWord, m.path, refusal)
 		case refusal != "":
-			fmt.Fprintf(stdout, "%s %s: %s\n", failWord, mod, refusal)
+			fmt.Fprintf(stdout, "%s %s: %s\n", failWord, m.path, refusal)
 			status = statusFailed
 		case module.IsPseudoVersion(version):
-			fmt.Fprintf(stdout, "%s %s: the module proxy has no release, and returns the pseudo-version %s\n",
-				unpublishedWord, mod, version)
+			fmt.Fprintf(stdout,
+				"%s %s: the module proxy returns the pseudo-version %s for a module without a release\n",
+				unpublishedWord, m.path, version)
 		default:
-			out, err := test(ctx, env, c, filepath.Join(scratch, strconv.Itoa(i)), mod, version)
+			out, err := test(ctx, env, c, filepath.Join(scratch, strconv.Itoa(i)), m, version)
 			if err != nil {
-				fmt.Fprintf(stdout, "%s %s@%s: %v\n%s", failWord, mod, version, err, out)
+				fmt.Fprintf(stdout, "%s %s@%s: %v\n%s", failWord, m.path, version, err, out)
 				status = statusFailed
 				continue
 			}
-			fmt.Fprintf(stdout, "%s %s@%s\n", okWord, mod, version)
+			fmt.Fprintf(stdout, "%s %s@%s\n", okWord, m.path, version)
 		}
 	}
 	return status

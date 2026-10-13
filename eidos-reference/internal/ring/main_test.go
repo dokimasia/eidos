@@ -21,23 +21,23 @@ import (
 )
 
 // mainEnv makes the test binary run main in place of its tests when it has
-// the value runMain. A case then runs main as a process, with arguments, an
+// the value runMain. A case then runs main as a process with arguments, an
 // environment and an exit status. go test sets GOCOVERDIR for a test binary
 // built with coverage. The process writes its coverage counters there when
-// it exits, and the test binary merges them into its coverage profile.
+// it exits. The test binary merges them into its coverage profile.
 const (
 	mainEnv = "EIDOS_RING_TEST_MAIN"
 	runMain = "1"
 )
 
 // usageExit is the exit status of a command line or a checkout that does not
-// read. A Go panic exits with status 2, so a usage error has a status of its
-// own.
+// read. A Go panic exits with status 2. A usage error therefore has a status
+// of its own.
 const usageExit = 64
 
-// graceShare is the share of the time left before the deadline of a test
-// that a process of the test does not get: the test kills the process at
-// the deadline less the time left divided by graceShare.
+// graceShare is the share of the time before the deadline of a test that a
+// process of the test does not get. The test kills the process at the
+// deadline less the time left divided by graceShare.
 const graceShare = 20
 
 // The flag and the argument of the cases of the command line that the
@@ -47,21 +47,21 @@ const (
 	extraArg    = "extra"
 )
 
-// missingDir is a directory that no case creates, or that a case removes.
+// missingDir is a directory that no case creates or that a case removes.
 const missingDir = "missing"
 
-// windowsOS is the GOOS of Windows, which does not remove the working
+// windowsOS is the GOOS of Windows. Windows does not remove the working
 // directory of a running process.
 const windowsOS = "windows"
 
-// tempEnv are the variables of the temporary directory of the system:
-// TMPDIR on Linux and macOS, and TMP and TEMP on Windows.
+// tempEnv are the variables of the temporary directory of the system. Linux
+// and macOS read TMPDIR. Windows reads TMP and TEMP.
 var tempEnv = []string{"TMPDIR", "TMP", "TEMP"}
 
 // TestMain runs main in place of the tests when mainEnv has the value
-// runMain, and the tests otherwise. The process reads its standard input to
-// the end before main runs, so a case can change the surroundings of the
-// process first.
+// runMain. Otherwise it runs the tests. The process reads its standard input
+// to the end before main runs. A case can therefore change the surroundings
+// of the process first.
 func TestMain(m *testing.M) {
 	if os.Getenv(mainEnv) == runMain {
 		_, _ = io.Copy(io.Discard, os.Stdin)
@@ -70,12 +70,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestMainProcess runs main as a process of the test binary, and run in the
+// TestMainProcess runs main as a process of the test binary and run in the
 // process of the test. Each process writes the coverage meta-data file of
-// the binary into GOCOVERDIR under a temporary name that Go 1.27 makes from
-// the time in nanoseconds alone, so the cases of main run one process at a
-// time. The processes get inputs that end the run before the first query of
-// the module proxy.
+// the binary into GOCOVERDIR. The cases of main run one process at a time,
+// because Go 1.27 makes the temporary name of that file from the time in
+// nanoseconds alone. The processes get inputs that end the run before the
+// first query of the module proxy.
 func TestMainProcess(t *testing.T) {
 	self, err := os.Executable()
 	assert.NoError(t, err, "the test binary has a path")
@@ -140,7 +140,7 @@ func TestMainProcess(t *testing.T) {
 			{
 				name: "returns statusUsage for an argument",
 				args: []string{extraArg},
-				want: "the command takes no arguments",
+				want: "the command does not take the arguments " + extraArg,
 			},
 		}
 		for _, tt := range usage {
@@ -200,10 +200,10 @@ func TestMainProcess(t *testing.T) {
 	})
 }
 
-// process returns the command that runs self, the test binary, as a process
-// of main with args. The process inherits the environment of the test. The
-// test kills the process shortly before its deadline, so a process that
-// hangs fails the test and stops before the test binary exits.
+// process returns the command that runs the test binary self as a process of
+// main with args. The process inherits the environment of the test. The test
+// kills the process shortly before its deadline. A process that hangs
+// therefore fails the test and stops before the test binary exits.
 func process(t *testing.T, self string, args ...string) *exec.Cmd {
 	t.Helper()
 
