@@ -65,8 +65,7 @@ leading comment of a parameter gets the verdict out.
 The frontend attaches the carriers of the doc and of the trailing comment of a parameter field to
 each parameter that the field binds, and so for a result field. The trailing comment of a field is
 shared by every name of the field, and so are its carriers. The kernel validates the directive as it
-validates a directive on a field, so a directive whose rules take no parameter is misplaced. This
-decides D-6 of the improvement plan.
+validates a directive on a field, so a directive whose rules take no parameter is misplaced.
 
 The parameters of a function type inside a type expression have no identity, and neither has the
 receiver of a method, so a carrier on either remains refused under GOLANG-0003.
@@ -88,9 +87,9 @@ A `//go:build` line decides alone where a file has one.
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| W5.G3 | The text of a leading comment of a parameter or a result | Go documents a parameter in the doc of its function, and godoc renders no comment inside a parameter list. The model has a trailing comment for a parameter. The frontend drops comment text that has no place in the model, as it drops a comment between declarations | A target that renders the doc of one parameter, such as a parameter tag that a Java or a TypeScript backend writes from the model |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| The text of a leading comment of a parameter or a result | Go documents a parameter in the doc of its function, and godoc renders no comment inside a parameter list. The model has a trailing comment for a parameter. The frontend drops comment text that has no place in the model, as it drops a comment between declarations | A target that renders the doc of one parameter, such as a parameter tag that a Java or a TypeScript backend writes from the model |
 
 ### Failures
 
@@ -135,6 +134,5 @@ None.
 
 ## References
 
-- The improvement plan rows W5.G2, W5.G3 and W5.G4, and its decision D-6.
 - [RFC-0027](0027-the-subject-kinds-of-a-directive.md), the subject kinds of a directive.
 - The build constraints of go/build: <https://pkg.go.dev/go/build#hdr-Build_Constraints>.

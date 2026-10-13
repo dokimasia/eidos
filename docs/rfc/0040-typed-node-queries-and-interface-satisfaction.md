@@ -190,5 +190,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.K3, W5.K4 and W5.K5.
 - The Go specification on method sets: <https://go.dev/ref/spec#Method_sets>.

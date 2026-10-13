@@ -21,9 +21,9 @@ produces-adr: ADR-0036
 ## Summary
 
 No frontend sets the position of a package, so a finding on a package has no position. We propose
-that the load places a package without a position at the position of its first file. The
-comparison with the previous version also lists four protobuf facts: the default JSON name of a
-field, typed option values, a Go type for one field, and the Go spelling of the well-known types. We
+that the load places a package without a position at the position of its first file. The previous
+version also had four protobuf facts that eidos does not have: the default JSON name of a field,
+typed option values, a Go type for one field, and the Go spelling of the well-known types. We
 propose the verdict out for the first three and the confirmation that the fourth is intended.
 
 ## Motivation
@@ -58,12 +58,12 @@ position of a file is where its frontend placed it, such as the package clause o
 
 ### Verdicts
 
-| Row | Capability | Verdict | Reason | Reverses the verdict |
-|---|---|---|---|---|
-| W5.P2 | The default JSON name of every field | out | No generator reads the JSON name of a protobuf field, the stated one included. A generator derives the default from the name of the field by the rule of protoc where it needs one | A generator that writes or reads the JSON form of a message |
-| W5.P3 | Typed option values | out | No generator reads the value of an option, and the stamp keeps each option as text in a list, one entry for each option | A generator that reads the value of an option |
-| W5.P4 | A Go type for one field | out | No generator writes a protobuf field in Go, and a type override is an option of the generator that writes it | A generator of Go messages from protobuf |
-| W5.P6 | The Go spelling of the well-known types | intended | eidos writes the declarations of its neutral model, and the Go spoke spells a well-known type as the type that Go code uses for it. No generator writes protobuf-go messages, so wire compatibility with protobuf-go does not apply | A generator of protobuf-go messages |
+| Capability | Verdict | Reason | Reverses the verdict |
+|---|---|---|---|
+| The default JSON name of every field | out | No generator reads the JSON name of a protobuf field, the stated one included. A generator derives the default from the name of the field by the rule of protoc where it needs one | A generator that writes or reads the JSON form of a message |
+| Typed option values | out | No generator reads the value of an option, and the stamp keeps each option as text in a list, one entry for each option | A generator that reads the value of an option |
+| A Go type for one field | out | No generator writes a protobuf field in Go, and a type override is an option of the generator that writes it | A generator of Go messages from protobuf |
+| The Go spelling of the well-known types | intended | eidos writes the declarations of its neutral model, and the Go spoke spells a well-known type as the type that Go code uses for it. No generator writes protobuf-go messages, so wire compatibility with protobuf-go does not apply | A generator of protobuf-go messages |
 
 ### Failures
 
@@ -97,5 +97,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.P1, W5.P2, W5.P3, W5.P4 and W5.P6.
 - D112 in [21](../architecture/21-decisions.md), the facts of protobuf.

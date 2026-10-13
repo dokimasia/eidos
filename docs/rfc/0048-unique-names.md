@@ -36,8 +36,8 @@ contain, and the rules of both callers on it. We refuse the case styles `Screami
 - The double package gives the parameter at position i without a name the name `a<i>`, and adds the
   names to the set as it goes. A method `Put(string, a1 int)` gets two parameters named `a1`, which Go
   refuses.
-- The audit of the authoring API lists three case styles and a repair of free text as capabilities
-  of the previous version without a counterpart.
+- The naming package lacks the case styles `ScreamingKebab`, `Dot` and `Title` and a repair of free
+  text into an identifier.
 
 ## Detailed design
 
@@ -80,10 +80,10 @@ its names collided.
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| A11 | The case styles `ScreamingKebab`, `Dot` and `Title` | No target spells a name in these styles, and no plugin of the ensemble writes one | A target or a plugin that spells a name in one of the styles |
-| A12 | A repair of free text into an identifier | A backend refuses a name outside the identifier shape with a finding, and no plugin derives an identifier from free text | A plugin that derives identifiers from free text, such as the variants of an enumeration from its string values |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| The case styles `ScreamingKebab`, `Dot` and `Title` | No target spells a name in these styles, and no plugin of the ensemble writes one | A target or a plugin that spells a name in one of the styles |
+| A repair of free text into an identifier | A backend refuses a name outside the identifier shape with a finding, and no plugin derives an identifier from free text | A plugin that derives identifiers from free text, such as the variants of an enumeration from its string values |
 
 ### Failures
 
@@ -123,4 +123,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.A11, W5.A12 and W5.A13.
+None.

@@ -200,6 +200,5 @@ None.
 
 ## References
 
-- The improvement plan rows W5.C3, W5.C4, W5.C6, W5.C7, W5.C10, W5.C12 and W5.C14.
 - The command kernels and the cobra host: RFC-0021.
 - The JSON codecs of the model: ADR-0003.

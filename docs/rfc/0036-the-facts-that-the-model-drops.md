@@ -122,32 +122,34 @@ privacy, so the backend quotes the name.
 
 ### The schema
 
-    // Method gains three fields.
-    type Method struct {
-        // The existing fields are unchanged.
-        Optional   bool              `eidos:"both,fact=Optional"`   // a value of the type may lack it: TypeScript's ?
-        Mutability symbol.Mutability `eidos:"both,fact=Mutability"` // an indexer: whether a holder can assign its entries
-        Computed   bool              `eidos:"both,fact=Computed"`   // the name is an expression: TypeScript's [expr]
-    }
+```go
+// Method gains three fields.
+type Method struct {
+    // The existing fields are unchanged.
+    Optional   bool              `eidos:"both,fact=Optional"`   // a value of the type may lack it: TypeScript's ?
+    Mutability symbol.Mutability `eidos:"both,fact=Mutability"` // an indexer: whether a holder can assign its entries
+    Computed   bool              `eidos:"both,fact=Computed"`   // the name is an expression: TypeScript's [expr]
+}
 
-    // Field gains one field.
-    type Field struct {
-        // The existing fields are unchanged.
-        Computed bool `eidos:"both,fact=Computed"` // the name is an expression: TypeScript's [expr]
-    }
+// Field gains one field.
+type Field struct {
+    // The existing fields are unchanged.
+    Computed bool `eidos:"both,fact=Computed"` // the name is an expression: TypeScript's [expr]
+}
 
-    // TypeRef gains two fields.
-    type TypeRef struct {
-        // The existing fields are unchanged.
-        Mutability symbol.Mutability `eidos:"both"` // List, Array, Tuple, Map and Borrow: whether a holder can write through it
-        Absent     []*TypeRef        `eidos:"node"` // Optional: the members of the source union that denote absence
-    }
+// TypeRef gains two fields.
+type TypeRef struct {
+    // The existing fields are unchanged.
+    Mutability symbol.Mutability `eidos:"both"` // List, Array, Tuple, Map and Borrow: whether a holder can write through it
+    Absent     []*TypeRef        `eidos:"node"` // Optional: the members of the source union that denote absence
+}
 
-    // Enum gains one field.
-    type Enum struct {
-        // The existing fields are unchanged.
-        Underlying *TypeRef `eidos:"both,walk,fact=Underlying"` // the declared representation: Go's uint8, Rust's repr(u8)
-    }
+// Enum gains one field.
+type Enum struct {
+    // The existing fields are unchanged.
+    Underlying *TypeRef `eidos:"both,walk,fact=Underlying"` // the declared representation: Go's uint8, Rust's repr(u8)
+}
+```
 
 `Mutability` on a method states nothing for a method that is not an indexer. `Absent` is empty for
 an optional that the source states with a mark, such as Go's `*T` or TypeScript's `T?`, and it lists
@@ -156,10 +158,12 @@ language does not declare a representation, such as a TypeScript, a protobuf or 
 
 The rules fold `TypeRef.Mutability` into the shape:
 
-    type TypeShape struct {
-        // The existing fields are unchanged.
-        Mutability symbol.Mutability // List, Array, Tuple, Map and Borrow
-    }
+```go
+type TypeShape struct {
+    // The existing fields are unchanged.
+    Mutability symbol.Mutability // List, Array, Tuple, Map and Borrow
+}
+```
 
 ### The TypeScript satellite
 
@@ -187,18 +191,22 @@ opaque shapes, which every spoke without them refuses.
 The kernel's member walk reports a computed member as a gap with the new reason `GapComputed`,
 because no other language can call a member by an expression:
 
-    // GapComputed is a member whose name is an expression of its
-    // language, such as TypeScript's [Symbol.iterator].
-    GapComputed GapReason = 6
+```go
+// GapComputed is a member whose name is an expression of its
+// language, such as TypeScript's [Symbol.iterator].
+GapComputed GapReason = 6
+```
 
 The backend renders the facts:
 
-    interface Store {
-        run?(): void;
-        readonly [key: string]: Row;
-        [Symbol.iterator](): Iterator<Row>;
-        #flush(): void;
-    }
+```typescript
+interface Store {
+    run?(): void;
+    readonly [key: string]: Row;
+    [Symbol.iterator](): Iterator<Row>;
+    #flush(): void;
+}
+```
 
 It writes `?` after the key of an optional method, `readonly` before a readonly index signature, a
 computed name as written, and a hard name as written with its `#`. A hard name has private
@@ -246,18 +254,20 @@ generator writes.
 A computed member has no name in Go, Java or Rust, so neither the declaration with the fact nor the
 declaration without it renders. The render kit gains a fourth verdict for such a fact:
 
-    const (
-        // Rejects means the target cannot render the declaration with the
-        // fact or without it: the render reports the stated fact as an
-        // Error and leaves the declaration out.
-        Rejects Verdict = 4
-    )
+```go
+const (
+    // Rejects means the target cannot render the declaration with the
+    // fact or without it: the render reports the stated fact as an
+    // Error and leaves the declaration out.
+    Rejects Verdict = 4
+)
 
-    // RejectedFact reports a stated fact whose declaration the target
-    // cannot render. It is an Error at the declaration.
-    var RejectedFact = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-        Number: next, Meaning: "the target cannot render a declaration with a stated fact or without it",
-    })
+// RejectedFact reports a stated fact whose declaration the target
+// cannot render. It is an Error at the declaration.
+var RejectedFact = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+    Number: next, Meaning: "the target cannot render a declaration with a stated fact or without it",
+})
+```
 
 `next` is the next free number of the kernel's codes. The Go backend already refuses six facts with
 an Error and skips the declaration: async, abstract, override, a default body, a level and the
@@ -351,4 +361,3 @@ None.
 
 - The symbol model: [`docs/architecture/02-symbol-model.md`](../architecture/02-symbol-model.md).
 - The cross-language hub: [RFC-0023](0023-the-cross-language-hub.md).
-- The improvement plan rows W2.2, W2.4, W2.7, W2.11, W2.13, W6.X21 and W6.X22, and decision D-7.

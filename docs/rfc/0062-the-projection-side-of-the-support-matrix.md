@@ -24,9 +24,9 @@ The support matrix states what each language reads, what each target renders, ho
 spells each canonical form and which languages lower markers. It does not state which optional
 capabilities of the projection vocabulary the rules of each language implement. We propose a fifth
 table of the matrix: a row for each optional capability, a column for each language, and a cell that
-the matrix finds by asserting the capability on the rules of the language. We also decide the rest of
-the proposed decision D-12 of the improvement plan: no plugin is built to call a capability that no
-plugin needs.
+the matrix finds by asserting the capability on the rules of the language. We also decide against
+a plugin that exists only to call `PropertyRules`, `ConstructRules`, `PromotionRules` or
+`EqualityRules`.
 
 ## Motivation
 
@@ -37,9 +37,8 @@ plugin needs.
 - The table of the optional capabilities in the projection document lists the languages whose
   constructs motivate each capability, and leaves `WellKnownRules` and `SatisfactionRules` out. No
   document states which languages implement a capability.
-- The improvement plan proposes D-12: every implemented capability gets a production caller in the
-  reference ensemble or in the conformance matrix. RFC-0061 decides the half of D-12 that concerns
-  the rules of Java and Rust.
+- A proposal gives every implemented capability a production caller in the reference ensemble or in
+  the conformance matrix. RFC-0061 decides the rules of Java and Rust.
 
 ## Detailed design
 
@@ -73,11 +72,11 @@ declares and the matrix does not list fails the test with its name.
 
 ### Verdicts
 
-| Row | Item | Verdict | Reason | Reverses the verdict |
-|---|---|---|---|---|
-| D-12, W6.O5 | The matrix states the capabilities that the rules of each language implement | in | A consumer asserts a capability, and the matrix asserts each capability of each language. The table states the support of each language from the code | none |
-| D-12, W6.O5 | A plugin that calls `PropertyRules`, `ConstructRules`, `PromotionRules` or `EqualityRules` | out | No plugin of the reference ensemble needs one of the four. A plugin built to call one has no consumer, and the tests of the rules of each language check each implementation | A plugin that needs one of the four capabilities |
-| W6.O5 | The Go annotator calls `Comparable` of the Go rules directly | in as built | The annotator stamps a fact of the Go satellite, and the Go rules compute it. A neutral consumer asserts `EqualityRules` instead | A neutral consumer that reads the comparability of a type of Go |
+| Item | Verdict | Reason | Reverses the verdict |
+|---|---|---|---|
+| The matrix states the capabilities that the rules of each language implement | in | A consumer asserts a capability, and the matrix asserts each capability of each language. The table states the support of each language from the code | none |
+| A plugin that calls `PropertyRules`, `ConstructRules`, `PromotionRules` or `EqualityRules` | out | No plugin of the reference ensemble needs one of the four. A plugin built to call one has no consumer, and the tests of the rules of each language check each implementation | A plugin that needs one of the four capabilities |
+| The Go annotator calls `Comparable` of the Go rules directly | in as built | The annotator stamps a fact of the Go satellite, and the Go rules compute it. A neutral consumer asserts `EqualityRules` instead | A neutral consumer that reads the comparability of a type of Go |
 
 ### Failures
 
@@ -121,8 +120,6 @@ None.
 
 ## References
 
-- The improvement plan rows W6.O4, W6.O5 and W6.O9, and the proposed decision D-12.
 - [RFC-0060](0060-the-reference-ensemble-after-its-review.md), the scope of the builder.
-- [RFC-0061](0061-the-declared-name-of-an-imported-go-package.md), the half of D-12 that concerns
-  Java and Rust.
+- [RFC-0061](0061-the-declared-name-of-an-imported-go-package.md), the rules of Java and Rust.
 - [03](../architecture/03-projection.md), the optional capabilities.

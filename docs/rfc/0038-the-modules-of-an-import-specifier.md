@@ -152,5 +152,4 @@ None.
 
 ## References
 
-- The improvement plan row W2.5.
 - TypeScript's module resolution: <https://www.typescriptlang.org/docs/handbook/modules/reference.html#paths>.

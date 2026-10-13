@@ -181,5 +181,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.K1, W5.A4 and W5.K18, and decision D-2.
 - The optimal string alignment distance: <https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance>.

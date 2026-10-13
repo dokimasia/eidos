@@ -262,7 +262,6 @@ None.
 
 ## References
 
-- The improvement plan rows W5.K12, W5.K14 and W5.K15.
 - The reference ensemble, with the priorities of errorgen and auditgen and the triggers of the
   weavers: RFC-0026.
 - The order of a plugin apart from the presence of its provider: RFC-0030.

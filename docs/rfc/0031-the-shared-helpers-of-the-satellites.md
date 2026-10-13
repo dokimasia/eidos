@@ -101,24 +101,24 @@ package changes twice.
 
 ### Components
 
-| Package | Additions | Rows |
-|---|---|---|
-| `core/plugin` | `SourceUnit.RefuseCarriers`, `SourceUnit.RefuseSugar`, `SourceUnit.ReportSyntax`, `GraphBuilder.StampModule`, `Zip`, `Absent`, `UserHomeDir`, `Composite`, `FuncType` | W6.F2, F3, F7, F9, F11, F13, F14, D1, D5, D14 |
-| `core/frontend` | `TestFiles`, `Generated`, `Nearest`, `Builder.Imports` | W6.F1, F10, D6, D16, O1 |
-| `eidos-lang/treesitter` | `Comments`, `Node.FirstOf`, `Node.HasToken`, `Node.Content`, `Node.LastNamed`, `Tree.Problems` | W6.F5, F6, F7, F8, D3 |
-| `eidos-lang/numeric` | `Syntax`, `Parse` | W6.F17 |
-| `core/backend/render` | the names of the shared vocabulary helpers, `Coverage.RefusesEmbeds` | W6.B2, B5, B12 |
-| `core/backend` | `Builder.Statements` | W6.B8 |
-| `eidos-lang/scaffold` | `Base` | W6.B7 |
-| `eidos-lang/lowering` | `VariantName`, `NamedPayload`, `ParamArgs`, `Callables` | W6.B10, B11 |
-| `eidos-lang/spoke` | `Arity`, `Split` | W6.S1 |
-| `eidos-lang/spellref` | `Restate`, `SpellRestated` | W6.X1 |
-| `eidos-lang-go` | `golang.Restate` | W6.X2 |
-| `eidos-lang-typescript`, `eidos-lang-java`, `eidos-lang-rust` | `GeneratedKey` | W6.D6 |
-| `core/rules` | `Resolver`, `Resolve`, `ResolveError`, `EnumBuilder`, `Unaliased`, `FactNamed`. `SourceRules.TypeName` and `Bound.TypeName` go | W6.R1, R3, R5, R6, X6 |
-| `core/toolchain` | `Run`, `LookPaths`, `Scratch`, `WriteFile`, `Sources`, `Probe` | W6.T1 to T6 |
-| `core` | `Emitter.Fields` | W6.C5 |
-| `eidos-sdk` | the regenerated facade | all |
+| Package | Additions |
+|---|---|
+| `core/plugin` | `SourceUnit.RefuseCarriers`, `SourceUnit.RefuseSugar`, `SourceUnit.ReportSyntax`, `GraphBuilder.StampModule`, `Zip`, `Absent`, `UserHomeDir`, `Composite`, `FuncType` |
+| `core/frontend` | `TestFiles`, `Generated`, `Nearest`, `Builder.Imports` |
+| `eidos-lang/treesitter` | `Comments`, `Node.FirstOf`, `Node.HasToken`, `Node.Content`, `Node.LastNamed`, `Tree.Problems` |
+| `eidos-lang/numeric` | `Syntax`, `Parse` |
+| `core/backend/render` | the names of the shared vocabulary helpers, `Coverage.RefusesEmbeds` |
+| `core/backend` | `Builder.Statements` |
+| `eidos-lang/scaffold` | `Base` |
+| `eidos-lang/lowering` | `VariantName`, `NamedPayload`, `ParamArgs`, `Callables` |
+| `eidos-lang/spoke` | `Arity`, `Split` |
+| `eidos-lang/spellref` | `Restate`, `SpellRestated` |
+| `eidos-lang-go` | `golang.Restate` |
+| `eidos-lang-typescript`, `eidos-lang-java`, `eidos-lang-rust` | `GeneratedKey` |
+| `core/rules` | `Resolver`, `Resolve`, `ResolveError`, `EnumBuilder`, `Unaliased`, `FactNamed`. `SourceRules.TypeName` and `Bound.TypeName` go |
+| `core/toolchain` | `Run`, `LookPaths`, `Scratch`, `WriteFile`, `Sources`, `Probe` |
+| `core` | `Emitter.Fields` |
+| `eidos-sdk` | the regenerated facade |
 
 ### The source unit
 
@@ -669,7 +669,7 @@ template with its generator and its mirror guard.
 
 ## Unresolved and future work
 
-- The rows that rename exported names or change a representation are not
+- The changes that rename exported names or change a representation are not
   proposed here: the two key spellings of Go, the two `Scope` types, the three
   meanings of a bucket, the three meanings of a record, the layout fields of a
   plan's config, the two readings of `workspace` in the command line, the

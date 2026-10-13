@@ -155,6 +155,5 @@ None.
 
 ## References
 
-- The improvement plan rows W5.A1, W5.A2 and W5.A3, and the decision D-13.
 - `encoding.TextUnmarshaler`: <https://pkg.go.dev/encoding#TextUnmarshaler>.
 - `time.ParseDuration`: <https://pkg.go.dev/time#ParseDuration>.

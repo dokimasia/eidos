@@ -107,9 +107,9 @@ The TypeScript, Java and Rust skeletons write nothing from the annotations.
 
 ### Verdicts
 
-| Row | Capability | Verdict | Reason | Reverses the verdict |
-|---|---|---|---|---|
-| W5.G26 | File-level directives that a plugin places on a generated file through `emit.File` | out | No generator of the ensemble writes a file-level directive, and the Go backend skips an `emit.File` in a unit under `UnspeltKind`. The constraint of a source reaches its generated file through the layout | A generator that writes a file-level directive of its own, such as a constraint that no source states |
+| Capability | Verdict | Reason | Reverses the verdict |
+|---|---|---|---|
+| File-level directives that a plugin places on a generated file through `emit.File` | out | No generator of the ensemble writes a file-level directive, and the Go backend skips an `emit.File` in a unit under `UnspeltKind`. The constraint of a source reaches its generated file through the layout | A generator that writes a file-level directive of its own, such as a constraint that no source states |
 
 ### Failures
 
@@ -168,7 +168,6 @@ None.
 
 ## References
 
-- The improvement plan rows W2.36 and W5.G26.
 - D87 in [21](../architecture/21-decisions.md), the annotations of a file.
 - [RFC-0052](0052-go-parameters-as-subjects-and-the-legacy-build-line.md), the `// +build` lines.
 - [Build constraints](https://pkg.go.dev/cmd/go#hdr-Build_constraints) of the go command.

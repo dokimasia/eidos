@@ -117,9 +117,9 @@ The builder reads the default of a field through `LiteralFor` in the scope of it
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| none | A call with arguments as a value | An argument is a value of its own, and a default or a sample that needs a computation belongs in a function that the author writes and names | A generator that needs arguments that it computes itself |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| A call with arguments as a value | An argument is a value of its own, and a default or a sample that needs a computation belongs in a function that the author writes and names | A generator that needs arguments that it computes itself |
 
 ### Failures
 
@@ -165,5 +165,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.G13, W5.G14, W9.44 and W9.45.
 - [RFC-0014](0014-the-projection-vocabulary.md), the projection vocabulary and the values.

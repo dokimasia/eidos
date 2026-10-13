@@ -58,9 +58,8 @@ produces.
 In the testing document, the fixture builders have a neutral core with a
 spelling adapter in each satellite. In the languages document, the testing
 package of a satellite contains the fixture builder. No module contains
-either. The audit of the test kits on 2026-10-11 classed the entry points of
-a builder, its sub-builders and its type-reference constructors as
-uncovered.
+either. No kit has the entry points of a builder, its sub-builders or its
+type-reference constructors.
 
 ### Why the kernel
 

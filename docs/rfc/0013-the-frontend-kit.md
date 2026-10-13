@@ -42,11 +42,10 @@ share one tested procedure. The read side has nothing yet — no
 five frontends are about to be written together: Go, protobuf,
 TypeScript, Rust and Java, per capability, over one shared
 corpus. Building any parser first and the contract second would
-harden that language's habits into the contract; the kit and its
-suite come first, and four audits of the old frontends against
-this document already did what the wave will keep doing — every
-contract defect they found arrived through a language the others
-did not share.
+harden that language's habits into the contract. The kit and its
+suite come first. Four audits of the old frontends against this
+document found contract defects. Each defect came from a language
+that the others did not share.
 
 Two properties must be mechanisms rather than review rules, and
 both live in this contract. Hermeticity: a frontend that can open
@@ -454,12 +453,10 @@ Tier-1 projections (`rules/`) are the milestone's later slices and
 their own design: the kit hands them a frozen graph and nothing
 here constrains their shape. The toolchain adapter is specified in
 the testing architecture and arrives with the last slice. Native
-attribute sugar — Rust's `#[gen::…]`, TypeScript decorators,
-Java annotations lowering to canonical directives — is a kit
-addition beside `Classify` that arrives with the wave's directive
-slice, now that three in-wave languages carry real sugar; its
-shape is decided against those carriers, not invented for Go,
-which has none. The
+attribute sugar is a kit addition beside `Classify` and a design
+of its own. It lowers Rust's `#[gen::…]`, TypeScript decorators
+and Java annotations to canonical directives. Its design starts
+from those three carriers, because Go has no attribute sugar. The
 workspace's Load step — driving selection, partitioning and
 parallel `Parse` across registered frontends, then Link, then
 Freeze — is milestone 0005's join; the suite stands in for it

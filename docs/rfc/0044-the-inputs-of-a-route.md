@@ -355,7 +355,6 @@ None.
 
 ## References
 
-- The improvement plan rows W5.K6, W5.K7, W5.C1 and W5.C5.
 - The routing of a declaration and the precedence of its inputs: RFC-0016.
 - The config file and the commands `plan` and `explain`: RFC-0021.
 - The sealed state and its generations: RFC-0020.

@@ -43,7 +43,7 @@ Each defect in this list reproduces against the reference binary over a copy of 
 - The stub of `Check(item string, append int) error` calls `append` to record the call, and
   `go vet` reports `cannot call append (variable of type int)`.
 
-The comparison with the previous version lists the rest:
+These defects and gaps do not show in a run of the reference binary:
 
 - The go command refuses an import path that is not valid, and an import of another module's
   `internal` tree. The Go backend writes both, so the build of the consumer is the first step that
@@ -158,10 +158,10 @@ no type.
 
 ### Verdicts
 
-| Row | Capability | Verdict | Reason | Reverses the verdict |
-|---|---|---|---|---|
-| W5.G25 | A package comment in a generated file | out | The ensemble writes each family into the package of its source, and the files of the source document the package. The Go backend skips an `emit.Package` in a unit under `UnspeltKind` | A generator or a route that fills a package with generated files alone |
-| W5.G27 | A respelling or a refusal of a predeclared name at the settle | out | Go permits a declaration and a parameter to take such a name. A refusal at the settle would refuse valid Go, and the settle does not read the bodies that templates write. The doubles rename their parameters | A generated body that calls a predeclared function in the scope of a name that its generator does not choose |
+| Capability | Verdict | Reason | Reverses the verdict |
+|---|---|---|---|
+| A package comment in a generated file | out | The ensemble writes each family into the package of its source, and the files of the source document the package. The Go backend skips an `emit.Package` in a unit under `UnspeltKind` | A generator or a route that fills a package with generated files alone |
+| A respelling or a refusal of a predeclared name at the settle | out | Go permits a declaration and a parameter to take such a name. A refusal at the settle would refuse valid Go, and the settle does not read the bodies that templates write. The doubles rename their parameters | A generated body that calls a predeclared function in the scope of a name that its generator does not choose |
 
 ### Failures
 
@@ -221,7 +221,6 @@ None.
 
 ## References
 
-- The improvement plan rows W5.G25, W5.G27, W5.G28, W5.G29, W5.G35, W5.G36, W5.G37 and W5.A7.
 - D87 in [21](../architecture/21-decisions.md), the trailing comments and the annotations of the
   model.
 - [RFC-0001](0001-symbol-model-contract.md), the contract of a type reference.

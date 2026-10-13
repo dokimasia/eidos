@@ -80,13 +80,13 @@ spelling of the target of a type alias on the alias where the target is a condit
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| W5.T2 | An abstract property in the emit model | No generator writes an abstract class | A generator that writes an abstract property |
-| W5.T3 | Function overloads in the emit model | No generator writes two signatures of one function | A generator that writes an overloaded function |
-| W5.T4 | Ambient declarations in the emit model | No generator writes a declaration file | A generator that writes a declaration file |
-| W5.T5 | The type-only mark of an import and an export | No projection reads it. The rules resolve a type through every import, and the backend states its own type-only imports | A rule that resolves a value through an import |
-| W5.T7 | An explicit `public` kept apart from no modifier | No generator keeps the spelling of the visibility of its source | A generator that copies a class member with its modifiers |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| An abstract property in the emit model | No generator writes an abstract class | A generator that writes an abstract property |
+| Function overloads in the emit model | No generator writes two signatures of one function | A generator that writes an overloaded function |
+| Ambient declarations in the emit model | No generator writes a declaration file | A generator that writes a declaration file |
+| The type-only mark of an import and an export | No projection reads it. The rules resolve a type through every import, and the backend states its own type-only imports | A rule that resolves a value through an import |
+| An explicit `public` kept apart from no modifier | No generator keeps the spelling of the visibility of its source | A generator that copies a class member with its modifiers |
 
 ### Failures
 
@@ -123,5 +123,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.T1, W5.T2, W5.T3, W5.T4, W5.T5, W5.T7, W5.T8, W5.T12 and W5.T14.
 - [03](../architecture/03-projection.md), the projection vocabulary and its metadata.

@@ -165,7 +165,7 @@ that the frontend recorded.
 | A nested type | the line of its kind, with `<Host>.<Name>` as its name |
 
 A parameter renders as its type, with `...` before the type of a variadic parameter, its label and
-a colon before it in a language with labels, `?` after an optional parameter and ` = <Default>`
+a colon before it in a language with labels, `?` after an optional parameter and `= <Default>`
 after a default. The results render as one type, or as a list in parentheses for more than one. A
 type, a value or a result that the frontend did not record is left out of the line. Type
 parameters render as `[T]`, or as `[T <Bound>]` with their bounds joined by ` & `. The surface of

@@ -106,17 +106,17 @@ RFC gives the review one view of the whole break, and one release contains it.
 
 ### Components
 
-| Package | Change | Items |
-|---|---|---|
-| `core/plugin` | `Backend` declares the methods of a plan. `Frontend` embeds `Versioned`. `KeyBinder` returns a bound plugin. `CapabilityProvider` gains `After`. `ContractVersion` | W4.1, W4.2, W4.15, W4.17, W4.19 |
-| `core/backend` | `Build` returns the kit's `Backend`. One backend type replaces four | W4.1, W4.6, W4.7, W4.9 |
-| `core/output` | `Sink` declares `Overwrite`. `Overwriter` goes | W4.3 |
-| `core/ledger` | `Ledger` declares `Lock`. `Locker` goes | W4.4 |
-| `core/workspace` | Build refuses a ledger without an output and a partial provider. 17 assertions go | W4.5, W4.8, W4.16 |
-| `core` | One typed build per role. `GraphMatch` reports through `ErrorfAt`, `WarnfAt` and `InfofAt`. `JoinName` names its positions | W4.10, W4.24, W4.25 |
-| `core/emit` | A slot of a value in the store refuses a direct append. Tags, embeds, parameters and returns are slots | W4.11, W4.12 |
-| `core/rules` | `View` hides its fact store. `Bound` reaches every optional capability. The kernel substitutes. `SourceRules.SamplesOf` becomes `DeriveSamples` | W4.13, W4.20, W4.21, W4.22 |
-| `eidos-sdk` | Regenerated facade | all |
+| Package | Change |
+|---|---|
+| `core/plugin` | `Backend` declares the methods of a plan. `Frontend` embeds `Versioned`. `KeyBinder` returns a bound plugin. `CapabilityProvider` gains `After`. `ContractVersion` |
+| `core/backend` | `Build` returns the kit's `Backend`. One backend type replaces four |
+| `core/output` | `Sink` declares `Overwrite`. `Overwriter` goes |
+| `core/ledger` | `Ledger` declares `Lock`. `Locker` goes |
+| `core/workspace` | Build refuses a ledger without an output and a partial provider. 17 assertions go |
+| `core` | One typed build per role. `GraphMatch` reports through `ErrorfAt`, `WarnfAt` and `InfofAt`. `JoinName` names its positions |
+| `core/emit` | A slot of a value in the store refuses a direct append. Tags, embeds, parameters and returns are slots |
+| `core/rules` | `View` hides its fact store. `Bound` reaches every optional capability. The kernel substitutes. `SourceRules.SamplesOf` becomes `DeriveSamples` |
+| `eidos-sdk` | Regenerated facade |
 
 ### The backend contract
 

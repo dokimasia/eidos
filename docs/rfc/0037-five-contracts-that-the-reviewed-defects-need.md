@@ -322,6 +322,5 @@ None.
 
 ## References
 
-- The improvement plan rows W2.9, W2.14, W2.16, W2.17 and W2.23.
 - The cross-language hub: [RFC-0023](0023-the-cross-language-hub.md).
 - The shape catalog: [RFC-0022](0022-the-shape-catalog.md).

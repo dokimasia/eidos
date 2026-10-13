@@ -116,10 +116,10 @@ target has a complex number, and a spoke refuses an opaque shape.
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| W5.G19 | Distinct witnesses for the parameters of one declaration | A witness instantiates a declaration so that its generated checks compile. The sample of each field differs from the sample of every other field, so a field that a method reads through the wrong parameter fails its check at equal witnesses too | A check that only distinct type arguments can tell apart |
-| W5.G24 | The shape of `iter.Seq` without a target | The return roles classify `iter.Seq` and `iter.Seq2` in a signature, and no generator reads the shape of a sequence elsewhere | A generator that reads a sequence outside a signature |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| Distinct witnesses for the parameters of one declaration | A witness instantiates a declaration so that its generated checks compile. The sample of each field differs from the sample of every other field, so a field that a method reads through the wrong parameter fails its check at equal witnesses too | A check that only distinct type arguments can tell apart |
+| The shape of `iter.Seq` without a target | The return roles classify `iter.Seq` and `iter.Seq2` in a signature, and no generator reads the shape of a sequence elsewhere | A generator that reads a sequence outside a signature |
 
 ### Failures
 
@@ -166,5 +166,4 @@ None.
 
 ## References
 
-- The improvement plan rows W5.G10, W5.G16, W5.G17, W5.G18, W5.G19, W5.G21 and W5.G24.
 - [RFC-0014](0014-the-projection-vocabulary.md), the projection vocabulary.

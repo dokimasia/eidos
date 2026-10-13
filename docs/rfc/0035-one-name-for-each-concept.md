@@ -141,31 +141,35 @@ an unexported row that the depth leaves out also take part in the arithmetic of 
 The constant takes the name of its key, and the key does not change. The docblocks use the word of
 the key.
 
-    // ReceiverIsPointerKey marks a method declared on a pointer
-    // receiver.
-    ReceiverIsPointerKey meta.KeyName = "golang.receiverIsPointer"
+```go
+// ReceiverIsPointerKey marks a method declared on a pointer
+// receiver.
+ReceiverIsPointerKey meta.KeyName = "golang.receiverIsPointer"
 
-    // UnderlyingKindKey records the kind of the underlying type of a
-    // defined type: basic, named, pointer, slice, array, map, chan or
-    // func.
-    UnderlyingKindKey meta.KeyName = "golang.underlyingKind"
+// UnderlyingKindKey records the kind of the underlying type of a
+// defined type: basic, named, pointer, slice, array, map, chan or
+// func.
+UnderlyingKindKey meta.KeyName = "golang.underlyingKind"
+```
 
 ### The bindings of a Go file
 
 The type keeps its fields, its methods and its contracts under the new name.
 
-    // Bindings is what the imports of one Go file bind: the import path
-    // that each qualifier binds, the dot-imported paths, and every
-    // unaliased import in source order. The zero Bindings binds nothing.
-    type Bindings struct {
-        named map[string]string
-        dots  []string
-        all   []string
-    }
+```go
+// Bindings is what the imports of one Go file bind: the import path
+// that each qualifier binds, the dot-imported paths, and every
+// unaliased import in source order. The zero Bindings binds nothing.
+type Bindings struct {
+    named map[string]string
+    dots  []string
+    all   []string
+}
 
-    func NewBindings(imports []*node.Import) Bindings
-    func (b Bindings) Import(qualifier string) (string, bool)
-    func (b Bindings) Candidates(pkg, spelling string) []symbol.Identity
+func NewBindings(imports []*node.Import) Bindings
+func (b Bindings) Import(qualifier string) (string, bool)
+func (b Bindings) Candidates(pkg, spelling string) []symbol.Identity
+```
 
 The frontend records the value in the kernel's `Bindings` slot, and the Go rules read it back as
 `scope.Bindings.(golang.Bindings)`.
@@ -177,14 +181,16 @@ Turn zero is outside the schedule, and a stamp of a frontend and a `meta drop` d
 claim ranks by its authority, then by the earlier turn, then by the name of the plugin, and then by
 its place in canonical match order.
 
-    type Claim struct {
-        Subject   symbol.Identity
-        Authority Authority
-        Turn      int
-        Plugin    diag.Origin
-        Order     Order
-        // Pos and Derived are unchanged.
-    }
+```go
+type Claim struct {
+    Subject   symbol.Identity
+    Authority Authority
+    Turn      int
+    Plugin    diag.Origin
+    Order     Order
+    // Pos and Derived are unchanged.
+}
+```
 
 `AnnotatorContext.Turn` and `GeneratorContext.Turn` are the turn of the phase call, and the store
 of a generator contains the units of the earlier turns. `Component.Turn` is the turn that every
@@ -197,24 +203,26 @@ the byte of the hash of a path, which is a hash bucket.
 
 ### The kinds of execution
 
-    // ExecutionKind is the kind of execution that an [ExplainedExecution]
-    // describes. The zero value is not a valid kind.
-    type ExecutionKind uint8
+```go
+// ExecutionKind is the kind of execution that an [ExplainedExecution]
+// describes. The zero value is not a valid kind.
+type ExecutionKind uint8
 
-    const (
-        ExecutionValidation ExecutionKind = 1
-        ExecutionInvocation ExecutionKind = 2
-        ExecutionCheck      ExecutionKind = 3
-        ExecutionGroup      ExecutionKind = 4
-        ExecutionAudit      ExecutionKind = 5
-        ExecutionRegion     ExecutionKind = 6
-    )
+const (
+    ExecutionValidation ExecutionKind = 1
+    ExecutionInvocation ExecutionKind = 2
+    ExecutionCheck      ExecutionKind = 3
+    ExecutionGroup      ExecutionKind = 4
+    ExecutionAudit      ExecutionKind = 5
+    ExecutionRegion     ExecutionKind = 6
+)
 
-    // ExplainedExecution is one execution in a generation.
-    type ExplainedExecution struct {
-        Kind ExecutionKind
-        // The other fields are unchanged.
-    }
+// ExplainedExecution is one execution in a generation.
+type ExplainedExecution struct {
+    Kind ExecutionKind
+    // The other fields are unchanged.
+}
+```
 
 `Explanation.Executions` lists the executions. `String` returns the same six words, and
 `ExecutionKind(n)` for an undeclared kind. The event of the command line is `explain.execution`,
@@ -223,22 +231,26 @@ because a record of the state is the row that stores an execution.
 
 ### The member of a list
 
-    // diagEvent, errorEvent, fileEvent, outcomeEvent and header
-    Member string `json:"member,omitempty"`
+```go
+// diagEvent, errorEvent, fileEvent, outcomeEvent and header
+Member string `json:"member,omitempty"`
 
-    // tally
-    Member string `json:"member,omitempty"`
+// tally
+Member string `json:"member,omitempty"`
 
-    // summaryEvent
-    Members []tally `json:"members,omitempty"`
+// summaryEvent
+Members []tally `json:"members,omitempty"`
 
-    // Member starts the output of the member m of a list. The events
-    // that follow have the name of m in their field member.
-    func (r *Renderer) Member(m Member)
+// Member starts the output of the member m of a list. The events
+// that follow have the name of m in their field member.
+func (r *Renderer) Member(m Member)
+```
 
 A run of a member `tools/gen` of a list writes events such as this one.
 
-    {"event":"outcome","plan":"go-stubs","status":"committed","member":"tools/gen"}
+```json
+{"event":"outcome","plan":"go-stubs","status":"committed","member":"tools/gen"}
+```
 
 ### The evaluation of values
 
@@ -254,7 +266,9 @@ Each language evaluates a value in the layer that has the facts that the evaluat
 
 The row of the language document reads as follows.
 
-    | enum and constant values, including iota-style arithmetic | the layer that has the facts: the Go frontend evaluates through the type checker and stamps the exact value, and the TypeScript and protobuf rules evaluate from the declaration |
+```markdown
+| enum and constant values, including iota-style arithmetic | the layer that has the facts: the Go frontend evaluates through the type checker and stamps the exact value, and the TypeScript and protobuf rules evaluate from the declaration |
+```
 
 ### What keeps its name
 
@@ -366,7 +380,7 @@ None.
 - The glossary: [`docs/architecture/GLOSSARY.md`](../architecture/GLOSSARY.md).
 - The language document: [`docs/architecture/11-languages.md`](../architecture/11-languages.md).
 - The compatibility policy: [`docs/architecture/15-compatibility.md`](../architecture/15-compatibility.md).
-- The shared helpers of the satellites, whose unresolved work lists these rows:
+- The shared helpers of the satellites, whose unresolved work lists these renames:
   [RFC-0031](0031-the-shared-helpers-of-the-satellites.md).
 - The projection vocabulary, which reads the Go values from the stamp:
   [RFC-0014](0014-the-projection-vocabulary.md).

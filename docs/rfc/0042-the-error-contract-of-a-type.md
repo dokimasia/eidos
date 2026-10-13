@@ -210,7 +210,6 @@ None.
 
 ## References
 
-- The improvement plan rows W5.K16, W5.A14 and W5.G11.
 - The Go blog on errors in Go 1.13, which describes `Unwrap`, `Is` and `As`:
   <https://go.dev/blog/go1.13-errors>.
 - The cause of an error in ECMAScript: <https://tc39.es/ecma262/#sec-installerrorcause>.

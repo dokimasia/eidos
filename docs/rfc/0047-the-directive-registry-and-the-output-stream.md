@@ -37,8 +37,8 @@ packages, an attribution helper for templates and observers on the fact store.
 - A program that composes a workspace can choose its output, and the output package offers a disk, a
   memory and a tee sink. Each of them writes to a directory, to memory or to other sinks, and not to
   an `io.Writer`.
-- The parity audit proposes a span type, a byte offset, an accessor for the loaded packages, an
-  attribution helper and observers on the fact store, each without a consumer.
+- A span type, a byte offset in a position, an accessor for the loaded packages, an attribution
+  helper and observers on the fact store each lack a consumer.
 
 ## Detailed design
 
@@ -127,13 +127,13 @@ events to standard output, and a dry run and a check commit nothing to write.
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| K10 | A span type `position.Range` | A frontend records where a declaration starts, and a finding has one position and its related positions. No consumer reads a span | An editor integration that marks the span of a finding |
-| K11 | A byte offset in `position.Pos` | A person and an editor find a position by its line and its column. An offset would grow every node of the model and the sealed state, and no consumer reads a source by offset | A consumer that rewrites the bytes of a source at a position |
-| K13 | An accessor for the loaded packages | The report of a run lists its files and its plans, and the patterns that a run binds are the input of the caller | A consumer that needs the packages that a pattern selects |
-| K19 | An attribution helper for one value in templates | The header of a file names the plugins of the file, and `explain` names the invocation behind each declaration | A consumer whose review needs the plugin of one value inside the file |
-| K20 | Observers on the fact store | A handler reads facts through tracked reads in canonical order. An observer would run outside that order and outside the record of the reads | A capability that needs a reaction to a write that canonical reads cannot express |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| A span type `position.Range` | A frontend records where a declaration starts, and a finding has one position and its related positions. No consumer reads a span | An editor integration that marks the span of a finding |
+| A byte offset in `position.Pos` | A person and an editor find a position by its line and its column. An offset would grow every node of the model and the sealed state, and no consumer reads a source by offset | A consumer that rewrites the bytes of a source at a position |
+| An accessor for the loaded packages | The report of a run lists its files and its plans, and the patterns that a run binds are the input of the caller | A consumer that needs the packages that a pattern selects |
+| An attribution helper for one value in templates | The header of a file names the plugins of the file, and `explain` names the invocation behind each declaration | A consumer whose review needs the plugin of one value inside the file |
+| Observers on the fact store | A handler reads facts through tracked reads in canonical order. An observer would run outside that order and outside the record of the reads | A capability that needs a reaction to a write that canonical reads cannot express |
 
 ### Failures
 
@@ -186,6 +186,5 @@ None.
 
 ## References
 
-- The improvement plan rows W5.K8, W5.K9, W5.K10, W5.K11, W5.K13, W5.K19 and W5.K20.
 - The output contract and its sinks: RFC-0010.
 - The command kernels: RFC-0021.

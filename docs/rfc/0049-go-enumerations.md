@@ -160,11 +160,11 @@ unknown text. The plugin derives that text from the texts of the projection.
 
 ### Verdicts out
 
-| Row | Capability | Reason | Reverses the verdict |
-|---|---|---|---|
-| W5.G34 | One constant group for a lowered enumeration | The settle reads each constant of a lowered enumeration as a declaration of its file. It checks the name of each constant for a collision and respells the references to it. A group needs an emit construct whose members the settle reads, and no target besides Go declares one | A second target that declares a group of declarations in one construct |
-| W5.G8 | The print verb of an enumeration | A verb is a spelling of the fmt package of Go, which a template chooses from the underlying type. The reference enum prints an undeclared value through a local type with the underlying type and `%v`, which formats every basic type | A generator that formats an undeclared value in two languages from one projection |
-| go-projections#57 | The constants that another package declares of an enumeration | A search for them reads every constant of the graph for each enumeration, and the store indexes no declaration by the target of its type | A store index of declarations by the target of their type |
+| Capability | Reason | Reverses the verdict |
+|---|---|---|
+| One constant group for a lowered enumeration | The settle reads each constant of a lowered enumeration as a declaration of its file. It checks the name of each constant for a collision and respells the references to it. A group needs an emit construct whose members the settle reads, and no target besides Go declares one | A second target that declares a group of declarations in one construct |
+| The print verb of an enumeration | A verb is a spelling of the fmt package of Go, which a template chooses from the underlying type. The reference enum prints an undeclared value through a local type with the underlying type and `%v`, which formats every basic type | A generator that formats an undeclared value in two languages from one projection |
+| The constants that another package declares of an enumeration | A search for them reads every constant of the graph for each enumeration, and the store indexes no declaration by the target of its type | A store index of declarations by the target of their type |
 
 ### Failures
 
@@ -220,7 +220,6 @@ None.
 
 ## References
 
-- The improvement plan rows W5.G1, W5.G5 to W5.G9, W5.G34 and W9.34.
 - [RFC-0036](0036-the-facts-that-the-model-drops.md), which adds the underlying type of an
   enumeration.
 - [RFC-0027](0027-the-subject-kinds-of-a-directive.md), which refuses a directive on a declaration

@@ -218,6 +218,5 @@ None.
 
 ## References
 
-- The improvement plan rows W5.C2, W5.C8, W5.C9, W5.C11 and W5.C13.
 - The command kernels and the config file: RFC-0021.
 - The required mark of an option: RFC-0043.

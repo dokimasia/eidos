@@ -23,12 +23,10 @@ produces-adr: ADR-0041, ADR-0042
 The Go backend imports a package under the name that its path assumes. A package can declare
 another name, and the import then binds that name while the file qualifies with the assumed one, so
 the file does not compile. We propose that the render pass gives the backend the declared name of
-each package that the run loaded, and that the Go backend binds an import under that name. This
-decides the proposed decision D-14. We also decide the other open decisions and records of the
-improvement plan: a migration of the spellings of the previous version is out (D-5), the
-projections of Java and Rust are a milestone of the roadmap (D-12), the Go finaliser removes no
-import (W2.10), and two ADRs record the departures of the options of a plugin and of the parse check
-of the toolchain suite.
+each package that the run loaded, and that the Go backend binds an import under that name. We also
+decide four open questions. A migration of the spellings of the previous version, rules packages of
+Java and Rust, and a Go finaliser that removes unused imports are out. Two ADRs record the
+departures of the options of a plugin and of the parse check of the toolchain suite.
 
 ## Motivation
 
@@ -38,10 +36,14 @@ of the toolchain suite.
   `storage`, and a reference to its type `Row` is written as `store.Row`, which the compiler
   refuses.
 - The graph has the declared name of each package that the run loaded, as `node.Package.Name`.
-- The improvement plan proposes D-5, a command that rewrites the spellings of the previous version,
-  and D-12, rules packages of Java and Rust for the capabilities that nothing implements.
-- W2.10 waits on D-14, and two records differ from the code: RFC-0006 states that an untagged option
-  takes its lowered name, and D92 states that parsing needs no toolchain.
+- We have not decided on a command that rewrites the spellings of the previous version.
+- We have not decided on rules packages of Java and Rust for `ThrowsRules` and `OwnershipRules`. No
+  rules package implements the two capabilities.
+- A finaliser that removes the unused imports of a Go file needs the declared names.
+- RFC-0006 states that an untagged option takes its lowered name as its key. `ValidateOptions`
+  refuses an exported field without the tag `opt`.
+- D92 states that "parsing needs no toolchain". The TypeScript, Java and Rust adapters parse through
+  tsc, java and rustfmt.
 
 ## Detailed design
 
@@ -90,14 +92,14 @@ edge clean.
 
 ### Verdicts
 
-| Row | Item | Verdict | Reason | Reverses the verdict |
-|---|---|---|---|---|
-| D-14 | The declared name of a Go package | in | The graph has the name, and an import under the assumed name does not compile where the two differ | none |
-| W2.10 | The removal of an import that a file does not reference | out | A template records an import through `use` where its text uses the package, and the toolchain check of the generated tests refuses an unused import. A finaliser that removes imports needs the name that each import binds, and a package outside the load has no declared name | A template that records an import before it knows whether it uses the package |
-| D-5 | A command that rewrites the spellings of the previous version | out | The names of the catalog, the keys and the plugins follow their accepted designs, and every carrier has the brand of its binary. A consumer rewrites its carriers once with a substitution for each name, and eidos keeps no code that only such a rewrite runs | A consumer whose sources a substitution of names cannot rewrite |
-| D-12 | Rules packages of Java and Rust for `ThrowsRules` and `OwnershipRules` | out of the improvement plan | The projections of Java and Rust are a milestone, and the roadmap does not schedule it. The two capabilities stay in the projection vocabulary for the languages that the architecture names | A milestone for the projections of Java and Rust |
-| W10.17 | An untagged option field that takes its lowered name | out | ADR-0041 records that the options of a plugin keep both refusals of `ValidateOptions` | A plugin that needs an implicit key |
-| W10.42 | The sentence of D92 that parsing needs no toolchain | changed by ADR-0042 | TypeScript parses through tsc, Java through java and Rust through rustfmt, so `RunToolchainSuite` asks `Require` before its parse check as before its other checks | A satellite whose parse check runs without its toolchain |
+| Item | Verdict | Reason | Reverses the verdict |
+|---|---|---|---|
+| The declared name of a Go package | in | The graph has the name, and an import under the assumed name does not compile where the two differ | none |
+| The removal of an import that a file does not reference | out | A template records an import through `use` where its text uses the package, and the toolchain check of the generated tests refuses an unused import. A finaliser that removes imports needs the name that each import binds, and a package outside the load has no declared name | A template that records an import before it knows whether it uses the package |
+| A command that rewrites the spellings of the previous version | out | The names of the catalog, the keys and the plugins follow their accepted designs, and every carrier has the brand of its binary. A consumer rewrites its carriers once with a substitution for each name, and eidos keeps no code that only such a rewrite runs | A consumer whose sources a substitution of names cannot rewrite |
+| Rules packages of Java and Rust for `ThrowsRules` and `OwnershipRules` | out | No generator projects Java or Rust code. The two capabilities stay in the projection vocabulary for the languages that the architecture names | A generator that projects Java or Rust code |
+| An untagged option field that takes its lowered name | out | ADR-0041 records that the options of a plugin keep both refusals of `ValidateOptions` | A plugin that needs an implicit key |
+| The sentence of D92 that parsing needs no toolchain | changed by ADR-0042 | TypeScript parses through tsc, Java through java and Rust through rustfmt, so `RunToolchainSuite` asks `Require` before its parse check as before its other checks | A satellite whose parse check runs without its toolchain |
 
 ### Failures
 
@@ -142,8 +144,6 @@ None.
 
 ## References
 
-- The improvement plan rows W1.5, W2.10, W10.17, W10.27 and W10.42, and the proposed decisions
-  D-5, D-12 and D-14.
 - [RFC-0006](0006-authoring-surface-and-dispatch.md), the options of a plugin.
 - D92 in [21](../architecture/21-decisions.md), the toolchain harness.
 - [03](../architecture/03-projection.md), the capabilities of Java and Rust.
