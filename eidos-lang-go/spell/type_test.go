@@ -236,6 +236,14 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{Spelling: "any"},
 			},
 			{
+				name: "returns error for an optional of the well-known error",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Error | undefined",
+					Elems: []rules.TypeShape{rules.Reference("Error", rules.WellKnownError)},
+				},
+				want: &emit.TypeRef{Spelling: "error"},
+			},
+			{
 				name: "returns the translated reference for an optional of a sum",
 				give: rules.TypeShape{
 					Form: symbol.FormOptional, Spelling: "Result | undefined",
@@ -390,6 +398,11 @@ func TestType(t *testing.T) {
 				name: "returns struct{} for the well-known empty value",
 				give: rules.Reference("google.protobuf.Empty", rules.WellKnownEmpty),
 				want: &emit.TypeRef{Spelling: "struct{}", Form: symbol.FormInline},
+			},
+			{
+				name: "returns error for the well-known error",
+				give: rules.Reference("Error", rules.WellKnownError),
+				want: &emit.TypeRef{Spelling: "error"},
 			},
 			{
 				name: "returns the flat name for a reference to a nested type",

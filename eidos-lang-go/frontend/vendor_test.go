@@ -24,6 +24,7 @@ const (
 	otherModule    = "example.com/other"
 	forkModule     = "example.com/fork"
 	forkVersion    = "v1.0.0"
+	lowerVersion   = "v1.1.0"
 )
 
 // The vendor tree is the second source of a module, and the go
@@ -80,6 +81,23 @@ func TestVendor(t *testing.T) {
 				vendorLibLine+vendorExplicit+vendorPackage)
 			assert.Equal(t, placed(t, tree, uncached(), libPackage), vendoredLib,
 				"the go command reads the line as no module, so its packages belong to nothing")
+		})
+
+		t.Run("keeps the open module across a module line without a version", func(t *testing.T) {
+			t.Parallel()
+
+			tree := vendorTree("", vendorLibLine+vendorExplicit+"# "+otherModule+"\n"+vendorPackage)
+			assert.Equal(t, placed(t, tree, uncached(), libPackage), vendoredLib,
+				"the go command passes over the short line, so the package belongs to the open module")
+		})
+
+		t.Run("lists a lower version of a module that follows a higher one as no provider", func(t *testing.T) {
+			t.Parallel()
+
+			tree := vendorTree("", vendorLibLine+vendorExplicit+vendorPackage+
+				"# "+libModule+" "+lowerVersion+"\n## explicit\n"+libModule+"/old\n")
+			assert.Equal(t, placed(t, tree, uncached(), libPackage), vendoredLib,
+				"the go command lists the versions that raise the version of their path alone")
 		})
 
 		t.Run("leaves out a replacement of another shape", func(t *testing.T) {

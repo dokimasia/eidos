@@ -46,15 +46,19 @@ const markerPrefix = "is"
 // with declared failure types gets an error return, in place. Each
 // rewrite removes the fact that it lowers, so a second settle does not
 // change the result. Every other declaration passes through unchanged.
+// Lower returns an error for a callable with failure types whose body has
+// verbatim text, statements or a return statement in a slot, because the
+// error return changes what each return statement returns.
 //
 // # Allocation contract
 //
 // A declaration that passes through allocates nothing. An enum allocates
 // the list of outputs and the defined type, and the target of an enum
-// without an underlying type. Each variant
-// allocates the constant, its type and the two steps of its joined name.
-// A variant name without a lower-case letter also allocates its
-// lower-case form. A sum allocates what [lowerSum] states. A callable
+// without an underlying type. Each variant allocates the constant, its
+// type and the two steps of its joined name. A variant name without a
+// lower-case letter also allocates its lower-case form, and a variant
+// whose doc opens with its name allocates the doc of its constant and the
+// first line of that doc. A sum allocates what [lowerSum] states. A callable
 // with declared failures allocates the error return, its type and the
 // grown storage of its returns. A struct allocates the receiver of each
 // method that it fills. A refusal allocates its error.
@@ -135,7 +139,10 @@ func freeName(returns []*emit.Return, base string) string {
 // Before the join, the lowering converts a variant name without a
 // lower-case letter to lower case. The join then title-cases each word,
 // so the protobuf variant UNSPECIFIED of the enum phase becomes the
-// constant phaseUnspecified.
+// constant phaseUnspecified. Where the first word of the doc of a variant
+// is the name of the variant, the doc of the constant opens with the name
+// of the constant instead, as a Go doc comment opens with the name that it
+// documents.
 //
 // A constant declared alone cannot count through iota, so the lowering
 // writes each value as a Go constant group evaluates it:
@@ -179,17 +186,25 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 			value = strconv.Itoa(i)
 		}
 		value = atPosition(value, i)
-		name := v.Name
-		if !strings.ContainsFunc(name, unicode.IsLower) {
+		word := v.Name
+		if !strings.ContainsFunc(word, unicode.IsLower) {
 			// naming.Pascal returns an upper-case identifier unchanged, so
 			// the join lowers it first and Pascal title-cases each word.
-			name = strings.ToLower(name)
+			word = strings.ToLower(word)
+		}
+		name := e.Name + naming.Pascal(word)
+		doc := v.Doc
+		if len(doc) > 0 {
+			if rest, opens := strings.CutPrefix(doc[0], v.Name); opens && (rest == "" || rest[0] == ' ') {
+				doc = slices.Clone(doc)
+				doc[0] = name + rest
+			}
 		}
 		out = append(out, &emit.Constant{
 			Origin:      e.Origin,
-			Doc:         v.Doc,
+			Doc:         doc,
 			Comment:     v.Comment,
-			Name:        e.Name + naming.Pascal(name),
+			Name:        name,
 			Visibility:  e.Visibility,
 			Type:        &emit.TypeRef{Spelling: e.Name},
 			Value:       value,

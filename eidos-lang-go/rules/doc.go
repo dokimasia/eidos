@@ -19,8 +19,9 @@
 // text, refusing a value outside the type.
 //
 // The value also satisfies the enum, error-value, tag, generics,
-// promotion and equality capabilities: an enumeration's texts and
-// exact values from the frontend's constValue stamps, the Err
+// promotion and equality capabilities: an enumeration's form, texts,
+// zero and out-of-range value from its underlying type and the
+// frontend's constValue stamps, the Err
 // sentinel convention, struct tags, a witness for every bound int
 // satisfies, read off the bound's declaration where the view
 // contains one, substitution of type arguments, the settable members
@@ -31,7 +32,7 @@
 //
 // lang/go/rules imports the sdk facade, lang/naming, lang/numeric,
 // the satellite root for its keys, names and import scope, and the Go
-// stdlib, go/constant, go/scanner and go/token among it. It never
+// stdlib, go/constant, go/scanner, go/token and math/big among it. It never
 // imports the frontend: the rules read the sealed graph and its
 // facts, not source.
 package rules

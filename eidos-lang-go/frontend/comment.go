@@ -7,18 +7,17 @@ import (
 	"go/ast"
 	"strings"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/position"
 )
 
-// goBuild is the constraint directive. It is configuration and not an
-// annotation, so only the exclusion scan reads it.
-const goBuild = "go:build"
-
 // split takes one comment group apart through the pipeline of the unit,
-// and drops the go:build directive from the annotations. The pipeline
-// reads consecutive line comments as one text, so the continuation of a
-// carrier folds across them as the author reads it.
+// and drops the go:build directive from the annotations. A file has one
+// annotation [golang.BuildAnnotation] with the whole constraint that
+// [constraintOf] computes. The pipeline reads consecutive line comments as
+// one text, so the continuation of a carrier folds across them as the
+// author reads it.
 func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.CommentParts {
 	var parts plugin.CommentParts
 	if group == nil {
@@ -28,7 +27,7 @@ func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.Co
 	take := func(one plugin.CommentParts) {
 		parts.Carriers = append(parts.Carriers, one.Carriers...)
 		for _, a := range one.Annotations {
-			if a.Name == goBuild {
+			if a.Name == golang.BuildAnnotation {
 				continue
 			}
 			parts.Annotations = append(parts.Annotations, a)

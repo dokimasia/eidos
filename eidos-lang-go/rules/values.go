@@ -7,11 +7,14 @@ import (
 	"go/constant"
 	"go/scanner"
 	"go/token"
+	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/numeric"
+	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -39,8 +42,22 @@ const (
 	sampleSuffix     = "-a"
 	alternateSuffix  = "-b"
 	timeUnix         = "Unix"
-	// stringQuote opens the exact value of a string constant.
+	// stringQuote opens the exact value of a string constant, and
+	// fractionSep separates the numerator and the denominator of the exact
+	// value of a fractional float constant, such as 3/2.
 	stringQuote = `"`
+	fractionSep = "/"
+	// structKeyword opens an inline struct body.
+	structKeyword = "struct"
+	// callParens closes the call of a function without arguments.
+	callParens = "()"
+)
+
+// The kinds of the declarations that a name and a call of [Rules.LiteralFor]
+// refer to. The variant of an enumeration is a constant of Go.
+var (
+	valueKinds    = []symbol.Kind{symbol.KindConstant, symbol.KindVariable, symbol.KindEnumVariant}
+	functionKinds = []symbol.Kind{symbol.KindFunction}
 )
 
 // The keyword literals of Go. They are the absent value and the two
@@ -56,8 +73,13 @@ const (
 const platformWidth = 0
 
 // DeriveSamples derives the two distinguishable values of a type:
-//   - the pair of a builtin from the fixed table
+//   - the pair of a builtin from the fixed table, and two floats for a
+//     complex number, which Go converts to it
 //   - the pair of a defined type as a conversion of the pair of its
+//     underlying type
+//   - the pair of an enumeration as conversions of the exact values of
+//     its first two variants with distinct values, each typed as a literal
+//     of its underlying type, or else as conversions of the pair of its
 //     underlying type
 //   - the pair of a struct as a composite that sets its first exported
 //     field whose pair derives
@@ -65,13 +87,17 @@ const platformWidth = 0
 //     differs in the element
 //   - the pair of a map as a one-entry composite that differs in the key
 //   - the pair of a pointer as the address of its inner composite
-//   - time.Time as a call, and time.Duration as a conversion
+//   - time.Time as a call, and time.Duration as a conversion, with or
+//     without a target, because both are well-known types
 //
-// A number states the width of its builtin. An interface, a function
-// type, a channel, an inline body, a predeclared type without a literal
-// and a pointer to anything but a composite refuse with no literal,
-// because Go takes the address of a composite literal alone. A named type
-// outside the view refuses as unresolved.
+// The type arguments of a reference to a generic type replace its type
+// parameters in the type of each field and in the target of a defined
+// type, through [rules.Substitute], so a field of Box[int] that T types
+// derives the pair of int. A number states the width of its builtin. An
+// interface, a function type, a channel, an inline body, a predeclared
+// type without a literal and a pointer to anything but a composite refuse
+// with no literal, because Go takes the address of a composite literal
+// alone. A named type outside the view refuses as unresolved.
 //
 // The element of a slice or an array, the key and the value of a map, and
 // the field of a struct take the values that an author stated for them
@@ -123,7 +149,7 @@ func (r Rules) derive(
 		return rules.Of(emit.Composite(t, emit.KeyedEntry(key.Value, value.Value))),
 			rules.Of(emit.Composite(t, emit.KeyedEntry(otherKey.Value, value.Value)))
 	case symbol.FormNamed:
-		if ref.Target.IsZero() {
+		if _, known := r.WellKnown(ref.Target); ref.Target.IsZero() || known {
 			return r.builtinPair(ref, hint)
 		}
 		return r.declaredPair(ref, hint, v, depth)
@@ -173,7 +199,8 @@ func (r Rules) declaredPair(
 			if f == nil || f.Type == nil || !token.IsExported(f.Name) {
 				continue
 			}
-			sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1)
+			typ := rules.Substitute(f.Type, d.TypeParams, ref.Args)
+			sample, alternate := r.partPair(f.ID, typ, f.Name, v, depth+1)
 			if !sample.OK() || !alternate.OK() {
 				if !refused {
 					why, refused = rules.FirstRefusal(sample, alternate), true
@@ -189,7 +216,7 @@ func (r Rules) declaredPair(
 		if d.Target == nil {
 			return rules.RefusedPair(rules.RefusedNoLiteral)
 		}
-		sample, alternate := r.derive(d.Target, hint, v, depth+1)
+		sample, alternate := r.derive(rules.Substitute(d.Target, d.TypeParams, ref.Args), hint, v, depth+1)
 		if !d.Defined {
 			return sample, alternate
 		}
@@ -200,8 +227,8 @@ func (r Rules) declaredPair(
 		if first, second, exact := r.twoVariantValues(d, v); exact {
 			return rules.Of(emit.Conversion(t, first)), rules.Of(emit.Conversion(t, second))
 		}
-		return rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, sampleSmall))),
-			rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, alternateSmall)))
+		sample, alternate := r.derive(d.Underlying, hint, v, depth+1)
+		return rules.Lift(sample, converted(t)), rules.Lift(alternate, converted(t))
 	default:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
@@ -215,6 +242,9 @@ func (r Rules) declaredPair(
 // not place refuses with no literal, and any other spelling refuses as
 // unresolved.
 func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.Sample) {
+	if t := nameOf(ref); t == complex64Type || t == complex128Type {
+		return rules.Pair(emit.LiteralFloat, sampleFloat, alternateFloat)
+	}
 	shape := r.Builtin(ref, rules.View{})
 	switch shape.Form {
 	case symbol.FormScalar:
@@ -261,53 +291,69 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 }
 
 // twoVariantValues returns the exact values of the first two variants of
-// an enumeration, where the frontend stamped both and they differ.
-func (Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Value, bool) {
-	var texts []string
+// an enumeration of the view whose exact values differ, each typed as a
+// literal of the underlying type of the enumeration. It reports false
+// where fewer than two variants have distinct exact values of that type.
+// A loaded enumeration has no nil variant. It allocates the rational
+// number of a fraction.
+func (r Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Value, bool) {
+	shape := r.literalShape(e.Underlying, v, 0)
+	var values [2]emit.Value
+	var texts [2]string
+	found := 0
 	for _, variant := range e.Variants {
-		if variant == nil {
+		text, stamped := rules.Fact(v, variant.ID, constValue)
+		if !stamped || found == 1 && text == texts[0] {
 			continue
 		}
-		if text, stamped := rules.Fact(v, variant.ID, constValue); stamped &&
-			!slices.Contains(texts, text) {
-
-			texts = append(texts, text)
+		exact, read := exactConstant(text)
+		if !read {
+			continue
 		}
-		if len(texts) == 2 {
-			return emit.Raw(golang.Lang, texts[0]), emit.Raw(golang.Lang, texts[1]), true
+		value, typed := literal{value: exact}.typed(shape)
+		if !typed {
+			continue
+		}
+		values[found], texts[found] = value, text
+		if found++; found == len(values) {
+			return values[0], values[1], true
 		}
 	}
 	return emit.Value{}, emit.Value{}, false
 }
 
-// enumZero returns the zero of the underlying type of an enumeration. It
-// reads the first variant value that the frontend stamped, and returns
-// the empty string where that value is a string and zero where it is a
-// number. It reports false where no variant has a stamped value.
-func (Rules) enumZero(e *node.Enum, v rules.View) (emit.Value, bool) {
-	for _, variant := range e.Variants {
-		if variant == nil {
-			continue
-		}
-		text, stamped := rules.Fact(v, variant.ID, constValue)
-		if !stamped {
-			continue
-		}
-		if strings.HasPrefix(text, stringQuote) {
-			return emit.Literal(emit.LiteralString, ""), true
-		}
-		return emit.Literal(emit.LiteralInt, sampleZero), true
+// exactConstant reads an exact value that the frontend stamps as a
+// constant: a quoted string, a truth value, an integer, or a fraction such
+// as 3/2 for a float. It reports false for any other text, and allocates
+// the rational number of a fraction.
+func exactConstant(text string) (constant.Value, bool) {
+	switch {
+	case strings.HasPrefix(text, stringQuote):
+		s, err := strconv.Unquote(text)
+		return constant.MakeString(s), err == nil
+	case text == trueSpelling || text == falseSpelling:
+		return constant.MakeBool(text == trueSpelling), true
+	case !strings.Contains(text, fractionSep):
+		value := constant.MakeFromLiteral(text, token.INT, 0)
+		return value, value.Kind() == constant.Int
 	}
-	return emit.Value{}, false
+	rat, read := new(big.Rat).SetString(text)
+	if !read {
+		return nil, false
+	}
+	return constant.Make(rat), true
 }
 
 // ZeroValue returns the zero value of a type as Go spells it:
 //   - nil for a pointer, a slice, a map, a function, a channel, an
-//     interface and unsafe.Pointer
-//   - an empty composite for a struct and an array
-//   - the builtin zeros at the width of the builtin
-//   - a conversion of the underlying zero for a defined type, and for an
-//     enumeration whose variant values have its underlying type
+//     interface, an inline interface included, and unsafe.Pointer
+//   - an empty composite for a struct, an inline struct and an array
+//   - the builtin zeros at the width of the builtin, and 0 for a complex
+//     number
+//   - the zeros of time.Time and time.Duration from the builtin table,
+//     with or without a target
+//   - a conversion of the underlying zero for a defined type and for an
+//     enumeration
 //
 // It reports false for a spelling that the rules cannot place. The zero
 // of a builtin allocates nothing, and a composite or a conversion
@@ -321,11 +367,20 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		return emit.Literal(emit.LiteralNil, ""), true
 	case symbol.FormArray:
 		return emit.Composite(rules.EmitRef(ref)), true
+	case symbol.FormInline:
+		switch spelling := named(ref); {
+		case strings.HasPrefix(spelling, interfaceKeyword):
+			return emit.Literal(emit.LiteralNil, ""), true
+		case strings.HasPrefix(spelling, structKeyword):
+			return emit.Composite(rules.EmitRef(ref)), true
+		default:
+			return emit.Value{}, false
+		}
 	case symbol.FormNamed:
 	default:
 		return emit.Value{}, false
 	}
-	if ref.Target.IsZero() {
+	if _, known := r.WellKnown(ref.Target); ref.Target.IsZero() || known {
 		return r.builtinZero(ref)
 	}
 	sym, held := v.Lookup(ref.Target)
@@ -338,7 +393,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	case *node.Interface, *node.Sum:
 		return emit.Literal(emit.LiteralNil, ""), true
 	case *node.Enum:
-		inner, placed := r.enumZero(d, v)
+		inner, placed := r.ZeroValue(d.Underlying, v)
 		if !placed {
 			return emit.Value{}, false
 		}
@@ -360,6 +415,9 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 // builtinZero returns the zero value of a spelling that the resolution
 // step left without a target, through the builtin table.
 func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
+	if t := nameOf(ref); t == complex64Type || t == complex128Type {
+		return emit.Literal(emit.LiteralInt, sampleZero), true
+	}
 	shape := r.Builtin(ref, rules.View{})
 	switch shape.Form {
 	case symbol.FormScalar:
@@ -389,39 +447,95 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 	}
 }
 
-// LiteralFor lifts a Go literal into the value tree, typed by the
-// reference. A literal is nil, one of the two booleans, an integer in any
-// base that Go reads, a float, a rune as its integer value, or a quoted
-// or raw string. The scanner of Go reads the text, and LiteralFor writes
-// the value back as canonical decimal text, which every target reads
-// alike.
+// LiteralFor lifts Go text into the value tree. It reads three forms of
+// text in this order:
+//   - A literal, typed by the reference. A literal is nil, one of the two
+//     booleans, an integer in any base that Go reads, a float, a rune as
+//     its integer value, or a quoted or raw string.
+//   - The name of a constant or a variable in the scope s, bare or
+//     qualified, as [emit.Name] of the declaration. The variant of an
+//     enumeration is a constant.
+//   - A call of a function in the scope s without arguments, such as New()
+//     or store.New(), as [emit.Call] of the function.
 //
-// Where the reference is a builtin, directly or through aliases in the
-// view, the value must be a value of the builtin:
+// The scanner of Go reads a literal, and LiteralFor writes it back as
+// canonical decimal text, which every target reads alike. Where the
+// reference is a builtin, directly or through aliases in the view, the
+// literal must be a value of the builtin:
 //   - An integer type takes an integral value inside its width.
 //   - A float type takes a finite value inside its width.
 //   - bool takes a truth value, and string takes a string.
 //   - A number states the width of the builtin.
 //
-// A value type takes no nil. Any other text is no literal. The file has
-// no effect, because a Go literal reads the same in every scope.
+// A value type takes no nil. A name resolves as [directive.ResolvePackageVar]
+// resolves it, and a call as [directive.ResolveCallableInScope] resolves
+// it, from the subject of s. A call of a method does not resolve, because
+// it needs a receiver. LiteralFor does not check the type of a name or a
+// call. A qualified name or call whose qualifier the file of s imports
+// from a package outside the view is a stand-in under the import path,
+// with the kind of a constant or a function. Any other text is no value.
 //
 // # Allocation contract
 //
-// LiteralFor allocates the state of the scanner, the file set and the
+// A literal allocates the state of the scanner, the file set and the
 // file, the lists of the tokens that it scans, the constant and the
-// canonical text. A decimal integer costs six allocations.
+// canonical text. A decimal integer costs six allocations. A name and a
+// call allocate no scanner. A qualified name or call allocates the
+// bindings of the imports of the file, three allocations for a file of up
+// to eight imports without a dot import, which is the whole cost of a
+// stand-in. A name or a call that resolves in the view allocates the
+// bindings and the list of candidates of the resolution, four
+// allocations, and a qualified one the bindings a second time.
 func (r Rules) LiteralFor(
-	_ *node.File,
+	s rules.Scope,
 	ref *node.TypeRef,
 	text string,
 	v rules.View,
 ) (emit.Value, bool) {
-	lit, scanned := scanLiteral(strings.TrimSpace(text))
-	if !scanned {
-		return emit.Value{}, false
+	text = strings.TrimSpace(text)
+	name, call := strings.CutSuffix(text, callParens)
+	if !goName(name) || !call && (name == nilSpelling || name == trueSpelling || name == falseSpelling) {
+		lit, scanned := scanLiteral(text)
+		if !scanned {
+			return emit.Value{}, false
+		}
+		return lit.typed(r.literalShape(ref, v, 0))
 	}
-	return lit.typed(r.literalShape(ref, v, 0))
+	kind, kinds, standIn := directive.ResolvePackageVar, valueKinds, symbol.KindConstant
+	if call {
+		kind, kinds, standIn = directive.ResolveCallableInScope, functionKinds, symbol.KindFunction
+	}
+	// A qualifier that binds a package outside the view resolves to no
+	// declaration of the view, so the stand-in comes first.
+	id, found := outsideView(s, name, standIn, v)
+	if !found {
+		id, found = r.declaredValue(s, name, kind, kinds, v)
+	}
+	switch {
+	case !found:
+		return emit.Value{}, false
+	case call:
+		return emit.Call(id), true
+	default:
+		return emit.Name(id), true
+	}
+}
+
+// declaredValue returns the identity of the declaration that name refers
+// to in the scope at a resolution kind. It reports false where the name
+// resolves to nothing, or to a declaration of none of the kinds.
+func (r Rules) declaredValue(
+	s rules.Scope, name string, kind directive.ResolutionKind, kinds []symbol.Kind, v rules.View,
+) (symbol.Identity, bool) {
+	sym, err := r.Resolve(s, name, kind, v)
+	if err != nil {
+		return symbol.Identity{}, false
+	}
+	decl, declares := sym.(node.Declaration)
+	if !declares || !slices.Contains(kinds, decl.Identity().Kind) {
+		return symbol.Identity{}, false
+	}
+	return decl.Identity(), true
 }
 
 // literal is one scanned Go literal. value is its constant value, and nil
@@ -533,10 +647,11 @@ func (l literal) typed(shape rules.TypeShape) (emit.Value, bool) {
 }
 
 // literalShape returns the shape against which a literal is typed. A
-// builtin has the shape of the table, a workspace alias has the shape of
-// its target, and a structural reference has its form. A reference that
-// the rules cannot place, and a nil reference, return the zero shape,
-// which types nothing.
+// builtin has the shape of the table, an alias or a defined type of the
+// view has the shape of its target, an enumeration of the view has the
+// shape of its underlying type, and a structural reference has its form.
+// A reference that the rules cannot place, and a nil reference, return the
+// zero shape, which types nothing.
 func (r Rules) literalShape(ref *node.TypeRef, v rules.View, depth int) rules.TypeShape {
 	switch {
 	case ref == nil || depth > deriveDepth:
@@ -546,11 +661,15 @@ func (r Rules) literalShape(ref *node.TypeRef, v rules.View, depth int) rules.Ty
 	case ref.Target.IsZero():
 		return r.Builtin(ref, v)
 	}
-	sym, held := v.Lookup(ref.Target)
-	if a, is := sym.(*node.Alias); held && is && a.Target != nil {
-		return r.literalShape(a.Target, v, depth+1)
+	sym, _ := v.Lookup(ref.Target)
+	switch d := sym.(type) {
+	case *node.Alias:
+		return r.literalShape(d.Target, v, depth+1)
+	case *node.Enum:
+		return r.literalShape(d.Underlying, v, depth+1)
+	default:
+		return rules.TypeShape{}
 	}
-	return rules.TypeShape{}
 }
 
 // addressed takes the address of a derived composite, and refuses

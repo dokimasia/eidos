@@ -33,6 +33,13 @@ const AnnotatorName plugin.ID = "golang-facts"
 // Extension is the suffix of every Go file.
 const Extension = ".go"
 
+// BuildAnnotation is the name of the annotation that records the build
+// constraint of a file. Its one argument is the constraint as one
+// expression of a //go:build line. The frontend records it on each file
+// with a constraint. The backend writes it above the package clause of a
+// file that derives from that one source file.
+const BuildAnnotation = "go:build"
+
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.

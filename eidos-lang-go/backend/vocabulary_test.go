@@ -28,6 +28,9 @@ const (
 	storeName = "store"
 	// storeName2 is the name legacyPkg binds beside storePkg.
 	storeName2 = storeName + "2"
+	// storeClause is the name that the package clause of storePkg
+	// declares in [declaredNames].
+	storeClause = "storage"
 	// aliasName is the alias a source file imported storePkg under.
 	aliasName = "st"
 	// yamlPkg is a path whose last element is no Go identifier, and
@@ -65,6 +68,7 @@ const (
 	generateDirective = "go:generate"
 	jsonKey           = "json"
 	dbKey             = "db"
+	linuxConstraint   = "linux && amd64"
 )
 
 // generateArgs are the arguments of the generate directive the cases
@@ -90,8 +94,9 @@ const (
 	resultsAllocs = 1 + 1 + 1
 	// varTypeAllocs is a variable's type behind its space.
 	varTypeAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of sixteen helpers
-	// in four allocations, and the six bound helpers of the speller.
+	// funcsAllocs is the vocabulary of a file: the map of seventeen
+	// helpers in four allocations, and the six bound helpers of the
+	// speller.
 	funcsAllocs = 4 + 6
 	// tagAllocs is the tag of a field, built on the stack and allocated
 	// once.
@@ -100,6 +105,9 @@ const (
 	docsAllocs = 1
 	// directivesAllocs is the directive lines, sized once.
 	directivesAllocs = 1
+	// constraintAllocs is the line of a build constraint with its blank
+	// line.
+	constraintAllocs = 1
 )
 
 // The vocabulary is what every kind template spells through, so
@@ -236,6 +244,17 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, spelled(t, s, aliased()), qualifiedRow, "the source file's alias is replaced")
 			assert.Equal(t, set.Entries(), []render.Entry{{Path: storePkg, Name: storeName}},
 				"the import binds the assumed name")
+		})
+
+		t.Run("qualifies through the name that the package declares", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetNames(declaredNames)
+			assert.Equal(t, spelled(t, s, aliased()), storeClause+"."+rowName,
+				"the package clause names the qualifier")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storePkg, Name: storeClause}},
+				"the import binds the declared name")
 		})
 
 		t.Run("qualifies a path whose last element is no identifier through its assumed name", func(t *testing.T) {
@@ -472,7 +491,7 @@ func TestVocabulary(t *testing.T) {
 			assert.HasError(t, err, "a map takes a key and a value")
 		})
 
-		t.Run("returns an error for an inline body that names another package", func(t *testing.T) {
+		t.Run("returns an error for an inline body without children that names another package", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
@@ -480,6 +499,196 @@ func TestVocabulary(t *testing.T) {
 			assert.HasError(t, err, "the body's import is not recorded")
 			assert.Contains(t, err.Error(), "inline body", "naming the form")
 		})
+
+		nested := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "returns an error for a slice of an inline body without children that names another package",
+				give: composite(symbol.FormList, "[]struct{ When time.Time }",
+					composite(symbol.FormInline, "struct{ When time.Time }")),
+			},
+			{
+				name: "returns an error for an argument that is an inline body without children",
+				give: &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{
+					composite(symbol.FormInline, "struct{ When time.Time }"),
+				}},
+			},
+		}
+		for _, tt := range nested {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.Spell(tt.give)
+				assert.HasError(t, err, "the body's import is not recorded")
+				assert.Contains(t, err.Error(), "inline body", "naming the form")
+			})
+		}
+
+		t.Run("binds the import of each child of an inline body", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			body := composite(symbol.FormInline, "struct{ When time.Time }", imported(timePkg, timePkg, "Time"))
+			assert.Equal(t, spelled(t, s, body), "struct{ When time.Time }", "the body as written")
+			assert.Equal(t, set.Paths(), []string{timePkg}, "the import of the child")
+		})
+
+		t.Run("returns an error for an inline body whose child spells otherwise", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.Spell(composite(symbol.FormInline, "struct{ R st.Row }", aliased()))
+			assert.HasError(t, err, "the body keeps the qualifier of its source")
+			assert.Contains(t, err.Error(), "inline body", "naming the form")
+		})
+
+		t.Run("returns an error for an inline body with a child of another package", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetHome(svcPkg)
+			target := symbol.Identity{Lang: golang.Lang, Package: storePkg, Name: rowName, Kind: symbol.KindStruct}
+			row := &emit.TypeRef{Spelling: rowName, Target: target}
+			_, err := s.Spell(composite(symbol.FormInline, "struct{ R Row }", row))
+			assert.HasError(t, err, "the file is in another package than the declaration")
+		})
+
+		t.Run("keeps the spelling of a union whose terms spell as written", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			union := composite(symbol.FormUnion, "~int64 | time.Duration",
+				ref("int64"), imported(timePkg, timePkg, "Duration"))
+			assert.Equal(t, spelled(t, s, union), "~int64 | time.Duration", "the union as written")
+			assert.Equal(t, set.Paths(), []string{timePkg}, "the import of the qualified term")
+		})
+
+		unions := []struct {
+			name string
+			give *emit.TypeRef
+			want string
+		}{
+			{
+				name: "restates a union whose term spells otherwise with the approximation mark of each term",
+				give: composite(symbol.FormUnion, "~int | st.Row", ref("int"), aliased()),
+				want: "~int | " + qualifiedRow,
+			},
+			{
+				name: "restates the term of an approximation alone",
+				give: composite(symbol.FormUnion, "~st.Row", aliased()),
+				want: "~" + qualifiedRow,
+			},
+			{
+				name: "restates a term in parentheses as one term",
+				give: composite(symbol.FormUnion, "(st.Row) | ~int", aliased(), ref("int")),
+				want: qualifiedRow + " | ~int",
+			},
+		}
+		for _, tt := range unions {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				assert.Equal(t, spelled(t, s, tt.give), tt.want, "restated from the terms")
+			})
+		}
+
+		brokenUnions := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "returns an error restating a union without a spelling",
+				give: composite(symbol.FormUnion, "", ref("int"), aliased()),
+			},
+			{
+				name: "returns an error restating a union whose spelling does not parse",
+				give: composite(symbol.FormUnion, "~int |", ref("int"), aliased()),
+			},
+			{
+				name: "returns an error restating a union whose spelling has another number of terms",
+				give: composite(symbol.FormUnion, "~st.Row", ref("int"), aliased()),
+			},
+		}
+		for _, tt := range brokenUnions {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.Spell(tt.give)
+				assert.HasError(t, err, "the spelling of the union does not record the marks of its terms")
+			})
+		}
+
+		imports := []struct {
+			name string
+			home string
+			give *emit.TypeRef
+			want string
+		}{
+			{
+				name: "returns an error for a package whose path is not an import path",
+				give: imported(storeName, "example.com/bad store", rowName),
+				want: "malformed import path",
+			},
+			{
+				name: "returns an error for a package of an internal tree that does not contain the file",
+				home: "example.com/shop/web",
+				give: imported(storeName, "example.com/shop/core/internal/store", rowName),
+				want: "internal",
+			},
+			{
+				name: "returns an error for a package of the internal tree of the standard library",
+				home: svcPkg,
+				give: imported("abi", "internal/abi", "Type"),
+				want: "standard library",
+			},
+			{
+				name: "returns an error for an internal package of another tree",
+				home: "example.com/shop/web",
+				give: imported("internal", "example.com/shop/core/internal", rowName),
+				want: "internal to example.com/shop/core",
+			},
+		}
+		for _, tt := range imports {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, set := speller()
+				set.SetHome(tt.home)
+				_, err := s.Spell(tt.give)
+				assert.HasError(t, err, "the go command refuses the import")
+				assert.Contains(t, err.Error(), tt.want, "naming the rule")
+			})
+		}
+
+		internals := []struct {
+			name string
+			home string
+		}{
+			{name: "binds a package of an internal tree from the parent of the tree", home: "example.com/shop/core"},
+			{
+				name: "binds a package of an internal tree from a package below its parent",
+				home: "example.com/shop/core/api",
+			},
+			{
+				name: "binds a package of an internal tree from the external tests of its parent",
+				home: "example.com/shop/core_test",
+			},
+		}
+		for _, tt := range internals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, set := speller()
+				set.SetHome(tt.home)
+				assert.Equal(t, spelled(t, s, imported(storeName, "example.com/shop/core/internal/store", rowName)),
+					qualifiedRow, "the tree contains the file")
+			})
+		}
 
 		t.Run("writes an inline body that names no other package as written", func(t *testing.T) {
 			t.Parallel()
@@ -665,6 +874,23 @@ func TestVocabulary(t *testing.T) {
 			_, err := s.Params(new(emit.SlotOf(&emit.Param{Name: "id", Type: ref("x.Y")})))
 			assert.HasError(t, err, "the list is refused")
 		})
+
+		t.Run("returns an error for a list in which some parameters have names", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			named, unnamed := &emit.Param{Name: "id", Type: ref("int")}, &emit.Param{Type: ref("string")}
+			_, err := s.Params(new(emit.SlotOf(named, unnamed)))
+			assert.HasError(t, err, "Go names every parameter or none")
+			assert.Contains(t, err.Error(), "1 of its 2", "counting the names")
+		})
+
+		t.Run("writes a list in which no parameter has a name", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, params(t, &emit.Param{Type: ref("int")}, &emit.Param{Type: ref("string")}), "int, string",
+				"the types alone")
+		})
 	})
 
 	t.Run("Results", func(t *testing.T) {
@@ -711,6 +937,16 @@ func TestVocabulary(t *testing.T) {
 			s, _ := speller()
 			_, err := s.Results(new(emit.SlotOf(&emit.Return{Type: ref("x.Y")})))
 			assert.HasError(t, err, "the list is refused")
+		})
+
+		t.Run("returns an error for a list in which some results have names", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			named, unnamed := &emit.Return{Name: "n", Type: ref("int")}, &emit.Return{Type: ref("error")}
+			_, err := s.Results(new(emit.SlotOf(named, unnamed)))
+			assert.HasError(t, err, "Go names every result or none")
+			assert.Contains(t, err.Error(), "1 of its 2", "counting the names")
 		})
 	})
 
@@ -1032,29 +1268,44 @@ func TestVocabulary(t *testing.T) {
 		}
 	})
 
+	assigned := symbol.Annotations{{Name: "deprecated", Args: []string{`"use g"`}, Assigned: true}}
+
 	t.Run("Directives", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("returns nothing for no annotations", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Directives(nil), "", "no lines")
+			got, err := backend.Directives(nil)
+			assert.NoError(t, err, "no directive refuses")
+			assert.Equal(t, got, "", "no lines")
 		})
 
 		t.Run("writes one directive comment per annotation", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Directives(symbol.Annotations{
+			got, err := backend.Directives(symbol.Annotations{
 				{Name: "go:embed", Args: []string{"schema.sql"}},
 				{Name: "nolint", Args: []string{"errcheck"}},
-			}), "//go:embed schema.sql\n//nolint errcheck\n", "the arguments space-joined behind the name")
+			})
+			assert.NoError(t, err, "Go spells both directives")
+			assert.Equal(t, got, "//go:embed schema.sql\n//nolint errcheck\n",
+				"the arguments space-joined behind the name")
 		})
 
 		t.Run("writes every argument space-joined behind the name", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Directives(symbol.Annotations{{Name: generateDirective, Args: generateArgs}}),
-				"//go:generate stringer -type=Colour\n", "two arguments in order")
+			got, err := backend.Directives(symbol.Annotations{{Name: generateDirective, Args: generateArgs}})
+			assert.NoError(t, err, "Go spells the directive")
+			assert.Equal(t, got, "//go:generate stringer -type=Colour\n", "two arguments in order")
+		})
+
+		t.Run("returns an error for an assigned annotation", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Directives(assigned)
+			assert.HasError(t, err, "a Go directive writes its arguments after its name alone")
 		})
 	})
 
@@ -1064,15 +1315,57 @@ func TestVocabulary(t *testing.T) {
 		t.Run("returns nothing for no annotations", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.MemberDirectives(nil), "", "no lines")
+			got, err := backend.MemberDirectives(nil)
+			assert.NoError(t, err, "no directive refuses")
+			assert.Equal(t, got, "", "no lines")
 		})
 
 		t.Run("writes each directive comment behind a tab", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.MemberDirectives(symbol.Annotations{{Name: "go:fix"}, {Name: "nolint"}}),
-				"\t//go:fix\n\t//nolint\n", "at the member's depth")
+			got, err := backend.MemberDirectives(symbol.Annotations{{Name: "go:fix"}, {Name: "nolint"}})
+			assert.NoError(t, err, "Go spells both directives")
+			assert.Equal(t, got, "\t//go:fix\n\t//nolint\n", "at the member's depth")
 		})
+
+		t.Run("returns an error for an assigned annotation", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.MemberDirectives(assigned)
+			assert.HasError(t, err, "a Go directive writes its arguments after its name alone")
+		})
+	})
+
+	t.Run("Constraint", func(t *testing.T) {
+		t.Parallel()
+
+		constraint := symbol.Annotation{Name: golang.BuildAnnotation, Args: []string{linuxConstraint}}
+		generate := symbol.Annotation{Name: generateDirective, Args: generateArgs}
+		tests := []struct {
+			name string
+			give symbol.Annotations
+			want string
+		}{
+			{name: "returns nothing for no annotations"},
+			{name: "returns nothing for annotations without a build constraint", give: symbol.Annotations{generate}},
+			{
+				name: "writes the build constraint as a go:build line and a blank line",
+				give: symbol.Annotations{constraint},
+				want: "//go:build " + linuxConstraint + "\n\n",
+			},
+			{
+				name: "writes the build constraint without the other annotations",
+				give: symbol.Annotations{generate, constraint},
+				want: "//go:build " + linuxConstraint + "\n\n",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, backend.Constraint(tt.give), tt.want, "the line that the go command reads")
+			})
+		}
 	})
 
 	t.Run("NewSpeller", func(t *testing.T) {
@@ -1166,6 +1459,8 @@ func BenchmarkVocabulary(b *testing.B) {
 // vocabulary.go.
 func vocabularyCalls() []allocCall {
 	s, set := speller()
+	named, namedSet := speller()
+	namedSet.SetNames(declaredNames)
 	bare, qualified := ref(intType), imported(storeName, storePkg, rowName)
 	doc := []string{rowDoc}
 	params := []*emit.TypeParam{{Name: keyParam, Bounds: []*emit.TypeRef{ref(comparableBound)}}, {Name: valueParam}}
@@ -1186,6 +1481,7 @@ func vocabularyCalls() []allocCall {
 	untagged := &emit.Field{Name: idName}
 	field := &emit.Field{Name: idName, Tags: emit.SlotOf(&emit.TagEntry{Key: jsonKey, Value: idName})}
 	annotations := symbol.Annotations{{Name: generateDirective, Args: generateArgs}}
+	constrained := symbol.Annotations{{Name: golang.BuildAnnotation, Args: []string{linuxConstraint}}}
 	pkg := symbol.Identity{Package: storePkg, Name: storeName}
 	var (
 		spellerOut backend.Speller
@@ -1208,6 +1504,10 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Spell", caseName: "a qualified name", allocs: qualifiedAllocs,
 			call: func() { out, err = s.Spell(qualified) }, check: spells(qualifiedRow),
+		},
+		{
+			name: "Spell", caseName: "a qualified name of a package that the run loaded", allocs: qualifiedAllocs,
+			call: func() { out, err = named.Spell(qualified) }, check: spells(storeClause + "." + rowName),
 		},
 		{
 			name: "TypeParams", allocs: typeParamsAllocs,
@@ -1233,7 +1533,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 16, "Funcs returns the sixteen helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 17, "Funcs returns the seventeen helpers") },
 		},
 		{
 			name: "Docs", allocs: docsAllocs,
@@ -1257,13 +1557,22 @@ func vocabularyCalls() []allocCall {
 		},
 		{
 			name: "Directives", allocs: directivesAllocs,
-			call:  func() { out = backend.Directives(annotations) },
+			call:  func() { out, err = backend.Directives(annotations) },
 			check: spells("//go:generate stringer -type=Colour\n"),
 		},
 		{
 			name: "MemberDirectives", allocs: directivesAllocs,
-			call:  func() { out = backend.MemberDirectives(annotations) },
+			call:  func() { out, err = backend.MemberDirectives(annotations) },
 			check: spells("\t//go:generate stringer -type=Colour\n"),
+		},
+		{
+			name: "Constraint", caseName: "annotations without a build constraint",
+			call: func() { out = backend.Constraint(annotations) }, check: spells(""),
+		},
+		{
+			name: "Constraint", caseName: "a build constraint", allocs: constraintAllocs,
+			call:  func() { out = backend.Constraint(constrained) },
+			check: spells("//go:build " + linuxConstraint + "\n\n"),
 		},
 	}
 }
@@ -1305,6 +1614,20 @@ func sizedArray() *emit.TypeRef {
 func speller() (backend.Speller, *render.ImportSet) {
 	set := &render.ImportSet{}
 	return backend.NewSpeller(set), set
+}
+
+// declaredNames returns the names that the package clauses of a run
+// declare: storeClause for storePkg, storeName for legacyPkg, and false
+// for any other path.
+func declaredNames(path string) (string, bool) {
+	switch path {
+	case storePkg:
+		return storeClause, true
+	case legacyPkg:
+		return storeName, true
+	default:
+		return "", false
+	}
 }
 
 // spelled spells one reference and asserts it spells.

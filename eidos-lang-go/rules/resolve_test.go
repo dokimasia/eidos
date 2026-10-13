@@ -94,6 +94,13 @@ func TestResolve(t *testing.T) {
 				want: id(fxPath, "Limit", symbol.KindConstant),
 			},
 			{
+				name: "returns the variant of an enumeration for the name of its constant",
+				give: "Green", kind: directive.ResolvePackageVar,
+				want: symbol.Identity{
+					Lang: golang.Lang, Package: fxPath, Owner: colorType, Name: "Green", Kind: symbol.KindEnumVariant,
+				},
+			},
+			{
 				name: "returns the type a bare name declares in the subject's package",
 				give: "Row", kind: directive.ResolveTypeInScope, want: row,
 			},
@@ -166,6 +173,10 @@ func TestResolve(t *testing.T) {
 				name:    "returns an error for the assumed name of a blank import",
 				imports: []*node.Import{{Path: depPath, Alias: golang.BlankAlias}},
 				give:    "dep.Target", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for the constant of an enumeration as a type",
+				give: "Green", kind: directive.ResolveTypeInScope,
 			},
 			{
 				name: "returns an error for a type spelling under a slice",

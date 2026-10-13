@@ -8,12 +8,16 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// FileTemplate is the skeleton of a Go file. It renders the package
-// clause, the import block of the file and then its declarations. gofmt
-// decides the blank lines, so the skeleton renders structure and not
-// layout. The output contract writes the marker of generated code after
-// the formatter runs, so the template does not contain it.
-const FileTemplate = "package {{" + FuncPackage + " .Pkg}}\n" +
+// FileTemplate is the skeleton of a Go file. It renders the build
+// constraint of the source file of the file, the package clause, the
+// import block of the file and then its declarations. gofmt decides the
+// blank lines, so the skeleton renders structure and not layout. The
+// output contract writes the marker of generated code after the formatter
+// runs, so the template does not contain it. The skeleton calls the
+// helper only for a file with annotations, because text/template
+// allocates on each call of a helper.
+const FileTemplate = "{{with .Annotations}}{{" + FuncConstraint + " .}}{{end}}" +
+	"package {{" + FuncPackage + " .Pkg}}\n" +
 	"\n{{" + render.BuiltinImports + "}}\n{{" + render.BuiltinDecls + "}}"
 
 // Each kind template renders one emit kind that Go declares at the top

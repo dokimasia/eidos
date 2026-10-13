@@ -41,26 +41,35 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 	return NewSpeller(t.set).Spell(ref)
 }
 
-// Callee spells a function by its identity and binds its package's
-// import. A call has no source spelling of its own, so the name is
-// qualified by the name the package's import binds. The import binds the
-// name that [golang.Qualifier] returns for the path, as it does for a
-// type reference. Where another import or a declaration of the file takes
-// that name, the import binds a numbered name. A function in no package,
-// and one in the file's own package, spells bare.
+// Callee spells the declaration of a call or a name value by its
+// identity, and binds the import of its package through [bind], as a type
+// reference binds one. The value has no source spelling of its own, so
+// the name of the import qualifies the name of the declaration. Where
+// another import or a declaration of the file takes that name, the import
+// binds a numbered name. A declaration in no package, and one in the
+// package of the file, spells bare. Callee returns the error of bind for a
+// package that the go command refuses to import.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Package == "" {
 		return id.Name, nil
 	}
-	local := t.set.Bind(id.Package, golang.Qualifier(id.Package))
+	local, err := bind(t.set, id.Package)
+	if err != nil {
+		return "", err
+	}
 	if local == "" {
 		return id.Name, nil
 	}
 	return local + qualifierSep + id.Name, nil
 }
 
-// Conversion spells Go's conversion, which every named type takes.
+// Conversion spells Go's conversion, which every named type takes. A type
+// that starts with the operator * or <-, or with the keyword func, is in
+// parentheses, because Go reads *T(x) as the dereference of T(x).
 func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
+	if strings.HasPrefix(typ, pointerMark) || strings.HasPrefix(typ, receiveMark) || strings.HasPrefix(typ, funcOpen) {
+		typ = "(" + typ + ")"
+	}
 	return typ + "(" + inner + ")", nil
 }
 

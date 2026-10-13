@@ -90,7 +90,11 @@ func (l *lowered) spelling(e ast.Expr) string {
 //     direction of the channel.
 //   - A function type is a Func of its parameters and then its results.
 //   - An inline struct or interface body is Inline. [lowered.inlineFields]
-//     and [lowered.inlineMethods] record its members.
+//     and [lowered.inlineMethods] record its members, and its children
+//     are the types that the body states.
+//   - A union constraint is a Union of its terms, and an approximation
+//     outside a union is a Union of one term. The spelling keeps the
+//     approximation marks, as [lowered.appendTerms] describes.
 //   - A variadic parameter inside a function type is a List.
 //   - A qualified name records the import path that its qualifier binds,
 //     as [lowered.packageOf] reads it.
@@ -138,51 +142,82 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	case *ast.FuncType:
 		return plugin.FuncType(l.spelling(e), l.at(e.Pos()), l.fieldTypes(t.Params), l.fieldTypes(t.Results))
 	case *ast.StructType:
+		fields, children := l.inlineFields(t)
 		return &node.TypeRef{
-			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Fields: l.inlineFields(t),
+			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Fields: fields, Elems: children,
 		}
 	case *ast.InterfaceType:
+		methods, children := l.inlineMethods(t)
 		return &node.TypeRef{
-			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Methods: l.inlineMethods(t),
+			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Methods: methods, Elems: children,
 		}
+	case *ast.BinaryExpr, *ast.UnaryExpr:
+		return plugin.Composite(l.spelling(e), l.at(e.Pos()), symbol.FormUnion, l.appendTerms(nil, e)...)
 	default:
 		return &node.TypeRef{Spelling: l.spelling(e), Pos: l.at(e.Pos())}
 	}
 }
 
-// inlineFields lowers the named fields of an inline struct body. A field
-// has no identity and no comment, and otherwise lowers as the field of a
-// declared struct. The sweep refuses the carriers in its comments. A blank
-// field binds nothing, and an embedded field is not a field of the model,
-// so the lowering leaves both out. The spelling of the reference keeps
-// them.
-func (l *lowered) inlineFields(t *ast.StructType) []*node.Field {
-	var out []*node.Field
+// appendTerms appends the terms of a constraint element to out, in the
+// order of the source. go/parser writes a union as a binary expression of
+// the operator | and an approximation as a unary expression of ~, and no
+// other operator in a type. A union of unions and a term in parentheses
+// flatten into their terms. The term of an approximation is the type
+// after its mark, and the spelling of the element keeps the mark.
+func (l *lowered) appendTerms(out []*node.TypeRef, e ast.Expr) []*node.TypeRef {
+	switch t := e.(type) {
+	case *ast.ParenExpr:
+		return l.appendTerms(out, t.X)
+	case *ast.BinaryExpr:
+		return l.appendTerms(l.appendTerms(out, t.X), t.Y)
+	case *ast.UnaryExpr:
+		return append(out, l.typeRef(t.X))
+	default:
+		return append(out, l.typeRef(e))
+	}
+}
+
+// inlineFields lowers the named fields of an inline struct body, and the
+// type of each entry of the body as a child of the reference, in order.
+// A field has no identity and no comment, and otherwise lowers as the
+// field of a declared struct. The sweep refuses the carriers in its
+// comments. A blank field binds nothing, and an embedded field is not a
+// field of the model, so the fields leave both out. The children and the
+// spelling of the reference keep them. Each field of an entry has a copy
+// of the child of the entry, which [node.CloneRef] returns, because a node
+// of the graph has one place.
+func (l *lowered) inlineFields(t *ast.StructType) (fields []*node.Field, children []*node.TypeRef) {
 	for _, field := range t.Fields.List {
+		typ := l.typeRef(field.Type)
+		children = append(children, typ)
 		for _, name := range field.Names {
 			if !named(name) {
 				continue
 			}
-			out = append(out, &node.Field{
+			fields = append(fields, &node.Field{
 				Name: name.Name, Pos: l.at(name.Pos()), Visibility: visibilityOf(name.Name),
-				Type: l.typeRef(field.Type), Tag: tagOf(field.Tag),
+				Type: node.CloneRef(typ), Tag: tagOf(field.Tag),
 			})
 		}
 	}
-	return out
+	return fields, children
 }
 
-// inlineMethods lowers the methods of an inline interface body. A method
-// is abstract and has no identity and no comment, and otherwise lowers as
-// the method of a declared interface. The sweep refuses the carriers in
-// its comments. The lowering leaves out an embedded interface, a
-// constraint element and a blank method, and the spelling of the
-// reference keeps them.
-func (l *lowered) inlineMethods(t *ast.InterfaceType) []*node.Method {
-	var out []*node.Method
+// inlineMethods lowers the methods of an inline interface body, and the
+// types that the body states as the children of the reference, in the
+// order of its elements. A method is abstract and has no identity and no
+// comment, and otherwise lowers as the method of a declared interface.
+// The sweep refuses the carriers in its comments. The methods leave out an
+// embedded interface, a constraint element and a blank method. The
+// children have the type of each embed and each constraint element, and
+// copies of the parameter types and the result types of each method, a
+// blank method included. [node.CloneRef] returns each copy, because a node
+// of the graph has one place.
+func (l *lowered) inlineMethods(t *ast.InterfaceType) (methods []*node.Method, children []*node.TypeRef) {
 	for _, member := range t.Methods.List {
 		sig, is := member.Type.(*ast.FuncType)
-		if !is || len(member.Names) == 0 || !named(member.Names[0]) {
+		if !is || len(member.Names) == 0 {
+			children = append(children, l.typeRef(member.Type))
 			continue
 		}
 		name := member.Names[0].Name
@@ -197,9 +232,17 @@ func (l *lowered) inlineMethods(t *ast.InterfaceType) []*node.Method {
 				m.Returns = l.appendReturns(m.Returns, field, "")
 			}
 		}
-		out = append(out, m)
+		for _, p := range m.Params {
+			children = append(children, node.CloneRef(p.Type))
+		}
+		for _, r := range m.Returns {
+			children = append(children, node.CloneRef(r.Type))
+		}
+		if named(member.Names[0]) {
+			methods = append(methods, m)
+		}
 	}
-	return out
+	return methods, children
 }
 
 // packageOf returns the import path that [golang.Bindings.Import] returns
@@ -290,6 +333,30 @@ func (l *lowered) trailing(end, limit token.Pos) *ast.CommentGroup {
 			return nil
 		}
 		if at == line {
+			return group
+		}
+	}
+	return nil
+}
+
+// leading returns the comment group that ends on the line above start and
+// opens after after, where after is valid. Such a group is the leading
+// comment of a parameter or a result in a list with one member per line,
+// which go/parser attaches to nothing. after is the end of the member
+// before, or the opening parenthesis of the list. A group that another
+// declaration took is not a candidate, and leading returns nil where no
+// group is.
+func (l *lowered) leading(after, start token.Pos) *ast.CommentGroup {
+	if !after.IsValid() {
+		return nil
+	}
+	above := l.file.Line(start) - 1
+	first := sort.Search(len(l.comments), func(i int) bool { return l.comments[i].Pos() > after })
+	for _, group := range l.comments[first:] {
+		if group.Pos() >= start {
+			return nil
+		}
+		if !l.consumed[group] && l.file.Line(group.End()) == above {
 			return group
 		}
 	}

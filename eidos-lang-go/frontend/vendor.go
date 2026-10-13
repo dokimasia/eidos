@@ -46,15 +46,18 @@ type vendorMeta struct {
 // parseVendor reads a vendor/modules.txt the way the go command reads
 // it. A "# path version" line opens a module, "# path => new" opens a
 // replacement of every version, and either can end in a replacement,
-// "=> dir" or "=> path version". A "## " line annotates the open
-// module, and a line with one import path lists a package the module
-// provides. A line of another shape is left out.
+// "=> dir" or "=> path version". A module line of fewer than three fields
+// keeps the open module. A "## " line annotates the open module, and a
+// line with one import path lists a package the module provides. A line
+// of another shape is left out.
 func parseVendor(data []byte) vendorList {
 	list := vendorList{meta: map[module.Version]vendorMeta{}}
 	var mod module.Version
 	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, vendorModuleLine) {
-			mod = list.openModule(strings.Fields(line))
+			if f := strings.Fields(line); len(f) >= 3 {
+				mod = list.openModule(f)
+			}
 			continue
 		}
 		if mod.Path == "" {
@@ -77,13 +80,10 @@ func parseVendor(data []byte) vendorList {
 	return list
 }
 
-// openModule reads a module line's fields, the leading mark first,
-// records its replacement, and returns the module it opens, the zero
-// Version for a line the go command reads as no module.
+// openModule reads the three or more fields of a module line, the leading
+// mark first, records its replacement, and returns the module it opens,
+// the zero Version for a line the go command reads as no module.
 func (list *vendorList) openModule(f []string) module.Version {
-	if len(f) < 3 {
-		return module.Version{}
-	}
 	var mod module.Version
 	switch {
 	case semver.IsValid(f[2]):
@@ -112,9 +112,15 @@ func (list *vendorList) openModule(f []string) module.Version {
 	return mod
 }
 
-// provide records that a module provides a package, once per module.
+// provide records that a module provides a package, where the module
+// raises the version of its path. The go command lists the versions that
+// raise it alone, so a lower version listed after a higher one, and a
+// repeated version, provide nothing.
 func (list *vendorList) provide(mod module.Version) {
-	if !slices.Contains(list.provided, mod) {
+	raised := !slices.ContainsFunc(list.provided, func(p module.Version) bool {
+		return p.Path == mod.Path && semver.Compare(p.Version, mod.Version) >= 0
+	})
+	if raised {
 		list.provided = append(list.provided, mod)
 	}
 }

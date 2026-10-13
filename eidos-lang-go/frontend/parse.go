@@ -69,11 +69,29 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 			return err
 		}
 	}
-	for _, pkgPath := range st.order {
-		foldMethods(st.batches[pkgPath].files)
-		stampConstValues(u, st.fset, st.batches[pkgPath])
-	}
 	gb := u.Graph()
+	for _, pkgPath := range st.order {
+		b := st.batches[pkgPath]
+		promoted, moved := promoteEnums(b.files)
+		for from, to := range moved {
+			// A carrier or a stamp on an alias or a constant that the
+			// promotion replaced moves to the enum or the variant that
+			// replaces it, so the splice meets no subject that the
+			// promotion removed.
+			gb.Rehome(from, to)
+		}
+		for _, pending := range b.underlyings {
+			var subject symbol.Symbol = pending.alias
+			if enum, replaced := promoted[pending.alias]; replaced {
+				subject = enum
+			}
+			gb.Stamp(subject, meta.RawStamp{
+				Key: golang.UnderlyingKindKey, Value: pending.kind, Pos: subject.Position(),
+			})
+		}
+		foldMethods(b.files)
+		stampConstValues(u, st.fset, b)
+	}
 	for _, pkg := range gb.Packages() {
 		gb.StampModule(pkg, place.root.module, place.root.dir)
 	}
@@ -96,11 +114,14 @@ type parseState struct {
 }
 
 // constBatch has the parsed and the lowered files of one package inside
-// the build.
+// the build, and the underlying shapes of its defined types. The parse
+// stamps them after the promotion of the package has replaced the types
+// that promote.
 type constBatch struct {
-	name   string
-	parsed []*ast.File
-	files  []*node.File
+	name        string
+	parsed      []*ast.File
+	files       []*node.File
+	underlyings []pendingUnderlying
 }
 
 // batch returns the batch of a package, and creates it on the first call
@@ -125,10 +146,11 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	}
 
 	parsed, err := parser.ParseFile(st.fset, filePath, src, parseMode|parser.ImportsOnly)
-	var constraintLine string
+	var built constraint.Expr
 	excluded := false
 	if parsed != nil && parsed.Name != nil && parsed.Package.IsValid() {
-		constraintLine, excluded = f.excluded(parsed, filePath)
+		built = constraintOf(parsed, filePath)
+		excluded = built != nil && !built.Eval(f.satisfies)
 		if !excluded {
 			parsed, err = parser.ParseFile(st.fset, filePath, src, parseMode)
 		}
@@ -169,10 +191,14 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	l.bindings = golang.NewBindings(file.Imports)
 	gb.Scope(file, l.bindings)
 
-	// The tool directives above the package clause are the annotations of
-	// the file.
+	// The build constraint of the file is its first annotation, and the tool
+	// directives above the package clause follow it.
 	parts := l.split(u, parsed.Doc)
 	file.Doc = parts.Docs
+	if built != nil {
+		constrained := symbol.Annotation{Name: golang.BuildAnnotation, Args: []string{built.String()}}
+		file.Annotations = append(file.Annotations, constrained)
+	}
 	file.Annotations = append(file.Annotations, parts.Annotations...)
 
 	if cgo {
@@ -188,7 +214,7 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		if pkg.Name == "" {
 			pkg.Name = pkgName
 		}
-		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: constraintLine, Pos: file.Pos})
+		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: built.String(), Pos: file.Pos})
 		if u.Depth() == plugin.DepthSignatures {
 			pruneImports(file)
 		}
@@ -205,29 +231,13 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
-	promoted, moved := promoteEnums(file)
-	for from, to := range moved {
-		// A carrier or a stamp on an alias or a constant that the
-		// promotion replaced moves to the enum or the variant that
-		// replaces it, so the splice meets no subject that the promotion
-		// removed.
-		gb.Rehome(from, to)
-	}
-	for _, pending := range l.underlyings {
-		var subject symbol.Symbol = pending.alias
-		if enum, replaced := promoted[pending.alias]; replaced {
-			subject = enum
-		}
-		gb.Stamp(subject, meta.RawStamp{
-			Key: golang.UnderlyingKindKey, Value: pending.kind, Pos: subject.Position(),
-		})
-	}
 	if u.Depth() == plugin.DepthSignatures {
 		pruneImports(file)
 	}
 	batch := st.batch(pkgPath, pkgName)
 	batch.parsed = append(batch.parsed, parsed)
 	batch.files = append(batch.files, file)
+	batch.underlyings = append(batch.underlyings, l.underlyings...)
 
 	// The sweep reads each comment that no declaration took, between
 	// declarations or above the package clause. Its tool directives are
@@ -312,38 +322,59 @@ func reportSyntax(u *plugin.SourceUnit, filePath string, err error) {
 	})
 }
 
-// excluded reports whether a file is outside the tag set of the load, and
-// returns the constraint that excludes it. The constraint is a go:build
-// line among the parsed comments before the package clause, or the GOOS
-// and GOARCH suffixes of the file name. A go:build spelling inside a block
-// comment is not a constraint, so excluded reads the parsed comments and
-// not the raw source.
-func (f *goFrontend) excluded(parsed *ast.File, filePath string) (string, bool) {
+// constraintOf returns the build constraint of a file as one expression,
+// and nil for a file without one. The expression is the conjunction of
+// the //go:build lines among the parsed comments before the package
+// clause, and of the GOOS and GOARCH tags that the name of the file
+// implies. A //go:build spelling inside a block comment is not a
+// constraint, so constraintOf reads the parsed comments and not the raw
+// source. A line that does not parse adds nothing.
+//
+// A file without a //go:build line reads its +build lines as go/build
+// does. Such a line constrains the file where it is in a comment group
+// before the package clause and outside the doc of the package. Every
+// such line must hold, and constraint.Parse reads a tag that is not valid
+// as the tag ignore, which no load sets.
+func constraintOf(parsed *ast.File, filePath string) constraint.Expr {
+	var build, plus constraint.Expr
+	stated := false
 	for _, group := range parsed.Comments {
 		if group.Pos() >= parsed.Package {
 			break
 		}
 		for _, c := range group.List {
-			if !strings.HasPrefix(c.Text, "//") || !constraint.IsGoBuild(c.Text) {
+			switch {
+			case !strings.HasPrefix(c.Text, "//"):
 				continue
-			}
-			expr, err := constraint.Parse(c.Text)
-			if err != nil {
-				continue
-			}
-			if !expr.Eval(f.satisfies) {
-				return c.Text, true
+			case constraint.IsGoBuild(c.Text):
+				stated = true
+				if expr, err := constraint.Parse(c.Text); err == nil {
+					build = conjoined(build, expr)
+				}
+			case constraint.IsPlusBuild(c.Text) && group != parsed.Doc:
+				if expr, err := constraint.Parse(c.Text); err == nil {
+					plus = conjoined(plus, expr)
+				}
 			}
 		}
+	}
+	if !stated {
+		build = plus
 	}
 	if implied, constrained := filenameConstraint(path.Base(filePath)); constrained {
 		for _, tag := range implied {
-			if !f.satisfies(tag) {
-				return strings.Join(implied, " && "), true
-			}
+			build = conjoined(build, &constraint.TagExpr{Tag: tag})
 		}
 	}
-	return "", false
+	return build
+}
+
+// conjoined returns the conjunction of x and y, and y alone where x is nil.
+func conjoined(x, y constraint.Expr) constraint.Expr {
+	if x == nil {
+		return y
+	}
+	return &constraint.AndExpr{X: x, Y: y}
 }
 
 // satisfies reports whether the tag set of the load contains a tag.
@@ -515,12 +546,15 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 		return
 	}
 	recv := d.Recv.List[0]
+	// A receiver has no identity, so no rule takes it as its subject.
+	recvComment, recvCarriers := l.memberComment(u, recv, d.Recv.Opening, d.Recv.Closing)
+	u.RefuseCarriers(UnaddressedCarrier, recvCarriers, "a receiver")
 	m := &node.Method{
 		Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: parts.Docs,
 		Comment:     commentText(l, u, tail),
 		Visibility:  visibilityOf(d.Name.Name),
 		Receives:    &node.TypeRef{Spelling: l.bareName(recv.Type), Pos: l.at(recv.Pos())},
-		Receiver:    l.param(recv, l.memberComment(u, recv, d.Recv.Closing, "a receiver")),
+		Receiver:    l.param(recv, recvComment),
 		TypeParams:  l.typeParams(d.Type.TypeParams),
 		Params:      l.params(u, d.Type.Params),
 		Returns:     l.returns(u, d.Type.Results),
@@ -642,10 +676,15 @@ func (l *lowered) aliasOf(
 // file, because the load names an embed by that spelling. It leaves out a
 // blank field, which is padding that no code can name, because a struct
 // can declare any number of them. Nothing reads the comments of a field of
-// blank names alone, so the sweep refuses a carrier on it.
+// blank names alone, so the sweep refuses a carrier on it. The lowering
+// stamps golang.hiddenFields on a struct where it leaves out a blank or an
+// unexported field, because Go compares a struct through the type of each
+// field.
 func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
+	hidden := false
 	for _, field := range t.Fields.List {
 		if len(field.Names) > 0 && !slices.ContainsFunc(field.Names, named) {
+			hidden = true
 			continue
 		}
 		parts := l.declParts(u, plugin.CommentParts{}, field.Doc, field.Comment)
@@ -664,10 +703,8 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 			continue
 		}
 		for _, name := range field.Names {
-			if !named(name) {
-				continue
-			}
-			if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name.Name) {
+			if !named(name) || u.Depth() == plugin.DepthSignatures && !ast.IsExported(name.Name) {
+				hidden = true
 				continue
 			}
 			lowered := &node.Field{
@@ -681,6 +718,9 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 			st.Fields = append(st.Fields, lowered)
 			u.AttachCarriers(lowered, parts.Carriers, BadCarrier)
 		}
+	}
+	if hidden {
+		u.Graph().Stamp(st, meta.RawStamp{Key: golang.HiddenFieldsKey, Value: true, Pos: st.Pos})
 	}
 }
 
@@ -845,15 +885,21 @@ func (l *lowered) typeParams(fields *ast.FieldList) []*node.TypeParam {
 // its own position and one for an unnamed parameter. A comment that the
 // parser attaches to a parameter lowers as its trailing comment. The
 // lowering reads it once for each field, and every name of the field
-// shares it, as for a result. No rule takes a parameter as its subject, so
-// a carrier there is refused at its position.
+// shares it and its carriers, as for a result.
 func (l *lowered) params(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Param {
 	if fields == nil {
 		return nil
 	}
 	var out []*node.Param
+	after := fields.Opening
 	for _, field := range fields.List {
-		out = l.appendParams(out, field, l.memberComment(u, field, fields.Closing, "a parameter"))
+		comment, carriers := l.memberComment(u, field, after, fields.Closing)
+		after = field.End()
+		start := len(out)
+		out = l.appendParams(out, field, comment)
+		for _, p := range out[start:] {
+			u.AttachCarriers(p, carriers, BadCarrier)
+		}
 	}
 	return out
 }
@@ -896,14 +942,22 @@ func (l *lowered) param(field *ast.Field, comment string) *node.Param {
 // returns lowers a result list and keeps blank names as written. Go admits
 // a list of named results only where every result has a name, so a
 // dropped underscore would leave the list invalid. A comment on a result
-// lowers as its trailing comment, and its carriers are refused.
+// lowers as its trailing comment, and its carriers attach to each result
+// of the field.
 func (l *lowered) returns(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Return {
 	if fields == nil {
 		return nil
 	}
 	var out []*node.Return
+	after := fields.Opening
 	for _, field := range fields.List {
-		out = l.appendReturns(out, field, l.memberComment(u, field, fields.Closing, "a result"))
+		comment, carriers := l.memberComment(u, field, after, fields.Closing)
+		after = field.End()
+		start := len(out)
+		out = l.appendReturns(out, field, comment)
+		for _, r := range out[start:] {
+			u.AttachCarriers(r, carriers, BadCarrier)
+		}
 	}
 	return out
 }
@@ -927,22 +981,26 @@ func (l *lowered) appendReturns(out []*node.Return, field *ast.Field, comment st
 }
 
 // memberComment lowers the comments of a signature member. They are the
-// doc that the parser attached and the trailing comment on the line of the
-// member inside its list, which the parser attaches to nothing. The prose
-// is the trailing comment of the member. A carrier is refused at its
-// position, and the finding names the member through what. A list without
-// parentheses takes no trailing comment, because its last line belongs to
-// the declaration after it.
+// leading comment on the line above the member, after the member before or
+// the opening of its list at after, and the trailing comment on the line
+// of the member inside its list. The parser attaches neither to the
+// member. memberComment returns the text of the trailing comment and the
+// carriers of both comments. The text of the leading comment has no place
+// in the model. A list without parentheses takes no comment of its own,
+// because its lines belong to the declarations around it.
 func (l *lowered) memberComment(
-	u *plugin.SourceUnit, field *ast.Field, closing token.Pos, what string,
-) string {
+	u *plugin.SourceUnit, field *ast.Field, after, closing token.Pos,
+) (string, []plugin.Carrier) {
+	doc := field.Doc
+	if doc == nil {
+		doc = l.leading(after, field.Pos())
+	}
 	tail := field.Comment
 	if tail == nil && closing.IsValid() {
 		tail = l.trailing(field.End(), closing)
 	}
-	parts := l.declParts(u, plugin.CommentParts{}, field.Doc, tail)
-	u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, what)
-	return strings.Join(l.split(u, tail).Docs, " ")
+	parts := l.declParts(u, plugin.CommentParts{}, doc, tail)
+	return strings.Join(l.split(u, tail).Docs, " "), parts.Carriers
 }
 
 // visibilityOf returns public for an exported name and package for every

@@ -121,13 +121,25 @@ type proven struct {
 	comparable        bool
 }
 
-// prove derives the facts of one subject from its visible method set,
-// the interfaces that it embeds, and the comparability of its type.
+// The methods whose presence the annotator stamps: the method of the
+// error interface and the method of fmt.Stringer.
+const (
+	errorMethod  = "Error"
+	stringMethod = "String"
+)
+
+// prove derives the facts of one subject from its method set, the
+// interfaces that it embeds, and the comparability of its type. The Go
+// rules return the method set and decide each fact, so a stamped fact and
+// the projected answer of the rules come from one rule. One method set
+// serves both stamps, and [gorules.NullaryString] finds the method Error
+// as the error contract of the Go rules finds it.
 func prove(r *store.Reader, decl symbol.Symbol, id symbol.Identity, embeds []*node.Embed) proven {
-	set := methodSet(r, decl, id)
+	view := rules.NewView(r, nil, nil, meta.KernelKeys{})
+	set := gorules.MethodSet(decl, view)
 	out := proven{
-		satisfiesError:    hasNullaryString(r, set, "Error"),
-		satisfiesStringer: hasNullaryString(r, set, "String"),
+		satisfiesError:    gorules.NullaryString(set, errorMethod, view) != nil,
+		satisfiesStringer: gorules.NullaryString(set, stringMethod, view) != nil,
 	}
 	for _, e := range embeds {
 		if e.Ref == nil || e.Ref.Target.IsZero() {
@@ -139,93 +151,6 @@ func prove(r *store.Reader, decl symbol.Symbol, id symbol.Identity, embeds []*no
 			}
 		}
 	}
-	out.comparable = provenComparable(r, id)
+	out.comparable, _ = gorules.Rules{}.Comparable(&node.TypeRef{Spelling: id.Name, Target: id}, view)
 	return out
 }
-
-// provenComparable asks the Go rules whether the type of the subject is
-// comparable with ==, over a view of the tracked reader. The stamped fact
-// and the projected answer then come from one rule.
-func provenComparable(r *store.Reader, id symbol.Identity) bool {
-	view := rules.NewView(r, nil, nil, meta.KernelKeys{})
-	ok, _ := gorules.Rules{}.Comparable(&node.TypeRef{Spelling: id.Name, Target: id}, view)
-	return ok
-}
-
-// methodSet assembles the visible methods of a type. For a struct, an
-// interface and an enumeration, they are the methods that the member walk
-// of the Go rules keeps. Those are the declared methods and the methods
-// that the embeds promote. Two promoted methods of one name at one depth
-// cancel each other, and a generic embed is bound to its arguments. The
-// file-level methods of the package of the type that attach to it follow.
-// A defined type has no members, so the file-level methods are all of its
-// methods. methodSet reads them from the package of the type alone,
-// because Go declares a method in the package of its receiver. One type
-// then costs the declarations of its package and never the methods of the
-// workspace.
-func methodSet(r *store.Reader, decl symbol.Symbol, id symbol.Identity) []*node.Method {
-	var out []*node.Method
-	view := rules.NewView(r, nil, nil, meta.KernelKeys{})
-	if set, membered := rules.NewBound(gorules.Rules{}, view, nil).MembersOf(decl); membered {
-		out = make([]*node.Method, 0, len(set.Members))
-		for _, m := range set.Members {
-			if method, isMethod := m.Symbol.(*node.Method); isMethod {
-				out = append(out, method)
-			}
-		}
-	}
-	if pkg, held := r.PackageOf(id); held {
-		for _, f := range pkg.Files {
-			for _, d := range f.Decls {
-				if m, isMethod := d.(*node.Method); isMethod && m.Identity().Owner == id.Name {
-					out = append(out, m)
-				}
-			}
-		}
-	}
-	return out
-}
-
-// hasNullaryString reports whether the set has a method of the given name
-// that takes nothing and returns one string. [builtinString] reads the
-// type of the result.
-func hasNullaryString(r *store.Reader, set []*node.Method, name string) bool {
-	for _, m := range set {
-		if m.Name != name || len(m.Params) != 0 || len(m.Returns) != 1 {
-			continue
-		}
-		if builtinString(r, m.Returns[0].Type) {
-			return true
-		}
-	}
-	return false
-}
-
-// builtinString reports whether ref is the predeclared string of Go. That
-// is a reference without a target whose spelling is string, or an alias
-// that the graph declares for one, followed through each alias. A defined
-// type over string is a type of its own, and a reference that the graph
-// does not resolve is unknown, so builtinString reports false for both.
-// It reads each alias through r, which records the read.
-func builtinString(r *store.Reader, ref *node.TypeRef) bool {
-	seen := map[symbol.Identity]bool{}
-	for ref != nil && ref.Form == symbol.FormNamed {
-		if ref.Target.IsZero() {
-			return ref.Spelling == stringType
-		}
-		if seen[ref.Target] {
-			return false
-		}
-		seen[ref.Target] = true
-		decl, held := r.Lookup(ref.Target)
-		alias, is := decl.(*node.Alias)
-		if !held || !is || alias.Defined {
-			return false
-		}
-		ref = alias.Target
-	}
-	return false
-}
-
-// stringType is the spelling of the predeclared string of Go.
-const stringType = "string"

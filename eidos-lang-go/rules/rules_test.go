@@ -40,13 +40,13 @@ const (
 	foreignContext = "example.test/context"
 )
 
-// rulesAllocs is one projection pass over the fixture tree: 194 at the
-// default benchtime. A memory profile attributes 98 to TypeOf, 44 to
+// rulesAllocs is one projection pass over the fixture tree: 203 at the
+// default benchtime. A memory profile attributes 107 to TypeOf, 44 to
 // SamplesOf, 17 to CallableOf, 17 to MembersOf and 3 to the fresh view
 // and its binding, and it samples the tiny allocations of the rest only
 // in part. The 2 more are for the runtime's own allocations in a run of
 // one iteration: 300 fresh processes counted 0 or 1.
-const rulesAllocs = 194 + 2
+const rulesAllocs = 203 + 2
 
 // returnRolesAllocs is the classification of a signature: the list of the
 // roles of its returns.
@@ -537,14 +537,36 @@ const (
 	ModeWrite Mode = "write"
 )
 
+// Switch is an enumeration over a bool with one value.
+type Switch bool
+
+const SwitchOn Switch = true
+
+// Scale is an enumeration over a float with a fractional value, after a
+// value that another package decides.
+type Scale float64
+
+const (
+	ScaleOpen  Scale = Scale(dep.Ratio)
+	ScaleHalf  Scale = 0.5
+	ScaleWhole Scale = 1
+)
+
+// Moment is an enumeration over a type that the tree does not declare.
+type Moment time.Month
+
+const MomentStart Moment = 1
+
 // Weight is a defined type over a builtin.
 type Weight float64
 
 // Plain is a transparent alias.
 type Plain = int
 
-// Box and Pair are generic.
+// Box and Pair are generic, and so is the defined type Items.
 type Box[T any] struct{ Item T }
+
+type Items[T any] []T
 
 type Pair[K comparable, V any] struct {
 	Key K
@@ -607,6 +629,9 @@ var ErrMissing = context.Canceled
 
 // Target is what fx refers to.
 type Target struct{ V int }
+
+// Ratio is a constant that fx converts.
+const Ratio = 0.25
 `)},
 	}
 }

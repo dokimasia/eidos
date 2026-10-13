@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
@@ -70,6 +71,27 @@ func TestValue(t *testing.T) {
 				want: "\treturn Weight(1.5)\n",
 			},
 			{
+				name: "writes a conversion to a pointer type with the type in parentheses",
+				give: emit.Conversion(&emit.TypeRef{
+					Spelling: "*Row", Form: symbol.FormOptional,
+					Elems: []*emit.TypeRef{valueRef(rowName, svcPkg, rowName)},
+				}, emit.Literal(emit.LiteralNil, "")),
+				want: "\treturn (*Row)(nil)\n",
+			},
+			{
+				name: "writes a conversion to a receive-only channel with the type in parentheses",
+				give: emit.Conversion(&emit.TypeRef{
+					Spelling: "<-chan int", Form: symbol.FormStream, Elems: []*emit.TypeRef{ref("int")},
+				}, emit.Literal(emit.LiteralNil, "")),
+				want: "\treturn (<-chan int)(nil)\n",
+			},
+			{
+				name: "writes a conversion to a function type with the type in parentheses",
+				give: emit.Conversion(&emit.TypeRef{Spelling: "func()", Form: symbol.FormFunc},
+					emit.Literal(emit.LiteralNil, "")),
+				want: "\treturn (func())(nil)\n",
+			},
+			{
 				name: "writes a struct composite with its named fields",
 				give: emit.Composite(valueRef(rowName, svcPkg, rowName),
 					emit.NamedField("ID", emit.Literal(emit.LiteralInt, "1")),
@@ -104,6 +126,20 @@ func TestValue(t *testing.T) {
 				want: "\treturn &Row{}\n",
 			},
 			{
+				name: "writes the name of a constant of another package qualified",
+				give: emit.Name(symbol.Identity{
+					Lang: golang.Lang, Package: timePkg, Name: "Second", Kind: symbol.KindConstant,
+				}),
+				want: "\treturn time.Second\n",
+			},
+			{
+				name: "writes the name of a variable of the file's own package bare",
+				give: emit.Name(symbol.Identity{
+					Lang: golang.Lang, Package: svcPkg, Name: "Registry", Kind: symbol.KindVariable,
+				}),
+				want: "\treturn Registry\n",
+			},
+			{
 				name:    "returns a value error for another language's raw text",
 				give:    emit.Raw("typescript", "{id: 1}"),
 				want:    "written in typescript",
@@ -128,15 +164,15 @@ func TestValue(t *testing.T) {
 				wantErr: true,
 			},
 			{
-				name:    "returns a value error for a composite of a type that spells nothing",
+				name:    "returns a value error for a composite of a type without a spelling",
 				give:    emit.Composite(&emit.TypeRef{}),
-				want:    "spells nothing",
+				want:    "has no spelling",
 				wantErr: true,
 			},
 			{
-				name:    "returns a value error for a call of a function that spells nothing",
+				name:    "returns a value error for a call of a function without a name",
 				give:    emit.Call(symbol.Identity{Lang: golang.Lang, Package: timePkg}),
-				want:    "spells nothing",
+				want:    "has no name",
 				wantErr: true,
 			},
 			{
@@ -170,9 +206,12 @@ func TestValue(t *testing.T) {
 				emit.NamedField("W", emit.Conversion(
 					valueRef("Weight", unitsPkg, "Weight"),
 					emit.Literal(emit.LiteralInt, "1"),
-				))))
+				)),
+				emit.NamedField("Old", emit.Name(symbol.Identity{
+					Lang: golang.Lang, Package: legacyPkg, Name: "Default", Kind: symbol.KindVariable,
+				}))))
 			assert.NoError(t, err, "the tree spells")
-			assert.Equal(t, set.Paths(), []string{storePkg, unitsPkg, timePkg},
+			assert.Equal(t, set.Paths(), []string{legacyPkg, storePkg, unitsPkg, timePkg},
 				"every package the tree names, in path order")
 		})
 
@@ -223,6 +262,35 @@ func TestValue(t *testing.T) {
 			_, _, err := returned(t, emit.Composite(ref("x.Y")))
 			assert.HasError(t, err, "a qualified reference without a package is refused")
 		})
+
+		callees := []struct {
+			name string
+			give emit.Value
+			want string
+		}{
+			{
+				name: "returns an error for a callee of an internal tree that does not contain the file",
+				give: emit.Call(valueFn("example.test/core/internal/clock", nowName)),
+				want: "internal",
+			},
+			{
+				name: "returns an error for a name whose package is not an import path",
+				give: emit.Name(symbol.Identity{
+					Lang: golang.Lang, Package: "example.test/bad units", Name: "Max", Kind: symbol.KindConstant,
+				}),
+				want: "malformed import path",
+			},
+		}
+		for _, tt := range callees {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, set, err := returned(t, tt.give)
+				assert.HasError(t, err, "the go command refuses the import")
+				expect.Contains(t, err.Error(), tt.want, "naming the rule")
+				expect.Equal(t, set.Len(), 0, "the refused import is not bound")
+			})
+		}
 
 		t.Run("places a value in a call the scaffold writes", func(t *testing.T) {
 			t.Parallel()

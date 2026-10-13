@@ -103,7 +103,7 @@ func TestBuiltin(t *testing.T) {
 			{name: "classifies bool as a boolean leaf", give: "bool", form: symbol.FormBool},
 			{name: "classifies string as a text leaf", give: "string", form: symbol.FormText},
 			{name: "classifies any as the top type", give: "any", form: symbol.FormDynamic},
-			{name: "classifies error as opaque", give: "error", form: symbol.FormOpaque},
+			{name: "classifies error as a reference", give: "error", form: symbol.FormReference},
 			{name: "classifies comparable as opaque", give: "comparable", form: symbol.FormOpaque},
 			{name: "classifies complex128 as opaque", give: "complex128", form: symbol.FormOpaque},
 		}
@@ -125,6 +125,46 @@ func TestBuiltin(t *testing.T) {
 			assert.Equal(t, gorules.New().Builtin(nil, rules.View{}).Form, symbol.FormOpaque, "nothing is opaque")
 		})
 
+		inline := []struct {
+			name string
+			give string
+			want symbol.TypeForm
+		}{
+			{
+				name: "classifies the empty inline interface as the top type",
+				give: "interface{}", want: symbol.FormDynamic,
+			},
+			{
+				name: "classifies the empty inline interface with spaces as the top type",
+				give: " interface { } ", want: symbol.FormDynamic,
+			},
+			{
+				name: "classifies an inline interface with a method as opaque",
+				give: "interface{ Close() error }", want: symbol.FormOpaque,
+			},
+			{
+				name: "classifies an inline interface with an embedded interface as opaque",
+				give: "interface{ io.Reader }", want: symbol.FormOpaque,
+			},
+			{name: "classifies the empty inline struct as opaque", give: "struct{}", want: symbol.FormOpaque},
+		}
+		for _, tt := range inline {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s := gorules.New().Builtin(&node.TypeRef{Spelling: tt.give, Form: symbol.FormInline}, rules.View{})
+				assert.Equal(t, s.Form, tt.want, "the form")
+			})
+		}
+
+		t.Run("folds the empty inline interface to the top type through the kernel", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			s := f.bound().TypeOf(&node.TypeRef{Spelling: "interface{}", Form: symbol.FormInline})
+			assert.Equal(t, s.Form, symbol.FormDynamic, "interface{} has the shape of any")
+		})
+
 		t.Run("maps time.Time onto the well-known timestamp", func(t *testing.T) {
 			t.Parallel()
 
@@ -138,6 +178,13 @@ func TestBuiltin(t *testing.T) {
 
 			assert.Equal(t, gorules.New().Builtin(builtin("time.Duration"), rules.View{}).Ref,
 				rules.WellKnownDuration, "the duration")
+		})
+
+		t.Run("maps error onto the well-known error", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, gorules.New().Builtin(builtin("error"), rules.View{}).Ref,
+				rules.WellKnownError, "the predeclared error is the error value")
 		})
 
 		t.Run("maps a Time through an aliased import onto the well-known timestamp", func(t *testing.T) {

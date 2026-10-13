@@ -39,6 +39,8 @@ const (
 	FuncReceiver = "receiver"
 	// FuncPackage is the template name of [Package].
 	FuncPackage = "package"
+	// FuncConstraint is the template name of [Constraint].
+	FuncConstraint = "constraint"
 	// FuncGuard is the template name of [Guard].
 	FuncGuard = "guard"
 	// FuncSigGuard is the template name of [SigGuard].
@@ -76,6 +78,14 @@ const (
 	// method.
 	variadicMark = "..."
 	pointerMark  = "*"
+	// receiveMark starts the type of a receive-only channel, and funcOpen
+	// the type of a function.
+	receiveMark = "<-"
+	funcOpen    = "func("
+	// unionSep separates two terms of a union, and approxMark marks a term
+	// that admits every type of its underlying type.
+	unionSep   = " | "
+	approxMark = "~"
 	// directiveMark starts a directive comment line, and docMark starts a
 	// line of documentation.
 	directiveMark = "//"
@@ -147,8 +157,12 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 //
 //   - a qualified name whose package the model does not record;
 //   - a spelling that is not a Go type name;
-//   - an inline body that refers to another package, because the model
-//     does not record its imports;
+//   - a package that the go command refuses to import, as [bind] checks
+//     it;
+//   - an inline body without children that refers to another package,
+//     because the model does not record its imports;
+//   - an inline body whose child the file writes otherwise, because the
+//     body keeps the spelling of its source;
 //   - a structural reference that its structure does not determine,
 //     such as an array with an expression as its length.
 //
@@ -164,25 +178,86 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return spellref.SpellRestated(t, argsOpen, argsClose, Anonymous, s.qualify, restate)
 }
 
-// restate restates a composite of the model through [golang.Restate]. A
-// composite of the model without a spelling is one that rules.Substitute
-// restated, and the spelling recorded facts that the model does not.
+// restate restates a composite of the model through [golang.Restate], and
+// a union through [union]. A composite of the model without a spelling is
+// one that rules.Substitute restated, and the spelling recorded facts that
+// the model does not.
 //
 // Error modes: a channel without a spelling returns an error, because
 // its spelling recorded its direction. A function type whose last
 // parameter is a list without a spelling returns an error, because the
-// spelling of the list recorded whether the parameter is variadic.
+// spelling of the list recorded whether the parameter is variadic. An
+// inline body returns an error, because its spelling does not follow
+// from its children.
 func restate(t *emit.TypeRef, elems []string) (string, error) {
-	if t.Form == symbol.FormStream && t.Spelling == "" {
+	switch last := t.Split - 1; {
+	case t.Form == symbol.FormStream && t.Spelling == "":
 		return "", refuse("a channel without a spelling does not record its direction")
-	}
-	if last := t.Split - 1; t.Form == symbol.FormFunc && last >= 0 && last < len(t.Elems) &&
-		t.Elems[last] != nil && t.Elems[last].Form == symbol.FormList && t.Elems[last].Spelling == "" {
-
+	case t.Form == symbol.FormFunc && last >= 0 && last < len(t.Elems) &&
+		t.Elems[last] != nil && t.Elems[last].Form == symbol.FormList && t.Elems[last].Spelling == "":
 		return "", refuse("a function type takes a list without a spelling last, " +
 			"and the reference does not record whether the parameter is variadic")
+	case t.Form == symbol.FormInline:
+		return "", refuse("the inline body %s keeps the spelling of its source, "+
+			"and this file writes a type inside it otherwise", t.Spelling)
+	case t.Form == symbol.FormUnion:
+		return union(t, elems)
 	}
 	return golang.Restate(t, elems)
+}
+
+// union restates a union constraint from the spellings of its terms in
+// elems, joined by |. It reads the approximation mark of each term from
+// the spelling of the union, which go/parser splits into terms as the
+// frontend split it: a union of unions and a term in parentheses flatten
+// into their terms.
+//
+// Error modes: a union without a spelling, a spelling that does not
+// parse, and a spelling with another number of terms than elems return an
+// error, because the marks of the terms are unknown.
+//
+// union allocates the parse of the spelling, the list of the marks, and
+// the text that it returns. A refusal allocates its error.
+func union(t *emit.TypeRef, elems []string) (string, error) {
+	if t.Spelling == "" {
+		return "", refuse("a union without a spelling does not record the approximation marks of its terms")
+	}
+	e, err := parser.ParseExpr(t.Spelling)
+	if err != nil {
+		return "", refuse("the union %s does not parse: %v", t.Spelling, err)
+	}
+	marks := approximations(nil, e)
+	if len(marks) != len(elems) {
+		return "", refuse("the union %s has %d terms, and its reference has %d", t.Spelling, len(marks), len(elems))
+	}
+	var b strings.Builder
+	for i, elem := range elems {
+		if i > 0 {
+			b.WriteString(unionSep)
+		}
+		if marks[i] {
+			b.WriteString(approxMark)
+		}
+		b.WriteString(elem)
+	}
+	return b.String(), nil
+}
+
+// approximations appends to out whether each term of the constraint
+// element e is an approximation, in the order of the source. go/parser
+// writes a union as a binary expression and an approximation as a unary
+// expression, and no other operator in a constraint.
+func approximations(out []bool, e ast.Expr) []bool {
+	switch t := e.(type) {
+	case *ast.ParenExpr:
+		return approximations(out, t.X)
+	case *ast.BinaryExpr:
+		return approximations(approximations(out, t.X), t.Y)
+	case *ast.UnaryExpr:
+		return append(out, true)
+	default:
+		return append(out, false)
+	}
 }
 
 // TypeParams writes the type parameter list ps in brackets, and nothing
@@ -222,10 +297,23 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 // Params writes the parameter list in the slot ps with the variadic
 // marker. A template passes the slot by address, as in
 // {{params .Params}}, so the call reads the slot without a reflective
-// method call. Params allocates the spelling of each named parameter,
-// the joined list, and what the spelling of each type allocates.
+// method call. Params returns an error for a list in which some
+// parameters have names and others do not, because Go gives a name to
+// every parameter of a list or to none. Params allocates the spelling of
+// each named parameter, the joined list, and what the spelling of each
+// type allocates.
 func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 	items := ps.Items()
+	named := 0
+	for _, p := range items {
+		if p.Name != "" {
+			named++
+		}
+	}
+	if named > 0 && named < len(items) {
+		return "", refuse("a Go parameter list gives a name to every parameter or to none, "+
+			"and this list gives one to %d of its %d parameters", named, len(items))
+	}
 	parts := make([]string, 0, len(items))
 	for _, p := range items {
 		part, err := s.param(p)
@@ -241,12 +329,24 @@ func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 // for no result, one bare type for one unnamed result, and a list in
 // parentheses otherwise. One named result is in parentheses, because Go
 // requires them. A template passes the slot by address, as Params
-// describes. Results allocates the list that it writes, the joined list
-// of two or more results, and what the spelling of each type allocates.
+// describes. Results returns an error for a list in which some results
+// have names and others do not, as Params does. Results allocates the list
+// that it writes, the joined list of two or more results, and what the
+// spelling of each type allocates.
 func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
 	rs := results.Items()
 	if len(rs) == 0 {
 		return "", nil
+	}
+	named := 0
+	for _, r := range rs {
+		if r.Name != "" {
+			named++
+		}
+	}
+	if named > 0 && named < len(rs) {
+		return "", refuse("a Go result list gives a name to every result or to none, "+
+			"and this list gives one to %d of its %d results", named, len(rs))
 	}
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
@@ -303,11 +403,12 @@ func (s Speller) VarType(v *emit.Variable) (string, error) {
 }
 
 // qualify writes the name of the named reference t, qualified with the
-// bound name of its package, and binds the import of the package under
-// the name that [golang.Qualifier] returns for its path. For a reference
-// without a target, which keeps the spelling of its source, qualify
-// returns an error where the spelling is not a Go type name, and where it
-// is qualified and the model does not record a package for it.
+// bound name of its package, and binds the import of the package through
+// [bind]. For a reference without a target, which keeps the spelling of
+// its source, qualify returns an error where the spelling is not a Go type
+// name, and where it is qualified and the model does not record a package
+// for it. It returns the error of bind for a package that the go command
+// refuses to import.
 func (s Speller) qualify(t *emit.TypeRef) (string, error) {
 	pkg := spellref.PackageOf(t, golang.Lang)
 	if t.Target.IsZero() {
@@ -321,8 +422,12 @@ func (s Speller) qualify(t *emit.TypeRef) (string, error) {
 	if pkg == "" {
 		return t.Spelling, nil
 	}
+	local, err := bind(s.set, pkg)
+	if err != nil {
+		return "", err
+	}
 	name := golang.Unqualified(t.Spelling)
-	if local := s.set.Bind(pkg, golang.Qualifier(pkg)); local != "" {
+	if local != "" {
 		name = local + qualifierSep + name
 	}
 	return name, nil
@@ -373,8 +478,9 @@ func (s Speller) param(p *emit.Param) (string, error) {
 // that composes a variant backend registers the vocabulary with its own
 // additions. Every helper takes a fixed list of arguments, because
 // text/template allocates the list of a variadic call and a value for
-// each string argument in a template. Funcs allocates the map of sixteen
-// helpers in four allocations, and the six bound helpers of the speller.
+// each string argument in a template. Funcs allocates the map of
+// seventeen helpers in four allocations, and the six bound helpers of the
+// speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -386,6 +492,7 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 		FuncResults:          s.Results,
 		FuncReceiver:         s.Receiver,
 		FuncPackage:          Package,
+		FuncConstraint:       Constraint,
 		FuncGuard:            Guard,
 		FuncSigGuard:         SigGuard,
 		FuncEmbedGuard:       EmbedGuard,
@@ -409,6 +516,25 @@ func Docs(lines []string) string {
 // and of a method in an interface. It allocates what [Docs] allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.LineDocs(lines, docMark, memberIndent)
+}
+
+// Constraint writes the build constraint of a source file as a //go:build
+// line and a blank line. as are the annotations of the source file, and
+// the constraint is the annotation [golang.BuildAnnotation]. The file
+// skeleton writes the line above the package clause, where the go command
+// reads it. The blank line separates the constraint from the
+// documentation of the package. Constraint returns the empty string where
+// as has no constraint. It does not write the other annotations, because
+// a //go:generate line in a generated file would run its generator a
+// second time. Constraint allocates the line once. It does not allocate
+// where as has no constraint.
+func Constraint(as symbol.Annotations) string {
+	for _, a := range as {
+		if a.Name == golang.BuildAnnotation {
+			return directiveMark + a.Name + " " + strings.Join(a.Args, " ") + "\n\n"
+		}
+	}
+	return ""
 }
 
 // Package writes the name in the package clause of the package id. It
@@ -597,26 +723,35 @@ func Tag(f *emit.Field) (string, error) {
 // comment with an exact spelling, so the annotation passes through
 // verbatim, and the generator is responsible for a name without
 // documentation. The frontend reads a name outside the tool:name form
-// and the legacy forms with a space as documentation.
+// and the legacy forms with a space as documentation. Directives returns
+// an error for an assigned annotation, because a Go directive writes its
+// arguments after its name alone.
 //
 // Directives sizes the lines once and allocates them once, and allocates
 // nothing for a declaration without annotations.
-func Directives(as symbol.Annotations) string {
+func Directives(as symbol.Annotations) (string, error) {
 	return directiveLines(as, "")
 }
 
 // MemberDirectives writes the annotations of a member as the directive
 // comment lines of [Directives]. Each line starts with one tab. It
-// allocates what Directives allocates.
-func MemberDirectives(as symbol.Annotations) string {
+// returns the error of Directives, and allocates what Directives
+// allocates.
+func MemberDirectives(as symbol.Annotations) (string, error) {
 	return directiveLines(as, memberIndent)
 }
 
 // directiveLines writes one directive comment line for each annotation
-// of as, each after prefix.
-func directiveLines(as symbol.Annotations, prefix string) string {
+// of as, each after prefix, and returns an error for the first assigned
+// annotation.
+func directiveLines(as symbol.Annotations, prefix string) (string, error) {
 	if len(as) == 0 {
-		return ""
+		return "", nil
+	}
+	for _, a := range as {
+		if a.Assigned {
+			return "", refuse("a directive writes its arguments after its name, and %s assigns its argument", a.Name)
+		}
 	}
 	size := 0
 	for _, a := range as {
@@ -637,7 +772,7 @@ func directiveLines(as symbol.Annotations, prefix string) string {
 		}
 		b.WriteString("\n")
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // qualifiesInside reports whether the spelling of an inline body refers
@@ -659,15 +794,17 @@ func qualifiesInside(spelling string) bool {
 	return qualified
 }
 
-// inlineImport returns the spelling of the first inline body inside t that
-// refers to a declaration of another package, and the empty string where
-// no inline body does. It walks the children and the arguments of t, and
-// allocates what [qualifiesInside] allocates for each inline body.
+// inlineImport returns the spelling of the first inline body without
+// children inside t that refers to a declaration of another package, and
+// the empty string where no such body is. An inline body with children
+// binds the imports of its children. inlineImport walks the children and
+// the arguments of t, and allocates what [qualifiesInside] allocates for
+// each inline body without children.
 func inlineImport(t *emit.TypeRef) string {
 	switch {
 	case t == nil:
 		return ""
-	case t.Form == symbol.FormInline && qualifiesInside(t.Spelling):
+	case t.Form == symbol.FormInline && len(t.Elems) == 0 && qualifiesInside(t.Spelling):
 		return t.Spelling
 	}
 	for _, c := range t.Elems {

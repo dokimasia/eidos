@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -29,6 +30,15 @@ const (
 // templateMapAllocs is a map of kinds onto templates: the map and its
 // one group.
 const templateMapAllocs = 2
+
+// fileData is the data that the render pass executes the file skeleton
+// over: the name of the file, its package and the annotations of its
+// source file.
+type fileData struct {
+	Name        string
+	Pkg         symbol.Identity
+	Annotations symbol.Annotations
+}
 
 // Each kind template is pinned byte for byte over a declaration
 // exercising its whole shape, member docblocks included.
@@ -382,12 +392,22 @@ func TestTemplates(t *testing.T) {
 		t.Run("writes the package clause then the imports then the declarations", func(t *testing.T) {
 			t.Parallel()
 
-			got := executed(t, backend.FileTemplate, struct {
-				Name string
-				Pkg  symbol.Identity
-			}{Name: "store_stub.go", Pkg: symbol.Identity{Package: "svc/api"}})
+			got := executed(t, backend.FileTemplate, fileData{
+				Name: "store_stub.go", Pkg: symbol.Identity{Package: "svc/api"},
+			})
 			assert.Equal(t, got, "package api\n\n"+importsStub+"\n"+declsStub,
 				"the shape gofmt leaves")
+		})
+
+		t.Run("writes the build constraint of the source file above the package clause", func(t *testing.T) {
+			t.Parallel()
+
+			got := executed(t, backend.FileTemplate, fileData{
+				Name: "store_stub.go", Pkg: symbol.Identity{Package: "svc/api"},
+				Annotations: symbol.Annotations{{Name: golang.BuildAnnotation, Args: []string{linuxConstraint}}},
+			})
+			assert.Equal(t, got, "//go:build "+linuxConstraint+"\n\npackage api\n\n"+importsStub+"\n"+declsStub,
+				"the go command reads the line before the package clause")
 		})
 	})
 }

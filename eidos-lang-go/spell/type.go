@@ -72,12 +72,12 @@ const (
 //     synchronous stream as a channel, and an asynchronous stream as
 //     iter.Seq2[T, error], with the import of iter;
 //   - an optional of a list, bytes, a map, a function type, a stream, the
-//     top type or a sum as the type itself, because the nil value of its
-//     Go spelling is the absent value;
+//     top type, the error value or a sum as the type itself, because the
+//     nil value of its Go spelling is the absent value;
 //   - a wildcard as its upper bound, and as any where it has no bound;
 //   - the well-known timestamp and duration as time.Time and
-//     time.Duration, with the import of time, and the well-known empty
-//     value as struct{};
+//     time.Duration, with the import of time, the well-known empty value
+//     as struct{}, and the well-known error as error;
 //   - every other reference and sum as a translated reference with the
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which Go writes in brackets.
@@ -252,8 +252,9 @@ func wildcard(s rules.TypeShape) (*emit.TypeRef, error) {
 }
 
 // reference spells a reference or a sum: a well-known type as Go's time
-// type or as the empty struct, and every other referent as a translated
-// reference under its flat name, with its translated arguments.
+// type, as the empty struct or as error, and every other referent as a
+// translated reference under its flat name, with its translated
+// arguments.
 func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
@@ -262,6 +263,8 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: durationType, Package: timePackage}, nil
 	case rules.WellKnownEmpty:
 		return &emit.TypeRef{Spelling: emptyStruct, Form: symbol.FormInline}, nil
+	case rules.WellKnownError:
+		return &emit.TypeRef{Spelling: errorType}, nil
 	}
 	args, err := spoke.Children(s.Args, goType)
 	if err != nil {
@@ -272,12 +275,14 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // nilable reports whether the nil value of Go's spelling of s is the
 // absent value: a slice, bytes, a map, a function, a channel, an iterator,
-// any and the interface of a sum.
+// any, error and the interface of a sum.
 func nilable(s rules.TypeShape) bool {
 	switch s.Form {
 	case symbol.FormList, symbol.FormBytes, symbol.FormMap, symbol.FormFunc, symbol.FormStream,
 		symbol.FormDynamic, symbol.FormSum:
 		return true
+	case symbol.FormReference:
+		return s.Ref == rules.WellKnownError
 	default:
 		return false
 	}

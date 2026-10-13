@@ -27,6 +27,14 @@ import (
 // brand is the brand every fixture unit reads its carriers under.
 const brand = string(frontendtest.Brand)
 
+// The tags of the build constraint cases: one that no load sets unless a
+// case sets it, and the operating system and the architecture of a case.
+const (
+	exoticTag = "exotic"
+	linuxTag  = "linux"
+	amd64Tag  = "amd64"
+)
+
 // The canonical scale every layer benches at: 1000 packages of 10
 // files of 20 declarations, 200k declarations in all.
 const (
@@ -448,28 +456,168 @@ func TestParse(t *testing.T) {
 			assert.Length(t, file.Decls, 1, "a block comment is not a constraint")
 		})
 
-		t.Run("reports UnaddressedCarrier for each carrier the model cannot address", func(t *testing.T) {
+		t.Run("keeps out a file that a +build line excludes", func(t *testing.T) {
 			t.Parallel()
 
-			tree := fstest.MapFS{"p/a.go": {Data: []byte(
-				"package p\n\nimport \"io\" //+fixture:gen:z\n\n" +
-					"func F(\n\t//+fixture:gen:y\n\tn int,\n) (\n\t//+fixture:gen:w\n\tout int,\n) {\n\treturn n\n}\n\n" +
-					"var _ io.Reader\n",
-			)}}
-			f := frontend.New(nil)
-			sink := diag.NewSink()
-			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: "p/a.go"}}, tree,
-				plugin.DepthFull, f.Syntax(), brand, sink, f.Name())
-			assert.NoError(t, f.Parse(t.Context(), u), "the file parses")
+			gb := parsedFile(t, nil, plugin.DepthFull, "// +build exotic\n\npackage p\n\ntype Gone struct{}\n")
+			assert.Empty(t, onlyFile(t, gb).Decls, "the go command leaves the file out")
+			assert.Equal(t, stampValues(gb, golang.ConstraintKey), []any{exoticTag},
+				"the constraint that excludes the file stamps as an expression")
+		})
 
-			refused := 0
-			for d := range sink.All() {
-				if d.Code == frontend.UnaddressedCarrier {
-					refused++
+		constraints := []struct {
+			name     string
+			giveTags []string
+			givePath string
+			giveSrc  string
+			want     symbol.Annotations
+		}{
+			{
+				name:    "gives a file the annotation of its go:build line",
+				giveSrc: "//go:build !exotic\n\npackage p\n",
+				want:    symbol.Annotations{{Name: golang.BuildAnnotation, Args: []string{"!exotic"}}},
+			},
+			{
+				name: "gives a file the conjunction of its +build lines", giveTags: []string{linuxTag},
+				giveSrc: "// +build linux\n// +build !exotic\n\npackage p\n",
+				want:    symbol.Annotations{{Name: golang.BuildAnnotation, Args: []string{"linux && !exotic"}}},
+			},
+			{
+				name: "gives a file the tags that its name implies", giveTags: []string{linuxTag},
+				givePath: "p/x_linux.go", giveSrc: "package p\n",
+				want: symbol.Annotations{{Name: golang.BuildAnnotation, Args: []string{linuxTag}}},
+			},
+			{
+				name:     "joins the go:build line of a file and the tags of its name",
+				giveTags: []string{linuxTag, amd64Tag},
+				givePath: "p/x_linux_amd64.go",
+				giveSrc:  "//go:build !exotic\n\npackage p\n",
+				want: symbol.Annotations{
+					{Name: golang.BuildAnnotation, Args: []string{"!exotic && linux && amd64"}},
+				},
+			},
+			{
+				name:    "gives a file without a constraint no annotation",
+				giveSrc: "package p\n",
+			},
+			{
+				name:    "leaves a go:build line that does not parse out of the annotations",
+				giveSrc: "//go:build (\n\npackage p\n",
+			},
+		}
+		for _, tt := range constraints {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				at := []string{}
+				if tt.givePath != "" {
+					at = append(at, tt.givePath)
 				}
-			}
-			assert.Equal(t, refused, 3, "an import, a parameter and a result each refuse, positioned")
-			assert.Empty(t, u.Graph().Attachments(), "nothing attaches in silence")
+				gb := parsedFile(t, &frontend.Options{Tags: tt.giveTags}, plugin.DepthFull, tt.giveSrc, at...)
+				assert.Equal(t, onlyFile(t, gb).Annotations, tt.want, "the build constraint of the file")
+			})
+		}
+
+		legacy := []struct {
+			name     string
+			giveTags []string
+			giveSrc  string
+			want     int
+		}{
+			{
+				name: "loads a file whose +build line holds", giveTags: []string{exoticTag},
+				giveSrc: "// +build exotic\n\npackage p\n\ntype Kept struct{}\n", want: 1,
+			},
+			{
+				name: "reads the options of a +build line as alternatives", giveTags: []string{linuxTag},
+				giveSrc: "// +build exotic linux\n\npackage p\n\ntype Kept struct{}\n", want: 1,
+			},
+			{
+				name: "keeps out a file whose second +build line does not hold", giveTags: []string{linuxTag},
+				giveSrc: "// +build linux\n// +build exotic\n\npackage p\n\ntype Gone struct{}\n",
+			},
+			{
+				name:    "reads no +build line in the doc of the package",
+				giveSrc: "// Package p is here.\n// +build exotic\npackage p\n\ntype Kept struct{}\n", want: 1,
+			},
+			{
+				name: "lets a go:build line decide over a +build line", giveTags: []string{linuxTag},
+				giveSrc: "//go:build linux\n// +build exotic\n\npackage p\n\ntype Kept struct{}\n", want: 1,
+			},
+			{
+				name: "keeps out a file whose +build line has a tag that is not valid", giveTags: []string{linuxTag},
+				giveSrc: "// +build !\n\npackage p\n\ntype Gone struct{}\n",
+			},
+		}
+		for _, tt := range legacy {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb := parsedFile(t, &frontend.Options{Tags: tt.giveTags}, plugin.DepthFull, tt.giveSrc)
+				assert.Length(t, onlyFile(t, gb).Decls, tt.want, "the go command builds the file where it declares")
+			})
+		}
+
+		t.Run("reports UnaddressedCarrier for a carrier on an import", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedFindings(t, nil, plugin.DepthFull,
+				"package p\n\nimport \"io\" //+fixture:gen:z\n\nvar _ io.Reader\n")
+			assert.Length(t, found, 1, "the carrier of the import refuses")
+			assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "as a carrier that no rule takes")
+			assert.Empty(t, gb.Attachments(), "nothing attaches in silence")
+		})
+
+		t.Run("attaches a carrier on a parameter and on a result to each", func(t *testing.T) {
+			t.Parallel()
+
+			src := "package p\n\nfunc F(\n\t//+fixture:gen:y\n\tn int,\n) (\n\tout int, //+fixture:gen:w\n) {\n" +
+				"\treturn n\n}\n"
+			gb, found := parsedFindings(t, nil, plugin.DepthFull, src)
+			assert.Empty(t, found, "no carrier refuses")
+			fn := onlyFile(t, gb).Decls[0].(*node.Function)
+			attached := gb.Attachments()
+			assert.Length(t, attached, 2, "the leading carrier of n and the trailing carrier of out attach")
+			expect.Equal(t, attached[0].Subject, symbol.Symbol(fn.Params[0]), "the parameter n",
+				assert.ByIdentity())
+			expect.Equal(t, attached[1].Subject, symbol.Symbol(fn.Returns[0]), "the result out",
+				assert.ByIdentity())
+		})
+
+		t.Run("attaches a carrier on a field with two names to each parameter", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsedFile(t, nil, plugin.DepthFull,
+				"package p\n\nfunc F(\n\ta, b int, //+fixture:gen:y\n) {}\n")
+			fn := onlyFile(t, gb).Decls[0].(*node.Function)
+			attached := gb.Attachments()
+			assert.Length(t, attached, 2, "the carrier attaches once for each name")
+			expect.Equal(t, attached[0].Subject, symbol.Symbol(fn.Params[0]), "the parameter a",
+				assert.ByIdentity())
+			expect.Equal(t, attached[1].Subject, symbol.Symbol(fn.Params[1]), "the parameter b",
+				assert.ByIdentity())
+		})
+
+		t.Run("attaches a carrier on a parameter of an interface method", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsedFile(t, nil, plugin.DepthFull,
+				"package p\n\ntype I interface {\n\tM(\n\t\tn int, //+fixture:gen:y\n\t)\n}\n")
+			m := onlyFile(t, gb).Decls[0].(*node.Interface).Methods[0]
+			attached := gb.Attachments()
+			assert.Length(t, attached, 1, "the carrier attaches")
+			assert.Equal(t, attached[0].Subject, symbol.Symbol(m.Params[0]), "to the parameter",
+				assert.ByIdentity())
+		})
+
+		t.Run("reports UnaddressedCarrier for a carrier on a receiver", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedFindings(t, nil, plugin.DepthFull,
+				"package p\n\ntype T struct{}\n\nfunc (\n\tt T, //+fixture:gen:r\n) M() {}\n")
+			assert.Length(t, found, 1, "the carrier of the receiver refuses")
+			assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "as a carrier on a receiver")
+			assert.Empty(t, gb.Attachments(), "a receiver has no identity")
 		})
 
 		t.Run("reports BadCarrier for a carrier outside the kernel grammar", func(t *testing.T) {
@@ -576,10 +724,10 @@ func TestParse(t *testing.T) {
 					"package p\n\n//go:noinline\n\n// Free prose drops.\n\ntype E int\n")
 			file := onlyFile(t, gb)
 			assert.Equal(t, file.Annotations, symbol.Annotations{
+				{Name: golang.BuildAnnotation, Args: []string{"!exotic"}},
 				{Name: "go:generate", Args: []string{"stringer", "-type=E"}},
 				{Name: "go:noinline"},
-			}, "the file has them in source order, and a build constraint is "+
-				"configuration the split reads as no annotation")
+			}, "the file has its build constraint first, and the others in source order")
 		})
 
 		t.Run("stamps constraint elements as the interface's type set", func(t *testing.T) {
@@ -678,6 +826,50 @@ func TestParse(t *testing.T) {
 			gb := parsedFile(t, nil, plugin.DepthFull, "package p\n\ntype T struct{}\n\nfunc (t *T) M() {}\n")
 			assert.Equal(t, stampValues(gb, golang.ReceiverIsPointerKey), []any{true}, "the method marks")
 		})
+
+		hidden := []struct {
+			name      string
+			giveDepth plugin.Depth
+			giveSrc   string
+			want      []any
+		}{
+			{
+				name:      "stamps the hidden fields of a struct with a blank field",
+				giveDepth: plugin.DepthFull,
+				giveSrc:   "package p\n\ntype T struct {\n\t_ [0]func()\n\tA int\n}\n",
+				want:      []any{true},
+			},
+			{
+				name:      "stamps the hidden fields of a struct with a blank name beside a field",
+				giveDepth: plugin.DepthFull,
+				giveSrc:   "package p\n\ntype T struct {\n\tA, _ int\n}\n",
+				want:      []any{true},
+			},
+			{
+				name:      "stamps the hidden fields of a struct with an unexported field at the signature depth",
+				giveDepth: plugin.DepthSignatures,
+				giveSrc:   "package p\n\ntype T struct {\n\tA int\n\tb []int\n}\n",
+				want:      []any{true},
+			},
+			{
+				name:      "stamps no hidden fields of a struct with an unexported field at the full depth",
+				giveDepth: plugin.DepthFull,
+				giveSrc:   "package p\n\ntype T struct {\n\tA int\n\tb []int\n}\n",
+			},
+			{
+				name:      "stamps no hidden fields of a struct whose fields all load",
+				giveDepth: plugin.DepthSignatures,
+				giveSrc:   "package p\n\ntype T struct {\n\tA int\n\tB []int\n}\n",
+			},
+		}
+		for _, tt := range hidden {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb := parsedFile(t, nil, tt.giveDepth, tt.giveSrc)
+				assert.Equal(t, stampValues(gb, golang.HiddenFieldsKey), tt.want, "the mark of the struct")
+			})
+		}
 
 		t.Run("stamps an iter.Seq result", func(t *testing.T) {
 			t.Parallel()

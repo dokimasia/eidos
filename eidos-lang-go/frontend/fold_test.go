@@ -4,6 +4,8 @@
 package frontend_test
 
 import (
+	"maps"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -74,13 +76,13 @@ func TestFold(t *testing.T) {
 	})
 }
 
-// parsedUnit lowers one package of several files and returns its
-// files.
+// parsedUnit lowers one package of two or more files and returns its
+// files in the order of their paths.
 func parsedUnit(tb testing.TB, sources map[string]string) []*node.File {
 	tb.Helper()
 
 	tree := fstest.MapFS{}
-	paths := []string{"p/a.go", "p/b.go"}
+	paths := slices.Sorted(maps.Keys(sources))
 	refs := make([]plugin.SourceRef, 0, len(paths))
 	for _, path := range paths {
 		tree[path] = &fstest.MapFile{Data: []byte(sources[path])}

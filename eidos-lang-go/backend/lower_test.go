@@ -62,6 +62,17 @@ const (
 	phaseClosed = "phaseClosed"
 )
 
+// The docs of a variant that the doc cases lower: a doc that opens with
+// the variant name, the rest of its first line, a second line, a doc that
+// opens with another word and a doc that opens with a longer word.
+const (
+	openDoc   = "open admits writes."
+	openRest  = " admits writes."
+	secondDoc = "It is the first step."
+	otherDoc  = "Admits writes."
+	openerDoc = "opener admits writes."
+)
+
 // The variant names in upper case and in mixed case that the join
 // cases lower, and the constants that they join to.
 const (
@@ -246,6 +257,57 @@ func TestLower(t *testing.T) {
 			})
 		}
 
+		docs := []struct {
+			name string
+			give []string
+			want []string
+		}{
+			{
+				name: "opens the doc of a constant with its name where the doc of its variant opens with the variant",
+				give: []string{openDoc, secondDoc},
+				want: []string{phaseOpen + openRest, secondDoc},
+			},
+			{
+				name: "writes the name of the constant as a doc of the variant name alone",
+				give: []string{openName},
+				want: []string{phaseOpen},
+			},
+			{
+				name: "keeps the doc of a variant that opens with another word",
+				give: []string{otherDoc},
+				want: []string{otherDoc},
+			},
+			{
+				name: "keeps the doc of a variant that opens with a longer word",
+				give: []string{openerDoc},
+				want: []string{openerDoc},
+			},
+		}
+		for _, tt := range docs {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				e := &emit.Enum{Name: phaseName}
+				e.Variants.Append(&emit.EnumVariant{Doc: tt.give, Name: openName})
+				out, err := backend.Lower(e)
+				assert.NoError(t, err, "the enum lowers")
+				assert.Length(t, out, 2, "one defined type and one constant")
+				constant, isConstant := out[1].(*emit.Constant)
+				assert.True(t, isConstant, "the variant becomes a constant")
+				assert.Equal(t, constant.Doc, tt.want, "the doc of the constant")
+			})
+		}
+
+		t.Run("keeps the doc of the variant as it is", func(t *testing.T) {
+			t.Parallel()
+
+			e := &emit.Enum{Name: phaseName}
+			e.Variants.Append(&emit.EnumVariant{Doc: []string{openDoc}, Name: openName})
+			_, err := backend.Lower(e)
+			assert.NoError(t, err, "the enum lowers")
+			assert.Equal(t, e.Variants.Items()[0].Doc, []string{openDoc}, "the lowering writes a doc of its own")
+		})
+
 		t.Run("returns an error for an enum with members", func(t *testing.T) {
 			t.Parallel()
 
@@ -339,6 +401,15 @@ func TestLower(t *testing.T) {
 			f := thrower(nil, notFoundType)
 			lowered(t, f)
 			assert.Empty(t, f.Throws, "a second settle finds nothing to lower")
+		})
+
+		t.Run("returns an error for a function with failures and a body of statements", func(t *testing.T) {
+			t.Parallel()
+
+			f := thrower(nil, notFoundType)
+			f.Body.Stmts = []emit.Stmt{{Kind: emit.StmtReturn}}
+			_, err := backend.Lower(f)
+			assert.HasError(t, err, "the error return changes what each return statement returns")
 		})
 
 		t.Run("lowers the failures a struct's member method announces", func(t *testing.T) {

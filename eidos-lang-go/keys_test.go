@@ -22,10 +22,10 @@ const (
 )
 
 // registerAllocs is a registration into a fresh registry: the eleven
-// kind lists of the keys, and seventeen allocations of the registry,
+// kind lists of the keys, and eighteen allocations of the registry,
 // its namespace claim and the growth of its spec list, type list and
-// name map to sixteen keys.
-const registerAllocs = 11 + 17
+// name map to seventeen keys.
+const registerAllocs = 11 + 18
 
 // One namespace claim serves both stamping roles. The registration is
 // pinned: every key resolves, the handles return typed, a second
@@ -48,7 +48,7 @@ func TestKeys(t *testing.T) {
 				golang.CgoKey, golang.TypeSetKey, golang.ConstraintInterfaceKey,
 				golang.EmptyInterfaceKey, golang.ReceiverIsPointerKey,
 				golang.UnderlyingKindKey, golang.IterSeqKey, golang.IterSeq2Key,
-				golang.ConstValueKey, golang.SatisfiesErrorKey,
+				golang.ConstValueKey, golang.HiddenFieldsKey, golang.SatisfiesErrorKey,
 				golang.SatisfiesStringerKey, golang.EmbedsInterfaceKey,
 				golang.ComparableKey,
 			} {

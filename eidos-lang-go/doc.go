@@ -90,8 +90,8 @@
 // # Dependency position
 //
 // The root package imports the sdk's diag, emit, meta, node, plugin
-// and symbol facades, eidos-lang's spellref, and the Go stdlib,
-// go/types among it. The
+// and symbol facades, eidos-lang's naming and spellref, and the Go
+// stdlib, go/types among it. The
 // module's other packages import the kernel's SPI through the sdk
 // facade, the shared helpers of eidos-lang, and the Go stdlib. None
 // imports eidos-lang's grammar packages: the frontend parses with

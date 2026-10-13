@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -81,7 +82,64 @@ func TestExpr(t *testing.T) {
 			assert.Equal(t, fn.Split, 2, "split where the results begin")
 			assert.Equal(t, fn.Elems[1].Form, symbol.FormList, "a variadic parameter is the list it is")
 			assert.Equal(t, fn.Elems[2].Spelling, "User", "the first result follows")
-			assert.Empty(t, fields[7].Type.Elems, "an inline body has no children")
+			assert.Equal(t, spellingsOf(fields[7].Type.Elems), []string{"int"},
+				"an inline body has the type of its field as its child")
+		})
+
+		tests := []struct {
+			name      string
+			give      string
+			wantTerms []string
+		}{
+			{
+				name:      "lowers a union constraint to a union of its terms",
+				give:      "T ~int64 | time.Duration",
+				wantTerms: []string{"int64", "time.Duration"},
+			},
+			{
+				name:      "lowers an approximation alone to a union of one term",
+				give:      "T ~int",
+				wantTerms: []string{"int"},
+			},
+			{
+				name:      "lowers a union of three terms to three children",
+				give:      "T int | string | bool",
+				wantTerms: []string{"int", "string", "bool"},
+			},
+			{
+				name:      "lowers a term in parentheses as the term inside them",
+				give:      "T (int) | string,",
+				wantTerms: []string{"int", "string"},
+			},
+			{
+				name:      "lowers the composite of an approximation as one term",
+				give:      "T ~[]E, E any",
+				wantTerms: []string{"[]E"},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				bound := boundOf(t, tt.give)
+				expect.That(t, bound.Form).Equal(symbol.FormUnion, "a constraint element is a union")
+				expect.That(t, spellingsOf(bound.Elems)).Equal(tt.wantTerms, "each term is a child, in order")
+			})
+		}
+
+		t.Run("keeps the approximation mark in the spelling of a union", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, boundOf(t, "T ~int64 | time.Duration").Spelling, "~int64 | time.Duration",
+				"the spelling of the union marks the approximated term")
+		})
+
+		t.Run("records the import path of a qualified term", func(t *testing.T) {
+			t.Parallel()
+
+			terms := boundOf(t, "T ~int64 | time.Duration").Elems
+			assert.Length(t, terms, 2, "the union has two terms")
+			assert.Equal(t, terms[1].Package, timePath, "the term resolves as any reference does")
 		})
 
 		t.Run("positions a reference at its expression", func(t *testing.T) {
@@ -135,6 +193,27 @@ func TestExpr(t *testing.T) {
 
 			ref := inlineOf(t, "", "struct {\n\t\t_ int\n\t\tX int\n\t}")
 			assert.Equal(t, fieldNames(ref.Fields), []string{"X"}, "padding binds nothing")
+		})
+
+		t.Run("records the type of each entry of an inline struct as a child", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "import (\n\t\"io\"\n\t\"time\"\n)\n\n",
+				"struct {\n\t\tio.Reader\n\t\t_ int\n\t\tX, Y time.Duration\n\t}")
+			assert.Equal(t, spellingsOf(ref.Elems), []string{"io.Reader", "int", "time.Duration"},
+				"an embedded and a blank entry have a child too")
+			assert.Equal(t, ref.Elems[0].Package, "io", "a child records the import path of its qualifier")
+		})
+
+		t.Run("gives each field of an inline struct a type of its own", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "struct{ X, Y int }")
+			assert.Length(t, ref.Elems, 1, "the entry has one child")
+			expect.NotEqual(t, ref.Fields[0].Type, ref.Elems[0], "the field and the child are two nodes",
+				assert.ByIdentity())
+			expect.NotEqual(t, ref.Fields[0].Type, ref.Fields[1].Type, "the two fields are two nodes",
+				assert.ByIdentity())
 		})
 	})
 
@@ -203,6 +282,25 @@ func TestExpr(t *testing.T) {
 
 			ref := inlineOf(t, "", "interface {\n\t\t_()\n\t\tClose() error\n\t}")
 			assert.Equal(t, methodNames(ref.Methods), []string{"Close"}, "a blank method binds nothing")
+		})
+
+		t.Run("records the types of an inline interface as children in the order of its elements", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "import (\n\t\"io\"\n\t\"time\"\n)\n\n",
+				"interface {\n\t\tio.Reader\n\t\tRead(p []byte) (n int, err error)\n"+
+					"\t\t~int | time.Duration\n\t\t_(s string)\n\t}")
+			assert.Equal(t, spellingsOf(ref.Elems),
+				[]string{"io.Reader", "[]byte", "int", "error", "~int | time.Duration", "string"},
+				"an embed, the types of each method and a constraint element, a blank method included")
+		})
+
+		t.Run("records a function type element of an inline interface as one child", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "interface{ func() }")
+			assert.Length(t, ref.Elems, 1, "the element is one child")
+			assert.Equal(t, ref.Elems[0].Form, symbol.FormFunc, "a function type and not a method")
 		})
 	})
 
@@ -288,6 +386,26 @@ func inlineOf(tb testing.TB, imports, typ string) *node.TypeRef {
 	tb.Helper()
 
 	return fieldsOf(tb, "package p\n\n"+imports+"type H struct {\n\ta "+typ+"\n}\n")[0].Type
+}
+
+// boundOf parses one file whose first declaration is a struct G with the
+// type parameter list params, and returns the bound of its first
+// parameter. The file imports time.
+func boundOf(tb testing.TB, params string) *node.TypeRef {
+	tb.Helper()
+
+	src := "package p\n\nimport \"time\"\n\ntype G[" + params + "] struct{ d time.Duration }\n"
+	file := onlyFile(tb, parsedFile(tb, nil, plugin.DepthFull, src))
+	return file.Decls[0].(*node.Struct).TypeParams[0].Bounds[0]
+}
+
+// spellingsOf returns the spellings of refs, in order.
+func spellingsOf(refs []*node.TypeRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.Spelling)
+	}
+	return out
 }
 
 // fieldNames returns the names of fields, in order.

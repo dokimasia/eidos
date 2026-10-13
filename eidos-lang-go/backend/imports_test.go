@@ -81,6 +81,26 @@ func TestImports(t *testing.T) {
 				"the import binds that name without one")
 		})
 
+		t.Run("writes a name that differs from the name that the package declares before the path", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.SetNames(declaredNames)
+			set.Bind(storePkg, storeName)
+			assert.Equal(t, backend.Imports(&set), block(line(storeName, storePkg)),
+				"an import without a name would bind the declared name")
+		})
+
+		t.Run("writes no name that equals the declared name and the path's last element", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.SetNames(declaredNames)
+			set.Bind(legacyPkg, storeName)
+			assert.Equal(t, backend.Imports(&set), block(line("", legacyPkg)),
+				"the import binds that name without one")
+		})
+
 		t.Run("writes a line two entries share once", func(t *testing.T) {
 			t.Parallel()
 
@@ -189,12 +209,15 @@ func block(lines ...string) string {
 }
 
 // importsCalls returns a call of Imports over both groups and a named
-// entry, and over an empty set.
+// entry, over a set with the declared names of its packages, and over an
+// empty set.
 func importsCalls() []allocCall {
-	var full, empty render.ImportSet
+	var full, named, empty render.ImportSet
 	full.Add(contextPkg)
 	full.Add(assertPkg)
 	full.AddNamed(sdkPkg, sdkAlias)
+	named.SetNames(declaredNames)
+	named.Bind(storePkg, storeName)
 	var out string
 	return []allocCall{
 		{
@@ -203,6 +226,14 @@ func importsCalls() []allocCall {
 			check: func(tb assert.TB) {
 				assert.Equal(tb, out, block(line("", contextPkg), "\n", line("", assertPkg), line(sdkAlias, sdkPkg)),
 					"Imports writes both groups")
+			},
+		},
+		{
+			name: "Imports", caseName: "a set with the declared names of its packages", allocs: importsAllocs,
+			call: func() { out = backend.Imports(&named) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, out, block(line(storeName, storePkg)),
+					"Imports writes the name that differs from the declared name")
 			},
 		},
 		{

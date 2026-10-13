@@ -23,8 +23,9 @@ const (
 	TestFileKey meta.KeyName = "golang.testFile"
 
 	// ConstraintKey classifies a file whose build constraint falls
-	// outside the load's tag set. The value is the constraint as
-	// written or filename-implied.
+	// outside the load's tag set. The value is the constraint as one
+	// go:build expression: its build lines and the tags that its name
+	// implies, joined.
 	ConstraintKey meta.KeyName = "golang.constraint"
 
 	// GeneratedKey classifies a file with the Go convention's
@@ -65,6 +66,12 @@ const (
 	// scope of its package suffices to evaluate it. The value includes
 	// the ordinal arithmetic of an iota row.
 	ConstValueKey meta.KeyName = "golang.constValue"
+
+	// HiddenFieldsKey marks a struct whose lowering left out a field: a
+	// blank field at every depth, and an unexported field at the
+	// signature depth. The model does not keep the type of such a field,
+	// so the fields of the struct do not decide whether it is comparable.
+	HiddenFieldsKey meta.KeyName = "golang.hiddenFields"
 
 	// SatisfiesErrorKey and SatisfiesStringerKey mark a type whose
 	// workspace-visible method set has the interface's one method.
@@ -110,7 +117,7 @@ func Keys(r *meta.Registry) error {
 //
 // Register allocates the eleven kind lists of the keys, and the
 // registry allocates its namespace claim and the growth of its lists
-// and maps to sixteen keys: 28 allocations into a fresh registry.
+// and maps to seventeen keys: 29 allocations into a fresh registry.
 func Register(r *meta.Registry) (Handles, error) {
 	var h Handles
 	if err := r.ClaimNamespace(namespace); err != nil {
@@ -118,6 +125,7 @@ func Register(r *meta.Registry) (Handles, error) {
 	}
 	var errs []error
 	file := []symbol.Kind{symbol.KindFile}
+	structs := []symbol.Kind{symbol.KindStruct}
 	types := []symbol.Kind{
 		symbol.KindStruct, symbol.KindInterface, symbol.KindAlias,
 		symbol.KindEnum, symbol.KindSum,
@@ -172,6 +180,10 @@ func Register(r *meta.Registry) (Handles, error) {
 			Doc: "records a constant's exact value where the package evaluates it",
 		},
 		{
+			Name: HiddenFieldsKey, Kinds: structs,
+			Doc: "marks a struct whose lowering left out a blank or an unexported field",
+		},
+		{
 			Name: SatisfiesErrorKey, Kinds: types,
 			Doc: "marks a type whose visible method set satisfies error",
 		},
@@ -180,7 +192,7 @@ func Register(r *meta.Registry) (Handles, error) {
 			Doc: "marks a type whose visible method set satisfies fmt.Stringer",
 		},
 		{
-			Name: EmbedsInterfaceKey, Kinds: []symbol.Kind{symbol.KindStruct},
+			Name: EmbedsInterfaceKey, Kinds: structs,
 			Doc: "marks a struct embedding a type the graph declares as an interface",
 		},
 		{

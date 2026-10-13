@@ -27,7 +27,9 @@ const qualifierSep = "."
 //
 //   - A name in scope resolves through [golang.Bindings.Candidates] of
 //     the file of the subject. The first candidate that the view
-//     declares at one of the kinds is the declaration.
+//     declares at one of the kinds is the declaration. The variant of an
+//     enumeration is a constant, because Go declares it as a constant of
+//     the package.
 //   - A member resolves only where Go code of the subject's package can
 //     use it, so an unexported member of a type of another package does
 //     not resolve.
@@ -102,18 +104,14 @@ func (resolver) Placeholder(scope rules.Scope, name string, v rules.View) (symbo
 	if golang.Predeclared(name) {
 		return standIn(symbol.Identity{Lang: golang.Lang, Name: name, Kind: symbol.KindAlias}), true
 	}
-	qualifier, bare, qualified := strings.Cut(name, qualifierSep)
-	if !qualified || !goName(name) {
+	if !goName(name) {
 		return nil, false
 	}
-	path, bound := bindingsOf(scope.File).Import(qualifier)
-	if !bound || inView(path, v) {
+	id, outside := outsideView(scope, name, symbol.KindAlias, v)
+	if !outside {
 		return nil, false
 	}
-	// A package outside the workspace, the standard library or a
-	// dependency: the type is named by its path, which a backend
-	// qualifies and imports.
-	return standIn(symbol.Identity{Lang: golang.Lang, Package: path, Name: bare, Kind: symbol.KindAlias}), true
+	return standIn(id), true
 }
 
 // Value returns the type that a pointer points to, through every level of
@@ -153,16 +151,39 @@ func inView(path string, v rules.View) bool {
 	return held
 }
 
+// outsideView returns the identity of a qualified name whose qualifier the
+// file of the scope imports from a package that the view does not contain,
+// such as a package of the standard library or of a dependency. The
+// identity has the import path as its package and kind as its kind, so a
+// backend qualifies and imports it. outsideView reports false for a bare
+// name, for a qualifier that no import of the file binds, and for a
+// package in the view.
+func outsideView(scope rules.Scope, name string, kind symbol.Kind, v rules.View) (symbol.Identity, bool) {
+	qualifier, bare, qualified := strings.Cut(name, qualifierSep)
+	if !qualified {
+		return symbol.Identity{}, false
+	}
+	path, bound := bindingsOf(scope.File).Import(qualifier)
+	if !bound || inView(path, v) {
+		return symbol.Identity{}, false
+	}
+	return symbol.Identity{Lang: golang.Lang, Package: path, Name: bare, Kind: kind}, true
+}
+
 // packageIdentity returns the identity of the Go package at an import
 // path.
 func packageIdentity(path string) symbol.Identity {
 	return symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage}
 }
 
-// declared returns a package's top-level declaration of one name and one
-// of the kinds, or nil. It reads each file's top-level declarations and
-// nothing nested inside them.
+// declared returns the top-level declaration of a package with one name
+// and one of the kinds, or nil. It reads the top-level declarations of
+// each file and nothing nested inside them, except the variants of an
+// enumeration where the kinds contain a constant. Go declares such a
+// variant as a constant of the package, and the frontend moves it into
+// its enumeration.
 func declared(pkg *node.Package, name string, kinds []symbol.Kind) symbol.Symbol {
+	constants := slices.Contains(kinds, symbol.KindConstant)
 	for _, f := range pkg.Files {
 		for _, sym := range f.Decls {
 			var id symbol.Identity
@@ -171,6 +192,13 @@ func declared(pkg *node.Package, name string, kinds []symbol.Kind) symbol.Symbol
 			}
 			if id.Owner == "" && id.Name == name && slices.Contains(kinds, id.Kind) {
 				return sym
+			}
+			if e, isEnum := sym.(*node.Enum); isEnum && constants {
+				for _, variant := range e.Variants {
+					if variant != nil && variant.Name == name {
+						return variant
+					}
+				}
 			}
 		}
 	}

@@ -53,6 +53,16 @@ func TestLang(t *testing.T) {
 		})
 	})
 
+	t.Run("BuildAnnotation", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells go:build", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, golang.BuildAnnotation, "go:build", "the directive of a build constraint")
+		})
+	})
+
 	t.Run("Syntax", func(t *testing.T) {
 		t.Parallel()
 

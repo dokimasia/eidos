@@ -4,11 +4,11 @@
 package golang
 
 import (
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -74,8 +74,9 @@ func PointerReceiver(m *emit.Method) *emit.Method {
 // receiverName returns the first candidate that taken does not contain.
 // The candidates are the first letter of host, its first two letters,
 // recv, and then recv0, recv1 and upward, each in lower case. It builds
-// a candidate only when taken contains the candidate before it. A first
-// letter in ASCII allocates nothing.
+// the first two letters only when taken contains the first letter, and
+// [naming.Unique] chooses among the later candidates. A first letter in
+// ASCII allocates nothing.
 func receiverName(host string, taken map[string]bool) string {
 	first, size := utf8.DecodeRuneInString(host)
 	if short := letter(unicode.ToLower(first)); !taken[short] {
@@ -84,17 +85,7 @@ func receiverName(host string, taken map[string]bool) string {
 	if _, next := utf8.DecodeRuneInString(host[size:]); next > 0 {
 		size += next
 	}
-	if longer := strings.ToLower(host[:size]); !taken[longer] {
-		return longer
-	}
-	if !taken[receiverFallback] {
-		return receiverFallback
-	}
-	for i := 0; ; i++ {
-		if candidate := receiverFallback + strconv.Itoa(i); !taken[candidate] {
-			return candidate
-		}
-	}
+	return naming.Unique(taken, strings.ToLower(host[:size]), receiverFallback)
 }
 
 // letter returns the rune r as a string. It allocates only for a rune

@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -47,6 +49,10 @@ const (
 	plainType  = "Plain"
 	colorType  = "Color"
 	modeType   = "Mode"
+	switchType = "Switch"
+	scaleType  = "Scale"
+	momentType = "Moment"
+	itemsType  = "Items"
 	bareType   = "Bare"
 	hookedType = "Hooked"
 	readerType = "Reader"
@@ -116,6 +122,13 @@ const (
 	// file set and file, the token and spelling lists, the constant,
 	// and the decimal text.
 	literalAllocs = 6
+	// nameLiteralAllocs is the name of a constant of the package: the
+	// bindings of the four imports of the file, three allocations, and the
+	// list of candidates of the resolution.
+	nameLiteralAllocs = 3 + 1
+	// callLiteralAllocs is the call of a function of a package outside
+	// the view: the bindings of the imports of the file.
+	callLiteralAllocs = 3
 )
 
 // A generated check writes every value through these three. Each
@@ -216,6 +229,30 @@ func TestValues(t *testing.T) {
 			}, "a duration converts a small integer")
 		})
 
+		t.Run("returns two conversions for time.Duration through a target outside the view", func(t *testing.T) {
+			t.Parallel()
+
+			ref := builtin(durationSpelling)
+			ref.Target = id(timePath, "Duration", symbol.KindAlias)
+			s, a := pairOf(t, loaded(t), ref, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, derivedSmall)),
+				emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, derivedAltSmall)),
+			}, "the dependency round resolves the reference, and the duration is still well-known")
+		})
+
+		t.Run("returns two calls of time.Unix for time.Time through a target outside the view", func(t *testing.T) {
+			t.Parallel()
+
+			ref := builtin(timeSpelling)
+			ref.Target = id(timePath, "Time", symbol.KindStruct)
+			s, _ := pairOf(t, loaded(t), ref, "")
+			unix := symbol.Identity{Lang: golang.Lang, Package: timePath, Name: unixName, Kind: symbol.KindFunction}
+			zero := emit.Literal(emit.LiteralInt, zeroText)
+			assert.Equal(t, s, emit.Call(unix, emit.Literal(emit.LiteralInt, sampleSeconds), zero),
+				"the dependency round resolves the reference, and the time is still well-known")
+		})
+
 		refusals := []struct {
 			name string
 			give *node.TypeRef
@@ -226,10 +263,6 @@ func TestValues(t *testing.T) {
 			{
 				name: "returns RefusedNoLiteral for comparable",
 				give: builtin(comparableSpelling), want: rules.RefusedNoLiteral,
-			},
-			{
-				name: "returns RefusedNoLiteral for complex128",
-				give: builtin(complexSpelling), want: rules.RefusedNoLiteral,
 			},
 			{
 				name: "returns RefusedNoLiteral for unsafe.Pointer",
@@ -365,27 +398,119 @@ func TestValues(t *testing.T) {
 			assert.Equal(t, s, emit.Literal(emit.LiteralInt, derivedInt), "Plain is int")
 		})
 
-		t.Run("returns conversions of the stamped values for an enumeration", func(t *testing.T) {
+		enums := []struct {
+			name          string
+			give          *node.TypeRef
+			wantSample    emit.Value
+			wantAlternate emit.Value
+		}{
+			{
+				name:          "returns conversions of the exact values of two variants for an enumeration",
+				give:          ref(fxPath, colorType, symbol.KindEnum),
+				wantSample:    emit.Literal(emit.LiteralInt, zeroText),
+				wantAlternate: emit.Literal(emit.LiteralInt, derivedSmall),
+			},
+			{
+				name:          "returns conversions of the exact strings of two variants for a string enumeration",
+				give:          ref(fxPath, modeType, symbol.KindEnum),
+				wantSample:    emit.Literal(emit.LiteralString, "read"),
+				wantAlternate: emit.Literal(emit.LiteralString, "write"),
+			},
+			{
+				name:          "returns conversions of the fractional value of a variant for a float enumeration",
+				give:          ref(fxPath, scaleType, symbol.KindEnum),
+				wantSample:    emit.Number(emit.LiteralFloat, authoredWeight, bits64),
+				wantAlternate: emit.Number(emit.LiteralFloat, derivedSmall, bits64),
+			},
+			{
+				name:          "returns conversions of the underlying pair for an enumeration with one value",
+				give:          ref(fxPath, switchType, symbol.KindEnum),
+				wantSample:    emit.Literal(emit.LiteralBool, trueText),
+				wantAlternate: emit.Literal(emit.LiteralBool, falseText),
+			},
+		}
+		for _, tt := range enums {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, a := pairOf(t, loaded(t), tt.give, "")
+				expect.Equal(t, s, emit.Conversion(rules.EmitRef(tt.give), tt.wantSample), "the sample")
+				expect.Equal(t, a, emit.Conversion(rules.EmitRef(tt.give), tt.wantAlternate), "the alternate")
+			})
+		}
+
+		t.Run("returns composites that set a field of a generic struct at its type argument", func(t *testing.T) {
 			t.Parallel()
 
-			color := ref(fxPath, colorType, symbol.KindEnum)
-			s, a := pairOf(t, loaded(t), color, "")
-			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
-				emit.Conversion(rules.EmitRef(color), emit.Raw(golang.Lang, "0")),
-				emit.Conversion(rules.EmitRef(color), emit.Raw(golang.Lang, "1")),
-			}, "the exact values the frontend stamped, as Go text")
+			box := boxOf(builtin(intSpelling))
+			s, a := pairOf(t, loaded(t), box, "")
+			sample := emit.Composite(
+				rules.EmitRef(box),
+				emit.NamedField("Item", emit.Literal(emit.LiteralInt, derivedInt)),
+			)
+			other := emit.Composite(
+				rules.EmitRef(box),
+				emit.NamedField("Item", emit.Literal(emit.LiteralInt, derivedAltInt)),
+			)
+			expect.Equal(t, s, sample, "the sample sets Item to an int")
+			expect.Equal(t, a, other, "the alternate sets another int")
 		})
 
-		t.Run("returns conversions of the stamped strings for a string enumeration", func(t *testing.T) {
+		t.Run("returns conversions of the pair at the type argument for a generic defined type", func(t *testing.T) {
 			t.Parallel()
 
-			mode := ref(fxPath, modeType, symbol.KindEnum)
-			s, a := pairOf(t, loaded(t), mode, "")
-			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
-				emit.Conversion(rules.EmitRef(mode), emit.Raw(golang.Lang, `"read"`)),
-				emit.Conversion(rules.EmitRef(mode), emit.Raw(golang.Lang, `"write"`)),
-			}, "the exact values the frontend stamped, quotes included")
+			items := &node.TypeRef{
+				Spelling: itemsType, Target: id(fxPath, itemsType, symbol.KindAlias),
+				Args: []*node.TypeRef{builtin(intSpelling)},
+			}
+			s, _ := pairOf(t, loaded(t), items, "")
+			assert.Equal(t, s.Kind, emit.ValueConversion, "the sample converts to Items[int]")
+			assert.Equal(t, s.Inner.Kind, emit.ValueComposite, "a slice of the type argument")
+			assert.Length(t, s.Inner.Fields, 1, "with one element")
+			assert.Equal(t, s.Inner.Fields[0].Value, emit.Literal(emit.LiteralInt, derivedInt), "an int")
 		})
+
+		t.Run("returns floats for complex128", func(t *testing.T) {
+			t.Parallel()
+
+			s, a := pairOf(t, loaded(t), builtin(complexSpelling), "")
+			expect.Equal(t, s, emit.Literal(emit.LiteralFloat, derivedFloat), "Go converts the float to the complex")
+			expect.Equal(t, a, emit.Literal(emit.LiteralFloat, derivedAltFloat), "the alternate float")
+		})
+
+		// An author sets the exact value of Red at directive authority,
+		// as the meta directive does, over the value that the frontend
+		// stamped. Green has 1 and Blue has 2.
+		skipped := []struct {
+			name    string
+			giveRed string
+		}{
+			{name: "skips a variant whose exact value repeats the value of the first", giveRed: derivedSmall},
+			{name: "skips a variant whose exact value does not read", giveRed: unknownSpelling},
+			{name: "skips a variant whose exact fraction does not read", giveRed: "1/x"},
+			{name: "skips a variant whose exact value has another type", giveRed: `"red"`},
+		}
+		for _, tt := range skipped {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				color := ref(fxPath, colorType, symbol.KindEnum)
+				e, is := f.decl(t, color.Target).(*node.Enum)
+				assert.True(t, is, "Color is an enumeration")
+				key, held := f.constKey()
+				assert.True(t, held, "the fixture registered the constant key")
+				err := meta.Stamp(f.Facts, key, tt.giveRed, meta.Claim{
+					Subject: e.Variants[0].ID, Authority: meta.AuthorityDirective, Plugin: "fixture",
+				})
+				assert.NoError(t, err, "the author's value applies")
+				s, a := pairOf(t, f, color, "")
+				one := emit.Conversion(rules.EmitRef(color), emit.Literal(emit.LiteralInt, derivedSmall))
+				two := emit.Conversion(rules.EmitRef(color), emit.Literal(emit.LiteralInt, derivedAltSmall))
+				expect.Equal(t, s, one, "the sample has the value 1")
+				expect.Equal(t, a, two, "the alternate has the value 2")
+			})
+		}
 
 		t.Run("derives a pointer to a struct whose first field is no pointer", func(t *testing.T) {
 			t.Parallel()
@@ -501,8 +626,15 @@ func TestValues(t *testing.T) {
 		row := ref(fxPath, rowType, symbol.KindStruct)
 		color := ref(fxPath, colorType, symbol.KindEnum)
 		mode := ref(fxPath, modeType, symbol.KindEnum)
+		switchRef := ref(fxPath, switchType, symbol.KindEnum)
+		scale := ref(fxPath, scaleType, symbol.KindEnum)
 		weight := ref(fxPath, weightType, symbol.KindAlias)
 		nilValue := emit.Literal(emit.LiteralNil, "")
+		inlineInterface := &node.TypeRef{Spelling: "interface{ Close() error }", Form: symbol.FormInline}
+		inlineStruct := &node.TypeRef{Spelling: "struct{ A int }", Form: symbol.FormInline}
+		resolvedDuration, resolvedTime := builtin(durationSpelling), builtin(timeSpelling)
+		resolvedDuration.Target = id(timePath, "Duration", symbol.KindAlias)
+		resolvedTime.Target = id(timePath, "Time", symbol.KindStruct)
 		tests := []struct {
 			name string
 			give *node.TypeRef
@@ -560,6 +692,16 @@ func TestValues(t *testing.T) {
 				want: emit.Conversion(rules.EmitRef(mode), emit.Literal(emit.LiteralString, "")),
 			},
 			{
+				name: "returns a conversion of false for an enumeration over a bool",
+				give: switchRef,
+				want: emit.Conversion(rules.EmitRef(switchRef), emit.Literal(emit.LiteralBool, falseText)),
+			},
+			{
+				name: "returns a conversion of 0 at 64 bits for an enumeration over a float",
+				give: scale,
+				want: emit.Conversion(rules.EmitRef(scale), emit.Number(emit.LiteralFloat, zeroText, bits64)),
+			},
+			{
 				name: "returns a conversion of the underlying zero for a defined type",
 				give: weight,
 				want: emit.Conversion(rules.EmitRef(weight), emit.Number(emit.LiteralFloat, zeroText, bits64)),
@@ -567,6 +709,27 @@ func TestValues(t *testing.T) {
 			{
 				name: "returns the target's zero for a transparent alias",
 				give: ref(fxPath, plainType, symbol.KindAlias), want: emit.Literal(emit.LiteralInt, zeroText),
+			},
+			{
+				name: "returns 0 for complex128",
+				give: builtin(complexSpelling), want: emit.Literal(emit.LiteralInt, zeroText),
+			},
+			{
+				name: "returns nil for an inline interface",
+				give: inlineInterface, want: nilValue,
+			},
+			{
+				name: "returns the empty composite for an inline struct",
+				give: inlineStruct, want: emit.Composite(rules.EmitRef(inlineStruct)),
+			},
+			{
+				name: "returns a conversion of 0 for time.Duration through a target outside the view",
+				give: resolvedDuration,
+				want: emit.Conversion(rules.EmitRef(resolvedDuration), emit.Literal(emit.LiteralInt, zeroText)),
+			},
+			{
+				name: "returns the empty composite for time.Time through a target outside the view",
+				give: resolvedTime, want: emit.Composite(rules.EmitRef(resolvedTime)),
 			},
 		}
 		for _, tt := range tests {
@@ -589,6 +752,14 @@ func TestValues(t *testing.T) {
 				give: ref(fxPath, ghostType, symbol.KindStruct),
 			},
 			{name: "reports false for a nil reference"},
+			{
+				name: "reports false for an enumeration whose underlying type the rules cannot place",
+				give: ref(fxPath, momentType, symbol.KindEnum),
+			},
+			{
+				name: "reports false for an inline type of another kind",
+				give: &node.TypeRef{Spelling: "func()", Form: symbol.FormInline},
+			},
 		}
 		for _, tt := range unplaced {
 			t.Run(tt.name, func(t *testing.T) {
@@ -603,6 +774,8 @@ func TestValues(t *testing.T) {
 	t.Run("LiteralFor", func(t *testing.T) {
 		t.Parallel()
 
+		// The cases read a text in the scope of Row in the fixture file.
+		rowID := id(fxPath, rowType, symbol.KindStruct)
 		untyped := []struct {
 			name string
 			give string
@@ -657,7 +830,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				got, ok := gorules.New().LiteralFor(nil, nil, tt.give, rules.View{})
+				got, ok := gorules.New().LiteralFor(rules.Scope{}, nil, tt.give, rules.View{})
 				assert.True(t, ok, "the text is one Go literal")
 				assert.Equal(t, got, tt.want, "written as canonical decimal text")
 			})
@@ -678,12 +851,13 @@ func TestValues(t *testing.T) {
 			{name: "reports false for a doubled sign", give: "--1"},
 			{name: "reports false for an identifier", give: "x"},
 			{name: "reports false for a float past float64", give: "1e400"},
+			{name: "reports false for an unterminated string", give: `"open`},
 		}
 		for _, tt := range unreadable {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, ok := gorules.New().LiteralFor(nil, nil, tt.give, rules.View{})
+				_, ok := gorules.New().LiteralFor(rules.Scope{}, nil, tt.give, rules.View{})
 				assert.False(t, ok, "the text is no single literal")
 			})
 		}
@@ -764,13 +938,19 @@ func TestValues(t *testing.T) {
 				giveText: "7",
 				want:     emit.Number(emit.LiteralInt, "7", 0),
 			},
+			{
+				name:     "returns the underlying int for an enumeration",
+				give:     ref(fxPath, colorType, symbol.KindEnum),
+				giveText: "7",
+				want:     emit.Number(emit.LiteralInt, "7", 0),
+			},
 		}
 		for _, tt := range typed {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				f := loaded(t)
-				got, ok := gorules.New().LiteralFor(f.file, tt.give, tt.giveText, f.view)
+				got, ok := gorules.New().LiteralFor(f.scope(rowID), tt.give, tt.giveText, f.view)
 				assert.True(t, ok, "the text is a value of the type")
 				assert.Equal(t, got, tt.want, "typed by the builtin the reference names")
 			})
@@ -796,16 +976,128 @@ func TestValues(t *testing.T) {
 				name: "reports false for a string as a defined float",
 				give: ref(fxPath, weightType, symbol.KindAlias), giveText: `"heavy"`,
 			},
+			{
+				name: "reports false for a string as an enumeration over an int",
+				give: ref(fxPath, colorType, symbol.KindEnum), giveText: `"red"`,
+			},
 		}
 		for _, tt := range outside {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				f := loaded(t)
-				_, ok := gorules.New().LiteralFor(f.file, tt.give, tt.giveText, f.view)
+				_, ok := gorules.New().LiteralFor(f.scope(rowID), tt.give, tt.giveText, f.view)
 				assert.False(t, ok, "the value is outside the builtin")
 			})
 		}
+
+		second := symbol.Identity{Lang: golang.Lang, Package: timePath, Name: "Second", Kind: symbol.KindConstant}
+		now := symbol.Identity{Lang: golang.Lang, Package: timePath, Name: "Now", Kind: symbol.KindFunction}
+		named := []struct {
+			name string
+			give string
+			want emit.Value
+		}{
+			{
+				name: "returns the name of a constant of the package of the subject",
+				give: "Limit", want: emit.Name(id(fxPath, "Limit", symbol.KindConstant)),
+			},
+			{
+				name: "returns the name of a variable of the package of the subject",
+				give: "Registry", want: emit.Name(id(fxPath, "Registry", symbol.KindVariable)),
+			},
+			{
+				name: "returns the name of a constant of an enumeration",
+				give: "Green",
+				want: emit.Name(symbol.Identity{
+					Lang: golang.Lang, Package: fxPath, Owner: colorType, Name: "Green", Kind: symbol.KindEnumVariant,
+				}),
+			},
+			{
+				name: "returns the name of a constant of an imported package in the view",
+				give: "dep.Ratio", want: emit.Name(id(depPath, "Ratio", symbol.KindConstant)),
+			},
+			{
+				name: "returns a stand-in constant for a name of an imported package outside the view",
+				give: "time.Second", want: emit.Name(second),
+			},
+			{
+				name: "returns a call of a function of the package of the subject",
+				give: "All()", want: emit.Call(id(fxPath, "All", symbol.KindFunction)),
+			},
+			{
+				name: "returns a stand-in function for a call of an imported package outside the view",
+				give: "time.Now()", want: emit.Call(now),
+			},
+			{
+				name: "reads a name behind spaces",
+				give: " Limit ", want: emit.Name(id(fxPath, "Limit", symbol.KindConstant)),
+			},
+		}
+		for _, tt := range named {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				got, ok := gorules.New().LiteralFor(f.scope(rowID), nil, tt.give, f.view)
+				assert.True(t, ok, "the text refers to a declaration in the scope")
+				assert.Equal(t, got, tt.want, "the value refers to the declaration by its identity")
+			})
+		}
+
+		unnamed := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for a name that the package of the subject does not declare", give: "Missing"},
+			{
+				name: "reports false for a name that an imported package in the view does not declare",
+				give: "dep.Missing",
+			},
+			{name: "reports false for a qualifier that the file does not import", give: "unbound.Second"},
+			{name: "reports false for the name of a function", give: "Load"},
+			{name: "reports false for the name of a type", give: "Row"},
+			{name: "reports false for a call of a constant", give: "Limit()"},
+			{name: "reports false for a call of a method", give: "Rename()"},
+			{name: "reports false for a call with an argument", give: "Find(1)"},
+			{name: "reports false for a call of the result of a call", give: "All()()"},
+			{name: "reports false for a selector of a variable", give: "Registry.Len"},
+		}
+		for _, tt := range unnamed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				_, ok := gorules.New().LiteralFor(f.scope(rowID), nil, tt.give, f.view)
+				assert.False(t, ok, "the text refers to no constant, variable or function in the scope")
+			})
+		}
+
+		t.Run("reports false for a name in a scope without a file", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			_, ok := gorules.New().LiteralFor(rules.Scope{Subject: rowID}, nil, "time.Second", f.view)
+			assert.False(t, ok, "no import binds the qualifier without the file")
+		})
+
+		t.Run("reads the call that an author states on a field of a type without a literal", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			when := f.field(t, rowType, "When")
+			stamp(t, f.Facts, when.ID, f.Keys.Sample, "time.Now()")
+			sample, _ := f.view.Authored(gorules.New(), when.ID, when.Type)
+			assert.Equal(t, sample.Value, emit.Call(now), "View.Authored lifts the text through LiteralFor")
+		})
+
+		t.Run("reports false for a call of a sibling method from a method subject", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			_, ok := gorules.New().LiteralFor(f.scope(method(storeName, "Put")), nil, "Get()", f.view)
+			assert.False(t, ok, "Get is a method of Store, and a call of a method needs a receiver")
+		})
 	})
 }
 
@@ -846,6 +1138,7 @@ func valueCalls(tb testing.TB) []allocCall {
 	f := loaded(tb)
 	r := gorules.New()
 	scalar, row := builtin(intSpelling), ref(fxPath, rowType, symbol.KindStruct)
+	scope := f.scope(row.Target)
 	slice := composite("[]string", symbol.FormList, builtin(stringSpelling))
 	m := composite("map[string]int", symbol.FormMap, builtin(stringSpelling), builtin(intSpelling))
 	var (
@@ -890,9 +1183,23 @@ func valueCalls(tb testing.TB) []allocCall {
 			},
 		},
 		{
-			name: "LiteralFor", allocs: literalAllocs,
-			call:  func() { value, _ = r.LiteralFor(f.file, scalar, "42", f.view) },
+			name: "LiteralFor", caseName: "a decimal integer", allocs: literalAllocs,
+			call:  func() { value, _ = r.LiteralFor(scope, scalar, "42", f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, "42", "LiteralFor reads 42") },
+		},
+		{
+			name: "LiteralFor", caseName: "the name of a constant", allocs: nameLiteralAllocs,
+			call: func() { value, _ = r.LiteralFor(scope, scalar, "Limit", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value, emit.Name(id(fxPath, "Limit", symbol.KindConstant)), "LiteralFor reads Limit")
+			},
+		},
+		{
+			name: "LiteralFor", caseName: "a call of a stand-in function", allocs: callLiteralAllocs,
+			call: func() { value, _ = r.LiteralFor(scope, scalar, "time.Now()", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value.Kind, emit.ValueCall, "LiteralFor reads the call of time.Now")
+			},
 		},
 	}
 }
