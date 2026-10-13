@@ -27,6 +27,7 @@ const (
 	tsPackage         = "shaped"
 	ledgerName        = "Ledger"
 	counterName       = "Counter"
+	storeName         = "Store"
 	streamName        = "Stream"
 	shapedName        = "Shaped"
 	numberName        = "Number"
@@ -36,13 +37,18 @@ const (
 // probeID is the name of the plugin that mirrors the interfaces.
 const probeID plugin.ID = "probe"
 
-// The names that the doubles of Ledger and Counter give the receivers and a
-// parameter without a name.
+// The names that the doubles of Ledger, Counter and Store give the receivers
+// and a parameter without a name. positionalName is the name of the
+// position of the second parameter, and clashParam is the name that an
+// unnamed second parameter takes where another name of its method is
+// positionalName.
 const (
 	receiverName   = "l"
 	clashReceiver  = "l0"
 	resultReceiver = "c0"
 	unnamedParam   = "a0"
+	positionalName = "a1"
+	clashParam     = "a10"
 	fallback       = "d"
 	getName        = "Get"
 	putName        = "Put"
@@ -51,6 +57,9 @@ const (
 	intType        = "int"
 	errorType      = "error"
 	stateName      = "state"
+	// appendName and lenName are predeclared functions of Go.
+	appendName = "append"
+	lenName    = "len"
 )
 
 // mirrored is what Of returned for one interface.
@@ -85,6 +94,14 @@ func TestDouble(t *testing.T) {
 			got, _ := of(t, goPackage)
 			assert.Equal(t, got[ledgerName].methods[0].Params.Items()[0].Name, unnamedParam,
 				"the parameter of Get takes the name of its position")
+		})
+
+		t.Run("names a parameter without a name apart from a named result", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := of(t, goPackage)
+			assert.Equal(t, got[storeName].methods[0].Params.Items()[1].Name, clashParam,
+				"the second parameter of Put takes a number, because the result of Put is a1")
 		})
 
 		t.Run("names the receiver by the first letter of the double", func(t *testing.T) {
@@ -160,6 +177,42 @@ func TestDouble(t *testing.T) {
 
 			got := double.Copy(hostWithMark, emitted())
 			assert.Equal(t, got[0].Receiver.Name, fallback, "the receiver takes the fallback letter")
+		})
+
+		t.Run("names a parameter without a name apart from a named parameter", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: storeName}
+			i.Methods.Append(&emit.Method{
+				Name: putName,
+				Params: emit.SlotOf(
+					&emit.Param{Name: positionalName, Type: &emit.TypeRef{Spelling: intType}},
+					&emit.Param{Type: &emit.TypeRef{Spelling: intType}},
+				),
+			})
+			got := double.Copy(storeName+doubleSuffix, i)
+			assert.Equal(t, got[0].Params.Items()[1].Name, clashParam,
+				"the second parameter of Put takes a number, because the first parameter of Put is a1")
+		})
+
+		t.Run("renames a parameter and a result with the name of a predeclared identifier of Go", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: storeName}
+			i.Methods.Append(&emit.Method{
+				Name: putName,
+				Params: emit.SlotOf(
+					&emit.Param{Name: appendName, Type: &emit.TypeRef{Spelling: intType}},
+					&emit.Param{Name: appendName + "0", Type: &emit.TypeRef{Spelling: intType}},
+				),
+				Returns: emit.SlotOf(&emit.Return{Name: lenName, Type: &emit.TypeRef{Spelling: intType}}),
+			})
+			got := double.Copy(storeName+doubleSuffix, i)
+			params, returns := got[0].Params.Items(), got[0].Returns.Items()
+			expect.That(t, params[0].Name).Equal(appendName+"1",
+				"append takes the smallest number that the method does not have")
+			expect.That(t, params[1].Name).Equal(appendName+"0", "a name that Go does not predeclare stays")
+			expect.That(t, returns[0].Name).Equal(lenName+"0", "a named result takes a number too")
 		})
 	})
 

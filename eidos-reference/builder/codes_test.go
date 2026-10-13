@@ -32,7 +32,7 @@ func TestCodes(t *testing.T) {
 
 			meaning, registered := diag.Kernel().Meaning(builder.BadDefault)
 			assert.True(t, registered, "the package registers the code")
-			assert.Equal(t, meaning, "the declared default of a field is no literal of the type of the field",
+			assert.Equal(t, meaning, "the declared default of a field is no value of the type of the field",
 				"the meaning anchors the code in the index")
 		})
 	})

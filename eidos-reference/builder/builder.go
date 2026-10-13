@@ -138,8 +138,7 @@ const (
 
 // schema is the directive of builder.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   BuilderDirective,
+	Name: BuilderDirective,
 	Params: []directive.ParamSpec{{
 		Key: DefaultsParam, Type: directive.TypeReference, Resolution: directive.ResolveCallableInScope,
 		Doc: "the function whose result seeds the value of each new builder",
@@ -172,10 +171,14 @@ type seeding struct {
 
 // setterCheck is one check of a setter in a test file. Field is the field
 // that the setter sets, and Pointer reports that the field points at the
-// value of the setter.
+// value of the setter. Seeded reports that the check starts from the seed
+// of New<T>From and sets the alternate sample, which differs from the
+// sample of the seed. A check without it starts from New<T> and sets the
+// sample.
 type setterCheck struct {
 	Field   string
 	Pointer bool
+	Seeded  bool
 }
 
 // names are the names of the builder of a struct and of its constructors.
@@ -217,13 +220,18 @@ type checks struct {
 // so builder requires the capability of defaults. The family [Word] under
 // the tag [TestTag] claims a test file for each source file. The file
 // checks the constructors and the setters with the samples of the fields.
+// The check of a setter starts from the seed of New<T>From and sets the
+// alternate sample, which differs from the sample of the seed, where the
+// field has an alternate.
 // A generic struct is checked at the witnesses of its type parameters, and
 // has no checks where a parameter has no witness. A field whose type refers
 // to a type parameter has no checks.
 //
-// builder reports [BadDefault] at a field whose default is not a literal of
-// its type, and writes nothing for the struct. The plugin serves the target
-// golang alone. Each call returns a new plugin.
+// A default is a literal, the name of a constant or a variable, or a call of
+// a function without arguments, which the rules read in the scope of the
+// struct. builder reports [BadDefault] at a field whose default is no value
+// of its type, and writes nothing for the struct. The plugin serves the
+// target golang alone. Each call returns a new plugin.
 func New() plugin.Generator {
 	return sdk.NewPlugin(ID).
 		Version(Version).
@@ -250,17 +258,18 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 		})
 	}
 	values := map[*node.Field]emit.Value{}
+	scope := b.View().ScopeOf(s.ID)
 	for _, f := range fields(s) {
 		text, declared := sdk.FactOf(m, f.ID, meta.Named[string](defaults.KeyValue))
 		if !declared {
 			continue
 		}
-		value, lifted := lift(b, f, text)
+		value, lifted := lift(b, scope, f, text)
 		if !lifted {
 			m.ErrorfAt(
 				BadDefault,
 				f.Pos,
-				"the default %q of %s is no literal of its type %s",
+				"the default %q of %s is no value of its type %s",
 				text,
 				f.Name,
 				f.Type.Spelling,
@@ -342,8 +351,9 @@ func generate(m *sdk.StructMatch, e *sdk.Emitter) error {
 // tests returns the record of the checks of the builder of the struct of m,
 // with its data. The record is a copy of the builder, which the settle
 // respells as it respells the builder. Its first method is Build, and each
-// further method is a setter with a check, whose body binds the sample of
-// the check to want. Its first nested function is New<T>, and its second is
+// further method is a setter with a check, whose body binds the value of
+// the check to want: the alternate sample of the field, or its sample
+// where it has no alternate. Its first nested function is New<T>, and its second is
 // New<T>From, whose body seeds each field with a sample. Each further
 // nested function is the check of one default, whose body binds the default
 // to want. The checks of a field whose type refers to a type parameter of
@@ -408,15 +418,19 @@ func tests(
 			// The setter With<F> of a scalar, bytes, a set and a mapping takes
 			// the type of the field.
 		}
-		if sample, _ := b.SamplesOf(f.ID, sampled, f.Name); sample.OK() {
+		if sample, alternate := b.SamplesOf(f.ID, sampled, f.Name); sample.OK() {
+			value, seeded := sample.Value, alternate.OK()
+			if seeded {
+				value = alternate.Value
+			}
 			test.Methods.Append(&emit.Method{
 				Origin: s.ID, Name: e.JoinName(f.Name, withWord), Visibility: s.Visibility,
 				Params: emit.SlotOf(param),
 				Body: emit.Body{Stmts: []emit.Stmt{{
-					Kind: emit.StmtAssign, Names: []string{wantLocal}, Value: emit.ValueExpr(sample.Value),
+					Kind: emit.StmtAssign, Names: []string{wantLocal}, Value: emit.ValueExpr(value),
 				}}},
 			})
-			data.Setters = append(data.Setters, setterCheck{Field: f.Name, Pointer: pointer})
+			data.Setters = append(data.Setters, setterCheck{Field: f.Name, Pointer: pointer, Seeded: seeded})
 		}
 	}
 	return test, data, true
@@ -450,14 +464,15 @@ func pointerTo(t *emit.TypeRef) *emit.TypeRef {
 
 // lift returns the value of the text of the default of the field f. The
 // text of a field of text is its content, as the text of an authored sample
-// is. The text of every other field is a literal of the language of the
-// field, which the rules read. lift reports false for a text that is no
-// literal of the type of f.
-func lift(b rules.Bound, f *node.Field, text string) (emit.Value, bool) {
+// is. The text of every other field is a value in the language of the
+// field, which the rules read in the scope s of the struct. Such a value is
+// a literal, or the name of a declaration, such as time.Second. lift
+// reports false for a text that is no value of the type of f.
+func lift(b rules.Bound, s rules.Scope, f *node.Field, text string) (emit.Value, bool) {
 	if b.TypeOf(f.Type).Form == symbol.FormText {
 		return emit.Literal(emit.LiteralString, text), true
 	}
-	return b.LiteralFor(nil, f.Type, text)
+	return b.LiteralFor(s, f.Type, text)
 }
 
 // formOf returns the form of the type of the field f. The structure of the

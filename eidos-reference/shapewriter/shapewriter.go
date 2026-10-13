@@ -37,7 +37,6 @@ const (
 
 // schema is the directive of shapewriter.
 var schema = directive.Schema{
-	Plugin:    string(ID),
 	Name:      WriterDirective,
 	Negatable: true,
 	Doc:       "marks the struct as a writer, and the negated form excludes the struct from the detection",

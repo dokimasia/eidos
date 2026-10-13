@@ -35,11 +35,12 @@ type Reporter interface {
 }
 
 // Options are the options of a plugin that calls a function of another
-// package: the import path of the package and the name of the function. A
-// config sets both, because the options contract has no required key.
+// package: the import path of the package and the name of the function.
+// Both options are required, so Build refuses a composition whose config
+// leaves either empty.
 type Options struct {
-	Package string `opt:"package" doc:"the import path of the package that declares the function that the plugin calls"`
-	Func    string `opt:"func"    doc:"the name of the function that the plugin calls"`
+	Package string `opt:"package" doc:"the import path of the package of the called function" schema:"required"`
+	Func    string `opt:"func"    doc:"the name of the called function"                       schema:"required"`
 }
 
 // Log are the options of a weaver: the import path of the package of the
@@ -51,72 +52,68 @@ type Log struct {
 	Format  string `opt:"format"  doc:"the format of the entry with one verb for the name of the method"`
 }
 
-// Chain returns the rule of a plugin of the middleware chain. On an emitted
-// function with the named slot of the chain, it appends
-// h = <package>.<func>(h) into the slot, where h is the first parameter of
-// the function. A function without the slot, such as a validator, is left
-// as it is.
-func Chain(o *Options) func(*sdk.EmitMatch, *sdk.Emitter) error {
-	return func(m *sdk.EmitMatch, e *sdk.Emitter) error {
-		fn, _ := m.Value.(*emit.Function)
-		slot, declared := fn.Body.Slot(middlewaregen.ChainSlot)
-		if !declared {
+// Chain returns the rule of a plugin of the middleware chain. On each
+// emitted function whose body declares the named slot of the chain, it
+// appends h = <package>.<func>(h) into the slot, where h is the first
+// parameter of the function. The gate of the rule does not admit a
+// function without the slot, such as a validator.
+func Chain(o *Options) sdk.Rule {
+	return sdk.Where(sdk.HasSlot(middlewaregen.ChainSlot),
+		sdk.OnEmit(symbol.KindFunction, func(m *sdk.EmitMatch, e *sdk.Emitter) error {
+			if !Check(m, m.Origin(), o.Package, o.Func) {
+				return nil
+			}
+			fn, _ := m.Value.(*emit.Function)
+			slot, _ := fn.Body.Slot(middlewaregen.ChainSlot)
+			handler := emit.Expr{Kind: emit.ExprName, Name: fn.Params.Items()[0].Name}
+			e.Slot(slot).Append(emit.Stmt{
+				Kind: emit.StmtAssign, Names: []string{handler.Name}, Value: call(o.Package, o.Func, handler),
+			})
 			return nil
-		}
-		handler := emit.Expr{Kind: emit.ExprName, Name: fn.Params.Items()[0].Name}
-		wrapped, set := call(m, o.Package, o.Func, handler)
-		if !set {
-			return nil
-		}
-		e.Slot(slot).Append(emit.Stmt{Kind: emit.StmtAssign, Names: []string{handler.Name}, Value: wrapped})
-		return nil
-	}
+		}))
 }
 
 // Epilogue returns the rule of a plugin that calls a function of the
-// request at the end of each request. On the method ServeHTTP of a handler,
-// it appends <package>.<func>(w, r) into the epilogue of the method, with
-// the parameters of the method. Every other method is left as it is.
-func Epilogue(o *Options) func(*sdk.EmitMatch, *sdk.Emitter) error {
-	return func(m *sdk.EmitMatch, e *sdk.Emitter) error {
-		method, _ := m.Value.(*emit.Method)
-		if method.Name != handlergen.ServeHTTP {
+// request at the end of each request. On each emitted method ServeHTTP, it
+// appends <package>.<func>(w, r) into the epilogue of the method, with the
+// parameters of the method. The gate of the rule does not admit another
+// method.
+func Epilogue(o *Options) sdk.Rule {
+	return sdk.Where(sdk.NameEquals(handlergen.ServeHTTP),
+		sdk.OnEmit(symbol.KindMethod, func(m *sdk.EmitMatch, e *sdk.Emitter) error {
+			if !Check(m, m.Origin(), o.Package, o.Func) {
+				return nil
+			}
+			method, _ := m.Value.(*emit.Method)
+			args := make([]emit.Expr, 0, method.Params.Len())
+			for _, p := range method.Params.Items() {
+				args = append(args, emit.Expr{Kind: emit.ExprName, Name: p.Name})
+			}
+			stmt := emit.Stmt{Kind: emit.StmtExpr, Value: call(o.Package, o.Func, args...)}
+			e.Slot(&method.Body.Epilogue).Append(stmt)
 			return nil
-		}
-		args := make([]emit.Expr, 0, method.Params.Len())
-		for _, p := range method.Params.Items() {
-			args = append(args, emit.Expr{Kind: emit.ExprName, Name: p.Name})
-		}
-		c, set := call(m, o.Package, o.Func, args...)
-		if !set {
-			return nil
-		}
-		e.Slot(&method.Body.Epilogue).Append(emit.Stmt{Kind: emit.StmtExpr, Value: c})
-		return nil
-	}
+		}))
 }
 
-// Weave returns the rule of a weaver. On an emitted method with a
-// receiver, it appends <package>.<func>(<format>, "<T>.<M>") into the
-// prologue, where T is the name of the origin of the method and M the name
-// of the method. A method without a receiver, such as a method of an
-// interface, renders no body, and is left as it is.
-func Weave(o *Log) func(*sdk.EmitMatch, *sdk.Emitter) error {
-	return func(m *sdk.EmitMatch, e *sdk.Emitter) error {
-		method, _ := m.Value.(*emit.Method)
-		if method.Receiver == nil {
+// Weave returns the rule of a weaver. On each emitted struct, it appends
+// <package>.<func>(<format>, "<T>.<M>") into the prologue of each method,
+// where T is the name of the origin of the struct and M the name of the
+// method. The rule triggers on the struct, because the methods of a struct
+// render bodies, and the methods of an interface do not.
+func Weave(o *Log) sdk.Rule {
+	return sdk.OnEmit(symbol.KindStruct, func(m *sdk.EmitMatch, e *sdk.Emitter) error {
+		if !Check(m, m.Origin(), o.Package, o.Func) {
 			return nil
 		}
-		c, set := call(m, o.Package, o.Func,
-			emit.ValueExpr(emit.Literal(emit.LiteralString, o.Format)),
-			emit.ValueExpr(emit.Literal(emit.LiteralString, m.Origin().Name+selector+method.Name)),
-		)
-		if !set {
-			return nil
+		s, _ := m.Value.(*emit.Struct)
+		for _, method := range s.Methods.Items() {
+			e.Slot(&method.Body.Prologue).Append(emit.Stmt{Kind: emit.StmtExpr, Value: call(o.Package, o.Func,
+				emit.ValueExpr(emit.Literal(emit.LiteralString, o.Format)),
+				emit.ValueExpr(emit.Literal(emit.LiteralString, m.Origin().Name+selector+method.Name)),
+			)})
 		}
-		e.Slot(&method.Body.Prologue).Append(emit.Stmt{Kind: emit.StmtExpr, Value: c})
 		return nil
-	}
+	})
 }
 
 // Check reports whether pkg and fn name a function to call from the
@@ -175,11 +172,8 @@ func declares(p *node.Package, fn string) bool {
 }
 
 // call returns the call of the function fn of the Go package pkg with
-// args. It returns false where [Check] returns false for the origin of m.
-func call(m *sdk.EmitMatch, pkg, fn string, args ...emit.Expr) (emit.Expr, bool) {
-	if !Check(m, m.Origin(), pkg, fn) {
-		return emit.Expr{}, false
-	}
+// args. A rule calls [Check] for the options first.
+func call(pkg, fn string, args ...emit.Expr) emit.Expr {
 	ref := emit.RefExpr(symbol.Identity{Lang: golang.Lang, Package: pkg, Name: fn, Kind: symbol.KindFunction})
-	return emit.Expr{Kind: emit.ExprCall, Fn: &ref, Args: args}, true
+	return emit.Expr{Kind: emit.ExprCall, Fn: &ref, Args: args}
 }

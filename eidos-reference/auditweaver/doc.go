@@ -4,11 +4,12 @@
 // Package auditweaver logs the entry of each method that the plan emits
 // from a declaration under the directive audit.
 //
-// The directive gates a rule on emitted methods, so the gate reads the
-// instance on the origin of each method: a method of <T>Repo, or of the
-// mock of <T>Repository, derives from the struct <T> under
-// //+reference:audit. auditweaver requires the capability of debugweaver,
-// so where both weave one method, the trace precedes the audit:
+// The directive gates a rule on emitted structs, so the gate reads the
+// instance on the origin of each struct: <T>Repo, or the mock of
+// <T>Repository, derives from the struct <T> under //+reference:audit.
+// auditweaver weaves each method of such a struct, and requires the
+// capability of debugweaver. So where both weave one method, the trace
+// precedes the audit:
 //
 //	// Get implements ProductRepository with zero values.
 //	func (p *ProductRepo) Get(ctx context.Context, id string) (*Product, error) {

@@ -59,9 +59,8 @@ const trimSuffix = "trimSuffix"
 
 // schema is the directive of stubgen.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   StubDirective,
-	Doc:    "generates a stub of the interface that records the arguments of each call and calls a function field",
+	Name: StubDirective,
+	Doc:  "generates a stub of the interface that records the arguments of each call and calls a function field",
 }
 
 // templates contains the templates of stubgen in one directory for each

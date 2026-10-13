@@ -75,6 +75,14 @@ func TestStatusEnum(t *testing.T) {
 		}
 	})
 
+	t.Run("IsValid reports false for a value that no variant has", func(t *testing.T) {
+		t.Parallel()
+
+		if v := Status(""); v.IsValid() {
+			t.Errorf("IsValid reports true for %v", v)
+		}
+	})
+
 	t.Run("UnmarshalText returns each variant for the text of MarshalText", func(t *testing.T) {
 		t.Parallel()
 
@@ -90,4 +98,4 @@ func TestStatusEnum(t *testing.T) {
 		}
 	})
 }
-// reference:provenance sha256:ddde5f6f188e5de8d115beb41516fb2e77e9a9a648bf86e3590752c7f33ff9d4
+// reference:provenance sha256:8972ce2b8c0a52b3e9f7ce2d9a0c4689ecffe32a682a561ea6c391333575c2a6

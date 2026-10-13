@@ -14,18 +14,35 @@ import (
 func TestCatalogErrors(t *testing.T) {
 	t.Parallel()
 
-	all := []struct {
+	type sentinel struct {
 		name string
 		err  error
-	}{
+	}
+	all := []sentinel{
 		{"ErrConflict", ErrConflict},
 		{"ErrNotFound", ErrNotFound},
 	}
+	var assigned []sentinel
+	for _, e := range all {
+		if e.err != nil {
+			assigned = append(assigned, e)
+		}
+	}
+
+	t.Run("each sentinel is assigned", func(t *testing.T) {
+		t.Parallel()
+
+		for _, e := range all {
+			if e.err == nil {
+				t.Errorf("%s is never assigned", e.name)
+			}
+		}
+	})
 
 	t.Run("each sentinel has a message", func(t *testing.T) {
 		t.Parallel()
 
-		for _, e := range all {
+		for _, e := range assigned {
 			if e.err.Error() == "" {
 				t.Errorf("%s has no message", e.name)
 			}
@@ -35,7 +52,7 @@ func TestCatalogErrors(t *testing.T) {
 	t.Run("each message starts with the prefix of the package", func(t *testing.T) {
 		t.Parallel()
 
-		for _, e := range all {
+		for _, e := range assigned {
 			if !strings.HasPrefix(e.err.Error(), "catalog: ") {
 				t.Errorf("the message %q of %s does not start with %q", e.err.Error(), e.name, "catalog: ")
 			}
@@ -46,7 +63,7 @@ func TestCatalogErrors(t *testing.T) {
 		t.Parallel()
 
 		seen := map[string]string{}
-		for _, e := range all {
+		for _, e := range assigned {
 			if first, taken := seen[e.err.Error()]; taken {
 				t.Errorf("%s has the message of %s", e.name, first)
 			}
@@ -57,8 +74,8 @@ func TestCatalogErrors(t *testing.T) {
 	t.Run("no message starts with another", func(t *testing.T) {
 		t.Parallel()
 
-		for _, a := range all {
-			for _, b := range all {
+		for _, a := range assigned {
+			for _, b := range assigned {
 				if a.name != b.name && strings.HasPrefix(a.err.Error(), b.err.Error()) {
 					t.Errorf("the message of %s starts with the message of %s", a.name, b.name)
 				}
@@ -69,13 +86,32 @@ func TestCatalogErrors(t *testing.T) {
 	t.Run("no sentinel matches another under errors.Is", func(t *testing.T) {
 		t.Parallel()
 
-		for _, a := range all {
-			for _, b := range all {
+		for _, a := range assigned {
+			for _, b := range assigned {
 				if a.name != b.name && errors.Is(a.err, b.err) {
 					t.Errorf("%s matches %s", a.name, b.name)
 				}
 			}
 		}
 	})
+
+	t.Run("NotFoundError reports a message for its zero value", func(t *testing.T) {
+		t.Parallel()
+
+		if (&NotFoundError{}).Error() == "" {
+			t.Errorf("NotFoundError reports no message for its zero value")
+		}
+	})
+
+	t.Run("NotFoundError exposes the cause that it was given", func(t *testing.T) {
+		t.Parallel()
+
+		cause := errors.New("cause")
+		got := &NotFoundError{}
+		got.Err = cause
+		if errors.Unwrap(got) != cause {
+			t.Errorf("NotFoundError does not expose the cause that it was given")
+		}
+	})
 }
-// reference:provenance sha256:bf8dba5c15e0b734fb4274c758394e4843c407f8ac8474e72f890b4301533cc3
+// reference:provenance sha256:9382aa263b405e9d18ac273a327e697e2ef92d37231d4335328cd11aec08439a

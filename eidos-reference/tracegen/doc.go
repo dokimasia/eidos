@@ -12,12 +12,12 @@
 //	options:
 //	    tracegen: {package: example.com/shop/httpmw/trace, func: StartSpan}
 //
-// A config without the options makes tracegen report REFERENCE-0001 at
-// each struct, and append nothing.
+// Both options are required, so Build refuses a composition whose config
+// leaves either empty.
 //
 // # Dependency position
 //
 // The package imports the packages handlergen, internal/callee and
-// metricgen of the module, and the root, meta, plugin and symbol packages
-// of the SDK facade.
+// metricgen of the module, and the root, meta and plugin packages of the
+// SDK facade.
 package tracegen

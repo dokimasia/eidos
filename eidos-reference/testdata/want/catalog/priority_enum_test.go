@@ -75,6 +75,14 @@ func TestPriorityEnum(t *testing.T) {
 		}
 	})
 
+	t.Run("IsValid reports false for a value that no variant has", func(t *testing.T) {
+		t.Parallel()
+
+		if v := Priority(2); v.IsValid() {
+			t.Errorf("IsValid reports true for %v", v)
+		}
+	})
+
 	t.Run("UnmarshalText returns each variant for the text of MarshalText", func(t *testing.T) {
 		t.Parallel()
 
@@ -90,4 +98,4 @@ func TestPriorityEnum(t *testing.T) {
 		}
 	})
 }
-// reference:provenance sha256:fc46d777050d2854e2f68aa39adf32e1568222329cb483a4dfe721d2e013e475
+// reference:provenance sha256:7daa7b137d6af6e43cbfdba064b331a9d287e021b178b64b0d1d395768a55939

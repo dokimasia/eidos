@@ -28,9 +28,11 @@
 //
 // The prefix is the name of the package and a colon. The option prefix
 // replaces the name, and [PrefixOff] withholds the check. The cause of an
-// error type is its first field of the type error, where the type declares
-// the method Unwrap that returns one error. A generic error type has no
-// checks. The tests import the standard library alone.
+// error type is the cause of the error contract that the rules of its
+// language state: in Go, the first field of the type error that a struct
+// declares, where the struct has the method Unwrap that returns one error.
+// A generic error type has no checks. The tests import the standard
+// library alone.
 //
 // # Exclusion
 //
@@ -40,6 +42,6 @@
 // # Dependency position
 //
 // The package imports the package internal/tree of the module, the root of
-// the Go satellite, the root, emit, meta, node, plugin, rules and symbol
-// packages of the SDK facade, and the Go stdlib. Its output is Go alone.
+// the Go satellite, the root, emit, meta, plugin and symbol packages of the
+// SDK facade, and the Go stdlib. Its output is Go alone.
 package sentinel

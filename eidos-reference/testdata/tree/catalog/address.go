@@ -11,8 +11,11 @@ type Address struct {
 	// City is the city.
 	//
 	//+reference:default Amsterdam
+	//+reference:sample value=Utrecht alternate=Leiden
 	City string
 	// Country is the ISO 3166-1 code of the country.
+	//
+	//+reference:sample alternate=DE
 	Country string `default:"NL"`
 	// Floor is the floor of the address, and zero for the ground floor.
 	Floor int `default:"0"`

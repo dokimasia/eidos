@@ -40,9 +40,8 @@ const fileTemplate = "registry.tmpl"
 
 // schema is the directive of registrygen.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   RegisterDirective,
-	Doc:    "registers a value of the struct in the function init of its package",
+	Name: RegisterDirective,
+	Doc:  "registers a value of the struct in the function init of its package",
 }
 
 // templates contains the templates of registrygen in one directory for

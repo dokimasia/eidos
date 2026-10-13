@@ -11,7 +11,6 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
-	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -38,13 +37,10 @@ const (
 // the prefix of each message.
 const PrefixOff = "off"
 
-// The template of each file of the family, the method that exposes the
-// cause of an error, the type of a cause, and the words that the name of
+// The template of each file of the family, and the words that the name of
 // the test function joins onto the name of the package.
 const (
 	fileTemplate = "sentinel.test.tmpl"
-	unwrapMethod = "Unwrap"
-	errorType    = "error"
 	testWord     = "Test"
 	errorsWord   = "Errors"
 )
@@ -145,7 +141,7 @@ func (c *conclusion) register(r *meta.Registry) error {
 // convention of its language for an error value. A language without
 // error values has no sentinels.
 func (c *conclusion) stamp(m *sdk.VariableMatch, st *sdk.Stamper) error {
-	if m.Rules().IsSentinelName(m.Variable.Name) {
+	if _, sentinel := m.Rules().SentinelBase(m.Variable.Name); sentinel {
 		sdk.Stamp(st, c.value, true)
 	}
 	return nil
@@ -161,9 +157,8 @@ func (c *conclusion) sentinel(m *sdk.VariableMatch, e *sdk.Emitter) error {
 }
 
 // errorType records a struct that the Go satellite stamps as an error into
-// the test file of its package. The cause of the struct is its first field
-// of the type error, where the struct declares the method Unwrap that
-// returns one error. A generic struct has no record, because the test cannot
+// the test file of its package. The cause of the struct is the cause of its
+// error contract. A generic struct has no record, because the test cannot
 // make a value of it without its type arguments.
 func (c *conclusion) errorType(m *sdk.StructMatch, e *sdk.Emitter) error {
 	s := m.Struct
@@ -172,13 +167,8 @@ func (c *conclusion) errorType(m *sdk.StructMatch, e *sdk.Emitter) error {
 	}
 	data := c.subject(e, s.ID)
 	data.Type = true
-	if unwraps(s) {
-		for _, f := range s.Fields {
-			if f.Type.Spelling == errorType {
-				data.Cause = f.Name
-				break
-			}
-		}
+	if contract, isError := m.Rules().ErrorContract(s); isError && contract.Cause != nil {
+		data.Cause = contract.Cause.Name
 	}
 	e.PackageFile(TestTag).Record(data, &emit.Struct{Origin: s.ID, Name: s.Name, Visibility: s.Visibility})
 	return nil
@@ -193,17 +183,4 @@ func (c *conclusion) subject(e *sdk.Emitter, id symbol.Identity) Subject {
 		Prefix:  c.options.Prefix,
 		Checked: c.options.Prefix != PrefixOff,
 	}
-}
-
-// unwraps reports whether s declares the method Unwrap that takes nothing
-// and returns one error.
-func unwraps(s *node.Struct) bool {
-	for _, m := range s.Methods {
-		if m.Name == unwrapMethod && len(m.Params) == 0 && len(m.Returns) == 1 &&
-			m.Returns[0].Type.Spelling == errorType {
-
-			return true
-		}
-	}
-	return false
 }

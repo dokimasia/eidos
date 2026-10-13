@@ -4,12 +4,14 @@
 package double
 
 import (
+	"go/types"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -133,34 +135,52 @@ func Signatures(ms []*emit.Method) []*emit.Method {
 	return out
 }
 
-// completed names each parameter of the method m that has no name by its
-// position, and gives m a receiver. host is the name of the double. The
-// receiver takes the first letter of host in lower case, or d where host
-// does not start with a letter. Where a parameter or a result of m has that
-// name, the receiver takes the letter followed by the smallest number from
-// 0 that no parameter or result has.
+// completed names each parameter of the method m that has no name, and
+// gives m a receiver. host is the name of the double. The names of the
+// named parameters and results of m are taken first. A parameter without a
+// name then takes a followed by its position, and the receiver takes the
+// first letter of host in lower case, or d where host does not start with
+// a letter. Where m has that name already, the parameter or the receiver
+// takes the name followed by the smallest number from 0 that m does not
+// have, as [naming.Unique] chooses.
+//
+// A parameter or a result with the name of a predeclared identifier of
+// Go, which the universe scope of go/types declares, takes the name
+// followed by the smallest number from 0 that m does not have. The body of
+// a double calls predeclared functions, such as append in a stub, and a
+// parameter of the same name would hide the function.
 //
 // completed returns m. It allocates the set of the names of m, the receiver
 // and the names that it adds.
 func completed(host string, m *emit.Method) *emit.Method {
-	taken := make(map[string]bool, m.Params.Len()+m.Returns.Len())
-	for i, p := range m.Params.Items() {
-		if p.Name == "" {
-			p.Name = paramPrefix + strconv.Itoa(i)
-		}
+	params, returns := m.Params.Items(), m.Returns.Items()
+	taken := make(map[string]bool, len(params)+len(returns))
+	for _, p := range params {
 		taken[p.Name] = true
 	}
-	for _, r := range m.Returns.Items() {
+	for _, r := range returns {
 		taken[r.Name] = true
+	}
+	for i, p := range params {
+		switch {
+		case p.Name == "":
+			p.Name = naming.Unique(taken, paramPrefix+strconv.Itoa(i))
+			taken[p.Name] = true
+		case types.Universe.Lookup(p.Name) != nil:
+			p.Name = naming.Unique(taken, p.Name)
+			taken[p.Name] = true
+		}
+	}
+	for _, r := range returns {
+		if types.Universe.Lookup(r.Name) != nil {
+			r.Name = naming.Unique(taken, r.Name)
+			taken[r.Name] = true
+		}
 	}
 	letter := receiverFallback
 	if first, _ := utf8.DecodeRuneInString(host); unicode.IsLetter(first) {
 		letter = strings.ToLower(string(first))
 	}
-	name := letter
-	for n := 0; taken[name]; n++ {
-		name = letter + strconv.Itoa(n)
-	}
-	m.Receiver = &emit.Param{Name: name, Type: &emit.TypeRef{Spelling: host}}
+	m.Receiver = &emit.Param{Name: naming.Unique(taken, letter), Type: &emit.TypeRef{Spelling: host}}
 	return m
 }

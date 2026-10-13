@@ -44,9 +44,8 @@ const fileTemplate = "mock.tmpl"
 
 // schema is the directive of mockgen.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   MockDirective,
-	Doc:    "generates a mock of the interface whose methods call function fields",
+	Name: MockDirective,
+	Doc:  "generates a mock of the interface whose methods call function fields",
 }
 
 // templates contains the templates of mockgen in one directory for each

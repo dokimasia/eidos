@@ -5,27 +5,32 @@
 // call a function of another package. The options of each plugin set the
 // function.
 //
-// Each rule appends one statement into a body that another plugin wrote:
+// Each rule appends statements into bodies that another plugin wrote, and
+// its trigger and its value gate select those bodies:
 //
 //   - [Chain] wraps the handler of a middleware function in one middleware,
 //     in the named slot of the chain.
 //   - [Epilogue] calls a function of the request at the end of the method
 //     ServeHTTP of a handler.
-//   - [Weave] logs the entry of each method with a receiver in its
+//   - [Weave] logs the entry of each method of an emitted struct in its
 //     prologue.
 //
-// The call of each statement refers to the function by its identity, and
-// the target qualifies the call and imports the package.
+// A plugin wraps the rule in its own gate on the origin. The call of each
+// statement refers to the function by its identity, and the target
+// qualifies the call and imports the package.
 //
 // # Diagnostics
 //
-// The options contract of a plugin has no required key. So [Check] reports
-// [Missing] at the subject where the options leave the package or the
-// function empty, and a rule then appends nothing. Check also resolves the
-// options against the load. It reports [UnknownFunction] where the package
-// does not declare a function of the name, and [UnknownPackage] where the
-// module of the subject does not contain a package at the path. A plugin that calls the
-// function through a template checks its options with Check too.
+// The package and the function of [Options] are required options, so a
+// composition refuses an empty one at Build. The weavers set a default for
+// each option of [Log]. [Check] reports [Missing] at the subject for an
+// empty option of a plugin that runs outside a composition, such as in a
+// fixture, and a rule then appends nothing. Check also resolves the options
+// against the load. It reports [UnknownFunction] where the package does not
+// declare a function of the name, and [UnknownPackage] where the module of
+// the subject does not contain a package at the path. Each rule checks its
+// options once for each invocation. A plugin that calls the function
+// through a template checks its options with Check too.
 //
 // # Dependency position
 //

@@ -9,8 +9,11 @@
 // of an interface of the graph, and [Copy] copies the methods of an
 // interface that a plugin emitted. Each method of a double has a receiver
 // and a name for each parameter, because the body of the method passes
-// every parameter on. The receiver has a name that no parameter and no
-// result of the method has. The template of a target writes the receiver
+// every parameter on. The receiver and each parameter without a name in
+// the interface get a name that no other parameter and no result of the
+// method has. A parameter or a result with the name of a predeclared
+// identifier of Go, such as append, gets such a name too, because the body
+// of a stub calls append. The template of a target writes the receiver
 // where the target writes one, and a weaver reads it to tell the method of
 // a double from the signature of an interface.
 //
@@ -36,5 +39,5 @@
 // # Dependency position
 //
 // The package imports the root, diag, emit, meta, node, plugin and rules
-// packages of the SDK facade and the Go stdlib.
+// packages of the SDK facade, eidos-lang's naming, and the Go stdlib.
 package double

@@ -53,8 +53,7 @@ const DefaultTag = "default"
 
 // schema is the directive of defaults.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   DefaultDirective,
+	Name: DefaultDirective,
 	Positional: []directive.ParamSpec{{
 		Key: ValueParam, Type: directive.TypeString, Required: true,
 		Doc: "the default value of the field, as text that the rules of the language of the field read",
@@ -140,10 +139,12 @@ func (c *conclusion) declared(m *sdk.FieldMatch, st *sdk.Stamper) error {
 }
 
 // tagged stamps the value of the tag of the field under the key of the
-// option tag, with the source [SourceTag]. It stamps nothing on a field
-// without the tag, and on a field of a language without tags.
+// option tag, with the source [SourceTag]. It does not stamp a field
+// without the tag, a field whose tag has an empty value, or a field of a
+// language without tags. An empty value declares no default, because a
+// reader would assign the zero value over a value that a seed set.
 func (c *conclusion) tagged(m *sdk.FieldMatch, st *sdk.Stamper) error {
-	if text, stated := m.Rules().Tag(m.Field, c.options.Tag); stated {
+	if text, stated := m.Rules().Tag(m.Field, c.options.Tag); stated && text != "" {
 		sdk.Stamp(st, c.value, text)
 		sdk.Stamp(st, c.source, SourceTag)
 	}

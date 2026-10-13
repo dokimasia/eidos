@@ -12,14 +12,14 @@ import (
 
 	"example.com/shop/httpmw/auth"
 	"example.com/shop/httpmw/metrics"
-	"example.com/shop/httpmw/trace"
+	tracing "example.com/shop/httpmw/trace"
 )
 
 // OrdersMiddleware wraps h in the middleware of Orders.
 func OrdersMiddleware(h http.Handler) http.Handler {
 	h = auth.RequireAuth(h)
 	h = metrics.RecordLatency(h)
-	h = trace.StartSpan(h)
+	h = tracing.StartSpan(h)
 	return h
 }
-// reference:provenance sha256:b0f64ab13656afc43287c7c13d8e49b17009661220ce7ba08ad653a854c00ae7
+// reference:provenance sha256:3e7e01bbc4665573bbba3dfb1a42839304f0049e477dc61294b3703b7e55bcf3

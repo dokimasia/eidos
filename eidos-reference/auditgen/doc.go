@@ -4,18 +4,19 @@
 // Package auditgen records each request at the end of the method ServeHTTP
 // of each handler that handlergen writes.
 //
-// auditgen requires the capability of handlergen, and runs after errorgen
-// through [Priority], so its call is the last of the epilogue. Its options
-// set the function that it calls:
+// auditgen requires the capability of handlergen, and runs after the
+// capability of errorgen where the composition contains errorgen. So its
+// call follows the call of errorgen in the epilogue. Its options set the
+// function that it calls:
 //
 //	options:
 //	    auditgen: {package: example.com/shop/httpmw/audit, func: Record}
 //
-// A config without the options makes auditgen report REFERENCE-0001 at
-// each struct, and append nothing.
+// Both options are required, so Build refuses a composition whose config
+// leaves either empty.
 //
 // # Dependency position
 //
-// The package imports the packages handlergen and internal/callee of the
-// module, and the root, meta, plugin and symbol packages of the SDK facade.
+// The package imports the packages errorgen, handlergen and internal/callee
+// of the module, and the root, meta and plugin packages of the SDK facade.
 package auditgen

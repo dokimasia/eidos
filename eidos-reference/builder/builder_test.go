@@ -51,6 +51,13 @@ const (
 	valueLocal    = "value"
 )
 
+// The prefix of the name of a setter, and the prefix of a field that the
+// seed of NewAddressFrom assigns.
+const (
+	setterPrefix = "With"
+	seedPrefix   = "seed."
+)
+
 // The tree of the generic structs, its package, the builders of its two
 // structs, the record of the checks of Page, and the assignment of the
 // default of Page.
@@ -65,13 +72,23 @@ const (
 	nextAssign      = "value.Next"
 )
 
-// The tree of a default that is no literal of its type, its package, and
-// the field of the default.
+// The tree of a default that is no value of its type, its package, and the
+// field of the default.
 const (
 	badTree    = "testdata/bad"
 	badPackage = "example.com/bad"
 	shelfName  = "Shelf"
 	slotsName  = "Slots"
+)
+
+// The tree of the defaults that are names and a call, its package, the
+// constructor of Policy, and the package outside the view that a default
+// refers to.
+const (
+	namedTree    = "testdata/named"
+	namedPackage = "example.com/named"
+	newPolicy    = "NewPolicy"
+	timePackage  = "time"
 )
 
 // generated is what builder writes over one tree: the builders and the
@@ -148,6 +165,25 @@ func TestBuilder(t *testing.T) {
 				"the record has the constructors and the defaults other than zero")
 		})
 
+		t.Run("records the check of each setter with a value that the seed does not have", func(t *testing.T) {
+			t.Parallel()
+
+			got := generate(t, referencetest.Tree, catalogPackage)
+			record := got.checks[addressBuilder]
+			assert.NotNil(t, record, "builder records the checks of the builder of Address")
+			types := record.Types.Items()
+			assert.Length(t, types, 5, "the record has the two constructors and three defaults")
+			seeded := map[string]emit.Value{}
+			for _, s := range types[1].(*emit.Function).Body.Stmts {
+				seeded[strings.TrimPrefix(s.Names[0], seedPrefix)] = *s.Value.Val
+			}
+			for _, m := range record.Methods.Items()[1:] {
+				field := strings.TrimPrefix(m.Name, setterPrefix)
+				expect.NotEqual(t, *m.Body.Stmts[0].Value.Val, seeded[field],
+					"the check of "+m.Name+" sets the alternate sample over the seed")
+			}
+		})
+
 		t.Run("records a check of a field whose type refers to a type parameter", func(t *testing.T) {
 			t.Parallel()
 
@@ -167,7 +203,30 @@ func TestBuilder(t *testing.T) {
 			expect.NotContains(t, got.checks, labelledBuilder, "builder records no checks of Labelled")
 		})
 
-		t.Run("reports BadDefault at a field whose default is no literal of its type", func(t *testing.T) {
+		t.Run("assigns the defaults that refer to declarations in the scope of the struct", func(t *testing.T) {
+			t.Parallel()
+
+			got := generate(t, namedTree, namedPackage)
+			ctor := got.funcs[newPolicy]
+			assert.NotNil(t, ctor, "builder writes the constructor of Policy")
+			slot, _ := ctor.Body.Slot(builder.DefaultsSlot)
+			stmts := slot.Items()
+			assert.Length(t, stmts, 3, "the slot assigns the three defaults")
+			second := symbol.Identity{
+				Lang: golang.Lang, Package: timePackage, Name: "Second", Kind: symbol.KindConstant,
+			}
+			retries := symbol.Identity{
+				Lang: golang.Lang, Package: namedPackage, Name: "Retries", Kind: symbol.KindConstant,
+			}
+			clock := symbol.Identity{
+				Lang: golang.Lang, Package: namedPackage, Name: "SystemClock", Kind: symbol.KindFunction,
+			}
+			expect.Equal(t, *stmts[0].Value.Val, emit.Name(second), "Timeout takes the constant time.Second")
+			expect.Equal(t, *stmts[1].Value.Val, emit.Name(retries), "Attempts takes the constant Retries")
+			expect.Equal(t, *stmts[2].Value.Val, emit.Call(clock), "Clock takes the call of SystemClock")
+		})
+
+		t.Run("reports BadDefault at a field whose default is no value of its type", func(t *testing.T) {
 			t.Parallel()
 
 			p := builder.New()

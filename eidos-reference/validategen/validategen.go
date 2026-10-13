@@ -61,7 +61,7 @@ func New() plugin.Generator {
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
 		Handle(
 			sdk.Where(handled, sdk.OnStruct(validator)),
-			sdk.Where(handled, sdk.OnEmit(symbol.KindMethod, guard)),
+			sdk.Where(handled, sdk.Where(sdk.NameEquals(handlergen.ServeHTTP), sdk.OnEmit(symbol.KindMethod, guard))),
 		).
 		Generator()
 }
@@ -88,14 +88,11 @@ func validator(m *sdk.StructMatch, e *sdk.Emitter) error {
 
 // guard appends into the prologue of the method ServeHTTP of a handler the
 // call of the validator of the struct with the request, and a guard that
-// returns where the validator reports an error. Every other method is left
-// as it is. The call refers to the validator by its name in the package of
-// the handler, and the settle follows the name.
+// returns where the validator reports an error. The gate of its rule does
+// not admit another method. The call refers to the validator by its name
+// in the package of the handler, and the settle follows the name.
 func guard(m *sdk.EmitMatch, e *sdk.Emitter) error {
 	method, _ := m.Value.(*emit.Method)
-	if method.Name != handlergen.ServeHTTP {
-		return nil
-	}
 	validate := emit.Expr{Kind: emit.ExprName, Name: Prefix + m.Origin().Name}
 	params := method.Params.Items()
 	request := emit.Expr{Kind: emit.ExprName, Name: params[len(params)-1].Name}

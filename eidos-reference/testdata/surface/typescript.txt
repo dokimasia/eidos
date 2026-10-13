@@ -26,6 +26,21 @@ MapperMock implements Mapper
 MapperMock.mapFunc? <U>(v:T,f:(t:T)=>U)=>U
 MapperMock.map[U](T, (t:T)=>U) U
 Struct MapperMock[T]
+package web/orders.mock.test
+OrdersMock implements Orders
+OrdersMock.count({product:Product;limit:number}) number
+OrdersMock.countFunc? (filter:{product:Product;limit:number})=>number
+Struct OrdersMock
+package web/orders.stub
+Interface OrdersCountCall
+OrdersCountCall.filter {product:Product;limit:number}
+OrdersStub implements Orders
+OrdersStub.count({product:Product;limit:number}) number
+OrdersStub.countCalls OrdersCountCall[]
+OrdersStub.countFunc? (filter:{product:Product;limit:number})=>number
+Struct OrdersStub
+package web/orders.stub.test
+Constant checkOrdersStub Orders = new OrdersStub()
 package web/store.mock.test
 StoreMock implements Store
 StoreMock.get(string) Product

@@ -10,7 +10,6 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // ID is the name of the plugin.
@@ -32,7 +31,7 @@ const (
 	DefaultFormat  = "debug: %s entered"
 )
 
-// New returns debugweaver. On each method with a receiver that the plan
+// New returns debugweaver. On each method of each struct that the plan
 // emits from a struct that repogen stamps, it appends
 // <package>.<func>(<format>, "<T>.<M>") into the prologue. Those methods
 // are the methods of <T>Repo, and the methods of the mock of <T>Repository
@@ -48,7 +47,6 @@ func New() plugin.Generator {
 		Provides(Capability).
 		After(repogen.Capability, mockgen.Capability).
 		Options(o).
-		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](repogen.KeyRepository)),
-			sdk.OnEmit(symbol.KindMethod, callee.Weave(o)))).
+		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](repogen.KeyRepository)), callee.Weave(o))).
 		Generator()
 }

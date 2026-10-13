@@ -4,6 +4,7 @@ package catalog
 //
 //+reference:stub
 //+reference:mock
+//+reference:witness T=string
 type Cache[T any] interface {
 	// Get returns the value of key and whether key has one.
 	Get(key string) (T, bool)

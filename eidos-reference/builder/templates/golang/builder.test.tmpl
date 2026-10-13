@@ -40,9 +40,12 @@ func Test{{$b.Name}}(t *testing.T) {
 
 	t.Run("{{$m.Name}} sets {{$s.Field}}", func(t *testing.T) {
 		t.Parallel()
+{{- if $s.Seeded}}
 
+		var seed {{spell $d.Value}}
+{{body $from}}{{- end}}
 		var want {{if $p.Variadic}}[]{{end}}{{spell $p.Type}}
-{{body $m}}		got := {{$new.Name}}{{template "args" $d.Args}}().{{$m.Name}}(want{{if $p.Variadic}}...{{end}}).{{$build.Name}}()
+{{body $m}}		got := {{if $s.Seeded}}{{$from.Name}}{{template "args" $d.Args}}(seed){{else}}{{$new.Name}}{{template "args" $d.Args}}(){{end}}.{{$m.Name}}(want{{if $p.Variadic}}...{{end}}).{{$build.Name}}()
 {{- if $s.Pointer}}
 		if got.{{$s.Field}} == nil || !reflect.DeepEqual(*got.{{$s.Field}}, want) {
 			t.Errorf("{{$m.Name}} sets {{$s.Field}} to %v instead of the address of %v", got.{{$s.Field}}, want)

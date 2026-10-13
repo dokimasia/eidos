@@ -70,6 +70,16 @@ func Test{{$t}}Enum(t *testing.T) {
 			}
 		}
 	})
+{{- if $d.OutOfRange}}
+
+	t.Run("IsValid reports false for a value that no variant has", func(t *testing.T) {
+		t.Parallel()
+
+		if v := {{$t}}({{$d.OutOfRange}}); v.IsValid() {
+			t.Errorf("IsValid reports true for %v", v)
+		}
+	})
+{{- end}}
 {{- end}}
 {{- if $d.Unmarshal}}
 

@@ -13,12 +13,11 @@
 //	options:
 //	    metricgen: {package: example.com/shop/httpmw/metrics, func: RecordLatency}
 //
-// A config without the options makes metricgen report REFERENCE-0001 at
-// each struct, and append nothing.
+// Both options are required, so Build refuses a composition whose config
+// leaves either empty.
 //
 // # Dependency position
 //
 // The package imports the packages authgen, handlergen and internal/callee
-// of the module, and the root, meta, plugin and symbol packages of the SDK
-// facade.
+// of the module, and the root, meta and plugin packages of the SDK facade.
 package metricgen

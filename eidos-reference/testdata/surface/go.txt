@@ -28,8 +28,16 @@ CacheStub.GetFunc func(key string) (T, bool)
 CacheStub.Put(string, T)
 CacheStub.PutCalls []CachePutCall[T]
 CacheStub.PutFunc func(key string, value T)
+ClockMock.Now() D
+ClockMock.NowFunc func() D
 Function NewAddress() *AddressBuilder
 Function NewAddressFrom(Address) *AddressBuilder
+Function NewHost() *HostBuilder
+Function NewHostFrom(Host) *HostBuilder
+Function NewLimits() *LimitsBuilder
+Function NewLimitsFrom(Limits) *LimitsBuilder
+Function NewRetryPolicy() *RetryPolicyBuilder
+Function NewRetryPolicyFrom(RetryPolicy) *RetryPolicyBuilder
 Function ParsePriority(string) (Priority, error)
 Function ParseStatus(string) (Status, error)
 Function PriorityValues() []Priority
@@ -38,12 +46,29 @@ Function TestAddressBuilder(*testing.T)
 Function TestCacheStubGet(*testing.T)
 Function TestCacheStubPut(*testing.T)
 Function TestCatalogErrors(*testing.T)
+Function TestHostBuilder(*testing.T)
+Function TestLimitsBuilder(*testing.T)
 Function TestPriorityEnum(*testing.T)
+Function TestProbeStubCheck(*testing.T)
+Function TestRetryPolicyBuilder(*testing.T)
 Function TestStatusEnum(*testing.T)
 Function TestStoreStubGet(*testing.T)
 Function TestStoreStubPut(*testing.T)
+HostBuilder.Build() Host
+HostBuilder.WithName(string) *HostBuilder
 Interface ProductRepository
 Interface ReviewRepository
+LimitsBuilder.Build() Limits
+LimitsBuilder.WithBurst(int) *LimitsBuilder
+LimitsBuilder.WithRetry(struct {
+	Wait time.Duration
+	Max  int
+}) *LimitsBuilder
+ProbeCheckCall.Append0 int
+ProbeCheckCall.Item string
+ProbeStub.Check(string, int) error
+ProbeStub.CheckCalls []ProbeCheckCall
+ProbeStub.CheckFunc func(item string, append0 int) error
 ProductRepo.Delete(context.Context, string) error
 ProductRepo.Get(context.Context, string) (*Product, error)
 ProductRepo.List(context.Context) ([]*Product, error)
@@ -56,10 +81,15 @@ ProductRepositoryMock.List(context.Context) ([]*Product, error)
 ProductRepositoryMock.ListFunc func(ctx context.Context) ([]*Product, error)
 ProductRepositoryMock.Put(context.Context, *Product) error
 ProductRepositoryMock.PutFunc func(ctx context.Context, v *Product) error
+RetryPolicyBuilder.Build() RetryPolicy
+RetryPolicyBuilder.WithAttempts(int) *RetryPolicyBuilder
+RetryPolicyBuilder.WithTimeout(time.Duration) *RetryPolicyBuilder
 ReviewRepo.Delete(context.Context, string) error
 ReviewRepo.Get(context.Context, string) (*Review, error)
 ReviewRepo.List(context.Context) ([]*Review, error)
 ReviewRepo.Put(context.Context, *Review) error
+RulerMock.Length(string) measure.Meters
+RulerMock.LengthFunc func(item string) measure.Meters
 StoreGetCall.Ctx context.Context
 StoreGetCall.ID string
 StoreMock.Get(context.Context, string) (*Product, error)
@@ -79,9 +109,16 @@ Struct CacheGetCall
 Struct CacheMock[T any]
 Struct CachePutCall[T any]
 Struct CacheStub[T any]
+Struct ClockMock[D ~int32 | time.Duration]
+Struct HostBuilder
+Struct LimitsBuilder
+Struct ProbeCheckCall
+Struct ProbeStub
 Struct ProductRepo
 Struct ProductRepositoryMock
+Struct RetryPolicyBuilder
 Struct ReviewRepo
+Struct RulerMock
 Struct StoreGetCall
 Struct StoreMock
 Struct StorePutCall

@@ -18,7 +18,7 @@ func TestAddressBuilder(t *testing.T) {
 
 		var seed Address
 		seed.Street = "Street-a"
-		seed.City = "City-a"
+		seed.City = "Utrecht"
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
@@ -66,9 +66,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithStreet sets Street", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want string
-		want = "Street-a"
-		got := NewAddress().WithStreet(want).Build()
+		want = "Street-b"
+		got := NewAddressFrom(seed).WithStreet(want).Build()
 		if !reflect.DeepEqual(got.Street, want) {
 			t.Errorf("WithStreet sets Street to %v instead of %v", got.Street, want)
 		}
@@ -77,9 +86,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithCity sets City", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want string
-		want = "City-a"
-		got := NewAddress().WithCity(want).Build()
+		want = "Leiden"
+		got := NewAddressFrom(seed).WithCity(want).Build()
 		if !reflect.DeepEqual(got.City, want) {
 			t.Errorf("WithCity sets City to %v instead of %v", got.City, want)
 		}
@@ -88,9 +106,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithCountry sets Country", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want string
-		want = "Country-a"
-		got := NewAddress().WithCountry(want).Build()
+		want = "DE"
+		got := NewAddressFrom(seed).WithCountry(want).Build()
 		if !reflect.DeepEqual(got.Country, want) {
 			t.Errorf("WithCountry sets Country to %v instead of %v", got.Country, want)
 		}
@@ -99,9 +126,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithFloor sets Floor", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want int
-		want = 42
-		got := NewAddress().WithFloor(want).Build()
+		want = 7
+		got := NewAddressFrom(seed).WithFloor(want).Build()
 		if !reflect.DeepEqual(got.Floor, want) {
 			t.Errorf("WithFloor sets Floor to %v instead of %v", got.Floor, want)
 		}
@@ -110,9 +146,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithLines sets Lines", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want []string
-		want = []string{"Lines-a"}
-		got := NewAddress().WithLines(want...).Build()
+		want = []string{"Lines-b"}
+		got := NewAddressFrom(seed).WithLines(want...).Build()
 		if !reflect.DeepEqual(got.Lines, want) {
 			t.Errorf("WithLines sets Lines to %v instead of %v", got.Lines, want)
 		}
@@ -121,9 +166,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithNotes sets Notes", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want map[string]string
-		want = map[string]string{"Notes-a": "Notes-a"}
-		got := NewAddress().WithNotes(want).Build()
+		want = map[string]string{"Notes-b": "Notes-a"}
+		got := NewAddressFrom(seed).WithNotes(want).Build()
 		if !reflect.DeepEqual(got.Notes, want) {
 			t.Errorf("WithNotes sets Notes to %v instead of %v", got.Notes, want)
 		}
@@ -132,9 +186,18 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithRaw sets Raw", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want []byte
-		want = []byte{1}
-		got := NewAddress().WithRaw(want).Build()
+		want = []byte{2}
+		got := NewAddressFrom(seed).WithRaw(want).Build()
 		if !reflect.DeepEqual(got.Raw, want) {
 			t.Errorf("WithRaw sets Raw to %v instead of %v", got.Raw, want)
 		}
@@ -143,12 +206,21 @@ func TestAddressBuilder(t *testing.T) {
 	t.Run("WithUnit sets Unit", func(t *testing.T) {
 		t.Parallel()
 
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
 		var want string
-		want = "Unit-a"
-		got := NewAddress().WithUnit(want).Build()
+		want = "Unit-b"
+		got := NewAddressFrom(seed).WithUnit(want).Build()
 		if got.Unit == nil || !reflect.DeepEqual(*got.Unit, want) {
 			t.Errorf("WithUnit sets Unit to %v instead of the address of %v", got.Unit, want)
 		}
 	})
 }
-// reference:provenance sha256:6acc981b0939fff0e5974882b65b6352d058dfe8aea092fe84e03d85cb5dd637
+// reference:provenance sha256:2f11b8a2a2dfa4049dc297101f8b1dcccee8bf59e5bee4e2ad798247cfaed308

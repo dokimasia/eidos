@@ -74,9 +74,8 @@ const (
 
 // schema is the directive of handlergen.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   HandlerDirective,
-	Doc:    "generates a handler that serves the struct over HTTP through its method Serve",
+	Name: HandlerDirective,
+	Doc:  "generates a handler that serves the struct over HTTP through its method Serve",
 }
 
 // conclusion is the state of one instance of handlergen: the handle of its
@@ -135,11 +134,9 @@ func (c *conclusion) register(r *meta.Registry) error {
 // declares the method Serve(w http.ResponseWriter, r *http.Request). It
 // reports [MissingServe] at a struct without one, and stamps nothing on it.
 func (c *conclusion) conclude(m *sdk.StructMatch, st *sdk.Stamper) error {
-	for _, method := range m.Struct.Methods {
-		if method.Name == Serve && serves(method.Params) {
-			sdk.Stamp(st, c.handler, true)
-			return nil
-		}
+	if method, declared := node.MemberNamed(m.Struct.Methods, Serve); declared && serves(method.Params) {
+		sdk.Stamp(st, c.handler, true)
+		return nil
 	}
 	m.Errorf(
 		MissingServe,

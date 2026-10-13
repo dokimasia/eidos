@@ -1,5 +1,5 @@
-// Package trace traces the requests of the shop.
-package trace
+// Package tracing traces the requests of the shop.
+package tracing
 
 import (
 	"log"

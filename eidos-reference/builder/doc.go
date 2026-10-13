@@ -23,7 +23,10 @@
 // //+reference:builder defaults=defaultAddress. The constructor then
 // assigns each default that the plugin defaults stamps on a field, in the
 // named slot [DefaultsSlot]. builder requires the capability of defaults,
-// so the facts of defaults are complete when it runs.
+// so the facts of defaults are complete when it runs. A default is a
+// literal, the name of a constant or a variable, such as time.Second, or a
+// call of a function without arguments. The rules of Go read it in the
+// scope of the struct, and the constructor imports its package.
 //
 // # Checks
 //
@@ -36,12 +39,13 @@
 // which read the kernel's sample facts first. A generic struct is checked at
 // the witnesses of its type parameters. It has no checks where a parameter
 // has no witness, and a field whose type refers to a parameter has none.
-// The tests import the standard library alone.
+// The tests import the standard library and the packages of the defaults
+// alone.
 //
 // # Diagnostics
 //
-// builder reports [BadDefault] at a field whose default is not a literal of
-// its type, and writes nothing for the struct.
+// builder reports [BadDefault] at a field whose default is no value of its
+// type, and writes nothing for the struct.
 //
 // # Dependency position
 //

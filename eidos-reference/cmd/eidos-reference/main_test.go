@@ -87,6 +87,8 @@ func TestMainProcess(t *testing.T) {
 			}
 			cmd := exec.CommandContext(ctx, self, versionCommand)
 			cmd.Dir = t.TempDir()
+			assert.NoError(t, os.CopyFS(cmd.Dir, os.DirFS(filepath.FromSlash(tree))),
+				"the tree with the config file of the options copies into the working directory")
 			cmd.Env = append(os.Environ(), mainEnv+"="+runMain, "PWD="+cmd.Dir)
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr

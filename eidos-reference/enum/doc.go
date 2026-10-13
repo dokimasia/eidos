@@ -14,8 +14,9 @@
 //
 // The text of a variant is its declared value where the value is text, as
 // "listed" is for StatusListed. Otherwise it is the name of the variant
-// without the name of the type, as Low is for LevelLow. enum reads the exact
-// value of each constant from the fact that the Go frontend stamps.
+// without the name of the type, as Low is for LevelLow. enum takes the form
+// and the texts from the enumeration rules of the language of the
+// enumeration.
 //
 // # What enum withholds
 //
@@ -37,12 +38,18 @@
 //
 // # Diagnostics
 //
-// enum reports [DuplicateText] at the second of two variants with one
-// text, and writes nothing for the enumeration.
+// Each finding is an Error, and enum writes nothing for the enumeration
+// after it:
+//
+//   - [NoProjection] at an enumeration whose rules do not project an
+//     enumeration;
+//   - [UnknownText] at a variant of text whose value the frontend did not
+//     evaluate;
+//   - [DuplicateText] at the second of two variants with one text.
 //
 // # Dependency position
 //
 // The package imports the package internal/tree of the module, the root of
-// the Go satellite, the root, diag, directive, emit, meta and plugin
+// the Go satellite, the root, diag, directive, emit, node, plugin and rules
 // packages of the SDK facade, and the Go stdlib. Its output is Go alone.
 package enum

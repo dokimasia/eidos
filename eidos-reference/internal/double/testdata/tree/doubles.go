@@ -20,6 +20,13 @@ type Counter interface {
 	Count() (c int)
 }
 
+// Store has a method whose result has the name that the position of an
+// unnamed parameter gives.
+type Store interface {
+	// Put stores a value under a key and returns the previous value a1.
+	Put(string, int) (a1 int)
+}
+
 // Stream embeds an interface that the load does not resolve.
 type Stream interface {
 	io.Reader

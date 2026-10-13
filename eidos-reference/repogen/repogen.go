@@ -98,9 +98,8 @@ var methods = []repoMethod{
 
 // schema is the directive of repogen.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   RepoDirective,
-	Doc:    "generates a repository of the struct and an implementation of it with zero values",
+	Name: RepoDirective,
+	Doc:  "generates a repository of the struct and an implementation of it with zero values",
 }
 
 // templates are the templates of repogen, below the directory of each

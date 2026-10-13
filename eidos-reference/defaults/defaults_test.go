@@ -48,6 +48,7 @@ const (
 	taggedPackage   = "example.com/tagged"
 	configName      = "Config"
 	regionName      = "Region"
+	zoneName        = "Zone"
 	fallbackTag     = "fallback"
 	fallbackDefault = "west"
 	regionDefault   = "east"
@@ -124,6 +125,15 @@ func TestDefaults(t *testing.T) {
 			assert.Equal(t, stamped(t, f, p, configName, regionName),
 				stamp{value: regionDefault, source: defaults.SourceTag, stamped: true},
 				"defaults reads the tag of the key default")
+		})
+
+		t.Run("stamps nothing on a field whose tag has an empty default", func(t *testing.T) {
+			t.Parallel()
+
+			p := defaults.New()
+			f := fixture(t, taggedTree, taggedPackage, p)
+			assert.Equal(t, stamped(t, f, p, configName, zoneName), stamp{},
+				"an empty tag value declares no default")
 		})
 
 		t.Run("reads the tag of the key that the option tag sets", func(t *testing.T) {

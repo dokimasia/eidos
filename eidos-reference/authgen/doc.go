@@ -12,12 +12,12 @@
 //	    authgen: {package: example.com/shop/httpmw/auth, func: RequireAuth}
 //
 // With the options of the example, the chain of OrdersMiddleware opens
-// with h = auth.RequireAuth(h). A config without the options makes authgen
-// report REFERENCE-0001 at each struct, and append nothing.
+// with h = auth.RequireAuth(h). Both options are required, so Build refuses
+// a composition whose config leaves either empty.
 //
 // # Dependency position
 //
 // The package imports the packages handlergen, middlewaregen and
-// internal/callee of the module, and the root, meta, plugin and symbol
-// packages of the SDK facade.
+// internal/callee of the module, and the root, meta and plugin packages of
+// the SDK facade.
 package authgen

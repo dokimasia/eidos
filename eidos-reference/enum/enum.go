@@ -14,8 +14,9 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
-	"go.dokimi.dev/eidos/sdk/meta"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/rules"
 )
 
 // ID is the name of the plugin.
@@ -64,13 +65,16 @@ const (
 	unknownMark  = "?"
 )
 
+// methodsDefault is the spelling of the default of [MethodsParam]: enum
+// writes the methods unless the author turns them off.
+const methodsDefault = "true"
+
 // schema is the directive of enum.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   EnumDirective,
+	Name: EnumDirective,
 	Params: []directive.ParamSpec{{
-		Key: MethodsParam, Type: directive.TypeBool,
-		Doc: "writes the methods String, IsValid, MarshalText and UnmarshalText where true, the default",
+		Key: MethodsParam, Type: directive.TypeBool, Default: methodsDefault,
+		Doc: "writes the methods String, IsValid, MarshalText and UnmarshalText where true",
 	}},
 	Doc: "generates the text of each variant of the enumeration, its parser, and checks of both",
 }
@@ -95,6 +99,9 @@ type Variant struct {
 // enum writes. enum writes the parser, the list of the variants and the
 // error of an unknown text with String, under the names Parse, Values and
 // Unknown. UnknownText is a Go string literal of a text that no variant has.
+// OutOfRange is a Go literal of a value of the underlying type that no
+// variant has, which the test converts to the enumeration, and empty where
+// the rules derive none.
 type Surface struct {
 	Variants    []Variant
 	Textual     bool
@@ -106,6 +113,7 @@ type Surface struct {
 	Values      string
 	Unknown     string
 	UnknownText string
+	OutOfRange  string
 }
 
 // New returns enum. For each enumeration under [EnumDirective], it writes
@@ -117,15 +125,18 @@ type Surface struct {
 // source file, which checks the variants and the declarations that enum
 // writes.
 //
-// The text of a variant is its declared value where the value is text, and
-// its name without the name of the type otherwise. enum withholds each
-// method that the type declares already. It writes Parse<T>, <T>Values,
-// ErrUnknown<T>, MarshalText and UnmarshalText only where it writes String,
-// because they read the text of a variant. [MethodsParam] set to false
-// withholds every method.
+// The form and the text of each variant come from the enumeration rules
+// of the language, [rules.EnumRules]. The Go rules give a variant of text
+// its declared value, and any other variant its name without the name of
+// the type. enum withholds each method that the type declares already. It
+// writes Parse<T>, <T>Values, ErrUnknown<T>, MarshalText and UnmarshalText
+// only where it writes String, because they read the text of a variant.
+// [MethodsParam] set to false withholds every method.
 //
-// enum reports [DuplicateText] at the second of two variants with one
-// text, and writes nothing for the type. The plugin serves the target
+// enum reports [NoProjection] at an enumeration whose rules do not
+// implement [rules.EnumRules], [UnknownText] at a variant without a text,
+// and [DuplicateText] at the second of two variants with one text. It
+// writes nothing for the type after each. The plugin serves the target
 // golang alone. Each call returns a new plugin.
 func New() plugin.Generator {
 	return sdk.NewPlugin(ID).
@@ -138,27 +149,37 @@ func New() plugin.Generator {
 }
 
 // generate records the declarations of one enumeration into the family of
-// the enumerations, and its checks into the family of the tests.
+// the enumerations, and its checks into the family of the tests. The rules
+// of the language of the enumeration project its form and its texts.
 func generate(m *sdk.EnumMatch, e *sdk.Emitter) error {
 	n := m.Enum
+	bound := m.Rules()
+	projector, projects := bound.Source().(rules.EnumRules)
+	if !projects {
+		m.Errorf(NoProjection, "the rules of %s do not project the enumeration %s", bound.Lang(), n.Name)
+		return nil
+	}
+	info := projector.EnumOf(n, bound.View())
 	data := Surface{
-		Variants: make([]Variant, 0, len(n.Variants)),
+		Variants: make([]Variant, 0, len(info.Variants)),
+		Textual:  info.Form == rules.EnumValue,
 		Parse:    e.JoinName(n.Name, parseWord),
 		Values:   e.JoinName(valuesWord, n.Name),
 		Unknown:  e.JoinName(n.Name, unknownWord),
 	}
-	texts := make([]string, 0, len(n.Variants))
+	texts := make([]string, 0, len(info.Variants))
 	longest := 0
-	for _, v := range n.Variants {
-		text := strings.TrimPrefix(v.Name, n.Name)
-		// The exact value of a constant of text is a quoted literal.
-		// Unquote refuses the value of a number and an absent value.
-		value, _ := sdk.FactOf(m, v.ID, meta.Named[string](golang.ConstValueKey))
-		if unquoted, err := strconv.Unquote(value); err == nil {
-			text, data.Textual = unquoted, true
+	for _, v := range info.Variants {
+		variant, _ := node.MemberNamed(n.Variants, v.Name)
+		if v.Text.IsZero() {
+			m.ErrorfAt(UnknownText, variant.Pos,
+				"%s has a value that %s does not evaluate, so it has no text", v.Name, bound.Lang())
+			return nil
 		}
+		text := v.Text.Text
 		if slices.Contains(texts, text) {
-			m.ErrorfAt(DuplicateText, v.Pos, "%s has the text %q of an earlier variant of %s", v.Name, text, n.Name)
+			m.ErrorfAt(DuplicateText, variant.Pos, "%s has the text %q of an earlier variant of %s",
+				v.Name, text, n.Name)
 			return nil
 		}
 		texts = append(texts, text)
@@ -166,11 +187,17 @@ func generate(m *sdk.EnumMatch, e *sdk.Emitter) error {
 		data.Variants = append(data.Variants, Variant{Name: v.Name, Text: strconv.Quote(text)})
 	}
 	data.UnknownText = strconv.Quote(strings.Repeat(unknownMark, longest+1))
-
-	methods := true
-	if v, set := m.Directive().Params[MethodsParam]; set {
-		methods = v.Bool
+	// The value outside the variants converts a literal to the type. The
+	// text of a number, a truth value and raw text is its Go spelling, and a
+	// string needs its quotes.
+	if outside := info.OutOfRange; outside.Kind == emit.ValueConversion && outside.Inner != nil {
+		data.OutOfRange = outside.Inner.Text
+		if outside.Inner.Literal == emit.LiteralString {
+			data.OutOfRange = strconv.Quote(outside.Inner.Text)
+		}
 	}
+
+	methods := m.Directive().Params[MethodsParam].Bool
 	declared := make(map[string]bool, len(n.Methods))
 	for _, method := range n.Methods {
 		declared[method.Name] = true

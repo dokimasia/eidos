@@ -4,8 +4,10 @@
 package reference
 
 import (
+	"go.dokimi.dev/eidos/core/authored"
 	"go.dokimi.dev/eidos/core/workspace"
 	golang "go.dokimi.dev/eidos/lang/go"
+	goannotate "go.dokimi.dev/eidos/lang/go/annotate"
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
@@ -61,16 +63,17 @@ const (
 
 // Base returns the composition of eidos-reference without its plans: the
 // brand reference, the Go and the TypeScript frontends and rules, the
-// targets golang and typescript, the annotators shapewriter and defaults,
-// and parallel dispatch on four workers. Each call returns new plugin
-// instances.
+// targets golang and typescript, the annotators of the authored samples
+// and witnesses, the annotator of the Go satellite, shapewriter and
+// defaults, and parallel dispatch on four workers. Each call returns new
+// plugin instances.
 func Base() *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
 		Frontends(gofrontend.New(nil), tsfrontend.New()).
 		Rules(gorules.New(), tsrules.New()).
 		Targets(golang.Target, typescript.Target).
-		Annotators(shapewriter.New(), defaults.New()).
+		Annotators(authored.Sample(), authored.Witness(), goannotate.New(), shapewriter.New(), defaults.New()).
 		Parallel(Workers)
 }
 

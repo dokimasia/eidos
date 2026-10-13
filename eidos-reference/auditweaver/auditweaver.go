@@ -34,16 +34,15 @@ const (
 	DefaultFormat  = "audit: %s"
 )
 
-// schema is the directive of auditweaver. Its rule runs on the methods that
+// schema is the directive of auditweaver. Its rule runs on the structs that
 // the plan emits, so the schema lists the kinds of their origins.
 var schema = directive.Schema{
-	Plugin: string(ID),
-	Name:   AuditDirective,
-	Kinds:  []symbol.Kind{symbol.KindStruct, symbol.KindInterface},
-	Doc:    "logs the entry of each method that the plan emits from the declaration",
+	Name:  AuditDirective,
+	Kinds: []symbol.Kind{symbol.KindStruct, symbol.KindInterface},
+	Doc:   "logs the entry of each method that the plan emits from the declaration",
 }
 
-// New returns auditweaver. On each method with a receiver that the plan
+// New returns auditweaver. On each method of each struct that the plan
 // emits from a declaration under [AuditDirective], it appends
 // <package>.<func>(<format>, "<T>.<M>") into the prologue, after the
 // statement of debugweaver. The options package, func and format set the
@@ -57,6 +56,6 @@ func New() plugin.Generator {
 		Provides(Capability).
 		Requires(debugweaver.Capability).
 		Options(o).
-		Handle(sdk.Directive(schema, sdk.OnEmit(symbol.KindMethod, callee.Weave(o)))).
+		Handle(sdk.Directive(schema, callee.Weave(o))).
 		Generator()
 }

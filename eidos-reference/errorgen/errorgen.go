@@ -9,7 +9,6 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // ID is the name of the plugin.
@@ -19,13 +18,10 @@ const ID plugin.ID = "errorgen"
 // folds it in.
 const Version = "0.1.0"
 
-// Capability is the capability that errorgen provides.
+// Capability is the capability that errorgen provides. auditgen runs after
+// it, so the call of errorgen precedes the call of auditgen in the epilogue
+// of ServeHTTP.
 const Capability plugin.Capability = "http.error"
-
-// Priority is the priority of the generator of errorgen. It runs after
-// every generator of priority 0, and before auditgen, so its call is the
-// first of the epilogue of ServeHTTP.
-const Priority = 1
 
 // New returns errorgen. On the method ServeHTTP of each handler that
 // handlergen writes, it appends <package>.<func>(w, r) into the epilogue.
@@ -36,11 +32,9 @@ func New() plugin.Generator {
 	o := &callee.Options{}
 	return sdk.NewPlugin(ID).
 		Version(Version).
-		Priority(plugin.RoleGenerator, Priority).
 		Provides(Capability).
 		Requires(handlergen.Capability).
 		Options(o).
-		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)),
-			sdk.OnEmit(symbol.KindMethod, callee.Epilogue(o)))).
+		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)), callee.Epilogue(o))).
 		Generator()
 }

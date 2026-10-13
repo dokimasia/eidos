@@ -81,6 +81,22 @@ func TestCallee(t *testing.T) {
 		symbol.Identity{Lang: golang.Lang, Package: logPackage, Name: logFunc, Kind: symbol.KindFunction},
 	)
 
+	t.Run("Options", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("requires the package and the function", func(t *testing.T) {
+			t.Parallel()
+
+			o := &callee.Options{}
+			p := sdk.NewPlugin(probeID).Options(o).Handle(callee.Chain(o)).Generator()
+			assert.Empty(t, plugin.ValidateOptions(p), "the options meet the tag contract")
+			missing := plugin.MissingOptions(p)
+			assert.Length(t, missing, 2, "both empty options are missing")
+			expect.Contains(t, missing[0].Error(), "requires the option package", "the package is required")
+			expect.Contains(t, missing[1].Error(), "requires the option func", "the function is required")
+		})
+	})
+
 	t.Run("Check", func(t *testing.T) {
 		t.Parallel()
 
@@ -139,7 +155,7 @@ func TestCallee(t *testing.T) {
 		t.Run("appends the wrap of the handler into the slot of the chain", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindFunction, callee.Chain(&callee.Options{Package: logPackage, Func: logFunc}))
+			out := run(t, callee.Chain(&callee.Options{Package: logPackage, Func: logFunc}))
 			slot, _ := out.middleware.Body.Slot(middlewaregen.ChainSlot)
 			assert.Equal(t, slot.Items(), []emit.Stmt{
 				{
@@ -157,14 +173,14 @@ func TestCallee(t *testing.T) {
 		t.Run("leaves a function without the slot of the chain as it is", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindFunction, callee.Chain(&callee.Options{Package: logPackage, Func: logFunc}))
+			out := run(t, callee.Chain(&callee.Options{Package: logPackage, Func: logFunc}))
 			assert.True(t, out.validator.Body.IsZero(), "the validator has no contribution")
 		})
 
 		t.Run("reports Missing at the subject for empty options", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindFunction, callee.Chain(&callee.Options{}))
+			out := run(t, callee.Chain(&callee.Options{}))
 			assertMissing(t, out.sink, 1)
 			slot, _ := out.middleware.Body.Slot(middlewaregen.ChainSlot)
 			assert.Empty(t, slot.Items(), "the chain has no statement")
@@ -173,8 +189,7 @@ func TestCallee(t *testing.T) {
 		t.Run("reports UnknownPackage at the subject for a package of the module of the origin", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindFunction,
-				callee.Chain(&callee.Options{Package: missingPackage, Func: metricsFunc}))
+			out := run(t, callee.Chain(&callee.Options{Package: missingPackage, Func: metricsFunc}))
 			found := slices.Collect(out.sink.All())
 			assert.Length(t, found, 1, "the chain reports the one middleware")
 			expect.That(t, found[0].Code).Equal(callee.UnknownPackage, "the finding is UnknownPackage")
@@ -189,7 +204,7 @@ func TestCallee(t *testing.T) {
 		t.Run("appends the call of the request into the epilogue of ServeHTTP", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindMethod, callee.Epilogue(&callee.Options{Package: logPackage, Func: logFunc}))
+			out := run(t, callee.Epilogue(&callee.Options{Package: logPackage, Func: logFunc}))
 			assert.Equal(t, out.serveHTTP.Body.Epilogue.Items(), []emit.Stmt{{
 				Kind: emit.StmtExpr,
 				Value: emit.Expr{Kind: emit.ExprCall, Fn: &logged, Args: []emit.Expr{
@@ -202,14 +217,14 @@ func TestCallee(t *testing.T) {
 		t.Run("leaves a method other than ServeHTTP as it is", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindMethod, callee.Epilogue(&callee.Options{Package: logPackage, Func: logFunc}))
+			out := run(t, callee.Epilogue(&callee.Options{Package: logPackage, Func: logFunc}))
 			assert.True(t, out.close.Body.IsZero(), "the method Close has no contribution")
 		})
 
 		t.Run("reports Missing at the subject for empty options", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindMethod, callee.Epilogue(&callee.Options{}))
+			out := run(t, callee.Epilogue(&callee.Options{}))
 			assertMissing(t, out.sink, 1)
 			assert.Empty(t, out.serveHTTP.Body.Epilogue.Items(), "the epilogue has no statement")
 		})
@@ -218,14 +233,10 @@ func TestCallee(t *testing.T) {
 	t.Run("Weave", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("appends the log of the entry into the prologue of each method with a receiver", func(t *testing.T) {
+		t.Run("appends the log of the entry into the prologue of each method of a struct", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(
-				t,
-				symbol.KindMethod,
-				callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}),
-			)
+			out := run(t, callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}))
 			for _, m := range []*emit.Method{out.serveHTTP, out.close} {
 				expect.Equal(t, m.Body.Prologue.Items(), []emit.Stmt{{
 					Kind: emit.StmtExpr,
@@ -237,22 +248,19 @@ func TestCallee(t *testing.T) {
 			}
 		})
 
-		t.Run("leaves a method without a receiver as it is", func(t *testing.T) {
+		t.Run("leaves the method of an interface as it is", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(
-				t,
-				symbol.KindMethod,
-				callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}),
-			)
+			out := run(t, callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}))
 			assert.True(t, out.signature.Body.IsZero(), "the method of the interface has no contribution")
 		})
 
-		t.Run("reports Missing at the subject for empty options", func(t *testing.T) {
+		t.Run("reports Missing once for each struct for empty options", func(t *testing.T) {
 			t.Parallel()
 
-			out := run(t, symbol.KindMethod, callee.Weave(&callee.Log{Format: logFormat}))
-			assertMissing(t, out.sink, 2)
+			out := run(t, callee.Weave(&callee.Log{Format: logFormat}))
+			assertMissing(t, out.sink, 1)
+			assert.Empty(t, out.serveHTTP.Body.Prologue.Items(), "the prologue has no statement")
 		})
 
 		t.Run("passes the plugin suite in a plugin of its own", func(t *testing.T) {
@@ -260,8 +268,7 @@ func TestCallee(t *testing.T) {
 
 			plugintest.RunPluginSuite(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 				p := sdk.NewPlugin(probeID).
-					Handle(sdk.OnEmit(symbol.KindMethod,
-						callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat}))).
+					Handle(callee.Weave(&callee.Log{Package: logPackage, Func: logFunc, Format: logFormat})).
 					Generator()
 				return p, referencetest.New(tb, referencetest.Spec{
 					Dir:      tree,
@@ -285,12 +292,12 @@ type written struct {
 }
 
 // run seeds the units of the host over the package orders of the tree, and
-// runs a plugin with the rule on the emitted values of kind k. It returns
-// the declarations of the host after the rule ran.
-func run(t *testing.T, k symbol.Kind, rule func(*sdk.EmitMatch, *sdk.Emitter) error) written {
+// runs a plugin with the rule. It returns the declarations of the host
+// after the rule ran.
+func run(t *testing.T, rule sdk.Rule) written {
 	t.Helper()
 
-	p := sdk.NewPlugin(probeID).Handle(sdk.OnEmit(k, rule)).Generator()
+	p := sdk.NewPlugin(probeID).Handle(rule).Generator()
 	f := referencetest.New(t, referencetest.Spec{
 		Dir:      tree,
 		Packages: []string{ordersPackage},

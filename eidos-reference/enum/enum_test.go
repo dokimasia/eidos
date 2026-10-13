@@ -4,6 +4,8 @@
 package enum_test
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -11,11 +13,14 @@ import (
 	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
+	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/reference/enum"
 	"go.dokimi.dev/eidos/reference/internal/referencetest"
+	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/plugintest"
+	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -34,6 +39,7 @@ const (
 	statusValues   = "StatusValues"
 	unknownStatus  = "ErrUnknownStatus"
 	statusUnknown  = `"????????"`
+	statusOutside  = `""`
 )
 
 // The tree of the enumerations of each kind, its package, its numeric
@@ -47,6 +53,7 @@ const (
 	levelHigh    = "LevelHigh"
 	lowText      = `"Low"`
 	highText     = `"High"`
+	levelOutside = "2"
 	modeName     = "Mode"
 	quietName    = "Quiet"
 )
@@ -58,6 +65,15 @@ const (
 	clashPackage = "example.com/clash"
 	clashName    = "Clash"
 	clashSecond  = "ClashSecond"
+)
+
+// The tree of a variant of text whose value another package decides, its
+// package, its enumeration and that variant.
+const (
+	unknownTree    = "testdata/unknown"
+	unknownPackage = "example.com/unknown"
+	regionName     = "Region"
+	regionHost     = "RegionHost"
 )
 
 // The templates of the two families.
@@ -133,6 +149,20 @@ func TestEnum(t *testing.T) {
 			assert.Equal(t, got.UnknownText, statusUnknown, "the unknown text is one mark longer than retired")
 		})
 
+		t.Run("records the text that no variant has as the value outside an enumeration of text", func(t *testing.T) {
+			t.Parallel()
+
+			got := record(t, referencetest.Tree, catalogPackage).surfaces[statusName]
+			assert.Equal(t, got.OutOfRange, statusOutside, "no variant of Status has the empty text")
+		})
+
+		t.Run("records the number above the variants as the value outside a numeric enumeration", func(t *testing.T) {
+			t.Parallel()
+
+			got := record(t, kindsTree, kindsPackage).surfaces[levelName]
+			assert.Equal(t, got.OutOfRange, levelOutside, "the largest level is 1")
+		})
+
 		t.Run("writes each method of an enumeration that declares none", func(t *testing.T) {
 			t.Parallel()
 
@@ -183,6 +213,46 @@ func TestEnum(t *testing.T) {
 				f.Find(t, symbol.KindEnumVariant, clashName, clashSecond).Position().Line,
 				"the finding is at the second variant")
 			expect.Empty(t, slices.Collect(res.Emit.Units()), "enum records nothing for Clash")
+		})
+
+		t.Run("reports UnknownText at a variant of text without a value", func(t *testing.T) {
+			t.Parallel()
+
+			p := enum.New()
+			f := fixture(t, unknownTree, unknownPackage, p)
+			res := f.Generate(t, p)
+			assert.NoError(t, res.Err, "the generator runs whole")
+			found := slices.Collect(res.Sink.All())
+			assert.Length(t, found, 1, "enum reports the one variant")
+			expect.That(t, found[0].Code).Equal(enum.UnknownText, "the finding is UnknownText")
+			expect.That(t, found[0].Pos.Line).Equal(
+				f.Find(t, symbol.KindEnumVariant, regionName, regionHost).Position().Line,
+				"the finding is at the variant without a value")
+			expect.Empty(t, slices.Collect(res.Emit.Units()), "enum records nothing for Region")
+		})
+
+		t.Run("reports NoProjection at an enumeration of a language without the projection", func(t *testing.T) {
+			t.Parallel()
+
+			p := enum.New()
+			f := plugintest.Loaded(t, plugintest.Source{
+				Tree:      os.DirFS(filepath.FromSlash(kindsTree)),
+				Brand:     referencetest.Brand,
+				Frontends: []plugin.Frontend{gofrontend.New(nil)},
+				Plugins:   []plugin.Plugin{p},
+				Packages:  []string{kindsPackage},
+			})
+			f.Target = golang.Target
+			res := f.Generate(t, p)
+			assert.NoError(t, res.Err, "the generator runs whole")
+			var codes []diag.Code
+			for d := range res.Sink.All() {
+				codes = append(codes, d.Code)
+			}
+			assert.Equal(t, codes,
+				[]diag.Code{rules.AbsentRules, enum.NoProjection, enum.NoProjection, enum.NoProjection},
+				"the kernel reports the absent rules once, and enum reports each of the three enumerations")
+			expect.Empty(t, slices.Collect(res.Emit.Units()), "enum records nothing")
 		})
 	})
 }

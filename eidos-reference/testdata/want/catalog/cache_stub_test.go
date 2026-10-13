@@ -9,13 +9,13 @@ import (
 )
 
 // CacheStub implements Cache.
-var _ Cache[int] = (*CacheStub[int])(nil)
+var _ Cache[string] = (*CacheStub[string])(nil)
 
 // TestCacheStubGet checks that Get calls GetFunc once and records one call.
 func TestCacheStubGet(t *testing.T) {
 	t.Parallel()
 
-	testCacheStubGet[int](t)
+	testCacheStubGet[string](t)
 }
 
 // testCacheStubGet checks Get for the type arguments that TestCacheStubGet passes.
@@ -39,7 +39,7 @@ func testCacheStubGet[T any](t *testing.T) {
 func TestCacheStubPut(t *testing.T) {
 	t.Parallel()
 
-	testCacheStubPut[int](t)
+	testCacheStubPut[string](t)
 }
 
 // testCacheStubPut checks Put for the type arguments that TestCacheStubPut passes.
@@ -57,4 +57,4 @@ func testCacheStubPut[T any](t *testing.T) {
 		t.Errorf("Put records %d calls instead of one", len(stub.PutCalls))
 	}
 }
-// reference:provenance sha256:0e094ae73824a11799cd9f494b1f75c6f8c05c072e53387f34df2723b8b75b5f
+// reference:provenance sha256:c3b60631214f8151c0205796bb9bf4f0f179122161ec806b6caaa8c5cf23b083

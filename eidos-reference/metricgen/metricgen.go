@@ -10,7 +10,6 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // ID is the name of the plugin.
@@ -38,7 +37,6 @@ func New() plugin.Generator {
 		Provides(Capability).
 		Requires(authgen.Capability).
 		Options(o).
-		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)),
-			sdk.OnEmit(symbol.KindFunction, callee.Chain(o)))).
+		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)), callee.Chain(o))).
 		Generator()
 }

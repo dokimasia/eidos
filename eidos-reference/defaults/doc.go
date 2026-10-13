@@ -18,7 +18,7 @@
 // Within one plugin, the first claim in rule order takes precedence, and
 // the directive rule comes first. So on a field with both forms, the value
 // of the directive becomes the fact: Street defaults to Dam 1, and Country
-// to NL.
+// to NL. A tag with an empty value declares no default.
 //
 // # Facts
 //

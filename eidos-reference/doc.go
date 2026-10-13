@@ -17,7 +17,8 @@
 //
 // [Base] returns the composition without its plans: the brand [Brand], the
 // Go and the TypeScript frontends and rules, the targets of both
-// languages, the annotators shapewriter and defaults, and dispatch on
+// languages, the annotators of the authored samples and witnesses, the
+// annotator of the Go satellite, shapewriter and defaults, and dispatch on
 // [Workers] workers. [Plans] returns two plans. The plan [GoPlan] runs
 // every generator of the ensemble toward the Go backend. The plan
 // [TypeScriptPlan] runs mockgen and stubgen over the TypeScript sources
@@ -35,7 +36,8 @@
 //
 // # Dependency position
 //
-// The package imports core/workspace, the root, backend, frontend and rules
-// packages of the Go and the TypeScript satellites, the plugin packages of
-// the module, and the output and plugin packages of the SDK facade.
+// The package imports core/authored and core/workspace, the root, backend,
+// frontend and rules packages of the Go and the TypeScript satellites, the
+// annotate package of the Go satellite, the plugin packages of the module,
+// and the output and plugin packages of the SDK facade.
 package reference
