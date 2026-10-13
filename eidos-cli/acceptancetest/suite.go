@@ -27,7 +27,8 @@ type Fixture struct {
 	Prefix []string
 	// Tree is a workspace tree with the config file of the brand at its
 	// root, such as .acme.yaml. A check copies the tree into each directory
-	// in which it runs the binary.
+	// in which it runs the binary. [AssertDiscovery] also passes the config
+	// file through --config.
 	Tree fs.FS
 	// Panic is the arguments that run a command of the binary that panics.
 	// The binary adds the command for the suite.

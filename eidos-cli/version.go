@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,8 @@ type moduleOf struct {
 
 // versionOf is the JSON form of the version event.
 type versionOf struct {
+	// Brand is the brand of the composition.
+	Brand  string   `json:"brand"`
 	Module moduleOf `json:"module"`
 	Core   string   `json:"core"`
 	// Contract is the contract version of the kernel,
@@ -56,9 +59,9 @@ type versionOf struct {
 	Executable  string `json:"executable"`
 }
 
-// versionCommand returns the command version, which prints the versions of
-// the binary, of eidos and of the plugins, the contract version of the
-// kernel, and the digests of the composition and of the executable.
+// versionCommand returns the command version, which prints the brand, the
+// versions of the binary, of eidos and of the plugins, the contract version
+// of the kernel, and the digests of the composition and of the executable.
 func versionCommand(compose Compose) *kernel {
 	return &kernel{
 		name:     "version",
@@ -77,7 +80,7 @@ func versionCommand(compose Compose) *kernel {
 // version returns [StatusUsage] for a config error, [StatusFailed] for an
 // executable that does not read, and [StatusOK] otherwise.
 func (x *invocation) version() int {
-	found, err := open(x.stdio, x.flags, x.k.compose)
+	found, err := open(x.stdio, x.flags, x.k.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage
@@ -102,9 +105,11 @@ func (x *invocation) version() int {
 		}
 		d := m.Workspace.Describe()
 		sum := sha256.Sum256(d.Fingerprint)
+		v.Brand = string(d.Brand)
 		v.Composition = digestPrefix + hex.EncodeToString(sum[:])
 		v.Plugins = pluginsOf(d)
 		lines := []string{
+			"brand " + v.Brand,
 			"module " + v.Module.Path + " " + v.Module.Version,
 			"core " + v.Core,
 			"contract " + strconv.Itoa(v.Contract),
@@ -119,15 +124,18 @@ func (x *invocation) version() int {
 	return StatusOK
 }
 
-// pluginsOf returns each plugin of a description once. The frontends come
-// first, then the annotators, then the generators and the backend of each
-// plan, and then the checks.
+// pluginsOf returns each plugin of a description once, by its role and its
+// name, so a frontend and a backend of one language that share the name of
+// the language are two plugins. The frontends come first, then the
+// annotators, then the generators and the backend of each plan, then those
+// of each plan that the config disables, and then the checks. The binary
+// contains the plugins of a disabled plan, so the list has them.
 func pluginsOf(d workspace.Description) []component {
 	var out []component
-	seen := map[string]bool{}
+	seen := map[[2]string]bool{}
 	add := func(role string, c workspace.Component) {
-		if !seen[string(c.Name)] {
-			seen[string(c.Name)] = true
+		if key := [2]string{role, string(c.Name)}; !seen[key] {
+			seen[key] = true
 			out = append(out, component{Role: role, Name: string(c.Name), Version: c.Version})
 		}
 	}
@@ -137,7 +145,7 @@ func pluginsOf(d workspace.Description) []component {
 	for _, c := range d.Annotate {
 		add(roleAnnotator, c)
 	}
-	for _, p := range d.Plans {
+	for _, p := range slices.Concat(d.Plans, d.Disabled) {
 		for _, c := range p.Generate {
 			add(roleGenerator, c)
 		}

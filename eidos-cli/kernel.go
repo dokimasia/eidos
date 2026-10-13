@@ -19,7 +19,7 @@ const endFlags = "--"
 // status of the command.
 type runner func(ctx context.Context, x *invocation) int
 
-// kernel is one of the seven kernel commands. Every kernel command parses
+// kernel is one of the eight kernel commands. Every kernel command parses
 // its flags and arguments in the same way, renders through a [Renderer]
 // and returns its status.
 type kernel struct {
@@ -37,14 +37,14 @@ type kernel struct {
 
 var _ Command = (*kernel)(nil)
 
-// Kernels returns the seven kernel commands over compose, in the order run,
-// plan, explain, prune, doctor, watch and version. Each call returns new
-// values. The Run method of a command is safe for concurrent use when
+// Kernels returns the eight kernel commands over compose, in the order run,
+// plan, explain, prune, doctor, watch, version and schema. Each call returns
+// new values. The Run method of a command is safe for concurrent use when
 // compose is.
 func Kernels(compose Compose) []Command {
 	return []Command{
 		runCommand(compose), planCommand(compose), explainCommand(compose), pruneCommand(compose),
-		doctorCommand(compose), watchCommand(compose), versionCommand(compose),
+		doctorCommand(compose), watchCommand(compose), versionCommand(compose), schemaCommand(compose),
 	}
 }
 
@@ -80,9 +80,9 @@ func (k *kernel) Usage() string {
 // command and renders its output to stdio. Flags can come before, between
 // and after the positional arguments, and the argument -- ends the flags.
 // For -h or --help in args, Run prints Usage to stdio.Stdout and returns
-// [StatusOK]. For an unknown flag, a malformed value or a positional
-// argument of a command that takes none, Run renders a usage error and
-// returns [StatusUsage].
+// [StatusOK]. For an unknown flag, a malformed value, --quiet with
+// --verbose, or a positional argument of a command that takes none, Run
+// renders a usage error and returns [StatusUsage].
 //
 // Run panics unless stdio has both output streams, Getenv and an absolute
 // Dir.
@@ -94,6 +94,9 @@ func (k *kernel) Run(ctx context.Context, stdio IO, args []string) int {
 	if errors.Is(err, flag.ErrHelp) {
 		fmt.Fprint(stdio.Stdout, k.Usage())
 		return StatusOK
+	}
+	if err == nil && f.Quiet && f.Verbose {
+		err = fmt.Errorf("the flags --%s and --%s exclude each other", quietFlag, verboseFlag)
 	}
 	if err == nil && k.form == "" && len(positional) > 0 {
 		err = fmt.Errorf("the command takes no arguments, and has %s", strings.Join(positional, " "))
@@ -130,6 +133,9 @@ type invocation struct {
 	args []string
 	raw  []string
 	r    *Renderer
+	// stream is the writer of the files of run --stdout, and nil for a run
+	// that writes to the disk.
+	stream io.Writer
 }
 
 // usage renders err as a usage error of the command and returns

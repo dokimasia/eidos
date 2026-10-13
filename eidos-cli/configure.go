@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 
 	"go.dokimi.dev/eidos/cli/internal/config"
-	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -32,7 +31,7 @@ func Configure(b *workspace.Builder, root string) error {
 	if !brand.Valid() {
 		return fmt.Errorf("cli: the composition has the brand %q, which names no config file", brand)
 	}
-	name := ledger.StateDir(brand) + configExt
+	name := ConfigName(brand)
 	data, err := os.ReadFile(filepath.Join(root, name))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil

@@ -14,6 +14,7 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -44,6 +45,22 @@ const refinedConfig = "version: 1\nplans:\n    mirrors:\n" +
 // widthConfig selects the choice wide of the width policy, which the
 // printer of the policed composition declares.
 const widthConfig = "version: 1\npolicies:\n    text.width: wide\n"
+
+// generatorsConfig refines the generator of the mirror and its primary
+// family under a centralised plan.
+const generatorsConfig = "version: 1\nplans:\n    mirrors:\n        layout:\n" +
+	"            policy: centralised\n            dir: gen\n            generators:\n" +
+	"                mirror:\n                    dir: mirrors\n" +
+	"                    families: {\"\": {file: all.txt}}\n"
+
+// disabledConfig disables the plan bindings of the described composition.
+const disabledConfig = "version: 1\nplans:\n    bindings: {enabled: false}\n"
+
+// familiesConfig refines the primary family of the tuned generator and of
+// the mirror, and refines neither generator itself.
+const familiesConfig = "version: 1\nplans:\n    mirrors:\n        layout:\n            generators:\n" +
+	"                tuned: {families: {\"\": {policy: alongside-source}}}\n" +
+	"                mirror: {families: {\"\": {file: all.txt}}}\n"
 
 // storeID is the struct Store of the package svc, which the lister looks up.
 var storeID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc", Name: "Store", Kind: symbol.KindStruct}
@@ -139,6 +156,28 @@ func TestPlan(t *testing.T) {
 					"the plan bindings depends on the plan of the mirror")
 		})
 
+		t.Run("writes a plan that the config file disables as text", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(disabledConfig)})
+			_, stdout, _ := invoke(t, described, cmdPlan, root)
+			assert.Contains(t, stdout,
+				"plan bindings: disabled by the config file, target text, backend printer\n"+
+					"  generator binder 3\n",
+				"the plan has its target, its backend and its generator")
+		})
+
+		t.Run("writes a plan event for a plan that the config file disables", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(disabledConfig)})
+			_, stdout, _ := invoke(t, described, cmdPlan, root, jsonFlag)
+			assert.Contains(t, stdout,
+				`{"event":"plan","name":"bindings","disabled":true,"generate":[{"name":"binder","version":"3"}],`+
+					`"backend":{"name":"printer"},"target":"text"}`+"\n",
+				"the event has the name, the mark, the generators, the backend and the target")
+		})
+
 		t.Run("writes the sources and the layout that the config file refines", func(t *testing.T) {
 			t.Parallel()
 
@@ -161,6 +200,71 @@ func TestPlan(t *testing.T) {
 					`"generate":[{"name":"mirror","turn":1}],"backend":{"name":"printer"},"target":"text",`+
 					`"layout":{"policy":"centralised","dir":"gen","importBase":"example.test/gen"}}`+"\n",
 				"the event has the refined fields")
+		})
+
+		t.Run("writes each refinement of a generator and of a family", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(generatorsConfig)})
+			_, stdout, _ := invoke(t, compose, cmdPlan, root)
+			assert.Contains(t, stdout,
+				"  layout: policy centralised, dir gen\n"+
+					"  refine generator mirror: dir mirrors\n"+
+					"  refine family \"\" of mirror: file all.txt\n",
+				"the refinements follow the layout of the plan")
+		})
+
+		t.Run("writes each refinement of a generator and of a family into the plan event", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(generatorsConfig)})
+			_, stdout, _ := invoke(t, compose, cmdPlan, root, jsonFlag)
+			assert.Contains(t, stdout,
+				`"layout":{"policy":"centralised","dir":"gen",`+
+					`"generators":{"mirror":{"dir":"mirrors","families":{"":{"file":"all.txt"}}}}}}`+"\n",
+				"the event has the refinements in the form of the config file")
+		})
+
+		t.Run("writes the refinements of two families in the order of their generators", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(familiesConfig)})
+			_, stdout, _ := invoke(t, tunedCompose(tuned(&tunedOptions{Suffix: "_tuned"})), cmdPlan, root)
+			assert.Contains(t, stdout,
+				"  refine family \"\" of mirror: file all.txt\n"+
+					"  refine family \"\" of tuned: policy alongside-source\n",
+				"the family of the mirror comes first")
+		})
+
+		t.Run("writes the refinement of a family alone into the plan event", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(familiesConfig)})
+			_, stdout, _ := invoke(t, tunedCompose(tuned(&tunedOptions{Suffix: "_tuned"})), cmdPlan, root, jsonFlag)
+			assert.Contains(t, stdout,
+				`"generators":{"mirror":{"families":{"":{"file":"all.txt"}}},`+
+					`"tuned":{"families":{"":{"policy":"alongside-source"}}}}`,
+				"each generator has the refinement of its family alone")
+		})
+
+		t.Run("writes no refinement that sets no field", func(t *testing.T) {
+			t.Parallel()
+
+			unset := func() *workspace.Builder {
+				return workspace.New().
+					Brand(brand).
+					Frontends(frontendtest.NewScripted()).
+					Targets(target).
+					Plans(workspace.Plan{
+						Name: planName, Generators: []plugin.Generator{mirror()}, Backend: printer(),
+						Layout: layout.Config{
+							Plugins:  map[plugin.ID]layout.Refinement{"mirror": {}},
+							Families: map[layout.Family]layout.Refinement{{Plugin: "mirror"}: {}},
+						},
+					})
+			}
+			_, stdout, _ := invoke(t, unset, cmdPlan, workspaceDir(t, files.Tree{}))
+			assert.NotContains(t, stdout, "refine", "the plan has no line for a refinement that sets no field")
 		})
 
 		t.Run("writes the choice of each policy of a plan's backend", func(t *testing.T) {

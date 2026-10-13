@@ -190,6 +190,24 @@ func TestDocument(t *testing.T) {
 				"the plan has the layout of the document")
 		})
 
+		t.Run("refines the generators and the families of the layout of a plan", func(t *testing.T) {
+			t.Parallel()
+
+			b := composition(t, &stubOptions{})
+			assert.NoError(t, (&config.Document{Plans: map[string]config.Plan{planName: {
+				Layout: &config.Layout{Generators: map[plugin.ID]config.GeneratorLayout{genID: {
+					Policy: config.Policy(layout.PolicyCentralised), Dir: "gen",
+					Families: map[string]config.FamilyLayout{"": {File: "stubs.go"}},
+				}}},
+			}}}).Apply(b, t.TempDir()), "the document applies")
+			plans := built(t, b).Describe().Plans
+			assert.Length(t, plans, 1, "the composition has the plan")
+			assert.Equal(t, plans[0].Layout, layout.Config{
+				Plugins:  map[plugin.ID]layout.Refinement{genID: {Policy: layout.PolicyCentralised, Dir: "gen"}},
+				Families: map[layout.Family]layout.Refinement{{Plugin: genID}: {File: "stubs.go"}},
+			}, "the plan has the refinements of the document")
+		})
+
 		t.Run("leaves out a plan that the document disables", func(t *testing.T) {
 			t.Parallel()
 

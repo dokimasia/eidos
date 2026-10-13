@@ -6,6 +6,8 @@ package cli
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"strconv"
@@ -13,6 +15,8 @@ import (
 	"time"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -20,17 +24,43 @@ import (
 
 // The events of explain.
 const (
-	eventExplain          = "explain"
-	eventExplainFile      = "explain.file"
-	eventExplainClaim     = "explain.claim"
-	eventExplainExecution = "explain.execution"
+	eventExplain            = "explain"
+	eventExplainDeclaration = "explain.declaration"
+	eventExplainFile        = "explain.file"
+	eventExplainClaim       = "explain.claim"
+	eventExplainExecution   = "explain.execution"
 )
+
+// textIndent indents the JSON form of a declaration in text output.
+const textIndent = "  "
 
 // generationOf is the JSON form of the generation that an explanation
 // reads. Recorded is a time in RFC 3339 form.
 type generationOf struct {
 	Generation string `json:"generation"`
 	Recorded   string `json:"recorded"`
+}
+
+// declarationOf is the JSON form of one declaration of an explanation. Pos
+// is empty for a declaration without a position.
+type declarationOf struct {
+	Subject     string   `json:"subject"`
+	Pos         string   `json:"pos,omitempty"`
+	Declaration declared `json:"declaration"`
+}
+
+// declared is a declaration that encodes as [node.EncodeJSON] encodes it,
+// with the kind of the node in front of its fields.
+type declared struct {
+	node.Declaration
+}
+
+var _ json.Marshaler = declared{}
+
+// MarshalJSON returns the encoding of the declaration that node.EncodeJSON
+// returns, and its error.
+func (d declared) MarshalJSON() ([]byte, error) {
+	return node.EncodeJSON(d.Declaration)
 }
 
 // matchOf is the JSON form of the match of an invocation. Subject is empty
@@ -75,8 +105,23 @@ type explainedFile struct {
 	Hash         string    `json:"hash"`
 	Plugins      []string  `json:"plugins"`
 	Sources      []string  `json:"sources"`
+	Routes       []routeOf `json:"routes,omitempty"`
 	Contributors []matchOf `json:"contributors"`
 	Findings     []finding `json:"findings,omitempty"`
+}
+
+// routeOf is the JSON form of the route of one unit of a generated file:
+// the unit, and the name of the input of each part of the route. A part
+// without an input has no key.
+type routeOf struct {
+	Plugin  string `json:"plugin"`
+	Tag     string `json:"tag,omitempty"`
+	Package string `json:"package,omitempty"`
+	Key     string `json:"key,omitempty"`
+	Family  string `json:"family,omitempty"`
+	Policy  string `json:"policy,omitempty"`
+	Dir     string `json:"dir,omitempty"`
+	Name    string `json:"name,omitempty"`
 }
 
 // explainedClaim is the JSON form of one claim on a fact. Pos is empty for
@@ -107,6 +152,13 @@ type explainedExecution struct {
 	Unidentified int       `json:"unidentified"`
 }
 
+// unrecorded is a workspace whose generation records nothing about the
+// target of explain, and the name of the generation.
+type unrecorded struct {
+	member     Member
+	generation string
+}
+
 // explainCommand returns the command explain, which prints what the live
 // generation records about one target.
 func explainCommand(compose Compose) *kernel {
@@ -134,17 +186,20 @@ func explainCommand(compose Compose) *kernel {
 //   - a path outside the root of every workspace
 //
 // It returns [StatusFailed] when Explain returns an error, such as
-// [workspace.ErrNoGeneration].
+// [workspace.ErrNoGeneration]. It also returns StatusFailed when the
+// generation of each workspace that contains the target records nothing
+// about it, and then renders one error for each such workspace.
 func (x *invocation) explain(ctx context.Context) int {
 	if len(x.args) != 1 {
 		return x.usage(fmt.Errorf("the command takes one target, and has %d arguments", len(x.args)))
 	}
-	found, err := open(x.stdio, x.flags, x.k.compose)
+	found, err := open(x.stdio, x.flags, x.k.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage
 	}
-	status, placed := StatusOK, false
+	status, placed, recorded := StatusOK, false, false
+	var empty []unrecorded
 	for _, m := range found.members {
 		t, err := m.Workspace.ParseTarget(x.args[0])
 		if err != nil {
@@ -158,25 +213,52 @@ func (x *invocation) explain(ctx context.Context) int {
 			x.r.Member(m)
 		}
 		explanation, err := m.Workspace.Explain(ctx, t)
+		var texts []string
+		if err == nil {
+			texts, err = declarationTexts(explanation.Declarations)
+		}
 		if err != nil {
 			x.r.Error(err)
 			status = StatusFailed
 			continue
 		}
-		x.explanation(explanation)
+		x.explanation(explanation, texts)
+		if len(explanation.Declarations)+len(explanation.Files)+len(explanation.Claims)+
+			len(explanation.Executions) > 0 {
+
+			recorded = true
+			continue
+		}
+		empty = append(empty, unrecorded{member: m, generation: explanation.Generation})
 	}
 	if !placed {
 		return x.usage(fmt.Errorf("the target %s is outside the root of every workspace", x.args[0]))
 	}
+	if recorded {
+		return status
+	}
+	for _, blank := range empty {
+		if blank.member.Name != "" {
+			x.r.Member(blank.member)
+		}
+		x.r.Error(fmt.Errorf("cli: explain: the generation %s records nothing about %s", blank.generation, x.args[0]))
+		status = StatusFailed
+	}
 	return status
 }
 
-// explanation renders the generation of an explanation, then each file,
-// each claim and each execution.
-func (x *invocation) explanation(e *workspace.Explanation) {
+// explanation renders the generation of an explanation, then each
+// declaration, each file, each claim and each execution. texts are the text
+// forms of the declarations, which [declarationTexts] returns.
+func (x *invocation) explanation(e *workspace.Explanation, texts []string) {
 	recorded := e.Recorded.UTC().Format(time.RFC3339)
 	x.r.Event(eventExplain, &generationOf{Generation: e.Generation, Recorded: recorded},
 		"generation "+e.Generation+", recorded "+recorded)
+	for i, d := range e.Declarations {
+		x.r.Event(eventExplainDeclaration, &declarationOf{
+			Subject: d.Identity().String(), Pos: placeOf(d.Position()), Declaration: declared{d},
+		}, texts[i])
+	}
 	for _, f := range e.Files {
 		out := &explainedFile{
 			Path: f.Entry.Path, Plan: f.Entry.Plan, Hash: f.Entry.Hash, Sources: f.Entry.Sources,
@@ -185,9 +267,19 @@ func (x *invocation) explanation(e *workspace.Explanation) {
 		for _, p := range f.Entry.Plugins {
 			out.Plugins = append(out.Plugins, string(p))
 		}
-		lines := make([]string, 0, 1+len(f.Contributors)+len(out.Sources))
+		lines := make([]string, 0, 1+len(f.Routes)+len(f.Contributors)+len(out.Sources))
 		lines = append(lines,
 			"file "+out.Path+": "+fields("plan", out.Plan, "plugins", strings.Join(out.Plugins, " ")))
+		for _, r := range f.Routes {
+			route := routeOf{
+				Plugin: string(r.Unit.Plugin), Tag: r.Unit.Tag, Package: identityOf(r.Unit.Pkg), Key: r.Unit.Key,
+				Family: inputOf(r.Route.Family), Policy: inputOf(r.Route.Policy),
+				Dir: inputOf(r.Route.Dir), Name: inputOf(r.Route.Name),
+			}
+			out.Routes = append(out.Routes, route)
+			lines = append(lines, "  route "+fields("plugin", route.Plugin, "tag", route.Tag, "key", route.Key)+": "+
+				fields("family", route.Family, "policy", route.Policy, "dir", route.Dir, "name", route.Name))
+		}
 		for _, c := range f.Contributors {
 			m := matchOf{
 				Plugin: string(c.Plugin), Rule: int(c.Rule), Subject: identityOf(c.Subject), Instance: c.Instance,
@@ -273,6 +365,24 @@ func (x *invocation) execution(r workspace.ExplainedExecution) {
 	x.r.Event(eventExplainExecution, out, strings.Join(append(lines, findingsText(out.Findings)...), "\n"))
 }
 
+// declarationTexts returns the text form of each declaration: a line with
+// the identity and the position of the declaration, and below it the JSON
+// form of the declaration, indented by two spaces.
+//
+// Error modes: declarationTexts returns an error that joins the error of
+// the encoder of each declaration that does not encode.
+func declarationTexts(ds []node.Declaration) ([]string, error) {
+	out := make([]string, 0, len(ds))
+	errs := make([]error, 0, len(ds))
+	for _, d := range ds {
+		indented, err := json.MarshalIndent(declared{d}, textIndent, textIndent)
+		out = append(out, "declaration "+d.Identity().String()+" at "+spot(d.Position())+"\n"+
+			textIndent+string(indented))
+		errs = append(errs, err)
+	}
+	return out, errors.Join(errs...)
+}
+
 // relocate rewrites the path of t and the file of its position from the
 // working directory dir to the root root, with slashes. It reports whether
 // root contains them. A target without a path and without a position
@@ -330,6 +440,15 @@ func fields(pairs ...string) string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// inputOf returns the name of an input of the layout, and the empty string
+// for a part of a route without an input.
+func inputOf(in plugin.RouteInput) string {
+	if !in.Valid() {
+		return ""
+	}
+	return in.String()
 }
 
 // identityOf returns the text of an identity, and the empty string for the

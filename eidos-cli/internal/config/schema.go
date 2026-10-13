@@ -19,31 +19,44 @@ const (
 // The keywords and the types of JSON Schema that the schema of the file and
 // the schemas of the config's values state.
 const (
-	keywordSchema  = "$schema"
-	keywordTitle   = "title"
-	keywordOneOf   = "oneOf"
-	keywordType    = "type"
-	keywordMinimum = "minimum"
-	keywordPattern = "pattern"
-	keywordConst   = "const"
-	keywordEnum    = "enum"
-	typeInteger    = "integer"
-	typeString     = "string"
+	keywordSchema     = "$schema"
+	keywordTitle      = "title"
+	keywordOneOf      = "oneOf"
+	keywordType       = "type"
+	keywordProperties = "properties"
+	keywordMinimum    = "minimum"
+	keywordPattern    = "pattern"
+	keywordConst      = "const"
+	keywordEnum       = "enum"
+	typeInteger       = "integer"
+	typeString        = "string"
 )
+
+// optionsKey is the key of the options of a document.
+const optionsKey = "options"
 
 // Schema returns the JSON Schema of the config file format, draft 2020-12,
 // as indented JSON that ends with a newline. A file is valid when it is a
-// valid [Document] or a valid [List]. Each options section is an object
-// with any keys, because each plugin defines its own options and Build
-// validates them.
+// valid [Document] or a valid [List].
 //
-// Schema builds the schema from the yaml, doc and schema tags of the
-// fields through [jsonschema.Of], and returns the same bytes on each call.
-func Schema() []byte {
+// options maps the name of a plugin to the JSON Schema of its options.
+// Each schema becomes a property of the options of a document. The options
+// of a document admit any other name with any keys, because a plan
+// directory adds the options of its declarative plugins and Build validates
+// them. Schema builds the rest of the schema from the yaml, doc and schema
+// tags of the fields through [jsonschema.Of], and returns the same bytes on
+// each call with the same options.
+func Schema(options map[string]any) []byte {
+	document := jsonschema.Of(reflect.TypeFor[Document](), jsonschema.TagYAML)
+	if len(options) > 0 {
+		properties, _ := document[keywordProperties].(map[string]any)
+		section, _ := properties[optionsKey].(map[string]any)
+		section[keywordProperties] = options
+	}
 	root := map[string]any{
 		keywordSchema: dialect,
 		keywordTitle:  title,
-		keywordOneOf:  []any{jsonschema.Of(reflect.TypeFor[Document]()), jsonschema.Of(reflect.TypeFor[List]())},
+		keywordOneOf:  []any{document, jsonschema.Of(reflect.TypeFor[List](), jsonschema.TagYAML)},
 	}
 	// MarshalIndent cannot fail on a tree of maps, slices, strings, numbers
 	// and booleans.

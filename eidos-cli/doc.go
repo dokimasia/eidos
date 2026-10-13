@@ -4,8 +4,8 @@
 // Package cli contains the commands that every binary built with eidos
 // offers, and the parts that a command of the binary itself uses.
 //
-// [Kernels] returns the seven kernel commands: run, plan, explain, prune,
-// doctor, watch and version. A [Command] parses its own flags and
+// [Kernels] returns the eight kernel commands: run, plan, explain, prune,
+// doctor, watch, version and schema. A [Command] parses its own flags and
 // arguments, renders its own output and returns its own exit status, so any
 // command line can mount it. A host passes a command the arguments after
 // the name of the command, and exits with the status that [Command.Run]
@@ -16,6 +16,15 @@
 // renders its output through [Begin]. [Flags] are the flags that every
 // command accepts. [Configure] applies the config file of one root to a
 // composition, so a test runs the composition that the binary runs.
+//
+// # The config file
+//
+// [ConfigName] returns the name of the config file of a brand, such as
+// .acme.yaml. Each fault of a config file is a [ConfigError] with the file
+// and the line of the fault. The kernel commands do not read the key
+// extensions, and [Member.Extension] decodes one extension into the
+// settings of a command of the binary. [Schema] returns the JSON Schema of
+// the config file with the options of each plugin of the composition.
 //
 // # Exit statuses
 //
@@ -32,7 +41,7 @@
 //
 // # Dependency position
 //
-// cli imports cli/internal/config, core/diag, core/directive, core/ledger,
-// core/output, core/position, core/symbol, core/workspace and the Go
-// stdlib.
+// cli imports cli/internal/config, core/diag, core/directive, core/layout,
+// core/ledger, core/output, core/plugin, core/position, core/symbol,
+// core/workspace and the Go stdlib.
 package cli

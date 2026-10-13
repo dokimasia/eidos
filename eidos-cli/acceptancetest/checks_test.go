@@ -130,6 +130,24 @@ func TestChecks(t *testing.T) {
 			assert.HasPrefix(t, rejected(t, acceptancetest.AssertDiscovery, fixture(), pinned),
 				"a run from a directory below the root exits 0", "the check fails at the run below the root")
 		})
+
+		t.Run("rejects a host that searches past a version control marker", func(t *testing.T) {
+			t.Parallel()
+
+			unbounded := acceptancetest.Build(t, unboundedMain)
+			assert.HasPrefix(t, rejected(t, acceptancetest.AssertDiscovery, fixture(), unbounded),
+				"plan inside the repository exits as plan in a repository without a config file",
+				"the check fails at the status inside the repository")
+		})
+
+		t.Run("rejects a host that searches past a marker and exits 64 without a config file", func(t *testing.T) {
+			t.Parallel()
+
+			required := acceptancetest.Build(t, requiredMain)
+			assert.Equal(t, rejected(t, acceptancetest.AssertDiscovery, fixture(), required),
+				"plan inside the repository reports nothing about the config file above the marker",
+				"the check fails at the report of the config file above the marker")
+		})
 	})
 
 	t.Run("AssertJSON", func(t *testing.T) {

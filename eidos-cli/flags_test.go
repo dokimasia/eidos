@@ -13,7 +13,7 @@ import (
 	"go.dokimi.dev/eidos/cli"
 )
 
-// Every command accepts the same five flags.
+// Every command accepts the same six flags.
 func TestFlags(t *testing.T) {
 	t.Parallel()
 
@@ -83,14 +83,21 @@ func TestFlags(t *testing.T) {
 				})
 			}
 
-			t.Run("returns an error for a name of no format", func(t *testing.T) {
+			t.Run("returns an error that wraps ErrFormat for a name of no format", func(t *testing.T) {
+				t.Parallel()
+
+				var got cli.Format
+				assert.ErrorIs(t, got.Set("yaml"), cli.ErrFormat, "yaml is no output format")
+			})
+
+			t.Run("returns an error that lists the formats", func(t *testing.T) {
 				t.Parallel()
 
 				var got cli.Format
 				err := got.Set("yaml")
 				assert.HasError(t, err, "yaml is no output format")
-				assert.Equal(t, err.Error(), `cli: "yaml" is not an output format: use text or json`,
-					"the error lists the formats")
+				assert.Equal(t, err.Error(), `cli: unknown output format "yaml": use text or json`,
+					"the error names the value and the formats")
 			})
 		})
 	})
@@ -104,10 +111,12 @@ func TestFlags(t *testing.T) {
 			var got cli.Flags
 			fs := flag.NewFlagSet("run", flag.ContinueOnError)
 			got.Register(fs)
-			err := fs.Parse([]string{"--format=json", "--config", "ci.yaml", "--strict", "--verbose", "--no-color"})
+			err := fs.Parse([]string{
+				"--format=json", "--config", "ci.yaml", "--strict", "--verbose", "--quiet", "--no-color",
+			})
 			assert.NoError(t, err, "the flags parse")
 			assert.Equal(t, got, cli.Flags{
-				Format: cli.FormatJSON, Config: "ci.yaml", Strict: true, Verbose: true, NoColor: true,
+				Format: cli.FormatJSON, Config: "ci.yaml", Strict: true, Verbose: true, Quiet: true, NoColor: true,
 			}, "each flag sets its field")
 		})
 

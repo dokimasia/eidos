@@ -46,7 +46,7 @@ func doctorCommand(compose Compose) *kernel {
 // doctor returns [StatusFailed] when it reports a config error, an error of
 // a run or an Error finding, and [StatusOK] otherwise.
 func (x *invocation) doctor(ctx context.Context) int {
-	found, err := open(x.stdio, x.flags, x.k.compose)
+	found, err := open(x.stdio, x.flags, x.k.compose, nil)
 	status := StatusOK
 	if err != nil {
 		x.r.Error(err)

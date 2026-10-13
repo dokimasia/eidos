@@ -25,12 +25,14 @@ const (
 	cmdDoctor  = "doctor"
 	cmdWatch   = "watch"
 	cmdVersion = "version"
+	cmdSchema  = "schema"
 )
 
 // The flags that the cases pass to the commands.
 const (
 	jsonFlag     = "--format=json"
 	verboseFlag  = "--verbose"
+	quietFlag    = "--quiet"
 	strictFlag   = "--strict"
 	helpFlag     = "-h"
 	longHelpFlag = "--help"
@@ -38,6 +40,7 @@ const (
 	endFlag      = "--"
 	planFlag     = "--plan"
 	dryRunFlag   = "--dry-run"
+	stdoutFlag   = "--stdout"
 	checkFlag    = "--check"
 	coldFlag     = "--cold"
 	driftFlag    = "--overwrite-drift"
@@ -47,24 +50,26 @@ const (
 
 // These constants are the events of JSON output that the cases read.
 const (
-	eventStart            = "start"
-	eventError            = "error"
-	eventDiag             = "diag"
-	eventFile             = "file"
-	eventOutcome          = "outcome"
-	eventSummary          = "summary"
-	eventComponent        = "component"
-	eventPlan             = "plan"
-	eventVersion          = "version"
-	eventExplain          = "explain"
-	eventExplainFile      = "explain.file"
-	eventExplainClaim     = "explain.claim"
-	eventExplainExecution = "explain.execution"
+	eventStart              = "start"
+	eventError              = "error"
+	eventDiag               = "diag"
+	eventFile               = "file"
+	eventOutcome            = "outcome"
+	eventSummary            = "summary"
+	eventComponent          = "component"
+	eventPlan               = "plan"
+	eventVersion            = "version"
+	eventSchema             = "schema"
+	eventExplain            = "explain"
+	eventExplainDeclaration = "explain.declaration"
+	eventExplainFile        = "explain.file"
+	eventExplainClaim       = "explain.claim"
+	eventExplainExecution   = "explain.execution"
 )
 
 // kernelNames contains the names of the kernel commands, in the order of
 // Kernels.
-var kernelNames = []string{cmdRun, cmdPlan, cmdExplain, cmdPrune, cmdDoctor, cmdWatch, cmdVersion}
+var kernelNames = []string{cmdRun, cmdPlan, cmdExplain, cmdPrune, cmdDoctor, cmdWatch, cmdVersion, cmdSchema}
 
 // header is the field that every event of JSON output starts with.
 type header struct {
@@ -104,7 +109,7 @@ func TestKernel(t *testing.T) {
 	t.Run("Kernels", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the seven kernel commands in order", func(t *testing.T) {
+		t.Run("returns the eight kernel commands in order", func(t *testing.T) {
 			t.Parallel()
 
 			kernels := cli.Kernels(compose)
@@ -195,6 +200,15 @@ func TestKernel(t *testing.T) {
 			expect.Equal(t, status, cli.StatusUsage, "an unknown flag is a usage error")
 			expect.HasPrefix(t, stderr, "error: cli: plan: flag provided but not defined: -bogus\nplan [flags]",
 				"text output writes the error and the usage to standard error")
+		})
+
+		t.Run("returns StatusUsage for --quiet with --verbose", func(t *testing.T) {
+			t.Parallel()
+
+			status, _, stderr := invoke(t, compose, cmdPlan, t.TempDir(), quietFlag, verboseFlag)
+			expect.Equal(t, status, cli.StatusUsage, "the two flags exclude each other")
+			expect.HasPrefix(t, stderr, "error: cli: plan: the flags --quiet and --verbose exclude each other\n",
+				"the error names both flags")
 		})
 
 		t.Run("returns StatusUsage for an argument of a command that takes none", func(t *testing.T) {

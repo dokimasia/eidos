@@ -24,7 +24,9 @@ import (
 	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/cli"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/workspace"
 )
 
 // coreModule is the module path of the kernel. The command version writes
@@ -47,11 +49,22 @@ type moduleEvent struct {
 // versionEvent is a version event of JSON output, with the fields that the
 // cases read.
 type versionEvent struct {
+	Brand      string      `json:"brand"`
 	Module     moduleEvent `json:"module"`
 	Contract   int         `json:"contract"`
 	Executable string      `json:"executable"`
 	Member     string      `json:"member"`
 }
+
+// printerFront is the scripted frontend under the name of the printer, as
+// the frontend and the backend of one language share the name of the
+// language.
+type printerFront struct {
+	plugin.Frontend
+}
+
+// Name returns the name of the printer.
+func (printerFront) Name() plugin.ID { return "printer" }
 
 // TestVersion tests the command version, which writes the versions of the
 // binary, of eidos and of the plugins of each workspace, and the digests of
@@ -78,6 +91,7 @@ func TestVersion(t *testing.T) {
 			status, stdout, stderr := invoke(t, described, cmdVersion, root)
 			expect.Equal(t, status, cli.StatusOK, "version succeeds")
 			expect.Equal(t, stdout, strings.Join([]string{
+				"brand " + string(brand),
 				"module " + info.Main.Path + " " + info.Main.Version,
 				"core " + core,
 				"contract " + strconv.Itoa(plugin.ContractVersion),
@@ -107,6 +121,33 @@ func TestVersion(t *testing.T) {
 			expect.Equal(t, got[0].Module, moduleEvent{Path: info.Main.Path, Version: info.Main.Version},
 				"the event has the main module of the binary")
 			expect.Equal(t, got[1].Member, memberTool, "the second event names the second member")
+		})
+
+		t.Run("writes the brand into the version event", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := invoke(t, compose, cmdVersion, workspaceDir(t, files.Tree{}), jsonFlag)
+			got := decoded[versionEvent](t, stdout, eventVersion)
+			assert.Length(t, got, 1, "the workspace has one event")
+			assert.Equal(t, got[0].Brand, string(brand), "the event has the brand of the composition")
+		})
+
+		t.Run("lists a frontend and a backend that share a name", func(t *testing.T) {
+			t.Parallel()
+
+			shared := func() *workspace.Builder { return composed(printerFront{frontendtest.NewScripted()}) }
+			_, stdout, _ := invoke(t, shared, cmdVersion, workspaceDir(t, files.Tree{}))
+			expect.That(t, stdout).
+				Contains("\nfrontend printer 1\n", "the version lists the frontend").
+				Contains("\nbackend printer\n", "the version lists the backend")
+		})
+
+		t.Run("lists the plugins of a plan that the config file disables", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(disabledConfig)})
+			_, stdout, _ := invoke(t, described, cmdVersion, root)
+			assert.Contains(t, stdout, "\ngenerator binder 3\n", "the binary contains the generator of the plan")
 		})
 
 		t.Run("returns StatusUsage for a config error", func(t *testing.T) {

@@ -133,8 +133,11 @@ func Decode(name string, data []byte) (File, error) {
 }
 
 // value returns the value of key in the mapping m, or nil when m does not
-// have the key.
+// have the key. It returns nil for an m that is nil or not a mapping.
 func value(m *yaml.Node, key string) *yaml.Node {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if m.Content[i].Value == key {
 			return m.Content[i+1]

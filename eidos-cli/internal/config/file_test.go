@@ -32,7 +32,17 @@ memo:
 plans:
     go-services:
         sources: {lang: golang, packages: ["./svc/..."], module: example.com/platform}
-        layout: {policy: centralised, dir: gen, importBase: example.com/platform/gen}
+        layout:
+            policy: centralised
+            dir: gen
+            importBase: example.com/platform/gen
+            generators:
+                mockgen:
+                    policy: alongside-source
+                    dir: mocks
+                    file: mocks.go
+                    families:
+                        test: {policy: centralised, dir: gen/test, file: mocks_test.go}
     go-mocks:
         enabled: false
     ts-client:
@@ -41,6 +51,8 @@ policies:
     typescript.int64: string
 options:
     stubgen: {suffix: _stub}
+extensions:
+    reference: {canary: {rounds: 4}}
 `
 
 // fullList is a list with two workspaces.
@@ -79,6 +91,14 @@ func TestFile(t *testing.T) {
 							Policy:     config.Policy(layout.PolicyCentralised),
 							Dir:        "gen",
 							ImportBase: "example.com/platform/gen",
+							Generators: map[plugin.ID]config.GeneratorLayout{"mockgen": {
+								Policy: config.Policy(layout.PolicyAlongside), Dir: "mocks", File: "mocks.go",
+								Families: map[string]config.FamilyLayout{"test": {
+									Policy: config.Policy(layout.PolicyCentralised),
+									Dir:    "gen/test",
+									File:   "mocks_test.go",
+								}},
+							}},
 						},
 					},
 					"go-mocks":  {Enabled: new(false)},
@@ -86,6 +106,9 @@ func TestFile(t *testing.T) {
 				},
 				Policies: map[plugin.PolicyKey]plugin.Choice{"typescript.int64": "string"},
 				Options:  map[string]map[string]any{"stubgen": {"suffix": "_stub"}},
+				Extensions: map[string]any{
+					"reference": map[string]any{"canary": map[string]any{"rounds": 4}},
+				},
 			}, "the document has the value of each key")
 		})
 
@@ -184,6 +207,11 @@ func TestFile(t *testing.T) {
 				name: "returns an Error for a key of a document in a list",
 				give: "version: 1\nworkers: 2\nworkspaces: [{root: platform}]\n",
 				want: []config.Error{{File: fileName, Line: 2, Msg: "field workers not found in type config.List"}},
+			},
+			{
+				name: "returns an Error for the extensions of a list",
+				give: "version: 1\nworkspaces: [{root: platform}]\nextensions: {reference: 1}\n",
+				want: []config.Error{{File: fileName, Line: 3, Msg: "field extensions not found in type config.List"}},
 			},
 			{
 				name: "returns an Error for an unknown key of an entry",

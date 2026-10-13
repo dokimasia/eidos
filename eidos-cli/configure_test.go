@@ -72,6 +72,14 @@ func TestConfigure(t *testing.T) {
 				"the error has the file relative to the root and the line of the fault")
 		})
 
+		t.Run("returns an error that wraps a ConfigError for a fault of the config file", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
+			fault := assert.ErrorAs[*cli.ConfigError](t, cli.Configure(compose(), root), "the fault is a ConfigError")
+			assert.Equal(t, fault.Line, 2, "the fault has the line of the key")
+		})
+
 		t.Run("returns an error for a config file that lists workspaces", func(t *testing.T) {
 			t.Parallel()
 

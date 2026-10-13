@@ -39,12 +39,14 @@ const (
 // the deadline less the time left divided by graceShare.
 const graceShare = 20
 
-// The command line of the process cases: the extra command of the binary,
-// the command name that lists the commands, and a name of no command.
+// The command line of the cases: the extra command of the binary, the
+// command name that lists the commands, a name of no command, and the name
+// of the binary that each case of Run passes first.
 const (
-	echoName  = "echo"
-	helpName  = "help"
-	ghostName = "ghost"
+	echoName   = "echo"
+	helpName   = "help"
+	ghostName  = "ghost"
+	binaryName = "host"
 )
 
 // goneDir is the working directory that the test removes before Main runs,
@@ -89,15 +91,15 @@ func TestMain(m *testing.M) {
 }
 
 // TestMainProcess runs Main as a process of the test binary, one process at
-// a time. Each process writes the coverage meta-data file of the binary into
-// the one GOCOVERDIR under a temporary name that Go 1.27 makes from the time
-// in nanoseconds alone. When two processes exit in the same nanosecond, both
-// write one temporary file, and the rename of one of them fails.
+// a time, and Run in the test process. Each process writes the coverage
+// meta-data file of the binary into the one GOCOVERDIR under a temporary
+// name that Go 1.27 makes from the time in nanoseconds alone. When two
+// processes exit in the same nanosecond, both write one temporary file, and
+// the rename of one of them fails.
 func TestMainProcess(t *testing.T) {
 	self, err := os.Executable()
 	assert.NoError(t, err, "the test binary has a path")
 	binary := filepath.Base(self)
-	listed := "usage: " + binary + " [flags] <command> [flags] [arguments]\n\ncommands:\n"
 
 	t.Run("Main", func(t *testing.T) {
 		tests := []struct {
@@ -110,69 +112,15 @@ func TestMainProcess(t *testing.T) {
 			wantStderr string
 		}{
 			{
-				name:       "exits with StatusUsage without a command",
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: the command line of " + binary + " has no command\n" + listed,
-			},
-			{
-				name:       "writes the list of commands to standard output for -h",
-				args:       []string{helpFlag},
-				wantStatus: cli.StatusOK,
-				wantStdout: listed,
-			},
-			{
-				name:       "writes the list of commands to standard output for help",
-				args:       []string{helpName},
-				wantStatus: cli.StatusOK,
-				wantStdout: listed,
-			},
-			{
-				name:       "writes the usage of the command after help",
-				args:       []string{helpName, cmdRun},
-				wantStatus: cli.StatusOK,
-				wantStdout: "run [flags] [<pattern>...]\n",
-			},
-			{
-				name:       "exits with StatusUsage for help with two names",
-				args:       []string{helpName, cmdRun, cmdPlan},
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: help takes the name of one command, and has run plan\n" + listed,
-			},
-			{
-				name:       "exits with StatusUsage for help with the name of no command",
-				args:       []string{helpName, ghostName},
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: help takes the name of one command, and has ghost\n",
-			},
-			{
-				name:       "exits with StatusUsage for a command that the binary does not have",
-				args:       []string{ghostName},
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: ghost is not a command of " + binary + "\n" + listed,
-			},
-			{
-				name:       "exits with StatusUsage for a flag before the command that no command defines",
-				args:       []string{bogusFlag, cmdRun},
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: flag provided but not defined: -bogus\n",
-			},
-			{
-				name:       "writes a usage error before the command as JSON under --format=json",
-				args:       []string{jsonFlag, ghostName},
-				wantStatus: cli.StatusUsage,
-				wantStdout: `{"event":"start","schema":"1.0","command":"","brand":"acme",`,
-			},
-			{
-				name:       "passes the flags before the name of a command ahead of its arguments",
-				args:       []string{jsonFlag, echoName, "a"},
-				wantStatus: cli.StatusOK,
-				wantStdout: jsonFlag + " a\n",
-			},
-			{
-				name:       "runs the kernel command after the flags",
+				name:       "exits with the status of the command",
 				args:       []string{cmdPlan},
 				wantStatus: cli.StatusOK,
 				wantStdout: "frontend fakefront 1\n",
+			},
+			{
+				name:       "exits with StatusUsage without a command",
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: the command line of " + binary + " has no command\n",
 			},
 		}
 		for _, tt := range tests {
@@ -211,35 +159,158 @@ func TestMainProcess(t *testing.T) {
 			expect.HasPrefix(t, stderr.String(), "cli: find the working directory: ",
 				"Main writes the error of ProcessIO")
 		})
+	})
+
+	t.Run("Run", func(t *testing.T) {
+		t.Parallel()
+
+		listed := "usage: " + binaryName + " [flags] <command> [flags] [arguments]\n\ncommands:\n"
+		tests := []struct {
+			name       string
+			args       []string
+			wantStatus int
+			// wantStdout and wantStderr are the beginnings of what the command
+			// writes to standard output and to standard error.
+			wantStdout string
+			wantStderr string
+		}{
+			{
+				name:       "returns StatusUsage without a command",
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: the command line of " + binaryName + " has no command\n" + listed,
+			},
+			{
+				name:       "writes the list of commands to standard output for -h",
+				args:       []string{helpFlag},
+				wantStatus: cli.StatusOK,
+				wantStdout: listed,
+			},
+			{
+				name:       "writes the list of commands to standard output for help",
+				args:       []string{helpName},
+				wantStatus: cli.StatusOK,
+				wantStdout: listed,
+			},
+			{
+				name:       "writes the usage of the command after help",
+				args:       []string{helpName, cmdRun},
+				wantStatus: cli.StatusOK,
+				wantStdout: "run [flags] [<pattern>...]\n",
+			},
+			{
+				name:       "returns StatusUsage for help with two names",
+				args:       []string{helpName, cmdRun, cmdPlan},
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: help takes the name of one command, and has run plan\n" + listed,
+			},
+			{
+				name:       "returns StatusUsage for help with the name of no command",
+				args:       []string{helpName, ghostName},
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: help takes the name of one command, and has ghost\n",
+			},
+			{
+				name:       "returns StatusUsage for a command that the binary does not have",
+				args:       []string{ghostName},
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: ghost is not a command of " + binaryName + "\n" + listed,
+			},
+			{
+				name:       "returns StatusUsage for a flag before the command that no command defines",
+				args:       []string{bogusFlag, cmdRun},
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: flag provided but not defined: -bogus\n",
+			},
+			{
+				name:       "writes a usage error before the command as JSON under --format=json",
+				args:       []string{jsonFlag, ghostName},
+				wantStatus: cli.StatusUsage,
+				wantStdout: `{"event":"start","schema":"1.0","command":"","brand":"acme",`,
+			},
+			{
+				name:       "passes the flags before the name of a command ahead of its arguments",
+				args:       []string{jsonFlag, echoName, "a"},
+				wantStatus: cli.StatusOK,
+				wantStdout: jsonFlag + " a\n",
+			},
+			{
+				name:       "runs the kernel command after the flags",
+				args:       []string{cmdPlan},
+				wantStatus: cli.StatusOK,
+				wantStdout: "frontend fakefront 1\n",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var stdout, stderr bytes.Buffer
+				stdio := cli.IO{
+					Stdout: &stdout,
+					Stderr: &stderr,
+					Dir:    t.TempDir(),
+					Getenv: func(string) string { return "" },
+				}
+				args := append([]string{binaryName}, tt.args...)
+				status := cli.Run(t.Context(), stdio, compose, args, extra{name: echoName})
+				expect.Equal(t, status, tt.wantStatus, "Run returns the status of the command")
+				expect.HasPrefix(t, stdout.String(), tt.wantStdout, "Run writes the output of the command")
+				expect.HasPrefix(t, stderr.String(), tt.wantStderr, "Run writes the errors of the command")
+			})
+		}
 
 		panics := []struct {
 			name  string
+			args  []string
 			extra []cli.Command
 			want  string
 		}{
 			{
+				name: "panics for a command line without the path of the binary",
+				want: "cli: the command line has no path of the binary",
+			},
+			{
 				name:  "panics for an extra command with an empty name",
+				args:  []string{binaryName},
 				extra: []cli.Command{extra{}},
 				want:  "cli: a command has an empty name",
 			},
 			{
 				name:  "panics for an extra command with the name of a kernel command",
+				args:  []string{binaryName},
 				extra: []cli.Command{extra{name: cmdRun}},
 				want:  `cli: two commands have the name "run"`,
 			},
 			{
 				name:  "panics for two extra commands with one name",
+				args:  []string{binaryName},
 				extra: []cli.Command{extra{name: echoName}, extra{name: echoName}},
 				want:  `cli: two commands have the name "echo"`,
 			},
 		}
 		for _, tt := range panics {
 			t.Run(tt.name, func(t *testing.T) {
-				got := assert.Panics(t, func() { cli.Main(compose, tt.extra...) },
-					"the commands are a defect of the binary")
+				t.Parallel()
+
+				stdio := cli.IO{
+					Stdout: io.Discard,
+					Stderr: io.Discard,
+					Dir:    t.TempDir(),
+					Getenv: func(string) string { return "" },
+				}
+				got := assert.Panics(t, func() { cli.Run(t.Context(), stdio, compose, tt.args, tt.extra...) },
+					"the command line is a defect of the binary")
 				assert.Equal(t, got, any(tt.want), "the panic names the defect")
 			})
 		}
+
+		t.Run("panics for an IO without an output stream", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() { cli.Run(t.Context(), cli.IO{}, compose, []string{binaryName}) },
+				"an incomplete IO is a defect of the host")
+			assert.Equal(t, got, any("cli: the IO has no output stream"), "the panic names the missing part")
+		})
 	})
 }
 

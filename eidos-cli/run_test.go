@@ -214,6 +214,76 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, status, cli.StatusOK, "the committed output is current: "+stderr)
 		})
 
+		t.Run("writes each generated file to standard output under --stdout", func(t *testing.T) {
+			t.Parallel()
+
+			status, stdout, stderr := invoke(t, compose, cmdRun, stored(t, nil), stdoutFlag)
+			expect.Equal(t, status, cli.StatusOK, "the run succeeds")
+			expect.That(t, stdout).
+				HasPrefix("// === "+mirrorPath+" ===\n", "the output opens with the header of the mirror").
+				Contains(mirroredBody, "the output has the body of the mirror")
+			expect.Empty(t, stderr, "the run reports nothing")
+		})
+
+		t.Run("writes no file into the workspace under --stdout", func(t *testing.T) {
+			t.Parallel()
+
+			root := stored(t, nil)
+			status, _, _ := invoke(t, compose, cmdRun, root, stdoutFlag)
+			assert.Equal(t, status, cli.StatusOK, "the run succeeds")
+			files.Absent(t, filepath.Join(root, filepath.FromSlash(mirrorPath)), "the run writes no mirror")
+			files.Absent(t, filepath.Join(root, stateName), "the run records no generation")
+		})
+
+		t.Run("writes the name of the member before each path of a list under --stdout", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := invoke(t, compose, cmdRun, listed(t), stdoutFlag)
+			expect.That(t, stdout).
+				Contains("// === "+memberSvc+"/mirror.txt ===\n", "the header names the member svc").
+				Contains("// === "+memberTool+"/mirror.txt ===\n", "the header names the member tools")
+		})
+
+		t.Run("writes no file of a plan that fails under --stdout", func(t *testing.T) {
+			t.Parallel()
+
+			status, stdout, _ := invoke(t, compose, cmdRun, stored(t, files.Tree{storePath: files.Text(brokenSource)}),
+				stdoutFlag)
+			expect.Equal(t, status, cli.StatusFailed, "the generator fails the plan")
+			expect.Empty(t, stdout, "the failed plan commits nothing")
+		})
+
+		excluded := []struct {
+			name string
+			give string
+			want string
+		}{
+			{
+				name: "returns StatusUsage for --stdout with --format=json",
+				give: jsonFlag,
+				want: "the flags --stdout and --format=json exclude each other",
+			},
+			{
+				name: "returns StatusUsage for --stdout with --dry-run",
+				give: dryRunFlag,
+				want: "error: cli: run: the flags --stdout and --dry-run exclude each other\n",
+			},
+			{
+				name: "returns StatusUsage for --stdout with --check",
+				give: checkFlag,
+				want: "error: cli: run: the flags --stdout and --check exclude each other\n",
+			},
+		}
+		for _, tt := range excluded {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				status, stdout, stderr := invoke(t, compose, cmdRun, stored(t, nil), stdoutFlag, tt.give)
+				expect.Equal(t, status, cli.StatusUsage, "the flags exclude each other")
+				expect.Contains(t, stdout+stderr, tt.want, "the error names both flags")
+			})
+		}
+
 		t.Run("commits only the changes inside the patterns", func(t *testing.T) {
 			t.Parallel()
 

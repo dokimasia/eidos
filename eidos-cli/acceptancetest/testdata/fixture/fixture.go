@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"time"
@@ -105,6 +106,23 @@ func Dispatch(stdio cli.IO, commands []cli.Command, args []string) int {
 		return cli.StatusUsage
 	}
 	return commands[i].Run(context.Background(), stdio, args[1:])
+}
+
+// ConfigAbove returns the path of the config file of the brand in dir, or in
+// the nearest parent directory of dir that has the file. The search does not
+// stop at a version control marker. ConfigAbove reports false when no
+// directory has the file.
+func ConfigAbove(dir string) (string, bool) {
+	name := cli.ConfigName(Brand)
+	for d := dir; ; d = filepath.Dir(d) {
+		file := filepath.Join(d, name)
+		if _, err := os.Stat(file); err == nil {
+			return file, true
+		}
+		if filepath.Dir(d) == d {
+			return "", false
+		}
+	}
 }
 
 // composed returns the composition of the hosts. Its mirror gives the

@@ -34,9 +34,29 @@ type Sources struct {
 
 // Layout contains the fields of [layout.Config] that a config file can set.
 type Layout struct {
-	Policy     Policy `yaml:"policy"     doc:"The default placement of a generated file. The value is inherit, alongside-source or centralised."`
-	Dir        string `yaml:"dir"        doc:"The output directory of the plan. The path is relative to the workspace root and uses slashes."`
-	ImportBase string `yaml:"importBase" doc:"The import path of the output directory. A plan needs it when no loaded module contains the output directory."`
+	Policy     Policy                        `yaml:"policy"     doc:"The default placement of a generated file. The value is inherit, alongside-source or centralised."`
+	Dir        string                        `yaml:"dir"        doc:"The output directory of the plan. The path is relative to the workspace root and uses slashes."`
+	ImportBase string                        `yaml:"importBase" doc:"The import path of the output directory. A plan needs it when no loaded module contains the output directory."`
+	Generators map[plugin.ID]GeneratorLayout `yaml:"generators" doc:"The refinements of the routing of the generators of the plan. Each key is the name of a generator of the plan."`
+}
+
+// GeneratorLayout is the refinement of the routing of one generator and of
+// its families. Each field that the file sets replaces the same field of the
+// refinement that the composition declares for the generator.
+type GeneratorLayout struct {
+	Policy   Policy                  `yaml:"policy"   doc:"The placement of the files of the generator. The value is inherit, alongside-source or centralised."`
+	Dir      string                  `yaml:"dir"      doc:"The output directory of the files of the generator. The path is relative to the workspace root and uses slashes."`
+	File     string                  `yaml:"file"     doc:"The filename of every file of the generator, in place of the filename that the target spells."`
+	Families map[string]FamilyLayout `yaml:"families" doc:"The refinements of the routing of the families of the generator. Each key is the tag of a family, and the empty key names the primary family."`
+}
+
+// FamilyLayout is the refinement of the routing of one family of a
+// generator. Each field that the file sets replaces the same field of the
+// refinement that the composition declares for the family.
+type FamilyLayout struct {
+	Policy Policy `yaml:"policy" doc:"The placement of the files of the family. The value is inherit, alongside-source or centralised."`
+	Dir    string `yaml:"dir"    doc:"The output directory of the files of the family. The path is relative to the workspace root and uses slashes."`
+	File   string `yaml:"file"   doc:"The filename of every file of the family, in place of the filename that the target spells."`
 }
 
 // Plan is the refinement of one plan of the binary. Build leaves a value of
@@ -46,20 +66,38 @@ type Plan struct {
 	// Enabled is nil or true.
 	Enabled  *bool                              `yaml:"enabled"  doc:"When false, the composition leaves the plan out, and the next run removes the files of the plan. The default is true."`
 	Sources  *Sources                           `yaml:"sources"  doc:"The source packages of the plan. They replace the sources that the plan declares."`
-	Layout   *Layout                            `yaml:"layout"   doc:"The policy, the output directory and the import base of the plan. Each value that the file sets replaces the value of the plan."`
+	Layout   *Layout                            `yaml:"layout"   doc:"The policy, the output directory, the import base and the refinements of the generators of the plan. Each value that the file sets replaces the value of the plan."`
 	Policies map[plugin.PolicyKey]plugin.Choice `yaml:"policies" doc:"The choices of the lowering policies of the plan's backend. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice replaces the choice of the same key at the top level for the plan. Quote a choice that YAML reads as another type, such as \"null\"."`
 	Plugins  []string                           `yaml:"plugins"  doc:"The directories of the declarative plugins that the plan runs after the generators of the binary. A directory is absolute or relative to the workspace root, and uses slashes. Build refuses plugins for a plan that the binary does not mark extensible."`
 }
 
 // refinement converts the plan into the [workspace.PlanConfig] that Build
-// applies.
+// applies. A generator whose entry sets families alone refines no field of
+// the generator itself.
 func (p Plan) refinement() workspace.PlanConfig {
 	out := workspace.PlanConfig{Disabled: p.Enabled != nil && !*p.Enabled, Policies: p.Policies}
 	if p.Sources != nil {
 		out.Sources = &workspace.Sources{Lang: p.Sources.Lang, Packages: p.Sources.Packages, Module: p.Sources.Module}
 	}
-	if p.Layout != nil {
-		out.Policy, out.Dir, out.ImportBase = layout.Policy(p.Layout.Policy), p.Layout.Dir, p.Layout.ImportBase
+	if p.Layout == nil {
+		return out
+	}
+	out.Policy, out.Dir, out.ImportBase = layout.Policy(p.Layout.Policy), p.Layout.Dir, p.Layout.ImportBase
+	for name, g := range p.Layout.Generators {
+		if r := (layout.Refinement{Policy: layout.Policy(g.Policy), Dir: g.Dir, File: g.File}); r != (layout.Refinement{}) {
+			if out.Plugins == nil {
+				out.Plugins = make(map[plugin.ID]layout.Refinement, len(p.Layout.Generators))
+			}
+			out.Plugins[name] = r
+		}
+		for tag, f := range g.Families {
+			if out.Families == nil {
+				out.Families = map[layout.Family]layout.Refinement{}
+			}
+			out.Families[layout.Family{Plugin: name, Tag: tag}] = layout.Refinement{
+				Policy: layout.Policy(f.Policy), Dir: f.Dir, File: f.File,
+			}
+		}
 	}
 	return out
 }
@@ -80,6 +118,10 @@ type Document struct {
 	Plans    map[string]Plan                    `yaml:"plans"    doc:"The refinements of the plans of the binary. Each key is the name of a plan."`
 	Policies map[plugin.PolicyKey]plugin.Choice `yaml:"policies" doc:"The choices of the lowering policies. Each key is a policy key, such as typescript.int64, and each value is one of the choices of the key. A choice applies to every plan whose backend declares the key. Quote a choice that YAML reads as another type, such as \"null\"."`
 	Options  map[string]map[string]any          `yaml:"options"  doc:"The option values of the plugins. Each key is the name of a plugin, and each nested key is the key of an option."`
+	// Extensions contains the settings of the commands that the binary adds.
+	// The kernel commands do not read them, and [Extension] decodes one of
+	// them strictly.
+	Extensions map[string]any `yaml:"extensions" doc:"The settings of the commands that the binary adds. Each key is the name of an extension, and the kernel commands do not read the values."`
 }
 
 // Apply sets the values of the document on b. root is the workspace root of

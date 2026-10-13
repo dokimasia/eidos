@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"strconv"
@@ -15,8 +16,13 @@ const (
 	configFlag  = "config"
 	strictFlag  = "strict"
 	verboseFlag = "verbose"
+	quietFlag   = "quiet"
 	noColorFlag = "no-color"
 )
+
+// ErrFormat reports a value of --format that is neither text nor json.
+// [Format.Set] returns an error that wraps it.
+var ErrFormat = errors.New("cli: unknown output format")
 
 // Format is the output format that --format selects. The zero Format is
 // FormatText.
@@ -50,7 +56,10 @@ func (f Format) String() string {
 
 // Set sets f to the format with the name s. It implements [flag.Value].
 //
-// Error modes: Set returns an error when s is neither text nor json.
+// Error modes: Set returns an error that wraps [ErrFormat] when s is neither
+// text nor json. The flag package formats the error of a value with the verb
+// %v, so the error of a parse of the flags contains the text of the error and
+// does not wrap ErrFormat.
 func (f *Format) Set(s string) error {
 	for g := FormatText; g.Valid(); g++ {
 		if g.String() == s {
@@ -58,7 +67,7 @@ func (f *Format) Set(s string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("cli: %q is not an output format: use %s or %s", s, FormatText, FormatJSON)
+	return fmt.Errorf("%w %q: use %s or %s", ErrFormat, s, FormatText, FormatJSON)
 }
 
 // Flags are the flags that every command accepts.
@@ -73,6 +82,9 @@ type Flags struct {
 	Strict bool
 	// Verbose is true under --verbose, which renders Info findings.
 	Verbose bool
+	// Quiet is true under --quiet, which renders the Error findings alone.
+	// A kernel command refuses --quiet with --verbose.
+	Quiet bool
 	// NoColor is true under --no-color, which renders text without colour.
 	NoColor bool
 }
@@ -83,5 +95,6 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 	fs.StringVar(&f.Config, configFlag, "", "the config `file`, which replaces the search for one")
 	fs.BoolVar(&f.Strict, strictFlag, false, "report every warning as an error")
 	fs.BoolVar(&f.Verbose, verboseFlag, false, "render info findings")
+	fs.BoolVar(&f.Quiet, quietFlag, false, "render error findings alone")
 	fs.BoolVar(&f.NoColor, noColorFlag, false, "render text without colour")
 }

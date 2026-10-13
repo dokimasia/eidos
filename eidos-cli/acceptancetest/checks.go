@@ -30,6 +30,7 @@ const (
 	pruneName   = "prune"
 	doctorName  = "doctor"
 	versionName = "version"
+	schemaName  = "schema"
 )
 
 // The flags that the checks pass to the kernel commands.
@@ -58,39 +59,35 @@ const (
 	stackMark   = "goroutine "
 )
 
-// configExt is the extension of the config file of a brand. The name of the
-// file is the name of the state directory of the brand and the extension,
-// such as .acme.yaml.
-const configExt = ".yaml"
-
 // gitDir is the version control marker that AssertDiscovery writes.
 const gitDir = ".git"
 
 // The directories that the checks create in their root.
 const (
-	cleanDir     = "clean"
-	malformedDir = "malformed"
-	failedDir    = "failed"
-	belowDir     = "below"
-	deeperDir    = "deeper"
-	markedDir    = "marked"
-	repoDir      = "repo"
-	innerDir     = "inner"
-	givenDir     = "given"
-	listedDir    = "listed"
-	firstMember  = "first"
-	secondMember = "second"
-	nestedDir    = "nested"
-	outerDir     = "outer"
+	cleanDir        = "clean"
+	malformedDir    = "malformed"
+	failedDir       = "failed"
+	belowDir        = "below"
+	deeperDir       = "deeper"
+	markedDir       = "marked"
+	repoDir         = "repo"
+	innerDir        = "inner"
+	unconfiguredDir = "unconfigured"
+	givenDir        = "given"
+	listedDir       = "listed"
+	firstMember     = "first"
+	secondMember    = "second"
+	nestedDir       = "nested"
+	outerDir        = "outer"
 )
 
-// The checks write these config files. malformedConfig has a key that the
-// format does not have, and plainConfig has the version alone. givenName is
-// the file name that a check passes to --config. listConfig lists two
-// members, and the roots of nestedConfig nest.
+// The checks write these config files. malformedConfig has malformedKey,
+// a key that the format does not have. givenName is the file name that a
+// check passes to --config. listConfig lists two members, and the roots of
+// nestedConfig nest.
 const (
-	malformedConfig = "version: 1\nacceptancetest: a key that the format does not have\n"
-	plainConfig     = "version: 1\n"
+	malformedKey    = "acceptancetest"
+	malformedConfig = "version: 1\n" + malformedKey + ": a key that the format does not have\n"
 	givenName       = "given.yaml"
 	listConfig      = "version: 1\nworkspaces: [{root: " + firstMember + "}, {root: " + secondMember + "}]\n"
 	nestedConfig    = "version: 1\nworkspaces: [{root: " + outerDir + "}, {root: " + outerDir + "/" + innerDir + "}]\n"
@@ -178,9 +175,13 @@ func AssertPanic(tb assert.TB, f Fixture, bin, root string) {
 //   - A run from a directory below the root finds the config file of the
 //     root, and writes the state directory into the root.
 //   - A version control marker between the working directory and a config
-//     file stops the search.
+//     file stops the search. plan inside a repository below a config file
+//     that does not decode exits with the status of plan in a repository
+//     without a config file. It reports nothing about the config file above
+//     the marker. A composition with a required option exits 64 in both.
 //   - --config takes precedence over the config file of the working
-//     directory.
+//     directory. The check passes the config file of the tree of the
+//     fixture through --config.
 func AssertDiscovery(tb assert.TB, f Fixture, bin, root string) {
 	tb.Helper()
 
@@ -197,6 +198,11 @@ func AssertDiscovery(tb assert.TB, f Fixture, bin, root string) {
 	files.IsDir(tb, filepath.Join(below, state), "the run writes the state directory into the root")
 	files.Absent(tb, filepath.Join(deeper, state), "the run writes no state directory into the working directory")
 
+	unconfigured := filepath.Join(root, unconfiguredDir)
+	assert.NoError(tb, os.MkdirAll(filepath.Join(unconfigured, gitDir), dirMode),
+		"the check creates a repository without a config file")
+	want := Exec(tb, bin, unconfigured, nil, plan...)
+
 	marked := filepath.Join(root, markedDir)
 	inner := filepath.Join(marked, repoDir, innerDir)
 	assert.NoError(tb, os.MkdirAll(inner, dirMode), "the check creates a directory inside a repository")
@@ -208,15 +214,19 @@ func AssertDiscovery(tb assert.TB, f Fixture, bin, root string) {
 	assert.Equal(tb, got.Status, cli.StatusUsage,
 		"plan exits 64 beside the config file with a key that the format does not have: "+string(got.Stderr))
 	got = Exec(tb, bin, inner, nil, plan...)
-	assert.Equal(tb, got.Status, cli.StatusOK,
-		"plan exits 0 inside the repository, because the search stops at its marker: "+string(got.Stderr))
+	assert.Equal(tb, got.Status, want.Status,
+		"plan inside the repository exits as plan in a repository without a config file: "+string(got.Stderr))
+	assert.NotContains(tb, string(got.Stderr), malformedKey,
+		"plan inside the repository reports nothing about the config file above the marker")
 
 	given := filepath.Join(root, givenDir)
+	body, err := fs.ReadFile(f.Tree, config)
+	assert.NoError(tb, err, "the tree of the fixture has the config file of the brand at its root")
 	assert.NoError(tb, os.MkdirAll(given, dirMode), "the check creates the working directory of --config")
 	assert.NoError(tb, os.WriteFile(filepath.Join(given, config), []byte(malformedConfig), fileMode),
 		"the check writes a config file with a key that the format does not have")
-	assert.NoError(tb, os.WriteFile(filepath.Join(given, givenName), []byte(plainConfig), fileMode),
-		"the check writes the config file of --config")
+	assert.NoError(tb, os.WriteFile(filepath.Join(given, givenName), body, fileMode),
+		"the check writes the config file of the tree as the config file of --config")
 	got = Exec(tb, bin, given, nil, slices.Concat(plan, []string{configFlag, givenName})...)
 	assert.Equal(tb, got.Status, cli.StatusOK,
 		"plan exits 0 for --config beside a config file that does not decode: "+string(got.Stderr))
@@ -253,7 +263,7 @@ func AssertJSON(tb assert.TB, f Fixture, bin, root string) {
 	i := slices.IndexFunc(ran, func(e event) bool { return e.Event == eventFile })
 	assert.NotEqual(tb, i, -1, "run reports a file for explain to explain")
 	events(explainName, ran[i].Path)
-	for _, name := range []string{planName, pruneName, doctorName, versionName} {
+	for _, name := range []string{planName, pruneName, doctorName, versionName, schemaName} {
 		events(name)
 	}
 }
@@ -378,6 +388,5 @@ func stateNames(tb assert.TB, f Fixture) (string, string) {
 	tb.Helper()
 
 	assert.True(tb, f.Brand.Valid(), "the fixture has a valid brand")
-	state := ledger.StateDir(f.Brand)
-	return state, state + configExt
+	return ledger.StateDir(f.Brand), cli.ConfigName(f.Brand)
 }

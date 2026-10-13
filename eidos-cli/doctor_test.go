@@ -64,6 +64,14 @@ func TestDoctor(t *testing.T) {
 				"doctor writes the Info at the directive")
 		})
 
+		t.Run("writes no UnusedSuppression Info under --quiet", func(t *testing.T) {
+			t.Parallel()
+
+			root := stored(t, files.Tree{storePath: files.Text(unusedSource)})
+			_, _, stderr := invoke(t, compose, cmdDoctor, root, quietFlag)
+			assert.Empty(t, stderr, "--quiet leaves out the Info of a doctored code")
+		})
+
 		t.Run("writes a DeprecatedDirective Warning at a deprecated directive", func(t *testing.T) {
 			t.Parallel()
 

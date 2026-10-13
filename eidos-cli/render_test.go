@@ -213,6 +213,27 @@ func TestRenderer(t *testing.T) {
 				"the Info renders")
 		})
 
+		t.Run("writes no Warning under --quiet", func(t *testing.T) {
+			t.Parallel()
+
+			r, _, stderr := rendered(t, cli.Flags{Format: cli.FormatText, Quiet: true}, nil, false)
+			d := finding
+			d.Severity = diag.SeverityWarning
+			r.Report(d)
+			assert.Empty(t, stderr.String(), "a Warning does not render under --quiet")
+		})
+
+		t.Run("writes an Error under --quiet", func(t *testing.T) {
+			t.Parallel()
+
+			r, _, stderr := rendered(t, cli.Flags{Format: cli.FormatText, Quiet: true}, nil, false)
+			d := finding
+			d.Related = nil
+			r.Report(d)
+			assert.Equal(t, stderr.String(), "svc/store.zz:3:2: error "+code+": Store has no spelling (mirror)\n",
+				"the Error renders")
+		})
+
 		t.Run("puts the name of the member before each position in text output", func(t *testing.T) {
 			t.Parallel()
 
@@ -405,6 +426,18 @@ func TestRenderer(t *testing.T) {
 			assert.HasSuffix(t, stdout.String(),
 				`{"event":"summary","status":1,`+noFiles+`,`+noPlans+`,"errors":1,"warnings":1,"infos":1}`+"\n",
 				"the summary counts the Info that it did not render")
+		})
+
+		t.Run("counts the findings that --quiet does not render", func(t *testing.T) {
+			t.Parallel()
+
+			r, stdout, _ := rendered(t, cli.Flags{Format: cli.FormatJSON, Quiet: true}, nil, false)
+			r.Report(warning)
+			r.Report(info)
+			r.End(cli.StatusOK)
+			assert.HasSuffix(t, stdout.String(),
+				`{"event":"summary","status":0,`+noFiles+`,`+noPlans+`,"errors":0,"warnings":1,"infos":1}`+"\n",
+				"the summary counts the Warning and the Info")
 		})
 
 		t.Run("writes the counts of each member of a list", func(t *testing.T) {

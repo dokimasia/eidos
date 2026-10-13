@@ -74,7 +74,7 @@ func (x *invocation) watch(ctx context.Context, interval time.Duration) int {
 	if interval < minInterval {
 		return x.usage(fmt.Errorf("the interval %s is shorter than %s", interval, minInterval))
 	}
-	found, err := open(x.stdio, x.flags, x.k.compose)
+	found, err := open(x.stdio, x.flags, x.k.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage

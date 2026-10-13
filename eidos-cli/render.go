@@ -241,8 +241,8 @@ func (r *Renderer) Member(m Member) {
 // Report renders one finding, and counts it for the summary. Text output
 // writes the finding to standard error as one line, followed by one
 // indented line for each related position. JSON output writes a diag
-// event. Report renders an Info only under --verbose, and counts it in
-// both cases.
+// event. Report renders an Info only under --verbose, and only an Error
+// under --quiet. It counts every finding.
 func (r *Renderer) Report(d diag.Diag) {
 	r.report(d, false)
 }
@@ -314,9 +314,12 @@ func (r *Renderer) End(status int) {
 }
 
 // report renders one finding and counts it. It renders an Info only under
-// --verbose, unless always is true.
+// --verbose, unless always is true, and only an Error under --quiet.
 func (r *Renderer) report(d diag.Diag, always bool) {
 	r.count(func(t *tally) { t.add(d.Severity) })
+	if r.flags.Quiet && d.Severity != diag.SeverityError {
+		return
+	}
 	if d.Severity == diag.SeverityInfo && !r.flags.Verbose && !always {
 		return
 	}

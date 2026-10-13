@@ -23,25 +23,46 @@ import (
 const helpCommand = "help"
 
 // Main is the command line of a binary without a framework of its own. It
-// looks up the command of os.Args among the kernel commands and the extra
-// commands, and runs it with [ProcessIO] under a context that the first
-// interrupt or termination signal cancels. It exits the process with the
-// status that the command returns, and never returns.
-//
-// Main reads the command line <binary> [flags] <command> [flags]
-// [arguments]. It passes the flags before the name of the command to the
+// runs os.Args through [Run] with [ProcessIO], under a context that the
+// first interrupt or termination signal cancels. It exits the process with
+// the status that Run returns, and never returns. When ProcessIO fails,
+// Main writes the error to standard error and exits with [StatusFailed].
+// Main panics for each defect of the binary that Run panics for.
+func Main(compose Compose, extra ...Command) {
+	stdio, err := ProcessIO()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(StatusFailed)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	status := Run(ctx, stdio, compose, os.Args, extra...)
+	stop()
+	os.Exit(status)
+}
+
+// Run runs the command line args of a binary with stdio under ctx, and
+// returns the status of the command. args[0] is the path of the binary, as
+// [os.Args] has it, and the rest is [flags] <command> [flags] [arguments].
+// Run looks up the command among the kernel commands and the extra
+// commands. It passes the flags before the name of the command to the
 // command, ahead of the arguments after the name. For help, -h or --help
-// before the name, Main prints the list of commands. For help <command>, it
-// prints the help text of the command. Both exit with [StatusOK]. A missing
-// or unknown command exits with [StatusUsage]. When ProcessIO fails, Main
-// writes the error to standard error and exits with [StatusFailed].
+// before the name, Run writes the list of commands. For help <command>, it
+// writes the help text of the command. Both return [StatusOK]. A missing or
+// unknown command returns [StatusUsage].
 //
-// Main panics for each of these defects of the binary:
+// Run panics for each of these defects of the binary:
 //
+//   - a command line without the path of the binary
+//   - an IO without both output streams, without Getenv or with a relative
+//     working directory
 //   - an extra command with an empty name
 //   - an extra command with the name of a kernel command
 //   - two extra commands with one name
-func Main(compose Compose, extra ...Command) {
+func Run(ctx context.Context, stdio IO, compose Compose, args []string, extra ...Command) int {
+	if len(args) == 0 {
+		panic("cli: the command line has no path of the binary")
+	}
+	stdio.check()
 	commands := append(Kernels(compose), extra...)
 	named := map[string]bool{}
 	for _, c := range commands {
@@ -53,15 +74,7 @@ func Main(compose Compose, extra ...Command) {
 		}
 		named[c.Name()] = true
 	}
-	stdio, err := ProcessIO()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(StatusFailed)
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	status := dispatch(ctx, stdio, compose, filepath.Base(os.Args[0]), os.Args[1:], commands)
-	stop()
-	os.Exit(status)
+	return dispatch(ctx, stdio, compose, filepath.Base(args[0]), args[1:], commands)
 }
 
 // dispatch looks up the command whose name follows the leading flags of

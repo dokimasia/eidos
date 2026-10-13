@@ -54,8 +54,24 @@ const (
 	chattyName = "Chatty"
 )
 
+// The Extension cases read the extension extensionName. extendedConfig is a
+// config file with the extension, and strayConfig is a config file whose
+// extension has a key that canarySettings does not declare, at line 3.
+const (
+	extensionName  = "reference"
+	extendedConfig = "version: 1\nextensions:\n    reference: {rounds: 4}\n"
+	strayConfig    = "version: 1\nextensions:\n    reference: {roundz: 4}\n"
+	strayMsg       = "field roundz not found in type cli_test.canarySettings"
+)
+
 // errBroken is the error that the mirror returns for a struct named Broken.
 var errBroken = errors.New("cli_test: the mirror cannot mirror Broken")
+
+// canarySettings are the settings of a consumer under the extension of the
+// Extension cases.
+type canarySettings struct {
+	Rounds int `yaml:"rounds"`
+}
 
 // noted is the code of the findings of the mirror.
 var noted = diag.MustRegister(diag.Prefix("CLITEST"), diag.CodeSpec{
@@ -189,6 +205,16 @@ func TestOpen(t *testing.T) {
 			err := refused(t, root, cli.Flags{})
 			assert.HasPrefix(t, err.Error(), confName+":2: field workerz not found",
 				"the error has the file relative to the root and the line of the fault")
+		})
+
+		t.Run("returns an error that wraps a ConfigError for a fault of a config file", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
+			fault := assert.ErrorAs[*cli.ConfigError](t, refused(t, root, cli.Flags{}), "the fault is a ConfigError")
+			assert.Equal(t, *fault, cli.ConfigError{
+				File: confName, Line: 2, Msg: "field workerz not found in type config.Document",
+			}, "the fault has the file, the line and the message")
 		})
 
 		t.Run("returns the faults of Build", func(t *testing.T) {
@@ -381,6 +407,84 @@ func TestOpen(t *testing.T) {
 			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: "svc", Getenv: os.Getenv}
 			assert.Panics(t, func() { _, _ = cli.Open(stdio, cli.Flags{}, compose) },
 				"a relative working directory is a defect of the host")
+		})
+	})
+
+	t.Run("Member", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("Extension", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("decodes the extension of the config file of the member", func(t *testing.T) {
+				t.Parallel()
+
+				members := opened(t, workspaceDir(t, files.Tree{confName: files.Text(extendedConfig)}), cli.Flags{})
+				assert.Length(t, members, 1, "a document covers one workspace")
+				var got canarySettings
+				found, err := members[0].Extension(extensionName, &got)
+				assert.NoError(t, err, "the extension decodes")
+				assert.True(t, found, "the config file has the extension")
+				assert.Equal(t, got, canarySettings{Rounds: 4}, "the settings have the value of the extension")
+			})
+
+			t.Run("decodes the extension of the config file of a member of a list", func(t *testing.T) {
+				t.Parallel()
+
+				root := workspaceDir(t, files.Tree{
+					confName:          files.Text("version: 1\nworkspaces: [{root: svc}]\n"),
+					"svc/" + confName: files.Text(extendedConfig),
+				})
+				members := opened(t, root, cli.Flags{})
+				assert.Length(t, members, 1, "the list has one workspace")
+				var got canarySettings
+				_, err := members[0].Extension(extensionName, &got)
+				assert.NoError(t, err, "the extension decodes")
+				assert.Equal(t, got, canarySettings{Rounds: 4}, "the member reads its own config file")
+			})
+
+			t.Run("reports false for a member without a config file", func(t *testing.T) {
+				t.Parallel()
+
+				members := opened(t, workspaceDir(t, files.Tree{".git": files.Dir()}), cli.Flags{})
+				assert.Length(t, members, 1, "the repository is one workspace")
+				var got canarySettings
+				found, err := members[0].Extension(extensionName, &got)
+				assert.NoError(t, err, "a member without a config file has no fault")
+				assert.False(t, found, "the member has no extension")
+			})
+
+			faults := []struct {
+				name string
+				give files.Tree
+				want cli.ConfigError
+			}{
+				{
+					name: "returns an error that wraps a ConfigError for a key that v does not declare",
+					give: files.Tree{confName: files.Text(strayConfig)},
+					want: cli.ConfigError{File: confName, Line: 3, Msg: strayMsg},
+				},
+				{
+					name: "returns a ConfigError with the file of a member of a list relative to the list",
+					give: files.Tree{
+						confName:          files.Text("version: 1\nworkspaces: [{root: svc}]\n"),
+						"svc/" + confName: files.Text(strayConfig),
+					},
+					want: cli.ConfigError{File: "svc/" + confName, Line: 3, Msg: strayMsg},
+				},
+			}
+			for _, tt := range faults {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					members := opened(t, workspaceDir(t, tt.give), cli.Flags{})
+					assert.Length(t, members, 1, "the file covers one workspace")
+					var got canarySettings
+					_, err := members[0].Extension(extensionName, &got)
+					fault := assert.ErrorAs[*cli.ConfigError](t, err, "the fault is a ConfigError")
+					assert.Equal(t, *fault, tt.want, "the fault has the file, the line and the message")
+				})
+			}
 		})
 	})
 }

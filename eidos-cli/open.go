@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -18,11 +19,6 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/workspace"
 )
-
-// configExt is the extension of a config file. The name of the config file
-// of a brand is the name of its state directory and the extension, such as
-// .acme.yaml.
-const configExt = ".yaml"
 
 // markers contains the names that mark the root of a repository of a
 // version control system.
@@ -41,6 +37,40 @@ type Member struct {
 	Config string
 	// Workspace is the configured and built composition.
 	Workspace *workspace.Workspace
+	// source is the path of the config file in its faults, and data is the
+	// content of the file. Both are empty when the workspace has no config
+	// file.
+	source string
+	data   []byte
+}
+
+// Extension decodes the value of the extension name of the config file of
+// m into v, with the strict rules of the file. It reports false where m has
+// no config file or the file has no such extension. Extension decodes into
+// the value of v, so a field that the extension does not set keeps its
+// value. A member of a list reads the extensions of its own config file.
+//
+// Extension panics for a v that is nil or not a pointer, and for a name
+// that is empty, is - or contains a comma.
+//
+// Error modes: Extension returns an error that wraps one *ConfigError for
+// each key that v does not declare and for each value that does not decode.
+// The file of each fault is relative to the directory of the config file
+// that Open found.
+func (m Member) Extension(name string, v any) (bool, error) {
+	return config.Extension(m.source, m.data, name, v)
+}
+
+// configFile is the config file of one member.
+type configFile struct {
+	// path is the absolute path of the file, and empty for a workspace
+	// without a config file.
+	path string
+	// source is the path of the file in its faults, relative to the
+	// directory of the file that open found, in slash form.
+	source string
+	data   []byte
+	doc    *config.Document
 }
 
 // workspaces is what open found for a working directory.
@@ -77,7 +107,7 @@ type workspaces struct {
 // the file relative to the directory of the file that Open found, in slash
 // form, as a finding names a file.
 func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
-	found, err := open(stdio, f, compose)
+	found, err := open(stdio, f, compose, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +118,10 @@ func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
 // that built beside the error that joins the faults of the other members,
 // so a command such as doctor can continue with the members that built.
 // The composition that names the brand becomes the workspace outside a
-// list, and each member of a list builds a composition of its own.
-func open(stdio IO, f Flags, compose Compose) (workspaces, error) {
+// list, and each member of a list builds a composition of its own. stream
+// is the writer that each workspace writes its files to in place of the
+// disk, and nil for the disk.
+func open(stdio IO, f Flags, compose Compose, stream io.Writer) (workspaces, error) {
 	stdio.check()
 	b := compose()
 	brand := b.BrandName()
@@ -101,23 +133,26 @@ func open(stdio IO, f Flags, compose Compose) (workspaces, error) {
 	if err != nil {
 		return workspaces{}, fmt.Errorf("cli: resolve the working directory: %w", err)
 	}
-	name := ledger.StateDir(brand) + configExt
+	name := ConfigName(brand)
 	file, data, root, err := locate(dir, f.Config, name)
 	if err != nil {
 		return workspaces{dir: dir}, err
 	}
+	c := configFile{path: file, data: data}
 	var decoded config.File
 	if file != "" {
-		if decoded, err = config.Decode(relative(root, file), data); err != nil {
+		c.source = relative(root, file)
+		if decoded, err = config.Decode(c.source, data); err != nil {
 			return workspaces{dir: dir}, err
 		}
 	}
 	if decoded.List != nil {
 		var members []Member
-		members, err = list(compose, brand, root, name, decoded.List)
+		members, err = list(compose, brand, root, name, decoded.List, stream)
 		return workspaces{dir: dir, members: members}, err
 	}
-	m, err := member(b, brand, "", root, file, decoded.Document)
+	c.doc = decoded.Document
+	m, err := member(b, brand, "", root, c, stream)
 	if err != nil {
 		return workspaces{dir: dir}, err
 	}
@@ -159,10 +194,14 @@ func locate(dir, given, name string) (string, []byte, string, error) {
 }
 
 // list builds the members of a list. dir is the directory of the list, and
-// name is the file name of the config file of the brand. list returns the
-// members that built beside the error that joins the faults of the others.
-// It builds no member when a root does not exist or two roots nest.
-func list(compose Compose, brand output.Brand, dir, name string, l *config.List) ([]Member, error) {
+// name is the file name of the config file of the brand. stream is the
+// writer of the files of each member, nil for the disk, as [member] takes
+// it. list returns the members that built beside the error that joins the
+// faults of the others. It builds no member when a root does not exist or
+// two roots nest.
+func list(
+	compose Compose, brand output.Brand, dir, name string, l *config.List, stream io.Writer,
+) ([]Member, error) {
 	roots := make([]string, 0, len(l.Workspaces))
 	var errs []error
 	for i, e := range l.Workspaces {
@@ -183,12 +222,12 @@ func list(compose Compose, brand output.Brand, dir, name string, l *config.List)
 	}
 	members := make([]Member, 0, len(l.Workspaces))
 	for i, e := range l.Workspaces {
-		file, doc, err := entryConfig(roots[i], dir, name, e.Config)
+		c, err := entryConfig(roots[i], dir, name, e.Config)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		m, err := member(compose(), brand, path.Clean(e.Root), roots[i], file, doc)
+		m, err := member(compose(), brand, path.Clean(e.Root), roots[i], c, stream)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("cli: the workspace %s does not build", e.Root), err)
 			continue
@@ -203,47 +242,62 @@ func list(compose Compose, brand output.Brand, dir, name string, l *config.List)
 // the path that the entry sets. When given is empty, the file is the config
 // file of the brand in the root, and the entry has no config when that file
 // does not exist. A fault of the file names the file relative to dir.
-func entryConfig(root, dir, name, given string) (string, *config.Document, error) {
+func entryConfig(root, dir, name, given string) (configFile, error) {
 	file := filepath.Join(root, name)
 	if given != "" {
 		file = resolve(dir, given)
 	}
 	data, err := os.ReadFile(file)
 	if given == "" && errors.Is(err, fs.ErrNotExist) {
-		return "", nil, nil
+		return configFile{}, nil
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("cli: read the config file: %w", err)
+		return configFile{}, fmt.Errorf("cli: read the config file: %w", err)
 	}
-	decoded, err := config.Decode(relative(dir, file), data)
+	c := configFile{path: file, source: relative(dir, file), data: data}
+	decoded, err := config.Decode(c.source, data)
 	if err != nil {
-		return "", nil, err
+		return configFile{}, err
 	}
 	if decoded.List != nil {
-		return "", nil, fmt.Errorf("cli: the config file %s of a workspace in a list is a list", relative(dir, file))
+		return configFile{}, fmt.Errorf("cli: the config file %s of a workspace in a list is a list", c.source)
 	}
-	return file, decoded.Document, nil
+	c.doc = decoded.Document
+	return c, nil
 }
 
 // member configures and builds one workspace from the composition b, which
-// no other member uses. doc is the document of the config file of the
-// workspace, and nil when the workspace has none. The workspace writes its
-// output into root and its state into the state directory of brand in
-// root.
-func member(b *workspace.Builder, brand output.Brand, name, root, file string, doc *config.Document) (Member, error) {
-	if doc != nil {
-		if err := doc.Apply(b, root); err != nil {
+// no other member uses. c is the config file of the workspace, whose
+// document is nil when the workspace has none. Where stream is nil, the
+// workspace writes its output into root and its state into the state
+// directory of brand in root. Otherwise it writes its files to stream, each
+// under a header that starts with the name of the member, and keeps no
+// state.
+func member(
+	b *workspace.Builder, brand output.Brand, name, root string, c configFile, stream io.Writer,
+) (Member, error) {
+	if c.doc != nil {
+		if err := c.doc.Apply(b, root); err != nil {
 			return Member{}, err
 		}
 	}
-	// A run reads the sink and the ledger only when the error is nil.
-	b.Output(func() (output.Sink, error) { return output.NewDisk(root, brand) })
-	b.Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, brand) })
+	if stream == nil {
+		// A run reads the sink and the ledger only when the error is nil.
+		b.Output(func() (output.Sink, error) { return output.NewDisk(root, brand) })
+		b.Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, brand) })
+	} else {
+		prefix := name
+		if prefix != "" {
+			prefix += "/"
+		}
+		b.Output(output.NewStream(stream, prefix).Open)
+		b.Ledger(nil)
+	}
 	w, err := b.Build()
 	if err != nil {
 		return Member{}, err
 	}
-	return Member{Name: name, Root: root, Config: file, Workspace: w}, nil
+	return Member{Name: name, Root: root, Config: c.path, Workspace: w, source: c.source, data: c.data}, nil
 }
 
 // resolve returns the path p of a config file or a command line as an

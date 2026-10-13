@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
@@ -34,6 +36,21 @@ const (
 // the struct above it.
 const dropped = "+meta drop=" + string(flagKey) + "\n"
 
+// The targets that no generation records: a path that no plan generates,
+// and the identity of a struct that no source declares.
+const (
+	ungeneratedPath = "svc/none.txt"
+	ghostIdentity   = "fake:ghost.Ghost"
+)
+
+// moved is the scripted line of the out directive of the kernel, which
+// moves the mirror of the struct above it into the directory gen beside its
+// source. movedPath is the path of the moved mirror.
+const (
+	moved     = "+out path=gen/\n"
+	movedPath = "svc/gen/mirror.txt"
+)
+
 // noisyTarget is the finding of the mirror at the line of the struct Noisy.
 var noisyTarget = noted.String() + "@" + storePath + ":2"
 
@@ -50,6 +67,19 @@ type matchEvent struct {
 	Subject string `json:"subject"`
 }
 
+// declarationEvent is an explain.declaration event of JSON output.
+type declarationEvent struct {
+	Subject     string          `json:"subject"`
+	Pos         string          `json:"pos"`
+	Declaration json.RawMessage `json:"declaration"`
+	Member      string          `json:"member"`
+}
+
+// kindOf is the kind of the JSON form of a declaration.
+type kindOf struct {
+	Kind string `json:"kind"`
+}
+
 // explainedFileEvent is an explain.file event of JSON output.
 type explainedFileEvent struct {
 	Path         string       `json:"path"`
@@ -57,6 +87,24 @@ type explainedFileEvent struct {
 	Plugins      []string     `json:"plugins"`
 	Contributors []matchEvent `json:"contributors"`
 	Member       string       `json:"member"`
+}
+
+// routesEvent is the list of the routes of an explain.file event of JSON
+// output.
+type routesEvent struct {
+	Routes []routeEvent `json:"routes"`
+}
+
+// routeEvent is the route of one unit of a file in JSON output.
+type routeEvent struct {
+	Plugin  string `json:"plugin"`
+	Tag     string `json:"tag"`
+	Package string `json:"package"`
+	Key     string `json:"key"`
+	Family  string `json:"family"`
+	Policy  string `json:"policy"`
+	Dir     string `json:"dir"`
+	Name    string `json:"name"`
 }
 
 // readEvent is one read of an execution or of a claim in JSON output.
@@ -115,6 +163,85 @@ func TestExplain(t *testing.T) {
 				Path: mirrorPath, Plan: planName, Plugins: []string{"mirror"},
 				Contributors: []matchEvent{{Plugin: "mirror", Subject: storeTarget}},
 			}}, "the invocation of the mirror on the store contributed to the file")
+		})
+
+		t.Run("writes the route of the unit of a generated file", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), mirrorPath, jsonFlag)
+			assert.Equal(t, decoded[routesEvent](t, stdout, eventExplainFile), []routesEvent{{Routes: []routeEvent{{
+				Plugin: "mirror", Package: "fake:svc", Key: "svc",
+				Family: plugin.RouteHandler.String(), Policy: plugin.RouteDefault.String(),
+				Dir: plugin.RouteSource.String(), Name: plugin.RouteTarget.String(),
+			}}}}, "the layout placed the unit of the mirror beside its source")
+		})
+
+		t.Run("writes no policy into the route of a unit that an out directive moves", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source+moved), movedPath, jsonFlag)
+			assert.Equal(t, decoded[routesEvent](t, stdout, eventExplainFile), []routesEvent{{Routes: []routeEvent{{
+				Plugin: "mirror", Package: "fake:svc", Key: "svc", Family: plugin.RouteHandler.String(),
+				Dir: plugin.RouteOut.String(), Name: plugin.RouteTarget.String(),
+			}}}}, "the path of the directive leaves the policy out of the route")
+		})
+
+		t.Run("writes the declaration of an identity", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), storeTarget, jsonFlag)
+			got := decoded[declarationEvent](t, stdout, eventExplainDeclaration)
+			assert.Length(t, got, 1, "the identity names one declaration")
+			expect.Equal(t, got[0].Subject, storeTarget, "the event has the identity of the declaration")
+			expect.Equal(t, got[0].Pos, storePath+":2", "the event has the position of the declaration")
+			var kind kindOf
+			assert.NoError(t, json.Unmarshal(got[0].Declaration, &kind), "the declaration is a JSON object")
+			expect.Equal(t, kind.Kind, symbol.KindStruct.String(), "the declaration has the kind of the store")
+		})
+
+		t.Run("writes the declaration of an identity as text", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), storeTarget)
+			want := "declaration " + storeTarget + " at " + storePath + ":2\n" +
+				"  {\n    \"kind\": \"" + symbol.KindStruct.String() + "\",\n"
+			assert.Contains(t, stdout, want, "the text has the line of the declaration and its JSON form below it")
+		})
+
+		t.Run("returns StatusFailed for a target that the generation records nothing about", func(t *testing.T) {
+			t.Parallel()
+
+			status, stdout, _ := invoke(t, described, cmdExplain, explained(t, source), ungeneratedPath, jsonFlag)
+			expect.Equal(t, status, cli.StatusFailed, "an empty explanation fails explain")
+			generations := decoded[generationEvent](t, stdout, eventExplain)
+			assert.Length(t, generations, 1, "the output has the generation that explain read")
+			errs := decoded[errorEvent](t, stdout, eventError)
+			assert.Length(t, errs, 1, "the output has one error")
+			expect.Equal(t, errs[0].Msg, "cli: explain: the generation "+generations[0].Generation+
+				" records nothing about "+ungeneratedPath, "the error names the generation and the target")
+		})
+
+		t.Run("returns StatusOK for an identity that one member of a list records", func(t *testing.T) {
+			t.Parallel()
+
+			root := listed(t)
+			ran(t, root)
+			status, _, stderr := invoke(t, compose, cmdExplain, root, "fake:store.Store")
+			expect.Equal(t, status, cli.StatusOK, "the member svc records the store")
+			expect.Empty(t, stderr, "explain writes no error for the member tools")
+		})
+
+		t.Run("writes an error for each member of a list that records nothing about the target", func(t *testing.T) {
+			t.Parallel()
+
+			root := listed(t)
+			ran(t, root)
+			status, stdout, _ := invoke(t, compose, cmdExplain, root, ghostIdentity, jsonFlag)
+			expect.Equal(t, status, cli.StatusFailed, "no member records the identity")
+			errs := decoded[errorEvent](t, stdout, eventError)
+			assert.Length(t, errs, 2, "each member has one error")
+			expect.Equal(t, errs[0].Member, memberSvc, "the first error names the first member")
+			expect.Equal(t, errs[1].Member, memberTool, "the second error names the second member")
 		})
 
 		t.Run("writes the group and the contributors of a file", func(t *testing.T) {
@@ -196,8 +323,9 @@ func TestExplain(t *testing.T) {
 			_, stdout, _ := invoke(t, described, cmdExplain, explained(t, noisySource+dropped), "fake:svc.Noisy")
 			expect.That(t, stdout).
 				Contains("file svc/mirror.txt: plan mirrors, plugins mirror\n"+
+					"  route plugin mirror, key svc: family handler, policy default, dir source, name target\n"+
 					"  contributor mirror rule 0 fake:svc.Noisy\n  source fake:svc.Noisy\n",
-					"the text has the file and its contributor").
+					"the text has the file, the route of its unit and its contributor").
 				Contains("claim cli.flag on fake:svc.Noisy: "+
 					"value dropped, winner true, authority directive, turn 0, at svc/store.zz:3\n",
 					"the text has the drop").

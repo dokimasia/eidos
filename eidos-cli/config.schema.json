@@ -4,6 +4,11 @@
     {
       "additionalProperties": false,
       "properties": {
+        "extensions": {
+          "additionalProperties": {},
+          "description": "The settings of the commands that the binary adds. Each key is the name of an extension, and the kernel commands do not read the values.",
+          "type": "object"
+        },
         "ignore": {
           "description": "The directive names that the load does not report as unclaimed. A name is a full directive name, or a plugin prefix that ends with a colon.",
           "items": {
@@ -53,11 +58,65 @@
               },
               "layout": {
                 "additionalProperties": false,
-                "description": "The policy, the output directory and the import base of the plan. Each value that the file sets replaces the value of the plan.",
+                "description": "The policy, the output directory, the import base and the refinements of the generators of the plan. Each value that the file sets replaces the value of the plan.",
                 "properties": {
                   "dir": {
                     "description": "The output directory of the plan. The path is relative to the workspace root and uses slashes.",
                     "type": "string"
+                  },
+                  "generators": {
+                    "additionalProperties": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dir": {
+                          "description": "The output directory of the files of the generator. The path is relative to the workspace root and uses slashes.",
+                          "type": "string"
+                        },
+                        "families": {
+                          "additionalProperties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "dir": {
+                                "description": "The output directory of the files of the family. The path is relative to the workspace root and uses slashes.",
+                                "type": "string"
+                              },
+                              "file": {
+                                "description": "The filename of every file of the family, in place of the filename that the target spells.",
+                                "type": "string"
+                              },
+                              "policy": {
+                                "description": "The placement of the files of the family. The value is inherit, alongside-source or centralised.",
+                                "enum": [
+                                  "inherit",
+                                  "alongside-source",
+                                  "centralised"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "description": "The refinements of the routing of the families of the generator. Each key is the tag of a family, and the empty key names the primary family.",
+                          "type": "object"
+                        },
+                        "file": {
+                          "description": "The filename of every file of the generator, in place of the filename that the target spells.",
+                          "type": "string"
+                        },
+                        "policy": {
+                          "description": "The placement of the files of the generator. The value is inherit, alongside-source or centralised.",
+                          "enum": [
+                            "inherit",
+                            "alongside-source",
+                            "centralised"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "description": "The refinements of the routing of the generators of the plan. Each key is the name of a generator of the plan.",
+                    "type": "object"
                   },
                   "importBase": {
                     "description": "The import path of the output directory. A plan needs it when no loaded module contains the output directory.",

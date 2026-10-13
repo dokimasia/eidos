@@ -25,6 +25,8 @@ const (
 	renamedMain    = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/renamed"
 	recoveringMain = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/recovering"
 	pinnedMain     = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/pinned"
+	unboundedMain  = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/unbounded"
+	requiredMain   = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/required"
 	bannerMain     = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/banner"
 	clockMain      = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/clock"
 	mutedMain      = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/muted"
