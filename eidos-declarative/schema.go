@@ -39,7 +39,7 @@ const (
 // of a closed vocabulary, such as the type of a param, has an enum of its
 // spellings. Schema returns the same bytes on each call.
 func Schema() []byte {
-	root := jsonschema.Of(reflect.TypeFor[manifest]())
+	root := jsonschema.Of(reflect.TypeFor[manifest](), jsonschema.TagYAML)
 	root[keywordSchema] = dialect
 	root[keywordTitle] = title
 	// MarshalIndent cannot fail on a tree of maps, slices, strings, numbers
