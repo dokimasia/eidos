@@ -4,12 +4,13 @@
 package golang_test
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
-	"go.dokimi.dev/assert/expect"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/cli/acceptancetest"
@@ -22,8 +23,8 @@ import (
 )
 
 // The main packages of the two binaries of the acceptance fixture, the tree
-// of the fixture, and the group under which the dispatcher of the group
-// binary mounts the kernel commands.
+// of the fixture, and the group below which the group binary mounts the
+// kernel commands.
 const (
 	mainHost       = "go.dokimi.dev/eidos/conformance/lang/go/testdata/acceptance/main"
 	groupHost      = "go.dokimi.dev/eidos/conformance/lang/go/testdata/acceptance/group"
@@ -31,14 +32,11 @@ const (
 	group          = "gen"
 )
 
-// crashUsage is the help text of the crash command.
-const crashUsage = "usage: crash\n"
-
-// The binaries of the acceptance fixture pass the acceptance suite. One
-// binary mounts the kernel commands through cli.Main, and the other binary
-// mounts them under a group of its own dispatcher. The suite compiles the
-// output of a run through the type check of the Go adapter, which compiles
-// every package and every test file. Crash panics.
+// The binaries of the acceptance fixture pass the acceptance suite. The app
+// of one binary has the kernel commands at its root, and the app of the
+// other binary mounts them below a group. The suite compiles the output of
+// a run through the type check of the Go adapter, which compiles every
+// package and every test file. Crash panics.
 func TestAcceptance(t *testing.T) {
 	t.Parallel()
 
@@ -51,11 +49,11 @@ func TestAcceptance(t *testing.T) {
 			prefix []string
 		}{
 			{
-				name: "passes the acceptance suite in a binary that mounts the kernel commands through cli.Main",
+				name: "passes the acceptance suite in a binary with the kernel commands at the root of its app",
 				main: mainHost,
 			},
 			{
-				name:   "passes the acceptance suite in a binary that mounts the kernel commands under a group",
+				name:   "passes the acceptance suite in a binary that mounts the kernel commands below a group",
 				main:   groupHost,
 				prefix: []string{group},
 			},
@@ -107,46 +105,12 @@ func TestAcceptance(t *testing.T) {
 	t.Run("Crash", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("Name", func(t *testing.T) {
+		t.Run("panics", func(t *testing.T) {
 			t.Parallel()
 
-			t.Run("returns CrashName", func(t *testing.T) {
-				t.Parallel()
-
-				assert.Equal(t, golang.Crash{}.Name(), golang.CrashName, "the name of the command is CrashName")
-			})
-		})
-
-		t.Run("Synopsis", func(t *testing.T) {
-			t.Parallel()
-
-			t.Run("returns one line that ends with a full stop", func(t *testing.T) {
-				t.Parallel()
-
-				expect.That(t, golang.Crash{}.Synopsis()).
-					HasSuffix(".", "the synopsis ends with a full stop").
-					NotContains("\n", "the synopsis has one line")
-			})
-		})
-
-		t.Run("Usage", func(t *testing.T) {
-			t.Parallel()
-
-			t.Run("returns the form of the command", func(t *testing.T) {
-				t.Parallel()
-
-				assert.Equal(t, golang.Crash{}.Usage(), crashUsage, "the usage is the form of the crash command")
-			})
-		})
-
-		t.Run("Run", func(t *testing.T) {
-			t.Parallel()
-
-			t.Run("panics", func(t *testing.T) {
-				t.Parallel()
-
-				assert.Panics(t, func() { golang.Crash{}.Run(t.Context(), cli.IO{}, nil) }, "the command panics")
-			})
+			run, err := gocli.NewRun(&cli.Global{}, &struct{}{}, &gocli.Env{Stdout: io.Discard, Stderr: io.Discard})
+			assert.NoError(t, err, "the run has its options and both streams")
+			assert.Panics(t, func() { _ = golang.Crash(t.Context(), run) }, "the command panics")
 		})
 	})
 }

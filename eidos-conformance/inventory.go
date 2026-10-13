@@ -23,13 +23,13 @@ const (
 	tableName  = "Table"
 )
 
-// Inventory returns the neutral feature list, in corpus order.
+// Inventory returns the neutral feature list in corpus order.
 //
-// It grows with the wave, the node model its source, and a feature
-// is never removed: coverage totality over a growing list is what
-// keeps a language's silence impossible. A language that cannot
-// spell a feature declares the refusal in its coverage, and never
-// omits the entry.
+// The features come from the node model. No feature is ever removed from
+// the list. A check of coverage over the whole list then fails for a
+// language without a verdict on each feature. A language that cannot spell
+// a feature declares the refusal in its coverage instead of omitting the
+// entry.
 func Inventory() []Feature {
 	return []Feature{
 		{

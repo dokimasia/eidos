@@ -35,8 +35,8 @@ const (
 //   - The plan ts-audit reads ops toward the TypeScript backend.
 //
 // The config file of the tree adds the declarative plugin acme-audit to both
-// plans. Without it, Build refuses each plan because the plan lists no
-// generator. Each call returns new frontends, rules and backends.
+// plans. Without it, each plan has no generator and writes no file. Each
+// call returns new frontends, rules and backends.
 func Compose() *workspace.Builder {
 	return workspace.New().
 		Brand(brand).

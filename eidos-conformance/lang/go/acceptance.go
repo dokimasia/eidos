@@ -6,6 +6,8 @@ package golang
 import (
 	"context"
 
+	gocli "go.stealthscale.io/cli"
+
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/workspace"
 	golang "go.dokimi.dev/eidos/lang/go"
@@ -13,28 +15,17 @@ import (
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 )
 
-// CrashName is the name of [Crash] in the binaries of the acceptance
-// fixture.
-const CrashName = "crash"
+// The name and the help text of the command [Crash] in the binaries of the
+// acceptance fixture.
+const (
+	CrashName = "crash"
+	CrashHelp = "Panics, so that the acceptance suite checks the status of a panic."
+)
 
-// Crash is a command that panics. The binaries of the acceptance fixture
-// mount it, and the acceptance suite runs it to check that a panic exits
-// with status 2. The zero value is the command.
-type Crash struct{}
-
-// Name returns the name of the command, crash.
-func (Crash) Name() string { return CrashName }
-
-// Synopsis returns the synopsis of the command.
-func (Crash) Synopsis() string {
-	return "Panics, so that the acceptance suite checks the status of a panic."
-}
-
-// Usage returns the help text of the command.
-func (Crash) Usage() string { return "usage: crash\n" }
-
-// Run panics.
-func (Crash) Run(context.Context, cli.IO, []string) int {
+// Crash is the handler of a command that panics. The binaries of the
+// acceptance fixture add it to their apps under CrashName, and the
+// acceptance suite runs it to check that a panic exits with status 2.
+func Crash(context.Context, *gocli.Run[cli.Global, struct{}]) error {
 	panic("golang: the crash command panics")
 }
 

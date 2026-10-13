@@ -221,7 +221,7 @@ func run(t *testing.T, root string) (*workspace.Report, error) {
 	t.Helper()
 
 	stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: root, Getenv: os.Getenv}
-	members, err := cli.Open(stdio, cli.Flags{}, declarative.Compose)
+	members, err := cli.Open(stdio, cli.Global{}, declarative.Compose)
 	assert.NoError(t, err, "the workspace opens")
 	assert.Length(t, members, 1, "the config file configures one workspace")
 	return members[0].Workspace.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
