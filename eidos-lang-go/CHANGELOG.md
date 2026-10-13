@@ -1,0 +1,191 @@
+# go.dokimi.dev/eidos/lang/go
+
+## 0.1.0
+
+### Minor Changes
+
+- 17a7a8a: Add `golang.Qualifier`, and import a package whose path ends in a keyword, such as `example.com/go`, under an escaped name such as `go_`.
+- 2e6ca0a: Attach a directive carrier on a Go parameter or a result to each name of its field.
+- 786a060: Add `testing.AssertParallel`, which requires every generated Go test and subtest to call `Parallel`.
+- 4ffc162: Add `rules.Bound.Satisfies`, `rules.Bound.Implementers` and `rules.SatisfactionRules`, which the Go rules implement.
+- 786a060: Add `backend.TemplateImport` to each backend, which binds the name of an import that a template states.
+- 2e6ca0a: Derive the samples of a generic type at its type arguments, the samples and the zero of a complex number, and the zero of an inline type, and fold `interface{}` as `any`.
+- 786a060: **Breaking:** Rename `Rules.SamplesOf` to `DeriveSamples`, and remove `Rules.Substitute`.
+- d7c134f: Add `rules.WellKnownRules`, and fold a resolved `time.Time` and `time.Duration` to their well-known identities.
+- 2e6ca0a: **Breaking:** Fold `error` to `rules.WellKnownError`, state the error contract of a Go type, replace `IsSentinelName` with `SentinelBase`, and export `MethodSet` and `NullaryString`.
+- 786a060: Add the template helpers `tag`, which joins the tag entries of a field and refuses an entry that `reflect.StructTag` cannot read back, and `embeds`.
+- 786a060: Lower an enum to its underlying type, and bound its out-of-range value by that type.
+- 4ffc162: List the types of an inline type body as the children of its reference, so a backend imports the names inside the body.
+- 2e6ca0a: Lower a Go union constraint such as `~int | time.Duration` to a `Union` of its terms, and import the package of each term.
+- 2e6ca0a: Add `golang.HiddenFieldsKey`, which the frontend stamps on a struct whose lowering left out a blank or an unexported field.
+- 7ed5ea5: Name the Go annotator `golang-facts`, and add `golang.Lookup`, so one composition contains the annotator and the Go backend.
+- 786a060: **Breaking:** Rename `golang.Scope` and `NewScope` to `Bindings` and `NewBindings`, and the key constants to `ReceiverIsPointerKey` and `UnderlyingKindKey`.
+- 2e6ca0a: Return the value form, the texts without the type name, the zero and an out-of-range value from the underlying type of an enumeration in `EnumOf`.
+- 2e6ca0a: Promote a defined type to an enumeration over the typed constants of every file of its package, a type over `bool` or another defined type included.
+- 2e6ca0a: **Breaking:** Read a constant, a variable or a call of a function without arguments in the `rules.Scope` of `Rules.LiteralFor`.
+- 786a060: **Breaking:** `Speller.Params` and `Speller.Results` take the slot of a declaration by address, as a template passes `.Params` and `.Returns`.
+- 2e6ca0a: **Breaking:** Return an error from `Directives` and `MemberDirectives` for an assigned annotation.
+- 786a060: Refuse an immutable list, array and map in the Go spoke.
+- 786a060: Reject async, override, a default body, a type level, a computed name and the mutability of an index signature in the Go coverage.
+- a54b3c8: **Breaking:** Replace the indentation argument of `docs` and `directives` with the helpers `memberdocs` and `memberdirectives`, which write at the depth of a member.
+- 786a060: Add `golang.Restate`, which the spoke and the backend share to write the Go syntax of a composite type.
+- 786a060: **Breaking:** Return `backend.Backend` of the kit from `backend.New`.
+- d7c134f: **Breaking:** Run `toolchain.RunToolchainSuite` over an adapter and a fixture as values, remove `toolchain.Setup`, and remove the adapter parameter of `gotesting.AssertVets`.
+- 786a060: Add `testing.Language`, the spelling adapter of the fixture builder in `nodetest`.
+- 4ffc162: Write the build constraint of a Go source file above the package clause of each file that a generator derives from it alone.
+
+### Patch Changes
+
+- 786a060: Derive int for an empty interface bound in a view without facts, which reads no type set.
+- 2e6ca0a: Refuse a Go import whose path is not valid or whose `internal` tree does not contain the file, and a list in which some parameters have names and others do not.
+- 2e6ca0a: Type the samples, the zero and a literal of an enumeration by its underlying type, so an enumeration over `bool` or a fractional float gets values that Go accepts.
+- 2e6ca0a: Derive the samples and the zero of a resolved `time.Time` and `time.Duration`, and read the comparability table for a resolved standard library type outside the view.
+- ade234c: Find GOROOT two levels above the go binary on PATH before the frontend follows the link of the binary.
+- 2e6ca0a: Import a package under the name that its package clause declares, and write the name of an import that differs from that name.
+- 2e6ca0a: Open the doc of each constant of a lowered enumeration with the name of the constant.
+- 7ed5ea5: Stamp `golang.satisfiesError` and `golang.satisfiesStringer` on a type whose method returns an alias of `string`.
+- 2e6ca0a: Report a struct with hidden fields as comparable only from a table of standard library types, and an inline struct from its recorded fields.
+- 2e6ca0a: Keep the open module of `vendor/modules.txt` across a short module line and keep the highest version of each path.
+- 2e6ca0a: Read the `// +build` lines of a Go file without a `//go:build` line, as go/build reads them.
+- 786a060: Refuse a satisfaction claim whose type contains an import path before the build in `testing.New`.
+- 786a060: Return an error for an absolute path of a fixture in the toolchain adapters.
+- 786a060: Refuse in the Go backend's speller a channel and a variadic list whose spelling the substitution cleared.
+- d7c134f: Require `go.dokimi.dev/assert` v0.1.1.
+- 786a060: Resolve a declaration that shadows a predeclared type before the predeclared type.
+- 2e6ca0a: Resolve the variant of an enumeration as a package variable, as Go declares it a constant.
+- 786a060: Show the source of the probe in the error of a satisfaction probe that fails for a reason other than the contract.
+- 2e6ca0a: Write a Go conversion to a type that starts with `*`, `<-` or `func(` with the type in parentheses, such as `(*T)(nil)`.
+- ad48d4f: Spell a reference to a type parameter by its bare name, so a generated file imports nothing for it.
+- Updated dependencies [8a44142]
+- Updated dependencies [8a44142]
+- Updated dependencies [79553b5]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [81c58aa]
+- Updated dependencies [4ffc162]
+- Updated dependencies [2bac013]
+- Updated dependencies [d7c134f]
+- Updated dependencies [e28d437]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [354ba3d]
+- Updated dependencies [d7c134f]
+- Updated dependencies [69477f7]
+- Updated dependencies [d7c134f]
+- Updated dependencies [8126b00]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [42fa23a]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [576db82]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [8a44142]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [5c2df17]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [1f081a5]
+- Updated dependencies [38284d3]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [7646457]
+- Updated dependencies [8a44142]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4fd2025]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [8126b00]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [85d4b42]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [1ce59e5]
+- Updated dependencies [60bf040]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d3c0bda]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [8126b00]
+- Updated dependencies [ebb8f4b]
+- Updated dependencies [4ffc162]
+- Updated dependencies [4ffc162]
+- Updated dependencies [d7c134f]
+- Updated dependencies [d7c134f]
+- Updated dependencies [4ffc162]
+- Updated dependencies [ad48d4f]
+- Updated dependencies [8126b00]
+- Updated dependencies [9ff596a]
+- Updated dependencies [4ffc162]
+  - go.dokimi.dev/eidos/core@0.1.0
+  - go.dokimi.dev/eidos/sdk@0.1.0
+  - go.dokimi.dev/eidos/lang@0.1.0

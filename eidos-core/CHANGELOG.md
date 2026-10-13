@@ -1,0 +1,129 @@
+# go.dokimi.dev/eidos/core
+
+## 0.1.0
+
+### Minor Changes
+
+- 8a44142: Add `plugin.Output.Template`, `Out.Record` and `render.MixedClaim`, so a file template writes each file of a family from the records of the family.
+- 8a44142: Add `workspace.Plan.Extensible` and `workspace.PlanConfig.Generators`, which add the generators of a config to an extensible plan.
+- 79553b5: Add `MirrorTypeParams` and `TypeArgs`, which copy the type parameters of a generic declaration onto a declaration that a plugin derives from it.
+- 4ffc162: Add `node.CloneRef`, which copies a type reference and every node below it.
+- 4ffc162: Add `RenderContext.Names`, `RenderedFile.Packages` and `ImportSet.Declared` for the declared names of the packages of a run, and render a file again after an edit renames a package whose name the file read.
+- d7c134f: Add `Optional`, `Mutability` and `Computed` to a method, `Computed` to a field, `Mutability` and `Absent` to a type reference, and `Underlying` to an enum.
+- d7c134f: Add `plugin.Composite`, `plugin.FuncType`, `plugin.Zip`, `plugin.Absent` and `plugin.UserHomeVar`.
+- d7c134f: Add `toolchain.Run`, `toolchain.RunTimeout`, `toolchain.LookPaths`, `toolchain.Scratch`, `toolchain.WriteFile`, `toolchain.Sources` and `toolchain.Probe`.
+- 4ffc162: Add `emit.ValueName` and `emit.Name` for the name of a declaration as a value.
+- d7c134f: Add `Bound.Tag`, `Bound.SentinelName` and `Bound.IsSentinelName`, which report false for a language without the capability.
+- 81c58aa: Add `emit.ExprRef` and `emit.RefExpr`, a scaffolding expression that refers to a function, a constant or a variable of another package.
+- 4ffc162: Add `plugin.OptionsSchema`, which returns the JSON Schema of the options of a plugin in a config file.
+- 2bac013: Add `Schema.Kinds`, which `Builder.Build` derives from the rules, and report `MisplacedDirective` for a directive on a declaration of another kind.
+- d7c134f: Add `frontend.TestFiles`, `frontend.Nearest` and `frontend.Builder.Imports`.
+- e28d437: Add `TagTest`, the well-known tag of a test companion.
+- 4ffc162: Apply the path of the kernel `out` directive on a package to each declaration of the package.
+- d7c134f: **Breaking:** Return the bound plugin from `plugin.KeyBinder.BindKeys`, and leave the receiver unchanged.
+- d7c134f: Add `ImportSet.Use` and `Language.TemplateImport`, so the `use` builtin binds the name of a template's import in the name assignment of the file.
+- d7c134f: **Breaking:** Replace `Builder.Build` with `Generator`, `Annotator` and `Dual`, which panic where the rules do not fit the role.
+- d7c134f: Add `nodetest`, whose `Builder.Build` loads the declarations of a test through the kernel's load.
+- d7c134f: Add `plugintest.AssertCleanRun`, `plugintest.AssertEmptyRun` and `backendtest.AssertEmptyRender`, and run them in the suites.
+- d7c134f: Add `diag.Diag.Positioned`, and fail a finding without a file in every kit through it.
+- d7c134f: Add `toolchain.AssertDocumented`, which requires a doc comment on each public declaration at file level of generated output.
+- d7c134f: Add `toolchain.Surface` and `toolchain.AssertSurface`, which render the public surface of generated output and match it against a golden file.
+- d7c134f: Add `meta.LoadClaim` and `frontendtest.Registry`, and file the stamps of a load through them in the workspace and the kits.
+- d7c134f: Clear the spelling of a composite that `rules.Substitute` restates, and restate it in `spellref.SpellRestated` or refuse it in `spellref.SpellWith`.
+- 4ffc162: Add `meta.KeySpec.Choices`, refuse a `meta set` of a value outside the choices of its key, and register each key of a lowering policy with its choices.
+- 42fa23a: Add `ledger.GroupWriter`, and commit the files of `output.Disk` and the blobs of `ledger.Dir.WriteAll` as groups through one order barrier and one durability barrier.
+- 4ffc162: Add `rules.Bound.Satisfies`, `rules.Bound.Implementers` and `rules.SatisfactionRules`, which the Go rules implement.
+- d7c134f: Compare every declaration of a plugin across repeated reads and two builds in `plugintest.AssertStableDeclaration`.
+- 4ffc162: Give a directive schema without a plugin the name of the plugin that `Builder` lowers.
+- d7c134f: Add `plugin.ContractVersion`, and run a sealed state of another contract version cold.
+- 4ffc162: Add `Description.Disabled`, and list the plans that the config disables in `plan` and their plugins in `version`.
+- d7c134f: **Breaking:** Remove `node.TypeRef.ID`. `TypeRef.Identity` returns the zero identity.
+- d7c134f: **Breaking:** Embed `plugin.Versioned` in `plugin.Frontend`.
+- 8a44142: **Breaking:** Execute each reference template with `missingkey=error`, so a template that reads a key that its data does not contain fails under `RefusedTemplate`.
+- 4ffc162: Add `Explanation.Declarations` and the event `explain.declaration` for the declarations that an identity or a key at a position names.
+- 4ffc162: Record the route of each unit in the group record of format 3 and return it in `workspace.ExplainedFile.Routes`.
+- d7c134f: Add `rules.WellKnownRules`, and fold a resolved `time.Time` and `time.Duration` to their well-known identities.
+- 4ffc162: Fold an inline reference to the shape that the `Builtin` of its language returns, and keep it inline where the language returns `Opaque`.
+- d7c134f: **Breaking:** Fold `Lock` into `ledger.Ledger`, and refuse a composition with a ledger and no output at Build.
+- d7c134f: **Breaking:** Fold `Overwrite` into `output.Sink`, and remove `output.Overwriter`.
+- d7c134f: Keep the mutability of a reference in `rules.TypeShape`, and copy the asynchrony and the mutability of a reference in `rules.EmitRef`.
+- 8a44142: **Breaking:** Add the file templates of a tree as the fourth parameter of `render.Pass.Lint`.
+- 4ffc162: Add `workspace.Builder.Plugins`, which lists the plugins of a composition without a build.
+- d7c134f: Add `plugintest.Source` and `plugintest.Loaded`, which load a plugin fixture from a source tree.
+- d7c134f: Add `frontendtest.Fixture.Empty` and `frontendtest.AssertEmptyLoad`, which loads a tree whose files declare nothing.
+- d7c134f: **Breaking:** Make `Params`, `Returns`, `Embeds` and the new `Field.Tags` emit slots, replace `Field.Tag` with `TagEntry` entries, and add `emit.SlotOf`.
+- 4ffc162: Add `workspace.PlanConfig.Plugins`, `PlanConfig.Families` and `layout.Refinement.Over` to merge the refinements of a config over the declared ones.
+- d7c134f: Copy the optional mark, the accessor, the index and construct forms, the hard privacy, the mutability and the computed mark of a method in `Mirror`.
+- d7c134f: **Breaking:** Rename `workspace.RecordKind`, its constants, `ExplainedRecord` and `Explanation.Records` to the `Execution` names, and the event `explain.record` to `explain.execution`.
+- d7c134f: **Breaking:** Rename `Errorf`, `Warnf` and `Infof` of `GraphMatch` to `ErrorfAt`, `WarnfAt` and `InfofAt`.
+- d7c134f: **Breaking:** Rename the `Bucket` fields of `meta.Claim`, the phase contexts, `workspace.Component` and `plugintest.Fixture` to `Turn`, and print the field `turn` in `plan` and `explain`.
+- 4ffc162: Add `Not`, `NameEquals` and `HasSlot` to the predicates of a gate.
+- d7c134f: **Breaking:** Add `After` to `plugin.CapabilityProvider` and `Builder`, to order a plugin after a capability without requiring the capability.
+- 4ffc162: Parse the text of a `time.Duration` option and wrap the error of the decoder in the fault of an option value.
+- 4ffc162: **Breaking:** Take the struct tag of the keys in `jsonschema.Of`, which `jsonschema.TagYAML` and `jsonschema.TagJSON` name.
+- 4ffc162: Add `node.DeclsOf`, `node.DeclNamed` and `node.MemberNamed`, which query declarations by their Go type and name.
+- 4ffc162: **Breaking:** Pass a `rules.Scope` to `LiteralFor`, add `View.ScopeOf`, and lift an authored text of a type without a literal through `LiteralFor`.
+- d7c134f: **Breaking:** Make the fields of `rules.View` unexported, and add `rules.NewView`, `View.Reader` and `View.Kernel`.
+- 4ffc162: Add `Workspace.Directives` and `Registry.Schemas` for the directive schemas of a composition.
+- 4ffc162: Add `symbol.Annotation.Assigned` for an annotation that assigns its argument and raise the format of the sealed state to 4.
+- 4ffc162: Add `Modules` to `node.Import` and `node.Export`, the packages that a specifier names where a configuration of the workspace maps it.
+- 4ffc162: Add `plugin.Route` and `plugin.RouteInput` and set the route of each unit that `layout.Route` places.
+- 4ffc162: **Breaking:** Report `MissingParam` for a `meta` instance that writes neither `drop` nor `set`, or both.
+- d7c134f: Add `meta.KeySpec.Derived` and `DerivedMetadataKey`, and register the summary keys of the shape catalog as derived.
+- d7c134f: Add `SourceUnit.RefuseCarriers`, `SourceUnit.RefuseSugar`, `SourceUnit.ReportSyntax` and `GraphBuilder.StampModule`.
+- d7c134f: Add `render.Coverage.RefusesEmbeds` and the names of the shared vocabulary helpers, from `render.HelperDocs` to `render.HelperResults`.
+- 4ffc162: Report a nil generator and a missing backend of a plan that the config disables in `workspace.Builder.Build`.
+- d7c134f: Add the verdict `render.Rejects` and the finding `RejectedFact`, which leave out a declaration that the target cannot render with a stated fact or without it.
+- d7c134f: **Breaking:** Rename `SamplesOf` of `rules.SourceRules` to `DeriveSamples`.
+- d7c134f: Report a computed member of the member walk as the gap `rules.GapComputed`.
+- d7c134f: Report a plugin that implements part of `plugin.CapabilityProvider` or `plugin.TemplateProvider` at Build.
+- 4ffc162: Accept a sample directive that states the alternate alone, and report `EmptySample` and `EmptyWitness` for a sample or a witness directive that states nothing.
+- d7c134f: Report a template helper that text/template cannot call under `render.UnbindableHelper` instead of a panic.
+- 4ffc162: Report each required option at its zero value in `plugintest.AssertOptionsSchema`.
+- 4ffc162: Add `plugin.MissingOptions` for the option tag `schema:"required"` and fail Build for a required option at its zero value.
+- d7c134f: **Breaking:** Add the methods that a plan calls to `plugin.Backend`, and return `backend.Backend` with `render.Coverer` from the backend kit.
+- d7c134f: **Breaking:** Add `rules.Resolve`, `rules.Resolver`, `rules.ResolveError` and `rules.Unaliased`, and remove `TypeName` from `rules.SourceRules` and `rules.Bound`.
+- d7c134f: Add `rules.View.WithRules`, so a binding that a rules implementation makes resolves the rules of every language.
+- 4ffc162: **Breaking:** Replace `IsSentinelName` of `rules.ErrorValueRules` and `rules.Bound` with `SentinelBase`, which returns the base of a sentinel name.
+- d7c134f: Add `backendtest.Rendered`, `backendtest.Fixture.Context` and `rulestest.Fixture.Findings`.
+- 4ffc162: Add `emit.NameOf`, which returns the name of an emitted declaration.
+- d7c134f: **Breaking:** Run `toolchain.RunToolchainSuite` over an adapter and a fixture as values, remove `toolchain.Setup`, and remove the adapter parameter of `gotesting.AssertVets`.
+- d7c134f: **Breaking:** Seal the slots of every value in the store of a plan until the settle, so a direct `Slot.Append` panics there, and add `Slot.Replace`, `emit.AppendSealed` and `emit.Seal`.
+- 4ffc162: Add `meta set=<key>` with `value` or `values`, `directive.ParamSpec.Default`, the nearest registered name in `UnclaimedName`, and `meta.Registry.Type`.
+- d7c134f: **Breaking:** Return an error from `workspacetest.Fixture.Compose`, run `pipelinetest.RunPipelineSuite` over a `workspacetest.Fixture`, and remove `pipelinetest.Fixture`.
+- d7c134f: Add `workspacetest.AssertRerunUnchanged`, `workspacetest.Want`, `workspacetest.AssertGolden` and `workspacetest.Generated`.
+- 4ffc162: Add `rules.ErrorTypeRules`, `rules.ErrorContract`, `Bound.ErrorContract` and the well-known identity `rules.WellKnownError`.
+- 4ffc162: Add `output.Stream`, which writes the files that its sinks commit to one writer.
+- d7c134f: **Breaking:** Add `rules.Substitute`, and remove `Substitute` from `rules.GenericsRules`.
+- d7c134f: Add `Emitter.Fields`, which translates the fields of a declaration or reports that a type has no spelling.
+- 4ffc162: Give a `time.Duration` the JSON types string and integer, and a type that unmarshals its text the type string, in `jsonschema.Of`.
+- 4ffc162: Write the build constraint of a Go source file above the package clause of each file that a generator derives from it alone.
+
+### Patch Changes
+
+- 354ba3d: Touch a file that a frontend claims in `workspacetest.AssertTouched`, and exempt the files of a claimed family from the export check of `workspacetest.AssertExported`.
+- 69477f7: Refuse at workspace Build a family that a generator declares twice, or without a cardinality, a word or a template path inside a tree.
+- 4ffc162: Copy the tree of the fixture into the directory of `workspacetest.AssertCycleRefused` before the build.
+- 4ffc162: List in each `UnknownKey` refusal the keys that the instance accepts under its role.
+- 5c2df17: Explain the declaration that the spelling of an identity names where its package path has a dot in its last element.
+- d7c134f: Fail the test on a panic of a phase call in `plugintest.Fixture.Annotate` and `Fixture.Generate`.
+- 1f081a5: Gate all three checks of `RunToolchainSuite` on the toolchain, and return the error of a `tsc` that does not run from the TypeScript `Parse`.
+- 38284d3: Index the declarations of each package of a sealed `store.Graph` in a sorted slice, and build the index of every package on a pool before an enumeration of all of them.
+- 4ffc162: Join every defect of a policy spec in the error of `plugin.NewPolicy`.
+- 7646457: Lay out the files of `toolchain.Generated.Sources` beneath the generated files in `toolchain.Prepare`.
+- d7c134f: List each generated file with its line numbers in the contract of a failed toolchain assertion.
+- 4ffc162: List the types of an inline type body as the children of its reference, so a backend imports the names inside the body.
+- d7c134f: Run the loads and parses of `frontendtest` under the context of the test.
+- d7c134f: Run the load of `rulestest.Loaded` under the context of its TB.
+- d7c134f: Rename the parameters of `Emitter.JoinName` to `tail` and `head`.
+- 4fd2025: Commit the files of a package whose last path element contains a dot, such as a protobuf package, in a run with patterns.
+- 4ffc162: Place a package that a frontend leaves without a position at the position of its first file.
+- 4ffc162: Give a field whose tag is `-,` the key `-` in `jsonschema.Of`, as the YAML and the JSON decoders do.
+- 85d4b42: Refuse a composition at Build where a plugin requires a capability whose provider runs after it.
+- d7c134f: Require `go.dokimi.dev/assert` v0.1.1.
+- 1ce59e5: Render a nested declaration into a buffer that the render frame reuses for each depth.
+- 60bf040: Run cold instead of panicking on a sealed state whose run index has a block outside its run.
+- d7c134f: Run the loads, the runs and the record reads of the workspace and pipeline kits under the context of the test.
+- 4ffc162: Leave a sealed directive registry as it is on a second `Registry.Seal`.
+- d7c134f: Skip each check of a role or a surface that a plugin lacks in `plugintest.RunPluginSuite`, with the reason.
+- 9ff596a: Write the blobs of `ledger.Dir` on Windows without a sync of their directory.
