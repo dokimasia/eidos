@@ -155,5 +155,5 @@ func TestLiteral(t *testing.T) {
 // untyped lifts a literal against no type, so each lifts as its own
 // kind.
 func untyped(text string) (emit.Value, bool) {
-	return protorules.New().LiteralFor(nil, nil, text, rules.View{})
+	return protorules.New().LiteralFor(rules.Scope{}, nil, text, rules.View{})
 }

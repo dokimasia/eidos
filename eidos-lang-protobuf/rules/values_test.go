@@ -406,9 +406,9 @@ func TestValues(t *testing.T) {
 			list := composite("repeated Colour", symbol.FormList, colour)
 			s, a := pairOf(t, f, list, "")
 			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
-				emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, authoredValue))),
-				emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, redValue))),
-			}, "each element takes the text the author stated on Colour")
+				emit.Composite(rules.EmitRef(list), emit.Element(enumValue(colour, "0"))),
+				emit.Composite(rules.EmitRef(list), emit.Element(enumValue(colour, "1"))),
+			}, "each element takes the value of the enum value that the author stated on Colour")
 		})
 
 		t.Run("returns the value authored on a map value's type", func(t *testing.T) {
@@ -421,8 +421,8 @@ func TestValues(t *testing.T) {
 			s, _ := pairOf(t, f, m, keyHint)
 			assert.Equal(t, s, emit.Composite(rules.EmitRef(m), emit.KeyedEntry(
 				emit.Literal(emit.LiteralString, keyHint+sampleSuffix),
-				emit.Raw(protobuf.Lang, authoredValue),
-			)), "the entry's value takes the text the author stated on Colour")
+				enumValue(colour, "0"),
+			)), "the entry's value takes the value of the enum value that the author stated on Colour")
 		})
 
 		t.Run("returns the values authored on a field for a message", func(t *testing.T) {
@@ -477,6 +477,19 @@ func TestValues(t *testing.T) {
 				"the authored pair depends on no derivation, so no field of Row is an edge")
 		})
 
+		t.Run("returns raw text for a value authored on a message type", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			row := ref(svcPkg, rowName, symbol.KindStruct)
+			stamp(t, f, f.Keys.Sample, row.Target, authoredRow)
+			stamp(t, f, f.Keys.Alternate, row.Target, otherRow)
+			list := composite("repeated Row", symbol.FormList, row)
+			s, _ := pairOf(t, f, list, "")
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, authoredRow))),
+				"a message takes no literal, so the text of the author stays protobuf text")
+		})
+
 		t.Run("returns RefusedNoLiteral for both halves when a repeated element has one value", func(t *testing.T) {
 			t.Parallel()
 
@@ -498,7 +511,7 @@ func TestValues(t *testing.T) {
 			list := composite("repeated Colour", symbol.FormList, colour)
 			s, a := pairOf(t, f, list, "")
 			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
-				emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, authoredValue))),
+				emit.Composite(rules.EmitRef(list), emit.Element(enumValue(colour, "0"))),
 				emit.Composite(rules.EmitRef(list), emit.Element(enumValue(colour, "1"))),
 			}, "the authored element pairs with Colour's derived alternate")
 		})
@@ -652,7 +665,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				got, ok := protorules.New().LiteralFor(nil, tt.give, tt.giveText, loaded(t).view)
+				got, ok := protorules.New().LiteralFor(rules.Scope{}, tt.give, tt.giveText, loaded(t).view)
 				assert.True(t, ok, "the text is a value of the type")
 				assert.Equal(t, got, tt.want, "written back at the wire's width")
 			})
@@ -681,7 +694,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, ok := protorules.New().LiteralFor(nil, tt.give, tt.giveText, loaded(t).view)
+				_, ok := protorules.New().LiteralFor(rules.Scope{}, tt.give, tt.giveText, loaded(t).view)
 				assert.False(t, ok, "no value of the type")
 			})
 		}
@@ -690,7 +703,7 @@ func TestValues(t *testing.T) {
 			t.Parallel()
 
 			mode := ref(svcPkg, modeName, symbol.KindEnum)
-			got, ok := protorules.New().LiteralFor(nil, mode, octalValue,
+			got, ok := protorules.New().LiteralFor(rules.Scope{}, mode, octalValue,
 				loadedFrom(t, map[string]string{enumsPath: enumsSource}).view)
 			assert.True(t, ok, "a value's name is a value of the enum")
 			assert.Equal(t, got, enumValue(mode, "15"), "converted from its number")
@@ -708,7 +721,7 @@ func TestValues(t *testing.T) {
 				t.Parallel()
 
 				mode := ref(svcPkg, modeName, symbol.KindEnum)
-				_, ok := protorules.New().LiteralFor(nil, mode, tt.give,
+				_, ok := protorules.New().LiteralFor(rules.Scope{}, mode, tt.give,
 					loadedFrom(t, map[string]string{enumsPath: enumsSource}).view)
 				assert.False(t, ok, "a default names an enum value by its name")
 			})
@@ -806,12 +819,12 @@ func valueCalls(tb testing.TB) []allocCall {
 		},
 		{
 			name: "LiteralFor", caseName: "an integer",
-			call:  func() { value, _ = r.LiteralFor(nil, scalar, derivedInt, f.view) },
+			call:  func() { value, _ = r.LiteralFor(rules.Scope{}, scalar, derivedInt, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, derivedInt, "LiteralFor reads 42") },
 		},
 		{
 			name: "LiteralFor", caseName: "a string", allocs: stringLiteralAllocs,
-			call: func() { value, _ = r.LiteralFor(nil, text, longString, f.view) },
+			call: func() { value, _ = r.LiteralFor(rules.Scope{}, text, longString, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, value.Text, longText, "LiteralFor reads the string")
 			},

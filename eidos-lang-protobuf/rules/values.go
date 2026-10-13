@@ -371,7 +371,7 @@ func scalarZero(spelling string) (emit.Value, bool) {
 // Where the reference names none of these, each literal lifts as its
 // own kind, and an identifier, which only an enum can type, reports
 // false. inf and nan are identifiers no literal spells, so they
-// report false too. The file plays no part, because a proto literal
+// report false too. The scope plays no part, because a proto literal
 // reads the same in every scope.
 //
 // # Allocation contract
@@ -384,7 +384,7 @@ func scalarZero(spelling string) (emit.Value, bool) {
 // unescaped text, and an enum value the reference and the conversion.
 // A truth value and an integer from 0 to 99 allocate nothing.
 func (r Rules) LiteralFor(
-	_ *node.File, ref *node.TypeRef, text string, v rules.View,
+	_ rules.Scope, ref *node.TypeRef, text string, v rules.View,
 ) (emit.Value, bool) {
 	lit, scanned := scanLiteral(strings.TrimSpace(text))
 	if !scanned {
