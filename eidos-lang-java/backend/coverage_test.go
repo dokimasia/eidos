@@ -14,9 +14,9 @@ import (
 )
 
 // coverageAllocs is the count of the coverage table: four for the fact
-// map, and two for the exception map with two for each of its four
+// map, and two for the exception map with two for each of its three
 // kinds.
-const coverageAllocs = 4 + 2 + 4*2
+const coverageAllocs = 4 + 2 + 3*2
 
 // TestCoverage pins the verdicts that distinguish Java. The conformance
 // suite checks that the table is total and that the rendered findings
@@ -84,6 +84,10 @@ func TestCoverage(t *testing.T) {
 			{
 				name: "returns Renders for a field's mutability",
 				kind: symbol.KindField, fact: symbol.FactMutability, want: render.Renders,
+			},
+			{
+				name: "returns Renders for a parameter's annotations",
+				kind: symbol.KindParam, fact: symbol.FactAnnotations, want: render.Renders,
 			},
 		}
 		for _, tt := range tests {

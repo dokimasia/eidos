@@ -312,6 +312,25 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, params(t, &emit.Param{Type: ref("int")}), "int arg0", "Java requires a name")
 		})
 
+		t.Run("writes the annotations of a parameter before its type", func(t *testing.T) {
+			t.Parallel()
+
+			key := &emit.Param{Name: "key", Type: ref("String"), Annotations: symbol.Annotations{
+				{Name: "NotNull"}, {Name: "Size", Args: []string{"max = 8"}},
+			}}
+			assert.Equal(t, params(t, key), "@NotNull @Size(max = 8) String key", "Java annotates a parameter inline")
+		})
+
+		t.Run("returns an error for an assigned annotation of a parameter", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.Params(new(emit.SlotOf(&emit.Param{
+				Name: "key", Type: ref("String"), Annotations: assignedAnnotations(),
+			})))
+			assert.HasError(t, err, "Java passes the arguments of an annotation in parentheses alone")
+		})
+
 		t.Run("returns an error for a type that does not spell", func(t *testing.T) {
 			t.Parallel()
 
@@ -891,16 +910,27 @@ func TestVocabulary(t *testing.T) {
 		t.Run("returns nothing for no annotations", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Annotate(nil), "", "no lines")
+			got, err := backend.Annotate(nil)
+			assert.NoError(t, err, "no annotation refuses")
+			assert.Equal(t, got, "", "no lines")
 		})
 
 		t.Run("writes one annotation line per annotation", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Annotate(symbol.Annotations{
+			got, err := backend.Annotate(symbol.Annotations{
 				{Name: "Deprecated"},
 				{Name: "SuppressWarnings", Args: []string{`"unchecked"`}},
-			}), "@Deprecated\n@SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
+			})
+			assert.NoError(t, err, "Java spells both annotations")
+			assert.Equal(t, got, "@Deprecated\n@SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
+		})
+
+		t.Run("returns an error for an assigned annotation", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Annotate(assignedAnnotations())
+			assert.HasError(t, err, "Java passes the arguments of an annotation in parentheses alone")
 		})
 	})
 
@@ -910,16 +940,27 @@ func TestVocabulary(t *testing.T) {
 		t.Run("returns nothing for no annotations", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.MemberAnnotate(nil), "", "no lines")
+			got, err := backend.MemberAnnotate(nil)
+			assert.NoError(t, err, "no annotation refuses")
+			assert.Equal(t, got, "", "no lines")
 		})
 
 		t.Run("writes each annotation line behind the member indent", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.MemberAnnotate(symbol.Annotations{
+			got, err := backend.MemberAnnotate(symbol.Annotations{
 				{Name: "Deprecated"},
 				{Name: "SuppressWarnings", Args: []string{`"unchecked"`}},
-			}), "    @Deprecated\n    @SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
+			})
+			assert.NoError(t, err, "Java spells both annotations")
+			assert.Equal(t, got, "    @Deprecated\n    @SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
+		})
+
+		t.Run("returns an error for an assigned annotation", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.MemberAnnotate(assignedAnnotations())
+			assert.HasError(t, err, "Java passes the arguments of an annotation in parentheses alone")
 		})
 	})
 
@@ -1080,13 +1121,19 @@ func vocabularyCalls() []allocCall {
 		},
 		{
 			name: "Annotate", allocs: textAllocs,
-			call: func() { out = backend.Annotate(annotations) }, check: spells("@Override\n"),
+			call: func() { out, err = backend.Annotate(annotations) }, check: spells("@Override\n"),
 		},
 		{
 			name: "MemberAnnotate", allocs: textAllocs,
-			call: func() { out = backend.MemberAnnotate(annotations) }, check: spells("    @Override\n"),
+			call: func() { out, err = backend.MemberAnnotate(annotations) }, check: spells("    @Override\n"),
 		},
 	}
+}
+
+// assignedAnnotations returns one annotation that assigns its argument, as
+// a Rust attribute does.
+func assignedAnnotations() symbol.Annotations {
+	return symbol.Annotations{{Name: "deprecated", Args: []string{`"use g"`}, Assigned: true}}
 }
 
 // ref returns an unresolved reference spelled s.

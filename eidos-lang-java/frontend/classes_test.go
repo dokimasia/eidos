@@ -58,6 +58,7 @@ const (
 	holderClass = "Holder"
 	pointClass  = "Point"
 	rangeClass  = "Range"
+	tagClass    = "Tag"
 )
 
 // The attribute name the cases rename in a class file's bytes, and the
@@ -105,6 +106,7 @@ const (
 	objectSpelling     = "java.lang.Object"
 	numberSpelling     = "java.lang.Number"
 	comparableSpelling = "java.lang.Comparable"
+	annotationSpelling = "java.lang.annotation.Annotation"
 	markerName         = "com.acme.lib.Marker"
 	deprecatedName     = "java.lang.Deprecated"
 	utilPackage        = "java/util"
@@ -388,6 +390,13 @@ func TestClasses(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, named[*node.Interface](t, libDecls(t), "Marker").Extends, "source writes no extends")
+		})
+
+		t.Run("lowers the Annotation that a plain interface extends", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, spellingsOf(named[*node.Interface](t, libDecls(t), tagClass).Extends),
+				[]string{annotationSpelling}, "the source writes the extends clause")
 		})
 
 		t.Run("lowers an interface's member types", func(t *testing.T) {

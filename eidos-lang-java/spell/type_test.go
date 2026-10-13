@@ -358,6 +358,11 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{Spelling: "Duration", Package: timePackage},
 			},
 			{
+				name: "returns Exception for the well-known error",
+				give: rules.Reference("error", rules.WellKnownError),
+				want: &emit.TypeRef{Spelling: "Exception"},
+			},
+			{
 				name: "returns the flat name for a reference to a nested type",
 				give: rules.Reference("Session.State", state),
 				want: &emit.TypeRef{Spelling: "SessionState", Target: state},

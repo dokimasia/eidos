@@ -192,9 +192,11 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 // Params writes the parameter list in the slot ps with the variadic
 // marker. A template passes the slot by address, as in
 // {{params .Params}}, so the call reads the slot without a reflective
-// method call. An unnamed parameter gets [unnamedParam] and its position
-// as its name. Params allocates the spelling of each parameter, the
-// joined list, and what the spelling of each type allocates.
+// method call. The annotations of a parameter precede its type, and an
+// assigned one returns the error of [Annotate]. An unnamed parameter gets
+// [unnamedParam] and its position as its name. Params allocates the
+// spelling of each parameter, the joined list, the annotations of a
+// parameter that has any, and what the spelling of each type allocates.
 func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 	items := ps.Items()
 	parts := make([]string, 0, len(items))
@@ -203,6 +205,9 @@ func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 		if name == "" {
 			name = unnamedParam + strconv.Itoa(i)
 		}
+		if err := unassigned(p.Annotations); err != nil {
+			return "", err
+		}
 		spelling, err := s.Spell(p.Type)
 		if err != nil {
 			return "", err
@@ -210,7 +215,8 @@ func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 		if p.Variadic != symbol.VariadicNone {
 			spelling += "..."
 		}
-		parts = append(parts, spelling+" "+name+textfmt.Inline(p.Comment))
+		parts = append(parts, textfmt.MarkedInline(p.Annotations, "@", "")+spelling+" "+name+
+			textfmt.Inline(p.Comment))
 	}
 	return strings.Join(parts, ", "), nil
 }
@@ -642,17 +648,38 @@ func SigMods(m *emit.Method) (string, error) {
 // Annotate writes one annotation line at the top level for each
 // annotation of a. A line has the name after the marker, and the
 // arguments verbatim in parentheses where the annotation has any. It
-// allocates what [textfmt.Marked] allocates. That is the lines, sized
-// once, and nothing for no annotations.
-func Annotate(a symbol.Annotations) string {
-	return textfmt.Marked(a, "@", "")
+// returns an error for an assigned annotation, because Java passes the
+// arguments of an annotation in parentheses alone. It allocates what
+// [textfmt.Marked] allocates. That is the lines, sized once, and nothing
+// for no annotations.
+func Annotate(a symbol.Annotations) (string, error) {
+	if err := unassigned(a); err != nil {
+		return "", err
+	}
+	return textfmt.Marked(a, "@", ""), nil
 }
 
 // MemberAnnotate writes the annotation lines of a member as [Annotate]
 // writes them. Each line starts with the member indent of a type body.
-// It allocates what Annotate allocates.
-func MemberAnnotate(a symbol.Annotations) string {
-	return textfmt.Marked(a, "@", "", memberIndent)
+// It returns the error of Annotate, and allocates what Annotate allocates.
+func MemberAnnotate(a symbol.Annotations) (string, error) {
+	if err := unassigned(a); err != nil {
+		return "", err
+	}
+	return textfmt.Marked(a, "@", "", memberIndent), nil
+}
+
+// unassigned returns an error for the first assigned annotation of as,
+// because Java passes the arguments of an annotation in parentheses
+// alone, and nil where no annotation is assigned. It allocates nothing,
+// and an error allocates its message.
+func unassigned(as symbol.Annotations) error {
+	for _, a := range as {
+		if a.Assigned {
+			return refuse("an annotation passes its arguments in parentheses, and %s assigns its argument", a.Name)
+		}
+	}
+	return nil
 }
 
 // javaPackage returns the Java form of a slash-separated package path,

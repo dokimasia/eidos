@@ -72,16 +72,16 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 	return NewSpeller(t.set).Spell(ref)
 }
 
-// Callee spells a function as Owner.name, the static method of the
-// class its identity's Owner names, and imports that class: the
-// owner chain's first name. The call is written fully qualified where
-// another import or a declaration of the file takes the class's
-// simple name. A function whose identity names no Owner is refused,
-// because Java has no free function to call.
+// Callee spells a static method or a static field as Owner.name, a member
+// of the class in the Owner of its identity. It imports that class, which
+// is the first name of the owner chain. The spelling is fully qualified
+// where another import or a declaration of the file takes the simple name
+// of the class. Callee refuses an identity without an Owner, because Java
+// declares every method and every field in a class.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Owner == "" {
 		return "", render.RefuseValue(t.Lang(),
-			"%s belongs to no class, and Java calls no free function", id.Name)
+			"%s belongs to no class, and Java declares every method and field in a class", id.Name)
 	}
 	call := id.Owner + memberSep + id.Name
 	class, _, _ := strings.Cut(id.Owner, memberSep)

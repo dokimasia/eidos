@@ -93,7 +93,9 @@ func (l *lowering) dimensioned(typ, dims treesitter.Node) *node.TypeRef {
 
 // wildcardOf lowers a wildcard. Its bound is its one child, with Variance
 // In for super and Out for extends, and an unbounded wildcard has no
-// child.
+// child. The spelling is the compact form that the class-file lowering
+// writes, from the spelling of the bound, so it leaves out the type
+// annotations.
 func (l *lowering) wildcardOf(n treesitter.Node) *node.TypeRef {
 	variance := symbol.VarianceInvariant
 	var bound []*node.TypeRef
@@ -108,7 +110,15 @@ func (l *lowering) wildcardOf(n treesitter.Node) *node.TypeRef {
 			}
 		}
 	}
-	ref := plugin.Composite(n.Compact(), n.Pos(), symbol.FormWildcard, bound...)
+	spelling := wildcardMark
+	if len(bound) > 0 {
+		spelling = extendsBound
+		if variance == symbol.VarianceIn {
+			spelling = superBound
+		}
+		spelling += spelled(bound[0])
+	}
+	ref := plugin.Composite(spelling, n.Pos(), symbol.FormWildcard, bound...)
 	ref.Variance = variance
 	return ref
 }

@@ -26,6 +26,7 @@ const (
 	collections  = "java/util"
 	rowsClass    = "Rows"
 	makeName     = "make"
+	emptyField   = "EMPTY"
 	weightName   = "Weight"
 	listClass    = "List"
 	listFactory  = "List<Long>"
@@ -134,6 +135,13 @@ func TestValue(t *testing.T) {
 				want: "Rows.make(1)",
 			},
 			{
+				name: "writes the name of a static field of its owner's class",
+				give: emit.Name(symbol.Identity{
+					Lang: java.Lang, Package: utilPkg, Owner: rowsClass, Name: emptyField, Kind: symbol.KindField,
+				}),
+				want: "Rows.EMPTY",
+			},
+			{
 				name: "writes a string escaped in Java's grammar",
 				give: emit.Literal(emit.LiteralString, "tab\tbell\x07 \\ \"q\" é"),
 				want: `"tab\tbell\u0007 \\ \"q\" é"`,
@@ -163,6 +171,14 @@ func TestValue(t *testing.T) {
 			{
 				name: "returns a value error for a function of no class",
 				give: emit.Call(valueFn(utilPkg, "", makeName)), want: "belongs to no class", wantErr: true,
+			},
+			{
+				name: "returns a value error for the name of a field of no class",
+				give: emit.Name(
+					symbol.Identity{Lang: java.Lang, Package: utilPkg, Name: emptyField, Kind: symbol.KindField},
+				),
+				want:    "belongs to no class",
+				wantErr: true,
 			},
 			{
 				name: "returns a value error for a keyed entry in a list",
@@ -219,6 +235,17 @@ func TestValue(t *testing.T) {
 			_, err := returned(t, &set, integer("1"))
 			assert.NoError(t, err, "a literal spells")
 			assert.Equal(t, set.Len(), 0, "a literal names no package")
+		})
+
+		t.Run("imports the class of a static field", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := returned(t, &set, emit.Name(symbol.Identity{
+				Lang: java.Lang, Package: utilPkg, Owner: rowsClass, Name: emptyField, Kind: symbol.KindField,
+			}))
+			assert.NoError(t, err, "the name spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilPkg, Name: rowsClass}}, "the class of the field")
 		})
 
 		t.Run("imports the file-level class of a nested callee's owner", func(t *testing.T) {

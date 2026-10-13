@@ -349,7 +349,10 @@ func releaseMark(release int, tops []fs.DirEntry) (rune, error) {
 	if release >= letterRelease {
 		mark = firstLetter + rune(release-letterRelease)
 	}
-	if rank(mark) > rank(newest) {
+	listed := slices.ContainsFunc(tops, func(top fs.DirEntry) bool {
+		return top.IsDir() && strings.ContainsRune(top.Name(), mark)
+	})
+	if !listed {
 		return 0, fmt.Errorf("frontend: ct.sym lists no release %d", release)
 	}
 	return mark, nil

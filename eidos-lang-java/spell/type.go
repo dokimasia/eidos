@@ -40,6 +40,7 @@ const (
 	runnableType  = "Runnable"
 	instantType   = "Instant"
 	durationType  = "Duration"
+	exceptionType = "Exception"
 	arrayMark     = "[]"
 	upperWildcard = "? extends "
 	lowerWildcard = "? super "
@@ -98,7 +99,7 @@ var (
 //     Supplier, Consumer, Function, BiConsumer or BiFunction;
 //   - a borrow as its type, and a wildcard as ? extends B, ? super B or ?;
 //   - the well-known timestamp and duration as java.time.Instant and
-//     java.time.Duration;
+//     java.time.Duration, and the well-known error as Exception;
 //   - every other reference and sum as a translated reference with the
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which Java writes in angle brackets.
@@ -282,15 +283,18 @@ func wildcard(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, 
 }
 
 // reference spells a reference or a sum: the well-known timestamp and
-// duration as the classes of java.time, and every other referent as a
-// translated reference under its flat name, with its translated
-// arguments. It refuses the well-known empty value.
+// duration as the classes of java.time, the well-known error as the
+// Exception of java.lang, and every other referent as a translated
+// reference under its flat name, with its translated arguments. It
+// refuses the well-known empty value.
 func reference(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: instantType, Package: timePackage}, nil
 	case rules.WellKnownDuration:
 		return &emit.TypeRef{Spelling: durationType, Package: timePackage}, nil
+	case rules.WellKnownError:
+		return &emit.TypeRef{Spelling: exceptionType}, nil
 	case rules.WellKnownEmpty:
 		return nil, errors.New("the well-known empty value has no Java spelling")
 	}

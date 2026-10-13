@@ -79,12 +79,12 @@ const (
 // bytes with one byte left.
 const shortAttribute = "1 bytes are left where 2 are read"
 
-// parseAllocs is one pass over the fixture library's 27 class files,
-// 1,767 in every run with the collector on and off, about 65 a class
+// parseAllocs is one pass over the fixture library's 28 class files,
+// 1,774 in every run with the collector on and off, about 63 a class
 // file: the strings each constant pool decodes, the types each
 // descriptor and signature parses into, and the lists of each class's
 // members, attributes and annotations.
-const parseAllocs = 1_767
+const parseAllocs = 1_774
 
 // parsesOrRefuses is the property [FuzzParse] and its ForAll twin in
 // [TestClass] state.

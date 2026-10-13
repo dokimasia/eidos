@@ -143,6 +143,30 @@ func TestTyperef(t *testing.T) {
 			assert.Empty(t, arg.Elems, "the annotation is no bound")
 			assert.Equal(t, arg.Variance, symbol.VarianceInvariant, "an unbounded wildcard")
 		})
+
+		spellings := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "spells an annotated wildcard without its annotation", give: "List<@A ?> f;", want: "?"},
+			{
+				name: "spells an upper bound without its type annotation",
+				give: "List<? extends @A Number> f;", want: "?extends Number",
+			},
+			{
+				name: "spells a lower bound without its type annotation",
+				give: "List<? super @A Integer> f;", want: "?super Integer",
+			},
+		}
+		for _, tt := range spellings {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, fieldType(t, tt.give).Args[0].Spelling, tt.want,
+					"a type annotation is no part of a signature")
+			})
+		}
 	})
 
 	t.Run("listOf", func(t *testing.T) {

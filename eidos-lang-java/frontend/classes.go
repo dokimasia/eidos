@@ -252,9 +252,10 @@ func (d *classDecl) class(h classHeader) *node.Struct {
 
 // iface lowers an interface, or an annotation interface, as an Interface,
 // sealed where the interface permits subtypes. The Interface has the type
-// parameters of the interface, the interfaces that it extends without the
-// Annotation that every annotation interface extends, and its members.
-// java.annotationType stamps an annotation interface.
+// parameters of the interface, the interfaces that it extends, and its
+// members. An annotation interface leaves out the Annotation that every
+// annotation interface extends, and java.annotationType stamps it. Any
+// other interface keeps an Annotation that its source extends.
 func (d *classDecl) iface(h classHeader) *node.Interface {
 	c := d.cf.class
 	it := &node.Interface{
@@ -263,12 +264,13 @@ func (d *classDecl) iface(h classHeader) *node.Interface {
 	}
 	params, _, interfaces := d.supertypes()
 	it.TypeParams = d.typeParams(params)
+	annotation := c.Access.Has(classfile.AccAnnotation)
 	for _, t := range interfaces {
-		if t.BinaryName() != annotationClass {
+		if !annotation || t.BinaryName() != annotationClass {
 			it.Extends = append(it.Extends, d.ref(t))
 		}
 	}
-	if c.Access.Has(classfile.AccAnnotation) {
+	if annotation {
 		d.l.u.Graph().Stamp(it, meta.RawStamp{Key: java.AnnotationTypeKey, Value: true, Pos: d.pos})
 	}
 	it.Fields, it.Methods = d.fields(), d.methods(h, true)

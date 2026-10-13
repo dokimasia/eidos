@@ -390,6 +390,12 @@ func TestDepend(t *testing.T) {
 				want: fmt.Sprintf("lists no release %d", newest),
 			},
 			{
+				name:   "returns an error for a release older than every release that ct.sym lists",
+				opts:   &frontend.Options{Release: release8},
+				stores: map[string]fs.FS{frontend.JDKStore: fstest.MapFS{lang9To25: {}}},
+				want:   fmt.Sprintf("lists no release %d", release8),
+			},
+			{
 				name: "returns an error for a release older than the oldest release that ct.sym can name",
 				opts: &frontend.Options{Release: tooOld}, stores: jdkStores(),
 				want: fmt.Sprintf("names no release %d", tooOld),
