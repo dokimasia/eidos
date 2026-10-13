@@ -281,6 +281,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Stream", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[output.Stream](), reflect.TypeFor[core.Stream](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NewStream", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(output.NewStream), reflect.TypeOf(core.NewStream), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Tee", func(t *testing.T) {
 		t.Parallel()
 

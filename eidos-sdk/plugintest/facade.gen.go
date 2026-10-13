@@ -140,10 +140,12 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 	core.AssertTemplates(tb, setup)
 }
 
-// AssertOptionsSchema checks the plugin's options struct against
-// the tag contract, through the check the composition runs, so a
-// plugin that would fail at Build fails in its own tests first. Each
-// fault of the struct reports on its own.
+// AssertOptionsSchema checks the options struct of the plugin through the
+// two checks that the composition runs, so a plugin that would fail at
+// Build fails in its own tests first. The struct meets the tag contract,
+// and no required option of the plugin of the setup has the zero value of
+// its type. The setup gives each required option a value, as the config of
+// a composition does. Each fault reports on its own.
 func AssertOptionsSchema(tb assert.TB, setup Setup) {
 	core.AssertOptionsSchema(tb, setup)
 }

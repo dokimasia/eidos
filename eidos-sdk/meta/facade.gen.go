@@ -359,6 +359,8 @@ type Completeness = core.Completeness
 //   - a name without a claimed namespace or without a local part;
 //   - a name in a namespace another registrant claimed;
 //   - a spec without documentation;
+//   - choices on a key of another type than string, an empty choice and
+//     a choice listed twice;
 //   - a name registered again under another value type or another
 //     spec, with an error that contains the first difference;
 //   - a key and a group with one spelling, in either registration

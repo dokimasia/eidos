@@ -22,6 +22,14 @@ import (
 // the declaration does not declare, positioned at the carrier.
 var UnknownWitnessParam = core.UnknownWitnessParam
 
+// EmptySample refuses a sample instance that states neither a value
+// nor an alternate, positioned at the carrier.
+var EmptySample = core.EmptySample
+
+// EmptyWitness refuses a witness instance that names no type
+// parameter, positioned at the carrier.
+var EmptyWitness = core.EmptyWitness
+
 // The names of the two annotators, which their findings and claims record
 // as the origin.
 const (
@@ -34,10 +42,11 @@ const (
 // Sample returns the annotator of the sample directive. It runs once for
 // each validated instance on a field, a parameter, a return, a variable, a
 // constant, an alias, a struct, an enum or a sum. It stamps the value
-// under gen.sample, and the alternate under gen.alternate where the
-// instance states one, both as the text that the author wrote. A callable
-// and an interface have several types or none, so the fact store refuses
-// the stamp at the subject.
+// under gen.sample and the alternate under gen.alternate where the
+// instance states them, both as the text that the author wrote. It
+// refuses an instance that states neither under [EmptySample] at the
+// carrier. A callable and an interface have several types or none, so the
+// fact store refuses the stamp at the subject.
 func Sample() plugin.Annotator {
 	return core.Sample()
 }
@@ -47,7 +56,8 @@ func Sample() plugin.Annotator {
 // method, an alias or a sum. For each key, it stamps the resolved type
 // under gen.witness on the type parameter that the key names. It refuses
 // a key that names none of the parameters of the declaration under
-// [UnknownWitnessParam] at the carrier, and stamps the other keys.
+// [UnknownWitnessParam] at the carrier, and stamps the other keys. It
+// refuses an instance without a key under [EmptyWitness] at the carrier.
 func Witness() plugin.Annotator {
 	return core.Witness()
 }

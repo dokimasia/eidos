@@ -99,8 +99,8 @@ var AbsentRules = core.AbsentRules
 // calls a method allocates what the method allocates, and states so.
 type SourceRules = core.SourceRules
 
-// Scope is where a spelling is read: the subject the spelling is
-// written on, and the file whose imports qualify it.
+// Scope is the place where a spelling is read. Subject is the declaration
+// that has the spelling, and the imports of File qualify the spelling.
 type Scope = core.Scope
 
 // ParamRole classifies a callable's parameter.
@@ -292,9 +292,20 @@ type EnumInfo = core.EnumInfo
 // a string literal, quoted by the language that spells it.
 type VariantText = core.VariantText
 
-// ErrorValueRules names error values. Its two methods are inverses, so
-// a name and its recognition cannot disagree.
+// ErrorValueRules names error values. SentinelBase recognises the names
+// that SentinelName returns, so a name and its recognition cannot
+// disagree.
 type ErrorValueRules = core.ErrorValueRules
+
+// ErrorTypeRules is the optional capability of a language whose types can
+// be errors, such as a Go type with the method Error and a TypeScript
+// class that extends Error. [Bound.ErrorContract] calls it.
+type ErrorTypeRules = core.ErrorTypeRules
+
+// ErrorContract is what a language states about an error type. The zero
+// value is the contract of an error type that inherits its message, and
+// that declares no cause and no hooks.
+type ErrorContract = core.ErrorContract
 
 // TagRules reads a language's per-field tags.
 type TagRules = core.TagRules
@@ -304,6 +315,13 @@ type TagRules = core.TagRules
 // time.Time. The fold calls the rules of the language of a target before
 // it classifies the target.
 type WellKnownRules = core.WellKnownRules
+
+// SatisfactionRules is the optional capability of a language whose
+// satisfaction of an interface reads more than the member sets: a method
+// that belongs to a pointer to its type alone, such as a Go method with a
+// pointer receiver, and an interface that constrains a type set, such as
+// a Go constraint. [Bound.Satisfies] calls it.
+type SatisfactionRules = core.SatisfactionRules
 
 // GenericsRules reasons about type parameters. The kernel substitutes
 // arguments for parameters itself, through [Substitute].
@@ -406,6 +424,15 @@ func Resolve(r Resolver, src SourceRules, v View, scope Scope, name string, kind
 	return core.Resolve(r, src, v, scope, name, kind)
 }
 
+// Satisfaction is the comparison of the member set of a type with the
+// members of an interface. The zero value is the satisfaction of an
+// interface without members by a type without gaps.
+type Satisfaction = core.Satisfaction
+
+// Mismatch pairs a member of an interface with the member of the same
+// name that a type has.
+type Mismatch = core.Mismatch
+
 // ScalarClass names which number a Scalar is.
 type ScalarClass = core.ScalarClass
 
@@ -460,7 +487,7 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 // A language's Builtin maps its own spelling of a well-known type onto
 // one of these blessed reference identities, so a Go time.Time and a
 // proto Timestamp project to one shape. The registry contains these
-// three, and growing it only adds entries.
+// four, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = core.WellKnownTimestamp
@@ -469,6 +496,9 @@ var (
 	// WellKnownEmpty is a value that contains no data, such as protobuf's
 	// Empty.
 	WellKnownEmpty = core.WellKnownEmpty
+	// WellKnownError is the value of a failure, such as Go's error and
+	// TypeScript's Error.
+	WellKnownError = core.WellKnownError
 )
 
 // IsWellKnown reports whether an identity is one the registry

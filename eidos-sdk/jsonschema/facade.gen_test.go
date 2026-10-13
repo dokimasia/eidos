@@ -21,6 +21,36 @@ import (
 func TestFacade(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Tag", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[jsonschema.Tag](), reflect.TypeFor[core.Tag](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("TagYAML", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, jsonschema.TagYAML, core.TagYAML, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("TagJSON", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, jsonschema.TagJSON, core.TagJSON, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Schemer", func(t *testing.T) {
 		t.Parallel()
 

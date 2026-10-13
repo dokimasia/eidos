@@ -333,9 +333,10 @@ const (
 	// records the variance. An unbounded wildcard has no child, and
 	// its variance is invariant.
 	FormWildcard = core.FormWildcard
-	// FormInline has no children: an inline struct, interface or
-	// object body, whose members the reference records as its fields
-	// and methods.
+	// FormInline is an inline struct, interface or object body. Its
+	// children are the types that the body states, in the order of the
+	// body, and the reference records the members as its fields and
+	// methods.
 	FormInline = core.FormInline
 	// FormScalar is a number. The shape contains its class and
 	// width.

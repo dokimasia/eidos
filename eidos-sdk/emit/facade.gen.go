@@ -218,15 +218,22 @@ type File = core.File
 // One statement is one Import, however many names it binds. Path
 // names the module. Alias is the module-level alias, which covers a
 // Go renamed import, a Python "import numpy as np" and a TypeScript
-// namespace import. Names holds the per-symbol bindings, so
-// "import {a as b, c} from 'x'" carries two. Default holds the
-// local name bound to the module's default export, which
-// TypeScript has and most languages do not.
+// namespace import. Names has the per-symbol bindings, so
+// "import {a as b, c} from 'x'" has two. Default is the local name
+// bound to the module's default export, which TypeScript has and
+// most languages do not.
 //
 // Wildcard means the statement pulls every exported name into
 // scope: a Java "import java.util.*", a Rust glob use, a Python
 // star import. Resolution treats a wildcard scope differently from
 // a named one, so it is a field rather than a spelling.
+//
+// Modules are the packages that Path names, in the order in which the
+// language tries them, where a configuration of the workspace maps
+// the specifier, such as the paths option of a tsconfig. Modules is
+// nil where the language resolves the specifier from its text alone.
+// The graph does not record the configuration, so the rules resolve a
+// mapped specifier through Modules.
 //
 // Import is node-only. A generated file's imports are a side effect
 // of spelling types, collected per file as the backend renders,
@@ -239,11 +246,12 @@ type Import = core.Import
 // that it did not declare.
 //
 // A declaration's own export is its [symbol.Visibility], not an
-// Export. This kind carries the statement forms that publish
+// Export. This kind records the statement forms that publish
 // something else: a TypeScript "export { a } from './x'" or
 // "export * from './x'", a Rust "pub use", a Python __all__ entry.
 // Path names the source module and is empty when the file
-// re-exports its own local names.
+// re-exports its own local names. Modules are the packages that a
+// mapped Path names, as [Import.Modules] are.
 //
 // The public surface of a package is its exported declarations plus
 // these, which is why a binding generator has to read both.
@@ -494,10 +502,13 @@ type Alias = core.Alias
 //   - Optional, List, Array, Stream and Borrow: one child.
 //   - Map: the key, then the value.
 //   - Func: the parameters, then the returns, which begin at Split.
-//   - Tuple, Union and Intersection: the members.
+//   - Tuple, Union and Intersection: the members. A Go union has its
+//     terms, and its spelling keeps the approximation mark of a term.
 //   - Wildcard: the bound, with Variance, and none for an unbounded
 //     one.
-//   - Inline and Named: none.
+//   - Inline: the types that the body states, in the order of the
+//     body, so a backend binds the imports of the names in the body.
+//   - Named: none.
 //
 // No element of Elems is nil. A frontend records a child that the source
 // does not state as an empty reference, so the form keeps its arity.
@@ -533,7 +544,8 @@ type Alias = core.Alias
 // the same nodes as the members of a declaration, without identities.
 // No carrier and no stamp can address them. The resolution step
 // resolves the references among them. Only the node model has them. A
-// backend writes an inline body from the spelling of the reference.
+// backend writes an inline body from the spelling of the reference, and
+// binds the imports of its children.
 //
 // This is the emit spelling of the kind.
 type TypeRef = core.TypeRef
@@ -610,6 +622,12 @@ func DeclaredName(d symbol.Symbol) string {
 // routing key.
 func RespellNames(s symbol.Symbol, f func(host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error)) error {
 	return core.RespellNames(s, f)
+}
+
+// NameOf returns the name that s declares, and false for a kind without a
+// name. It does not allocate.
+func NameOf(s symbol.Symbol) (string, bool) {
+	return core.NameOf(s)
 }
 
 // StmtKind selects a statement's populated fields. The zero kind
@@ -797,29 +815,33 @@ func DecodeJSON(data []byte) (symbol.Symbol, error) {
 // reads it anyway.
 type TemplateRef = core.TemplateRef
 
-// ValueKind selects a value's populated fields. The zero kind
-// names no value.
+// ValueKind selects the fields of a [Value] that are set. The zero kind
+// is no value.
 type ValueKind = core.ValueKind
 
 const (
-	// ValueLiteral is Literal and Text: a number, a string's
-	// content, a truth value, the absent value, or raw text in the
-	// source language.
+	// ValueLiteral is a literal with Literal and Text: a number, the
+	// content of a string, a truth value, the absent value, or raw text
+	// in the source language.
 	ValueLiteral = core.ValueLiteral
-	// ValueConversion applies Type to Inner: Weekday(42).
+	// ValueConversion converts Inner to Type: Weekday(42).
 	ValueConversion = core.ValueConversion
-	// ValueComposite is Type with Fields: Point{X: 42}, positional
-	// where a field has no name.
+	// ValueComposite is a composite of Type with Fields: Point{X: 42}. A
+	// field without a name or a key is positional.
 	ValueComposite = core.ValueComposite
-	// ValueCall applies Callee to Args: time.Unix(42, 0).
+	// ValueCall calls Callee with Args: time.Unix(42, 0).
 	ValueCall = core.ValueCall
 	// ValueAddress takes the address of Inner: &Point{X: 42}.
 	ValueAddress = core.ValueAddress
+	// ValueName is the name of the declaration Callee, such as a
+	// constant or a variable: time.Second. A target spells the name with
+	// the import of its package, as it spells the callee of a call.
+	ValueName = core.ValueName
 )
 
-// LiteralKind names what a literal's text is, so a target spells
-// it its own way: the string's quotes, the absent value's name.
-// The zero kind names no literal.
+// LiteralKind is the kind of the text of a literal. A target spells each
+// kind in its own way, such as the quotes of a string or the name of the
+// absent value. The zero kind is no literal.
 type LiteralKind = core.LiteralKind
 
 const (
@@ -827,96 +849,108 @@ const (
 	LiteralInt = core.LiteralInt
 	// LiteralFloat is a floating-point number in decimal text.
 	LiteralFloat = core.LiteralFloat
-	// LiteralString is a string. Text is the content, unquoted.
+	// LiteralString is a string. Text is the content without quotes.
 	LiteralString = core.LiteralString
 	// LiteralBool is a truth value. Text is "true" or "false".
 	LiteralBool = core.LiteralBool
-	// LiteralNil is the language's absent value. Text is empty.
+	// LiteralNil is the absent value of the language. Text is empty.
 	LiteralNil = core.LiteralNil
-	// LiteralRaw is Text in the source language, which only that
-	// language's backend spells and another language's refuses.
+	// LiteralRaw is Text in the source language. Only the backend of
+	// that language spells it, and the backend of another language
+	// refuses it.
 	LiteralRaw = core.LiteralRaw
 )
 
-// Value is one value a generated body writes: a sample, a zero, a
-// literal read from text. Every reference in it is qualified by
-// the backend for the file it is written into, which is what text
-// alone could never do. Kind selects the populated fields, so a
-// consumer switches on it and reads without an assertion. The
-// zero Value names nothing.
+// Value is one value that a generated body writes, such as a sample, a
+// zero or a literal read from text. The backend qualifies every reference
+// in it for the file that it writes, which text alone cannot do. Kind
+// selects the fields that are set, so a consumer switches on Kind and
+// reads the fields without an assertion. The zero Value is no value.
 //
-// A copy of a Value shares what its pointers and slices refer to:
-// Type, Inner and each composite field's Key are pointers, and
-// Fields and Args are slices. Inner is a pointer because a struct
-// cannot contain itself.
+// Type, Inner and the Key of each composite field are pointers, and
+// Fields and Args are slices. A copy of a Value shares what they point
+// to. Inner is a pointer because a struct cannot contain itself.
 type Value = core.Value
 
-// ValueField is one entry of a composite, in one of three forms: a
-// named field where Name is set, a keyed entry where Key is, and a
-// positional element where neither is. The three cover a struct's
-// fields, a map's entries and a list's elements, which is every
-// composite the languages in scope spell.
+// ValueField is one entry of a composite in one of three forms. Name is
+// set for a named field, Key for a keyed entry, and neither for a
+// positional element. The three forms cover the fields of a struct, the
+// entries of a map and the elements of a list. Every composite of the
+// languages in scope has one of them.
 type ValueField = core.ValueField
 
-// Literal returns a literal value of one kind. Raw text takes
-// [Raw] instead, because only a backend of the text's own language
-// can spell it.
+// Literal returns a literal of one kind. Use [Raw] for raw text, because
+// only the backend of its language can spell it. Literal allocates
+// nothing.
 func Literal(k LiteralKind, text string) Value {
 	return core.Literal(k, text)
 }
 
-// Number returns a numeric literal written for a number type of a
-// width in bits: 32 for a single-precision float, 64 for a long
-// integer. A width of 0 states none, which is a platform-sized
-// integer or a number whose type the derivation did not know. A
-// target whose literal syntax depends on the width, such as Java's
-// float and long suffixes, reads it, and every other target spells
-// the text alone.
+// Number returns a numeric literal for a number type of a width in bits,
+// such as 32 for a single-precision float or 64 for a long integer. A
+// width of 0 is no width, which is a platform-sized integer or a number
+// of an unknown type. A target whose literal syntax depends on the width,
+// such as the float and long suffixes of Java, reads it. Every other
+// target spells the text alone. Number allocates nothing.
 func Number(k LiteralKind, text string, bits int) Value {
 	return core.Number(k, text, bits)
 }
 
-// Raw returns a literal an author wrote as text in one language: a
-// target spells it where the language is its own and refuses it
-// otherwise, because nothing can translate it.
+// Raw returns a literal that an author wrote as text in one language. A
+// target spells it where the language is its own, and refuses it
+// otherwise, because no target translates it. Raw allocates nothing.
 func Raw(lang symbol.Lang, text string) Value {
 	return core.Raw(lang, text)
 }
 
-// NamedField returns a composite's named field.
+// NamedField returns a named field of a composite. It allocates nothing.
 func NamedField(name string, v Value) ValueField {
 	return core.NamedField(name, v)
 }
 
-// KeyedEntry returns a composite's keyed entry: a map's one pair.
+// KeyedEntry returns a keyed entry of a composite, which is one pair of a
+// map. It allocates the key, one allocation.
 func KeyedEntry(key, v Value) ValueField {
 	return core.KeyedEntry(key, v)
 }
 
-// Element returns a composite's positional element: a list's one
-// item.
+// Element returns a positional element of a composite, which is one item
+// of a list. It allocates nothing.
 func Element(v Value) ValueField {
 	return core.Element(v)
 }
 
-// Conversion returns a value converted to a type.
+// Conversion returns a value converted to a type. It allocates the inner
+// value, one allocation.
 func Conversion(t *TypeRef, inner Value) Value {
 	return core.Conversion(t, inner)
 }
 
-// Composite returns a composite value of a type.
+// Composite returns a composite value of a type. It allocates the list of
+// fields of a variadic call, one allocation.
 func Composite(t *TypeRef, fields ...ValueField) Value {
 	return core.Composite(t, fields...)
 }
 
-// Call returns a call of a function, imported by identity.
+// Call returns a call of a function, which a backend imports by its
+// identity. It allocates the list of arguments of a variadic call, one
+// allocation.
 func Call(callee symbol.Identity, args ...Value) Value {
 	return core.Call(callee, args...)
 }
 
-// Address returns the address of a value.
+// Address returns the address of a value. It allocates the inner value,
+// one allocation.
 func Address(inner Value) Value {
 	return core.Address(inner)
+}
+
+// Name returns the name of the declaration id as a value, such as a
+// constant or a variable. A backend imports the package of the
+// declaration, as it does for the callee of a call. Name allocates
+// nothing.
+func Name(id symbol.Identity) Value {
+	return core.Name(id)
 }
 
 // Walk visits s and every declaration it contains, depth first, in

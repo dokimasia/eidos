@@ -538,40 +538,78 @@ func NamesOf(files []File, settled *Emit, others Names) []NameEntry {
 	return core.NamesOf(files, settled, others)
 }
 
-// ValidateOptions holds a plugin's options declaration to the tag
-// contract: a pointer to a struct, exported fields only, an opt
-// tag naming each field's config key, a doc tag stating its
-// meaning, and no key claimed twice. It returns one error per
-// finding, in field order, and nothing where the plugin declares
-// no options. The composition runs it before populating; the
-// conformance suite runs it as a check, so a plugin failing at
-// composition fails in its own tests first.
+// ValidateOptions checks the options struct of p against the tag contract
+// and returns one error for each finding, in field order. The contract has
+// these rules:
+//
+//   - Options returns a pointer to a struct that is not nil.
+//   - Each field is exported.
+//   - Each field has an opt tag with its config key, and no two fields
+//     have one key.
+//   - Each field has a doc tag with its meaning.
+//   - A schema tag has the value required.
+//
+// ValidateOptions returns nothing for a plugin that declares no options.
+// The composition runs it before it populates the options, and the plugin
+// suite runs it as a check.
 //
 // # Allocation contract
 //
-// ValidateOptions allocates the set of claimed keys, the reflection of
-// each field and the errors it returns. It allocates nothing for a
-// plugin without the surface.
+// ValidateOptions allocates the set of claimed keys, the reflection of the
+// fields and the errors that it returns. It allocates nothing for a plugin
+// without the surface.
 func ValidateOptions(p Plugin) []error {
 	return core.ValidateOptions(p)
 }
 
-// EncodeOptions returns a plugin's options in their canonical
-// encoding, which is what a unit key and the composition
-// fingerprint fold, and nil for a plugin declaring none. The
-// encoding is encoding/json over the declared struct. It refuses a
-// struct the encoding cannot see whole: an unexported field at any
-// depth, a field its json tag hides, and a value the encoder
-// refuses. A type that marshals itself is taken as it encodes.
-// Every option is inside the encoding, so a changed option always
-// changes the key.
+// MissingOptions returns one error for each option of p that the tag
+// schema:"required" marks and that has the zero value of its type, in
+// field order. The message of each error contains the name of the plugin
+// and the key of the option. MissingOptions returns nothing for a plugin
+// that declares no options. It also returns nothing for options that are
+// not a pointer to a struct, because ValidateOptions reports them.
+//
+// # Allocation contract
+//
+// MissingOptions allocates the errors that it returns and nothing else.
+func MissingOptions(p Plugin) []error {
+	return core.MissingOptions(p)
+}
+
+// OptionsSchema returns the JSON Schema, draft 2020-12, of the options of p
+// in a config file. The schema is a closed object with one property for
+// each option. The property has the key of the opt tag, the doc tag as its
+// description, and the schema of the type of the field that
+// [jsonschema.Of] returns. The options step decodes a value below an option
+// through JSON, so the schema reads the keys of a struct below an option
+// from its json tags.
+//
+// An option with the tag schema:"required" is a required property while it
+// has the zero value of its type. A config file need not set an option that
+// the composition already set. OptionsSchema returns nil for a plugin that
+// declares no options, and for options that [ValidateOptions] reports.
+func OptionsSchema(p Plugin) map[string]any {
+	return core.OptionsSchema(p)
+}
+
+// EncodeOptions returns the options of p in their canonical encoding, and
+// nil for a plugin that declares no options. A unit key and the
+// composition fingerprint fold the encoding. The encoding is encoding/json
+// over the declared struct, and a type that marshals itself encodes as it
+// marshals. Every option is inside the encoding, so a changed option
+// always changes the key.
+//
+// Error modes: EncodeOptions returns an error for a struct that the
+// encoding cannot see whole. Such a struct has an unexported field at any
+// depth, a field that its json tag hides, or a value that the encoder
+// refuses.
 //
 // # Allocation contract
 //
 // EncodeOptions allocates the set of seen types, the reflection of each
 // field, the encoded bytes, and what encoding/json allocates for its
-// state where its pool is empty. It allocates nothing for a plugin
-// without the surface.
+// state when its pool is empty. It allocates nothing for a plugin without
+// the surface.
 func EncodeOptions(p Plugin) ([]byte, error) {
 	return core.EncodeOptions(p)
 }
@@ -750,7 +788,8 @@ type PolicyProvider = core.PolicyProvider
 // CapabilityProvider orders a plugin. It returns a priority for each role,
 // and the capabilities that order the plugins of one priority. The
 // workspace refuses a plugin that implements some of these methods and
-// lacks others, and names the methods that it lacks.
+// lacks others, and names the methods that it lacks. A plugin that does
+// not implement CapabilityProvider runs at priority 0 in each role.
 type CapabilityProvider = core.CapabilityProvider
 
 // OptionsProvider declares a typed options struct. Options returns a
@@ -865,6 +904,39 @@ type PlanRecord = core.PlanRecord
 // the whole graph. The run records the reader's reads beside the check's
 // findings, and a read through Index or Facts records nothing.
 type CheckContext = core.CheckContext
+
+// RouteInput is one input of the layout. The zero value is no input.
+type RouteInput = core.RouteInput
+
+const (
+	// RouteDefault is the default policy, alongside-source.
+	RouteDefault = core.RouteDefault
+	// RouteHandler is the family that the handler of the plugin chose.
+	RouteHandler = core.RouteHandler
+	// RouteSource is the directory of the source of the unit.
+	RouteSource = core.RouteSource
+	// RouteTarget is the filename that the target spells.
+	RouteTarget = core.RouteTarget
+	// RoutePlan is the layout of the plan.
+	RoutePlan = core.RoutePlan
+	// RouteGenerator is the refinement of the generator of the unit.
+	RouteGenerator = core.RouteGenerator
+	// RouteFamily is the refinement of the family of the unit.
+	RouteFamily = core.RouteFamily
+	// RoutePackage is the path of the kernel out directive on the package
+	// of the origin.
+	RoutePackage = core.RoutePackage
+	// RouteOut is the kernel out directive on the origin.
+	RouteOut = core.RouteOut
+	// RouteDirective is the key out= or tag= on a directive of the plugin.
+	RouteDirective = core.RouteDirective
+)
+
+// Route records how the layout placed a unit. Each field is the input that
+// decided one part of the path of the file of the unit. The zero Route is
+// the route of a unit that the layout has not placed, such as a unit of the
+// emit store.
+type Route = core.Route
 
 // RefusedConstruct is the code of a lowering hook that refuses a
 // declaration. The target declares no idiom for the construct, and the

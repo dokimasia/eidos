@@ -10,10 +10,12 @@
 //
 // # Dependency position
 //
-// sdk/output imports core/output and sdk/plugin.
+// sdk/output imports core/output, sdk/plugin and the Go stdlib.
 package output
 
 import (
+	"io"
+
 	core "go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
@@ -222,6 +224,33 @@ type Change = core.Change
 //
 // A Sink belongs to one goroutine and serves one staging.
 type Sink = core.Sink
+
+// Stream writes the files that its sinks commit to one writer, such as
+// standard output. Each file is a header line, // === <path> ===, then the
+// body and a newline. A sink of the stream commits its files in path order
+// under the lock of the stream, so the files of two commits never mix. A
+// run commits its plans one after another in commit order, so the output
+// follows that order too.
+//
+// # Concurrency
+//
+// A Stream is safe for concurrent use. Each sink that [Stream.Open]
+// returns belongs to one goroutine, as every [Sink] does.
+//
+// # Allocation contract
+//
+// [NewStream] allocates the stream, and Open allocates the sink. A sink
+// stages and prepares as [Mem] does, and its commit allocates what Mem's
+// commit allocates and what the formatting of each header allocates.
+type Stream = core.Stream
+
+// NewStream returns a stream over w. prefix comes before the path of each
+// file in its header, such as the name of a member of a list and a slash,
+// and is empty for the paths as a workspace stages them. It allocates the
+// stream alone.
+func NewStream(w io.Writer, prefix string) *Stream {
+	return core.NewStream(w, prefix)
+}
 
 // Tee stages one set of files into several sinks at once: a disk
 // sink beside a memory sink is how a run writes and reports the

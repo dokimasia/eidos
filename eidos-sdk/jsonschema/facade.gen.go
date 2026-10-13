@@ -19,19 +19,39 @@ import (
 	core "go.dokimi.dev/eidos/core/jsonschema"
 )
 
+// Tag is the name of the struct tag that contains the key of a field. A
+// decoder reads the value of the field under the key.
+type Tag = core.Tag
+
+const (
+	// TagYAML is the tag of a YAML decoder. A field without a key has the
+	// name of the field in lower case.
+	TagYAML = core.TagYAML
+	// TagJSON is the tag of encoding/json. A field without a key has the
+	// name of the field.
+	TagJSON = core.TagJSON
+)
+
 // Schemer is a type with a JSON Schema of its own, such as an enumeration
 // that a decoder reads from a fixed list of spellings.
 type Schemer = core.Schemer
 
-// Of returns the JSON Schema, draft 2020-12, of the values of t.
+// Of returns the JSON Schema, draft 2020-12, of the values of t. tag is the
+// struct tag that contains the key of each field of a struct below t.
 //
 //   - A pointer has the schema of its element.
 //   - A type whose zero value implements [Schemer] has the schema that
 //     its JSONSchema method returns.
-//   - A struct is a closed object with one property for each field that
-//     a YAML decoder reads. The property has the field's yaml key and its
-//     doc tag as the description, and a field whose schema tag is
-//     required is a required property.
+//   - A [time.Duration] has the JSON types string and integer: the text of
+//     a duration, such as 1m30s, or a number of nanoseconds.
+//   - Any other type whose pointer implements [encoding.TextUnmarshaler]
+//     has the JSON type string.
+//   - A struct is a closed object with one property for each exported field
+//     and each embedded field. The property has the key of the field in tag
+//     and the doc tag of the field as its description. A field without a
+//     key has the key that the decoder of tag gives it, and a field whose
+//     tag is - has no property. A field whose schema tag is required is a
+//     required property.
 //   - A slice is an array, and a map is an object whose properties have
 //     the schema of the map's elements. Where the zero value of the map's
 //     key type implements [Schemer], the names of the properties have the
@@ -40,12 +60,13 @@ type Schemer = core.Schemer
 //     every signed and unsigned integer has the JSON type integer.
 //   - Any other type, such as an interface, allows any value.
 //
-// Of returns a new map on each call. It cannot fail.
+// Of reads the keys of tag as [TagJSON] does for any tag other than
+// [TagYAML]. Of returns a new map on each call. It cannot fail.
 //
 // # Allocation contract
 //
 // Of allocates the maps and the lists of the schema that it returns, and
 // what a [Schemer] allocates.
-func Of(t reflect.Type) map[string]any {
-	return core.Of(t)
+func Of(t reflect.Type, tag Tag) map[string]any {
+	return core.Of(t, tag)
 }

@@ -561,6 +561,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("MissingOptions", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.MissingOptions), reflect.TypeOf(core.MissingOptions), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("OptionsSchema", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.OptionsSchema), reflect.TypeOf(core.OptionsSchema), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("EncodeOptions", func(t *testing.T) {
 		t.Parallel()
 
@@ -938,6 +958,126 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.CheckContext](), reflect.TypeFor[core.CheckContext](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("RouteInput", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.RouteInput](), reflect.TypeFor[core.RouteInput](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("RouteDefault", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteDefault, core.RouteDefault, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteHandler", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteHandler, core.RouteHandler, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteSource", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteSource, core.RouteSource, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteTarget", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteTarget, core.RouteTarget, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RoutePlan", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RoutePlan, core.RoutePlan, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteGenerator", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteGenerator, core.RouteGenerator, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteFamily", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteFamily, core.RouteFamily, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RoutePackage", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RoutePackage, core.RoutePackage, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteOut", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteOut, core.RouteOut, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RouteDirective", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.RouteDirective, core.RouteDirective, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("Route", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Route](), reflect.TypeFor[core.Route](), "the facade aliases the kernel's type")
 		})
 	})
 

@@ -93,8 +93,8 @@ var (
 	// kind that the schema's Kinds leave out. The instance drops, so it
 	// does not run a rule.
 	MisplacedDirective = core.MisplacedDirective
-	// DerivedMetadataKey refuses a meta directive that names a key whose
-	// value its registrant derives from other keys. The instance is
+	// DerivedMetadataKey refuses a meta directive that drops or sets a key
+	// whose value its registrant derives from other keys. The instance is
 	// dropped, and the facts that the key summarises stay.
 	DerivedMetadataKey = core.DerivedMetadataKey
 )
@@ -198,9 +198,10 @@ type Directive = core.Directive
 // schemas before any plugin's, so an impersonation is a plain
 // duplicate by the time it arrives.
 const (
-	// KernelMeta overrides metadata at directive authority. Its
-	// drop param resolves against the metadata registry and
-	// removes a fact or a group.
+	// KernelMeta overrides metadata at directive authority. Its drop
+	// param resolves against the metadata registry and removes a fact or
+	// a group. Its set param names a key, and its value or values param
+	// is the fact that it writes.
 	KernelMeta = core.KernelMeta
 	// KernelOut redirects a declaration's output; its path param
 	// is the override.
@@ -224,6 +225,15 @@ const (
 const (
 	// MetaDrop names the fact or group the meta directive removes.
 	MetaDrop = core.MetaDrop
+	// MetaSet names the key that the meta directive sets.
+	MetaSet = core.MetaSet
+	// MetaValue is the value that the meta directive sets, for a key of
+	// a string, integer, boolean or identity type. Validation types it
+	// as the type of the key.
+	MetaValue = core.MetaValue
+	// MetaValues is the list that the meta directive sets, for a key of
+	// the type []string.
+	MetaValues = core.MetaValues
 	// OutPath is the out directive's redirect target.
 	OutPath = core.OutPath
 	// OutTag selects a companion output.
@@ -248,10 +258,11 @@ func Kernel() []Schema {
 
 // Registry records every schema a workspace recognises.
 //
-// A Registry is not safe for concurrent use. Registration happens
+// An open Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, and sealing ends it: validation
 // refuses an unsealed registry, and registration after the seal is
-// an error.
+// an error. A sealed Registry changes on no call, so it is safe for
+// concurrent use.
 type Registry = core.Registry
 
 // NewRegistry returns an empty registry.
@@ -407,6 +418,12 @@ type Resolver = core.Resolver
 // that writes a param that its schema deprecates, reports a Warning under
 // [DeprecatedDirective] that states the schema's rewrite, and validates
 // as before.
+//
+// A param that an instance omits takes the default of its spec where a
+// role of the instance admits the param. A meta instance writes exactly
+// one of drop and set, and a set types its value as the type of its key.
+// An unclaimed name names the nearest registered name where one is within
+// two edits.
 //
 // An instance of a schema with variants selects its variant with its
 // first positional argument. The variant's params join the schema's, and

@@ -561,6 +561,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ErrorTypeRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.ErrorTypeRules](), reflect.TypeFor[core.ErrorTypeRules](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("ErrorContract", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.ErrorContract](), reflect.TypeFor[core.ErrorContract](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("TagRules", func(t *testing.T) {
 		t.Parallel()
 
@@ -578,6 +598,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[rules.WellKnownRules](), reflect.TypeFor[core.WellKnownRules](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("SatisfactionRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.SatisfactionRules](), reflect.TypeFor[core.SatisfactionRules](), "the facade aliases the kernel's type")
 		})
 	})
 
@@ -741,6 +771,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Satisfaction", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.Satisfaction](), reflect.TypeFor[core.Satisfaction](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Mismatch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.Mismatch](), reflect.TypeFor[core.Mismatch](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("ScalarClass", func(t *testing.T) {
 		t.Parallel()
 
@@ -858,6 +908,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, rules.WellKnownEmpty, core.WellKnownEmpty, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("WellKnownError", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.WellKnownError, core.WellKnownError, "the facade re-declares the kernel's value")
 		})
 	})
 

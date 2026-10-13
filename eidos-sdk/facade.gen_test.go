@@ -361,6 +361,36 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Not", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(sdk.Not), reflect.TypeOf(core.Not), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("NameEquals", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(sdk.NameEquals), reflect.TypeOf(core.NameEquals), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("HasSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(sdk.HasSlot), reflect.TypeOf(core.HasSlot), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Stamper", func(t *testing.T) {
 		t.Parallel()
 

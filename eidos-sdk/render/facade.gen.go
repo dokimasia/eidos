@@ -228,6 +228,12 @@ type Entry = core.Entry
 // took for a declaration of the file is never bound. The render
 // binds in canonical declaration order, so two runs bind alike.
 //
+// A set can have the names that the package clauses of a run declare.
+// [ImportSet.SetNames] sets them, and [ImportSet.Declared] returns the
+// name of one package and records its path. [ImportSet.Packages] returns
+// the recorded paths, because the file depends on the names of those
+// packages.
+//
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
 type ImportSet = core.ImportSet

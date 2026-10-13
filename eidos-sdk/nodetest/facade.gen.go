@@ -145,7 +145,13 @@ func Wildcard(variance symbol.Variance, bound *node.TypeRef) *node.TypeRef {
 }
 
 // Inline returns an inline body with fields as its fields and methods as its
-// methods. The reference keeps both lists.
+// methods. The reference keeps both lists. Its children are copies of the
+// types of the members, as a frontend records them for a body whose fields
+// come before its methods: the type of each field, then for each method the
+// bounds and the default of each type parameter, the type of its receiver,
+// its parameter types and its result types. A member without a type has
+// no child, and each child is a copy that [node.CloneRef] returns, because
+// a node of a fixture has one place.
 func Inline(fields []*node.Field, methods []*node.Method) *node.TypeRef {
 	return core.Inline(fields, methods)
 }

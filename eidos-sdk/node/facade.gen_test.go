@@ -31,6 +31,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("CloneRef", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(node.CloneRef), reflect.TypeOf(core.CloneRef), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("AppendBinary", func(t *testing.T) {
 		t.Parallel()
 

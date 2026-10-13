@@ -445,8 +445,10 @@ type Rule = core.Rule
 // declare, so one wrapper gates every rule of a directive. On a rule that
 // an emit triggers, the gate is the instance on the origin. A typed build
 // sets an empty Kinds of s from the rules, as the documentation of
-// [Builder] states. Directive allocates the copy of the schema and the
-// list of rules, two allocations.
+// [Builder] states. A typed build gives a schema with an empty Plugin the
+// name of the plugin, and the workspace refuses a schema that names
+// another plugin. Directive allocates the copy of the schema and the list
+// of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return core.Directive(s, rules...)
 }
@@ -464,18 +466,21 @@ func Gated(name directive.Name, rules ...Rule) Rule {
 	return core.Gated(name, rules...)
 }
 
-// Where gates rules on stamped facts. Wrappers compose and predicates
-// conjoin, and a disjunction is two rules. On a rule that an emit
-// triggers, the predicate evaluates against the origin. Where allocates
-// the list of predicates and the list of rules, two allocations.
+// Where gates rules on a predicate. Wrappers compose and predicates
+// conjoin, a disjunction is two rules, and [Not] negates a predicate. On a
+// rule that an emit triggers, a key gate evaluates against the origin, and
+// a value gate against the emitted value. Where allocates the list of
+// predicates and the list of rules, two allocations.
 func Where(p Pred, rules ...Rule) Rule {
 	return core.Where(p, rules...)
 }
 
-// Pred is a declarative fact predicate. Its key is data, which the
-// subscription record contains, and its test runs untracked at dispatch,
-// because the evaluation of a gate is routing. The zero Pred gates nothing,
-// and a typed build refuses it.
+// Pred is a declarative predicate. A key gate, such as [HasKey], reads a
+// key of the fact store, and the subscription record of its rule contains
+// the key as data. A value gate, such as [NameEquals], reads the value that
+// triggers the rule, and adds no record. The dispatch runs the test of a
+// predicate untracked, because the evaluation of a gate is routing. The
+// zero Pred gates nothing, and a typed build refuses it.
 type Pred = core.Pred
 
 // HasKey admits a subject on which k reads present.
@@ -506,6 +511,38 @@ type Equatable = core.Equatable
 // that binds it, two allocations.
 func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return core.KeyEquals[T](k, v)
+}
+
+// Not admits a subject that p does not admit. For [HasKey], that is a
+// subject on which the key reads absent. For [KeyEquals], it is also a
+// subject with another value. The fact index cannot enumerate a negated
+// gate, so a rule whose key gates are all negated enumerates every subject
+// of its kind. A negated key gate reads its key, so the subscription record
+// of its rule contains the key. The zero Pred remains zero under Not, and a
+// typed build refuses it. Not allocates the closure of the test, one
+// allocation.
+func Not(p Pred) Pred {
+	return core.Not(p)
+}
+
+// NameEquals admits a subject whose value has the name: the declaration
+// that a node trigger runs on, or the emitted value that an [OnEmit]
+// trigger runs on. For the empty name it returns the zero Pred, which a
+// typed build refuses. NameEquals allocates the closure of the test over
+// the name, one allocation.
+func NameEquals(name string) Pred {
+	return core.NameEquals(name)
+}
+
+// HasSlot admits an emitted function or method whose body declares the
+// named slot. It does not admit a node declaration, because the node
+// model does not record a body. The prologue and the epilogue are on every
+// body, and an owner cannot declare a slot under their names. So for
+// either name, and for the empty name, HasSlot returns the zero Pred,
+// which a typed build refuses. HasSlot allocates the closure of the test
+// over the name, one allocation.
+func HasSlot(name string) Pred {
+	return core.HasSlot(name)
 }
 
 // Stamper is the annotator effect: a write handle bound to its

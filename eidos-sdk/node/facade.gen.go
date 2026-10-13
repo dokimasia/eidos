@@ -27,6 +27,24 @@ import (
 // the same class.
 var ErrMalformed = core.ErrMalformed
 
+// CloneRef returns a deep copy of r, and nil for a nil reference. The copy
+// has the facts of r and a copy of each node below r: the children, the
+// type arguments and the absent members, and the fields and the methods of
+// an inline body with their receivers, parameters, results, type
+// parameters and thrown types. The copy shares no node with r, so a
+// frontend that lists one type in two places of a graph lists two nodes,
+// as the graph requires. The lists of text and of annotations of a member
+// are shared, because no step writes them after the parse. A nil member of
+// a list stays nil in the copy.
+//
+// # Allocation contract
+//
+// CloneRef allocates each node that it copies and each list of nodes, and
+// nothing for a nil reference.
+func CloneRef(r *TypeRef) *TypeRef {
+	return core.CloneRef(r)
+}
+
 // AppendBinary appends the binary encoding of s to dst and returns the
 // extended buffer, numbering every string s spells in t.
 //
@@ -225,15 +243,22 @@ type File = core.File
 // One statement is one Import, however many names it binds. Path
 // names the module. Alias is the module-level alias, which covers a
 // Go renamed import, a Python "import numpy as np" and a TypeScript
-// namespace import. Names holds the per-symbol bindings, so
-// "import {a as b, c} from 'x'" carries two. Default holds the
-// local name bound to the module's default export, which
-// TypeScript has and most languages do not.
+// namespace import. Names has the per-symbol bindings, so
+// "import {a as b, c} from 'x'" has two. Default is the local name
+// bound to the module's default export, which TypeScript has and
+// most languages do not.
 //
 // Wildcard means the statement pulls every exported name into
 // scope: a Java "import java.util.*", a Rust glob use, a Python
 // star import. Resolution treats a wildcard scope differently from
 // a named one, so it is a field rather than a spelling.
+//
+// Modules are the packages that Path names, in the order in which the
+// language tries them, where a configuration of the workspace maps
+// the specifier, such as the paths option of a tsconfig. Modules is
+// nil where the language resolves the specifier from its text alone.
+// The graph does not record the configuration, so the rules resolve a
+// mapped specifier through Modules.
 //
 // Import is node-only. A generated file's imports are a side effect
 // of spelling types, collected per file as the backend renders,
@@ -246,11 +271,12 @@ type Import = core.Import
 // that it did not declare.
 //
 // A declaration's own export is its [symbol.Visibility], not an
-// Export. This kind carries the statement forms that publish
+// Export. This kind records the statement forms that publish
 // something else: a TypeScript "export { a } from './x'" or
 // "export * from './x'", a Rust "pub use", a Python __all__ entry.
 // Path names the source module and is empty when the file
-// re-exports its own local names.
+// re-exports its own local names. Modules are the packages that a
+// mapped Path names, as [Import.Modules] are.
 //
 // The public surface of a package is its exported declarations plus
 // these, which is why a binding generator has to read both.
@@ -501,10 +527,13 @@ type Alias = core.Alias
 //   - Optional, List, Array, Stream and Borrow: one child.
 //   - Map: the key, then the value.
 //   - Func: the parameters, then the returns, which begin at Split.
-//   - Tuple, Union and Intersection: the members.
+//   - Tuple, Union and Intersection: the members. A Go union has its
+//     terms, and its spelling keeps the approximation mark of a term.
 //   - Wildcard: the bound, with Variance, and none for an unbounded
 //     one.
-//   - Inline and Named: none.
+//   - Inline: the types that the body states, in the order of the
+//     body, so a backend binds the imports of the names in the body.
+//   - Named: none.
 //
 // No element of Elems is nil. A frontend records a child that the source
 // does not state as an empty reference, so the form keeps its arity.
@@ -540,7 +569,8 @@ type Alias = core.Alias
 // the same nodes as the members of a declaration, without identities.
 // No carrier and no stamp can address them. The resolution step
 // resolves the references among them. Only the node model has them. A
-// backend writes an inline body from the spelling of the reference.
+// backend writes an inline body from the spelling of the reference, and
+// binds the imports of its children.
 //
 // This is the node spelling of the kind.
 type TypeRef = core.TypeRef
@@ -589,6 +619,32 @@ type Embed = core.Embed
 //
 // This is the node spelling of the kind.
 type TagEntry = core.TagEntry
+
+// DeclsOf returns the top-level declarations of p of the type T, such as
+// every *Interface of a package, in the order of the files of p and of
+// their declarations. A nil p and a nil file yield nothing. It allocates
+// nothing beyond the iterator.
+func DeclsOf[T Declaration](p *Package) iter.Seq[T] {
+	return core.DeclsOf[T](p)
+}
+
+// DeclNamed returns the first top-level declaration of p of the type T
+// whose identity has the name, and false where p declares none. A
+// declaration has its identity once the resolution step of the load
+// assigned it. It allocates nothing.
+func DeclNamed[T Declaration](p *Package, name string) (T, bool) {
+	return core.DeclNamed[T](p, name)
+}
+
+// MemberNamed returns the first member of a list whose identity has the
+// name, such as a method of a struct, and false where the list has none.
+// It skips a nil member. It allocates nothing.
+func MemberNamed[E any, T interface {
+	*E
+	Declaration
+}](members []T, name string) (T, bool) {
+	return core.MemberNamed[E, T](members, name)
+}
 
 // StringTable numbers the strings of one encoded region, so the
 // encoding writes each distinct string once and refers to it by its

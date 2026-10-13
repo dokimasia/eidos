@@ -31,6 +31,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("EmptySample", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, authored.EmptySample, core.EmptySample, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("EmptyWitness", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, authored.EmptyWitness, core.EmptyWitness, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("SamplePlugin", func(t *testing.T) {
 		t.Parallel()
 
