@@ -34,6 +34,9 @@ const (
 //     composite spelling;
 //   - a callable whose result has no type, because the unit type in its
 //     place changes what the callable returns;
+//   - a callable with a failure type whose body has verbatim text,
+//     statements or a return statement in a slot, because the fold
+//     changes the result and does not rewrite the body;
 //   - a file-level method without a Receives type, because Rust renders
 //     a method inside the impl block of its type.
 //

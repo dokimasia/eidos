@@ -14,6 +14,10 @@ import (
 // model, in the refusal of its carriers and its markers.
 const unmodeledConst = "an associated constant the model does not contain"
 
+// negativeMark precedes the trait of a negative impl, as in
+// impl !Send for A.
+const negativeMark = "!"
+
 // pendingConst is an associated constant of an inherent impl, lowered as a
 // field at the type level, with the parts of its comments, the spelling of
 // its restricted visibility and its attributes. Its carriers and its
@@ -41,17 +45,17 @@ type pendingImpl struct {
 // implItem lowers an impl block, whose own attributes are a. A trait impl
 // records its trait, and its items declare nothing, because the trait
 // declares them, so a carrier or a marker on one reports under
-// [UnaddressedCarrier]. An inherent impl lowers its methods, a function
-// without self at the type level, and its associated constants as fields
-// at the type level that are immutable. The signature depth leaves out an
-// item that is not public. A carrier or a marker on the block itself
-// reports under [UnaddressedCarrier].
+// [UnaddressedCarrier]. A negative impl states that the type does not
+// implement the trait, so it records nothing. An inherent impl lowers its
+// methods, a function without self at the type level, and its associated
+// constants as fields at the type level that are immutable. The signature
+// depth leaves out an item that is not public. A carrier or a marker on
+// the block itself reports under [UnaddressedCarrier].
 func (l *lowering) implItem(n treesitter.Node, c container, a attributes) {
 	l.refuse(n, a, "an impl block")
 	impl := pendingImpl{scope: c.scope, file: c.file, self: l.typeRef(n.Child(l.v.fieldType))}
 	body := n.Child(l.v.fieldBody)
 	if trait := n.Child(l.v.fieldTrait); !trait.IsZero() {
-		impl.trait = l.typeRef(trait)
 		var attrs []treesitter.Node
 		for item := range body.NamedChildren() {
 			switch {
@@ -62,7 +66,10 @@ func (l *lowering) implItem(n treesitter.Node, c container, a attributes) {
 				attrs = nil
 			}
 		}
-		l.w.impls = append(l.w.impls, impl)
+		if !n.HasToken(negativeMark) {
+			impl.trait = l.typeRef(trait)
+			l.w.impls = append(l.w.impls, impl)
+		}
 		return
 	}
 	var attrs []treesitter.Node

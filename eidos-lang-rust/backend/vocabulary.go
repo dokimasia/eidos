@@ -302,15 +302,16 @@ func (s Speller) AssocType(d symbol.Symbol) (string, error) {
 
 // SumPayload writes the payload of the variant v. It writes nothing for
 // an empty variant, named fields in braces for a struct variant, and
-// bare types in parentheses for a tuple variant. It returns an error for
-// a payload with named and unnamed entries, and for an entry with a fact
-// that an inline entry cannot express.
+// bare types in parentheses for a tuple variant. The outer attributes of
+// an entry precede it. It returns an error for a payload with named and
+// unnamed entries, and for an entry with a fact that an inline entry
+// cannot express.
 //
 // SumPayload allocates the spelling of each named entry, the joined
-// entries of more than one entry, the payload in its delimiters, and
-// what the spelling of each type allocates. One named entry allocates
-// twice, one unnamed entry allocates once, and an empty payload
-// allocates nothing.
+// entries of more than one entry, the payload in its delimiters, the
+// attributes of an entry that has any, and what the spelling of each
+// type allocates. One named entry allocates twice, one unnamed entry
+// allocates once, and an empty payload allocates nothing.
 func (s Speller) SumPayload(v *emit.SumVariant) (string, error) {
 	fields := v.Fields.Items()
 	if len(fields) == 0 {
@@ -330,10 +331,11 @@ func (s Speller) SumPayload(v *emit.SumVariant) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		attrs := textfmt.MarkedInline(f.Annotations, attrOpen, attrClose)
 		if named {
-			parts = append(parts, f.Name+": "+typ)
+			parts = append(parts, attrs+f.Name+": "+typ)
 		} else {
-			parts = append(parts, typ)
+			parts = append(parts, attrs+typ)
 		}
 	}
 	if named {
@@ -399,12 +401,14 @@ func (s Speller) SelfParams(m *emit.Method) (string, error) {
 
 // Params writes the parameter list in the slot ps. A template passes the
 // slot by address, as in {{params .Params}}, so the call reads the slot
-// without a reflective method call. An unnamed parameter gets the
-// discard pattern, because Rust requires a pattern. Params returns an
-// error for a parameter without a type. It allocates the spelling of
-// each parameter, the joined list of more than one parameter, and what
-// the spelling of each type allocates. Two parameters allocate three
-// times, and an empty list allocates nothing.
+// without a reflective method call. The outer attributes of a parameter
+// precede its pattern. An unnamed parameter gets the discard pattern,
+// because Rust requires a pattern. Params returns an error for a
+// parameter without a type. It allocates the spelling of each parameter,
+// the joined list of more than one parameter, the attributes of a
+// parameter that has any, and what the spelling of each type allocates.
+// Two parameters without attributes allocate three times, and an empty
+// list allocates nothing.
 func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 	items := ps.Items()
 	parts := make([]string, 0, len(items))
@@ -417,7 +421,8 @@ func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		parts = append(parts, name+": "+typ+textfmt.Inline(p.Comment))
+		parts = append(parts, textfmt.MarkedInline(p.Annotations, attrOpen, attrClose)+name+": "+typ+
+			textfmt.Inline(p.Comment))
 	}
 	return strings.Join(parts, ", "), nil
 }
@@ -888,13 +893,13 @@ func bareName(t *emit.TypeRef) string {
 }
 
 // inlineEntry returns an error for a fact of the payload entry f that an
-// inline entry cannot express. An inline entry consists of a name and a
-// type alone, on the line of its variant.
+// inline entry cannot express. An inline entry consists of its attributes,
+// a name and a type alone, on the line of its variant.
 func inlineEntry(variant string, f *emit.Field) error {
 	switch {
-	case len(f.Doc) > 0 || f.Comment != "" || len(f.Annotations) > 0:
+	case len(f.Doc) > 0 || f.Comment != "":
 		return refuse("a payload entry spells inline, and one in %s states "+
-			"documentation, a comment or attributes", variant)
+			"documentation or a comment", variant)
 	case f.Visibility != symbol.VisibilityUnknown:
 		return refuse("a payload follows its enum's visibility, and an entry in "+
 			"%s states its own", variant)

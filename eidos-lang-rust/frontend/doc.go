@@ -31,8 +31,11 @@
 //
 // The package path of a library is its crate name: the [lib] name, or the
 // package name with hyphens replaced by underscores. The package path of
-// any other target is its own name. The package path of a module is the
-// path of the crate followed by the module path, as in mycrate/store/table.
+// any other target is its own name, and the binary at src/main.rs takes
+// the package name with its hyphens. The build script at build.rs is the
+// build crate of Cargo below the crate name, as in
+// mycrate/build_script_build. The package path of a module is the path of
+// the crate followed by the module path, as in mycrate/store/table.
 // The parse walks the module tree from the crate root through every mod
 // item, with #[path] honoured, and an inline mod block is a nested
 // package. A member that no mod item names loads under the module path of

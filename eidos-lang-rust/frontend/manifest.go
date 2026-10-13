@@ -103,11 +103,13 @@ func (m *manifest) crateName() string {
 // src/lib.rs, the binaries, tests, examples and benches the manifest
 // declares at a path and the ones Cargo's layout places, and the build
 // script. A library takes [lib] name or the crate name, and every other
-// target its own name: a declared one's, a file's stem, or its
-// directory's for a main.rs. A target the manifest declares without a
-// path is at the root Cargo's layout places under its name. A root the
-// manifest declares comes before the same root Cargo's layout places,
-// so its declared name is the one [owner] finds.
+// target its own name: a declared one's, the name of the package for
+// src/main.rs, a file's stem, or its directory's for a main.rs. The build
+// script is Cargo's build crate below the crate name, so the build
+// scripts of two packages are two packages. A target the manifest declares
+// without a path is at the root Cargo's layout places under its name. A
+// root the manifest declares comes before the same root Cargo's layout
+// places, so its declared name is the one [owner] finds.
 func (m *manifest) targets(rel map[string]bool) []target {
 	var out []target
 	add := func(t target) {
@@ -141,7 +143,7 @@ func (m *manifest) targets(rel map[string]bool) []target {
 			}
 		}
 		if kind.role == roleBin {
-			add(target{role: roleBin, name: m.crateName(), root: mainRoot})
+			add(target{role: roleBin, name: m.Package.Name, root: mainRoot})
 		}
 		for _, f := range slices.Sorted(maps.Keys(rel)) {
 			if name, auto := autoTarget(kind.dir, f); auto {
@@ -149,7 +151,7 @@ func (m *manifest) targets(rel map[string]bool) []target {
 			}
 		}
 	}
-	add(target{role: roleBuild, name: buildCrate, root: buildScript})
+	add(target{role: roleBuild, name: path.Join(m.crateName(), buildCrate), root: buildScript})
 	return out
 }
 

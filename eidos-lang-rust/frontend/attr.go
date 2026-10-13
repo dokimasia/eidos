@@ -88,7 +88,9 @@ type attributes struct {
 
 // attributes reads the outer attributes of an item, or the inner
 // attributes of a module. Each attribute is an annotation of its name and
-// its arguments verbatim. A #[doc] attribute that assigns a string literal
+// its arguments verbatim, and an attribute that assigns its value, as
+// #[must_use = "use it"] does, is an assigned annotation of the value. A
+// #[doc] attribute that assigns a string literal
 // is documentation instead, one line per line of the text. The lowering
 // also evaluates a #[cfg] attribute. An attribute whose path starts with
 // the brand of the unit is also the marker of a directive, which
@@ -122,7 +124,7 @@ func (l *lowering) attributes(items []treesitter.Node) attributes {
 		annotation := symbol.Annotation{Name: name}
 		switch {
 		case !value.IsZero():
-			annotation.Args = []string{value.Text()}
+			annotation.Args, annotation.Assigned = []string{value.Text()}, true
 		case !args.IsZero():
 			for _, arg := range l.predicates(args) {
 				annotation.Args = append(annotation.Args, arg[0].TextThrough(arg[len(arg)-1]))

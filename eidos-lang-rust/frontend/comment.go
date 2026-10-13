@@ -56,12 +56,27 @@ func commentWalk(v *vocabulary) treesitter.Comments {
 }
 
 // declParts returns what the comments and the doc attributes of an item
-// state: the documentation of its leading comments and then of its #[doc]
-// attributes, and the carriers of its leading and its trailing comment.
-// comment is the documentation of the trailing comment on one line, and
-// empty where there is none.
+// state: the documentation of its leading doc comments and then of its
+// #[doc] attributes, and the carriers of its leading and its trailing
+// comments. A plain comment above an item states its carriers alone,
+// because rustdoc documents an item with its doc comments alone. comment
+// is the text of the trailing comment on one line, and empty where there
+// is none.
 func (l *lowering) declParts(n treesitter.Node, a attributes) (parts plugin.CommentParts, comment string) {
-	parts = l.parts(l.comments.Leading(n))
+	leading := l.comments.Leading(n)
+	for len(leading) > 0 {
+		doc := !leading[0].Child(l.v.fieldOuter).IsZero()
+		end := 1
+		for end < len(leading) && !leading[end].Child(l.v.fieldOuter).IsZero() == doc {
+			end++
+		}
+		run := l.parts(leading[:end])
+		if doc {
+			parts.Docs = append(parts.Docs, run.Docs...)
+		}
+		parts.Carriers = append(parts.Carriers, run.Carriers...)
+		leading = leading[end:]
+	}
 	parts.Docs = append(parts.Docs, a.docs...)
 	if tail := l.comments.Trailing(n); !tail.IsZero() {
 		after := l.parts([]treesitter.Node{tail})

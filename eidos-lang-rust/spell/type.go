@@ -39,6 +39,7 @@ const (
 	boxType        = "Box"
 	systemTimeType = "SystemTime"
 	durationType   = "Duration"
+	dynErrorType   = "dyn std::error::Error"
 	arrayOpen      = "["
 	arrayLength    = "; "
 	arrayClose     = "]"
@@ -83,8 +84,8 @@ var (
 //     has no result, and with a tuple of two or more results;
 //   - a wildcard as its upper bound;
 //   - the well-known timestamp and duration as std::time::SystemTime and
-//     std::time::Duration, and the well-known empty value as the unit
-//     type ();
+//     std::time::Duration, the well-known empty value as the unit type (),
+//     and the well-known error as Box<dyn std::error::Error>;
 //   - every other reference and sum as a translated reference with the
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which Rust writes in angle brackets.
@@ -250,8 +251,9 @@ func function(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // reference spells a reference or a sum: the well-known timestamp and
 // duration as the types of std::time, the well-known empty value as the
-// unit type, and every other referent as a translated reference under its
-// flat name, with its translated arguments.
+// unit type, the well-known error as a boxed trait object of
+// std::error::Error, and every other referent as a translated reference
+// under its flat name, with its translated arguments.
 func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
@@ -260,6 +262,8 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: durationType, Package: timeModule}, nil
 	case rules.WellKnownEmpty:
 		return &emit.TypeRef{Spelling: unitType, Form: symbol.FormTuple}, nil
+	case rules.WellKnownError:
+		return &emit.TypeRef{Spelling: boxType, Args: []*emit.TypeRef{{Spelling: dynErrorType}}}, nil
 	}
 	args, err := spoke.Children(s.Args, rustType)
 	if err != nil {

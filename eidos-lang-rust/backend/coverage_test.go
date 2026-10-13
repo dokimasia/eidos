@@ -14,8 +14,8 @@ import (
 )
 
 // coverageAllocs is the coverage table: the fact map's four, and the
-// exception map's two with its six kinds' two each.
-const coverageAllocs = 4 + 2 + 6*2
+// exception map's two with its four kinds' two each.
+const coverageAllocs = 4 + 2 + 4*2
 
 // The suite checks the declaration total and the rendered findings
 // against the table, and these cases pin the cells that distinguish
@@ -79,6 +79,10 @@ func TestCoverage(t *testing.T) {
 			{
 				name: "returns Renders for a method's throws",
 				kind: symbol.KindMethod, fact: symbol.FactThrows, want: render.Renders,
+			},
+			{
+				name: "returns Renders for a parameter's attributes",
+				kind: symbol.KindParam, fact: symbol.FactAnnotations, want: render.Renders,
 			},
 		}
 		for _, tt := range tests {

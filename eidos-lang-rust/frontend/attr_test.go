@@ -57,7 +57,8 @@ func TestAttr(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, structOf(t, "#[must_use = \"use it\"]\npub struct A;\n", "A").Annotations,
-				symbol.Annotations{{Name: "must_use", Args: []string{"\"use it\""}}}, "the literal as written")
+				symbol.Annotations{{Name: "must_use", Args: []string{"\"use it\""}, Assigned: true}},
+				"the literal as written, in the assigned form")
 		})
 
 		t.Run("annotates an item with an attribute's path", func(t *testing.T) {
@@ -450,8 +451,9 @@ func TestAttr(t *testing.T) {
 
 			st := structOf(t, "#[doc = include_str!(\"a.md\")]\npub struct A;\n", "A")
 			assert.Empty(t, st.Doc, "a macro's expansion is outside the syntax")
-			assert.Equal(t, st.Annotations, symbol.Annotations{{Name: "doc", Args: []string{"include_str!(\"a.md\")"}}},
-				"and the attribute is an annotation")
+			assert.Equal(t, st.Annotations,
+				symbol.Annotations{{Name: "doc", Args: []string{"include_str!(\"a.md\")"}, Assigned: true}},
+				"and the attribute is an assigned annotation")
 		})
 	})
 

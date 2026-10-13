@@ -174,6 +174,25 @@ func TestLower(t *testing.T) {
 			assert.Contains(t, stampKeys(gb, packageIn(t, gb, crateName+"/tests")), rust.TestKey, "the test module")
 		})
 
+		t.Run("annotates the File node of an inline module with the attributes of its mod item", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "#[allow(dead_code)]\nmod inner {\n    #![deny(missing_docs)]\n}\n")
+			assert.Equal(t, fileIn(t, gb, crateName+"/inner").Annotations, symbol.Annotations{
+				{Name: "allow", Args: []string{"dead_code"}}, {Name: "deny", Args: []string{"missing_docs"}},
+			}, "the outer attributes, then the inner ones")
+		})
+
+		t.Run("annotates the File node of a file module with the attributes of its mod item", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, crateTree(map[string]string{
+				libRoot: "#[allow(dead_code)]\nmod a;\n", "src/a.rs": publicStruct,
+			}), libRoot, plugin.DepthFull, nil)
+			assert.Equal(t, fileIn(t, gb, crateName+"/a").Annotations,
+				symbol.Annotations{{Name: "allow", Args: []string{"dead_code"}}}, "the outer attribute of the module")
+		})
+
 		t.Run("lowers an inline module into the package below its parent", func(t *testing.T) {
 			t.Parallel()
 

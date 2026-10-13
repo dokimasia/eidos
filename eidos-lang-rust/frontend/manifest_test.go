@@ -105,7 +105,8 @@ func TestManifest(t *testing.T) {
 
 			gb, _ := parsedTree(t, crateTree(map[string]string{"build.rs": publicStruct}), "build.rs",
 				plugin.DepthFull, nil)
-			assert.Equal(t, packagesOf(gb), []string{"build_script_build"}, "Cargo's name for the build crate")
+			assert.Equal(t, packagesOf(gb), []string{crateName + "/build_script_build"},
+				"Cargo's name for the build crate, below the crate of its package, so two packages keep two")
 		})
 
 		t.Run("roots no target for a file below a directory under src/bin", func(t *testing.T) {

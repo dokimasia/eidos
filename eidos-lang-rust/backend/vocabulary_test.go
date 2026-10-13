@@ -432,6 +432,17 @@ func TestVocabulary(t *testing.T) {
 				"the discard pattern")
 		})
 
+		t.Run("writes the attributes of a parameter before its name", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			key := &emit.Param{Name: "key", Type: ref("u32"), Annotations: symbol.Annotations{
+				{Name: "allow", Args: []string{"unused"}},
+			}}
+			assert.Equal(t, must(t)(s.Params(new(emit.SlotOf(key)))), "#[allow(unused)] key: u32",
+				"Rust writes an outer attribute before the pattern of a parameter")
+		})
+
 		t.Run("returns an error for a parameter that states no type", func(t *testing.T) {
 			t.Parallel()
 
@@ -919,6 +930,26 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, payload(t, &emit.SumVariant{Name: "Quit"}), "", "a unit variant")
 		})
 
+		t.Run("writes the attributes of a named entry before its name", func(t *testing.T) {
+			t.Parallel()
+
+			entry := &emit.Field{Name: "radius", Type: ref("f64"), Annotations: symbol.Annotations{
+				{Name: "serde", Args: []string{"default"}},
+			}}
+			assert.Equal(t, payload(t, variantOf(entry)), " { #[serde(default)] radius: f64 }",
+				"Rust writes an outer attribute on the field of a variant")
+		})
+
+		t.Run("writes the attributes of an unnamed entry before its type", func(t *testing.T) {
+			t.Parallel()
+
+			entry := &emit.Field{Type: ref("String"), Annotations: symbol.Annotations{
+				{Name: "serde", Args: []string{"default"}},
+			}}
+			assert.Equal(t, payload(t, variantOf(entry)), "(#[serde(default)] String)",
+				"Rust writes an outer attribute on the field of a tuple variant")
+		})
+
 		t.Run("returns an error for a payload of mixed entries", func(t *testing.T) {
 			t.Parallel()
 
@@ -976,6 +1007,14 @@ func TestVocabulary(t *testing.T) {
 				{Name: "derive", Args: []string{"Debug", "Clone"}},
 				{Name: "non_exhaustive"},
 			}), "#[derive(Debug, Clone)]\n#[non_exhaustive]\n", "the arguments verbatim")
+		})
+
+		t.Run("writes an assigned annotation in the assigned form", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.Attrs(symbol.Annotations{
+				{Name: "deprecated", Args: []string{`"use g"`}, Assigned: true},
+			}), "#[deprecated = \"use g\"]\n", "rustc refuses the parenthesised form of the attribute")
 		})
 	})
 

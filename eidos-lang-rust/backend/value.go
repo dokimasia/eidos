@@ -84,9 +84,10 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 	return head + turbofishOpener + strings.Join(args, ", ") + genericsCloser, nil
 }
 
-// Callee spells a function by the name its use binds: a used path
-// binds the name, so nothing qualifies at the call. A function in no
-// module, and one naming nothing, spells its own name.
+// Callee spells the function of a call or the item of a name value under
+// the name that its use binds. The use binds the name, so nothing
+// qualifies it in the value. A declaration in no module, and an identity
+// without a name, spell their own name.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Package == "" || id.Name == "" {
 		return id.Name, nil

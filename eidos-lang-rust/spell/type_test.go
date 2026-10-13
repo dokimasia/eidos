@@ -307,6 +307,11 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{Spelling: "()", Form: symbol.FormTuple},
 			},
 			{
+				name: "returns a boxed trait object of Error for the well-known error",
+				give: rules.Reference("error", rules.WellKnownError),
+				want: &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{{Spelling: "dyn std::error::Error"}}},
+			},
+			{
 				name: "returns the flat name for a reference to a nested type",
 				give: rules.Reference("Session.State", state),
 				want: &emit.TypeRef{Spelling: "SessionState", Target: state},

@@ -95,8 +95,10 @@ func (w *crate) targetOf(files []plugin.SourceRef) (target, string) {
 // stamps a file whose first comment contains [rust.GeneratedMark], with
 // the comment as written. The sweep reports the carriers of the comments
 // that no declaration takes, and every syntax error of the file reports
-// under [UnparsedFile].
-func (w *crate) walk(file, pkg string) {
+// under [UnparsedFile]. outer are the attributes of the mod item that
+// names the file, which annotate its File node before its inner
+// attributes.
+func (w *crate) walk(file, pkg string, outer symbol.Annotations) {
 	if w.walked[file] || w.err != nil {
 		return
 	}
@@ -115,6 +117,7 @@ func (w *crate) walk(file, pkg string) {
 	l := &lowering{w: w, v: w.v, tree: tree, path: file, comments: w.v.comments}
 	root := tree.Root()
 	c := l.container(pkg, moduleDir(file, w.root), false, root.Pos())
+	c.file.Annotations = append(c.file.Annotations, outer...)
 	if w.target.tests() {
 		w.stamp(c.file, rust.TestKey, true, c.file.Pos)
 	}
@@ -262,7 +265,7 @@ func (f *rustFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 		w.members[ref.Path] = true
 	}
 	w.target, w.dir = w.targetOf(u.Files())
-	w.walk(w.root, w.target.name)
+	w.walk(w.root, w.target.name, nil)
 	for _, ref := range u.Files() {
 		if w.err != nil || w.walked[ref.Path] {
 			continue
@@ -274,7 +277,7 @@ func (f *rustFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 		}
 		pkg := w.layoutPackage(ref.Path)
 		u.Infof(UnlinkedFile, at, "no mod item names %s, so it loads as the module %s", ref.Path, pkg)
-		w.walk(ref.Path, pkg)
+		w.walk(ref.Path, pkg, nil)
 	}
 	if w.err != nil {
 		return w.err

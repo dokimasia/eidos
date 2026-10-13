@@ -54,15 +54,29 @@ func TestComment(t *testing.T) {
 		t.Run("takes a comment between two attributes into the run", func(t *testing.T) {
 			t.Parallel()
 
-			src := "/// A.\n#[derive(Debug)]\n// B.\n#[repr(C)]\npub struct A;\n"
+			src := "/// A.\n#[derive(Debug)]\n/// B.\n#[repr(C)]\npub struct A;\n"
 			assert.Equal(t, structOf(t, src, "A").Doc, []string{"A.", "B."}, "both comments document the item")
 		})
 
 		t.Run("takes the comment after an attribute on its line", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, structOf(t, "#[derive(Debug)] // A.\npub struct A;\n", "A").Doc, []string{"A."},
+			assert.Equal(t, structOf(t, "#[derive(Debug)] /// A.\npub struct A;\n", "A").Doc, []string{"A."},
 				"an attribute is not an item, so the comment is not its trailing comment")
+		})
+
+		t.Run("leaves a plain comment above an item out of its documentation", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, structOf(t, "// TODO: drop\npub struct A;\n", "A").Doc,
+				"rustdoc documents an item with its doc comments alone")
+		})
+
+		t.Run("documents an item with the doc comments of a run that also has a plain comment", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, structOf(t, "// TODO: drop\n/// A is one record.\npub struct A;\n", "A").Doc,
+				[]string{"A is one record."}, "the doc comment documents the item")
 		})
 
 		t.Run("ends the documentation at a blank line", func(t *testing.T) {
@@ -125,7 +139,7 @@ func TestComment(t *testing.T) {
 		t.Run("records no comment on the next line as a trailing comment", func(t *testing.T) {
 			t.Parallel()
 
-			decls := declsOf(t, "pub struct A;\n// The b.\npub struct B;\n")
+			decls := declsOf(t, "pub struct A;\n/// The b.\npub struct B;\n")
 			assert.Equal(t, named[*node.Struct](t, decls, "A").Comment, "", "the comment starts below A")
 			assert.Equal(t, named[*node.Struct](t, decls, "B").Doc, []string{"The b."}, "the comment documents B")
 		})

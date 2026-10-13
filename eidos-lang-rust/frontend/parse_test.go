@@ -33,7 +33,8 @@ const brand = string(frontendtest.Brand)
 // root, a public struct, and the directory of a nested copy of the crate.
 const (
 	manifestPath = "Cargo.toml"
-	manifestSrc  = "[package]\nname = \"demo-crate\"\n"
+	packageName  = "demo-crate"
+	manifestSrc  = "[package]\nname = \"" + packageName + "\"\n"
 	crateName    = "demo_crate"
 	libRoot      = "src/lib.rs"
 	publicStruct = "pub struct A;\n"
@@ -357,7 +358,7 @@ func TestParse(t *testing.T) {
 
 			gb, _ := parsedTree(t, crateTree(map[string]string{"src/main.rs": publicStruct}),
 				"src/main.rs", plugin.DepthFull, nil)
-			named[*node.Struct](t, fileIn(t, gb, crateName).Decls, "A")
+			named[*node.Struct](t, fileIn(t, gb, packageName).Decls, "A")
 		})
 
 		t.Run("names a library after the name in its manifest", func(t *testing.T) {

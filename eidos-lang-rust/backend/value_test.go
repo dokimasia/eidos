@@ -173,6 +173,17 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilModule, Name: makeName}}, "the function's use")
 		})
 
+		t.Run("writes a constant under the name that its use binds", func(t *testing.T) {
+			t.Parallel()
+
+			got, set, err := returned(t, emit.Name(symbol.Identity{
+				Lang: rust.Lang, Package: utilModule, Name: limitName, Kind: symbol.KindConstant,
+			}))
+			assert.NoError(t, err, "the name spells")
+			assert.Equal(t, got, limitName, "the use binds the bare name")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilModule, Name: limitName}}, "the constant's use")
+		})
+
 		t.Run("uses the generic item a struct literal names", func(t *testing.T) {
 			t.Parallel()
 

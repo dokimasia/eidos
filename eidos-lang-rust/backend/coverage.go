@@ -37,7 +37,7 @@ import (
 //
 // Coverage builds the table on every call, which the caller keeps: four
 // allocations of the fact map, and two of the exception map with two for
-// each of its five kinds, 16 allocations.
+// each of its four kinds, 14 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		RefusesEmbeds: true,
@@ -96,9 +96,6 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindInterface: {
 				symbol.FactTypes: render.Renders, // associated types
-			},
-			symbol.KindParam: {
-				symbol.FactAnnotations: render.Refuses,
 			},
 		},
 	}

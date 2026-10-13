@@ -127,6 +127,13 @@ func TestImpl(t *testing.T) {
 				"&A implements the trait, not A")
 		})
 
+		t.Run("adds no trait of a negative impl to the struct's Implements", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, structOf(t, "pub struct A;\nimpl !Send for A {}\n", "A").Implements,
+				"a negative impl states that A does not implement the trait")
+		})
+
 		t.Run("folds an inherent impl's methods and constants onto an enum", func(t *testing.T) {
 			t.Parallel()
 

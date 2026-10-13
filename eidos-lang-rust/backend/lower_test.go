@@ -38,6 +38,7 @@ const (
 	notFoundType = "notFound"
 	timeoutType  = "timeout"
 	rowComment   = "the row"
+	verbatimBody = "unimplemented!()"
 )
 
 // The allocations of a lowering.
@@ -137,6 +138,13 @@ func TestLower(t *testing.T) {
 			{
 				name: "returns an error for a function whose result states no type beside a failure",
 				give: thrower([]*emit.Return{{Name: rowType}}, fetchError),
+			},
+			{
+				name: "returns an error for a function with a failure and a verbatim body",
+				give: &emit.Function{
+					Name: fetchName, Throws: []*emit.TypeRef{{Spelling: fetchError}},
+					Body: emit.Body{Verbatim: verbatimBody},
+				},
 			},
 			{
 				name: "returns an error for a file-level method without a receiver",

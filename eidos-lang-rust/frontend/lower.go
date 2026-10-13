@@ -198,8 +198,10 @@ func (l *lowering) exclude(n treesitter.Node, c container, a attributes) {
 // inside an inline block. Without a path attribute, the file is <name>.rs
 // or <name>/mod.rs in the directory of the container. The documentation
 // above the item documents the module, and its carriers and the directives
-// of its markers attach to the module. A module loads at every depth,
-// because a pub use can publish the pub items of a private module.
+// of its markers attach to the module. The attributes of the mod item
+// annotate the File node of the module, before its inner attributes. A
+// module loads at every depth, because a pub use can publish the pub items
+// of a private module.
 func (l *lowering) module(n treesitter.Node, c container, a attributes) {
 	name := n.Child(l.v.fieldName).Text()
 	pkg := join(c.pkg, name)
@@ -216,11 +218,12 @@ func (l *lowering) module(n treesitter.Node, c container, a attributes) {
 	body := n.Child(l.v.fieldBody)
 	if body.IsZero() {
 		if file := l.moduleFile(c, name, a.path); file != "" {
-			l.w.walk(file, pkg)
+			l.w.walk(file, pkg, a.annotations)
 		}
 		return
 	}
 	inner := l.container(pkg, path.Join(c.dir, name), true, n.Pos())
+	inner.file.Annotations = append(inner.file.Annotations, a.annotations...)
 	if pred := l.header(body, inner); pred != "" {
 		l.w.exclusions = append(l.w.exclusions, exclusion{dir: inner.dir, pred: pred})
 		l.comments.Take(body)
