@@ -82,3 +82,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0063](0063-the-assigned-argument-of-an-annotation.md) | The assigned argument of an annotation | Accepted |
 | [0064](0064-the-command-line-on-go-cli.md) | The command line on go-cli | Accepted |
 | [0065](0065-the-eidos-binary.md) | The eidos binary | Accepted |
+| [0066](0066-the-ring-tests-a-release-from-its-tag.md) | The ring tests a release from its tag | Accepted |

@@ -71,3 +71,4 @@ way.
 | [0050](0050-eidos-publishes-the-binary-eidos.md) | eidos publishes the binary eidos | Accepted |
 | [0051](0051-an-extensible-plan-can-have-no-generator.md) | An extensible plan can have no generator | Accepted |
 | [0052](0052-a-run-locates-the-stores-of-the-frontends-with-input-files.md) | A run locates the stores of the frontends with input files | Accepted |
+| [0053](0053-the-ring-tests-a-release-from-the-tree-of-its-tag.md) | The ring tests a release from the tree of its tag | Accepted |

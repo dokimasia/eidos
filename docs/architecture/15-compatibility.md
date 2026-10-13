@@ -69,11 +69,13 @@ run is the ring for that module.
 
 The ring job of CI tests the latest published version of each module
 of the ring against the kernel at the commit. It reads the modules from
-`go.work`, queries the module proxy for the latest version of each, and
-runs `go test` over the packages of each release in a scratch module.
-The scratch module replaces the kernel and the SDK facade with the
-checkout. A module without a release is unpublished, and the job does
-not test it.
+`go.work` and queries the module proxy for the latest version of each.
+It reads the tree of each release from its tag with `git archive`,
+because a module zip leaves out the fixtures that have a go.mod and the
+files outside the module. In the go.mod of the release, it drops the
+replace directives and replaces the kernel and the SDK facade with the
+checkout. It then runs `go test` over the packages of the release. A
+module without a release is unpublished, and the job does not test it.
 
 The release job publishes a commit only after a CI run passed on the
 same content, so a ring failure blocks the tag. Real consumers test
