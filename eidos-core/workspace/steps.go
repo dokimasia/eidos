@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -806,14 +807,22 @@ func topo(role string, group []member) ([]member, []error) {
 	)}
 }
 
-// configure is the fourth step: every plugin's options validate
-// against the tag contract, then the config's values populate the
-// structs over their constructed defaults, and each populated
-// struct is taken in the canonical encoding the fingerprint folds.
-// A plugin whose schema failed skips population and encoding,
-// because its faults are already collected. An options struct the
-// encoding cannot see whole is a fault, because the fingerprint
-// folds every option.
+// configure is the options step. It works through the options of every
+// plugin of the roster in three parts:
+//
+//   - [plugin.ValidateOptions] checks each options struct against the tag
+//     contract.
+//   - The values of the config populate the structs over their constructed
+//     defaults.
+//   - [plugin.MissingOptions] reports each required option that still has
+//     the zero value of its type.
+//
+// configure then takes each struct in the canonical encoding that the
+// fingerprint folds. A plugin whose declaration fails skips the
+// population, the check of its required options and the encoding,
+// because its faults are already collected. An options struct that the
+// encoding cannot see whole is a fault, because the fingerprint folds
+// every option.
 func configure(
 	roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, cfg Config,
 ) (map[plugin.ID][]byte, []error) {
@@ -843,6 +852,7 @@ func configure(
 		if !sound[p.Name()] {
 			continue
 		}
+		faults = append(faults, plugin.MissingOptions(p)...)
 		encoded, err := plugin.EncodeOptions(p)
 		if err != nil {
 			faults = append(faults, fmt.Errorf("workspace: %w", err))
@@ -854,13 +864,11 @@ func configure(
 }
 
 // populate sets the declared options of one plugin from its config
-// section, key by key, in sorted order so the faults arrive in one order.
-// A value that the field cannot take as it is goes through the canonical
-// JSON encoding of options: populate encodes the value and decodes the
-// bytes into the type of the field. A decoder of a config file returns an
-// int and an []any, and the encoding turns them into an int64 and a
-// []string. A value that does not encode, or does not decode into the
-// field, is a fault.
+// section. It sets them key by key in sorted order, so the faults arrive
+// in one order. A value that the field takes as it is fills the field, and
+// [convert] turns any other value into the type of the field. A key that
+// the plugin does not declare, an empty value and a value that convert
+// refuses are faults.
 func populate(p plugin.Plugin, section map[string]any) []error {
 	op, held := p.(plugin.OptionsProvider)
 	if !held || op.Options() == nil {
@@ -891,58 +899,82 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 			))
 			continue
 		}
-		value, converted := reflect.ValueOf(v), true
+		value := reflect.ValueOf(v)
 		if !value.Type().AssignableTo(f.Type) {
-			value, converted = convert(v, f.Type)
-		}
-		if !converted {
-			faults = append(faults, fmt.Errorf(
-				"workspace: option %q of plugin %q takes %s, and the config has %T", key, p.Name(), f.Type, v,
-			))
-			continue
+			converted, err := convert(p.Name(), key, v, f.Type)
+			if err != nil {
+				faults = append(faults, err)
+				continue
+			}
+			value = converted
 		}
 		rv.FieldByIndex(f.Index).Set(value)
 	}
 	return faults
 }
 
-// convert returns v as a value of type t through the JSON encoding, and
-// reports false when v does not encode or the bytes do not decode into t.
-// The decoder rejects a key that a struct of t does not declare.
-func convert(v any, t reflect.Type) (reflect.Value, bool) {
-	encoded, err := json.Marshal(v)
-	if err != nil {
-		return reflect.Value{}, false
-	}
+// durationType is the type of an option that [convert] parses from a text.
+var durationType = reflect.TypeFor[time.Duration]()
+
+// convert returns the value v of the option key of the plugin name as a
+// value of the type t. A text becomes a [time.Duration] through
+// [time.ParseDuration]. Any other value goes through the JSON encoding of
+// options: convert encodes the value and decodes the bytes into t. A
+// decoder of a config file returns an int and an []any. The encoding turns
+// them into an int64 and a []string. The JSON decoder calls the
+// UnmarshalText of a type that implements [encoding.TextUnmarshaler], so
+// such a type with a closed set of values refuses a text outside the set.
+// The decoder also rejects a key that a struct of t does not declare.
+//
+// Error modes: convert wraps the error of ParseDuration, of the encoder or
+// of the decoder. The message of the fault contains the option, the plugin
+// and t.
+func convert(name plugin.ID, key string, v any, t reflect.Type) (reflect.Value, error) {
 	out := reflect.New(t)
-	dec := json.NewDecoder(bytes.NewReader(encoded))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(out.Interface()); err != nil {
-		return reflect.Value{}, false
+	var err error
+	if text, isText := v.(string); isText && t == durationType {
+		var d time.Duration
+		d, err = time.ParseDuration(text)
+		out.Elem().Set(reflect.ValueOf(d))
+	} else {
+		var encoded []byte
+		if encoded, err = json.Marshal(v); err == nil {
+			dec := json.NewDecoder(bytes.NewReader(encoded))
+			dec.DisallowUnknownFields()
+			err = dec.Decode(out.Interface())
+		}
 	}
-	return out.Elem(), true
+	if err != nil {
+		return reflect.Value{}, fmt.Errorf("workspace: option %q of plugin %q takes %s: %w", key, name, t, err)
+	}
+	return out.Elem(), nil
 }
 
 // refine applies the plan refinements of the config to the declared plans
-// before Build compiles them. It leaves out each disabled plan, and replaces
-// the sources and the layout fields that a refinement sets. It appends the
-// generators that a refinement adds to a plan whose Extensible is true.
+// before Build compiles them. It returns the refined plans and, apart, each
+// disabled plan as the composition declares it. It replaces the sources and
+// the layout fields that a refinement sets. It merges each refinement of a
+// generator or a family over the refinement that the plan declares, through
+// [layout.Refinement.Over]. It appends the generators that a refinement adds
+// to a plan whose Extensible is true.
 //
 // refine returns an error for each of these refinements:
 //
 //   - a refinement of a plan that the composition does not declare
 //   - a disabled plan that an enabled plan depends on or that a check
 //     reads, with the names of both
+//   - a disabled plan that lists a nil generator or declares no backend,
+//     which the plan step does not check
 //   - generators for a plan that is not extensible
 //
-// A disabled plan that refine refuses remains in the list, so the later
-// steps report no second error about it. refine copies each plan that it
-// refines, so the declared plans of the composition do not change.
+// A disabled plan that refine refuses remains in the refined plans, so the
+// later steps report no second error about it. refine copies each plan that
+// it refines, so the declared plans of the composition do not change.
 func refine(
 	declared []Plan, refinements map[string]PlanConfig, checks []plugin.WorkspaceCheck,
-) ([]Plan, []error) {
+) ([]Plan, []Plan, []error) {
 	if len(refinements) == 0 {
-		return declared, nil
+		return declared, nil, nil
 	}
 	var faults []error
 	for _, name := range slices.Sorted(maps.Keys(refinements)) {
@@ -980,8 +1012,23 @@ func refine(
 		}
 	}
 	out := make([]Plan, 0, len(declared))
+	var disabled []Plan
 	for _, pl := range declared {
 		r := refinements[pl.Name]
+		off := r.Disabled && !needed[pl.Name]
+		if off {
+			disabled = append(disabled, pl)
+			if slices.Contains(pl.Generators, nil) {
+				faults = append(faults, fmt.Errorf(
+					"workspace: the config disables plan %q, which lists a nil generator", pl.Name,
+				))
+			}
+			if pl.Backend == nil {
+				faults = append(faults, fmt.Errorf(
+					"workspace: the config disables plan %q, which declares no backend", pl.Name,
+				))
+			}
+		}
 		if len(r.Generators) > 0 {
 			if pl.Extensible {
 				pl.Generators = slices.Concat(pl.Generators, r.Generators)
@@ -991,7 +1038,7 @@ func refine(
 				))
 			}
 		}
-		if r.Disabled && !needed[pl.Name] {
+		if off {
 			continue
 		}
 		if r.Sources != nil {
@@ -1006,9 +1053,27 @@ func refine(
 		if r.ImportBase != "" {
 			pl.Layout.ImportBase = r.ImportBase
 		}
+		if len(r.Plugins) > 0 {
+			pl.Layout.Plugins = maps.Clone(pl.Layout.Plugins)
+			if pl.Layout.Plugins == nil {
+				pl.Layout.Plugins = make(map[plugin.ID]layout.Refinement, len(r.Plugins))
+			}
+			for p, refinement := range r.Plugins {
+				pl.Layout.Plugins[p] = refinement.Over(pl.Layout.Plugins[p])
+			}
+		}
+		if len(r.Families) > 0 {
+			pl.Layout.Families = maps.Clone(pl.Layout.Families)
+			if pl.Layout.Families == nil {
+				pl.Layout.Families = make(map[layout.Family]layout.Refinement, len(r.Families))
+			}
+			for f, refinement := range r.Families {
+				pl.Layout.Families[f] = refinement.Over(pl.Layout.Families[f])
+			}
+		}
 		out = append(out, pl)
 	}
-	return out, faults
+	return out, disabled, faults
 }
 
 // compilePlans is the plan step: every plan named once, at least one

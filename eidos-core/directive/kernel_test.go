@@ -105,13 +105,13 @@ func TestKernel(t *testing.T) {
 			assert.False(t, plugin.Required, "a bare skip excludes from everything")
 		})
 
-		t.Run("returns a sample schema that requires its value", func(t *testing.T) {
+		t.Run("returns a sample schema whose value is optional", func(t *testing.T) {
 			t.Parallel()
 
 			sample := kernelSchema(t, directive.KernelSample)
 			assert.Length(t, sample.Params, 2, "value and alternate")
 			assert.Equal(t, sample.Params[0].Key, directive.SampleValue, "the first is the value")
-			assert.True(t, sample.Params[0].Required, "which every instance states")
+			assert.False(t, sample.Params[0].Required, "which an instance that states the alternate alone leaves out")
 		})
 
 		t.Run("returns a sample schema whose alternate is optional", func(t *testing.T) {

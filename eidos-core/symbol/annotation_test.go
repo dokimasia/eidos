@@ -25,6 +25,15 @@ func TestAnnotation(t *testing.T) {
 		assert.Equal(t, string(b), `{"name":"Deprecated"}`, "the empty argument list is left out")
 	})
 
+	t.Run("spells an assigned annotation with its mark", func(t *testing.T) {
+		t.Parallel()
+
+		b, err := json.Marshal(symbol.Annotation{Name: "deprecated", Args: []string{`"use g"`}, Assigned: true})
+		assert.NoError(t, err, "an annotation encodes")
+		assert.Equal(t, string(b), `{"name":"deprecated","args":["\"use g\""],"assigned":true}`,
+			"the mark follows the argument")
+	})
+
 	t.Run("keeps a list's order and each argument verbatim", func(t *testing.T) {
 		t.Parallel()
 

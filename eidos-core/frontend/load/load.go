@@ -758,6 +758,11 @@ func depthOf(files []plugin.SourceRef, roots []string) plugin.Depth {
 // unit and its own sink, so scheduling orders neither the graph
 // nor the findings. A frontend's returned error is fatal to the
 // whole load and cancels the rest.
+//
+// A package that a frontend left without a position takes the position
+// of its first file in the unit, so a finding on the package has a file
+// and a line. The position is part of the unit's own nodes, so a warm
+// run that keeps the unit's region keeps it.
 func parseAll(ctx context.Context, cfg Config, tree storeTree, units []*unit) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -783,6 +788,12 @@ func parseAll(ctx context.Context, cfg Config, tree storeTree, units []*unit) er
 			if err := u.frontend.Parse(ctx, u.src); err != nil {
 				failures[i] = fmt.Errorf("load: parse %s: %w", u.frontend.Name(), err)
 				cancel()
+				return
+			}
+			for _, p := range u.src.Graph().Packages() {
+				if p.Pos.IsZero() && len(p.Files) > 0 && p.Files[0] != nil {
+					p.Pos = p.Files[0].Pos
+				}
 			}
 		}()
 	}
@@ -865,7 +876,9 @@ type scopeEntry struct {
 // appended in unit order, and the scope records pass through with
 // their frontends. A merged package keeps the first name and the first
 // non-empty documentation, because a language whose unit is one file
-// states its package documentation in one file of many.
+// states its package documentation in one file of many. It keeps the
+// position of the first unit's node, which [parseAll] placed at the first
+// file of that unit.
 //
 // The merge builds a package node of its own and leaves every unit's
 // node with that unit's files alone, so each unit's region is the

@@ -5,6 +5,7 @@ package meta_test
 
 import (
 	"cmp"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -24,6 +25,12 @@ const (
 	shapeNamespace  = "shape"
 	genNamespace    = "gen"
 	compositionName = "the composition"
+)
+
+// The choices that the cases list for the role key.
+const (
+	readerChoice = "reader"
+	writerChoice = "writer"
 )
 
 // The allocations of building a registry and of each registration,
@@ -283,6 +290,17 @@ func TestRegistry(t *testing.T) {
 				},
 				marker: "two different completeness contracts",
 			},
+			{
+				name:  "returns an error naming both choice lists for a key registered again with other choices",
+				first: roleSpec(),
+				again: func(r *meta.Registry) error {
+					spec := roleSpec()
+					spec.Choices = []string{readerChoice}
+					_, err := meta.Register[string](r, spec)
+					return err
+				},
+				marker: `the choices [] and ["reader"]`,
+			},
 		}
 		for _, tt := range repeats {
 			t.Run(tt.name, func(t *testing.T) {
@@ -330,6 +348,46 @@ func TestRegistry(t *testing.T) {
 			_, err := meta.Register[string](claimed(t), meta.KeySpec{Name: "shape.role"})
 			assert.HasError(t, err, "the registration fails")
 		})
+
+		t.Run("returns an error for choices on a key of another type than string", func(t *testing.T) {
+			t.Parallel()
+
+			spec := roleSpec()
+			spec.Choices = []string{readerChoice}
+			_, err := meta.Register[int64](claimed(t), spec)
+			assert.HasError(t, err, "the registration fails")
+			assert.Equal(t, err.Error(),
+				`meta: key "shape.role" of the type int64 lists choices, and only a key of the type string takes them`,
+				"the error contains the key and its type")
+		})
+
+		choices := []struct {
+			name string
+			give []string
+			want string
+		}{
+			{
+				name: "returns an error for an empty choice",
+				give: []string{readerChoice, ""},
+				want: `meta: key "shape.role" lists an empty choice`,
+			},
+			{
+				name: "returns an error for a choice listed twice",
+				give: []string{readerChoice, writerChoice, readerChoice},
+				want: `meta: key "shape.role" lists the choice "reader" twice`,
+			},
+		}
+		for _, tt := range choices {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				spec := roleSpec()
+				spec.Choices = tt.give
+				_, err := meta.Register[string](claimed(t), spec)
+				assert.HasError(t, err, "the registration fails")
+				assert.Equal(t, err.Error(), tt.want, "the error contains the key and the choice")
+			})
+		}
 
 		t.Run("returns an error for a group spelled like a registered key", func(t *testing.T) {
 			t.Parallel()
@@ -473,6 +531,18 @@ func TestRegistry(t *testing.T) {
 			assert.Equal(t, spec.Kinds, []symbol.Kind{symbol.KindStruct}, "the spec has the kinds")
 		})
 
+		t.Run("returns the choices of a key", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			spec := roleSpec()
+			spec.Choices = []string{readerChoice, writerChoice}
+			role, err := meta.Register[string](r, spec)
+			assert.NoError(t, err, "the key registers")
+			got, _ := r.Spec(role.ID())
+			assert.Equal(t, got.Choices, []string{readerChoice, writerChoice}, "the spec has the choices in order")
+		})
+
 		tests := []struct {
 			name string
 			give meta.KeyID
@@ -580,6 +650,26 @@ func TestRegistry(t *testing.T) {
 		})
 	})
 
+	t.Run("Type", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the value type of a registered key", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			target, err := meta.Register[symbol.Identity](r, meta.KeySpec{Name: "shape.target", Doc: "the named twin"})
+			assert.NoError(t, err, "the key registers")
+			assert.Equal(t, r.Type(target.ID()), reflect.TypeFor[symbol.Identity](),
+				"the type is the type parameter of the registration")
+		})
+
+		t.Run("returns nil for an id never assigned", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Nil(t, claimed(t).Type(999), "an unknown id has no type")
+		})
+	})
+
 	t.Run("Seal", func(t *testing.T) {
 		t.Parallel()
 
@@ -654,6 +744,9 @@ func TestRegistryAllocs(t *testing.T) {
 	var spec meta.KeySpec
 	assert.MaxAllocs(t, func() { spec, _ = r.Spec(role.ID()) }, 0, "Spec allocates nothing")
 	assert.Equal(t, spec.Name, role.Name(), "Spec returns the key's spec")
+	var valueType reflect.Type
+	assert.MaxAllocs(t, func() { valueType = r.Type(role.ID()) }, 0, "Type allocates nothing")
+	assert.Equal(t, valueType, reflect.TypeFor[string](), "Type returns the value type of the key")
 	members := 0
 	assert.MaxAllocs(t, func() {
 		members = 0
@@ -805,6 +898,16 @@ func BenchmarkRegistry(b *testing.B) {
 			spec, _ = r.Spec(role.ID())
 		}
 		assert.Equal(b, spec.Name, role.Name(), "Spec returns the registered spec")
+	})
+
+	b.Run("Type", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var valueType reflect.Type
+		for c.Loop() {
+			valueType = r.Type(role.ID())
+		}
+		assert.Equal(b, valueType, reflect.TypeFor[string](), "Type returns the value type of the key")
 	})
 
 	b.Run("Group", func(b *testing.B) {

@@ -26,12 +26,18 @@ const (
 	storeLocal3 = storeLocal + "3"
 	// rowName2 is the name rowName takes with the first suffix.
 	rowName2 = rowName + "2"
+	// storeDeclared and auditDeclared are the names that the package
+	// clauses of storePkg and auditPkg declare in [declaring].
+	storeDeclared = "storage"
+	auditDeclared = "auditing"
 )
 
-// The size of [filledSet]: four entries over three paths.
+// The size of [filledSet]: four entries over three paths, and one package
+// whose declared name the file read.
 const (
-	filledEntries = 4
-	filledPaths   = 3
+	filledEntries  = 4
+	filledPaths    = 3
+	filledPackages = 1
 )
 
 // importWrite is one write a file's spellings make into its set: the
@@ -453,6 +459,61 @@ func TestImportSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Declared", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the name that the package of a path declares", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetNames(declaring)
+			name, known := s.Declared(storePkg)
+			assert.True(t, known, "the names have the package")
+			assert.Equal(t, name, storeDeclared, "the name of the package clause")
+		})
+
+		t.Run("reports false for a path that the names do not have", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetNames(declaring)
+			_, known := s.Declared(legacyPkg)
+			assert.False(t, known, "the run did not load the package")
+		})
+
+		t.Run("reports false for a set without names", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			_, known := s.Declared(storePkg)
+			assert.False(t, known, "the set has no names to read")
+		})
+	})
+
+	t.Run("Packages", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns each path whose declared name the file read once in sorted order", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetNames(declaring)
+			s.Declared(storePkg)
+			s.Declared(auditPkg)
+			s.Declared(storePkg)
+			assert.Equal(t, s.Packages(), []string{auditPkg, storePkg}, "one path for each package")
+		})
+
+		t.Run("leaves out a path that the names do not have", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetNames(declaring)
+			s.Declared(legacyPkg)
+			assert.Empty(t, s.Packages(), "the file read no declared name")
+		})
+	})
+
 	t.Run("Add", func(t *testing.T) {
 		t.Parallel()
 
@@ -624,6 +685,26 @@ func TestImportSet(t *testing.T) {
 			assert.Equal(t, s.Bind(storePkg, storeLocal), storeLocal,
 				"the next file declares its own names")
 		})
+
+		t.Run("drops every path whose declared name the file read", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetNames(declaring)
+			s.Declared(storePkg)
+			s.Reset()
+			assert.Empty(t, s.Packages(), "the next file reads its own names")
+		})
+
+		t.Run("keeps the names of the set", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetNames(declaring)
+			s.Reset()
+			_, known := s.Declared(storePkg)
+			assert.True(t, known, "the next file reads the names of the same render")
+		})
 	})
 }
 
@@ -659,6 +740,9 @@ func TestImportSetAllocs(t *testing.T) {
 	var entries []render.Entry
 	assert.MaxAllocs(t, func() { entries = full.Entries() }, 1, "Entries allocates the list it returns")
 	assert.Length(t, entries, filledEntries, "Entries returns every entry")
+	var packages []string
+	assert.MaxAllocs(t, func() { packages = full.Packages() }, 1, "Packages allocates the list it returns")
+	assert.Length(t, packages, filledPackages, "Packages returns every path whose declared name the file read")
 	var n int
 	assert.MaxAllocs(t, func() { n = full.Len() }, 0, "Len allocates nothing for up to eight entries")
 	assert.Equal(t, n, filledPaths, "Len counts the distinct paths")
@@ -729,6 +813,16 @@ func BenchmarkImportSet(b *testing.B) {
 		assert.Length(b, got, filledEntries, "Entries returns every entry")
 	})
 
+	b.Run("Packages", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got []string
+		for c.Loop() {
+			got = full.Packages()
+		}
+		assert.Length(b, got, filledPackages, "Packages returns every path whose declared name the file read")
+	})
+
 	b.Run("Len", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
@@ -783,6 +877,7 @@ func importWrites() []importWrite {
 				}
 			},
 		},
+		{name: "Declared", write: func(s *render.ImportSet) { s.Declared(storePkg) }},
 		{name: "Add", write: func(s *render.ImportSet) { s.Add(storePkg) }},
 		{name: "AddNamed", write: func(s *render.ImportSet) { s.AddNamed(storePkg, rowName) }},
 		{name: "AddType", write: func(s *render.ImportSet) { s.AddType(storePkg, rowName) }},
@@ -796,10 +891,13 @@ func importWrites() []importWrite {
 	}
 }
 
-// grownSet returns a set that recorded every kind of write once, so its
-// maps and journal have the storage a Reset keeps.
+// grownSet returns a set with the names of [declaring] that recorded every
+// kind of write once, so its maps and journal have the storage a Reset
+// keeps.
 func grownSet() *render.ImportSet {
 	s := &render.ImportSet{}
+	s.SetNames(declaring)
+	s.Declared(storePkg)
 	s.Reserve(storeName)
 	s.Bind(storePkg, storeLocal)
 	s.Bind(legacyPkg, storeLocal)
@@ -812,15 +910,32 @@ func grownSet() *render.ImportSet {
 }
 
 // filledSet returns a set for the file of storePkg with [filledEntries]
-// entries over [filledPaths] paths, and a declaration of the file named
-// storeName.
+// entries over [filledPaths] paths, a declaration of the file named
+// storeName, and [filledPackages] paths whose declared names the file
+// read.
 func filledSet() *render.ImportSet {
 	s := &render.ImportSet{}
+	s.SetNames(declaring)
 	s.SetHome(storePkg)
 	s.Reserve(storeName)
 	s.Add(sidePkg)
 	s.AddNamed(auditPkg, rowName)
 	s.AddType(auditPkg, storeName)
 	s.Bind(legacyPkg, storeLocal)
+	s.Declared(auditPkg)
 	return s
+}
+
+// declaring returns the declared names of the fixture: storeDeclared for
+// storePkg, auditDeclared for auditPkg, and false for any other path, as
+// the names of a run that loaded the two packages return them.
+func declaring(path string) (string, bool) {
+	switch path {
+	case storePkg:
+		return storeDeclared, true
+	case auditPkg:
+		return auditDeclared, true
+	default:
+		return "", false
+	}
 }

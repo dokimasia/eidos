@@ -322,15 +322,22 @@ func (x *File) Identity() symbol.Identity { return x.ID }
 // One statement is one Import, however many names it binds. Path
 // names the module. Alias is the module-level alias, which covers a
 // Go renamed import, a Python "import numpy as np" and a TypeScript
-// namespace import. Names holds the per-symbol bindings, so
-// "import {a as b, c} from 'x'" carries two. Default holds the
-// local name bound to the module's default export, which
-// TypeScript has and most languages do not.
+// namespace import. Names has the per-symbol bindings, so
+// "import {a as b, c} from 'x'" has two. Default is the local name
+// bound to the module's default export, which TypeScript has and
+// most languages do not.
 //
 // Wildcard means the statement pulls every exported name into
 // scope: a Java "import java.util.*", a Rust glob use, a Python
 // star import. Resolution treats a wildcard scope differently from
 // a named one, so it is a field rather than a spelling.
+//
+// Modules are the packages that Path names, in the order in which the
+// language tries them, where a configuration of the workspace maps
+// the specifier, such as the paths option of a tsconfig. Modules is
+// nil where the language resolves the specifier from its text alone.
+// The graph does not record the configuration, so the rules resolve a
+// mapped specifier through Modules.
 //
 // Import is node-only. A generated file's imports are a side effect
 // of spelling types, collected per file as the backend renders,
@@ -347,6 +354,7 @@ type Import struct {
 	Names    []*Binding      `json:"names,omitzero"`    // per-symbol bindings
 	Default  string          `json:"default,omitzero"`  // local name for the module's default export
 	Wildcard bool            `json:"wildcard,omitzero"` // every exported name enters scope
+	Modules  []string        `json:"modules,omitzero"`  // the packages that a mapped Path names; nil when unmapped
 }
 
 // Kind returns [symbol.KindImport].
@@ -367,11 +375,12 @@ func (x *Import) Identity() symbol.Identity { return x.ID }
 // that it did not declare.
 //
 // A declaration's own export is its [symbol.Visibility], not an
-// Export. This kind carries the statement forms that publish
+// Export. This kind records the statement forms that publish
 // something else: a TypeScript "export { a } from './x'" or
 // "export * from './x'", a Rust "pub use", a Python __all__ entry.
 // Path names the source module and is empty when the file
-// re-exports its own local names.
+// re-exports its own local names. Modules are the packages that a
+// mapped Path names, as [Import.Modules] are.
 //
 // The public surface of a package is its exported declarations plus
 // these, which is why a binding generator has to read both.
@@ -385,6 +394,7 @@ type Export struct {
 	Names    []*Binding      `json:"names,omitzero"`    // per-symbol bindings
 	Default  string          `json:"default,omitzero"`  // name published as the module's default export
 	Wildcard bool            `json:"wildcard,omitzero"` // every name of Path is republished
+	Modules  []string        `json:"modules,omitzero"`  // the packages that a mapped Path names; nil when unmapped
 }
 
 // Kind returns [symbol.KindExport].
@@ -1073,10 +1083,13 @@ func (x *Alias) Identity() symbol.Identity { return x.ID }
 //   - Optional, List, Array, Stream and Borrow: one child.
 //   - Map: the key, then the value.
 //   - Func: the parameters, then the returns, which begin at Split.
-//   - Tuple, Union and Intersection: the members.
+//   - Tuple, Union and Intersection: the members. A Go union has its
+//     terms, and its spelling keeps the approximation mark of a term.
 //   - Wildcard: the bound, with Variance, and none for an unbounded
 //     one.
-//   - Inline and Named: none.
+//   - Inline: the types that the body states, in the order of the
+//     body, so a backend binds the imports of the names in the body.
+//   - Named: none.
 //
 // No element of Elems is nil. A frontend records a child that the source
 // does not state as an empty reference, so the form keeps its arity.
@@ -1112,7 +1125,8 @@ func (x *Alias) Identity() symbol.Identity { return x.ID }
 // the same nodes as the members of a declaration, without identities.
 // No carrier and no stamp can address them. The resolution step
 // resolves the references among them. Only the node model has them. A
-// backend writes an inline body from the spelling of the reference.
+// backend writes an inline body from the spelling of the reference, and
+// binds the imports of its children.
 //
 // This is the node spelling of the kind.
 type TypeRef struct {

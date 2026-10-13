@@ -84,6 +84,28 @@ var otherHolder = ledger.Holder{
 // group and not the key.
 const flagGroup meta.GroupName = "shape.all"
 
+// The setter annotator, the namespace of its keys and the keys, one of
+// each type that the meta set form writes through value or values. The
+// setter stamps none of them, so a set writes the only claim of its key.
+const (
+	setterID        plugin.ID    = "setter"
+	setterNamespace              = "setter"
+	toggleKey       meta.KeyName = "setter.toggle"
+	labelKey        meta.KeyName = "setter.label"
+	tagsKey         meta.KeyName = "setter.tags"
+	peerKey         meta.KeyName = "setter.peer"
+)
+
+// The spellings that the set cases write: the boolean true, a label, two
+// tags and the name of the struct of the alpha fixture.
+const (
+	trueSpelling = "true"
+	primaryLabel = "primary"
+	firstTag     = "a"
+	secondTag    = "b"
+	alphaName    = "Alpha"
+)
+
 // The plugin whose directive the negation cases write, and the canonical
 // spelling of that directive.
 const (
@@ -461,8 +483,8 @@ func (native) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 }
 
 // LiteralFor returns the literal of the scripted rules for text.
-func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
-	return rulestest.Scripted().LiteralFor(f, ref, text, v)
+func (native) LiteralFor(s rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	return rulestest.Scripted().LiteralFor(s, ref, text, v)
 }
 
 // TestRun tests the frame of a run. The frame loads or takes a graph,
@@ -779,21 +801,86 @@ func TestRun(t *testing.T) {
 			assert.Empty(t, units(report.Emits["plan"]), "the flag gates nothing")
 		})
 
-		t.Run("keeps the facts under directives that drop nothing", func(t *testing.T) {
+		t.Run("keeps the facts under a directive that drops nothing", func(t *testing.T) {
 			t.Parallel()
 
 			report, s, flag, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
-				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{
-					rawDiag(suppressible, 4),
-					rawBareMeta(5),
-				}), "the instances attach before the seal")
+				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag(suppressible, 4)}),
+					"the instance attaches before the seal")
 			})
-			assert.NoError(t, err, "neither instance is a fault")
+			assert.NoError(t, err, "the instance is no fault")
 			coretest.AssertCodes(t, report.Sink, workspace.UnusedSuppression)
 			v, held := meta.Get(report.Facts, s, flag)
-			assert.True(t, held, "the diag instance and the bare meta instance remove nothing")
+			assert.True(t, held, "the diag instance removes nothing")
 			assert.True(t, v, "the fact keeps the plugin's value")
 			assert.Length(t, units(report.Emits["plan"]), 1, "the flag still gates")
+		})
+
+		t.Run("reports MissingParam for a meta instance that neither drops nor sets", func(t *testing.T) {
+			t.Parallel()
+
+			report, s, flag, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
+				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawBareMeta(5)}),
+					"the instance attaches before the seal")
+			})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refusal is an Error, which fails the run")
+			coretest.AssertCodes(t, report.Sink, directive.MissingParam)
+			_, held := meta.Get(report.Facts, s, flag)
+			assert.True(t, held, "the refused instance removes nothing")
+		})
+
+		t.Run("sets a fact that the meta directive names", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			report, err := built(t, warmBuilder(t, ledger.NewMem(), keys)).Run(t.Context(),
+				workspace.Input{Tree: warmTree(rowLine, setLine, colLine, readerLine)})
+			assert.NoError(t, err, "the run is clean")
+			width, _ := meta.Get(report.Facts, rowID, keys.width)
+			expect.Equal(t, width, int64(7), "the set at directive authority outranks the stamp of the sizer")
+			seen, _ := meta.Get(report.Facts, readerID, keys.seen)
+			expect.Equal(t, seen, int64(7), "an annotator reads the set width")
+		})
+
+		t.Run("sets a boolean fact that the meta directive names", func(t *testing.T) {
+			t.Parallel()
+
+			report, s := setRun(t, toggleKey, directive.RawArg{
+				Key: string(directive.MetaValue), Value: directive.RawValue{Text: trueSpelling},
+			})
+			toggled, _ := meta.GetAtLeast(report.Facts, s, meta.Named[bool](toggleKey), meta.AuthorityDirective)
+			assert.True(t, toggled, "the set writes true at directive authority")
+		})
+
+		t.Run("sets a string fact that the meta directive names", func(t *testing.T) {
+			t.Parallel()
+
+			report, s := setRun(t, labelKey, directive.RawArg{
+				Key: string(directive.MetaValue), Value: directive.RawValue{Text: primaryLabel},
+			})
+			label, _ := meta.GetAtLeast(report.Facts, s, meta.Named[string](labelKey), meta.AuthorityDirective)
+			assert.Equal(t, label, primaryLabel, "the set writes the text at directive authority")
+		})
+
+		t.Run("sets a list fact that the meta directive names", func(t *testing.T) {
+			t.Parallel()
+
+			report, s := setRun(t, tagsKey, directive.RawArg{
+				Key:   string(directive.MetaValues),
+				Value: directive.RawValue{List: []directive.RawValue{{Text: firstTag}, {Text: secondTag}}},
+			})
+			tags, _ := meta.GetAtLeast(report.Facts, s, meta.Named[[]string](tagsKey), meta.AuthorityDirective)
+			assert.Equal(t, tags, []string{firstTag, secondTag}, "the set writes the list in its order")
+		})
+
+		t.Run("sets a reference fact to the declaration that the rules bind", func(t *testing.T) {
+			t.Parallel()
+
+			report, s := setRun(t, peerKey, directive.RawArg{
+				Key: string(directive.MetaValue), Value: directive.RawValue{Text: alphaName},
+			})
+			peer, _ := meta.GetAtLeast(report.Facts, s, meta.Named[symbol.Identity](peerKey), meta.AuthorityDirective)
+			assert.Equal(t, peer, s, "the set writes the identity of the struct named Alpha")
 		})
 
 		t.Run("applies a load stamp at plugin authority", func(t *testing.T) {
@@ -1694,12 +1781,22 @@ func rawMeta(ref string, line int) directive.Raw {
 	}
 }
 
-// rawBareMeta returns a positioned meta instance without a drop:
-// the schema admits one, and the drop pass has to pass over it.
+// rawBareMeta returns a positioned meta instance that neither drops nor
+// sets, which validation refuses under MissingParam.
 func rawBareMeta(line int) directive.Raw {
 	return directive.Raw{
 		Name: "meta",
 		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// rawSet returns a positioned raw instance of the kernel meta directive
+// that sets key through the value arg.
+func rawSet(key meta.KeyName, value directive.RawArg) directive.Raw {
+	return directive.Raw{
+		Name: directive.KernelMeta,
+		Args: []directive.RawArg{{Key: string(directive.MetaSet), Value: directive.RawValue{Text: string(key)}}, value},
+		Pos:  position.Pos{File: alphaDirectiveFile, Line: 2, Col: 1},
 	}
 }
 
@@ -1793,6 +1890,41 @@ func keyedRun(
 	}
 	report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 	return report, s.Identity(), *flag, err
+}
+
+// setting returns the smallest whole composition with the setter
+// annotator and the native rules, which bind the reference of a set.
+func setting() *workspace.Builder {
+	setter := eidos.NewPlugin(setterID).
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace(setterNamespace); err != nil {
+				return err
+			}
+			_, toggleErr := meta.Register[bool](r, meta.KeySpec{Name: toggleKey, Doc: "marks a struct"})
+			_, labelErr := meta.Register[string](r, meta.KeySpec{Name: labelKey, Doc: "labels a struct"})
+			_, tagsErr := meta.Register[[]string](r, meta.KeySpec{Name: tagsKey, Doc: "tags a struct"})
+			_, peerErr := meta.Register[symbol.Identity](r, meta.KeySpec{Name: peerKey, Doc: "names a peer"})
+			return errors.Join(toggleErr, labelErr, tagsErr, peerErr)
+		}).
+		Handle(eidos.OnStruct(quiet)).Annotator()
+	return valid().Annotators(setter).Rules(native{})
+}
+
+// setRun runs the setting composition over the alpha fixture after the
+// set of key through the value arg attaches to the struct. It returns the
+// report and the identity of the struct, and stops the test where the
+// run is not clean.
+func setRun(t *testing.T, key meta.KeyName, value directive.RawArg) (*workspace.Report, symbol.Identity) {
+	t.Helper()
+
+	w, err := setting().Build()
+	assert.NoError(t, err, "the setting composition composes")
+	g, s := alpha(t)
+	assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawSet(key, value)}),
+		"the set attaches before the seal")
+	report, err := w.Run(t.Context(), workspace.Input{Graph: g})
+	assert.NoError(t, err, "the run is clean")
+	return report, s.Identity()
 }
 
 // optingOut returns a composition whose mirror generator declares

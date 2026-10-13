@@ -4,8 +4,10 @@
 package workspace
 
 import (
+	"cmp"
 	"path"
 	"slices"
+	"strings"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/state"
@@ -92,12 +94,21 @@ type planGroups struct {
 //     and of each override that the settle read for one
 //   - the scope of each name that its files declare
 //   - the declaration edge of each origin of its declarations, whose
-//     directives and position the layout reads, and the files edge of the
-//     package of each per-package unit, whose directory the layout reads
+//     directives and position the layout reads, the declaration edge of the
+//     package of each origin, whose out directive the layout reads, and the
+//     files edge of the package of each per-package unit, whose directory
+//     the layout reads
 //   - the residents of the directory of each of its files and the modules,
 //     against which the backend places its files
+//   - the declaration edge of the source file of each of its files, whose
+//     annotations the backend writes into the file
+//   - the declaration edge of each package whose declared name the render
+//     read for one of its files, under which the backend imports the
+//     package
 //
-// Its findings are those that the render reported for its files.
+// Its findings are those that the render reported for its files. Its routes
+// are the route of each unit of each of its files, by file and then by
+// unit.
 func (pg *planGroups) record(lane *state.Lane) {
 	units := slices.Collect(pg.emit.Units())
 	at := make(map[plugin.UnitRef]int, len(units))
@@ -168,9 +179,19 @@ func (pg *planGroups) record(lane *state.Lane) {
 		if u.Per == plugin.PerPackage {
 			g.Reads = append(g.Reads, state.FilesEdge(u.Pkg))
 		}
+		// The declarations of a unit are in the order of their origins, so
+		// the origins of one package are next to each other, and the edge of
+		// each package is hashed once for each run of its origins.
+		var pkg symbol.Identity
 		for _, d := range u.Decls {
-			if origin, _ := emit.OriginOf(d); !origin.IsZero() {
-				g.Reads = append(g.Reads, state.DeclarationEdge(origin))
+			origin, _ := emit.OriginOf(d)
+			if origin.IsZero() {
+				continue
+			}
+			g.Reads = append(g.Reads, state.DeclarationEdge(origin))
+			if next := origin.PackageIdentity(); next != pkg {
+				pkg = next
+				g.Reads = append(g.Reads, state.DeclarationEdge(pkg))
 			}
 		}
 	}
@@ -188,6 +209,12 @@ func (pg *planGroups) record(lane *state.Lane) {
 		g := group(i)
 		g.Files = append(g.Files, f.Path)
 		g.Reads = append(g.Reads, state.DirectoryEdge(path.Dir(f.Path)), state.ModulesEdge)
+		if !f.Source.IsZero() {
+			g.Reads = append(g.Reads, state.DeclarationEdge(f.Source))
+		}
+		for _, u := range f.Units {
+			g.Routes = append(g.Routes, state.FileRoute{File: f.Path, Unit: u.Ref(), Route: u.Route})
+		}
 	}
 	// hit lists the groups that one invocation touched, each once. An
 	// invocation touches few units, so a scan of the list finds a repeat.
@@ -258,6 +285,9 @@ func (pg *planGroups) record(lane *state.Lane) {
 		for _, n := range s.names {
 			g.Reads = append(g.Reads, state.ScopeEdge(pg.plan, n.Package, n.Receiver))
 		}
+		for _, pkg := range s.packages {
+			g.Reads = append(g.Reads, state.DeclarationEdge(pkg))
+		}
 		g.Findings = append(g.Findings, s.findings...)
 	}
 
@@ -273,6 +303,9 @@ func (pg *planGroups) record(lane *state.Lane) {
 		slices.SortFunc(g.Contributors, plugin.MatchKey.Compare)
 		g.Contributors = slices.CompactFunc(g.Contributors, func(a, b plugin.MatchKey) bool {
 			return a.Compare(b) == 0
+		})
+		slices.SortStableFunc(g.Routes, func(a, b state.FileRoute) int {
+			return cmp.Or(strings.Compare(a.File, b.File), a.Unit.Compare(b.Unit))
 		})
 		lane.Group(*g)
 	}

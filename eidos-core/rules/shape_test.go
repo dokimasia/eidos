@@ -176,8 +176,19 @@ func TestShape(t *testing.T) {
 				Variance: symbol.VarianceOut, Elems: []*node.TypeRef{named(svcPath, rowName, symbol.KindStruct)},
 			}
 			assert.Equal(t, b.TypeOf(wild).Variance, symbol.VarianceOut, "a wildcard keeps its variance")
-			assert.Empty(t, b.TypeOf(&node.TypeRef{Spelling: "struct{}", Form: symbol.FormInline}).Elems,
-				"an inline body has no children")
+			inline := b.TypeOf(&node.TypeRef{Spelling: "struct{}", Form: symbol.FormInline})
+			assert.Equal(t, inline.Form, symbol.FormInline, "the language leaves the inline body inline")
+			assert.Empty(t, inline.Elems, "an inline body has no children")
+		})
+
+		t.Run("returns the shape that the language gives an inline reference", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
+			b := rules.NewBound(presenceLang{scripted()}, v, nil)
+			got := b.TypeOf(&node.TypeRef{Spelling: dynamicSpelling, Form: symbol.FormInline})
+			assert.Equal(t, got, rules.Leaf(symbol.FormDynamic, dynamicSpelling),
+				"the language folds the inline body to the top type")
 		})
 
 		t.Run("keeps the asynchrony of a stream", func(t *testing.T) {
@@ -487,6 +498,7 @@ func TestShape(t *testing.T) {
 			{name: "reports true for WellKnownTimestamp", give: rules.WellKnownTimestamp, want: true},
 			{name: "reports true for WellKnownDuration", give: rules.WellKnownDuration, want: true},
 			{name: "reports true for WellKnownEmpty", give: rules.WellKnownEmpty, want: true},
+			{name: "reports true for WellKnownError", give: rules.WellKnownError, want: true},
 			{
 				name: "reports false for a declaration",
 				give: coretest.ID(svcPath, rowName, symbol.KindStruct),

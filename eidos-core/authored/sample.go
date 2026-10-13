@@ -29,10 +29,11 @@ type carrier interface {
 // Sample returns the annotator of the sample directive. It runs once for
 // each validated instance on a field, a parameter, a return, a variable, a
 // constant, an alias, a struct, an enum or a sum. It stamps the value
-// under gen.sample, and the alternate under gen.alternate where the
-// instance states one, both as the text that the author wrote. A callable
-// and an interface have several types or none, so the fact store refuses
-// the stamp at the subject.
+// under gen.sample and the alternate under gen.alternate where the
+// instance states them, both as the text that the author wrote. It
+// refuses an instance that states neither under [EmptySample] at the
+// carrier. A callable and an interface have several types or none, so the
+// fact store refuses the stamp at the subject.
 func Sample() plugin.Annotator {
 	return eidos.NewPlugin(SamplePlugin).
 		Handle(eidos.Gated(directive.KernelSample,
@@ -56,16 +57,23 @@ func Sample() plugin.Annotator {
 }
 
 // stampSample stamps the value and the alternate of one instance on the
-// subject. The validation checked the instance against its schema, so the
-// value is present and both are strings.
-func stampSample(m carrier, st *eidos.Stamper) error {
+// subject. The validation checked the instance against its schema, so
+// both are strings where the instance states them. It reports an instance
+// that states neither under [EmptySample], and stamps nothing.
+func stampSample(m reporter, st *eidos.Stamper) error {
 	d := m.Directive()
 	keys := m.Kernel()
-	if v, held := d.Param(directive.SampleValue); held {
-		eidos.Stamp(st, keys.Sample, v.Str)
+	value, valued := d.Param(directive.SampleValue)
+	alternate, alternated := d.Param(directive.SampleAlternate)
+	if !valued && !alternated {
+		m.ErrorfAt(EmptySample, d.Pos, "sample states neither a value nor an alternate")
+		return nil
 	}
-	if v, held := d.Param(directive.SampleAlternate); held {
-		eidos.Stamp(st, keys.Alternate, v.Str)
+	if valued {
+		eidos.Stamp(st, keys.Sample, value.Str)
+	}
+	if alternated {
+		eidos.Stamp(st, keys.Alternate, alternate.Str)
 	}
 	return nil
 }

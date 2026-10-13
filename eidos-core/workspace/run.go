@@ -365,7 +365,7 @@ func (w *Workspace) run(
 
 	var src tree
 	if w.open != nil {
-		src = tree{residents: residentsOf(g, loaded), modules: layout.ModulesOf(out.modules)}
+		src = tree{residents: residentsOf(g, loaded), modules: layout.ModulesOf(out.modules), packages: g.PackageOf}
 		if out.modules == nil {
 			src.modules = layout.Modules(g, facts, w.kernel)
 		}
@@ -612,7 +612,7 @@ func (w *Workspace) annotateRun(
 	validated, count := w.validated(g, facts, sink, rec)
 	stats.Validated = count
 	out := shared{table: plugin.ValidatedMap(validated), refused: applyStamps(g, facts, sink)}
-	if err := w.applyDrops(validated, facts); err != nil {
+	if err := w.applyMeta(validated, facts); err != nil {
 		return out, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -759,8 +759,7 @@ func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts, reads *store.Rea
 			return symbol.Identity{}, err
 		}
 		view := rules.NewView(reader, facts, nil, w.kernel).WithRules(w.rulesFor)
-		scope := rules.Scope{Subject: subject, File: fileOf(reader, subject)}
-		sym, err := src.Resolve(scope, name, kind, view)
+		sym, err := src.Resolve(view.ScopeOf(subject), name, kind, view)
 		if err != nil {
 			return symbol.Identity{}, err
 		}
@@ -781,27 +780,6 @@ func (w *Workspace) rulesFor(lang symbol.Lang) rules.SourceRules {
 		return src
 	}
 	return rules.Absent(lang)
-}
-
-// fileOf returns the file of a declaration. It matches the position of
-// the declaration against the files of its package, and returns nil for a
-// declaration that the reader does not contain.
-func fileOf(reader *store.Reader, subject symbol.Identity) *node.File {
-	decl, held := reader.Lookup(subject)
-	if !held {
-		return nil
-	}
-	pkg, held := reader.PackageOf(subject)
-	if !held {
-		return nil
-	}
-	at := decl.Position().File
-	for _, f := range pkg.Files {
-		if f != nil && f.Pos.File == at {
-			return f
-		}
-	}
-	return nil
 }
 
 // applyStamps replays the classification stamps of the load into the fact
@@ -844,41 +822,41 @@ func stampSubject(g *store.Graph, facts *meta.Facts, sink *diag.Sink, id symbol.
 	return refused
 }
 
-// applyDrops applies the drop of every validated meta instance before any
-// annotator runs. A key drop applies through the key tombstone of the
-// fact store, and a group drop through the group tombstone. Each claim
-// has directive authority and the position of its instance. applyDrops
-// does not apply the out and diag instances. A refused drop is a defect,
-// because validation resolved the reference.
-func (w *Workspace) applyDrops(
+// applyMeta files the drops and the sets of every validated meta instance
+// before any annotator runs. A key drop applies through the key tombstone
+// of the fact store, and a group drop through the group tombstone. A set
+// writes its fact through [meta.Facts.StampRaw]. Each claim has directive
+// authority and the position of its instance. applyMeta does not apply
+// the out and diag instances. A refused drop or set is a defect, because
+// validation resolved and typed each instance.
+func (w *Workspace) applyMeta(
 	table map[symbol.Identity][]directive.Directive, facts *meta.Facts,
 ) error {
 	errs := make([]error, 0, len(table))
 	for _, id := range slices.SortedFunc(maps.Keys(table), symbol.Identity.Compare) {
-		_, err := w.drops(facts, id, table[id], false, nil)
+		_, err := w.metaClaims(facts, id, table[id], false, nil)
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
 
-// drops files the drops of the validated meta instances of a subject into
-// the fact store, or withdraws them when withdraw is set. A drop that
-// references a registered key is a key drop, and any other drop is a
-// group drop. Each claim has directive authority and the position of its
-// instance. drops appends each fact that a drop covers to touched,
-// including every member of a dropped group. It returns the joined errors
-// of the drops that the store refused. A refusal is a defect, because
-// validation resolved each reference.
-func (w *Workspace) drops(
+// metaClaims files the drops and the sets of the validated meta instances
+// of a subject into the fact store, or withdraws them when withdraw is
+// set. Validation keeps a meta instance only with exactly one of drop and
+// set, so an instance that does not set drops. A drop that references a
+// registered key is a key drop, and any other drop is a group drop. A set
+// writes the value that validation typed for its key. Each claim has
+// directive authority and the position of its instance. metaClaims appends
+// each fact that a drop or a set covers to touched, including every member
+// of a dropped group. It returns the joined errors of the claims that the
+// store refused. A refusal is a defect, because validation resolved and
+// typed each instance.
+func (w *Workspace) metaClaims(
 	facts *meta.Facts, id symbol.Identity, ds []directive.Directive, withdraw bool, touched []meta.FactRef,
 ) ([]meta.FactRef, error) {
 	var errs []error
 	for _, d := range ds {
 		if d.Name != directive.KernelMeta {
-			continue
-		}
-		v, held := d.Param(directive.MetaDrop)
-		if !held {
 			continue
 		}
 		claim := meta.Claim{
@@ -887,6 +865,20 @@ func (w *Workspace) drops(
 			Order:     meta.Order{Subject: id, Instance: d.Instance},
 			Pos:       d.Pos,
 		}
+		if set, sets := d.Param(directive.MetaSet); sets {
+			name := meta.KeyName(set.Ref)
+			key, _ := w.keys.Resolve(name)
+			touched = append(touched, meta.FactRef{Subject: id, Key: name})
+			if withdraw {
+				errs = append(errs, facts.Withdraw(key, claim))
+				continue
+			}
+			if value, typed := setValue(d); typed {
+				errs = append(errs, facts.StampRaw(meta.RawStamp{Key: name, Value: value, Pos: d.Pos}, claim))
+			}
+			continue
+		}
+		v, _ := d.Param(directive.MetaDrop)
 		if key, registered := w.keys.Resolve(meta.KeyName(v.Ref)); registered {
 			touched = append(touched, meta.FactRef{Subject: id, Key: meta.KeyName(v.Ref)})
 			if withdraw {
@@ -908,6 +900,31 @@ func (w *Workspace) drops(
 		errs = append(errs, facts.DropGroup(group, claim))
 	}
 	return touched, errors.Join(errs...)
+}
+
+// setValue returns the fact that a validated set instance writes: the
+// list of its values param, or the typed value of its value param. It
+// reports false for an identity without a target, which only a validation
+// without a resolver leaves, and the workspace always validates with one.
+func setValue(d directive.Directive) (any, bool) {
+	if list, held := d.Param(directive.MetaValues); held {
+		values := make([]string, 0, len(list.List))
+		for _, e := range list.List {
+			values = append(values, e.Str)
+		}
+		return values, true
+	}
+	v, _ := d.Param(directive.MetaValue)
+	switch v.Kind {
+	case directive.TypeBool:
+		return v.Bool, true
+	case directive.TypeInt:
+		return v.Int, true
+	case directive.TypeReference:
+		return v.Target, !v.Target.IsZero()
+	default:
+		return v.Str, true
+	}
 }
 
 // annotateAll runs the annotate schedule in turn order over one

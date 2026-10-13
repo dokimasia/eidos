@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -41,6 +42,13 @@ const (
 	otherIgnored   directive.Name = "legacy:"
 	ignoredA       directive.Name = "alpha:"
 	ignoredB       directive.Name = "beta:"
+)
+
+// The namespace and the key with choices of the case that changes the
+// choices of a key.
+const (
+	choiceNamespace              = "choosing"
+	choiceKey       meta.KeyName = "choosing.mode"
 )
 
 // A run reads the sealed state only where the live generation records
@@ -262,6 +270,25 @@ func TestFingerprint(t *testing.T) {
 			warning := fingerprinted(t, valid().Keys(p.registration(diag.SeverityWarning)))
 			failing := fingerprinted(t, valid().Keys(q.registration(diag.SeverityError)))
 			assert.NotEqual(t, failing, warning, "a changed contract runs cold")
+		})
+
+		t.Run("returns other bytes for other choices of a key", func(t *testing.T) {
+			t.Parallel()
+
+			choosing := func(choices ...string) func(*meta.Registry) error {
+				return func(r *meta.Registry) error {
+					if err := r.ClaimNamespace(choiceNamespace); err != nil {
+						return err
+					}
+					_, err := meta.Register[string](r, meta.KeySpec{
+						Name: choiceKey, Doc: "the mode of a declaration", Choices: choices,
+					})
+					return err
+				}
+			}
+			one := fingerprinted(t, valid().Keys(choosing(string(narrow))))
+			other := fingerprinted(t, valid().Keys(choosing(string(narrow), string(wide))))
+			assert.NotEqual(t, other, one, "a changed set of choices runs cold")
 		})
 
 		t.Run("returns other bytes for one ignored spelling in place of another", func(t *testing.T) {

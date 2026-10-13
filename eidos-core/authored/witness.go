@@ -24,7 +24,8 @@ const noTypeParams = "none"
 // method, an alias or a sum. For each key, it stamps the resolved type
 // under gen.witness on the type parameter that the key names. It refuses
 // a key that names none of the parameters of the declaration under
-// [UnknownWitnessParam] at the carrier, and stamps the other keys.
+// [UnknownWitnessParam] at the carrier, and stamps the other keys. It
+// refuses an instance without a key under [EmptyWitness] at the carrier.
 func Witness() plugin.Annotator {
 	return eidos.NewPlugin(WitnessPlugin).
 		Handle(eidos.Gated(directive.KernelWitness,
@@ -60,7 +61,8 @@ type reporter interface {
 // stampWitness stamps the keys of one instance on the type parameters of
 // the declaration, in key order, so the findings are deterministic. A key
 // is the name of a type parameter, and stampWitness skips the reserved
-// routing keys.
+// routing keys. It reports an instance without a key under
+// [EmptyWitness], with the type parameters of the declaration.
 func stampWitness(m reporter, st *eidos.Stamper, params []*node.TypeParam) error {
 	d := m.Directive()
 	keys := make([]string, 0, len(d.Params))
@@ -69,6 +71,11 @@ func stampWitness(m reporter, st *eidos.Stamper, params []*node.TypeParam) error
 			continue
 		}
 		keys = append(keys, string(key))
+	}
+	if len(keys) == 0 {
+		m.ErrorfAt(EmptyWitness, d.Pos,
+			"witness names no type parameter. The type parameters of the declaration are %s", spellParams(params))
+		return nil
 	}
 	slices.Sort(keys)
 	for _, key := range keys {

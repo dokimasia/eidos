@@ -123,10 +123,10 @@ var (
 	MisplacedDirective = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 72, Meaning: "a directive is written on a declaration of a kind that its schema does not admit",
 	})
-	// DerivedMetadataKey refuses a meta directive that names a key whose
-	// value its registrant derives from other keys. The instance is
+	// DerivedMetadataKey refuses a meta directive that drops or sets a key
+	// whose value its registrant derives from other keys. The instance is
 	// dropped, and the facts that the key summarises stay.
 	DerivedMetadataKey = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 75, Meaning: "a directive drops a metadata key that its registrant derives",
+		Number: 75, Meaning: "a directive drops or sets a metadata key that its registrant derives",
 	})
 )

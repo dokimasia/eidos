@@ -16,6 +16,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -23,10 +24,17 @@ import (
 
 // tree is the source tree every plan of one run routes against: the
 // files each directory contains, which the layout asks for one directory
-// at a time, and the toolchain modules the load resolved.
+// at a time, the toolchain modules the load resolved, and the packages
+// that the run loaded.
 type tree struct {
 	residents func(dir string) []plugin.Resident
 	modules   []plugin.Module
+	// packages returns the package that the run loaded under a package
+	// identity. The lookup records no read, and it does not apply the
+	// sources of a plan. The render of a plan reads the declared names of
+	// the packages that its files import through it. It is safe for
+	// concurrent use.
+	packages func(id symbol.Identity) (*node.Package, bool)
 }
 
 // residentsOf returns the residents of each directory of a tree that a

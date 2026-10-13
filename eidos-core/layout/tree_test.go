@@ -54,7 +54,7 @@ func TestTree(t *testing.T) {
 		t.Run("returns each directory's files with the package that declares them", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, layout.Residents(graph(t)), map[string][]plugin.Resident{
+			assert.Equal(t, layout.Residents(graph(t, nil)), map[string][]plugin.Resident{
 				"svc/store":   {resident(rowFile, storePkg, "store"), resident(storeFile, storePkg, "store")},
 				"svc/cache":   {resident(cacheFile, cachePkg, "cache")},
 				"svc/multi/a": {resident(aceFile, multiPkg, "multi")},
@@ -68,9 +68,9 @@ func TestTree(t *testing.T) {
 			const external = "svc/store_test"
 			const externalFile = "svc/store/store_test.go"
 			g := coretest.Frozen(t,
-				sourcePackage(storePkg, "store", source{storeFile, storeID}),
+				sourcePackage(storePkg, "store", source{file: storeFile, id: storeID}),
 				sourcePackage(external, "store_test",
-					source{externalFile, coretest.ID(external, "StoreTest", symbol.KindStruct)}),
+					source{file: externalFile, id: coretest.ID(external, "StoreTest", symbol.KindStruct)}),
 			)
 			assert.Equal(t, layout.Residents(g)["svc/store"], []plugin.Resident{
 				resident(storeFile, storePkg, "store"),
@@ -81,7 +81,7 @@ func TestTree(t *testing.T) {
 		t.Run("returns each directory's slice capped at its length", func(t *testing.T) {
 			t.Parallel()
 
-			residents := layout.Residents(graph(t))
+			residents := layout.Residents(graph(t, nil))
 			for dir, rs := range residents {
 				expect.Equal(t, cap(rs), len(rs), "an append to "+dir+" copies the slice")
 			}
@@ -155,7 +155,7 @@ func TestTree(t *testing.T) {
 				t.Parallel()
 
 				f, k := facts(t, tt.moduled)
-				got := layout.Modules(graph(t), f, k)
+				got := layout.Modules(graph(t, nil), f, k)
 				if tt.want == nil {
 					assert.Nil(t, got, "a tree without a module returns nil")
 					return
@@ -211,8 +211,8 @@ func TestTree(t *testing.T) {
 			t.Parallel()
 
 			f, k := facts(t, twoModules())
-			assert.Equal(t, layout.ModulesOf(map[plugin.Module]int{acme: 1, cache: 1}), layout.Modules(graph(t), f, k),
-				"the count reads as the walk does")
+			assert.Equal(t, layout.ModulesOf(map[plugin.Module]int{acme: 1, cache: 1}),
+				layout.Modules(graph(t, nil), f, k), "the count reads as the walk does")
 		})
 	})
 }
@@ -221,7 +221,7 @@ func TestTree(t *testing.T) {
 // fixture's tree and over the canonical corpus, in the ordinary run,
 // which runs no benchmark.
 func TestTreeAllocs(t *testing.T) {
-	g := graph(t)
+	g := graph(t, nil)
 	var residents map[string][]plugin.Resident
 	assert.MaxAllocs(t, func() { residents = layout.Residents(g) }, residentsAllocs,
 		"Residents allocates its map and one backing array")
@@ -251,7 +251,7 @@ func TestTreeAllocs(t *testing.T) {
 func BenchmarkTree(b *testing.B) {
 	b.Run("Residents", func(b *testing.B) {
 		b.Run("the fixture's tree", func(b *testing.B) {
-			g := graph(b)
+			g := graph(b, nil)
 			c := bench.Start(b).MaxAllocs(residentsAllocs)
 			defer c.End()
 			var got map[string][]plugin.Resident
@@ -275,7 +275,7 @@ func BenchmarkTree(b *testing.B) {
 
 	b.Run("Modules", func(b *testing.B) {
 		b.Run("the fixture's two modules", func(b *testing.B) {
-			g := graph(b)
+			g := graph(b, nil)
 			f, k := facts(b, twoModules())
 			c := bench.Start(b).MaxAllocs(modulesAllocs)
 			defer c.End()

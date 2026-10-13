@@ -30,6 +30,9 @@ type Workspace struct {
 	rules      *rules.Registry
 	annotate   []annEntry
 	plans      []compiledPlan
+	// disabled are the plans that the config disables, in composition
+	// order, as the composition declares them.
+	disabled []Plan
 	// order is the plans' commit order, as indexes into plans: every
 	// plan after the plans it depends on.
 	order []int
@@ -83,3 +86,10 @@ func (w *Workspace) Brand() output.Brand { return w.brand }
 // reader of a run's report uses for the kernel's own facts: the
 // module identity, an authored sample, a witness.
 func (w *Workspace) Kernel() meta.KernelKeys { return w.kernel }
+
+// Directives returns the sealed directive registry of the workspace: the
+// schemas of the kernel, of each target and of each plugin. The registry
+// refuses every registration, so it changes on no call and is safe to
+// read beside a run. A documentation tool reads the schemas of the
+// composition through it. Directives allocates nothing.
+func (w *Workspace) Directives() *directive.Registry { return w.directives }

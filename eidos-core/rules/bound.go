@@ -178,13 +178,34 @@ func (b Bound) SentinelName(base string) (string, bool) {
 	return names.SentinelName(base), true
 }
 
-// IsSentinelName reports whether ident follows the convention of the
-// language for the name of an error value. It reports false where the
-// language does not implement [ErrorValueRules]. It allocates what the
-// IsSentinelName of the language allocates.
-func (b Bound) IsSentinelName(ident string) bool {
+// SentinelBase returns the base that the sentinel name ident composes. It
+// reports false where ident does not follow the convention of the
+// language for the name of an error value, and where the language does
+// not implement [ErrorValueRules]. It allocates what the SentinelBase of
+// the language allocates.
+func (b Bound) SentinelBase(ident string) (string, bool) {
 	names, declared := b.source.(ErrorValueRules)
-	return declared && names.IsSentinelName(ident)
+	if !declared {
+		return "", false
+	}
+	return names.SentinelBase(ident)
+}
+
+// ErrorContract returns the contract of decl as an error type, through
+// the rules of the language of decl. It reports false where decl is not a
+// declaration, where it is not an error type, and where those rules do not
+// implement [ErrorTypeRules]. It allocates what the ErrorContract of the
+// language allocates.
+func (b Bound) ErrorContract(decl symbol.Symbol) (ErrorContract, bool) {
+	d, declares := decl.(node.Declaration)
+	if !declares {
+		return ErrorContract{}, false
+	}
+	errs, declared := b.rulesOf(d.Identity().Lang).(ErrorTypeRules)
+	if !declared {
+		return ErrorContract{}, false
+	}
+	return errs.ErrorContract(decl, b.view)
 }
 
 // ZeroValue returns the type's zero value, and reports false where the
@@ -197,15 +218,15 @@ func (b Bound) ZeroValue(ref *node.TypeRef) (emit.Value, bool) {
 	return b.source.ZeroValue(ref, b.view)
 }
 
-// LiteralFor turns text that went through the language's quoting into
-// a value of a type, and reports false where it cannot be one, for a nil
-// reference, and on the zero view. It allocates what the language's
-// LiteralFor allocates.
-func (b Bound) LiteralFor(f *node.File, ref *node.TypeRef, text string) (emit.Value, bool) {
+// LiteralFor reads text in the language as a value of a type in the scope
+// s, which [View.ScopeOf] returns for a declaration. It reports false
+// where the text is no such value, for a nil reference, and on the zero
+// view. It allocates what the LiteralFor of the language allocates.
+func (b Bound) LiteralFor(s Scope, ref *node.TypeRef, text string) (emit.Value, bool) {
 	if b.view.IsZero() || ref == nil {
 		return emit.Value{}, false
 	}
-	return b.source.LiteralFor(f, ref, text, b.view)
+	return b.source.LiteralFor(s, ref, text, b.view)
 }
 
 // Witnesses returns one reference per type parameter, the authored
@@ -218,3 +239,13 @@ func (b Bound) LiteralFor(f *node.File, ref *node.TypeRef, text string) (emit.Va
 // Witnesses allocates the list, one reference per authored witness, and
 // what the language's Derive allocates for each derived one.
 func (b Bound) Witnesses(params []*node.TypeParam) []*node.TypeRef { return b.witnesses(params) }
+
+// rulesOf returns the rules of a language: the bound rules for the bound
+// language, and the rules that the resolver of the binding returns for
+// another one. It allocates nothing beyond what the resolver allocates.
+func (b Bound) rulesOf(lang symbol.Lang) SourceRules {
+	if lang == b.source.Lang() {
+		return b.source
+	}
+	return b.forLang(lang)
+}

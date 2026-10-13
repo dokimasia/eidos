@@ -203,6 +203,73 @@ func TestOverride(t *testing.T) {
 				},
 				want: []string{"svc/store/mocks/store_stub.go: StoreStub"},
 			},
+			{
+				name: "moves a declaration into the directory that the out directive on its package names",
+				give: func() *fixture {
+					return newFixture(storeStub()).onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []string{"svc/store/gen/store_stub.go: StoreStub"},
+			},
+			{
+				name: "moves each declaration of a package by the out directive on the package",
+				give: func() *fixture {
+					return newFixture(storeStub(), rowStub()).
+						onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []string{"svc/store/gen/row_stub.go: RowStub", "svc/store/gen/store_stub.go: StoreStub"},
+			},
+			{
+				name: "moves a declaration by its own path over the path on its package",
+				give: func() *fixture {
+					return newFixture(storeStub()).
+						on(storeID, written(stubDirective, 2, keyOut, "mocks/")).
+						onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []string{"svc/store/mocks/store_stub.go: StoreStub"},
+			},
+			{
+				name: "moves a declaration by the path on its package into the family of its own tag",
+				give: func() *fixture {
+					return newFixture(storeStub()).
+						on(storeID, written(stubDirective, 2, keyTag, tagTest)).
+						onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []string{"svc/store/gen/store_stub_test.go: StoreStub"},
+			},
+			{
+				name: "keeps a declaration of another package beside its source",
+				give: func() *fixture {
+					return newFixture(storeStub(), stubOf(cacheFile, cachePkg, generated(cacheID, "CacheStub"))).
+						onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []string{"svc/cache/cache_stub.go: CacheStub", "svc/store/gen/store_stub.go: StoreStub"},
+			},
+			{
+				name: "resolves the path on a package against the directory of the source of each origin",
+				give: func() *fixture {
+					return newFixture(stubOf(zedFile, multiPkg, generated(zedID, "ZedStub")),
+						stubOf(aceFile, multiPkg, generated(aceID, "AceStub"))).
+						onPackage(multiPkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []string{"svc/multi/a/gen/ace_stub.go: AceStub", "svc/multi/z/gen/zed_stub.go: ZedStub"},
+			},
+			{
+				name: "ignores the tag of the out directive on a package",
+				give: func() *fixture {
+					return newFixture(storeStub()).
+						onPackage(storePkg, written(directive.KernelOut, 1, keyKTag, tagTest))
+				},
+				want: []string{"svc/store/store_stub.go: StoreStub"},
+			},
+			{
+				name: "ignores a negated out directive on a package",
+				give: func() *fixture {
+					d := written(directive.KernelOut, 1, keyPath, "gen/")
+					d.Negated = true
+					return newFixture(storeStub()).onPackage(storePkg, d)
+				},
+				want: []string{"svc/store/store_stub.go: StoreStub"},
+			},
 		}
 		for _, tt := range layouts {
 			t.Run(tt.name, func(t *testing.T) {
@@ -291,6 +358,14 @@ func TestOverride(t *testing.T) {
 				},
 				want: layout.NoDestination,
 			},
+			{
+				name: "reports EscapingPath for a path on a package that leaves the workspace root",
+				give: func() *fixture {
+					return newFixture(storeStub()).
+						onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "../../../gen/"))
+				},
+				want: layout.EscapingPath,
+			},
 		}
 		for _, tt := range refusals {
 			t.Run(tt.name, func(t *testing.T) {
@@ -349,6 +424,26 @@ func TestOverride(t *testing.T) {
 				on(storeID, written(stubDirective, 7, keyOut, "/etc/stub.go")).route(t)
 			for d := range sink.All() {
 				assert.Equal(t, d.Pos.Line, 7, "the finding is at the directive")
+			}
+		})
+
+		t.Run("reports AmbiguousOverride for a filename on a package of an origin of two families", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := newFixture(storeStub(), storeStubTest()).
+				onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "fake.go")).route(t)
+			assert.Empty(t, files, "both declarations are refused")
+			coretest.AssertCodes(t, sink, layout.AmbiguousOverride, layout.AmbiguousOverride)
+		})
+
+		t.Run("reports the finding of a path on a package at the directive on the package", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := newFixture(storeStub()).
+				onPackage(storePkg, written(directive.KernelOut, 9, keyPath, "/etc/stub.go")).route(t)
+			coretest.AssertCodes(t, sink, layout.EscapingPath)
+			for d := range sink.All() {
+				assert.Equal(t, d.Pos.Line, 9, "the finding is at the directive on the package")
 			}
 		})
 

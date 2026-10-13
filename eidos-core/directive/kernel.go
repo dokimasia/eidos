@@ -8,9 +8,10 @@ package directive
 // schemas before any plugin's, so an impersonation is a plain
 // duplicate by the time it arrives.
 const (
-	// KernelMeta overrides metadata at directive authority. Its
-	// drop param resolves against the metadata registry and
-	// removes a fact or a group.
+	// KernelMeta overrides metadata at directive authority. Its drop
+	// param resolves against the metadata registry and removes a fact or
+	// a group. Its set param names a key, and its value or values param
+	// is the fact that it writes.
 	KernelMeta Name = "meta"
 	// KernelOut redirects a declaration's output; its path param
 	// is the override.
@@ -39,6 +40,15 @@ var kernelNames = []Name{KernelMeta, KernelOut, KernelDiag, KernelSkip, KernelSa
 const (
 	// MetaDrop names the fact or group the meta directive removes.
 	MetaDrop ParamKey = "drop"
+	// MetaSet names the key that the meta directive sets.
+	MetaSet ParamKey = "set"
+	// MetaValue is the value that the meta directive sets, for a key of
+	// a string, integer, boolean or identity type. Validation types it
+	// as the type of the key.
+	MetaValue ParamKey = "value"
+	// MetaValues is the list that the meta directive sets, for a key of
+	// the type []string.
+	MetaValues ParamKey = "values"
 	// OutPath is the out directive's redirect target.
 	OutPath ParamKey = "path"
 	// OutTag selects a companion output.
@@ -71,9 +81,21 @@ func Kernel() []Schema {
 					Key: MetaDrop, Type: TypeReference, Resolution: ResolveMetadataKey,
 					Doc: "the fact or group to remove; the only way to negate a stamped boolean",
 				},
+				{
+					Key: MetaSet, Type: TypeReference, Resolution: ResolveMetadataKey,
+					Doc: "the key whose fact the instance writes, with value or values",
+				},
+				{
+					Key: MetaValue, Type: TypeString,
+					Doc: "the fact that set writes, for a key of a string, integer, boolean or identity type",
+				},
+				{
+					Key: MetaValues, Type: TypeList, ListOf: TypeString,
+					Doc: "the list that set writes, for a key of the type []string",
+				},
 			},
 			Repeatable: true,
-			Doc:        "overrides metadata at directive authority",
+			Doc:        "drops or sets metadata at directive authority",
 		},
 		{
 			Name: KernelOut,
@@ -114,7 +136,7 @@ func Kernel() []Schema {
 			Name: KernelSample,
 			Params: []ParamSpec{
 				{
-					Key: SampleValue, Type: TypeString, Required: true,
+					Key: SampleValue, Type: TypeString,
 					Doc: "the declaration's authored value, as text in the source language",
 				},
 				{

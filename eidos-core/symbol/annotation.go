@@ -14,6 +14,11 @@ package symbol
 type Annotation struct {
 	Name string   `json:"name"`
 	Args []string `json:"args,omitzero"`
+	// Assigned marks an annotation whose one argument the source assigns
+	// to its name, as Rust writes #[deprecated = "use g"], and does not
+	// pass in parentheses. A backend of a language without that form
+	// refuses an assigned annotation.
+	Assigned bool `json:"assigned,omitzero"`
 }
 
 // Annotations is a declaration's marker list, in source order on

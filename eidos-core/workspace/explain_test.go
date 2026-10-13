@@ -71,6 +71,12 @@ var (
 	refusedAt = position.Pos{File: refusedSource, Line: 1}
 )
 
+// besideSource is the route of a unit that the layout places beside its
+// source under the zero configuration of a plan.
+var besideSource = plugin.Route{
+	Family: plugin.RouteHandler, Policy: plugin.RouteDefault, Dir: plugin.RouteSource, Name: plugin.RouteTarget,
+}
+
 // explainedRows are the rows of the explained run that the damage cases
 // break. They are the path of the file of the marker, the key of the row
 // of its group, the key of the row of its contributor and the key of the
@@ -189,6 +195,44 @@ func TestExplain(t *testing.T) {
 			assert.Length(t, got.Files[0].Contributors, 1, "one invocation placed the mirror")
 			expect.Equal(t, got.Files[0].Contributors[0].Plugin, markerID, "the marker placed it")
 			expect.Equal(t, got.Files[0].Contributors[0].Subject, rowID, "on the row")
+		})
+
+		t.Run("returns the route of the unit of a generated file", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, path := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Path: path})
+			assert.NoError(t, err, "the generation explains the file")
+			assert.Length(t, got.Files, 1, "the explanation lists the file")
+			assert.Length(t, got.Files[0].Routes, 1, "the file has the unit of the marker")
+			expect.Equal(t, got.Files[0].Routes[0].Unit.Plugin, markerID, "the unit is the marker's")
+			expect.Equal(t, got.Files[0].Routes[0].Route, besideSource, "the layout placed the unit beside its source")
+		})
+
+		t.Run("returns the route of the unit of a file generated from a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, _ := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
+			assert.NoError(t, err, "the generation explains the row")
+			assert.Length(t, got.Files, 1, "the marker generated one file from the row")
+			assert.Length(t, got.Files[0].Routes, 1, "the file has the unit of the marker")
+			assert.Equal(t, got.Files[0].Routes[0].Route, besideSource, "the layout placed the unit beside its source")
+		})
+
+		t.Run("identifies the read of the declaration of the package of a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, _ := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
+			assert.NoError(t, err, "the generation explains the row")
+			at := slices.IndexFunc(got.Executions, func(r workspace.ExplainedExecution) bool {
+				return r.Kind == workspace.ExecutionGroup
+			})
+			assert.InRange(t, at, 0, math.Inf(1), "the group of the marker read the row")
+			assert.Contains(t, got.Executions[at].Reads,
+				workspace.Read{Grain: workspace.ReadDeclaration, Subject: rowID.PackageIdentity()},
+				"the layout read the out directive on the package of the row")
 		})
 
 		t.Run("returns the group and the contributor of a generated file", func(t *testing.T) {
@@ -414,6 +458,50 @@ func TestExplain(t *testing.T) {
 			got, err := w.Explain(t.Context(), target)
 			assert.NoError(t, err, "the generation explains the spelling")
 			assert.Equal(t, got, want, "the spelling names the row of the dotted package")
+		})
+
+		t.Run("returns the declaration that an identity names", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, _ := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
+			assert.NoError(t, err, "the generation explains the row")
+			assert.Length(t, got.Declarations, 1, "the identity names one declaration")
+			assert.Equal(t, got.Declarations[0].Identity(), rowID, "the declaration is the row")
+		})
+
+		t.Run("returns no declaration for an identity that the recorded load does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, _ := explained(t)
+			ghost := rowID
+			ghost.Name = "Ghost"
+			got, err := w.Explain(t.Context(), workspace.Target{Identity: ghost})
+			assert.NoError(t, err, "the generation explains the identity")
+			assert.Empty(t, got.Declarations, "the recorded load has no declaration of the identity")
+		})
+
+		t.Run("returns each declaration at the position of a key", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, _ := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Key: flagName, At: rowAt})
+			assert.NoError(t, err, "the generation explains the fact")
+			ids := make([]symbol.Identity, 0, len(got.Declarations))
+			for _, d := range got.Declarations {
+				expect.Equal(t, d.Position().Line, rowAt.Line, "the declaration is at the line of the key")
+				ids = append(ids, d.Identity())
+			}
+			assert.Contains(t, ids, rowID, "the row is at the position")
+		})
+
+		t.Run("returns no declaration for a path", func(t *testing.T) {
+			t.Parallel()
+
+			w, _, path := explained(t)
+			got, err := w.Explain(t.Context(), workspace.Target{Path: path})
+			assert.NoError(t, err, "the generation explains the path")
+			assert.Empty(t, got.Declarations, "a path names a file and no declaration")
 		})
 
 		t.Run("returns the claim on the fact of a key at a position", func(t *testing.T) {

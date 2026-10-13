@@ -96,7 +96,7 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 // A language's Builtin maps its own spelling of a well-known type onto
 // one of these blessed reference identities, so a Go time.Time and a
 // proto Timestamp project to one shape. The registry contains these
-// three, and growing it only adds entries.
+// four, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = wellKnown("timestamp")
@@ -105,6 +105,9 @@ var (
 	// WellKnownEmpty is a value that contains no data, such as protobuf's
 	// Empty.
 	WellKnownEmpty = wellKnown("empty")
+	// WellKnownError is the value of a failure, such as Go's error and
+	// TypeScript's Error.
+	WellKnownError = wellKnown("error")
 )
 
 // No frontend declares the registry's own language and package, so no
@@ -122,12 +125,15 @@ func wellKnown(name string) symbol.Identity {
 // IsWellKnown reports whether an identity is one the registry
 // blesses. It allocates nothing.
 func IsWellKnown(id symbol.Identity) bool {
-	return id == WellKnownTimestamp || id == WellKnownDuration || id == WellKnownEmpty
+	return id == WellKnownTimestamp || id == WellKnownDuration || id == WellKnownEmpty || id == WellKnownError
 }
 
 // typeOf is the kernel's fold. A structural form folds into the same
 // form with its children folded, and the fold copies the asynchrony of a
-// stream. The fold of a named reference depends on its target:
+// stream. An inline reference takes the shape that the language's Builtin
+// gives it, such as the top type for Go's interface{}, and the inline form
+// where the Builtin returns Opaque. The fold of a named reference depends
+// on its target:
 //
 //   - A reference to a type parameter folds to Opaque.
 //   - A reference whose target the view contains folds by the
@@ -158,6 +164,11 @@ func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 // fold computes one reference's shape. A structural shape allocates the
 // list of its children, and Bytes allocates none.
 func (b Bound) fold(ref *node.TypeRef) TypeShape {
+	if ref.Form == symbol.FormInline {
+		if s := b.source.Builtin(ref, b.view); s.Form != symbol.FormOpaque {
+			return s
+		}
+	}
 	if ref.Form.Structural() && ref.Form != symbol.FormNamed {
 		return b.children(TypeShape{
 			Form: ref.Form, Spelling: ref.Spelling, Length: ref.Length, Split: ref.Split,
@@ -195,11 +206,7 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 // bless none, and where they do not implement [WellKnownRules]. It
 // allocates nothing beyond what the resolver of the binding allocates.
 func (b Bound) wellKnown(target symbol.Identity) (symbol.Identity, bool) {
-	src := b.source
-	if target.Lang != src.Lang() {
-		src = b.forLang(target.Lang)
-	}
-	w, is := src.(WellKnownRules)
+	w, is := b.rulesOf(target.Lang).(WellKnownRules)
 	if !is {
 		return symbol.Identity{}, false
 	}

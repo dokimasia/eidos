@@ -138,6 +138,15 @@ type Check struct {
 	Findings []diag.Diag
 }
 
+// FileRoute is the route of one unit of one file of a group: the path of
+// the file, the unit as the layout wrote it into the file, and the inputs
+// of the layout that placed the unit.
+type FileRoute struct {
+	File  string
+	Unit  plugin.UnitRef
+	Route plugin.Route
+}
+
 // Group is the record of one group of a plan's files: the files that
 // execute together, because a backend split one unit into them, two units
 // share one of them, or an emit-phase invocation matched a value of one
@@ -162,6 +171,9 @@ type Group struct {
 	// Findings are the findings that the render reported for the
 	// group's files.
 	Findings []diag.Diag
+	// Routes are the routes of the units of the group's files, sorted by
+	// file and then by unit.
+	Routes []FileRoute
 }
 
 // Validation returns the record of a subject's validation, and false
@@ -514,8 +526,9 @@ func appendCheck(dst []byte, c *Check) []byte {
 }
 
 // appendGroup appends a group's entry to dst: the plan and the key unit,
-// then the units, the files, the contributors, the reads and the
-// findings.
+// then the units, the files, the contributors, the reads, the findings
+// and the routes. A route is its file, its unit and the four inputs of the
+// route.
 func appendGroup(dst []byte, g *Group) []byte {
 	e := encoder{buf: appendUnitRef(wire.AppendText(dst, g.Plan), g.Key)}
 	e.uvarint(uint64(len(g.Units)))
@@ -529,6 +542,16 @@ func appendGroup(dst []byte, g *Group) []byte {
 	}
 	e.edges(g.Reads)
 	e.findings(g.Findings)
+	e.uvarint(uint64(len(g.Routes)))
+	for i := range g.Routes {
+		r := &g.Routes[i]
+		e.text(r.File)
+		e.buf = appendUnitRef(e.buf, r.Unit)
+		e.uvarint(uint64(r.Route.Family))
+		e.uvarint(uint64(r.Route.Policy))
+		e.uvarint(uint64(r.Route.Dir))
+		e.uvarint(uint64(r.Route.Name))
+	}
 	return e.buf
 }
 
@@ -551,6 +574,15 @@ func decodeGroup(d *decoder, plan string, key plugin.UnitRef) Group {
 	}
 	out.Reads = d.edges()
 	out.Findings = d.findings()
+	if n := d.Count(); n > 0 {
+		out.Routes = make([]FileRoute, n)
+		for i := range out.Routes {
+			out.Routes[i] = FileRoute{File: d.text(), Unit: d.unitRef(), Route: plugin.Route{
+				Family: plugin.RouteInput(d.Enum()), Policy: plugin.RouteInput(d.Enum()),
+				Dir: plugin.RouteInput(d.Enum()), Name: plugin.RouteInput(d.Enum()),
+			}}
+		}
+	}
 	return out
 }
 

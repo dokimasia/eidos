@@ -15,6 +15,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/authored"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -131,8 +132,8 @@ func (fixtureRules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool
 }
 
 // LiteralFor returns the scripted rules' literal for text.
-func (fixtureRules) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
-	return rulestest.Scripted().LiteralFor(f, ref, text, v)
+func (fixtureRules) LiteralFor(s rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	return rulestest.Scripted().LiteralFor(s, ref, text, v)
 }
 
 // The sample annotator stamps the text an author wrote under the
@@ -183,6 +184,49 @@ func TestSample(t *testing.T) {
 			expect.Equal(t, views[0].Claim.Authority, meta.AuthorityDirective, "the claim has directive authority")
 			expect.Equal(t, views[0].Claim.Pos, position.Pos{File: fixtureFile, Line: 4, Col: 1},
 				"the claim has the position of the instance")
+		})
+
+		t.Run("stamps the alternate of an instance without a value", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.item.ID, 4, directive.KernelSample, "alternate=2")
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.NoError(t, err, "the run is clean")
+			alt, held := meta.Get(report.Facts, f.item.ID, w.Kernel().Alternate)
+			assert.True(t, held, "the alternate is stamped")
+			assert.Equal(t, alt, "2", "the alternate arrives as the text the author wrote")
+		})
+
+		t.Run("leaves the value absent where only the alternate was stated", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.item.ID, 4, directive.KernelSample, "alternate=2")
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.NoError(t, err, "the run is clean")
+			_, held := meta.Get(report.Facts, f.item.ID, w.Kernel().Sample)
+			assert.False(t, held, "a derivation fills the value that the author left out")
+		})
+
+		t.Run("reports EmptySample for an instance without a value and an alternate", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.item.ID, 4, directive.KernelSample)
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
+			var refusal diag.Diag
+			for d := range report.Sink.All() {
+				if d.Code == authored.EmptySample {
+					refusal = d
+				}
+			}
+			assert.Equal(t, refusal.Code, authored.EmptySample, "under the code of an empty sample")
+			assert.Equal(t, refusal.Pos.Line, 4, "positioned at the carrier")
 		})
 
 		t.Run("leaves the alternate absent where none was stated", func(t *testing.T) {

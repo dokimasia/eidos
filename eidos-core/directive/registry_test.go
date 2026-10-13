@@ -467,6 +467,39 @@ func TestRegistry(t *testing.T) {
 				want: `choice "bigint" twice`,
 			},
 			{
+				name: "returns an error for a default on a required param",
+				schema: choosing(directive.ParamSpec{
+					Key: "depth", Type: directive.TypeInt, Required: true, Default: "1", Doc: "the depth",
+				}),
+				want: "declares a default and requires the param",
+			},
+			{
+				name: "returns an error for a default on a list param",
+				schema: choosing(directive.ParamSpec{
+					Key:     "fields",
+					Type:    directive.TypeList,
+					ListOf:  directive.TypeString,
+					Default: "a",
+					Doc:     "the fields",
+				}),
+				want: "only a string, integer or boolean param takes one",
+			},
+			{
+				name: "returns an error for a default that does not type as the param",
+				schema: choosing(directive.ParamSpec{
+					Key: "depth", Type: directive.TypeInt, Default: "deep", Doc: "the depth",
+				}),
+				want: "does not type",
+			},
+			{
+				name: "returns an error for a default outside the choices",
+				schema: choosing(directive.ParamSpec{
+					Key: "int64", Type: directive.TypeString, Choices: []string{"bigint", "string"}, Default: "number",
+					Doc: "the spelling",
+				}),
+				want: "does not type",
+			},
+			{
 				name:   "returns an error naming the invalid kind",
 				schema: kinded(symbol.KindStruct, symbol.KindInvalid),
 				want:   "lists Invalid",
@@ -722,6 +755,58 @@ func TestRegistry(t *testing.T) {
 			faults := r.Seal()
 			assert.Length(t, faults, 1, "the covered schema is one fault")
 			assert.Contains(t, faults[0].Error(), "mockgen:stub", "the fault names the schema")
+		})
+
+		t.Run("returns no fault for a second seal", func(t *testing.T) {
+			t.Parallel()
+
+			needs := wellFormed("mockgen", "stub")
+			needs.Requires = []directive.Name{"nonexistent"}
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Register(needs), "the schema registers")
+			assert.Length(t, r.Seal(), 1, "the first seal reports the unknown name")
+			assert.Empty(t, r.Seal(), "the second seal leaves the registry as it is")
+		})
+
+		t.Run("leaves the registry as it is for a reader beside a second seal", func(t *testing.T) {
+			t.Parallel()
+
+			r := sealed(t, wellFormed("mockgen", "stub"))
+			faults := make(chan []error, 1)
+			go func() { faults <- r.Seal() }()
+			assert.True(t, r.Sealed(), "the registry is sealed while the second seal runs")
+			assert.Empty(t, <-faults, "the second seal reports nothing")
+		})
+	})
+
+	t.Run("Schemas", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("yields each schema in the order of its canonical spelling", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.RegisterTarget(target("typescript")), "the target registers")
+			plugins := []directive.Schema{wellFormed("stubgen", "stub"), wellFormed("mockgen", "stub")}
+			assert.Total(t, r.Register, plugins, "the schemas register")
+			var got []directive.Name
+			for s := range r.Schemas() {
+				got = append(got, s.Canonical())
+			}
+			assert.Equal(t, got, []directive.Name{"mockgen:stub", "stubgen:stub", "typescript"},
+				"the schemas come in the order of their canonical spellings")
+		})
+
+		t.Run("stops at the first schema that the caller declines", func(t *testing.T) {
+			t.Parallel()
+
+			r := openRegistry(t, wellFormed("stubgen", "stub"), wellFormed("mockgen", "stub"))
+			var got []directive.Name
+			for s := range r.Schemas() {
+				got = append(got, s.Canonical())
+				break
+			}
+			assert.Equal(t, got, []directive.Name{"mockgen:stub"}, "the enumeration ends after the first schema")
 		})
 	})
 

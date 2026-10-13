@@ -105,7 +105,42 @@ func Wildcard(variance symbol.Variance, bound *node.TypeRef) *node.TypeRef {
 }
 
 // Inline returns an inline body with fields as its fields and methods as its
-// methods. The reference keeps both lists.
+// methods. The reference keeps both lists. Its children are copies of the
+// types of the members, as a frontend records them for a body whose fields
+// come before its methods: the type of each field, then for each method the
+// bounds and the default of each type parameter, the type of its receiver,
+// its parameter types and its result types. A member without a type has
+// no child, and each child is a copy that [node.CloneRef] returns, because
+// a node of a fixture has one place.
 func Inline(fields []*node.Field, methods []*node.Method) *node.TypeRef {
-	return &node.TypeRef{Form: symbol.FormInline, Fields: fields, Methods: methods}
+	ref := &node.TypeRef{Form: symbol.FormInline, Fields: fields, Methods: methods}
+	for _, f := range fields {
+		if f.Type != nil {
+			ref.Elems = append(ref.Elems, node.CloneRef(f.Type))
+		}
+	}
+	for _, m := range methods {
+		for _, tp := range m.TypeParams {
+			for _, b := range tp.Bounds {
+				ref.Elems = append(ref.Elems, node.CloneRef(b))
+			}
+			if tp.Default != nil {
+				ref.Elems = append(ref.Elems, node.CloneRef(tp.Default))
+			}
+		}
+		if m.Receiver != nil && m.Receiver.Type != nil {
+			ref.Elems = append(ref.Elems, node.CloneRef(m.Receiver.Type))
+		}
+		for _, p := range m.Params {
+			if p.Type != nil {
+				ref.Elems = append(ref.Elems, node.CloneRef(p.Type))
+			}
+		}
+		for _, r := range m.Returns {
+			if r.Type != nil {
+				ref.Elems = append(ref.Elems, node.CloneRef(r.Type))
+			}
+		}
+	}
+	return ref
 }

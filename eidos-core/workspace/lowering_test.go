@@ -64,6 +64,7 @@ const (
 	wideLine     = "+tsx width=wide\n"
 	fullLine     = "+tsx width=full\n"
 	hugeLine     = "+tsx width=huge\n"
+	hugeSetLine  = "+meta set=tsx.width value=huge\n"
 	widePkgNote  = "pkgnote tsx width=wide\n"
 	fullPkgNote  = "pkgnote tsx width=full\n"
 	carrierLine  = 3
@@ -158,6 +159,27 @@ func TestLowering(t *testing.T) {
 			expect.True(t, named, "the name key is registered")
 			_, chosen := meta.Lookup[string](r, meta.KeyName(widthKey))
 			expect.True(t, chosen, "the policy key is registered")
+		})
+
+		t.Run("registers the policy key with the choices of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			r := lowerRun(t, lowerComposition(t, workspace.Sources{}), lowerTree(rowLine)).Facts.Registry()
+			id, _ := r.Resolve(meta.KeyName(widthKey))
+			spec, _ := r.Spec(id)
+			assert.Equal(t, spec.Choices, []string{string(narrow), string(wide), string(full)},
+				"the key takes the choices of the policy")
+		})
+
+		t.Run("returns a policy key that refuses a meta set outside the policy's choices", func(t *testing.T) {
+			t.Parallel()
+
+			report, err := built(t, lowerComposition(t, workspace.Sources{})).
+				Run(t.Context(), workspace.Input{Tree: lowerTree(rowLine, hugeSetLine)})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refused value fails the run")
+			refused := findings(report.Sink, directive.BadSpelling)
+			assert.Length(t, refused, 1, "the run reports the refused value")
+			assert.Contains(t, refused[0].Msg, "narrow, wide, full", "the finding lists the choices")
 		})
 
 		t.Run("registers the name key for a backend that keeps every name", func(t *testing.T) {

@@ -66,9 +66,12 @@ type Language struct {
 	// through a group template, so a language refuses no kind its
 	// Cluster gathers.
 	Refused map[symbol.Kind]string
-	// File is the file skeleton, executed once per file over the
-	// file's name and its package. Empty takes the default, imports
-	// then declarations. The clause a language opens its
+	// File is the file skeleton. The pass executes it once per file
+	// over the file's name as .Name, its package as .Pkg and the
+	// annotations of its source file as .Annotations. A file of a
+	// package, of a plan or of two or more source files has no
+	// annotations. Empty takes the default, imports then
+	// declarations. The clause a language opens its
 	// files with is the skeleton's own to spell, because not every
 	// language has one. The header is not the skeleton's: the
 	// output contract prepends it after the formatter ran.

@@ -43,6 +43,23 @@ type Refinement struct {
 	File string
 }
 
+// Over returns base with each field that r sets: the policy where it is not
+// [PolicyInherit], and the directory and the filename where they are not
+// empty. A config file refines a refinement of the composition this way. Over
+// allocates nothing.
+func (r Refinement) Over(base Refinement) Refinement {
+	if r.Policy != PolicyInherit {
+		base.Policy = r.Policy
+	}
+	if r.Dir != "" {
+		base.Dir = r.Dir
+	}
+	if r.File != "" {
+		base.File = r.File
+	}
+	return base
+}
+
 // check validates one refinement's own fields, naming the plan and
 // the scope the refinement applies to.
 func (r Refinement) check(plan, scope string) []error {
@@ -73,11 +90,16 @@ func (r Refinement) appendBinary(b []byte) []byte {
 
 // resolved is one family's routing configuration after the
 // refinements: the family's own, then the generator's, then the
-// plan's, field by field.
+// plan's, field by field. policyFrom, dirFrom and fileFrom are the inputs
+// that set the policy, the directory and the filename. dirFrom and fileFrom
+// are zero where no input sets the field.
 type resolved struct {
-	policy Policy
-	dir    string
-	file   string
+	dir        string
+	file       string
+	policy     Policy
+	policyFrom plugin.RouteInput
+	dirFrom    plugin.RouteInput
+	fileFrom   plugin.RouteInput
 }
 
 // Config is one plan's routing configuration. The zero Config places
@@ -245,14 +267,35 @@ func (c Config) checkGenerator(plan string, p plugin.ID, declared []plugin.Outpu
 	return faults
 }
 
-// resolve returns one family's routing configuration.
+// resolve returns one family's routing configuration and the input that
+// set each of its fields. A policy that no input sets is [PolicyAlongside],
+// the default.
 func (c Config) resolve(f Family) resolved {
 	own, gen := c.Families[f], c.Plugins[f.Plugin]
-	return resolved{
-		policy: own.Policy.or(gen.Policy.or(c.Policy.or(PolicyAlongside))),
-		dir:    cmp.Or(own.Dir, gen.Dir, c.Dir),
-		file:   cmp.Or(own.File, gen.File),
+	out := resolved{policy: PolicyAlongside, policyFrom: plugin.RouteDefault}
+	switch {
+	case own.Policy != PolicyInherit:
+		out.policy, out.policyFrom = own.Policy, plugin.RouteFamily
+	case gen.Policy != PolicyInherit:
+		out.policy, out.policyFrom = gen.Policy, plugin.RouteGenerator
+	case c.Policy != PolicyInherit:
+		out.policy, out.policyFrom = c.Policy, plugin.RoutePlan
 	}
+	switch {
+	case own.Dir != "":
+		out.dir, out.dirFrom = own.Dir, plugin.RouteFamily
+	case gen.Dir != "":
+		out.dir, out.dirFrom = gen.Dir, plugin.RouteGenerator
+	case c.Dir != "":
+		out.dir, out.dirFrom = c.Dir, plugin.RoutePlan
+	}
+	switch {
+	case own.File != "":
+		out.file, out.fileFrom = own.File, plugin.RouteFamily
+	case gen.File != "":
+		out.file, out.fileFrom = gen.File, plugin.RouteGenerator
+	}
+	return out
 }
 
 // directory reports whether a configured directory is

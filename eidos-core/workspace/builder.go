@@ -56,6 +56,13 @@ type PlanConfig struct {
 	Policy     layout.Policy
 	Dir        string
 	ImportBase string
+	// Plugins and Families refine the routing of the generators and the
+	// families of the plan. Build merges each refinement over the
+	// refinement that the plan declares for the same generator or family,
+	// through [layout.Refinement.Over], and leaves the maps of the declared
+	// plan unchanged.
+	Plugins  map[plugin.ID]layout.Refinement
+	Families map[layout.Family]layout.Refinement
 	// Policies selects a choice for a policy key of the plan's backend,
 	// and replaces the selection of Config.Policies for the plan. Build
 	// returns an error for a key that the backend does not declare, and
@@ -161,6 +168,20 @@ func (b *Builder) Brand(brand output.Brand) *Builder {
 // before Build to find its config file, whose name contains the brand.
 // BrandName allocates nothing.
 func (b *Builder) BrandName() output.Brand { return b.brand }
+
+// Plugins returns the plugins that the composition declares, each once by
+// name, in the order of the roster: the annotators, then the generators and
+// the backend of each plan, then the checks. It does not apply the config
+// and does not build the composition, so a command line reads the plugins
+// of a composition that does not build without its config file. Plugins
+// leaves out a nil plugin and a plugin with an empty name, which Build
+// reports.
+func (b *Builder) Plugins() []plugin.Plugin {
+	declared := *b
+	declared.config = Config{}
+	roster, _, _ := declared.assemble()
+	return roster
+}
 
 // Frontends registers the frontends that load the tree of a run, in load
 // order.
@@ -372,7 +393,7 @@ func (b *Builder) Build() (*Workspace, error) {
 	roster, byName, afaults := b.assemble()
 	faults = append(faults, afaults...)
 	faults = append(faults, partialProviders(roster)...)
-	refined, refineFaults := refine(b.plans, b.config.Plans, b.checks)
+	refined, disabled, refineFaults := refine(b.plans, b.config.Plans, b.checks)
 	faults = append(faults, refineFaults...)
 	policies, broken, pfaults := resolvePolicies(refined, b.config)
 	faults = append(faults, pfaults...)
@@ -405,6 +426,7 @@ func (b *Builder) Build() (*Workspace, error) {
 		rules:       reg.rules,
 		annotate:    ann,
 		plans:       plans,
+		disabled:    disabled,
 		order:       order,
 		checks:      checks,
 		frontends:   slices.Clone(b.frontends),

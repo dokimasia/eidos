@@ -11,9 +11,11 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -96,6 +98,89 @@ func TestGroups(t *testing.T) {
 			sealedRun(t, sealing(t, mem, "plan"), workspace.Input{Tree: sealedTree()})
 			assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.DeclarationEdge(rowID),
 				"the layout reads the row's directives and position")
+		})
+
+		t.Run("records the declaration edge of the package of each origin among a group's reads", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			sealedRun(t, sealing(t, mem, "plan"), workspace.Input{Tree: sealedTree()})
+			assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.DeclarationEdge(rowID.PackageIdentity()),
+				"the layout reads the out directive on the package of the row")
+		})
+
+		t.Run("records no declaration edge for a declaration without an origin", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			free := generator(mirrorID, func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+				e.PackageFile().Append(&emit.Struct{Name: "Free"})
+				return nil
+			})
+			sealedRun(t, built(t, sealingOf(t, mem, "plan", free)), workspace.Input{Tree: sealedTree()})
+			assert.NotContains(t, groupOf(t, mem, mirroredFile).Reads, state.DeclarationEdge(symbol.Identity{}),
+				"a declaration without an origin reads no declaration")
+		})
+
+		t.Run("records the declaration edge of the source file of each file among a group's reads", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			sourced := eidos.NewPlugin(mirrorID).
+				Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.File().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name})
+					return nil
+				})).Generator()
+			sealedRun(t, built(t, sealingOf(t, mem, "plan", sourced)), workspace.Input{Tree: sealedTree()})
+			source := symbol.Identity{
+				Lang: rowID.Lang, Package: rowID.Package, Name: sealedSource, Kind: symbol.KindFile,
+			}
+			assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.DeclarationEdge(source),
+				"the backend writes the annotations of the source file into the file")
+		})
+
+		t.Run("records the declaration edge of each package whose declared name a file read among a group's reads",
+			func(t *testing.T) {
+				t.Parallel()
+
+				mem := ledger.NewMem()
+				w := built(t, clauseBuilder(mem, frontendtest.NewScripted(), func() (output.Sink, error) {
+					return output.NewMem(), nil
+				}))
+				sealedRun(t, w, workspace.Input{Tree: clauseTree(cacheClause)})
+				assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.DeclarationEdge(cachePackage),
+					"the backend writes the name that the cache package declares into the file")
+			})
+
+		t.Run("records the route of the unit of a file", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			sealedRun(t, sealing(t, mem, "plan"), workspace.Input{Tree: sealedTree()})
+			g := groupOf(t, mem, mirroredFile)
+			assert.Equal(t, g.Routes, []state.FileRoute{{File: mirroredFile, Unit: g.Key, Route: plugin.Route{
+				Family: plugin.RouteHandler, Policy: plugin.RouteDefault,
+				Dir: plugin.RouteSource, Name: plugin.RouteTarget,
+			}}}, "the layout placed the unit of the mirror beside its source")
+		})
+
+		t.Run("records a route for each unit of a file that two units write", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			twin := generator(twinID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Twin" + m.Struct.Name})
+				return nil
+			})
+			w := built(t, sealingPlans(mem, workspace.Plan{
+				Name: "plan", Generators: []plugin.Generator{twin, mirror(mirrorID)}, Backend: fixturePrinter(),
+			}))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			g := groupOf(t, mem, mirroredFile)
+			assert.Length(t, g.Routes, 2, "each unit of the file has a route")
+			expect.Equal(t, g.Routes[0].Unit, g.Units[0], "the routes are in the order of the units")
+			expect.Equal(t, g.Routes[1].Unit, g.Units[1], "the second route is the route of the second unit")
 		})
 
 		t.Run("records the name edge of each name that the settle looked up among a group's reads", func(t *testing.T) {

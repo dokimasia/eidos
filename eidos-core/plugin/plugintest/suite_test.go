@@ -699,6 +699,26 @@ func TestSuite(t *testing.T) {
 			fault, _ := failure[0].Got()
 			assert.Contains(t, fmt.Sprint(fault), "doc", "and the fault names the missing tag")
 		})
+
+		t.Run("fails a required option with the zero value", func(t *testing.T) {
+			t.Parallel()
+
+			failure := assert.Rejects(t, "a required option without a value must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertOptionsSchema(tb, headed(""))
+				})
+			assert.Equal(t, coretest.Contracts(failure), []string{"every required option has a value"},
+				"the check states the contract of a required option")
+			fault, _ := failure[0].Got()
+			assert.Contains(t, fmt.Sprint(fault), "headed requires the option header",
+				"the fault contains the plugin and the key of the option")
+		})
+
+		t.Run("passes a required option that the setup sets", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertOptionsSchema(t, headed("// audit"))
+		})
 	})
 
 	t.Run("AssertTemplates", func(t *testing.T) {
@@ -1161,6 +1181,24 @@ func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 		).
 		Dual()
 	return p, f
+}
+
+// headed returns a setup whose generator has a required banner with the
+// value header.
+func headed(header string) plugintest.Setup {
+	return func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+		tb.Helper()
+
+		f, _, _ := twoStructs(tb)
+		p := eidos.NewPlugin("headed").
+			Options(&struct {
+				Header string `opt:"header" doc:"the banner every audit opens with" schema:"required"`
+			}{Header: header}).
+			Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+			Handle(quietRule()).
+			Generator()
+		return p, f
+	}
 }
 
 // bare returns the hand-rolled generator over the fixture.

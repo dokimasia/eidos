@@ -87,6 +87,10 @@ type Description struct {
 	Annotate []Component
 	// Plans lists the plans in composition order.
 	Plans []PlanDescription
+	// Disabled lists the plans that the config disables, in composition
+	// order. Each has its name, the generators that it declares, its backend
+	// and its target. A generator of a disabled plan has no turn.
+	Disabled []PlanDescription
 	// Order lists the names of the plans in commit order, in which every plan
 	// comes after the plans that it depends on.
 	Order []string
@@ -99,10 +103,12 @@ type Description struct {
 // brand, the name of the workspace, the fingerprint, the frontends, the
 // annotate schedule, the commit order and the checks. For each plan, it
 // contains the sources, the dependencies, the generate schedule, the
-// backend, the layout and the choice of each lowering policy. Describe
-// does not run the composition or read outside the workspace, and it
-// cannot fail. Each call returns a new description. Describe is safe to
-// call concurrently with every other method of the workspace.
+// backend, the layout and the choice of each lowering policy. For each plan
+// that the config disables, it contains the generators, the backend and the
+// target. Describe does not run the composition or read outside the
+// workspace, and it cannot fail. Each call returns a new description.
+// Describe is safe to call concurrently with every other method of the
+// workspace.
 func (w *Workspace) Describe() Description {
 	d := Description{
 		Brand:       w.brand,
@@ -111,6 +117,7 @@ func (w *Workspace) Describe() Description {
 		Frontends:   make([]Component, 0, len(w.frontends)),
 		Annotate:    make([]Component, 0, len(w.annotate)),
 		Plans:       make([]PlanDescription, 0, len(w.plans)),
+		Disabled:    make([]PlanDescription, 0, len(w.disabled)),
 		Order:       make([]string, 0, len(w.order)),
 		Checks:      make([]CheckDescription, 0, len(w.checks)),
 	}
@@ -147,6 +154,18 @@ func (w *Workspace) Describe() Description {
 			}
 		}
 		d.Plans = append(d.Plans, plan)
+	}
+	for _, pl := range w.disabled {
+		plan := PlanDescription{
+			Name:     pl.Name,
+			Generate: make([]Component, 0, len(pl.Generators)),
+			Backend:  component(pl.Backend.Name(), pl.Backend, 0),
+			Target:   pl.Backend.Target(),
+		}
+		for _, g := range pl.Generators {
+			plan.Generate = append(plan.Generate, component(g.Name(), g, 0))
+		}
+		d.Disabled = append(d.Disabled, plan)
 	}
 	for _, i := range w.order {
 		d.Order = append(d.Order, w.plans[i].name)

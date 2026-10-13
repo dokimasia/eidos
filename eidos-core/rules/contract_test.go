@@ -208,7 +208,7 @@ func TestContract(t *testing.T) {
 		t.Run("returns rules without a literal", func(t *testing.T) {
 			t.Parallel()
 
-			_, held := rules.Absent(unregistered).LiteralFor(nil, builtin(intSpelling), "1", rules.View{})
+			_, held := rules.Absent(unregistered).LiteralFor(rules.Scope{}, builtin(intSpelling), "1", rules.View{})
 			assert.False(t, held, "LiteralFor reports false")
 		})
 

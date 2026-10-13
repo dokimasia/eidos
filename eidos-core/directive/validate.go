@@ -5,6 +5,7 @@ package directive
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,6 +58,12 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 // that writes a param that its schema deprecates, reports a Warning under
 // [DeprecatedDirective] that states the schema's rewrite, and validates
 // as before.
+//
+// A param that an instance omits takes the default of its spec where a
+// role of the instance admits the param. A meta instance writes exactly
+// one of drop and set, and a set types its value as the type of its key.
+// An unclaimed name names the nearest registered name where one is within
+// two edits.
 //
 // An instance of a schema with variants selects its variant with its
 // first positional argument. The variant's params join the schema's, and
@@ -351,6 +358,11 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			// without a finding.
 			return Directive{}, Schema{}, false
 		}
+		if near, found := v.registry.nearest(raw.Name); found {
+			v.report(UnclaimedName, raw.Pos, "%s names no registered schema. The nearest registered name is %s",
+				raw.Name, near)
+			return Directive{}, Schema{}, false
+		}
 		v.report(UnclaimedName, raw.Pos, "%s names no registered schema", raw.Name)
 		return Directive{}, Schema{}, false
 	}
@@ -433,6 +445,16 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		}
 		seen[key] = arg.Col
 
+		if key == roleKey && len(roles) == 0 {
+			owner := string(d.Name)
+			if variant.Name != "" {
+				owner += " " + variant.Name
+			}
+			v.report(UnknownKey, raw.Pos, "%s declares no roles, so it does not accept %s: %s",
+				owner, roleKey, acceptedKeys(schema, variant, nil, nil))
+			ok = false
+			continue
+		}
 		if key == roleKey {
 			role, roleOK := v.role(d.Name, roles, arg)
 			if !roleOK {
@@ -453,7 +475,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			spec.Key = key
 		default:
 			v.report(UnknownKey, raw.Pos,
-				"%s does not accept %s: %s", d.Name, key, acceptedKeys(schema, variant, roles))
+				"%s does not accept %s: %s", d.Name, key, acceptedKeys(schema, variant, roles, nil))
 			ok = false
 			continue
 		}
@@ -488,11 +510,17 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		if !declared {
 			continue // a reserved key is admitted under every role
 		}
-		if !roleAdmits(spec.Roles, d.Role) {
-			v.report(UnknownKey, raw.Pos,
-				"%s does not accept %s under role %q", d.Name, key, d.Role)
-			ok = false
+		if roleAdmits(spec.Roles, d.Role) {
+			continue
 		}
+		role := d.Role
+		advice := acceptedKeys(schema, variant, roles, func(scope []string) bool { return roleAdmits(scope, role) })
+		if role == "" {
+			v.report(UnknownKey, raw.Pos, "%s does not accept %s without a role: %s", d.Name, key, advice)
+		} else {
+			v.report(UnknownKey, raw.Pos, "%s does not accept %s under role %q: %s", d.Name, key, role, advice)
+		}
+		ok = false
 	}
 	// A requirement is met by what the author wrote. A value that
 	// failed typing is reported once, above, under its typing code,
@@ -516,6 +544,27 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	}
 
 	if !ok {
+		return Directive{}, Schema{}, false
+	}
+	// A default applies where the author omitted the param under a role
+	// that admits it. Registration typed every default, so applying one
+	// reports nothing.
+	for _, specs := range [2][]ParamSpec{schema.Params, variant.Params} {
+		for _, spec := range specs {
+			if _, given := seen[spec.Key]; spec.Default == "" || given || !roleAdmits(spec.Roles, d.Role) {
+				continue
+			}
+			d.Params[spec.Key], _ = scalar(spec, spec.Type, spec.Default)
+		}
+	}
+	for _, spec := range schema.Positional[positional:] {
+		if spec.Default == "" {
+			break
+		}
+		value, _ := scalar(spec, spec.Type, spec.Default)
+		d.Args = append(d.Args, value)
+	}
+	if canonical == KernelMeta && !v.metaInstance(&d) {
 		return Directive{}, Schema{}, false
 	}
 	return d, schema, true
@@ -554,13 +603,9 @@ func (v *validator) variant(name Name, variants []Variant, args []RawArg) (Varia
 
 // role validates the role argument against the declared roles. They are
 // the roles of the variant that the instance selects, or the roles of the
-// schema for a schema without variants.
+// schema for a schema without variants. The caller refuses a role argument
+// where no roles are declared.
 func (v *validator) role(name Name, roles []string, arg RawArg) (string, bool) {
-	if len(roles) == 0 {
-		v.report(UnknownKey, v.at,
-			"%s declares no roles, so it does not accept %s", name, roleKey)
-		return "", false
-	}
 	if arg.Value.List != nil {
 		v.report(TypeMismatch, v.at, "%s takes one role, not a list", name)
 		return "", false
@@ -606,33 +651,13 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 		return Value{}, false
 	}
 	switch t {
-	case TypeString:
-		if len(spec.Choices) > 0 && !slices.Contains(spec.Choices, raw.Text) {
-			v.report(BadSpelling, v.at,
-				"%s param %s takes one of %s, not %q",
-				name, spec.Key, strings.Join(spec.Choices, ", "), raw.Text)
+	case TypeString, TypeInt, TypeBool:
+		value, reason := scalar(spec, t, raw.Text)
+		if reason != "" {
+			v.report(BadSpelling, v.at, "%s %s", name, reason)
 			return Value{}, false
 		}
-		return Value{Kind: TypeString, Str: raw.Text}, true
-	case TypeInt:
-		parsed, err := strconv.ParseInt(raw.Text, 10, 64)
-		if err != nil {
-			v.report(BadSpelling, v.at,
-				"%s param %s takes a base-10 integer, not %q", name, spec.Key, raw.Text)
-			return Value{}, false
-		}
-		return Value{Kind: TypeInt, Int: parsed}, true
-	case TypeBool:
-		switch raw.Text {
-		case spellTrue:
-			return Value{Kind: TypeBool, Bool: true}, true
-		case spellFalse:
-			return Value{Kind: TypeBool, Bool: false}, true
-		}
-		v.report(BadSpelling, v.at,
-			"%s param %s takes exactly %s or %s, not %q",
-			name, spec.Key, spellTrue, spellFalse, raw.Text)
-		return Value{}, false
+		return value, true
 	case TypeReference:
 		if spec.Resolution == ResolveDiagnosticCode {
 			return v.code(name, spec, raw.Text)
@@ -646,10 +671,14 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 			}
 			if id, held := v.keys.Resolve(meta.KeyName(raw.Text)); held {
 				if key, _ := v.keys.Spec(id); key.Derived {
+					advice := ""
+					if spec.Key == MetaDrop {
+						advice = " Drop the group of those keys instead."
+					}
 					v.report(DerivedMetadataKey, v.at,
-						"%s param %s names %q, whose value its registrant derives from other keys. "+
-							"Name the group of those keys instead",
-						name, spec.Key, raw.Text)
+						"%s param %s names %q. Its registrant derives the value from other keys, "+
+							"so a directive cannot drop or set it.%s",
+						name, spec.Key, raw.Text, advice)
 					return Value{}, false
 				}
 			}
@@ -669,6 +698,144 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 	default:
 		v.report(TypeMismatch, v.at, "%s param %s has no type", name, spec.Key)
 		return Value{}, false
+	}
+}
+
+// scalar types the text of one value as t, which is TypeString, TypeInt
+// or TypeBool, under the choices of spec. It returns the value and an
+// empty reason, or the reason of a refusal, which validation reports
+// under [BadSpelling] and registration returns in its error. It allocates
+// the text of a reason alone.
+func scalar(spec ParamSpec, t ParamType, text string) (Value, string) {
+	switch t {
+	case TypeString:
+		if len(spec.Choices) > 0 && !slices.Contains(spec.Choices, text) {
+			return Value{}, fmt.Sprintf("param %s takes one of %s, not %q",
+				spec.Key, strings.Join(spec.Choices, ", "), text)
+		}
+		return Value{Kind: TypeString, Str: text}, ""
+	case TypeInt:
+		parsed, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return Value{}, fmt.Sprintf("param %s takes a base-10 integer, not %q", spec.Key, text)
+		}
+		return Value{Kind: TypeInt, Int: parsed}, ""
+	default:
+		switch text {
+		case spellTrue:
+			return Value{Kind: TypeBool, Bool: true}, ""
+		case spellFalse:
+			return Value{Kind: TypeBool, Bool: false}, ""
+		}
+		return Value{}, fmt.Sprintf("param %s takes exactly %s or %s, not %q", spec.Key, spellTrue, spellFalse, text)
+	}
+}
+
+// metaInstance checks a meta instance and types the value of a set by the
+// type of its key. An instance writes exactly one of drop and set, and
+// value or values go with set alone. A key of the type []string takes
+// values, and every other key takes value. A set of a key that does not
+// admit the kind of the subject is misplaced. It reports false when it
+// reported a violation.
+func (v *validator) metaInstance(d *Directive) bool {
+	drop, drops := d.Params[MetaDrop]
+	set, sets := d.Params[MetaSet]
+	value, hasValue := d.Params[MetaValue]
+	_, hasValues := d.Params[MetaValues]
+	if drops == sets {
+		v.report(MissingParam, d.Pos, "%s writes exactly one of %s and %s", d.Name, MetaDrop, MetaSet)
+		return false
+	}
+	if drops {
+		if hasValue || hasValues {
+			v.report(UnknownKey, d.Pos, "%s drops %s and takes no %s or %s: write %s=%s alone",
+				d.Name, drop.Ref, MetaValue, MetaValues, MetaDrop, drop.Ref)
+			return false
+		}
+		return true
+	}
+	id, isKey := v.keys.Resolve(meta.KeyName(set.Ref))
+	if !isKey {
+		v.report(UnknownMetadataKey, d.Pos, "%s param %s names the group %q, and a set names a key",
+			d.Name, MetaSet, set.Ref)
+		return false
+	}
+	spec, _ := v.keys.Spec(id)
+	if len(spec.Kinds) > 0 && !slices.Contains(spec.Kinds, v.subject.Kind) {
+		v.report(MisplacedDirective, d.Pos,
+			"%s sets %s, which applies to a declaration of kind %s, and %s has the kind %s",
+			d.Name, set.Ref, kindList(spec.Kinds), v.subject, v.subject.Kind)
+		return false
+	}
+	keyType := v.keys.Type(id)
+	wants, given, other, otherKey := MetaValue, hasValue, hasValues, MetaValues
+	if keyType == reflect.TypeFor[[]string]() {
+		wants, given, other, otherKey = MetaValues, hasValues, hasValue, MetaValue
+	}
+	if other {
+		v.report(TypeMismatch, d.Pos, "%s sets %s, a key of the type %s, through %s and not %s",
+			d.Name, set.Ref, keyType, wants, otherKey)
+		return false
+	}
+	if !given {
+		v.report(MissingParam, d.Pos, "%s sets %s and omits %s", d.Name, set.Ref, wants)
+		return false
+	}
+	if wants == MetaValues {
+		return true
+	}
+	typed, ok := v.fact(d.Name, keyType, set.Ref, spec.Choices, value.Str)
+	if ok {
+		d.Params[MetaValue] = typed
+	}
+	return ok
+}
+
+// fact types the spelling of the value of a set as the type of its key: a
+// boolean, an integer, the identity of a type in scope or a string. A
+// boolean set is true, because absence is the negative. An identity binds
+// through the resolver, and keeps the spelling alone without one. A string
+// key with choices takes one of them. It reports false when it reported a
+// violation.
+func (v *validator) fact(name Name, keyType reflect.Type, key string, choices []string, text string) (Value, bool) {
+	switch keyType {
+	case reflect.TypeFor[bool]():
+		switch text {
+		case spellTrue:
+			return Value{Kind: TypeBool, Bool: true}, true
+		case spellFalse:
+			v.report(BadSpelling, v.at, "%s sets %s to %s, and absence is the negative: write %s=%s",
+				name, key, spellFalse, MetaDrop, key)
+		default:
+			v.report(BadSpelling, v.at, "%s sets the boolean %s, which takes %s, not %q", name, key, spellTrue, text)
+		}
+		return Value{}, false
+	case reflect.TypeFor[int64]():
+		parsed, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			v.report(BadSpelling, v.at, "%s sets the integer %s, which takes a base-10 integer, not %q",
+				name, key, text)
+			return Value{}, false
+		}
+		return Value{Kind: TypeInt, Int: parsed}, true
+	case reflect.TypeFor[symbol.Identity]():
+		if v.resolve == nil {
+			return Value{Kind: TypeReference, Ref: text}, true
+		}
+		target, err := v.resolve(v.subject, text, ResolveTypeInScope)
+		if err != nil {
+			v.report(UnresolvedReference, v.at, "%s sets %s to %q, which does not resolve as %s: %v",
+				name, key, text, ResolveTypeInScope, err)
+			return Value{}, false
+		}
+		return Value{Kind: TypeReference, Ref: text, Target: target}, true
+	default:
+		if len(choices) > 0 && !slices.Contains(choices, text) {
+			v.report(BadSpelling, v.at, "%s sets %s, which takes one of %s, not %q",
+				name, key, strings.Join(choices, ", "), text)
+			return Value{}, false
+		}
+		return Value{Kind: TypeString, Str: text}, true
 	}
 }
 
@@ -735,13 +902,16 @@ func roleAdmits(scope []string, role string) bool {
 // acceptedKeys returns the advice at the end of an [UnknownKey] refusal.
 // It lists the param keys of the schema, then the param keys of the
 // variant that the instance selects, then the role key when the instance
-// has roles. It leaves out the reserved keys. For an empty list it
-// returns "it takes no keyed param".
-func acceptedKeys(s Schema, variant Variant, roles []string) string {
+// has roles. admits selects the params by their role scope, and a nil
+// admits selects every param. The list leaves out the reserved keys. For
+// an empty list it returns "it takes no keyed param".
+func acceptedKeys(s Schema, variant Variant, roles []string, admits func(scope []string) bool) string {
 	var keys []string
 	for _, specs := range [2][]ParamSpec{s.Params, variant.Params} {
 		for _, spec := range specs {
-			keys = append(keys, string(spec.Key))
+			if admits == nil || admits(spec.Roles) {
+				keys = append(keys, string(spec.Key))
+			}
 		}
 	}
 	if len(roles) > 0 {

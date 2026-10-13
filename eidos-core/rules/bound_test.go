@@ -129,9 +129,10 @@ func (f fixedSamples) DeriveSamples(*node.TypeRef, string, rules.View) (rules.Sa
 	return f.sample, f.alternate
 }
 
-// capable is the scripted rules with tags and error values. Its tag is
-// the whole text of the tag of a field under every key, and the name of
-// its error values has the prefix [sentinelPrefix].
+// capable is the scripted rules with tags, error values and error types.
+// Its tag is the whole text of the tag of a field under every key, the
+// name of its error values has the prefix [sentinelPrefix], and Row is its
+// one error type.
 type capable struct {
 	rules.SourceRules
 }
@@ -143,8 +144,22 @@ func (capable) Tag(f *node.Field, _ string) (string, bool) { return f.Tag, f.Tag
 // SentinelName returns base after the prefix.
 func (capable) SentinelName(base string) string { return sentinelPrefix + base }
 
-// IsSentinelName reports whether ident has the prefix.
-func (capable) IsSentinelName(ident string) bool { return strings.HasPrefix(ident, sentinelPrefix) }
+// SentinelBase returns ident without the prefix, and reports false for an
+// identifier without it.
+func (capable) SentinelBase(ident string) (string, bool) {
+	return strings.CutPrefix(ident, sentinelPrefix)
+}
+
+// ErrorContract returns the contract of Row, an error behind a pointer
+// with the field name as its cause, and reports false for every other
+// declaration.
+func (capable) ErrorContract(decl symbol.Symbol, _ rules.View) (rules.ErrorContract, bool) {
+	s, isStruct := decl.(*node.Struct)
+	if !isStruct || s.Name != rowName {
+		return rules.ErrorContract{}, false
+	}
+	return rules.ErrorContract{Cause: s.Fields[0], Pointer: true}, true
+}
 
 // otherLang is the scripted rules under the name of a language in which
 // the fixture declares nothing. A case reads the declarations of the
@@ -204,8 +219,8 @@ func (n nongeneric) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool
 }
 
 // LiteralFor returns the value that the inner rules derive for a text.
-func (n nongeneric) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
-	return n.inner.LiteralFor(f, ref, text, v)
+func (n nongeneric) LiteralFor(s rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	return n.inner.LiteralFor(s, ref, text, v)
 }
 
 // presenceLang is the scripted rules with presence beyond the type. The
@@ -401,16 +416,27 @@ func TestBound(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			lit, held := b.LiteralFor(nil, builtin(strSpelling), "x")
+			lit, held := b.LiteralFor(rules.Scope{}, builtin(strSpelling), "x")
 			assert.True(t, held, "a literal derives")
 			assert.Equal(t, lit, emit.Literal(emit.LiteralString, "x"), "as text")
+		})
+
+		t.Run("passes the scope to the language", func(t *testing.T) {
+			t.Parallel()
+
+			v := viewOnly(t)
+			scope := v.ScopeOf(rowField(nameField))
+			lit, held := rules.NewBound(scoped{scripted()}, v, nil).
+				LiteralFor(scope, named(svcPath, rowName, symbol.KindStruct), "x")
+			assert.True(t, held, "the language reads the text in the scope")
+			assert.Equal(t, lit, emit.Name(scope.Subject), "the language receives the scope of the caller")
 		})
 
 		t.Run("reports false for the zero view", func(t *testing.T) {
 			t.Parallel()
 
 			_, held := rules.NewBound(rulestest.Scripted(), rules.View{}, nil).
-				LiteralFor(nil, builtin(strSpelling), "x")
+				LiteralFor(rules.Scope{}, builtin(strSpelling), "x")
 			assert.False(t, held, "the zero view derives no literal")
 		})
 	})
@@ -460,28 +486,71 @@ func TestBound(t *testing.T) {
 		})
 	})
 
-	t.Run("IsSentinelName", func(t *testing.T) {
+	t.Run("SentinelBase", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports true for a name that follows the convention of the language", func(t *testing.T) {
+		t.Run("returns the base of a name that follows the convention of the language", func(t *testing.T) {
 			t.Parallel()
 
-			bound := rules.NewBound(capable{scripted()}, rules.View{}, nil)
-			assert.True(t, bound.IsSentinelName(sentinelPrefix+rowName), "the name has the prefix of an error value")
+			able := rules.NewBound(capable{scripted()}, rules.View{}, nil)
+			base, sentinel := able.SentinelBase(sentinelPrefix + rowName)
+			assert.True(t, sentinel, "the name has the prefix of an error value")
+			assert.Equal(t, base, rowName, "SentinelBase returns the name without the prefix")
 		})
 
 		t.Run("reports false for a name that does not follow the convention", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, rules.NewBound(capable{scripted()}, rules.View{}, nil).IsSentinelName(rowName),
-				"the name has no prefix")
+			_, sentinel := rules.NewBound(capable{scripted()}, rules.View{}, nil).SentinelBase(rowName)
+			assert.False(t, sentinel, "the name does not have the prefix")
 		})
 
 		t.Run("reports false for a language without error values", func(t *testing.T) {
 			t.Parallel()
 
-			assert.False(t, rules.NewBound(scripted(), rules.View{}, nil).IsSentinelName(sentinelPrefix+rowName),
-				"the scripted language does not implement ErrorValueRules")
+			_, sentinel := rules.NewBound(scripted(), rules.View{}, nil).SentinelBase(sentinelPrefix + rowName)
+			assert.False(t, sentinel, "the scripted language does not implement ErrorValueRules")
+		})
+	})
+
+	t.Run("ErrorContract", func(t *testing.T) {
+		t.Parallel()
+
+		g := coretest.Frozen(t, hierarchy())
+		row, _ := g.Lookup(coretest.ID(svcPath, rowName, symbol.KindStruct))
+
+		t.Run("returns the contract that the language of the declaration states", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, g)
+			c, isError := rules.NewBound(capable{scripted()}, v, nil).ErrorContract(row)
+			assert.True(t, isError, "the language takes Row as an error type")
+			assert.True(t, c.Pointer, "a pointer to Row is the error")
+			assert.Equal(t, c.Cause.Name, nameField, "the field name is the cause")
+		})
+
+		t.Run("reports false for a declaration that is not an error type", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, g)
+			store, _ := g.Lookup(coretest.ID(svcPath, storeName, symbol.KindInterface))
+			_, isError := rules.NewBound(capable{scripted()}, v, nil).ErrorContract(store)
+			assert.False(t, isError, "the language does not take Store as an error type")
+		})
+
+		t.Run("reports false for a symbol that is not a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			_, isError := rules.NewBound(capable{scripted()}, viewOnly(t), nil).ErrorContract(nil)
+			assert.False(t, isError, "a nil symbol is not a declaration")
+		})
+
+		t.Run("reports false for a language without error types", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, g)
+			_, isError := rules.NewBound(scripted(), v, nil).ErrorContract(row)
+			assert.False(t, isError, "the scripted language does not implement ErrorTypeRules")
 		})
 	})
 }
@@ -658,6 +727,7 @@ func boundCalls(tb assert.TB) []allocCall {
 	params := []*node.TypeParam{{ID: coretest.MemberID(svcPath, "Box", "T", symbol.KindTypeParam), Name: "T"}}
 	able := rules.NewBound(capable{source}, view, nil)
 	sentinel := sentinelPrefix + rowName
+	row, _ := view.Lookup(coretest.ID(svcPath, rowName, symbol.KindStruct))
 	var (
 		bound     rules.Bound
 		src       rules.SourceRules
@@ -671,6 +741,7 @@ func boundCalls(tb assert.TB) []allocCall {
 		name      string
 		witnesses []*node.TypeRef
 		shape     rules.TypeShape
+		contract  rules.ErrorContract
 	)
 	return []allocCall{
 		{
@@ -724,7 +795,7 @@ func boundCalls(tb assert.TB) []allocCall {
 			check: func(tb assert.TB) { assert.True(tb, held, "ZeroValue derives a zero") },
 		},
 		{
-			name: "LiteralFor", call: func() { _, held = b.LiteralFor(nil, strRef, "x") },
+			name: "LiteralFor", call: func() { _, held = b.LiteralFor(rules.Scope{}, strRef, "x") },
 			check: func(tb assert.TB) { assert.True(tb, held, "LiteralFor derives a literal") },
 		},
 		{
@@ -758,8 +829,18 @@ func boundCalls(tb assert.TB) []allocCall {
 			check: func(tb assert.TB) { assert.Equal(tb, name, sentinel, "SentinelName joins the prefix") },
 		},
 		{
-			name: "IsSentinelName", call: func() { held = able.IsSentinelName(sentinel) },
-			check: func(tb assert.TB) { assert.True(tb, held, "IsSentinelName reports the prefix") },
+			name: "SentinelBase", call: func() { name, held = able.SentinelBase(sentinel) },
+			check: func(tb assert.TB) {
+				assert.True(tb, held, "SentinelBase recognises the prefix")
+				assert.Equal(tb, name, rowName, "SentinelBase returns the base")
+			},
+		},
+		{
+			name: "ErrorContract", call: func() { contract, held = able.ErrorContract(row) },
+			check: func(tb assert.TB) {
+				assert.True(tb, held, "ErrorContract takes Row as an error type")
+				assert.True(tb, contract.Pointer, "ErrorContract returns the contract of the language")
+			},
 		},
 	}
 }

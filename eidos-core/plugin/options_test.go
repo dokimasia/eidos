@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -26,6 +27,20 @@ const (
 	// twelve allocations, and the six of encoding/json's state, which its
 	// pool supplies until a collection empties the pool.
 	encodeOptionsAllocs = 12 + 6
+)
+
+// The keywords and the type names of JSON Schema that the cases of
+// OptionsSchema pin.
+const (
+	jsonType        = "type"
+	jsonProperties  = "properties"
+	jsonAdditional  = "additionalProperties"
+	jsonRequired    = "required"
+	jsonDescription = "description"
+	jsonObject      = "object"
+	jsonString      = "string"
+	jsonInteger     = "integer"
+	jsonBoolean     = "boolean"
 )
 
 // optioned is a fixture plugin returning whatever options value it
@@ -90,6 +105,29 @@ type hookOptions struct {
 // marshals itself.
 type stampedOptions struct {
 	Since time.Time `opt:"since" doc:"when the walk starts"`
+}
+
+// requiredOptions has a required banner and an optional depth.
+type requiredOptions struct {
+	Header string `opt:"header" doc:"the banner every file opens with" schema:"required"`
+	Depth  int    `opt:"depth"  doc:"how deep the mirror walks"`
+}
+
+// mismarkedOptions has a schema tag with another value than required.
+type mismarkedOptions struct {
+	Header string `opt:"header" doc:"the banner every file opens with" schema:"optional"`
+}
+
+// groupedOptions has an option of a struct type.
+type groupedOptions struct {
+	Walk walkOptions `opt:"walk" doc:"how the mirror walks"`
+}
+
+// walkOptions is the value of an option of a struct type. The options step
+// decodes it through JSON, so a field has its json key.
+type walkOptions struct {
+	Depth  int  `json:"depth" doc:"how deep the mirror walks"`
+	Strict bool `             doc:"when true, the walk refuses a gap"`
 }
 
 // The options checks are what both consumers run: the composition
@@ -177,6 +215,152 @@ func TestOptions(t *testing.T) {
 			assert.Contains(t, errs[0].Error(), "First", "naming one claimant")
 			assert.Contains(t, errs[0].Error(), "Second", "and the other")
 		})
+
+		t.Run("returns nothing for a struct with the required mark", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, plugin.ValidateOptions(optioned{name: "cfg", cfg: &requiredOptions{}}),
+				"the schema tag takes the value required")
+		})
+
+		t.Run("returns an error naming a schema tag with another value than required", func(t *testing.T) {
+			t.Parallel()
+
+			errs := plugin.ValidateOptions(optioned{name: "cfg", cfg: &mismarkedOptions{}})
+			assert.Length(t, errs, 1, "the mark is one finding")
+			expect.That(t, errs[0].Error()).
+				Contains("Header", "the finding names the field").
+				Contains(`"optional"`, "the finding names the value of the tag")
+		})
+	})
+
+	t.Run("MissingOptions", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns an error naming a required option with the zero value", func(t *testing.T) {
+			t.Parallel()
+
+			errs := plugin.MissingOptions(optioned{name: "cfg", cfg: &requiredOptions{Depth: 2}})
+			assert.Length(t, errs, 1, "the empty banner is one finding")
+			expect.That(t, errs[0].Error()).
+				HasPrefix("plugin: ", "the error opens with the name of the package").
+				Contains("cfg", "the finding names the plugin").
+				Contains("header", "the finding names the key of the option")
+		})
+
+		t.Run("returns nothing for a required option with a value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, plugin.MissingOptions(optioned{name: "cfg", cfg: &requiredOptions{Header: "h"}}),
+				"the banner has a value")
+		})
+
+		t.Run("returns nothing for an option without the mark", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, plugin.MissingOptions(optioned{name: "cfg", cfg: &lawfulOptions{}}),
+				"an option without the mark may keep its zero value")
+		})
+
+		empty := []struct {
+			name string
+			give plugin.Plugin
+		}{
+			{name: "returns nothing for a plugin without the surface", give: named{name: "bare"}},
+			{name: "returns nothing for a nil declaration", give: optioned{name: "cfg"}},
+			{name: "returns nothing for a struct by value", give: optioned{name: "cfg", cfg: requiredOptions{}}},
+			{name: "returns nothing for a pointer to no struct", give: optioned{name: "cfg", cfg: new(string)}},
+			{name: "returns nothing for a nil pointer", give: optioned{name: "cfg", cfg: (*requiredOptions)(nil)}},
+		}
+		for _, tt := range empty {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Empty(t, plugin.MissingOptions(tt.give), "ValidateOptions reports what is not a struct")
+			})
+		}
+	})
+
+	t.Run("OptionsSchema", func(t *testing.T) {
+		t.Parallel()
+
+		absent := []struct {
+			name string
+			give plugin.Plugin
+		}{
+			{name: "returns nil for a plugin without the surface", give: named{name: "bare"}},
+			{name: "returns nil for a nil declaration", give: optioned{name: "cfg"}},
+			{name: "returns nil for options that break the tag contract", give: optioned{
+				name: "cfg", cfg: &doublyWrongOptions{},
+			}},
+		}
+		for _, tt := range absent {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Nil(t, plugin.OptionsSchema(tt.give), "the plugin has no schema of its options")
+			})
+		}
+
+		header := map[string]any{jsonType: jsonString, jsonDescription: "the banner every file opens with"}
+		depth := map[string]any{jsonType: jsonInteger, jsonDescription: "how deep the mirror walks"}
+		strict := map[string]any{jsonType: jsonBoolean, jsonDescription: "when true, the walk refuses a gap"}
+		tests := []struct {
+			name string
+			give any
+			want map[string]any
+		}{
+			{
+				name: "returns a closed object with one property for each option",
+				give: &lawfulOptions{},
+				want: map[string]any{
+					jsonType:       jsonObject,
+					jsonProperties: map[string]any{"header": header, "depth": depth},
+					jsonAdditional: false,
+				},
+			},
+			{
+				name: "returns a required property for a required option with the zero value",
+				give: &requiredOptions{Depth: 2},
+				want: map[string]any{
+					jsonType:       jsonObject,
+					jsonProperties: map[string]any{"header": header, "depth": depth},
+					jsonAdditional: false,
+					jsonRequired:   []string{"header"},
+				},
+			},
+			{
+				name: "returns no required property for a required option with a value",
+				give: &requiredOptions{Header: "h"},
+				want: map[string]any{
+					jsonType:       jsonObject,
+					jsonProperties: map[string]any{"header": header, "depth": depth},
+					jsonAdditional: false,
+				},
+			},
+			{
+				name: "returns the json keys of a struct below an option",
+				give: &groupedOptions{},
+				want: map[string]any{
+					jsonType: jsonObject,
+					jsonProperties: map[string]any{"walk": map[string]any{
+						jsonType:        jsonObject,
+						jsonProperties:  map[string]any{"depth": depth, "Strict": strict},
+						jsonAdditional:  false,
+						jsonDescription: "how the mirror walks",
+					}},
+					jsonAdditional: false,
+				},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got := plugin.OptionsSchema(optioned{name: "cfg", cfg: tt.give})
+				assert.Equal(t, got, tt.want, "the schema of the options")
+			})
+		}
 	})
 
 	t.Run("EncodeOptions", func(t *testing.T) {
@@ -231,19 +415,28 @@ func TestOptions(t *testing.T) {
 	})
 }
 
-// The options checks allocate the reflection of the options and the
-// sets they keep, and nothing for a plugin without the surface, in the
-// ordinary run, which runs no benchmark. The plugins are interface
-// values made once, so no check counts their conversion. The check runs
-// alone, because the count includes every goroutine's allocations.
+// TestOptionsAllocs checks the allocation ceilings of the options checks
+// in the ordinary run, which runs no benchmark. ValidateOptions and
+// EncodeOptions allocate the reflection of the options and the sets that
+// they keep. MissingOptions allocates nothing for options whose required
+// option has a value. No check allocates for a plugin without the
+// surface. The plugins are interface values made once, so no check counts
+// their conversion. The test runs alone, because the count includes the
+// allocations of every goroutine.
 func TestOptionsAllocs(t *testing.T) {
-	lawful, bare := optionPlugins()
+	lawful, required, bare := optionPlugins()
 	var errs []error
 	assert.MaxAllocs(t, func() { errs = plugin.ValidateOptions(lawful) }, validateOptionsAllocs,
 		"ValidateOptions allocates the claimed keys and the reflection of the fields")
 	assert.Empty(t, errs, "ValidateOptions finds nothing in the lawful options")
 	assert.MaxAllocs(t, func() { errs = plugin.ValidateOptions(bare) }, 0,
 		"ValidateOptions allocates nothing for a plugin without the surface")
+
+	assert.MaxAllocs(t, func() { errs = plugin.MissingOptions(required) }, 0,
+		"MissingOptions allocates nothing for options whose required option has a value")
+	assert.Empty(t, errs, "MissingOptions finds nothing in the set options")
+	assert.MaxAllocs(t, func() { errs = plugin.MissingOptions(bare) }, 0,
+		"MissingOptions allocates nothing for a plugin without the surface")
 
 	var encoded []byte
 	assert.MaxAllocs(t, func() { encoded, _ = plugin.EncodeOptions(lawful) }, encodeOptionsAllocs,
@@ -253,10 +446,11 @@ func TestOptionsAllocs(t *testing.T) {
 		"EncodeOptions allocates nothing for a plugin without the surface")
 }
 
-// BenchmarkOptions measures the options checks a composition makes once
-// per plugin, over the lawful options and a plugin without the surface.
+// BenchmarkOptions measures the options checks that a composition makes
+// once for each plugin. It measures them over the lawful options, the set
+// required options and a plugin without the surface.
 func BenchmarkOptions(b *testing.B) {
-	lawful, bare := optionPlugins()
+	lawful, required, bare := optionPlugins()
 
 	validations := []struct {
 		name   string
@@ -276,6 +470,27 @@ func BenchmarkOptions(b *testing.B) {
 					errs = plugin.ValidateOptions(tt.give)
 				}
 				assert.Empty(b, errs, "ValidateOptions finds nothing")
+			})
+		}
+	})
+
+	missing := []struct {
+		name string
+		give plugin.Plugin
+	}{
+		{name: "options whose required option has a value", give: required},
+		{name: "a plugin without the surface", give: bare},
+	}
+	b.Run("MissingOptions", func(b *testing.B) {
+		for _, tt := range missing {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				var errs []error
+				for c.Loop() {
+					errs = plugin.MissingOptions(tt.give)
+				}
+				assert.Empty(b, errs, "MissingOptions finds nothing")
 			})
 		}
 	})
@@ -303,8 +518,11 @@ func BenchmarkOptions(b *testing.B) {
 	})
 }
 
-// optionPlugins returns a plugin with the lawful options and a plugin
-// without the options surface, each an interface value made once.
-func optionPlugins() (lawful, bare plugin.Plugin) {
-	return optioned{name: "cfg", cfg: &lawfulOptions{Header: "h", Depth: 2}}, named{name: "bare"}
+// optionPlugins returns three interface values that the test makes once. lawful
+// has the lawful options, required has required options with values, and bare
+// has no options surface.
+func optionPlugins() (lawful, required, bare plugin.Plugin) {
+	return optioned{name: "cfg", cfg: &lawfulOptions{Header: "h", Depth: 2}},
+		optioned{name: "cfg", cfg: &requiredOptions{Header: "h", Depth: 2}},
+		named{name: "bare"}
 }

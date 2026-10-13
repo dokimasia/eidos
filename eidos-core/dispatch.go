@@ -564,7 +564,7 @@ func (c *phaseCall) enumerate(fr *flatRule) {
 		c.take(fr, &invocation{})
 	case fr.gate != "":
 		c.enumerateDirective(fr)
-	case len(fr.preds) > 0:
+	case fr.indexed >= 0:
 		c.enumerateFacts(fr)
 	default:
 		c.enumerateBare(fr)
@@ -572,12 +572,13 @@ func (c *phaseCall) enumerate(fr *flatRule) {
 }
 
 // enumerateEmit visits the plan's emit values of the rule's kind.
-// Every emit-trigger mechanism resolves through the origin: the gate
-// views, the predicates, skip, and the report position.
+// Every emit-trigger mechanism except a value gate resolves through the
+// origin: the gate views, the key gates, skip, and the report position.
+// A value gate reads the emit value.
 func (c *phaseCall) enumerateEmit(fr *flatRule) {
 	for value := range c.emit.ByKind(fr.kind) {
 		origin, _ := emit.OriginOf(value)
-		if !c.admits(fr, origin) {
+		if !c.admits(fr, origin, value) {
 			continue
 		}
 		if !c.takeEach(fr, &invocation{subject: origin, pos: c.positionOf(origin), value: value}) {
@@ -610,7 +611,7 @@ func (c *phaseCall) enumerateDirective(fr *flatRule) {
 			if later {
 				c.seen[id] = struct{}{}
 			}
-			if !c.admits(fr, id) {
+			if !c.admits(fr, id, s) {
 				continue
 			}
 			if !c.takeEach(fr, &invocation{subject: id, pos: decl.Position(), value: s}) {
@@ -620,16 +621,16 @@ func (c *phaseCall) enumerateDirective(fr *flatRule) {
 	}
 }
 
-// enumerateFacts visits the subjects stamped with the rule's first
-// gate key, resolving each to its declaration and checking it against
-// the trigger's kind and the remaining predicates.
+// enumerateFacts visits the subjects stamped with the key of the gate
+// that the rule's index names, resolving each to its declaration and
+// checking it against the trigger's kind and every predicate.
 func (c *phaseCall) enumerateFacts(fr *flatRule) {
-	for id := range c.index.ByFactKey(fr.preds[0].id) {
+	for id := range c.index.ByFactKey(fr.preds[fr.indexed].id) {
 		s, held := c.index.Lookup(id)
 		if !held || s.Kind() != fr.kind {
 			continue
 		}
-		if _, names := s.(node.Declaration); !names || !c.admits(fr, id) {
+		if _, names := s.(node.Declaration); !names || !c.admits(fr, id, s) {
 			continue
 		}
 		if !c.take(fr, &invocation{subject: id, pos: s.Position(), value: s}) {
@@ -647,7 +648,7 @@ func (c *phaseCall) enumerateBare(fr *flatRule) {
 			continue
 		}
 		id := decl.Identity()
-		if !c.admits(fr, id) {
+		if !c.admits(fr, id, s) {
 			continue
 		}
 		if !c.take(fr, &invocation{subject: id, pos: decl.Position(), value: s}) {
@@ -680,16 +681,16 @@ func (c *phaseCall) takeEach(fr *flatRule, inv *invocation) bool {
 }
 
 // admits evaluates skip, a negated directive's opt-out and the
-// predicates for one subject, untracked, because gate evaluation is
-// routing. A directive-gated rule is exempt from both opt-outs: its
-// subject opted in explicitly and withdraws by deleting the
-// directive.
-func (c *phaseCall) admits(fr *flatRule, subject symbol.Identity) bool {
+// predicates for one subject and the value that triggers the rule on it,
+// untracked, because gate evaluation is routing. A directive-gated rule
+// is exempt from both opt-outs: its subject opted in explicitly and
+// withdraws by deleting the directive.
+func (c *phaseCall) admits(fr *flatRule, subject symbol.Identity, value symbol.Symbol) bool {
 	if fr.gate == "" && c.index.Skipped(subject, c.plugin) {
 		return false
 	}
 	for _, p := range fr.preds {
-		if !p.test(c.facts, subject) {
+		if !p.test(c.facts, subject, value) {
 			return false
 		}
 	}

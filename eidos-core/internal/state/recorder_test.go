@@ -884,14 +884,19 @@ func validationOf(tb testing.TB, build func(*state.Lane)) state.Validation {
 
 // recordedGroup returns a group of the recorded plan of one unit and one
 // file, which the unit's invocation contributed to and which read the
-// unit's edge and the directory of the file.
+// unit's edge and the directory of the file. The layout placed the unit
+// beside its source.
 func recordedGroup(unit plugin.UnitRef) state.Group {
+	file := edgeDir + "/user_gen.zz"
 	return state.Group{
 		Key:          unit,
 		Units:        []plugin.UnitRef{unit},
-		Files:        []string{edgeDir + "/user_gen.zz"},
+		Files:        []string{file},
 		Contributors: []plugin.MatchKey{generated(recordedSubject)},
 		Reads:        []state.EdgeHash{state.UnitEdge(recordedPlan, unit), state.DirectoryEdge(edgeDir)},
+		Routes: []state.FileRoute{{File: file, Unit: unit, Route: plugin.Route{
+			Family: plugin.RouteHandler, Policy: plugin.RouteDefault, Dir: plugin.RouteSource, Name: plugin.RouteTarget,
+		}}},
 	}
 }
 

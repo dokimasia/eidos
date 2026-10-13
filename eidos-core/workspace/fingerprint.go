@@ -113,7 +113,7 @@ func pluginEntry(name plugin.ID, run any, encoded []byte) string {
 // with their options' encodings, ignored spellings, scheduled plugins,
 // plans and checks, each plugin with its options' encoding, each plan's
 // resolved lowering policy, and every key of the registry with the kinds
-// it may be stamped on, its group and its contract.
+// it may be stamped on, its group, its choices and its contract.
 func (b *Builder) fingerprint(
 	annotate []annEntry, plans []compiledPlan, checks []compiledCheck, options map[plugin.ID][]byte,
 	fronts [][]byte, keys *meta.Registry,
@@ -123,7 +123,7 @@ func (b *Builder) fingerprint(
 	for name := range keys.Keys() {
 		id, _ := keys.Resolve(name)
 		spec, _ := keys.Spec(id)
-		entry := fmt.Sprintf("key\x00%s\x00%v\x00%s", spec.Name, spec.Kinds, spec.Group)
+		entry := fmt.Sprintf("key\x00%s\x00%v\x00%s\x00%q", spec.Name, spec.Kinds, spec.Group, spec.Choices)
 		if c := spec.Contract; c != nil {
 			entry += fmt.Sprintf("\x00%v\x00%s\x00%v", c.On, c.By, c.Severity)
 		}

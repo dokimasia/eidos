@@ -17,7 +17,9 @@
 // symbol schema. Editing a generated file fails the build, because
 // the mirror guard reruns the generator and compares. [Imports] is
 // hand-written: a package's import list is the union of its files',
-// derived here and stored nowhere.
+// derived here and stored nowhere. [CloneRef] is hand-written too: it
+// copies a reference and every node below it, because a node of a graph
+// has one place.
 //
 // # Encodings
 //

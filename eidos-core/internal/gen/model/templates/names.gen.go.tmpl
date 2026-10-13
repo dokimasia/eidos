@@ -65,3 +65,18 @@ func respellNames(
 	}
 	return nil
 }
+
+// NameOf returns the name that s declares, and false for a kind without a
+// name. It does not allocate.
+func NameOf(s symbol.Symbol) (string, bool) {
+	switch x := s.(type) {
+{{- range .Views}}
+{{- if .NameStorage}}
+	case *{{.Name}}:
+		return x.{{.NameStorage}}, true
+{{- end}}
+{{- end}}
+	default:
+		return "", false
+	}
+}

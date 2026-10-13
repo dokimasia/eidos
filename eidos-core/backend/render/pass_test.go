@@ -61,9 +61,10 @@ const (
 // file's import set, the packages it qualifies with, and the name the
 // first package binds.
 const (
-	// qualifyHelper, itemHelper and claimHelper are the vocabulary
-	// helpers [qualifying] declares.
+	// qualifyHelper, declareHelper, itemHelper and claimHelper are the
+	// vocabulary helpers [qualifying] declares.
 	qualifyHelper = "qualify"
+	declareHelper = "declare"
 	itemHelper    = "item"
 	claimHelper   = "claim"
 	// storePkg and legacyPkg are two packages whose last segment is
@@ -120,12 +121,25 @@ const (
 	// nameSkeleton is a file skeleton that spells the file's name
 	// alone, so a file of no declarations still renders bytes.
 	nameSkeleton = "{{.Name}}\n"
+	// annotationSkeleton is a file skeleton that spells the name and
+	// the first argument of each annotation of the file's source file.
+	annotationSkeleton = "{{range .Annotations}}{{.Name}} {{index .Args 0}}\n{{end}}"
+	// constraintName and constraintExpr are the name and the argument
+	// of the annotation of the fixture's source file.
+	constraintName = "go:build"
+	constraintExpr = "linux"
 )
 
 // qualifiedStruct is a struct spelling that qualifies rowName from
-// storePkg through the [qualifying] vocabulary.
-var qualifiedStruct = "type {{.Name}} " +
-	action(qualifyHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
+// storePkg through the [qualifying] vocabulary, and declaredStruct one
+// that qualifies it through the name that the package of storePkg
+// declares.
+var (
+	qualifiedStruct = "type {{.Name}} " +
+		action(qualifyHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
+	declaredStruct = "type {{.Name}} " +
+		action(declareHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
+)
 
 // The pass is the procedure every language shares: render the routed
 // files, kinds in canonical order, finalise per file and continue past
@@ -580,6 +594,26 @@ func TestPass(t *testing.T) {
 			assert.Equal(t, string(files[0].Body), storeFile+"\n", "the skeleton alone")
 		})
 
+		t.Run("passes the annotations of the source file to the skeleton", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.File = annotationSkeleton
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey))
+			files := backendtest.Files(e, p)
+			assert.Length(t, files, 1, "the unit routes into one file")
+			files[0].Annotations = symbol.Annotations{{Name: constraintName, Args: []string{constraintExpr}}}
+			sink := diag.NewSink()
+			got, err := p.Render(&plugin.RenderContext{Emit: e, Files: files, Sink: sink, Plugin: passName})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, got, 1, "the pass returns the file")
+			assert.Equal(t, string(got[0].Body), constraintName+" "+constraintExpr+"\n",
+				"the skeleton writes the annotation of the source file")
+		})
+
 		t.Run("binds the language vocabulary to the file's import set", func(t *testing.T) {
 			t.Parallel()
 
@@ -612,6 +646,30 @@ func TestPass(t *testing.T) {
 				assert.HasPrefix(t, string(f.Body), "use "+storePkg+" as "+storeLocal+"\n",
 					f.Path+" imports what it binds")
 			}
+		})
+
+		t.Run("binds an import under the name that the names of the context declare", func(t *testing.T) {
+			t.Parallel()
+
+			files := renderNamed(t, declaring)
+			assert.Equal(t, string(files[0].Body),
+				"use "+storePkg+" as "+storeDeclared+"\n"+
+					"type "+alphaName+" "+storeDeclared+"."+rowName+"\n",
+				"the import of the file binds the declared name")
+		})
+
+		t.Run("lists each package whose declared name the file read", func(t *testing.T) {
+			t.Parallel()
+
+			files := renderNamed(t, declaring)
+			assert.Equal(t, files[0].Packages, []string{storePkg}, "the file read the name of the store package")
+		})
+
+		t.Run("lists no package for a context without names", func(t *testing.T) {
+			t.Parallel()
+
+			files := renderNamed(t, nil)
+			assert.Empty(t, files[0].Packages, "the file read no declared name")
 		})
 
 		t.Run("reserves a name the file declares before the first declaration renders", func(t *testing.T) {
@@ -983,6 +1041,9 @@ func helpers(fm template.FuncMap) func(*render.ImportSet) template.FuncMap {
 //   - qualify binds a package under the package's last segment and
 //     spells a name through the bound name, or bare where the package
 //     is the file's own.
+//   - declare binds a package under the name that its package clause
+//     declares, and under its last segment where the set has no such
+//     name, and spells a name through the bound name.
 //   - item imports one declaration and spells the name it binds.
 //   - claim claims one declaration's simple name and spells the name,
 //     or the path and the name where another binding takes it.
@@ -994,6 +1055,13 @@ func qualifying(set *render.ImportSet) template.FuncMap {
 				return name
 			}
 			return local + "." + name
+		},
+		declareHelper: func(pkg, name string) string {
+			bound := path.Base(pkg)
+			if declared, known := set.Declared(pkg); known {
+				bound = declared
+			}
+			return set.Bind(pkg, bound) + "." + name
 		},
 		itemHelper: func(pkg, name string) string {
 			return set.BindItem(pkg, name, false)
@@ -1122,6 +1190,28 @@ func runPass(
 	})
 	assert.NoError(tb, err, "the pass renders every file")
 	return files, sink
+}
+
+// renderNamed renders one struct of the [binding] language that spells
+// declaredStruct, with names as the names of the context, and returns
+// the rendered files. It fails the test where the render reports a
+// finding.
+func renderNamed(tb assert.TB, names func(path string) (string, bool)) []plugin.RenderedFile {
+	tb.Helper()
+
+	l := binding()
+	l.Kinds[symbol.KindStruct] = declaredStruct
+	p, err := render.New(passName, l)
+	assert.NoError(tb, err, "the language composes")
+	e := seeded(tb, unitOf(emitter, storeKey, alphaName))
+	sink := diag.NewSink()
+	files, err := p.Render(&plugin.RenderContext{
+		Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName, Names: names,
+	})
+	assert.NoError(tb, err, "the pass renders every file")
+	coretest.AssertCodes(tb, sink)
+	assert.Length(tb, files, 1, "the unit routes into one file")
+	return files
 }
 
 // refTree returns the emitting plugin's tree containing src under

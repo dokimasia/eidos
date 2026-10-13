@@ -8,8 +8,10 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -91,6 +93,32 @@ func TestWorkspace(t *testing.T) {
 			assert.False(t, w.Kernel().IsZero(), "the handles name the kernel's keys")
 		})
 	})
+
+	t.Run("Directives", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the sealed registry of the composition", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			assert.True(t, w.Directives().Sealed(), "the registry is sealed")
+		})
+
+		t.Run("returns the schemas of the kernel and of the targets", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			var names []directive.Name
+			for s := range w.Directives().Schemas() {
+				names = append(names, s.Canonical())
+			}
+			expect.That(t, names).
+				Contains(directive.KernelOut, "the registry has the out directive of the kernel").
+				Contains(directive.Name("fixture"), "the registry has the directive of the target")
+		})
+	})
 }
 
 // TestWorkspaceAllocs checks that the accessors allocate nothing,
@@ -104,6 +132,9 @@ func TestWorkspaceAllocs(t *testing.T) {
 	var zero bool
 	assert.MaxAllocs(t, func() { zero = w.Kernel().IsZero() }, 0, "Kernel allocates nothing")
 	assert.False(t, zero, "Kernel returns the registered keys")
+	var registry *directive.Registry
+	assert.MaxAllocs(t, func() { registry = w.Directives() }, 0, "Directives allocates nothing")
+	assert.NotNil(t, registry, "Directives returns the registry")
 }
 
 // BenchmarkWorkspace measures the accessors of a built workspace.
@@ -129,6 +160,16 @@ func BenchmarkWorkspace(b *testing.B) {
 			got = w.Kernel()
 		}
 		assert.False(b, got.IsZero(), "Kernel returns the registered keys")
+	})
+
+	b.Run("Directives", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got *directive.Registry
+		for c.Loop() {
+			got = w.Directives()
+		}
+		assert.NotNil(b, got, "Directives returns the registry")
 	})
 }
 

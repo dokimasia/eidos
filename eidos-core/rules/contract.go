@@ -48,8 +48,12 @@ type SourceRules interface {
 
 	// Builtin projects a named reference the resolution step left
 	// without a target: a builtin, a well-known type, an external.
+	// The kernel's fold also passes it an inline reference, which it
+	// classifies where the language gives the inline body the shape of
+	// another type, such as Go's interface{} as the top type.
 	// It returns [symbol.FormOpaque] for a spelling it cannot
-	// classify. Where it returns a structural form without children
+	// classify, and the fold keeps an inline reference inline then.
+	// Where it returns a structural form without children
 	// for a reference with type arguments, the kernel's fold takes the
 	// folded arguments as the form's children.
 	Builtin(ref *node.TypeRef, v View) TypeShape
@@ -71,14 +75,16 @@ type SourceRules interface {
 	// where the language has no spelling for it.
 	ZeroValue(ref *node.TypeRef, v View) (emit.Value, bool)
 
-	// LiteralFor turns text that already went through the
-	// language's quoting into a value of a type, and reports false
-	// where the text cannot be one.
-	LiteralFor(f *node.File, ref *node.TypeRef, text string, v View) (emit.Value, bool)
+	// LiteralFor reads text in the source language as a value of a
+	// type, and reports false where the text is no such value. The text
+	// can be the name of a declaration in the scope s, where the
+	// language has values of that form. [View.ScopeOf] returns the scope
+	// of a declaration.
+	LiteralFor(s Scope, ref *node.TypeRef, text string, v View) (emit.Value, bool)
 }
 
-// Scope is where a spelling is read: the subject the spelling is
-// written on, and the file whose imports qualify it.
+// Scope is the place where a spelling is read. Subject is the declaration
+// that has the spelling, and the imports of File qualify the spelling.
 type Scope struct {
 	Subject symbol.Identity
 	File    *node.File
@@ -405,6 +411,6 @@ func (absent) ZeroValue(*node.TypeRef, View) (emit.Value, bool) {
 }
 
 // LiteralFor reports false for every text.
-func (absent) LiteralFor(*node.File, *node.TypeRef, string, View) (emit.Value, bool) {
+func (absent) LiteralFor(Scope, *node.TypeRef, string, View) (emit.Value, bool) {
 	return emit.Value{}, false
 }

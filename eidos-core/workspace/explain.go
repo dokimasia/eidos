@@ -144,6 +144,11 @@ type Explanation struct {
 	// started, minus two seconds.
 	Generation string
 	Recorded   time.Time
+	// Declarations lists the declarations that the target names, as the
+	// recorded load contains them: each declaration that an identity
+	// matches, and each declaration at the position of a key. It is empty for
+	// a path and for a code at a position.
+	Declarations []node.Declaration
 	// Files lists the generated files of the target. For a path, it lists the
 	// file at the path. For a declaration, it lists the files that the plans
 	// generated from the declaration.
@@ -166,6 +171,16 @@ type ExplainedFile struct {
 	// findings that the render reported for the group.
 	Contributors []plugin.MatchKey
 	Findings     []diag.Diag
+	// Routes lists the route of each unit of the file, in unit order.
+	Routes []ExplainedRoute
+}
+
+// ExplainedRoute is the route of one unit of an explained file: the unit
+// as the layout wrote it into the file, and the inputs of the layout that
+// placed it.
+type ExplainedRoute struct {
+	Unit  plugin.UnitRef
+	Route plugin.Route
 }
 
 // ExplainedClaim is one claim on a fact.
@@ -212,24 +227,27 @@ type ExplainedExecution struct {
 // The explanation depends on the form of t:
 //
 //   - For a path, it contains the manifest entry of the file, the
-//     contributors and the findings of the group of the file, and the
-//     records of the group and of each contributor.
-//   - For an identity, it contains the claims on the facts of each
-//     declaration that matches the identity, the records that read the
-//     declaration, and the files that the plans generated from it.
-//   - For a key at a position, it contains the claims on the fact of each
-//     declaration at the position, and the records that read the fact.
+//     contributors, the findings and the routes of the group of the file,
+//     and the records of the group and of each contributor.
+//   - For an identity, it contains each declaration of the recorded load
+//     that matches the identity, the claims on the facts of each such
+//     declaration, the records that read the declaration, and the files
+//     that the plans generated from it with their routes.
+//   - For a key at a position, it contains each declaration at the
+//     position, the claims on the fact of each, and the records that read
+//     the fact.
 //   - For a code at a position, it contains each record, audit finding and
 //     load region that reported a finding of the code at the position.
 //
 // The explanation of a target that the generation does not record has no
-// files, claims or records.
+// declarations, files, claims or records.
 //
 // A generation stores each read as the hash of an edge. Explain computes the
 // hashes of these edges and compares them with the reads of each record:
 //
 //   - the declaration, package and fact edges of the subject of the record
-//     and of each target declaration
+//     and of each target declaration, and the declaration edge of the
+//     package of each
 //   - the edge of each kind
 //   - the edge of each directive name in the recorded load
 //   - the export edge of each plan
@@ -353,7 +371,9 @@ func (x *explainer) path(at string) error {
 	if err != nil {
 		return err
 	}
-	x.out.Files = append(x.out.Files, ExplainedFile{Entry: a.Entry, Contributors: g.Contributors, Findings: g.Findings})
+	x.out.Files = append(x.out.Files, ExplainedFile{
+		Entry: a.Entry, Contributors: g.Contributors, Findings: g.Findings, Routes: routesOf(g, at),
+	})
 	if !grouped {
 		return nil
 	}
@@ -375,13 +395,14 @@ func (x *explainer) path(at string) error {
 }
 
 // identity explains each declaration that an identity names. It adds the
-// claims on the facts of the declaration, the records that read it, and the
+// declaration, the claims on its facts, the records that read it, and the
 // files that the plans generated from it.
 func (x *explainer) identity(id symbol.Identity) error {
-	subjects, err := x.resolve(id)
+	subjects, declared, err := x.resolve(id)
 	if err != nil {
 		return err
 	}
+	x.out.Declarations = append(x.out.Declarations, declared...)
 	for _, s := range subjects {
 		for name := range x.w.keys.Keys() {
 			x.claims(s, name)
@@ -399,7 +420,8 @@ func (x *explainer) identity(id symbol.Identity) error {
 }
 
 // fact explains the fact of a registered key on each declaration at a
-// position. It adds the claims on the fact and the records that read it.
+// position. It adds the declaration, the claims on the fact and the records
+// that read it.
 func (x *explainer) fact(key meta.KeyName, at position.Pos) error {
 	var subjects []symbol.Identity
 	err := x.declarations(func(u load.UnitRecord) bool {
@@ -408,6 +430,7 @@ func (x *explainer) fact(key meta.KeyName, at position.Pos) error {
 		p := d.Position()
 		if p.File == at.File && p.Line == at.Line && (at.Col == 0 || p.Col == at.Col) {
 			subjects = append(subjects, d.Identity())
+			x.out.Declarations = append(x.out.Declarations, d)
 		}
 	})
 	if err != nil {
@@ -457,35 +480,42 @@ func (x *explainer) finding(code diag.Code, at position.Pos) error {
 	return nil
 }
 
-// resolve returns the declarations that an identity names. An identity with
-// a kind names one declaration, the identity itself. An identity without a
-// kind names each declaration of the recorded load whose other fields are
-// equal, and resolve finds these declarations in the regions of the package
-// of the identity. resolve reads the identity again first where the
-// recorded load does not contain its package, as [explainer.respelled]
-// states.
-func (x *explainer) resolve(id symbol.Identity) ([]symbol.Identity, error) {
+// resolve returns the identities of the declarations that an identity
+// names, and the declarations that the recorded load contains of them. An
+// identity with a kind names one declaration, the identity itself, also
+// where the recorded load does not contain it. An identity without a kind
+// names each declaration of the recorded load whose other fields are
+// equal. resolve finds the declarations in the regions of the package of
+// the identity, and reads the identity again first where the recorded load
+// does not contain its package, as [explainer.respelled] states.
+func (x *explainer) resolve(id symbol.Identity) ([]symbol.Identity, []node.Declaration, error) {
 	var out []symbol.Identity
+	var declared []node.Declaration
 	for _, c := range x.respelled(id) {
-		if c.Kind != symbol.KindInvalid {
-			out = append(out, c)
-			continue
-		}
+		kinded := c.Kind != symbol.KindInvalid
 		pkg := c.PackageIdentity()
+		found := false
 		err := x.declarations(func(u load.UnitRecord) bool {
 			return slices.Contains(u.Summary.Packages, pkg)
 		}, func(d node.Declaration) {
 			candidate := d.Identity()
-			candidate.Kind = symbol.KindInvalid
+			if !kinded {
+				candidate.Kind = symbol.KindInvalid
+			}
 			if candidate == c {
 				out = append(out, d.Identity())
+				declared = append(declared, d)
+				found = true
 			}
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if kinded && !found {
+			out = append(out, c)
 		}
 	}
-	return out, nil
+	return out, declared, nil
 }
 
 // respelled returns the identities whose spelling is the spelling of id.
@@ -584,11 +614,24 @@ func (x *explainer) groupFiles(g state.Group) error {
 		}
 		if found {
 			x.out.Files = append(x.out.Files, ExplainedFile{
-				Entry: a.Entry, Contributors: g.Contributors, Findings: g.Findings,
+				Entry: a.Entry, Contributors: g.Contributors, Findings: g.Findings, Routes: routesOf(g, f),
 			})
 		}
 	}
 	return nil
+}
+
+// routesOf returns the routes of the units of one file of a group, in the
+// order of the routes of the group. It returns nil for a group without a
+// route of the file.
+func routesOf(g state.Group, file string) []ExplainedRoute {
+	var out []ExplainedRoute
+	for _, r := range g.Routes {
+		if r.File == file {
+			out = append(out, ExplainedRoute{Unit: r.Unit, Route: r.Route})
+		}
+	}
+	return out
 }
 
 // readersOf returns the records whose reads include an edge, in the order of
@@ -695,6 +738,7 @@ func (x *explainer) identify(h state.EdgeHash, subjects []symbol.Identity) (Read
 			pkg := s.PackageIdentity()
 			edges = map[state.EdgeHash]Read{state.DeclarationEdge(s): {Grain: ReadDeclaration, Subject: s}}
 			edges[state.PackageEdge(pkg)] = Read{Grain: ReadPackage, Subject: pkg}
+			edges[state.DeclarationEdge(pkg)] = Read{Grain: ReadDeclaration, Subject: pkg}
 			for name := range x.w.keys.Keys() {
 				edges[state.FactEdge(s, name)] = Read{Grain: ReadFact, Subject: s, Key: name}
 			}

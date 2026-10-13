@@ -61,15 +61,16 @@ const (
 	invocationsAllocs = 9
 	// readersAllocs is one edge's readers: the list of records.
 	readersAllocs = 1
-	// groupAllocs is one group's lookup: the decoder, the plan, the four
-	// lists of units, files, contributors and reads, the strings of the
-	// key unit and of the listed unit, the file's path, and the plugin and
-	// the subject strings of the contributor's match. A unit decodes five
-	// longer strings, and a subject four.
-	groupAllocs = 22
+	// groupAllocs is one group's lookup: the decoder, the plan, the five
+	// lists of units, files, contributors, reads and routes, the strings of
+	// the key unit, of the listed unit and of the unit of the route, the
+	// file's path twice, and the plugin and the subject strings of the
+	// contributor's match. A unit decodes five longer strings, and a subject
+	// four.
+	groupAllocs = 29
 	// groupsAllocs is the ceiling of Groups over one row. It adds the list
 	// of records to the allocations of one group's lookup.
-	groupsAllocs = 23
+	groupsAllocs = 30
 )
 
 // The record cases' carrier and finding, and a host unit of the plan.

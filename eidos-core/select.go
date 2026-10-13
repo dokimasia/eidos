@@ -209,7 +209,7 @@ func (c *phaseCall) admitted(fr *flatRule, id symbol.Identity) (symbol.Symbol, b
 	if !held || s.Kind() != fr.kind {
 		return nil, false
 	}
-	if _, names := s.(node.Declaration); !names || !c.admits(fr, id) {
+	if _, names := s.(node.Declaration); !names || !c.admits(fr, id, s) {
 		return nil, false
 	}
 	return s, true

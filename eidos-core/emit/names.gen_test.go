@@ -21,6 +21,9 @@ import (
 // subject offers: each subject's own name and one per descent field.
 const namesVisits = 0 + 4 + 5 + 1 + 1 + 4 + 1 + 4 + 2 + 1 + 1 + 1 + 5 + 5 + 2 + 1
 
+// namedKinds is how many kinds declare a name of their own.
+const namedKinds = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+
 // Every declared name respells through the traversal: each kind's
 // own name under its host and visibility, with the declaration it
 // belongs to, and one name per descent field.
@@ -1275,10 +1278,142 @@ func TestNames(t *testing.T) {
 			assert.NoError(t, err, "nothing to walk is not a fault")
 		})
 	})
+
+	t.Run("NameOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the name of kind Function", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Function{Name: "alpha"})
+			assert.True(t, named, "kind Function has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Method", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Method{Name: "alpha"})
+			assert.True(t, named, "kind Method has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Param", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Param{Name: "alpha"})
+			assert.True(t, named, "kind Param has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Return", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Return{Name: "alpha"})
+			assert.True(t, named, "kind Return has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Enum", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Enum{Name: "alpha"})
+			assert.True(t, named, "kind Enum has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind EnumVariant", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&EnumVariant{Name: "alpha"})
+			assert.True(t, named, "kind EnumVariant has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Sum", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Sum{Name: "alpha"})
+			assert.True(t, named, "kind Sum has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind SumVariant", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&SumVariant{Name: "alpha"})
+			assert.True(t, named, "kind SumVariant has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Field", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Field{Name: "alpha"})
+			assert.True(t, named, "kind Field has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Variable", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Variable{Name: "alpha"})
+			assert.True(t, named, "kind Variable has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Constant", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Constant{Name: "alpha"})
+			assert.True(t, named, "kind Constant has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Struct", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Struct{Name: "alpha"})
+			assert.True(t, named, "kind Struct has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Interface", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Interface{Name: "alpha"})
+			assert.True(t, named, "kind Interface has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind Alias", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&Alias{Name: "alpha"})
+			assert.True(t, named, "kind Alias has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("returns the name of kind TypeParam", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&TypeParam{Name: "alpha"})
+			assert.True(t, named, "kind TypeParam has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+
+		t.Run("reports false for a nil symbol", func(t *testing.T) {
+			t.Parallel()
+
+			_, named := NameOf(nil)
+			assert.False(t, named, "a nil symbol has no name")
+		})
+	})
 }
 
 // The traversal allocates nothing in the ordinary run, which runs no
-// benchmark, when the hook returns each name as it is.
+// benchmark, when the hook returns each name as it is, and NameOf
+// allocates nothing.
 func TestNamesAllocs(t *testing.T) {
 	subjects := namesSubjects()
 	var visits int
@@ -1290,11 +1425,14 @@ func TestNamesAllocs(t *testing.T) {
 	}, 0, "RespellNames allocates nothing")
 	assert.NoError(t, err, "every traversal completes")
 	assert.Equal(t, visits, namesVisits, "RespellNames offers every declared name")
+	var named int
+	assert.MaxAllocs(t, func() { named = countNamed(subjects) }, 0, "NameOf allocates nothing")
+	assert.Equal(t, named, namedKinds, "NameOf returns the name of every kind that declares one")
 }
 
 // BenchmarkNames measures the respell traversal over every named
 // kind, with a hook that returns each name as it is, so the number is
-// the traversal's own.
+// the traversal's own. It also measures NameOf over the same subjects.
 func BenchmarkNames(b *testing.B) {
 	subjects := namesSubjects()
 
@@ -1311,6 +1449,18 @@ func BenchmarkNames(b *testing.B) {
 			}
 			assert.NoError(b, err, "every traversal completes")
 			assert.Equal(b, visits, namesVisits, "RespellNames offers every declared name")
+		})
+	})
+
+	b.Run("NameOf", func(b *testing.B) {
+		b.Run("every named kind", func(b *testing.B) {
+			var named int
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				named = countNamed(subjects)
+			}
+			assert.Equal(b, named, namedKinds, "NameOf returns the name of every kind that declares one")
 		})
 	})
 }
@@ -1345,6 +1495,18 @@ func respellEvery(
 		}
 	}
 	return nil
+}
+
+// countNamed returns how many of the subjects NameOf returns a name
+// for.
+func countNamed(subjects []symbol.Symbol) int {
+	named := 0
+	for _, s := range subjects {
+		if _, held := NameOf(s); held {
+			named++
+		}
+	}
+	return named
 }
 
 // namesSubjects returns a subject of every kind that declares a name

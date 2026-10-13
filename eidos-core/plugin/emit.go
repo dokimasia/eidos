@@ -82,6 +82,9 @@ type Unit struct {
 	// Tag selects the declared family, and "" selects the primary family.
 	Tag string
 	Per Cardinality
+	// Route is how the layout placed the unit. It is zero for a unit that
+	// the layout has not placed, such as a unit of the emit store.
+	Route Route
 	// Word is the word of the family. The target spells its join and its
 	// extension at render.
 	Word string

@@ -422,7 +422,7 @@ func populateOf(f fieldView, ordinal int) string {
 		return target + ` = []string{"` + f.Name + `", "", "` + f.Name + `"}`
 	case codecAnnotations:
 		return target + ` = symbol.Annotations{{Name: "` + f.Name +
-			`", Args: []string{"x", "y"}}, {Name: "bare"}}`
+			`", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}`
 	}
 	return ""
 }

@@ -134,6 +134,18 @@ func (o *opener) opened() []*output.Mem {
 // helper.
 const wordHelper = "word"
 
+// clauseHelper is the name of the helper through which the struct template
+// of the clause printer writes the name that a package declares.
+const clauseHelper = "clause"
+
+// cacheClause is the name that the package clause of the cache package
+// declares in the cases of the declared names, and renamedClause the name
+// that an edit gives it.
+const (
+	cacheClause   = "caching"
+	renamedClause = "cached"
+)
+
 // alphaFile is the source file of Alpha in the routing fixture, in the
 // directory of its package.
 const alphaFile = coretest.StorePath + "/alpha.go"
@@ -261,6 +273,33 @@ func TestWrite(t *testing.T) {
 			assert.Contains(t, body, "type ForAlpha struct{}", "the shared helper spells the name")
 		})
 
+		t.Run("renders the declared name of a package outside the sources of the plan", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			cache := coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Beta"))
+			cache.Name = cacheClause
+			cache.Files[0].Path = coretest.CachePath + "/beta.go"
+			assert.NoError(t, g.AddPackage(cache), "the cache package is admitted")
+			_, err := clauseWriting(t, o.open, coretest.CachePath).Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			body := string(o.opened()[0].Files()[coretest.StorePath+"/gen.txt"])
+			assert.Contains(t, body, "type ForAlpha "+cacheClause,
+				"the render reads the name that the package clause of the cache declares")
+		})
+
+		t.Run("renders no declared name for a package that the run did not load", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			_, err := clauseWriting(t, o.open, coretest.CachePath).Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			body := string(o.opened()[0].Files()[coretest.StorePath+"/gen.txt"])
+			assert.Contains(t, body, "type ForAlpha \n", "the render has no name for the cache package")
+		})
+
 		t.Run("discards the staging after a refused write", func(t *testing.T) {
 			t.Parallel()
 
@@ -377,6 +416,55 @@ func vocal(tb assert.TB, target plugin.Target) plugin.Backend {
 		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
 		Coverage(render.Coverage{Facts: totalCoverage()}).
 		Build()
+}
+
+// clausePrinter returns a kit backend of target whose struct template
+// writes the name that the package of path declares, as the import set of
+// the file reads it, after the name of the struct. Each call returns a new
+// backend.
+func clausePrinter(target plugin.Target, path string) plugin.Backend {
+	return backend.New("clauses", target, plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} {{" + clauseHelper + "}}\n",
+		}).
+		Funcs(func(set *render.ImportSet) template.FuncMap {
+			return template.FuncMap{clauseHelper: func() string {
+				name, _ := set.Declared(path)
+				return name
+			}}
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// clauseWriting returns a composition whose one plan mirrors the structs
+// of the store package into the output that open returns. The plan
+// renders through the clause printer of the fixtures' language, which
+// writes the name that the package of path declares.
+func clauseWriting(tb assert.TB, open func() (output.Sink, error), path string) *workspace.Workspace {
+	tb.Helper()
+
+	target := plugin.Target(coretest.Lang)
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(stamper("noter", quiet)).
+		Targets(target).
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirror("mirror")},
+			Backend:    clausePrinter(target, path),
+			Sources:    workspace.Sources{Packages: []string{coretest.StorePath}},
+		}).
+		Output(open).
+		Build()
+	assert.NoError(tb, err, "the clause writing composition composes")
+	return w
 }
 
 // shouting returns a composition whose one plan renders through the

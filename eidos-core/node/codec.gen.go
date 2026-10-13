@@ -573,6 +573,7 @@ func (w *binaryWriter) encodeImport(x *Import) {
 	}
 	w.str(x.Default)
 	w.boolean(x.Wildcard)
+	w.strs(x.Modules)
 }
 
 // decodeImport reads the fields of one Import, the kind in front
@@ -593,6 +594,7 @@ func (r *binaryReader) decodeImport() *Import {
 	}
 	x.Default = r.str()
 	x.Wildcard = r.boolean()
+	x.Modules = r.strs()
 	return x
 }
 
@@ -614,6 +616,7 @@ func (w *binaryWriter) encodeExport(x *Export) {
 	}
 	w.str(x.Default)
 	w.boolean(x.Wildcard)
+	w.strs(x.Modules)
 }
 
 // decodeExport reads the fields of one Export, the kind in front
@@ -632,6 +635,7 @@ func (r *binaryReader) decodeExport() *Export {
 	}
 	x.Default = r.str()
 	x.Wildcard = r.boolean()
+	x.Modules = r.strs()
 	return x
 }
 

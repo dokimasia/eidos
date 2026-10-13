@@ -78,18 +78,19 @@ const (
 	//     looked up
 	//   - one decoder for the reads before, and one for the records that the
 	//     commit keeps
-	//   - the fields and the reads of each prior entry, decoded once for the
-	//     reads before and once for the reads that the commit keeps
+	//   - the fields and the reads of each prior entry, and the routes of a
+	//     group, decoded once for the reads before and once for the reads
+	//     that the commit keeps
 	//   - the lists of the reads before and after
 	//   - the checks table, which the record reads whole
-	warmRecordPhasesAllocs = 53
+	warmRecordPhasesAllocs = 55
 	// warmPhaseCommitAllocs is the ceiling of that record's completion into
 	// a commit, which changes no row: the buffers, the lists of records and
 	// reads and the rows of the record tables, one decoder for the records
-	// that the commit keeps, and the lists and the reads of each prior entry
-	// that the commit keeps. The entries' strings are those that the
-	// preparation decoded, and the commit changes no readers row.
-	warmPhaseCommitAllocs = 24
+	// that the commit keeps, and the lists, the reads and the routes of each
+	// prior entry that the commit keeps. The entries' strings are those that
+	// the preparation decoded, and the commit changes no readers row.
+	warmPhaseCommitAllocs = 25
 )
 
 // phaseKeys are the keys the recorded fact stores claim: one of each

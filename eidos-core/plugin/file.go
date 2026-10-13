@@ -21,6 +21,14 @@ type File struct {
 	// routing split keeps its plugin, family and key, and contains
 	// only the declarations written in this file.
 	Units []Unit
+	// Source is the identity of the source file that every unit of the
+	// file derives from, and the zero identity for a file of a package, of
+	// a plan, or of two or more source files.
+	Source symbol.Identity
+	// Annotations are the annotations of the source file, such as its
+	// build constraint, which the target writes where its language
+	// carries one over to a file that derives from the source.
+	Annotations symbol.Annotations
 }
 
 // FileSpeller is a target's filename half: how a unit splits into the

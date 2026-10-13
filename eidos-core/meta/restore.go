@@ -101,9 +101,9 @@ func (f *Facts) restoreBag(id symbol.Identity, b *bag) {
 		case !registered:
 			f.damaged(fmt.Errorf("meta: restore the claims on %s: %s names a key nothing registered", id, sc.Key))
 			continue
-		case !sc.Drop && reflect.TypeOf(sc.Value) != f.registry.typeOf(k):
+		case !sc.Drop && reflect.TypeOf(sc.Value) != f.registry.Type(k):
 			f.damaged(fmt.Errorf("meta: restore the claims on %s: %s is a %s key, and the value is a %T",
-				id, sc.Key, f.registry.typeOf(k), sc.Value))
+				id, sc.Key, f.registry.Type(k), sc.Value))
 			continue
 		}
 		b.key(k).add(entry)

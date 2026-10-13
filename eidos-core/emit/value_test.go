@@ -21,8 +21,12 @@ const (
 	pointType = "Point"
 )
 
-// unix is the function the call fixtures name.
-var unix = symbol.Identity{Lang: "golang", Package: "time", Name: "Unix", Kind: symbol.KindFunction}
+// unix is the function of the call fixtures, and second is the constant of
+// the name fixtures.
+var (
+	unix   = symbol.Identity{Lang: "golang", Package: "time", Name: "Unix", Kind: symbol.KindFunction}
+	second = symbol.Identity{Lang: "golang", Package: "time", Name: "Second", Kind: symbol.KindConstant}
+)
 
 // The value tree is what a sample crosses a package boundary as,
 // so its shape, its spellings and its codec are pinned here.
@@ -42,6 +46,7 @@ func TestValue(t *testing.T) {
 			{name: "returns composite for ValueComposite", give: emit.ValueComposite, want: "composite"},
 			{name: "returns call for ValueCall", give: emit.ValueCall, want: "call"},
 			{name: "returns address for ValueAddress", give: emit.ValueAddress, want: "address"},
+			{name: "returns name for ValueName", give: emit.ValueName, want: "name"},
 			{name: "returns the number of a kind nothing declares", give: emit.ValueKind(9), want: "9"},
 		}
 		for _, tt := range tests {
@@ -225,6 +230,17 @@ func TestValue(t *testing.T) {
 		})
 	})
 
+	t.Run("Name", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the name of the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, emit.Name(second), emit.Value{Kind: emit.ValueName, Callee: second},
+				"the identity of the declaration is the only field besides the kind")
+		})
+	})
+
 	t.Run("JSON", func(t *testing.T) {
 		t.Parallel()
 
@@ -235,6 +251,7 @@ func TestValue(t *testing.T) {
 			in := emit.Address(emit.Composite(ref,
 				emit.ValueField{Name: "X", Value: emit.Conversion(ref, forty())},
 				emit.ValueField{Name: "Y", Value: emit.Number(emit.LiteralFloat, "2.5", 32)},
+				emit.ValueField{Name: "Z", Value: emit.Name(second)},
 			))
 			assert.RoundTrip(t, func(v emit.Value) ([]byte, error) { return json.Marshal(v) },
 				func(b []byte) (emit.Value, error) {
@@ -277,6 +294,8 @@ func TestValueAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = emit.Call(unix, value) }, 1, "Call allocates its list of arguments")
 	assert.MaxAllocs(t, func() { got = emit.Address(value) }, 1, "Address allocates the value it points at")
 	assert.Equal(t, *got.Inner, value, "Address points at the value given")
+	assert.MaxAllocs(t, func() { got = emit.Name(second) }, 0, "Name allocates nothing")
+	assert.Equal(t, got.Callee, second, "Name returns the identity given")
 }
 
 // BenchmarkValue measures the kinds' spellings, the zero question, and
@@ -416,6 +435,16 @@ func BenchmarkValue(b *testing.B) {
 			got = emit.Address(value)
 		}
 		assert.Equal(b, *got.Inner, value, "Address points at the value")
+	})
+
+	b.Run("Name", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got emit.Value
+		for c.Loop() {
+			got = emit.Name(second)
+		}
+		assert.Equal(b, got.Callee, second, "Name returns the identity")
 	})
 }
 

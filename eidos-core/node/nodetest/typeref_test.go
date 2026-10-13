@@ -226,6 +226,30 @@ func TestTypeRef(t *testing.T) {
 			expect.Equal(t, ref.Fields, fields, "the body keeps the list of its fields", assert.ByIdentity())
 			expect.Equal(t, ref.Methods, methods, "the body keeps the list of its methods", assert.ByIdentity())
 		})
+
+		t.Run("returns an inline body with copies of the types of its members as children", func(t *testing.T) {
+			t.Parallel()
+
+			members := []*node.TypeRef{
+				nodetest.Named("A"), nodetest.Named("B"), nodetest.Named("C"),
+				nodetest.Named("D"), nodetest.Named("E"), nodetest.Named("F"),
+			}
+			ref := nodetest.Inline([]*node.Field{{Name: fieldName, Type: members[0]}, {Name: "untyped"}},
+				[]*node.Method{{
+					Name: methodName,
+					TypeParams: []*node.TypeParam{{
+						Name: "T", Bounds: []*node.TypeRef{members[1]}, Default: members[2],
+					}},
+					Receiver: &node.Param{Name: "this", Type: members[3]},
+					Params:   []*node.Param{{Name: "p", Type: members[4]}, {Name: "untyped"}},
+					Returns:  []*node.Return{{Type: members[5]}, {}},
+				}})
+			assert.Equal(t, ref.Elems, members,
+				"each field, then the bounds, the default, the receiver, the parameters and the results of each method")
+			for i, child := range ref.Elems {
+				expect.NotEqual(t, child, members[i], "a child is a copy of its type", assert.ByIdentity())
+			}
+		})
 	})
 }
 

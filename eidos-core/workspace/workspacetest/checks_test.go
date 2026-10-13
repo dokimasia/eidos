@@ -401,6 +401,24 @@ func TestChecks(t *testing.T) {
 			assert.Equal(t, coretest.Contracts(records), []string{builds},
 				"the rejection names the composition's own error")
 		})
+
+		t.Run("passes a composition that configures from the config file of its tree", func(t *testing.T) {
+			t.Parallel()
+
+			configured := fixture(t)
+			configured.Tree = fstest.MapFS{
+				configFile: {Data: []byte(configBody)},
+				rowFile:    {Data: []byte(rowSource)},
+			}
+			compose := configured.Compose
+			configured.Compose = func(root string) (*workspace.Builder, error) {
+				if _, err := os.Stat(filepath.Join(root, configFile)); err != nil {
+					return nil, err
+				}
+				return compose(root)
+			}
+			workspacetest.AssertCycleRefused(t, configured, t.TempDir())
+		})
 	})
 
 	t.Run("AssertSwept", func(t *testing.T) {

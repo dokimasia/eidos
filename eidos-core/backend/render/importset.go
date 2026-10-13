@@ -49,6 +49,12 @@ type Entry struct {
 // took for a declaration of the file is never bound. The render
 // binds in canonical declaration order, so two runs bind alike.
 //
+// A set can have the names that the package clauses of a run declare.
+// [ImportSet.SetNames] sets them, and [ImportSet.Declared] returns the
+// name of one package and records its path. [ImportSet.Packages] returns
+// the recorded paths, because the file depends on the names of those
+// packages.
+//
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
 type ImportSet struct {
@@ -66,6 +72,14 @@ type ImportSet struct {
 	// items maps one declaration of a path to the name it is bound
 	// under.
 	items map[binding]string
+	// names returns the name that the package clause of a path declares,
+	// and is nil for a set without names.
+	names func(path string) (string, bool)
+	// declared maps each path that Declared looked up in the file to its
+	// declared name, and to the empty name where names has none. known
+	// counts the paths with a name.
+	declared map[string]string
+	known    int
 }
 
 // binding is what a local name refers to: a whole package, one
@@ -93,6 +107,46 @@ func (s *ImportSet) Home() string { return s.home }
 // The render pass names it for every file; an entry under it
 // records nothing.
 func (s *ImportSet) SetHome(path string) { s.home = path }
+
+// SetNames sets the function that returns the name that the package
+// clause of a path declares. The function reports false for a path that
+// the run did not load. The render pass sets the names of its context on
+// the set of each worker. A Reset keeps the names, and a nil function
+// removes them.
+func (s *ImportSet) SetNames(names func(path string) (string, bool)) { s.names = names }
+
+// Declared returns the name that the package clause of path declares. It
+// reports false where the set has no names, and where the names have no
+// name for path. A path with a name joins the packages of the file, and
+// [ImportSet.Packages] returns them. A language that binds a package under
+// its declared name calls Declared before [ImportSet.Bind]. Declared calls
+// the names once for each path of a file.
+//
+// # Allocation contract
+//
+// Declared allocates nothing for a set without names, and nothing for a
+// path that the file looked up before. The first lookup of a set allocates
+// the map of its lookups, and a Reset keeps the map.
+func (s *ImportSet) Declared(path string) (string, bool) {
+	if s.names == nil {
+		return "", false
+	}
+	if name, looked := s.declared[path]; looked {
+		return name, name != ""
+	}
+	var name string
+	if declared, known := s.names(path); known {
+		name = declared
+	}
+	if s.declared == nil {
+		s.declared = map[string]string{}
+	}
+	s.declared[path] = name
+	if name != "" {
+		s.known++
+	}
+	return name, name != ""
+}
 
 // Reserve takes names for the declarations of the file itself, so
 // no import binds one of them. The render pass reserves every
@@ -325,6 +379,23 @@ func (s *ImportSet) Entries() []Entry {
 	return entries
 }
 
+// Packages returns every path whose declared name the file read through
+// [ImportSet.Declared], distinct and sorted, and nil where the file read
+// none. It allocates the list it returns, and nothing for nil.
+func (s *ImportSet) Packages() []string {
+	if s.known == 0 {
+		return nil
+	}
+	paths := make([]string, 0, s.known)
+	for p, name := range s.declared {
+		if name != "" {
+			paths = append(paths, p)
+		}
+	}
+	slices.Sort(paths)
+	return paths
+}
+
 // boolCmp orders false before true.
 func boolCmp(a, b bool) int {
 	switch {
@@ -347,13 +418,16 @@ func (s *ImportSet) Len() int {
 	return len(paths)
 }
 
-// Reset drops every entry, binding and reservation and keeps the
-// storage, so the pass reuses one set across a call's files.
+// Reset drops every entry, binding, reservation and declared name that
+// the file read, and keeps the storage and the names, so the pass reuses
+// one set across a call's files.
 func (s *ImportSet) Reset() {
 	clear(s.entries)
 	clear(s.locals)
 	clear(s.packages)
 	clear(s.items)
+	clear(s.declared)
+	s.known = 0
 	s.journal = s.journal[:0]
 }
 

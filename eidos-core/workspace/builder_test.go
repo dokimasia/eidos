@@ -139,6 +139,55 @@ func TestBuilder(t *testing.T) {
 		})
 	})
 
+	t.Run("Plugins", func(t *testing.T) {
+		t.Parallel()
+
+		// names returns the name of each plugin of b, in order.
+		names := func(b *workspace.Builder) []plugin.ID {
+			plugins := b.Plugins()
+			out := make([]plugin.ID, 0, len(plugins))
+			for _, p := range plugins {
+				out = append(out, p.Name())
+			}
+			return out
+		}
+
+		t.Run("returns the plugins in the order of the roster", func(t *testing.T) {
+			t.Parallel()
+
+			b := workspace.New().
+				Checks(&recordingCheck{name: "stubbed"}).
+				Plans(planTo("plan", "fixture", mirror("mirror"))).
+				Annotators(stamper("noter", quiet))
+			assert.Equal(t, names(b), []plugin.ID{"noter", "mirror", "fixture" + printerSuffix, "stubbed"},
+				"the annotators come first, then the generators and the backend of each plan, then the checks")
+		})
+
+		t.Run("returns a plugin of two plans once", func(t *testing.T) {
+			t.Parallel()
+
+			gen := mirror("mirror")
+			b := workspace.New().Plans(planTo("first", "fixture", gen), planTo("second", "fixture", gen))
+			assert.Equal(t, names(b), []plugin.ID{"mirror", "fixture" + printerSuffix},
+				"the plans share the generator and the backend")
+		})
+
+		t.Run("leaves out a generator that the config adds", func(t *testing.T) {
+			t.Parallel()
+
+			b := workspace.New().Plans(planTo("plan", "fixture", mirror("mirror"))).Config(workspace.Config{
+				Plans: map[string]workspace.PlanConfig{"plan": {Generators: []plugin.Generator{mirror("added")}}},
+			})
+			assert.NotContains(t, names(b), plugin.ID("added"), "Plugins does not apply the config")
+		})
+
+		t.Run("returns nothing for an empty composition", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, workspace.New().Plugins(), "the composition declares no plugin")
+		})
+	})
+
 	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
 

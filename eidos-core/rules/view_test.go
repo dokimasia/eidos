@@ -63,6 +63,13 @@ type widths struct {
 	rules.SourceRules
 }
 
+// scoped is the scripted rules with a LiteralFor that reads every text as
+// the name of the subject of its scope. It reads nothing in a scope
+// without a file, so a case proves the scope that a caller passes.
+type scoped struct {
+	rules.SourceRules
+}
+
 // Builtin classifies int64 and float32 at their widths.
 func (w widths) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	switch ref.Spelling {
@@ -73,6 +80,15 @@ func (w widths) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	default:
 		return w.SourceRules.Builtin(ref, v)
 	}
+}
+
+// LiteralFor returns the name of the subject of s, and reports false for a
+// scope without a file.
+func (scoped) LiteralFor(s rules.Scope, _ *node.TypeRef, _ string, _ rules.View) (emit.Value, bool) {
+	if s.File == nil {
+		return emit.Value{}, false
+	}
+	return emit.Name(s.Subject), true
 }
 
 // TestView pins what a view returns, what it records and how it lifts an
@@ -191,6 +207,59 @@ func TestView(t *testing.T) {
 
 			_, held := rules.View{}.PackageOf(coretest.ID(svcPath, rowName, symbol.KindStruct))
 			assert.False(t, held, "the zero view has no package")
+		})
+	})
+
+	t.Run("ScopeOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the identity and the file of a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			subject := rowField(nameField)
+			s := viewOnly(t).ScopeOf(subject)
+			assert.Equal(t, s.Subject, subject, "the scope has the identity of the declaration")
+			assert.NotNil(t, s.File, "the scope has the file of the declaration")
+			assert.Equal(t, s.File.ID, coretest.FileID(svcPath), "the file is the one file of the fixture package")
+		})
+
+		t.Run("records the reads of the declaration and its package", func(t *testing.T) {
+			t.Parallel()
+
+			v, reads, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
+			subject := rowField(nameField)
+			v.ScopeOf(subject)
+			assert.Equal(t, slices.Collect(reads.Identities()), []symbol.Identity{subject},
+				"a change of the declaration moves its position")
+			assert.Equal(t, slices.Collect(reads.Packages()), []symbol.Identity{coretest.PackageID(svcPath)},
+				"a change of a file of the package changes the file of the scope")
+		})
+
+		t.Run("returns a scope without a file for a declaration whose position is in no file", func(t *testing.T) {
+			t.Parallel()
+
+			row := coretest.Struct(svcPath, rowName)
+			row.Pos.File = "elsewhere.go"
+			v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, row)))
+			s := v.ScopeOf(row.ID)
+			assert.Equal(t, s.Subject, row.ID, "the scope has the identity of the declaration")
+			assert.Nil(t, s.File, "no file of the package has the position of the declaration")
+		})
+
+		t.Run("returns a scope without a file for a declaration that the view does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			ghost := coretest.ID(svcPath, "Ghost", symbol.KindStruct)
+			s := viewOnly(t).ScopeOf(ghost)
+			assert.Equal(t, s.Subject, ghost, "the scope has the identity that the caller passes")
+			assert.Nil(t, s.File, "the view has no file of the declaration")
+		})
+
+		t.Run("returns a scope without a file on the zero view", func(t *testing.T) {
+			t.Parallel()
+
+			s := rules.View{}.ScopeOf(rowField(nameField))
+			assert.Nil(t, s.File, "the zero view has no file")
 		})
 	})
 
@@ -319,9 +388,43 @@ func TestView(t *testing.T) {
 			foreign := symbol.Identity{
 				Lang: foreignLang, Package: svcPath, Owner: rowName, Name: nameField, Kind: symbol.KindField,
 			}
-			sample, _ := v.Authored(otherLang{scripted()}, foreign, named(svcPath, rowName, symbol.KindStruct))
+			sample, _ := v.Authored(otherLang{scoped{scripted()}}, foreign, named(svcPath, rowName, symbol.KindStruct))
 			assert.Equal(t, sample.Value, emit.Raw(coretest.Lang, authoredRow),
-				"the declaration of the type states the text, whatever the language of the rules")
+				"the rules of another language do not read the text of the declaration of the type")
+		})
+
+		t.Run("returns the value that the rules read in the scope of the subject that has the value",
+			func(t *testing.T) {
+				t.Parallel()
+
+				v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
+				subject := rowField(nameField)
+				stamp(t, facts, v.Kernel().Sample, subject, authoredRow)
+				sample, _ := v.Authored(scoped{scripted()}, subject, named(svcPath, rowName, symbol.KindStruct))
+				assert.Equal(t, sample.Value, emit.Name(subject),
+					"the text of a struct type lifts through LiteralFor in the scope of the subject")
+			})
+
+		t.Run("returns the value that the rules read in the scope of the type that has the value", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
+			row := coretest.ID(svcPath, rowName, symbol.KindStruct)
+			stamp(t, facts, v.Kernel().Sample, row, authoredRow)
+			sample, _ := v.Authored(scoped{scripted()}, rowField(nameField), named(svcPath, rowName, symbol.KindStruct))
+			assert.Equal(t, sample.Value, emit.Name(row),
+				"the text of the type lifts through LiteralFor in the scope of the declaration of the type")
+		})
+
+		t.Run("returns raw text for nil rules", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
+			subject := rowField(nameField)
+			stamp(t, facts, v.Kernel().Sample, subject, authoredRow)
+			sample, _ := v.Authored(nil, subject, named(svcPath, rowName, symbol.KindStruct))
+			assert.Equal(t, sample.Value, emit.Raw(coretest.Lang, authoredRow),
+				"nil rules read no text, as the rules of no language do")
 		})
 
 		t.Run("records the fact read of the declaration of the type", func(t *testing.T) {
@@ -539,6 +642,8 @@ func viewCalls(tb assert.TB) []allocCall {
 	stamp(tb, facts, keys.Sample, stated, authoredText)
 	assert.NoError(tb, meta.Stamp(facts, keys.Module, modulePath, meta.Claim{Subject: pkg}), "a fact stamps")
 	strRef, intRef := builtin(strSpelling), builtin(intSpelling)
+	var scopedSource rules.SourceRules = scoped{source}
+	rowRef := named(svcPath, rowName, symbol.KindStruct)
 	reader := v.Reader()
 	var (
 		built  rules.View
@@ -547,6 +652,7 @@ func viewCalls(tb assert.TB) []allocCall {
 		got    string
 		kernel meta.KernelKeys
 		end    *node.TypeRef
+		scope  rules.Scope
 	)
 	return []allocCall{
 		{
@@ -588,6 +694,17 @@ func viewCalls(tb assert.TB) []allocCall {
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Text, authoredText, "Authored returns the stated value")
 			},
+		},
+		{
+			name: "Authored", caseName: "a stated value of a struct type", allocs: authoredAllocs,
+			call: func() { sample, _ = v.Authored(scopedSource, stated, rowRef) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value, emit.Name(stated), "Authored returns the value that LiteralFor reads")
+			},
+		},
+		{
+			name: "ScopeOf", call: func() { scope = v.ScopeOf(stated) },
+			check: func(tb assert.TB) { assert.NotNil(tb, scope.File, "ScopeOf returns the file of the declaration") },
 		},
 		{
 			name: "Fact", call: func() { got, _ = rules.Fact(v, pkg, keys.Module) },

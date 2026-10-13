@@ -22,6 +22,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// errMissingType is the error of the resolver of a case where no type of
+// the name is in scope.
+var errMissingType = errors.New("directive_test: no type of the name is in scope")
+
 // validationSubject is the struct Store, the subject of every validation
 // case.
 var validationSubject = symbol.Identity{
@@ -40,6 +44,17 @@ const (
 	// derivedKey is a key of the fixture whose value its registrant
 	// derives, so a meta directive cannot drop it.
 	derivedKey = "shape.shape"
+	// flagKey, countKey, tagsKey and targetKey are keys of the fixture of
+	// the boolean, integer, list and identity types. interfaceKey admits
+	// an interface alone, and the subject of the fixture is a struct.
+	flagKey      = "shape.flag"
+	countKey     = "shape.count"
+	tagsKey      = "shape.tags"
+	targetKey    = "shape.target"
+	interfaceKey = "shape.contract"
+	// modeKey is a string key of the fixture that takes the choices eager
+	// and lazy alone.
+	modeKey = "shape.mode"
 )
 
 // The variants of the variant fixture: writer, which requires the fields
@@ -300,10 +315,22 @@ func TestValidate(t *testing.T) {
 				naming:   "shard",
 			},
 			{
+				name:     "reports UnknownKey with the keys that the role of the instance admits",
+				payloads: []string{"indexer:index btree role=client shard=id"},
+				want:     directive.UnknownKey,
+				naming:   `does not accept shard under role "client": write one of fields, depth, unique, role`,
+			},
+			{
 				name:     "reports UnknownKey for a role-scoped param on an instance without a role",
 				payloads: []string{"indexer:index btree shard=id"},
 				want:     directive.UnknownKey,
 				naming:   "shard",
+			},
+			{
+				name:     "reports UnknownKey with the keys that an instance without a role accepts",
+				payloads: []string{"indexer:index btree shard=id"},
+				want:     directive.UnknownKey,
+				naming:   "does not accept shard without a role: write one of fields, depth, unique, role",
 			},
 			{
 				name:     "reports ExtraPositional after typing a false boolean",
@@ -316,6 +343,12 @@ func TestValidate(t *testing.T) {
 				payloads: []string{"stubgen:index role=client"},
 				want:     directive.UnknownKey,
 				naming:   "role",
+			},
+			{
+				name:     "reports UnknownKey with the keys of a schema that declares no roles",
+				payloads: []string{"stubgen:index role=client"},
+				want:     directive.UnknownKey,
+				naming:   "stubgen:index declares no roles, so it does not accept role: write one of mode",
 			},
 			{
 				name:     "reports TypeMismatch for a role written as a list",
@@ -340,6 +373,102 @@ func TestValidate(t *testing.T) {
 				payloads: []string{"meta drop=" + derivedKey},
 				want:     directive.DerivedMetadataKey,
 				naming:   derivedKey,
+			},
+			{
+				name:     "reports UnclaimedName naming the nearest registered name",
+				payloads: []string{"indexer:indx btree"},
+				want:     directive.UnclaimedName,
+				naming:   "The nearest registered name is indexer:index",
+			},
+			{
+				name:     "reports UnclaimedName naming the nearest bare name of a bare spelling",
+				payloads: []string{"shap writer"},
+				want:     directive.UnclaimedName,
+				naming:   "The nearest registered name is shape",
+			},
+			{
+				name:     "reports MissingParam for a meta instance that neither drops nor sets",
+				payloads: []string{"meta"},
+				want:     directive.MissingParam,
+				naming:   "exactly one of drop and set",
+			},
+			{
+				name:     "reports MissingParam for a meta instance that drops and sets",
+				payloads: []string{"meta drop=shape.role set=shape.role value=x"},
+				want:     directive.MissingParam,
+				naming:   "exactly one of drop and set",
+			},
+			{
+				name:     "reports UnknownKey for a value beside a drop",
+				payloads: []string{"meta drop=shape.role value=x"},
+				want:     directive.UnknownKey,
+				naming:   "meta drops shape.role and takes no value or values",
+			},
+			{
+				name:     "reports UnknownKey with the advice to write the drop alone",
+				payloads: []string{"meta drop=shape.role values=[x]"},
+				want:     directive.UnknownKey,
+				naming:   "write drop=shape.role alone",
+			},
+			{
+				name:     "reports UnknownMetadataKey for a set of a group",
+				payloads: []string{"meta set=shape.writer value=x"},
+				want:     directive.UnknownMetadataKey,
+				naming:   "a set names a key",
+			},
+			{
+				name:     "reports DerivedMetadataKey for a set of a derived key",
+				payloads: []string{"meta set=" + derivedKey + " value=x"},
+				want:     directive.DerivedMetadataKey,
+				naming:   "cannot drop or set it",
+			},
+			{
+				name:     "reports MisplacedDirective for a set of a key that does not admit the kind of the subject",
+				payloads: []string{"meta set=" + interfaceKey + " value=x"},
+				want:     directive.MisplacedDirective,
+				naming:   interfaceKey,
+			},
+			{
+				name:     "reports BadSpelling for a set of a boolean key to false",
+				payloads: []string{"meta set=" + flagKey + " value=false"},
+				want:     directive.BadSpelling,
+				naming:   "absence is the negative",
+			},
+			{
+				name:     "reports BadSpelling for a set of a boolean key to another word",
+				payloads: []string{"meta set=" + flagKey + " value=yes"},
+				want:     directive.BadSpelling,
+				naming:   `meta sets the boolean shape.flag, which takes true, not "yes"`,
+			},
+			{
+				name:     "reports BadSpelling for a set of an integer key to text",
+				payloads: []string{"meta set=" + countKey + " value=many"},
+				want:     directive.BadSpelling,
+				naming:   "base-10 integer",
+			},
+			{
+				name:     "reports BadSpelling with the choices for a set of a key outside them",
+				payloads: []string{"meta set=" + modeKey + " value=fast"},
+				want:     directive.BadSpelling,
+				naming:   `meta sets shape.mode, which takes one of eager, lazy, not "fast"`,
+			},
+			{
+				name:     "reports TypeMismatch for a set of a list key through value",
+				payloads: []string{"meta set=" + tagsKey + " value=a"},
+				want:     directive.TypeMismatch,
+				naming:   "through values and not value",
+			},
+			{
+				name:     "reports TypeMismatch for a set of a scalar key through values",
+				payloads: []string{"meta set=shape.role values=[a]"},
+				want:     directive.TypeMismatch,
+				naming:   "through value and not values",
+			},
+			{
+				name:     "reports MissingParam for a set without a value",
+				payloads: []string{"meta set=shape.role"},
+				want:     directive.MissingParam,
+				naming:   "omits value",
 			},
 			{
 				name:     "reports UnknownCode naming a code that does not parse",
@@ -400,6 +529,12 @@ func TestValidate(t *testing.T) {
 				payloads: []string{"shaper:shape writer reads=[a] role=begin"},
 				want:     directive.UnknownKey,
 				naming:   "role",
+			},
+			{
+				name:     "reports UnknownKey with the keys of a variant that declares no roles",
+				payloads: []string{"shaper:shape writer reads=[a] role=begin"},
+				want:     directive.UnknownKey,
+				naming:   "shaper:shape writer declares no roles, so it does not accept role: write one of id, reads",
 			},
 			{
 				name:     "reports ExtraPositional for a positional after the variant",
@@ -688,6 +823,159 @@ func TestValidate(t *testing.T) {
 			got, sink := validate(t, "meta drop=shape.writer")
 			assert.Length(t, got, 1, "the instance is returned")
 			assert.False(t, sink.Failed(), "nothing is reported")
+		})
+
+		sets := []struct {
+			name    string
+			give    string
+			wantKey directive.ParamKey
+			want    directive.Value
+		}{
+			{
+				name: "types the value of a set of a string key as its text", give: "meta set=shape.role value=writer",
+				wantKey: directive.MetaValue, want: directive.Value{Kind: directive.TypeString, Str: "writer"},
+			},
+			{
+				name: "types the value of a set of a boolean key as true", give: "meta set=" + flagKey + " value=true",
+				wantKey: directive.MetaValue, want: directive.Value{Kind: directive.TypeBool, Bool: true},
+			},
+			{
+				name:    "types the value of a set of an integer key as its integer",
+				give:    "meta set=" + countKey + " value=42",
+				wantKey: directive.MetaValue,
+				want:    directive.Value{Kind: directive.TypeInt, Int: 42},
+			},
+			{
+				name:    "types the value of a set among the choices of its key as its text",
+				give:    "meta set=" + modeKey + " value=lazy",
+				wantKey: directive.MetaValue, want: directive.Value{Kind: directive.TypeString, Str: "lazy"},
+			},
+			{
+				name:    "keeps the spelling of a set of an identity key without a resolver",
+				give:    "meta set=" + targetKey + " value=Row",
+				wantKey: directive.MetaValue, want: directive.Value{Kind: directive.TypeReference, Ref: "Row"},
+			},
+			{
+				name:    "types the values of a set of a list key as a list",
+				give:    "meta set=" + tagsKey + " values=[a, b]",
+				wantKey: directive.MetaValues,
+				want: directive.Value{Kind: directive.TypeList, List: []directive.Value{
+					{Kind: directive.TypeString, Str: "a"}, {Kind: directive.TypeString, Str: "b"},
+				}},
+			},
+		}
+		for _, tt := range sets {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, sink := validate(t, tt.give)
+				assert.False(t, sink.Failed(), "nothing is reported")
+				assert.Length(t, got, 1, "the instance is returned")
+				value, held := got[0].Param(tt.wantKey)
+				assert.True(t, held, "the instance has its value")
+				assert.Equal(t, value, tt.want, "validation types the value as the type of the key")
+			})
+		}
+
+		t.Run("binds the identity of a set through the resolver", func(t *testing.T) {
+			t.Parallel()
+
+			row := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Row", Kind: symbol.KindStruct}
+			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+				return row, nil
+			}
+			sink := diag.NewSink()
+			got := directive.Validate(
+				validationSubject,
+				[]directive.Raw{parse(t, "meta set="+targetKey+" value=Row", 1)},
+				sealed(t),
+				keyed(t),
+				resolve,
+				sink,
+			)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the instance is returned")
+			value, _ := got[0].Param(directive.MetaValue)
+			assert.Equal(t, value.Target, row, "the value is the identity that the resolver binds")
+		})
+
+		t.Run("reports UnresolvedReference for the identity of a set that does not resolve", func(t *testing.T) {
+			t.Parallel()
+
+			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+				return symbol.Identity{}, errMissingType
+			}
+			sink := diag.NewSink()
+			got := directive.Validate(
+				validationSubject,
+				[]directive.Raw{parse(t, "meta set="+targetKey+" value=Ghost", 1)},
+				sealed(t),
+				keyed(t),
+				resolve,
+				sink,
+			)
+			assert.Empty(t, got, "the instance drops")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.UnresolvedReference},
+				"the set reports the reference that does not resolve")
+		})
+
+		tuner := directive.Schema{
+			Plugin: "tuner", Name: "tune", Roles: []string{"fast", "slow"},
+			Positional: []directive.ParamSpec{{Key: "level", Type: directive.TypeInt, Default: "3", Doc: "the level"}},
+			Params: []directive.ParamSpec{
+				{
+					Key:     "mode",
+					Type:    directive.TypeString,
+					Choices: []string{"eager", "lazy"},
+					Default: "lazy",
+					Doc:     "the mode",
+				},
+				{Key: "depth", Type: directive.TypeInt, Default: "1", Roles: []string{"fast"}, Doc: "the depth"},
+			},
+			Doc: "tunes a declaration",
+		}
+
+		t.Run("applies the default of a keyed param that the instance omits", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "tuner:tune", 1)}, tuner)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the instance is returned")
+			mode, held := got[0].Param("mode")
+			assert.True(t, held, "the omitted param has its default")
+			assert.Equal(
+				t,
+				mode,
+				directive.Value{Kind: directive.TypeString, Str: "lazy"},
+				"the default types as the param",
+			)
+		})
+
+		t.Run("keeps the written value of a param that has a default", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "tuner:tune mode=eager", 1)}, tuner)
+			assert.Length(t, got, 1, "the instance is returned")
+			mode, _ := got[0].Param("mode")
+			assert.Equal(t, mode.Str, "eager", "the author's value replaces the default")
+		})
+
+		t.Run("applies the default of a positional param that the instance omits", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "tuner:tune", 1)}, tuner)
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.Equal(t, got[0].Args, []directive.Value{{Kind: directive.TypeInt, Int: 3}},
+				"the positional default fills the omitted position")
+		})
+
+		t.Run("applies no default under a role that does not admit the param", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validateRaws(t, []directive.Raw{parse(t, "tuner:tune role=slow", 1)}, tuner)
+			assert.Length(t, got, 1, "the instance is returned")
+			_, held := got[0].Param("depth")
+			assert.False(t, held, "the role slow does not admit the param")
 		})
 
 		t.Run("resolves a diag directive naming a registered code", func(t *testing.T) {
@@ -1334,7 +1622,8 @@ func validationBench(tb assert.TB) (*directive.Registry, *meta.Registry, []direc
 }
 
 // keyed returns a metadata registry with shape.role in the group
-// shape.writer, and the derived key shape.shape, for drop resolution.
+// shape.writer, the derived key shape.shape, and a key of each other type
+// of the vocabulary, for drop and set resolution.
 func keyed(tb assert.TB) *meta.Registry {
 	tb.Helper()
 
@@ -1348,6 +1637,22 @@ func keyed(tb assert.TB) *meta.Registry {
 		Name: derivedKey, Doc: "the name of the classification", Derived: true,
 	})
 	assert.NoError(tb, err, "the derived key registers")
+	_, err = meta.Register[bool](r, meta.KeySpec{Name: flagKey, Doc: "marks a flagged declaration"})
+	assert.NoError(tb, err, "the boolean key registers")
+	_, err = meta.Register[int64](r, meta.KeySpec{Name: countKey, Doc: "counts the members"})
+	assert.NoError(tb, err, "the integer key registers")
+	_, err = meta.Register[[]string](r, meta.KeySpec{Name: tagsKey, Doc: "lists the tags"})
+	assert.NoError(tb, err, "the list key registers")
+	_, err = meta.Register[symbol.Identity](r, meta.KeySpec{Name: targetKey, Doc: "names the twin"})
+	assert.NoError(tb, err, "the identity key registers")
+	_, err = meta.Register[string](r, meta.KeySpec{
+		Name: interfaceKey, Kinds: []symbol.Kind{symbol.KindInterface}, Doc: "the contract of an interface",
+	})
+	assert.NoError(tb, err, "the key of an interface registers")
+	_, err = meta.Register[string](r, meta.KeySpec{
+		Name: modeKey, Choices: []string{"eager", "lazy"}, Doc: "the mode of the evaluation",
+	})
+	assert.NoError(tb, err, "the key with choices registers")
 	return r
 }
 

@@ -206,6 +206,33 @@ func TestPolicy(t *testing.T) {
 				"the error contains the fault of the spec")
 			assert.Contains(t, err.Error(), `not "long"`, "the error contains the fault of the selection")
 		})
+
+		t.Run("returns an error for each defect of one spec", func(t *testing.T) {
+			t.Parallel()
+
+			specs := policySpecs()
+			specs[1].Key = "typescript.name"
+			specs[1].Choices = []plugin.Choice{bigint, bigint}
+			specs[1].Doc = ""
+			_, err := plugin.NewPolicy(policyTarget, specs, nil)
+			assert.HasError(t, err, "the resolution fails")
+			assert.Equal(t, err.Error(), "plugin: policy typescript.name takes the name name, "+
+				"which the target's directive keeps for a name\n"+
+				"plugin: policy typescript.name declares choice bigint twice\n"+
+				"plugin: policy typescript.name has no documentation",
+				"the error contains every defect of the spec in the order of the checks")
+		})
+
+		t.Run("returns the fault of the missing choices alone for a spec without choices", func(t *testing.T) {
+			t.Parallel()
+
+			specs := policySpecs()
+			specs[1].Choices = nil
+			_, err := plugin.NewPolicy(policyTarget, specs, nil)
+			assert.HasError(t, err, "the resolution fails")
+			assert.Equal(t, err.Error(), "plugin: policy typescript.int64 does not declare a choice",
+				"the spec without choices reports that fault alone")
+		})
 	})
 
 	t.Run("Choice", func(t *testing.T) {

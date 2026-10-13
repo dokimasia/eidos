@@ -69,9 +69,10 @@ func (b *Builder) Version(v string) *Builder {
 
 // FileTemplate sets the file skeleton; undeclared, the pass's
 // default renders the import block then the declarations. The
-// clause a language opens its files with is the skeleton's own to
-// spell; the header is not, because the output contract prepends
-// it after the formatter ran.
+// skeleton executes over the data that [render.Language.File]
+// describes. The clause a language opens its files with is the
+// skeleton's own to spell; the header is not, because the output
+// contract prepends it after the formatter ran.
 func (b *Builder) FileTemplate(t string) *Builder {
 	b.lang.File = t
 	return b

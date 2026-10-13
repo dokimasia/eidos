@@ -130,8 +130,11 @@ func (b *Builder) Output(o plugin.Output) *Builder {
 	return b
 }
 
-// Priority sets the priority of the role r. A first call allocates the
-// first group of the map of priorities.
+// Priority sets the priority of the role r, which is 0 where the plugin
+// does not set it. A priority places the plugin against every plugin of
+// the role, and [Builder.Requires] and [Builder.After] order it against
+// one provider. A first call allocates the first group of the map of
+// priorities.
 func (b *Builder) Priority(r plugin.Role, p int) *Builder {
 	b.priority[r] = p
 	return b
@@ -343,7 +346,9 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 // flatten lowers the rule tree to its leaves. It collects the gates of the
 // wrappers on the way down, and panics on a wrapper that gates nothing. A
 // gate on a directive lowers to the canonical spelling of the directive,
-// once for each rule, so the dispatch compares names and builds none.
+// once for each rule, so the dispatch compares names and builds none. A
+// schema without a plugin lowers to a copy with the name of the plugin,
+// which the rules under its wrapper share.
 func flatten(
 	name string, rules []Rule, preds []Pred, schema *directive.Schema,
 	gate directive.Name, out *[]flatRule,
@@ -364,7 +369,12 @@ func flatten(
 			}
 			sch, on = r.schema, r.gate
 			if r.schema != nil {
-				on = r.schema.Canonical()
+				if r.schema.Plugin == "" {
+					owned := *r.schema
+					owned.Plugin = name
+					sch = &owned
+				}
+				on = sch.Canonical()
 			}
 		}
 		if r.leaf == nil {
@@ -378,7 +388,7 @@ func flatten(
 			if p.test == nil {
 				panic("eidos: " + name + " gates on a zero predicate")
 			}
-			if p.id == 0 && p.bind == nil {
+			if !p.value && p.id == 0 && p.bind == nil {
 				panic("eidos: " + name + " gates on the zero key;" +
 					" a gate takes a registered handle when the rule is declared, or a named handle")
 			}
@@ -396,6 +406,7 @@ func flatten(
 			gate:      on,
 			spellings: spellingsOf(sch, on),
 			preds:     held,
+			indexed:   slices.IndexFunc(held, func(p Pred) bool { return !p.value && !p.negated }),
 			invoke:    r.leaf.invoke,
 		})
 	}
@@ -418,7 +429,11 @@ type flatRule struct {
 	// rule that no directive gates.
 	spellings []directive.Name
 	preds     []Pred
-	invoke    func(inv invocation) error
+	// indexed is the position in preds of the first key gate that Not did
+	// not negate, whose key the fact index enumerates. It is -1 where the
+	// rule has no such gate.
+	indexed int
+	invoke  func(inv invocation) error
 }
 
 // spellingsOf returns the spellings under which the index can contain a
@@ -515,21 +530,25 @@ func kinded(name string, wrapper *directive.Schema, rules []flatRule) directive.
 }
 
 // subscriptionsFor lowers the gates to subscriptions. It returns one
-// record for each rule without a fact gate, and one record for each fact
-// gate of the other rules.
+// record for each key gate of a rule, negated or not, and one record
+// without a key for a rule whose gates read no key.
 func subscriptionsFor(rules []flatRule) []plugin.Subscription {
 	var subs []plugin.Subscription
 	for _, fr := range rules {
-		if len(fr.preds) == 0 {
-			subs = append(subs, plugin.Subscription{
-				Rule: fr.ordinal, Kind: fr.kind, Directive: fr.gate, Phase: fr.phase,
-			})
-			continue
-		}
+		keyed := false
 		for _, p := range fr.preds {
+			if p.value {
+				continue
+			}
+			keyed = true
 			subs = append(subs, plugin.Subscription{
 				Rule: fr.ordinal, Kind: fr.kind, Directive: fr.gate,
 				FactKey: p.id, Phase: fr.phase,
+			})
+		}
+		if !keyed {
+			subs = append(subs, plugin.Subscription{
+				Rule: fr.ordinal, Kind: fr.kind, Directive: fr.gate, Phase: fr.phase,
 			})
 		}
 	}

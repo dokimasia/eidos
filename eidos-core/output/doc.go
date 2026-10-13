@@ -41,7 +41,9 @@
 // stage then commit, so a failed or abandoned plan leaves the
 // previous generation of files exactly in place and a dry run is
 // a sink that never commits. [NewDisk] writes into a directory
-// tree, [NewMem] into memory, and [NewTee] into several at once.
+// tree, [NewMem] into memory, and [NewTee] into several at once. A
+// [Stream] writes the files of each commit of its sinks to one
+// writer, each under a header line with its path.
 // A sink stages a file through [Sink.Write] and the removal of a
 // file through [Sink.Delete].
 //

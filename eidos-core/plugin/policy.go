@@ -172,43 +172,44 @@ func (p Policy) Overridden(override func(PolicyKey) (Choice, bool)) Policy {
 	return p
 }
 
-// checkSpec returns the first defect of one spec of the target t, and
-// nil for a spec without one.
+// checkSpec returns every defect of one spec of the target t, joined in
+// the order of the checks, and nil for a spec without one. The key
+// reports its first defect alone, because each check of a key assumes
+// the one before it. A spec without choices reports no default outside
+// them.
 func checkSpec(t Target, s PolicySpec) error {
-	if s.Key == "" {
-		return fmt.Errorf("plugin: target %s declares a policy without a key", t)
-	}
+	var faults []error
 	prefix, _, dotted := strings.Cut(string(s.Key), policySeparator)
-	if !dotted || Target(prefix) != t {
-		return fmt.Errorf("plugin: policy %s is outside the namespace of target %s", s.Key, t)
-	}
 	param := s.Key.Param()
-	if !param.Valid() {
-		return fmt.Errorf("plugin: policy %s has a name that is not a valid param key of a directive", s.Key)
-	}
-	if param == NameParam {
-		return fmt.Errorf("plugin: policy %s takes the name %s, which the target's directive keeps for a name",
-			s.Key, NameParam)
+	if s.Key == "" {
+		faults = append(faults, fmt.Errorf("plugin: target %s declares a policy without a key", t))
+	} else if !dotted || Target(prefix) != t {
+		faults = append(faults, fmt.Errorf("plugin: policy %s is outside the namespace of target %s", s.Key, t))
+	} else if !param.Valid() {
+		faults = append(faults,
+			fmt.Errorf("plugin: policy %s has a name that is not a valid param key of a directive", s.Key))
+	} else if param == NameParam {
+		faults = append(faults, fmt.Errorf(
+			"plugin: policy %s takes the name %s, which the target's directive keeps for a name", s.Key, NameParam))
 	}
 	if len(s.Choices) == 0 {
-		return fmt.Errorf("plugin: policy %s does not declare a choice", s.Key)
+		faults = append(faults, fmt.Errorf("plugin: policy %s does not declare a choice", s.Key))
 	}
 	for i, c := range s.Choices {
 		if c == "" {
-			return fmt.Errorf("plugin: policy %s declares an empty choice", s.Key)
-		}
-		if slices.Contains(s.Choices[:i], c) {
-			return fmt.Errorf("plugin: policy %s declares choice %s twice", s.Key, c)
+			faults = append(faults, fmt.Errorf("plugin: policy %s declares an empty choice", s.Key))
+		} else if slices.Contains(s.Choices[:i], c) {
+			faults = append(faults, fmt.Errorf("plugin: policy %s declares choice %s twice", s.Key, c))
 		}
 	}
-	if !slices.Contains(s.Choices, s.Default) {
-		return fmt.Errorf("plugin: policy %s defaults to %q, which is not one of %s",
-			s.Key, s.Default, joined(s.Choices))
+	if len(s.Choices) > 0 && !slices.Contains(s.Choices, s.Default) {
+		faults = append(faults, fmt.Errorf("plugin: policy %s defaults to %q, which is not one of %s",
+			s.Key, s.Default, joined(s.Choices)))
 	}
 	if s.Doc == "" {
-		return fmt.Errorf("plugin: policy %s has no documentation", s.Key)
+		faults = append(faults, fmt.Errorf("plugin: policy %s has no documentation", s.Key))
 	}
-	return nil
+	return errors.Join(faults...)
 }
 
 // joined returns the spellings of values separated by commas, for a

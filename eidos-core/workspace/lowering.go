@@ -103,11 +103,13 @@ var _ plugin.Annotator = (*lowering)(nil)
 
 // policyParam is one lowering policy of a target. It has the policy's
 // spec, the param of the target's directive that overrides the policy,
-// and the handle of the policy's key, which the register step sets.
+// the policy's choices, which close both the param and the key, and the
+// handle of the policy's key, which the register step sets.
 type policyParam struct {
-	spec  plugin.PolicySpec
-	param directive.ParamKey
-	key   meta.Key[string]
+	spec    plugin.PolicySpec
+	param   directive.ParamKey
+	choices []string
+	key     meta.Key[string]
 }
 
 // planScope is the sources of one plan, with their patterns parsed.
@@ -161,7 +163,11 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 		}
 		if !broken[b.Name()] {
 			for _, spec := range b.Policies() {
-				l.policies = append(l.policies, policyParam{spec: spec, param: spec.Key.Param()})
+				choices := make([]string, len(spec.Choices))
+				for i, c := range spec.Choices {
+					choices[i] = string(c)
+				}
+				l.policies = append(l.policies, policyParam{spec: spec, param: spec.Key.Param(), choices: choices})
 			}
 		}
 		out = append(out, l)
@@ -195,9 +201,9 @@ func (l *lowering) Annotate(ctx *plugin.AnnotatorContext) error {
 }
 
 // register registers the target's keys under the target's spelling.
-// These are the name key and the key of each policy. It keeps each
-// handle, which the entry stamps through, and returns the registry's
-// errors.
+// These are the name key and the key of each policy, which takes the
+// policy's choices alone. It keeps each handle, which the entry stamps
+// through, and returns the registry's errors.
 func (l *lowering) register(keys *meta.Registry) []error {
 	r := keys.For(string(l.target))
 	if err := r.ClaimNamespace(string(l.target)); err != nil {
@@ -213,7 +219,9 @@ func (l *lowering) register(keys *meta.Registry) []error {
 	l.nameKey = key
 	for i := range l.policies {
 		p := &l.policies[i]
-		key, err := meta.Register[string](r, meta.KeySpec{Name: meta.KeyName(p.spec.Key), Doc: p.spec.Doc})
+		key, err := meta.Register[string](r, meta.KeySpec{
+			Name: meta.KeyName(p.spec.Key), Doc: p.spec.Doc, Choices: p.choices,
+		})
 		if err != nil {
 			faults = append(faults, err)
 		}
@@ -232,12 +240,8 @@ func (l *lowering) schema() directive.Schema {
 		Key: plugin.NameParam, Type: directive.TypeString, Doc: fmt.Sprintf(nameParamDoc, l.target),
 	})
 	for _, p := range l.policies {
-		choices := make([]string, len(p.spec.Choices))
-		for i, c := range p.spec.Choices {
-			choices[i] = string(c)
-		}
 		s.Params = append(s.Params, directive.ParamSpec{
-			Key: p.param, Type: directive.TypeString, Choices: choices, Doc: p.spec.Doc,
+			Key: p.param, Type: directive.TypeString, Choices: p.choices, Doc: p.spec.Doc,
 		})
 	}
 	return s

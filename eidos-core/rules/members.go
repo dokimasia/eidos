@@ -589,12 +589,19 @@ func (w *walk) hostOf(a *arrival) symbol.Identity {
 	return w.root
 }
 
+// signatureSize is the length that the spelling of a signature reserves
+// up front, which covers a method of a few named parameters and results
+// in one allocation.
+const signatureSize = 64
+
 // signature spells a method's parameter and return types by what
 // they name, each parameter's variadic kind included, so two
 // arrivals of one name compare equal only when they state one
-// signature.
+// signature. It allocates the spelling once for a signature of up to
+// signatureSize bytes.
 func signature(m *node.Method) string {
 	var b strings.Builder
+	b.Grow(signatureSize)
 	for _, p := range m.Params {
 		if p != nil {
 			b.WriteString(strconv.Itoa(int(p.Variadic)))

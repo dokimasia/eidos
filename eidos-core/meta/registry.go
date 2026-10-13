@@ -107,6 +107,10 @@ type KeySpec struct {
 	// cannot drop a derived key, so a drop removes the facts that every
 	// reader reads.
 	Derived bool
+	// Choices closes a key of the type string to the values that it lists.
+	// The validation of a meta directive refuses a set of the key to any
+	// other value. Empty admits every value.
+	Choices []string
 }
 
 // Completeness is a coverage promise: the key is stamped on every
@@ -163,6 +167,8 @@ func (r *Registry) ClaimNamespace(ns string) error {
 //   - a name without a claimed namespace or without a local part;
 //   - a name in a namespace another registrant claimed;
 //   - a spec without documentation;
+//   - choices on a key of another type than string, an empty choice and
+//     a choice listed twice;
 //   - a name registered again under another value type or another
 //     spec, with an error that contains the first difference;
 //   - a key and a group with one spelling, in either registration
@@ -206,6 +212,19 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 		return Key[T]{}, fmt.Errorf(
 			"meta: key %q states no semantics: the parity matrix tabulates them", s.Name,
 		)
+	}
+	if t := reflect.TypeFor[T](); len(s.Choices) > 0 && t != reflect.TypeFor[string]() {
+		return Key[T]{}, fmt.Errorf(
+			"meta: key %q of the type %s lists choices, and only a key of the type string takes them", s.Name, t,
+		)
+	}
+	for i, c := range s.Choices {
+		if c == "" {
+			return Key[T]{}, fmt.Errorf("meta: key %q lists an empty choice", s.Name)
+		}
+		if slices.Contains(s.Choices[:i], c) {
+			return Key[T]{}, fmt.Errorf("meta: key %q lists the choice %q twice", s.Name, c)
+		}
 	}
 	if held, taken := r.byName[s.Name]; taken {
 		if difference := specDifference(r.types[held-1], r.specs[held-1], reflect.TypeFor[T](), s); difference != "" {
@@ -297,9 +316,11 @@ func (r *Registry) Keys() iter.Seq[KeyName] {
 // sealed registry changes nothing. Seal allocates nothing.
 func (r *Registry) Seal() { r.sealed = true }
 
-// typeOf returns the value type a key registered with, nil for an
-// id nothing was assigned.
-func (r *Registry) typeOf(id KeyID) reflect.Type {
+// Type returns the value type that a key registered with, one of the
+// types of [FactValue], so a caller that holds only the spelling of a key
+// can type a value for it. It returns nil for an id that nothing was
+// assigned, and it allocates nothing.
+func (r *Registry) Type(id KeyID) reflect.Type {
 	if id == 0 || int(id) > len(r.types) {
 		return nil
 	}
@@ -326,9 +347,9 @@ func registrantName(registrant string) string {
 
 // specDifference returns the first difference of a repeated
 // registration from the kept registration. It compares the docs, the
-// value types, the kinds, the groups and the completeness contracts, in
-// that order. It returns the empty string for an equal registration,
-// and allocates only the text of a difference.
+// value types, the kinds, the groups, the choices and the completeness
+// contracts, in that order. It returns the empty string for an equal
+// registration, and allocates only the text of a difference.
 func specDifference(heldType reflect.Type, held KeySpec, t reflect.Type, s KeySpec) string {
 	if held.Doc != s.Doc {
 		return fmt.Sprintf("the docs %q and %q", held.Doc, s.Doc)
@@ -341,6 +362,9 @@ func specDifference(heldType reflect.Type, held KeySpec, t reflect.Type, s KeySp
 	}
 	if held.Group != s.Group {
 		return fmt.Sprintf("the groups %q and %q", held.Group, s.Group)
+	}
+	if !slices.Equal(held.Choices, s.Choices) {
+		return fmt.Sprintf("the choices %q and %q", held.Choices, s.Choices)
 	}
 	if !sameContract(held.Contract, s.Contract) {
 		return "two different completeness contracts"

@@ -182,14 +182,17 @@ func AssertExported(tb assert.TB, f Fixture, root string) {
 	}
 }
 
-// AssertCycleRefused builds the fixture over root with copies of the
-// first plan under two names that depend on each other, and checks that
-// Build returns an error that contains both names. It builds the plans
-// of the fixture first, so a composition that does not build fails the
-// check with its own error.
+// AssertCycleRefused copies the tree of the fixture into root, an empty
+// directory, and builds the fixture over it with copies of the first plan
+// under two names that depend on each other. It checks that Build returns
+// an error that contains both names. The copy gives the composition the
+// config file of the tree, which can set a required option. The check
+// builds the plans of the fixture first, so a composition that does not
+// build fails the check with its own error.
 func AssertCycleRefused(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
+	copied(tb, f, root)
 	built(tb, f, root, plansOf(tb, f), nil)
 	plans := plansOf(tb, f)
 	a, b := plans[0], plans[0]

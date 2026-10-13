@@ -12,6 +12,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -193,6 +194,22 @@ func TestBuilder(t *testing.T) {
 			provider, ok := p.(plugin.DirectiveProvider)
 			assert.True(t, ok, "the plugin provides directives")
 			assert.Equal(t, provider.Directives(), []directive.Schema{s}, "the schema is returned once")
+		})
+
+		t.Run("returns a schema without a plugin with the name of the plugin", func(t *testing.T) {
+			t.Parallel()
+
+			s := stubSchema("stub")
+			s.Plugin = ""
+			p := eidos.NewPlugin("stubgen").
+				Handle(eidos.Directive(s, eidos.OnEmit(symbol.KindStruct,
+					func(m *eidos.EmitMatch, e *eidos.Emitter) error { return nil }))).
+				Generator()
+
+			provider, ok := p.(plugin.DirectiveProvider)
+			assert.True(t, ok, "the plugin provides directives")
+			assert.Equal(t, provider.Directives(), []directive.Schema{stubSchema("stub")},
+				"the builder gives the schema the name of the plugin")
 		})
 
 		t.Run("returns a plugin whose gate on a named handle waits for the workspace to bind it", func(t *testing.T) {
@@ -471,6 +488,36 @@ func TestBuilder(t *testing.T) {
 					eidos.NewPlugin("t").Handle(
 						eidos.Where(eidos.HasKey(unregistered), onEmit()),
 					).Generator()
+				},
+			},
+			{
+				name: "panics on the negation of a zero predicate",
+				build: func() {
+					eidos.NewPlugin("t").Handle(eidos.Where(eidos.Not(eidos.Pred{}), onEmit())).Generator()
+				},
+			},
+			{
+				name: "panics on a name gate on the empty name",
+				build: func() {
+					eidos.NewPlugin("t").Handle(eidos.Where(eidos.NameEquals(""), onEmit())).Generator()
+				},
+			},
+			{
+				name: "panics on a slot gate on the empty name",
+				build: func() {
+					eidos.NewPlugin("t").Handle(eidos.Where(eidos.HasSlot(""), onEmit())).Generator()
+				},
+			},
+			{
+				name: "panics on a slot gate on the prologue",
+				build: func() {
+					eidos.NewPlugin("t").Handle(eidos.Where(eidos.HasSlot(emit.SlotPrologue), onEmit())).Generator()
+				},
+			},
+			{
+				name: "panics on a slot gate on the epilogue",
+				build: func() {
+					eidos.NewPlugin("t").Handle(eidos.Where(eidos.HasSlot(emit.SlotEpilogue), onEmit())).Generator()
 				},
 			},
 		}

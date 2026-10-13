@@ -15,6 +15,9 @@ import (
 // subject offers: each subject's own name and one per descent field.
 const namesVisits = 0{{range .Views}}{{if or .NameStorage .NameWalked}} + {{.NameVisits}}{{end}}{{end}}
 
+// namedKinds is how many kinds declare a name of their own.
+const namedKinds = 0{{range .Views}}{{if .NameStorage}} + 1{{end}}{{end}}
+
 // Every declared name respells through the traversal: each kind's
 // own name under its host and visibility, with the declaration it
 // belongs to, and one name per descent field.
@@ -166,10 +169,34 @@ func TestNames(t *testing.T) {
 		})
 {{- end}}
 	})
+
+	t.Run("NameOf", func(t *testing.T) {
+		t.Parallel()
+{{- range .Views}}
+{{- if .NameStorage}}
+
+		t.Run("returns the name of kind {{.Name}}", func(t *testing.T) {
+			t.Parallel()
+
+			name, named := NameOf(&{{.Name}}{ {{.NameStorage}}: "alpha"})
+			assert.True(t, named, "kind {{.Name}} has a name")
+			assert.Equal(t, name, "alpha", "NameOf returns the name of the declaration")
+		})
+{{- end}}
+{{- end}}
+
+		t.Run("reports false for a nil symbol", func(t *testing.T) {
+			t.Parallel()
+
+			_, named := NameOf(nil)
+			assert.False(t, named, "a nil symbol has no name")
+		})
+	})
 }
 
 // The traversal allocates nothing in the ordinary run, which runs no
-// benchmark, when the hook returns each name as it is.
+// benchmark, when the hook returns each name as it is, and NameOf
+// allocates nothing.
 func TestNamesAllocs(t *testing.T) {
 	subjects := namesSubjects()
 	var visits int
@@ -181,11 +208,14 @@ func TestNamesAllocs(t *testing.T) {
 	}, 0, "RespellNames allocates nothing")
 	assert.NoError(t, err, "every traversal completes")
 	assert.Equal(t, visits, namesVisits, "RespellNames offers every declared name")
+	var named int
+	assert.MaxAllocs(t, func() { named = countNamed(subjects) }, 0, "NameOf allocates nothing")
+	assert.Equal(t, named, namedKinds, "NameOf returns the name of every kind that declares one")
 }
 
 // BenchmarkNames measures the respell traversal over every named
 // kind, with a hook that returns each name as it is, so the number is
-// the traversal's own.
+// the traversal's own. It also measures NameOf over the same subjects.
 func BenchmarkNames(b *testing.B) {
 	subjects := namesSubjects()
 
@@ -202,6 +232,18 @@ func BenchmarkNames(b *testing.B) {
 			}
 			assert.NoError(b, err, "every traversal completes")
 			assert.Equal(b, visits, namesVisits, "RespellNames offers every declared name")
+		})
+	})
+
+	b.Run("NameOf", func(b *testing.B) {
+		b.Run("every named kind", func(b *testing.B) {
+			var named int
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				named = countNamed(subjects)
+			}
+			assert.Equal(b, named, namedKinds, "NameOf returns the name of every kind that declares one")
 		})
 	})
 }
@@ -236,6 +278,18 @@ func respellEvery(
 		}
 	}
 	return nil
+}
+
+// countNamed returns how many of the subjects NameOf returns a name
+// for.
+func countNamed(subjects []symbol.Symbol) int {
+	named := 0
+	for _, s := range subjects {
+		if _, held := NameOf(s); held {
+			named++
+		}
+	}
+	return named
 }
 
 // namesSubjects returns a subject of every kind that declares a name

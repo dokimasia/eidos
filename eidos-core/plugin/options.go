@@ -8,22 +8,59 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"go.dokimi.dev/eidos/core/jsonschema"
 )
 
-// ValidateOptions holds a plugin's options declaration to the tag
-// contract: a pointer to a struct, exported fields only, an opt
-// tag naming each field's config key, a doc tag stating its
-// meaning, and no key claimed twice. It returns one error per
-// finding, in field order, and nothing where the plugin declares
-// no options. The composition runs it before populating; the
-// conformance suite runs it as a check, so a plugin failing at
-// composition fails in its own tests first.
+// The struct tags of an options struct and the values that the checks
+// compare them with.
+const (
+	// optTag contains the config key of an option.
+	optTag = "opt"
+	// docTag contains the meaning of an option.
+	docTag = "doc"
+	// schemaTag marks an option that needs a value.
+	schemaTag = "schema"
+	// requiredMark is the one value of schemaTag. Build refuses an option
+	// with the mark that has the zero value of its type.
+	requiredMark = "required"
+	// jsonTag contains the JSON key of a field, and jsonSkip is the key of
+	// a field that the encoding leaves out.
+	jsonTag  = "json"
+	jsonSkip = "-"
+)
+
+// The keywords and the type name of JSON Schema that [OptionsSchema]
+// writes.
+const (
+	keywordType        = "type"
+	keywordProperties  = "properties"
+	keywordAdditional  = "additionalProperties"
+	keywordRequired    = "required"
+	keywordDescription = "description"
+	typeObject         = "object"
+)
+
+// ValidateOptions checks the options struct of p against the tag contract
+// and returns one error for each finding, in field order. The contract has
+// these rules:
+//
+//   - Options returns a pointer to a struct that is not nil.
+//   - Each field is exported.
+//   - Each field has an opt tag with its config key, and no two fields
+//     have one key.
+//   - Each field has a doc tag with its meaning.
+//   - A schema tag has the value required.
+//
+// ValidateOptions returns nothing for a plugin that declares no options.
+// The composition runs it before it populates the options, and the plugin
+// suite runs it as a check.
 //
 // # Allocation contract
 //
-// ValidateOptions allocates the set of claimed keys, the reflection of
-// each field and the errors it returns. It allocates nothing for a
-// plugin without the surface.
+// ValidateOptions allocates the set of claimed keys, the reflection of the
+// fields and the errors that it returns. It allocates nothing for a plugin
+// without the surface.
 func ValidateOptions(p Plugin) []error {
 	op, held := p.(OptionsProvider)
 	if !held {
@@ -57,11 +94,11 @@ func ValidateOptions(p Plugin) []error {
 			))
 			continue
 		}
-		key := f.Tag.Get("opt")
+		key := f.Tag.Get(optTag)
 		switch first, taken := claimed[key]; {
 		case key == "":
 			errs = append(errs, fmt.Errorf(
-				"plugin: %s option field %s carries no opt tag naming its config key",
+				"plugin: %s option field %s has no opt tag with its config key",
 				p.Name(), f.Name,
 			))
 		case taken:
@@ -72,32 +109,112 @@ func ValidateOptions(p Plugin) []error {
 		default:
 			claimed[key] = f.Name
 		}
-		if f.Tag.Get("doc") == "" {
+		if f.Tag.Get(docTag) == "" {
 			errs = append(errs, fmt.Errorf(
-				"plugin: %s option field %s carries no doc tag stating its meaning",
+				"plugin: %s option field %s has no doc tag with its meaning",
 				p.Name(), f.Name,
+			))
+		}
+		if mark, marked := f.Tag.Lookup(schemaTag); marked && mark != requiredMark {
+			errs = append(errs, fmt.Errorf(
+				"plugin: %s option field %s has the schema tag %q, and the one value of the tag is %s",
+				p.Name(), f.Name, mark, requiredMark,
 			))
 		}
 	}
 	return errs
 }
 
-// EncodeOptions returns a plugin's options in their canonical
-// encoding, which is what a unit key and the composition
-// fingerprint fold, and nil for a plugin declaring none. The
-// encoding is encoding/json over the declared struct. It refuses a
-// struct the encoding cannot see whole: an unexported field at any
-// depth, a field its json tag hides, and a value the encoder
-// refuses. A type that marshals itself is taken as it encodes.
-// Every option is inside the encoding, so a changed option always
-// changes the key.
+// MissingOptions returns one error for each option of p that the tag
+// schema:"required" marks and that has the zero value of its type, in
+// field order. The message of each error contains the name of the plugin
+// and the key of the option. MissingOptions returns nothing for a plugin
+// that declares no options. It also returns nothing for options that are
+// not a pointer to a struct, because ValidateOptions reports them.
+//
+// # Allocation contract
+//
+// MissingOptions allocates the errors that it returns and nothing else.
+func MissingOptions(p Plugin) []error {
+	op, held := p.(OptionsProvider)
+	if !held {
+		return nil
+	}
+	rv := reflect.ValueOf(op.Options())
+	if rv.Kind() != reflect.Pointer || rv.IsNil() || rv.Elem().Kind() != reflect.Struct {
+		return nil
+	}
+	v := rv.Elem()
+	t := v.Type()
+	var errs []error
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Tag.Get(schemaTag) == requiredMark && v.Field(i).IsZero() {
+			errs = append(errs, fmt.Errorf(
+				"plugin: %s requires the option %s, which has the zero value of its type",
+				p.Name(), f.Tag.Get(optTag),
+			))
+		}
+	}
+	return errs
+}
+
+// OptionsSchema returns the JSON Schema, draft 2020-12, of the options of p
+// in a config file. The schema is a closed object with one property for
+// each option. The property has the key of the opt tag, the doc tag as its
+// description, and the schema of the type of the field that
+// [jsonschema.Of] returns. The options step decodes a value below an option
+// through JSON, so the schema reads the keys of a struct below an option
+// from its json tags.
+//
+// An option with the tag schema:"required" is a required property while it
+// has the zero value of its type. A config file need not set an option that
+// the composition already set. OptionsSchema returns nil for a plugin that
+// declares no options, and for options that [ValidateOptions] reports.
+func OptionsSchema(p Plugin) map[string]any {
+	op, held := p.(OptionsProvider)
+	if !held || op.Options() == nil || len(ValidateOptions(p)) > 0 {
+		return nil
+	}
+	v := reflect.ValueOf(op.Options()).Elem()
+	t := v.Type()
+	properties := make(map[string]any, t.NumField())
+	var required []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		key := f.Tag.Get(optTag)
+		property := jsonschema.Of(f.Type, jsonschema.TagJSON)
+		property[keywordDescription] = f.Tag.Get(docTag)
+		properties[key] = property
+		if f.Tag.Get(schemaTag) == requiredMark && v.Field(i).IsZero() {
+			required = append(required, key)
+		}
+	}
+	out := map[string]any{keywordType: typeObject, keywordProperties: properties, keywordAdditional: false}
+	if len(required) > 0 {
+		out[keywordRequired] = required
+	}
+	return out
+}
+
+// EncodeOptions returns the options of p in their canonical encoding, and
+// nil for a plugin that declares no options. A unit key and the
+// composition fingerprint fold the encoding. The encoding is encoding/json
+// over the declared struct, and a type that marshals itself encodes as it
+// marshals. Every option is inside the encoding, so a changed option
+// always changes the key.
+//
+// Error modes: EncodeOptions returns an error for a struct that the
+// encoding cannot see whole. Such a struct has an unexported field at any
+// depth, a field that its json tag hides, or a value that the encoder
+// refuses.
 //
 // # Allocation contract
 //
 // EncodeOptions allocates the set of seen types, the reflection of each
 // field, the encoded bytes, and what encoding/json allocates for its
-// state where its pool is empty. It allocates nothing for a plugin
-// without the surface.
+// state when its pool is empty. It allocates nothing for a plugin without
+// the surface.
 func EncodeOptions(p Plugin) ([]byte, error) {
 	op, held := p.(OptionsProvider)
 	if !held {
@@ -120,15 +237,15 @@ func EncodeOptions(p Plugin) ([]byte, error) {
 	return encoded, nil
 }
 
-// Interfaces a type implements when it spells its own encoding.
+// The interfaces of a type that encodes itself.
 var (
 	jsonMarshaler = reflect.TypeFor[json.Marshaler]()
 	textMarshaler = reflect.TypeFor[encoding.TextMarshaler]()
 )
 
-// hiddenField returns the first field reachable from t that the
-// JSON encoding cannot see, spelled type-qualified, and false where
-// every field is visible. seen stops a recursive type.
+// hiddenField returns the qualified name of the first field below t that
+// the JSON encoding cannot see, and false when the encoding sees every
+// field. seen ends the walk of a recursive type.
 func hiddenField(t reflect.Type, seen map[reflect.Type]bool) (string, bool) {
 	for {
 		if marshals(t) {
@@ -145,7 +262,7 @@ func hiddenField(t reflect.Type, seen map[reflect.Type]bool) (string, bool) {
 	seen[t] = true
 	for f := range t.Fields() {
 		switch {
-		case f.Tag.Get("json") == "-":
+		case f.Tag.Get(jsonTag) == jsonSkip:
 			return t.String() + "." + f.Name, true
 		case !f.IsExported() && (!f.Anonymous || f.Type.Kind() != reflect.Struct):
 			return t.String() + "." + f.Name, true
@@ -157,8 +274,7 @@ func hiddenField(t reflect.Type, seen map[reflect.Type]bool) (string, bool) {
 	return "", false
 }
 
-// marshals reports whether values of t, or pointers to them, spell
-// their own encoding.
+// marshals reports whether a value of t or a pointer to it encodes itself.
 func marshals(t reflect.Type) bool {
 	pt := reflect.PointerTo(t)
 	return t.Implements(jsonMarshaler) || t.Implements(textMarshaler) ||

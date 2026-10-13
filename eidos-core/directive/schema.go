@@ -159,6 +159,16 @@ type ParamSpec struct {
 	// param of another type, an empty choice and a repeated choice.
 	// Empty admits every string.
 	Choices []string
+	// Default is the spelling of the value that validation applies
+	// where an instance omits the param under a role that admits it.
+	// Validation types it as it types a written value, so a handler
+	// reads a defaulted param as a written one. A positional default
+	// applies where the instance omits the param and every positional
+	// param after it. Registration refuses a default on a required
+	// param, on a list or a reference param, and a default that does
+	// not type as the param's type. An empty Default declares no
+	// default.
+	Default string
 	// Doc states the param's meaning. Registration refuses an
 	// empty one.
 	Doc string

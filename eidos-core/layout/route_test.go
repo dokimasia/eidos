@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -63,18 +64,20 @@ const (
 
 // The fixture workspace: two packages in two directories, a package
 // whose files span two directories, and one package of a dependency
-// store.
+// store. The graph does not contain ghostPkg.
 const (
 	storePkg  = "svc/store"
 	cachePkg  = "svc/cache"
 	multiPkg  = "svc/multi"
 	depPkg    = "example.com/dep"
+	ghostPkg  = "svc/ghost"
 	storeFile = "svc/store/store.go"
 	rowFile   = "svc/store/row.go"
 	cacheFile = "svc/cache/cache.go"
 	zedFile   = "svc/multi/z/zed.go"
 	aceFile   = "svc/multi/a/ace.go"
 	depFile   = "gomod://example.com/dep@v1.0.0/dep.go"
+	ghostFile = "svc/ghost/ghost.go"
 	genDir    = "gen"
 
 	// stubDirective is stubgen's directive, docDirective docgen's and
@@ -115,13 +118,33 @@ var (
 
 	// ghostID names a declaration of a package the graph does not
 	// contain.
-	ghostID = coretest.ID("svc/ghost", "Ghost", symbol.KindStruct)
+	ghostID = coretest.ID(ghostPkg, "Ghost", symbol.KindStruct)
 )
 
-// source is one file of a fixture package, declaring one struct.
+// source is one file of a fixture package, declaring one struct, with
+// the annotations of the file.
 type source struct {
-	file string
-	id   symbol.Identity
+	file        string
+	id          symbol.Identity
+	annotations symbol.Annotations
+}
+
+// storeAnnotations are the annotations of storeFile: a build constraint.
+var storeAnnotations = symbol.Annotations{{Name: "go:build", Args: []string{"linux"}}}
+
+// The identities of the files storeFile and rowFile, as sourcePackage
+// gives them.
+var (
+	storeFileID = symbol.Identity{
+		Lang: coretest.Lang, Package: storePkg, Name: path.Base(storeFile), Kind: symbol.KindFile,
+	}
+	rowFileID = symbol.Identity{Lang: coretest.Lang, Package: storePkg, Name: path.Base(rowFile), Kind: symbol.KindFile}
+)
+
+// beside is the route of a unit beside its source under the zero
+// configuration.
+var beside = plugin.Route{
+	Family: plugin.RouteHandler, Policy: plugin.RouteDefault, Dir: plugin.RouteSource, Name: plugin.RouteTarget,
 }
 
 // fixture is one routing case: the plan's units, the directives on
@@ -129,13 +152,16 @@ type source struct {
 type fixture struct {
 	units      []plugin.Unit
 	directives plugin.ValidatedMap
-	outputs    map[plugin.ID][]plugin.Output
-	config     layout.Config
-	speller    plugin.FileSpeller
-	packager   plugin.Packager
-	residents  map[string][]plugin.Resident
-	modules    []plugin.Module
-	others     plugin.Names
+	// raws are the raw instances that the graph indexes by name, for the
+	// directives on a package.
+	raws      map[symbol.Identity][]directive.Raw
+	outputs   map[plugin.ID][]plugin.Output
+	config    layout.Config
+	speller   plugin.FileSpeller
+	packager  plugin.Packager
+	residents map[string][]plugin.Resident
+	modules   []plugin.Module
+	others    plugin.Names
 	// target is the plan's target, and zero for a plan that translates
 	// no reference.
 	target plugin.Target
@@ -160,12 +186,23 @@ func (f *fixture) on(id symbol.Identity, ds ...directive.Directive) *fixture {
 	return f
 }
 
+// onPackage attaches a directive to a package of the fixture: the raw
+// instance, which the graph indexes by its name, and the validated one.
+func (f *fixture) onPackage(pkg string, d directive.Directive) *fixture {
+	id := coretest.PackageID(pkg)
+	if f.raws == nil {
+		f.raws = map[symbol.Identity][]directive.Raw{}
+	}
+	f.raws[id] = append(f.raws[id], directive.Raw{Name: d.Name, Pos: d.Pos})
+	return f.on(id, d)
+}
+
 // input returns the routing input over a settled store of the case's
 // units, and the sink it reports into.
 func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 	tb.Helper()
 
-	ix, err := plugin.NewIndex(graph(tb), meta.NewFacts(meta.NewRegistry()), f.directives, nil)
+	ix, err := plugin.NewIndex(graph(tb, f.raws), meta.NewFacts(meta.NewRegistry()), f.directives, nil)
 	assert.NoError(tb, err, "the fixture index builds")
 	e := plugin.NewEmit()
 	assert.Total(tb, e.Add, f.units, "the fixture unit arrives")
@@ -459,6 +496,250 @@ func TestRoute(t *testing.T) {
 
 				files, sink := tt.give().route(t)
 				assert.Equal(t, layoutOf(files), tt.want, "the routed files")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		sources := []struct {
+			name            string
+			give            func() *fixture
+			wantSource      symbol.Identity
+			wantAnnotations symbol.Annotations
+		}{
+			{
+				name: "returns a per-source file with the identity and the annotations of its source file",
+				give: func() *fixture {
+					return newFixture(stubOf(storeFile, storePkg, generated(storeID, "StoreStub")))
+				},
+				wantSource: storeFileID, wantAnnotations: storeAnnotations,
+			},
+			{
+				name: "returns a file of two families of one source file with that source",
+				give: func() *fixture {
+					f := newFixture(
+						stubOf(storeFile, storePkg, generated(storeID, "StoreStub")),
+						unitOf(docgen, families()[docgen][0], storeFile, coretest.PackageID(storePkg),
+							generated(storeID, "StoreDoc")),
+					)
+					f.config = layout.Config{Families: map[layout.Family]layout.Refinement{
+						{Plugin: docgen}: {File: "store_stub.go"},
+					}}
+					return f
+				},
+				wantSource: storeFileID, wantAnnotations: storeAnnotations,
+			},
+			{
+				name: "returns a per-source file of a source file without annotations with that source",
+				give: func() *fixture {
+					return newFixture(stubOf(rowFile, storePkg, generated(rowID, "RowStub")))
+				},
+				wantSource: rowFileID,
+			},
+			{
+				name: "returns a file of two source files without a source",
+				give: func() *fixture {
+					f := newFixture(
+						stubOf(storeFile, storePkg, generated(storeID, "StoreStub")),
+						stubOf(rowFile, storePkg, generated(rowID, "RowStub")),
+					)
+					f.config = layout.Config{Families: map[layout.Family]layout.Refinement{
+						{Plugin: stubgen}: {File: "stubs.go"},
+					}}
+					return f
+				},
+			},
+			{
+				name: "returns a per-package file without a source",
+				give: func() *fixture {
+					return newFixture(unitOf(stubgen, families()[stubgen][2], storePkg,
+						coretest.PackageID(storePkg), generated(storeID, "StoreSuite")))
+				},
+			},
+			{
+				name: "returns a per-source file of a package outside the index without a source",
+				give: func() *fixture {
+					return newFixture(stubOf(ghostFile, ghostPkg, generated(ghostID, "GhostStub")))
+				},
+			},
+		}
+		for _, tt := range sources {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				files, _ := tt.give().route(t)
+				assert.Length(t, files, 1, "the units route to one file")
+				expect.Equal(t, files[0].Source, tt.wantSource, "the source file of the file")
+				expect.Equal(t, files[0].Annotations, tt.wantAnnotations, "the annotations of the source file")
+			})
+		}
+
+		centralised := layout.Config{Policy: layout.PolicyCentralised, Dir: genDir}
+		routes := []struct {
+			name string
+			give func() *fixture
+			want []plugin.Route
+		}{
+			{
+				name: "sets the route of a unit beside its source",
+				give: func() *fixture { return newFixture(storeStub()) },
+				want: []plugin.Route{beside},
+			},
+			{
+				name: "sets the plan as the input of the policy and the directory of a centralised plan",
+				give: func() *fixture {
+					f := newFixture(storeStub())
+					f.config = centralised
+					return f
+				},
+				want: []plugin.Route{{
+					Family: plugin.RouteHandler, Policy: plugin.RoutePlan,
+					Dir: plugin.RoutePlan, Name: plugin.RouteTarget,
+				}},
+			},
+			{
+				name: "sets the generator as the input of the directory that its refinement states",
+				give: func() *fixture {
+					f := newFixture(storeStub())
+					f.config = centralised
+					f.config.Plugins = map[plugin.ID]layout.Refinement{stubgen: {Dir: tagPlan}}
+					return f
+				},
+				want: []plugin.Route{{
+					Family: plugin.RouteHandler, Policy: plugin.RoutePlan, Dir: plugin.RouteGenerator,
+					Name: plugin.RouteTarget,
+				}},
+			},
+			{
+				name: "sets the family as the input of each part that its refinement states",
+				give: func() *fixture {
+					f := newFixture(storeStub())
+					f.config = layout.Config{Families: map[layout.Family]layout.Refinement{
+						{Plugin: stubgen}: {Policy: layout.PolicyCentralised, Dir: genDir, File: "stubs.go"},
+					}}
+					return f
+				},
+				want: []plugin.Route{{
+					Family: plugin.RouteHandler, Policy: plugin.RouteFamily, Dir: plugin.RouteFamily,
+					Name: plugin.RouteFamily,
+				}},
+			},
+			{
+				name: "sets the generator as the input of the filename that its refinement states",
+				give: func() *fixture {
+					f := newFixture(storeStub())
+					f.config = layout.Config{Plugins: map[plugin.ID]layout.Refinement{stubgen: {File: "all.go"}}}
+					return f
+				},
+				want: []plugin.Route{{
+					Family: plugin.RouteHandler, Policy: plugin.RouteDefault, Dir: plugin.RouteSource,
+					Name: plugin.RouteGenerator,
+				}},
+			},
+			{
+				name: "sets no input of the policy of a per-plan family",
+				give: func() *fixture {
+					f := newFixture(unitOf(stubgen, families()[stubgen][3], "", symbol.Identity{},
+						generated(storeID, "StoreIndex")))
+					f.config = layout.Config{Dir: genDir}
+					return f
+				},
+				want: []plugin.Route{{Family: plugin.RouteHandler, Dir: plugin.RoutePlan, Name: plugin.RouteTarget}},
+			},
+			{
+				name: "sets the directive as the input of the family that its tag moves a declaration into",
+				give: func() *fixture {
+					return newFixture(storeStub()).on(storeID, written(stubDirective, 1, keyTag, tagTest))
+				},
+				want: []plugin.Route{{
+					Family: plugin.RouteDirective, Policy: plugin.RouteDefault, Dir: plugin.RouteSource,
+					Name: plugin.RouteTarget,
+				}},
+			},
+			{
+				name: "sets out as the input of the family that the kernel out directive moves a declaration into",
+				give: func() *fixture {
+					return newFixture(storeStub()).on(storeID, written(directive.KernelOut, 1, keyKTag, tagTest))
+				},
+				want: []plugin.Route{{
+					Family: plugin.RouteOut, Policy: plugin.RouteDefault, Dir: plugin.RouteSource,
+					Name: plugin.RouteTarget,
+				}},
+			},
+			{
+				name: "sets the directive as the input of the directory of a path that names a directory",
+				give: func() *fixture {
+					return newFixture(storeStub()).on(storeID, written(stubDirective, 1, keyOut, "mocks/"))
+				},
+				want: []plugin.Route{
+					{Family: plugin.RouteHandler, Dir: plugin.RouteDirective, Name: plugin.RouteTarget},
+				},
+			},
+			{
+				name: "sets out as the input of the directory and the filename of a path that names a file",
+				give: func() *fixture {
+					return newFixture(storeStub()).
+						on(storeID, written(directive.KernelOut, 1, keyPath, "mocks/fake.go"))
+				},
+				want: []plugin.Route{{Family: plugin.RouteHandler, Dir: plugin.RouteOut, Name: plugin.RouteOut}},
+			},
+			{
+				name: "sets the family as the input of the filename beside a path that names a directory",
+				give: func() *fixture {
+					f := newFixture(storeStub()).on(storeID, written(stubDirective, 1, keyOut, "mocks/"))
+					f.config = layout.Config{Families: map[layout.Family]layout.Refinement{
+						{Plugin: stubgen}: {File: "stubs.go"},
+					}}
+					return f
+				},
+				want: []plugin.Route{
+					{Family: plugin.RouteHandler, Dir: plugin.RouteDirective, Name: plugin.RouteFamily},
+				},
+			},
+			{
+				name: "sets package-out as the input of the directory of the path on a package",
+				give: func() *fixture {
+					return newFixture(storeStub()).onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+				},
+				want: []plugin.Route{{Family: plugin.RouteHandler, Dir: plugin.RoutePackage, Name: plugin.RouteTarget}},
+			},
+			{
+				name: "sets out as the input of the path of a declaration over the path of its package",
+				give: func() *fixture {
+					own := written(directive.KernelOut, 2, keyPath, "mocks/fake.go")
+					f := newFixture(storeStub()).onPackage(storePkg, written(directive.KernelOut, 1, keyPath, "gen/"))
+					f.raws[storeID] = append(f.raws[storeID], directive.Raw{Name: own.Name, Pos: own.Pos})
+					return f.on(storeID, own)
+				},
+				want: []plugin.Route{{Family: plugin.RouteHandler, Dir: plugin.RouteOut, Name: plugin.RouteOut}},
+			},
+			{
+				name: "sets the route of the unit on each part that the target splits it into",
+				give: func() *fixture {
+					f := newFixture(stubOf(storeFile, storePkg,
+						generated(storeID, "StoreStub"), generated(storeID, "StoreFake")))
+					f.speller = perDecl{}
+					return f
+				},
+				want: []plugin.Route{beside, beside},
+			},
+			{
+				name: "sets the inputs of the first declaration on a unit that two inputs place at one destination",
+				give: func() *fixture {
+					return newFixture(stubOf(storeFile, storePkg,
+						generated(storeID, "StoreStub"), generated(rowID, "RowStub"))).
+						on(storeID, written(stubDirective, 1, keyOut, "."))
+				},
+				want: []plugin.Route{
+					{Family: plugin.RouteHandler, Dir: plugin.RouteDirective, Name: plugin.RouteTarget},
+				},
+			},
+		}
+		for _, tt := range routes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				files, sink := tt.give().route(t)
+				assert.Equal(t, routesOf(files), tt.want, "the route of each unit")
 				coretest.AssertCodes(t, sink)
 			})
 		}
@@ -861,24 +1142,35 @@ func sourcePackage(pkg, name string, files ...source) *node.Package {
 	p := &node.Package{ID: coretest.PackageID(pkg), Path: strings.Split(pkg, "/"), Name: name}
 	for _, s := range files {
 		p.Files = append(p.Files, &node.File{
-			ID:    symbol.Identity{Lang: coretest.Lang, Package: pkg, Name: path.Base(s.file), Kind: symbol.KindFile},
-			Path:  s.file,
-			Decls: node.Symbols{sourceOf(s.id, s.file)},
+			ID: symbol.Identity{
+				Lang: coretest.Lang, Package: pkg, Name: path.Base(s.file), Kind: symbol.KindFile,
+			},
+			Path:        s.file,
+			Annotations: s.annotations,
+			Decls:       node.Symbols{sourceOf(s.id, s.file)},
 		})
 	}
 	return p
 }
 
-// graph returns the fixture workspace, frozen.
-func graph(tb testing.TB) *store.Graph {
+// graph returns the fixture workspace with the raw directives attached to
+// their subjects, frozen.
+func graph(tb testing.TB, raws map[symbol.Identity][]directive.Raw) *store.Graph {
 	tb.Helper()
 
-	return coretest.Frozen(tb,
-		sourcePackage(storePkg, "store", source{storeFile, storeID}, source{rowFile, rowID}),
-		sourcePackage(cachePkg, "cache", source{cacheFile, cacheID}),
-		sourcePackage(multiPkg, "multi", source{zedFile, zedID}, source{aceFile, aceID}),
-		sourcePackage(depPkg, "dep", source{depFile, depID}),
-	)
+	g := store.New()
+	assert.Total(tb, g.AddPackage, []*node.Package{
+		sourcePackage(storePkg, "store",
+			source{file: storeFile, id: storeID, annotations: storeAnnotations}, source{file: rowFile, id: rowID}),
+		sourcePackage(cachePkg, "cache", source{file: cacheFile, id: cacheID}),
+		sourcePackage(multiPkg, "multi", source{file: zedFile, id: zedID}, source{file: aceFile, id: aceID}),
+		sourcePackage(depPkg, "dep", source{file: depFile, id: depID}),
+	}, "the fixture's packages load")
+	for id, ds := range raws {
+		assert.NoError(tb, g.AttachDirectives(id, ds), "the fixture's directives attach before the seal")
+	}
+	g.Freeze()
+	return g
 }
 
 // registry returns the schemas of the fixture generators' directives.
@@ -934,6 +1226,18 @@ func unitOf(p plugin.ID, out plugin.Output, key string, pkg symbol.Identity, dec
 // stubOf returns stubgen's primary unit of one source file.
 func stubOf(file, pkg string, decls ...symbol.Symbol) plugin.Unit {
 	return unitOf(stubgen, families()[stubgen][0], file, coretest.PackageID(pkg), decls...)
+}
+
+// routesOf returns the route of each unit of each file, in file order and
+// then in unit order.
+func routesOf(files []plugin.File) []plugin.Route {
+	var out []plugin.Route
+	for _, f := range files {
+		for _, u := range f.Units {
+			out = append(out, u.Route)
+		}
+	}
+	return out
 }
 
 // layoutOf returns each file's path and the names of its declarations,

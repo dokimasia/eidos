@@ -57,11 +57,3 @@ func (p Policy) String() string {
 		return "Policy(" + strconv.Itoa(int(p)) + ")"
 	}
 }
-
-// or returns p, or fallback when p is PolicyInherit.
-func (p Policy) or(fallback Policy) Policy {
-	if p == PolicyInherit {
-		return fallback
-	}
-	return p
-}

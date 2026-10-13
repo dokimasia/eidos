@@ -49,10 +49,13 @@ import (
 //   - Optional, List, Array, Stream and Borrow: one child.
 //   - Map: the key, then the value.
 //   - Func: the parameters, then the returns, which begin at Split.
-//   - Tuple, Union and Intersection: the members.
+//   - Tuple, Union and Intersection: the members. A Go union has its
+//     terms, and its spelling keeps the approximation mark of a term.
 //   - Wildcard: the bound, with Variance, and none for an unbounded
 //     one.
-//   - Inline and Named: none.
+//   - Inline: the types that the body states, in the order of the
+//     body, so a backend binds the imports of the names in the body.
+//   - Named: none.
 //
 // No element of Elems is nil. A frontend records a child that the source
 // does not state as an empty reference, so the form keeps its arity.
@@ -88,7 +91,8 @@ import (
 // the same nodes as the members of a declaration, without identities.
 // No carrier and no stamp can address them. The resolution step
 // resolves the references among them. Only the node model has them. A
-// backend writes an inline body from the spelling of the reference.
+// backend writes an inline body from the spelling of the reference, and
+// binds the imports of its children.
 type TypeRef struct {
 	Pos        position.Pos      `eidos:"node"`
 	Spelling   string            `eidos:"both"`      // source text, verbatim

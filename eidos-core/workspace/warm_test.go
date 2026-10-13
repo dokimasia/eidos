@@ -5,6 +5,7 @@ package workspace_test
 
 import (
 	"bytes"
+	"context"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,6 +60,14 @@ const labelLine = "+labeler:label\n"
 // before it.
 const copyLine = "+copier:copy\n"
 
+// packageOutLine is the kernel out directive on the package of the warm
+// tree, and packageOutFile the path of the copier's file under it. The
+// plan of the copier names the file after the plan.
+const (
+	packageOutLine = "pkgnote out path=\"gen/\"\n"
+	packageOutFile = "svc/store/gen/copies.txt"
+)
+
 // The file of the warm tree, and the lines that the cases edit. Each line
 // declares a struct, or attaches a directive or a stamp to the line before
 // it. An edit that must not move the declarations after it replaces one
@@ -74,14 +83,26 @@ const (
 	markedLine   = markLine + "\n"
 	bogusMark    = markLine + " bogus=1\n"
 	dropLine     = "+meta drop=size.width\n"
+	setLine      = "+meta set=size.width value=7\n"
 	testStampYes = "stamp fake.testFile yes\n"
 	testStampNo  = "stamp fake.testFile no\n"
 	unknownStamp = "stamp fake.unknown yes\n"
 )
 
+// The cache package of the cases of the declared names: its source file,
+// and the header line of a file that names the package clause of the file
+// in the [headed] language.
+const (
+	cacheSource = "svc/cache/cache.zz"
+	namePrefix  = "// name "
+)
+
 // warmWarning is the code of the warning that the warner reports on the
 // row.
 var warmWarning = diag.Code{Prefix: "tst", Number: 9}
+
+// cachePackage is the package of [cacheSource].
+var cachePackage = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/cache", Kind: symbol.KindPackage}
 
 // warmEdit is the modification time of each file that an edit changes,
 // as the write of an editor sets it.
@@ -130,6 +151,35 @@ func (counter) Name() plugin.ID { return counterID }
 func (c counter) Annotate(ctx *plugin.AnnotatorContext) error {
 	c.calls.Add(1)
 	ctx.Reader.Lookup(rowID)
+	return nil
+}
+
+// headed is the scripted language with a header that names the package
+// clause of a file. A first line "// name NAME" sets the name that the
+// packages of the file's unit declare. The scripted language takes the
+// last element of the package's path as the name otherwise.
+type headed struct {
+	*frontendtest.Scripted
+}
+
+// Parse parses the scripted unit, and then names its packages after the
+// header of a member that has one.
+func (f headed) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := f.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	for _, ref := range u.Files() {
+		b, err := u.Read(ref.Path)
+		if err != nil {
+			return err
+		}
+		first, _, _ := strings.Cut(string(b), "\n")
+		if name, named := strings.CutPrefix(first, namePrefix); named {
+			for _, p := range u.Graph().Packages() {
+				p.Name = name
+			}
+		}
+	}
 	return nil
 }
 
@@ -199,6 +249,36 @@ func TestWarm(t *testing.T) {
 			expect.Equal(t, generatedBy(report, copierID), 1, "the copier runs on the reader again")
 			expect.Equal(t, report.Stats.Rendered, 1, "the run renders the copier's file")
 		})
+
+		t.Run("routes a file again after an edit of the out directive on its package", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys).Plans(copying(t, keys)))
+			report, err := warmAfter(t, w, warmTree(rowLine, colLine, readerLine, copyLine),
+				warmTree(packageOutLine, rowLine, colLine, readerLine, copyLine))
+			assert.NoError(t, err, "the run is clean")
+			paths := make([]string, 0, len(report.Manifest.Files))
+			for _, f := range report.Manifest.Files {
+				paths = append(paths, f.Path)
+			}
+			assert.Equal(t, paths, []string{packageOutFile},
+				"the copier's file moves into the directory of the out directive on the package")
+		})
+
+		t.Run("renders a file again after an edit renames a package whose declared name the file read",
+			func(t *testing.T) {
+				t.Parallel()
+
+				var o opener
+				w := built(t, clauseBuilder(ledger.NewMem(), headed{frontendtest.NewScripted()}, o.open))
+				_, err := warmAfter(t, w, clauseTree(cacheClause), clauseTree(renamedClause))
+				assert.NoError(t, err, "the run is clean")
+				sinks := o.opened()
+				assert.Length(t, sinks, 2, "each run opens one sink")
+				assert.Contains(t, string(sinks[1].Files()[mirroredFile]), "type ForRow "+renamedClause,
+					"the file of the store package writes the new name of the cache package")
+			})
 
 		t.Run("withdraws the claim of an invocation that a directive gates and that runs again", func(t *testing.T) {
 			t.Parallel()
@@ -276,6 +356,31 @@ func TestWarm(t *testing.T) {
 			assert.NoError(t, err, "the run is clean")
 			_, held := meta.Get(report.Facts, rowID, keys.width)
 			assert.False(t, held, "the drop hides the width of the row")
+		})
+
+		t.Run("withdraws the set of a directive that the edit removed", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys))
+			report, err := warmAfter(t, w, warmTree(rowLine, setLine, colLine, readerLine),
+				warmTree(rowLine, colLine, readerLine))
+			assert.NoError(t, err, "the run is clean")
+			width, _ := meta.Get(report.Facts, rowID, keys.width)
+			assert.Equal(t, width, int64(2), "the width is the sizer's count again")
+		})
+
+		t.Run("files the set of a directive that the edit added", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys))
+			report, err := warmAfter(t, w, before, warmTree(rowLine, setLine, colLine, readerLine))
+			assert.NoError(t, err, "the run is clean")
+			width, _ := meta.Get(report.Facts, rowID, keys.width)
+			expect.Equal(t, width, int64(7), "the set outranks the stamp of the sizer")
+			seen, _ := meta.Get(report.Facts, readerID, keys.seen)
+			expect.Equal(t, seen, int64(7), "the watcher reads the set width again")
 		})
 
 		t.Run("files the stamps of a file whose stamps changed", func(t *testing.T) {
@@ -486,6 +591,37 @@ func warner() plugin.Annotator {
 		}
 		return nil
 	})
+}
+
+// clauseBuilder returns the builder of a composition over the frontend f
+// that records into a ledger and renders into the output that open
+// returns. Its plan mirrors every struct through the clause printer of
+// the scripted language, which writes the name that the cache package
+// declares.
+func clauseBuilder(l ledger.Ledger, f plugin.Frontend, open func() (output.Sink, error)) *workspace.Builder {
+	target := plugin.Target(frontendtest.ScriptedLang)
+	return workspace.New().
+		Brand(fixtureBrand).
+		Frontends(f).
+		Annotators(stamper(noterID, quiet)).
+		Targets(target).
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirror(mirrorID)},
+			Backend:    clausePrinter(target, cachePackage.Package),
+		}).
+		Output(open).
+		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// clauseTree returns a tree of the store package with its row, and of the
+// cache package with its column, whose file names its package clause name
+// in the header of the [headed] language.
+func clauseTree(name string) fstest.MapFS {
+	return fstest.MapFS{
+		sealedSource: {Data: []byte("package svc/store\n" + rowLine)},
+		cacheSource:  {Data: []byte(namePrefix + name + "\npackage svc/cache\n" + colLine)},
+	}
 }
 
 // warmTree returns a tree of the store package with one file that

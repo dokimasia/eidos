@@ -115,6 +115,25 @@ func TestWitness(t *testing.T) {
 			assert.Contains(t, msgs[0], "none", "which says the declaration has no parameters")
 		})
 
+		t.Run("reports EmptyWitness for an instance without a key", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.box.ID, 2, directive.KernelWitness)
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
+			var refusal diag.Diag
+			for d := range report.Sink.All() {
+				if d.Code == authored.EmptyWitness {
+					refusal = d
+				}
+			}
+			assert.Equal(t, refusal.Code, authored.EmptyWitness, "under the code of an empty witness")
+			assert.Equal(t, refusal.Pos.Line, 2, "positioned at the carrier")
+			assert.Contains(t, refusal.Msg, paramT, "naming the parameters that the declaration has")
+		})
+
 		t.Run("stamps nothing for a witness naming a type nothing resolves", func(t *testing.T) {
 			t.Parallel()
 

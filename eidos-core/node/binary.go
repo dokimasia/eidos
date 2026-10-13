@@ -76,13 +76,14 @@ func (w *binaryWriter) strs(ss []string) {
 	}
 }
 
-// annotations writes an annotation list: each annotation's name and
-// arguments.
+// annotations writes an annotation list: each annotation's name, its
+// arguments and whether it assigns its argument.
 func (w *binaryWriter) annotations(as symbol.Annotations) {
 	w.unsigned(uint64(len(as)))
 	for _, a := range as {
 		w.str(a.Name)
 		w.strs(a.Args)
+		w.boolean(a.Assigned)
 	}
 }
 
@@ -161,7 +162,7 @@ func (r *binaryReader) annotations() symbol.Annotations {
 	}
 	out := make(symbol.Annotations, n)
 	for i := range out {
-		out[i] = symbol.Annotation{Name: r.str(), Args: r.strs()}
+		out[i] = symbol.Annotation{Name: r.str(), Args: r.strs(), Assigned: r.boolean()}
 	}
 	return out
 }

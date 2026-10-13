@@ -259,6 +259,50 @@ func TestConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("Refinement", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("Over", func(t *testing.T) {
+			t.Parallel()
+
+			base := layout.Refinement{Policy: layout.PolicyCentralised, Dir: genDir, File: tagTest}
+			tests := []struct {
+				name string
+				give layout.Refinement
+				base layout.Refinement
+				want layout.Refinement
+			}{
+				{name: "returns base for the zero refinement", base: base, want: base},
+				{
+					name: "replaces the policy of base with a policy other than PolicyInherit",
+					give: layout.Refinement{Policy: layout.PolicyAlongside},
+					base: base,
+					want: layout.Refinement{Policy: layout.PolicyAlongside, Dir: genDir, File: tagTest},
+				},
+				{
+					name: "replaces the directory of base with a directory that is not empty",
+					give: layout.Refinement{Dir: tagPlan},
+					base: base,
+					want: layout.Refinement{Policy: layout.PolicyCentralised, Dir: tagPlan, File: tagTest},
+				},
+				{
+					name: "replaces the filename of base with a filename that is not empty",
+					give: layout.Refinement{File: tagPlan},
+					base: base,
+					want: layout.Refinement{Policy: layout.PolicyCentralised, Dir: genDir, File: tagPlan},
+				},
+				{name: "returns the refinement over the zero base", give: base, want: base},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					assert.Equal(t, tt.give.Over(tt.base), tt.want, "each field that the refinement sets replaces base")
+				})
+			}
+		})
+	})
+
 	t.Run("AppendBinary", func(t *testing.T) {
 		t.Parallel()
 
@@ -365,6 +409,11 @@ func TestConfigAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got, _ = full.AppendBinary(room) }, appendAllocs,
 		"AppendBinary allocates the sorted keys of each refinement map")
 	assert.Equal(t, got, encoded(t, full), "AppendBinary returns the encoding")
+
+	over, base := full.Plugins[stubgen], full.Plugins[docgen]
+	var merged layout.Refinement
+	assert.MaxAllocs(t, func() { merged = over.Over(base) }, 0, "Over allocates nothing")
+	assert.Equal(t, merged, over, "Over returns the refinement that sets every field")
 }
 
 // BenchmarkConfig measures the check a Build runs over each plan's

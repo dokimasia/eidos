@@ -16,9 +16,11 @@
 // subscription to everything in scope. The provider interfaces,
 // [KeyProvider] among them, are what the composition asserts to
 // learn the rest of the declaration. [KeyBinder] binds a plugin's gates
-// on named key handles once the key registry seals. [ValidateOptions] is the
-// one check an options struct passes, at composition and in the
-// conformance suite alike.
+// on named key handles once the key registry seals. [ValidateOptions]
+// checks an options struct against the tag contract. [MissingOptions]
+// reports each required option that has the zero value of its type. The
+// composition and the plugin suite run both checks. [OptionsSchema]
+// returns the JSON Schema of the options of a plugin in a config file.
 //
 // # Two read surfaces
 //
@@ -118,6 +120,6 @@
 // # Dependency position
 //
 // core/plugin imports core/diag, core/directive, core/emit,
-// core/manifest, core/meta, core/node, core/position, core/rules,
-// core/store, core/symbol and the Go stdlib.
+// core/jsonschema, core/manifest, core/meta, core/node, core/position,
+// core/rules, core/store, core/symbol and the Go stdlib.
 package plugin

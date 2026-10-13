@@ -29,6 +29,7 @@ import (
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -713,6 +714,20 @@ func TestLoad(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, packageOf(t, g, sharedPath).Name, "right",
 				"a unit that named nothing is not a disagreement")
+		})
+
+		t.Run("places a package without a position at the position of its first file", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{
+				oneFile: {Data: []byte("package shared\ntype Twin left\n")},
+				twoFile: {Data: []byte("package shared\ntype Other right\n")},
+			}
+			g, _, sink := loadTree(t, tree)
+			coretest.AssertCodes(t, sink)
+			pkg := packageOf(t, g, sharedPath)
+			assert.NotEqual(t, pkg.Files[0].Pos, position.Pos{}, "the frontend places its files")
+			assert.Equal(t, pkg.Pos, pkg.Files[0].Pos, "a finding on the package has the place of its first file")
 		})
 	})
 

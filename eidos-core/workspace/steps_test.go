@@ -4,11 +4,14 @@
 package workspace_test
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
@@ -24,11 +27,12 @@ import (
 )
 
 // The values with which the refinement cases refine a plan, an output
-// directory, an import base and a pattern.
+// directory, an import base, a pattern and a filename.
 const (
 	refinedDir        = "gen"
 	refinedImportBase = "example.com/platform/gen"
 	refinedPattern    = "svc/..."
+	refinedFile       = "all.txt"
 )
 
 // The binding fixture beside [flaggerID], the annotator that registers
@@ -48,6 +52,18 @@ const (
 	keyedLang symbol.Lang  = "kv"
 	keyedKey  meta.KeyName = "kv.flag"
 )
+
+// The config texts of [pacedOptions]. timeoutText is a duration, lateText
+// is not a duration, and slowText is not a pace.
+const (
+	timeoutText = "1m30s"
+	lateText    = "soon"
+	slowText    = "slow"
+)
+
+// errPace is the error of [pacedMode.UnmarshalText] for a text that is not
+// a pace.
+var errPace = errors.New("the text is not a pace")
 
 // keyedFrontend is the scripted frontend under another language, which
 // registers the keys of its language through register.
@@ -74,6 +90,39 @@ type convertedOptions struct {
 	Limit int64          `opt:"limit" doc:"the largest number of files"`
 	Tags  []string       `opt:"tags"  doc:"the tags of each file"`
 	Bound convertedBound `opt:"bound" doc:"the bounds of a file"`
+}
+
+// pacedMode is a closed set of paces, as Go states an enumeration. Its
+// UnmarshalText refuses a text outside the set.
+type pacedMode string
+
+// The paces of [pacedMode].
+const (
+	paceFast pacedMode = "fast"
+	paceSafe pacedMode = "safe"
+)
+
+// UnmarshalText sets m to the pace in text. It returns [errPace] for a text
+// that is not a pace.
+func (m *pacedMode) UnmarshalText(text []byte) error {
+	pace := pacedMode(text)
+	if pace != paceFast && pace != paceSafe {
+		return errPace
+	}
+	*m = pace
+	return nil
+}
+
+// pacedOptions are options that take their values from text. Timeout takes
+// a duration and Mode a pace.
+type pacedOptions struct {
+	Timeout time.Duration `opt:"timeout" doc:"how long the walk waits"`
+	Mode    pacedMode     `opt:"mode"    doc:"how fast the walk runs"`
+}
+
+// requiredOptions has a required banner.
+type requiredOptions struct {
+	Header string `opt:"header" doc:"the banner every file opens with" schema:"required"`
 }
 
 // nameless is a hand-rolled annotator that returns no name. The facade
@@ -468,33 +517,84 @@ func TestSteps(t *testing.T) {
 			expect.Equal(t, opts.Bound, convertedBound{Files: 2}, "a mapping fills a struct field")
 		})
 
-		faults := []struct {
-			name    string
-			give    any
-			markers []string
-		}{
-			{
-				name:    "returns an error naming a value that does not encode",
-				give:    map[any]any{1: "deep"},
-				markers: []string{`"depth"`, "takes int", "has map[interface {}]interface {}"},
-			},
-			{
-				name:    "returns an error for an option without a value",
-				give:    nil,
-				markers: []string{`"depth"`, "takes int", "has nothing"},
-			},
-		}
-		for _, tt := range faults {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("parses a text into a time.Duration field", func(t *testing.T) {
+			t.Parallel()
 
-				_, err := sectioned("tuned", &mirrorOptions{}, map[string]any{"depth": tt.give}).Build()
-				assert.HasError(t, err, "the option has no value of its type")
-				for _, marker := range tt.markers {
-					assert.Contains(t, err.Error(), marker, "the error names the option and both types")
-				}
-			})
-		}
+			opts := &pacedOptions{}
+			_, err := sectioned("tuned", opts, map[string]any{"timeout": timeoutText}).Build()
+			assert.NoError(t, err, "the text parses as a duration")
+			want, err := time.ParseDuration(timeoutText)
+			assert.NoError(t, err, "the fixture text is a duration")
+			assert.Equal(t, opts.Timeout, want, "the field has the duration of the text")
+		})
+
+		t.Run("decodes a number of nanoseconds into a time.Duration field", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &pacedOptions{}
+			_, err := sectioned("tuned", opts, map[string]any{"timeout": 1500}).Build()
+			assert.NoError(t, err, "the number decodes into the duration")
+			assert.Equal(t, opts.Timeout, 1500*time.Nanosecond, "the field has the number as nanoseconds")
+		})
+
+		t.Run("decodes a text through the UnmarshalText of the type of the field", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &pacedOptions{}
+			_, err := sectioned("tuned", opts, map[string]any{"mode": string(paceSafe)}).Build()
+			assert.NoError(t, err, "the type takes the text")
+			assert.Equal(t, opts.Mode, paceSafe, "the field has the decoded pace")
+		})
+
+		t.Run("returns the wrapped error of ParseDuration for a text that is not a duration", func(t *testing.T) {
+			t.Parallel()
+
+			_, want := time.ParseDuration(lateText)
+			assert.HasError(t, want, "the fixture text is not a duration")
+			_, err := sectioned("tuned", &pacedOptions{}, map[string]any{"timeout": lateText}).Build()
+			assert.HasError(t, err, "the text does not parse")
+			assert.Contains(t, err.Error(), `option "timeout" of plugin "tuned" takes time.Duration: `+want.Error(),
+				"the message contains the option and the error of ParseDuration")
+		})
+
+		t.Run("returns the wrapped error of the decoder for a text that the type refuses", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := sectioned("tuned", &pacedOptions{}, map[string]any{"mode": slowText}).Build()
+			assert.ErrorIs(t, err, errPace, "the error wraps the refusal of UnmarshalText")
+			assert.Contains(t, err.Error(), `option "mode" of plugin "tuned" takes workspace_test.pacedMode: `,
+				"the message contains the option and its type")
+		})
+
+		t.Run("returns the wrapped error of the encoder for a value that does not encode", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := sectioned("tuned", &mirrorOptions{}, map[string]any{"depth": func() {}}).Build()
+			unsupported := assert.ErrorAs[*json.UnsupportedTypeError](t, err,
+				"the error wraps the error of the encoder")
+			assert.Equal(t, unsupported.Type, reflect.TypeFor[func()](), "the encoder refuses the type of the value")
+			assert.Contains(t, err.Error(), `option "depth" of plugin "tuned" takes int: `,
+				"the message contains the option and its type")
+		})
+
+		t.Run("returns the wrapped error of the decoder for a value of another shape", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := sectioned("tuned", &mirrorOptions{}, map[string]any{"depth": map[string]any{"deep": 1}}).Build()
+			mismatch := assert.ErrorAs[*json.UnmarshalTypeError](t, err, "the error wraps the error of the decoder")
+			assert.Equal(t, mismatch.Type, reflect.TypeFor[int](), "the decoder reports the type of the field")
+			assert.Contains(t, err.Error(), `option "depth" of plugin "tuned" takes int: `,
+				"the message contains the option and its type")
+		})
+
+		t.Run("returns an error for an option without a value", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := sectioned("tuned", &mirrorOptions{}, map[string]any{"depth": nil}).Build()
+			assert.HasError(t, err, "the option has no value of its type")
+			assert.Contains(t, err.Error(), `option "depth" of plugin "tuned" takes int, and the config has nothing`,
+				"the message contains the option and its type")
+		})
 
 		t.Run("returns an error naming a mapping with a key that the struct does not declare", func(t *testing.T) {
 			t.Parallel()
@@ -551,6 +651,32 @@ func TestSteps(t *testing.T) {
 			assert.Contains(t, err.Error(), "declares no options", "the error names the fault")
 			assert.Contains(t, err.Error(), `"mirror"`, "the error names the plugin")
 		})
+
+		t.Run("returns an error naming a required option with the zero value", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Plans(planTo("second", "fixture", tuned("tuned", &requiredOptions{}))).Build()
+			assert.HasError(t, err, "the composition fails")
+			assert.Contains(t, err.Error(), "plugin: tuned requires the option header",
+				"the message contains the plugin and the key of the option")
+		})
+
+		t.Run("returns no error for a required option that the config sets", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &requiredOptions{}
+			_, err := sectioned("tuned", opts, map[string]any{"header": "// banner"}).Build()
+			assert.NoError(t, err, "the config gives the option a value")
+			assert.Equal(t, opts.Header, "// banner", "the field has the configured value")
+		})
+
+		t.Run("returns no error for a required option that the constructor sets", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &requiredOptions{Header: "// banner"}
+			_, err := valid().Plans(planTo("second", "fixture", tuned("tuned", opts))).Build()
+			assert.NoError(t, err, "the constructed value counts as a value")
+		})
 	})
 
 	t.Run("refine", func(t *testing.T) {
@@ -578,6 +704,12 @@ func TestSteps(t *testing.T) {
 		}
 		extended := func(gens ...plugin.Generator) *workspace.Builder {
 			return extensible().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {Generators: gens}}})
+		}
+		disabled := func(pl workspace.Plan) func() *workspace.Builder {
+			return func() *workspace.Builder {
+				return valid().Plans(pl).
+					Config(workspace.Config{Plans: map[string]workspace.PlanConfig{pl.Name: {Disabled: true}}})
+			}
 		}
 
 		refused := []struct {
@@ -618,6 +750,30 @@ func TestSteps(t *testing.T) {
 				name:    "returns an error naming the plan of a nil generator of the config",
 				compose: func() *workspace.Builder { return extended(nil) },
 				want:    `plan "plan" lists a nil generator`,
+			},
+			{
+				name:    "returns an error naming a disabled plan that lists a nil generator",
+				compose: disabled(planTo("bindings", "fixture", nil)),
+				want:    `the config disables plan "bindings", which lists a nil generator`,
+			},
+			{
+				name: "returns an error naming a disabled plan that declares no backend",
+				compose: disabled(workspace.Plan{
+					Name: "bindings", Generators: []plugin.Generator{mirror("bindings-mirror")},
+				}),
+				want: `the config disables plan "bindings", which declares no backend`,
+			},
+			{
+				name:    "returns an error naming a generator refinement of the config for a generator outside the plan",
+				compose: closed(workspace.PlanConfig{Plugins: map[plugin.ID]layout.Refinement{"ghost": {}}}),
+				want:    `plan "plan": a refinement names ghost, which is no generator of the plan`,
+			},
+			{
+				name: "returns an error naming a family refinement of the config for a family the generator lacks",
+				compose: closed(workspace.PlanConfig{Families: map[layout.Family]layout.Refinement{
+					{Plugin: "mirror", Tag: "bogus"}: {},
+				}}),
+				want: `plan "plan": a refinement names family "bogus" of mirror, which mirror does not declare`,
 			},
 		}
 		for _, tt := range refused {
@@ -723,6 +879,22 @@ func TestSteps(t *testing.T) {
 					p.Sources = workspace.Sources{Packages: []string{refinedPattern}}
 				},
 			},
+			{
+				name: "folds a generator refinement into the fingerprint as a declared one",
+				give: workspace.PlanConfig{Plugins: map[plugin.ID]layout.Refinement{"mirror": {File: refinedFile}}},
+				declare: func(p *workspace.Plan) {
+					p.Layout.Plugins = map[plugin.ID]layout.Refinement{"mirror": {File: refinedFile}}
+				},
+			},
+			{
+				name: "folds a family refinement into the fingerprint as a declared one",
+				give: workspace.PlanConfig{Families: map[layout.Family]layout.Refinement{
+					{Plugin: "mirror"}: {File: refinedFile},
+				}},
+				declare: func(p *workspace.Plan) {
+					p.Layout.Families = map[layout.Family]layout.Refinement{{Plugin: "mirror"}: {File: refinedFile}}
+				},
+			},
 		}
 		for _, tt := range folded {
 			t.Run(tt.name, func(t *testing.T) {
@@ -740,6 +912,47 @@ func TestSteps(t *testing.T) {
 					"the refined composition has the same fingerprint as the composition that declares the field")
 			})
 		}
+
+		t.Run("merges a generator refinement of the config over the declared one", func(t *testing.T) {
+			t.Parallel()
+
+			declared := map[plugin.ID]layout.Refinement{"mirror": {Policy: layout.PolicyCentralised, Dir: refinedDir}}
+			pl := planTo("plan", "fixture", mirror("mirror"))
+			pl.Layout.Plugins = declared
+			b := workspace.New().Brand(fixtureBrand).Annotators(stamper("noter", quiet)).Targets("fixture").Plans(pl).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {
+					Plugins: map[plugin.ID]layout.Refinement{"mirror": {File: refinedFile}},
+				}}})
+			plans := built(t, b).Describe().Plans
+			assert.Length(t, plans, 1, "the composition has one plan")
+			assert.Equal(t, plans[0].Layout.Plugins, map[plugin.ID]layout.Refinement{
+				"mirror": {Policy: layout.PolicyCentralised, Dir: refinedDir, File: refinedFile},
+			}, "the config sets the filename, and the plan keeps its policy and its directory")
+			assert.Equal(t, declared,
+				map[plugin.ID]layout.Refinement{"mirror": {Policy: layout.PolicyCentralised, Dir: refinedDir}},
+				"the refinement of the declared plan is the same as before the build")
+		})
+
+		t.Run("merges a family refinement of the config over the declared one", func(t *testing.T) {
+			t.Parallel()
+
+			family := layout.Family{Plugin: "mirror"}
+			declared := map[layout.Family]layout.Refinement{family: {File: refinedFile}}
+			pl := planTo("plan", "fixture", mirror("mirror"))
+			pl.Layout.Families = declared
+			centralised := layout.Refinement{Policy: layout.PolicyCentralised, Dir: refinedDir}
+			b := workspace.New().Brand(fixtureBrand).Annotators(stamper("noter", quiet)).Targets("fixture").Plans(pl).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{"plan": {
+					Families: map[layout.Family]layout.Refinement{family: centralised},
+				}}})
+			plans := built(t, b).Describe().Plans
+			assert.Length(t, plans, 1, "the composition has one plan")
+			assert.Equal(t, plans[0].Layout.Families, map[layout.Family]layout.Refinement{
+				family: {Policy: layout.PolicyCentralised, Dir: refinedDir, File: refinedFile},
+			}, "the config sets the policy and the directory, and the plan keeps its filename")
+			assert.Equal(t, declared, map[layout.Family]layout.Refinement{family: {File: refinedFile}},
+				"the refinement of the declared plan is the same as before the build")
+		})
 
 		t.Run("appends the generators of the config to an extensible plan", func(t *testing.T) {
 			t.Parallel()

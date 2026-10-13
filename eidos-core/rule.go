@@ -7,7 +7,9 @@ import (
 	"fmt"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -80,8 +82,10 @@ type leaf struct {
 // declare, so one wrapper gates every rule of a directive. On a rule that
 // an emit triggers, the gate is the instance on the origin. A typed build
 // sets an empty Kinds of s from the rules, as the documentation of
-// [Builder] states. Directive allocates the copy of the schema and the
-// list of rules, two allocations.
+// [Builder] states. A typed build gives a schema with an empty Plugin the
+// name of the plugin, and the workspace refuses a schema that names
+// another plugin. Directive allocates the copy of the schema and the list
+// of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return Rule{schema: &s, children: rules}
 }
@@ -99,27 +103,37 @@ func Gated(name directive.Name, rules ...Rule) Rule {
 	return Rule{gate: name, gated: true, children: rules}
 }
 
-// Where gates rules on stamped facts. Wrappers compose and predicates
-// conjoin, and a disjunction is two rules. On a rule that an emit
-// triggers, the predicate evaluates against the origin. Where allocates
-// the list of predicates and the list of rules, two allocations.
+// Where gates rules on a predicate. Wrappers compose and predicates
+// conjoin, a disjunction is two rules, and [Not] negates a predicate. On a
+// rule that an emit triggers, a key gate evaluates against the origin, and
+// a value gate against the emitted value. Where allocates the list of
+// predicates and the list of rules, two allocations.
 func Where(p Pred, rules ...Rule) Rule {
 	return Rule{preds: []Pred{p}, children: rules}
 }
 
-// Pred is a declarative fact predicate. Its key is data, which the
-// subscription record contains, and its test runs untracked at dispatch,
-// because the evaluation of a gate is routing. The zero Pred gates nothing,
-// and a typed build refuses it.
+// Pred is a declarative predicate. A key gate, such as [HasKey], reads a
+// key of the fact store, and the subscription record of its rule contains
+// the key as data. A value gate, such as [NameEquals], reads the value that
+// triggers the rule, and adds no record. The dispatch runs the test of a
+// predicate untracked, because the evaluation of a gate is routing. The
+// zero Pred gates nothing, and a typed build refuses it.
 type Pred struct {
-	id   meta.KeyID
 	name meta.KeyName
-	test func(f *meta.Facts, subject symbol.Identity) bool
+	// test reports whether the predicate admits a subject. value is the
+	// declaration or the emitted value that triggers the rule.
+	test func(f *meta.Facts, subject symbol.Identity, value symbol.Symbol) bool
 	// bind returns the id of the name of a named handle in a registry. For
 	// a name that the registry does not contain under the value type of
 	// the handle, it returns an error whose message contains the plugin p
 	// and the key. It is nil for a registered handle.
 	bind func(r *meta.Registry, p plugin.ID) (meta.KeyID, error)
+	id   meta.KeyID
+	// value marks a value gate, which reads no key.
+	value bool
+	// negated marks a predicate that [Not] negated an odd number of times.
+	// The fact index cannot enumerate it.
+	negated bool
 }
 
 // HasKey admits a subject on which k reads present.
@@ -138,7 +152,7 @@ func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return Pred{
 		id:   k.ID(),
 		name: k.Name(),
-		test: func(f *meta.Facts, subject symbol.Identity) bool {
+		test: func(f *meta.Facts, subject symbol.Identity, _ symbol.Symbol) bool {
 			_, held := meta.Get(f, subject, k)
 			return held
 		},
@@ -163,11 +177,81 @@ func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return Pred{
 		id:   k.ID(),
 		name: k.Name(),
-		test: func(f *meta.Facts, subject symbol.Identity) bool {
+		test: func(f *meta.Facts, subject symbol.Identity, _ symbol.Symbol) bool {
 			got, held := meta.Get(f, subject, k)
 			return held && got == v
 		},
 		bind: bindName(k),
+	}
+}
+
+// Not admits a subject that p does not admit. For [HasKey], that is a
+// subject on which the key reads absent. For [KeyEquals], it is also a
+// subject with another value. The fact index cannot enumerate a negated
+// gate, so a rule whose key gates are all negated enumerates every subject
+// of its kind. A negated key gate reads its key, so the subscription record
+// of its rule contains the key. The zero Pred remains zero under Not, and a
+// typed build refuses it. Not allocates the closure of the test, one
+// allocation.
+func Not(p Pred) Pred {
+	if p.test == nil {
+		return p
+	}
+	test := p.test
+	p.test = func(f *meta.Facts, subject symbol.Identity, value symbol.Symbol) bool {
+		return !test(f, subject, value)
+	}
+	p.negated = !p.negated
+	return p
+}
+
+// NameEquals admits a subject whose value has the name: the declaration
+// that a node trigger runs on, or the emitted value that an [OnEmit]
+// trigger runs on. For the empty name it returns the zero Pred, which a
+// typed build refuses. NameEquals allocates the closure of the test over
+// the name, one allocation.
+func NameEquals(name string) Pred {
+	if name == "" {
+		return Pred{}
+	}
+	return Pred{
+		value: true,
+		test: func(_ *meta.Facts, _ symbol.Identity, value symbol.Symbol) bool {
+			if decl, declared := value.(node.Declaration); declared {
+				return decl.Identity().Name == name
+			}
+			got, named := emit.NameOf(value)
+			return named && got == name
+		},
+	}
+}
+
+// HasSlot admits an emitted function or method whose body declares the
+// named slot. It does not admit a node declaration, because the node
+// model does not record a body. The prologue and the epilogue are on every
+// body, and an owner cannot declare a slot under their names. So for
+// either name, and for the empty name, HasSlot returns the zero Pred,
+// which a typed build refuses. HasSlot allocates the closure of the test
+// over the name, one allocation.
+func HasSlot(name string) Pred {
+	if name == "" || name == emit.SlotPrologue || name == emit.SlotEpilogue {
+		return Pred{}
+	}
+	return Pred{
+		value: true,
+		test: func(_ *meta.Facts, _ symbol.Identity, value symbol.Symbol) bool {
+			var body *emit.Body
+			switch v := value.(type) {
+			case *emit.Function:
+				body = &v.Body
+			case *emit.Method:
+				body = &v.Body
+			default:
+				return false
+			}
+			_, declared := body.Slot(name)
+			return declared
+		},
 	}
 }
 

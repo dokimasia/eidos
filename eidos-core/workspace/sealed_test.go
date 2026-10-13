@@ -1192,7 +1192,8 @@ func damageSegment(t *testing.T, mem *ledger.Mem, pick func(live int) bool, dama
 // do not take. The paths are a name that joins a scope, an export that
 // changes, the audit and a check, a clash with a kept file, a kept
 // finding, a plan that did not commit, a weaver that appends into a
-// mirror again, and a weaver whose mirror disappears.
+// mirror again, a weaver whose mirror disappears, and a package whose
+// clause an edit renames.
 func damageScenarios() []damageScenario {
 	return []damageScenario{
 		{
@@ -1262,6 +1263,16 @@ func damageScenarios() []damageScenario {
 			},
 			before: func() fstest.MapFS { return roundsTree(rowLine+auditLine+colLine, userLine) },
 			after:  func() fstest.MapFS { return roundsTree(rowLine+auditLine, userLine) },
+		},
+		{
+			name: "a warm run whose edit renames a package whose declared name a file read",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, clauseBuilder(l, headed{frontendtest.NewScripted()}, func() (output.Sink, error) {
+					return output.NewMem(), nil
+				}))
+			},
+			before: func() fstest.MapFS { return clauseTree(cacheClause) },
+			after:  func() fstest.MapFS { return clauseTree(renamedClause) },
 		},
 	}
 }

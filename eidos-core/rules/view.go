@@ -95,26 +95,53 @@ func (v View) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	return v.decls.PackageOf(id)
 }
 
+// ScopeOf returns the scope of a declaration, which has the identity of
+// the declaration and the file that contains its position. It records the
+// reads of the declaration and of its package, because a change of either
+// can change the file. The scope of a declaration that the view does not
+// contain has no file, and so has the scope of a declaration whose
+// position is in no file of its package. ScopeOf allocates what the read
+// set allocates to record a new edge.
+func (v View) ScopeOf(id symbol.Identity) Scope {
+	s := Scope{Subject: id}
+	decl, declared := v.Lookup(id)
+	pkg, placed := v.PackageOf(id)
+	if !declared || !placed {
+		return s
+	}
+	at := decl.Position().File
+	for _, f := range pkg.Files {
+		if f != nil && f.Pos.File == at {
+			s.File = f
+			return s
+		}
+	}
+	return s
+}
+
 // Authored returns the two values that an author stated for a value of a
 // type. Each half reads the declaration that has the type first, and then
-// the declaration that the type names. The two halves resolve
-// independently. A half that neither declaration states is the zero
-// [Sample], which the caller derives. A zero subject and a reference
-// without a target state nothing. Every fact read records on the view.
+// the declaration of the type. The two halves resolve independently. A
+// half that neither declaration states is the zero [Sample], which the
+// caller derives. A zero subject and a reference without a target state
+// nothing. Every fact read records on the view.
 //
 // A stated text lifts by the shape that src folds for the type, with an
-// alias followed to the type that it names:
+// alias followed to its target:
 //   - Text lifts to a string literal of the text.
 //   - A boolean lifts to a truth value.
 //   - A scalar lifts to a number at the width of the shape.
-//   - Every other form lifts to raw text in the language of the
-//     declaration that states it, which only the backend of that language
-//     spells.
+//   - Every other form lifts through the LiteralFor of src, in the scope
+//     of the declaration that states the text, where that declaration has
+//     the language of src. A text that LiteralFor does not read lifts to
+//     raw text in the language of the declaration, and so does a text of a
+//     declaration in another language. Only the backend of that language
+//     spells raw text.
 //
-// The kernel reads the authored values of a type here before it asks the
-// language to derive. The composite walk of a language reads the values of
-// each element here before it derives the element. The type folds only
-// where a half is stated.
+// Nil rules read no text. The kernel reads the authored values of a type
+// here before it asks the language to derive. The composite walk of a
+// language reads the values of each element here before it derives the
+// element. The type folds only where a half is stated.
 //
 // # Allocation contract
 //
@@ -122,39 +149,73 @@ func (v View) PackageOf(id symbol.Identity) (*node.Package, bool) {
 // value allocates the fold of its type in a binding of its own, which is
 // the memo of the binding, the first group of the memo and the shape,
 // three allocations for a builtin type, and the children of a structural
-// one.
+// one. A text of another form also allocates what LiteralFor allocates,
+// and what the read set allocates to record the reads of [View.ScopeOf].
 func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeRef) (Sample, Sample) {
+	if src == nil {
+		src = Absent("")
+	}
 	var target symbol.Identity
 	if ref != nil {
 		target = ref.Target
 	}
-	sample, sampleLang, sampled := v.stated(v.kernel.Sample, subject, target)
-	alternate, alternateLang, alternated := v.stated(v.kernel.Alternate, subject, target)
+	sample, sampleBy, sampled := v.stated(v.kernel.Sample, subject, target)
+	alternate, alternateBy, alternated := v.stated(v.kernel.Alternate, subject, target)
 	if !sampled && !alternated {
 		return Sample{}, Sample{}
 	}
 	shape := NewBound(src, v, nil).valueShape(ref)
 	var s, a Sample
 	if sampled {
-		s = Of(authoredValue(sampleLang, shape, sample))
+		s = Of(v.authoredValue(src, sampleBy, ref, shape, sample))
 	}
 	if alternated {
-		a = Of(authoredValue(alternateLang, shape, alternate))
+		a = Of(v.authoredValue(src, alternateBy, ref, shape, alternate))
 	}
 	return s, a
 }
 
 // stated returns the text that one authored key states on the declaration
-// that has a type, or else on the declaration that the type names, with
-// the language of the declaration that states it.
-func (v View) stated(k meta.Key[string], subject, target symbol.Identity) (string, symbol.Lang, bool) {
+// that has a type, or else on the declaration of the type, with the
+// identity of the declaration that states it.
+func (v View) stated(k meta.Key[string], subject, target symbol.Identity) (string, symbol.Identity, bool) {
 	if text, held := Fact(v, subject, k); held {
-		return text, subject.Lang, true
+		return text, subject, true
 	}
 	if text, held := Fact(v, target, k); held {
-		return text, target.Lang, true
+		return text, target, true
 	}
-	return "", "", false
+	return "", symbol.Identity{}, false
+}
+
+// authoredValue returns authored text as a value of a shape. It returns a
+// string literal for text, a truth value for a boolean, and a number at
+// the width of the shape for a scalar. For every other form, it returns
+// the value that the LiteralFor of src reads in the scope of by, the
+// declaration that states the text, where by has the language of src. It
+// returns raw text in the language of by otherwise.
+func (v View) authoredValue(
+	src SourceRules, by symbol.Identity, ref *node.TypeRef, shape TypeShape, text string,
+) emit.Value {
+	switch shape.Form {
+	case symbol.FormText:
+		return emit.Literal(emit.LiteralString, text)
+	case symbol.FormBool:
+		return emit.Literal(emit.LiteralBool, text)
+	case symbol.FormScalar:
+		if shape.Class == ScalarFloat {
+			return emit.Number(emit.LiteralFloat, text, shape.Bits)
+		}
+		return emit.Number(emit.LiteralInt, text, shape.Bits)
+	default:
+		// Every other form lifts through the rules below.
+	}
+	if by.Lang == src.Lang() {
+		if value, read := src.LiteralFor(v.ScopeOf(by), ref, text, v); read {
+			return value
+		}
+	}
+	return emit.Raw(by.Lang, text)
 }
 
 // Fact returns the value that the arbitration selects for a subject and a
@@ -194,24 +255,4 @@ func Unaliased(ref *node.TypeRef, v View) *node.TypeRef {
 		ref = alias.Target
 	}
 	return ref
-}
-
-// authoredValue returns authored text as a value of a shape. It returns a
-// string literal for text, a truth value for a boolean, a number at the
-// width of the shape for a scalar, and raw text in lang for every other
-// form.
-func authoredValue(lang symbol.Lang, shape TypeShape, text string) emit.Value {
-	switch shape.Form {
-	case symbol.FormText:
-		return emit.Literal(emit.LiteralString, text)
-	case symbol.FormBool:
-		return emit.Literal(emit.LiteralBool, text)
-	case symbol.FormScalar:
-		if shape.Class == ScalarFloat {
-			return emit.Number(emit.LiteralFloat, text, shape.Bits)
-		}
-		return emit.Number(emit.LiteralInt, text, shape.Bits)
-	default:
-		return emit.Raw(lang, text)
-	}
 }

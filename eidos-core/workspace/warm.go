@@ -120,7 +120,7 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 //     disappeared. For each subject whose stamps changed, it withdraws
 //     the recorded stamps and files the subject's stamps again. For each
 //     subject that it validated again, it withdraws the recorded drops
-//     and files the subject's drops again.
+//     and sets and files the subject's drops and sets again.
 //  4. Each annotator call runs again the recorded invocations of its
 //     plugin that read a dirty edge or whose subject is a candidate, and
 //     it evaluates every candidate. The run first withdraws the claims of
@@ -153,7 +153,8 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 // Error modes:
 //   - [damage] for a record of the generation that does not read whole.
 //     [Workspace.Run] then runs again cold.
-//   - the fact store's error for a drop or a withdrawal that it refuses
+//   - the fact store's error for a drop, a set or a withdrawal that it
+//     refuses
 //   - an annotator's returned error, wrapped with the annotator's role
 func (w *Workspace) warmShared(
 	ctx context.Context, g *store.Graph, loaded *load.Report, phases *state.PhaseState,
@@ -225,7 +226,8 @@ func (w *Workspace) warmShared(
 // declaration edge of each declaration that appeared, disappeared or
 // changed, the kind edge of each declaration that appeared or
 // disappeared, in the declaration's package, the edge of each changed
-// package, the directive edge of each spelling that a subject gained or
+// package, the declaration edge of each package that declares another
+// name, the directive edge of each spelling that a subject gained or
 // lost, in each package of such a subject, and the edges of where the
 // layout places files, which [warmRun.placements] lists. The declarations
 // that appeared or changed become the first candidates.
@@ -255,6 +257,11 @@ func (r *warmRun) seed() error {
 	}
 	for _, p := range c.Packages {
 		if err := r.dirty.add(state.PackageEdge(p)); err != nil {
+			return err
+		}
+	}
+	for _, p := range c.Renamed {
+		if err := r.dirty.declaration(p); err != nil {
 			return err
 		}
 	}
@@ -330,19 +337,19 @@ func (r *warmRun) validate() error {
 	return nil
 }
 
-// restamp brings the stamps and drops of the fact store up to date with
-// the load. It withdraws every claim on each declaration that
-// disappeared. For each subject whose stamps changed, it withdraws the
-// recorded stamp claims and files the subject's stamps again. For each
+// restamp brings the stamps, the drops and the sets of the fact store up
+// to date with the load. It withdraws every claim on each declaration
+// that disappeared. For each subject whose stamps changed, it withdraws
+// the recorded stamp claims and files the subject's stamps again. For each
 // subject that the run validated again, it withdraws the recorded drops
-// and files the subject's drops again. A stamp reports its findings as it
-// does on a cold run, and refused reports whether one of them is an
-// Error. Each touched fact whose winner changed then makes its fact edge
-// dirty.
+// and sets and files the subject's drops and sets again. A stamp reports
+// its findings as it does on a cold run, and refused reports whether one
+// of them is an Error. Each touched fact whose winner changed then makes
+// its fact edge dirty.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record of the
 // generation that does not read whole, and the fact store's error for a
-// drop or a withdrawal that it refuses.
+// drop, a set or a withdrawal that it refuses.
 func (r *warmRun) restamp() error {
 	var touched []meta.FactRef
 	for _, id := range r.changes.Disappeared {
@@ -365,11 +372,11 @@ func (r *warmRun) restamp() error {
 	for _, v := range r.revalidated {
 		var withdrawn, filed error
 		before := len(touched)
-		touched, withdrawn = r.w.drops(r.facts, v.subject, v.before, true, touched)
+		touched, withdrawn = r.w.metaClaims(r.facts, v.subject, v.before, true, touched)
 		if len(touched) > before {
 			r.rec.Withdrew(v.subject)
 		}
-		touched, filed = r.w.drops(r.facts, v.subject, v.after, false, touched)
+		touched, filed = r.w.metaClaims(r.facts, v.subject, v.after, false, touched)
 		if err := cmp.Or(withdrawn, filed); err != nil {
 			return err
 		}
@@ -378,9 +385,9 @@ func (r *warmRun) restamp() error {
 }
 
 // withdrawAll withdraws every claim that the generation recorded on a
-// subject, including its drops and group drops. It appends the facts that
-// the claims covered to touched. A declaration that disappeared keeps no
-// claim.
+// subject, including its drops, its group drops and its sets. It appends
+// the facts that the claims covered to touched. A declaration that
+// disappeared keeps no claim.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that
 // does not read whole, and the fact store's error for a withdrawal that

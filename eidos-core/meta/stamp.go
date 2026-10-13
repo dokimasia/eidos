@@ -70,7 +70,7 @@ func (f *Facts) StampRaw(s RawStamp, c Claim) error {
 		return fmt.Errorf("meta: %s is stamped with a %T, which is outside the value vocabulary",
 			s.Key, s.Value)
 	}
-	if want := f.registry.typeOf(id); reflect.TypeOf(s.Value) != want {
+	if want := f.registry.Type(id); reflect.TypeOf(s.Value) != want {
 		return fmt.Errorf("meta: %s is a %s key, and the value is a %T", s.Key, want, s.Value)
 	}
 	if err := admitClaim(spec, s.Key, s.Value, c); err != nil {

@@ -31,6 +31,10 @@ type RenderedFile struct {
 	// contributes its source path, a package-keyed unit its
 	// package path, and a plan file contributes nothing.
 	Sources []string
+	// Packages lists the paths of the packages whose declared names the
+	// render read for the file, distinct and sorted. A warm run renders
+	// the file again after an edit changes the name of one of them.
+	Packages []string
 	// Body is the finished text: formatted, in the language's own
 	// spelling. The output contract stamps and stages it.
 	Body []byte
@@ -77,6 +81,11 @@ type RenderContext struct {
 	// without a declaration is refused and reported.
 	Funcs     map[ID]template.FuncMap
 	Overrides map[ID][]string
+	// Names returns the name that the package clause of the package at a
+	// path declares. It reports false for a package that the run did not
+	// load. The workers of a render call it concurrently, so it must be
+	// safe for concurrent use. A nil Names has no name for any path.
+	Names func(path string) (string, bool)
 	// Sink takes the pass's findings: an unresolved reference, a
 	// dropped slot marker, a format failure.
 	Sink *diag.Sink

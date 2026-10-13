@@ -94,6 +94,20 @@ func TestDescribe(t *testing.T) {
 				"the server plan has the selection of the config")
 		})
 
+		t.Run("returns a plan that the config disables apart from the plans", func(t *testing.T) {
+			t.Parallel()
+
+			d := built(t, described().Config(workspace.Config{Plans: map[string]workspace.PlanConfig{
+				"bindings": {Disabled: true},
+			}})).Describe()
+			assert.Equal(t, d.Disabled, []workspace.PlanDescription{{
+				Name:     "bindings",
+				Generate: []workspace.Component{{Name: "bindings-mirror"}},
+				Backend:  workspace.Component{Name: "fixture" + printerSuffix},
+				Target:   "fixture",
+			}}, "the disabled plan has its generators without a turn, its backend and its target")
+		})
+
 		t.Run("returns an empty name for a composition that leaves the name to the ledger", func(t *testing.T) {
 			t.Parallel()
 

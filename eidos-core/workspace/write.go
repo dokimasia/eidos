@@ -45,6 +45,9 @@ type stagedFile struct {
 	findings []diag.Diag
 	group    plugin.UnitRef
 	names    []plugin.NameEntry
+	// packages are the packages whose declared names the render read for
+	// the file, in the language of the plan's target and in path order.
+	packages []symbol.Identity
 }
 
 // write routes one plan's settled store to files against the run's
@@ -74,7 +77,7 @@ func (w *Workspace) write(
 	if err != nil {
 		return nil, nil, fmt.Errorf("route: %w", err)
 	}
-	return render(pl, ix, into, files, sink)
+	return render(pl, ix, src, into, files, sink)
 }
 
 // render drives one plan's backend over the files its layout routed
@@ -82,12 +85,13 @@ func (w *Workspace) write(
 // contract, at each file's routed path and in path order. It also returns
 // the routed files the backend rendered, at the same places.
 func render(
-	pl *compiledPlan, ix *plugin.Index, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
+	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) ([]stagedFile, []plugin.File, error) {
-	rendered, err := pl.backend.Render(renderContext(pl, into, files, sink))
+	rendered, err := pl.backend.Render(renderContext(pl, src, into, files, sink))
 	if err != nil {
 		return nil, nil, fmt.Errorf("render: %w", err)
 	}
+	lang := symbol.Lang(pl.backend.Target())
 	out := make([]stagedFile, 0, len(rendered))
 	routedFiles := make([]plugin.File, 0, len(rendered))
 	routed := 0
@@ -108,6 +112,13 @@ func render(
 		staged := stagedFile{
 			path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path},
 			pkg: files[routed].Pkg, findings: f.Findings,
+		}
+		if len(f.Packages) > 0 {
+			staged.packages = make([]symbol.Identity, 0, len(f.Packages))
+			for _, p := range f.Packages {
+				pkg := symbol.Identity{Lang: lang, Package: p, Kind: symbol.KindPackage}
+				staged.packages = append(staged.packages, pkg)
+			}
 		}
 		describeFile(&staged, &files[routed], ix)
 		out = append(out, staged)
@@ -150,10 +161,13 @@ func describeFile(staged *stagedFile, f *plugin.File, ix *plugin.Index) {
 }
 
 // renderContext assembles what the pass reads: the settled store, the
-// routed files, the plan's schedule, and the template surfaces its
-// generators declare for the backend's target.
+// routed files, the plan's schedule, the template surfaces its
+// generators declare for the backend's target, and the declared names of
+// the packages that the run loaded in the language of the target. The
+// names cover every package of the run, because a file can import a
+// package outside the sources of its plan.
 func renderContext(
-	pl *compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
+	pl *compiledPlan, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) *plugin.RenderContext {
 	target := pl.backend.Target()
 	ctx := &plugin.RenderContext{
@@ -165,6 +179,16 @@ func renderContext(
 		Overrides: map[plugin.ID][]string{},
 		Sink:      sink,
 		Plugin:    pl.backend.Name(),
+	}
+	if src.packages != nil {
+		lang := symbol.Lang(target)
+		ctx.Names = func(path string) (string, bool) {
+			p, loaded := src.packages(symbol.Identity{Lang: lang, Package: path, Kind: symbol.KindPackage})
+			if !loaded {
+				return "", false
+			}
+			return p.Name, true
+		}
 	}
 	for _, s := range pl.entries {
 		ctx.Schedule = append(ctx.Schedule, s.name)

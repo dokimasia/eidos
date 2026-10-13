@@ -158,7 +158,7 @@ func TestStats(t *testing.T) {
 				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag(suppressible, 4)}),
 					"the struct's instance attaches before the seal")
 				assert.NoError(t, g.AttachDirectives(coretest.PackageID(coretest.StorePath),
-					[]directive.Raw{rawBareMeta(9)}), "the package's instance attaches before the seal")
+					[]directive.Raw{rawMeta("shape.flag", 9)}), "the package's instance attaches before the seal")
 			})
 			assert.NoError(t, err, "the run is clean")
 			assert.Equal(t, report.Stats.Validated, 2, "the struct and its package")
@@ -171,7 +171,7 @@ func TestStats(t *testing.T) {
 				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag(suppressible, 4)}),
 					"the struct's instance attaches before the seal")
 				ghost := coretest.Struct("example.com/elsewhere", "Ghost")
-				assert.NoError(t, g.AttachDirectives(ghost.Identity(), []directive.Raw{rawBareMeta(9)}),
+				assert.NoError(t, g.AttachDirectives(ghost.Identity(), []directive.Raw{rawMeta("shape.flag", 9)}),
 					"the dangling instance attaches before the seal")
 			})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the dangling subject fails the run")

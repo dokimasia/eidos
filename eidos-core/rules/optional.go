@@ -59,15 +59,48 @@ type VariantText struct {
 	Text emit.Value // the variant's textual form, a string literal
 }
 
-// ErrorValueRules names error values. Its two methods are inverses, so
-// a name and its recognition cannot disagree.
+// ErrorValueRules names error values. SentinelBase recognises the names
+// that SentinelName returns, so a name and its recognition cannot
+// disagree.
 type ErrorValueRules interface {
 	// SentinelName returns the name of the error value a generator
 	// derives from a base name.
 	SentinelName(base string) string
-	// IsSentinelName reports whether an identifier is a name
+	// SentinelBase returns the base that SentinelName composes ident
+	// from, and reports false where ident is not a name that
 	// SentinelName returns.
-	IsSentinelName(ident string) bool
+	SentinelBase(ident string) (string, bool)
+}
+
+// ErrorTypeRules is the optional capability of a language whose types can
+// be errors, such as a Go type with the method Error and a TypeScript
+// class that extends Error. [Bound.ErrorContract] calls it.
+type ErrorTypeRules interface {
+	// ErrorContract returns the contract of decl as an error type, and
+	// reports false where decl is not one. It reads the members of decl
+	// through v.
+	ErrorContract(decl symbol.Symbol, v View) (ErrorContract, bool)
+}
+
+// ErrorContract is what a language states about an error type. The zero
+// value is the contract of an error type that inherits its message, and
+// that declares no cause and no hooks.
+type ErrorContract struct {
+	// Message is the member that returns the message of the error: the
+	// method Error of a Go type, and the field message where a TypeScript
+	// class declares one. It is nil where the type inherits the member
+	// from the error of its language.
+	Message symbol.Symbol
+	// Cause is the field that stores the error that caused this one, and
+	// nil where the type has none.
+	Cause *node.Field
+	// Unwrap, Is and As are the hooks that the error functions of the
+	// language call, and nil where the type does not declare one.
+	Unwrap, Is, As *node.Method
+	// Pointer reports that a pointer to the type is the error and a value
+	// of the type is not, as a Go method Error with a pointer receiver
+	// states.
+	Pointer bool
 }
 
 // TagRules reads a language's per-field tags.
@@ -86,6 +119,21 @@ type WellKnownRules interface {
 	// and reports false for a declaration that the registry does not
 	// bless. It does not allocate.
 	WellKnown(id symbol.Identity) (symbol.Identity, bool)
+}
+
+// SatisfactionRules is the optional capability of a language whose
+// satisfaction of an interface reads more than the member sets: a method
+// that belongs to a pointer to its type alone, such as a Go method with a
+// pointer receiver, and an interface that constrains a type set, such as
+// a Go constraint. [Bound.Satisfies] calls it.
+type SatisfactionRules interface {
+	// ValueReceiver reports whether a value of the type of m has m. It
+	// allocates nothing beyond what the view records.
+	ValueReceiver(m *node.Method, v View) bool
+	// TypeSet reports whether i constrains a type set beside its
+	// methods, which a comparison of members cannot prove. It allocates
+	// nothing beyond what the view records.
+	TypeSet(i *node.Interface, v View) bool
 }
 
 // GenericsRules reasons about type parameters. The kernel substitutes

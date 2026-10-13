@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // parentDir is the path element that names a directory's parent.
@@ -18,13 +20,16 @@ const parentDir = ".."
 // override is the routing an author wrote on one origin for one
 // plugin's output: a tag that moves the primary family's declarations
 // into a companion family, and a path that redirects them. Each field
-// is positioned at the carrier line that wrote it, and the zero
-// override routes nothing.
+// is positioned at the carrier line that wrote it, and tagFrom and
+// pathFrom are the inputs that wrote it. The zero override routes
+// nothing.
 type override struct {
-	tag    string
-	tagAt  position.Pos
-	path   string
-	pathAt position.Pos
+	tag      string
+	tagAt    position.Pos
+	path     string
+	pathAt   position.Pos
+	tagFrom  plugin.RouteInput
+	pathFrom plugin.RouteInput
 }
 
 // overrideOf reads the routing on one origin for one plugin's output.
@@ -40,29 +45,62 @@ func overrideOf(ds []directive.Directive, p plugin.ID, schemas *directive.Regist
 		switch {
 		case d.Negated:
 		case d.Name == directive.KernelOut:
-			kernel.take(d, directive.OutPath, directive.OutTag)
+			kernel.take(d, directive.OutPath, directive.OutTag, plugin.RouteOut)
 		case ownedBy(schemas, d.Name, p):
-			own.take(d, directive.ReservedOut, directive.ReservedTag)
+			own.take(d, directive.ReservedOut, directive.ReservedTag, plugin.RouteDirective)
 		}
 	}
 	if own.path == "" {
-		own.path, own.pathAt = kernel.path, kernel.pathAt
+		own.path, own.pathAt, own.pathFrom = kernel.path, kernel.pathAt, kernel.pathFrom
 	}
 	if own.tag == "" {
-		own.tag, own.tagAt = kernel.tag, kernel.tagAt
+		own.tag, own.tagAt, own.tagFrom = kernel.tag, kernel.tagAt, kernel.tagFrom
 	}
 	return own
 }
 
 // take fills the fields an instance writes and an earlier instance
-// left empty.
-func (o *override) take(d *directive.Directive, pathKey, tagKey directive.ParamKey) {
+// left empty, and records from as the input of each field that it fills.
+func (o *override) take(d *directive.Directive, pathKey, tagKey directive.ParamKey, from plugin.RouteInput) {
 	if v, written := d.Param(pathKey); written && o.path == "" && v.Str != "" {
-		o.path, o.pathAt = v.Str, d.Pos
+		o.path, o.pathAt, o.pathFrom = v.Str, d.Pos, from
 	}
 	if v, written := d.Param(tagKey); written && o.tag == "" && v.Str != "" {
-		o.tag, o.tagAt = v.Str, d.Pos
+		o.tag, o.tagAt, o.tagFrom = v.Str, d.Pos, from
 	}
+}
+
+// packagePaths returns the path of the kernel out directive on each package
+// that has one, keyed by the identity of the package. The path applies to
+// each declaration of the package that does not state a path of its own,
+// and the tag of the directive does not apply. The first instance in source
+// order with a path takes precedence, and a negated instance routes nothing.
+// packagePaths returns nil where no package has a path, and it allocates
+// only the map that it returns.
+func packagePaths(ix *plugin.Index) map[symbol.Identity]override {
+	var out map[symbol.Identity]override
+	for s := range ix.ByDirective(directive.KernelOut) {
+		pkg, declares := s.(node.Declaration)
+		if !declares || s.Kind() != symbol.KindPackage {
+			continue
+		}
+		id := pkg.Identity().PackageIdentity()
+		ds := ix.DirectivesOf(id)
+		for i := range ds {
+			d := &ds[i]
+			if d.Negated || d.Name != directive.KernelOut {
+				continue
+			}
+			if v, written := d.Param(directive.OutPath); written && v.Str != "" {
+				if out == nil {
+					out = map[symbol.Identity]override{}
+				}
+				out[id] = override{path: v.Str, pathAt: d.Pos, pathFrom: plugin.RoutePackage}
+				break
+			}
+		}
+	}
+	return out
 }
 
 // ownedBy reports whether a plugin registered a directive's schema.

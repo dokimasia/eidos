@@ -407,7 +407,7 @@ func populated() []symbol.Symbol {
 		subject.Name = "Name"
 		subject.Visibility = 6
 		subject.Async = true
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Params = append(subject.Params, &Param{})
 		subject.Returns = append(subject.Returns, &Return{})
@@ -435,7 +435,7 @@ func populated() []symbol.Symbol {
 		subject.Optional = true
 		subject.Mutability = 18
 		subject.Computed = true
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Receiver = &Param{}
 		subject.Receives = &TypeRef{}
@@ -455,7 +455,7 @@ func populated() []symbol.Symbol {
 		subject.Default = "Default"
 		subject.Optional = true
 		subject.Variadic = 9
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Type = &TypeRef{}
 		out = append(out, subject)
 	}
@@ -484,7 +484,7 @@ func populated() []symbol.Symbol {
 		subject.Pos = position.Pos{File: "Pos.go", Line: 2, Col: 2}
 		subject.Doc = []string{"Doc", "", "Doc"}
 		subject.Path = "Path"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Imports = append(subject.Imports, &Import{})
 		subject.Exports = append(subject.Exports, &Export{})
 		subject.Decls = append(subject.Decls, &File{})
@@ -500,6 +500,7 @@ func populated() []symbol.Symbol {
 		subject.Alias = "Alias"
 		subject.Default = "Default"
 		subject.Wildcard = true
+		subject.Modules = []string{"Modules", "", "Modules"}
 		subject.Names = append(subject.Names, &Binding{})
 		out = append(out, subject)
 	}
@@ -511,6 +512,7 @@ func populated() []symbol.Symbol {
 		subject.Path = "Path"
 		subject.Default = "Default"
 		subject.Wildcard = true
+		subject.Modules = []string{"Modules", "", "Modules"}
 		subject.Names = append(subject.Names, &Binding{})
 		out = append(out, subject)
 	}
@@ -532,7 +534,7 @@ func populated() []symbol.Symbol {
 		subject.Name = "Name"
 		subject.Visibility = 6
 		subject.Const = true
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Underlying = &TypeRef{}
 		subject.Variants = append(subject.Variants, &EnumVariant{})
 		subject.Fields = append(subject.Fields, &Field{})
@@ -547,7 +549,7 @@ func populated() []symbol.Symbol {
 		subject.Comment = "Comment"
 		subject.Name = "Name"
 		subject.Value = "Value"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		out = append(out, subject)
 	}
@@ -559,7 +561,7 @@ func populated() []symbol.Symbol {
 		subject.Comment = "Comment"
 		subject.Name = "Name"
 		subject.Visibility = 6
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Variants = append(subject.Variants, &SumVariant{})
 		subject.Methods = append(subject.Methods, &Method{})
@@ -572,7 +574,7 @@ func populated() []symbol.Symbol {
 		subject.Doc = []string{"Doc", "", "Doc"}
 		subject.Comment = "Comment"
 		subject.Name = "Name"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Fields = append(subject.Fields, &Field{})
 		out = append(out, subject)
@@ -592,7 +594,7 @@ func populated() []symbol.Symbol {
 		subject.Computed = true
 		subject.Value = "Value"
 		subject.Tag = "Tag"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Type = &TypeRef{}
 		out = append(out, subject)
@@ -607,7 +609,7 @@ func populated() []symbol.Symbol {
 		subject.Visibility = 6
 		subject.Mutability = 7
 		subject.Value = "Value"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Type = &TypeRef{}
 		out = append(out, subject)
 	}
@@ -620,7 +622,7 @@ func populated() []symbol.Symbol {
 		subject.Name = "Name"
 		subject.Visibility = 6
 		subject.Value = "Value"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Type = &TypeRef{}
 		out = append(out, subject)
 	}
@@ -636,7 +638,7 @@ func populated() []symbol.Symbol {
 		subject.Abstract = true
 		subject.Final = true
 		subject.Sealed = true
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
@@ -656,7 +658,7 @@ func populated() []symbol.Symbol {
 		subject.Name = "Name"
 		subject.Visibility = 6
 		subject.Sealed = true
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
@@ -675,7 +677,7 @@ func populated() []symbol.Symbol {
 		subject.Name = "Name"
 		subject.Visibility = 6
 		subject.Defined = true
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Target = &TypeRef{}
 		out = append(out, subject)
@@ -718,7 +720,7 @@ func populated() []symbol.Symbol {
 		subject.Doc = []string{"Doc", "", "Doc"}
 		subject.Comment = "Comment"
 		subject.Tag = "Tag"
-		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}}
+		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Ref = &TypeRef{}
 		out = append(out, subject)

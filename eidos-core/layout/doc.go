@@ -27,7 +27,8 @@
 //   - family: tag= on the plugin's own directive, the kernel out
 //     directive's tag, the family the handler addressed;
 //   - directory: out= on the plugin's own directive, the kernel out
-//     directive's path, the family's refinement, the generator's
+//     directive's path, the path of the kernel out directive on the
+//     package of the origin, the family's refinement, the generator's
 //     refinement, the plan;
 //   - filename: the same path overrides, the family's File, the
 //     generator's File, the target's spelling;
@@ -37,7 +38,14 @@
 // A tag moves only a declaration of its plugin's primary family. A
 // path override resolves against the directory of the origin's source
 // file: a trailing slash, "." or ".." names a directory, and otherwise
-// the last element is the filename.
+// the last element is the filename. The tag of the kernel out directive
+// on a package does not apply to the declarations of the package.
+//
+// Route sets the [plugin.Route] of each unit that it returns: the input
+// that decided the family, the policy, the directory and the filename of
+// the unit. A unit whose declarations arrive at one destination through two
+// inputs has the inputs of its first declaration. [Refinement.Over] merges
+// the refinement of a config file over the refinement of a composition.
 //
 // # References
 //
@@ -63,7 +71,7 @@
 // # Dependency position
 //
 // core/layout imports core/diag, core/directive, core/emit, core/meta,
-// core/plugin, core/position, core/store, core/symbol,
+// core/node, core/plugin, core/position, core/store, core/symbol,
 // core/internal/pathset and the Go stdlib. The workspace imports it to
 // route each plan, and nothing below the workspace does.
 package layout

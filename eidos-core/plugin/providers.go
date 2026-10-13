@@ -64,10 +64,12 @@ type PolicyProvider interface {
 // CapabilityProvider orders a plugin. It returns a priority for each role,
 // and the capabilities that order the plugins of one priority. The
 // workspace refuses a plugin that implements some of these methods and
-// lacks others, and names the methods that it lacks.
+// lacks others, and names the methods that it lacks. A plugin that does
+// not implement CapabilityProvider runs at priority 0 in each role.
 type CapabilityProvider interface {
 	// Priority returns the priority of the plugin in the role r. A plugin
-	// with a lower priority runs first.
+	// with a lower priority runs first, so a negative priority runs before
+	// the plugins at 0.
 	Priority(r Role) int
 	// Provides returns the capabilities that the plugin provides. A
 	// capability has one provider in a composition.

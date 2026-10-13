@@ -188,8 +188,10 @@ func (p *Pass) SplitUnit(u plugin.Unit) []plugin.Unit {
 // returns them as values, in the context's order, which the layout
 // sorts by path. A file whose every declaration is skipped is
 // withheld. Findings attach to the context's sink at the file's path,
-// and a rendered file lists its own in its Findings. A returned error
-// is a defect in the inputs, never a finding.
+// and a rendered file lists its own in its Findings. The import set of
+// each file reads the declared names of the context's Names, and a
+// rendered file lists the packages whose names it read in its Packages.
+// A returned error is a defect in the inputs, never a finding.
 func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	if ctx == nil || ctx.Emit == nil {
 		return nil, errors.New("render: the pass needs a plan's emit store")
@@ -216,11 +218,12 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	// order and the report order are therefore the precomputed ones,
 	// whatever order the workers finish in.
 	type rendered struct {
-		body    []byte
-		plugins []plugin.ID
-		sources []string
-		found   []diag.Diag
-		held    bool
+		body     []byte
+		plugins  []plugin.ID
+		sources  []string
+		packages []string
+		found    []diag.Diag
+		held     bool
 	}
 	results := make([]rendered, len(order))
 	workers := min(runtime.GOMAXPROCS(0), len(order))
@@ -233,6 +236,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				pass: p, sink: diag.NewSink(), origin: origin,
 				trees: ctx.Trees, merged: merged,
 			}
+			w.set.SetNames(ctx.Names)
 			b, err := p.bind(w)
 			if err != nil {
 				bindErr.CompareAndSwap(nil, &err)
@@ -248,6 +252,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				r := rendered{body: body, held: held}
 				if held {
 					r.plugins, r.sources = derivation(order[i].Units)
+					r.packages = w.set.Packages()
 				}
 				if found := slices.Collect(w.sink.All()); len(found) > 0 {
 					r.found = found
@@ -271,7 +276,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		if results[i].held {
 			files = append(files, plugin.RenderedFile{
 				Path: order[i].Path, Pkg: order[i].Pkg,
-				Plugins: results[i].plugins, Sources: results[i].sources,
+				Plugins: results[i].plugins, Sources: results[i].sources, Packages: results[i].packages,
 				Body: results[i].body, Findings: results[i].found,
 			})
 		}
@@ -299,10 +304,11 @@ func derivation(units []plugin.Unit) (plugins []plugin.ID, sources []string) {
 }
 
 // fileView is what the skeleton executes over: the file's spelled
-// name and its package identity.
+// name, its package identity and the annotations of its source file.
 type fileView struct {
-	Name string
-	Pkg  symbol.Identity
+	Name        string
+	Pkg         symbol.Identity
+	Annotations symbol.Annotations
 }
 
 // frame is one render call's mutable state: the buffer the files
@@ -524,7 +530,7 @@ func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 		}
 	}
 	name := path.Base(g.Path)
-	if err := b.file.Execute(&f.fileOut, fileView{Name: name, Pkg: g.Pkg}); err != nil {
+	if err := b.file.Execute(&f.fileOut, fileView{Name: name, Pkg: g.Pkg, Annotations: g.Annotations}); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the file skeleton refused %s: %v", g.Path, err)
 		return nil, false

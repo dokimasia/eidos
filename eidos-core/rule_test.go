@@ -11,6 +11,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
@@ -27,6 +28,14 @@ const fixtureNamespace = "t"
 const (
 	wantedRank = "first"
 	otherRank  = "second"
+)
+
+// chainSlot is the named slot that the cases of the slot gate declare,
+// and gatedName the name that the name gate of a record case compares
+// with.
+const (
+	chainSlot = "chain"
+	gatedName = "Serve"
 )
 
 // These constants are the allocation counts of the scoping wrappers and
@@ -85,6 +94,20 @@ func TestRule(t *testing.T) {
 				Phase:     plugin.PhaseEmit,
 			}}, "the record names the canonical spelling")
 		})
+
+		t.Run("returns a rule gated on the spelling under the name of the plugin for a schema without one",
+			func(t *testing.T) {
+				t.Parallel()
+
+				s := stubSchema("stub")
+				s.Plugin = ""
+				got := subscriptionsOf(t, eidos.Directive(s, onEmit()))
+				assert.Equal(t, got, []plugin.Subscription{{
+					Rule: 0, Kind: symbol.KindStruct,
+					Directive: directive.Name("t:stub"),
+					Phase:     plugin.PhaseEmit,
+				}}, "the record names the spelling under the plugin t that the fixture builds")
+			})
 	})
 
 	t.Run("Gated", func(t *testing.T) {
@@ -153,6 +176,26 @@ func TestRule(t *testing.T) {
 			assert.Equal(t, got[1].Rule, plugin.RuleID(1), "the ordinals follow declaration order")
 			assert.Equal(t, got[1].Kind, symbol.KindMethod, "each record has its own trigger's kind")
 			assert.Equal(t, got[1].FactKey, key.ID(), "each record has the shared wrapper's gate")
+		})
+
+		t.Run("returns one record without a key for a rule whose gates read the value alone", func(t *testing.T) {
+			t.Parallel()
+
+			got := subscriptionsOf(t, eidos.Where(eidos.NameEquals(gatedName), onEmit()))
+			assert.Equal(t, got, []plugin.Subscription{{
+				Rule: 0, Kind: symbol.KindStruct, Phase: plugin.PhaseEmit,
+			}}, "a value gate does not read a key, so the record is the record of a bare rule")
+		})
+
+		t.Run("returns a record for the key gate beside a value gate", func(t *testing.T) {
+			t.Parallel()
+
+			key, _ := boolKey(t)
+			rule := eidos.Where(eidos.NameEquals(gatedName), eidos.Where(eidos.HasKey(key), onEmit()))
+			got := subscriptionsOf(t, rule)
+			assert.Equal(t, got, []plugin.Subscription{{
+				Rule: 0, Kind: symbol.KindStruct, FactKey: key.ID(), Phase: plugin.PhaseEmit,
+			}}, "the value gate adds no record")
 		})
 	})
 
@@ -248,6 +291,157 @@ func TestRule(t *testing.T) {
 			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "only the equal value is visited")
 		})
 	})
+
+	t.Run("Not", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("visits only a subject on which the key reads absent", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t, meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}), "one subject is flagged")
+
+			visited := gatedVisits(t, g, facts, eidos.Not(eidos.HasKey(key)))
+			assert.Equal(t, visited, []symbol.Identity{beta.ID}, "the flagged subject is not visited")
+		})
+
+		t.Run("visits only a subject on which the key of a named handle reads absent", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t, meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}), "one subject is flagged")
+
+			visited := gatedVisits(t, g, facts, eidos.Not(eidos.HasKey(meta.Named[bool](key.Name()))))
+			assert.Equal(t, visited, []symbol.Identity{beta.ID}, "the bound negated gate visits the unflagged subject")
+		})
+
+		t.Run("visits a subject with another value under a negated equality", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := rankKey(t)
+			assert.NoError(t, meta.Stamp(facts, key, wantedRank, meta.Claim{Subject: alpha.ID}),
+				"the matching subject is stamped with the wanted value")
+			assert.NoError(t, meta.Stamp(facts, key, otherRank, meta.Claim{Subject: beta.ID}),
+				"the other subject is stamped with another value")
+
+			visited := gatedVisits(t, g, facts, eidos.Not(eidos.KeyEquals(key, wantedRank)))
+			assert.Equal(t, visited, []symbol.Identity{beta.ID}, "only the other value is visited")
+		})
+
+		t.Run("visits a subject without a value under a negated equality", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := rankKey(t)
+			assert.NoError(t, meta.Stamp(facts, key, wantedRank, meta.Claim{Subject: alpha.ID}),
+				"one subject is stamped with the wanted value")
+
+			visited := gatedVisits(t, g, facts, eidos.Not(eidos.KeyEquals(key, wantedRank)))
+			assert.Equal(t, visited, []symbol.Identity{beta.ID}, "the unstamped subject is visited")
+		})
+
+		t.Run("visits only a subject on which the key reads present under two negations", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t, meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}), "one subject is flagged")
+
+			visited := gatedVisits(t, g, facts, eidos.Not(eidos.Not(eidos.HasKey(key))))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "the second negation restores the gate")
+		})
+
+		t.Run("returns a gate whose rule records the key", func(t *testing.T) {
+			t.Parallel()
+
+			key, _ := boolKey(t)
+			got := subscriptionsOf(t, eidos.Where(eidos.Not(eidos.HasKey(key)), onEmit()))
+			assert.Equal(t, got, []plugin.Subscription{{
+				Rule: 0, Kind: symbol.KindStruct, FactKey: key.ID(), Phase: plugin.PhaseEmit,
+			}}, "a negated gate reads its key, so the record contains it")
+		})
+	})
+
+	t.Run("NameEquals", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("visits only the declaration of the name", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			visited := gatedVisits(t, g, facts, eidos.NameEquals(alpha.Name))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "the declaration of another name is not visited")
+		})
+
+		t.Run("visits only the emitted value of the name", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			first, second := emitted(alpha), emitted(beta)
+			visited := emitVisits(t, g, symbol.KindStruct, eidos.NameEquals(second.Name), first, second)
+			assert.Length(t, visited, 1, "the value of another name is not visited")
+			assert.Equal(t, visited[0], symbol.Symbol(second), "the visited value has the name", assert.ByIdentity())
+		})
+
+		t.Run("visits every subject of another name under a negation", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			visited := gatedVisits(t, g, facts, eidos.Not(eidos.NameEquals(alpha.Name)))
+			assert.Equal(t, visited, []symbol.Identity{beta.ID}, "the declaration of the name is not visited")
+		})
+	})
+
+	t.Run("HasSlot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("visits only the emitted function whose body declares the slot", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			declaring := &emit.Function{Origin: alpha.ID, Name: alpha.Name}
+			declaring.Body.Declare(chainSlot)
+			plain := &emit.Function{Origin: beta.ID, Name: beta.Name}
+			visited := emitVisits(t, g, symbol.KindFunction, eidos.HasSlot(chainSlot), declaring, plain)
+			assert.Length(t, visited, 1, "a function without the slot is not visited")
+			assert.Equal(t, visited[0], symbol.Symbol(declaring), "the visited function declares the slot",
+				assert.ByIdentity())
+		})
+
+		t.Run("visits only the emitted method whose body declares the slot", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			declaring := &emit.Method{Origin: alpha.ID, Name: alpha.Name}
+			declaring.Body.Declare(chainSlot)
+			plain := &emit.Method{Origin: beta.ID, Name: beta.Name}
+			visited := emitVisits(t, g, symbol.KindMethod, eidos.HasSlot(chainSlot), declaring, plain)
+			assert.Length(t, visited, 1, "a method without the slot is not visited")
+			assert.Equal(t, visited[0], symbol.Symbol(declaring), "the visited method declares the slot",
+				assert.ByIdentity())
+		})
+
+		t.Run("visits no emitted value without a body", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			visited := emitVisits(t, g, symbol.KindStruct, eidos.HasSlot(chainSlot), emitted(alpha))
+			assert.Empty(t, visited, "a struct has no body")
+		})
+
+		t.Run("visits no node declaration", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			assert.Empty(t, gatedVisits(t, g, facts, eidos.HasSlot(chainSlot)), "the node model does not record a body")
+		})
+	})
 }
 
 // TestRuleAllocs checks in the ordinary run, which runs no benchmark, that
@@ -336,6 +530,9 @@ func ruleCalls(tb assert.TB) []ruleCall {
 			name: "KeyEquals", allocs: predAllocs, check: keyed(rank.ID()),
 			call: func() { p = eidos.KeyEquals(rank, wantedRank) },
 		},
+		{name: "Not", allocs: predAllocs, check: keyed(flag.ID()), call: func() { p = eidos.Not(pred) }},
+		{name: "NameEquals", allocs: predAllocs, check: keyed(0), call: func() { p = eidos.NameEquals(gatedName) }},
+		{name: "HasSlot", allocs: predAllocs, check: keyed(0), call: func() { p = eidos.HasSlot(chainSlot) }},
 	}
 }
 
@@ -387,5 +584,27 @@ func gatedVisits(
 	assert.NoError(tb, err, "the gates bind")
 	assert.NoError(tb, generatorOf(tb, bound).Generate(genContext(tb, g, facts, nil)),
 		"the phase call passes")
+	return visited
+}
+
+// emitVisits returns the emitted values of kind k that an emit rule under
+// pred visits, in visit order. An earlier turn placed values in the store
+// of the plan over the graph g.
+func emitVisits(
+	tb assert.TB, g *store.Graph, k symbol.Kind, pred eidos.Pred, values ...symbol.Symbol,
+) []symbol.Symbol {
+	tb.Helper()
+
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+	seed(tb, ctx, values...)
+	visited := []symbol.Symbol{}
+	p := eidos.NewPlugin("gated").
+		Handle(eidos.Where(pred, eidos.OnEmit(k, func(m *eidos.EmitMatch, _ *eidos.Emitter) error {
+			visited = append(visited, m.Value)
+			return nil
+		}))).
+		Generator()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 	return visited
 }

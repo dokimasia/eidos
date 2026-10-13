@@ -138,9 +138,11 @@ func (scripted) ZeroValue(ref *node.TypeRef, _ rules.View) (emit.Value, bool) {
 	}
 }
 
-// LiteralFor admits text as a string, an integer where it parses,
-// and refuses the rest.
-func (scripted) LiteralFor(_ *node.File, ref *node.TypeRef, text string, _ rules.View) (emit.Value, bool) {
+// LiteralFor reads text as a string for a string, and as an integer for
+// an int where the text parses. It reports false for every other text and
+// type. The scope plays no part, because the scripted language has no
+// names as values.
+func (scripted) LiteralFor(_ rules.Scope, ref *node.TypeRef, text string, _ rules.View) (emit.Value, bool) {
 	if ref == nil {
 		return emit.Value{}, false
 	}

@@ -4,6 +4,7 @@
 package layout
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"path"
@@ -84,7 +85,9 @@ func (in Input) check() error {
 // is written in, and returns the files sorted by path. Each file's
 // units keep the store's unit order, and each unit keeps its
 // declarations' order. A declaration that a finding refuses is absent
-// from every file, and a file left with no declaration is absent too.
+// from every file, and a file left with no declaration is absent too. A
+// file whose units derive from one source file has the identity and the
+// annotations of that file, as [plugin.File] states.
 //
 // Route reports routing problems to the sink under [diag.PhaseLayout],
 // each an Error. It sets the package of every bare reference and every
@@ -113,14 +116,15 @@ func Route(in Input) ([]plugin.File, error) {
 		n++
 	}
 	r := &router{
-		in:      in,
-		units:   slices.AppendSeq(make([]plugin.Unit, 0, n), in.Emit.Units()),
-		dirs:    map[symbol.Identity]packageDir{},
-		batches: make([]batch, 0, n),
-		at:      make(map[destKey]int, n),
-		files:   make([]building, 0, n),
-		byPath:  make(map[string]int, n),
-		refused: map[symbol.Symbol]struct{}{},
+		in:       in,
+		units:    slices.AppendSeq(make([]plugin.Unit, 0, n), in.Emit.Units()),
+		pkgPaths: packagePaths(in.Index),
+		dirs:     map[symbol.Identity]packageDir{},
+		batches:  make([]batch, 0, n),
+		at:       make(map[destKey]int, n),
+		files:    make([]building, 0, n),
+		byPath:   make(map[string]int, n),
+		refused:  map[symbol.Symbol]struct{}{},
 	}
 	r.readOverrides()
 	r.place()
@@ -128,6 +132,7 @@ func Route(in Input) ([]plugin.File, error) {
 		return nil, err
 	}
 	r.packages()
+	r.sources()
 	r.collide()
 	r.qualify()
 	return r.assemble(), nil
@@ -144,6 +149,9 @@ type router struct {
 	// spread collects the families of each origin whose override names
 	// a path without a tag, the only origins an ambiguity can concern.
 	spread map[placement]map[string]struct{}
+	// pkgPaths contains the path of the kernel out directive on each
+	// package that has one, and is nil where no package has a path.
+	pkgPaths map[symbol.Identity]override
 	// dirs caches each package's source directory.
 	dirs map[symbol.Identity]packageDir
 	// batches are the destinations in the order their first
@@ -211,7 +219,8 @@ type destKey struct {
 	file   string
 }
 
-// batch is the declarations of one destination, in store order.
+// batch is the declarations of one destination, in store order. route is
+// the route of the declaration that created the batch.
 type batch struct {
 	dest  destination
 	decls []symbol.Symbol
@@ -219,6 +228,7 @@ type batch struct {
 	// the later ones, in the order they first contributed.
 	first int
 	more  []int
+	route plugin.Route
 	// whole reports that every contribution was a whole source unit.
 	whole bool
 	// shared reports that decls is a source unit's own slice, which an
@@ -277,6 +287,7 @@ func (r *router) readOverrides() {
 // whole to its family's file for its key.
 func (r *router) place() {
 	var dests []destination
+	var routes []plugin.Route
 	var routed []bool
 	k := 0
 	for i := range r.units {
@@ -289,7 +300,7 @@ func (r *router) place() {
 				u.Plugin, len(u.Decls), u.Tag)
 			continue
 		}
-		home, homeFound := r.target(u.Plugin, own, u.Key, u.Pkg)
+		home, homeRoute, homeFound := r.target(u.Plugin, own, u.Key, u.Pkg)
 		if !r.overridden(k, len(u.Decls)) {
 			k += len(u.Decls)
 			if !homeFound {
@@ -299,25 +310,25 @@ func (r *router) place() {
 				continue
 			}
 			if len(u.Decls) > 0 {
-				r.add(home, i, u.Decls, true)
+				r.add(home, homeRoute, i, u.Decls, true)
 			}
 			continue
 		}
-		dests, routed = dests[:0], routed[:0]
+		dests, routes, routed = dests[:0], routes[:0], routed[:0]
 		for _, d := range u.Decls {
 			ov, overridden := r.overrides[k]
 			k++
 			if overridden {
-				dest, found := r.destine(u, d, own, ov)
-				dests, routed = append(dests, dest), append(routed, found)
+				dest, route, found := r.destine(u, d, own, ov)
+				dests, routes, routed = append(dests, dest), append(routes, route), append(routed, found)
 				continue
 			}
 			if !homeFound {
 				r.sourceless(u, d)
 			}
-			dests, routed = append(dests, home), append(routed, homeFound)
+			dests, routes, routed = append(dests, home), append(routes, homeRoute), append(routed, homeFound)
 		}
-		r.gather(i, dests, routed)
+		r.gather(i, dests, routes, routed)
 	}
 }
 
@@ -337,19 +348,22 @@ func (r *router) overridden(k, n int) bool {
 
 // destine resolves the destination of one declaration with an
 // override: the family its tag names, the key the family's cardinality
-// derives, and the directory its path names. It reports false, with
-// the finding on the sink, where no destination resolves.
-func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov override) (destination, bool) {
+// derives, and the directory its path names. It also returns the route of
+// the destination. It reports false, with the finding on the sink, where
+// no destination resolves.
+func (r *router) destine(
+	u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov override,
+) (destination, plugin.Route, bool) {
 	origin, _ := emit.OriginOf(d)
-	fam := own
+	fam, family := own, plugin.RouteHandler
 	if u.Tag == "" && ov.tag != "" {
 		moved, known := familyOf(r.in.Outputs[u.Plugin], ov.tag)
 		if !known {
 			r.errorf(UnknownTag, ov.tagAt, nil,
 				"tag %q names no family %s declares, and %s is refused", ov.tag, u.Plugin, Describe(d))
-			return destination{}, false
+			return destination{}, plugin.Route{}, false
 		}
-		fam = moved
+		fam, family = moved, ov.tagFrom
 	}
 	key, pkg := u.Key, u.Pkg
 	if fam.Per != u.Per {
@@ -358,22 +372,24 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 			r.errorf(NoDestination, r.positionOf(origin, u), nil,
 				"%s moves to family %q, and no %s key derives for it without a workspace source",
 				Describe(d), fam.Tag, fam.Per)
-			return destination{}, false
+			return destination{}, plugin.Route{}, false
 		}
 		key, pkg = k, owner
 	}
 	if ov.path == "" || (ov.tag != "" && ov.tag != fam.Tag) {
-		dest, found := r.target(u.Plugin, fam, key, pkg)
+		dest, route, found := r.target(u.Plugin, fam, key, pkg)
 		if !found {
 			r.sourceless(u, d)
 		}
-		return dest, found
+		route.Family = family
+		return dest, route, found
 	}
 	conf := r.in.Config.resolve(Family{Plugin: u.Plugin, Tag: fam.Tag})
 	dest := destination{
 		plugin: u.Plugin, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template,
 		key: key, pkg: pkg, file: conf.file,
 	}
+	route := plugin.Route{Family: family, Dir: ov.pathFrom, Name: cmp.Or(conf.fileFrom, plugin.RouteTarget)}
 	base, found := r.originDir(origin)
 	if !found {
 		base, found = r.sourceDir(fam.Per, key, pkg)
@@ -381,51 +397,55 @@ func (r *router) destine(u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov 
 	if !found {
 		r.errorf(NoDestination, ov.pathAt, nil,
 			"out=%s resolves against the source directory of %s, which has none", ov.path, Describe(d))
-		return destination{}, false
+		return destination{}, plugin.Route{}, false
 	}
 	dir, file, inside := redirect(base, ov.path)
 	switch {
 	case !inside:
 		r.errorf(EscapingPath, ov.pathAt, nil,
 			"out=%s is absolute or leaves the workspace root, and %s is refused", ov.path, Describe(d))
-		return destination{}, false
+		return destination{}, plugin.Route{}, false
 	case file != "" && len(r.spread[placement{origin: origin, plugin: u.Plugin}]) > 1:
 		r.errorf(AmbiguousOverride, ov.pathAt, nil,
 			"out=%s names one file for %s, and %s emits into more than one family from %s: "+
 				"add tag= to pick one", ov.path, Describe(d), u.Plugin, origin)
-		return destination{}, false
+		return destination{}, plugin.Route{}, false
 	}
 	dest.dir = dir
 	if file != "" {
-		dest.file = file
+		dest.file, route.Name = file, ov.pathFrom
 	}
-	return dest, true
+	return dest, route, true
 }
 
 // target returns the destination of a family's file for one key under
 // the plan's configuration: the configured directory for a per-plan
 // family, and the key's source directory otherwise, under the output
-// directory where the family is centralised. It reports false where
-// the key has no source directory.
-func (r *router) target(p plugin.ID, fam plugin.Output, key string, pkg symbol.Identity) (destination, bool) {
+// directory where the family is centralised. It also returns the route of
+// the destination, whose family is the family that the handler chose. It
+// reports false where the key has no source directory.
+func (r *router) target(
+	p plugin.ID, fam plugin.Output, key string, pkg symbol.Identity,
+) (destination, plugin.Route, bool) {
 	conf := r.in.Config.resolve(Family{Plugin: p, Tag: fam.Tag})
 	dest := destination{
 		plugin: p, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template,
 		key: key, pkg: pkg, file: conf.file,
 	}
+	route := plugin.Route{Family: plugin.RouteHandler, Name: cmp.Or(conf.fileFrom, plugin.RouteTarget)}
 	if fam.Per == plugin.PerPlan {
-		dest.dir = conf.dir
-		return dest, true
+		dest.dir, route.Dir = conf.dir, conf.dirFrom
+		return dest, route, true
 	}
 	src, found := r.sourceDir(fam.Per, key, pkg)
 	if !found {
-		return destination{}, false
+		return destination{}, plugin.Route{}, false
 	}
-	dest.dir = src
+	dest.dir, route.Policy, route.Dir = src, conf.policyFrom, plugin.RouteSource
 	if conf.policy == PolicyCentralised {
-		dest.dir = path.Join(conf.dir, src)
+		dest.dir, route.Dir = path.Join(conf.dir, src), conf.dirFrom
 	}
-	return dest, true
+	return dest, route, true
 }
 
 // sourceless reports a declaration whose family's file has no source
@@ -438,8 +458,8 @@ func (r *router) sourceless(u *plugin.Unit, d symbol.Symbol) {
 
 // gather adds one unit's routed declarations to their batches. A unit
 // whose declarations all route to one destination joins it whole,
-// without a copy.
-func (r *router) gather(unit int, dests []destination, routed []bool) {
+// without a copy, under the route of its first declaration.
+func (r *router) gather(unit int, dests []destination, routes []plugin.Route, routed []bool) {
 	decls := r.units[unit].Decls
 	whole := len(dests) > 0
 	for j := range dests {
@@ -449,24 +469,24 @@ func (r *router) gather(unit int, dests []destination, routed []bool) {
 		}
 	}
 	if whole {
-		r.add(dests[0], unit, decls, true)
+		r.add(dests[0], routes[0], unit, decls, true)
 		return
 	}
 	for j := range dests {
 		if routed[j] {
-			r.add(dests[j], unit, decls[j:j+1], false)
+			r.add(dests[j], routes[j], unit, decls[j:j+1], false)
 		}
 	}
 }
 
 // add appends declarations of one source unit to the batch of a
-// destination, and creates the batch on first use.
-func (r *router) add(dest destination, unit int, decls []symbol.Symbol, whole bool) {
+// destination, and creates the batch on first use under route.
+func (r *router) add(dest destination, route plugin.Route, unit int, decls []symbol.Symbol, whole bool) {
 	k := dest.index()
 	at, reached := r.at[k]
 	if !reached {
 		r.at[k] = len(r.batches)
-		b := batch{dest: dest, first: unit, whole: whole, shared: whole, decls: decls}
+		b := batch{dest: dest, route: route, first: unit, whole: whole, shared: whole, decls: decls}
 		if !whole {
 			b.decls = slices.Clone(decls)
 		}
@@ -500,6 +520,7 @@ func (r *router) name() error {
 				u.Word, len(u.Decls), kept)
 		}
 		for pi := range parts {
+			parts[pi].Route = b.route
 			name := b.dest.file
 			if name == "" {
 				name = r.in.Speller.FileName(parts[pi])
@@ -555,6 +576,39 @@ func (r *router) packages() {
 	}
 }
 
+// sources gives each file whose units are per-source units of one key the
+// identity and the annotations of the source file that the key names. The
+// file of a package or of a plan, and a file of two keys, keep the zero
+// source. A key that names no file of the package of its unit, such as a
+// file of a dependency store, leaves the file without a source too.
+// sources allocates nothing.
+func (r *router) sources() {
+	for fi := range r.files {
+		f := &r.files[fi]
+		key := f.file.Units[0].Key
+		one := true
+		for _, u := range f.file.Units {
+			if u.Per != plugin.PerSource || u.Key != key {
+				one = false
+				break
+			}
+		}
+		if !one {
+			continue
+		}
+		p, found := r.in.Index.PackageOf(f.file.Units[0].Pkg)
+		if !found {
+			continue
+		}
+		for _, src := range p.Files {
+			if src != nil && src.Path == key {
+				f.file.Source, f.file.Annotations = src.ID, src.Annotations
+				break
+			}
+		}
+	}
+}
+
 // assemble returns the routed files: refused declarations removed, and
 // emptied units and files dropped. The files keep their path order.
 func (r *router) assemble() []plugin.File {
@@ -597,12 +651,20 @@ func (r *router) refuse(f *building) {
 }
 
 // overrideOf returns the routing an author wrote on one origin for one
-// plugin. An origin without an identity has none.
+// plugin. The path of the kernel out directive on the package of the
+// origin fills the path where the directives of the origin leave it empty.
+// An origin without an identity has none.
 func (r *router) overrideOf(origin symbol.Identity, p plugin.ID) override {
 	if origin.IsZero() {
 		return override{}
 	}
-	return overrideOf(r.in.Index.DirectivesOf(origin), p, r.in.Directives)
+	ov := overrideOf(r.in.Index.DirectivesOf(origin), p, r.in.Directives)
+	if ov.path == "" && len(r.pkgPaths) > 0 {
+		if pkg, held := r.pkgPaths[origin.PackageIdentity()]; held {
+			ov.path, ov.pathAt, ov.pathFrom = pkg.path, pkg.pathAt, pkg.pathFrom
+		}
+	}
+	return ov
 }
 
 // keyOf derives the key and package a family of one cardinality takes

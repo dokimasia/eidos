@@ -6,6 +6,7 @@ package directive
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
 	"strings"
 
@@ -14,10 +15,11 @@ import (
 
 // Registry records every schema a workspace recognises.
 //
-// A Registry is not safe for concurrent use. Registration happens
+// An open Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, and sealing ends it: validation
 // refuses an unsealed registry, and registration after the seal is
-// an error.
+// an error. A sealed Registry changes on no call, so it is safe for
+// concurrent use.
 type Registry struct {
 	// byCanonical maps each canonical spelling to its schema.
 	byCanonical map[Name]Schema
@@ -107,6 +109,8 @@ func (r *Registry) Ignored(n Name) bool {
 //     reference without a resolution kind;
 //   - choices on a param that is not a string, an empty choice, and a
 //     choice declared twice;
+//   - a default on a required, list or reference param, and a default
+//     that does not type as the param's type;
 //   - a value of Kinds that is no declaration kind, [symbol.KindInvalid]
 //     included, and a kind that Kinds lists twice;
 //   - an untyped param, and an empty doc anywhere;
@@ -181,7 +185,13 @@ func (r *Registry) RegisterTarget(s Schema) error {
 // registered, refuses an ignore covering a registered name, and
 // closes the registry. Each unknown name, self-reference and
 // silenced schema is one error, and composition collects them all.
+// Seal on a sealed registry returns nothing and leaves the registry as
+// it is, so a sealed registry changes on no call and is safe for
+// concurrent use.
 func (r *Registry) Seal() []error {
+	if r.sealed {
+		return nil
+	}
 	var faults []error
 	for _, n := range r.ignoredOrder() {
 		if err := r.claimedIgnore(n); err != nil {
@@ -239,6 +249,21 @@ func (r *Registry) Candidates(n Name) []Name {
 	return slices.Clone(r.claimants[n])
 }
 
+// Schemas returns each registered schema in the order of its canonical
+// spelling, the schemas of the kernel and of the targets included. A
+// schema shares its lists with the declaration that registered it, so a
+// caller does not change them. A documentation tool reads the schemas of
+// a composition through it.
+func (r *Registry) Schemas() iter.Seq[Schema] {
+	return func(yield func(Schema) bool) {
+		for _, canonical := range r.canonicalOrder() {
+			if !yield(r.byCanonical[canonical]) {
+				return
+			}
+		}
+	}
+}
+
 // lookup returns the schema a spelling addresses together with its
 // canonical spelling, which is the key it is stored under, so no
 // caller spells the canonical form again.
@@ -256,6 +281,70 @@ func (r *Registry) lookup(n Name) (Schema, Name, bool) {
 // constraintsOf returns a schema's constraints as the seal resolved
 // them.
 func (r *Registry) constraintsOf(canonical Name) resolved { return r.constraints[canonical] }
+
+// The bounds of a suggestion: a registered name within suggestEdits edits
+// of a spelling, and within a third of the length of the longer of the
+// two, is near.
+const (
+	suggestEdits   = 2
+	suggestPortion = 3
+)
+
+// nearest returns the registered name nearest to a spelling that names no
+// schema: a canonical name for a spelling with a plugin prefix, and a bare
+// name otherwise. It reports false where no name is near. Two names at one
+// distance return the first in name order, so the suggestion does not
+// depend on the order of registration.
+func (r *Registry) nearest(n Name) (Name, bool) {
+	var best Name
+	bestDistance := suggestEdits + 1
+	consider := func(candidate Name) {
+		d := editDistance(string(n), string(candidate))
+		if d*suggestPortion > max(len(n), len(candidate)) {
+			return
+		}
+		if d < bestDistance || d == bestDistance && candidate < best {
+			best, bestDistance = candidate, d
+		}
+	}
+	if n.Plugin() != "" {
+		for canonical := range r.byCanonical {
+			consider(canonical)
+		}
+	} else {
+		for bare := range r.claimants {
+			consider(bare)
+		}
+	}
+	return best, bestDistance <= suggestEdits
+}
+
+// editDistance returns the optimal string alignment distance between two
+// spellings: the count of byte insertions, deletions, substitutions and
+// swaps of two adjacent bytes that turn a into b, where no byte is edited
+// twice. It allocates three rows of the length of b, and only a refusal
+// calls it.
+func editDistance(a, b string) int {
+	before, prev, cur := make([]int, len(b)+1), make([]int, len(b)+1), make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				cur[j] = min(cur[j], before[j-2]+1)
+			}
+		}
+		before, prev, cur = prev, cur, before
+	}
+	return prev[len(b)]
+}
 
 // claimedIgnore refuses an ignore that would silence a registered
 // schema: the name itself, a bare name any plugin claims, or a
@@ -467,6 +556,19 @@ func admissibleParam(
 		}
 		if slices.Contains(spec.Choices[:i], choice) {
 			return fmt.Errorf("directive: %s param %q declares choice %q twice", owner, spec.Key, choice)
+		}
+	}
+	if spec.Default != "" {
+		if spec.Required {
+			return fmt.Errorf("directive: %s param %q declares a default and requires the param", owner, spec.Key)
+		}
+		if spec.Type != TypeString && spec.Type != TypeInt && spec.Type != TypeBool {
+			return fmt.Errorf("directive: %s param %q declares a default, and only a string, integer or "+
+				"boolean param takes one", owner, spec.Key)
+		}
+		if _, reason := scalar(spec, spec.Type, spec.Default); reason != "" {
+			return fmt.Errorf("directive: %s param %q declares a default that does not type: %s",
+				owner, spec.Key, reason)
 		}
 	}
 	if spec.Type == TypeList && spec.ListOf == TypeList {
