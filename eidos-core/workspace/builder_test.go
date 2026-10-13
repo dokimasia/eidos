@@ -465,7 +465,7 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"plan"`, "twice"},
 			},
 			{
-				name: "returns an error naming a plan without generators",
+				name: "returns an error naming a plan without generators that is not extensible",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("second", "fixture"))
 				},

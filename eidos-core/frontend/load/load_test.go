@@ -109,6 +109,16 @@ const (
 	dualEntry   = "ext/lib/x"
 )
 
+// The names of the two locating frontends of the case whose locators
+// return one store, and the variable that a locator reads with its value
+// in the environment of the fixture.
+const (
+	firstLocator  plugin.ID = "first"
+	secondLocator plugin.ID = "second"
+	locatorVar              = "FAKE_HOME"
+	locatorValue            = "/opt/fake"
+)
+
 // The canonical scale every layer benches at: 1000 packages of 10
 // files of 20 declarations, 200k declarations in all.
 const (
@@ -647,6 +657,111 @@ func TestLoad(t *testing.T) {
 		})
 	})
 
+	t.Run("locate", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("resolves an import through the store of a frontend with an input file", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(map[string]fs.FS{frontendtest.ScriptedStore: depStore()})
+			g, _, _ := loadTree(t, depTree(), with(front), located())
+			assert.Equal(t, front.calls, 1, "the load calls the locator once")
+			app, _ := g.Lookup(declIn(appPath, appName))
+			assert.Equal(t, app.(*node.Struct).Fields[0].Type.Target, declIn(libPath, libName),
+				"the import resolves to the declaration of the located store")
+		})
+
+		t.Run("passes the Getenv of the configuration to the locator", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(map[string]fs.FS{frontendtest.ScriptedStore: depStore()})
+			loadTree(t, depTree(), with(front), located())
+			assert.Equal(t, front.read, locatorValue, "the locator reads the environment of the configuration")
+		})
+
+		t.Run("calls no locator of a frontend without an input file", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(nil)
+			front.err = errLocate
+			loadTree(t, fstest.MapFS{modFile: {Data: []byte("mod v1\n")}}, with(front), located())
+			assert.Equal(t, front.calls, 0, "a frontend that claims no file locates no store")
+		})
+
+		t.Run("calls no locator of a frontend whose claimed files are outputs of the brand", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(nil)
+			front.err = errLocate
+			tree := fstest.MapFS{appFile: {Data: stamped(t, ownBrand, "package "+appPath+"\n")}}
+			loadTree(t, tree, with(front), located())
+			assert.Equal(t, front.calls, 0, "an output of the brand is no input file")
+		})
+
+		t.Run("calls no locator without a Getenv", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(nil)
+			front.err = errLocate
+			loadTree(t, depTree(), with(front))
+			assert.Equal(t, front.calls, 0, "a load without the environment locates no store")
+		})
+
+		t.Run("leaves the stores of the configuration unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			given := map[string]fs.FS{absentStore: fstest.MapFS{}}
+			front := locates(map[string]fs.FS{frontendtest.ScriptedStore: depStore()})
+			loadTree(t, depTree(), with(front), located(), func(cfg *load.Config) { cfg.Stores = given })
+			assert.Length(t, given, 1, "the map of the caller does not gain the located store")
+		})
+
+		t.Run("returns the error of a locator behind the name of its frontend", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(nil)
+			front.err = errLocate
+			err := refuse(t, depTree(), with(front), located())
+			assert.ErrorIs(t, err, errLocate, "the load returns the error of the locator")
+			assert.HasPrefix(t, err.Error(), "load: frontend "+string(frontendtest.ScriptedID)+": ",
+				"the error opens with the name of the frontend")
+		})
+
+		t.Run("returns an error naming a store that two locators return", func(t *testing.T) {
+			t.Parallel()
+
+			first := locates(map[string]fs.FS{frontendtest.ScriptedStore: depStore()})
+			first.ID, first.Sel = firstLocator, []string{serviceSelection}
+			second := locates(map[string]fs.FS{frontendtest.ScriptedStore: depStore()})
+			second.ID, second.Sel = secondLocator, []string{otherSelection}
+			tree := depTree()
+			tree[otherFile] = &fstest.MapFile{Data: []byte("package other\n")}
+			err := refuse(t, tree, with(first, second), located())
+			want := fmt.Sprintf("load: frontends %s and %s both return the store %q",
+				firstLocator, secondLocator, frontendtest.ScriptedStore)
+			assert.Contains(t, err.Error(), want, "the error contains both frontends")
+		})
+
+		t.Run("returns an error naming a located store that the configuration provides", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(map[string]fs.FS{frontendtest.ScriptedStore: depStore()})
+			err := refuse(t, depTree(), with(front), located(), stores(depStore()))
+			want := fmt.Sprintf("load: the configuration and frontend %s both provide the store %q",
+				frontendtest.ScriptedID, frontendtest.ScriptedStore)
+			assert.Contains(t, err.Error(), want, "the error contains both sources")
+		})
+
+		t.Run("returns an error naming a located store without a tree", func(t *testing.T) {
+			t.Parallel()
+
+			front := locates(map[string]fs.FS{frontendtest.ScriptedStore: nil})
+			err := refuse(t, depTree(), with(front), located())
+			assert.Contains(t, err.Error(), "store "+frontendtest.ScriptedStore+" has no tree to read",
+				"the load checks a located store as it checks a configured one")
+		})
+	})
+
 	t.Run("splice", func(t *testing.T) {
 		t.Parallel()
 
@@ -1038,6 +1153,15 @@ func config(tree fs.FS, mutate ...func(*load.Config)) (load.Config, *diag.Sink) 
 // with composes exactly these frontends instead of the standard one.
 func with(fronts ...plugin.Frontend) func(*load.Config) {
 	return func(cfg *load.Config) { cfg.Frontends = fronts }
+}
+
+// located hands the load an environment with the one variable that the
+// locating frontend reads.
+func located() func(*load.Config) {
+	env := map[string]string{locatorVar: locatorValue}
+	return func(cfg *load.Config) {
+		cfg.Getenv = func(key string) string { return env[key] }
+	}
 }
 
 // loadTree drives one load over a tree with the fake frontend and
@@ -1571,6 +1695,36 @@ func entryNames(entries []fs.DirEntry) []string {
 		out[i] = e.Name()
 	}
 	return out
+}
+
+// errLocate is what a failing store locator returns, so a case can
+// follow the cause up through the driver.
+var errLocate = errors.New("load_test: the store locator fails")
+
+// locating is the scripted language in the dependent role with a store
+// locator. The locator counts its calls, records the value of the
+// variable that it reads, and returns the stores or the error of the
+// case. The load calls the locator from one goroutine, so the count needs
+// no lock.
+type locating struct {
+	*frontendtest.ScriptedDependent
+	stores map[string]fs.FS
+	err    error
+	calls  int
+	read   string
+}
+
+// locates returns the scripted dependent whose locator returns stores.
+func locates(stores map[string]fs.FS) *locating {
+	return &locating{ScriptedDependent: frontendtest.NewScriptedDependent(), stores: stores}
+}
+
+// Stores counts the call, reads the variable of the fixture through
+// getenv, and returns the stores or the error of the case.
+func (l *locating) Stores(getenv func(key string) string) (map[string]fs.FS, error) {
+	l.calls++
+	l.read = getenv(locatorVar)
+	return l.stores, l.err
 }
 
 // looseStamp stamps a declaration it never puts in a file, so the

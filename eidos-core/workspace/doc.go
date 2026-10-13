@@ -49,8 +49,10 @@
 // sets them. Build appends the generators of [PlanConfig.Generators] to a
 // plan whose [Plan.Extensible] is true, and returns an error for the
 // generators of any other plan. So the author of a binary decides which
-// plans its users can extend. The fingerprint includes a refined plan as
-// it includes a declared plan.
+// plans its users can extend. An extensible plan can have no generator
+// after the config applies. It then does not write a file. Its run
+// removes the files of its last generation. The fingerprint includes a
+// refined plan as it includes a declared plan.
 //
 // # Targets
 //
@@ -116,7 +118,9 @@
 // [Workspace.Run] takes one [Input] through the frame. It reads the
 // previous record and the sealed state from the composition's ledger,
 // then loads the input's tree with the composition's frontends under
-// its brand, or seals the graph the caller handed over. Per-subject
+// its brand, or seals the graph the caller handed over. The load calls
+// the store locator of each frontend that has an input file through
+// [Input.Getenv]. Per-subject
 // directive validation, the stamp replay, the kernel meta drops and
 // the annotate schedule in turn order follow. The plans then run in
 // parallel: each generates, settles, routes, renders and stamps over

@@ -498,6 +498,35 @@ func TestPlan(t *testing.T) {
 			assert.Equal(t, paths(recorded(t, root)), []string{cacheGen}, "the record lists the new file alone")
 		})
 
+		t.Run("writes no file for an extensible plan without generators", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, workspace.Plan{Name: "plan", Backend: fixturePrinter(), Extensible: true}))
+			report := cleanRun(t, w, routedIn(t, coretest.StorePath))
+			assert.Empty(t, report.Plans[0].Changes, "the plan stages no change")
+			files.Absent(t, filepath.Join(root, storeGen), "the plan writes no file")
+		})
+
+		t.Run("removes the files of an extensible plan whose config drops its last generator", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			extended := onDisk(t, root, workspace.Plan{Name: "plan", Backend: fixturePrinter(), Extensible: true}).
+				Config(workspace.Config{Plans: map[string]workspace.PlanConfig{
+					"plan": {Generators: []plugin.Generator{mirror("added")}},
+				}})
+			cleanRun(t, built(t, extended), routedIn(t, coretest.StorePath))
+			files.IsFile(t, filepath.Join(root, storeGen), "the generator of the config writes its file")
+
+			emptied := onDisk(t, root, workspace.Plan{Name: "plan", Backend: fixturePrinter(), Extensible: true})
+			report := cleanRun(t, built(t, emptied), routedIn(t, coretest.StorePath))
+			files.Absent(t, filepath.Join(root, storeGen), "the run removes the file of the last generation")
+			assert.Contains(t, report.Plans[0].Changes, output.Change{
+				Path: storeGen, Action: output.ActionDeleted, Found: output.FoundIntact,
+			}, "the report records the removal")
+		})
+
 		t.Run("keeps a stale output edited since its stamp under KeptOutput", func(t *testing.T) {
 			t.Parallel()
 

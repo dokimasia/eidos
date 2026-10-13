@@ -401,9 +401,6 @@ func TestCodeAllocs(t *testing.T) {
 		err = cmp.Or(err, rerr)
 	}, registerAllocs, "NewRegistry and a first Register allocate the registry and its map")
 	assert.NoError(t, err, "every first Register records its code")
-	assert.MaxAllocs(t, func() {
-		diag.MustRegister(testPrefix, diag.CodeSpec{Number: nextTestNumber(), Meaning: firstSpec.Meaning})
-	}, 0, "MustRegister allocates only to grow the kernel registry, below once per call")
 	var kernel *diag.Registry
 	assert.MaxAllocs(t, func() { kernel = diag.Kernel() }, 0, "Kernel allocates nothing")
 	assert.NotNil(t, kernel, "Kernel returns the registry")
@@ -475,7 +472,9 @@ func BenchmarkCode(b *testing.B) {
 		// kernel registry grows. Its map doubles, so the growth averages
 		// below one allocation per call, and the contract floors the
 		// average to zero. A run of one iteration that includes a growth
-		// counts that growth.
+		// counts that growth. Only -bench checks this ceiling, because the
+		// test form of a ceiling of 0 admits one allocation in all, and the
+		// growth allocates on two of 100 calls.
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		var got diag.Code

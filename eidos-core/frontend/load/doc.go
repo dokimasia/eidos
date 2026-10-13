@@ -111,8 +111,14 @@
 // # Stores and dependency rounds
 //
 // [Config.Stores] names the read-only trees beside the workspace that
-// dependency units read, such as a Go module cache or a JDK's ct.sym. A
-// file of a store has a qualified path: the store's name, "://" and the
+// dependency units read, such as a Go module cache or a JDK's ct.sym.
+// With [Config.Getenv], the load also calls the [plugin.StoreLocator] of
+// each frontend that has an input file after the selection, and adds the
+// stores that the locator returns. The load does not locate the stores
+// of a frontend without an input file, so a binary that composes a
+// frontend needs the toolchain of its language only for a tree with a
+// file of the language.
+// A file of a store has a qualified path: the store's name, "://" and the
 // path inside the store, as [plugin.StorePath] returns it. Every door of
 // the load resolves a qualified path in its store, and a qualified path
 // naming a store the load does not provide returns an error wrapping
@@ -182,7 +188,9 @@
 //
 // A frontend's Partition, Parse or Dependencies error is fatal to the
 // whole load: the resolution step runs over the union of every
-// frontend's graph, and a partial union resolves wrong. So is a
+// frontend's graph, and a partial union resolves wrong. So are the error
+// of a store locator and a located store whose name another source
+// provides. So is a
 // dependency unit that breaks the round's contract: an empty unit, a
 // member some frontend's selection claims, a member the round returns
 // twice, or a unit that shares only some of its members with loaded

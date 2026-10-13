@@ -45,6 +45,12 @@ type Input struct {
 	// dependency units read, such as a Go module cache or the ct.sym file
 	// of a JDK.
 	Stores map[string]fs.FS
+	// Getenv reads the environment for the store locators of the
+	// frontends. The load of the run calls the locator of a frontend only
+	// when the tree has an input file of the frontend. It adds the stores
+	// that the locator returns to Stores. A nil Getenv turns the location
+	// of stores off.
+	Getenv func(key string) string
 	// Graph is a sealed graph, or a graph that the run seals. The run
 	// starts at directive validation and audits every declaration in it.
 	Graph *store.Graph
@@ -550,6 +556,7 @@ func (w *Workspace) load(
 		Sink:      sink,
 		Brand:     w.brand,
 		Stores:    in.Stores,
+		Getenv:    in.Getenv,
 		Prior:     s.loadPrior(),
 		Memo:      s.loadMemo(in.Cold),
 	})

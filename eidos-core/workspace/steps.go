@@ -1077,7 +1077,8 @@ func refine(
 }
 
 // compilePlans is the plan step: every plan named once, at least one
-// generator, exactly one backend against a registered target, every
+// generator in a plan that is not extensible, exactly one backend
+// against a registered target, every
 // generator that declares templates serving that target, a layout the
 // plan's generators' families admit, sources in the languages langs
 // contains, dependencies on declared plans, and the roles fixed in
@@ -1137,7 +1138,7 @@ func compilePlans(
 				outputs[name] = op.Outputs()
 			}
 		}
-		if len(roles) == 0 {
+		if len(roles) == 0 && !pl.Extensible {
 			faults = append(faults, fmt.Errorf(
 				"workspace: plan %q lists no generator", pl.Name,
 			))

@@ -14,9 +14,11 @@ import (
 
 // Stores returns the stores of every frontend of the composition that
 // implements [plugin.StoreLocator], merged into one map by store name. A
-// command line passes the map to a run as [Input.Stores]. Stores calls the
-// locators in load order, and each locator reads the environment through
-// getenv.
+// caller that needs every store before a run, such as a test fixture,
+// passes the map to the run as [Input.Stores]. A run with [Input.Getenv]
+// locates the stores of the frontends with input files itself, so a
+// command line passes Getenv instead. Stores calls the locators in load
+// order, and each locator reads the environment through getenv.
 //
 // Error modes: Stores returns the error of a locator after the name of its
 // frontend, and an error for a store name that two frontends return.

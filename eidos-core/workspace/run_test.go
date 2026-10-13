@@ -65,6 +65,10 @@ const (
 // returns.
 var errUnlock = errors.New("the release of the lock fails")
 
+// errLocate is the error that the store locator of the failing locator
+// cases returns.
+var errLocate = errors.New("workspace_test: set FAKEROOT")
+
 // The plans of the selection cases over a tree, each of which mirrors
 // every struct into a file named after the plan, and the file of the
 // skipped plan in the store package.
@@ -72,6 +76,14 @@ const (
 	selectedPlan = "selected"
 	skippedPlan  = "skipped"
 	skippedFile  = "svc/store/" + skippedPlan + ".txt"
+)
+
+// The source file of the store locator cases, which the scripted language
+// claims, its text, and the value of every variable of their environment.
+const (
+	locatedFile   = "svc/store/row.zz"
+	locatedSource = "package svc/store\ntype Row int\n"
+	locatedValue  = "/srv/cache"
 )
 
 // otherHolder is the holder of the lock in the cases where another run
@@ -1329,6 +1341,51 @@ func TestRun(t *testing.T) {
 			})
 			assert.HasError(t, err, "the load fails")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "and no plan runs")
+		})
+
+		t.Run("passes the Getenv of the input to the locator of a frontend with an input file", func(t *testing.T) {
+			t.Parallel()
+
+			var read string
+			locate := func(getenv func(string) string) (map[string]fs.FS, error) {
+				read = getenv(storeVar)
+				return nil, nil
+			}
+			w := built(t, valid().Frontends(locating("first", locate)))
+			_, err := w.Run(t.Context(), workspace.Input{
+				Tree:   fstest.MapFS{locatedFile: {Data: []byte(locatedSource)}},
+				Getenv: func(string) string { return locatedValue },
+			})
+			assert.NoError(t, err, "the run loads the tree")
+			assert.Equal(t, read, locatedValue, "the locator reads the environment of the input")
+		})
+
+		failing := func(t *testing.T) (*workspace.Report, error) {
+			t.Helper()
+
+			root := t.TempDir()
+			place(t, root, locatedFile, locatedSource)
+			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).
+				Frontends(locating("first", func(func(string) string) (map[string]fs.FS, error) {
+					return nil, errLocate
+				})))
+			return w.Run(t.Context(), workspace.Input{
+				Tree: os.DirFS(root), Getenv: func(string) string { return locatedValue },
+			})
+		}
+
+		t.Run("returns the error of a store locator", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := failing(t)
+			assert.ErrorIs(t, err, errLocate, "the run returns the error of the locator")
+		})
+
+		t.Run("reports no finding for the error of a store locator", func(t *testing.T) {
+			t.Parallel()
+
+			report, _ := failing(t)
+			coretest.AssertCodes(t, report.Sink)
 		})
 
 		t.Run("stops before the next annotator after a cancellation", func(t *testing.T) {

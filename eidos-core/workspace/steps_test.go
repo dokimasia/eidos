@@ -1275,6 +1275,18 @@ func TestSteps(t *testing.T) {
 			assert.NoError(t, err, "the plugin-level tree serves the plan's target")
 		})
 
+		t.Run("returns no error for an extensible plan without generators", func(t *testing.T) {
+			t.Parallel()
+
+			empty := planTo("second", "fixture")
+			empty.Extensible = true
+			w, err := valid().Plans(empty).Build()
+			assert.NoError(t, err, "an extensible plan admits the config's generators and has none of its own")
+			plans := w.Describe().Plans
+			assert.Length(t, plans, 2, "the composition has both plans")
+			assert.Empty(t, plans[1].Generate, "the extensible plan schedules no generator")
+		})
+
 		refused := []struct {
 			name string
 			deps []string

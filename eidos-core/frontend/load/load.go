@@ -91,6 +91,16 @@ type Config struct {
 	// name without a tree.
 	Stores map[string]fs.FS
 
+	// Getenv reads the environment for the store locators. After the
+	// selection, the load calls in composition order the Stores method of
+	// each frontend that implements [plugin.StoreLocator] and has an
+	// input file. It adds the stores that each locator returns to Stores.
+	// An input file is a file that the selection of the frontend claims
+	// and that is not an output of the brand. The load does not locate the
+	// stores of a frontend without an input file. A nil Getenv turns the
+	// location of stores off.
+	Getenv func(key string) string
+
 	// Prior is the last committed load's record, which the fingerprint
 	// gate compares the tree against, and nil for a cold load.
 	Prior Prior
@@ -235,20 +245,22 @@ type unit struct {
 // parsed reports whether the load parsed the unit.
 func (u *unit) parsed() bool { return u.from == FromParse }
 
-// Load drives every frontend over the tree: the gate, select,
-// partition, key, keep or restore or parse, load the dependencies,
-// splice, resolve, and build one region per parsed unit. It returns a
-// graph [store.Sealed] returns over the units' regions, and the report.
-// A nil graph means nothing loaded, and the error states why.
+// Load drives every frontend over the tree: the gate, select, locate the
+// stores, partition, key, keep or restore or parse, load the
+// dependencies, splice, resolve, and build one region per parsed unit. It
+// returns a graph [store.Sealed] returns over the units' regions, and the
+// report. A nil graph means nothing loaded, and the error states why.
 //
 // A load with [Config.Prior] set keeps every unit whose key the record
 // states, restores a unit whose key the memo contains, and parses the
 // rest, together with every kept unit they couple to. A load without a
 // prior parses every unit whose key the memo lacks.
 //
-// Error modes: a configuration [check] refuses, a frontend's error, a
-// unit or a dependency round that breaks the contract, and the prior's
-// error for a record that does not read whole.
+// Error modes: a configuration [check] refuses, a store locator's error,
+// a located store that collides with another or that [checkStores]
+// refuses, a frontend's error, a unit or a dependency round that breaks
+// the contract, and the prior's error for a record that does not read
+// whole.
 func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if err := check(cfg); err != nil {
 		return nil, nil, err
@@ -280,7 +292,14 @@ type loader struct {
 //
 // Error modes: the prior's error for a record that does not read whole.
 func newLoader(ctx context.Context, cfg Config) (*loader, error) {
-	tree := storeTree{FS: cfg.FS, stores: cfg.Stores}
+	stores := cfg.Stores
+	if cfg.Getenv != nil {
+		// The load adds the located stores to a map of its own, so the map
+		// of the caller does not change.
+		stores = make(map[string]fs.FS, len(cfg.Stores))
+		maps.Copy(stores, cfg.Stores)
+	}
+	tree := storeTree{FS: cfg.FS, stores: stores}
 	g, err := newGate(cfg, tree, time.Now())
 	if err != nil {
 		return nil, err
@@ -299,6 +318,9 @@ func newLoader(ctx context.Context, cfg Config) (*loader, error) {
 // load runs the load's steps and returns its graph and its report.
 func (l *loader) load() (*store.Graph, *Report, error) {
 	inputs, excluded, claimed, err := survey(l.cfg, l.gate)
+	if err == nil {
+		err = l.locate(inputs)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -381,6 +403,49 @@ func survey(cfg Config, g *gate) ([][]string, []string, map[string]bool, error) 
 		}
 	}
 	return inputs, excluded, claimed, nil
+}
+
+// locate adds the stores of each frontend that implements
+// [plugin.StoreLocator] and has an input file to the stores of the load,
+// in composition order. inputs are the input files of each frontend, in
+// the order of [Config.Frontends]. A load without a Getenv returns at
+// once.
+//
+// Error modes: the error of a locator behind the name of its frontend, an
+// error for a store name that two locators return or that a locator and
+// [Config.Stores] both provide, and the error of [checkStores] for a
+// located store.
+func (l *loader) locate(inputs [][]string) error {
+	if l.cfg.Getenv == nil {
+		return nil
+	}
+	located := map[string]fs.FS{}
+	by := map[string]plugin.ID{}
+	for i, f := range l.cfg.Frontends {
+		locator, locates := f.(plugin.StoreLocator)
+		if !locates || len(inputs[i]) == 0 {
+			continue
+		}
+		stores, err := locator.Stores(l.cfg.Getenv)
+		if err != nil {
+			return fmt.Errorf("load: frontend %s: %w", f.Name(), err)
+		}
+		for _, name := range slices.Sorted(maps.Keys(stores)) {
+			if first, taken := by[name]; taken {
+				return fmt.Errorf("load: frontends %s and %s both return the store %q", first, f.Name(), name)
+			}
+			if _, given := l.cfg.Stores[name]; given {
+				return fmt.Errorf("load: the configuration and frontend %s both provide the store %q", f.Name(), name)
+			}
+			by[name] = f.Name()
+			located[name] = stores[name]
+		}
+	}
+	if err := checkStores(located); err != nil {
+		return err
+	}
+	maps.Copy(l.tree.stores, located)
+	return nil
 }
 
 // unitsOf partitions the inputs into units, keys each, keeps, restores

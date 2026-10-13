@@ -99,8 +99,12 @@ type Plan struct {
 	Generators []plugin.Generator
 	// When Extensible is true, Build appends the generators of the plan's
 	// [PlanConfig.Generators] to Generators, so the users of a binary can
-	// add plugins to the plan through the config. A plan that is not
-	// extensible runs the generators of the composition alone.
+	// add plugins to the plan through the config. An extensible plan can
+	// have no generator after the config applies. Its run then does not
+	// render a file. It stages the removal of each file of its last
+	// generation. A plan that is not extensible runs the generators of the
+	// composition alone. Build returns an error for such a plan without a
+	// generator.
 	Extensible bool
 	// Backend renders the settled store of the plan. Each plan has exactly
 	// one backend, and its target must be registered.
