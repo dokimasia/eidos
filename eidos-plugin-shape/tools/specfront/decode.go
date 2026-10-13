@@ -357,7 +357,9 @@ func (d *decoding) checkParams(s spec) {
 // the spec. They are a reference without a resolution kind, a resolution
 // kind on another type, roles outside a contract or outside its roles, a
 // minimum on another type than an int, and an entry of excludes or
-// also_on that is no fitting param.
+// also_on that is no fitting param. An exclusion is a relation of a pair,
+// so each param of the pair lists the other, and the check of a directive
+// reports the pair once.
 func (d *decoding) checkParam(s spec, p param, byKey map[Name]Param) {
 	switch {
 	case p.Type == TypeReference && p.Resolve == "":
@@ -378,8 +380,13 @@ func (d *decoding) checkParam(s spec, p param, byKey map[Name]Param) {
 		d.fault(p.at, "the %s param %s has a minimum, and only an int has one", p.Type, p.Key)
 	}
 	for _, x := range p.Excludes {
-		if _, declared := byKey[x]; !declared || x == p.Key {
+		other, declared := byKey[x]
+		if !declared || x == p.Key {
 			d.fault(p.at, "the param %s excludes %s, which is no other param of the spec", p.Key, x)
+			continue
+		}
+		if !slices.Contains(other.Excludes, p.Key) {
+			d.fault(p.at, "the param %s excludes %s, and %s does not exclude %s", p.Key, x, x, p.Key)
 		}
 	}
 	if len(p.AlsoOn) > 0 && p.Resolve != ResolveHostParam {

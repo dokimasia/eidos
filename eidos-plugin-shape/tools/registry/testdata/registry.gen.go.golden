@@ -355,6 +355,7 @@ func Specs() []Spec {
 					Fact:       "shape.xss-safe.limit",
 					Minimum:    2,
 					HasMinimum: true,
+					Excludes:   []directive.ParamKey{XSSSafeMode},
 				},
 				{
 					ParamSpec: directive.ParamSpec{
@@ -388,4 +389,4 @@ func Specs() []Spec {
 		},
 	}
 }
-// shapegen:provenance sha256:0ad6b1bb945928fad2ca0d234e7c9770478c5db17250286d564b7dcc1310fba0
+// shapegen:provenance sha256:3c2802969b20562e647deeb056f9ab943ebe248c105ae14036d9eb77302cad5c

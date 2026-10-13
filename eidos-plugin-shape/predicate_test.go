@@ -47,6 +47,16 @@ func TestPredicate(t *testing.T) {
 				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.Is(ghostName), sdk.OnMethod(ignore))).Generator()
 			}, "a gate on no key is a defect of the plugin")
 		})
+
+		t.Run("panics at the Build of a plugin for the name of a mixin", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, func() {
+				sdk.NewPlugin(gatedID).
+					Handle(sdk.Where(shape.Is(shape.Shape(shape.Atomic)), sdk.OnMethod(ignore))).
+					Generator()
+			}, "no shape spec has the name of a mixin")
+		})
 	})
 
 	t.Run("Has", func(t *testing.T) {
@@ -65,6 +75,16 @@ func TestPredicate(t *testing.T) {
 			assert.Panics(t, func() {
 				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.Has(ghostName), sdk.OnMethod(ignore))).Generator()
 			}, "a gate on no key is a defect of the plugin")
+		})
+
+		t.Run("panics at the Build of a plugin for the name of a shape", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, func() {
+				sdk.NewPlugin(gatedID).
+					Handle(sdk.Where(shape.Has(shape.Mixin(shape.Writer)), sdk.OnMethod(ignore))).
+					Generator()
+			}, "no mixin spec has the name of a shape")
 		})
 	})
 
@@ -93,6 +113,16 @@ func TestPredicate(t *testing.T) {
 			assert.Panics(t, func() {
 				sdk.NewPlugin(gatedID).Handle(sdk.Where(shape.In(ghostName), sdk.OnMethod(ignore))).Generator()
 			}, "a gate on no key is a defect of the plugin")
+		})
+
+		t.Run("panics at the Build of a plugin for the name of a shape", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, func() {
+				sdk.NewPlugin(gatedID).
+					Handle(sdk.Where(shape.In(shape.Contract(shape.Writer)), sdk.OnMethod(ignore))).
+					Generator()
+			}, "no contract spec has the name of a shape")
 		})
 	})
 
@@ -124,6 +154,16 @@ func TestPredicate(t *testing.T) {
 					Handle(sdk.Where(shape.Plays(ghostName, shape.TxBegin), sdk.OnMethod(ignore))).
 					Generator()
 			}, "a gate on no key is a defect of the plugin")
+		})
+
+		t.Run("panics at the Build of a plugin for the name of a shape", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, func() {
+				sdk.NewPlugin(gatedID).
+					Handle(sdk.Where(shape.Plays(shape.Contract(shape.Writer), shape.TxBegin), sdk.OnMethod(ignore))).
+					Generator()
+			}, "no contract spec has the name of a shape")
 		})
 	})
 }

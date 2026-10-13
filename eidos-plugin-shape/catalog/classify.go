@@ -134,15 +134,15 @@ func onCallable(handle func(match, *sdk.Stamper, callable) error) []sdk.Rule {
 // id.
 func schemas(specs []shape.Spec) (shapes, mixins, contracts directive.Schema) {
 	shapes = directive.Schema{
-		Plugin: string(ShapeID), Name: ShapeDirective, Overrides: true,
+		Name: ShapeDirective, Overrides: true,
 		Doc: "declares the shape of a callable, which keeps the detectors off the callable",
 	}
 	mixins = directive.Schema{
-		Plugin: string(ShapeID), Name: MixinDirective, Repeatable: true,
+		Name: MixinDirective, Repeatable: true,
 		Doc: "declares a mixin of a callable",
 	}
 	contracts = directive.Schema{
-		Plugin: string(ShapeID), Name: ContractDirective, Repeatable: true,
+		Name: ContractDirective, Repeatable: true,
 		Params: []directive.ParamSpec{{
 			Key: IDParam, Type: directive.TypeString,
 			Doc: "the id that separates two instances of the contract in one package",

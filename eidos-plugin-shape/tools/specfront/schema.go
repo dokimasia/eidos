@@ -34,9 +34,9 @@ func Schema() []byte {
 		keywordSchema: draft,
 		keywordTitle:  title,
 		keywordOneOf: []any{
-			jsonschema.Of(reflect.TypeFor[Shape]()),
-			jsonschema.Of(reflect.TypeFor[Mixin]()),
-			jsonschema.Of(reflect.TypeFor[Contract]()),
+			jsonschema.Of(reflect.TypeFor[Shape](), jsonschema.TagYAML),
+			jsonschema.Of(reflect.TypeFor[Mixin](), jsonschema.TagYAML),
+			jsonschema.Of(reflect.TypeFor[Contract](), jsonschema.TagYAML),
 		},
 	}
 	out, _ := json.MarshalIndent(root, "", indent)

@@ -290,6 +290,14 @@ func TestDecode(t *testing.T) {
 				want: []fault{{9, "the param mode excludes mode, which is no other param of the spec"}},
 			},
 			{
+				name: "reports an exclusion that the other param does not state",
+				path: shapePath,
+				give: shapeBase + "params:\n" +
+					"  - {key: axis, type: string, doc: a param}\n" +
+					"  - {key: mode, type: string, excludes: [axis], doc: a param}\n",
+				want: []fault{{10, "the param mode excludes axis, and axis does not exclude mode"}},
+			},
+			{
 				name: "reports also_on on a param that is no host-param reference",
 				path: shapePath,
 				give: shapeBase + "params:\n" +

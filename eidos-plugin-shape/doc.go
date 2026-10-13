@@ -77,7 +77,7 @@
 //				// w.Reads is the reader that observes the write.
 //				return nil
 //			}))).
-//		Build()
+//		Generator()
 //
 // # Authority
 //

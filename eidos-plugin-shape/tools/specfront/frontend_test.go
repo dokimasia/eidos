@@ -303,7 +303,7 @@ func TestFrontend(t *testing.T) {
 
 			got := parse(t, map[string]string{contractPath: contractBase +
 				"params:\n" +
-				"  - {key: limit, type: int, minimum: 2, required: true, doc: a param}\n" +
+				"  - {key: limit, type: int, minimum: 2, required: true, excludes: [mode], doc: a param}\n" +
 				"  - {key: read, type: reference, resolve: callable-in-scope, roles: [begin], doc: a param}\n" +
 				"  - {key: axis, type: reference, resolve: host-param, also_on: [read], counterexample: true, doc: a param}\n" +
 				"  - {key: mode, type: string, excludes: [limit], doc: a param}\n"})
@@ -316,11 +316,10 @@ func TestFrontend(t *testing.T) {
 				typ    specfront.ParamType
 				stamps map[meta.KeyName]any
 			}{
-				{
-					limitKey,
-					specfront.TypeInt,
-					map[meta.KeyName]any{specfront.KeyMinimum: int64(2), specfront.KeyRequired: true},
-				},
+				{limitKey, specfront.TypeInt, map[meta.KeyName]any{
+					specfront.KeyMinimum: int64(2), specfront.KeyRequired: true,
+					specfront.KeyExcludes: []string{modeKey},
+				}},
 				{readKey, specfront.TypeReference, map[meta.KeyName]any{
 					specfront.KeyResolve: string(specfront.ResolveCallableInScope),
 					specfront.KeyApplies: []string{beginRole},
