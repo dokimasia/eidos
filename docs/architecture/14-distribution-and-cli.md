@@ -9,32 +9,50 @@
 [08](08-workspace-and-plans.md) (the workspace a binary composes).
 Feeds: [20](20-cli.md).*
 
-## eidos is a library, full stop
+## The library and the binary eidos
 
-The project ships **no binary, ever**. There is no
-batteries-included executable, no rebuild tool and no `cmd/` in the
-kernel. What it ships instead is everything a consumer needs to make
-their own binary the product:
+eidos is a library first. It provides everything a consumer needs to
+make their own binary the product:
 
 - **Command kernels**, in `eidos/cli`: run, plan, explain, prune,
-  doctor, watch, version and schema, plus config loading, flag
-  conventions and diagnostic formatting. A consumer mounts them beside its own
-  commands, so every eidos-built binary offers the same commands,
-  flags and output formats without its author writing any UX code.
+  doctor, watch, version and schema, plus config loading, the global
+  options and diagnostic formatting. A binary built with eidos is an
+  app of go-cli, `go.stealthscale.io/cli`, with the kernel commands
+  beside its own commands, so every eidos-built binary offers the same
+  commands, options and output formats without its author writing any
+  UX code.
 - **The workspace builder and plan values.** A consumer's `main` is
-  a composition function plus `cli.Main(...)`, or the binary's own
-  command line with the values of `cli.Kernels(...)` mounted in it.
+  a composition function, `cli.New(...)` and `cli.Main(...)`, or an app
+  of its own that mounts the kernel commands as subcommands of a group
+  with `cli.Mount(...)`.
 - **The declarative host**, in `eidos/declarative`
   ([06-plugins.md](06-plugins.md)). A binary admits declarative
   plugins into the plans that it marks `Extensible`, so its users
   extend the tool without a toolchain.
 
-Consumers answer the question about users who do not write Go, not
-eidos. dokimi, the reference consumer, ships a batteries-included
-binary that its users cannot extend. An organisation's platform team
-ships theirs with the organisation's plugins and the declarative
-host enabled. eidos' audience is the people who build those
-binaries.
+eidos also publishes one binary, `eidos`, the main package `cmd/eidos`
+of the root module. It composes the frontends of Go, TypeScript, Java,
+Rust and protobuf, the rules of Go, TypeScript and protobuf, and one
+extensible plan for each of the targets golang, typescript, java and
+rust. It has no generator and no annotator of its own. Its users add
+declarative plugins to the plans in `.eidos.yaml`. A team that does
+not write Go runs its plugins without a binary of its own
+([21-decisions.md](21-decisions.md), D160).
+
+`go install go.dokimi.dev/eidos/cmd/eidos@latest` installs the
+binary. The root module has no replace directive, and the go command
+builds it from published modules. The frontends of
+TypeScript, Java and Rust parse through cgo. The build needs a C
+compiler for them. Each release of the root module also publishes
+archives for darwin, Linux and Windows and a Homebrew cask. ergon
+builds the commands of `.ergon.yaml` with cgo off, so the job
+`binaries` of `release.yml` builds them from `.goreleaser.yml` on
+macOS: darwin with clang, Linux and Windows with zig.
+
+A consumer with typed plugins still builds its own binary. dokimi,
+the reference consumer, ships a batteries-included binary that its
+users cannot extend. An organisation's platform team ships theirs with
+the organisation's plugins and the declarative host enabled.
 
 Considered and cut: a rebuild tool that turns config into a
 generated `main` and runs `go build`. Even with `GOTOOLCHAIN`
@@ -48,7 +66,7 @@ owe it ([21-decisions.md](21-decisions.md), D13).
 
 ```go
 func main() {
-    cli.Main(func() *workspace.Builder {
+    compose := func() *workspace.Builder {
         return workspace.New().
             Brand("acme").
             Frontends(gofrontend.New(), protofrontend.New()).
@@ -57,7 +75,9 @@ func main() {
                 golang.ServerPlan(mygen.New()),
                 typescript.ClientPlan(),
             )
-    }) // run | plan | explain | prune | doctor | watch | version | schema
+    }
+    // run | plan | explain | prune | doctor | watch | version | schema
+    cli.Main(cli.New("Generates the code of the acme platform.", compose), compose)
 }
 ```
 
@@ -100,13 +120,18 @@ directory in two plans is one plugin in both plans. A directory that
 does not load fails the command with a config error and the exit status
 64. Build refuses plugins for a plan that the binary does not mark
 `Extensible`, so a binary with a fixed product keeps its output fixed.
+An extensible plan does not need a generator of its own. Without a
+plugin it does not write a file. The next run of a plan whose last
+plugin the config file dropped removes the files that the plugin wrote
+([21-decisions.md](21-decisions.md), D161).
 
 What a consumer's `go.mod` takes on, and under what discipline:
 
 | Dependency | Discipline |
 |---|---|
 | `go.dokimi.dev/eidos/core` | semver, canary-tested, additive within a major ([15-compatibility.md](15-compatibility.md)) |
-| `go.dokimi.dev/eidos/cli` | semver; the command kernels, whose flags, JSON schemas and exit codes follow the same policy ([20-cli.md](20-cli.md)) |
+| `go.dokimi.dev/eidos/cli` | semver; the command kernels, whose options, JSON schemas and exit codes follow the same policy ([20-cli.md](20-cli.md)) |
+| `go.stealthscale.io/cli` | semver; the command line of every eidos-built binary, which `eidos/cli` requires |
 | `go.dokimi.dev/eidos/declarative` | semver; the manifest format and its JSON Schema follow the same policy |
 | `go.dokimi.dev/eidos/lang/<lang>` | its own cadence; declares a kernel range and proves it in CI |
 | `go.dokimi.dev/eidos/plugin-shape` | its own cadence; the catalog grows by spec |

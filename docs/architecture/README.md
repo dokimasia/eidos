@@ -26,9 +26,12 @@ and links into the specification at every step. Keep the
 
 ## Ground rules
 
-- **eidos is a library.** It ships no binary. Consumers build their
-  own binary and mount the command kernels of `eidos-cli` in it
-  ([20-cli.md](20-cli.md)).
+- **eidos is a library with one stock binary.** The binary `eidos`
+  composes every language and runs the declarative plugins of its
+  users. A consumer with typed plugins builds its own binary and
+  mounts the command kernels of `eidos-cli` in it
+  ([14-distribution-and-cli.md](14-distribution-and-cli.md),
+  [20-cli.md](20-cli.md)).
 - **Outsiders use this.** So the kernel's API stability is checked
   by machinery rather than promised, the documentation ships as
   part of the release, and the conformance suite is what proves a
@@ -100,7 +103,7 @@ and links into the specification at every step. Keep the
 | [11-languages.md](11-languages.md) | Satellite anatomy, the language landscape, completeness |
 | [12-shape-catalog.md](12-shape-catalog.md) | eidos-plugin-shape: classification, written as specs first |
 | [13-testing-and-conformance.md](13-testing-and-conformance.md) | The eight checks, harness skeletons, fixtures |
-| [14-distribution-and-cli.md](14-distribution-and-cli.md) | Library-only delivery, command kernels, consumer binaries |
+| [14-distribution-and-cli.md](14-distribution-and-cli.md) | The library, the binary eidos, command kernels, consumer binaries |
 | [15-compatibility.md](15-compatibility.md) | Versioning, the canary ring, deprecation |
 | [16-diagnostics.md](16-diagnostics.md) | Severities, failure semantics, suppression, codes |
 | [17-output-and-determinism.md](17-output-and-determinism.md) | The sink contract, determinism rules, headers, manifest |

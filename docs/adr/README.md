@@ -66,3 +66,8 @@ way.
 | [0045](0045-the-tree-sitter-frontends-keep-the-departures-of-their-implementation.md) | The tree-sitter frontends keep the departures of their implementation | Accepted |
 | [0046](0046-the-shape-catalog-keeps-the-departures-of-its-implementation.md) | The shape catalog keeps the departures of its implementation | Accepted |
 | [0047](0047-the-cross-language-hub-keeps-the-departures-of-its-implementation.md) | The cross-language hub keeps the departures of its implementation | Accepted |
+| [0048](0048-the-command-line-of-a-binary-is-a-go-cli-app.md) | The command line of a binary is a go-cli app | Accepted |
+| [0049](0049-the-config-file-of-a-workspace-sets-the-values-of-options.md) | The config file of a workspace sets the values of options | Accepted |
+| [0050](0050-eidos-publishes-the-binary-eidos.md) | eidos publishes the binary eidos | Accepted |
+| [0051](0051-an-extensible-plan-can-have-no-generator.md) | An extensible plan can have no generator | Accepted |
+| [0052](0052-a-run-locates-the-stores-of-the-frontends-with-input-files.md) | A run locates the stores of the frontends with input files | Accepted |

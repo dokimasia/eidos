@@ -266,7 +266,9 @@ The steps, in order, where each assumes the ones before it:
    plan that the composition declares, and no enabled plan or check
    reads a plan that the config disables. A refinement adds
    generators only to a plan that the composition marks `Extensible`.
-   Each plan has exactly one backend and a registered
+   A plan lists at least one generator unless the composition marks
+   it `Extensible`. An extensible plan without a generator writes no
+   file. Each plan has exactly one backend and a registered
    target, and every template-claiming plugin declares that target.
    Layout refinements name plugins and tags that exist. The sources
    name a language that a frontend loads or a rules value declares,

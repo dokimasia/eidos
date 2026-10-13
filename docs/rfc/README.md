@@ -80,3 +80,5 @@ the decision is already made and there is nothing left to argue, write an
 | [0061](0061-the-declared-name-of-an-imported-go-package.md) | The declared name of an imported Go package | Accepted |
 | [0062](0062-the-projection-side-of-the-support-matrix.md) | The projection side of the support matrix | Accepted |
 | [0063](0063-the-assigned-argument-of-an-annotation.md) | The assigned argument of an annotation | Accepted |
+| [0064](0064-the-command-line-on-go-cli.md) | The command line on go-cli | Accepted |
+| [0065](0065-the-eidos-binary.md) | The eidos binary | Accepted |

@@ -11,8 +11,11 @@ entities. A backend renders those into a target language. One run regenerates
 only what changed, produces the same bytes every time, and can target several
 languages at once.
 
-eidos ships no binary. You build the binary. It composes the command kernels,
-and it is the thing your users install.
+The binary `eidos` runs the declarative plugins of your workspace. Install it
+with `brew install --cask dokimasia/tap/eidos`, from the archive of a release,
+or with `go install go.dokimi.dev/eidos/cmd/eidos@latest`. The go command needs
+a C compiler for the tree-sitter frontends. A team with typed plugins builds
+its own binary on the command kernels. Its users install that binary.
 
 **eidos is not released yet.** The [specification](docs/README.md) is
 complete, and the module table says what each module contains. Start with
@@ -28,6 +31,7 @@ their own schedule.
 
 | Module | Import path | Contents |
 |---|---|---|
+| [cmd/eidos](cmd/eidos) | `go.dokimi.dev/eidos` | the binary `eidos`: the frontends of every language, the rules of Go, TypeScript and protobuf, and one extensible plan for each target. A workspace adds its declarative plugins to the plans |
 | [eidos-core](eidos-core) | `go.dokimi.dev/eidos/core` | the kernel: the symbol, node and emit models, metadata, directives, diagnostics, the store, projection rules, the plugin SPI and authoring surface, the frontend and backend kits, output, the workspace, the toolchain harness and the conformance kits |
 | [eidos-sdk](eidos-sdk) | `go.dokimi.dev/eidos/sdk` | the generated facade plugin modules import: one re-export per exported symbol of the kernel's plugin-facing packages |
 | [eidos-cli](eidos-cli) | `go.dokimi.dev/eidos/cli` | the command kernels that every binary built with eidos offers: the config file and its JSON Schema, the shared flags, the rendering of findings and the exit statuses |
@@ -51,8 +55,8 @@ no language, and its runtime packages import the standard library alone. Its
 conformance kits import `go.dokimi.dev/assert`.
 
 `go.work` holds the module list and ergon reads it from there. The root
-module `go.dokimi.dev/eidos` declares the import-path prefix. It has no
-packages and stays out of `go.work`.
+module `go.dokimi.dev/eidos` contains the command `eidos`. Its `go.mod` has no
+replace directive, so `go install` builds the command from published modules.
 
 ## Development
 

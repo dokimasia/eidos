@@ -10,84 +10,118 @@
 the consumer's surface.*
 
 The `cli` package of `go.dokimi.dev/eidos/cli` contains the command
-kernels: eight complete commands that a consumer's binary mounts.
-Mount them and your users get the commands, flags, output formats and
-exit codes specified here, and you write no UX code to get them. This
+kernels: eight complete commands that every binary built with eidos
+runs. Your users get the commands, options, output formats and exit
+codes specified here, and you write no UX code to get them. This
 document is the contract for that surface.
 
 ## Composition
 
-`cli.Kernels` takes a function that composes the workspace and
-returns the eight commands as values. A binary without a command line
-of its own passes the same function to `cli.Main`:
+A binary built with eidos is an app of `go.stealthscale.io/cli`, go-cli
+for short. `cli.New` takes a function that composes the workspace, and
+returns a go-cli app with the eight kernel commands at its root. The
+binary adds its own commands to the app as go-cli commands, such as an
+installer or a migration, and runs the app with `cli.Main`:
 
 ```go
 func main() {
-    cli.Main(func() *workspace.Builder {
+    compose := func() *workspace.Builder {
         return workspace.New().
             Brand("acme").
             Frontends(gofrontend.New()).
             Annotators(shapefull.Annotators()...).
             Plans(golang.ServerPlan(mygen.New()))
-    })
+    }
+    app := cli.New("Generates the code of the acme platform.", compose)
+    app.Command("install", "Installs the acme hooks.", install)
+    cli.Main(app, compose)
 }
 ```
 
 A command calls the function once for each workspace it covers,
 because it applies the config file to the builder before Build runs,
 and a plugin instance belongs to one workspace. The brand that the
-builder declares names the config file, the state directory and the
-frame of every generated file. `version` prints the main module's path
-and version from the binary's build information.
+builder declares names the app, the config file, the state directory
+and the frame of every generated file. `version` prints the main
+module's path and version from the binary's build information.
 
-Consumers add their own commands beside the kernels: an installer, a
-migration, whatever the product needs. A kernel command parses its own
-flags and arguments, renders its own output and returns its own exit
-status, so it mounts in any command line:
+A binary that mounts the kernel commands as subcommands of a group
+creates the app itself. `cli.Prepare` registers what eidos needs from
+go-cli, and `cli.Mount` adds the kernel commands to the group:
 
-- `cli.Main` dispatches among the kernels and the consumer's
-  `cli.Command` values, and panics on a consumer command that shadows
-  a kernel name.
-- A binary with a command line of its own, such as a cobra tree or a
-  dispatcher over the standard library, mounts the values that
-  `cli.Kernels` returns, at its root or under a group. Its host passes
-  each command the arguments that follow the command's name, writes
-  nothing to the standard streams around it, and exits with the status
-  that it returns.
+```go
+app := gocli.New[cli.Global]("acme", "Runs the acme platform.")
+cli.Prepare(app, compose)
+cli.Mount(app.Command[struct{}]("gen", "Generates the code of the platform.", nil), compose)
+cli.Main(app, compose)
+```
 
-`run` means the same thing in every eidos-built binary: under
-`cli.Main` because a shadowing command is refused, and under any other
-host because `acceptancetest` runs each kernel name on the built
-binary. The composition surface, pinned:
+A command of the binary reads its IO with `cli.IOOf`, reads its
+workspaces with `cli.Open` and renders its output through `cli.Begin`,
+as a kernel command does. A handler that rendered its output returns
+`cli.Exit` of its status, and `cli.Run` renders any other error of a
+handler. go-cli refuses two commands with one name, so `run` means the
+same thing in every eidos-built binary, and `acceptancetest` runs each
+kernel name on the built binary. The composition surface, pinned:
 
 ```go
 type Compose func() *workspace.Builder // a fresh composition per call
 
-type Command interface {
-    Name() string
-    Synopsis() string
-    Usage() string
-    Run(ctx context.Context, stdio IO, args []string) int // 0, 1 or 64
+type Global struct { // the global options of the app
+    Config  gocli.ConfigFile
+    Chdir   string
+    Format  Format
+    Strict, Verbose, Quiet, NoColor bool
 }
 
-func Kernels(compose Compose) []Command
-func Main(compose Compose, extra ...Command) // exits; panics on a shadowed name
-func Exit(status int) error                 // nil, or an ExitError for a host whose commands return errors
+func New(help string, compose Compose) *gocli.App[Global]
+func Prepare(app *gocli.App[Global], compose Compose)
+func Mount[C any](parent *gocli.Command[Global, C], compose Compose)
+func Main(app *gocli.App[Global], compose Compose) // exits with the status of Run
+func Run(ctx context.Context, app *gocli.App[Global], compose Compose, env *gocli.Env) int // 0, 1 or 64
+func IOOf[C any](run *gocli.Run[Global, C]) (IO, error)
+func Exit(status int) error // nil, or an ExitError that Run exits with
 ```
+
+`cli.Run` panics for a defect of the binary that go-cli reports, such as
+a command of the binary with the name of a kernel command, or a brand
+that is not the name of an app.
 
 ## Config discovery
 
-`--config <path>` wins outright. Otherwise discovery walks up from
-the working directory to the first `.<brand>.yaml`, stopping at the
-VCS root. That file names either one workspace or the explicit
-`workspaces:` list
+A `--config <path>` replaces the search. Otherwise discovery walks up
+from the working directory, or from the directory of `-C`, to the first
+`.<brand>.yaml`, stopping at the VCS root. go-cli runs the same walk
+through its search for the config file, so the options and the
+workspace come from one file. That file names either one workspace or
+the explicit `workspaces:` list
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
-The filename comes from the brand and is never `eidos.yaml`, because
-no eidos binary exists to claim that name
-([14-distribution-and-cli.md](14-distribution-and-cli.md)), and two
-eidos-built binaries sharing a repository must not read each other's
-config. `cli.ConfigName` returns the name, and the command kernels, the
+The config file contains the workspace document and the values of the
+options of the command line. go-cli reads the keys of the options, such
+as `strict` and `run.plan`, and skips the keys of the document, which
+the command kernels decode:
+
+```yaml
+version: 1
+strict: true
+run:
+    plan: [api]
+plans:
+    web: {enabled: false}
+```
+
+A top-level key that neither the document nor an option has is a usage
+error, and go-cli suggests the nearest key of an option. A file that
+lists workspaces can set options for the whole run. The config file of a
+member of a list sets no options, because go-cli reads one file for each
+run, so a key of an option there is a config error.
+
+The filename comes from the brand. The binary `eidos` reads
+`.eidos.yaml` ([14-distribution-and-cli.md](14-distribution-and-cli.md)),
+and an acme binary reads `.acme.yaml`. Two eidos-built binaries that
+share a repository never read each other's config.
+`cli.ConfigName` returns the name, and the command kernels, the
 acceptance kit and the tests of a consumer name the file through it.
 Each fault of a config file is a `cli.ConfigError` with the file, the
 line and the message of the fault:
@@ -130,32 +164,38 @@ var settings canarySettings
 found, err := member.Extension("reference", &settings)
 ```
 
-A config file has no key for the verbosity of the output. The file
-states the composition that everyone who runs the binary in the
-repository shares, and the verbosity of one command is a flag.
+## Global options
 
-## Shared flags
+Every command accepts the global options before and after its name.
+go-cli reads each option from its flag, its environment variable and its
+key in the config file. The variable joins the brand and the flag in
+upper case, and an option of a command adds the path of the command to
+both names: `--dry-run` of `run` is `ACME_RUN_DRY_RUN` and
+`run.dry-run`. The last source that sets an option applies, in the
+order default, config file, variable and flag.
 
-Every kernel command accepts these flags after its name, between its
-arguments included, and `cli.Main` also accepts them before the
-command's name. `-h` and `--help` print the command's usage.
+| Flag | Variable | Key | Effect |
+|---|---|---|---|
+| `--format=text\|json` | `ACME_FORMAT` | `format` | human rendering, or line-delimited JSON under the versioned schemas |
+| `--config <path>` | `ACME_CONFIG` | none | read this config file, and skip the search |
+| `-C`, `--chdir <dir>` | `ACME_CHDIR` | none | run in this directory. The search starts there and the patterns are relative to it. A relative `--config` is relative to the working directory of the process |
+| `--strict` | `ACME_STRICT` | `strict` | promote Warnings to Errors |
+| `--verbose` | `ACME_VERBOSE` | `verbose` | include Info diagnostics |
+| `--quiet` | `ACME_QUIET` | `quiet` | render Error diagnostics alone. The summary counts every finding, and `--quiet` with `--verbose` is a usage error |
+| `--no-color` / `NO_COLOR` | `ACME_NO_COLOR` | `no-color` | plain text. TTY rendering never affects file output |
+| `--flag-debug` | `ACME_FLAG_DEBUG` | none | go-cli writes the value and the source of each option to standard error before the command runs |
 
-| Flag | Effect |
-|---|---|
-| `--format=text\|json` | human rendering, or line-delimited JSON under the versioned schemas |
-| `--config <path>` | use this config; discovery is skipped |
-| `--strict` | promote Warnings to Errors |
-| `--verbose` | include Info diagnostics |
-| `--quiet` | render Error diagnostics alone. The summary counts every finding, and `--quiet` with `--verbose` is a usage error |
-| `--no-color` / `NO_COLOR` | plain text. TTY rendering never affects file output |
+`-h` and `--help` write the help of the app or of a command as text,
+with the variable and the key of each option. A long flag has two
+dashes, and a misspelled flag, command or key gets a suggestion.
 
 ## The commands
 
 ### run
 
 Executes the workspace: every plan, or a subset through `--plan
-<name>`, which repeats and brings in the plans that each selected plan
-depends on. Positional patterns narrow the commit: the run computes
+<name>`, which repeats, takes a list such as `--plan web,cli`, and
+brings in the plans that each selected plan depends on. Positional patterns narrow the commit: the run computes
 every plan over the whole graph, and commits only the changes to files
 that derive from a package the patterns admit
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
@@ -283,7 +323,9 @@ also reports a sealed state that the next run ignores
 directive ([15-compatibility.md](15-compatibility.md)) and a dead
 suppression ([16-diagnostics.md](16-diagnostics.md)). It does not
 compare the workspace's directive usage with the schema index of
-another release.
+another release. go-cli checks the keys of the options before `doctor`
+runs, so a top-level key that go-cli refuses fails `doctor` as a usage
+error.
 
 ### watch
 
@@ -311,13 +353,17 @@ last two, and a difference in any of the three runs the next run cold
 closed object under `options` for each plugin of the composition that
 declares options, so an editor completes the options of a plugin. The
 object under `options` admits other names, because a plan directory adds
-declarative plugins.
+declarative plugins. The top level admits every key that is not a key of
+the format, because go-cli checks the keys of the options when a run
+reads the file. The schema does not list the options of the commands.
 
-`schema` does not read a config file. It reads the plugins of the
-composition without a build, so a composition with a required option has
-a schema before its config file exists. Text output writes the schema,
-and JSON output writes a `schema` event whose field `schema` is the
-schema object:
+`schema` decodes no workspace document. go-cli still reads the options
+from the config file, so a config file that does not parse fails
+`schema`, and `--config=` runs it without a file. `schema` reads the
+plugins of the composition without a build, so a composition with a
+required option has a schema before its config file exists. Text output
+writes the schema, and JSON output writes a `schema` event whose field
+`schema` is the schema object:
 
 ```sh
 acme schema > .acme.schema.json
@@ -329,9 +375,12 @@ Every command's `--format=json` emits line-delimited JSON under a
 versioned schema, and the schemas are public API
 ([15-compatibility.md](15-compatibility.md)). The stream has the
 same shape across commands: a `start` event that states the schema's
-version, typed events, then one `summary` event. Standard output
-contains the stream alone, and standard error is empty unless the
-process panics.
+version, typed events, then one `summary` event. A usage error that
+go-cli finds in the command line or in the config file has the same
+stream, in the format of the flags before the fault. Standard output
+contains the stream alone. Standard error is empty unless the process
+panics, the command line has `--flag-debug`, or the command line ends
+at a command without a handler, where go-cli writes the help.
 
 ```json
 {"event":"start","schema":"1.0","command":"run","brand":"acme",
@@ -354,8 +403,8 @@ surface.
 Exit codes come from the diagnostic contract: 0 on success, 1 when
 diagnostics failed the run, and 64 on a usage or config error. 2
 means a crash and nothing else
-([16-diagnostics.md](16-diagnostics.md)). A command returns the status,
-and its host exits with it.
+([16-diagnostics.md](16-diagnostics.md)). `cli.Run` maps the error of
+each run to the status, and `cli.Main` exits with it.
 
 A consumer's CI composes these without parsing any message text:
 
