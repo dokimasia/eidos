@@ -1,5 +1,26 @@
 # go.dokimi.dev/eidos/reference
 
+## 0.1.1
+
+### Patch Changes
+
+- c6a4676: Run `eidos-reference` as an app of `go.stealthscale.io/cli`.
+- 78613ca: Test each release of the ring from the tree of its tag against the kernel and the SDK facade of the checkout.
+- 4644a2b: Update `go.dokimi.dev/assert` to v0.2.0.
+- Updated dependencies [a2d0d64]
+- Updated dependencies [a2d0d64]
+- Updated dependencies [a044621]
+- Updated dependencies [a044621]
+- Updated dependencies [a044621]
+- Updated dependencies [4644a2b]
+  - go.dokimi.dev/eidos/core@0.2.0
+  - go.dokimi.dev/eidos/cli@0.2.0
+  - go.dokimi.dev/eidos/declarative@0.1.1
+  - go.dokimi.dev/eidos/lang@0.1.1
+  - go.dokimi.dev/eidos/lang/go@0.1.1
+  - go.dokimi.dev/eidos/lang/typescript@0.1.1
+  - go.dokimi.dev/eidos/sdk@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

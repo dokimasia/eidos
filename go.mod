@@ -7,13 +7,13 @@ go 1.27.2
 
 require (
 	go.dokimi.dev/assert v0.2.0
-	go.dokimi.dev/eidos/cli v0.1.0
-	go.dokimi.dev/eidos/core v0.1.0
-	go.dokimi.dev/eidos/lang/go v0.1.0
-	go.dokimi.dev/eidos/lang/java v0.1.0
-	go.dokimi.dev/eidos/lang/protobuf v0.1.0
-	go.dokimi.dev/eidos/lang/rust v0.1.0
-	go.dokimi.dev/eidos/lang/typescript v0.1.0
+	go.dokimi.dev/eidos/cli v0.2.0
+	go.dokimi.dev/eidos/core v0.2.0
+	go.dokimi.dev/eidos/lang/go v0.1.1
+	go.dokimi.dev/eidos/lang/java v0.1.1
+	go.dokimi.dev/eidos/lang/protobuf v0.1.1
+	go.dokimi.dev/eidos/lang/rust v0.1.1
+	go.dokimi.dev/eidos/lang/typescript v0.1.1
 	go.stealthscale.io/cli v0.4.0
 )
 
@@ -29,9 +29,10 @@ require (
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
-	go.dokimi.dev/eidos/declarative v0.1.0 // indirect
-	go.dokimi.dev/eidos/lang v0.1.0 // indirect
-	go.dokimi.dev/eidos/sdk v0.1.0 // indirect
+	go.dokimi.dev/eidos/declarative v0.1.1 // indirect
+	go.dokimi.dev/eidos/lang v0.1.1 // indirect
+	go.dokimi.dev/eidos/sdk v0.1.1 // indirect
+	go.stealthscale.io/cli/yaml v0.1.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
 	golang.org/x/mod v0.41.0 // indirect
