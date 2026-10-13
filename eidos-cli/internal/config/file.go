@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -76,10 +79,13 @@ type File struct {
 // file name.
 //
 // Decode decodes a file with the key workspaces into a [List]. It decodes
-// any other file into a [Document]. Decode is strict. It returns an Error
-// for an unknown key, for a value of the wrong type, and for a size or a
-// policy that does not parse. Decode continues after such a fault, and
-// joins the Errors of all faults with [errors.Join].
+// any other file into a [Document]. Decode skips each top-level key that is
+// not a key of a Document or of a List, because the command line reads the
+// values of its options from those keys and checks them itself. Below the
+// top level, Decode is strict. It returns an Error for an unknown key, for
+// a value of the wrong type, and for a size or a policy that does not parse.
+// Decode continues after such a fault, and joins the Errors of all faults
+// with [errors.Join].
 //
 // Error modes:
 //
@@ -88,48 +94,138 @@ type File struct {
 //   - A file that is not valid YAML returns an error that wraps one *Error.
 //   - A file with unknown keys or with values that do not decode returns an
 //     error that wraps one *Error for each such key and value.
+//   - A list with a key of a document returns an error that wraps one
+//     *Error for each such key.
 //   - A list without workspaces returns an *Error, and a list with entries
 //     without a root returns an error that wraps one *Error for each such
 //     entry.
 func Decode(name string, data []byte) (File, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return File{}, faults(name, err)
-	}
-	noVersion := fmt.Sprintf("the file has no version key: add version: %d", Current)
-	if len(doc.Content) == 0 {
-		return File{}, &Error{File: name, Line: 1, Msg: noVersion}
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return File{}, &Error{File: name, Line: root.Line, Msg: "the file is not a mapping of keys to values"}
-	}
-	version := value(root, versionKey)
-	if version == nil {
-		return File{}, &Error{File: name, Line: root.Line, Msg: noVersion}
-	}
-	var v Version
-	if err := version.Decode(&v); err != nil || v != Current {
-		msg := fmt.Sprintf("the file has version %s, and this binary reads only version %d", version.Value, Current)
-		return File{}, &Error{File: name, Line: version.Line, Msg: msg}
+	root, err := parse(name, data)
+	if err != nil {
+		return File{}, err
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if workspaces := value(root, workspacesKey); workspaces != nil {
-		var l List
+		var l struct {
+			List `yaml:",inline"`
+			Rest map[string]yaml.Node `yaml:",inline"`
+		}
 		if err := dec.Decode(&l); err != nil {
 			return File{}, faults(name, err)
+		}
+		if err := listed(name, root); err != nil {
+			return File{}, err
 		}
 		if err := l.check(name, workspaces); err != nil {
 			return File{}, err
 		}
-		return File{List: &l}, nil
+		return File{List: &l.List}, nil
 	}
-	var d Document
+	var d struct {
+		Document `yaml:",inline"`
+		Rest     map[string]yaml.Node `yaml:",inline"`
+	}
 	if err := dec.Decode(&d); err != nil {
 		return File{}, faults(name, err)
 	}
-	return File{Document: &d}, nil
+	return File{Document: &d.Document}, nil
+}
+
+// DecodeMember decodes the config file data of a member of a list into a
+// [Document], as [Decode] decodes a document. The command line reads the
+// values of its options from the config file of the run alone, so
+// DecodeMember returns an Error for each top-level key that is not a key of
+// a Document. Each [Error] includes name as the file name.
+//
+// Error modes:
+//
+//   - the error modes of Decode for a document.
+//   - an *Error at the key workspaces for a file that lists workspaces.
+//   - an error that wraps one *Error for each top-level key that is not a
+//     key of a Document.
+func DecodeMember(name string, data []byte) (*Document, error) {
+	root, err := parse(name, data)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if key := root.Content[i]; key.Value == workspacesKey {
+			return nil, &Error{
+				File: name,
+				Line: key.Line,
+				Msg:  "the config file of a member of a list lists workspaces",
+			}
+		}
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	var d Document
+	if err := dec.Decode(&d); err != nil {
+		return nil, faults(name, err)
+	}
+	return &d, nil
+}
+
+// Keys returns the top-level keys of a [Document] and of a [List] in
+// order. The command line skips these keys, because Decode reads them.
+func Keys() []string {
+	keys := slices.Concat(keysOf(reflect.TypeFor[Document]()), keysOf(reflect.TypeFor[List]()))
+	slices.Sort(keys)
+	return slices.Compact(keys)
+}
+
+// parse parses data and returns the mapping at the top of the file, after
+// it checks the version of the file.
+//
+// Error modes: parse returns an error that wraps one *Error for data that
+// is not valid YAML, and an *Error for a file that is not a mapping, a file
+// without a version, and a file with a version other than [Current].
+func parse(name string, data []byte) (*yaml.Node, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, faults(name, err)
+	}
+	noVersion := fmt.Sprintf("the file has no version key: add version: %d", Current)
+	if len(doc.Content) == 0 {
+		return nil, &Error{File: name, Line: 1, Msg: noVersion}
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil, &Error{File: name, Line: root.Line, Msg: "the file is not a mapping of keys to values"}
+	}
+	version := value(root, versionKey)
+	if version == nil {
+		return nil, &Error{File: name, Line: root.Line, Msg: noVersion}
+	}
+	var v Version
+	if err := version.Decode(&v); err != nil || v != Current {
+		msg := fmt.Sprintf("the file has version %s, and this binary reads only version %d", version.Value, Current)
+		return nil, &Error{File: name, Line: version.Line, Msg: msg}
+	}
+	return root, nil
+}
+
+// listed returns an Error for each top-level key of the list root that is
+// a key of a [Document] and not a key of a [List]. A list configures no
+// workspace itself.
+func listed(name string, root *yaml.Node) error {
+	document, list := keysOf(reflect.TypeFor[Document]()), keysOf(reflect.TypeFor[List]())
+	var errs []error
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key := root.Content[i]
+		if slices.Contains(document, key.Value) && !slices.Contains(list, key.Value) {
+			errs = append(errs, &Error{File: name, Line: key.Line, Msg: "a list does not have the key " + key.Value})
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// keysOf returns the top-level keys of the format type t in order: the
+// properties of the JSON Schema of t, so the keys and the schema agree.
+func keysOf(t reflect.Type) []string {
+	properties, _ := jsonschema.Of(t, jsonschema.TagYAML)[keywordProperties].(map[string]any)
+	return slices.Sorted(maps.Keys(properties))
 }
 
 // value returns the value of key in the mapping m, or nil when m does not

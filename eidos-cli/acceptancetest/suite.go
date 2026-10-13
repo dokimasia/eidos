@@ -22,8 +22,9 @@ type Fixture struct {
 	// Brand is the brand of the composition of the binary.
 	Brand output.Brand
 	// Prefix is the arguments before the name of a kernel command, such as
-	// []string{"gen"} for a host that mounts the kernel commands under a
-	// group. It is empty for a host that mounts them at the root.
+	// []string{"gen"} for a binary that mounts the kernel commands below
+	// the group gen through cli.Mount. It is empty for a binary whose app
+	// cli.New returns.
 	Prefix []string
 	// Tree is a workspace tree with the config file of the brand at its
 	// root, such as .acme.yaml. A check copies the tree into each directory

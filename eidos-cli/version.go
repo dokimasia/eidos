@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -16,8 +15,16 @@ import (
 	"strconv"
 	"strings"
 
+	gocli "go.stealthscale.io/cli"
+
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
+)
+
+// The name and the help text of the command version.
+const (
+	versionName = "version"
+	versionHelp = "Prints the versions of the binary, of eidos and of the plugins of each workspace."
 )
 
 // The command version prints the versions of the modules with these paths.
@@ -59,18 +66,11 @@ type versionOf struct {
 	Executable  string `json:"executable"`
 }
 
-// versionCommand returns the command version, which prints the brand, the
-// versions of the binary, of eidos and of the plugins, the contract version
-// of the kernel, and the digests of the composition and of the executable.
-func versionCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "version",
-		synopsis: "Prints the versions of the binary, of eidos and of the plugins of each workspace.",
-		compose:  compose,
-		define: func(*flag.FlagSet) runner {
-			return func(_ context.Context, x *invocation) int { return x.version() }
-		},
-	}
+// version is the handler of version, which prints the brand, the versions
+// of the binary, of eidos and of the plugins, the contract version of the
+// kernel, and the digests of the composition and of the executable.
+func (k kernels) version(ctx context.Context, run *gocli.Run[Global, struct{}]) error {
+	return execute(ctx, k.compose, run, nil, func(_ context.Context, x *invocation) int { return x.version() })
 }
 
 // version renders one version event for each workspace. The sealed state
@@ -80,7 +80,7 @@ func versionCommand(compose Compose) *kernel {
 // version returns [StatusUsage] for a config error, [StatusFailed] for an
 // executable that does not read, and [StatusOK] otherwise.
 func (x *invocation) version() int {
-	found, err := open(x.stdio, x.flags, x.k.compose, nil)
+	found, err := open(x.stdio, x.global, x.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage

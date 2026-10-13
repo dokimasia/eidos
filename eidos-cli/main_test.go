@@ -14,14 +14,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
+	"go.dokimi.dev/eidos/core/workspace"
 )
 
 // mainEnv makes the test binary run Main in place of its tests when it has
@@ -39,14 +42,26 @@ const (
 // the deadline less the time left divided by graceShare.
 const graceShare = 20
 
-// The command line of the cases: the extra command of the binary, the
-// command name that lists the commands, a name of no command, and the name
-// of the binary that each case of Run passes first.
+// The commands of the binary beside the kernel commands, with their help
+// texts, and a name of no command.
 const (
-	echoName   = "echo"
-	helpName   = "help"
-	ghostName  = "ghost"
-	binaryName = "host"
+	echoName  = "echo"
+	echoHelp  = "Writes its words."
+	failName  = "fail"
+	failHelp  = "Returns the error of its kind."
+	ghostName = "ghost"
+)
+
+// The kinds of error that the command fail returns, the status of its
+// ExitError, and the texts of its errors.
+const (
+	exitKind    = "exit"
+	usageKind   = "usage"
+	plainKind   = "plain"
+	exitCode    = 3
+	usageText   = "cli_test: the words are missing"
+	plainText   = "cli_test: the command failed"
+	invalidName = "acme-"
 )
 
 // goneDir is the working directory that the test removes before Main runs,
@@ -56,26 +71,14 @@ const (
 	dirMode fs.FileMode = 0o755
 )
 
-// extra is a command of a binary beside the kernel commands. It writes its
-// arguments to standard output as one line, and returns StatusOK.
-type extra struct {
-	name string
+// echoOptions are the options of the command echo.
+type echoOptions struct {
+	Words []string `arg:"" default:"" help:"Words to write."`
 }
 
-// Name returns the name of the command.
-func (e extra) Name() string { return e.name }
-
-// Synopsis returns the synopsis of the command.
-func (extra) Synopsis() string { return "Writes its arguments." }
-
-// Usage returns the help text of the command, whose first line is the form
-// of the command.
-func (e extra) Usage() string { return e.name + " [arguments]\n" }
-
-// Run writes args to standard output as one line, and returns StatusOK.
-func (extra) Run(_ context.Context, stdio cli.IO, args []string) int {
-	fmt.Fprintln(stdio.Stdout, strings.Join(args, " "))
-	return cli.StatusOK
+// failOptions are the options of the command fail.
+type failOptions struct {
+	Kind string `arg:"" help:"Kind of the error: exit, usage or plain."`
 }
 
 // TestMain runs Main in place of the tests when mainEnv has the value
@@ -85,7 +88,7 @@ func (extra) Run(_ context.Context, stdio cli.IO, args []string) int {
 func TestMain(m *testing.M) {
 	if os.Getenv(mainEnv) == runMain {
 		_, _ = io.Copy(io.Discard, os.Stdin)
-		cli.Main(compose, extra{name: echoName})
+		cli.Main(binary(), compose)
 	}
 	os.Exit(m.Run())
 }
@@ -99,7 +102,6 @@ func TestMain(m *testing.M) {
 func TestMainProcess(t *testing.T) {
 	self, err := os.Executable()
 	assert.NoError(t, err, "the test binary has a path")
-	binary := filepath.Base(self)
 
 	t.Run("Main", func(t *testing.T) {
 		tests := []struct {
@@ -120,7 +122,7 @@ func TestMainProcess(t *testing.T) {
 			{
 				name:       "exits with StatusUsage without a command",
 				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: the command line of " + binary + " has no command\n",
+				wantStderr: "Usage: acme <command> [options]\n",
 			},
 		}
 		for _, tt := range tests {
@@ -138,8 +140,8 @@ func TestMainProcess(t *testing.T) {
 			})
 		}
 
-		t.Run("exits with StatusFailed for a working directory that does not exist", func(t *testing.T) {
-			if runtime.GOOS == "windows" {
+		t.Run("exits with StatusUsage for a working directory that does not exist", func(t *testing.T) {
+			if runtime.GOOS == windowsOS {
 				t.Skip("Windows does not remove the working directory of a process")
 			}
 			dir := filepath.Join(t.TempDir(), goneDir)
@@ -155,163 +157,206 @@ func TestMainProcess(t *testing.T) {
 			err = cmd.Wait()
 			_, exited := errors.AsType[*exec.ExitError](err)
 			assert.True(t, exited, "the process exits with a status")
-			expect.Equal(t, cmd.ProcessState.ExitCode(), cli.StatusFailed, "the missing directory fails Main")
-			expect.HasPrefix(t, stderr.String(), "cli: find the working directory: ",
-				"Main writes the error of ProcessIO")
+			expect.Equal(t, cmd.ProcessState.ExitCode(), cli.StatusUsage, "the missing directory is a usage error")
+			expect.HasPrefix(t, stderr.String(), "error: cli: find the working directory: ",
+				"Main writes the error of the search for the config file")
 		})
 	})
 
 	t.Run("Run", func(t *testing.T) {
 		t.Parallel()
 
-		listed := "usage: " + binaryName + " [flags] <command> [flags] [arguments]\n\ncommands:\n"
 		tests := []struct {
 			name       string
 			args       []string
 			wantStatus int
-			// wantStdout and wantStderr are the beginnings of what the command
-			// writes to standard output and to standard error.
+			// wantStdout and wantStderr are what the command writes to
+			// standard output and to standard error.
 			wantStdout string
 			wantStderr string
 		}{
 			{
-				name:       "returns StatusUsage without a command",
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: the command line of " + binaryName + " has no command\n" + listed,
-			},
-			{
-				name:       "writes the list of commands to standard output for -h",
-				args:       []string{helpFlag},
-				wantStatus: cli.StatusOK,
-				wantStdout: listed,
-			},
-			{
-				name:       "writes the list of commands to standard output for help",
-				args:       []string{helpName},
-				wantStatus: cli.StatusOK,
-				wantStdout: listed,
-			},
-			{
-				name:       "writes the usage of the command after help",
-				args:       []string{helpName, cmdRun},
-				wantStatus: cli.StatusOK,
-				wantStdout: "run [flags] [<pattern>...]\n",
-			},
-			{
-				name:       "returns StatusUsage for help with two names",
-				args:       []string{helpName, cmdRun, cmdPlan},
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: help takes the name of one command, and has run plan\n" + listed,
-			},
-			{
-				name:       "returns StatusUsage for help with the name of no command",
-				args:       []string{helpName, ghostName},
-				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: help takes the name of one command, and has ghost\n",
-			},
-			{
 				name:       "returns StatusUsage for a command that the binary does not have",
 				args:       []string{ghostName},
 				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: ghost is not a command of " + binaryName + "\n" + listed,
+				wantStderr: "error: cli: unknown command \"ghost\"\n",
 			},
 			{
-				name:       "returns StatusUsage for a flag before the command that no command defines",
+				name:       "suggests the command of a misspelled name",
+				args:       []string{"plna"},
+				wantStatus: cli.StatusUsage,
+				wantStderr: "error: cli: unknown command \"plna\" (did you mean plan?)\n",
+			},
+			{
+				name:       "returns StatusUsage for a flag before the command that no option declares",
 				args:       []string{bogusFlag, cmdRun},
 				wantStatus: cli.StatusUsage,
-				wantStderr: "error: cli: flag provided but not defined: -bogus\n",
+				wantStderr: "error: cli: unknown flag --bogus\n",
 			},
 			{
-				name:       "writes a usage error before the command as JSON under --format=json",
-				args:       []string{jsonFlag, ghostName},
+				name:       "runs a command of the binary",
+				args:       []string{echoName, "a", "b"},
+				wantStatus: cli.StatusOK,
+				wantStdout: "a b\n",
+			},
+			{
+				name:       "returns the code of an ExitError of a handler and renders nothing",
+				args:       []string{failName, exitKind},
+				wantStatus: exitCode,
+			},
+			{
+				name:       "returns StatusUsage for a UsageError of a handler",
+				args:       []string{failName, usageKind},
 				wantStatus: cli.StatusUsage,
-				wantStdout: `{"event":"start","schema":"1.0","command":"","brand":"acme",`,
+				wantStderr: "error: " + usageText + "\n",
 			},
 			{
-				name:       "passes the flags before the name of a command ahead of its arguments",
-				args:       []string{jsonFlag, echoName, "a"},
-				wantStatus: cli.StatusOK,
-				wantStdout: jsonFlag + " a\n",
-			},
-			{
-				name:       "runs the kernel command after the flags",
-				args:       []string{cmdPlan},
-				wantStatus: cli.StatusOK,
-				wantStdout: "frontend fakefront 1\n",
+				name:       "returns StatusFailed for another error of a handler",
+				args:       []string{failName, plainKind},
+				wantStatus: cli.StatusFailed,
+				wantStderr: "error: " + plainText + "\n",
 			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				var stdout, stderr bytes.Buffer
-				stdio := cli.IO{
-					Stdout: &stdout,
-					Stderr: &stderr,
-					Dir:    t.TempDir(),
-					Getenv: func(string) string { return "" },
-				}
-				args := append([]string{binaryName}, tt.args...)
-				status := cli.Run(t.Context(), stdio, compose, args, extra{name: echoName})
+				status, stdout, stderr := execute(t, binary(), compose, tt.args...)
 				expect.Equal(t, status, tt.wantStatus, "Run returns the status of the command")
-				expect.HasPrefix(t, stdout.String(), tt.wantStdout, "Run writes the output of the command")
-				expect.HasPrefix(t, stderr.String(), tt.wantStderr, "Run writes the errors of the command")
+				expect.Equal(t, stdout, tt.wantStdout, "Run writes the output of the command")
+				expect.Equal(t, stderr, tt.wantStderr, "Run writes the errors of the command")
 			})
 		}
 
+		t.Run("writes the help of the app and a usage error without a command", func(t *testing.T) {
+			t.Parallel()
+
+			status, _, stderr := execute(t, binary(), compose)
+			expect.Equal(t, status, cli.StatusUsage, "a command line without a command is a usage error")
+			expect.That(t, stderr).
+				HasPrefix("Usage: acme <command> [options]\n\n"+appHelp+"\n", "go-cli writes the help of the app").
+				HasSuffix("\n\nerror: cli: missing command\n", "Run writes the usage error after the help")
+		})
+
+		t.Run("lists the kernel commands and the commands of the binary in the help", func(t *testing.T) {
+			t.Parallel()
+
+			status, stdout, _ := execute(t, binary(), compose, helpFlag)
+			assert.Equal(t, status, cli.StatusOK, "help is no failure")
+			for _, name := range slices.Concat(kernelNames, []string{echoName, failName}) {
+				expect.Contains(t, stdout, "\n  "+name+" ", "the help lists the command "+name)
+			}
+		})
+
+		t.Run("writes a usage error before the command as JSON under --format=json", func(t *testing.T) {
+			t.Parallel()
+
+			status, stdout, stderr := execute(t, binary(), compose, jsonFlag, ghostName)
+			expect.Equal(t, status, cli.StatusUsage, "the unknown command is a usage error")
+			expect.HasPrefix(t, stdout, `{"event":"start","schema":"1.0","command":"","brand":"acme",`,
+				"the start event has no command")
+			expect.Empty(t, stderr, "JSON output writes nothing to standard error")
+		})
+
+		t.Run("writes the error of a handler as JSON under --format=json", func(t *testing.T) {
+			t.Parallel()
+
+			_, stdout, _ := execute(t, binary(), compose, jsonFlag, failName, plainKind)
+			errs := decoded[errorEvent](t, stdout, eventError)
+			assert.Length(t, errs, 1, "the output has one error")
+			expect.Equal(t, errs[0], errorEvent{Msg: plainText}, "the error of the handler is no usage error")
+			summaries := decoded[summaryEvent](t, stdout, eventSummary)
+			assert.Length(t, summaries, 1, "the output has one summary")
+			expect.Equal(t, summaries[0].Status, cli.StatusFailed, "the summary has the status")
+		})
+
+		t.Run("renders a failure in text for an app without Prepare", func(t *testing.T) {
+			t.Parallel()
+
+			app := gocli.New[cli.Global]("acme", appHelp)
+			cli.Mount(app.Command[struct{}](groupName, groupHelp, nil), compose)
+			status, stdout, stderr := execute(t, app, compose, jsonFlag, ghostName)
+			expect.Equal(t, status, cli.StatusUsage, "the unknown command is a usage error")
+			expect.Empty(t, stdout, "the run has no format without the renderer of Prepare")
+			expect.Equal(t, stderr, "error: cli: unknown command \"ghost\"\n", "the run renders the failure as text")
+		})
+
 		panics := []struct {
-			name  string
-			args  []string
-			extra []cli.Command
-			want  string
+			name string
+			app  func() *gocli.App[cli.Global]
+			env  func(stdout io.Writer) *gocli.Env
+			want error
 		}{
 			{
-				name: "panics for a command line without the path of the binary",
-				want: "cli: the command line has no path of the binary",
+				name: "panics for a command of the binary with the name of a kernel command",
+				app: func() *gocli.App[cli.Global] {
+					app := cli.New(appHelp, compose)
+					app.Command(cmdRun, echoHelp, echo)
+					return app
+				},
+				env:  func(stdout io.Writer) *gocli.Env { return &gocli.Env{Stdout: stdout, Stderr: io.Discard} },
+				want: gocli.ErrDeclaration,
 			},
 			{
-				name:  "panics for an extra command with an empty name",
-				args:  []string{binaryName},
-				extra: []cli.Command{extra{}},
-				want:  "cli: a command has an empty name",
+				name: "panics for a brand that is not the name of an app",
+				app: func() *gocli.App[cli.Global] {
+					return cli.New(appHelp, func() *workspace.Builder { return compose().Brand(invalidName) })
+				},
+				env:  func(stdout io.Writer) *gocli.Env { return &gocli.Env{Stdout: stdout, Stderr: io.Discard} },
+				want: gocli.ErrDeclaration,
 			},
 			{
-				name:  "panics for an extra command with the name of a kernel command",
-				args:  []string{binaryName},
-				extra: []cli.Command{extra{name: cmdRun}},
-				want:  `cli: two commands have the name "run"`,
-			},
-			{
-				name:  "panics for two extra commands with one name",
-				args:  []string{binaryName},
-				extra: []cli.Command{extra{name: echoName}, extra{name: echoName}},
-				want:  `cli: two commands have the name "echo"`,
+				name: "panics for an Env without Stdout",
+				app:  binary,
+				env:  func(io.Writer) *gocli.Env { return &gocli.Env{Stderr: io.Discard} },
+				want: gocli.ErrEnv,
 			},
 		}
 		for _, tt := range panics {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				stdio := cli.IO{
-					Stdout: io.Discard,
-					Stderr: io.Discard,
-					Dir:    t.TempDir(),
-					Getenv: func(string) string { return "" },
-				}
-				got := assert.Panics(t, func() { cli.Run(t.Context(), stdio, compose, tt.args, tt.extra...) },
-					"the command line is a defect of the binary")
-				assert.Equal(t, got, any(tt.want), "the panic names the defect")
+				var stdout bytes.Buffer
+				got := assert.Panics(t, func() { cli.Run(t.Context(), tt.app(), compose, tt.env(&stdout)) },
+					"the declarations and the Env are defects of the binary")
+				err, _ := got.(error)
+				expect.ErrorIs(t, err, tt.want, "the panic is the error of the run")
+				expect.Empty(t, stdout.String(), "Run renders nothing for a defect")
 			})
 		}
-
-		t.Run("panics for an IO without an output stream", func(t *testing.T) {
-			t.Parallel()
-
-			got := assert.Panics(t, func() { cli.Run(t.Context(), cli.IO{}, compose, []string{binaryName}) },
-				"an incomplete IO is a defect of the host")
-			assert.Equal(t, got, any("cli: the IO has no output stream"), "the panic names the missing part")
-		})
 	})
+}
+
+// binary returns the app of the binary of the cases: the kernel commands
+// over the fixture composition, the command echo and the command fail.
+func binary() *gocli.App[cli.Global] {
+	app := cli.New(appHelp, compose)
+	app.Command(echoName, echoHelp, echo)
+	app.Command(failName, failHelp, fail)
+	return app
+}
+
+// echo is the handler of the command echo. It writes its words to standard
+// output as one line.
+//
+// Error modes: echo returns the error of the write.
+func echo(_ context.Context, run *gocli.Run[cli.Global, echoOptions]) error {
+	_, err := fmt.Fprintln(run.Stdout(), strings.Join(run.Config().Words, " "))
+	return err
+}
+
+// fail is the handler of the command fail. It returns an ExitError with
+// exitCode for exitKind, a UsageError for usageKind, and an error that wraps
+// neither for any other kind.
+func fail(_ context.Context, run *gocli.Run[cli.Global, failOptions]) error {
+	switch run.Config().Kind {
+	case exitKind:
+		return cli.Exit(exitCode)
+	case usageKind:
+		return &cli.UsageError{Err: errors.New(usageText)}
+	default:
+		return errors.New(plainText)
+	}
 }
 
 // process returns the command that runs binary as a process of Main in dir

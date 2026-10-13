@@ -1,7 +1,7 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Command host mounts the kernel commands and the crash command through
+// Command host runs the kernel commands and the crash command through
 // cli.Main, and meets the contract that the acceptance kit checks.
 package main
 
@@ -11,5 +11,5 @@ import (
 )
 
 func main() {
-	cli.Main(fixture.Compose, fixture.Crash{})
+	cli.Main(fixture.App(fixture.Compose), fixture.Compose)
 }

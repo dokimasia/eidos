@@ -8,12 +8,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
 	eidos "go.dokimi.dev/eidos/core"
@@ -40,8 +42,13 @@ const (
 	stateName = ".acme"
 	// version is a config file that sets only the version.
 	version = "version: 1\n"
+	// optionsConfig is a config file with the value of an option of the
+	// command line beside the name of the workspace.
+	optionsConfig = "version: 1\nstrict: true\nworkspace: platform\n"
 	// source is a scripted source file with one struct.
 	source = "package svc\ntype Store string\n"
+	// windowsOS is the GOOS of Windows.
+	windowsOS = "windows"
 )
 
 // The mirror of the fixture composition fails or reports a finding for a
@@ -91,7 +98,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkspace: platform\n")})
-			members := opened(t, root, cli.Flags{})
+			members := opened(t, root, cli.Global{})
 			assert.Length(t, members, 1, "a document covers one workspace")
 			expect.Equal(t, members[0].Name, "", "a workspace outside a list has no name")
 			expect.Equal(t, members[0].Root, root, "the root is the directory of the file")
@@ -103,7 +110,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Text(version), "svc/store": files.Dir()})
-			members := opened(t, filepath.Join(root, "svc", "store"), cli.Flags{})
+			members := opened(t, filepath.Join(root, "svc", "store"), cli.Global{})
 			assert.Length(t, members, 1, "a document covers one workspace")
 			assert.Equal(t, members[0].Root, root, "the search finds the file two directories up")
 		})
@@ -132,7 +139,7 @@ func TestOpen(t *testing.T) {
 					"repo/" + tt.marker: tt.give,
 					"repo/svc":          files.Dir(),
 				})
-				members := opened(t, filepath.Join(root, "repo", "svc"), cli.Flags{})
+				members := opened(t, filepath.Join(root, "repo", "svc"), cli.Global{})
 				assert.Length(t, members, 1, "the repository is one workspace")
 				expect.Equal(t, members[0].Root, filepath.Join(root, "repo"), "the root is the root of the repository")
 				expect.Equal(t, members[0].Config, "", "the search does not leave the repository")
@@ -143,50 +150,78 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			dir := filepath.Join(workspaceDir(t, files.Tree{"svc": files.Dir()}), "svc")
-			members := opened(t, dir, cli.Flags{})
+			members := opened(t, dir, cli.Global{})
 			assert.Length(t, members, 1, "the working directory is one workspace")
 			expect.Equal(t, members[0].Root, dir, "the root is the working directory")
 			expect.Equal(t, members[0].Config, "", "the workspace has no config file")
 		})
 
-		t.Run("reads the config file of --config relative to the working directory", func(t *testing.T) {
+		t.Run("reads the config file of a Config relative to the working directory", func(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{"ci/acme.yaml": files.Text("version: 1\nworkspace: ci\n")})
-			members := opened(t, root, cli.Flags{Config: filepath.Join("ci", "acme.yaml")})
+			members := opened(t, root, cli.Global{Config: gocli.ConfigFile(filepath.Join("ci", "acme.yaml"))})
 			assert.Length(t, members, 1, "a document covers one workspace")
 			expect.Equal(t, members[0].Root, filepath.Join(root, "ci"), "the root is the directory of the file")
 			expect.Equal(t, members[0].Workspace.Describe().Name, "ci", "the file configures the workspace")
 		})
 
-		t.Run("reads the config file of --config at an absolute path", func(t *testing.T) {
+		t.Run("reads the config file of a Config at an absolute path", func(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{"ci/acme.yaml": files.Text(version)})
-			members := opened(t, t.TempDir(), cli.Flags{Config: filepath.Join(root, "ci", "acme.yaml")})
+			config := gocli.ConfigFile(filepath.Join(root, "ci", "acme.yaml"))
+			members := opened(t, t.TempDir(), cli.Global{Config: config})
 			assert.Length(t, members, 1, "a document covers one workspace")
 			assert.Equal(t, members[0].Config, filepath.Join(root, "ci", "acme.yaml"), "the member has the file")
+		})
+
+		t.Run("returns the directory of a linked config file of a Config as the root", func(t *testing.T) {
+			t.Parallel()
+
+			if runtime.GOOS == windowsOS {
+				t.Skip("Windows creates a symbolic link only with a privilege")
+			}
+			root := workspaceDir(t, files.Tree{
+				"shared/acme.yaml": files.Text("version: 1\nworkspace: shared\n"),
+				"app/" + confName:  files.Link(filepath.Join("..", "shared", "acme.yaml")),
+			})
+			app := filepath.Join(root, "app")
+			searched := opened(t, app, cli.Global{})
+			given := opened(t, root, cli.Global{Config: gocli.ConfigFile(filepath.Join(app, confName))})
+			assert.Length(t, searched, 1, "the search finds one workspace")
+			assert.Length(t, given, 1, "the Config covers one workspace")
+			expect.Equal(t, searched[0].Root, app, "the root of the search is the directory of the link")
+			expect.Equal(t, given[0].Root, app, "the root of the Config is the directory of the link")
+			expect.Equal(t, given[0].Workspace.Describe().Name, "shared", "the link reads the shared file")
 		})
 
 		t.Run("returns an error for a working directory that does not resolve", func(t *testing.T) {
 			t.Parallel()
 
-			err := refused(t, filepath.Join(t.TempDir(), "gone"), cli.Flags{})
+			err := refused(t, filepath.Join(t.TempDir(), "gone"), cli.Global{})
 			assert.ErrorIs(t, err, os.ErrNotExist, "the error is the error of the resolution")
 		})
 
-		t.Run("returns an error for a config file of --config that does not exist", func(t *testing.T) {
+		t.Run("returns an error for a config file of a Config that does not exist", func(t *testing.T) {
 			t.Parallel()
 
-			err := refused(t, t.TempDir(), cli.Flags{Config: "absent.yaml"})
+			err := refused(t, t.TempDir(), cli.Global{Config: "absent.yaml"})
 			assert.ErrorIs(t, err, os.ErrNotExist, "the error is the error of the read")
 		})
 
-		t.Run("returns an error for a config file of --config that does not read", func(t *testing.T) {
+		t.Run("returns an error for a Config in a directory that does not exist", func(t *testing.T) {
+			t.Parallel()
+
+			err := refused(t, t.TempDir(), cli.Global{Config: gocli.ConfigFile(filepath.Join("gone", "absent.yaml"))})
+			assert.ErrorIs(t, err, os.ErrNotExist, "the error is the error of the resolution of the directory")
+		})
+
+		t.Run("returns an error for a config file of a Config that does not read", func(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{"ci": files.Dir()})
-			err := refused(t, root, cli.Flags{Config: "ci"})
+			err := refused(t, root, cli.Global{Config: "ci"})
 			assert.Contains(t, err.Error(), "read the config file", "the error describes the read")
 		})
 
@@ -194,26 +229,35 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Dir()})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.Contains(t, err.Error(), "read the config file", "the error describes the read")
+		})
+
+		t.Run("skips the keys of the options of the command line in the config file", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(optionsConfig)})
+			members := opened(t, root, cli.Global{})
+			assert.Length(t, members, 1, "a document covers one workspace")
+			assert.Equal(t, members[0].Workspace.Describe().Name, "platform", "the file configures the workspace")
 		})
 
 		t.Run("returns the faults of a config file that does not decode", func(t *testing.T) {
 			t.Parallel()
 
-			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
-			err := refused(t, root, cli.Flags{})
-			assert.HasPrefix(t, err.Error(), confName+":2: field workerz not found",
+			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
+			err := refused(t, root, cli.Global{})
+			assert.HasPrefix(t, err.Error(), confName+":2: field limt not found",
 				"the error has the file relative to the root and the line of the fault")
 		})
 
 		t.Run("returns an error that wraps a ConfigError for a fault of a config file", func(t *testing.T) {
 			t.Parallel()
 
-			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
-			fault := assert.ErrorAs[*cli.ConfigError](t, refused(t, root, cli.Flags{}), "the fault is a ConfigError")
+			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
+			fault := assert.ErrorAs[*cli.ConfigError](t, refused(t, root, cli.Global{}), "the fault is a ConfigError")
 			assert.Equal(t, *fault, cli.ConfigError{
-				File: confName, Line: 2, Msg: "field workerz not found in type config.Document",
+				File: confName, Line: 2, Msg: "field limt not found in type config.Memo",
 			}, "the fault has the file, the line and the message")
 		})
 
@@ -221,7 +265,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nplans: {ghost: {}}\n")})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.Contains(t, err.Error(), `"ghost"`, "the error names the plan that the composition lacks")
 		})
 
@@ -231,7 +275,7 @@ func TestOpen(t *testing.T) {
 			root := workspaceDir(t, files.Tree{
 				confName: files.Text("version: 1\nplans: {" + planName + ": {plugins: [plugins/acme-audit]}}\n"),
 			})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.Contains(t, err.Error(), "the directory has no plugin.yaml", "the error is the fault of the plugin")
 		})
 
@@ -239,7 +283,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: t.TempDir(), Getenv: os.Getenv}
-			_, err := cli.Open(stdio, cli.Flags{}, func() *workspace.Builder { return compose().Brand("Acme") })
+			_, err := cli.Open(stdio, cli.Global{}, func() *workspace.Builder { return compose().Brand("Acme") })
 			assert.HasError(t, err, "a composition without a valid brand does not open")
 			assert.Contains(t, err.Error(), `"Acme" is not a brand`, "the error is the fault of the brand")
 		})
@@ -254,7 +298,7 @@ func TestOpen(t *testing.T) {
 				"platform/ci.yaml": files.Text("version: 1\nworkspace: platform\n"),
 				"tools/gen":        files.Dir(),
 			})
-			members := opened(t, root, cli.Flags{})
+			members := opened(t, root, cli.Global{})
 			assert.Length(t, members, 2, "the list has two workspaces")
 			expect.Equal(t, members[0].Name, "platform", "the name is the clean root of the list")
 			expect.Equal(t, members[0].Root, filepath.Join(root, "platform"), "the root is below the list")
@@ -271,7 +315,7 @@ func TestOpen(t *testing.T) {
 				confName:               files.Text("version: 1\nworkspaces: [{root: platform}]\n"),
 				"platform/" + confName: files.Text("version: 1\nworkspace: platform\n"),
 			})
-			members := opened(t, root, cli.Flags{})
+			members := opened(t, root, cli.Global{})
 			assert.Length(t, members, 1, "the list has one workspace")
 			assert.Equal(t, members[0].Workspace.Describe().Name, "platform", "the file configures the workspace")
 		})
@@ -280,7 +324,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkspaces: [{root: ghost}]\n")})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.Contains(t, err.Error(), "cli: the workspace root ghost does not resolve",
 				"the error names the root")
 		})
@@ -293,7 +337,7 @@ func TestOpen(t *testing.T) {
 				"svc/api": files.Dir(),
 				"tools":   files.Dir(),
 			})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.Equal(t, err.Error(), "cli: the workspace roots svc and svc/api nest", "the error names both roots")
 		})
 
@@ -304,7 +348,7 @@ func TestOpen(t *testing.T) {
 				confName: files.Text("version: 1\nworkspaces: [{root: svc}, {root: ./svc}]\n"),
 				"svc":    files.Dir(),
 			})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.Equal(t, err.Error(), "cli: the workspace roots svc and ./svc nest", "the error names both roots")
 		})
 
@@ -315,8 +359,23 @@ func TestOpen(t *testing.T) {
 				confName:          files.Text("version: 1\nworkspaces: [{root: svc}]\n"),
 				"svc/" + confName: files.Text("version: 1\nworkspaces: [{root: api}]\n"),
 			})
-			err := refused(t, root, cli.Flags{})
-			assert.Contains(t, err.Error(), "of a workspace in a list is a list", "the error describes the file")
+			fault := assert.ErrorAs[*cli.ConfigError](t, refused(t, root, cli.Global{}), "the fault is a ConfigError")
+			assert.Equal(t, *fault, cli.ConfigError{
+				File: "svc/" + confName, Line: 2, Msg: "the config file of a member of a list lists workspaces",
+			}, "the fault has the file relative to the list and the line of the key")
+		})
+
+		t.Run("returns an error for the key of an option in the config file of a list entry", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{
+				confName:          files.Text("version: 1\nstrict: true\nworkspaces: [{root: svc}]\n"),
+				"svc/" + confName: files.Text("version: 1\nstrict: true\n"),
+			})
+			fault := assert.ErrorAs[*cli.ConfigError](t, refused(t, root, cli.Global{}), "the fault is a ConfigError")
+			assert.Equal(t, *fault, cli.ConfigError{
+				File: "svc/" + confName, Line: 2, Msg: "field strict not found in type config.Document",
+			}, "the config file of a member sets no options")
 		})
 
 		t.Run("returns an error for a config file of a list entry that does not exist", func(t *testing.T) {
@@ -326,7 +385,7 @@ func TestOpen(t *testing.T) {
 				confName: files.Text("version: 1\nworkspaces: [{root: svc, config: svc/ci.yaml}]\n"),
 				"svc":    files.Dir(),
 			})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.ErrorIs(t, err, os.ErrNotExist, "the error is the error of the read")
 		})
 
@@ -337,7 +396,7 @@ func TestOpen(t *testing.T) {
 				confName:          files.Text("version: 1\nworkspaces: [{root: svc}]\n"),
 				"svc/" + confName: files.Text("version: 2\n"),
 			})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.HasPrefix(t, err.Error(), "svc/"+confName+":1: the file has version 2",
 				"the error has the file relative to the list and the fault of the file")
 		})
@@ -349,7 +408,7 @@ func TestOpen(t *testing.T) {
 				confName:          files.Text("version: 1\nworkspaces: [{root: svc}]\n"),
 				"svc/" + confName: files.Text("version: 1\nplans: {ghost: {}}\n"),
 			})
-			err := refused(t, root, cli.Flags{})
+			err := refused(t, root, cli.Global{})
 			assert.HasPrefix(t, err.Error(), "cli: the workspace svc does not build\n",
 				"the first line names the entry")
 			assert.Contains(t, err.Error(), `"ghost"`, "the next line is the fault of Build")
@@ -359,7 +418,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Text(version), "svc/store.zz": files.Text(source)})
-			members := opened(t, root, cli.Flags{})
+			members := opened(t, root, cli.Global{})
 			assert.Length(t, members, 1, "a document covers one workspace")
 			_, err := members[0].Workspace.Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
 			assert.NoError(t, err, "the run succeeds")
@@ -373,7 +432,7 @@ func TestOpen(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(version), "svc/store.zz": files.Text(source)})
 			sink := output.NewMem()
 			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: root, Getenv: os.Getenv}
-			members, err := cli.Open(stdio, cli.Flags{}, func() *workspace.Builder {
+			members, err := cli.Open(stdio, cli.Global{}, func() *workspace.Builder {
 				return compose().
 					Output(func() (output.Sink, error) { return sink, nil }).
 					Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil })
@@ -392,7 +451,7 @@ func TestOpen(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(version)})
 			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: root, Getenv: os.Getenv}
 			var calls atomic.Int32
-			members, err := cli.Open(stdio, cli.Flags{}, func() *workspace.Builder {
+			members, err := cli.Open(stdio, cli.Global{}, func() *workspace.Builder {
 				calls.Add(1)
 				return compose()
 			})
@@ -405,7 +464,7 @@ func TestOpen(t *testing.T) {
 			t.Parallel()
 
 			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: "svc", Getenv: os.Getenv}
-			assert.Panics(t, func() { _, _ = cli.Open(stdio, cli.Flags{}, compose) },
+			assert.Panics(t, func() { _, _ = cli.Open(stdio, cli.Global{}, compose) },
 				"a relative working directory is a defect of the host")
 		})
 	})
@@ -419,7 +478,7 @@ func TestOpen(t *testing.T) {
 			t.Run("decodes the extension of the config file of the member", func(t *testing.T) {
 				t.Parallel()
 
-				members := opened(t, workspaceDir(t, files.Tree{confName: files.Text(extendedConfig)}), cli.Flags{})
+				members := opened(t, workspaceDir(t, files.Tree{confName: files.Text(extendedConfig)}), cli.Global{})
 				assert.Length(t, members, 1, "a document covers one workspace")
 				var got canarySettings
 				found, err := members[0].Extension(extensionName, &got)
@@ -435,7 +494,7 @@ func TestOpen(t *testing.T) {
 					confName:          files.Text("version: 1\nworkspaces: [{root: svc}]\n"),
 					"svc/" + confName: files.Text(extendedConfig),
 				})
-				members := opened(t, root, cli.Flags{})
+				members := opened(t, root, cli.Global{})
 				assert.Length(t, members, 1, "the list has one workspace")
 				var got canarySettings
 				_, err := members[0].Extension(extensionName, &got)
@@ -446,7 +505,7 @@ func TestOpen(t *testing.T) {
 			t.Run("reports false for a member without a config file", func(t *testing.T) {
 				t.Parallel()
 
-				members := opened(t, workspaceDir(t, files.Tree{".git": files.Dir()}), cli.Flags{})
+				members := opened(t, workspaceDir(t, files.Tree{".git": files.Dir()}), cli.Global{})
 				assert.Length(t, members, 1, "the repository is one workspace")
 				var got canarySettings
 				found, err := members[0].Extension(extensionName, &got)
@@ -477,7 +536,7 @@ func TestOpen(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 
-					members := opened(t, workspaceDir(t, tt.give), cli.Flags{})
+					members := opened(t, workspaceDir(t, tt.give), cli.Global{})
 					assert.Length(t, members, 1, "the file covers one workspace")
 					var got canarySettings
 					_, err := members[0].Extension(extensionName, &got)
@@ -559,24 +618,25 @@ func workspaceDir(t *testing.T, tree files.Tree) string {
 	return dir
 }
 
-// opened opens the workspaces for the working directory dir, and fails the
-// test when Open returns an error.
-func opened(t *testing.T, dir string, f cli.Flags) []cli.Member {
+// opened opens the workspaces for the working directory dir with the global
+// options global, and fails the test when Open returns an error.
+func opened(t *testing.T, dir string, global cli.Global) []cli.Member {
 	t.Helper()
 
 	stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: dir, Getenv: os.Getenv}
-	members, err := cli.Open(stdio, f, compose)
+	members, err := cli.Open(stdio, global, compose)
 	assert.NoError(t, err, "the workspaces open")
 	return members
 }
 
-// refused opens the workspaces for the working directory dir, and returns
-// the error of Open. It fails the test when Open returns no error.
-func refused(t *testing.T, dir string, f cli.Flags) error {
+// refused opens the workspaces for the working directory dir with the
+// global options global, and returns the error of Open. It fails the test
+// when Open returns no error.
+func refused(t *testing.T, dir string, global cli.Global) error {
 	t.Helper()
 
 	stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: dir, Getenv: os.Getenv}
-	_, err := cli.Open(stdio, f, compose)
+	_, err := cli.Open(stdio, global, compose)
 	assert.HasError(t, err, "Open returns a config error")
 	return err
 }

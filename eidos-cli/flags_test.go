@@ -4,16 +4,41 @@
 package cli_test
 
 import (
-	"flag"
-	"io"
+	"bytes"
+	"context"
+	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/files"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
 )
 
-// Every command accepts the same six flags.
+// The command of the binary that the Global cases run, and its help text.
+const (
+	probeName = "probe"
+	probeHelp = "Records the global options of its run."
+)
+
+// globalConfig is a config file that sets every global option that has a
+// key.
+const globalConfig = "version: 1\nformat: json\nstrict: true\nverbose: true\nquiet: true\nno-color: true\n"
+
+// The environment variables of the global options of the brand acme.
+const (
+	formatVar  = "ACME_FORMAT"
+	configVar  = "ACME_CONFIG"
+	chdirVar   = "ACME_CHDIR"
+	strictVar  = "ACME_STRICT"
+	verboseVar = "ACME_VERBOSE"
+	quietVar   = "ACME_QUIET"
+	noColorVar = "ACME_NO_COLOR"
+)
+
+// Every command accepts the global options, which go-cli reads from their
+// flags, their variables and their keys.
 func TestFlags(t *testing.T) {
 	t.Parallel()
 
@@ -102,42 +127,88 @@ func TestFlags(t *testing.T) {
 		})
 	})
 
-	t.Run("Register", func(t *testing.T) {
+	t.Run("Global", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("defines the flags that set each field", func(t *testing.T) {
+		t.Run("has the format text and no other value without a source", func(t *testing.T) {
 			t.Parallel()
 
-			var got cli.Flags
-			fs := flag.NewFlagSet("run", flag.ContinueOnError)
-			got.Register(fs)
-			err := fs.Parse([]string{
-				"--format=json", "--config", "ci.yaml", "--strict", "--verbose", "--quiet", "--no-color",
+			dir := workspaceDir(t, files.Tree{".git": files.Dir()})
+			got := probed(t, &gocli.Env{Args: []string{chdirFlag, dir, probeName}})
+			want := cli.Global{Format: cli.FormatText, Chdir: dir}
+			assert.Equal(t, got, want, "every other option has its zero value")
+		})
+
+		t.Run("takes each option from its flag", func(t *testing.T) {
+			t.Parallel()
+
+			dir := workspaceDir(t, files.Tree{".git": files.Dir(), "ci.yaml": files.Text(version)})
+			config := filepath.Join(dir, "ci.yaml")
+			got := probed(t, &gocli.Env{Args: []string{
+				chdirFlag, dir, jsonFlag, configFlag, config,
+				strictFlag, verboseFlag, quietFlag, noColorFlag, probeName,
+			}})
+			assert.Equal(t, got, cli.Global{
+				Format: cli.FormatJSON, Config: gocli.ConfigFile(config), Chdir: dir,
+				Strict: true, Verbose: true, Quiet: true, NoColor: true,
+			}, "each flag sets its option")
+		})
+
+		t.Run("takes each option from its environment variable", func(t *testing.T) {
+			t.Parallel()
+
+			dir := workspaceDir(t, files.Tree{".git": files.Dir(), "ci.yaml": files.Text(version)})
+			config := filepath.Join(dir, "ci.yaml")
+			got := probed(t, &gocli.Env{
+				Lookup: gocli.Vars(map[string]string{
+					formatVar: "json", configVar: config, chdirVar: dir, strictVar: "true",
+					verboseVar: "true", quietVar: "true", noColorVar: "true",
+				}),
+				Args: []string{probeName},
 			})
-			assert.NoError(t, err, "the flags parse")
-			assert.Equal(t, got, cli.Flags{
-				Format: cli.FormatJSON, Config: "ci.yaml", Strict: true, Verbose: true, Quiet: true, NoColor: true,
-			}, "each flag sets its field")
+			assert.Equal(t, got, cli.Global{
+				Format: cli.FormatJSON, Config: gocli.ConfigFile(config), Chdir: dir,
+				Strict: true, Verbose: true, Quiet: true, NoColor: true,
+			}, "each variable sets its option")
 		})
 
-		t.Run("leaves each field at its zero value without flags", func(t *testing.T) {
+		t.Run("takes each option with a key from the config file", func(t *testing.T) {
 			t.Parallel()
 
-			var got cli.Flags
-			fs := flag.NewFlagSet("run", flag.ContinueOnError)
-			got.Register(fs)
-			assert.NoError(t, fs.Parse(nil), "no flags parse")
-			assert.Equal(t, got, cli.Flags{}, "every field is zero")
+			dir := workspaceDir(t, files.Tree{".git": files.Dir(), confName: files.Text(globalConfig)})
+			got := probed(t, &gocli.Env{Args: []string{chdirFlag, dir, probeName}})
+			assert.Equal(t, got, cli.Global{
+				Format: cli.FormatJSON, Config: gocli.ConfigFile(filepath.Join(dir, confName)), Chdir: dir,
+				Strict: true, Verbose: true, Quiet: true, NoColor: true,
+			}, "each key sets its option")
 		})
 
-		t.Run("defines a format flag that returns an error for an unknown format", func(t *testing.T) {
+		t.Run("returns StatusUsage for the key chdir in the config file", func(t *testing.T) {
 			t.Parallel()
 
-			var got cli.Flags
-			fs := flag.NewFlagSet("run", flag.ContinueOnError)
-			fs.SetOutput(io.Discard)
-			got.Register(fs)
-			assert.HasError(t, fs.Parse([]string{"--format=yaml"}), "the flag returns the error of Set")
+			dir := workspaceDir(t, files.Tree{".git": files.Dir(), confName: files.Text("version: 1\nchdir: svc\n")})
+			status, _, stderr := execute(t, cli.New(appHelp, compose), compose, chdirFlag, dir, cmdPlan)
+			assert.Equal(t, status, cli.StatusUsage, "Chdir has no key: "+stderr)
 		})
 	})
+}
+
+// probed runs the command probe of an app that New returns over the fixture
+// composition with env, and returns the global options of the run. The run
+// opens the files of the process, and probed sets the standard streams of
+// env. It fails the test when the run does not succeed.
+func probed(t *testing.T, env *gocli.Env) cli.Global {
+	t.Helper()
+
+	var got cli.Global
+	app := cli.New(appHelp, compose)
+	app.Command(probeName, probeHelp, func(_ context.Context, run *gocli.Run[cli.Global, struct{}]) error {
+		got = *run.Global()
+		return nil
+	})
+	var stdout, stderr bytes.Buffer
+	env.Open, env.Stdout, env.Stderr = gocli.OS().Open, &stdout, &stderr
+	status := cli.Run(t.Context(), app, compose, env)
+	assert.Equal(t, status, cli.StatusOK, "the probe succeeds: "+stderr.String())
+	return got
 }

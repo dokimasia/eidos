@@ -53,8 +53,8 @@ func TestRenderer(t *testing.T) {
 	t.Parallel()
 
 	code := frontendtest.ScriptedBadFile.String()
-	text := cli.Flags{Format: cli.FormatText}
-	jsonOutput := cli.Flags{Format: cli.FormatJSON}
+	text := cli.Global{Format: cli.FormatText}
+	jsonOutput := cli.Global{Format: cli.FormatJSON}
 
 	t.Run("Begin", func(t *testing.T) {
 		t.Parallel()
@@ -105,6 +105,16 @@ func TestRenderer(t *testing.T) {
 
 			stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: t.TempDir()}
 			assert.Panics(t, func() { cli.Begin(stdio, text, compose, "run") }, "the IO needs Getenv")
+		})
+
+		t.Run("renders through an IO without a working directory", func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			stdio := cli.IO{Stdout: &stdout, Stderr: io.Discard, Getenv: os.Getenv}
+			r := cli.Begin(stdio, jsonOutput, compose, "run")
+			r.End(cli.StatusUsage)
+			assert.Contains(t, stdout.String(), `"event":"summary"`, "the renderer writes its events")
 		})
 	})
 
@@ -164,7 +174,7 @@ func TestRenderer(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				r, _, stderr := rendered(t, cli.Flags{Format: cli.FormatText, Verbose: true}, nil, true)
+				r, _, stderr := rendered(t, cli.Global{Format: cli.FormatText, Verbose: true}, nil, true)
 				d := finding
 				d.Severity, d.Related = tt.severity, nil
 				r.Report(d)
@@ -176,10 +186,10 @@ func TestRenderer(t *testing.T) {
 
 		plainOutputs := []struct {
 			name string
-			flag cli.Flags
+			flag cli.Global
 			env  map[string]string
 		}{
-			{name: "writes no colour under --no-color", flag: cli.Flags{Format: cli.FormatText, NoColor: true}},
+			{name: "writes no colour under --no-color", flag: cli.Global{Format: cli.FormatText, NoColor: true}},
 			{name: "writes no colour when NO_COLOR is set", flag: text, env: map[string]string{"NO_COLOR": "1"}},
 		}
 		for _, tt := range plainOutputs {
@@ -205,7 +215,7 @@ func TestRenderer(t *testing.T) {
 		t.Run("writes an Info under --verbose", func(t *testing.T) {
 			t.Parallel()
 
-			r, _, stderr := rendered(t, cli.Flags{Format: cli.FormatText, Verbose: true}, nil, false)
+			r, _, stderr := rendered(t, cli.Global{Format: cli.FormatText, Verbose: true}, nil, false)
 			d := finding
 			d.Severity, d.Related = diag.SeverityInfo, nil
 			r.Report(d)
@@ -216,7 +226,7 @@ func TestRenderer(t *testing.T) {
 		t.Run("writes no Warning under --quiet", func(t *testing.T) {
 			t.Parallel()
 
-			r, _, stderr := rendered(t, cli.Flags{Format: cli.FormatText, Quiet: true}, nil, false)
+			r, _, stderr := rendered(t, cli.Global{Format: cli.FormatText, Quiet: true}, nil, false)
 			d := finding
 			d.Severity = diag.SeverityWarning
 			r.Report(d)
@@ -226,7 +236,7 @@ func TestRenderer(t *testing.T) {
 		t.Run("writes an Error under --quiet", func(t *testing.T) {
 			t.Parallel()
 
-			r, _, stderr := rendered(t, cli.Flags{Format: cli.FormatText, Quiet: true}, nil, false)
+			r, _, stderr := rendered(t, cli.Global{Format: cli.FormatText, Quiet: true}, nil, false)
 			d := finding
 			d.Related = nil
 			r.Report(d)
@@ -391,9 +401,9 @@ func TestRenderer(t *testing.T) {
 			t.Parallel()
 
 			r, stdout, _ := rendered(t, jsonOutput, nil, false)
-			r.Error(&cli.UsageError{Err: errors.New("flag provided but not defined: -x")})
+			r.Error(&cli.UsageError{Err: errors.New("cli: run: unknown flag --x")})
 			assert.Equal(t, after(stdout),
-				`{"event":"error","msg":"flag provided but not defined: -x","usage":true}`+"\n",
+				`{"event":"error","msg":"cli: run: unknown flag --x","usage":true}`+"\n",
 				"the event marks a usage error")
 		})
 
@@ -431,7 +441,7 @@ func TestRenderer(t *testing.T) {
 		t.Run("counts the findings that --quiet does not render", func(t *testing.T) {
 			t.Parallel()
 
-			r, stdout, _ := rendered(t, cli.Flags{Format: cli.FormatJSON, Quiet: true}, nil, false)
+			r, stdout, _ := rendered(t, cli.Global{Format: cli.FormatJSON, Quiet: true}, nil, false)
 			r.Report(warning)
 			r.Report(info)
 			r.End(cli.StatusOK)
@@ -481,11 +491,11 @@ func TestRenderer(t *testing.T) {
 	})
 }
 
-// rendered begins the output of the command run with the flags f, the
-// environment env and the terminal flag terminal. It returns the renderer
-// and the buffers of standard output and standard error.
+// rendered begins the output of the command run with the global options
+// global, the environment env and the terminal flag terminal. It returns
+// the renderer and the buffers of standard output and standard error.
 func rendered(
-	t *testing.T, f cli.Flags, env map[string]string, terminal bool,
+	t *testing.T, global cli.Global, env map[string]string, terminal bool,
 ) (*cli.Renderer, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 
@@ -497,7 +507,7 @@ func rendered(
 		Getenv:   func(key string) string { return env[key] },
 		Terminal: terminal,
 	}
-	return cli.Begin(stdio, f, compose, "run"), &stdout, &stderr
+	return cli.Begin(stdio, global, compose, "run"), &stdout, &stderr
 }
 
 // after returns the output after the start event.

@@ -6,8 +6,8 @@
 //
 // A consumer runs [RunAcceptanceSuite] over its own binary with a
 // [Fixture], and the suite runs every check over the binary. The suite does
-// not check the dispatch of the host itself, such as an unknown command or
-// the help of the host.
+// not check the commands of the binary itself, such as an unknown command or
+// the help of the app.
 //
 // # Checks
 //
@@ -38,5 +38,6 @@
 // # Dependency position
 //
 // acceptancetest imports cli, core/ledger, core/output,
-// core/workspace/workspacetest, the assert module and the Go stdlib.
+// core/workspace/workspacetest, go.stealthscale.io/cli, the assert module
+// and the Go stdlib.
 package acceptancetest

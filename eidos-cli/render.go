@@ -167,8 +167,8 @@ func (t *tally) line() string {
 	)
 }
 
-// Renderer writes the output of one command in the format of the [Flags]
-// that [Begin] received.
+// Renderer writes the output of one command in the format of the [Global]
+// options that [Begin] received.
 //
 // Text output writes findings and errors to standard error, and the events
 // of a command to standard output. It colours the severities when the
@@ -182,7 +182,7 @@ func (t *tally) line() string {
 // A Renderer is not safe for concurrent use.
 type Renderer struct {
 	stdio  IO
-	flags  Flags
+	global Global
 	colour bool
 	// listed is true once the renderer rendered a file or the outcome of a
 	// plan, and text output then ends with a summary line.
@@ -198,21 +198,22 @@ type Renderer struct {
 	current int
 }
 
-// Begin starts the output of the command with the name command, and returns
-// its renderer. Under [FormatJSON], Begin writes the start event. The event
-// contains the brand that compose sets, and the path and the version of
-// the main module of the binary.
+// Begin starts the output of the command with the path command, such as
+// run or gen run, and returns its renderer. Under [FormatJSON], Begin
+// writes the start event. The event contains the brand that compose sets,
+// and the path and the version of the main module of the binary. Begin
+// reads neither the Dir of stdio nor its working directory, so a command
+// renders the error of [IOOf] through it.
 //
-// Begin panics unless stdio has both output streams, Getenv and an absolute
-// Dir.
-func Begin(stdio IO, f Flags, compose Compose, command string) *Renderer {
+// Begin panics unless stdio has both output streams and Getenv.
+func Begin(stdio IO, global Global, compose Compose, command string) *Renderer {
 	stdio.check()
 	r := &Renderer{
 		stdio:  stdio,
-		flags:  f,
-		colour: stdio.Terminal && !f.NoColor && stdio.Getenv(noColor) == "",
+		global: global,
+		colour: stdio.Terminal && !global.NoColor && stdio.Getenv(noColor) == "",
 	}
-	if f.Format == FormatJSON {
+	if global.Format == FormatJSON {
 		start := &startEvent{
 			Event: eventStart, Schema: schemaVersion, Command: command, Brand: string(compose().BrandName()),
 		}
@@ -256,7 +257,7 @@ func (r *Renderer) Report(d diag.Diag) {
 // Event panics when v does not encode as a JSON object, which is a defect
 // of the command.
 func (r *Renderer) Event(name string, v any, text string) {
-	if r.flags.Format != FormatJSON {
+	if r.global.Format != FormatJSON {
 		if text != "" {
 			fmt.Fprintln(r.stdio.Stdout, text)
 		}
@@ -290,7 +291,7 @@ func (r *Renderer) Error(err error) {
 		if msg == "" {
 			continue
 		}
-		if r.flags.Format == FormatJSON {
+		if r.global.Format == FormatJSON {
 			r.emit(&errorEvent{Event: eventError, Msg: msg, Usage: usage, Member: r.member})
 			continue
 		}
@@ -304,7 +305,7 @@ func (r *Renderer) Error(err error) {
 // member of a list. Text output writes the summary line of the files and
 // the plans, when the command rendered any.
 func (r *Renderer) End(status int) {
-	if r.flags.Format != FormatJSON {
+	if r.global.Format != FormatJSON {
 		if r.listed {
 			fmt.Fprintln(r.stdio.Stdout, r.total.line())
 		}
@@ -317,13 +318,13 @@ func (r *Renderer) End(status int) {
 // --verbose, unless always is true, and only an Error under --quiet.
 func (r *Renderer) report(d diag.Diag, always bool) {
 	r.count(func(t *tally) { t.add(d.Severity) })
-	if r.flags.Quiet && d.Severity != diag.SeverityError {
+	if r.global.Quiet && d.Severity != diag.SeverityError {
 		return
 	}
-	if d.Severity == diag.SeverityInfo && !r.flags.Verbose && !always {
+	if d.Severity == diag.SeverityInfo && !r.global.Verbose && !always {
 		return
 	}
-	if r.flags.Format == FormatJSON {
+	if r.global.Format == FormatJSON {
 		r.emit(r.diagOf(d))
 		return
 	}
@@ -344,7 +345,7 @@ func (r *Renderer) diagOf(d diag.Diag) *diagEvent {
 func (r *Renderer) file(plan string, c output.Change, a action) {
 	r.listed = true
 	r.count(func(t *tally) { t.Files.add(a) })
-	if r.flags.Format == FormatJSON {
+	if r.global.Format == FormatJSON {
 		r.emit(&fileEvent{
 			Event: eventFile, Path: c.Path, Plan: plan, Action: a, Found: c.Found.String(), Hash: c.Hash,
 			Member: r.member,
@@ -361,7 +362,7 @@ func (r *Renderer) file(plan string, c output.Change, a action) {
 func (r *Renderer) outcome(plan string, s workspace.PlanStatus) {
 	r.listed = true
 	r.count(func(t *tally) { t.Plans.add(s) })
-	if r.flags.Format == FormatJSON {
+	if r.global.Format == FormatJSON {
 		r.emit(&outcomeEvent{Event: eventOutcome, Plan: plan, Status: s.String(), Member: r.member})
 	}
 }

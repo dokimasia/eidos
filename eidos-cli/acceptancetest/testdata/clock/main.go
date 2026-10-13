@@ -1,7 +1,7 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Command clock mounts the kernel commands through cli.Main over a
+// Command clock runs the kernel commands through cli.Main over a
 // composition whose mirror puts the time of the run into the name of each
 // struct, so a second run rewrites every file.
 package main
@@ -12,5 +12,5 @@ import (
 )
 
 func main() {
-	cli.Main(fixture.ComposeClock, fixture.Crash{})
+	cli.Main(fixture.App(fixture.ComposeClock), fixture.ComposeClock)
 }

@@ -6,28 +6,20 @@ package cli
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
-	"strings"
+
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// names is a flag that collects its values in order, such as --plan.
-type names []string
-
-var _ flag.Value = (*names)(nil)
-
-// String returns the values, separated by commas.
-func (n *names) String() string { return strings.Join(*n, ",") }
-
-// Set appends the value s. It returns no error.
-func (n *names) Set(s string) error {
-	*n = append(*n, s)
-	return nil
-}
+// The name and the help text of the command run.
+const (
+	runName = "run"
+	runHelp = "Generates the output of each workspace and commits it."
+)
 
 // The flags of run that a check of --stdout names.
 const (
@@ -36,47 +28,45 @@ const (
 	checkFlag  = "check"
 )
 
-// runCommand returns the command run, which runs each workspace once.
-func runCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "run",
-		synopsis: "Generates the output of each workspace and commits it.",
-		form:     "[<pattern>...]",
-		compose:  compose,
-		define: func(fs *flag.FlagSet) runner {
-			var (
-				plans                                  names
-				dry, check, drift, adopt, cold, stdout bool
-			)
-			fs.Var(&plans, "plan",
-				"run this `plan` and the plans that it depends on, and repeat the flag for more plans")
-			fs.BoolVar(&dry, dryRunFlag, false, "run every phase and commit nothing")
-			fs.BoolVar(&check, checkFlag, false,
-				"report each file that the run would change as an error, and commit nothing")
-			fs.BoolVar(&drift, "overwrite-drift", false, "write over a generated file that was edited since its stamp")
-			fs.BoolVar(&adopt, "adopt", false, "write over a file without the frame of the brand")
-			fs.BoolVar(&cold, "cold", false, "run without the state that the last run recorded")
-			fs.BoolVar(&stdout, stdoutFlag, false,
-				"write the files to standard output in place of the workspace, and record nothing")
-			return func(ctx context.Context, x *invocation) int {
-				if stdout {
-					switch {
-					case x.flags.Format == FormatJSON:
-						return x.usage(fmt.Errorf("the flags --%s and --%s=%s exclude each other",
-							stdoutFlag, formatFlag, FormatJSON))
-					case dry:
-						return x.usage(fmt.Errorf("the flags --%s and --%s exclude each other", stdoutFlag, dryRunFlag))
-					case check:
-						return x.usage(fmt.Errorf("the flags --%s and --%s exclude each other", stdoutFlag, checkFlag))
-					}
-					x.stream = x.stdio.Stdout
-				}
-				return x.runEach(ctx, workspace.Input{
-					Plans: plans, Dry: dry, Check: check, OverwriteDrift: drift, Adopt: adopt, Cold: cold,
-				})
+// runOptions are the options of run.
+type runOptions struct {
+	// Plans are the plans that the run runs with the plans that they depend
+	// on. Each repeated flag adds its values, and --plan web,cli adds two.
+	Plans []string `help:"Run this plan and the plans that it depends on." name:"plan"`
+
+	DryRun         bool `help:"Run every phase and commit nothing."`
+	Check          bool `help:"Commit nothing and report each file that the run would change as an error."`
+	OverwriteDrift bool `help:"Write over a generated file that was edited since its stamp."`
+	Adopt          bool `help:"Write over a file without the frame of the brand."`
+	Cold           bool `help:"Run without the state that the last run recorded."`
+	Stdout         bool `help:"Record nothing and write the files to standard output."`
+	// Patterns are the patterns of the run, and empty for a run without
+	// patterns.
+	Patterns []string `arg:"" default:"" help:"Patterns of the packages to run. Each is relative to the working directory."`
+}
+
+// run is the handler of run, which runs each workspace once. It refuses
+// --stdout with --format=json, --dry-run or --check.
+func (k kernels) run(ctx context.Context, run *gocli.Run[Global, runOptions]) error {
+	o := run.Config()
+	return execute(ctx, k.compose, run, o.Patterns, func(ctx context.Context, x *invocation) int {
+		if o.Stdout {
+			switch {
+			case x.global.Format == FormatJSON:
+				return x.usage(fmt.Errorf("the flags --%s and --%s=%s exclude each other",
+					stdoutFlag, formatFlag, FormatJSON))
+			case o.DryRun:
+				return x.usage(fmt.Errorf("the flags --%s and --%s exclude each other", stdoutFlag, dryRunFlag))
+			case o.Check:
+				return x.usage(fmt.Errorf("the flags --%s and --%s exclude each other", stdoutFlag, checkFlag))
 			}
-		},
-	}
+			x.stream = x.stdio.Stdout
+		}
+		return x.runEach(ctx, workspace.Input{
+			Plans: o.Plans, Dry: o.DryRun, Check: o.Check, OverwriteDrift: o.OverwriteDrift, Adopt: o.Adopt,
+			Cold: o.Cold,
+		})
+	})
 }
 
 // runEach runs each workspace of the invocation once with the input in,
@@ -89,18 +79,18 @@ func runCommand(compose Compose) *kernel {
 // the root of every workspace and for an input that a run refuses. It
 // returns [StatusFailed] when a run fails, and [StatusOK] otherwise.
 func (x *invocation) runEach(ctx context.Context, in workspace.Input) int {
-	found, err := open(x.stdio, x.flags, x.k.compose, x.stream)
+	found, err := open(x.stdio, x.global, x.compose, x.stream)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage
 	}
-	patterns, err := assign(found.dir, found.members, x.args)
+	patterns, err := assign(found.dir, found.members, x.patterns)
 	if err != nil {
 		return x.usage(err)
 	}
 	status := StatusOK
 	for i, m := range found.members {
-		if len(x.args) > 0 && len(patterns[i]) == 0 {
+		if len(x.patterns) > 0 && len(patterns[i]) == 0 {
 			continue
 		}
 		if m.Name != "" {
@@ -116,14 +106,10 @@ func (x *invocation) runEach(ctx context.Context, in workspace.Input) int {
 // report.
 //
 // runOnce returns [StatusUsage] for an input that the run refuses, and
-// [StatusFailed] for an error of the stores or of the run.
+// [StatusFailed] for an error of the run, such as the error of a store
+// locator.
 func (x *invocation) runOnce(ctx context.Context, m Member, in workspace.Input) int {
-	in, err := x.input(m, in)
-	if err != nil {
-		x.r.Error(err)
-		return StatusFailed
-	}
-	report, err := m.Workspace.Run(ctx, in)
+	report, err := m.Workspace.Run(ctx, x.input(m, in))
 	if report == nil {
 		return x.usage(err)
 	}
@@ -138,17 +124,13 @@ func (x *invocation) runOnce(ctx context.Context, m Member, in workspace.Input) 
 }
 
 // input completes the input of a run of the workspace of m. It sets the
-// tree at the member's root, the stores, the strict mode and the caller.
-// run, watch and doctor run each workspace with it.
-//
-// Error modes: input returns the error of the stores.
-func (x *invocation) input(m Member, in workspace.Input) (workspace.Input, error) {
-	stores, err := m.Workspace.Stores(x.stdio.Getenv)
-	if err != nil {
-		return in, err
-	}
-	in.Tree, in.Stores, in.Strict, in.Caller = os.DirFS(m.Root), stores, x.flags.Strict, x.caller()
-	return in, nil
+// tree at the member's root, the environment of the store locators, the
+// strict mode and the path of the command as the caller. run, watch and
+// doctor run each workspace with it. The load of the run calls the locator
+// of a frontend only when the tree has an input file of the frontend.
+func (x *invocation) input(m Member, in workspace.Input) workspace.Input {
+	in.Tree, in.Getenv, in.Strict, in.Caller = os.DirFS(m.Root), x.stdio.Getenv, x.global.Strict, x.command
+	return in
 }
 
 // render renders the findings of a run and the counts of the suppressed

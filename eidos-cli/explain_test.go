@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -385,7 +386,15 @@ func TestExplain(t *testing.T) {
 
 			status, _, stderr := invoke(t, compose, cmdExplain, stored(t, nil))
 			expect.Equal(t, status, cli.StatusUsage, "explain takes one target")
-			expect.HasPrefix(t, stderr, "error: cli: explain: the command takes one target, and has 0 arguments\n",
+			expect.Equal(t, stderr, "error: cli: explain: missing argument TARGET\n", "explain writes the error")
+		})
+
+		t.Run("returns StatusUsage for a second target", func(t *testing.T) {
+			t.Parallel()
+
+			status, _, stderr := invoke(t, compose, cmdExplain, stored(t, nil), mirrorPath, storePath)
+			expect.Equal(t, status, cli.StatusUsage, "explain takes one target")
+			expect.Equal(t, stderr, "error: cli: explain: unexpected argument "+strconv.Quote(storePath)+"\n",
 				"explain writes the error")
 		})
 

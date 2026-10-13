@@ -5,11 +5,18 @@ package cli
 
 import (
 	"context"
-	"flag"
+
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/workspace"
+)
+
+// The name and the help text of the command doctor.
+const (
+	doctorName = "doctor"
+	doctorHelp = "Checks the config, the sealed state and the directives of each workspace."
 )
 
 // doctored contains the codes whose findings doctor renders at every
@@ -22,18 +29,11 @@ var doctored = map[diag.Code]bool{
 	directive.DeprecatedDirective: true,
 }
 
-// doctorCommand returns the command doctor, which checks the config, the
-// sealed state and the directives of each workspace. The command writes
-// nothing but the lock file.
-func doctorCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "doctor",
-		synopsis: "Checks the config, the sealed state and the directives of each workspace.",
-		compose:  compose,
-		define: func(*flag.FlagSet) runner {
-			return func(ctx context.Context, x *invocation) int { return x.doctor(ctx) }
-		},
-	}
+// doctor is the handler of doctor, which checks the config, the sealed
+// state and the directives of each workspace. The command writes nothing
+// but the lock file.
+func (k kernels) doctor(ctx context.Context, run *gocli.Run[Global, struct{}]) error {
+	return execute(ctx, k.compose, run, nil, func(ctx context.Context, x *invocation) int { return x.doctor(ctx) })
 }
 
 // doctor reports the config errors of the workspaces, and makes a dry run of
@@ -46,7 +46,7 @@ func doctorCommand(compose Compose) *kernel {
 // doctor returns [StatusFailed] when it reports a config error, an error of
 // a run or an Error finding, and [StatusOK] otherwise.
 func (x *invocation) doctor(ctx context.Context) int {
-	found, err := open(x.stdio, x.flags, x.k.compose, nil)
+	found, err := open(x.stdio, x.global, x.compose, nil)
 	status := StatusOK
 	if err != nil {
 		x.r.Error(err)
@@ -56,15 +56,9 @@ func (x *invocation) doctor(ctx context.Context) int {
 		if m.Name != "" {
 			x.r.Member(m)
 		}
-		in, err := x.input(m, workspace.Input{Dry: true})
-		if err != nil {
-			x.r.Error(err)
-			status = StatusFailed
-			continue
-		}
 		// A dry run over a tree without plans or patterns has no input that
 		// the run refuses, so the report is never nil.
-		report, err := m.Workspace.Run(ctx, in)
+		report, err := m.Workspace.Run(ctx, x.input(m, workspace.Input{Dry: true}))
 		for d := range report.Sink.All() {
 			x.r.report(d, doctored[d.Code])
 		}

@@ -156,7 +156,7 @@ func TestVersion(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			status, _, stderr := invoke(t, compose, cmdVersion, root)
 			expect.Equal(t, status, cli.StatusUsage, "the config error is a usage error")
-			expect.Contains(t, stderr, "field workerz not found", "version writes the fault")
+			expect.Contains(t, stderr, "field limt not found", "version writes the fault")
 		})
 	})
 }
@@ -197,7 +197,7 @@ func fingerprinted(t *testing.T, root string) string {
 	t.Helper()
 
 	stdio := cli.IO{Stdout: io.Discard, Stderr: io.Discard, Dir: root, Getenv: os.Getenv}
-	members, err := cli.Open(stdio, cli.Flags{}, described)
+	members, err := cli.Open(stdio, cli.Global{}, described)
 	assert.NoError(t, err, "the workspace opens")
 	assert.Length(t, members, 1, "the root is one workspace")
 	sum := sha256.Sum256(members[0].Workspace.Describe().Fingerprint)

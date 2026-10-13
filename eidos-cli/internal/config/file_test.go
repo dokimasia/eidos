@@ -62,8 +62,16 @@ workspaces:
     - {root: ./tools/gen}
 `
 
-// Decode decodes a config file strictly, and reports every fault with the
-// line of the fault.
+// optionsDocument is a document with the values of two options of the
+// command line beside a key of the format, and optionsList is a list with
+// the value of an option.
+const (
+	optionsDocument = "version: 1\nstrict: true\nworkspace: platform\nrun:\n    plan: [api]\n"
+	optionsList     = "version: 1\nstrict: true\nworkspaces: [{root: platform}]\n"
+)
+
+// Decode decodes a config file strictly below its top level, and reports
+// every fault with the line of the fault.
 func TestFile(t *testing.T) {
 	t.Parallel()
 
@@ -151,6 +159,24 @@ func TestFile(t *testing.T) {
 			}, "the list has each entry in order")
 		})
 
+		t.Run("skips each top-level key of an option in a document", func(t *testing.T) {
+			t.Parallel()
+
+			f, err := config.Decode(fileName, []byte(optionsDocument))
+			assert.NoError(t, err, "the keys of the options are no faults")
+			assert.Equal(t, f.Document, &config.Document{Version: config.Current, Workspace: "platform"},
+				"the document has the keys of the format alone")
+		})
+
+		t.Run("skips each top-level key of an option in a list", func(t *testing.T) {
+			t.Parallel()
+
+			f, err := config.Decode(fileName, []byte(optionsList))
+			assert.NoError(t, err, "the keys of the options are no faults")
+			want := &config.List{Version: config.Current, Workspaces: []config.Entry{{Root: "platform"}}}
+			assert.Equal(t, f.List, want, "the list has the keys of the format alone")
+		})
+
 		tests := []struct {
 			name string
 			give string
@@ -191,11 +217,11 @@ func TestFile(t *testing.T) {
 				want: []config.Error{{File: fileName, Line: 2, Msg: "found a tab character that violates indentation"}},
 			},
 			{
-				name: "returns an Error for each unknown key of a document",
-				give: "version: 1\nsourcse: svc\nworkerz: 2\n",
+				name: "returns an Error for each unknown key below the top level",
+				give: "version: 1\nmemo: {limt: 4}\nplans: {web: {enabeld: false}}\n",
 				want: []config.Error{
-					{File: fileName, Line: 2, Msg: "field sourcse not found in type config.Document"},
-					{File: fileName, Line: 3, Msg: "field workerz not found in type config.Document"},
+					{File: fileName, Line: 2, Msg: "field limt not found in type config.Memo"},
+					{File: fileName, Line: 3, Msg: "field enabeld not found in type config.Plan"},
 				},
 			},
 			{
@@ -206,12 +232,12 @@ func TestFile(t *testing.T) {
 			{
 				name: "returns an Error for a key of a document in a list",
 				give: "version: 1\nworkers: 2\nworkspaces: [{root: platform}]\n",
-				want: []config.Error{{File: fileName, Line: 2, Msg: "field workers not found in type config.List"}},
+				want: []config.Error{{File: fileName, Line: 2, Msg: "a list does not have the key workers"}},
 			},
 			{
 				name: "returns an Error for the extensions of a list",
 				give: "version: 1\nworkspaces: [{root: platform}]\nextensions: {reference: 1}\n",
-				want: []config.Error{{File: fileName, Line: 3, Msg: "field extensions not found in type config.List"}},
+				want: []config.Error{{File: fileName, Line: 3, Msg: "a list does not have the key extensions"}},
 			},
 			{
 				name: "returns an Error for an unknown key of an entry",
@@ -227,6 +253,67 @@ func TestFile(t *testing.T) {
 				assert.Equal(t, faultsOf(t, err), tt.want, "Decode returns the faults of the file")
 			})
 		}
+	})
+
+	t.Run("DecodeMember", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the Document of the file", func(t *testing.T) {
+			t.Parallel()
+
+			d, err := config.DecodeMember(fileName, []byte("version: 1\nworkspace: platform\n"))
+			assert.NoError(t, err, "the document decodes")
+			assert.Equal(t, d, &config.Document{Version: config.Current, Workspace: "platform"},
+				"the document has the value of each key")
+		})
+
+		tests := []struct {
+			name string
+			give string
+			want []config.Error
+		}{
+			{
+				name: "returns an Error for each top-level key of an option",
+				give: optionsDocument,
+				want: []config.Error{
+					{File: fileName, Line: 2, Msg: "field strict not found in type config.Document"},
+					{File: fileName, Line: 4, Msg: "field run not found in type config.Document"},
+				},
+			},
+			{
+				name: "returns an Error at the key workspaces for a list",
+				give: "version: 1\n\nworkspaces: [{root: platform}]\n",
+				want: []config.Error{
+					{File: fileName, Line: 3, Msg: "the config file of a member of a list lists workspaces"},
+				},
+			},
+			{
+				name: "returns an Error for a file without a version",
+				give: "workspace: platform\n",
+				want: []config.Error{{File: fileName, Line: 1, Msg: noVersion}},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := config.DecodeMember(fileName, []byte(tt.give))
+				assert.Equal(t, faultsOf(t, err), tt.want, "DecodeMember returns the faults of the file")
+			})
+		}
+	})
+
+	t.Run("Keys", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the top-level keys of a document and of a list in order", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, config.Keys(), []string{
+				"extensions", "ignore", "memo", "options", "plans", "policies", "version", "workers", "workspace",
+				"workspaces",
+			}, "the keys are the keys of the two types once each")
+		})
 	})
 
 	t.Run("Error", func(t *testing.T) {

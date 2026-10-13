@@ -133,7 +133,7 @@ func TestDoctor(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			status, _, stderr := invoke(t, compose, cmdDoctor, root)
 			expect.Equal(t, status, cli.StatusFailed, "doctor reports the config error as a failure")
-			expect.Contains(t, stderr, "field workerz not found", "doctor writes the fault")
+			expect.Contains(t, stderr, "field limt not found", "doctor writes the fault")
 		})
 
 		t.Run("checks the members of a list that build beside a member that does not", func(t *testing.T) {

@@ -24,6 +24,7 @@ const (
 	keywordOneOf      = "oneOf"
 	keywordType       = "type"
 	keywordProperties = "properties"
+	keywordAdditional = "additionalProperties"
 	keywordMinimum    = "minimum"
 	keywordPattern    = "pattern"
 	keywordConst      = "const"
@@ -46,17 +47,32 @@ const optionsKey = "options"
 // them. Schema builds the rest of the schema from the yaml, doc and schema
 // tags of the fields through [jsonschema.Of], and returns the same bytes on
 // each call with the same options.
+//
+// The top level of a document and of a list admits any key that is not a
+// key of the format, because the command line reads the values of its
+// options from those keys and checks them itself. A document has no key
+// workspaces, and a list has no other key of a document, so a file matches
+// one of the two schemas at most.
 func Schema(options map[string]any) []byte {
 	document := jsonschema.Of(reflect.TypeFor[Document](), jsonschema.TagYAML)
+	list := jsonschema.Of(reflect.TypeFor[List](), jsonschema.TagYAML)
+	documentKeys, _ := document[keywordProperties].(map[string]any)
+	listKeys, _ := list[keywordProperties].(map[string]any)
 	if len(options) > 0 {
-		properties, _ := document[keywordProperties].(map[string]any)
-		section, _ := properties[optionsKey].(map[string]any)
+		section, _ := documentKeys[optionsKey].(map[string]any)
 		section[keywordProperties] = options
 	}
+	for key := range documentKeys {
+		if _, ok := listKeys[key]; !ok {
+			listKeys[key] = false
+		}
+	}
+	documentKeys[workspacesKey] = false
+	document[keywordAdditional], list[keywordAdditional] = map[string]any{}, map[string]any{}
 	root := map[string]any{
 		keywordSchema: dialect,
 		keywordTitle:  title,
-		keywordOneOf:  []any{document, jsonschema.Of(reflect.TypeFor[List](), jsonschema.TagYAML)},
+		keywordOneOf:  []any{document, list},
 	}
 	// MarshalIndent cannot fail on a tree of maps, slices, strings, numbers
 	// and booleans.

@@ -6,11 +6,18 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"strings"
+
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli/internal/config"
 	"go.dokimi.dev/eidos/core/plugin"
+)
+
+// The name and the help text of the command schema.
+const (
+	schemaName = "schema"
+	schemaHelp = "Prints the JSON Schema of the config file of the binary."
 )
 
 // eventSchema is the event of schema.
@@ -23,24 +30,17 @@ type schemaOf struct {
 	Schema json.RawMessage `json:"schema"`
 }
 
-// schemaCommand returns the command schema, which prints the JSON Schema of
-// the config file of the binary.
-func schemaCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "schema",
-		synopsis: "Prints the JSON Schema of the config file of the binary.",
-		compose:  compose,
-		define: func(*flag.FlagSet) runner {
-			return func(_ context.Context, x *invocation) int { return x.schema() }
-		},
-	}
+// schema is the handler of schema, which prints the JSON Schema of the
+// config file of the binary.
+func (k kernels) schema(ctx context.Context, run *gocli.Run[Global, struct{}]) error {
+	return execute(ctx, k.compose, run, nil, func(_ context.Context, x *invocation) int { return x.schema() })
 }
 
-// schema renders the schema event and returns [StatusOK]. It reads no config
-// file. Text output writes the schema, and JSON output writes the event with
-// the schema as compact JSON.
+// schema renders the schema event and returns [StatusOK]. It decodes no
+// workspace document. Text output writes the schema, and JSON output writes
+// the event with the schema as compact JSON.
 func (x *invocation) schema() int {
-	s := Schema(x.k.compose)
+	s := Schema(x.compose)
 	x.r.Event(eventSchema, &schemaOf{Schema: s}, strings.TrimSuffix(string(s), "\n"))
 	return StatusOK
 }
@@ -50,7 +50,8 @@ func (x *invocation) schema() int {
 // newline. It is the published schema with one property under options for
 // each plugin of the composition that declares options, which
 // [plugin.OptionsSchema] returns. Each such property is a closed object
-// with one property for each option.
+// with one property for each option. The top level of the file admits the
+// keys of the options of the command line, which go-cli checks.
 //
 // Schema reads the plugins through [workspace.Builder.Plugins], so it does
 // not build the composition, and a composition with a required option has

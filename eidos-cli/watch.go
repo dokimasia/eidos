@@ -5,22 +5,34 @@ package cli
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"slices"
 	"time"
+
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// watch pauses for defaultInterval between two passes by default. A pause
-// shorter than minInterval is a usage error.
+// The name and the help text of the command watch.
 const (
-	defaultInterval = time.Second
-	minInterval     = 100 * time.Millisecond
+	watchName = "watch"
+	watchHelp = "Runs each workspace again after each change, until an interrupt."
 )
+
+// A pause of watch shorter than minInterval is a usage error.
+const minInterval = 100 * time.Millisecond
+
+// watchOptions are the options of watch.
+type watchOptions struct {
+	// Interval is the pause between two passes, one second by default.
+	Interval time.Duration `default:"1s" help:"Pause for this long between two runs. The minimum is 100ms."`
+	// Patterns are the patterns of each pass, and empty for passes without
+	// patterns.
+	Patterns []string `arg:"" default:"" help:"Patterns of the packages to run. Each is relative to the working directory."`
+}
 
 // pass is the result of one pass of watch over one workspace. It has the
 // findings of the run, and the text of the run error that no finding
@@ -38,20 +50,13 @@ func (p pass) same(o pass) bool {
 	})
 }
 
-// watchCommand returns the command watch, which runs each workspace in a
-// loop until an interrupt.
-func watchCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "watch",
-		synopsis: "Runs each workspace again after each change, until an interrupt.",
-		form:     "[<pattern>...]",
-		compose:  compose,
-		define: func(fs *flag.FlagSet) runner {
-			var interval time.Duration
-			fs.DurationVar(&interval, "interval", defaultInterval, "the `pause` between two runs, at least 100ms")
-			return func(ctx context.Context, x *invocation) int { return x.watch(ctx, interval) }
-		},
-	}
+// watch is the handler of watch, which runs each workspace in a loop until
+// an interrupt.
+func (k kernels) watch(ctx context.Context, run *gocli.Run[Global, watchOptions]) error {
+	o := run.Config()
+	return execute(ctx, k.compose, run, o.Patterns, func(ctx context.Context, x *invocation) int {
+		return x.watch(ctx, o.Interval)
+	})
 }
 
 // watch runs each workspace in passes until ctx ends, and pauses for
@@ -62,8 +67,9 @@ func watchCommand(compose Compose) *kernel {
 // the previous pass over the workspace. watch renders the StateLocked
 // finding of a run once, until a run takes the lock again.
 //
-// watch returns [StatusOK] when ctx ends, also during a run. It returns
-// [StatusFailed] for an error of the stores, and [StatusUsage] for these
+// watch returns [StatusOK] when ctx ends, also during a run. A pass renders
+// the error of a run, such as the error of a store locator, and the next
+// pass runs the workspace again. watch returns [StatusUsage] for these
 // errors:
 //
 //   - an interval below 100ms
@@ -74,27 +80,22 @@ func (x *invocation) watch(ctx context.Context, interval time.Duration) int {
 	if interval < minInterval {
 		return x.usage(fmt.Errorf("the interval %s is shorter than %s", interval, minInterval))
 	}
-	found, err := open(x.stdio, x.flags, x.k.compose, nil)
+	found, err := open(x.stdio, x.global, x.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage
 	}
-	patterns, err := assign(found.dir, found.members, x.args)
+	patterns, err := assign(found.dir, found.members, x.patterns)
 	if err != nil {
 		return x.usage(err)
 	}
 	previous := make([]pass, len(found.members))
 	for {
 		for i, m := range found.members {
-			if len(x.args) > 0 && len(patterns[i]) == 0 {
+			if len(x.patterns) > 0 && len(patterns[i]) == 0 {
 				continue
 			}
-			in, err := x.input(m, workspace.Input{Patterns: patterns[i]})
-			if err != nil {
-				x.r.Error(err)
-				return StatusFailed
-			}
-			report, err := m.Workspace.Run(ctx, in)
+			report, err := m.Workspace.Run(ctx, x.input(m, workspace.Input{Patterns: patterns[i]}))
 			if ctx.Err() != nil {
 				return StatusOK
 			}

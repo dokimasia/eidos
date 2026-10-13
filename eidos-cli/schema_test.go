@@ -41,17 +41,15 @@ type schemaEvent struct {
 	Schema json.RawMessage `json:"schema"`
 }
 
-// optionsOf is the part of a schema that the cases read: the schema of the
-// options of each plugin under the options of a document, the first schema
-// of oneOf.
+// optionsOf is the part of the schema of a document that the cases read:
+// the schema of the options of each plugin under the options of the
+// document.
 type optionsOf struct {
-	OneOf []struct {
-		Properties struct {
-			Options struct {
-				Properties map[string]any `json:"properties"`
-			} `json:"options"`
-		} `json:"properties"`
-	} `json:"oneOf"`
+	Properties struct {
+		Options struct {
+			Properties map[string]any `json:"properties"`
+		} `json:"options"`
+	} `json:"properties"`
 }
 
 // Schema returns the JSON Schema of the config file of a binary, with the
@@ -127,13 +125,13 @@ func TestSchema(t *testing.T) {
 			assert.Equal(t, got, want, "the event has the schema of the binary")
 		})
 
-		t.Run("reads no config file", func(t *testing.T) {
+		t.Run("decodes no workspace document", func(t *testing.T) {
 			t.Parallel()
 
 			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			status, _, stderr := invoke(t, compose, cmdSchema, root)
-			expect.Equal(t, status, cli.StatusOK, "the config file does not fail schema")
-			expect.Empty(t, stderr, "schema reports nothing about the config file")
+			expect.Equal(t, status, cli.StatusOK, "the fault of the document does not fail schema")
+			expect.Empty(t, stderr, "schema reports nothing about the document")
 		})
 	})
 }
@@ -160,12 +158,17 @@ func tunedCompose(gen plugin.Generator) cli.Compose {
 }
 
 // optionProperties returns the schema of the options of each plugin under
-// the options of a document in the schema s, by the name of the plugin.
+// the options of a document in the schema s, by the name of the plugin. The
+// schema of a document is the first schema of oneOf.
 func optionProperties(t *testing.T, s []byte) map[string]any {
 	t.Helper()
 
-	var got optionsOf
-	assert.NoError(t, json.Unmarshal(s, &got), "the schema is JSON")
-	assert.NotEmpty(t, got.OneOf, "the schema has the schema of a document")
-	return got.OneOf[0].Properties.Options.Properties
+	var schema struct {
+		OneOf []json.RawMessage `json:"oneOf"`
+	}
+	assert.NoError(t, json.Unmarshal(s, &schema), "the schema is JSON")
+	assert.NotEmpty(t, schema.OneOf, "the schema has the schema of a document")
+	var document optionsOf
+	assert.NoError(t, json.Unmarshal(schema.OneOf[0], &document), "the schema of a document is JSON")
+	return document.Properties.Options.Properties
 }

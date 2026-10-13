@@ -6,15 +6,22 @@ package cli
 import (
 	"cmp"
 	"context"
-	"flag"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
+	gocli "go.stealthscale.io/cli"
+
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
+)
+
+// The name and the help text of the command plan.
+const (
+	planName = "plan"
+	planHelp = "Prints the composition of each workspace without running it."
 )
 
 // The events of plan, and the roles of a component event.
@@ -89,17 +96,10 @@ type disabledOf struct {
 	Target   string      `json:"target"`
 }
 
-// planCommand returns the command plan, which prints the composition of
-// each workspace without running it.
-func planCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "plan",
-		synopsis: "Prints the composition of each workspace without running it.",
-		compose:  compose,
-		define: func(*flag.FlagSet) runner {
-			return func(_ context.Context, x *invocation) int { return x.plan() }
-		},
-	}
+// plan is the handler of plan, which prints the composition of each
+// workspace without running it.
+func (k kernels) plan(ctx context.Context, run *gocli.Run[Global, struct{}]) error {
+	return execute(ctx, k.compose, run, nil, func(_ context.Context, x *invocation) int { return x.plan() })
 }
 
 // plan renders the description of each workspace. It renders a component
@@ -108,7 +108,7 @@ func planCommand(compose Compose) *kernel {
 //
 // plan returns [StatusUsage] for a config error, and [StatusOK] otherwise.
 func (x *invocation) plan() int {
-	found, err := open(x.stdio, x.flags, x.k.compose, nil)
+	found, err := open(x.stdio, x.global, x.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage

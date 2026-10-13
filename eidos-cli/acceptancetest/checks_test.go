@@ -89,12 +89,21 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertNames", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a host that mounts run under another name", func(t *testing.T) {
+		t.Run("rejects a binary whose command run is not the kernel command run", func(t *testing.T) {
 			t.Parallel()
 
-			renamed := acceptancetest.Build(t, renamedMain)
-			assert.HasPrefix(t, rejected(t, acceptancetest.AssertNames, fixture(), renamed), "run -h exits 0",
-				"the check fails at the name run")
+			impostor := acceptancetest.Build(t, impostorMain)
+			assert.Equal(t, rejected(t, acceptancetest.AssertNames, fixture(), impostor),
+				"run -h writes the help text of the kernel command run", "the check fails at the help text of run")
+		})
+
+		t.Run("rejects a fixture whose prefix does not lead to the kernel commands", func(t *testing.T) {
+			t.Parallel()
+
+			f := fixture()
+			f.Prefix = []string{groupName}
+			assert.HasPrefix(t, rejected(t, acceptancetest.AssertNames, f, bin), "run -h exits 0",
+				"the check fails at the status of run")
 		})
 	})
 

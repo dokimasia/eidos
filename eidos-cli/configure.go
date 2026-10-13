@@ -19,7 +19,8 @@ import (
 // directives, the parse memo, the refinement of each plan, the policies and
 // the options. The file is the config file of the brand in root, such as
 // .acme.yaml, and Configure searches no other directory. It leaves b as it
-// is where root has no such file, and it adds no sink and no ledger.
+// is where root has no such file, and it adds no sink and no ledger. It
+// skips the keys of the options of the command line.
 //
 // Error modes: Configure returns an error for a composition without a valid
 // brand, for a file that does not read or decode, for a file that lists

@@ -299,7 +299,7 @@ func TestPlan(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			status, _, stderr := invoke(t, compose, cmdPlan, root)
 			expect.Equal(t, status, cli.StatusUsage, "the config error is a usage error")
-			expect.Contains(t, stderr, "field workerz not found", "plan writes the fault")
+			expect.Contains(t, stderr, "field limt not found", "plan writes the fault")
 		})
 	})
 }

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "oneOf": [
     {
-      "additionalProperties": false,
+      "additionalProperties": {},
       "properties": {
         "extensions": {
           "additionalProperties": {},
@@ -196,7 +196,8 @@
         "workspace": {
           "description": "The name of the workspace. The default is the base name of the workspace root.",
           "type": "string"
-        }
+        },
+        "workspaces": false
       },
       "required": [
         "version"
@@ -204,13 +205,21 @@
       "type": "object"
     },
     {
-      "additionalProperties": false,
+      "additionalProperties": {},
       "properties": {
+        "extensions": false,
+        "ignore": false,
+        "memo": false,
+        "options": false,
+        "plans": false,
+        "policies": false,
         "version": {
           "const": 1,
           "description": "The version of the file format. It must be 1.",
           "type": "integer"
         },
+        "workers": false,
+        "workspace": false,
         "workspaces": {
           "description": "The workspaces, in the order that a command runs them.",
           "items": {

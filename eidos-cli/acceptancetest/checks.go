@@ -6,6 +6,7 @@ package acceptancetest
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/files"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -103,11 +105,28 @@ const (
 // AssertLocked takes.
 const lockCaller = "acceptancetest"
 
+// kernelGroup is the name of the app and of the group whose help lists the
+// kernel commands for AssertNames.
+const kernelGroup = "kernel"
+
 // event is an event of JSON output, with the fields that the checks read.
 type event struct {
 	Event  string `json:"event"`
 	Path   string `json:"path"`
 	Action string `json:"action"`
+}
+
+// helpCapture is a go-cli renderer that keeps the commands that the help of
+// a run lists, in place of writing the help.
+type helpCapture struct {
+	gocli.Plain
+	commands []gocli.HelpCommand
+}
+
+// Help keeps the commands of h and writes nothing. It returns no error.
+func (c *helpCapture) Help(_ io.Writer, _ []string, h *gocli.Help) error {
+	c.commands = h.Commands
+	return nil
 }
 
 // AssertStatuses checks the exit statuses of run over copies of the tree of
@@ -145,15 +164,20 @@ func AssertStatuses(tb assert.TB, f Fixture, bin, root string) {
 }
 
 // AssertNames checks that each kernel command runs under its own name after
-// the prefix of the fixture. For -h after the name, the command exits 0 and
-// writes its usage to standard output.
+// the prefix of the fixture. For -h after the name, the command exits 0. It
+// writes its help to standard output, with the path of the command in the
+// usage line and the help text of the kernel command.
 func AssertNames(tb assert.TB, f Fixture, bin, root string) {
 	tb.Helper()
 
-	for _, k := range cli.Kernels(nil) {
-		got := Exec(tb, bin, root, nil, slices.Concat(f.Prefix, []string{k.Name(), helpFlag})...)
-		assert.Equal(tb, got.Status, cli.StatusOK, k.Name()+" -h exits 0: "+string(got.Stderr))
-		assert.Equal(tb, string(got.Stdout), k.Usage(), k.Name()+" -h writes the usage of "+k.Name())
+	for _, k := range kernels(tb) {
+		path := slices.Concat(f.Prefix, []string{k.Name})
+		got := Exec(tb, bin, root, nil, slices.Concat(path, []string{helpFlag})...)
+		assert.Equal(tb, got.Status, cli.StatusOK, k.Name+" -h exits 0: "+string(got.Stderr))
+		usage, rest, _ := strings.Cut(string(got.Stdout), "\n")
+		assert.Contains(tb, usage+" ", " "+strings.Join(path, " ")+" ",
+			k.Name+" -h writes the usage line of the path of "+k.Name)
+		assert.HasPrefix(tb, rest, "\n"+k.Text+"\n", k.Name+" -h writes the help text of the kernel command "+k.Name)
 	}
 }
 
@@ -379,6 +403,21 @@ func copied(tb assert.TB, f Fixture, dir string) {
 
 	assert.NotNil(tb, f.Tree, "the fixture has a tree")
 	assert.NoError(tb, os.CopyFS(dir, f.Tree), "the tree of the fixture copies into "+dir)
+}
+
+// kernels returns the name and the help text of each kernel command, in the
+// order of the help of a group that [cli.Mount] fills. It stops the check
+// when the help does not write.
+func kernels(tb assert.TB) []gocli.HelpCommand {
+	tb.Helper()
+
+	app := gocli.New[cli.Global](kernelGroup, "")
+	cli.Mount(app.Command[struct{}](kernelGroup, "", nil), nil)
+	capture := &helpCapture{}
+	app.Render(capture)
+	env := &gocli.Env{Stdout: io.Discard, Stderr: io.Discard, Args: []string{kernelGroup, helpFlag}}
+	assert.NoError(tb, app.Execute(assert.Context(tb), env), "the help of the kernel commands writes")
+	return capture.commands
 }
 
 // stateNames returns the name of the state directory of the brand of the

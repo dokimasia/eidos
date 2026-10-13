@@ -17,12 +17,12 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 )
 
-// The main packages of the hosts that the tests build. host meets the
-// contract, and each other host breaks one rule of it.
+// The main packages of the binaries that the tests build. host meets the
+// contract, and each other binary breaks one rule of it.
 const (
 	hostMain       = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/host"
 	remappedMain   = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/remapped"
-	renamedMain    = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/renamed"
+	impostorMain   = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/impostor"
 	recoveringMain = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/recovering"
 	pinnedMain     = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/pinned"
 	unboundedMain  = "go.dokimi.dev/eidos/cli/acceptancetest/testdata/unbounded"
@@ -35,10 +35,12 @@ const (
 // brand is the brand of the hosts.
 const brand output.Brand = "acme"
 
-// The command of the hosts that panics, and the status of a panic.
+// The command of the binaries that panics, the status of a panic, and the
+// name of a group that no binary has.
 const (
 	crashName   = "crash"
 	panicStatus = 2
+	groupName   = "gen"
 )
 
 // The files of the tree of the fixture: the config file of the brand, the

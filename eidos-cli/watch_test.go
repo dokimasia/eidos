@@ -8,12 +8,14 @@ import (
 	"context"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -26,11 +28,13 @@ const (
 	tooShort = intervalFlag + "=50ms"
 )
 
-// The passes at whose start the cases of three passes write their edit of
-// the tree and end the context of watch.
+// The passes during whose load the cases write their edit of the tree and
+// end the context of watch. The load calls the locator after the walk of
+// the tree, so the pass after editPass is the first pass that sees the
+// edit.
 const (
 	editPass = 2
-	lastPass = 3
+	lastPass = 4
 )
 
 // editedSummary is the summary line of text output for two rendered passes.
@@ -74,24 +78,24 @@ func TestWatch(t *testing.T) {
 		t.Run("renders nothing for a pass that changes nothing", func(t *testing.T) {
 			t.Parallel()
 
-			status, stdout, stderr := passed(t, stored(t, nil), nil)
+			status, stdout, stderr := passed(t, stored(t, nil), nil, nil)
 			expect.Equal(t, status, cli.StatusOK, "the end of the context stops watch")
-			expect.Equal(t, stdout, "create svc/mirror.txt\n"+createdSummary, "the second pass renders nothing")
+			expect.Equal(t, stdout, "create svc/mirror.txt\n"+createdSummary, "the later passes render nothing")
 			expect.Empty(t, stderr, "no pass reports anything")
 		})
 
 		t.Run("renders a pass after an edit of the tree", func(t *testing.T) {
 			t.Parallel()
 
-			_, stdout, _ := passed(t, stored(t, nil), files.Tree{storePath: files.Text(secondSource)})
+			_, stdout, _ := passed(t, stored(t, nil), files.Tree{storePath: files.Text(secondSource)}, nil)
 			assert.Equal(t, stdout, "create svc/mirror.txt\nupdate svc/mirror.txt\n"+editedSummary,
-				"the second pass renders the update of the mirror")
+				"the pass after the edit renders the update of the mirror")
 		})
 
 		t.Run("writes the events of its passes between the start event and the summary event", func(t *testing.T) {
 			t.Parallel()
 
-			_, stdout, _ := passed(t, stored(t, nil), nil, jsonFlag)
+			_, stdout, _ := passed(t, stored(t, nil), nil, nil, jsonFlag)
 			assert.Equal(t, decoded[header](t, stdout, ""),
 				[]header{{Event: eventStart}, {Event: eventFile}, {Event: eventOutcome}, {Event: eventSummary}},
 				"the output has the start event, the events of the first pass and the summary event")
@@ -100,18 +104,26 @@ func TestWatch(t *testing.T) {
 		t.Run("renders the StateLocked finding of the passes once", func(t *testing.T) {
 			t.Parallel()
 
-			root := stored(t, nil)
-			locked(t, root)
-			_, _, stderr := passed(t, root, nil)
+			root := listed(t)
+			locked(t, filepath.Join(root, memberSvc))
+			_, _, stderr := passed(t, root, nil, nil)
 			assert.Equal(t, strings.Count(stderr, workspace.StateLocked.String()), 1,
-				"the second pass finds the same lock and renders nothing")
+				"the later passes find the same lock and render nothing")
 		})
 
 		t.Run("renders the error of the passes once", func(t *testing.T) {
 			t.Parallel()
 
-			_, _, stderr := passed(t, stored(t, files.Tree{storePath: files.Text(brokenSource)}), nil)
-			assert.Equal(t, stderr, brokenError, "the second pass returns the same error and renders nothing")
+			_, _, stderr := passed(t, stored(t, files.Tree{storePath: files.Text(brokenSource)}), nil, nil)
+			assert.Equal(t, stderr, brokenError, "the later passes return the same error and render nothing")
+		})
+
+		t.Run("renders the error of a store locator once", func(t *testing.T) {
+			t.Parallel()
+
+			status, _, stderr := passed(t, stored(t, nil), nil, errLocate)
+			expect.Equal(t, status, cli.StatusOK, "a failed pass does not stop watch")
+			expect.Equal(t, stderr, locateError, "the later passes return the same error and render nothing")
 		})
 
 		t.Run("runs only the members of a list that contain a pattern", func(t *testing.T) {
@@ -138,7 +150,7 @@ func TestWatch(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			status, _, stderr := invoke(t, compose, cmdWatch, root)
 			expect.Equal(t, status, cli.StatusUsage, "the config error is a usage error")
-			expect.Contains(t, stderr, "field workerz not found", "watch writes the fault")
+			expect.Contains(t, stderr, "field limt not found", "watch writes the fault")
 		})
 
 		t.Run("returns StatusUsage for a pattern outside the root", func(t *testing.T) {
@@ -156,14 +168,6 @@ func TestWatch(t *testing.T) {
 			expect.Contains(t, stderr, `the pattern "svc/a...b" names no directory`,
 				"watch writes the error of the run")
 		})
-
-		t.Run("returns StatusFailed for a locator that returns an error", func(t *testing.T) {
-			t.Parallel()
-
-			status, _, stderr := invoke(t, failing, cmdWatch, stored(t, nil))
-			expect.Equal(t, status, cli.StatusFailed, "the locator fails watch")
-			expect.Equal(t, stderr, locateError, "watch writes the error of the locator")
-		})
 	})
 }
 
@@ -178,41 +182,47 @@ func watched(t *testing.T, dir string, args ...string) (int, string, string) {
 	defer cancel()
 	stdout := &cancelling{cancel: cancel}
 	var stderr bytes.Buffer
-	stdio := cli.IO{Stdout: stdout, Stderr: &stderr, Dir: dir, Getenv: func(string) string { return "" }}
-	status := command(t, compose, cmdWatch).Run(ctx, stdio, args)
+	env := &gocli.Env{
+		Open:   gocli.OS().Open,
+		Stdout: stdout,
+		Stderr: &stderr,
+		Args:   slices.Concat([]string{chdirFlag, dir, cmdWatch}, args),
+	}
+	status := cli.Run(ctx, cli.New(appHelp, compose), compose, env)
 	return status, stdout.String(), stderr.String()
 }
 
 // passed runs watch over the locating composition in dir at the shortest
-// interval, with args after the interval. The locator reads storeVar at the
-// start of each pass. At the start of editPass, passed writes edit into dir,
-// and at the start of lastPass, it ends the context of watch. It returns the
-// status of watch and what it wrote to standard output and to standard
-// error.
-func passed(t *testing.T, dir string, edit files.Tree, args ...string) (int, string, string) {
+// interval, with args after the interval. The load of each pass calls the
+// locator after the walk of the tree, and the locator returns fail. During
+// editPass, passed writes edit into dir. During lastPass, it ends the
+// context of watch. It returns the status of watch and what it wrote to
+// standard output and to standard error. A workspace of dir without a
+// tree to load calls no locator, so a list in dir needs one member that
+// loads.
+func passed(t *testing.T, dir string, edit files.Tree, fail error, args ...string) (int, string, string) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	reads := 0
-	getenv := func(key string) string {
-		if key == storeVar {
-			reads++
-			if reads == editPass {
-				files.Write(t, dir, edit)
-			}
+	passes := 0
+	locating := locatingCompose(func(func(string) string) (map[string]fs.FS, error) {
+		passes++
+		if passes == editPass {
+			files.Write(t, dir, edit)
 		}
-		if reads == lastPass {
+		if passes == lastPass {
 			cancel()
 		}
-		return ""
-	}
-	locating := locatingCompose(func(getenv func(string) string) (map[string]fs.FS, error) {
-		getenv(storeVar)
-		return nil, nil
+		return nil, fail
 	})
 	var stdout, stderr bytes.Buffer
-	stdio := cli.IO{Stdout: &stdout, Stderr: &stderr, Dir: dir, Getenv: getenv}
-	status := command(t, locating, cmdWatch).Run(ctx, stdio, append([]string{shortest}, args...))
+	env := &gocli.Env{
+		Open:   gocli.OS().Open,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Args:   slices.Concat([]string{chdirFlag, dir, cmdWatch, shortest}, args),
+	}
+	status := cli.Run(ctx, cli.New(appHelp, locating), locating, env)
 	return status, stdout.String(), stderr.String()
 }

@@ -12,7 +12,7 @@ import (
 	"go.dokimi.dev/eidos/cli"
 )
 
-// A host exits with the status of a command, and prints nothing for it.
+// Run exits with the status of a handler, and renders nothing for it.
 func TestCommand(t *testing.T) {
 	t.Parallel()
 
@@ -25,7 +25,7 @@ func TestCommand(t *testing.T) {
 			t.Run("returns the empty string", func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, cli.ExitError{Code: cli.StatusUsage}.Error(), "", "the command rendered its failure")
+				assert.Equal(t, cli.ExitError{Code: cli.StatusUsage}.Error(), "", "the handler rendered its failure")
 			})
 		})
 
@@ -36,7 +36,7 @@ func TestCommand(t *testing.T) {
 				t.Parallel()
 
 				assert.Equal(t, cli.ExitError{Code: cli.StatusUsage}.ExitCode(), cli.StatusUsage,
-					"a host exits with the code")
+					"a program exits with the code")
 			})
 		})
 	})
@@ -44,7 +44,7 @@ func TestCommand(t *testing.T) {
 	t.Run("UsageError", func(t *testing.T) {
 		t.Parallel()
 
-		cause := errors.New("cli_test: flag provided but not defined: -x")
+		cause := errors.New("cli_test: unknown flag --x")
 
 		t.Run("Error", func(t *testing.T) {
 			t.Parallel()
@@ -74,7 +74,7 @@ func TestCommand(t *testing.T) {
 		t.Run("returns nil for StatusOK", func(t *testing.T) {
 			t.Parallel()
 
-			assert.NoError(t, cli.Exit(cli.StatusOK), "a host exits with 0 for no error")
+			assert.NoError(t, cli.Exit(cli.StatusOK), "Run exits with 0 for no error")
 		})
 
 		tests := []struct {

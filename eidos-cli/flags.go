@@ -8,16 +8,15 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
+
+	gocli "go.stealthscale.io/cli"
 )
 
-// Every command accepts the flags with these names.
+// The messages of the commands name these flags.
 const (
 	formatFlag  = "format"
-	configFlag  = "config"
-	strictFlag  = "strict"
-	verboseFlag = "verbose"
 	quietFlag   = "quiet"
-	noColorFlag = "no-color"
+	verboseFlag = "verbose"
 )
 
 // ErrFormat reports a value of --format that is neither text nor json.
@@ -54,12 +53,12 @@ func (f Format) String() string {
 	}
 }
 
-// Set sets f to the format with the name s. It implements [flag.Value].
+// Set sets f to the format with the name s. It implements [flag.Value], and
+// go-cli converts each value of --format through it.
 //
 // Error modes: Set returns an error that wraps [ErrFormat] when s is neither
-// text nor json. The flag package formats the error of a value with the verb
-// %v, so the error of a parse of the flags contains the text of the error and
-// does not wrap ErrFormat.
+// text nor json. go-cli puts the text of the error into the message of its
+// usage error, which does not wrap ErrFormat.
 func (f *Format) Set(s string) error {
 	for g := FormatText; g.Valid(); g++ {
 		if g.String() == s {
@@ -70,31 +69,31 @@ func (f *Format) Set(s string) error {
 	return fmt.Errorf("%w %q: use %s or %s", ErrFormat, s, FormatText, FormatJSON)
 }
 
-// Flags are the flags that every command accepts.
-type Flags struct {
-	// Config is the path that --config sets, and empty when the flag is not
-	// set. A relative path is relative to the working directory.
-	Config string
-	// Format is the output format that --format selects.
-	Format Format
-	// Strict is true under --strict, which reports every Warning as an
-	// Error.
-	Strict bool
-	// Verbose is true under --verbose, which renders Info findings.
-	Verbose bool
-	// Quiet is true under --quiet, which renders the Error findings alone.
-	// A kernel command refuses --quiet with --verbose.
-	Quiet bool
-	// NoColor is true under --no-color, which renders text without colour.
-	NoColor bool
-}
-
-// Register defines the flags on fs. Each flag sets its field of f.
-func (f *Flags) Register(fs *flag.FlagSet) {
-	fs.Var(&f.Format, formatFlag, "the output `format`, text or json")
-	fs.StringVar(&f.Config, configFlag, "", "the config `file`, which replaces the search for one")
-	fs.BoolVar(&f.Strict, strictFlag, false, "report every warning as an error")
-	fs.BoolVar(&f.Verbose, verboseFlag, false, "render info findings")
-	fs.BoolVar(&f.Quiet, quietFlag, false, "render error findings alone")
-	fs.BoolVar(&f.NoColor, noColorFlag, false, "render text without colour")
+// Global are the global options of a binary built with eidos. Every command
+// of the app accepts them before and after its name. go-cli reads each
+// option from its flag, its environment variable and its key in the config
+// file, such as --strict, ACME_STRICT and strict for the brand acme.
+type Global struct {
+	// Config is the path of the config file. A run that sets neither the
+	// flag nor the variable takes the path that the search of Prepare finds,
+	// and the empty path when the search does not find a file. go-cli reads
+	// a relative path against the working directory of the process, also
+	// under Chdir.
+	Config gocli.ConfigFile `help:"Read this config file instead of the one that the search finds."`
+	// Chdir is the working directory of the command, and empty for the
+	// working directory of the process. A relative path is relative to the
+	// working directory of the process. The search for the config file
+	// starts at it, and the patterns of a command are relative to it.
+	Chdir string `help:"Run in this directory instead of the working directory." short:"C" key:"-"`
+	// Format is the output format, FormatText or FormatJSON.
+	Format Format `help:"Write the output as text or json." default:"text"`
+	// Strict reports every Warning as an Error.
+	Strict bool `help:"Report every warning as an error."`
+	// Verbose renders the Info findings.
+	Verbose bool `help:"Render info findings."`
+	// Quiet renders the Error findings alone. A command refuses Quiet with
+	// Verbose.
+	Quiet bool `help:"Render error findings alone."`
+	// NoColor renders text without colour.
+	NoColor bool `help:"Render text without colour."`
 }

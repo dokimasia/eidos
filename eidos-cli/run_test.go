@@ -18,6 +18,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/cli"
 	"go.dokimi.dev/eidos/core/frontend"
@@ -68,11 +69,16 @@ const (
 )
 
 // storeVar is the variable that the locator of a locating composition
-// reads.
-const storeVar = "CLITEST_STORE"
+// reads, and storeValue is its value in the environment of a case.
+const (
+	storeVar   = "CLITEST_STORE"
+	storeValue = "/var/cache/store"
+)
 
-// faultyConfig is a config file with a key that the format does not have.
-const faultyConfig = "version: 1\nworkerz: 4\n"
+// faultyConfig is a config file with a key that the memo of the format
+// does not have, at line 2. go-cli skips the keys of the document, so the
+// decoder of the document reports the fault.
+const faultyConfig = "version: 1\nmemo: {limt: 4}\n"
 
 // createdSummary is the summary line of text output for a run that created
 // one file and committed one plan.
@@ -98,7 +104,7 @@ var suppressing = "+diag off=" + noted.String() + "\n"
 var (
 	brokenError = `error: workspace: plan "mirrors": generator mirror in turn 1: eidos: mirror rule 0: ` +
 		errBroken.Error() + "\n"
-	locateError = "error: workspace: frontend locator: " + errLocate.Error() + "\n"
+	locateError = "error: workspace: load: frontend locator: " + errLocate.Error() + "\n"
 )
 
 // failing is the fixture composition over a frontend whose locator returns
@@ -393,7 +399,7 @@ func TestRun(t *testing.T) {
 			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			status, _, stderr := invoke(t, compose, cmdRun, root)
 			expect.Equal(t, status, cli.StatusUsage, "the config error is a usage error")
-			expect.Contains(t, stderr, "field workerz not found", "the run writes the fault")
+			expect.Contains(t, stderr, "field limt not found", "the run writes the fault")
 		})
 
 		t.Run("returns StatusFailed for a generator that returns an error", func(t *testing.T) {
@@ -435,9 +441,13 @@ func TestRun(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
 			var stdout, stderr bytes.Buffer
-			getenv := func(string) string { return "" }
-			stdio := cli.IO{Stdout: &stdout, Stderr: &stderr, Dir: stored(t, nil), Getenv: getenv}
-			status := command(t, compose, cmdRun).Run(ctx, stdio, nil)
+			env := &gocli.Env{
+				Open:   gocli.OS().Open,
+				Stdout: &stdout,
+				Stderr: &stderr,
+				Args:   []string{chdirFlag, stored(t, nil), cmdRun},
+			}
+			status := cli.Run(ctx, cli.New(appHelp, compose), compose, env)
 			expect.Equal(t, status, cli.StatusFailed, "the cancellation fails the run")
 			expect.Contains(t, stdout.String(), "plans: 0 committed, 0 failed, 1 cancelled",
 				"the summary counts the cancelled plan")
@@ -612,6 +622,27 @@ func TestRun(t *testing.T) {
 			status, _, stderr := invoke(t, failing, cmdRun, stored(t, nil))
 			expect.Equal(t, status, cli.StatusFailed, "the locator fails the run")
 			expect.Equal(t, stderr, locateError, "the run writes the error of the locator")
+		})
+
+		t.Run("passes the environment of the run to the locator of the stores", func(t *testing.T) {
+			t.Parallel()
+
+			var got string
+			locating := locatingCompose(func(getenv func(string) string) (map[string]fs.FS, error) {
+				got = getenv(storeVar)
+				return nil, nil
+			})
+			var stdout, stderr bytes.Buffer
+			env := &gocli.Env{
+				Environ: gocli.Environ(map[string]string{storeVar: storeValue}),
+				Open:    gocli.OS().Open,
+				Stdout:  &stdout,
+				Stderr:  &stderr,
+				Args:    []string{chdirFlag, stored(t, nil), cmdRun},
+			}
+			status := cli.Run(t.Context(), cli.New(appHelp, locating), locating, env)
+			assert.Equal(t, status, cli.StatusOK, "the run succeeds: "+stderr.String())
+			assert.Equal(t, got, storeValue, "the locator reads the variable of the environment")
 		})
 	})
 }

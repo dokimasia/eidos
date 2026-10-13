@@ -81,19 +81,26 @@ type workspaces struct {
 	members []Member
 }
 
-// Open finds the config file for stdio.Dir, or reads f.Config when it is not
-// empty. It applies the file to the compositions that compose returns, and
-// builds one member for each workspace that the file covers. A list covers
-// its entries in list order, and any other file covers one workspace. The
-// workspace of each member writes its output and its state directory below
-// its root.
+// Open finds the config file for stdio.Dir, or reads global.Config when it
+// is not empty. It applies the file to the compositions that compose
+// returns, and builds one member for each workspace that the file covers. A
+// list covers its entries in list order, and any other file covers one
+// workspace. The workspace of each member writes its output and its state
+// directory below its root.
 //
-// Without --config, Open searches stdio.Dir and then each parent directory
+// Without a Config, Open searches stdio.Dir and then each parent directory
 // for the config file of the brand, such as .acme.yaml. The directory of the
 // file is the root. The search stops after the first directory that
 // contains a version control marker: .git, .hg, .jj or .svn. Without a file,
 // the root is the directory with the marker, or stdio.Dir outside a
-// repository.
+// repository. A relative Config is relative to stdio.Dir, and the root of
+// its file is the directory of the path with its symbolic links resolved.
+// So a Config of the file that the search finds gives the root of the
+// search. The command line passes Config absolute, as the search of
+// [Prepare] finds it or as the hook of Prepare resolves it.
+//
+// Open skips the keys of the options of the command line in the config
+// file of the run. The config file of a member of a list sets no options.
 //
 // Open panics unless stdio has both output streams, Getenv and an absolute
 // Dir.
@@ -101,13 +108,14 @@ type workspaces struct {
 // Error modes: every error is a config error, which a command reports with
 // [StatusUsage]. The error joins the faults of every member. Open returns an
 // error for a working directory that does not resolve, for a file that does
-// not read or decode, for a plugin directory of the file that does not load,
+// not read or decode, for the key of an option in the config file of a
+// member of a list, for a plugin directory of the file that does not load,
 // for a fault of Build, for a root of a list that does not exist, and for two
 // roots of a list that nest. A fault of a file that does not decode names
 // the file relative to the directory of the file that Open found, in slash
 // form, as a finding names a file.
-func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
-	found, err := open(stdio, f, compose, nil)
+func Open(stdio IO, global Global, compose Compose) ([]Member, error) {
+	found, err := open(stdio, global, compose, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +129,11 @@ func Open(stdio IO, f Flags, compose Compose) ([]Member, error) {
 // list, and each member of a list builds a composition of its own. stream
 // is the writer that each workspace writes its files to in place of the
 // disk, and nil for the disk.
-func open(stdio IO, f Flags, compose Compose, stream io.Writer) (workspaces, error) {
+func open(stdio IO, global Global, compose Compose, stream io.Writer) (workspaces, error) {
 	stdio.check()
+	if !filepath.IsAbs(stdio.Dir) {
+		panic(fmt.Sprintf("cli: the working directory %q of the IO is not absolute", stdio.Dir))
+	}
 	b := compose()
 	brand := b.BrandName()
 	if !brand.Valid() {
@@ -134,7 +145,7 @@ func open(stdio IO, f Flags, compose Compose, stream io.Writer) (workspaces, err
 		return workspaces{}, fmt.Errorf("cli: resolve the working directory: %w", err)
 	}
 	name := ConfigName(brand)
-	file, data, root, err := locate(dir, f.Config, name)
+	file, data, root, err := locate(dir, string(global.Config), name)
 	if err != nil {
 		return workspaces{dir: dir}, err
 	}
@@ -161,20 +172,37 @@ func open(stdio IO, f Flags, compose Compose, stream io.Writer) (workspaces, err
 
 // locate returns the absolute path and the bytes of the config file, and
 // the workspace root. dir is the working directory, and given is the path
-// that --config sets, relative to dir. name is the file name of the config
-// file of the brand. The path is empty when the search finds no file.
+// of the Config, relative to dir. name is the file name of the config file
+// of the brand. The path is empty when the search finds no file. The root
+// of a given file is the directory of its path with the symbolic links
+// resolved, as the search finds it.
 func locate(dir, given, name string) (string, []byte, string, error) {
-	if given != "" {
-		file, err := filepath.EvalSymlinks(resolve(dir, given))
-		if err != nil {
-			return "", nil, "", fmt.Errorf("cli: read the config file: %w", err)
-		}
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return "", nil, "", fmt.Errorf("cli: read the config file: %w", err)
-		}
-		return file, data, filepath.Dir(file), nil
+	if given == "" {
+		return search(dir, name)
 	}
+	p := resolve(dir, given)
+	root, err := filepath.EvalSymlinks(filepath.Dir(p))
+	if err != nil {
+		return "", nil, "", fmt.Errorf("cli: read the config file: %w", err)
+	}
+	file := filepath.Join(root, filepath.Base(p))
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("cli: read the config file: %w", err)
+	}
+	return file, data, root, nil
+}
+
+// search searches dir and then each parent directory for the config file
+// name, and returns its absolute path, its bytes and the workspace root,
+// which is the directory of the file. The search stops after the first
+// directory that contains a version control marker. Without a file, the
+// path is empty, and the root is the directory with the marker, or dir
+// outside a repository. dir is absolute, with its symbolic links resolved.
+//
+// Error modes: search returns an error for a candidate that exists and does
+// not read.
+func search(dir, name string) (string, []byte, string, error) {
 	for d := dir; ; d = filepath.Dir(d) {
 		file := filepath.Join(d, name)
 		data, err := os.ReadFile(file)
@@ -241,7 +269,9 @@ func list(
 // is the root of the entry, dir is the directory of the list, and given is
 // the path that the entry sets. When given is empty, the file is the config
 // file of the brand in the root, and the entry has no config when that file
-// does not exist. A fault of the file names the file relative to dir.
+// does not exist. A fault of the file names the file relative to dir. The
+// file sets no options of the command line, so a key of an option is a
+// fault.
 func entryConfig(root, dir, name, given string) (configFile, error) {
 	file := filepath.Join(root, name)
 	if given != "" {
@@ -255,14 +285,9 @@ func entryConfig(root, dir, name, given string) (configFile, error) {
 		return configFile{}, fmt.Errorf("cli: read the config file: %w", err)
 	}
 	c := configFile{path: file, source: relative(dir, file), data: data}
-	decoded, err := config.Decode(c.source, data)
-	if err != nil {
+	if c.doc, err = config.DecodeMember(c.source, data); err != nil {
 		return configFile{}, err
 	}
-	if decoded.List != nil {
-		return configFile{}, fmt.Errorf("cli: the config file %s of a workspace in a list is a list", c.source)
-	}
-	c.doc = decoded.Document
 	return c, nil
 }
 

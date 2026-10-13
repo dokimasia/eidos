@@ -8,11 +8,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	gocli "go.stealthscale.io/cli"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/node"
@@ -20,6 +21,12 @@ import (
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
+)
+
+// The name and the help text of the command explain.
+const (
+	explainName = "explain"
+	explainHelp = "Prints what the last run recorded about a file, a declaration, a fact or a finding."
 )
 
 // The events of explain.
@@ -33,6 +40,11 @@ const (
 
 // textIndent indents the JSON form of a declaration in text output.
 const textIndent = "  "
+
+// explainOptions are the options of explain.
+type explainOptions struct {
+	Target string `arg:"" help:"File, declaration, fact or finding to explain."`
+}
 
 // generationOf is the JSON form of the generation that an explanation
 // reads. Recorded is a time in RFC 3339 form.
@@ -159,29 +171,23 @@ type unrecorded struct {
 	generation string
 }
 
-// explainCommand returns the command explain, which prints what the live
-// generation records about one target.
-func explainCommand(compose Compose) *kernel {
-	return &kernel{
-		name:     "explain",
-		synopsis: "Prints what the last run recorded about a file, a declaration, a fact or a finding.",
-		form:     "<target>",
-		compose:  compose,
-		define: func(*flag.FlagSet) runner {
-			return func(ctx context.Context, x *invocation) int { return x.explain(ctx) }
-		},
-	}
+// explain is the handler of explain, which prints what the live generation
+// records about one target.
+func (k kernels) explain(ctx context.Context, run *gocli.Run[Global, explainOptions]) error {
+	target := run.Config().Target
+	return execute(ctx, k.compose, run, nil, func(ctx context.Context, x *invocation) int {
+		return x.explain(ctx, target)
+	})
 }
 
-// explain explains the one target of the invocation in each workspace. A
-// path and the file of a position are relative to the working directory,
-// and explain rewrites them relative to the root of each workspace. explain
-// skips a workspace whose root does not contain them.
+// explain explains target in each workspace. A path and the file of a
+// position are relative to the working directory, and explain rewrites
+// them relative to the root of each workspace. explain skips a workspace
+// whose root does not contain them.
 //
 // explain returns [StatusUsage] for these errors:
 //
 //   - a config error
-//   - a number of arguments other than one
 //   - a target that does not parse
 //   - a path outside the root of every workspace
 //
@@ -189,11 +195,8 @@ func explainCommand(compose Compose) *kernel {
 // [workspace.ErrNoGeneration]. It also returns StatusFailed when the
 // generation of each workspace that contains the target records nothing
 // about it, and then renders one error for each such workspace.
-func (x *invocation) explain(ctx context.Context) int {
-	if len(x.args) != 1 {
-		return x.usage(fmt.Errorf("the command takes one target, and has %d arguments", len(x.args)))
-	}
-	found, err := open(x.stdio, x.flags, x.k.compose, nil)
+func (x *invocation) explain(ctx context.Context, target string) int {
+	found, err := open(x.stdio, x.global, x.compose, nil)
 	if err != nil {
 		x.r.Error(err)
 		return StatusUsage
@@ -201,7 +204,7 @@ func (x *invocation) explain(ctx context.Context) int {
 	status, placed, recorded := StatusOK, false, false
 	var empty []unrecorded
 	for _, m := range found.members {
-		t, err := m.Workspace.ParseTarget(x.args[0])
+		t, err := m.Workspace.ParseTarget(target)
 		if err != nil {
 			return x.usage(err)
 		}
@@ -232,7 +235,7 @@ func (x *invocation) explain(ctx context.Context) int {
 		empty = append(empty, unrecorded{member: m, generation: explanation.Generation})
 	}
 	if !placed {
-		return x.usage(fmt.Errorf("the target %s is outside the root of every workspace", x.args[0]))
+		return x.usage(fmt.Errorf("the target %s is outside the root of every workspace", target))
 	}
 	if recorded {
 		return status
@@ -241,7 +244,8 @@ func (x *invocation) explain(ctx context.Context) int {
 		if blank.member.Name != "" {
 			x.r.Member(blank.member)
 		}
-		x.r.Error(fmt.Errorf("cli: explain: the generation %s records nothing about %s", blank.generation, x.args[0]))
+		err := fmt.Errorf("cli: %s: the generation %s records nothing about %s", x.command, blank.generation, target)
+		x.r.Error(err)
 		status = StatusFailed
 	}
 	return status

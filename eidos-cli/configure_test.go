@@ -65,19 +65,30 @@ func TestConfigure(t *testing.T) {
 		t.Run("returns the faults of a config file that does not decode", func(t *testing.T) {
 			t.Parallel()
 
-			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
+			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			err := cli.Configure(compose(), root)
 			assert.HasError(t, err, "the config file does not decode")
-			assert.HasPrefix(t, err.Error(), confName+":2: field workerz not found",
+			assert.HasPrefix(t, err.Error(), confName+":2: field limt not found",
 				"the error has the file relative to the root and the line of the fault")
 		})
 
 		t.Run("returns an error that wraps a ConfigError for a fault of the config file", func(t *testing.T) {
 			t.Parallel()
 
-			root := workspaceDir(t, files.Tree{confName: files.Text("version: 1\nworkerz: 4\n")})
+			root := workspaceDir(t, files.Tree{confName: files.Text(faultyConfig)})
 			fault := assert.ErrorAs[*cli.ConfigError](t, cli.Configure(compose(), root), "the fault is a ConfigError")
 			assert.Equal(t, fault.Line, 2, "the fault has the line of the key")
+		})
+
+		t.Run("skips the keys of the options of the command line", func(t *testing.T) {
+			t.Parallel()
+
+			root := workspaceDir(t, files.Tree{confName: files.Text(optionsConfig)})
+			b := compose()
+			assert.NoError(t, cli.Configure(b, root), "the keys of the options are no faults")
+			w, err := b.Build()
+			assert.NoError(t, err, "the composition builds")
+			assert.Equal(t, w.Describe().Name, "platform", "the config file configures the composition")
 		})
 
 		t.Run("returns an error for a config file that lists workspaces", func(t *testing.T) {
