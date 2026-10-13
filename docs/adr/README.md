@@ -48,3 +48,21 @@ way.
 | [0027](0027-the-renames-keep-the-departures-of-their-implementation.md) | The renames keep the departures of their implementation | Accepted |
 | [0028](0028-the-facts-of-the-model-keep-the-departures-of-their-implementation.md) | The facts of the model keep the departures of their implementation | Accepted |
 | [0029](0029-the-five-contracts-keep-the-departures-of-their-implementation.md) | The five contracts keep the departures of their implementation | Accepted |
+| [0030](0030-the-error-contract-keeps-the-departures-of-its-implementation.md) | The error contract keeps the departures of its implementation | Accepted |
+| [0031](0031-the-required-options-keep-the-departures-of-their-implementation.md) | The required options keep the departures of their implementation | Accepted |
+| [0032](0032-the-inputs-of-a-route-keep-the-departures-of-their-implementation.md) | The inputs of a route keep the departures of their implementation | Accepted |
+| [0033](0033-the-config-file-of-a-binary-keeps-the-departures-of-its-implementation.md) | The config file of a binary keeps the departures of its implementation | Accepted |
+| [0034](0034-the-output-of-the-command-kernels-keeps-the-departures-of-its-implementation.md) | The output of the command kernels keeps the departures of its implementation | Accepted |
+| [0035](0035-the-legacy-build-line-keeps-the-departure-of-its-implementation.md) | The legacy build line keeps the departure of its implementation | Accepted |
+| [0036](0036-the-position-of-a-package-keeps-the-departure-of-its-implementation.md) | The position of a package keeps the departure of its implementation | Accepted |
+| [0037](0037-the-children-of-an-inline-reference-are-copies.md) | The children of an inline reference are copies | Accepted |
+| [0038](0038-the-facade-keeps-the-identifiers-of-its-packages.md) | The facade keeps the identifiers of its packages | Accepted |
+| [0039](0039-the-doubles-keep-the-spellings-of-their-targets.md) | The doubles keep the spellings of their targets | Accepted |
+| [0040](0040-the-reference-ensemble-keeps-the-departures-of-its-implementation.md) | The reference ensemble keeps the departures of its implementation | Accepted |
+| [0041](0041-the-options-of-a-plugin-keep-their-two-refusals.md) | The options of a plugin keep their two refusals | Accepted |
+| [0042](0042-the-toolchain-suite-requires-the-toolchain-before-its-parse.md) | The toolchain suite requires the toolchain before its parse | Accepted |
+| [0043](0043-the-declared-names-keep-the-departures-of-their-implementation.md) | The declared names keep the departures of their implementation | Accepted |
+| [0044](0044-the-lowering-seams-keep-the-departures-of-their-implementation.md) | The lowering seams keep the departures of their implementation | Accepted |
+| [0045](0045-the-tree-sitter-frontends-keep-the-departures-of-their-implementation.md) | The tree-sitter frontends keep the departures of their implementation | Accepted |
+| [0046](0046-the-shape-catalog-keeps-the-departures-of-its-implementation.md) | The shape catalog keeps the departures of its implementation | Accepted |
+| [0047](0047-the-cross-language-hub-keeps-the-departures-of-its-implementation.md) | The cross-language hub keeps the departures of its implementation | Accepted |

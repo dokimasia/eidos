@@ -31,8 +31,8 @@ Tier 1  every language returns        Callable · TypeShape · Resolve
         (the language contract)       · Members · Values
 Tier 2  declared by satisfying,       EnumRules · AnnotationRules ·
         found by asserting            GenericsRules · …
-Tier 3  language sdk, importable      the Go-only, Java-only
-        from binding files alone      questions
+Tier 3  the root package of each      the Go-only, Java-only
+        satellite                     questions
         ─────────── below the line: metadata (checks 2–3) ───────────
 ```
 
@@ -85,14 +85,15 @@ type SourceRules interface {
     Resolve(scope Scope, name string, kind directive.ResolutionKind, v View) (symbol.Symbol, error)
     DeriveSamples(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
     ZeroValue(ref *node.TypeRef, v View) (emit.Value, bool)
-    LiteralFor(f *node.File, ref *node.TypeRef, text string, v View) (emit.Value, bool)
+    LiteralFor(s Scope, ref *node.TypeRef, text string, v View) (emit.Value, bool) // a literal, or a name in the scope
 }
 ```
 
 A handler reaches the kernel's walks through the bound `Rules()` on
 its match: `CallableOf`, `TypeOf`, `FieldTypeOf`, `MembersOf`,
-`SamplesOf`, `ZeroValue`, `LiteralFor`, `Witnesses`, `Tag`,
-`SentinelName` and `IsSentinelName`, over the invocation's tracked view.
+`Satisfies`, `Implementers`, `SamplesOf`, `ZeroValue`, `LiteralFor`,
+`Witnesses`, `Tag`, `SentinelName`, `SentinelBase` and `ErrorContract`,
+over the invocation's tracked view.
 Every read that a projection makes records on that invocation. A value
 is safe for concurrent use, because it has no state of its own.
 
@@ -177,7 +178,9 @@ shape.
 
 **Union and Sum stay separate.** Conflating them is how a lowering
 ends up guessing, and proto `oneof` alongside TypeScript unions
-forces both shapes on day one.
+forces both shapes on day one. A Go union constraint, such as
+`~int | time.Duration`, is a Union of its terms, and its spelling keeps
+the approximation mark of each term.
 
 **Intersection** has one child per member, and a value of it has
 every member's type: TypeScript's `A & B`, and a Rust `dyn` or `impl`
@@ -188,17 +191,21 @@ the `impl`.
 An unbounded wildcard, Java's `?`, has no child. It is not the top
 type, because Java's `?` is a type only inside a type argument.
 
-An **Inline** reference has no children and records the members of an
-inline struct, interface or object body as its fields and methods,
-without identities ([02-symbol-model.md](02-symbol-model.md)).
+An **Inline** reference records the members of an inline struct,
+interface or object body as its fields and methods, without identities
+([02-symbol-model.md](02-symbol-model.md)). Its children are the types
+that the body states, in the order of the body. A backend binds the
+imports of the children and keeps the spelling of the body.
 
 **Well-known types are not shapes.** They are blessed `Reference`
-identities in a small kernel registry, which has three entries:
-`timestamp`, `duration` and `empty`, a value without data. A frontend
-maps its spelling in, so `time.Time` becomes `timestamp` and
-protobuf's `Empty` becomes `empty`. A lowering spells it out, as `Date`
-or as `struct{}`. A semantic type nobody mapped remains an ordinary
-Reference. The registry is public API, and growing it only adds.
+identities in a small kernel registry, which has four entries:
+`timestamp`, `duration`, `empty`, a value without data, and `error`,
+the value of a failure. A frontend maps its spelling in, so `time.Time`
+becomes `timestamp`, protobuf's `Empty` becomes `empty`, and Go's
+`error` and TypeScript's `Error` become `error`. A lowering spells it
+out, as `Date`, as `struct{}` or as `Exception`. A semantic type nobody
+mapped remains an ordinary Reference. The registry is public API, and
+growing it only adds.
 
 Java's unannotated references are nullability-unknown. That does not
 become a third Optional state. The frontend stamps
@@ -257,6 +264,17 @@ quietly shipping less than it appears to. Reads go through the
 tracked Reader, so resolving members is an incrementality edge like
 any other read ([09-incrementality.md](09-incrementality.md)).
 
+`Satisfies` compares the member set of a type with the members of an
+interface, at the type arguments of both references. It returns the
+members that the type misses and the members that it has with another
+signature, so a double reports what it cannot write instead of
+failing to compile. `Implementers` returns the declarations of the
+view whose member sets satisfy an interface. A language whose
+satisfaction reads more than the member sets implements
+`SatisfactionRules`. Go reports each method with a pointer receiver,
+which a value of the type does not have, and each interface with
+type-set elements, which no comparison of members proves.
+
 ### Values
 
 Value synthesis, which every check-emitting generator depends on.
@@ -273,10 +291,16 @@ default gets compared against. The spellings differ per language,
 `nil` against `None`, so a kernel table would be returning for one
 language.
 
-`LiteralFor` renders text as a literal of a type and reports false
-when it cannot. That serves values read from carriers that already
-consumed the language's quoting, where bare text is the right
-literal for some types and not for others.
+`LiteralFor` reads text as a value of a type in the scope of a
+declaration, and reports false when it cannot. That serves values read
+from carriers that already consumed the language's quoting, where bare
+text is the right literal for some types and not for others. In a
+language whose values can be names, the value can also be a declaration
+in the scope. The Go rules read a constant or a variable, such as
+`time.Second`, and a call of a function without arguments, such as
+`store.NewMemory()`. The value tree refers to such a declaration by its
+identity, so the backend imports its package. `View.ScopeOf` returns the
+scope of a declaration.
 
 All three refuse instead of guessing. A type the language cannot
 reason about returns not-OK, and never a zero value you would
@@ -292,13 +316,20 @@ contract rather than a
 convention, because a preference each generator has to remember is a
 preference two of them will forget.
 
+An authored text of a text, a boolean or a number type lifts by the
+shape of the type. A text of any other type lifts through `LiteralFor`
+in the scope of the declaration that states it. Where `LiteralFor` does
+not read the text, or the declaration has another language than the
+rules, the text lifts to raw text in the language of the declaration.
+Only the backend of that language spells raw text.
+
 ## Tier 2: declared by satisfying, found by asserting
 
 A language declares an optional capability by implementing the
-interface. The bound rules wrap five capabilities: `Tag`,
-`SentinelName`, `IsSentinelName`, `FieldTypeOf` and `Witnesses`. A
-handler reads them through methods that report false for a language
-without the capability. A consumer of any other capability asserts
+interface. The bound rules wrap six capabilities: `Tag`,
+`SentinelName`, `SentinelBase`, `ErrorContract`, `FieldTypeOf` and
+`Witnesses`. A handler reads them through methods that report false for
+a language without the capability. A consumer of any other capability asserts
 for it. When the assertion fails, the consumer reports once and
 generates nothing. It does not build a projection on a default that
 nobody chose. If these were required instead, a language without the
@@ -311,11 +342,21 @@ type EnumRules interface {
     EnumOf(e *node.Enum, v View) EnumInfo
 }
 type ErrorValueRules interface {
-    SentinelName(base string) string        // paired inverses, so the
-    IsSentinelName(ident string) bool       // two can never drift
+    SentinelName(base string) string          // the base recognises what the
+    SentinelBase(ident string) (string, bool) // name composes, so the two cannot drift
+}
+type ErrorTypeRules interface {
+    ErrorContract(decl symbol.Symbol, v View) (ErrorContract, bool) // message, cause, hooks, pointer
 }
 type TagRules interface {
     Tag(f *node.Field, key string) (string, bool)
+}
+type WellKnownRules interface {
+    WellKnown(id symbol.Identity) (symbol.Identity, bool) // the well-known identity of a library type
+}
+type SatisfactionRules interface {
+    ValueReceiver(m *node.Method, v View) bool // whether a value of the type of m has m
+    TypeSet(i *node.Interface, v View) bool    // whether i constrains a type set beside its methods
 }
 type GenericsRules interface {
     Derive(p *node.TypeParam, v View) (*node.TypeRef, bool)   // one witness the author left unstated
@@ -351,8 +392,11 @@ field is the projection.
 | Interface | Question | Exercised by |
 |---|---|---|
 | `EnumRules` | project an enumeration: form, zero, foreign values | Go const groups, Java enum classes, TS enums, proto |
-| `ErrorValueRules` | sentinel conventions, name against predicate, paired so they cannot drift | Go |
+| `ErrorValueRules` | sentinel conventions: the name of a base and the base of a name, paired so they cannot drift | Go |
+| `ErrorTypeRules` | the error contract of a type: the member of its message, the field of its cause, the hooks that the error functions call, and whether a pointer to it is the error | Go method sets, TypeScript classes that extend Error |
 | `TagRules` | stringly per-field tags | Go struct tags |
+| `WellKnownRules` | the well-known identity of a type of the standard library, which the fold reads before it classifies a target | Go `time.Time` and `time.Duration` |
+| `SatisfactionRules` | the satisfaction of an interface beyond the member sets: a method of a pointer to the type alone, and an interface that constrains a type set | Go pointer receivers and constraint interfaces |
 | `GenericsRules` | witnesses, constraint reasoning, whether generics are reified or erased | every generic language; erasure matters to a Java backend |
 | `PropertyRules` | the computed properties view, pairing getters with setters. A projection, never a change to the model | Kotlin, C#, Swift, Python `@property`, JavaBeans |
 | `ConstructRules` | constructors and how to spell instantiation | JVM, TS and Python real constructors; Go and Rust conventions |
@@ -362,14 +406,23 @@ field is the projection.
 | `EqualityRules` | whether a type works where the language demands equality (a map key, a switch, deduplication), and which member refs break it | Go comparability, where slices, maps and funcs break it; Java equals and hashCode; Python hashability |
 | `PresenceRules` | whether a field has presence that its type does not contain, decided by what the type resolves to | protobuf message fields |
 
-## Tier 3: the language sdk
+The third column lists the constructs that motivate each capability.
+The projection side of the support matrix, which the conformance
+module renders, states which languages implement each capability.
+The matrix finds a capability by asserting it on the rules of each
+language, as a consumer does.
 
-Per-language questions, importable only from a plugin's
-language-binding files. Go cannot enforce a cross-module import
-rule, so the conformance suite ships the lint that does
-([13-testing-and-conformance.md](13-testing-and-conformance.md)).
-Tier 3 is where language-only vocabulary lives legally: present,
-bounded, and unable to reach neutral code without somebody noticing.
+## Tier 3: the root package of each satellite
+
+The root package of each satellite exports the vocabulary of its
+language: the identity, the target, the fact keys and the naming
+rules, such as `golang.Target`, `golang.SatisfiesErrorKey` and
+`golang.AssumedName`. A plugin imports it where it binds the
+language, such as the registration of its templates of the target.
+A fact that two neutral consumers read is a Tier-2 capability and not
+a key of one language. The depguard rules of the repository deny the
+satellites to a module that is neutral as a whole, such as the shape
+catalog ([13-testing-and-conformance.md](13-testing-and-conformance.md)).
 
 ## The degradation scale
 

@@ -10,7 +10,7 @@
 the consumer's surface.*
 
 The `cli` package of `go.dokimi.dev/eidos/cli` contains the command
-kernels: seven complete commands that a consumer's binary mounts.
+kernels: eight complete commands that a consumer's binary mounts.
 Mount them and your users get the commands, flags, output formats and
 exit codes specified here, and you write no UX code to get them. This
 document is the contract for that surface.
@@ -18,7 +18,7 @@ document is the contract for that surface.
 ## Composition
 
 `cli.Kernels` takes a function that composes the workspace and
-returns the seven commands as values. A binary without a command line
+returns the eight commands as values. A binary without a command line
 of its own passes the same function to `cli.Main`:
 
 ```go
@@ -87,7 +87,15 @@ The filename comes from the brand and is never `eidos.yaml`, because
 no eidos binary exists to claim that name
 ([14-distribution-and-cli.md](14-distribution-and-cli.md)), and two
 eidos-built binaries sharing a repository must not read each other's
-config.
+config. `cli.ConfigName` returns the name, and the command kernels, the
+acceptance kit and the tests of a consumer name the file through it.
+Each fault of a config file is a `cli.ConfigError` with the file, the
+line and the message of the fault:
+
+```go
+func ConfigName(brand output.Brand) string // .acme.yaml for the brand acme
+type ConfigError = config.Error             // File, Line and Msg
+```
 
 The same scoping carries the state. Each brand owns `.<brand>/`
 beside its config file, holding the manifest, the cache and the lock
@@ -103,6 +111,29 @@ compiled-in plans, sets their layouts and the plugins' options, and
 assembles nothing new
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
+The kernel commands decode every key of a config file strictly, except
+the values under `extensions`, which they never read. A command that the
+binary adds keeps its settings there, and `Member.Extension` decodes one
+extension with the strict rules of the file. A fault has its line in the
+file, and a member of a list reads the extensions of its own config
+file:
+
+```yaml
+version: 1
+extensions:
+    reference:
+        canary: {rounds: 4}
+```
+
+```go
+var settings canarySettings
+found, err := member.Extension("reference", &settings)
+```
+
+A config file has no key for the verbosity of the output. The file
+states the composition that everyone who runs the binary in the
+repository shares, and the verbosity of one command is a flag.
+
 ## Shared flags
 
 Every kernel command accepts these flags after its name, between its
@@ -115,6 +146,7 @@ command's name. `-h` and `--help` print the command's usage.
 | `--config <path>` | use this config; discovery is skipped |
 | `--strict` | promote Warnings to Errors |
 | `--verbose` | include Info diagnostics |
+| `--quiet` | render Error diagnostics alone. The summary counts every finding, and `--quiet` with `--verbose` is a usage error |
 | `--no-color` / `NO_COLOR` | plain text. TTY rendering never affects file output |
 
 ## The commands
@@ -135,6 +167,14 @@ withheld ([17-output-and-determinism.md](17-output-and-determinism.md)).
 `--overwrite-drift` accepts the loss of hand edits explicitly.
 Without it, drift fails the run. `--adopt` replaces a file without the
 brand's frame at a path that a plan routes to.
+
+`--stdout` writes each file of each plan that commits to standard
+output, under a header line `// === <path> ===`, and nothing into the
+workspace. The run does not take the lock, read the sealed state or
+record a generation, so it runs cold. Text output writes the findings
+to standard error and leaves out the lines of the files and the
+summary, so standard output contains the files alone. `--stdout` with
+`--format=json`, `--dry-run` or `--check` is a usage error.
 
 `go generate` composes with `run` without any narrowing flag,
 because it executes the command in the directive's package
@@ -164,11 +204,21 @@ therefore exits 1 through the ordinary contract, and enforcing
 ### plan
 
 Shows the resolved execution picture without running anything:
-plugins per phase in turn order, per-plan layout
-policies, export edges between plans, and the source scope each plan
-sees. This is a dry run of the composition, showing what would
+plugins per phase in turn order, per-plan layout policies and the
+refinements of each generator and family, export edges between plans,
+and the source scope each plan sees. This is a dry run of the composition, showing what would
 execute, where `run --dry-run` applies the composition to sources
 and shows what would change.
+
+A plan that the config file disables has a line of its own, with its
+target and its backend, and a line for each generator that it declares.
+Its JSON event is a `plan` event with the fields `name`, `disabled`,
+`generate`, `backend` and `target`:
+
+```
+plan bindings: disabled by the config file, target text, backend printer
+  generator binder 3
+```
 
 ### explain
 
@@ -177,7 +227,7 @@ argument takes four forms, told apart by shape:
 
 | Form | Example | Answers |
 |---|---|---|
-| path | `svc/store_stub.go` | which plan, plugins and source declarations produced this file |
+| path | `svc/store_stub.go` | which plan, plugins and source declarations produced this file, and which input of the layout placed each of its units |
 | symbol identity | `golang:svc/store.Store#Get` | everything stamped on and generated from this symbol |
 | key at position | `shape.name@svc/store.go:41` | who stamped it, at what authority, from which reads |
 | code at position | `EIDGO-0412@svc/store.go:41` | the facts and reads behind the diagnostic |
@@ -186,6 +236,28 @@ Each returns across plans. `explain` reads the sealed state's live
 generation and runs nothing, so it describes the last run that wrote a
 generation. This is the tool that makes fixing a diagnostic cheaper
 than suppressing it.
+
+The explanation of an identity and of a key at a position starts with
+each declaration that the target names, as the recorded load contains
+it. The JSON event `explain.declaration` has the fields `subject`, `pos`
+and `declaration`, and `declaration` is the JSON form of the node. Text
+output writes a line for the declaration and its JSON form below it:
+
+```
+declaration golang:svc.Store at svc/store.go:12:6
+  {
+    "kind": "Struct",
+    ...
+  }
+```
+
+`explain` exits 0 when a workspace that contains the target records the
+target in its generation. Otherwise it exits 1 and writes one error for
+each workspace that contains the target:
+
+```
+error: cli: explain: the generation 3fa9… records nothing about svc/store_stubb.go
+```
 
 ### prune
 
@@ -223,12 +295,33 @@ the poll, and the default is one second.
 
 ### version
 
-The main module's path and version, the versions of the kernel and of
-the command kernels, the contract version, every registered plugin
-with its version, the composition fingerprint and the executable's
-digest. The sealed state's header records the contract version and the
+`version` prints the brand, the main module's path and version, the
+versions of the kernel and of the command kernels, the contract version,
+every registered plugin with its version, the composition fingerprint and
+the executable's digest. The plugins include the generators and the backend
+of a plan that the config file disables, because the binary contains
+them. The sealed state's header records the contract version and the
 last two, and a difference in any of the three runs the next run cold
 ([09-incrementality.md](09-incrementality.md)).
+
+### schema
+
+`schema` prints the JSON Schema of the config file of the binary, draft
+2020-12. The schema is the published schema of the format with one
+closed object under `options` for each plugin of the composition that
+declares options, so an editor completes the options of a plugin. The
+object under `options` admits other names, because a plan directory adds
+declarative plugins.
+
+`schema` does not read a config file. It reads the plugins of the
+composition without a build, so a composition with a required option has
+a schema before its config file exists. Text output writes the schema,
+and JSON output writes a `schema` event whose field `schema` is the
+schema object:
+
+```sh
+acme schema > .acme.schema.json
+```
 
 ## Machine output
 

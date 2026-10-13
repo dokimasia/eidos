@@ -83,8 +83,13 @@ stamped during Annotate.
 
 **Two scoping wrappers** compose around any rules, including
 `OnEmit`. `Directive(schema, rules…)` gates on a validated directive
-and registers the schema. `Where(pred, rules…)` gates on stamped
-facts, through `HasKey` and `KeyEquals`.
+and registers the schema. `Where(pred, rules…)` takes a predicate.
+A key gate, `HasKey` or `KeyEquals`, reads a stamped fact. A value
+gate reads the value that triggers the rule: `NameEquals` compares its
+name, and `HasSlot` finds a named slot that an emitted body declares.
+`Not` negates a predicate. Nested wrappers conjoin and two rules form a
+disjunction, so the gates of a plugin state any selection over keys and
+values.
 
 A typed build gives the schema of each `Directive` wrapper the kinds
 that an instance can affect: the kinds of the rules under the wrapper,
@@ -95,9 +100,11 @@ kinds in `Kinds` ([05-directives.md](05-directives.md)). The build
 panics where an explicit `Kinds` leaves out the kind of a rule under the
 wrapper.
 
-For emit-side rules the predicate evaluates against the **origin**,
+For emit-side rules a key gate evaluates against the **origin**,
 which is how a weaver subscribes to "methods emitted from
-handler-classified symbols" without touching a handler.
+handler-classified symbols" without touching a handler. A value gate
+evaluates against the emitted value, so the same weaver selects the
+method `ServeHTTP` alone through `NameEquals`.
 
 A bare rule runs for every subject in the plan's source scope. The
 kernel `skip` directive ([05-directives.md](05-directives.md))
@@ -116,7 +123,9 @@ from the store's index; subjects by directive name, built for free
 at Freeze, where validation already visits every directive; and
 symbols by fact key, maintained at stamp time. A rule therefore
 costs O(its matches) rather than O(graph), and only a bare rule,
-which honestly asked for everything, costs the full scan.
+which honestly asked for everything, costs the full scan. A negated
+key gate and a value gate do not narrow the enumeration, so a rule
+whose gates are of these two kinds alone costs the scan of its kind.
 
 The gate tuples are also **subscription records**. `(kind,
 directive)` and `(kind, originFact)` are exactly what the
@@ -453,7 +462,9 @@ func (b *Builder) Provides(caps ...Capability) *Builder
 func (b *Builder) Requires(caps ...Capability) *Builder // present, and runs first
 func (b *Builder) After(caps ...Capability) *Builder    // runs first where present
 func (b *Builder) Options(cfg any) *Builder        // tagged struct; the workspace's
-                                                   // Build populates it, errors name the field
+                                                   // Build populates it, errors name the field,
+                                                   // and a schema:"required" field at its zero
+                                                   // value fails Build
 func (b *Builder) Handle(rules ...Rule) *Builder
 func (b *Builder) Generator() Generator            // lowers to one role of the SPI,
 func (b *Builder) Annotator() Annotator            // and panics where the rules
@@ -491,9 +502,12 @@ func OnGraph(h func(*GraphMatch, *Emitter) error) Rule
 // Scoping wrappers compose around any rules.
 func Directive(s directive.Schema, rules ...Rule) Rule // gate + register
 func Gated(name directive.Name, rules ...Rule) Rule    // gate on a kernel directive
-func Where(p Pred, rules ...Rule) Rule                 // gate on facts
-func HasKey[T any](k meta.Key[T]) Pred
+func Where(p Pred, rules ...Rule) Rule                 // gate on a predicate
+func HasKey[T any](k meta.Key[T]) Pred                 // key gates read a fact
 func KeyEquals[T comparable](k meta.Key[T], v T) Pred
+func NameEquals(name string) Pred                      // value gates read the trigger's value
+func HasSlot(name string) Pred                         // a named slot of an emitted body
+func Not(p Pred) Pred
 
 // Every *Match embeds the base surface:
 //   Lang() symbol.Lang           Rules() rules.Bound  // the kernel's walks over the invocation's view

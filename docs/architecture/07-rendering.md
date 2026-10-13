@@ -263,14 +263,14 @@ A key that a payload map does not contain fails the execution under
 
 ## The builder API, an equal second path
 
-A typed, fluent Go API constructs emit values directly, and it is
+A plugin constructs emit values directly, as composite literals of
+the generated kinds, which the compiler checks. This path is
 documented as a peer of templates rather than a fallback.
 
 Templates suit presentation-shaped plugins, and they are the only
-path in the declarative tier. The builder suits logic-shaped
-plugins, and it is type-checked end to end. Both paths produce
-identical emit values and compose in the same slots, so a plugin may
-use either or both.
+path in the declarative tier. Composite literals suit logic-shaped
+plugins. Both paths produce identical emit values and compose in the
+same slots, so a plugin may use either or both.
 
 ## Backends
 
@@ -307,7 +307,11 @@ flow runs the same way in every satellite:
    naming the emitting plugin and counting what went unplaced.
 5. **Collect imports** as a side effect of spelling types into the
    file's one `ImportSet`. The language's `Imports` renderer groups
-   and sorts them.
+   and sorts them. The set has the names that the package clauses of
+   the run's packages declare, and the Go backend binds an import under
+   the declared name of its package. A rendered file lists the packages
+   whose names it read, and a warm run renders the file again after an
+   edit renames one of them.
 6. **Finalise** through the language formatter. A format failure is
    a positioned Error carrying the file it could not format, and the
    pass continues with the remaining files. The sink never receives

@@ -54,8 +54,8 @@ such as "exactly one `commit`", is validated by an annotator of the
 catalog over the whole instance, and reported as
 positioned Errors.
 
-Generated name constants are **typed per form**: `shape.ShapeName`,
-`shape.MixinName` and `shape.ContractName`. A consumer therefore
+Generated name constants are **typed per form**: `shape.Shape`,
+`shape.Mixin` and `shape.Contract`. A consumer therefore
 cannot pass a mixin where a shape is expected, which is the same
 registered-name rule applied to the catalog's own vocabulary.
 

@@ -44,6 +44,13 @@ any other directive write. `explain` shows it as a deletion somebody
 authored rather than as a fact nobody wrote
 ([05-directives.md](05-directives.md)).
 
+The same directive sets a fact with `+<brand>:meta set=<key> value=<value>`,
+or with `values=[<a>, <b>]` for a key of the type `[]string`. Validation
+types the value as the type that the key registered with, so a wrong
+value reports at the instance. A set writes at `directive` authority as
+well, so it ranks above a `plugin` stamp. A set of a boolean writes true
+alone, because absence is the negative.
+
 **Writes stay deterministic under parallelism.** The store
 serializes writes per bag, and rank decides the winner rather than
 arrival order:
@@ -89,7 +96,7 @@ either writer.
 Registration returns the typed `meta.Key[T]` handle, and the handle
 is what code holds: reads, writes and read-set entries all go
 through it. The key's string spelling appears only at the boundary,
-in `+<brand>:meta java.nullability=nonnull` or as an `explain` argument,
+in `+<brand>:meta set=java.nullability value=nonnull` or as an `explain` argument,
 and it resolves against the registry when the carrier is parsed.
 
 A key may also register into a **fact group**, which is a bundle
@@ -134,9 +141,11 @@ func Register[T FactValue](r *Registry, s KeySpec) Key[T]
 type KeySpec struct {
     Name     KeyName         // generated constant; "shape.role" is the boundary spelling
     Kinds    []symbol.Kind   // the kinds it may be stamped on
-    Group    GroupID         // optional fact group (D66)
+    Group    GroupName       // optional fact group (D66)
     Contract *Completeness   // optional: "on every X by phase Y"
     Doc      string          // semantics; feeds the parity matrix
+    Derived  bool            // the registrant derives the value; no directive drops or sets it
+    Choices  []string        // optional: the values of a string key; a meta set of another fails validation
 }
 ```
 
@@ -205,7 +214,7 @@ Any plugin may read any namespace. In practice, facts on checks 2 and
 3 get read by that language's bindings. Build refuses a write
 outside the namespace you own.
 
-Authority applies uniformly, so `+<brand>:meta java.nullability=nonnull`
+Authority applies uniformly, so `+<brand>:meta set=java.nullability value=nonnull`
 at a declaration outranks the frontend's stamp. That is how a
 consumer corrects a library's missing annotations without forking
 it.

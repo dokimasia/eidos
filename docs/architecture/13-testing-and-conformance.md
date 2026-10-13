@@ -76,8 +76,8 @@ it checks these properties:
   which `diag.Diag.Positioned` checks for every kit.
 - Declared tags. Every emitted tag is a declared tag.
 - Attribution. Every unit names the plugin that emitted it.
-- Options schema stability. Unknown keys and missing required keys are
-  rejected.
+- Options schema. The options struct meets the tag contract, and no
+  required option has the zero value of its type after the setup.
 - Template lint. Every declared template parses against each
   language's merged funcmap, body templates place the slot marker, no
   name collides with a reserved one, and text/template can call every
@@ -152,11 +152,12 @@ an unknown command.
 the level its language declared, evaluated through the projections,
 and a feature that does better than declared fails too.
 
-Beside plugintest ships the **Tier-3 import lint**, a static pass
-over a plugin module that refuses an import of any satellite `sdk/`
-package from a neutral file. Binding files are declared and exempt,
-which is Tier 3 staying legal and visible
-([03-projection.md](03-projection.md)).
+The **import lint** is a set of depguard rules in the lint
+configuration of the repository. One rule denies the kernel to the
+modules of plugins, which import the SDK facade. Another denies the
+satellites to the shape catalog, which is neutral as a whole. The
+composition and the binary of the reference ensemble are host side,
+so the first rule leaves them out ([03-projection.md](03-projection.md)).
 
 ## The two checks that test the frame
 

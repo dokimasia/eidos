@@ -2,13 +2,13 @@
 rfc: 0011
 title: Neutral emit and the target lowering seams
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Review
+status: Accepted
 created: 2026-08-31
-updated: 2026-08-31
+updated: 2026-10-13
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0044
 ---
 
 <!--

@@ -257,7 +257,11 @@ The steps, in order, where each assumes the ones before it:
    the role of the requirer, and where it is a generator alone and the
    requirer is an annotator.
 3. **Options.** Every plugin's options schema populates from its
-   config section, and a failure names the plugin and the field.
+   config section, and a failure names the plugin and the field. The
+   text of a `time.Duration` option parses as a duration, and every
+   other value decodes through JSON, whose error the failure contains.
+   A required option that has the zero value of its type after the
+   config applied is a failure.
 4. **Plans.** The config's refinements apply first. Each refines a
    plan that the composition declares, and no enabled plan or check
    reads a plan that the config disables. A refinement adds

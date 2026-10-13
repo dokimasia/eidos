@@ -17,8 +17,8 @@ kernel. What it ships instead is everything a consumer needs to make
 their own binary the product:
 
 - **Command kernels**, in `eidos/cli`: run, plan, explain, prune,
-  doctor, version and watch, plus config loading, flag conventions
-  and diagnostic formatting. A consumer mounts them beside its own
+  doctor, watch, version and schema, plus config loading, flag
+  conventions and diagnostic formatting. A consumer mounts them beside its own
   commands, so every eidos-built binary offers the same commands,
   flags and output formats without its author writing any UX code.
 - **The workspace builder and plan values.** A consumer's `main` is
@@ -57,7 +57,7 @@ func main() {
                 golang.ServerPlan(mygen.New()),
                 typescript.ClientPlan(),
             )
-    }) // run | plan | explain | prune | doctor | watch | version
+    }) // run | plan | explain | prune | doctor | watch | version | schema
 }
 ```
 
@@ -66,7 +66,18 @@ the same typed structs. That is how a binary lets its users choose
 among the plans it compiled in and set the options of its plugins:
 selection happens at run time, existence at build time. A plan runs
 whole or not at all, because the config file does not assemble a
-plan from the plugins of the binary.
+plan from the plugins of the binary. The command `schema` prints the
+JSON Schema of the config file of one binary, with the options of its
+plugins, and a repository points an editor at the file that it writes:
+
+```sh
+acme schema > .acme.schema.json
+```
+
+The commands that a binary adds read their settings from the key
+`extensions` of the same file. The command kernels never read that key,
+and `Member.Extension` decodes one extension with the strict rules of
+the file ([20-cli.md](20-cli.md)).
 
 A plan that the binary marks `Extensible` also admits the declarative
 plugins that the config file lists under the plan's key `plugins`.
@@ -104,8 +115,8 @@ What a consumer's `go.mod` takes on, and under what discipline:
 
 ## Command kernels
 
-run, plan, explain, prune, doctor, watch and version. Each is a
-complete implementation with a versioned `--format=json` twin, so
+run, plan, explain, prune, doctor, watch, version and schema. Each is
+a complete implementation with a versioned `--format=json` twin, so
 consumer binaries are scriptable by default.
 [20-cli.md](20-cli.md) specifies the per-command contracts, the
 flags, config discovery and the exit codes.

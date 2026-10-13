@@ -27,19 +27,19 @@ the decision is already made and there is nothing left to argue, write an
 | [0008](0008-emit-body-content.md) | The emit body and the scaffolding vocabulary | Review |
 | [0009](0009-render-pass-and-backend-kit.md) | The render pass and the backend kit | Review |
 | [0010](0010-output-contract.md) | The output contract | Review |
-| [0011](0011-neutral-emit-and-the-target-lowering-seams.md) | Neutral emit and the target lowering seams | Review |
+| [0011](0011-neutral-emit-and-the-target-lowering-seams.md) | Neutral emit and the target lowering seams | Accepted |
 | [0012](0012-the-sdk-contract-module.md) | The SDK facade module | Draft |
 | [0013](0013-the-frontend-kit.md) | The frontend kit and its conformance suite | Draft |
 | [0014](0014-the-projection-vocabulary.md) | The projection vocabulary and the rules seam | Accepted |
-| [0015](0015-tree-sitter-frontends-and-dependency-stores.md) | Tree-sitter frontends, dependency stores and re-exports | Draft |
+| [0015](0015-tree-sitter-frontends-and-dependency-stores.md) | Tree-sitter frontends, dependency stores and re-exports | Accepted |
 | [0016](0016-layout-and-routing.md) | Layout, the routing of generated declarations to files | Draft |
 | [0017](0017-the-end-to-end-run.md) | The end-to-end run, its manifest and its commit | Draft |
 | [0018](0018-parallel-dispatch-and-slot-appends.md) | Parallel dispatch inside a bucket, and slot appends through the Emitter | Draft |
 | [0019](0019-source-scopes-exports-and-checks.md) | Source scopes, plan exports and workspace checks | Accepted |
 | [0020](0020-warm-runs-and-the-sealed-state.md) | Warm runs, the sealed state and re-execution by artifact | Accepted |
 | [0021](0021-the-command-kernels.md) | The command kernels, the config file and the run lock | Accepted |
-| [0022](0022-the-shape-catalog.md) | The shape catalog, its specs and its generated registries | Draft |
-| [0023](0023-the-cross-language-hub.md) | The cross-language hub and the TypeScript satellite | Draft |
+| [0022](0022-the-shape-catalog.md) | The shape catalog, its specs and its generated registries | Accepted |
+| [0023](0023-the-cross-language-hub.md) | The cross-language hub and the TypeScript satellite | Accepted |
 | [0024](0024-protobuf-editions-and-services.md) | Protobuf editions and a service in Go and TypeScript | Accepted |
 | [0025](0025-declarative-plugins.md) | Declarative plugins and their manifest | Accepted |
 | [0026](0026-the-reference-ensemble-and-the-canary-ring.md) | The reference ensemble and the canary ring | Accepted |
@@ -54,3 +54,29 @@ the decision is already made and there is nothing left to argue, write an
 | [0035](0035-one-name-for-each-concept.md) | One name for each concept | Accepted |
 | [0036](0036-the-facts-that-the-model-drops.md) | The facts that the model drops | Accepted |
 | [0037](0037-five-contracts-that-the-reviewed-defects-need.md) | Five contracts that the reviewed defects need | Accepted |
+| [0038](0038-the-modules-of-an-import-specifier.md) | The modules of an import specifier | Accepted |
+| [0039](0039-the-meta-set-form-parameter-defaults-and-name-suggestions.md) | The meta set form, parameter defaults and name suggestions | Accepted |
+| [0040](0040-typed-node-queries-and-interface-satisfaction.md) | Typed node queries and interface satisfaction | Accepted |
+| [0041](0041-the-gates-of-a-rule-and-the-order-of-a-plugin.md) | The gates of a rule and the order of a plugin | Accepted |
+| [0042](0042-the-error-contract-of-a-type.md) | The error contract of a type | Accepted |
+| [0043](0043-required-options-and-option-values-from-text.md) | Required options and option values from text | Accepted |
+| [0044](0044-the-inputs-of-a-route.md) | The inputs of a route | Accepted |
+| [0045](0045-the-config-file-of-a-binary.md) | The config file of a binary | Accepted |
+| [0046](0046-the-output-of-the-command-kernels.md) | The output of the command kernels | Accepted |
+| [0047](0047-the-directive-registry-and-the-output-stream.md) | The directive registry and the output stream | Accepted |
+| [0048](0048-unique-names.md) | Unique names | Accepted |
+| [0049](0049-go-enumerations.md) | Go enumerations | Accepted |
+| [0050](0050-the-shapes-and-samples-of-go-types.md) | The shapes and samples of Go types | Accepted |
+| [0051](0051-the-names-of-declarations-as-values.md) | The names of declarations as values | Accepted |
+| [0052](0052-go-parameters-as-subjects-and-the-legacy-build-line.md) | Go parameters as subjects and the legacy build line | Accepted |
+| [0053](0053-helpers-without-a-consumer.md) | Helpers without a consumer | Accepted |
+| [0054](0054-typescript-declarations-that-the-model-loses.md) | TypeScript declarations that the model loses | Accepted |
+| [0055](0055-the-position-of-a-package-and-the-protobuf-facts.md) | The position of a package and the protobuf facts | Accepted |
+| [0056](0056-the-references-that-a-generated-file-writes.md) | The references that a generated file writes | Accepted |
+| [0057](0057-template-helpers-and-scaffold-forms.md) | Template helpers and scaffold forms | Accepted |
+| [0058](0058-the-build-constraint-of-a-generated-file.md) | The build constraint of a generated file | Accepted |
+| [0059](0059-package-structure-and-the-facade.md) | Package structure and the facade | Accepted |
+| [0060](0060-the-reference-ensemble-after-its-review.md) | The reference ensemble after its review | Accepted |
+| [0061](0061-the-declared-name-of-an-imported-go-package.md) | The declared name of an imported Go package | Accepted |
+| [0062](0062-the-projection-side-of-the-support-matrix.md) | The projection side of the support matrix | Accepted |
+| [0063](0063-the-assigned-argument-of-an-annotation.md) | The assigned argument of an annotation | Accepted |

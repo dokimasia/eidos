@@ -104,7 +104,8 @@ The rules around it, decided:
 ### Schema: one, owned by the kernel
 
 Every directive registers a schema. An unclaimed directive is
-reported, with a workspace-level opt-out available.
+reported, with a workspace-level opt-out available. The finding
+names the nearest registered name where one is within two edits.
 
 The schema turns a classic failure into structure. That failure is a
 directive whose params do not pin down what the consuming check may
@@ -128,7 +129,10 @@ assume. The schema declares:
   does not name, for a directive whose keys are the subject's own,
   one per type parameter; the reserved keys keep their meaning under
   it.
-- **Required or optional, with role scoping.**
+- **Required or optional, with role scoping.** An optional string,
+  integer or boolean param may declare a `Default`, which validation
+  applies where an instance omits the param, so a handler reads it as
+  a written value and a tool can list it.
 - **Repeatability.** A schema says whether its directive may appear
   more than once on one subject. The default is single-instance,
   because a second `default=` on one field is a contradiction, and
@@ -204,9 +208,12 @@ Four directive names belong to the kernel, with reserved semantics.
 
 `meta` overrides metadata at `directive` authority. Its reserved
 `drop=<key|group>` param deletes a fact, or a whole declared fact
-group, instead of setting one. That is the only way to negate a
-stamped boolean, since absence is the negative and `false` is never
-written ([04-metadata.md](04-metadata.md)).
+group. That is the only way to negate a stamped boolean, since
+absence is the negative and `false` is never written
+([04-metadata.md](04-metadata.md)). Its `set=<key>` param writes a
+fact, with `value=<value>` or, for a key of the type `[]string`,
+`values=[<a>, <b>]`. Validation types the value as the type of the
+key. An instance writes exactly one of `drop` and `set`.
 
 `out` overrides routing for a declaration
 ([18-routing-and-layout.md](18-routing-and-layout.md)).
@@ -234,9 +241,12 @@ here too. The kernel's own schemas refuse negation, so `meta drop=`
 remains the one way to delete a fact.
 
 Two further kernel-owned schemas exist for authored values. `sample`
-carries a declaration's sample value and its alternate. `witness`
-carries one concrete type per type parameter, as `T=int`. Both
-validate their keys against the subject's own declaration. Their
+carries a declaration's sample value, its alternate, or both, and the
+annotator reports an instance with neither under `EmptySample`.
+`witness` carries one concrete type per type parameter, as `T=int`,
+and the annotator reports an instance without a key under
+`EmptyWitness`. Both validate their keys against the subject's own
+declaration. Their
 handlers ship as default annotators rather than in the kernel, but
 the spellings and the `gen.*` keys they stamp are kernel API,
 because the Tier-1 Values and Tier-2 Witnesses returns read those

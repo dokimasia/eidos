@@ -49,7 +49,10 @@ under a configured output directory, grouped by package.
 per-(plugin, tag) overrides of layout, directory or filename in the
 plan's config. The most specific refinement decides: (plugin, tag),
 then plugin, then plan. A refinement names no package, because the
-package of a path is a fact of the target language.
+package of a path is a fact of the target language. A composition
+declares refinements in Go, and the config file refines them under the
+key `generators` of the layout of a plan. Each field that the file sets
+replaces the same field of the declared refinement.
 
 **4. Per-declaration overrides**, meaning the kernel's `out`
 directive, or the reserved `out=` and `tag=` keys on a plugin's own
@@ -60,7 +63,11 @@ kernel directive routes every plugin's output. `out=<path>`
 redirects, and `tag=<name>` moves a declaration of the primary
 output into a companion. What the source author writes takes
 precedence over configuration, as the authority model ranks a
-directive over config.
+directive over config. The path of the kernel `out` directive on a
+package applies to each declaration of the package without a path of
+its own. Its tag does not apply to the declarations. A tag selects a
+family of one plugin, and the directive on a package applies to every
+plugin of the plan.
 
 ## The resolution pass
 
@@ -75,8 +82,9 @@ decides it.
 2. **Key.** Resolve the cardinality key: `PerSource` uses the
    origin's source file, `PerPackage` the origin's package, and
    `PerPlan` the plan.
-3. **Directory.** An author's path resolves against the directory of
-   the origin's source file. Otherwise the policy decides: the source
+3. **Directory.** An author's path, on the declaration or on its
+   package, resolves against the directory of the origin's source file.
+   Otherwise the policy decides: the source
    directory beside the source, the source directory under the output
    directory when centralised, and the configured directory for a
    `PerPlan` output.
@@ -93,6 +101,25 @@ decides it.
 7. **References.** A reference between two declarations of the plan
    that are written in files of two packages takes the package of the
    file it names, so the target qualifies it and records the import.
+
+## The route of a file
+
+The layout records how it placed each unit as the route of the unit:
+the input that decided its family, the policy of its directory, its
+directory and its filename. The inputs are the family that the handler
+chose, the default policy, the source directory, the spelling of the
+target, the layout of the plan, the refinement of the generator, the
+refinement of the family, the path on the package, the kernel `out`
+directive and the reserved keys of the plugin's own directive. A part
+to which no input applies has none, such as the policy of a per-plan
+family.
+
+The group record of a run contains the route of each unit of each of its
+files, and `explain` prints the routes of a file
+([20-cli.md](20-cli.md)). The units of one file can have different
+routes, because the declarations of two destinations whose paths agree
+form one file. A unit whose declarations arrive at one destination
+through two inputs has the inputs of its first declaration.
 
 ## Filename derivation
 
@@ -165,6 +192,19 @@ target whose every file states its package refuses the file itself:
 every Go file opens with a package clause, so the Go backend
 withholds a Go file whose package derives none, under a positioned
 Error.
+
+## The source file of a routed file
+
+A routed file whose every unit derives from one source file has the
+identity and the annotations of that source file. The layout sets them
+where each unit of the file is a per-source unit with one key. A file
+of a package, of a plan or of two or more source files has neither.
+The render passes the annotations to the file skeleton. The Go
+skeleton writes the build constraint of the source above the package
+clause, so a file that a generator writes beside a constrained source
+compiles under the same constraint. A group of a warm run reads the
+declaration edge of the source file, so an edit of the constraint
+writes the file again ([09-incrementality.md](09-incrementality.md)).
 
 ## Failure semantics
 

@@ -109,7 +109,11 @@ the conformance suite can hold it to:
   where the composition contains them. Capability topology orders the
   plugins of one priority. Build refuses a plugin that implements part
   of the interface, as it refuses a partial `TemplateProvider`.
-- `OptionsProvider` states typed options schemas.
+- `OptionsProvider` states typed options schemas: a struct whose fields
+  have an `opt` key and a `doc` description. The mark
+  `schema:"required"` states an option without a usable zero value,
+  and a defined type whose `UnmarshalText` refuses a text outside its
+  set states a closed set of values.
 - `TemplateProvider` states template trees, funcs and overrides.
 - `FilenameProvider` states the declared outputs.
 - `DirectiveProvider` states the directive schemas of the plugin.
@@ -125,6 +129,12 @@ validated at Build against the declared providers.
 role it implements, because one shared number cannot place a
 dual-role plugin's annotator half and generator half independently,
 and the turn sequences of the two phases have no reason to share integers.
+
+A plugin that does not implement `CapabilityProvider` runs at priority
+0 in each role, and a negative priority runs before it. The kernel does
+not declare named priority values. A priority places a plugin against
+every plugin of its role, and `Requires` or `After` orders two plugins
+against each other.
 
 ## The concurrency contract
 
@@ -162,10 +172,13 @@ and the field.
 
 Options are part of the plugin's fingerprint, so changing an option
 invalidates what the plugin produced before
-([09-incrementality.md](09-incrementality.md)). The schema also
-appears in the published config JSON Schema, so a consumer's editor
-completes plugin options the way it completes workspace ones
-([14-distribution-and-cli.md](14-distribution-and-cli.md)).
+([09-incrementality.md](09-incrementality.md)). The command `schema` of
+a binary prints the JSON Schema of its config file with one closed
+object for the options of each plugin, so a consumer's editor completes
+plugin options the way it completes workspace ones
+([20-cli.md](20-cli.md)). `plugin.OptionsSchema` returns that object. An
+option with the mark `schema:"required"` is a required property while
+the composition leaves it at the zero value of its type.
 
 ## Plugin values: declarations as data
 

@@ -124,7 +124,9 @@ diagnostic code, at the declaration that forced it. Go `chan T` has
 no TypeScript spelling. A Union has no Go spelling. It never
 guesses. Rust refuses the top type, because Rust has no type of every
 value. Java refuses the well-known `empty`, because Java has no type of
-a value without data outside a declaration. This is level 4 of the
+a value without data outside a declaration. Every target spells the
+well-known `error`: Go as `error`, TypeScript as `Error`, Java as
+`Exception` and Rust as `Box<dyn std::error::Error>`. This is level 4 of the
 degradation scale, and the completeness check tests it per language.
 
 A spoke spells every fact of a shape or refuses the shape. It never

@@ -73,8 +73,11 @@ real eidos workspace ([12-shape-catalog.md](12-shape-catalog.md)).
 
 Hand-written rather than generated:
 
-- `node/`: the resolver, the query surface (`Interfaces()`,
-  `InterfaceByName`, and so on), and **freeze**. After the annotator
+- `node/`: the resolver, the queries (`DeclsOf`, `DeclNamed`
+  and `MemberNamed`, generic over the type of a declaration, so
+  `node.DeclsOf[*node.Interface](pkg)` lists the interfaces of a
+  package), the deep copy of a reference (`CloneRef`), and **freeze**.
+  After the annotator
   phase the store seals, and a structural write is refused with a
   stable diagnostic code
   ([08-workspace-and-plans.md](08-workspace-and-plans.md)). The
@@ -288,7 +291,8 @@ a read that the scope refused.
   children in that form's fixed order, so the resolution step
   visits the named types inside a composite and the projections
   parse nothing. An inline struct, interface or object body records
-  its members as the reference's `Fields` and `Methods`. They are
+  its members as the reference's `Fields` and `Methods`, and the types
+  that it states as its children. The members are
   the nodes a declaration's members are, without identities: the
   resolution step resolves the references among them, and no
   directive or stamp addresses one. A named reference also records

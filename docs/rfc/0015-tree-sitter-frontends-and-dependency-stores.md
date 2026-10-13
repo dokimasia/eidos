@@ -2,13 +2,13 @@
 rfc: 0015
 title: Tree-sitter frontends, dependency stores and re-exports
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-10-13
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0045
 ---
 
 <!--

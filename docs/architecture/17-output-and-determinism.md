@@ -73,10 +73,15 @@ and no drift detection. A plugin that must contribute into a
 hand-written file does it through a generated sibling that the
 hand-written file imports.
 
-Disk, memory and fan-out sinks ship with the kernel, and the
-contract is public for consumers with somewhere exotic to write. A
-sink stages by construction, which is what makes dry-run and plan
-isolation free:
+The output package of the kernel contains disk, memory, stream and
+fan-out sinks, and the contract is public for consumers with somewhere
+exotic to write. The
+stream writes the files of each commit to one writer, in path order,
+each under a header line `// === <path> ===`. Its destination starts
+empty, so it creates every file and removes none. `run --stdout` runs
+each workspace over a stream of standard output and without a ledger
+([20-cli.md](20-cli.md)). A sink stages by construction, which is what
+makes dry-run and plan isolation free:
 
 ```go
 type Sink interface {

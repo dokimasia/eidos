@@ -2,13 +2,13 @@
 rfc: 0022
 title: The shape catalog, its specs and its generated registries
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-08
-updated: 2026-10-09
+updated: 2026-10-13
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0046
 ---
 
 <!--
