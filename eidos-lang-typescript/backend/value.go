@@ -39,12 +39,13 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 	return NewSpeller(t.set).Spell(ref)
 }
 
-// Callee spells a function by the name its import binds: an imported
-// name is called bare in TypeScript, and the function imports as a
-// value, because a call needs it at run time. The import specifier is
-// the function's module path relative to the file's own. A function in
-// no module, a function of the file's own module, and an identity
-// without a name spell the function's own name.
+// Callee spells the function of a call or the declaration of a name value
+// under the name that its import binds. TypeScript refers to an imported
+// name bare. The import is a value import, because the value needs the
+// declaration at run time. The import specifier is the module path of the
+// declaration relative to the module of the file. A declaration in no
+// module, a declaration of the module of the file, and an identity
+// without a name spell their own name.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Package == "" || id.Name == "" || id.Package == t.set.Home() {
 		return id.Name, nil

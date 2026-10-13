@@ -134,6 +134,17 @@ func TestTsconfig(t *testing.T) {
 			})
 		}
 
+		t.Run("resolves without the baseUrl of a chain that does not read whole", func(t *testing.T) {
+			t.Parallel()
+
+			tree := withConfigs(map[string]string{
+				rootConfig: `{"extends": ["./base.json", "./missing.json"]}`,
+				baseConfig: `{"compilerOptions": {"baseUrl": "lib"}}`,
+			})
+			assert.Equal(t, importTiers(t, tree), [][]string{{importSpec}},
+				"the specifier resolves as the package of its name alone")
+		})
+
 		t.Run("reads a configuration with comments and trailing commas", func(t *testing.T) {
 			t.Parallel()
 

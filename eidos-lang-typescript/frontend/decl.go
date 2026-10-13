@@ -52,7 +52,7 @@ func (l *lowering) declaration(n treesitter.Node, c container, exported bool, ou
 	}
 	name := l.nameText(n.Child(l.v.fieldName))
 	if name == "" && l.anonymousDefault(n) {
-		name = defaultExport
+		name = typescript.DefaultExport
 	}
 	switch {
 	case name == "":
@@ -172,7 +172,7 @@ func (l *lowering) iface(n treesitter.Node, name string, vis symbol.Visibility, 
 			it.Extends = append(it.Extends, l.typeRef(t))
 		}
 	}
-	calls := l.objectMembers(n.Child(l.v.fieldBody), &it.Fields, &it.Methods)
+	calls, _ := l.objectMembers(n.Child(l.v.fieldBody), &it.Fields, &it.Methods)
 	for _, prior := range c.file.Decls {
 		if first, merges := prior.(*node.Interface); merges && first.Name == name {
 			first.Fields = append(first.Fields, it.Fields...)
@@ -246,7 +246,9 @@ func (l *lowering) enum(n treesitter.Node, name string, vis symbol.Visibility, p
 }
 
 // alias lowers a type alias: its type parameters and the type it names.
-// An object type with call signatures stamps them on the alias.
+// An object type with call signatures stamps them on the alias. A
+// conditional type stamps its spelling under typescript.conditionalType,
+// because the model keeps it as a named reference.
 func (l *lowering) alias(n treesitter.Node, name string, vis symbol.Visibility, parts plugin.CommentParts,
 	comment string,
 ) *node.Alias {
@@ -256,8 +258,12 @@ func (l *lowering) alias(n treesitter.Node, name string, vis symbol.Visibility, 
 		TypeParams: l.typeParams(n.Child(l.v.fieldTypeParameters)),
 		Target:     l.typeRef(value),
 	}
-	if value.Kind() == l.v.objectType {
+	switch value.Kind() {
+	case l.v.objectType:
 		l.stampCalls(a, l.callSignatures(value), value)
+	case l.v.conditionalType:
+		stamp := meta.RawStamp{Key: typescript.ConditionalTypeKey, Value: a.Target.Spelling, Pos: value.Pos()}
+		l.u.Graph().Stamp(a, stamp)
 	}
 	return a
 }

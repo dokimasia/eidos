@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/tailscale/hujson"
+
+	"go.dokimi.dev/eidos/lang/typescript"
 )
 
 // The names of a tsconfig chain: the file of the configuration of a
@@ -169,7 +171,7 @@ func (c *chain) visit(file string) (resolution, error) {
 // path has no file, or a package path under the nearest node_modules
 // directory that has it, as Node resolves a package.
 func (c *chain) locate(from, spec string) (string, bool) {
-	if relative(spec) {
+	if typescript.Relative(spec) {
 		candidate := path.Join(path.Dir(from), spec)
 		if c.readable(candidate) {
 			return candidate, true

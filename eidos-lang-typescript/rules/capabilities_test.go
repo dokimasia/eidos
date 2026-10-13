@@ -5,6 +5,7 @@ package rules_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
@@ -23,6 +24,54 @@ const (
 	constructorName = "constructor"
 )
 
+// The error fixture: its classes, and the fields that the error contract
+// reads.
+const (
+	notFoundName = "NotFound"
+	labelledName = "Labelled"
+	domainName   = "Domain"
+	rangeName    = "OutOfRange"
+	plainName    = "Plain"
+	keptName     = "Kept"
+	deepName     = "E0"
+	shallowName  = "E1"
+	causeName    = "cause"
+	messageName  = "message"
+)
+
+// errorTree is a module of error classes. NotFound extends Error and
+// declares a cause, Labelled declares a message, Domain extends NotFound,
+// OutOfRange extends RangeError, Plain extends nothing, and Kept extends
+// Plain. E0 reaches Error through nine classes, and E1 through eight.
+var errorTree = fstest.MapFS{
+	aFile: {Data: []byte(`export class NotFound extends Error {
+  cause?: Error;
+}
+
+export class Labelled extends Error {
+  message = "labelled";
+}
+
+export class Domain extends NotFound {}
+
+export class OutOfRange extends RangeError {}
+
+export class Plain {}
+
+export class Kept extends Plain {}
+
+export class E0 extends E1 {}
+export class E1 extends E2 {}
+export class E2 extends E3 {}
+export class E3 extends E4 {}
+export class E4 extends E5 {}
+export class E5 extends E6 {}
+export class E6 extends E7 {}
+export class E7 extends E8 {}
+export class E8 extends Error {}
+`)},
+}
+
 // The allocations of the capabilities above zero.
 const (
 	// deriveAllocs counts the reference to unknown.
@@ -34,6 +83,9 @@ const (
 	// constructorsAllocs counts the binding of the projection, the list
 	// of callables, and the parameter list of each of the two overloads.
 	constructorsAllocs = 4
+	// errorContractAllocs counts the binding of the member walk and what
+	// the walk of NotFound allocates.
+	errorContractAllocs = 3
 )
 
 // TestCapabilities checks each optional capability that the TypeScript
@@ -207,6 +259,98 @@ func TestCapabilities(t *testing.T) {
 			expect.Empty(t, problems, "Comparable reports no problem")
 		})
 	})
+
+	t.Run("ErrorContract", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the field cause of a class that extends Error", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, errorTree)
+			c, isError := tsrules.Rules{}.ErrorContract(f.class(t, notFoundName), f.view)
+			assert.True(t, isError, "NotFound is an error")
+			expect.That(t, c.Cause).NotNil("NotFound declares a cause")
+			expect.Nil(t, c.Message, "NotFound inherits its message from Error")
+			expect.Nil(t, c.Unwrap, "TypeScript has no hooks")
+		})
+
+		t.Run("returns the field message that a class declares", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, errorTree)
+			c, _ := tsrules.Rules{}.ErrorContract(f.class(t, labelledName), f.view)
+			message, isField := c.Message.(*node.Field)
+			assert.True(t, isField, "the message is a field")
+			assert.Equal(t, message.Name, messageName, "the field message")
+		})
+
+		t.Run("returns the cause that a class inherits", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, errorTree)
+			c, isError := tsrules.Rules{}.ErrorContract(f.class(t, domainName), f.view)
+			assert.True(t, isError, "Domain is an error through NotFound")
+			assert.Equal(t, c.Cause.Name, causeName, "the field cause of NotFound")
+		})
+
+		t.Run("returns the contract of a class that extends another global error class", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, errorTree)
+			_, isError := tsrules.Rules{}.ErrorContract(f.class(t, rangeName), f.view)
+			assert.True(t, isError, "OutOfRange extends RangeError")
+		})
+
+		t.Run("returns the contract of a class at the default depth", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, errorTree)
+			_, isError := tsrules.Rules{}.ErrorContract(f.class(t, shallowName), f.view)
+			assert.True(t, isError, "E1 reaches Error through eight classes")
+		})
+
+		refusals := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for a class that extends nothing", give: plainName},
+			{name: "reports false for a class that extends a class that is not an error", give: keptName},
+			{name: "reports false for a chain deeper than the default depth", give: deepName},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, errorTree)
+				_, isError := tsrules.Rules{}.ErrorContract(f.class(t, tt.give), f.view)
+				assert.False(t, isError, "the class is not an error type")
+			})
+		}
+
+		constructed := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{name: "reports false for a declaration that is not a class", give: &node.Interface{Name: plainName}},
+			{name: "reports false for a nil base", give: &node.Struct{Name: plainName, Extends: []*node.TypeRef{nil}}},
+			{
+				name: "reports false for an Error that a module exports",
+				give: &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: "Error", Package: outsideLib}}},
+			},
+			{
+				name: "reports false for a base that the view does not declare",
+				give: &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: rowName, Target: rowID}}},
+			},
+		}
+		for _, tt := range constructed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, isError := tsrules.Rules{}.ErrorContract(tt.give, rules.View{})
+				assert.False(t, isError, "the declaration is not an error type")
+			})
+		}
+	})
 }
 
 // TestCapabilitiesAllocs checks the allocation ceiling of each
@@ -229,6 +373,8 @@ func capabilitiesCalls(tb assert.TB) []allocCall {
 	ref := &node.TypeRef{Spelling: paramName}
 	accessors := f.class(tb, "Accessors")
 	overloaded := f.class(tb, "Overloaded")
+	ef := loadedFrom(tb, errorTree)
+	notFound := ef.class(tb, notFoundName)
 	var (
 		witness  *node.TypeRef
 		ok       bool
@@ -236,8 +382,17 @@ func capabilitiesCalls(tb assert.TB) []allocCall {
 		props    []rules.Property
 		ctors    []rules.Callable
 		problems []*node.TypeRef
+		contract rules.ErrorContract
 	)
 	return []allocCall{
+		{
+			name: "ErrorContract", allocs: errorContractAllocs,
+			call: func() { contract, ok = r.ErrorContract(notFound, ef.view) },
+			check: func(tb assert.TB) {
+				assert.True(tb, ok, "ErrorContract takes NotFound as an error")
+				assert.NotNil(tb, contract.Cause, "ErrorContract finds the cause")
+			},
+		},
 		{
 			name: "Derive", allocs: deriveAllocs,
 			call: func() { witness, ok = r.Derive(param, f.view) },

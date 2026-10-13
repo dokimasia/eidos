@@ -19,7 +19,8 @@ const numberBits = 64
 //
 //   - string, number and boolean as Text, a float of 64 bits and Bool;
 //   - any and unknown as the top type;
-//   - Date as the well-known timestamp, and Uint8Array as Bytes;
+//   - Date as the well-known timestamp, Error as the well-known error, and
+//     Uint8Array as Bytes;
 //   - Array with a type argument as a mutable list, and ReadonlyArray as
 //     an immutable list;
 //   - Record and Map with type arguments as a mutable map, and
@@ -47,6 +48,8 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 		return rules.Leaf(symbol.FormDynamic, ref.Spelling)
 	case typescript.TypeDate:
 		return rules.Reference(ref.Spelling, rules.WellKnownTimestamp)
+	case typescript.TypeError:
+		return rules.Reference(ref.Spelling, rules.WellKnownError)
 	case typescript.TypeUint8Array:
 		return rules.Leaf(symbol.FormBytes, ref.Spelling)
 	}

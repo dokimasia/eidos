@@ -1574,22 +1574,35 @@ func TestVocabulary(t *testing.T) {
 		})
 	})
 
+	assigned := symbol.Annotations{{Name: "deprecated", Args: []string{`"use g"`}, Assigned: true}}
+
 	t.Run("Decorators", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("returns nothing for no annotations", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Decorators(nil), "", "no lines")
+			got, err := backend.Decorators(nil)
+			assert.NoError(t, err, "no decorator refuses")
+			assert.Equal(t, got, "", "no lines")
 		})
 
 		t.Run("writes one decorator line per annotation", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Decorators(symbol.Annotations{
+			got, err := backend.Decorators(symbol.Annotations{
 				{Name: "injectable"},
 				{Name: "route", Args: []string{`"/rows"`, "true"}},
-			}), "@injectable\n@route(\"/rows\", true)\n", "the arguments verbatim")
+			})
+			assert.NoError(t, err, "TypeScript spells both decorators")
+			assert.Equal(t, got, "@injectable\n@route(\"/rows\", true)\n", "the arguments verbatim")
+		})
+
+		t.Run("returns an error for an assigned annotation", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Decorators(assigned)
+			assert.HasError(t, err, "a decorator passes its arguments in parentheses alone")
 		})
 	})
 
@@ -1599,16 +1612,27 @@ func TestVocabulary(t *testing.T) {
 		t.Run("returns nothing for no annotations", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.MemberDecorators(nil), "", "no lines")
+			got, err := backend.MemberDecorators(nil)
+			assert.NoError(t, err, "no decorator refuses")
+			assert.Equal(t, got, "", "no lines")
 		})
 
 		t.Run("writes each decorator line behind the member indent", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.MemberDecorators(symbol.Annotations{
+			got, err := backend.MemberDecorators(symbol.Annotations{
 				{Name: "injectable"},
 				{Name: "route", Args: []string{`"/rows"`, "true"}},
-			}), "  @injectable\n  @route(\"/rows\", true)\n", "the arguments verbatim")
+			})
+			assert.NoError(t, err, "TypeScript spells both decorators")
+			assert.Equal(t, got, "  @injectable\n  @route(\"/rows\", true)\n", "the arguments verbatim")
+		})
+
+		t.Run("returns an error for an assigned annotation", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.MemberDecorators(assigned)
+			assert.HasError(t, err, "a decorator passes its arguments in parentheses alone")
 		})
 	})
 }
@@ -1791,11 +1815,11 @@ func vocabularyCalls() []allocCall {
 		{name: "Binding", call: func() { out, err = backend.Binding(binding) }, check: spells("let")},
 		{
 			name: "Decorators", allocs: textAllocs,
-			call: func() { out = backend.Decorators(annotations) }, check: spells("@log\n"),
+			call: func() { out, err = backend.Decorators(annotations) }, check: spells("@log\n"),
 		},
 		{
 			name: "MemberDecorators", allocs: textAllocs,
-			call: func() { out = backend.MemberDecorators(annotations) }, check: spells("  @log\n"),
+			call: func() { out, err = backend.MemberDecorators(annotations) }, check: spells("  @log\n"),
 		},
 	}
 }

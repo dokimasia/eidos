@@ -58,6 +58,35 @@ func DeclarationFile(file string) bool {
 	})
 }
 
+// The names of the module system of TypeScript that the frontend and the
+// rules share.
+const (
+	// IndexModule is the module that resolution tries in a directory when
+	// the path of a specifier has no module file.
+	IndexModule = "index"
+	// DefaultExport is the name of the default export of a module, and the
+	// name that a default import binds.
+	DefaultExport = "default"
+)
+
+// The openings of a relative module specifier, and the two relative
+// specifiers that are a directory alone.
+const (
+	currentDir     = "./"
+	parentDir      = "../"
+	currentDirName = "."
+	parentDirName  = ".."
+)
+
+// Relative reports whether a module specifier names a path relative to
+// the directory of the importing file: it opens with ./ or ../, or it is
+// . or .. alone. Any other specifier names a package or an ambient
+// module. Relative allocates nothing.
+func Relative(specifier string) bool {
+	return strings.HasPrefix(specifier, currentDir) || strings.HasPrefix(specifier, parentDir) ||
+		specifier == currentDirName || specifier == parentDirName
+}
+
 // packageSep separates the segments of a package path.
 const packageSep = "/"
 

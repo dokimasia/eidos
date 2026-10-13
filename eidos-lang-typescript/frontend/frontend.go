@@ -73,6 +73,15 @@ var ReadonlyRest = diag.MustRegister(typescript.CodePrefix, diag.CodeSpec{
 	Meaning: "a rest parameter of a readonly array loads without its readonly",
 })
 
+// RelativeAugmentation reports a declare module block whose name is a
+// relative specifier, at the block. Severity is Warning. The block
+// augments the module of a file that the parse of its own file cannot
+// name, so it loads nothing.
+var RelativeAugmentation = diag.MustRegister(typescript.CodePrefix, diag.CodeSpec{
+	Number:  8,
+	Meaning: "a module augmentation of a relative module loads nothing",
+})
+
 // nodeModules is the directory that a package manager installs packages
 // into, which the claim leaves out.
 const nodeModules = "node_modules"

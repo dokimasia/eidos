@@ -18,13 +18,14 @@ import (
 
 // The values of the cases refer to the modules units and time, which a
 // file at the root imports as ./units and ./time. unix is a function of
-// time, and Weight is a type of units.
+// time, epoch is a constant of time, and Weight is a type of units.
 const (
 	unitsModule    = "units"
 	timeModule     = "time"
 	unitsSpecifier = "./units"
 	timeSpecifier  = "./time"
 	unixName       = "unix"
+	epochName      = "epoch"
 	weightName     = "Weight"
 )
 
@@ -184,6 +185,18 @@ func TestValue(t *testing.T) {
 			assert.NoError(t, err, "the value spells")
 			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeSpecifier, Name: unixName}},
 				"a call needs the function at run time")
+		})
+
+		t.Run("writes a constant under the name that its value import binds", func(t *testing.T) {
+			t.Parallel()
+
+			got, set, err := returned(t, emit.Name(symbol.Identity{
+				Lang: typescript.Lang, Package: timeModule, Name: epochName, Kind: symbol.KindConstant,
+			}))
+			assert.NoError(t, err, "the name spells")
+			assert.Equal(t, got, epochName, "the import binds the bare name")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeSpecifier, Name: epochName}},
+				"a name needs the constant at run time")
 		})
 
 		t.Run("calls a function of the file's own module without an import", func(t *testing.T) {

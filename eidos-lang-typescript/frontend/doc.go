@@ -20,14 +20,18 @@
 // finding that counts the rest, and every declaration that the parser
 // recovered loads. A tsconfig chain that does not read whole reports under
 // [BadConfig], and a package.json that does not read or parse under
-// [BadPackage]. [BadConfig], [BadPackage] and [ReadonlyRest] are warnings.
+// [BadPackage]. [BadConfig], [BadPackage], [ReadonlyRest] and
+// [RelativeAugmentation] are warnings.
 //
 // # Packages
 //
 // The package of a module is its path without its extension, with the
 // whole .d.ts of a declaration file. A namespace A.B is the package below
 // the package of the module, stamped typescript.namespace with A.B, and a
-// declare module 'x' block is the package x. A script, which is a file
+// declare module 'x' block is the package x. A declare module block with a
+// relative specifier augments the module of another file, which the parse
+// of one file cannot name, so it reports under [RelativeAugmentation] and
+// loads nothing. A script, which is a file
 // without a top-level import or export, declares into the package with the
 // empty path, which is the global scope of TypeScript, and so does a
 // declare global block. A file contributes one File node to each package
@@ -72,10 +76,12 @@
 // signature is readonly. A construct signature is a method named new that
 // constructs. The frontend stamps the call signatures of an object type as
 // typescript.callSignature on the interface or the alias that declares
-// them. It stamps typescript.generator on a generator method, and
-// typescript.definiteAssignment on a property declared with !. A
-// declaration that another module can import is public, and every other is
-// visible in its package.
+// them. It stamps typescript.generator on a generator method,
+// typescript.definiteAssignment on a property declared with !, and
+// typescript.abstract on an abstract property. An alias whose target is a
+// conditional type gets the spelling of the target under
+// typescript.conditionalType. A declaration that another module can import
+// is public, and every other is visible in its package.
 //
 // # Types
 //
@@ -129,10 +135,12 @@
 // attributes them. A run of line comments reads as one text, so the
 // continuation of a carrier folds across them. The comment on the last
 // line of a declaration is its trailing comment, and its carriers attach
-// too. A carrier that no declaration takes reports under
-// [UnaddressedCarrier], and one that the kernel grammar refuses under
-// [BadCarrier]. The comments in the body of a function belong to its
-// statements, which the model does not contain.
+// too. An import has the documentation and the trailing comment of its
+// statement, and an export that wraps no declaration the documentation of
+// its statement. A carrier in them, and a carrier that no declaration
+// takes, reports under [UnaddressedCarrier], and one that the kernel
+// grammar refuses under [BadCarrier]. The comments in the body of a
+// function belong to its statements, which the model does not contain.
 //
 // # Markers
 //

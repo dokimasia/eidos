@@ -934,17 +934,39 @@ func Binding(v *emit.Variable) (string, error) {
 // Decorators writes one decorator line at the top level for each
 // annotation of a. A line has the name after the marker, and the
 // arguments verbatim in parentheses where the annotation has any. It
-// allocates what [textfmt.Marked] allocates. That is the lines, sized
-// once, and nothing for no annotations.
-func Decorators(a symbol.Annotations) string {
-	return textfmt.Marked(a, "@", "")
+// returns an error for an assigned annotation, because a decorator passes
+// its arguments in parentheses alone. It allocates what [textfmt.Marked]
+// allocates. That is the lines, sized once, and nothing for no
+// annotations.
+func Decorators(a symbol.Annotations) (string, error) {
+	if err := unassigned(a); err != nil {
+		return "", err
+	}
+	return textfmt.Marked(a, "@", ""), nil
 }
 
 // MemberDecorators writes the decorator lines of a member as
 // [Decorators] writes them. Each line starts with the member indent of a
-// class. It allocates what Decorators allocates.
-func MemberDecorators(a symbol.Annotations) string {
-	return textfmt.Marked(a, "@", "", memberIndent)
+// class. It returns the error of Decorators, and allocates what
+// Decorators allocates.
+func MemberDecorators(a symbol.Annotations) (string, error) {
+	if err := unassigned(a); err != nil {
+		return "", err
+	}
+	return textfmt.Marked(a, "@", "", memberIndent), nil
+}
+
+// unassigned returns an error for the first assigned annotation of as,
+// because a decorator passes its arguments in parentheses alone, and nil
+// where no annotation is assigned. It allocates nothing, and an error
+// allocates its message.
+func unassigned(as symbol.Annotations) error {
+	for _, a := range as {
+		if a.Assigned {
+			return refuse("a decorator passes its arguments in parentheses, and %s assigns its argument", a.Name)
+		}
+	}
+	return nil
 }
 
 // variance returns the declaration-site keyword of the variance v, which

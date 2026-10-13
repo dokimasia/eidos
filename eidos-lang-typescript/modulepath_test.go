@@ -85,6 +85,30 @@ func TestModulePath(t *testing.T) {
 		}
 	})
 
+	t.Run("Relative", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "reports true for a specifier that opens with ./", give: "./store", want: true},
+			{name: "reports true for a specifier that opens with ../", give: "../store", want: true},
+			{name: "reports true for the current directory", give: ".", want: true},
+			{name: "reports true for the parent directory", give: "..", want: true},
+			{name: "reports false for a package specifier", give: "@scope/store", want: false},
+			{name: "reports false for a name that opens with a dot", give: ".store", want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, typescript.Relative(tt.give), tt.want, "whether the specifier is relative")
+			})
+		}
+	})
+
 	t.Run("JoinPackage", func(t *testing.T) {
 		t.Parallel()
 
@@ -124,6 +148,9 @@ func TestModulePathAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { declares = typescript.DeclarationFile("types/api.d.ts") }, 0,
 		"DeclarationFile allocates nothing")
 	assert.True(t, declares, "DeclarationFile reports a declaration file")
+	var relative bool
+	assert.MaxAllocs(t, func() { relative = typescript.Relative("../store") }, 0, "Relative allocates nothing")
+	assert.True(t, relative, "Relative reports a relative specifier")
 	parts := []string{"svc/store", "N"}
 	var joined string
 	assert.MaxAllocs(t, func() { joined = typescript.JoinPackage(parts[0], parts[1]) }, 1,
@@ -153,6 +180,16 @@ func BenchmarkModulePath(b *testing.B) {
 			declares = typescript.DeclarationFile("types/api.d.ts")
 		}
 		assert.True(b, declares, "DeclarationFile reports a declaration file")
+	})
+
+	b.Run("Relative", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var relative bool
+		for c.Loop() {
+			relative = typescript.Relative("../store")
+		}
+		assert.True(b, relative, "Relative reports a relative specifier")
 	})
 
 	b.Run("JoinPackage", func(b *testing.B) {

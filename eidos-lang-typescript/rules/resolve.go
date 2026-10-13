@@ -19,24 +19,12 @@ import (
 
 // The names and marks of the module system of TypeScript.
 const (
-	// indexModule is the module that resolution tries in a directory
-	// when the path of the specifier has no module file.
-	indexModule = "index"
-	// defaultExport is the name of the default export of a module, and
-	// the name that a default import binds.
-	defaultExport = "default"
 	// wildcardName is the name that a namespace re-export binds.
 	wildcardName = "*"
 	// packageSep separates the segments of a package path.
 	packageSep = "/"
 	// globalPackage is the package of the global scope of TypeScript.
 	globalPackage = ""
-	// currentDir and parentDir open a relative specifier. currentDirName
-	// and parentDirName are relative specifiers on their own.
-	currentDir     = "./"
-	parentDir      = "../"
-	currentDirName = "."
-	parentDirName  = ".."
 )
 
 // exportDepth bounds a chain of re-exports that resolution follows. A
@@ -63,10 +51,11 @@ const chainSize = 8
 //
 // A qualified name resolves through a namespace import of its first
 // name, an import of a namespace, or a namespace of one of those
-// packages. A relative specifier refers to its module file before the
-// index of the directory, and every other specifier refers to the ambient
-// module of its text. The graph does not record a tsconfig, so
-// resolution does not read a paths pattern or a baseUrl. A name that a
+// packages. A specifier that the governing tsconfig maps through its
+// paths or its baseUrl refers to the packages that the import or the
+// re-export records as its Modules, in order. A relative specifier refers
+// to its module file before the index of the directory, and every other
+// specifier refers to the ambient module of its text. A name that a
 // module publishes and does not declare resolves through the export
 // clauses of the module, its default export and its export-star
 // statements.
@@ -148,18 +137,23 @@ func (resolver) Placeholder(scope rules.Scope, name string, v rules.View) (symbo
 	}
 	file := moduleFile(scope, v)
 	head, inner, last := segments(name)
-	spec, exported, bound := binding(file, head)
+	src, exported, bound := binding(file, head)
 	if !bound || exported == "" && head == name {
 		return nil, false
 	}
-	base, relative := moduleOf(spec, file.Path)
-	for _, pkg := range [2]string{base, typescript.JoinPackage(base, indexModule)} {
+	base, relative := moduleOf(src.specifier, file.Path)
+	var buf [2]string
+	tried := src.modules
+	if len(tried) == 0 {
+		tried = append(buf[:0], base)
+		if relative {
+			tried = append(tried, typescript.JoinPackage(base, typescript.IndexModule))
+		}
+	}
+	for _, pkg := range tried {
 		_, inView := v.PackageOf(symbol.Identity{Lang: typescript.Lang, Package: pkg, Kind: symbol.KindPackage})
 		if inView {
 			return nil, false
-		}
-		if !relative {
-			break
 		}
 	}
 	id := symbol.Identity{Lang: typescript.Lang, Package: base, Name: exported, Kind: symbol.KindAlias}
@@ -236,31 +230,42 @@ func moduleFile(scope rules.Scope, v rules.View) *node.File {
 	return nil
 }
 
-// binding returns the module specifier and the exported name that an
-// import of a file binds a local name to. A named import binds the
-// exported name, and a default import binds default. A namespace import
-// binds the module itself, without a name. binding reports false when no
-// import binds the name, and for a nil file.
-func binding(file *node.File, local string) (string, string, bool) {
+// source is the module that an import or a re-export names: the
+// specifier as written, and the packages that a configuration of the
+// workspace maps it onto, which are nil where none maps it.
+type source struct {
+	specifier string
+	modules   []string
+}
+
+// binding returns the module source and the exported name that an import
+// of a file binds a local name to. A named import binds the exported
+// name, and a default import binds default. A namespace import binds the
+// module itself, without a name. binding reports false when no import
+// binds the name, and for a nil file.
+func binding(file *node.File, local string) (source, string, bool) {
 	if file == nil {
-		return "", "", false
+		return source{}, "", false
 	}
 	for _, imp := range file.Imports {
+		if imp == nil {
+			continue
+		}
+		src := source{specifier: imp.Path, modules: imp.Modules}
 		switch {
-		case imp == nil:
 		case imp.Alias == local:
-			return imp.Path, "", true
+			return src, "", true
 		case imp.Default == local:
-			return imp.Path, defaultExport, true
+			return src, typescript.DefaultExport, true
 		default:
 			for _, b := range imp.Names {
 				if b != nil && (b.Alias == local || b.Alias == "" && b.Name == local) {
-					return imp.Path, b.Name, true
+					return src, b.Name, true
 				}
 			}
 		}
 	}
-	return "", "", false
+	return source{}, "", false
 }
 
 // moduleOf returns the package of the module that a specifier refers to
@@ -269,9 +274,7 @@ func binding(file *node.File, local string) (string, string, bool) {
 // the index of the directory of the path next. Any other specifier refers to
 // the ambient module of its text.
 func moduleOf(specifier, from string) (string, bool) {
-	if !strings.HasPrefix(specifier, currentDir) && !strings.HasPrefix(specifier, parentDir) &&
-		specifier != currentDirName && specifier != parentDirName {
-
+	if !typescript.Relative(specifier) {
 		return specifier, false
 	}
 	return typescript.ModulePath(path.Join(path.Dir(from), specifier)), true
@@ -301,7 +304,7 @@ func (f finder) first(scope rules.Scope, name string) symbol.Symbol {
 		}
 	}
 	head, inner, last := segments(name)
-	spec, exported, bound := binding(file, head)
+	src, exported, bound := binding(file, head)
 	switch {
 	case head == name:
 		for _, pkg := range chain {
@@ -310,12 +313,12 @@ func (f finder) first(scope rules.Scope, name string) symbol.Symbol {
 			}
 		}
 		if bound && exported != "" {
-			if sym := f.inModule(spec, file.Path, "", exported, 0); sym != nil {
+			if sym := f.inModule(src, file.Path, "", exported, 0); sym != nil {
 				return sym
 			}
 		}
 	case bound:
-		return f.inModule(spec, file.Path, typescript.JoinPackage(exported, inner), last, 0)
+		return f.inModule(src, file.Path, typescript.JoinPackage(exported, inner), last, 0)
 	default:
 		for _, pkg := range chain {
 			if sym := f.find(typescript.JoinPackage(pkg, typescript.JoinPackage(head, inner)), last, 0); sym != nil {
@@ -332,17 +335,26 @@ func (f finder) first(scope rules.Scope, name string) symbol.Symbol {
 	return f.find(typescript.JoinPackage(head, inner), last, 0)
 }
 
-// inModule returns the declaration that the module of a specifier, or a
-// namespace path inside it, publishes under a name. For a relative
-// specifier, it searches the module file of the path and then the index
-// of the directory. For every other specifier, it searches the ambient
-// module of its text.
-func (f finder) inModule(specifier, from, inner, name string, depth int) symbol.Symbol {
-	base, relative := moduleOf(specifier, from)
+// inModule returns the declaration that the module of a source, or a
+// namespace path inside it, publishes under a name. Where a configuration
+// maps the specifier, it searches the packages of the mapping in order.
+// For a relative specifier, it searches the module file of the path and
+// then the index of the directory. For every other specifier, it searches
+// the ambient module of its text.
+func (f finder) inModule(src source, from, inner, name string, depth int) symbol.Symbol {
+	for _, pkg := range src.modules {
+		if sym := f.find(typescript.JoinPackage(pkg, inner), name, depth); sym != nil {
+			return sym
+		}
+	}
+	if len(src.modules) > 0 {
+		return nil
+	}
+	base, relative := moduleOf(src.specifier, from)
 	if sym := f.find(typescript.JoinPackage(base, inner), name, depth); sym != nil || !relative {
 		return sym
 	}
-	return f.find(typescript.JoinPackage(typescript.JoinPackage(base, indexModule), inner), name, depth)
+	return f.find(typescript.JoinPackage(typescript.JoinPackage(base, typescript.IndexModule), inner), name, depth)
 }
 
 // find returns the top-level declaration of a package that has a name
@@ -387,11 +399,12 @@ func (f finder) find(pkg, name string, depth int) symbol.Symbol {
 // name of its module except default. A frontend records no nil export
 // statement.
 func (f finder) published(pkg string, file *node.File, e *node.Export, name string, depth int) symbol.Symbol {
-	if e.Default != "" && name == defaultExport {
+	if e.Default != "" && name == typescript.DefaultExport {
 		if sym := f.local(pkg, file, e.Default, depth); sym != nil {
 			return sym
 		}
 	}
+	src := source{specifier: e.Path, modules: e.Modules}
 	for _, b := range e.Names {
 		if b == nil || b.Name == wildcardName || b.Alias != name && (b.Alias != "" || b.Name != name) {
 			continue
@@ -399,12 +412,12 @@ func (f finder) published(pkg string, file *node.File, e *node.Export, name stri
 		if e.Path == "" {
 			return f.local(pkg, file, b.Name, depth)
 		}
-		if sym := f.inModule(e.Path, file.Path, "", b.Name, depth+1); sym != nil {
+		if sym := f.inModule(src, file.Path, "", b.Name, depth+1); sym != nil {
 			return sym
 		}
 	}
-	if e.Wildcard && name != defaultExport {
-		return f.inModule(e.Path, file.Path, "", name, depth+1)
+	if e.Wildcard && name != typescript.DefaultExport {
+		return f.inModule(src, file.Path, "", name, depth+1)
 	}
 	return nil
 }
@@ -413,11 +426,11 @@ func (f finder) published(pkg string, file *node.File, e *node.Export, name stri
 // refers. That is the declaration to which an import of the file binds
 // the name, or otherwise the declaration of the module.
 func (f finder) local(pkg string, file *node.File, name string, depth int) symbol.Symbol {
-	spec, exported, bound := binding(file, name)
+	src, exported, bound := binding(file, name)
 	if !bound || exported == "" {
 		return f.find(pkg, name, depth+1)
 	}
-	return f.inModule(spec, file.Path, "", exported, depth+1)
+	return f.inModule(src, file.Path, "", exported, depth+1)
 }
 
 // kindList joins the names of a set of kinds for a refusal.

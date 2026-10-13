@@ -71,7 +71,7 @@ func TestLiteral(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				got, ok := tsrules.New().LiteralFor(nil, nil, tt.give, rules.View{})
+				got, ok := tsrules.New().LiteralFor(rules.Scope{}, nil, tt.give, rules.View{})
 				assert.True(t, ok, "the text is a literal")
 				assert.Equal(t, got, tt.want, "LiteralFor returns the literal as a value of its own kind")
 			})
@@ -104,7 +104,7 @@ func TestLiteral(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, ok := tsrules.New().LiteralFor(nil, nil, tt.give, rules.View{})
+				_, ok := tsrules.New().LiteralFor(rules.Scope{}, nil, tt.give, rules.View{})
 				assert.False(t, ok, "the text is not a literal")
 			})
 		}

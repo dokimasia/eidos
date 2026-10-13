@@ -45,17 +45,39 @@ const (
 	TypeAbortSignal           = "AbortSignal"
 )
 
+// The global error classes of TypeScript's standard library. They are
+// global types too, and a class that extends one of them is an error
+// type.
+const (
+	TypeError          = "Error"
+	TypeAggregateError = "AggregateError"
+	TypeEvalError      = "EvalError"
+	TypeRangeError     = "RangeError"
+	TypeReferenceError = "ReferenceError"
+	TypeSyntaxError    = "SyntaxError"
+	TypeTypeError      = "TypeError"
+	TypeURIError       = "URIError"
+)
+
 // keywordTypes lists the keyword types in the order of their constants.
 var keywordTypes = []string{
 	TypeAny, TypeUnknown, TypeNever, TypeObject, TypeSymbol, TypeVoid, TypeNull, TypeUndefined, TypeThis,
 	TypeString, TypeNumber, TypeBoolean, TypeBigInt,
 }
 
-// globalTypes lists the global types in the order of their constants.
-var globalTypes = []string{
+// errorClasses lists the global error classes in the order of their
+// constants.
+var errorClasses = []string{
+	TypeError, TypeAggregateError, TypeEvalError, TypeRangeError, TypeReferenceError, TypeSyntaxError,
+	TypeTypeError, TypeURIError,
+}
+
+// globalTypes lists the global types in the order of their constants, the
+// error classes last.
+var globalTypes = slices.Concat([]string{
 	TypeArray, TypeReadonlyArray, TypeRecord, TypePartial, TypeReadonly, TypeMap, TypeReadonlyMap, TypeSet, TypePromise,
 	TypeDate, TypeUint8Array, TypeAsyncIterable, TypeAsyncIterableIterator, TypeAsyncGenerator, TypeAbortSignal,
-}
+}, errorClasses)
 
 // KeywordType reports whether name is a keyword type of TypeScript. It
 // allocates nothing.
@@ -69,4 +91,10 @@ func KeywordType(name string) bool {
 // allocates nothing.
 func GlobalType(name string) bool {
 	return slices.Contains(globalTypes, name)
+}
+
+// ErrorClass reports whether name is one of the global error classes of
+// TypeScript, such as Error and TypeError. It allocates nothing.
+func ErrorClass(name string) bool {
+	return slices.Contains(errorClasses, name)
 }

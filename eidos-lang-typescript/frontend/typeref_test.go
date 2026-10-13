@@ -318,6 +318,27 @@ func TestTyperef(t *testing.T) {
 				"the member's type resolves as any reference does")
 		})
 
+		t.Run("records the types of an inline object type as children in the order of the body", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "{ a: Imported; run<U extends Local = Other>(this: Imported, x: string, "+
+				"...rest: number[]): boolean; new (n: number): Imported; [k: string]: Local; b: Other }")
+			assert.Equal(t, spellingsOf(ref.Elems), []string{
+				"Imported", "Local", "Other", "Imported", "string", "number", "boolean",
+				"number", "Imported", "string", "Local", "Other",
+			}, "a property, then the type parameters, the receiver, the parameters and the result of each signature")
+		})
+
+		t.Run("records the import of a child of an inline object type", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "{ a: Imported; b(): void }")
+			assert.Length(t, ref.Elems, 1, "a method without a result type has no child")
+			expect.Equal(t, ref.Elems[0].Package, "./lib", "the child resolves as any reference does")
+			expect.NotEqual(t, ref.Elems[0], ref.Fields[0].Type, "the child is a copy of the type of the property",
+				assert.ByIdentity())
+		})
+
 		t.Run("lowers a mapped type as Named", func(t *testing.T) {
 			t.Parallel()
 

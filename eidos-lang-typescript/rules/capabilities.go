@@ -16,6 +16,67 @@ import (
 // implicit constructor too.
 const constructorName = "constructor"
 
+// The fields of an error class that the error contract reads: the message
+// and the cause that ECMAScript defines on an error.
+const (
+	messageField = "message"
+	causeField   = "cause"
+)
+
+// ErrorContract returns the contract of a class whose extends chain
+// reaches a global error class of TypeScript, such as Error or TypeError,
+// through classes that the view declares. Message and Cause are the
+// fields message and cause among the members of the class, which inherit
+// the fields of the classes of the chain. Each is nil where no class of
+// the chain declares it. TypeScript has no hooks, so Unwrap, Is and As
+// are nil. ErrorContract reports false for every other declaration, and
+// for a chain deeper than the kernel's default depth.
+//
+// It allocates the binding of the member walk and what the walk
+// allocates.
+func (r Rules) ErrorContract(decl symbol.Symbol, v rules.View) (rules.ErrorContract, bool) {
+	s, isClass := decl.(*node.Struct)
+	if !isClass || s == nil {
+		return rules.ErrorContract{}, false
+	}
+	base, reached := s, false
+	for depth := 0; depth < rules.DefaultDepth && !reached; depth++ {
+		if len(base.Extends) == 0 || base.Extends[0] == nil {
+			return rules.ErrorContract{}, false
+		}
+		ext := base.Extends[0]
+		if ext.Target.IsZero() {
+			reached = ext.Package == "" && typescript.ErrorClass(ext.Spelling)
+			if !reached {
+				return rules.ErrorContract{}, false
+			}
+			continue
+		}
+		sym, _ := v.Lookup(ext.Target)
+		next, isNext := sym.(*node.Struct)
+		if !isNext {
+			return rules.ErrorContract{}, false
+		}
+		base = next
+	}
+	if !reached {
+		return rules.ErrorContract{}, false
+	}
+	var c rules.ErrorContract
+	set, _ := rules.NewBound(r, v, nil).MembersOf(s)
+	for _, m := range set.Members {
+		f, isField := m.Symbol.(*node.Field)
+		switch {
+		case !isField:
+		case f.Name == messageField && c.Message == nil:
+			c.Message = f
+		case f.Name == causeField && c.Cause == nil:
+			c.Cause = f
+		}
+	}
+	return c, true
+}
+
 // Derive returns the witness of a type parameter. The witness of a
 // parameter with one bound is the bound, which every admitted type
 // satisfies. The witness of a parameter without a bound is unknown.

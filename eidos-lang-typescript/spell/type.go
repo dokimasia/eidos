@@ -71,8 +71,9 @@ const (
 //   - an asynchronous stream as AsyncIterable<T>, a borrow as its type,
 //     and a wildcard as its upper bound or as unknown without a bound;
 //   - the well-known timestamp and duration as the choices of
-//     [typescript.Timestamp] and [typescript.Duration], and the
-//     well-known empty value as Record<string, never>;
+//     [typescript.Timestamp] and [typescript.Duration], the well-known
+//     empty value as Record<string, never>, and the well-known error as
+//     Error;
 //   - every other reference and sum as a translated reference with the
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which TypeScript writes in angle brackets.
@@ -327,8 +328,9 @@ func wildcard(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 // reference spells a reference or a sum: the well-known timestamp and
 // duration as the choices of [typescript.Timestamp] and
 // [typescript.Duration], the well-known empty value as a record without
-// keys, and every other referent as a translated reference under its flat
-// name, with its translated arguments.
+// keys, the well-known error as Error, and every other referent as a
+// translated reference under its flat name, with its translated
+// arguments.
 func reference(
 	s rules.TypeShape, p plugin.Policy, spell func(rules.TypeShape) (*emit.TypeRef, error),
 ) (*emit.TypeRef, error) {
@@ -342,6 +344,8 @@ func reference(
 			Spelling: typescript.TypeRecord,
 			Args:     []*emit.TypeRef{{Spelling: typescript.TypeString}, {Spelling: typescript.TypeNever}},
 		}, nil
+	case rules.WellKnownError:
+		return &emit.TypeRef{Spelling: typescript.TypeError}, nil
 	}
 	args, err := spoke.Children(s.Args, spell)
 	if err != nil {

@@ -157,8 +157,16 @@ func (l *lowering) record(root treesitter.Node, file *node.File) {
 // module record. A named import binds its local name to the name that the
 // module exports, and a default import to the default export of the
 // module. A namespace import and an import-require bind the module itself.
+// The import records the packages that the governing tsconfig maps its
+// specifier onto as its Modules, and the doc and the trailing comment of
+// the statement. A carrier in either comment is refused, because no rule
+// takes an import as its subject.
 func (l *lowering) importStatement(stmt treesitter.Node) *node.Import {
-	imp := &node.Import{Pos: stmt.Pos(), Path: l.unquote(stmt.Child(l.v.fieldSource))}
+	parts, comment := l.declParts(stmt)
+	l.u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "an import")
+	imp := &node.Import{
+		Pos: stmt.Pos(), Doc: parts.Docs, Comment: comment, Path: l.unquote(stmt.Child(l.v.fieldSource)),
+	}
 	for child := range stmt.NamedChildren() {
 		switch child.Kind() {
 		case l.v.importClause:
@@ -171,6 +179,7 @@ func (l *lowering) importStatement(stmt treesitter.Node) *node.Import {
 			}
 		}
 	}
+	imp.Modules = l.module.mapped(imp.Path)
 	return imp
 }
 
@@ -181,7 +190,7 @@ func (l *lowering) importClause(clause treesitter.Node, imp *node.Import) {
 		switch part.Kind() {
 		case l.v.identifier:
 			imp.Default = part.Text()
-			l.module.imports[imp.Default] = binding{specifier: imp.Path, name: defaultExport}
+			l.module.imports[imp.Default] = binding{specifier: imp.Path, name: typescript.DefaultExport}
 		case l.v.namespaceImport:
 			if local := part.FirstOf(l.v.identifier); !local.IsZero() {
 				imp.Alias = local.Text()
@@ -223,10 +232,14 @@ func (l *lowering) importAlias(stmt treesitter.Node) {
 // record and the module record: an export clause from a module or of the
 // names of the file, a star and a namespace re-export, and the default
 // export. It returns nil for an export statement that only exports the
-// declaration that it wraps.
+// declaration that it wraps. A re-export from a module records the
+// packages that the governing tsconfig maps its specifier onto as its
+// Modules. An export that wraps no declaration records the doc of the
+// statement, and refuses a carrier in it. The doc of a wrapped declaration
+// is the doc of the declaration.
 func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 	spec := l.unquote(stmt.Child(l.v.fieldSource))
-	export := &node.Export{Pos: stmt.Pos(), Path: spec}
+	export := &node.Export{Pos: stmt.Pos(), Path: spec, Modules: l.module.mapped(spec)}
 	clause := stmt.FirstOf(l.v.exportClause)
 	namespace := stmt.FirstOf(l.v.namespaceExport)
 	declaration := stmt.Child(l.v.fieldDeclaration)
@@ -276,6 +289,11 @@ func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 	default:
 		return nil
 	}
+	if declaration.IsZero() {
+		parts, _ := l.declParts(stmt)
+		l.u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "an export")
+		export.Doc = parts.Docs
+	}
 	return export
 }
 
@@ -291,7 +309,7 @@ func (l *lowering) defaultName(declaration, value treesitter.Node) string {
 	case value.Kind() == l.v.identifier:
 		return value.Text()
 	case l.anonymousDefault(value):
-		return defaultExport
+		return typescript.DefaultExport
 	default:
 		return ""
 	}
@@ -321,10 +339,10 @@ func (l *lowering) statements(list treesitter.Node, c container) {
 			l.ambient(stmt, c, false, stmt, overloaded)
 		case l.v.expressionStatement:
 			if inner := stmt.FirstOf(l.v.internalModule); !inner.IsZero() {
-				l.namespace(inner, c, false, stmt, c.public)
+				l.namespace(inner, c, false, stmt)
 			}
 		case l.v.internalModule, l.v.module:
-			l.namespace(stmt, c, false, stmt, c.public)
+			l.namespace(stmt, c, false, stmt)
 		default:
 			l.declaration(stmt, c, false, stmt, overloaded)
 		}
@@ -341,7 +359,7 @@ func (l *lowering) exportStatement(stmt treesitter.Node, c container, overloaded
 	case declaration.Kind() == l.v.ambientDeclaration:
 		l.ambient(declaration, c, true, stmt, overloaded)
 	case declaration.Kind() == l.v.internalModule || declaration.Kind() == l.v.module:
-		l.namespace(declaration, c, true, stmt, c.public)
+		l.namespace(declaration, c, true, stmt)
 	case !declaration.IsZero():
 		l.declaration(declaration, c, true, stmt, overloaded)
 	default:
@@ -370,7 +388,7 @@ func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outerm
 		switch inner.Kind() {
 		case l.v.comment:
 		case l.v.internalModule, l.v.module:
-			l.namespace(inner, declared, exported, outermost, true)
+			l.namespace(inner, declared, exported, outermost)
 			return
 		default:
 			l.declaration(inner, declared, exported, outermost, overloaded)
@@ -381,26 +399,35 @@ func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outerm
 
 // namespace lowers a namespace or a module declaration into the package
 // that it is. A name in quotes declares an ambient module, the package of
-// that name, whose members are public and ambient. A dotted name declares
-// the package of the namespace below the package of the container,
-// stamped with the dotted name. Its members are public where public is
-// set and exported by name otherwise, and ambient in an ambient context.
-// A namespace that the signature depth leaves out takes its comments and
-// its members with it.
-func (l *lowering) namespace(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
-	public bool,
-) {
+// that name, whose members are public and ambient. A relative specifier in
+// quotes augments the module of another file, which the parse of this file
+// cannot name, so the block reports under [RelativeAugmentation] and takes
+// its comments with it. A dotted name declares the package of the
+// namespace below the package of the container, stamped with the dotted
+// name. Its members are public and ambient in an ambient context, which
+// exports them implicitly, and exported by name otherwise, also in a
+// script. A namespace that the signature depth leaves out takes its
+// comments and its members with it.
+func (l *lowering) namespace(n treesitter.Node, c container, exported bool, outermost treesitter.Node) {
 	name := n.Child(l.v.fieldName)
 	var inner container
 	if name.Kind() == l.v.stringNode {
-		inner = container{pkg: l.unquote(name), outer: []string{c.pkg}, public: true, ambient: true}
+		spec := l.unquote(name)
+		if typescript.Relative(spec) {
+			l.u.Warnf(RelativeAugmentation, n.Pos(),
+				"declare module %q augments the module of another file, which the parse of this file cannot name, "+
+					"so the block loads nothing", spec)
+			l.skip(outermost)
+			return
+		}
+		inner = container{pkg: spec, outer: []string{c.pkg}, public: true, ambient: true}
 	} else {
 		if l.u.Depth() == plugin.DepthSignatures && !l.visible(c, exported, "") {
 			l.skip(outermost)
 			return
 		}
 		segments := strings.Split(name.Compact(), namespaceSeparator)
-		inner = container{public: public, ambient: c.ambient, dotted: name.Compact()}
+		inner = container{public: c.ambient, ambient: c.ambient, dotted: name.Compact()}
 		if c.dotted != "" {
 			inner.dotted = c.dotted + namespaceSeparator + inner.dotted
 		}

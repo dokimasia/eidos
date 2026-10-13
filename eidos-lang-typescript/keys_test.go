@@ -22,10 +22,10 @@ const (
 )
 
 // keysAllocs is the count of a registration into a fresh registry. The
-// registration allocates the eight kind lists of the keys. The registry
-// allocates ten times for its namespace claim and for the growth of its
-// spec list, its type list and its name map to eight keys.
-const keysAllocs = 8 + 10
+// registration allocates the ten kind lists of the keys. The registry
+// allocates 15 times for its namespace claim and for the growth of its
+// spec list, its type list and its name map to ten keys.
+const keysAllocs = 10 + 15
 
 // TestKeys pins the registration of the keys that the frontend stamps.
 // Every key resolves, and the namespace belongs to the satellite. A second
@@ -43,9 +43,9 @@ func TestKeys(t *testing.T) {
 			r := meta.NewRegistry()
 			assert.NoError(t, typescript.Keys(r), "the vocabulary registers")
 			for _, key := range []meta.KeyName{
-				typescript.TestFileKey, typescript.NamespaceKey, typescript.CallSignatureKey,
+				typescript.TestFileKey, typescript.GeneratedKey, typescript.NamespaceKey, typescript.CallSignatureKey,
 				typescript.AmbientKey, typescript.GeneratorKey, typescript.DefiniteAssignmentKey,
-				typescript.ParameterPropertyKey,
+				typescript.ParameterPropertyKey, typescript.AbstractKey, typescript.ConditionalTypeKey,
 			} {
 				_, known := r.Resolve(key)
 				assert.True(t, known, string(key)+" resolves")

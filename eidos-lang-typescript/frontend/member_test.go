@@ -309,6 +309,15 @@ func TestMember(t *testing.T) {
 			assert.True(t, stamped, "the class assigns it where the compiler cannot see")
 		})
 
+		t.Run("stamps typescript.abstract on an abstract property", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export abstract class "+className+" {\n  abstract id: string;\n}\n")
+			c := named[*node.Struct](t, fileIn(t, gb, aPackage).Decls, className)
+			_, stamped := stampOn(gb, c.Fields[0], typescript.AbstractKey)
+			assert.True(t, stamped, "a subclass declares the property")
+		})
+
 		t.Run("stamps nothing on a property without !", func(t *testing.T) {
 			t.Parallel()
 

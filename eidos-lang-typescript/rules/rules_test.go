@@ -31,6 +31,11 @@ const (
 	starPkg    = "fx/star"
 	innerPkg   = "fx/a/N"
 	outsideLib = "outside-lib"
+	// aliasUseFile and aliasUsePkg are the module of aliasTree that imports
+	// through the mapping, and aliasItemPkg is the module that it imports.
+	aliasUseFile = "fx/use.ts"
+	aliasUsePkg  = "fx/use"
+	aliasItemPkg = "fx/item"
 )
 
 // The names of the declarations of the fixture that the cases read.
@@ -69,6 +74,15 @@ var (
 	targetID  = symbol.Identity{Lang: typescript.Lang, Package: depPkg, Name: targetName, Kind: symbol.KindStruct}
 	derivedID = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: derivedName, Kind: symbol.KindStruct}
 )
+
+// aliasTree is a tree whose tsconfig maps the specifiers under @fx/ onto
+// the directory fx. The module fx/use imports the class Item of the module
+// fx/item through the mapping.
+var aliasTree = fstest.MapFS{
+	"tsconfig.json": {Data: []byte(`{"compilerOptions": {"paths": {"@fx/*": ["fx/*"]}}}`)},
+	aliasUseFile:    {Data: []byte("import { Item } from \"@fx/item\";\n\nexport class User {\n  item!: Item;\n}\n")},
+	"fx/item.ts":    {Data: []byte("export class Item {}\n")},
+}
 
 // fixtureTree is the TypeScript source that the cases project. It has a
 // module that exercises every rule, the module from which it imports a
@@ -677,7 +691,14 @@ func benchCall(b *testing.B, tt allocCall) {
 func loaded(tb assert.TB) *fixture {
 	tb.Helper()
 
-	_, f := setup(tb)
+	return loadedFrom(tb, fixtureTree)
+}
+
+// loadedFrom returns the fixture of a tree with a tracked view over it.
+func loadedFrom(tb assert.TB, tree fstest.MapFS) *fixture {
+	tb.Helper()
+
+	f := rulestest.Loaded(tb, tsfrontend.New(), tree)
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
 	assert.NoError(tb, err, "the sealed graph returns a reader")

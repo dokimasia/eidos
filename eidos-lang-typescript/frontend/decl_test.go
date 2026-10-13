@@ -264,6 +264,25 @@ func TestDecl(t *testing.T) {
 			assert.Length(t, a.TypeParams, 1, "the parameter")
 			assert.Equal(t, a.Target.Form, symbol.FormList, "and the type it names")
 		})
+
+		t.Run("stamps typescript.conditionalType on an alias of a conditional type", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export type Kind<T> = T extends string ? 'text' : 'other';\n")
+			a := named[*node.Alias](t, fileIn(t, gb, aPackage).Decls, "Kind")
+			got, stamped := stampOn(gb, a, typescript.ConditionalTypeKey)
+			assert.True(t, stamped, "the model has no conditional type")
+			assert.Equal(t, got, any("T extends string?'text':'other'"), "the spelling of the target")
+		})
+
+		t.Run("stamps no conditional type on an alias of another type", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export type Names = string[];\n")
+			a := named[*node.Alias](t, fileIn(t, gb, aPackage).Decls, "Names")
+			_, stamped := stampOn(gb, a, typescript.ConditionalTypeKey)
+			assert.False(t, stamped, "a list is a form of the model")
+		})
 	})
 
 	t.Run("function", func(t *testing.T) {

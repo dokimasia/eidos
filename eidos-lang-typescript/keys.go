@@ -54,6 +54,16 @@ const (
 	// field, and the field that the parameter declares. A reader of the
 	// parameter list or the field list finds the entries that are both.
 	ParameterPropertyKey meta.KeyName = "typescript.parameterProperty"
+
+	// AbstractKey marks a property that an abstract class declares with
+	// abstract, which a subclass declares. The model keeps the abstract mark
+	// of a method alone.
+	AbstractKey meta.KeyName = "typescript.abstract"
+
+	// ConditionalTypeKey records the spelling of a conditional type, such
+	// as T extends string ? A : B, on the alias whose target it is. The
+	// model keeps the target as a named reference with that spelling.
+	ConditionalTypeKey meta.KeyName = "typescript.conditionalType"
 )
 
 // Keys claims the typescript namespace and registers every typescript
@@ -63,9 +73,9 @@ const (
 //
 // # Allocation contract
 //
-// Keys allocates the eight kind lists of the keys. The registry allocates
-// its namespace claim and the growth of its lists and maps to eight keys.
-// A registration into a fresh registry allocates 18 times.
+// Keys allocates the ten kind lists of the keys. The registry allocates
+// its namespace claim and the growth of its lists and maps to ten keys.
+// A registration into a fresh registry allocates 25 times.
 func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err
@@ -106,6 +116,14 @@ func Keys(r *meta.Registry) error {
 		Name: ParameterPropertyKey, Kinds: []symbol.Kind{symbol.KindField, symbol.KindParam},
 		Doc: "marks a constructor parameter that declares a field, and the field that it declares",
 	})
+	_, abstractErr := meta.Register[bool](r, meta.KeySpec{
+		Name: AbstractKey, Kinds: []symbol.Kind{symbol.KindField},
+		Doc: "marks an abstract property, which a subclass declares",
+	})
+	_, conditionalErr := meta.Register[string](r, meta.KeySpec{
+		Name: ConditionalTypeKey, Kinds: []symbol.Kind{symbol.KindAlias},
+		Doc: "records the spelling of the conditional type that an alias names",
+	})
 	return errors.Join(testErr, generatedErr, namespaceErr, callErr, ambientErr, generatorErr, definiteErr,
-		propertyErr)
+		propertyErr, abstractErr, conditionalErr)
 }

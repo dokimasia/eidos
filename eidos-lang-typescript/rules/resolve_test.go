@@ -142,6 +142,23 @@ func TestResolve(t *testing.T) {
 			})
 		}
 
+		t.Run("resolves a type that an import binds through a paths pattern of the tsconfig", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, aliasTree)
+			user, is := f.decl(t, aliasUsePkg, "User", symbol.KindStruct).(*node.Struct)
+			assert.True(t, is, "User is a class")
+			assert.Length(t, user.Fields, 1, "User declares the field item")
+			scope := rules.Scope{Subject: user.Fields[0].ID, File: f.file(t, aliasUsePkg, aliasUseFile)}
+			got, err := tsrules.New().Resolve(scope, "Item", directive.ResolveTypeInScope, f.view)
+			assert.NoError(t, err, "the type resolves")
+			decl, names := got.(node.Declaration)
+			assert.True(t, names, "the result is a declaration")
+			want := symbol.Identity{Lang: typescript.Lang, Package: aliasItemPkg, Name: "Item", Kind: symbol.KindStruct}
+			expect.Equal(t, decl.Identity(), want, "the rules resolve the specifier through the tsconfig")
+			expect.Equal(t, user.Fields[0].Type.Target, want, "the frontend links the reference to the same module")
+		})
+
 		t.Run("resolves a type from inside a namespace through the namespace first", func(t *testing.T) {
 			t.Parallel()
 

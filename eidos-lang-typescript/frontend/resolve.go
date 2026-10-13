@@ -129,7 +129,7 @@ func (m *module) local(name string) plugin.Candidates {
 // publish it, then the export-star modules.
 func (m *module) published(name string) plugin.Candidates {
 	var explicit []plugin.Candidates
-	if name == defaultExport && m.defaultName != "" && m.defaultName != defaultExport {
+	if name == typescript.DefaultExport && m.defaultName != "" && m.defaultName != typescript.DefaultExport {
 		explicit = append(explicit, m.local(m.defaultName))
 	}
 	for _, r := range m.reexports {
@@ -143,7 +143,7 @@ func (m *module) published(name string) plugin.Candidates {
 		}
 	}
 	var stars []plugin.Candidates
-	if name != defaultExport {
+	if name != typescript.DefaultExport {
 		for _, spec := range m.stars {
 			stars = append(stars, m.from(spec, "", name))
 		}

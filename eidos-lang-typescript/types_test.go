@@ -17,7 +17,8 @@ import (
 // type nor a global type.
 const declaredName = "Store"
 
-// keywordTypes and globalTypes list every constant of the two groups.
+// keywordTypes, globalTypes and errorClasses list every constant of the
+// three groups. The error classes are global types too.
 var (
 	keywordTypes = []string{
 		typescript.TypeAny, typescript.TypeUnknown, typescript.TypeNever, typescript.TypeObject,
@@ -25,12 +26,16 @@ var (
 		typescript.TypeThis, typescript.TypeString, typescript.TypeNumber, typescript.TypeBoolean,
 		typescript.TypeBigInt,
 	}
-	globalTypes = []string{
+	errorClasses = []string{
+		typescript.TypeError, typescript.TypeAggregateError, typescript.TypeEvalError, typescript.TypeRangeError,
+		typescript.TypeReferenceError, typescript.TypeSyntaxError, typescript.TypeTypeError, typescript.TypeURIError,
+	}
+	globalTypes = append([]string{
 		typescript.TypeArray, typescript.TypeReadonlyArray, typescript.TypeRecord, typescript.TypePartial,
 		typescript.TypeMap, typescript.TypeReadonlyMap, typescript.TypeSet, typescript.TypePromise,
 		typescript.TypeDate, typescript.TypeUint8Array, typescript.TypeAsyncIterable,
 		typescript.TypeAsyncIterableIterator, typescript.TypeAsyncGenerator, typescript.TypeAbortSignal,
-	}
+	}, errorClasses...)
 )
 
 // TestTypes checks the two predicates over every constant of the keyword
@@ -89,19 +94,46 @@ func TestTypes(t *testing.T) {
 			assert.False(t, typescript.GlobalType(declaredName), "a declared name is not a global type")
 		})
 	})
+
+	t.Run("ErrorClass", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for each error class", func(t *testing.T) {
+			t.Parallel()
+
+			for _, name := range errorClasses {
+				expect.True(t, typescript.ErrorClass(name), name+" is an error class")
+			}
+		})
+
+		t.Run("reports false for a global type that is not an error class", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, typescript.ErrorClass(typescript.TypeDate), "Date is not an error class")
+		})
+
+		t.Run("reports false for a declared name", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, typescript.ErrorClass(declaredName), "a declared name is not an error class")
+		})
+	})
 }
 
-// TestTypesAllocs checks that both predicates do not allocate. The
+// TestTypesAllocs checks that the three predicates do not allocate. The
 // ordinary test run does not run benchmarks, so this test checks the
 // ceilings.
 func TestTypesAllocs(t *testing.T) {
-	var keyword, global bool
+	var keyword, global, class bool
 	expect.MaxAllocs(t, func() { keyword = typescript.KeywordType(typescript.TypeBigInt) }, 0,
 		"KeywordType allocates nothing")
 	expect.MaxAllocs(t, func() { global = typescript.GlobalType(typescript.TypeAbortSignal) }, 0,
 		"GlobalType allocates nothing")
+	expect.MaxAllocs(t, func() { class = typescript.ErrorClass(typescript.TypeURIError) }, 0,
+		"ErrorClass allocates nothing")
 	expect.True(t, keyword, "bigint is a keyword type")
 	expect.True(t, global, "AbortSignal is a global type")
+	expect.True(t, class, "URIError is an error class")
 }
 
 // BenchmarkTypes measures each predicate on the last name of its list.
@@ -125,5 +157,15 @@ func BenchmarkTypes(b *testing.B) {
 			global = typescript.GlobalType(typescript.TypeAbortSignal)
 		}
 		assert.True(b, global, "AbortSignal is a global type")
+	})
+
+	b.Run("ErrorClass", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var class bool
+		for c.Loop() {
+			class = typescript.ErrorClass(typescript.TypeURIError)
+		}
+		assert.True(b, class, "URIError is an error class")
 	})
 }

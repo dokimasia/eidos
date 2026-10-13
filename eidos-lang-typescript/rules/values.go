@@ -327,14 +327,18 @@ func (r Rules) objectPair(
 //   - 0 for number, the empty string for string, false for boolean and 0n
 //     for bigint;
 //   - the empty array for a list, an Array and a ReadonlyArray;
+//   - the empty object for an object with one index signature and for a
+//     Record;
 //   - null for an optional whose Absent lists null and not undefined, and
 //     undefined for every other optional;
 //   - the zero of its target for an alias.
 //
 // The Absent of an optional member, such as the a?: T of a tuple, is
 // empty, so its zero is undefined. Every other type has no zero, and
-// ZeroValue reports false. The zero of a builtin allocates nothing, and
-// the empty array allocates the reference to its type.
+// ZeroValue reports false. A Map has none, because its empty value is the
+// construction new Map(), which the value tree does not have. The zero of
+// a builtin allocates nothing, and the empty array and the empty object
+// allocate the reference to their type.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	for range deriveDepth {
 		switch {
@@ -345,7 +349,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 				return emit.Literal(emit.LiteralNil, ""), true
 			}
 			return emit.Raw(typescript.Lang, typescript.TypeUndefined), true
-		case ref.Form == symbol.FormList:
+		case ref.Form == symbol.FormList || ref.Form == symbol.FormMap:
 			return emit.Composite(rules.EmitRef(ref)), true
 		case ref.Form != symbol.FormNamed:
 			return emit.Value{}, false
@@ -376,6 +380,9 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		return emit.Composite(rules.EmitRef(ref)), true
 	default:
 		// Every other form takes the zero of its spelling below.
+	}
+	if ref.Package == "" && ref.Spelling == typescript.TypeRecord {
+		return emit.Composite(rules.EmitRef(ref)), true
 	}
 	if ref.Package == "" && ref.Spelling == typescript.TypeBigInt {
 		return emit.Raw(typescript.Lang, zeroNumber+bigintMark), true
@@ -413,8 +420,8 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 //     member, as a value of the literal's own kind.
 //
 // Every other type does not take a literal. That includes a class, an
-// interface and a type outside the view. The file plays no part, because a
-// TypeScript literal has the same value in every module.
+// interface and a type outside the view. The scope plays no part, because
+// a TypeScript literal has the same value in every module.
 //
 // # Allocation contract
 //
@@ -428,7 +435,7 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 //
 // A truth value, null, undefined and a string without an escape allocate
 // nothing.
-func (r Rules) LiteralFor(_ *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+func (r Rules) LiteralFor(_ rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
 	lit, scanned := scanLiteral(text)
 	if !scanned {
 		return emit.Value{}, false

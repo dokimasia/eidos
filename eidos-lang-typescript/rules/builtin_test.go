@@ -54,6 +54,10 @@ func TestBuiltin(t *testing.T) {
 				want: rules.Reference("Date", rules.WellKnownTimestamp),
 			},
 			{
+				name: "classifies Error as the well-known error", give: &node.TypeRef{Spelling: "Error"},
+				want: rules.Reference("Error", rules.WellKnownError),
+			},
+			{
 				name: "classifies Uint8Array as bytes", give: &node.TypeRef{Spelling: "Uint8Array"},
 				want: rules.Leaf(symbol.FormBytes, "Uint8Array"),
 			},

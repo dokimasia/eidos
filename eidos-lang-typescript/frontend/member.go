@@ -197,8 +197,9 @@ func (l *lowering) parameterProperties(list treesitter.Node, params []*node.Para
 // type, its initializer verbatim, and the decorators before it and inside
 // it. A name in brackets is computed, and the field keeps the brackets in
 // its name. field stamps typescript.definiteAssignment on a
-// property declared with !. field returns nil for a property that the
-// signature depth leaves out.
+// property declared with !, and typescript.abstract on an abstract
+// property. field returns nil for a property that the signature depth
+// leaves out.
 func (l *lowering) field(m treesitter.Node, decorators []treesitter.Node) *node.Field {
 	nameNode := m.Child(l.v.fieldName)
 	hard := nameNode.Kind() == l.v.privatePropertyIdentifier
@@ -226,6 +227,9 @@ func (l *lowering) field(m treesitter.Node, decorators []treesitter.Node) *node.
 	}
 	if m.HasToken(keywordDefinite) {
 		l.mark(f, typescript.DefiniteAssignmentKey, m.Pos())
+	}
+	if m.HasToken(keywordAbstract) {
+		l.mark(f, typescript.AbstractKey, m.Pos())
 	}
 	l.u.AttachCarriers(f, parts.Carriers, BadCarrier)
 	return f
@@ -260,28 +264,65 @@ func (l *lowering) indexer(m treesitter.Node) *node.Method {
 // that constructs, and an index signature a method named []. It returns
 // the call signatures as written. The caller of an interface stamps them,
 // and the spelling of an inline body keeps them.
-func (l *lowering) objectMembers(body treesitter.Node, fields *[]*node.Field, methods *[]*node.Method) []string {
-	var calls []string
+//
+// objectMembers also returns the types that the members state, in the
+// order of the body, as the children of an inline body: the type of each
+// property, and for each signature the bounds and the defaults of its type
+// parameters, the type of its receiver, its parameter types and its result
+// type, as the method records them. A rest parameter has the type of one
+// argument, and a void result and the promise of an async result have no
+// child of their own. Each child is a copy of the type of its member, which
+// [node.CloneRef] returns, because a node of the graph has one place. A
+// parameter or a result without a type has no child.
+func (l *lowering) objectMembers(
+	body treesitter.Node, fields *[]*node.Field, methods *[]*node.Method,
+) (calls []string, children []*node.TypeRef) {
 	for m := range body.NamedChildren() {
+		var built *node.Method
 		switch m.Kind() {
 		case l.v.propertySignature:
-			*fields = append(*fields, l.property(m))
-		case l.v.methodSignature:
-			if built := l.methodOf(m, nil, true); built != nil {
-				*methods = append(*methods, built)
+			f := l.property(m)
+			*fields = append(*fields, f)
+			if f.Type != nil {
+				children = append(children, node.CloneRef(f.Type))
 			}
+		case l.v.methodSignature:
+			built = l.methodOf(m, nil, true)
 		case l.v.constructSignature:
-			*methods = append(*methods, l.construct(m))
+			built = l.construct(m)
 		case l.v.callSignature:
 			calls = append(calls, m.Compact())
 			l.refuse(m, "a call signature")
 		case l.v.indexSignature:
-			if built := l.indexer(m); built != nil {
-				*methods = append(*methods, built)
+			built = l.indexer(m)
+		}
+		if built == nil {
+			continue
+		}
+		*methods = append(*methods, built)
+		for _, tp := range built.TypeParams {
+			for _, b := range tp.Bounds {
+				children = append(children, node.CloneRef(b))
+			}
+			if tp.Default != nil {
+				children = append(children, node.CloneRef(tp.Default))
+			}
+		}
+		if built.Receiver != nil && built.Receiver.Type != nil {
+			children = append(children, node.CloneRef(built.Receiver.Type))
+		}
+		for _, p := range built.Params {
+			if p.Type != nil {
+				children = append(children, node.CloneRef(p.Type))
+			}
+		}
+		for _, r := range built.Returns {
+			if r.Type != nil {
+				children = append(children, node.CloneRef(r.Type))
 			}
 		}
 	}
-	return calls
+	return calls, children
 }
 
 // callSignatures returns the call signatures of an object type as written.

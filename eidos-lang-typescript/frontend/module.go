@@ -5,24 +5,9 @@ package frontend
 
 import (
 	"path"
-	"strings"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 )
-
-// indexModule is the file name a directory specifier resolves to.
-const indexModule = "index"
-
-// defaultExport is the name a module's default export is published
-// under, and the name a default import binds.
-const defaultExport = "default"
-
-// relative reports whether a module specifier names a path relative to
-// the importing file's directory.
-func relative(specifier string) bool {
-	return strings.HasPrefix(specifier, "./") || strings.HasPrefix(specifier, "../") ||
-		specifier == "." || specifier == ".."
-}
 
 // binding is what an import binds one local name to: a module
 // specifier and the name the module exports, "default" for a default
@@ -89,7 +74,7 @@ func newModule(file string, paths resolution) *module {
 // the package of its own spelling, which an ambient module declaration
 // declares.
 func (m *module) packages(specifier string) [][]string {
-	if relative(specifier) {
+	if typescript.Relative(specifier) {
 		return fileAndIndex(path.Join(m.dir, specifier))
 	}
 	var out [][]string
@@ -102,11 +87,37 @@ func (m *module) packages(specifier string) [][]string {
 	return append(out, []string{specifier})
 }
 
+// mapped returns the packages that a specifier names where a paths
+// pattern or the baseUrl of the governing tsconfig maps it, in the order
+// of [module.packages]. It returns nil for an empty specifier, for a
+// relative one and for one that the tsconfig does not map, because the
+// rules resolve those from their text. The import and the export records
+// of the graph contain the result as their Modules.
+//
+// # Allocation contract
+//
+// mapped allocates what [module.packages] allocates and the list that it
+// returns, and nothing for a specifier that it returns nil for.
+func (m *module) mapped(specifier string) []string {
+	if specifier == "" || typescript.Relative(specifier) {
+		return nil
+	}
+	tiers := m.packages(specifier)
+	if len(tiers) == 1 {
+		return nil
+	}
+	out := make([]string, 0, len(tiers))
+	for _, tier := range tiers {
+		out = append(out, tier...)
+	}
+	return out
+}
+
 // fileAndIndex returns the two tiers one module path names: the file
 // without its extension, and the directory's index.
 func fileAndIndex(p string) [][]string {
 	base := typescript.ModulePath(p)
-	return [][]string{{base}, {path.Join(base, indexModule)}}
+	return [][]string{{base}, {path.Join(base, typescript.IndexModule)}}
 }
 
 // scope is what one File node of a file records for the resolution

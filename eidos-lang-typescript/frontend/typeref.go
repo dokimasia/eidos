@@ -240,7 +240,7 @@ func (l *lowering) object(n treesitter.Node) *node.TypeRef {
 	}
 	ref := &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos(), Form: symbol.FormInline}
 	l.inline++
-	l.objectMembers(n, &ref.Fields, &ref.Methods)
+	_, ref.Elems = l.objectMembers(n, &ref.Fields, &ref.Methods)
 	l.inline--
 	return ref
 }

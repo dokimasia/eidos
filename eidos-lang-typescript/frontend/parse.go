@@ -24,9 +24,9 @@ type manifest struct {
 // MISSING node reports at its position, and every declaration that the
 // parser recovered loads. The tsconfig chain of the member, among its
 // shared inputs, states how its non-relative specifiers resolve. A chain
-// that does not read whole reports under [BadConfig] and resolves through
-// what it read before the fault. Every package of the unit has the module
-// of the package.json of the member.
+// that does not read whole reports under [BadConfig], and the files that
+// it governs resolve through neither a baseUrl nor paths. Every package of
+// the unit has the module of the package.json of the member.
 func (f *tsFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 	for _, ref := range u.Files() {
 		src, err := u.Read(ref.Path)
@@ -58,9 +58,9 @@ func (f *tsFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 
 // resolutionOf reads the tsconfig chain of a member through the door of
 // the unit and returns its module resolution. It reports a chain that does
-// not read whole at its governing configuration. A member without a
-// tsconfig.json among its shared inputs resolves through neither a baseUrl
-// nor paths.
+// not read whole at its governing configuration, and returns the empty
+// resolution for it. A member without a tsconfig.json among its shared
+// inputs resolves through neither a baseUrl nor paths.
 func resolutionOf(u *plugin.SourceUnit, ref plugin.SourceRef) resolution {
 	if len(ref.Shared) == 0 || path.Base(ref.Shared[0]) != tsconfigName {
 		return resolution{}
@@ -69,6 +69,7 @@ func resolutionOf(u *plugin.SourceUnit, ref plugin.SourceRef) resolution {
 	if err != nil {
 		u.Warnf(BadConfig, position.Pos{File: ref.Shared[0], Line: 1, Col: 1},
 			"%v. The files it governs resolve without its baseUrl and paths", err)
+		return resolution{}
 	}
 	return res
 }

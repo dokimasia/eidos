@@ -573,6 +573,35 @@ func TestValues(t *testing.T) {
 			expect.Equal(t, got.Kind, emit.ValueComposite, "the zero is an array literal")
 		})
 
+		maps := []struct {
+			name string
+			give *node.TypeRef
+		}{
+			{
+				name: "returns the empty object for a Record",
+				give: &node.TypeRef{
+					Spelling: typescript.TypeRecord,
+					Args:     []*node.TypeRef{{Spelling: stringName}, {Spelling: numberName}},
+				},
+			},
+			{
+				name: "returns the empty object for an object with one index signature",
+				give: &node.TypeRef{
+					Spelling: "{[k:string]:number}", Form: symbol.FormMap,
+					Elems: []*node.TypeRef{{Spelling: stringName}, {Spelling: numberName}},
+				},
+			},
+		}
+		for _, tt := range maps {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, ok := tsrules.New().ZeroValue(tt.give, rules.View{})
+				assert.True(t, ok, "a map has a zero")
+				assert.Equal(t, got, emit.Composite(rules.EmitRef(tt.give)), "the zero is the empty object")
+			})
+		}
+
 		t.Run("returns the zero of the target of an alias", func(t *testing.T) {
 			t.Parallel()
 
@@ -589,6 +618,11 @@ func TestValues(t *testing.T) {
 		}{
 			{name: "reports false for Date", give: func(assert.TB, *fixture) *node.TypeRef {
 				return &node.TypeRef{Spelling: "Date"}
+			}},
+			{name: "reports false for a Map", give: func(assert.TB, *fixture) *node.TypeRef {
+				return &node.TypeRef{
+					Spelling: typescript.TypeMap, Args: []*node.TypeRef{{Spelling: stringName}, {Spelling: numberName}},
+				}
 			}},
 			{name: "reports false for a class", give: func(tb assert.TB, f *fixture) *node.TypeRef {
 				return f.field(tb, rowName, "next").Type
@@ -681,7 +715,7 @@ func TestValues(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				got, ok := tsrules.New().LiteralFor(nil, tt.ref, tt.text, rules.View{})
+				got, ok := tsrules.New().LiteralFor(rules.Scope{}, tt.ref, tt.text, rules.View{})
 				assert.True(t, ok, "the type takes the literal")
 				assert.Equal(t, got, tt.want, "LiteralFor returns the value of the literal")
 			})
@@ -728,7 +762,7 @@ func TestValues(t *testing.T) {
 				optional := &node.TypeRef{
 					Form: symbol.FormOptional, Elems: []*node.TypeRef{{Spelling: stringName}}, Absent: tt.absent,
 				}
-				got, ok := tsrules.New().LiteralFor(nil, optional, tt.text, rules.View{})
+				got, ok := tsrules.New().LiteralFor(rules.Scope{}, optional, tt.text, rules.View{})
 				assert.Equal(t, ok, tt.takes, "LiteralFor reports whether the optional takes the literal")
 				assert.Equal(t, got, tt.want, "LiteralFor returns the expected value")
 			})
@@ -764,7 +798,7 @@ func TestValues(t *testing.T) {
 				f := loaded(t)
 				enum := symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: tt.enum, Kind: symbol.KindEnum}
 				ref := &node.TypeRef{Spelling: tt.enum, Target: enum}
-				got, ok := tsrules.New().LiteralFor(nil, ref, tt.text, f.view)
+				got, ok := tsrules.New().LiteralFor(rules.Scope{}, ref, tt.text, f.view)
 				assert.True(t, ok, "the enum takes its member")
 				expect.Equal(t, got.Kind, emit.ValueConversion, "the member is asserted to the enum")
 				expect.Equal(t, *got.Inner, tt.want, "the asserted value is the member's value")
@@ -775,7 +809,7 @@ func TestValues(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			got, ok := tsrules.New().LiteralFor(nil, f.field(t, shapesName, "plain").Type, "3", f.view)
+			got, ok := tsrules.New().LiteralFor(rules.Scope{}, f.field(t, shapesName, "plain").Type, "3", f.view)
 			assert.True(t, ok, "Plain is an alias of number")
 			assert.Equal(t, got, emit.Number(emit.LiteralFloat, "3", 64), "LiteralFor returns the number")
 		})
@@ -867,7 +901,7 @@ func TestValues(t *testing.T) {
 				t.Parallel()
 
 				f := loaded(t)
-				_, ok := tsrules.New().LiteralFor(nil, tt.ref(t, f), tt.text, f.view)
+				_, ok := tsrules.New().LiteralFor(rules.Scope{}, tt.ref(t, f), tt.text, f.view)
 				assert.False(t, ok, "the type does not take the literal")
 			})
 		}
@@ -929,17 +963,17 @@ func valuesCalls(tb assert.TB) []allocCall {
 		},
 		{
 			name: "LiteralFor", caseName: "a string",
-			call:  func() { value, _ = r.LiteralFor(nil, str, `"plain"`, f.view) },
+			call:  func() { value, _ = r.LiteralFor(rules.Scope{}, str, `"plain"`, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, "plain", "LiteralFor lifts the string") },
 		},
 		{
 			name: "LiteralFor", caseName: "a number", allocs: numberLiteralAllocs,
-			call:  func() { value, _ = r.LiteralFor(nil, number, "1234", f.view) },
+			call:  func() { value, _ = r.LiteralFor(rules.Scope{}, number, "1234", f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, "1234", "LiteralFor lifts the number") },
 		},
 		{
 			name: "LiteralFor", caseName: "a member of an enum", allocs: memberLiteralAllocs,
-			call:  func() { value, _ = r.LiteralFor(nil, codes, "Codes.NotFound", f.view) },
+			call:  func() { value, _ = r.LiteralFor(rules.Scope{}, codes, "Codes.NotFound", f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Inner.Text, "404", "LiteralFor lifts the member") },
 		},
 	}

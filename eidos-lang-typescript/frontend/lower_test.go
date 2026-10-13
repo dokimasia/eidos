@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
@@ -28,6 +29,10 @@ const (
 // moreSyntax is the pattern of the finding that counts the syntax errors
 // past the cap.
 const moreSyntax = `^and \d+ more syntax errors$`
+
+// relativeAugmentation is a module that augments the module of a relative
+// specifier.
+const relativeAugmentation = "export {};\ndeclare module './user' {\n  interface User { n: string }\n}\n"
 
 // The statement walk decides the package of each declaration and what the
 // module publishes. The cases pin its rules, the sweep over the comments
@@ -153,6 +158,43 @@ func TestLower(t *testing.T) {
 			assert.Equal(t, imp.Path, "f", "the module")
 		})
 
+		mapped := fstest.MapFS{
+			rootConfig: {Data: []byte(`{"compilerOptions": {"paths": {"@lib/*": ["lib/*"]}}}`)},
+			aFile: {Data: []byte("import { A } from '@lib/x';\nimport { B } from './x';\nimport { C } from 'other';\n" +
+				"export { D } from '@lib/x';\n")},
+		}
+		mappedModules := []string{"lib/x", "lib/x/index", "@lib/x"}
+
+		t.Run("records the packages that a paths pattern maps the specifier of an import onto", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, mapped, aFile, plugin.DepthFull)
+			assert.Equal(t, fileIn(t, gb, aPackage).Imports[0].Modules, mappedModules,
+				"the substitution as a file and an index, then the specifier")
+		})
+
+		t.Run("records no packages for a relative specifier", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, mapped, aFile, plugin.DepthFull)
+			assert.Nil(t, fileIn(t, gb, aPackage).Imports[1].Modules, "the rules resolve a relative specifier alike")
+		})
+
+		t.Run("records no packages for a specifier that the tsconfig does not map", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, mapped, aFile, plugin.DepthFull)
+			assert.Nil(t, fileIn(t, gb, aPackage).Imports[2].Modules, "the specifier names its ambient module")
+		})
+
+		t.Run("records the packages that a paths pattern maps the source of a re-export onto", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, mapped, aFile, plugin.DepthFull)
+			assert.Equal(t, fileIn(t, gb, aPackage).Exports[0].Modules, mappedModules,
+				"a re-export resolves its source as an import does")
+		})
+
 		t.Run("records a re-export from a module with its renames", func(t *testing.T) {
 			t.Parallel()
 
@@ -229,6 +271,42 @@ func TestLower(t *testing.T) {
 			})
 		}
 
+		t.Run("records the doc and the trailing comment of an import", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "// The library.\nimport { A } from './lib'; // for A\n")
+			imp := fileIn(t, gb, aPackage).Imports[0]
+			expect.Equal(t, imp.Doc, []string{"The library."}, "the doc of the import")
+			expect.Equal(t, imp.Comment, "for A", "the trailing comment of the import")
+		})
+
+		t.Run("reports UnaddressedCarrier for a carrier on an import", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedSource(t, carrierLine+"import { A } from './lib';\n")
+			assert.Length(t, found, 1, "the carrier refuses")
+			assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "as a carrier that no rule takes")
+			assert.Empty(t, gb.Attachments(), "nothing attaches")
+		})
+
+		t.Run("records the doc of a re-export", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "// The names of the library.\nexport { J } from './j';\n")
+			assert.Equal(t, fileIn(t, gb, aPackage).Exports[0].Doc, []string{"The names of the library."},
+				"the doc of the export")
+		})
+
+		t.Run("leaves the doc of an exported declaration to the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "// Foo is the default.\nexport default class Foo {}\n")
+			file := fileIn(t, gb, aPackage)
+			expect.Empty(t, file.Exports[0].Doc, "the export has no doc of its own")
+			expect.Equal(t, named[*node.Struct](t, file.Decls, "Foo").Doc, []string{"Foo is the default."},
+				"the class has the doc")
+		})
+
 		t.Run("skips a comment among the names of an import", func(t *testing.T) {
 			t.Parallel()
 
@@ -302,6 +380,21 @@ func TestLower(t *testing.T) {
 			assert.Length(t, fileIn(t, gb, modulePkg).Decls, 1, "a bare import of lib refers to it")
 		})
 
+		t.Run("reports RelativeAugmentation for an augmentation of a relative module", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, relativeAugmentation)
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.RelativeAugmentation},
+				"the parse of one file cannot name the module of a relative specifier")
+		})
+
+		t.Run("loads nothing from an augmentation of a relative module", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, relativeAugmentation)
+			assert.Equal(t, packagePaths(gb), []string{aPackage}, "no package has the spelling of the specifier")
+		})
+
 		t.Run("declares the members of a module block into its namespace package", func(t *testing.T) {
 			t.Parallel()
 
@@ -314,6 +407,14 @@ func TestLower(t *testing.T) {
 
 			gb, _ := parsedSource(t, "namespace A {\n  class X {}\n}\n")
 			assert.Length(t, fileIn(t, gb, "A").Decls, 1, "the namespace A of the global package")
+		})
+
+		t.Run("lowers a member that the namespace of a script does not export as package-visible", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "namespace A {\n  class Hidden {}\n}\n")
+			assert.Equal(t, fileIn(t, gb, "A").Decls[0].(*node.Struct).Visibility, symbol.VisibilityPackage,
+				"another file cannot refer to A.Hidden")
 		})
 
 		t.Run("leaves out a namespace that the module does not export at signature depth", func(t *testing.T) {

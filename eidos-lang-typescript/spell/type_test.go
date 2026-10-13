@@ -435,6 +435,10 @@ func TestType(t *testing.T) {
 				},
 			},
 			{
+				name: "returns Error for the well-known error",
+				give: rules.Reference("error", rules.WellKnownError), want: &emit.TypeRef{Spelling: "Error"},
+			},
+			{
 				name: "returns unknown for the top type",
 				give: rules.Leaf(symbol.FormDynamic, "any"), want: &emit.TypeRef{Spelling: "unknown"},
 			},

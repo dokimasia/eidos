@@ -34,7 +34,7 @@ export interface Row {
   i: Foo & Bar;
   f: (p0: string, p1: number) => boolean;
   m: { [key: string]: number };
-  b: { a: string; m(): void };
+  b: { a: string; m(): boolean };
   g: Box<string>[];
   p: (string | number)[];
   rl: readonly string[];
@@ -56,7 +56,6 @@ const (
 	stringName    = "string"
 	numberName    = "number"
 	booleanName   = "boolean"
-	voidName      = "void"
 	undefinedName = "undefined"
 	nullName      = "null"
 	propA         = "a"
@@ -230,7 +229,7 @@ func builtProps(tb testing.TB) map[string]refShape {
 			nodetest.Map(nodetest.Named(stringName), nodetest.Named(numberName)))},
 		{Name: bodyProp, Type: nodetest.Inline(
 			[]*node.Field{{Name: propA, Type: nodetest.Named(stringName)}},
-			[]*node.Method{{Name: methodM, Returns: []*node.Return{{Type: nodetest.Named(voidName)}}}},
+			[]*node.Method{{Name: methodM, Returns: []*node.Return{{Type: nodetest.Named(booleanName)}}}},
 		)},
 		{Name: argsProp, Type: mutable(symbol.MutabilityMutable,
 			nodetest.List(b.Ref(box, nodetest.Named(stringName))))},
