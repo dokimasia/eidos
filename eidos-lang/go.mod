@@ -16,6 +16,7 @@ require (
 
 require (
 	github.com/mattn/go-pointer v0.0.1 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	go.dokimi.dev/eidos/core v0.2.0 // indirect
 )
 
