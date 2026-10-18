@@ -13,7 +13,7 @@ require (
 	go.dokimi.dev/eidos/lang/go v0.1.1
 	go.dokimi.dev/eidos/lang/typescript v0.1.1
 	go.dokimi.dev/eidos/sdk v0.1.1
-	golang.org/x/mod v0.41.0
+	golang.org/x/mod v0.42.0
 )
 
 require (
