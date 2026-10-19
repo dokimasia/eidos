@@ -134,6 +134,51 @@ message Row {
 			assert.Empty(t, row.Fields[1].Doc, "nor documents the field after it, as protoc drops it")
 		})
 
+		t.Run("attributes a comment between a field and a closing brace on one line to neither", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+message Row { string a = 1; /* between */ }
+`)
+			assert.False(t, sink.Failed(), "the schema loads clean")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, row.Fields[0].Comment, "", "the comment does not trail the field, as protoc drops it")
+		})
+
+		t.Run("trails a declaration with the one group below it that a blank line follows", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+message Row {
+  string a = 1;
+  // Trails a.
+  // Another line of the comment of a.
+
+  string b = 2;
+}
+`)
+			assert.False(t, sink.Failed(), "the schema loads clean")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, row.Fields[0].Comment, "Trails a. Another line of the comment of a.",
+				"the group below a trails a, as protoc attributes it")
+			assert.Empty(t, row.Fields[1].Doc, "and the blank line detaches the group from b")
+		})
+
+		t.Run("takes the comment after the last statement of a file without a final newline", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, "syntax = \"proto3\";\n\npackage svc.store;\n\nimport \"dep/t.proto\"; // the import")
+			assert.False(t, sink.Failed(), "the schema loads clean")
+			assert.Equal(t, onlyFile(t, gb).Imports[0].Comment, "the import",
+				"the import takes the comment on its line")
+		})
+
 		t.Run("strips a block comment to its text", func(t *testing.T) {
 			t.Parallel()
 

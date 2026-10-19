@@ -80,9 +80,6 @@ func (l *lowered) attribute() {
 		between []token.Token
 	)
 	for tok := range l.stream.All() {
-		if tok.IsSynthetic() {
-			break
-		}
 		switch tok.Kind() {
 		case token.Comment:
 			between = append(between, tok)
@@ -108,10 +105,11 @@ func (l *lowered) attribute() {
 //   - The comment is a line comment, another comment follows it, or it
 //     ends on a line before next.
 //
-// The end of the file counts as a line below prev. The other comments
-// form groups as protoc groups them, and [lowered.donate] and
-// [lowered.attach] split the groups between the trailing group of prev
-// and the leading group of next.
+// The other comments form groups as protoc groups them, and
+// [lowered.donate] and [lowered.attach] split the groups between the
+// trailing group of prev and the leading group of next. donate treats
+// the end of the file as a closer, so a comment beside the last token of
+// a file trails that token.
 func (l *lowered) pair(prev, next token.Token, comments []token.Token) {
 	if len(comments) == 0 {
 		return
@@ -119,9 +117,6 @@ func (l *lowered) pair(prev, next token.Token, comments []token.Token) {
 	var trail commentGroup
 	if !prev.IsZero() {
 		prevEnd, nextStart := l.endLine(prev), l.startLine(next)
-		if next.IsZero() && nextStart == prevEnd {
-			nextStart++
-		}
 		first := comments[0]
 		if nextStart > prevEnd && l.startLine(first) == prevEnd &&
 			(isLine(first) || len(comments) > 1 || l.endLine(first) < nextStart) {
@@ -173,11 +168,9 @@ func (l *lowered) groupComments(comments []token.Token) []commentGroup {
 // of the previous token or on the line below it. Another group follows
 // it, a blank line separates it from the next token, or the next token is
 // a closer or the end of the file. A group on the line of both tokens is
-// not donated, because protoc leaves that attribution ambiguous.
+// not donated, because protoc leaves that attribution ambiguous. groups
+// contains one group or more.
 func (l *lowered) donate(prev, next token.Token, groups []commentGroup) (commentGroup, []commentGroup) {
-	if len(groups) == 0 {
-		return nil, nil
-	}
 	first := groups[0][0]
 	if l.startLine(first) > l.endLine(prev)+1 {
 		return nil, groups

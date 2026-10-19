@@ -773,6 +773,21 @@ message Row {
 			}
 		})
 
+		t.Run("reports UnparsedFile for options on the syntax statement", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := parsed(t, "syntax = \"proto3\" [deprecated = true];\n\npackage svc.store;\n")
+			assert.Contains(t, codesOf(sink), protofrontend.UnparsedFile, "protoc refuses options on the statement")
+		})
+
+		t.Run("reports UnparsedFile for a syntax statement after the package statement", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := parsed(t, "package svc.store;\n\nsyntax = \"proto3\";\n")
+			assert.Contains(t, codesOf(sink), protofrontend.UnparsedFile,
+				"protoc refuses a syntax statement that is not the first statement")
+		})
+
 		t.Run("caps the syntax errors one file reports", func(t *testing.T) {
 			t.Parallel()
 

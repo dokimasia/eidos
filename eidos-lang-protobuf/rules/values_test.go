@@ -34,9 +34,9 @@ enum Mode {
 `
 )
 
-// The schema the refusal cases load: an enum with one number, a oneof
-// whose one member derives nothing, and a message that contains only
-// itself.
+// The schema the refusal cases load: an enum with one number, an enum
+// without a value, a oneof whose one member derives nothing, and a
+// message that contains only itself.
 const (
 	refusalsPath   = "svc/refusals.proto"
 	refusalsSource = `syntax = "proto3";
@@ -44,6 +44,7 @@ package svc.store;
 enum Single {
   SINGLE_ONLY = 0;
 }
+enum Bare {}
 message Hollow {}
 message Holder {
   oneof pick {
@@ -603,6 +604,14 @@ func TestValues(t *testing.T) {
 				assert.False(t, ok, "no zero to compare a default against")
 			})
 		}
+
+		t.Run("reports false for an enum that declares no value", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, map[string]string{refusalsPath: refusalsSource})
+			_, ok := protorules.New().ZeroValue(ref(svcPkg, "Bare", symbol.KindEnum), f.view)
+			assert.False(t, ok, "an enum without a value has no first value")
+		})
 	})
 
 	t.Run("LiteralFor", func(t *testing.T) {

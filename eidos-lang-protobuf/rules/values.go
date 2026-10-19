@@ -158,9 +158,6 @@ func (r Rules) declaredPair(
 	switch d := sym.(type) {
 	case *node.Struct:
 		for _, f := range d.Fields {
-			if f == nil || f.Type == nil {
-				continue
-			}
 			if sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
 				t := rules.EmitRef(ref)
 				return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
@@ -176,14 +173,12 @@ func (r Rules) declaredPair(
 		// A oneof's value is one of its members, and the member's
 		// field is what a check writes.
 		for _, variant := range d.Variants {
-			if variant == nil || len(variant.Fields) == 0 || variant.Fields[0].Type == nil {
-				continue
-			}
-			f := variant.Fields[0]
-			if sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
-				t := rules.EmitRef(ref)
-				return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
-					rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
+			for _, f := range variant.Fields {
+				if sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
+					t := rules.EmitRef(ref)
+					return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
+						rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
+				}
 			}
 		}
 		return rules.RefusedPair(rules.RefusedNoLiteral)
@@ -244,15 +239,11 @@ func enumPair(ref *node.TypeRef, e *node.Enum) (rules.Sample, rules.Sample) {
 	return rules.RefusedPair(rules.RefusedNoLiteral)
 }
 
-// enumNumber returns a variant's declared number, and false for a nil
-// variant, one with no name, and one whose number is no int32. The
-// number is read in any base protobuf writes, a minus sign apart
-// from its digits included. A number written without white space
-// allocates nothing.
+// enumNumber returns a variant's declared number, and false for a number
+// that is no int32. The number is read in any base protobuf writes, a
+// minus sign apart from its digits included. A number written without
+// white space allocates nothing.
 func enumNumber(variant *node.EnumVariant) (int64, bool) {
-	if variant == nil || variant.Name == "" {
-		return 0, false
-	}
 	n, err := strconv.ParseInt(strings.Map(dropSpace, variant.Value), 0, enumBits)
 	return n, err == nil
 }
@@ -439,7 +430,7 @@ func (lit literal) typed(t literalType) (emit.Value, bool) {
 		return emit.Value{}, false
 	case t.enum != nil:
 		for _, variant := range t.enum.Variants {
-			if lit.kind != literalIdent || variant == nil || variant.Name != lit.text {
+			if lit.kind != literalIdent || variant.Name != lit.text {
 				continue
 			}
 			if n, numbered := enumNumber(variant); numbered {

@@ -98,7 +98,7 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 			statement.KeywordToken().Text(), statement.Value().Span().Text())
 		return nil
 	}
-	l.reportErrors(r, statement)
+	l.reportErrors(r)
 	l.attribute()
 	l.file(statement)
 	return nil
@@ -139,8 +139,10 @@ func versionOf(statement ast.DeclSyntax) (protobuf.Edition, bool) {
 // lowered is the lowering of one file. It has the unit that it writes
 // through, the parsed tree that it reads, and the path of every position.
 type lowered struct {
-	unit   *plugin.SourceUnit
-	tree   *ast.File
+	unit *plugin.SourceUnit
+	tree *ast.File
+	// stream is the token stream of tree. The parser mints no synthetic
+	// token, so the stream contains the tokens of the source alone.
 	stream *token.Stream
 	path   string
 	// version is the protobuf language version of the file. The
@@ -166,27 +168,20 @@ type lowered struct {
 	consumed map[token.ID]bool
 }
 
-// reportErrors reports the errors in the report of the parser through the
-// syntax report of the unit. It drops a diagnostic that is not an error,
-// and every diagnostic at the version statement, because the frontend
-// reports its own verdict there.
-func (l *lowered) reportErrors(r *report.Report, statement ast.DeclSyntax) {
+// reportErrors reports each diagnostic in the report of the parser through
+// the syntax report of the unit. The report contains errors alone, because
+// the parse suppresses warnings.
+func (l *lowered) reportErrors(r *report.Report) {
 	if len(r.Diagnostics) == 0 {
 		return
 	}
-	stated := statement.Span()
 	l.unit.ReportSyntax(UnparsedFile, func(yield func(position.Pos, string) bool) {
+		// The first false result of yield ends the calls, as the protocol of
+		// an iterator requires.
+		more := true
 		for i := range r.Diagnostics {
 			d := &r.Diagnostics[i]
-			at := d.Primary()
-			if d.Level() != report.ICE && d.Level() != report.Error ||
-				!stated.IsZero() && at.Start >= stated.Start && at.End <= stated.End {
-
-				continue
-			}
-			if !yield(l.at(at), d.Message()) {
-				return
-			}
+			more = more && yield(l.at(d.Primary()), d.Message())
 		}
 	})
 }
@@ -314,9 +309,6 @@ func (l *lowered) importOf(d ast.DeclImport, file *node.File) *node.Import {
 // an authored directive above nothing is reported and not dropped.
 func (l *lowered) sweep(file *node.File) {
 	for tok := range l.stream.All() {
-		if tok.IsSynthetic() {
-			break
-		}
 		if tok.Kind() != token.Comment || l.consumed[tok.ID()] {
 			continue
 		}

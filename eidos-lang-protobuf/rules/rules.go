@@ -250,30 +250,36 @@ func enclosingMessage(subject symbol.Identity, v rules.View) *node.Struct {
 	id := subject
 	for range hostDepth {
 		sym, _ := v.Lookup(id)
+		var host symbol.Identity
 		switch d := sym.(type) {
 		case *node.Struct:
 			return d
 		case *node.Field:
-			id = d.Host
+			host = d.Host
 		case *node.SumVariant:
-			id = d.Host
+			host = d.Host
 		case *node.EnumVariant:
-			id = d.Host
+			host = d.Host
 		case *node.Method:
-			id = d.Host
+			host = d.Host
 		case *node.Sum, *node.Enum, *node.Interface:
 			// The view keys each declaration by its identity, so id is
-			// the declaration's own.
-			if id.Owner == "" {
-				return nil
-			}
-			owner, name := ownerOf(id.Owner)
-			id = symbol.Identity{
-				Lang: id.Lang, Package: id.Package, Owner: owner, Name: name, Kind: symbol.KindStruct,
+			// the declaration's own. Only a message nests a declaration,
+			// so a declaration without an owner has no message.
+			if id.Owner != "" {
+				owner, name := ownerOf(id.Owner)
+				host = symbol.Identity{
+					Lang: id.Lang, Package: id.Package, Owner: owner, Name: name, Kind: symbol.KindStruct,
+				}
 			}
 		default:
-			return nil
+			// No message contains a declaration of another kind, such as a
+			// file, or an identity that the view does not contain.
 		}
+		if host.IsZero() {
+			break
+		}
+		id = host
 	}
 	return nil
 }
@@ -349,7 +355,7 @@ func rpcField(rpc *node.Method, name string, v rules.View, via through) (symbol.
 // member's field included, and nil where the message declares none.
 func fieldNamed(msg *node.Struct, name string) *node.Field {
 	for _, f := range msg.Fields {
-		if f != nil && f.Name == name {
+		if f.Name == name {
 			return f
 		}
 	}
@@ -359,11 +365,8 @@ func fieldNamed(msg *node.Struct, name string) *node.Field {
 			continue
 		}
 		for _, variant := range oneof.Variants {
-			if variant == nil {
-				continue
-			}
 			for _, f := range variant.Fields {
-				if f != nil && f.Name == name {
+				if f.Name == name {
 					return f
 				}
 			}
