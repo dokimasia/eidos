@@ -4,8 +4,8 @@
     {
       "path": ".commitlint.yaml",
       "producer": "common",
-      "local": "617414dc0f0537470b6ed732d4b24a7be0b9c6fec9cb0aa2301e7e19cebb02c2",
-      "sha256": "27144292d32d33cbe675f4daab7c25ea86c0f0099986b531d399afa7ecba8e2f"
+      "local": "13fa94d8fc0bc95d0e70fe33384ff1dd1916ba045cc6e83923bd3760ff991ab8",
+      "sha256": "97a64acb28590e545b53daaa381fc3961846ee5763a4a83ff2bd82938bec333c"
     },
     {
       "path": ".editorconfig",
@@ -98,8 +98,8 @@
     {
       "path": ".golangci.yml",
       "producer": "go",
-      "local": "61bfb45515b9755d325bb0ebfb04dd72f8b1762dcb47e31ae679bdd99051d616",
-      "sha256": "457d45664cf8061e7a1d7200082907c84701550f390aa13943ac675df0b9ffd5"
+      "local": "2618e4e3c36deeba77fac9d0e9375c17cacf480f06df3769da2d520301bfe6f7",
+      "sha256": "4fb3f31d9e54360407a4ac1099566bf5fac4786ce1ab2e4aebf5362432135048"
     },
     {
       "path": ".markdownlint.yml",

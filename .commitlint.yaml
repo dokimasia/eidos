@@ -45,6 +45,7 @@ settings:
       - declarative
       - lang
       - go
+      - graphql
       - java
       - kotlin
       - php

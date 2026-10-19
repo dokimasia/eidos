@@ -417,6 +417,11 @@ linters:
       # refusal starts without it.
       - path: (spell/type|rules/(rules|resolve))\.go
         linters: [errorprefix]
+      # A backend starts each refusal with the name of its language for the same reason, and a
+      # refusal of a fixed text is a sentinel that errors.New declares.
+      - path: ^backend/
+        linters: [errorprefix]
+        text: 'the text "(go|graphql|java|kotlin|php|protobuf|rust|typescript): '
       # passLine is the text that the test driver of the Java adapter prints for a passing test.
       # It is no credential.
       - path: testing/adapter\.go
