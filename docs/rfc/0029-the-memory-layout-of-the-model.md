@@ -388,7 +388,6 @@ it.
 - A type reference that leaves `node.Declaration` is not proposed here. 91 sites
   refer to the interface, and each one would need a check that it treats a type
   reference as it does today. The zero identity keeps every site as it is.
-
 - The engine's own maps keyed by identity are not part of this proposal. The
   duplicate check of the identity assignment allocates 0.46 GB over the cold
   run at 200,000 declarations. That memory is free before the peak.
