@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/graphql"
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -58,7 +57,7 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 	if len(s.TypeParams) > 0 {
 		return []symbol.Symbol{u}, nil
 	}
-	sum := naming.Pascal(s.Name)
+	sum := caser.Pascal(s.Name)
 	out := make([]symbol.Symbol, 1, 1+len(variants))
 	out[0] = u
 	objects := make([]emit.Struct, len(variants))
@@ -75,7 +74,7 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 			return nil, fmt.Errorf(refusalPrefix+"an object type declares at least one field, "+
 				"and the variant %s of %s declares none", v.Name, s.Name)
 		}
-		name := sum + naming.Pascal(v.Name)
+		name := sum + caser.Pascal(v.Name)
 		h := &host{name: name, origin: s.Origin}
 		for _, f := range fields {
 			if err := h.field(f); err != nil {
@@ -145,7 +144,7 @@ func lowerOneOf(s *emit.Sum) ([]symbol.Symbol, error) {
 			}
 			member.Annotations = append(slices.Clip(member.Annotations), f.Annotations...)
 		default:
-			name := naming.Pascal(s.Name) + naming.Pascal(v.Name) + inputSuffix
+			name := caser.Pascal(s.Name) + caser.Pascal(v.Name) + inputSuffix
 			object := &host{name: name, origin: s.Origin, input: true}
 			for _, f := range inner {
 				if err := object.field(f); err != nil {

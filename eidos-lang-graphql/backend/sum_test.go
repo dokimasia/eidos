@@ -114,6 +114,30 @@ func TestSum(t *testing.T) {
 				},
 			},
 			{
+				name: "returns object types whose names write an abbreviation as one word",
+				give: &emit.Sum{
+					Origin: rowOrigin, Name: "link",
+					Variants: emit.SlotOf(&emit.SumVariant{
+						Name:   "httpLink",
+						Fields: emit.SlotOf(&emit.Field{Name: "href", Type: &emit.TypeRef{Spelling: stringType}}),
+					}),
+				},
+				want: []symbol.Symbol{
+					&emit.Alias{
+						Origin: rowOrigin, Name: "link", Defined: true,
+						Target: &emit.TypeRef{
+							Spelling: "LinkHttpLink",
+							Form:     symbol.FormUnion,
+							Elems:    []*emit.TypeRef{{Spelling: "LinkHttpLink"}},
+						},
+					},
+					&emit.Struct{
+						Origin: rowOrigin, Name: "LinkHttpLink",
+						Fields: emit.SlotOf(&emit.Field{Name: "href", Type: &emit.TypeRef{Spelling: stringType}}),
+					},
+				},
+			},
+			{
 				name: "returns a union with the type parameters of a generic sum",
 				give: &emit.Sum{
 					Origin: rowOrigin, Name: "result", TypeParams: []*emit.TypeParam{{Name: "T"}},

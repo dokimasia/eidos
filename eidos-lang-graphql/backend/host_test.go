@@ -299,6 +299,23 @@ func TestHost(t *testing.T) {
 			})
 		}
 
+		t.Run("returns a payload whose name writes an abbreviation as one word", func(t *testing.T) {
+			t.Parallel()
+
+			lookup := &emit.Method{
+				Name: "lookupById",
+				Returns: emit.SlotOf(
+					&emit.Return{Type: &emit.TypeRef{Spelling: stringType}},
+					&emit.Return{Name: "count", Type: &emit.TypeRef{Spelling: intType}},
+				),
+			}
+			_, err := backend.Lower(&emit.Struct{Origin: rowOrigin, Name: rowName, Methods: emit.SlotOf(lookup)})
+			assert.NoError(t, err, "GraphQL writes the type")
+			assert.Equal(t, lookup.Returns.Items(),
+				[]*emit.Return{{Type: &emit.TypeRef{Spelling: "RowLookupByIdPayload"}}},
+				"the payload has the names of the type and of the method in Pascal case")
+		})
+
 		_, valueErr := value.Parse(unparsedValue)
 		assert.HasError(t, valueErr, "the default is not a value of GraphQL")
 		refusals := []struct {

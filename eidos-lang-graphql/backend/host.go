@@ -36,6 +36,11 @@ const (
 // A host records the names of a larger type in a list that it allocates.
 const hostNames = 16
 
+// caser converts the names of the types that the lowering synthesizes. It
+// converts as [spell.Name] does, without initialisms, so the respell keeps
+// each name.
+var caser = naming.New()
+
 // path contains the names after which the lowering names a type that it
 // synthesizes for a member: the name of the type, the name of the member,
 // and the name of a parameter of the member. The path of a type of entries
@@ -50,7 +55,7 @@ func (p path) name(suffix string) string {
 	var b strings.Builder
 	b.Grow(len(p[0]) + len(p[1]) + len(p[2]) + len(suffix))
 	for _, part := range p {
-		b.WriteString(naming.Pascal(part))
+		b.WriteString(caser.Pascal(part))
 	}
 	b.WriteString(suffix)
 	return b.String()

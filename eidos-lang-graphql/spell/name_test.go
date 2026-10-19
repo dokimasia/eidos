@@ -70,7 +70,7 @@ func TestName(t *testing.T) {
 			},
 			{
 				name: "returns the spelling of an operation that a built-in scalar spells",
-				kind: symbol.KindFunction, vis: symbol.VisibilityPublic, give: "id", want: "ID",
+				kind: symbol.KindFunction, vis: symbol.VisibilityPublic, give: "string", want: "String",
 			},
 			{
 				name: "returns the camel-case spelling of a field",
@@ -86,6 +86,16 @@ func TestName(t *testing.T) {
 				name: "returns the camel-case spelling of an argument",
 				host: symbol.KindMethod, kind: symbol.KindParam, vis: symbol.VisibilityUnknown,
 				give: "first_count", want: "firstCount",
+			},
+			{
+				name: "returns the camel-case spelling of an argument with an abbreviation as one word",
+				host: symbol.KindMethod, kind: symbol.KindParam, vis: symbol.VisibilityUnknown,
+				give: "user_id", want: "userId",
+			},
+			{
+				name: "returns a field name with an abbreviation in its style unchanged",
+				host: symbol.KindStruct, kind: symbol.KindField, vis: symbol.VisibilityPublic,
+				give: "imageUrl", want: "imageUrl",
 			},
 			{
 				name: "returns the camel-case spelling of a named result",
@@ -179,7 +189,7 @@ func TestName(t *testing.T) {
 			},
 			{
 				name: "returns an error for an object type that spells a built-in scalar",
-				kind: symbol.KindStruct, vis: symbol.VisibilityPublic, give: "id",
+				kind: symbol.KindStruct, vis: symbol.VisibilityPublic, give: "int",
 			},
 			{
 				name: "returns an error for a scalar that spells a built-in scalar",
