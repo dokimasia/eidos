@@ -37,6 +37,11 @@ const (
 	unionSep    = " | "
 )
 
+// caser converts names as the respell of the TypeScript backend does,
+// without initialisms. The client gives each interface of a union its final
+// name through it, and [keepKey] checks a key against it.
+var caser = naming.New()
+
 // ClientPlan returns the plan ts-client of the catalog fixture. It runs
 // clientgen toward the TypeScript backend, and writes the one TypeScript file
 // of the plan under client, as graphql-codegen writes the types of a schema
@@ -190,7 +195,7 @@ func clientSum(m *eidos.SumMatch, e *eidos.Emitter) error {
 		// The union is a composite spelling, which the settle leaves as
 		// written, so each interface takes its final Pascal spelling here,
 		// and each member of the union names it by that spelling.
-		variant := naming.Pascal(name + naming.Pascal(v.Name))
+		variant := caser.Pascal(name + caser.Pascal(v.Name))
 		decls = append(decls, &emit.Interface{
 			Origin: s.ID, Doc: v.Doc, Name: variant, Visibility: s.Visibility, Fields: emit.SlotOf(fields...),
 		})
@@ -275,7 +280,7 @@ func properties(
 // is the key as a string literal, which the respell of TypeScript keeps and
 // the backend writes as written.
 func keepKey(f *emit.Field) {
-	if naming.Camel(f.Name) != f.Name {
+	if caser.Camel(f.Name) != f.Name {
 		f.Name, f.Computed = strconv.Quote(f.Name), true
 	}
 }

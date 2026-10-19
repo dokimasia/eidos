@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/files"
 
 	"go.dokimi.dev/eidos/conformance/lang/graphql"
@@ -38,6 +39,21 @@ const (
 	browseVars     = "export interface BrowseVariables {\n"
 	nullableVar    = "  withVendor?: boolean | undefined;\n"
 	discriminantOf = "kind:"
+)
+
+// The files that a case adds to the catalog: a schema of a type whose name
+// and field contain an abbreviation, and a query that selects the type
+// through a union. The client declares the field and the interface of the
+// type in the selection under these lines.
+const (
+	linksSchemaPath = "catalog/schema/links.graphql"
+	linksSchema     = "type HttpLink {\n  imageUrl: URL\n}\n\n" +
+		"union LinkResult = HttpLink | Vendor\n\n" +
+		"extend type Query {\n  links: [LinkResult!]!\n}\n"
+	linksDocumentPath = "catalog/documents/links.graphql"
+	linksDocument     = "query Links {\n  links {\n    __typename\n    ... on HttpLink {\n      imageUrl\n    }\n  }\n}\n"
+	imageURLProperty  = "  imageUrl?: URL | undefined;\n"
+	linksUnion        = "export type LinksQueryLinks = LinksQueryLinksHttpLink | LinksQueryLinksVendor;\n"
 )
 
 // TestClient checks that the plan ts-client writes the TypeScript types of
@@ -86,6 +102,19 @@ func TestClient(t *testing.T) {
 			t.Parallel()
 
 			assert.NotContains(t, client, discriminantOf, "a response discriminates by __typename alone")
+		})
+
+		t.Run("writes the names with an abbreviation as the TypeScript respell writes them", func(t *testing.T) {
+			t.Parallel()
+
+			root := catalogRoot(t)
+			files.Write(t, root, files.Tree{
+				linksSchemaPath: files.Text(linksSchema), linksDocumentPath: files.Text(linksDocument),
+			})
+			cleanRun(t, root, graphql.ClientPlan())
+			expect.That(t, files.Read(t, filepath.Join(root, filepath.FromSlash(clientPath)))).
+				Contains(imageURLProperty, "the property has the key of the field without a computed name").
+				Contains(linksUnion, "each interface of the selection writes the abbreviation of its type as one word")
 		})
 
 		t.Run("reports RefusedType at each member whose type TypeScript does not spell", func(t *testing.T) {
