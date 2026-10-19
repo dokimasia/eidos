@@ -19,8 +19,13 @@ import (
 // mutability of a field or a variable renders, because Go writes a mutable
 // binding without a keyword, and [Guard] returns an error for an immutable
 // one. The initializer of a field refuses where the initializer of a
-// variable renders, because Go declares no field defaults. The annotations
-// of a parameter refuse, because Go has no syntax for them.
+// variable renders, because Go declares no field defaults. The methods of
+// a struct render after their type, where the methods of an enum and of a
+// sum refuse, because a constant group and a variant struct have no
+// methods of their own. The annotations of a parameter refuse, because Go
+// has no syntax for them. A field that another type receives refuses,
+// because Go has no extension field. The annotations of a file refuse,
+// because the skeleton does not write the header that a generator states.
 //
 // Go writes no async, override, default body, type level or computed
 // name, and a declaration without such a fact is a declaration of another
@@ -28,8 +33,8 @@ import (
 // mutability of an index signature.
 //
 // Coverage builds the table on every call, which the caller keeps: the
-// fact map's four allocations, and the exception map's two with its three
-// kinds' two each, 12 allocations.
+// fact map's four allocations, and the exception map's two with its five
+// kinds' two each, 16 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -59,6 +64,7 @@ func Coverage() render.Coverage {
 			symbol.FactFields:           render.Refuses,
 			symbol.FactMethods:          render.Refuses,
 			symbol.FactValue:            render.Renders,
+			symbol.FactReceives:         render.Refuses,
 			symbol.FactComment:          render.Renders,
 			symbol.FactMutability:       render.Renders,
 			symbol.FactTag:              render.Renders,
@@ -83,6 +89,12 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindMethod: {
 				symbol.FactMutability: render.Rejects, // no index signatures
+			},
+			symbol.KindStruct: {
+				symbol.FactMethods: render.Renders, // methods follow their type
+			},
+			symbol.KindFile: {
+				symbol.FactAnnotations: render.Refuses, // no header of a generator
 			},
 		},
 	}

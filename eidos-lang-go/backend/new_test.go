@@ -50,7 +50,7 @@ var svcPackage = symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbo
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the seven kind templates.
-	newAllocs = 1_603
+	newAllocs = 1_607
 	// renderAllocs is one render of the scaled corpus of 200,000
 	// declarations: text/template's reflective calls, about half of its
 	// allocations, go/format's parse and print of every file, about four
