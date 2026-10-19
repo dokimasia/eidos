@@ -101,6 +101,11 @@ decides it.
 7. **References.** A reference between two declarations of the plan
    that are written in files of two packages takes the package of the
    file it names, so the target qualifies it and records the import.
+   The file lists the package of each such file once in
+   `plugin.File.Referents`, sorted by package path. A target whose
+   package clause does not follow from the package path, such as
+   protobuf, reads the clause of the other file from the name of that
+   package.
 
 ## The route of a file
 
@@ -205,6 +210,21 @@ clause, so a file that a generator writes beside a constrained source
 compiles under the same constraint. A group of a warm run reads the
 declaration edge of the source file, so an edit of the constraint
 writes the file again ([09-incrementality.md](09-incrementality.md)).
+
+## The header of a routed file
+
+A unit can contain an `emit.File`, whose documentation and annotations
+are the file-level statement of a generator. A protobuf generator
+states the syntax, the package, the imports and the options of a file
+this way, and a GraphQL generator states the schema statement of a
+file. `plugin.HeaderOf` merges the `emit.File` declarations of the
+units of a routed file into `plugin.File.Header`, in unit order. An
+annotation that an earlier `emit.File` states alike appears once, and
+so does a documentation. The path of an `emit.File` is not part of the
+header. The target's package half reads the annotations of the header
+in `plugin.Placement.Header`, so a package rule can read the package
+that a header states. The render passes the header to the skeleton and
+to every template of the file ([07-rendering.md](07-rendering.md)).
 
 ## Failure semantics
 

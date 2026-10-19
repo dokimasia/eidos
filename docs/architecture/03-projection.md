@@ -354,6 +354,9 @@ type TagRules interface {
 type WellKnownRules interface {
     WellKnown(id symbol.Identity) (symbol.Identity, bool) // the well-known identity of a library type
 }
+type ShapeRules interface {
+    ShapeOf(decl symbol.Symbol, v View) (TypeShape, bool) // the shape of the values of a declared type
+}
 type SatisfactionRules interface {
     ValueReceiver(m *node.Method, v View) bool // whether a value of the type of m has m
     TypeSet(i *node.Interface, v View) bool    // whether i constrains a type set beside its methods
@@ -396,6 +399,7 @@ field is the projection.
 | `ErrorTypeRules` | the error contract of a type: the member of its message, the field of its cause, the hooks that the error functions call, and whether a pointer to it is the error | Go method sets, TypeScript classes that extend Error |
 | `TagRules` | stringly per-field tags | Go struct tags |
 | `WellKnownRules` | the well-known identity of a type of the standard library, which the fold reads before it classifies a target | Go `time.Time` and `time.Duration` |
+| `ShapeRules` | the shape of the values of a declared type, which the fold reads after `WellKnownRules` and before it classifies a target | GraphQL custom scalars with a `@specifiedBy` URL of the table of scalars |
 | `SatisfactionRules` | the satisfaction of an interface beyond the member sets: a method of a pointer to the type alone, and an interface that constrains a type set | Go pointer receivers and constraint interfaces |
 | `GenericsRules` | witnesses, constraint reasoning, whether generics are reified or erased | every generic language; erasure matters to a Java backend |
 | `PropertyRules` | the computed properties view, pairing getters with setters. A projection, never a change to the model | Kotlin, C#, Swift, Python `@property`, JavaBeans |

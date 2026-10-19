@@ -129,6 +129,19 @@ no plugin's template ever renders another plugin's values. A
 slot-appended value may carry a `TemplateRef` like any other, and it
 resolves in its own emitter's tree.
 
+**A generator may state the header of a file.** An `emit.File` in a
+unit states the documentation and the annotations of its file, which
+the layout merges into the header of the file
+([18-routing-and-layout.md](18-routing-and-layout.md)). The render
+passes the header to the file skeleton as `.Header`, and every template
+of the file reads it through the `header` builtin. The declaration run
+skips an `emit.File`. A file whose units contain an `emit.File` alone
+renders its skeleton. The coverage verdict of the annotations of a file
+applies to the header, and the guard reads it before the declarations
+render. The Go, TypeScript, Java and Rust backends refuse the
+annotations of a file, because their skeletons do not write a header. A
+header in those targets reports `RefusedFact`.
+
 There is deliberately no way to inject raw text between
 declarations. A free-floating text value among typed declarations is
 content the slot machinery cannot check, the collision logic cannot
@@ -311,7 +324,10 @@ flow runs the same way in every satellite:
    the run's packages declare, and the Go backend binds an import under
    the declared name of its package. A rendered file lists the packages
    whose names it read, and a warm run renders the file again after an
-   edit renames one of them.
+   edit renames one of them. The set also has the package of the file
+   under render, through `SetPackage`, and the packages of the files
+   that the file refers into, through `SetReferents`, so the protobuf
+   backend qualifies a reference by the package clause of its file.
 6. **Finalise** through the language formatter. A format failure is
    a positioned Error carrying the file it could not format, and the
    pass continues with the remaining files. The sink never receives

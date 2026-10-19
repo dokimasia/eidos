@@ -53,9 +53,12 @@ eidos-lang-<lang>/
 ```
 
 **A read-only language ships `frontend/` and `rules/` and stops.**
-`eidos-lang-protobuf` is a complete satellite of the read-only
-shape, and the anatomy says so structurally. It also ships the
-well-known-type canonical mappings as policy defaults:
+`eidos-lang-protobuf` reads and writes every construct of proto2,
+proto3 and the editions 2023, 2024 and 2026, so its module has every
+package of the anatomy but `sdk/`. Its `testing/` package parses
+generated schemas through the parser of its frontend and compiles them
+with the experimental compiler of protocompile, both in process. Its
+policy defaults map the well-known types onto the canonical forms:
 
 - Timestamp, Duration and Empty map onto the kernel's registry.
 - Every wrapper projects as its scalar under the optional form, which
@@ -98,9 +101,19 @@ A message field has presence in every version. Its presence depends on
 the declaration that the field's type resolves to, so the rules report
 it through `PresenceRules`. A group loads as a nested message of the
 group's name and a field of that name in lower case. The field has the
-marker `protobuf.delimited`. The frontend refuses an extend block at its
-position, because the block changes a declaration that the file does
-not declare.
+marker `protobuf.delimited`. An extend block loads as its fields, each
+with the extended message as its `Receives`. Each field is a
+declaration of the scope of the block, which is the file or a message.
+An extension is not a field of the message that declares it.
+
+The backend writes each construct in the syntax of the version of its
+file. A generator states a construct through one of five channels: a
+field of the model, the tag entry `number` of a field, an annotation for
+an option, a marker for a keyword or a statement that is not an option,
+and the header of its file. `protobuf.Stated` and `protobuf.Header`
+restate the stamps of a protobuf source in these channels, so a
+generator over protobuf sources writes a schema as its source states
+it.
 
 The frontend attributes comments the way protoc's source info
 attributes them, so a schema documented for protoc documents the
@@ -112,9 +125,50 @@ accepts resolves identically. The rules read a literal in protoc's
 grammar and state an enum value as its number converted to the enum
 type, which every target spells.
 
+`eidos-lang-graphql` reads and writes every construct of GraphQL in
+the September 2025 edition, so its module has every package of the
+anatomy but `sdk/`. Its internal package `document` splits a file
+into its two languages. A unit is one schema with its documents. The
+partition reads the configurations of graphql-config and of gqlgen in
+the directory of each GraphQL file and in every directory above it,
+and a file joins the unit of the first schema that claims it. A file
+outside every schema joins the unit of the files of its directory.
+The executable definitions of a unit load under the package of the
+schema followed by `/documents`, so the result types of operations do
+not collide with the types of the schema.
+
+A document can mix the type system and executable definitions. The
+frontend lexes each file once and parses each language from a copy of
+the file without the definitions of the other language, so every
+position in a copy is the position in the file. An extension merges
+into its type where the schema declares the type, and loads with the
+stamp `graphql.extension` where it does not.
+
+The frontend validates the documents of a unit against its schema
+under the rules of a client, and lowers each operation and each
+fragment into a function. The result of an operation is the struct of
+its selection, `<Operation><Kind>`. A selection that selects fields of
+particular types of an interface or a union is a sum. A custom scalar
+whose `@specifiedBy` URL is in the satellite's table of the scalars of
+scalars.graphql.org projects to the shape of the table through
+`ShapeRules`. Every other custom scalar projects as a reference.
+
+The backend writes a keyword that the model has no field for from a
+marker, an annotation whose name starts with `graphql:`, and the schema
+statement of a file from its header. An operation and a fragment write
+their selection sets from the verbatim body of a function.
+`graphql.Stated` and `graphql.Header` restate the stamps of a GraphQL
+source in these channels, so a generator over GraphQL sources writes a
+document as its source states it. The policies of the backend choose
+between a built-in type and a scalar of the table for the shapes that
+GraphQL has no built-in type for. The `testing/` package parses and
+validates generated documents through gqlparser, in process.
+
 ## The language landscape
 
-Go and TypeScript are fully supported. protobuf is read-only.
+Go and TypeScript are fully supported. protobuf reads and writes every
+construct of its versions, and GraphQL every construct of the
+September 2025 edition.
 
 The vocabulary already anticipates the rest, and each row below
 names the language that forced the model or tier addition
@@ -347,17 +401,18 @@ Within that rule, **tree-sitter is the platform**: one grammar
 model, and one binding layer in the shared `eidos-lang` module,
 which pins every grammar and is the only importer of the bindings.
 A satellite deviates only where a fully supported pure-Go parser already
-exists and is proven, which means Go's standard-library parser and
-protobuf's protocompile. Those two never import the grammar
-packages; `eidos-lang`'s pure helper packages, such as its case
-conversion, are shared by every satellite, and the kit keeps even
-the parser deviation invisible downstream:
+exists and is proven, which means Go's standard-library parser,
+protobuf's protocompile and GraphQL's gqlparser. Those three never
+import the grammar packages. Every satellite shares the pure helper
+packages of `eidos-lang`, such as its case conversion, and the kit
+keeps even the parser deviation invisible downstream:
 
 | Language | Parser | Why |
 |---|---|---|
 | Go | stdlib `go/parser` | the reference grammar as a zero-dependency pure-Go library, with exact positions and comment attachment |
 | TypeScript | tree-sitter | proven in the current satellite. The native TS 7 compiler is written in Go but ships internal packages only, so there is nothing importable to pin |
 | protobuf | the experimental parser of `bufbuild/protocompile`, pinned to a commit | pure Go and declarative. The released parser stops at Edition 2023, and a file of Edition 2026, whose grammar is Edition 2024's, parses as Edition 2024 |
+| GraphQL | `vektah/gqlparser/v2`, pinned to a release | the parser of gqlgen, pure Go, with the comments of a document and their positions. Its validator types each selection against its schema. It refuses three forms of the September 2025 edition, and the satellite contributes the fixes upstream |
 | Rust | tree-sitter-rust | no production pure-Go Rust parser exists, and the grammar is org-maintained |
 | Python | tree-sitter-python | the same, and docstrings enter through the kit's `Doc` and `DocLines` door |
 | Java | tree-sitter-java plus the class-file reader (D31) | a mature grammar, and JARs supply signature-only dependencies |

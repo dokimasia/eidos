@@ -32,9 +32,10 @@ make their own binary the product:
 
 eidos also publishes one binary, `eidos`, the main package `cmd/eidos`
 of the root module. It composes the frontends of Go, TypeScript, Java,
-Rust and protobuf, the rules of Go, TypeScript and protobuf, and one
-extensible plan for each of the targets golang, typescript, java and
-rust. It has no generator and no annotator of its own. Its users add
+Rust, protobuf and GraphQL, the rules of Go, TypeScript, protobuf and
+GraphQL, and one extensible plan for each of the targets golang,
+typescript, java, rust, protobuf and graphql. It has no generator and
+no annotator of its own. Its users add
 declarative plugins to the plans in `.eidos.yaml`. A team that does
 not write Go runs its plugins without a binary of its own
 ([21-decisions.md](21-decisions.md), D160).

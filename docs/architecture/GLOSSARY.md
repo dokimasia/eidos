@@ -47,7 +47,11 @@ The document named in each row carries the full contract.
 | tag | a named companion output of a plugin, such as `test` or `docs`. The empty tag is the primary output | [18](18-routing-and-layout.md) |
 | satellite | a language module of the fixed anatomy, depending only on the kernel | [11](11-languages.md) |
 | eidos-lang | the shared tree-sitter bindings and pinned grammars. It sits below the satellites and registers no language | [11](11-languages.md) |
-| read-only language | a satellite that ships a frontend and rules and stops, as protobuf does | [11](11-languages.md) |
+| read-only language | a satellite that ships a frontend and rules and stops | [11](11-languages.md) |
+| file header | the file-level statement of the generators of a routed file: the documentation and the annotations of the `emit.File` declarations of its units, which the file skeleton writes | [18](18-routing-and-layout.md) |
+| extension field | a field declared outside the type that it attaches to, with that type as its `Receives`, such as a protobuf extension or a field of a GraphQL type extension | [02](02-symbol-model.md) |
+| marker | an annotation whose name starts with the name of a target and a colon, such as `protobuf:reserved` or `graphql:input`. It states a keyword or a statement that is not an option or a directive | [11](11-languages.md) |
+| documents package | the package of the executable definitions of a GraphQL unit: the package of its schema followed by `/documents` | [11](11-languages.md) |
 | declarative plugin | a plugin written as files, a manifest plus template trees, which `declarative.Load` builds into an ordinary generator | [06](06-plugins.md) |
 | extensible plan | a plan that admits the generators of the config after its own, such as the declarative plugins that `plans.<name>.plugins` lists | [08](08-workspace-and-plans.md) |
 | file template | the template of a family that claims its files. It writes each file of the family from the family's records | [07](07-rendering.md) |

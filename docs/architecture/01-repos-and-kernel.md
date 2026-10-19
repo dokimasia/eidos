@@ -32,8 +32,11 @@ Language support is uneven by design, because a satellite arrives
 one side at a time. Go reads and writes, through a frontend, its
 rules, a backend and an annotator. TypeScript, Java and Rust have
 backends only, so a Go workspace renders into them before they can
-be read from. protobuf is read-only by design, with a frontend and
-its rules. The Kotlin and PHP modules contain a package comment
+be read from. protobuf reads and writes every construct of its
+versions, through a frontend, its rules and a backend. GraphQL reads
+and writes every construct of the September 2025 edition in the same
+way. The Kotlin and
+PHP modules contain a package comment
 alone, and further languages such as `eidos-lang-python` join as
 new modules
 ([11-languages.md](11-languages.md)). There are no bridge modules:
@@ -46,8 +49,8 @@ satellites parse through, and it registers no language of its own.
 It depends only on the kernel. Every satellite depends on it for
 the pure helper packages it shares, case conversion first among
 them; the tree-sitter satellites parse through it as well, while
-Go and protobuf have fully supported pure-Go parsers and never
-import the grammar packages. This does not weaken the rule that a
+Go, protobuf and GraphQL have fully supported pure-Go parsers and
+never import the grammar packages. This does not weaken the rule that a
 satellite never imports a satellite, because `eidos-lang` sits
 below the satellites rather than beside them. It is also where the
 tree-sitter cgo dependency stays, so the kernel keeps its zero

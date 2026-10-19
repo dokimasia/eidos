@@ -31,7 +31,7 @@ their own schedule.
 
 | Module | Import path | Contents |
 |---|---|---|
-| [cmd/eidos](cmd/eidos) | `go.dokimi.dev/eidos` | the binary `eidos`: the frontends of every language, the rules of Go, TypeScript and protobuf, and one extensible plan for each target. A workspace adds its declarative plugins to the plans |
+| [cmd/eidos](cmd/eidos) | `go.dokimi.dev/eidos` | the binary `eidos`: the frontends of every language, the rules of Go, TypeScript, protobuf and GraphQL, and one extensible plan for each target. A workspace adds its declarative plugins to the plans |
 | [eidos-core](eidos-core) | `go.dokimi.dev/eidos/core` | the kernel: the symbol, node and emit models, metadata, directives, diagnostics, the store, projection rules, the plugin SPI and authoring surface, the frontend and backend kits, output, the workspace, the toolchain harness and the conformance kits |
 | [eidos-sdk](eidos-sdk) | `go.dokimi.dev/eidos/sdk` | the generated facade plugin modules import: one re-export per exported symbol of the kernel's plugin-facing packages |
 | [eidos-cli](eidos-cli) | `go.dokimi.dev/eidos/cli` | the command kernels that every binary built with eidos offers: the config file and its JSON Schema, the shared flags, the rendering of findings and the exit statuses |
@@ -40,7 +40,8 @@ their own schedule.
 | [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | the helper packages the satellites share: lowering, naming, numeric, scaffold, spellref and textfmt |
 | [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang/go` | Go satellite: frontend, projection rules, annotator, backend and the toolchain adapter for generated tests |
 | [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang/typescript` | TypeScript satellite: backend and the toolchain adapter for generated tests |
-| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang/protobuf` | protobuf satellite: frontend and projection rules, read-only by design |
+| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang/protobuf` | protobuf satellite: frontend, projection rules, backend and the toolchain adapter for generated schemas |
+| [eidos-lang-graphql](eidos-lang-graphql) | `go.dokimi.dev/eidos/lang/graphql` | GraphQL satellite: frontend, projection rules, backend and the toolchain adapter for generated schemas and documents |
 | [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang/java` | Java satellite: backend and the toolchain adapter for generated tests |
 | [eidos-lang-kotlin](eidos-lang-kotlin) | `go.dokimi.dev/eidos/lang/kotlin` | Kotlin satellite: a statement of scope and no code |
 | [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang/php` | PHP satellite: a statement of scope and no code |

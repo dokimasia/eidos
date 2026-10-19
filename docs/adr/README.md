@@ -72,3 +72,9 @@ way.
 | [0051](0051-an-extensible-plan-can-have-no-generator.md) | An extensible plan can have no generator | Accepted |
 | [0052](0052-a-run-locates-the-stores-of-the-frontends-with-input-files.md) | A run locates the stores of the frontends with input files | Accepted |
 | [0053](0053-the-ring-tests-a-release-from-the-tree-of-its-tag.md) | The ring tests a release from the tree of its tag | Accepted |
+| [0054](0054-protobuf-has-a-backend-for-every-construct.md) | protobuf has a backend for every construct of its five versions | Accepted |
+| [0055](0055-a-generator-states-the-header-of-a-routed-file.md) | A generator states the header of a routed file | Accepted |
+| [0056](0056-a-field-declared-outside-its-type-has-receives.md) | A field declared outside its type has Receives | Accepted |
+| [0057](0057-eidos-reads-and-writes-graphql-through-gqlparser.md) | eidos reads and writes GraphQL through gqlparser | Accepted |
+| [0058](0058-a-graphql-unit-is-a-schema-and-its-documents.md) | A GraphQL unit is a schema and its documents | Accepted |
+| [0059](0059-a-parameter-has-documentation.md) | A parameter has documentation | Accepted |

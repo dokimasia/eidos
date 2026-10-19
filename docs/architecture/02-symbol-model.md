@@ -104,6 +104,13 @@ its tag as the text that the source wrote, and an emitted field keeps
 its entries in a slot, so a weaver appends an entry through the slot
 view.
 
+An emitted File is part of the header of the file that its unit routes
+to. Its documentation and its annotations are the file-level statement
+of a generator, such as the syntax and the options of a protobuf file.
+The layout merges the File declarations of the units of a routed file
+into the header of the file
+([18-routing-and-layout.md](18-routing-and-layout.md)).
+
 Import and Export carry a statement's whole binding list, and each
 bound name is a Binding, because `import {a as b, c} from 'x'` binds
 two names with their own aliases and positions. A declaration's own
@@ -137,6 +144,8 @@ each addition:
 | `Method.Optional` | a method that a value of its type may lack: TypeScript's `run?(): void`. Every other language leaves it false |
 | `Method.Mutability` | whether a holder can assign the entries of an index signature: TypeScript's `readonly [key: string]: V`. A method that is not an index signature leaves it unknown |
 | `Method.Computed` / `Field.Computed` | a member whose name is an expression: TypeScript's `[Symbol.iterator]`. The member keeps the brackets in its name, and the member walk leaves it out under the gap reason `GapComputed` |
+| `Field.Receives` | the type that a field attaches to from outside the declaration of the type: a protobuf extension, a field of a GraphQL type extension. The field keeps the identity of the scope that declares it, and the name table lists it under the spelling of its `Receives` |
+| `Param.Doc` | the documentation of a parameter: the description of a GraphQL argument. A language that documents a parameter in the documentation of its callable leaves it empty |
 | `TypeRef.Mutability` | whether a holder can write through a list, an array, a tuple, a map or a borrow: TypeScript's `readonly T[]`, and Rust's `&T` and `&mut T` |
 | `TypeRef.Absent` | the members of a source union that an optional folds, in source order, such as the `null` of TypeScript's `T \| null`. It is on the node side alone, and an optional that a mark states, such as Go's `*T`, has none |
 | `Enum.Underlying` | the representation that an enum declares: the target of Go's `type Level uint8` and the integer of Rust's `#[repr(u8)]`. TypeScript, protobuf and Java leave it nil |

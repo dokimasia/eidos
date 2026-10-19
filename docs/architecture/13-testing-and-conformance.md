@@ -107,9 +107,15 @@ its backend declares; that every body arrives whole, with slot
 contents spliced through the kind machinery;
 and that a file's failure reports positioned and attributed while
 the render continues per [07-rendering.md](07-rendering.md), the
-refused file withheld. It also renders an empty store, and fails on a
-file or an Error. The header and trailer checks are the output
-contract's and join the suite with it. `backendtest.Rendered` returns
+refused file withheld. It checks that every member of a rendered
+declaration appears in the bytes. The check passes over the members
+that the backend declares that it does not render: the members of a
+declaration of a refused kind or of a declaration that states a
+rejected fact, and the methods of a struct and the fields of an
+interface where the coverage refuses the list. It also renders an
+empty store, and fails on a file or an Error. The header and trailer
+checks are the output contract's and join the suite with it.
+`backendtest.Rendered` returns
 the files and the findings of one settle and render, and
 `Fixture.Context` lowers a fixture to the context of one render call,
 so the test of a satellite pins a finding of its backend without the
