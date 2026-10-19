@@ -4,6 +4,5 @@
 {{- use (printf "./%s" (trimSuffix $.Name ".test.ts")) $stub.Name}}
 
 /** tsc checks that a {{$stub.Name}} is a {{.Data.Interface}}. */
-export const check{{$stub.Name}}: {{spell $contract}} = new {{$stub.Name}}{{template "witnesses" $contract.Args}}();
+export const check{{$stub.Name}}: {{spell $contract}} = new {{$stub.Name}}{{typeargs $contract.Args}}();
 {{- end}}
-{{- define "witnesses"}}{{with .}}<{{range $i, $a := .}}{{if $i}}, {{end}}{{spell $a}}{{end}}>{{end}}{{end}}

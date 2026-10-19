@@ -26,7 +26,7 @@
 //
 // # Dependency position
 //
-// The package imports the packages handlergen and internal/tree of the
-// module, the root of the Go satellite, and the root, emit, meta, plugin and
-// symbol packages of the SDK facade.
+// The package imports the package handlergen of the module, the root of the
+// Go satellite, and the root, emit, meta, plugin and symbol packages of the
+// SDK facade.
 package middlewaregen

@@ -50,8 +50,8 @@
 //
 // # Dependency position
 //
-// The package imports the packages internal/double and internal/tree of
-// the module, the root, diag, directive, emit, plugin, rules and symbol
-// packages of the SDK facade, and the Go stdlib. It serves Go and
-// TypeScript, so it does not import a satellite.
+// The package imports the package internal/double of the module, the root,
+// diag, directive, emit, plugin and rules packages of the SDK facade, and
+// the Go stdlib. It serves Go and TypeScript, so it does not import a
+// satellite.
 package stubgen

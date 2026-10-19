@@ -39,8 +39,8 @@
 //
 // # Dependency position
 //
-// The package imports the packages internal/double, internal/tree and
-// repogen of the module, the root, directive, emit, plugin and symbol
-// packages of the SDK facade, and the Go stdlib. It serves Go and
-// TypeScript, so it does not import a satellite.
+// The package imports the packages internal/double and repogen of the
+// module, the root, directive, emit, plugin and symbol packages of the SDK
+// facade, and the Go stdlib. It serves Go and TypeScript, so it does not
+// import a satellite.
 package mockgen

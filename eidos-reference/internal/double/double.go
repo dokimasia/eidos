@@ -4,50 +4,30 @@
 package double
 
 import (
-	"go/types"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk"
-	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
-	"go.dokimi.dev/eidos/sdk/rules"
 )
 
 // receiverFallback is the receiver of a method of a double whose name does
-// not start with a letter. paramPrefix starts the name that a parameter
-// without a name takes.
-const (
-	receiverFallback = "d"
-	paramPrefix      = "a"
-)
-
-// constraintKey is the key on which the Go satellite marks an interface
-// with type-set elements. It has the spelling of
-// golang.ConstraintInterfaceKey, because a double plugin does not import
-// the satellite.
-const constraintKey meta.KeyName = "golang.constraintInterface"
-
-// Match is the part of the match of an interface that [Of] reads. Of reads
-// the rules of the language of the interface and a fact of the interface,
-// and reports at the interface. [sdk.InterfaceMatch] satisfies it.
-type Match interface {
-	sdk.Matcher
-	Rules() rules.Bound
-	Errorf(c diag.Code, format string, a ...any)
-}
+// not start with a letter.
+const receiverFallback = "d"
 
 // Of returns the methods of the double named host of the interface i,
-// which m matched. Each method mirrors an effective method of i through
-// [sdk.Mirror], and has a receiver and a name for each parameter. The rules
-// of the language of i walk its effective members, so a method that an
-// embedded interface contributes is a method of the double too.
+// which m matched. Of reads the rules of the language of i and a fact of i
+// through m, and reports at i. Each method mirrors an effective method of
+// i through [sdk.Mirror], and has a receiver and a name for each
+// parameter. The rules of the language of i walk its effective members, so
+// a method that an embedded interface contributes is a method of the
+// double too.
 //
 // Of returns false after it reports [Constraint] at an interface that the
 // Go satellite marks as a constraint interface, because no value has the
@@ -58,8 +38,8 @@ type Match interface {
 //
 // It allocates the members of the walk, what sdk.Mirror allocates for each
 // method, and the receiver and the names that it adds.
-func Of(m Match, host string, i *node.Interface) ([]*emit.Method, bool) {
-	if constraint, _ := sdk.FactOf(m, i.ID, meta.Named[bool](constraintKey)); constraint {
+func Of(m sdk.SubjectMatch, host string, i *node.Interface) ([]*emit.Method, bool) {
+	if constraint, _ := sdk.FactOf(m, i.ID, meta.Named[bool](golang.ConstraintInterfaceKey)); constraint {
 		m.Errorf(Constraint,
 			"%s has type-set elements and only constrains type parameters, so it has no double", i.Name)
 		return nil, false
@@ -135,47 +115,31 @@ func Signatures(ms []*emit.Method) []*emit.Method {
 	return out
 }
 
-// completed names each parameter of the method m that has no name, and
-// gives m a receiver. host is the name of the double. The names of the
-// named parameters and results of m are taken first. A parameter without a
-// name then takes a followed by its position, and the receiver takes the
-// first letter of host in lower case, or d where host does not start with
-// a letter. Where m has that name already, the parameter or the receiver
-// takes the name followed by the smallest number from 0 that m does not
-// have, as [naming.Unique] chooses.
+// completed names each parameter of the method m that has no name through
+// [naming.Params], renames each parameter and result with the name of a
+// predeclared identifier of Go through [golang.RenamePredeclared], and gives
+// m a receiver. host is the name of the double. The body of a double calls
+// predeclared functions, such as append in a stub, and a parameter of the
+// same name would hide the function. The receiver takes the first letter of
+// host in lower case, or d where host does not start with a letter. Where m
+// has that name already, the receiver takes the name followed by the
+// smallest number from 0 that m does not have, as [naming.Unique] chooses.
 //
-// A parameter or a result with the name of a predeclared identifier of
-// Go, which the universe scope of go/types declares, takes the name
-// followed by the smallest number from 0 that m does not have. The body of
-// a double calls predeclared functions, such as append in a stub, and a
-// parameter of the same name would hide the function.
-//
-// completed returns m. It allocates the set of the names of m, the receiver
-// and the names that it adds.
+// completed returns m. It allocates what naming.Params and
+// golang.RenamePredeclared allocate, the set of the names of m and the
+// receiver.
 func completed(host string, m *emit.Method) *emit.Method {
+	golang.RenamePredeclared(naming.Params(m))
 	params, returns := m.Params.Items(), m.Returns.Items()
-	taken := make(map[string]bool, len(params)+len(returns))
+	taken := make(map[string]bool, len(m.TypeParams)+len(params)+len(returns))
+	for _, tp := range m.TypeParams {
+		taken[tp.Name] = true
+	}
 	for _, p := range params {
 		taken[p.Name] = true
 	}
 	for _, r := range returns {
 		taken[r.Name] = true
-	}
-	for i, p := range params {
-		switch {
-		case p.Name == "":
-			p.Name = naming.Unique(taken, paramPrefix+strconv.Itoa(i))
-			taken[p.Name] = true
-		case types.Universe.Lookup(p.Name) != nil:
-			p.Name = naming.Unique(taken, p.Name)
-			taken[p.Name] = true
-		}
-	}
-	for _, r := range returns {
-		if types.Universe.Lookup(r.Name) != nil {
-			r.Name = naming.Unique(taken, r.Name)
-			taken[r.Name] = true
-		}
 	}
 	letter := receiverFallback
 	if first, _ := utf8.DecodeRuneInString(host); unicode.IsLetter(first) {

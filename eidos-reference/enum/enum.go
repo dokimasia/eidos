@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
-	"go.dokimi.dev/eidos/reference/internal/tree"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -143,7 +142,7 @@ func New() plugin.Generator {
 		Version(Version).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word, Template: enumTemplate}).
 		Output(plugin.Output{Tag: TestTag, Per: plugin.PerSource, Word: Word, Template: testTemplate}).
-		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
+		For(golang.Target, sdk.TemplatesOf(templates, golang.Target)).
 		Handle(sdk.Directive(schema, sdk.OnEnum(generate))).
 		Generator()
 }

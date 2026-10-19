@@ -32,12 +32,11 @@
 // [Of] reports [Constraint] at a Go constraint interface,
 // [IncompleteMembers] at an interface whose members its rules cannot list
 // in full, and [Property] at an interface with a property. All three are
-// Errors, and the plugin does not write a double of the interface. A double
-// plugin does not import the Go satellite, so the package spells the key
-// of the satellite's constraint fact itself.
+// Errors, and the plugin does not write a double of the interface.
 //
 // # Dependency position
 //
-// The package imports the root, diag, emit, meta, node, plugin and rules
-// packages of the SDK facade, eidos-lang's naming, and the Go stdlib.
+// The package imports the root, diag, emit, meta, node and plugin packages
+// of the SDK facade, eidos-lang's naming, the Go satellite, and the Go
+// stdlib.
 package double

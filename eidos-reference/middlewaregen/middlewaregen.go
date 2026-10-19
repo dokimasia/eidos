@@ -9,7 +9,6 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/reference/handlergen"
-	"go.dokimi.dev/eidos/reference/internal/tree"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -66,7 +65,7 @@ func New() plugin.Generator {
 		Provides(Capability).
 		Requires(handlergen.Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
-		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
+		For(golang.Target, sdk.TemplatesOf(templates, golang.Target)).
 		Handle(sdk.Where(sdk.HasKey(meta.Named[bool](handlergen.KeyHandler)), sdk.OnStruct(generate))).
 		Generator()
 }

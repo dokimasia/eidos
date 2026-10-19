@@ -34,7 +34,7 @@
 //
 // # Dependency position
 //
-// The package imports the packages internal/callee and internal/tree of
-// the module, the root of the Go satellite, and the root, diag, directive,
-// emit and plugin packages of the SDK facade. Its output is Go alone.
+// The package imports the package internal/callee of the module, the root
+// of the Go satellite, and the root, diag, directive, emit and plugin
+// packages of the SDK facade. Its output is Go alone.
 package registrygen

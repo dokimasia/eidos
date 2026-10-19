@@ -38,7 +38,7 @@ const (
 	addressMethods = "WithStreet WithCity WithCountry WithFloor WithLines AppendLines " +
 		"WithLabels WithLabelsEntry WithLabelsEntries WithNotes WithNotesEntry WithNotesEntries " +
 		"WithRaw WithRawString WithUnit Build"
-	addressChecks = "Build WithStreet WithCity WithCountry WithFloor WithLines WithNotes WithRaw WithUnit"
+	addressChecks = "Build WithStreet WithCity WithCountry WithFloor WithLines WithLabels WithNotes WithRaw WithUnit"
 	addressTypes  = "NewAddress NewAddressFrom StreetDefault CityDefault CountryDefault"
 )
 

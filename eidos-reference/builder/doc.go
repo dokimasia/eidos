@@ -49,8 +49,8 @@
 //
 // # Dependency position
 //
-// The package imports the packages defaults and internal/tree of the
-// module, the root of the Go satellite, the root, diag, directive, emit,
-// meta, node, plugin, rules and symbol packages of the SDK facade, and the
-// Go stdlib. Its output is Go alone.
+// The package imports the package defaults of the module, the root of the
+// Go satellite, the root, diag, directive, emit, meta, node, plugin, rules
+// and symbol packages of the SDK facade, and the Go stdlib. Its output is
+// Go alone.
 package builder

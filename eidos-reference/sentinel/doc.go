@@ -41,7 +41,7 @@
 //
 // # Dependency position
 //
-// The package imports the package internal/tree of the module, the root of
-// the Go satellite, the root, emit, meta, plugin and symbol packages of the
-// SDK facade, and the Go stdlib. Its output is Go alone.
+// The package imports the root of the Go satellite, the root, emit, meta,
+// plugin and symbol packages of the SDK facade, and the Go stdlib. Its
+// output is Go alone.
 package sentinel

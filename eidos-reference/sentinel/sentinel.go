@@ -7,7 +7,6 @@ import (
 	"embed"
 
 	golang "go.dokimi.dev/eidos/lang/go"
-	"go.dokimi.dev/eidos/reference/internal/tree"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -111,7 +110,7 @@ func New() sdk.Dual {
 		Options(c.options).
 		Keys(c.register).
 		Output(plugin.Output{Tag: TestTag, Per: plugin.PerPackage, Word: Word, Template: fileTemplate}).
-		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
+		For(golang.Target, sdk.TemplatesOf(templates, golang.Target)).
 		Handle(
 			sdk.OnVariable(c.stamp),
 			sdk.Where(sdk.HasKey(meta.Named[bool](KeyValue)), sdk.OnVariable(c.sentinel)),

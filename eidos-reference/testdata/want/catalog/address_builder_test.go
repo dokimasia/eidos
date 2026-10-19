@@ -22,6 +22,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 		got := NewAddressFrom(seed).Build()
@@ -72,6 +73,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -92,6 +94,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -112,6 +115,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -132,6 +136,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -152,6 +157,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -160,6 +166,27 @@ func TestAddressBuilder(t *testing.T) {
 		got := NewAddressFrom(seed).WithLines(want...).Build()
 		if !reflect.DeepEqual(got.Lines, want) {
 			t.Errorf("WithLines sets Lines to %v instead of %v", got.Lines, want)
+		}
+	})
+
+	t.Run("WithLabels sets Labels", func(t *testing.T) {
+		t.Parallel()
+
+		var seed Address
+		seed.Street = "Street-a"
+		seed.City = "Utrecht"
+		seed.Country = "Country-a"
+		seed.Floor = 42
+		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
+		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
+		seed.Raw = []byte{1}
+
+		var want map[string]struct{}
+		want = map[string]struct{}{"Labels-b": struct{}{}}
+		got := NewAddressFrom(seed).WithLabels(want).Build()
+		if !reflect.DeepEqual(got.Labels, want) {
+			t.Errorf("WithLabels sets Labels to %v instead of %v", got.Labels, want)
 		}
 	})
 
@@ -172,6 +199,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -192,6 +220,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -212,6 +241,7 @@ func TestAddressBuilder(t *testing.T) {
 		seed.Country = "Country-a"
 		seed.Floor = 42
 		seed.Lines = []string{"Lines-a"}
+		seed.Labels = map[string]struct{}{"Labels-a": struct{}{}}
 		seed.Notes = map[string]string{"Notes-a": "Notes-a"}
 		seed.Raw = []byte{1}
 
@@ -223,4 +253,4 @@ func TestAddressBuilder(t *testing.T) {
 		}
 	})
 }
-// reference:provenance sha256:2f11b8a2a2dfa4049dc297101f8b1dcccee8bf59e5bee4e2ad798247cfaed308
+// reference:provenance sha256:93f877765b30427237edf312fcc186de363d301daa6e80960061d718548e660f

@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	golang "go.dokimi.dev/eidos/lang/go"
-	"go.dokimi.dev/eidos/reference/internal/tree"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -134,7 +133,7 @@ func New() sdk.Dual {
 		Version(Version).
 		Provides(Capability).
 		Output(plugin.Output{Per: plugin.PerSource, Word: Word}).
-		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
+		For(golang.Target, sdk.TemplatesOf(templates, golang.Target)).
 		Keys(c.register).
 		Handle(
 			sdk.Directive(schema, sdk.OnStruct(c.conclude)),

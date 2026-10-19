@@ -22,7 +22,7 @@
 //
 // # Dependency position
 //
-// The package imports the package internal/tree of the module, the root of
-// the Go satellite, and the root, directive, emit, meta, node, plugin and
-// symbol packages of the SDK facade.
+// The package imports the root of the Go satellite, and the root,
+// directive, emit, meta, node, plugin and symbol packages of the SDK
+// facade.
 package repogen

@@ -8,7 +8,6 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/reference/internal/callee"
-	"go.dokimi.dev/eidos/reference/internal/tree"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -78,7 +77,7 @@ func New() plugin.Generator {
 		Version(Version).
 		Options(o).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: Word, Template: fileTemplate}).
-		For(golang.Target, sdk.Templates(tree.Of(templates, golang.Target))).
+		For(golang.Target, sdk.TemplatesOf(templates, golang.Target)).
 		Handle(sdk.Directive(schema, sdk.OnStruct(record(o)))).
 		Generator()
 }

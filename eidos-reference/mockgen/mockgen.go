@@ -8,7 +8,6 @@ import (
 	"slices"
 
 	"go.dokimi.dev/eidos/reference/internal/double"
-	"go.dokimi.dev/eidos/reference/internal/tree"
 	"go.dokimi.dev/eidos/reference/repogen"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/directive"
@@ -81,8 +80,8 @@ func New() plugin.Generator {
 		Provides(Capability).
 		Requires(repogen.Capability).
 		Output(plugin.Output{Tag: TestTag, Per: plugin.PerSource, Word: Word, Template: fileTemplate}).
-		For(double.GoTarget, sdk.Templates(tree.Of(templates, double.GoTarget))).
-		For(double.TypeScriptTarget, sdk.Templates(tree.Of(templates, double.TypeScriptTarget))).
+		For(double.GoTarget, sdk.TemplatesOf(templates, double.GoTarget)).
+		For(double.TypeScriptTarget, sdk.TemplatesOf(templates, double.TypeScriptTarget)).
 		Handle(
 			sdk.Directive(schema, sdk.OnInterface(source)),
 			sdk.OnEmit(symbol.KindInterface, emitted),
