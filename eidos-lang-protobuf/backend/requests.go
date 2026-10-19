@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -107,7 +106,7 @@ func lowerService(i *emit.Interface) ([]symbol.Symbol, error) {
 // one name.
 func request(i *emit.Interface, m *emit.Method) (*emit.Struct, error) {
 	params := m.Params.Items()
-	msg := &emit.Struct{Origin: i.Origin, Name: naming.Pascal(i.Name) + naming.Pascal(m.Name) + requestSuffix}
+	msg := &emit.Struct{Origin: i.Origin, Name: caser.Pascal(i.Name) + caser.Pascal(m.Name) + requestSuffix}
 	if len(params) == 1 && params[0].Type != nil && params[0].Type.Form == symbol.FormStream {
 		t := params[0].Type
 		streamedValue(msg, t)
@@ -171,7 +170,7 @@ func request(i *emit.Interface, m *emit.Method) (*emit.Struct, error) {
 // the whole response.
 func response(i *emit.Interface, m *emit.Method) (*emit.Struct, error) {
 	returns := m.Returns.Items()
-	msg := &emit.Struct{Origin: i.Origin, Name: naming.Pascal(i.Name) + naming.Pascal(m.Name) + responseSuffix}
+	msg := &emit.Struct{Origin: i.Origin, Name: caser.Pascal(i.Name) + caser.Pascal(m.Name) + responseSuffix}
 	if len(returns) == 1 && returns[0].Type != nil && returns[0].Type.Form == symbol.FormStream {
 		t := returns[0].Type
 		streamedValue(msg, t)

@@ -14,9 +14,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The names of the field and the types that the shape cases write.
+// The names of the fields and the types that the shape cases write.
 const (
 	tagsField    = "tags"
+	headersField = "httpHeaders"
 	rowType      = "Row"
 	int32Wrapper = protobuf.WellKnownPackage + protobuf.NameSep + "Int32Value"
 )
@@ -334,6 +335,25 @@ func TestShapes(t *testing.T) {
 				)
 			})
 		}
+
+		t.Run("returns a wrapper whose name writes an abbreviation as one word", func(t *testing.T) {
+			t.Parallel()
+
+			field := &emit.Field{Name: headersField, Tags: tag1, Type: &emit.TypeRef{
+				Form: symbol.FormList,
+				Elems: []*emit.TypeRef{
+					{
+						Spelling: "repeated string",
+						Form:     symbol.FormList,
+						Elems:    []*emit.TypeRef{{Spelling: stringType}},
+					},
+				},
+			}}
+			_, err := backend.Lower(&emit.Struct{Name: rowName, Fields: emit.SlotOf(field)})
+			assert.NoError(t, err, "protobuf writes the field")
+			assert.Equal(t, field.Type.Spelling, "repeated HttpHeadersItem",
+				"the wrapper has the name of the field in Pascal case")
+		})
 
 		t.Run("returns a wrapper of a member of a list as a member of the wrapper", func(t *testing.T) {
 			t.Parallel()

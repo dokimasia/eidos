@@ -24,6 +24,14 @@ const (
 	requestParam = "request"
 )
 
+// The names of a service and of its rpc that contain an abbreviation, and of
+// the request that the lowering declares for the rpc.
+const (
+	dnsStoreName = "dnsStore"
+	byIDName     = "getById"
+	byIDRequest  = "DnsStoreGetByIdRequest"
+)
+
 // TestRequests pins how an rpc takes one request and returns one response:
 // the message that it keeps, and the message that the lowering declares
 // beside the service.
@@ -378,6 +386,21 @@ func TestRequests(t *testing.T) {
 				assert.Equal(t, tt.give.Returns.Items(), tt.wantReturns, "the one result of the rpc")
 			})
 		}
+
+		t.Run("returns a request whose name writes an abbreviation as one word", func(t *testing.T) {
+			t.Parallel()
+
+			rpc := &emit.Method{
+				Name:    byIDName,
+				Params:  emit.SlotOf(&emit.Param{Name: keyParam, Type: &emit.TypeRef{Spelling: stringType}}),
+				Returns: emit.SlotOf(&emit.Return{Type: &emit.TypeRef{Spelling: rowType}}),
+			}
+			_, err := backend.Lower(&emit.Interface{Name: dnsStoreName, Methods: emit.SlotOf(rpc)})
+			assert.NoError(t, err, "protobuf writes the rpc")
+			assert.Equal(t, rpc.Params.Items(),
+				[]*emit.Param{{Name: requestParam, Type: &emit.TypeRef{Spelling: byIDRequest}}},
+				"the request has the names of the service and of the rpc in Pascal case")
+		})
 
 		refusals := []struct {
 			name string

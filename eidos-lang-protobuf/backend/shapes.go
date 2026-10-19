@@ -4,7 +4,6 @@
 package backend
 
 import (
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -99,13 +98,13 @@ func shape(name string, t *emit.TypeRef, add func(*emit.Struct)) *emit.TypeRef {
 func listElement(name string, elem *emit.TypeRef, add func(*emit.Struct)) *emit.TypeRef {
 	switch {
 	case elem.Form == symbol.FormList || elem.Form == symbol.FormMap:
-		return wrapped(naming.Pascal(name)+itemSuffix, valuesField, elem, add)
+		return wrapped(caser.Pascal(name)+itemSuffix, valuesField, elem, add)
 	case elem.Form == symbol.FormOptional && len(elem.Elems) == 1:
 		inner := elem.Elems[0]
 		if wrapper, scalar := protobuf.Wrapper(inner.Spelling); scalar && inner.Form == symbol.FormNamed {
 			return &emit.TypeRef{Spelling: wrapper, Package: protobuf.WrappersFile}
 		}
-		return wrapped(naming.Pascal(name)+itemSuffix, valueField, elem, add)
+		return wrapped(caser.Pascal(name)+itemSuffix, valueField, elem, add)
 	default:
 		return elem
 	}
@@ -116,7 +115,7 @@ func listElement(name string, elem *emit.TypeRef, add func(*emit.Struct)) *emit.
 func mapShape(name string, t *emit.TypeRef, add func(*emit.Struct)) *emit.TypeRef {
 	key, value := t.Elems[0], t.Elems[1]
 	if key.Form != symbol.FormNamed || !mapKeys[key.Spelling] {
-		entry := &emit.Struct{Name: naming.Pascal(name) + entrySuffix}
+		entry := &emit.Struct{Name: caser.Pascal(name) + entrySuffix}
 		nest := func(m *emit.Struct) { entry.Types.Append(m) }
 		entry.Fields.Append(
 			&emit.Field{
@@ -135,13 +134,13 @@ func mapShape(name string, t *emit.TypeRef, add func(*emit.Struct)) *emit.TypeRe
 	var v *emit.TypeRef
 	switch {
 	case value.Form == symbol.FormList || value.Form == symbol.FormMap:
-		v = wrapped(naming.Pascal(name)+valueSuffix, valuesField, value, add)
+		v = wrapped(caser.Pascal(name)+valueSuffix, valuesField, value, add)
 	case value.Form == symbol.FormOptional && len(value.Elems) == 1:
 		inner := value.Elems[0]
 		if wrapper, scalar := protobuf.Wrapper(inner.Spelling); scalar && inner.Form == symbol.FormNamed {
 			v = &emit.TypeRef{Spelling: wrapper, Package: protobuf.WrappersFile}
 		} else {
-			v = wrapped(naming.Pascal(name)+valueSuffix, valueField, value, add)
+			v = wrapped(caser.Pascal(name)+valueSuffix, valueField, value, add)
 		}
 	default:
 		return t

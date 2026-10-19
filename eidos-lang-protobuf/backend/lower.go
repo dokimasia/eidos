@@ -56,6 +56,11 @@ const localMembers = 16
 // numbers keeps on the stack.
 const localValues = 32
 
+// caser converts the names of the messages that the lowering declares: the
+// message of a variant, a wrapper, a request and a response. It converts as
+// [spell.Name] does, without initialisms, so the respell keeps each name.
+var caser = naming.New()
+
 // Lower rewrites one declaration into the shapes that protobuf writes, in
 // place and before any name respells. It refuses a construct that protobuf
 // has no form of, and the settle withholds the declaration. The rewrites
@@ -336,7 +341,7 @@ func lowerVariant(v *emit.SumVariant, add func(*emit.Struct)) (uint32, error) {
 	if len(fields) == 0 {
 		member.Type = &emit.TypeRef{Spelling: protobuf.TypeEmpty, Package: protobuf.EmptyFile}
 	} else {
-		m := &emit.Struct{Name: naming.Pascal(v.Name)}
+		m := &emit.Struct{Name: caser.Pascal(v.Name)}
 		for i, f := range fields {
 			if f.Name == "" {
 				f.Name = fieldName + positionSep + strconv.Itoa(i+1)
@@ -376,7 +381,7 @@ func lowerMember(name string, f *emit.Field, add func(*emit.Struct)) (uint32, er
 			f.Type = f.Type.Elems[0]
 		}
 	case symbol.FormList, symbol.FormMap:
-		f.Type = wrapped(naming.Pascal(name)+valueSuffix, valuesField, f.Type, add)
+		f.Type = wrapped(caser.Pascal(name)+valueSuffix, valuesField, f.Type, add)
 	default:
 		// A named type is the type of the member.
 	}

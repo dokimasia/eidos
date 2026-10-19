@@ -38,6 +38,14 @@ func TestName(t *testing.T) {
 				kind: symbol.KindStruct, vis: symbol.VisibilityPublic, give: "session_state", want: "SessionState",
 			},
 			{
+				name: "returns the Pascal-case spelling of a message with an abbreviation as one word",
+				kind: symbol.KindStruct, vis: symbol.VisibilityPublic, give: "get_dns_request", want: "GetDnsRequest",
+			},
+			{
+				name: "returns a message name in its style unchanged",
+				kind: symbol.KindStruct, vis: symbol.VisibilityPublic, give: "HttpRule", want: "HttpRule",
+			},
+			{
 				name: "returns the Pascal-case spelling of a nested message",
 				host: symbol.KindStruct, kind: symbol.KindStruct, vis: symbol.VisibilityPublic,
 				give: "entry", want: "Entry",

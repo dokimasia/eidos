@@ -10,6 +10,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// caser is the case conversion of protobuf. The style guide writes an
+// abbreviation as one word, as GetDnsRequest, so the conversion recognises
+// no initialism. A name that the source declares in its style, such as
+// HttpRule, keeps its spelling.
+var caser = naming.New()
+
 // Name spells one declared name in the convention of protobuf's style
 // guide. host is the kind of the declaration that declares the name, and
 // [symbol.KindInvalid] at file level. The kinds take these spellings:
@@ -21,6 +27,10 @@ import (
 //     result do;
 //   - an enum value takes screaming snake case;
 //   - a type parameter keeps its spelling.
+//
+// The conversion raises no initialism, so get_dns_request becomes
+// GetDnsRequest, and a name in its style, such as HttpRule, keeps its
+// spelling.
 //
 // Every other kind is a kind that the backend refuses, and it takes snake
 // case. A name at a visibility other than public and the unstated one is
@@ -47,14 +57,14 @@ func Name(host, kind symbol.Kind, v symbol.Visibility, name string) (string, err
 	case kind == symbol.KindTypeParam:
 		spelled = name
 	case kind == symbol.KindSum && host == symbol.KindStruct:
-		spelled = naming.Snake(name)
+		spelled = caser.Snake(name)
 	case kind == symbol.KindStruct || kind == symbol.KindEnum || kind == symbol.KindInterface ||
 		kind == symbol.KindMethod || kind == symbol.KindSum || kind == symbol.KindAlias:
-		spelled = naming.Pascal(name)
+		spelled = caser.Pascal(name)
 	case kind == symbol.KindEnumVariant:
-		spelled = naming.ScreamingSnake(name)
+		spelled = caser.ScreamingSnake(name)
 	default:
-		spelled = naming.Snake(name)
+		spelled = caser.Snake(name)
 	}
 	if spelled == "" {
 		return "", fmt.Errorf(refusalPrefix+"%q spells nothing in protobuf's convention", name)
