@@ -28,8 +28,12 @@ const (
 	FuncMemberDocs = "memberdocs"
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
+	// FuncSpellValue is the template name of [Speller.SpellValue].
+	FuncSpellValue = render.HelperSpellValue
 	// FuncTypeParams is the template name of [Speller.TypeParams].
 	FuncTypeParams = render.HelperTypeParams
+	// FuncTypeArgs is the template name of [Speller.TypeArgs].
+	FuncTypeArgs = render.HelperTypeArgs
 	// FuncParams is the template name of [Speller.Params].
 	FuncParams = render.HelperParams
 	// FuncResults is the template name of [Speller.Results].
@@ -189,6 +193,32 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return s.spell(t, true)
 }
 
+// SpellValue writes the reference t in a value position, where the
+// declaration must exist at run time, such as the class of a construction
+// or the base of a class. It imports the declaration of t for its value,
+// so tsc reads new Address() without the refusal of a type-only import.
+// The type arguments of t spell in a type position, as [Speller.Spell]
+// writes them, so a construction of Map<string, Address> imports Address
+// for the type checker alone. SpellValue returns the errors of
+// [Speller.Spell], and allocates what Spell allocates for the reference
+// and for each type argument, and the joined arguments.
+func (s Speller) SpellValue(t *emit.TypeRef) (string, error) {
+	if t == nil || t.Form != symbol.FormNamed || len(t.Args) == 0 {
+		return s.spell(t, false)
+	}
+	head := *t
+	head.Args = nil
+	name, err := s.spell(&head, false)
+	if err != nil {
+		return "", err
+	}
+	args, err := s.all(t.Args, s.Spell)
+	if err != nil {
+		return "", err
+	}
+	return name + argsOpener + strings.Join(args, ", ") + argsCloser, nil
+}
+
 // IndexSig writes the whole index signature of m. The one key parameter
 // is in brackets, and the element type follows the colon. IndexSig
 // returns an error for a method that an index signature cannot express:
@@ -259,11 +289,25 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
 }
 
+// TypeArgs writes a list of type parameters or of type references as the
+// type arguments of a reference in angle brackets, and nothing for an
+// empty list: the parameters of a generic declaration as the arguments of
+// a reference to it, as in PageBuilder<T>, and the witnesses of a test, as
+// in <number>. Each reference spells through [Speller.Spell], which
+// imports its declaration for the type checker. TypeArgs returns an error
+// for a list of another type. It allocates what [spellref.TypeArgs]
+// allocates. A template passes the list as a value of type any, which
+// text/template boxes, one allocation.
+func (s Speller) TypeArgs(list any) (string, error) {
+	return spellref.TypeArgs(list, argsOpener, argsCloser, s.Spell)
+}
+
 // Heritage writes the heritage clauses of the type d. A class has one
 // base after extends and its contracts after implements. An interface
 // has the interfaces that it extends after extends. The base of a class
-// is a value at run time, so Heritage imports it as a value. It imports
-// every contract for the type checker alone. Heritage returns an error
+// is a value at run time, so Heritage writes it through
+// [Speller.SpellValue]. It imports every contract for the type checker
+// alone. Heritage returns an error
 // for a second base of a class, because a TypeScript class extends one
 // class. TypeScript does not promote members, so the coverage refuses an
 // embed, and Heritage writes none.
@@ -279,7 +323,7 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 		switch len(t.Extends) {
 		case 0:
 		case 1:
-			base, err := s.spellValue(t.Extends[0])
+			base, err := s.SpellValue(t.Extends[0])
 			if err != nil {
 				return "", err
 			}
@@ -431,13 +475,6 @@ func (s Speller) resultType(rs []*emit.Return, open, closer string) (string, err
 	return open + "[" + strings.Join(parts, ", ") + "]" + closer, nil
 }
 
-// spellValue writes the reference t in a value position, where the
-// declaration must exist at run time. The base of a class is in a value
-// position.
-func (s Speller) spellValue(t *emit.TypeRef) (string, error) {
-	return s.spell(t, false)
-}
-
 // spell writes the reference t. Where typeOnly is true, it imports the
 // declaration of t for the type checker alone. A composite whose child
 // imports under another name, and a composite that the rules substituted,
@@ -504,15 +541,17 @@ func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)
 // set, the import set of one file. Every helper takes
 // a fixed list of arguments, because text/template allocates the list of
 // a variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty-three helpers in four allocations,
-// and the seven bound helpers of the speller.
+// Funcs allocates the map of twenty-five helpers in four allocations,
+// and the nine bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:             Docs,
 		FuncMemberDocs:       MemberDocs,
 		FuncSpell:            s.Spell,
+		FuncSpellValue:       s.SpellValue,
 		FuncTypeParams:       s.TypeParams,
+		FuncTypeArgs:         s.TypeArgs,
 		FuncParams:           s.Params,
 		FuncResults:          s.Results,
 		FuncReturns:          s.Returns,

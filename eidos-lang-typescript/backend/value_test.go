@@ -29,10 +29,12 @@ const (
 	weightName     = "Weight"
 )
 
-// The global array types, whose values are array literals.
+// The global array types, whose values are array literals, and the global
+// set type, whose value is a construction.
 const (
 	arrayType         = "Array"
 	readonlyArrayType = "ReadonlyArray"
+	setType           = "Set"
 )
 
 // lineSeparator is U+2028, which the quoting escapes.
@@ -126,6 +128,24 @@ func TestValue(t *testing.T) {
 				want: "unix()",
 			},
 			{
+				name: "writes a list that the substitution left without a spelling as an array literal",
+				give: emit.Composite(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: "number"}}},
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				want: "[2]",
+			},
+			{
+				name: "writes a construction as a new expression",
+				give: emit.Construction(&emit.TypeRef{Spelling: setType, Args: []*emit.TypeRef{{Spelling: "string"}}},
+					emit.Composite(&emit.TypeRef{Spelling: "string[]", Form: symbol.FormList},
+						emit.Element(emit.Literal(emit.LiteralString, "a")))),
+				want: "new Set<string>(['a'])",
+			},
+			{
+				name: "writes a construction without arguments",
+				give: emit.Construction(&emit.TypeRef{Spelling: setType}),
+				want: "new Set()",
+			},
+			{
 				name:    "returns a value error for another language's raw text",
 				give:    emit.Raw("golang", "Row{}"),
 				want:    "written in golang",
@@ -176,6 +196,16 @@ func TestValue(t *testing.T) {
 			assert.NoError(t, err, "the value spells")
 			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsSpecifier, Name: weightName, TypeOnly: true}},
 				"a type-only import")
+		})
+
+		t.Run("imports the class of a construction as a value", func(t *testing.T) {
+			t.Parallel()
+
+			got, set, err := returned(t, emit.Construction(valueRef(weightName, unitsModule, weightName)))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, "new Weight()", "the construction names the class")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsSpecifier, Name: weightName}},
+				"a construction needs the class at run time")
 		})
 
 		t.Run("imports a callee as a value", func(t *testing.T) {

@@ -101,3 +101,15 @@ func (t target) Composite(
 func (t target) Address(emit.Value, string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "TypeScript spells no address of a value")
 }
+
+// Construction spells a new expression, which constructs a class from its
+// arguments, as new Set([1]). The class is a value at run time, so the
+// construction writes its reference through [Speller.SpellValue], which
+// imports the class for its value.
+func (t target) Construction(ref *emit.TypeRef, args []string) (string, error) {
+	class, err := NewSpeller(t.set).SpellValue(ref)
+	if err != nil {
+		return "", err
+	}
+	return "new " + class + "(" + strings.Join(args, ", ") + ")", nil
+}

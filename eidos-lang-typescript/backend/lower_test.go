@@ -54,9 +54,9 @@ const (
 
 // lowerAllocs is a sum of two variants: the list of outputs, the union
 // alias, its target and the joined union, and per variant its
-// interface, the three steps of its name, its list of fields, the
+// interface, the two steps of its name, its list of fields, the
 // discriminant field, its type and the quoted literal.
-const lowerAllocs = 4 + 2*8
+const lowerAllocs = 4 + 2*7
 
 // The lowering turns a sum into variant interfaces and the union
 // alias, and passes everything else through untouched.

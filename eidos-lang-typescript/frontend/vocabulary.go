@@ -17,7 +17,7 @@ type vocabulary struct {
 	comments treesitter.Comments
 
 	// The statements, and the containers of the declarations of a module.
-	comment, exportStatement, ambientDeclaration, expressionStatement,
+	comment, hashBangLine, exportStatement, ambientDeclaration, expressionStatement,
 	statementBlock, internalModule, module, nestedIdentifier treesitter.Kind
 
 	// The declarations.
@@ -75,6 +75,7 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		grammar: g,
 
 		comment:             g.Kind("comment"),
+		hashBangLine:        g.Kind("hash_bang_line"),
 		exportStatement:     g.Kind("export_statement"),
 		ambientDeclaration:  g.Kind("ambient_declaration"),
 		expressionStatement: g.Kind("expression_statement"),

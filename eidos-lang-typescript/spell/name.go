@@ -11,12 +11,22 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// caser is the case conversion of TypeScript. TypeScript writes an
+// acronym as a word, as getById and HttpRow, so the conversion
+// recognises no initialism. A name that the source declares in its
+// style, such as getById or toJSON, keeps its spelling, and a class
+// that a generator writes from an interface implements the methods of
+// the interface under their own names.
+var caser = naming.New()
+
 // Name spells one declared name in TypeScript's convention: types
 // and their variants take Pascal case, a constant takes screaming
 // snake case, everything callable or bound takes camel case, and a
 // type parameter keeps its spelling, whose single-capital convention
 // is near universal. Visibility never changes a spelling, because
-// TypeScript scopes through keywords.
+// TypeScript scopes through keywords. The conversion raises no
+// initialism, so user_id becomes userId, and a name in its style,
+// such as getById, keeps its spelling.
 //
 // A name that is not an identifier, such as the wire name
 // content-type or a digit-led key, passes through unchanged on a
@@ -49,11 +59,11 @@ func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error)
 	case symbol.KindStruct, symbol.KindInterface, symbol.KindAlias,
 		symbol.KindEnum, symbol.KindEnumVariant,
 		symbol.KindSum, symbol.KindSumVariant:
-		spelt = naming.Pascal(name)
+		spelt = caser.Pascal(name)
 	case symbol.KindConstant:
-		spelt = naming.ScreamingSnake(name)
+		spelt = caser.ScreamingSnake(name)
 	default:
-		spelt = naming.Camel(name)
+		spelt = caser.Camel(name)
 	}
 	switch {
 	case reserved[spelt]:

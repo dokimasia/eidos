@@ -72,10 +72,10 @@ type container struct {
 }
 
 // lower lowers one parsed file into the builder of the unit: the module
-// record, every declaration into its package, the mark of a generated
-// file, the carriers that no declaration took, and the syntax errors. The
-// mark is the first comment of the file where the comment contains
-// [typescript.GeneratedMark].
+// record, the carriers of the header of a module, every declaration into
+// its package, the mark of a generated file, the carriers that no
+// declaration took, and the syntax errors. The mark is the first comment
+// of the file where the comment contains [typescript.GeneratedMark].
 func (l *lowering) lower(root treesitter.Node) {
 	moduleFile := l.isModule(root)
 	if !moduleFile {
@@ -93,6 +93,9 @@ func (l *lowering) lower(root treesitter.Node) {
 
 		l.u.Graph().Stamp(top.file, meta.RawStamp{Key: typescript.GeneratedKey, Value: first.Text(), Pos: top.file.Pos})
 	}
+	if moduleFile {
+		l.header(root)
+	}
 	l.record(root, top.file)
 	l.statements(root, top)
 	l.comments.Sweep(root, func(n treesitter.Node) {
@@ -101,6 +104,35 @@ func (l *lowering) lower(root treesitter.Node) {
 	if problems := l.tree.Problems(); problems != nil {
 		l.u.ReportSyntax(UnparsedFile, problems)
 	}
+}
+
+// header attaches the carriers of the header of a module to the package of
+// the module. The header is every comment above the first statement of the
+// module, and below its hashbang line where it has one. The run directly
+// above a first declaration or export belongs to that statement, so the
+// header leaves it out. The run directly above a
+// first import is part of the header, because no rule takes an import as
+// its subject. The header leaves the doc of the package unchanged, because
+// the first comment of a module is often a license header. A script has no
+// header, because its declarations are in the global package of every
+// script.
+func (l *lowering) header(root treesitter.Node) {
+	var comments []treesitter.Node
+	var first treesitter.Node
+	for n := range root.NamedChildren() {
+		if n.Kind() == l.v.hashBangLine {
+			continue
+		}
+		if n.Kind() != l.v.comment {
+			first = n
+			break
+		}
+		comments = append(comments, n)
+	}
+	if k := first.Kind(); k != l.v.importStatement && k != l.v.importAlias {
+		comments = comments[:len(comments)-len(l.comments.Leading(first))]
+	}
+	l.u.AttachCarriers(l.u.Graph().Package(l.module.pkg), l.parts(comments).Carriers, BadCarrier)
 }
 
 // isModule reports whether a file is a module: it has a top-level
@@ -236,7 +268,9 @@ func (l *lowering) importAlias(stmt treesitter.Node) {
 // packages that the governing tsconfig maps its specifier onto as its
 // Modules. An export that wraps no declaration records the doc of the
 // statement, and refuses a carrier in it. The doc of a wrapped declaration
-// is the doc of the declaration.
+// is the doc of the declaration. The anonymous class or function of an
+// export default is a declaration too, and the comments of the statement
+// are its own.
 func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 	spec := l.unquote(stmt.Child(l.v.fieldSource))
 	export := &node.Export{Pos: stmt.Pos(), Path: spec, Modules: l.module.mapped(spec)}
@@ -289,7 +323,7 @@ func (l *lowering) exportOf(stmt treesitter.Node) *node.Export {
 	default:
 		return nil
 	}
-	if declaration.IsZero() {
+	if declaration.IsZero() && !l.anonymousDefault(value) {
 		parts, _ := l.declParts(stmt)
 		l.u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "an export")
 		export.Doc = parts.Docs

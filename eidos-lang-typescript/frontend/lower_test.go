@@ -61,9 +61,66 @@ func TestLower(t *testing.T) {
 		t.Run("reports UnaddressedCarrier for a carrier that no declaration takes", func(t *testing.T) {
 			t.Parallel()
 
-			_, found := parsedSource(t, carrierLine+"\nexport class A {}\n")
+			_, found := parsedSource(t, "export class A {}\n\n"+carrierLine+"\nexport class B {}\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
-				"a blank line separates the carrier from the class")
+				"blank lines separate the carrier from both classes")
+		})
+
+		headers := []struct {
+			name string
+			give string
+		}{
+			{
+				name: "attaches a carrier above a blank line at the top of a module to its package",
+				give: carrierLine + "\nexport class A {}\n",
+			},
+			{
+				name: "attaches a carrier below a license header to the package of the module",
+				give: "// Copyright Acme.\n\n" + carrierLine + "\nexport class A {}\n",
+			},
+			{
+				name: "attaches a carrier directly above the first import of a module to its package",
+				give: "// The errors of the shop.\n" + carrierLine + "import { A } from './lib';\n",
+			},
+			{
+				name: "attaches a carrier below the hashbang line of a module to its package",
+				give: "#!/usr/bin/env node\n" + carrierLine + "\nexport class A {}\n",
+			},
+		}
+		for _, tt := range headers {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, tt.give)
+				assert.Empty(t, found, "the package takes the carrier")
+				assert.Length(t, gb.Attachments(), 1, "one directive")
+				assert.Equal(t, gb.Attachments()[0].Subject, symbol.Symbol(packageIn(t, gb, aPackage)),
+					"the package of the module is the subject", assert.ByIdentity())
+			})
+		}
+
+		t.Run("leaves the doc of the package unchanged by the header of a module", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "// The errors of the shop.\n"+carrierLine+"\nexport class A {}\n")
+			assert.Empty(t, packageIn(t, gb, aPackage).Doc, "a header is often a license")
+		})
+
+		t.Run("leaves the carrier directly above the first declaration to the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "// Copyright Acme.\n\n"+carrierLine+"export class A {}\n")
+			assert.Length(t, gb.Attachments(), 1, "one directive")
+			_, onClass := gb.Attachments()[0].Subject.(*node.Struct)
+			assert.True(t, onClass, "the class takes the carrier above it")
+		})
+
+		t.Run("reports UnaddressedCarrier for a carrier at the top of a script", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, carrierLine+"\nclass A {}\n")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
+				"a script declares into the global package of every script")
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier in a namespace that no declaration takes", func(t *testing.T) {
@@ -274,20 +331,42 @@ func TestLower(t *testing.T) {
 		t.Run("records the doc and the trailing comment of an import", func(t *testing.T) {
 			t.Parallel()
 
-			gb, _ := parsedSource(t, "// The library.\nimport { A } from './lib'; // for A\n")
-			imp := fileIn(t, gb, aPackage).Imports[0]
+			gb, _ := parsedSource(t, "import { B } from './b';\n// The library.\nimport { A } from './lib'; // for A\n")
+			imp := fileIn(t, gb, aPackage).Imports[1]
 			expect.Equal(t, imp.Doc, []string{"The library."}, "the doc of the import")
 			expect.Equal(t, imp.Comment, "for A", "the trailing comment of the import")
 		})
 
-		t.Run("reports UnaddressedCarrier for a carrier on an import", func(t *testing.T) {
+		t.Run("leaves the comment above the first import to the header of the module", func(t *testing.T) {
 			t.Parallel()
 
-			gb, found := parsedSource(t, carrierLine+"import { A } from './lib';\n")
-			assert.Length(t, found, 1, "the carrier refuses")
-			assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "as a carrier that no rule takes")
-			assert.Empty(t, gb.Attachments(), "nothing attaches")
+			gb, _ := parsedSource(t, "// The library.\nimport { A } from './lib';\n")
+			assert.Empty(t, fileIn(t, gb, aPackage).Imports[0].Doc, "the first comment of a module is its header")
 		})
+
+		refused := []struct {
+			name string
+			give string
+		}{
+			{
+				name: "reports UnaddressedCarrier for a carrier on an import",
+				give: "import { B } from './b';\n" + carrierLine + "import { A } from './lib';\n",
+			},
+			{
+				name: "reports UnaddressedCarrier for a trailing carrier on the first import",
+				give: "import { A } from './lib'; " + carrierLine,
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, found := parsedSource(t, tt.give)
+				assert.Length(t, found, 1, "the carrier refuses")
+				assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "as a carrier that no rule takes")
+				assert.Empty(t, gb.Attachments(), "nothing attaches")
+			})
+		}
 
 		t.Run("records the doc of a re-export", func(t *testing.T) {
 			t.Parallel()
@@ -305,6 +384,26 @@ func TestLower(t *testing.T) {
 			expect.Empty(t, file.Exports[0].Doc, "the export has no doc of its own")
 			expect.Equal(t, named[*node.Struct](t, file.Decls, "Foo").Doc, []string{"Foo is the default."},
 				"the class has the doc")
+		})
+
+		t.Run("leaves the doc of an anonymous default class to the class", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export {};\n// The default.\nexport default class {}\n")
+			file := fileIn(t, gb, aPackage)
+			expect.Empty(t, file.Exports[1].Doc, "the export has no doc of its own")
+			expect.Equal(t, named[*node.Struct](t, file.Decls, typescript.DefaultExport).Doc, []string{"The default."},
+				"the class has the doc")
+		})
+
+		t.Run("attaches a carrier above an anonymous default class to the class", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedSource(t, "export {};\n"+carrierLine+"export default class {}\n")
+			assert.Empty(t, found, "the class takes the carrier")
+			assert.Length(t, gb.Attachments(), 1, "one directive")
+			_, onClass := gb.Attachments()[0].Subject.(*node.Struct)
+			assert.True(t, onClass, "the anonymous class is the subject")
 		})
 
 		t.Run("skips a comment among the names of an import", func(t *testing.T) {

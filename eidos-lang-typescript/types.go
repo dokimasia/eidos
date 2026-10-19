@@ -36,6 +36,7 @@ const (
 	TypeMap                   = "Map"
 	TypeReadonlyMap           = "ReadonlyMap"
 	TypeSet                   = "Set"
+	TypeReadonlySet           = "ReadonlySet"
 	TypePromise               = "Promise"
 	TypeDate                  = "Date"
 	TypeUint8Array            = "Uint8Array"
@@ -75,8 +76,9 @@ var errorClasses = []string{
 // globalTypes lists the global types in the order of their constants, the
 // error classes last.
 var globalTypes = slices.Concat([]string{
-	TypeArray, TypeReadonlyArray, TypeRecord, TypePartial, TypeReadonly, TypeMap, TypeReadonlyMap, TypeSet, TypePromise,
-	TypeDate, TypeUint8Array, TypeAsyncIterable, TypeAsyncIterableIterator, TypeAsyncGenerator, TypeAbortSignal,
+	TypeArray, TypeReadonlyArray, TypeRecord, TypePartial, TypeReadonly, TypeMap, TypeReadonlyMap, TypeSet,
+	TypeReadonlySet, TypePromise, TypeDate, TypeUint8Array, TypeAsyncIterable, TypeAsyncIterableIterator,
+	TypeAsyncGenerator, TypeAbortSignal,
 }, errorClasses)
 
 // KeywordType reports whether name is a keyword type of TypeScript. It

@@ -142,6 +142,14 @@
 // grammar refuses under [BadCarrier]. The comments in the body of a
 // function belong to its statements, which the model does not contain.
 //
+// The header of a module is every comment above its first statement, and
+// below its hashbang line where it has one. The run directly above a first
+// declaration or export is not part of it, because that statement takes it. The run directly above a first import is part of the
+// header. The carriers of the header attach to the package of the module,
+// so a directive can address a whole module, as one on the package clause
+// of a Go file does. The header documents nothing, because the first
+// comment of a module is often a license header. A script has no header.
+//
 // # Markers
 //
 // A decorator whose path starts with the brand is a marker of a directive,

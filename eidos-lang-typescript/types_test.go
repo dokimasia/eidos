@@ -32,7 +32,8 @@ var (
 	}
 	globalTypes = append([]string{
 		typescript.TypeArray, typescript.TypeReadonlyArray, typescript.TypeRecord, typescript.TypePartial,
-		typescript.TypeMap, typescript.TypeReadonlyMap, typescript.TypeSet, typescript.TypePromise,
+		typescript.TypeMap, typescript.TypeReadonlyMap, typescript.TypeSet, typescript.TypeReadonlySet,
+		typescript.TypePromise,
 		typescript.TypeDate, typescript.TypeUint8Array, typescript.TypeAsyncIterable,
 		typescript.TypeAsyncIterableIterator, typescript.TypeAsyncGenerator, typescript.TypeAbortSignal,
 	}, errorClasses...)

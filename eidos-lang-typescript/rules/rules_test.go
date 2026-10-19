@@ -55,12 +55,11 @@ const (
 
 // rulesAllocs is the allocation count of one projection pass over the
 // fixture tree, which [rulestest.BenchRules] measures. The pass allocated
-// 462 times at 2,000 iterations, and 461 or 462 times in each of 40
-// fresh runs of one iteration. A memory profile attributes 189
-// allocations to TypeOf, 150 to SamplesOf, 78 to MembersOf and 23 to
-// CallableOf. The profile samples the tiny allocations of the rest only
-// in part.
-const rulesAllocs = 462
+// 520 times at 2,000 iterations and at one second. A memory profile
+// attributes 197 allocations to TypeOf, 198 to SamplesOf, 78 to MembersOf
+// and 22 to CallableOf. The profile samples the tiny allocations of the
+// rest only in part.
+const rulesAllocs = 520
 
 // returnRolesAllocs is the allocation count of the classification of a
 // signature. The classification allocates the list of the roles of its
@@ -255,7 +254,7 @@ export class Shapes {
   anything!: unknown;
   only!: "read";
   empty!: [];
-  broken!: [string, Map<string, number>];
+  broken!: [string, () => void];
   same!: Same;
   maybe!: string | undefined;
   nullable!: string | null;
@@ -264,6 +263,9 @@ export class Shapes {
   computed!: Computed;
   mixed!: Mixed;
   mode!: Mode;
+  set!: Set<string>;
+  frozenSet!: ReadonlySet<number>;
+  frozenMap!: ReadonlyMap<string, number>;
 }
 
 export enum Computed {
@@ -273,7 +275,7 @@ export enum Computed {
 }
 
 export class Mixed {
-  map!: Map<string, number>;
+  run!: () => void;
   id!: number;
 }
 

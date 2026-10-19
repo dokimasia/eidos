@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/lowering"
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -19,6 +18,11 @@ import (
 // leads with, typed to the variant's own name as a string literal,
 // which is what narrows a union member back to its variant.
 const discriminant = "kind"
+
+// variantSep separates the name of a sum from the name of its variant in
+// the name of a variant interface, which the convention of TypeScript
+// joins into one Pascal-case word.
+const variantSep = "_"
 
 // Lower reshapes the constructs TypeScript states in other
 // declarations. A sum becomes one interface per variant and a
@@ -31,8 +35,8 @@ const discriminant = "kind"
 //
 // The union target is a composite spelling, which the settle
 // leaves as written, so the variant interfaces cannot wait for the
-// respell: the lowering joins the sum's name and each variant's in
-// the neutral camel form, spells the join final through the
+// respell: the lowering joins the sum's name and each variant's with a
+// word separator, spells the join final through the
 // module's own convention, and writes the same spelling into the
 // interface and the union both, consistent by construction. The
 // alias keeps the sum's name untouched, so a reference to the sum
@@ -56,13 +60,12 @@ const discriminant = "kind"
 //
 // A declaration that passes through allocates nothing. A sum allocates
 // the list of outputs, the union alias, its target and the joined
-// union: four allocations. Each variant adds eight: its interface, the
-// three steps of its name (the variant's Pascal form, the join and the
-// final spelling), its list of fields, the discriminant field, its type
-// and the quoted literal. A sum of two variants allocates 20 times. A
-// generic sum adds, per variant, the copy of its type parameters and
-// the variant's spelling with its type arguments. A refusal allocates
-// its error.
+// union: four allocations. Each variant adds seven: its interface, the
+// two steps of its name (the join and the final spelling), its list of
+// fields, the discriminant field, its type and the quoted literal. A sum
+// of two variants allocates 18 times. A generic sum adds, per variant,
+// the copy of its type parameters and the variant's spelling with its
+// type arguments. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	var sum *emit.Sum
 	switch d := s.(type) {
@@ -160,7 +163,7 @@ func variantInterface(
 		return nil, "", err
 	}
 	name, err := spell.Name(symbol.KindInvalid, symbol.KindInterface,
-		sum.Visibility, sum.Name+naming.Pascal(v.Name))
+		sum.Visibility, sum.Name+variantSep+v.Name)
 	if err != nil {
 		return nil, "", err
 	}

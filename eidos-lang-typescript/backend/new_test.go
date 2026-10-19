@@ -45,19 +45,19 @@ const (
 	// template and the seven kind templates. The five lowering policies
 	// add eight: their specs, the kit's list of them, and the check of
 	// the specs that Build makes.
-	newAllocs = 1_790
+	newAllocs = 1_794
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 8,851,050, and the budget is a round number about
 	// 5% above it.
 	renderAllocs = 9_300_000
 	// settleAllocs is one settle of the scaled corpus. With the collector
-	// off a settle allocates 1,125,967 times: the sum lowering, about half
-	// of them, the respelling of every name, about a quarter, the rewrite
-	// of references and the reindex. The collections that run during a
-	// settle add more: fresh processes counted up to 12 more. The ceiling
-	// allows 32 more.
-	settleAllocs = 1_125_967 + 32
+	// off a settle allocates 1,075,969 times: the sum lowering, about three
+	// fifths of them, the respelling of every name and the rewrite of
+	// references, about a third, and the reindex. The collections that run
+	// during a settle add more: fresh processes counted up to 12 more. The
+	// ceiling allows 32 more.
+	settleAllocs = 1_075_969 + 32
 )
 
 // allocCall is one call that an allocation test and a benchmark share.

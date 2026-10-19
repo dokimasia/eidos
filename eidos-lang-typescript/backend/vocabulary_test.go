@@ -37,11 +37,12 @@ const (
 	// declaration that a translated reference refers to.
 	goLang    = symbol.Lang("go")
 	goPackage = "svc"
-	// promiseType, dateType and abortSignalType are global types of
-	// TypeScript.
+	// promiseType, dateType, abortSignalType and mapType are global types
+	// of TypeScript.
 	promiseType     = "Promise"
 	dateType        = "Date"
 	abortSignalType = "AbortSignal"
+	mapType         = "Map"
 )
 
 // The declarations, the spellings and the keywords the allocation cases
@@ -89,9 +90,9 @@ const (
 	// resultTupleAllocs is two results: the joined tuple, and the
 	// annotation.
 	resultTupleAllocs = 1 + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-three
-	// helpers, four allocations, and the speller's seven bound helpers.
-	funcsAllocs = 4 + 7
+	// funcsAllocs is the vocabulary of a file: the map of twenty-five
+	// helpers, four allocations, and the speller's nine bound helpers.
+	funcsAllocs = 4 + 9
 	// joinedKeywordsAllocs is two keywords joined behind an accessibility,
 	// one join each.
 	joinedKeywordsAllocs = 1 + 1
@@ -469,6 +470,97 @@ func TestVocabulary(t *testing.T) {
 			s, _ := speller()
 			_, err := s.TypeParams([]*emit.TypeParam{{Name: "T", Default: unspellable(t, s)}})
 			assert.HasError(t, err, "the default's refusal is the list's")
+		})
+	})
+
+	t.Run("SpellValue", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("imports the declaration of a reference as a value", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			got, err := s.SpellValue(imported(storeModule, rowName))
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got, rowName, "the reference has the name that its import binds")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storeModule, Name: rowName}},
+				"the declaration exists at run time")
+		})
+
+		t.Run("imports the type arguments of a reference for the type checker alone", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			generic := imported(storeModule, rowName)
+			generic.Args = []*emit.TypeRef{imported(storeModule, keyedName)}
+			got, err := s.SpellValue(generic)
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got, "Row<Keyed>", "the reference has its arguments")
+			assert.Equal(t, set.Entries(), []render.Entry{
+				{Path: storeModule, Name: keyedName, TypeOnly: true},
+				{Path: storeModule, Name: rowName},
+			}, "the argument is a type at run time alone")
+		})
+
+		t.Run("returns an error for a reference that does not spell", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.SpellValue(unspellable(t, s))
+			assert.HasError(t, err, "the refusal of the reference is the value's")
+		})
+
+		t.Run("returns an error for a type argument that does not spell", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			generic := imported(storeModule, rowName)
+			generic.Args = []*emit.TypeRef{unspellable(t, s)}
+			_, err := s.SpellValue(generic)
+			assert.HasError(t, err, "the refusal of the argument is the value's")
+		})
+
+		t.Run("returns an error for a generic global type that a declaration of the file hides", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.Reserve(mapType)
+			_, err := s.SpellValue(
+				&emit.TypeRef{Spelling: mapType, Args: []*emit.TypeRef{ref("string"), ref("number")}},
+			)
+			assert.HasError(t, err, "the name refers to the declaration of the file")
+		})
+	})
+
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes the names of type parameters in angle brackets", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			got, err := s.TypeArgs([]*emit.TypeParam{{Name: "K"}, {Name: "V"}})
+			assert.NoError(t, err, "the parameters spell")
+			assert.Equal(t, got, "<K, V>", "the arguments of a reference to the declaration")
+		})
+
+		t.Run("imports a type reference for the type checker alone", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			got, err := s.TypeArgs([]*emit.TypeRef{ref("number"), imported(storeModule, rowName)})
+			assert.NoError(t, err, "the references spell")
+			assert.Equal(t, got, "<number, Row>", "the arguments")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storeModule, Name: rowName, TypeOnly: true}},
+				"a type-only import")
+		})
+
+		t.Run("returns an error for a list of another type", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.TypeArgs([]string{"K"})
+			assert.HasError(t, err, "a list of text has no type arguments")
 		})
 	})
 
@@ -1770,7 +1862,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 23, "Funcs returns the twenty-three helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 25, "Funcs returns the twenty-five helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,

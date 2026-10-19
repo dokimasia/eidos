@@ -39,6 +39,15 @@ const (
 	// listZeroAllocs counts the reference to the list, with its list of
 	// children and its element.
 	listZeroAllocs = 3
+	// setPairAllocs counts a Set's pair. The pair allocates the reference
+	// to the class with its list of arguments and its argument, the
+	// reference to the array, the hinted texts of the two elements, the
+	// list of entries of each array and the list of arguments of each
+	// construction.
+	setPairAllocs = 10
+	// mapZeroAllocs counts the reference to the class of a Map with its
+	// list of arguments and its two arguments.
+	mapZeroAllocs = 4
 	// numberLiteralAllocs counts the decimal text of a number.
 	numberLiteralAllocs = 1
 	// memberLiteralAllocs counts the list of the enum's members, the
@@ -253,6 +262,86 @@ func TestValues(t *testing.T) {
 			})
 		}
 
+		sets := []struct {
+			name      string
+			field     string
+			sample    emit.Value
+			alternate emit.Value
+		}{
+			{
+				name: "derives the construction of a Set from an array of one element", field: "set",
+				sample:    emit.Literal(emit.LiteralString, "set-a"),
+				alternate: emit.Literal(emit.LiteralString, "set-b"),
+			},
+			{
+				name: "derives the construction of a Set for a ReadonlySet", field: "frozenSet",
+				sample:    emit.Number(emit.LiteralFloat, "1.5", 64),
+				alternate: emit.Number(emit.LiteralFloat, "2.5", 64),
+			},
+		}
+		for _, tt := range sets {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				fd := f.field(t, shapesName, tt.field)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
+				args := rules.EmitRef(fd.Type).Args
+				class := &emit.TypeRef{Spelling: typescript.TypeSet, Args: args}
+				array := &emit.TypeRef{Form: symbol.FormList, Elems: args}
+				expect.Equal(
+					t,
+					sample,
+					rules.Of(emit.Construction(class, emit.Composite(array, emit.Element(tt.sample)))),
+					"the sample constructs a Set of the sample of the element",
+				)
+				expect.Equal(t, alternate,
+					rules.Of(emit.Construction(class, emit.Composite(array, emit.Element(tt.alternate)))),
+					"the alternate constructs a Set of the alternate of the element")
+			})
+		}
+
+		maps := []struct {
+			name     string
+			host     string
+			field    string
+			key      emit.Value
+			otherKey emit.Value
+			value    emit.Value
+		}{
+			{
+				name: "derives the construction of a Map from an array of one entry", host: rowName, field: "map",
+				key:      emit.Literal(emit.LiteralString, "map-a"),
+				otherKey: emit.Literal(emit.LiteralString, "map-b"),
+				value:    emit.Number(emit.LiteralFloat, "1.5", 64),
+			},
+			{
+				name: "derives the construction of a Map for a ReadonlyMap", host: shapesName, field: "frozenMap",
+				key:      emit.Literal(emit.LiteralString, "frozenMap-a"),
+				otherKey: emit.Literal(emit.LiteralString, "frozenMap-b"),
+				value:    emit.Number(emit.LiteralFloat, "1.5", 64),
+			},
+		}
+		for _, tt := range maps {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				fd := f.field(t, tt.host, tt.field)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
+				args := rules.EmitRef(fd.Type).Args
+				class := &emit.TypeRef{Spelling: typescript.TypeMap, Args: args}
+				entry := &emit.TypeRef{Form: symbol.FormTuple, Elems: args}
+				array := &emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{entry}}
+				expect.Equal(t, sample, rules.Of(emit.Construction(class, emit.Composite(array,
+					emit.Element(emit.Composite(entry, emit.Element(tt.key), emit.Element(tt.value)))))),
+					"the sample constructs a Map of one entry")
+				expect.Equal(t, alternate, rules.Of(emit.Construction(class, emit.Composite(array,
+					emit.Element(emit.Composite(entry, emit.Element(tt.otherKey), emit.Element(tt.value)))))),
+					"the alternate constructs a Map of one entry with the other key")
+			})
+		}
+
 		objects := []struct {
 			name     string
 			host     string
@@ -333,10 +422,6 @@ func TestValues(t *testing.T) {
 			field string
 			want  rules.Refusal
 		}{
-			{
-				name: "refuses a Map, which no literal constructs", host: rowName, field: "map",
-				want: rules.RefusedNoLiteral,
-			},
 			{
 				name: "refuses a name that an import binds from outside the view", host: rowName, field: "outside",
 				want: rules.RefusedUnresolved,
@@ -419,6 +504,32 @@ func TestValues(t *testing.T) {
 			{
 				name: "refuses a Record of one argument",
 				give: &node.TypeRef{Spelling: "Record", Args: []*node.TypeRef{{Spelling: stringName}}},
+				want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "refuses a Set without a type argument",
+				give: &node.TypeRef{Spelling: typescript.TypeSet},
+				want: rules.RefusedUnresolved,
+			},
+			{
+				name: "refuses a Set whose element refuses",
+				give: &node.TypeRef{Spelling: typescript.TypeSet, Args: []*node.TypeRef{{Spelling: "unknown"}}},
+				want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "refuses a Map whose key refuses",
+				give: &node.TypeRef{
+					Spelling: typescript.TypeMap,
+					Args:     []*node.TypeRef{{Spelling: "unknown"}, {Spelling: numberName}},
+				},
+				want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "refuses a Map whose value refuses",
+				give: &node.TypeRef{
+					Spelling: typescript.TypeMap,
+					Args:     []*node.TypeRef{{Spelling: stringName}, {Spelling: "unknown"}},
+				},
 				want: rules.RefusedNoLiteral,
 			},
 		}
@@ -602,6 +713,48 @@ func TestValues(t *testing.T) {
 			})
 		}
 
+		stringToNumber := []*node.TypeRef{{Spelling: stringName}, {Spelling: numberName}}
+		constructions := []struct {
+			name  string
+			give  *node.TypeRef
+			class string
+		}{
+			{
+				name:  "returns the construction of an empty Set for a Set",
+				give:  &node.TypeRef{Spelling: typescript.TypeSet, Args: []*node.TypeRef{{Spelling: stringName}}},
+				class: typescript.TypeSet,
+			},
+			{
+				name: "returns the construction of an empty Set for a ReadonlySet",
+				give: &node.TypeRef{
+					Spelling: typescript.TypeReadonlySet,
+					Args:     []*node.TypeRef{{Spelling: numberName}},
+				},
+				class: typescript.TypeSet,
+			},
+			{
+				name:  "returns the construction of an empty Map for a Map",
+				give:  &node.TypeRef{Spelling: typescript.TypeMap, Args: stringToNumber},
+				class: typescript.TypeMap,
+			},
+			{
+				name:  "returns the construction of an empty Map for a ReadonlyMap",
+				give:  &node.TypeRef{Spelling: typescript.TypeReadonlyMap, Args: stringToNumber},
+				class: typescript.TypeMap,
+			},
+		}
+		for _, tt := range constructions {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, ok := tsrules.New().ZeroValue(tt.give, rules.View{})
+				assert.True(t, ok, "a collection has a zero")
+				assert.Equal(t, got,
+					emit.Construction(&emit.TypeRef{Spelling: tt.class, Args: rules.EmitRef(tt.give).Args}),
+					"the zero constructs an empty collection with the type arguments of the reference")
+			})
+		}
+
 		t.Run("returns the zero of the target of an alias", func(t *testing.T) {
 			t.Parallel()
 
@@ -619,10 +772,11 @@ func TestValues(t *testing.T) {
 			{name: "reports false for Date", give: func(assert.TB, *fixture) *node.TypeRef {
 				return &node.TypeRef{Spelling: "Date"}
 			}},
-			{name: "reports false for a Map", give: func(assert.TB, *fixture) *node.TypeRef {
-				return &node.TypeRef{
-					Spelling: typescript.TypeMap, Args: []*node.TypeRef{{Spelling: stringName}, {Spelling: numberName}},
-				}
+			{name: "reports false for a Set without a type argument", give: func(assert.TB, *fixture) *node.TypeRef {
+				return &node.TypeRef{Spelling: typescript.TypeSet}
+			}},
+			{name: "reports false for a Map of one type argument", give: func(assert.TB, *fixture) *node.TypeRef {
+				return &node.TypeRef{Spelling: typescript.TypeMap, Args: []*node.TypeRef{{Spelling: stringName}}}
 			}},
 			{name: "reports false for a class", give: func(tb assert.TB, f *fixture) *node.TypeRef {
 				return f.field(tb, rowName, "next").Type
@@ -921,13 +1075,16 @@ func BenchmarkValues(b *testing.B) {
 }
 
 // valuesCalls returns the measured calls of values.go. They derive a
-// pair, a zero and a literal of a builtin, of a list and of an enum.
+// pair, a zero and a literal of a builtin, of a list, of a collection
+// class and of an enum.
 func valuesCalls(tb assert.TB) []allocCall {
 	f := loaded(tb)
 	r := tsrules.New()
 	number := &node.TypeRef{Spelling: numberName}
 	str := &node.TypeRef{Spelling: stringName}
 	list := &node.TypeRef{Spelling: "string[]", Form: symbol.FormList, Elems: []*node.TypeRef{str}}
+	set := &node.TypeRef{Spelling: typescript.TypeSet, Args: []*node.TypeRef{str}}
+	byName := &node.TypeRef{Spelling: typescript.TypeMap, Args: []*node.TypeRef{str, number}}
 	codes := &node.TypeRef{Spelling: "Codes", Target: codesID}
 	var (
 		sample rules.Sample
@@ -950,6 +1107,13 @@ func valuesCalls(tb assert.TB) []allocCall {
 			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "DeriveSamples derives the list's pair") },
 		},
 		{
+			name: "DeriveSamples", caseName: "a Set", allocs: setPairAllocs,
+			call: func() { sample, _ = r.DeriveSamples(set, "s", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueConstruction, "DeriveSamples constructs the Set")
+			},
+		},
+		{
 			name: "ZeroValue", caseName: "a number",
 			call:  func() { value, _ = r.ZeroValue(number, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, "0", "ZeroValue returns 0") },
@@ -959,6 +1123,13 @@ func valuesCalls(tb assert.TB) []allocCall {
 			call: func() { value, _ = r.ZeroValue(list, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, value.Kind, emit.ValueComposite, "ZeroValue returns an array")
+			},
+		},
+		{
+			name: "ZeroValue", caseName: "a Map", allocs: mapZeroAllocs,
+			call: func() { value, _ = r.ZeroValue(byName, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value.Kind, emit.ValueConstruction, "ZeroValue constructs the Map")
 			},
 		},
 		{

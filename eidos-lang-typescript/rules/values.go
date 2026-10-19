@@ -48,6 +48,10 @@ const (
 //   - a tuple takes an array of one value per member;
 //   - a map of an index signature and a Record take an object of one
 //     entry, and the two objects differ in the key;
+//   - a Set and a ReadonlySet take the construction of a Set from an
+//     array of one element, and the two sets differ in the element;
+//   - a Map and a ReadonlyMap take the construction of a Map from an
+//     array of one entry, and the two maps differ in the key;
 //   - an optional takes the pair of its type;
 //   - a union takes the first two distinct values that its members
 //     derive, in member order;
@@ -59,18 +63,20 @@ const (
 //   - an alias takes the pair of its target, with the arguments
 //     substituted.
 //
-// The key of a map is a string or a number. The property of an object
-// literal is the first required property, or the first property when
-// the type has no required one.
+// The key of an object is a string or a number, and the key of a Map is a
+// value of any type that derives a pair. A construction has the type
+// arguments of the reference, so a value has the type of the reference
+// without a contextual type. The property of an object literal is the
+// first required property, or the first property when the type has no
+// required one.
 //
 // The values that an author stated come first for an element, a member,
-// the value of a key and a property. DeriveSamples reads them through
-// [rules.View.Authored], and derives each value without an author's
-// statement. A Map, a ReadonlyMap, a stream, a function type, an
-// intersection and an inline object type refuse with no literal,
-// because the value model has no constructor call and no merge. A
-// keyword type, such as unknown, refuses with no literal too. A named
-// type outside the view refuses as unresolved.
+// a key of a Map, the value of a key and a property. DeriveSamples reads
+// them through [rules.View.Authored], and derives each value without an
+// author's statement. A stream, a function type, an intersection and an
+// inline object type refuse with no literal. A keyword type, such as
+// unknown, refuses with no literal too. A named type outside the view
+// refuses as unresolved.
 //
 // # Allocation contract
 //
@@ -78,6 +84,9 @@ const (
 //     nothing else.
 //   - A composite's pair allocates the reference to its type and the list
 //     of each composite.
+//   - A construction's pair allocates the reference to its class, the
+//     references to its array and its entry, the list of each composite,
+//     and the list of arguments of each construction.
 //   - An object's pair allocates the member walk and the assertion.
 //   - An enum's pair allocates its list of members and the assertion of
 //     each value.
@@ -234,10 +243,13 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 	case symbol.FormList:
 		return r.listPair(rules.EmitRef(ref), ref.Args[0], hint, v, depth)
 	case symbol.FormMap:
-		if ref.Spelling != typescript.TypeRecord || len(ref.Args) != 2 {
+		switch {
+		case len(ref.Args) != 2:
 			return rules.RefusedPair(rules.RefusedNoLiteral)
+		case ref.Spelling == typescript.TypeRecord:
+			return r.mapPair(rules.EmitRef(ref), ref.Args[0], ref.Args[1], hint, v, depth)
 		}
-		return r.mapPair(rules.EmitRef(ref), ref.Args[0], ref.Args[1], hint, v, depth)
+		return r.entriesPair(ref, hint, v, depth)
 	case symbol.FormStream:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	default:
@@ -246,6 +258,10 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 	switch {
 	case ref.Package == "" && ref.Spelling == typescript.TypeBigInt:
 		return rules.Of(emit.Raw(typescript.Lang, sampleBigInt)), rules.Of(emit.Raw(typescript.Lang, alternateBigInt))
+	case ref.Package == "" && len(ref.Args) == 1 &&
+		(ref.Spelling == typescript.TypeSet || ref.Spelling == typescript.TypeReadonlySet):
+
+		return r.setPair(ref, hint, v, depth)
 	case ref.Package == "" && typescript.KeywordType(ref.Spelling):
 		// string, number and boolean take their pairs through the builtin
 		// table above, so a keyword type here has no value.
@@ -256,6 +272,42 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 		return rules.Of(value), rules.Refused(rules.RefusedNoLiteral)
 	}
 	return rules.RefusedPair(rules.RefusedUnresolved)
+}
+
+// setPair returns the pair of a Set or a ReadonlySet of one type argument.
+// Each value constructs a Set from an array of one element, from the pair
+// of the element type. A ReadonlySet has no constructor, and a Set is a
+// ReadonlySet.
+func (r Rules) setPair(ref *node.TypeRef, hint string, v rules.View, depth int) (rules.Sample, rules.Sample) {
+	sample, alternate := r.partPair(symbol.Identity{}, ref.Args[0], hint, v, depth+1)
+	if !sample.OK() || !alternate.OK() {
+		return rules.RefusedPair(rules.FirstRefusal(sample, alternate))
+	}
+	class := rules.EmitRef(ref)
+	class.Spelling = typescript.TypeSet
+	array := &emit.TypeRef{Form: symbol.FormList, Elems: class.Args}
+	return rules.Of(emit.Construction(class, emit.Composite(array, emit.Element(sample.Value)))),
+		rules.Of(emit.Construction(class, emit.Composite(array, emit.Element(alternate.Value))))
+}
+
+// entriesPair returns the pair of a Map or a ReadonlyMap of two type
+// arguments. Each value constructs a Map from an array of one entry, and
+// an entry is an array of the key and the value. The two maps differ in
+// the key. A ReadonlyMap has no constructor, and a Map is a ReadonlyMap.
+func (r Rules) entriesPair(ref *node.TypeRef, hint string, v rules.View, depth int) (rules.Sample, rules.Sample) {
+	k, otherKey := r.partPair(symbol.Identity{}, ref.Args[0], hint, v, depth+1)
+	val, _ := r.partPair(symbol.Identity{}, ref.Args[1], hint, v, depth+1)
+	if !k.OK() || !otherKey.OK() || !val.OK() {
+		return rules.RefusedPair(rules.FirstRefusal(k, otherKey, val))
+	}
+	class := rules.EmitRef(ref)
+	class.Spelling = typescript.TypeMap
+	entry := &emit.TypeRef{Form: symbol.FormTuple, Elems: class.Args}
+	array := &emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{entry}}
+	return rules.Of(emit.Construction(class, emit.Composite(array,
+			emit.Element(emit.Composite(entry, emit.Element(k.Value), emit.Element(val.Value)))))),
+		rules.Of(emit.Construction(class, emit.Composite(array,
+			emit.Element(emit.Composite(entry, emit.Element(otherKey.Value), emit.Element(val.Value))))))
 }
 
 // declaredPair derives the pair of a named type in the view.
@@ -329,16 +381,18 @@ func (r Rules) objectPair(
 //   - the empty array for a list, an Array and a ReadonlyArray;
 //   - the empty object for an object with one index signature and for a
 //     Record;
+//   - the construction of an empty Set for a Set and a ReadonlySet, and
+//     of an empty Map for a Map and a ReadonlyMap, with the type arguments
+//     of the reference;
 //   - null for an optional whose Absent lists null and not undefined, and
 //     undefined for every other optional;
 //   - the zero of its target for an alias.
 //
 // The Absent of an optional member, such as the a?: T of a tuple, is
 // empty, so its zero is undefined. Every other type has no zero, and
-// ZeroValue reports false. A Map has none, because its empty value is the
-// construction new Map(), which the value tree does not have. The zero of
-// a builtin allocates nothing, and the empty array and the empty object
-// allocate the reference to their type.
+// ZeroValue reports false. The zero of a builtin allocates nothing. The
+// empty array, the empty object and the construction allocate the
+// reference to their type.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	for range deriveDepth {
 		switch {
@@ -378,14 +432,26 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		return emit.Literal(emit.LiteralString, ""), true
 	case symbol.FormList:
 		return emit.Composite(rules.EmitRef(ref)), true
+	case symbol.FormMap:
+		if ref.Spelling != typescript.TypeRecord && len(ref.Args) == 2 {
+			class := rules.EmitRef(ref)
+			class.Spelling = typescript.TypeMap
+			return emit.Construction(class), true
+		}
 	default:
 		// Every other form takes the zero of its spelling below.
 	}
-	if ref.Package == "" && ref.Spelling == typescript.TypeRecord {
+	switch {
+	case ref.Package != "":
+		return emit.Value{}, false
+	case ref.Spelling == typescript.TypeRecord:
 		return emit.Composite(rules.EmitRef(ref)), true
-	}
-	if ref.Package == "" && ref.Spelling == typescript.TypeBigInt {
+	case ref.Spelling == typescript.TypeBigInt:
 		return emit.Raw(typescript.Lang, zeroNumber+bigintMark), true
+	case len(ref.Args) == 1 && (ref.Spelling == typescript.TypeSet || ref.Spelling == typescript.TypeReadonlySet):
+		class := rules.EmitRef(ref)
+		class.Spelling = typescript.TypeSet
+		return emit.Construction(class), true
 	}
 	return emit.Value{}, false
 }
