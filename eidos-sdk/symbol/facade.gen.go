@@ -64,6 +64,7 @@ const (
 	FactFields           = core.FactFields
 	FactMethods          = core.FactMethods
 	FactValue            = core.FactValue
+	FactReceives         = core.FactReceives
 	FactTag              = core.FactTag
 	FactSealed           = core.FactSealed
 	FactTypes            = core.FactTypes

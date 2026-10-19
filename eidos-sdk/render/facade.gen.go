@@ -62,6 +62,12 @@ const (
 	// declaration of it does, under the refused-kind or the
 	// unspelt-kind code, and spells nothing.
 	BuiltinNested = core.BuiltinNested
+	// BuiltinHeader returns the header of the file under render, the
+	// documentation and the annotations that the generators of the file
+	// state for it, as a *emit.File. Every template of the file can call
+	// it, so a kind template reads a version or a package that the
+	// header states.
+	BuiltinHeader = core.BuiltinHeader
 )
 
 // UnspeltKind reports a declaration whose kind the target language
@@ -233,6 +239,10 @@ type Entry = core.Entry
 // name of one package and records its path. [ImportSet.Packages] returns
 // the recorded paths, because the file depends on the names of those
 // packages.
+//
+// A set can also have the packages of the files of the plan that the file
+// refers into. [ImportSet.SetReferents] sets them for one file, and
+// [ImportSet.Referent] returns the package of one such file.
 //
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.

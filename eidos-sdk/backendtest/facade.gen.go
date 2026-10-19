@@ -126,8 +126,10 @@ func CanonicalFixture(tb assert.TB) *Fixture {
 // paths: each unit splits through the target's speller, each part
 // takes its spelled name under its package's path, and parts sharing
 // a package and a name assemble one file, in the store's order. A plan
-// unit, which has no package, takes its name alone. The files sort by
-// path, then by package, which is the order a plan's layout returns.
+// unit, which has no package, takes its name alone. Each file has the
+// header that [plugin.HeaderOf] returns for its units, as a plan's layout
+// gives it. The files sort by path, then by package, which is the order a
+// plan's layout returns.
 func Files(e *plugin.Emit, s plugin.FileSpeller) []plugin.File {
 	return core.Files(e, s)
 }
@@ -183,8 +185,19 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 // never visit a member a template never renders, so this check
 // reads the rendered bytes. It reads only the files that contain
 // the host's name, and a declaration elsewhere that shares a
-// member's name does not count for the member. A host of a kind the
-// backend refuses renders nothing, so the check skips its members.
+// member's name does not count for the member.
+//
+// The check skips what the backend declares that it does not render:
+//
+//   - the members of a host of a kind that the backend refuses;
+//   - the members of a host that states a fact that the coverage
+//     rejects, at the host or at a member, because the guard leaves the
+//     host out;
+//   - the methods of a struct and the fields of an interface where the
+//     coverage refuses the fact of the list, Methods and Properties,
+//     because the host renders without the list and the guard reports
+//     the fact.
+//
 // Each member reports on its own, as Host.Member, in the store's order.
 func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	core.AssertRenderedMembers(tb, setup)

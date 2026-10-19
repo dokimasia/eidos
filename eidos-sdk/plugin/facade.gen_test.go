@@ -251,6 +251,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("HeaderOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.HeaderOf), reflect.TypeOf(core.HeaderOf), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("FileSpeller", func(t *testing.T) {
 		t.Parallel()
 

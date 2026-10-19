@@ -121,6 +121,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("BuiltinHeader", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.BuiltinHeader, core.BuiltinHeader, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("UnspeltKind", func(t *testing.T) {
 		t.Parallel()
 

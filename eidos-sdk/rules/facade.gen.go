@@ -316,6 +316,13 @@ type TagRules = core.TagRules
 // it classifies the target.
 type WellKnownRules = core.WellKnownRules
 
+// ShapeRules is the optional capability of a language that declares a type
+// whose values have the shape of another form, such as a GraphQL custom
+// scalar whose specification is a signed integer of 64 bits. The fold asks
+// the rules of the language of a target after [WellKnownRules] and before
+// it classifies the target.
+type ShapeRules = core.ShapeRules
+
 // SatisfactionRules is the optional capability of a language whose
 // satisfaction of an interface reads more than the member sets: a method
 // that belongs to a pointer to its type alone, such as a Go method with a

@@ -10,8 +10,8 @@
 //
 // # Dependency position
 //
-// sdk/plugin imports core/plugin, sdk/diag, sdk/meta, sdk/node,
-// sdk/position, sdk/store, sdk/symbol and the Go stdlib.
+// sdk/plugin imports core/plugin, sdk/diag, sdk/emit, sdk/meta,
+// sdk/node, sdk/position, sdk/store, sdk/symbol and the Go stdlib.
 package plugin
 
 import (
@@ -19,6 +19,7 @@ import (
 
 	core "go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/position"
@@ -216,6 +217,23 @@ func NewExport(plan string, files []File, settled *Emit, others Names) ExportDoc
 // The plan's layout composes the files after the settle, and the
 // render pass renders each one.
 type File = core.File
+
+// HeaderOf returns the header that the emit.File declarations of units
+// state: the documentation and the annotations of each, in unit order.
+// An annotation that an earlier emit.File states alike is left out, and
+// so is a documentation. One emit.File keeps every annotation that it
+// states. The path of an emit.File is not part of the header.
+//
+// # Allocation contract
+//
+// HeaderOf visits each declaration once. The header of one emit.File
+// shares its lists, capped so that a later append copies them, and
+// allocates nothing. Each later emit.File allocates what the merged
+// documentation and annotations grow by, and HeaderOf never writes into
+// the lists of an emit.File.
+func HeaderOf(units []Unit) emit.File {
+	return core.HeaderOf(units)
+}
 
 // FileSpeller is a target's filename half: how a unit splits into the
 // files the target writes and what each file is named. The layout
@@ -521,13 +539,13 @@ type Settled = core.Settled
 // each file's declarations. settled is the store that the plan's settle
 // ran over, whose record supplies the name that each respelled
 // declaration was emitted under. A nil store reads every name as
-// emitted. A method's receiver maps back to the name that its type was
-// emitted under. The files' own declarations map it first, and others
-// map it second. A receiver whose type neither declares keeps its
-// spelling. Ambiguous is false on every entry, because the ambiguity of
-// a name depends on every file of the plan. A unit of a family that
-// claims its files contains records, which declare no name of the file,
-// so NamesOf lists none of them.
+// emitted. The receiver of a method, and the type that receives a field,
+// map back to the name that the type was emitted under. The files' own
+// declarations map it first, and others map it second. A receiver whose
+// type neither declares keeps its spelling. Ambiguous is false on every
+// entry, because the ambiguity of a name depends on every file of the
+// plan. A unit of a family that claims its files contains records, which
+// declare no name of the file, so NamesOf lists none of them.
 //
 // # Allocation contract
 //

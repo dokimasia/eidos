@@ -168,6 +168,10 @@ type Method = core.Method
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Doc is the documentation of the parameter, such as the description of
+// a GraphQL argument. A language that documents a parameter in the
+// documentation of its callable leaves it empty.
+//
 // A parameter is a subject: an authored value attaches to it in a
 // language whose comments can address it, and its identity is the
 // host's chain, its name or its position, and the host's
@@ -341,6 +345,13 @@ type SumVariant = core.SumVariant
 // tag, which the target joins into its tag syntax. A plugin appends an
 // entry to the field of another plugin through the slot view of its
 // emitter, so the header of the file names the plugin.
+//
+// Receives names the type a field attaches to when the field is
+// declared outside that type's own declaration: a protobuf extension, a
+// Kotlin extension property. Host remains the declaration that contains
+// the field, or the file of a field at file level, so the identity of
+// the field is in the scope that declares it. A field declared inside
+// its type leaves Receives nil.
 //
 // This is the emit spelling of the kind.
 type Field = core.Field
@@ -598,11 +609,23 @@ type TagEntry = core.TagEntry
 // DeclaredName returns the name a file-level declaration declares in
 // its file's scope, and the empty string for a declaration that
 // declares none there. A method declares its name in its receiver's
-// scope, so it returns the empty string too. The render reserves the
-// names against import bindings, and the layout resolves bare
-// references to generated declarations by them.
+// scope, and a field in its host or in the type that receives it, so
+// both return the empty string too. The render reserves the names
+// against import bindings, and the layout resolves bare references to
+// generated declarations by them.
 func DeclaredName(d symbol.Symbol) string {
 	return core.DeclaredName(d)
+}
+
+// ReceivesOf returns the type that a declaration attaches to from
+// outside the declaration of that type: the Receives of a method or of a
+// field. It returns nil for a method or a field that its type declares,
+// and for every other kind. The settle checks the name of such a
+// declaration against the other names that attach to the same type, and
+// the name table lists it under the spelling of the type. ReceivesOf
+// allocates nothing.
+func ReceivesOf(d symbol.Symbol) *TypeRef {
+	return core.ReceivesOf(d)
 }
 
 // RespellNames applies f to every declared name s contains, its

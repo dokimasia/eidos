@@ -29,9 +29,10 @@ var ErrMalformed = core.ErrMalformed
 
 // CloneRef returns a deep copy of r, and nil for a nil reference. The copy
 // has the facts of r and a copy of each node below r: the children, the
-// type arguments and the absent members, and the fields and the methods of
-// an inline body with their receivers, parameters, results, type
-// parameters and thrown types. The copy shares no node with r, so a
+// type arguments and the absent members, the fields of an inline body with
+// their types and their receiving types, and its methods with their
+// receivers, receiving types, parameters, results, type parameters and
+// thrown types. The copy shares no node with r, so a
 // frontend that lists one type in two places of a graph lists two nodes,
 // as the graph requires. The lists of text and of annotations of a member
 // are shared, because no step writes them after the parse. A nil member of
@@ -192,6 +193,10 @@ type Method = core.Method
 // variadic parameter's Type is the type of one argument it takes:
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
+//
+// Doc is the documentation of the parameter, such as the description of
+// a GraphQL argument. A language that documents a parameter in the
+// documentation of its callable leaves it empty.
 //
 // A parameter is a subject: an authored value attaches to it in a
 // language whose comments can address it, and its identity is the
@@ -366,6 +371,13 @@ type SumVariant = core.SumVariant
 // tag, which the target joins into its tag syntax. A plugin appends an
 // entry to the field of another plugin through the slot view of its
 // emitter, so the header of the file names the plugin.
+//
+// Receives names the type a field attaches to when the field is
+// declared outside that type's own declaration: a protobuf extension, a
+// Kotlin extension property. Host remains the declaration that contains
+// the field, or the file of a field at file level, so the identity of
+// the field is in the scope that declares it. A field declared inside
+// its type leaves Receives nil.
 //
 // This is the node spelling of the kind.
 type Field = core.Field
