@@ -1,0 +1,7 @@
+"An amount of money in one currency."
+type Money {
+  "The amount in the smallest unit of the currency."
+  amount: Int!
+  "The code of the currency in ISO 4217."
+  currency: String!
+}

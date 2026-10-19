@@ -1,0 +1,112 @@
+"The schema of the shop."
+schema @tag(name: "shop") {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"Marks a declaration for a consumer of the schema."
+directive @tag("The name of the mark." name: String!) repeatable on
+  | SCHEMA
+  | SCALAR
+  | OBJECT
+  | INTERFACE
+  | UNION
+  | ENUM
+  | ENUM_VALUE
+  | INPUT_OBJECT
+  | INPUT_FIELD_DEFINITION
+  | FIELD_DEFINITION
+  | ARGUMENT_DEFINITION
+
+"Caches the value of a field or of each field of a type."
+directive @cached(
+  "The time to live in seconds."
+  ttl: Int = 60
+) on FIELD_DEFINITION | OBJECT
+
+"Traces an operation or a fragment."
+directive @trace on QUERY | MUTATION | SUBSCRIPTION | FRAGMENT_DEFINITION
+
+"An instant in RFC 3339."
+scalar DateTime @specifiedBy(url: "https://scalars.graphql.org/andimarek/date-time.html")
+
+"A thing with an identifier."
+interface Node {
+  id: ID!
+}
+
+"A thing that a person can buy."
+interface Product implements Node {
+  id: ID!
+  name: String!
+  "The price in a currency."
+  price("The code of the currency." currency: String = "EUR" @tag(name: "iso")): Money
+}
+
+# +fixture:gen:table name=books
+"A book."
+type Book implements Product & Node @cached(ttl: 30) {
+  id: ID!
+  name: String!
+  price(currency: String = "EUR"): Money
+  "The authors of the book."
+  authors: [String!]!
+  isbn: String @deprecated(reason: "Use the identifier.") # the old key
+}
+
+type Film implements Product & Node {
+  id: ID!
+  name: String!
+  price(currency: String = "EUR"): Money
+  minutes: Int
+}
+
+"Anything that a search finds."
+union SearchResult = Book | Film
+
+"The state of an order."
+enum OrderStatus {
+  "Placed and not paid."
+  OPEN
+  PAID
+  SHIPPED @deprecated(reason: "Use DELIVERED.")
+  DELIVERED
+}
+
+"The input of a new order."
+input OrderInput {
+  productId: ID!
+  quantity: Int = 1
+  tags: [String!] = ["gift", "fast"] @tag(name: "free")
+}
+
+"The one way of picking a product."
+input Choice @oneOf {
+  byId: ID
+  byName: String
+}
+
+type Order {
+  id: ID!
+  status: OrderStatus!
+  items: [Product!]!
+  placed: DateTime
+  total: Money!
+}
+
+type Query {
+  "Returns a node by its identifier."
+  node(id: ID!): Node
+  search(text: String!, first: Int = 10): [SearchResult!]!
+  order(id: ID!): Order
+  pick(choice: Choice!): Product
+}
+
+type Mutation {
+  placeOrder(input: OrderInput!): Order!
+}
+
+type Subscription {
+  orderChanged(id: ID!): Order!
+}

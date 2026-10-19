@@ -1,0 +1,91 @@
+"The schema of the shop."
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"Caches the value of a field for ttl seconds."
+directive @cached(ttl: Int = 60) on OBJECT | FIELD_DEFINITION
+
+scalar Long @specifiedBy(url: "https://scalars.graphql.org/chillicream/long.html")
+
+scalar Base64String @specifiedBy(url: "https://scalars.graphql.org/chillicream/base64-string.html")
+
+scalar DateTime @specifiedBy(url: "https://scalars.graphql.org/andimarek/date-time.html")
+
+scalar Upload
+
+interface Node {
+  id: ID!
+}
+
+"A book of the shop."
+type Book implements Node @cached {
+  id: ID!
+  title: String!
+  pages: Int
+  rating: Float
+  available: Boolean!
+  tags: [String!]!
+  status: Status!
+  copies: Long
+  cover: Base64String
+  published: DateTime
+  scan: Upload
+  author: Author
+  related(limit: Int = 5): [Book!]
+}
+
+type Author implements Node {
+  id: ID!
+  name: String!
+  books: [Book!]!
+}
+
+union SearchResult = Book | Author
+
+"A medium whose one field has no literal."
+type Media {
+  scan: Upload
+}
+
+union Attachment = Media
+
+enum Status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Single {
+  ONLY
+}
+
+input BookFilter {
+  title: String
+  status: Status = PUBLISHED
+  minPages: Int = 0
+  tags: [String!]
+  author: AuthorFilter
+}
+
+input AuthorFilter {
+  name: String!
+}
+
+type Query {
+  book(id: ID!): Book
+  search(text: String!, filter: BookFilter): [SearchResult!]!
+  node(id: ID!): Node
+  single: Single
+  attachment: Attachment
+}
+
+type Mutation {
+  rename(id: ID!, title: String!): Book
+}
+
+type Subscription {
+  changed(id: ID!): Book
+}

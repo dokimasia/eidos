@@ -1,0 +1,54 @@
+# The fields of a product that a list shows.
+fragment ProductCard on Product @trace {
+  id
+  name
+  ... on Book {
+    authors
+  }
+}
+
+# +fixture:gen:table name=orders
+query GetOrder($id: ID!, $withItems: Boolean = true) @trace {
+  order(id: $id) {
+    id
+    state: status # the alias of the status
+    placed
+    total {
+      amount
+      currency
+    }
+    items @include(if: $withItems) {
+      ...ProductCard
+      ... on Film {
+        minutes
+      }
+    }
+  }
+}
+
+mutation PlaceOrder($input: OrderInput!) {
+  placeOrder(input: $input) {
+    id
+    status
+  }
+}
+
+subscription OnOrderChanged($id: ID!) {
+  orderChanged(id: $id) {
+    status
+  }
+}
+
+query Search($text: String!, $first: Int = 10) {
+  search(text: $text, first: $first) {
+    __typename
+    ... on Book {
+      name
+      authors
+    }
+    ... on Film {
+      name
+      minutes
+    }
+  }
+}

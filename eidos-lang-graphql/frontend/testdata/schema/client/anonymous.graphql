@@ -1,0 +1,6 @@
+{
+  node(id: "1") {
+    __typename
+    id
+  }
+}

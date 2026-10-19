@@ -1,0 +1,46 @@
+query GetBook($id: ID!) {
+  book(id: $id) {
+    id
+    title
+    status
+    author {
+      name
+    }
+  }
+}
+
+query Search($text: String!, $filter: BookFilter) {
+  search(text: $text, filter: $filter) {
+    ... on Book {
+      title
+    }
+    ... on Author {
+      name
+    }
+  }
+}
+
+mutation Rename($id: ID!, $title: String!) {
+  rename(id: $id, title: $title) {
+    id
+  }
+}
+
+subscription OnChanged($id: ID!) {
+  changed(id: $id) {
+    title
+  }
+}
+
+query GetAttachment {
+  attachment {
+    ... on Media {
+      scan
+    }
+  }
+}
+
+fragment BookFields on Book {
+  id
+  pages
+}

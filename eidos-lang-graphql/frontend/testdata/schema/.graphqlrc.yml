@@ -1,0 +1,8 @@
+# The shop project reads its own schema, the shared types of dep and the
+# documents of its client.
+projects:
+  shop:
+    schema:
+      - graph/*.graphqls
+      - dep/*.graphqls
+    documents: client/*.graphql

@@ -1,0 +1,27 @@
+# +fixture:gen:table name=films
+extend type Film @cached {
+  "The director of the film."
+  director: String
+}
+
+extend union SearchResult = Order
+
+extend enum OrderStatus {
+  CANCELLED
+}
+
+extend input OrderInput {
+  "A code of a coupon."
+  coupon: String
+}
+
+extend interface Node @tag(name: "node")
+
+extend scalar DateTime @tag(name: "time")
+
+extend schema @tag(name: "v2")
+
+extend type Review @tag(name: "external") {
+  id: ID!
+  stars: Int!
+}
