@@ -24,15 +24,17 @@ We propose the satellite `eidos-lang-graphql`, which reads and writes every cons
 the September 2025 edition of the specification. The type system covers the schema definition and
 its extension, scalars, object types, interfaces, unions, enums, input objects, directive
 definitions, applied directives, descriptions, default values and the extension of every kind of
-type. The executable language covers operations, fragments, variables and selections.
+type. The executable language covers operations, fragments, variables and selections. The satellite
+also reads and writes the two constructs of the working draft that graphql-js 17.0.2 parses: the
+directives of a directive definition, and the extension of a directive.
 
 The frontend parses through `github.com/vektah/gqlparser/v2`, the parser of gqlgen. It is pure Go
-and keeps the comments of a document with their positions. gqlparser refuses three forms of the
-specification, and the satellite contributes the fixes upstream. Each schema loads as one unit with
-its documents. A unit contains the files that a graphql-config project or a gqlgen configuration
-lists, or else the files of one directory. The frontend types each selection of a document against
-the schema of its unit, so an operation loads as a function whose result is the struct of its
-selection.
+and keeps the comments of a document with their positions. gqlparser refuses four forms of the
+specification and its working draft, and the satellite contributes the fixes upstream. Each schema
+loads as one unit with its documents. A unit contains the files that a graphql-config project or a
+gqlgen configuration lists, or else the files of one directory. The frontend types each selection
+of a document against the schema of its unit, so an operation loads as a function whose result is
+the struct of its selection.
 
 The backend writes GraphQL documents from the emit model. A keyword that the model has no field for
 is a marker, an annotation whose name contains a colon, such as `graphql:input`. The schema
@@ -111,7 +113,8 @@ The type system:
 | `enum` and its values | an enum, and a variant for each value | an enum |
 | `input` | a struct, and the stamp `graphql.input` | a struct with the marker `graphql:input` |
 | Input field and its default | a field, with its default as its value | a field |
-| `directive` | an interface with a field for each argument, and the stamps `graphql.directive` and `graphql.repeatable` | an interface with the markers `graphql:directive` and `graphql:repeatable` |
+| `directive` | an interface with a field for each argument, its directives as annotations, and the stamps `graphql.directive` and `graphql.repeatable` | an interface with the markers `graphql:directive` and `graphql:repeatable` |
+| `extend directive` | the directives of the extension on the interface of the directive, or an interface with the stamp `graphql.directive` without a location and the stamp `graphql.extension` | an interface with the marker `graphql:directive` without a location and the marker `graphql:extend` |
 | Applied directive | an annotation | an annotation |
 | `@oneOf`, `@deprecated` and `@specifiedBy` | an annotation | an annotation |
 | Description | the documentation of its declaration | `Doc` |
@@ -134,6 +137,19 @@ The executable language:
 | Fragment spread and inline fragment | the fields that they select, and the stamp `graphql.spreads` | the verbatim body |
 | Directive of an operation, a fragment or a variable | an annotation | an annotation |
 | Description of an operation, a fragment or a variable | the documentation | `Doc` |
+
+The working draft of the specification adds three constructs to the September 2025 edition:
+
+| Construct | Verdict |
+|---|---|
+| The directives of a directive definition, the location `DIRECTIVE_DEFINITION`, and `@deprecated` on a directive definition | read and written |
+| `extend directive` | read and written |
+| An empty selection set, `{}` | not read and not written |
+
+graphql-js 17.0.2 parses the first two, so a consumer's tooling reads what the backend writes. No
+release of graphql-js or of gqlparser parses an empty selection set, so neither a consumer nor the
+toolchain adapter could read one that the backend wrote. A release of graphql-js that parses it
+reverses the verdict.
 
 The sections below give the rules of each part.
 
@@ -178,18 +194,19 @@ A second probe parsed executable documents with `parser.ParseQuery` and validate
 - `parser.ParseSchema` refused every executable definition, and `parser.ParseQuery` refused every
   type system definition. A document that mixes both languages parsed with neither.
 
-The parser refuses three forms of the specification:
+The parser refuses four forms of the specification and its working draft:
 
 | Form | Example |
 |---|---|
 | An interface extension that adds interfaces, with or without fields | `extend interface B implements A` |
 | A braced Unicode escape | `"\u{1F600}"` |
 | The description of an operation, a fragment or a variable, which the September 2025 edition added | `"Fetches a user." query GetUser { … }` |
+| The directives of a directive definition, the location `DIRECTIVE_DEFINITION` and the extension of a directive, which the working draft added | `extend directive @old @deprecated` |
 
-The tracker of gqlparser has no issue or pull request about any of the three. Its pull request 476,
+The tracker of gqlparser has no issue or pull request about any of the four. Its pull request 476,
 merged on 2026-09-30, decodes a surrogate pair of `\u` escapes and leaves the braced form refused.
 The satellite contributes a fix for each form upstream as a pull request, and pins the first release
-of gqlparser that contains the three. A mixed document does not need a fix, because the frontend
+of gqlparser that contains the four. A mixed document does not need a fix, because the frontend
 parses each language from a copy of the file of its own.
 
 ### Schemas, units and packages
@@ -298,7 +315,11 @@ and `Subscription` as its roots, as the specification defines the default names.
 
 A directive definition loads as an interface, as the Java frontend loads an annotation type. Its
 locations are the stamp `graphql.directive`. A repeatable directive also has the stamp
-`graphql.repeatable`.
+`graphql.repeatable`. The directives that apply to the definition are the annotations of the
+interface. An extension of a directive merges its directives into the interface of the directive
+where the schema declares the directive. An extension of a directive that the schema does not
+declare loads as an interface with the stamp `graphql.directive` without a location and the stamp
+`graphql.extension`, as the extension of an undeclared type loads.
 
 #### Mixed documents
 
@@ -576,7 +597,10 @@ const (
     // DirectiveMarker marks an interface as the definition of a directive,
     // with the locations of the directive as its arguments, such as OBJECT
     // and FIELD_DEFINITION. The fields of the interface are the arguments
-    // of the directive.
+    // of the directive, and its other annotations are the directives that
+    // apply to the definition. With [ExtendMarker] and no argument, the
+    // marker marks the extension of a directive, whose annotations are the
+    // directives that the extension adds.
     DirectiveMarker Marker = MarkerPrefix + "directive"
     // RepeatableMarker marks the definition of a repeatable directive.
     RepeatableMarker Marker = MarkerPrefix + "repeatable"
@@ -625,7 +649,7 @@ a stream type in any other struct, and the marker does not write a statement.
 | Emit kind | SDL |
 |---|---|
 | Struct | `type`, and `input` with the marker `graphql:input` |
-| Interface | `interface`, and `directive` with the marker `graphql:directive` |
+| Interface | `interface`, `directive` with the marker `graphql:directive`, and `extend directive` with the marker `graphql:directive` without a location and the marker `graphql:extend` |
 | Enum | `enum` |
 | Alias of a union of references | `union` |
 | Defined alias without a target | `scalar` |
@@ -639,7 +663,9 @@ helper. The helper `docs` of the vocabulary serves the templates of generators. 
 ends on the line of its declaration. The writer writes each line terminator of a comment as a space.
 
 A declaration with the marker `graphql:extend` writes `extend` before its keyword, as in
-`extend union` and `extend scalar`. A struct writes its fields as fields without arguments, and then
+`extend union`, `extend scalar` and `extend directive`. The directives of a directive definition
+follow its arguments and precede the keyword `repeatable`, as the grammar of the working draft
+orders them. A struct writes its fields as fields without arguments, and then
 its methods as fields with arguments. A nested declaration of a type moves to file level after the
 type, under its emitted name and with the origin of the type, because GraphQL has no nested types
 and the settle gives every output of a lowering the origin of its input.
@@ -713,7 +739,8 @@ section.
 | An alias that is neither a union of named references nor a defined alias without a target, and a union without a member | GraphQL has no type alias, and a union joins at least one type |
 | A sum without a variant or with methods, and an object-side variant without a field | a union joins at least one type, and an object type declares at least one field |
 | A nested declaration that is not a type | a type nests types alone |
-| A directive definition with methods, interfaces, nested declarations, a map argument or the marker `graphql:extend` | a directive definition declares its arguments alone, and an argument takes a type of the schema |
+| A directive definition without a location, and a directive definition or an extension of a directive with methods, interfaces, nested declarations or a map argument | a directive definition declares its arguments and its locations alone, and an argument takes a type of the schema |
+| An extension of a directive with locations, arguments, the marker `graphql:repeatable` or documentation, and an extension of a directive without a directive | an extension of a directive adds directives alone |
 | A function without the marker `graphql:operation` or `graphql:fragment`, and a function with both | a document does not declare another callable |
 | The marker `graphql:anonymous` on a fragment | a fragment has a name |
 | A function whose body is not verbatim, has the content of a slot, or does not parse as one selection set | the body of an executable definition is its selection set |
@@ -1069,8 +1096,8 @@ the two copies do. The copies do not need a change upstream.
 
 ## Drawbacks
 
-- The satellite depends on three changes of gqlparser that upstream has not reviewed yet. Until a
-  release contains them, a document that uses one of the three forms does not parse.
+- The satellite depends on four changes of gqlparser that upstream has not reviewed yet. Until a
+  release contains them, a document that uses one of the four forms does not parse.
 - An anonymous operation takes the base name of its file. Two anonymous operations in files of one
   name collide in the package of the documents, and the load keeps the first.
 - A fragment spread loads as the fields that it adds, so the struct of a selection repeats the fields
@@ -1121,8 +1148,12 @@ None.
 - [graphql-tools' validation of documents](https://github.com/ardatan/graphql-tools/blob/master/packages/utils/src/validate-documents.ts):
   the rules `NoUnusedFragmentsRule`, `NoUnusedVariablesRule` and `KnownDirectivesRule` that
   `createDefaultRules` leaves out.
-- [graphql-js](https://github.com/graphql/graphql-js): v17.0.2, the printer of an operation and the
-  refusal of a description on the query shorthand.
+- [graphql-js](https://github.com/graphql/graphql-js): v17.0.2, the printer of an operation, the
+  refusal of a description on the query shorthand, and the parse of the directives of a directive
+  definition and of a directive extension.
+- [The working draft of GraphQL](https://spec.graphql.org/draft/): directives on directive
+  definitions and directive extensions (graphql/graphql-spec#1206), and empty selection sets
+  (graphql/graphql-spec#1227).
 - [graphql-codegen's typescript-operations](https://the-guild.dev/graphql/codegen/plugins/typescript/typescript-operations):
   the suffixes `Query`, `Mutation`, `Subscription` and `Fragment` of its result types.
 - [graphql-config](https://the-guild.dev/graphql/config/docs/user/usage): the names of its files in
