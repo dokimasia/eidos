@@ -29,6 +29,8 @@ const (
 	emptyField   = "EMPTY"
 	weightName   = "Weight"
 	listClass    = "List"
+	hashSetClass = "HashSet"
+	longClass    = "Long"
 	listFactory  = "List<Long>"
 	mapFactory   = "Map<Long, Long>"
 	pairsMap     = "Map<Integer, Integer>"
@@ -130,6 +132,22 @@ func TestValue(t *testing.T) {
 				want: "new String[] {}",
 			},
 			{
+				name: "writes a construction as a class instance creation with its arguments",
+				give: emit.Construction(
+					&emit.TypeRef{Spelling: hashSetClass, Package: collections, Args: []*emit.TypeRef{ref(longClass)}},
+					emit.Composite(
+						formed(listFactory, symbol.FormList),
+						emit.Element(emit.Number(emit.LiteralInt, "1", 64)),
+					),
+				),
+				want: "new HashSet<Long>(List.of(1L))",
+			},
+			{
+				name: "writes a construction without arguments",
+				give: emit.Construction(valueRef(rowName, storePkg, rowName)),
+				want: "new Row()",
+			},
+			{
 				name: "writes a call of the static method of its owner's class",
 				give: emit.Call(valueFn(utilPkg, rowsClass, makeName), integer("1")),
 				want: "Rows.make(1)",
@@ -202,6 +220,17 @@ func TestValue(t *testing.T) {
 					emit.KeyedEntry(integer("1"), integer("2"))),
 				want: "positionally", wantErr: true,
 			},
+			{
+				name: "returns a value error for a list type without a spelling",
+				give: emit.Composite(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{ref(longClass)}},
+					emit.Element(integer("1"))),
+				want: "no spelling", wantErr: true,
+			},
+			{
+				name: "returns a value error for a construction of a type without a spelling",
+				give: emit.Construction(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{ref(longClass)}}),
+				want: "no spelling", wantErr: true,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -226,6 +255,20 @@ func TestValue(t *testing.T) {
 			_, err := returned(t, &set, emit.Conversion(valueRef(weightName, unitsPkg, weightName), integer("1")))
 			assert.NoError(t, err, "the value spells")
 			assert.Equal(t, set.Paths(), []string{unitsPkg}, "the reference's package")
+		})
+
+		t.Run("imports the class of a construction", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := returned(t, &set, emit.Construction(valueRef(rowName, storePkg, rowName)))
+			assert.NoError(t, err, "the construction spells")
+			assert.Equal(
+				t,
+				set.Entries(),
+				[]render.Entry{{Path: storePkg, Name: rowName}},
+				"the class of the construction",
+			)
 		})
 
 		t.Run("imports nothing for a literal", func(t *testing.T) {

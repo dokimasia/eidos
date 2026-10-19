@@ -19,16 +19,16 @@ const (
 	shapeName   = "shape"
 	circleName  = "circle"
 	emptyName   = "empty"
-	circleClass = "shapeCircle"
+	circleClass = "shape_circle"
 	radiusName  = "radius"
 )
 
 // sumLowerAllocs is a sum of two variants, one with a field: the list
-// of permits and per variant its reference and its joined name's two,
-// the list of outputs and the principal, and per variant its class,
-// its joined name's two, its implements list and reference, and the
-// field list of the variant with a field.
-const sumLowerAllocs = 1 + 2*3 + 1 + 1 + 2*5 + 1
+// of permits and per variant its reference and its joined name, the
+// list of outputs and the principal, and per variant its class, its
+// joined name, its implements list and reference, and the field list of
+// the variant with a field.
+const sumLowerAllocs = 1 + 2*2 + 1 + 1 + 2*4 + 1
 
 // The lowering turns a sum into the principal interface and one final
 // implementing class per variant, refuses a file-level type that
@@ -129,7 +129,7 @@ func TestLower(t *testing.T) {
 
 			principal, _ := lowered(t, sumOf())
 			assert.Equal(t, []string{principal.Permits[0].Spelling, principal.Permits[1].Spelling},
-				[]string{circleClass, "shapeEmpty"}, "in the neutral form, so the respell decides the case")
+				[]string{circleClass, "shape_empty"}, "in the neutral form, so the respell decides the case")
 		})
 
 		t.Run("returns permits resolved to the sum's origin", func(t *testing.T) {

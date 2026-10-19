@@ -55,9 +55,11 @@ const (
 	paramsAllocs = 2 + 1
 	// clauseAllocs is one clause behind its keyword.
 	clauseAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of eighteen
-	// helpers, four allocations, and the speller's six bound helpers.
-	funcsAllocs = 4 + 6
+	// funcsAllocs is the vocabulary of a file: the map of twenty
+	// helpers, four allocations, and the speller's seven bound helpers.
+	funcsAllocs = 4 + 7
+	// typeArgsAllocs is a list of two type parameters: the written list.
+	typeArgsAllocs = 1
 	// textAllocs is a docblock, an annotation or a package statement,
 	// sized once.
 	textAllocs = 1
@@ -86,6 +88,19 @@ func TestVocabulary(t *testing.T) {
 			_, err := spell(imported(storePkg, rowName))
 			assert.NoError(t, err, "the reference spells")
 			assert.Equal(t, set.Paths(), []string{storePkg}, "the import is the file's")
+		})
+
+		t.Run("returns a spellvalue helper that imports a class as the spell helper does", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			spell, is := backend.Funcs(&set)[backend.FuncSpellValue].(func(*emit.TypeRef) (string, error))
+			assert.True(t, is, "the helper spells a reference")
+			got, err := spell(imported(storePkg, rowName))
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got, rowName, "the simple name")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storePkg, Name: rowName}},
+				"Java imports a class for its type and its value alike")
 		})
 	})
 
@@ -279,6 +294,65 @@ func TestVocabulary(t *testing.T) {
 				assert.HasError(t, err, "Java's type parameters state none of it")
 			})
 		}
+	})
+
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give any
+			want string
+		}{
+			{name: "returns nothing for no list", give: nil, want: ""},
+			{name: "returns nothing for an empty list", give: []*emit.TypeParam{}, want: ""},
+			{
+				name: "writes the names of type parameters as the arguments of a reference",
+				give: []*emit.TypeParam{{Name: keyParam}, {Name: valueParam, Bounds: refs(comparableType)}},
+				want: "<K, V>",
+			},
+			{
+				name: "writes the spellings of type references as the arguments of a reference",
+				give: []*emit.TypeRef{ref(stringType), {Spelling: "List", Args: refs(rowName)}},
+				want: "<String, List<Row>>",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				got, err := s.TypeArgs(tt.give)
+				assert.NoError(t, err, "the list spells")
+				assert.Equal(t, got, tt.want, "the type arguments")
+			})
+		}
+
+		t.Run("imports the class of a type reference", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			got, err := s.TypeArgs([]*emit.TypeRef{imported(storePkg, rowName)})
+			assert.NoError(t, err, "the list spells")
+			assert.Equal(t, got, "<Row>", "the simple name")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storePkg, Name: rowName}}, "the class's import")
+		})
+
+		t.Run("returns an error for a type reference that does not spell", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.TypeArgs([]*emit.TypeRef{unspellable(t, s)})
+			assert.HasError(t, err, "the reference's refusal is the list's")
+		})
+
+		t.Run("returns an error for a list of another type", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.TypeArgs([]string{rowName})
+			assert.HasError(t, err, "a list of names is no list of type arguments")
+		})
 	})
 
 	t.Run("Params", func(t *testing.T) {
@@ -1016,6 +1090,7 @@ func vocabularyCalls() []allocCall {
 	s, set := speller()
 	bare, row := ref(intType), imported(storePkg, rowName)
 	params := []*emit.TypeParam{{Name: keyParam, Bounds: refs(comparableType)}, {Name: valueParam}}
+	var list any = params
 	args := new(emit.SlotOf(&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: ref(stringType)}))
 	result := new(emit.SlotOf(&emit.Return{Type: bare}))
 	heir := &emit.Struct{Name: rowName, Extends: refs(baseName)}
@@ -1062,6 +1137,10 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.TypeParams(params) }, check: spells("<K extends Comparable, V>"),
 		},
 		{
+			name: "TypeArgs", allocs: typeArgsAllocs,
+			call: func() { out, err = s.TypeArgs(list) }, check: spells("<K, V>"),
+		},
+		{
 			name: "Params", allocs: paramsAllocs,
 			call: func() { out, err = s.Params(args) }, check: spells("int id, String name"),
 		},
@@ -1077,7 +1156,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 18, "Funcs returns the eighteen helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 20, "Funcs returns the twenty helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,

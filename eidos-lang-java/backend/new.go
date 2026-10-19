@@ -24,7 +24,7 @@ const memberIndent = "    "
 // hermeticity refuses a printer that the machine provides.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the three kind templates: 1,485 allocations.
+// and the three kind templates: 1,487 allocations.
 func New() backend.Backend {
 	return backend.New(java.Name, java.Target, java.Syntax()).
 		Version(java.Version).

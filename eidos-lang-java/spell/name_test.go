@@ -35,7 +35,22 @@ func TestName(t *testing.T) {
 		}{
 			{
 				name: "returns the Pascal-case spelling of a class name",
-				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HTTPRow",
+				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HttpRow",
+			},
+			{
+				name: "returns the name of a method that the source declares in camel case unchanged",
+				host: symbol.KindInterface, kind: symbol.KindMethod, vis: symbol.VisibilityPublic,
+				give: "getById", want: "getById",
+			},
+			{
+				name: "returns the acronym run of a method unchanged",
+				host: symbol.KindStruct, kind: symbol.KindMethod, vis: symbol.VisibilityPublic,
+				give: "toJSON", want: "toJSON",
+			},
+			{
+				name: "returns the camel-case spelling of a snake-case parameter without an initialism",
+				host: symbol.KindMethod, kind: symbol.KindParam, vis: symbol.VisibilityUnknown,
+				give: "user_id", want: "userId",
 			},
 			{
 				name: "returns the camel-case spelling of a method of any scope",
@@ -112,7 +127,7 @@ func TestNameAllocs(t *testing.T) {
 		got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, "httpRow")
 	}, conversionAllocs, "Name allocates the converted spelling")
 	assert.NoError(t, err, "Name spells the name")
-	assert.Equal(t, got, "HTTPRow", "Name converts the name")
+	assert.Equal(t, got, "HttpRow", "Name converts the name")
 	assert.MaxAllocs(t, func() {
 		got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, "Row")
 	}, 0, "Name allocates nothing for a name in its style")
@@ -129,7 +144,7 @@ func BenchmarkName(b *testing.B) {
 		allocs uint64
 	}{
 		{name: "a name in another style", give: "httpRow", allocs: conversionAllocs},
-		{name: "a name in its style", give: "HTTPRow"},
+		{name: "a name in its style", give: "HttpRow"},
 	}
 	b.Run("Name", func(b *testing.B) {
 		for _, tt := range names {
@@ -144,7 +159,7 @@ func BenchmarkName(b *testing.B) {
 					got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, tt.give)
 				}
 				assert.NoError(b, err, "Name spells the name")
-				assert.Equal(b, got, "HTTPRow", "Name returns the Pascal-case spelling")
+				assert.Equal(b, got, "HttpRow", "Name returns the Pascal-case spelling")
 			})
 		}
 	})

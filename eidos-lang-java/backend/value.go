@@ -32,8 +32,10 @@ const (
 	entriesFactory = ".ofEntries("
 	entryFactory   = ".entry("
 	// arrayCreation opens an array creation expression, which is how
-	// Java spells an array of values.
-	arrayCreation = "new "
+	// Java spells an array of values, and instanceCreation opens a
+	// class instance creation expression, which calls a constructor.
+	arrayCreation    = "new "
+	instanceCreation = "new "
 	// memberSep joins a class and its static member.
 	memberSep = "."
 	// longSuffix marks an integer literal as a long, and floatSuffix
@@ -67,8 +69,16 @@ func (target) Lang() string { return string(java.Lang) }
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
 // Type spells a reference through the file's [Speller], so a value
-// and a declaration import one class under one name.
+// and a declaration import one class under one name. The spelling of a
+// Java composite does not follow from its structure, because a list is
+// an array or a collection class. Type therefore refuses a structural
+// reference without a spelling, which the substitution of a type
+// parameter leaves.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
+	if ref.Form != symbol.FormNamed && ref.Spelling == "" {
+		return "", render.RefuseValue(t.Lang(),
+			"Java spells no composite type from its structure, and the type of the value has no spelling")
+	}
 	return NewSpeller(t.set).Spell(ref)
 }
 
@@ -161,13 +171,25 @@ func (t target) Composite(
 		}
 		parts = append(parts, e.Value)
 	}
-	return "new " + typ + "(" + strings.Join(parts, ", ") + ")", nil
+	return instanceCreation + typ + "(" + strings.Join(parts, ", ") + ")", nil
 }
 
 // Address refuses: Java has no address operator, and a reference
 // to a value is the value.
 func (t target) Address(emit.Value, string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "Java spells no address of a value")
+}
+
+// Construction spells a class instance creation expression, which calls
+// the constructor of the class with the arguments, as
+// new HashSet<Long>(List.of(1L)). The class spells through [target.Type]
+// with its type arguments, and Type imports it.
+func (t target) Construction(ref *emit.TypeRef, args []string) (string, error) {
+	class, err := t.Type(ref)
+	if err != nil {
+		return "", err
+	}
+	return instanceCreation + class + "(" + strings.Join(args, ", ") + ")", nil
 }
 
 // collection returns the name a factory call spells a collection

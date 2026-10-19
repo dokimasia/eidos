@@ -14,14 +14,15 @@ import (
 
 // Filename spells a unit's filename. Java names a file after the
 // public type it declares, so a unit with one type spells that
-// type's own name. The backend's split gives every typed unit one
-// type, and the generator's join puts the family word into the type
-// name.
+// type's own name in the Pascal case of [Name]. The backend's split
+// gives every typed unit one type, and the generator's join puts the
+// family word into the type name.
 //
 // A unit without a lone type falls back to the [naming.FilenameParts]
 // of its [plugin.Unit.FileKey], word and tag, joined and converted to
-// Pascal case as one. A per-package or per-plan unit has no file key,
-// so its fallback is the word and the tag alone.
+// Pascal case as one, in the conversion of Name. A per-package or
+// per-plan unit has no file key, so its fallback is the word and the
+// tag alone.
 //
 // # Allocation contract
 //
@@ -32,9 +33,9 @@ import (
 // for a Pascal-case conversion: four for a per-source unit.
 func Filename(u plugin.Unit) string {
 	if name, held := typeName(u); held {
-		return naming.Pascal(name) + java.Extension
+		return caser.Pascal(name) + java.Extension
 	}
-	return naming.Pascal(strings.Join(naming.FilenameParts(u.FileKey(), u.Word, u.Tag), "_")) + java.Extension
+	return caser.Pascal(strings.Join(naming.FilenameParts(u.FileKey(), u.Word, u.Tag), "_")) + java.Extension
 }
 
 // typeName returns the name of the one file-level type a unit

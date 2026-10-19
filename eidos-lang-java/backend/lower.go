@@ -6,10 +6,14 @@ package backend
 import (
 	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/lowering"
-	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
+
+// variantSep separates the name of a sum from the name of its variant in
+// the neutral name of a variant class, which the respell joins into one
+// Pascal-case word.
+const variantSep = "_"
 
 // Lower reshapes the constructs Java states in other declarations,
 // and refuses a file-level type that states what only a member type
@@ -18,7 +22,7 @@ import (
 //
 // A sum becomes the sealed principal interface keeping the sum's
 // name and one final class per variant: each class joins the sum's
-// name and its variant's in the neutral camel form, takes the
+// name and its variant's with a word separator, takes the
 // variant's payload as its fields, restates the sum's type
 // parameters, and implements the principal through a reference
 // resolved to the sum's origin, so every name follows the settle
@@ -36,10 +40,10 @@ import (
 //
 // A declaration that passes through allocates nothing. A sum allocates
 // the list of permits and per variant its reference and its joined
-// name's two, the list of outputs and the principal, and per variant its
-// class, its joined name's two, its implements list and reference, the
-// copy of its type parameters, and its field list where it has fields. A
-// refusal allocates its error.
+// name, the list of outputs and the principal, and per variant its
+// class, its joined name, its implements list and reference, the copy of
+// its type parameters, and its field list where it has fields. A refusal
+// allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if err := fileLevel(s); err != nil {
 		return nil, err
@@ -63,7 +67,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	for _, v := range variants {
 		permits = append(permits, &emit.TypeRef{
 			Target:   sum.Origin,
-			Spelling: sum.Name + naming.Pascal(v.Name),
+			Spelling: sum.Name + variantSep + v.Name,
 		})
 	}
 	out := make([]symbol.Symbol, 0, 1+len(variants))
@@ -130,7 +134,7 @@ func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
 		Origin:     sum.Origin,
 		Doc:        v.Doc,
 		Comment:    v.Comment,
-		Name:       sum.Name + naming.Pascal(v.Name),
+		Name:       sum.Name + variantSep + v.Name,
 		Visibility: sum.Visibility,
 		Final:      true,
 		TypeParams: lowering.CopyTypeParams(sum.TypeParams),

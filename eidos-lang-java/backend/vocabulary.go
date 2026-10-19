@@ -27,8 +27,14 @@ const (
 	FuncMemberDocs = "memberdocs"
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
+	// FuncSpellValue is the template name of [Speller.Spell] in a value
+	// position. Java imports a class for its type and its value alike, so
+	// the helper writes what the spell helper writes.
+	FuncSpellValue = render.HelperSpellValue
 	// FuncTypeParams is the template name of [Speller.TypeParams].
 	FuncTypeParams = render.HelperTypeParams
+	// FuncTypeArgs is the template name of [Speller.TypeArgs].
+	FuncTypeArgs = render.HelperTypeArgs
 	// FuncParams is the template name of [Speller.Params].
 	FuncParams = render.HelperParams
 	// FuncResults is the template name of [Speller.Results].
@@ -187,6 +193,18 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 		parts = append(parts, part)
 	}
 	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
+}
+
+// TypeArgs writes a list of type parameters or of type references as the
+// type arguments of a reference in angle brackets, and nothing for an
+// empty list: the parameters of a generic declaration as the arguments of
+// a reference to it, as in PageBuilder<T>, and the witnesses of a test, as
+// in <Long>. Each reference spells through [Speller.Spell], which imports
+// its class. TypeArgs returns an error for a list of another type. It
+// allocates what [spellref.TypeArgs] allocates. A template passes the
+// list as a value of type any, which text/template boxes, one allocation.
+func (s Speller) TypeArgs(list any) (string, error) {
+	return spellref.TypeArgs(list, argsOpener, argsCloser, s.Spell)
 }
 
 // Params writes the parameter list in the slot ps with the variadic
@@ -376,15 +394,19 @@ func (s Speller) joined(ts []*emit.TypeRef, sep string) (string, error) {
 // the import set of one file. Every helper takes a
 // fixed list of arguments, because text/template allocates the list of a
 // variadic call and a value for each string argument in a template.
-// Funcs allocates the map of eighteen helpers in four allocations, and
-// the six bound helpers of the speller.
+// Funcs allocates the map of twenty helpers in four allocations, and the
+// seven bound helpers of the speller. The spell helper and the spellvalue
+// helper share one bound helper.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
+	spell := s.Spell
 	return template.FuncMap{
 		FuncDocs:           Docs,
 		FuncMemberDocs:     MemberDocs,
-		FuncSpell:          s.Spell,
+		FuncSpell:          spell,
+		FuncSpellValue:     spell,
 		FuncTypeParams:     s.TypeParams,
+		FuncTypeArgs:       s.TypeArgs,
 		FuncParams:         s.Params,
 		FuncResults:        s.Results,
 		FuncPackage:        PackageClause,

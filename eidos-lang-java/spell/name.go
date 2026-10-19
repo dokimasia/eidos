@@ -10,6 +10,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// caser is the case conversion of Java. Java writes an acronym as a word,
+// as getById and HttpRow, so the conversion recognises no initialism. A
+// name that the source declares in its style, such as getById or toJSON,
+// keeps its spelling, and a class that a generator writes from an
+// interface implements the methods of the interface under their own
+// names.
+var caser = naming.New()
+
 // Name spells one declared name in Java's convention:
 //
 //   - A type takes Pascal case.
@@ -20,11 +28,13 @@ import (
 //     convention is near universal.
 //   - Everything else callable or bound takes camel case.
 //
-// Visibility never changes a spelling, because Java scopes through
-// keywords. Name returns an error for a name that is no identifier,
-// because a convention must not respell what a consumer matches by
-// string. It returns an error for a spelling that is a reserved word
-// too, which Java cannot escape.
+// The conversion raises no initialism, so user_id becomes userId, and a
+// name in its style, such as getById, keeps its spelling. Visibility
+// never changes a spelling, because Java scopes through keywords. Name
+// returns an error for a name that is no identifier, because a
+// convention must not respell what a consumer matches by string. It
+// returns an error for a spelling that is a reserved word too, which
+// Java cannot escape.
 //
 // # Allocation contract
 //
@@ -42,15 +52,15 @@ func Name(host, kind symbol.Kind, _ symbol.Visibility, name string) (string, err
 	case kind == symbol.KindTypeParam:
 		out = name
 	case kind == symbol.KindField && host == symbol.KindInterface:
-		out = naming.ScreamingSnake(name)
+		out = caser.ScreamingSnake(name)
 	case kind == symbol.KindConstant || kind == symbol.KindEnumVariant:
-		out = naming.ScreamingSnake(name)
+		out = caser.ScreamingSnake(name)
 	case kind == symbol.KindStruct || kind == symbol.KindInterface ||
 		kind == symbol.KindAlias || kind == symbol.KindEnum ||
 		kind == symbol.KindSum || kind == symbol.KindSumVariant:
-		out = naming.Pascal(name)
+		out = caser.Pascal(name)
 	default:
-		out = naming.Camel(name)
+		out = caser.Camel(name)
 	}
 	if reserved[out] {
 		return "", fmt.Errorf(

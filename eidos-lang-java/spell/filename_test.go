@@ -46,6 +46,14 @@ func TestFilename(t *testing.T) {
 				want: "Row.java",
 			},
 			{
+				name: "names the file after the class name that the convention spells for a lone struct",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
+					Decls: []symbol.Symbol{&emit.Struct{Name: "httpRow"}},
+				},
+				want: "HttpRow.java",
+			},
+			{
 				name: "returns a lone enum's name",
 				give: plugin.Unit{
 					Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
@@ -78,6 +86,11 @@ func TestFilename(t *testing.T) {
 				name: "returns a snake stem in the type name's case",
 				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/user_profile.ts", Word: "stub"},
 				want: "UserProfileStub.java",
+			},
+			{
+				name: "returns an acronym of a snake stem as a word",
+				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/http_client.ts", Word: "stub"},
+				want: "HttpClientStub.java",
 			},
 			{
 				name: "returns the tag after the word",
