@@ -42,7 +42,10 @@ const (
 	// DirectiveMarker marks an interface as the definition of a directive,
 	// with the locations of the directive as its arguments, such as OBJECT
 	// and FIELD_DEFINITION. The fields of the interface are the arguments
-	// of the directive.
+	// of the directive, and its other annotations are the directives that
+	// apply to the definition. With [ExtendMarker] and no argument, the
+	// marker marks the extension of a directive, whose annotations are the
+	// directives that the extension adds.
 	DirectiveMarker Marker = MarkerPrefix + "directive"
 	// RepeatableMarker marks the definition of a repeatable directive.
 	RepeatableMarker Marker = MarkerPrefix + "repeatable"

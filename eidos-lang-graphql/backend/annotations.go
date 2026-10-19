@@ -25,8 +25,13 @@ const (
 	takesNothing   = "no argument"
 	takesOperation = "one argument, query, mutation or subscription"
 	takesType      = "one argument, the name of a type"
-	takesLocations = "one or more locations of a directive"
+	takesLocations = "locations of a directive"
 )
+
+// directiveDefinitionLocation is the location of a directive that applies
+// to the definition of a directive. The working draft of GraphQL declares
+// it, and gqlparser declares no constant of it.
+const directiveDefinitionLocation ast.DirectiveLocation = "DIRECTIVE_DEFINITION"
 
 // locations are the locations of a directive of GraphQL, which a directive
 // definition lists after on.
@@ -36,6 +41,7 @@ var locations = []ast.DirectiveLocation{
 	ast.LocationVariableDefinition, ast.LocationSchema, ast.LocationScalar, ast.LocationObject,
 	ast.LocationFieldDefinition, ast.LocationArgumentDefinition, ast.LocationInterface, ast.LocationUnion,
 	ast.LocationEnum, ast.LocationEnumValue, ast.LocationInputObject, ast.LocationInputFieldDefinition,
+	directiveDefinitionLocation,
 }
 
 // arity is the rule of the arguments of a marker.
@@ -48,8 +54,9 @@ const (
 	operationArg
 	// nameArg takes one argument, a GraphQL name.
 	nameArg
-	// locationArgs takes one or more arguments, each a location of a
-	// directive.
+	// locationArgs takes zero or more arguments, each a location of a
+	// directive. The lowering requires a location of a definition and none
+	// of an extension.
 	locationArgs
 )
 
@@ -61,7 +68,7 @@ func (r arity) admits(args []string) bool {
 	case nameArg:
 		return len(args) == 1 && naming.IsIdentifier(args[0])
 	case locationArgs:
-		return len(args) > 0 && !slices.ContainsFunc(args, func(arg string) bool {
+		return !slices.ContainsFunc(args, func(arg string) bool {
 			return !slices.Contains(locations, ast.DirectiveLocation(arg))
 		})
 	default:

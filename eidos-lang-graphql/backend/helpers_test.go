@@ -38,7 +38,8 @@ const selection = "{\n  __typename\n}"
 // The markers that two or more specs state: an input object, an extension,
 // a query, a subscription, an anonymous operation, a fragment on the type
 // Row, the root of queries of a schema, a directive definition that applies
-// to the definition of a field and to an object type, and a repeatable
+// to the definition of a field and to an object type, the directive marker
+// without a location of an extension of a directive, and a repeatable
 // directive.
 var (
 	inputMarker    = symbol.Annotation{Name: string(graphql.InputMarker)}
@@ -56,7 +57,8 @@ var (
 		Name: string(graphql.DirectiveMarker),
 		Args: []string{string(ast.LocationFieldDefinition), string(ast.LocationObject)},
 	}
-	repeatable = symbol.Annotation{Name: string(graphql.RepeatableMarker)}
+	directiveMarker = symbol.Annotation{Name: string(graphql.DirectiveMarker)}
+	repeatable      = symbol.Annotation{Name: string(graphql.RepeatableMarker)}
 )
 
 // The applied directives that two or more specs state: one without

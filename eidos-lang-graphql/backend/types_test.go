@@ -269,6 +269,30 @@ func TestTypes(t *testing.T) {
 					},
 					want: "directive @cached(\n  \"Seconds.\"\n  maxAge: Int!\n) on FIELD_DEFINITION | OBJECT\n",
 				},
+				{
+					name: "returns the directives of a directive definition after its arguments",
+					give: &emit.Interface{
+						Name: "@cached", Annotations: symbol.Annotations{cachedLocations, deprecated},
+						Fields: emit.SlotOf(&emit.Field{Name: "maxAge", Type: intRef}),
+					},
+					want: "directive @cached(maxAge: Int!) @deprecated on FIELD_DEFINITION | OBJECT\n",
+				},
+				{
+					name: "returns the directives of a repeatable directive definition before the keyword repeatable",
+					give: &emit.Interface{
+						Name: "@tag", Annotations: symbol.Annotations{cachedLocations, repeatable, shareable},
+						Fields: emit.SlotOf(&emit.Field{Name: nameField, Type: stringRef}),
+					},
+					want: "directive @tag(name: String!) @shareable repeatable on FIELD_DEFINITION | OBJECT\n",
+				},
+				{
+					name: "returns an extension of a directive under the markers graphql:directive and graphql:extend",
+					give: &emit.Interface{
+						Name: "@cached", Comment: "retired",
+						Annotations: symbol.Annotations{directiveMarker, extendMarker, deprecated},
+					},
+					want: "extend directive @cached @deprecated # retired\n",
+				},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {

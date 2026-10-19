@@ -72,10 +72,10 @@ func (v *Vocabulary) Struct(s *emit.Struct) string {
 
 // Interface writes the interface i as an interface, and as the definition of
 // a directive under the marker graphql:directive, after the description of
-// i. The marker graphql:extend writes extend before the keyword. An
-// interface lists the interfaces that it implements, which are the
-// interfaces that i extends, its directives, and its fields and its methods
-// in a body.
+// i. The marker graphql:extend writes extend before the keyword, of an
+// interface and of a directive. An interface lists the interfaces that it
+// implements, which are the interfaces that i extends, its directives, and
+// its fields and its methods in a body.
 func (v *Vocabulary) Interface(i *emit.Interface) string {
 	b := &v.b
 	b.Reset()
@@ -98,10 +98,16 @@ func (v *Vocabulary) Interface(i *emit.Interface) string {
 
 // writeDirectiveDefinition writes the interface i as the definition of a
 // directive: the name, which starts with the sigil of a directive after the
-// lowering, the fields of i as the arguments, the keyword repeatable under
-// the marker graphql:repeatable, and the locations of the marker
-// graphql:directive. set is the set of the markers of i.
+// lowering, the fields of i as the arguments, the directives of i, the
+// keyword repeatable under the marker graphql:repeatable, and the locations
+// of the marker graphql:directive. Under the marker graphql:extend, it writes
+// the extension of the directive, with extend before the keyword and no
+// locations. set is the set of the markers of i.
 func writeDirectiveDefinition(b *bytes.Buffer, i *emit.Interface, set markerSet) {
+	extension := set&extendBit != 0
+	if extension {
+		b.WriteString(extendKeyword)
+	}
 	b.WriteString(directiveKeyword)
 	b.WriteString(i.Name)
 	fields := i.Fields.Items()
@@ -112,19 +118,22 @@ func writeDirectiveDefinition(b *bytes.Buffer, i *emit.Interface, set markerSet)
 			as: f.Annotations, comment: f.Comment,
 		}
 	}, "", "")
+	writeDirectives(b, i.Annotations)
 	if set&repeatableBit != 0 {
 		b.WriteString(repeatableKeyword)
 	}
-	b.WriteString(onKeyword)
-	for _, a := range i.Annotations {
-		if a.Name != string(graphql.DirectiveMarker) {
-			continue
-		}
-		for k, location := range a.Args {
-			if k > 0 {
-				b.WriteString(locationSep)
+	if !extension {
+		b.WriteString(onKeyword)
+		for _, a := range i.Annotations {
+			if a.Name != string(graphql.DirectiveMarker) {
+				continue
 			}
-			b.WriteString(location)
+			for k, location := range a.Args {
+				if k > 0 {
+					b.WriteString(locationSep)
+				}
+				b.WriteString(location)
+			}
 		}
 	}
 	writeComment(b, i.Comment)

@@ -153,6 +153,12 @@ func TestLower(t *testing.T) {
 				give: &emit.Interface{Name: "@cached", Annotations: symbol.Annotations{cachedLocations}},
 			},
 			{
+				name: "returns nil for an extension of a directive that applies a directive",
+				give: &emit.Interface{
+					Name: "@cached", Annotations: symbol.Annotations{directiveMarker, extendMarker, deprecated},
+				},
+			},
+			{
 				name: "returns nil for an operation whose selection set has no white space around it",
 				give: &emit.Function{
 					Name:        "GetRow",
@@ -565,9 +571,46 @@ func TestLower(t *testing.T) {
 				want: "graphql: an enum declares at least one value, and Phase declares none",
 			},
 			{
-				name: "returns an error for an extension of a directive definition",
-				give: &emit.Interface{Name: "cached", Annotations: symbol.Annotations{cachedLocations, extendMarker}},
-				want: "graphql: a directive definition has no extension, and cached states the marker graphql:extend",
+				name: "returns an error for a directive definition without a location",
+				give: &emit.Interface{Name: "cached", Annotations: symbol.Annotations{directiveMarker}},
+				want: "graphql: a directive definition applies to one or more locations, and cached states none",
+			},
+			{
+				name: "returns an error for an extension of a directive with locations",
+				give: &emit.Interface{
+					Name: "cached", Annotations: symbol.Annotations{cachedLocations, extendMarker, deprecated},
+				},
+				want: "graphql: an extension of a directive adds directives alone, and cached states locations",
+			},
+			{
+				name: "returns an error for an extension of a directive with arguments",
+				give: &emit.Interface{
+					Name: "cached", Annotations: symbol.Annotations{directiveMarker, extendMarker, deprecated},
+					Fields: emit.SlotOf(&emit.Field{Name: "maxAge", Type: &emit.TypeRef{Spelling: intType}}),
+				},
+				want: "graphql: an extension of a directive adds directives alone, and cached declares arguments",
+			},
+			{
+				name: "returns an error for a repeatable extension of a directive",
+				give: &emit.Interface{
+					Name:        "cached",
+					Annotations: symbol.Annotations{directiveMarker, extendMarker, repeatable, deprecated},
+				},
+				want: "graphql: an extension of a directive adds directives alone, " +
+					"and cached states the marker graphql:repeatable",
+			},
+			{
+				name: "returns an error for an extension of a directive without a directive",
+				give: &emit.Interface{Name: "cached", Annotations: symbol.Annotations{directiveMarker, extendMarker}},
+				want: "graphql: an extension of a directive adds at least one directive, and cached adds none",
+			},
+			{
+				name: "returns an error for an extension of a directive with documentation",
+				give: &emit.Interface{
+					Name: "cached", Doc: []string{"Retired."},
+					Annotations: symbol.Annotations{directiveMarker, extendMarker, deprecated},
+				},
+				want: "graphql: an extension of GraphQL has no description, and cached states documentation",
 			},
 			{
 				name: "returns an error for a directive definition with methods",

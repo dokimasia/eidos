@@ -38,8 +38,9 @@ const selectionOpen = "{"
 //   - A sum becomes a union of one object type for each variant, named after
 //     the sum and the variant. Under the marker graphql:input, it becomes an
 //     input object with the directive oneOf, [lowerSum].
-//   - The interface of a directive definition takes the sigil of a directive
-//     before its name, so the respell spells it in camel case.
+//   - The interface of a directive definition and of the extension of a
+//     directive takes the sigil of a directive before its name, so the
+//     respell spells it in camel case.
 //   - The selection set of an executable definition loses the white space
 //     around it.
 //
@@ -70,8 +71,12 @@ const selectionOpen = "{"
 //   - an enum without a value, an alias that is neither a union of named
 //     references nor a scalar, and a sum without a variant or with methods;
 //   - a variant of an object type without a field;
-//   - a directive definition with methods, interfaces, nested declarations or
-//     the marker graphql:extend;
+//   - a directive definition without a location, and a directive definition
+//     or an extension of a directive with methods, interfaces or nested
+//     declarations;
+//   - an extension of a directive with locations, arguments, the marker
+//     graphql:repeatable or a description, and an extension without a
+//     directive;
 //   - a function without the marker graphql:operation or graphql:fragment, an
 //     anonymous fragment, and a body that is not a verbatim selection set;
 //   - a header that states a schema definition without a root operation
@@ -261,18 +266,38 @@ func lowerInterface(i *emit.Interface) ([]symbol.Symbol, error) {
 }
 
 // lowerDirective lowers the interface i, whose markers are set, as the
-// definition of a directive: the fields of i are the arguments of the
-// directive, which are inputs, and the name of i takes the sigil of a
-// directive. A directive definition has no extension, no method, no
-// interface and no nested declaration.
+// definition of a directive, or as the extension of a directive under the
+// marker graphql:extend. The fields of a definition are the arguments of the
+// directive, which are inputs, and a definition applies to one or more
+// locations. An extension adds one or more directives and nothing else, so
+// it states no location, no argument, no marker graphql:repeatable and no
+// description. Neither has a method, an interface or a nested declaration.
+// The name of i takes the sigil of a directive.
 func lowerDirective(i *emit.Interface, set markerSet) error {
+	extension := set&extendBit != 0
+	located := markerArg(i.Annotations, graphql.DirectiveMarker) != ""
 	switch {
-	case set&extendBit != 0:
-		return fmt.Errorf(refusalPrefix+"a directive definition has no extension, and %s states the marker %s",
-			i.Name, graphql.ExtendMarker)
 	case i.Methods.Len() > 0 || len(i.Extends) > 0 || i.Types.Len() > 0:
 		return fmt.Errorf(refusalPrefix+"a directive definition declares its arguments as the fields of %s alone, "+
 			"and %s declares methods, interfaces or nested declarations", i.Name, i.Name)
+	case !extension && !located:
+		return fmt.Errorf(refusalPrefix+"a directive definition applies to one or more locations, "+
+			"and %s states none", i.Name)
+	case extension && located:
+		return fmt.Errorf(refusalPrefix+"an extension of a directive adds directives alone, and %s states locations",
+			i.Name)
+	case extension && i.Fields.Len() > 0:
+		return fmt.Errorf(refusalPrefix+"an extension of a directive adds directives alone, and %s declares arguments",
+			i.Name)
+	case extension && set&repeatableBit != 0:
+		return fmt.Errorf(refusalPrefix+"an extension of a directive adds directives alone, "+
+			"and %s states the marker %s", i.Name, graphql.RepeatableMarker)
+	case extension && !directives(i.Annotations):
+		return fmt.Errorf(refusalPrefix+"an extension of a directive adds at least one directive, and %s adds none",
+			i.Name)
+	}
+	if err := checkExtension(i.Name, set, i.Doc); err != nil {
+		return err
 	}
 	h := &host{name: strings.TrimPrefix(i.Name, graphql.DirectiveSigil), origin: i.Origin, input: true}
 	for _, f := range i.Fields.Items() {

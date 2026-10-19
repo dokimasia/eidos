@@ -16,6 +16,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// directiveDefinitionLocation is the location of a directive that applies
+// to the definition of a directive.
+const directiveDefinitionLocation = "DIRECTIVE_DEFINITION"
+
 // TestAnnotations pins the rules of the annotations of a declaration: a
 // marker of the satellite on a declaration of its kinds with the arguments
 // of its contract, once, and an applied directive with a GraphQL name and
@@ -60,6 +64,7 @@ func TestAnnotations(t *testing.T) {
 						string(ast.LocationArgumentDefinition), string(ast.LocationInterface),
 						string(ast.LocationUnion), string(ast.LocationEnum), string(ast.LocationEnumValue),
 						string(ast.LocationInputObject), string(ast.LocationInputFieldDefinition),
+						directiveDefinitionLocation,
 					},
 				}}},
 			},
@@ -164,20 +169,11 @@ func TestAnnotations(t *testing.T) {
 					`and RowFields states ["Row" "Node"]`,
 			},
 			{
-				name: "returns an error for a directive definition without a location",
-				give: &emit.Interface{
-					Name:        "cached",
-					Annotations: symbol.Annotations{{Name: string(graphql.DirectiveMarker)}},
-				},
-				want: "graphql: the marker graphql:directive takes one or more locations of a directive, " +
-					"and cached states []",
-			},
-			{
 				name: "returns an error for a location that GraphQL does not declare",
 				give: &emit.Interface{Name: "cached", Annotations: symbol.Annotations{{
 					Name: string(graphql.DirectiveMarker), Args: []string{string(ast.LocationObject), "ANYWHERE"},
 				}}},
-				want: `graphql: the marker graphql:directive takes one or more locations of a directive, ` +
+				want: `graphql: the marker graphql:directive takes locations of a directive, ` +
 					`and cached states ["OBJECT" "ANYWHERE"]`,
 			},
 			{
