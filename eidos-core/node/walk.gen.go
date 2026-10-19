@@ -116,6 +116,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		if x.Type != nil {
 			Walk(x.Type, visit)
 		}
+		if x.Receives != nil {
+			Walk(x.Receives, visit)
+		}
 	case *Variable:
 		if x.Type != nil {
 			Walk(x.Type, visit)

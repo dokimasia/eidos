@@ -389,6 +389,19 @@ func TestRounds(t *testing.T) {
 			assert.Equal(t, report.Stats.Rendered, 1, "a field declares no name in the scope of the column's file")
 		})
 
+		t.Run("renders only the dirty group's file of a plan whose mirrors receive fields", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
+				Name: "plan", Generators: []plugin.Generator{extending(), columnMirror()}, Backend: receivers(t),
+			}))
+			report, err := warmAfter(t, w, roundsTree(rowLine+colLine, userLine),
+				roundsTree(widerRow+colLine, userLine))
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, report.Stats.Rendered, 1,
+				"a received field declares no name in the scope of the column's file")
+		})
+
 		t.Run("reports the PathCollision of a new path that differs from a kept path only in case", func(t *testing.T) {
 			t.Parallel()
 
@@ -624,8 +637,22 @@ func receiving() plugin.Generator {
 	})
 }
 
+// extending returns a generator that mirrors each struct and declares a
+// field named tag that each mirror receives, outside the mirror.
+func extending() plugin.Generator {
+	return generator(mirrorID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+		name := "For" + m.Struct.Name
+		e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name})
+		e.PackageFile().Append(&emit.Field{
+			Origin: m.Struct.Identity(), Name: "tag", Type: &emit.TypeRef{Spelling: "int"},
+			Receives: &emit.TypeRef{Spelling: name},
+		})
+		return nil
+	})
+}
+
 // receivers returns a kit backend that spells each struct, and each
-// method that attaches to a struct by its receiver.
+// method and each field that attaches to a struct from outside it.
 func receivers(tb assert.TB) plugin.Backend {
 	tb.Helper()
 
@@ -633,6 +660,7 @@ func receivers(tb assert.TB) plugin.Backend {
 		KindTemplates(map[symbol.Kind]string{
 			symbol.KindStruct: "type {{.Name}} struct{}\n",
 			symbol.KindMethod: "func ({{.Receives.Spelling}}) {{.Name}}()\n",
+			symbol.KindField:  "var {{.Receives.Spelling}}.{{.Name}} int\n",
 		}).
 		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
 		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {

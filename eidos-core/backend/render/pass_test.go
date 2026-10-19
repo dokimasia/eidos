@@ -61,12 +61,14 @@ const (
 // file's import set, the packages it qualifies with, and the name the
 // first package binds.
 const (
-	// qualifyHelper, declareHelper, itemHelper and claimHelper are the
-	// vocabulary helpers [qualifying] declares.
+	// qualifyHelper, declareHelper, itemHelper, claimHelper, referHelper
+	// and clauseHelper are the vocabulary helpers [qualifying] declares.
 	qualifyHelper = "qualify"
 	declareHelper = "declare"
 	itemHelper    = "item"
 	claimHelper   = "claim"
+	referHelper   = "refer"
+	clauseHelper  = "clause"
 	// storePkg and legacyPkg are two packages whose last segment is
 	// storeLocal, so the second to bind takes a suffix.
 	storePkg  = "svc/store"
@@ -128,22 +130,36 @@ const (
 	// of the annotation of the fixture's source file.
 	constraintName = "go:build"
 	constraintExpr = "linux"
+	// headerSkeleton is a file skeleton that spells the name and the
+	// first argument of each annotation of the header of the file.
+	headerSkeleton = "{{range .Header.Annotations}}{{.Name}} {{index .Args 0}}\n{{end}}"
+	// headerStruct is a struct spelling that writes the first argument of
+	// the first annotation of the header, which it reads through the
+	// header builtin.
+	headerStruct = "type {{.Name}} {{with header}}{{index (index .Annotations 0).Args 0}}{{end}}\n"
+	// syntaxName and syntaxArg are the name and the argument of the
+	// annotation of the header that [headed] states.
+	syntaxName = "protobuf:syntax"
+	syntaxArg  = "proto3"
 )
 
 // qualifiedStruct is a struct spelling that qualifies rowName from
-// storePkg through the [qualifying] vocabulary, and declaredStruct one
-// that qualifies it through the name that the package of storePkg
-// declares.
+// storePkg through the [qualifying] vocabulary, declaredStruct one that
+// qualifies it through the name that the package of storePkg declares,
+// and referredStruct one that qualifies it through the name of the file
+// of storePkg that the file refers into.
 var (
 	qualifiedStruct = "type {{.Name}} " +
 		action(qualifyHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
 	declaredStruct = "type {{.Name}} " +
 		action(declareHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
+	referredStruct = "type {{.Name}} " +
+		action(referHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
 )
 
-// The pass is the procedure every language shares: render the routed
-// files, kinds in canonical order, finalise per file and continue past
-// a failure.
+// TestPass checks the procedure that every language shares. The pass
+// renders the routed files with their kinds in canonical order,
+// finalises each file and continues past a failure.
 func TestPass(t *testing.T) {
 	t.Parallel()
 
@@ -614,6 +630,78 @@ func TestPass(t *testing.T) {
 				"the skeleton writes the annotation of the source file")
 		})
 
+		t.Run("passes the header of the file to the skeleton", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.File = headerSkeleton
+			files, sink := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the unit routes into one file")
+			assert.Equal(t, string(files[0].Body), syntaxName+" "+syntaxArg+"\n",
+				"the skeleton writes the annotation of the header")
+		})
+
+		t.Run("returns the header of the file to a kind template", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = headerStruct
+			files, sink := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" "+syntaxArg+"\n",
+				"the template reads the argument of the header")
+		})
+
+		t.Run("renders the skeleton of a file whose one declaration is an emit.File", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.File = nameSkeleton
+			files, sink := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey))))
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "a file of a header alone renders")
+			assert.Equal(t, string(files[0].Body), storeFile+"\n", "the skeleton alone")
+		})
+
+		t.Run("reports RefusedFact for the annotations of a header that the coverage refuses", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Coverage = headerCoverage(render.Refuses)
+			_, sink := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			assert.HasSuffix(t, reported(t, sink, render.RefusedFact),
+				symbol.FactAnnotations.String()+" stated on a "+symbol.KindFile.String(),
+				"the finding names the fact of the file")
+		})
+
+		t.Run("renders a file whose header the coverage refuses", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Coverage = headerCoverage(render.Refuses)
+			files, _ := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			assert.Length(t, files, 1, "the file renders without its header")
+		})
+
+		t.Run("reports RejectedFact for the annotations of a header that the coverage rejects", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Coverage = headerCoverage(render.Rejects)
+			_, sink := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			coretest.AssertCodes(t, sink, render.RejectedFact)
+		})
+
+		t.Run("withholds a file whose header the coverage rejects", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Coverage = headerCoverage(render.Rejects)
+			files, _ := runPass(t, l, seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			assert.Empty(t, files, "the target cannot write the file with the header or without it")
+		})
+
 		t.Run("binds the language vocabulary to the file's import set", func(t *testing.T) {
 			t.Parallel()
 
@@ -672,6 +760,52 @@ func TestPass(t *testing.T) {
 			assert.Empty(t, files[0].Packages, "the file read no declared name")
 		})
 
+		t.Run("gives the import set of each file the files that it refers into", func(t *testing.T) {
+			t.Parallel()
+
+			l := binding()
+			l.Kinds[symbol.KindStruct] = referredStruct
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey, alphaName), unitOf(emitter, userKey, betaName))
+			routed := backendtest.Files(e, p)
+			assert.Length(t, routed, 2, "the units route into two files")
+			routed[0].Referents = []symbol.Identity{
+				{Lang: referentLang, Package: storePkg, Name: storeDeclared, Kind: symbol.KindPackage},
+			}
+			sink := diag.NewSink()
+			files, err := p.Render(&plugin.RenderContext{Emit: e, Files: routed, Sink: sink, Plugin: passName})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 2, "both files render")
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" "+storeDeclared+"."+rowName+"\n",
+				"the file qualifies the name with the package of the file that it refers into")
+			assert.Equal(t, string(files[1].Body), "type "+betaName+" "+rowName+"\n",
+				"a file without referents writes the name bare")
+		})
+
+		t.Run("gives the import set of each file the package of the file", func(t *testing.T) {
+			t.Parallel()
+
+			l := binding()
+			l.Kinds[symbol.KindStruct] = "type {{.Name}} {{" + clauseHelper + "}}\n"
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey, alphaName))
+			routed := backendtest.Files(e, p)
+			assert.Length(t, routed, 1, "the unit routes into one file")
+			routed[0].Pkg = symbol.Identity{
+				Lang: referentLang, Package: storePkg, Name: storeDeclared, Kind: symbol.KindPackage,
+			}
+			sink := diag.NewSink()
+			files, err := p.Render(&plugin.RenderContext{Emit: e, Files: routed, Sink: sink, Plugin: passName})
+			assert.NoError(t, err, "the pass renders the file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the file renders")
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" "+storeDeclared+"\n",
+				"the helper reads the name of the package clause of the file")
+		})
+
 		t.Run("reserves a name the file declares before the first declaration renders", func(t *testing.T) {
 			t.Parallel()
 
@@ -716,12 +850,12 @@ const (
 	// refusedKindsAllocs is one copy of a refusal map of one entry: the
 	// map and its group.
 	refusedKindsAllocs = 2
-	// renderOneAllocs is one Render of one file of one struct: 25 for
-	// the clone of the parsed templates and the builtins that bind them
-	// to the file's import set, about 22 for the worker, its frame and
-	// its import set, and about 23 for the file: the template's run
+	// renderOneAllocs is one Render of one file of one struct: 26 for
+	// the clone of the parsed templates and the seven builtins that bind
+	// them to the file's import set, about 22 for the worker, its frame
+	// and its import set, and about 23 for the file: the template's run
 	// through reflection, its buffers and the rendered bytes.
-	renderOneAllocs = 70
+	renderOneAllocs = 71
 	// renderStructsAllocs is one render of 1,000 files of 200 structs:
 	// 613,293 on average with a standard deviation of 6. Each struct's
 	// template run through reflection allocates 3, and each file about
@@ -742,14 +876,13 @@ const (
 	renderReferencesAllocs = 3_213_480 + 8*16
 )
 
-// The pass's methods allocate within their ceilings in the ordinary
-// run, which runs no benchmark: a composition, a refusal map's copy, a
-// filename, a unit's split, and a render of one file. The renders at
-// the canonical scale take too long to repeat 101 times, so only
-// [BenchmarkPass] checks their ceilings. Each count keeps the first
-// error of its calls, which cmp.Or returns without allocating. The
-// check runs alone, because the count includes every goroutine's
-// allocations.
+// TestPassAllocs checks the ceilings of New, Coverage, RefusedKinds,
+// FileName, SplitUnit and the render of one file in the ordinary run,
+// which runs no benchmark. Only [BenchmarkPass] checks the ceilings of
+// the renders at the canonical scale, because they take too long to
+// repeat 101 times. cmp.Or keeps the first error of the calls of each
+// count without allocating. The check runs alone, because the count
+// includes the allocations of every goroutine.
 func TestPassAllocs(t *testing.T) {
 	l := language()
 	var (
@@ -1072,6 +1205,13 @@ func qualifying(set *render.ImportSet) template.FuncMap {
 			}
 			return pkg + "." + name
 		},
+		referHelper: func(pkg, name string) string {
+			if referent, held := set.Referent(pkg); held {
+				return referent.Name + "." + name
+			}
+			return name
+		},
+		clauseHelper: func() string { return set.Package().Name },
 	}
 }
 
@@ -1141,6 +1281,27 @@ func fn(key, name string, body emit.Body) plugin.Unit {
 	f.Body = body
 	u.Decls = append(u.Decls, f)
 	return u
+}
+
+// headed returns u with an emit.File before its declarations, whose one
+// annotation states the syntax of the file.
+func headed(u plugin.Unit) plugin.Unit {
+	header := &emit.File{Annotations: symbol.Annotations{{Name: syntaxName, Args: []string{syntaxArg}}}}
+	u.Decls = append([]symbol.Symbol{header}, u.Decls...)
+	return u
+}
+
+// headerCoverage returns a coverage that renders every fact, with the
+// verdict v for the annotations of a file.
+func headerCoverage(v render.Verdict) render.Coverage {
+	facts := map[symbol.Fact]render.Verdict{}
+	for _, f := range symbol.Facts() {
+		facts[f] = render.Renders
+	}
+	return render.Coverage{
+		Facts:  facts,
+		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{symbol.KindFile: {symbol.FactAnnotations: v}},
+	}
 }
 
 // besideAlpha returns u with the struct alphaName before its

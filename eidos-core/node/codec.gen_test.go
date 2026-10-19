@@ -449,12 +449,13 @@ func populated() []symbol.Symbol {
 		subject := &Param{}
 		subject.ID = symbol.Identity{Lang: "lang", Package: "pkg/ID", Owner: "Owner", Name: "ID", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Pos = position.Pos{File: "Pos.go", Line: 2, Col: 2}
+		subject.Doc = []string{"Doc", "", "Doc"}
 		subject.Comment = "Comment"
 		subject.Name = "Name"
 		subject.Label = "Label"
 		subject.Default = "Default"
 		subject.Optional = true
-		subject.Variadic = 9
+		subject.Variadic = 10
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Type = &TypeRef{}
 		out = append(out, subject)
@@ -597,6 +598,7 @@ func populated() []symbol.Symbol {
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Type = &TypeRef{}
+		subject.Receives = &TypeRef{}
 		out = append(out, subject)
 	}
 	{

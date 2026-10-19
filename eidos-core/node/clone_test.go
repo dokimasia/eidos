@@ -17,16 +17,16 @@ import (
 
 // cloneAllocs is the copy of the inline body of [inlineBody]: the body, its
 // two children, its argument and its absent member with their three
-// lists, the field with its type and its list, and the method with its
-// list. The method adds its receiver and the type of the receiver, its
-// receiving type, its type parameter with a bound and a default, its
-// parameter, its result and their types, its thrown type, and the five
-// lists of its type parameters, bounds, parameters, results and thrown
-// types: 1 + 6 + 3 + 2 + 18.
-const cloneAllocs = 1 + 6 + 3 + 2 + 18
+// lists, the field with its type, its receiving type and its list, and
+// the method with its list. The method adds its receiver and the type of
+// the receiver, its receiving type, its type parameter with a bound and a
+// default, its parameter, its result and their types, its thrown type,
+// and the five lists of its type parameters, bounds, parameters, results
+// and thrown types: 1 + 7 + 4 + 2 + 16.
+const cloneAllocs = 1 + 7 + 4 + 2 + 16
 
-// CloneRef copies a reference and every node below it, and the copy shares
-// no node with the reference.
+// TestClone checks that CloneRef copies a reference and every node below
+// it, and that the copy shares no node with the reference.
 func TestClone(t *testing.T) {
 	t.Parallel()
 
@@ -102,8 +102,8 @@ func TestCloneAllocs(t *testing.T) {
 
 // inlineBody returns an inline body with a node in every place that a
 // reference can have one: children, an argument, an absent member, a field
-// and a method with a receiver, a receiving type, a type parameter, a
-// parameter, a result and a thrown type.
+// with a receiving type, and a method with a receiver, a receiving type, a
+// type parameter, a parameter, a result and a thrown type.
 func inlineBody() *node.TypeRef {
 	return &node.TypeRef{
 		Spelling: "{a: A; m<T extends B = C>(this: D, p: E): F}",
@@ -112,7 +112,10 @@ func inlineBody() *node.TypeRef {
 		Elems:    []*node.TypeRef{{Spelling: "A"}, {Spelling: "B"}},
 		Args:     []*node.TypeRef{{Spelling: "G"}},
 		Absent:   []*node.TypeRef{{Spelling: "undefined"}},
-		Fields:   []*node.Field{{Name: "a", Doc: []string{"A field."}, Type: &node.TypeRef{Spelling: "A"}}},
+		Fields: []*node.Field{{
+			Name: "a", Doc: []string{"A field."}, Type: &node.TypeRef{Spelling: "A"},
+			Receives: &node.TypeRef{Spelling: "J"},
+		}},
 		Methods: []*node.Method{{
 			Name:     "m",
 			Receiver: &node.Param{Name: "this", Type: &node.TypeRef{Spelling: "D"}},

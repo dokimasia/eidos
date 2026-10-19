@@ -82,6 +82,10 @@ type Placement struct {
 	// directory, for a directory no loaded module contains. Both are
 	// empty where the plan states no import base.
 	ImportBase, BaseDir string
+	// Header is the annotations of the header of the routed file, which
+	// [File.Header] describes, so a rule can read a package that a
+	// generator states for the file.
+	Header symbol.Annotations
 }
 
 // ModuleOf returns the innermost module of a language whose root

@@ -21,7 +21,9 @@ const lineBreak = '\n'
 // Cluster gathers renders through the group templates, each
 // cluster at the position of its first member, and the rest
 // renders through the kind templates, in the order the flush
-// fixed. It reports whether any declaration rendered.
+// fixed. An emit.File is part of the header of the file, which the
+// skeleton writes, so the run skips it. It reports whether any
+// declaration rendered.
 func (f *frame) declRun(u plugin.Unit, b *bound) bool {
 	memberOf := map[int]int{}
 	var clusters []Clustered
@@ -47,6 +49,9 @@ func (f *frame) declRun(u plugin.Unit, b *bound) bool {
 	rendered := make(map[int]bool, len(clusters))
 	spelt := false
 	for i, d := range u.Decls {
+		if _, header := d.(*emit.File); header {
+			continue
+		}
 		ci, member := memberOf[i]
 		if !member {
 			spelt = f.singleton(u, d, b) || spelt

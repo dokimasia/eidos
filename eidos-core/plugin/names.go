@@ -35,9 +35,9 @@ type Names interface {
 	// none does.
 	OfOrigin(origin symbol.Identity, emitted string) (NameEntry, bool)
 	// InScope returns the entries of one collision scope, sorted by
-	// settled name: the methods of the package that attach to the
-	// receiver where receiver is set, and every other file-level name of
-	// the package where it is empty.
+	// settled name: the methods and the fields of the package that attach
+	// to the receiver where receiver is set, and every other file-level
+	// name of the package where it is empty.
 	InScope(pkg, receiver string) []NameEntry
 }
 
@@ -50,9 +50,10 @@ type Names interface {
 type NameEntry struct {
 	// Package is the package path of the unit that declares the name.
 	Package string
-	// Receiver is the emitted spelling of the type that a method
-	// attaches to, and empty for every other declaration. A name
-	// collides with the other names of its package and receiver.
+	// Receiver is the emitted spelling of the type that a method or a
+	// field attaches to from outside the declaration of the type, and
+	// empty for every other declaration. A name collides with the other
+	// names of its package and receiver.
 	Receiver string
 	// Origin is the declaration's origin, and the zero identity for a
 	// declaration without one.
@@ -130,13 +131,13 @@ type Settled struct {
 // each file's declarations. settled is the store that the plan's settle
 // ran over, whose record supplies the name that each respelled
 // declaration was emitted under. A nil store reads every name as
-// emitted. A method's receiver maps back to the name that its type was
-// emitted under. The files' own declarations map it first, and others
-// map it second. A receiver whose type neither declares keeps its
-// spelling. Ambiguous is false on every entry, because the ambiguity of
-// a name depends on every file of the plan. A unit of a family that
-// claims its files contains records, which declare no name of the file,
-// so NamesOf lists none of them.
+// emitted. The receiver of a method, and the type that receives a field,
+// map back to the name that the type was emitted under. The files' own
+// declarations map it first, and others map it second. A receiver whose
+// type neither declares keeps its spelling. Ambiguous is false on every
+// entry, because the ambiguity of a name depends on every file of the
+// plan. A unit of a family that claims its files contains records, which
+// declare no name of the file, so NamesOf lists none of them.
 //
 // # Allocation contract
 //
@@ -165,8 +166,8 @@ func NamesOf(files []File, settled *Emit, others Names) []NameEntry {
 			File: file.Path, FilePkg: file.Pkg,
 		}
 		entry.Origin, _ = emit.OriginOf(carrier)
-		if m, attached := carrier.(*emit.Method); attached && m.Receives != nil {
-			entry.Receiver = hostOf(declared, others, unit.Pkg.Package, m.Receives.Spelling)
+		if receives := emit.ReceivesOf(carrier); receives != nil {
+			entry.Receiver = hostOf(declared, others, unit.Pkg.Package, receives.Spelling)
 		}
 		out = append(out, entry)
 		return name, nil

@@ -115,12 +115,29 @@ func (blessing) WellKnown(id symbol.Identity) (symbol.Identity, bool) {
 	return rules.WellKnownTimestamp, true
 }
 
+// shaping is the scripted rules of a language that gives the values of the
+// struct rowName the shape of a signed integer of 64 bits, as the GraphQL
+// rules give a custom scalar of a known specification the shape of its
+// specification.
+type shaping struct{ rules.SourceRules }
+
+var _ rules.ShapeRules = shaping{}
+
+// ShapeOf gives the struct rowName the shape of a signed integer of 64 bits,
+// and gives every other declaration none.
+func (shaping) ShapeOf(decl symbol.Symbol, _ rules.View) (rules.TypeShape, bool) {
+	if s, is := decl.(*node.Struct); !is || s.Name != rowName {
+		return rules.TypeShape{}, false
+	}
+	return rules.Scalar(int64Spelling, rules.ScalarInt, int64Bits), true
+}
+
 // TestShape checks the fold of the kernel. The kernel folds every
 // structural form with its children and folds a type parameter to opaque.
-// It classifies a resolved name by its declaration, or by the well-known
-// identity that the rules of its language bless it as, and passes an
-// unresolved name to the Builtin of the language, which returns through
-// the constructors.
+// It classifies a resolved name by its declaration, by the well-known
+// identity that the rules of its language bless it as, or by the shape that
+// those rules give its values. It passes an unresolved name to the Builtin
+// of the language, which returns through the constructors.
 func TestShape(t *testing.T) {
 	t.Parallel()
 
@@ -135,6 +152,26 @@ func TestShape(t *testing.T) {
 			s := b.TypeOf(named(svcPath, rowName, symbol.KindStruct))
 			assert.Equal(t, s.Form, symbol.FormReference, "a blessed target folds to a reference")
 			assert.Equal(t, s.Ref, rules.WellKnownTimestamp, "to the well-known identity")
+		})
+
+		t.Run("folds a target that its rules shape to the shape that they give it", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
+			b := rules.NewBound(shaping{scripted()}, v, nil)
+			assert.Equal(t, b.TypeOf(named(svcPath, rowName, symbol.KindStruct)),
+				rules.Scalar(rowName, rules.ScalarInt, int64Bits),
+				"the shape that the rules give the values of Row, with the spelling of the reference")
+		})
+
+		t.Run("folds a target that its rules do not shape to a reference", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
+			b := rules.NewBound(shaping{scripted()}, v, nil)
+			assert.Equal(t, b.TypeOf(named(svcPath, baseName, symbol.KindStruct)),
+				rules.Reference(baseName, coretest.ID(svcPath, baseName, symbol.KindStruct)),
+				"a target without a shape of its rules folds to a reference to the declaration")
 		})
 
 		t.Run("folds every structural form with its children", func(t *testing.T) {

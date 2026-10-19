@@ -504,12 +504,14 @@ type originName struct {
 // remaining names form the table that the references follow. The scope
 // of a declaration is its package. The scope of a method with a receiver
 // is its receiver, because two types can declare one method name in
-// every language. byOrigin records the same decisions keyed by the
-// identity of the origin, for resolved references. Both record the unit
-// that declares each name. The records of a claimed family declare no
-// name of their file, so they join no scope and no table. The clean path
-// allocates per name and never per group, because a group exists only
-// where a second name arrives.
+// every language. The scope of a field that another type receives is
+// that type, because the field adds its name to the members of the
+// type. byOrigin records the same decisions keyed by the identity of the
+// origin, for resolved references. Both record the unit that declares
+// each name. The records of a claimed family declare no name of their
+// file, so they join no scope and no table. The clean path allocates per
+// name and never per group, because a group exists only where a second
+// name arrives.
 func resolveTop(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
 ) (map[pkgName]tableEntry, map[originName]originEntry) {
@@ -580,10 +582,11 @@ func resolveTop(
 				if p.host != nil || p.err != nil {
 					continue
 				}
-				// A method's name never spells a bare reference:
-				// a type or a callable does, a member of one does
-				// not, so the table records everything else.
-				if p.kind != symbol.KindMethod {
+				// A method's name never spells a bare reference, and
+				// neither does the name of a field that another type
+				// receives: a type or a callable does, a member of one
+				// does not, so the table records everything else.
+				if p.kind != symbol.KindMethod && emit.ReceivesOf(d) == nil {
 					at := pkgName{pkg: pkg, emitted: p.emitted}
 					if entry, taken := table[at]; taken {
 						entry.ambiguous = entry.ambiguous || entry.settled != p.final
@@ -616,14 +619,14 @@ const scopeSep = "\x00"
 
 // scopeKey returns the key of the collision scope of one file-level
 // declaration. The key is the package, followed by the receiver of a
-// method, so two receivers can declare one method name without a
-// collision.
+// method or of a field that another type receives, so two receivers can
+// declare one name without a collision.
 func scopeKey(pkg string, d symbol.Symbol) string {
-	m, held := d.(*emit.Method)
-	if !held || m.Receives == nil {
+	receives := emit.ReceivesOf(d)
+	if receives == nil {
 		return pkg
 	}
-	return pkg + scopeSep + m.Receives.Spelling
+	return pkg + scopeSep + receives.Spelling
 }
 
 // resolveMembers reverts member collisions. Members of one host whose

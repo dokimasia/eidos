@@ -22,14 +22,17 @@ import (
 
 // The shapes the matchable vocabulary leaves out, each of which the
 // assignment step settles on a branch of its own: a type nested in a
-// type, a method attached from outside the type it belongs to, a
+// type, a method attached from outside the type it belongs to, a field
+// that another type receives at file level and inside a type, a
 // positional field and an embed.
 const (
-	outerName    = "Outer"
-	innerName    = "Inner"
-	leafName     = "Leaf"
-	detachedName = "Detached"
-	baseSpelling = "Base"
+	outerName     = "Outer"
+	innerName     = "Inner"
+	leafName      = "Leaf"
+	detachedName  = "Detached"
+	extensionName = "tag"
+	scopedName    = "scoped_tag"
+	baseSpelling  = "Base"
 )
 
 // The names and type spellings the blank and holey fixtures declare
@@ -54,8 +57,8 @@ const (
 	getDisc = "string,int"
 )
 
-// Identities are the join every persistent record keys on, so the
-// canonical shapes the assignment step spells are pinned here.
+// TestAssign pins the canonical identities that the assignment step
+// spells. Every persistent record keys on an identity.
 func TestAssign(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +178,32 @@ func TestAssign(t *testing.T) {
 			_, held := g.Lookup(assigned(outerName, detachedName, symbol.KindMethod))
 			assert.True(t, held,
 				"a method declared outside its type takes the type it attaches to as its owner")
+		})
+
+		t.Run("gives a field that another type receives the scope that declares it as its owner", func(t *testing.T) {
+			t.Parallel()
+
+			g := loadNested(t)
+			_, held := g.Lookup(assigned("", extensionName, symbol.KindField))
+			expect.True(t, held, "a field at file level takes no owner")
+			_, held = g.Lookup(assigned(outerName, extensionName, symbol.KindField))
+			expect.False(t, held, "and not the type that receives it")
+		})
+
+		t.Run("hosts a field that another type receives on the file that declares it", func(t *testing.T) {
+			t.Parallel()
+
+			g := loadNested(t)
+			field, found := g.Lookup(assigned("", extensionName, symbol.KindField))
+			assert.True(t, found, "the field is indexed")
+			assert.Equal(t, field.(*node.Field).Host.Kind, symbol.KindFile, "its host is the file")
+		})
+
+		t.Run("gives a field that another type receives inside a type the chain of that type", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := loadNested(t).Lookup(assigned(outerName+"."+innerName, scopedName, symbol.KindField))
+			assert.True(t, held, "the field takes the owner chain of the type that declares it")
 		})
 
 		t.Run("leaves a positional field unnamed and hosted", func(t *testing.T) {
@@ -534,11 +563,16 @@ type nested struct {
 }
 
 // Parse builds one enclosing type that declares a nested type, a
-// positional field and an embed, beside a detached method.
+// positional field and an embed, beside a detached method and a field
+// that the enclosing type receives. The nested type declares a field
+// that another type receives too.
 func (*nested) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	inner := &node.Struct{
-		Name:   innerName,
-		Fields: []*node.Field{{Name: leafName}},
+		Name: innerName,
+		Fields: []*node.Field{
+			{Name: leafName},
+			{Name: scopedName, Receives: &node.TypeRef{Spelling: baseSpelling}},
+		},
 	}
 	outer := &node.Struct{
 		Name:   outerName,
@@ -552,6 +586,7 @@ func (*nested) Parse(_ context.Context, u *plugin.SourceUnit) error {
 		Decls: node.Symbols{
 			outer,
 			&node.Method{Name: detachedName, Receives: &node.TypeRef{Spelling: outerName}},
+			&node.Field{Name: extensionName, Receives: &node.TypeRef{Spelling: outerName}},
 		},
 	})
 	return nil

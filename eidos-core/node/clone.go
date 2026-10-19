@@ -5,9 +5,10 @@ package node
 
 // CloneRef returns a deep copy of r, and nil for a nil reference. The copy
 // has the facts of r and a copy of each node below r: the children, the
-// type arguments and the absent members, and the fields and the methods of
-// an inline body with their receivers, parameters, results, type
-// parameters and thrown types. The copy shares no node with r, so a
+// type arguments and the absent members, the fields of an inline body with
+// their types and their receiving types, and its methods with their
+// receivers, receiving types, parameters, results, type parameters and
+// thrown types. The copy shares no node with r, so a
 // frontend that lists one type in two places of a graph lists two nodes,
 // as the graph requires. The lists of text and of annotations of a member
 // are shared, because no step writes them after the parse. A nil member of
@@ -28,7 +29,7 @@ func CloneRef(r *TypeRef) *TypeRef {
 		for i, f := range r.Fields {
 			if f != nil {
 				copied := *f
-				copied.Type = CloneRef(f.Type)
+				copied.Type, copied.Receives = CloneRef(f.Type), CloneRef(f.Receives)
 				c.Fields[i] = &copied
 			}
 		}

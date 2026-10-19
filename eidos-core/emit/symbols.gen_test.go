@@ -434,6 +434,7 @@ func TestSymbols(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Field with every child the original has", assert.EquateEmpty())
 			}
@@ -540,7 +541,7 @@ func TestSymbols(t *testing.T) {
 				{name: "not an object", data: `[]`},
 				{name: "a Function body it cannot read", data: `{"kind":"Function","origin":"nope"}`},
 				{name: "a Method body it cannot read", data: `{"kind":"Method","origin":"nope"}`},
-				{name: "a Param body it cannot read", data: `{"kind":"Param","comment":[]}`},
+				{name: "a Param body it cannot read", data: `{"kind":"Param","doc":"nope"}`},
 				{name: "a Return body it cannot read", data: `{"kind":"Return","comment":[]}`},
 				{name: "a Package body it cannot read", data: `{"kind":"Package","doc":"nope"}`},
 				{name: "a File body it cannot read", data: `{"kind":"File","doc":"nope"}`},
@@ -903,6 +904,7 @@ func symbolsList() Symbols {
 	{
 		subject := &Field{}
 		subject.Type = &TypeRef{}
+		subject.Receives = &TypeRef{}
 		out = append(out, subject)
 	}
 	{

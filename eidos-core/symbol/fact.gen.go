@@ -39,6 +39,7 @@ const (
 	FactFields
 	FactMethods
 	FactValue
+	FactReceives
 	FactTag
 	FactSealed
 	FactTypes
@@ -84,6 +85,7 @@ var factNames = [...]string{
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
 	FactValue:            "Value",
+	FactReceives:         "Receives",
 	FactTag:              "Tag",
 	FactSealed:           "Sealed",
 	FactTypes:            "Types",
@@ -138,6 +140,7 @@ func Facts() []Fact {
 		FactFields,
 		FactMethods,
 		FactValue,
+		FactReceives,
 		FactTag,
 		FactSealed,
 		FactTypes,

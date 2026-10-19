@@ -10,6 +10,7 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/backend/render"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The set's own fixture: the paths and names beyond the shared
@@ -31,6 +32,9 @@ const (
 	storeDeclared = "storage"
 	auditDeclared = "auditing"
 )
+
+// referentLang is the language of the files that [referents] lists.
+const referentLang symbol.Lang = "fixture"
 
 // The size of [filledSet]: four entries over three paths, and one package
 // whose declared name the file read.
@@ -73,6 +77,34 @@ func TestImportSet(t *testing.T) {
 			var s render.ImportSet
 			s.SetHome(storePkg)
 			assert.Equal(t, s.Home(), storePkg, "the file's own package")
+		})
+
+		t.Run("returns the path of the package that SetPackage named", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetPackage(referents()[1])
+			assert.Equal(t, s.Home(), storePkg, "the path of the file's own package")
+		})
+	})
+
+	t.Run("Package", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the package that SetPackage named", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetPackage(referents()[1])
+			assert.Equal(t, s.Package(), referents()[1], "the file's own package with its clause")
+		})
+
+		t.Run("returns the zero identity for a set without a package", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetHome(storePkg)
+			assert.Equal(t, s.Package(), symbol.Identity{}, "SetHome names a path alone")
 		})
 	})
 
@@ -490,6 +522,37 @@ func TestImportSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Referent", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the package of a file that the file refers into", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetReferents(referents())
+			got, held := s.Referent(storePkg)
+			assert.True(t, held, "the file refers into the store file")
+			assert.Equal(t, got, referents()[1], "the package of the store file")
+		})
+
+		t.Run("reports false for a path that the referents do not have", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetReferents(referents())
+			_, held := s.Referent(legacyPkg)
+			assert.False(t, held, "the file does not refer into the legacy file")
+		})
+
+		t.Run("reports false for a set without referents", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			_, held := s.Referent(storePkg)
+			assert.False(t, held, "the set has no referents to read")
+		})
+	})
+
 	t.Run("Packages", func(t *testing.T) {
 		t.Parallel()
 
@@ -705,6 +768,16 @@ func TestImportSet(t *testing.T) {
 			_, known := s.Declared(storePkg)
 			assert.True(t, known, "the next file reads the names of the same render")
 		})
+
+		t.Run("drops the referents of the file", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetReferents(referents())
+			s.Reset()
+			_, held := s.Referent(storePkg)
+			assert.False(t, held, "the next file refers into its own files")
+		})
 	})
 }
 
@@ -743,6 +816,12 @@ func TestImportSetAllocs(t *testing.T) {
 	var packages []string
 	assert.MaxAllocs(t, func() { packages = full.Packages() }, 1, "Packages allocates the list it returns")
 	assert.Length(t, packages, filledPackages, "Packages returns every path whose declared name the file read")
+	var referent symbol.Identity
+	assert.MaxAllocs(t, func() { referent, _ = full.Referent(storePkg) }, 0, "Referent allocates nothing")
+	assert.Equal(t, referent.Name, storeDeclared, "Referent returns the package of the store file")
+	var pkg symbol.Identity
+	assert.MaxAllocs(t, func() { pkg = full.Package() }, 0, "Package allocates nothing")
+	assert.Equal(t, pkg.Package, storePkg, "Package returns the file's own package")
 	var n int
 	assert.MaxAllocs(t, func() { n = full.Len() }, 0, "Len allocates nothing for up to eight entries")
 	assert.Equal(t, n, filledPaths, "Len counts the distinct paths")
@@ -823,6 +902,26 @@ func BenchmarkImportSet(b *testing.B) {
 		assert.Length(b, got, filledPackages, "Packages returns every path whose declared name the file read")
 	})
 
+	b.Run("Package", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got symbol.Identity
+		for c.Loop() {
+			got = full.Package()
+		}
+		assert.Equal(b, got.Package, storePkg, "Package returns the file's own package")
+	})
+
+	b.Run("Referent", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got symbol.Identity
+		for c.Loop() {
+			got, _ = full.Referent(storePkg)
+		}
+		assert.Equal(b, got.Name, storeDeclared, "Referent returns the package of the store file")
+	})
+
 	b.Run("Len", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
@@ -852,8 +951,11 @@ func benchWrite(b *testing.B, tt importWrite) {
 // importWrites returns every write a file's spellings make into its set,
 // each with its ceiling in a set whose storage has grown.
 func importWrites() []importWrite {
+	refs := referents()
 	return []importWrite{
 		{name: "SetHome", write: func(s *render.ImportSet) { s.SetHome(storePkg) }},
+		{name: "SetPackage", write: func(s *render.ImportSet) { s.SetPackage(refs[1]) }},
+		{name: "SetReferents", write: func(s *render.ImportSet) { s.SetReferents(refs) }},
 		{name: "Reserve", write: func(s *render.ImportSet) { s.Reserve(rowName) }},
 		{
 			name:     "Bind",
@@ -911,12 +1013,13 @@ func grownSet() *render.ImportSet {
 
 // filledSet returns a set for the file of storePkg with [filledEntries]
 // entries over [filledPaths] paths, a declaration of the file named
-// storeName, and [filledPackages] paths whose declared names the file
-// read.
+// storeName, [filledPackages] paths whose declared names the file read,
+// and the files of [referents] as the files that the file refers into.
 func filledSet() *render.ImportSet {
 	s := &render.ImportSet{}
 	s.SetNames(declaring)
-	s.SetHome(storePkg)
+	s.SetPackage(referents()[1])
+	s.SetReferents(referents())
 	s.Reserve(storeName)
 	s.Add(sidePkg)
 	s.AddNamed(auditPkg, rowName)
@@ -924,6 +1027,16 @@ func filledSet() *render.ImportSet {
 	s.Bind(legacyPkg, storeLocal)
 	s.Declared(auditPkg)
 	return s
+}
+
+// referents returns the packages of the two files that a file of the
+// fixture refers into, sorted by package path as the layout records them:
+// the file of auditPkg, and the file of storePkg.
+func referents() []symbol.Identity {
+	return []symbol.Identity{
+		{Lang: referentLang, Package: auditPkg, Name: auditDeclared, Kind: symbol.KindPackage},
+		{Lang: referentLang, Package: storePkg, Name: storeDeclared, Kind: symbol.KindPackage},
+	}
 }
 
 // declaring returns the declared names of the fixture: storeDeclared for

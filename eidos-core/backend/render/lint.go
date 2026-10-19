@@ -73,16 +73,19 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides, files []strin
 	// The stubs define exactly the names a plugin tree's execution
 	// binds, from the one constructor the render uses, so a builtin
 	// the render refuses fails here too.
+	header := func() *emit.File { return nil }
 	stubs := referenceBuiltins(
 		func() (string, error) { return "", nil },
 		func(string) (string, error) { return "", nil },
 		func(string, ...string) (string, error) { return "", nil },
+		header,
 	)
 	fileStubs := fileBuiltins(
 		func(any) (string, error) { return "", nil },
 		func(*emit.Method) (string, error) { return "", nil },
 		func(string, ...string) (string, error) { return "", nil },
 		func(string, symbol.Symbol) (string, error) { return "", nil },
+		header,
 	)
 
 	walk := func(name string) error {

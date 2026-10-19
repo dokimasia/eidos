@@ -57,7 +57,7 @@ type Struct struct {
 	Sealed      bool               `eidos:"both,fact=Sealed"`   // the direct subtypes are enumerated
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
 	Fields      []*Field           `eidos:"both,walk,slot=fields"`
-	Methods     []*Method          `eidos:"both,walk,slot=methods"`
+	Methods     []*Method          `eidos:"both,walk,slot=methods,fact=Methods"`
 	Types       []Symbol           `eidos:"both,walk,slot=types,fact=Types"`   // nested declarations
 	Embeds      []*Embed           `eidos:"both,walk,slot=embeds,fact=Embeds"` // compositional promotion
 	Extends     []*TypeRef         `eidos:"both,walk,fact=Extends"`            // nominal supertypes

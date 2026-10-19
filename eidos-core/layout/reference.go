@@ -30,8 +30,9 @@ type derived struct {
 
 // qualify sets the package of every reference to a declaration of the
 // plan that is written in a file of another package, so the target
-// qualifies the reference and records its import. It qualifies two kinds
-// of reference:
+// qualifies the reference and records its import. The file of the
+// reference lists the package of the file of the referent among its
+// [plugin.File.Referents]. It qualifies two kinds of reference:
 //
 //   - A bare reference is a type reference without a target or a
 //     package. The settle resolved it by the package of its unit and the
@@ -152,7 +153,20 @@ func (r *router) qualifyDecl(
 			return
 		case home.file.Pkg.Package != f.file.Pkg.Package:
 			t.Package = home.file.Pkg.Package
+			f.refer(home.file.Pkg)
 		}
+	}
+}
+
+// refer records the package of a file that a reference of b is qualified
+// into among the referents of b, once and in the order of the package
+// paths. It allocates the list of referents as it grows.
+func (b *building) refer(pkg symbol.Identity) {
+	at, held := slices.BinarySearchFunc(b.file.Referents, pkg.Package, func(id symbol.Identity, p string) int {
+		return strings.Compare(id.Package, p)
+	})
+	if !held {
+		b.file.Referents = slices.Insert(b.file.Referents, at, pkg)
 	}
 }
 

@@ -57,25 +57,31 @@ func claimOf(g *plugin.File) (c claim, claimed, mixed bool) {
 
 // fileBuiltins is the builtin set a claimed file's template resolves
 // against: the body and the member body of a record's callable, the use
-// recorder, and the nested declaration. The render binds it to a frame
-// and the lint binds stubs, so both parse against one set of names.
+// recorder, the nested declaration and the header of the file. The
+// render binds it to a frame and the lint binds stubs, so both parse
+// against one set of names.
 func fileBuiltins(
 	body func(any) (string, error),
 	member func(*emit.Method) (string, error),
 	use func(string, ...string) (string, error),
 	nested func(string, symbol.Symbol) (string, error),
+	header func() *emit.File,
 ) template.FuncMap {
-	return template.FuncMap{BuiltinBody: body, BuiltinMemberBody: member, BuiltinUse: use, BuiltinNested: nested}
+	return template.FuncMap{
+		BuiltinBody: body, BuiltinMemberBody: member, BuiltinUse: use, BuiltinNested: nested, BuiltinHeader: header,
+	}
 }
 
 // claimed executes the template of a claimed file into the frame's
 // buffer, over the file's records in the order of its units and their
-// declarations. The skeleton then frames the output as it frames the
-// declarations of any other file. A false result means the file is
-// withheld, and the finding that explains it is on the sink: the
-// template does not resolve, or it failed at execution. A record body
-// with slot content that the template did not place is reported under
-// [DroppedSlots], and the file renders without the content.
+// declarations. An emit.File is the header of the file and no record,
+// and the template reads it through the header builtin. The skeleton
+// then frames the output as it frames the declarations of any other
+// file. A false result means the file is withheld, and the finding that
+// explains it is on the sink: the template does not resolve, or it
+// failed at execution. A record body with slot content that the template
+// did not place is reported under [DroppedSlots], and the file renders
+// without the content.
 func (f *frame) claimed(g *plugin.File, c claim) bool {
 	f.plugin = c.plugin
 	t, resolved := f.fileTemplate(c)
@@ -85,6 +91,9 @@ func (f *frame) claimed(g *plugin.File, c claim) bool {
 	view := claimView{Name: path.Base(g.Path), Pkg: g.Pkg}
 	for _, u := range g.Units {
 		for _, d := range u.Decls {
+			if _, header := d.(*emit.File); header {
+				continue
+			}
 			origin, _ := emit.OriginOf(d)
 			view.Records = append(view.Records, fileRecord{Decl: d, Data: u.Data[origin]})
 		}
@@ -132,7 +141,7 @@ func (f *frame) fileTemplate(c claim) (*template.Template, bool) {
 	t, err := template.New(c.template).
 		Option(missingKeyError).
 		Funcs(f.vocab).Funcs(f.merged).
-		Funcs(fileBuiltins(f.body, f.memberBody, f.use, f.nested)).
+		Funcs(fileBuiltins(f.body, f.memberBody, f.use, f.nested, f.header)).
 		Parse(string(src))
 	if err != nil {
 		f.sink.Errorf(UnresolvedRef, f.at, f.origin,

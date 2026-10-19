@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Entry is one collected import: the path a spelling qualified
@@ -55,6 +57,10 @@ type Entry struct {
 // the recorded paths, because the file depends on the names of those
 // packages.
 //
+// A set can also have the packages of the files of the plan that the file
+// refers into. [ImportSet.SetReferents] sets them for one file, and
+// [ImportSet.Referent] returns the package of one such file.
+//
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
 type ImportSet struct {
@@ -63,8 +69,10 @@ type ImportSet struct {
 	// pass can withdraw what a skipped declaration recorded before
 	// it failed.
 	journal []record
-	// home is the package path of the file under render.
+	// home is the package path of the file under render, and pkg its
+	// package, with Name set to the name of its package clause.
 	home string
+	pkg  symbol.Identity
 	// locals maps each name bound in the file to its binding.
 	locals map[string]binding
 	// packages maps a package path to the name it is bound under.
@@ -80,6 +88,9 @@ type ImportSet struct {
 	// counts the paths with a name.
 	declared map[string]string
 	known    int
+	// referents are the packages of the files that the file refers into,
+	// sorted by package path, and nil for a file that refers into none.
+	referents []symbol.Identity
 }
 
 // binding is what a local name refers to: a whole package, one
@@ -104,9 +115,25 @@ type record struct {
 func (s *ImportSet) Home() string { return s.home }
 
 // SetHome names the package path of the file the set collects for.
-// The render pass names it for every file; an entry under it
-// records nothing.
+// The render pass names it for every file through [ImportSet.SetPackage];
+// an entry under it records nothing.
 func (s *ImportSet) SetHome(path string) { s.home = path }
+
+// SetPackage names the package of the file the set collects for, with Name
+// set to the name of its package clause, and makes the path of the package
+// the home of the set, as [ImportSet.SetHome] does. The render pass sets it
+// for every file. A language that qualifies a reference by the name of a
+// package clause compares the package of the file with the package of the
+// file of the referent, which [ImportSet.Referent] returns.
+func (s *ImportSet) SetPackage(pkg symbol.Identity) {
+	s.pkg = pkg
+	s.home = pkg.Package
+}
+
+// Package returns the package of the file the set collects for, and the
+// zero identity where [ImportSet.SetPackage] named none. It allocates
+// nothing.
+func (s *ImportSet) Package() symbol.Identity { return s.pkg }
 
 // SetNames sets the function that returns the name that the package
 // clause of a path declares. The function reports false for a path that
@@ -146,6 +173,27 @@ func (s *ImportSet) Declared(path string) (string, bool) {
 		s.known++
 	}
 	return name, name != ""
+}
+
+// SetReferents sets the packages of the other files that the file refers
+// into, which [plugin.File.Referents] lists sorted by package path. The
+// render pass sets them for each file after the Reset of the set. The set
+// keeps refs as it is, so the caller does not change it afterwards.
+func (s *ImportSet) SetReferents(refs []symbol.Identity) { s.referents = refs }
+
+// Referent returns the package of the file at the package path path, and
+// reports false where the file under render does not refer into that
+// file. A language whose package clause does not follow from the package
+// path reads the clause of such a file from the Name of the package.
+// Referent searches the sorted referents and allocates nothing.
+func (s *ImportSet) Referent(path string) (symbol.Identity, bool) {
+	i, held := slices.BinarySearchFunc(s.referents, path, func(id symbol.Identity, p string) int {
+		return cmp.Compare(id.Package, p)
+	})
+	if !held {
+		return symbol.Identity{}, false
+	}
+	return s.referents[i], true
 }
 
 // Reserve takes names for the declarations of the file itself, so
@@ -418,9 +466,9 @@ func (s *ImportSet) Len() int {
 	return len(paths)
 }
 
-// Reset drops every entry, binding, reservation and declared name that
-// the file read, and keeps the storage and the names, so the pass reuses
-// one set across a call's files.
+// Reset drops every entry, binding, reservation, declared name and
+// referent of the file, and keeps the storage and the names, so the pass
+// reuses one set across a call's files.
 func (s *ImportSet) Reset() {
 	clear(s.entries)
 	clear(s.locals)
@@ -428,6 +476,7 @@ func (s *ImportSet) Reset() {
 	clear(s.items)
 	clear(s.declared)
 	s.known = 0
+	s.referents = nil
 	s.journal = s.journal[:0]
 }
 

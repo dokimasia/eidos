@@ -56,8 +56,9 @@ type KeptNames struct {
 
 var _ plugin.Names = (*KeptNames)(nil)
 
-// scopeName names one collision scope: a package, and the receiver its
-// methods attach to, empty for the package's other names.
+// scopeName names one collision scope: a package, and the receiver that
+// its methods and its received fields attach to, empty for the package's
+// other names.
 type scopeName struct {
 	pkg      string
 	receiver string
@@ -106,10 +107,10 @@ func (n *KeptNames) OfOrigin(origin symbol.Identity, emitted string) (plugin.Nam
 }
 
 // InScope returns the entries of one collision scope, sorted by settled
-// name: the methods that attach to the receiver where it is set, and the
-// package's other file-level names where it is empty. It reads each scope
-// once and returns the same list to every later call, which the caller
-// does not mutate.
+// name: the methods and the fields that attach to the receiver where it
+// is set, and the package's other file-level names where it is empty. It
+// reads each scope once and returns the same list to every later call,
+// which the caller does not mutate.
 func (n *KeptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 	at := scopeName{pkg: pkg, receiver: receiver}
 	if entries, read := n.scopes[at]; read {

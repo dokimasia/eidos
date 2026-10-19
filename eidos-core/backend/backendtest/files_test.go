@@ -45,9 +45,9 @@ func (wordSpeller) SplitUnit(u plugin.Unit) []plugin.Unit {
 // FileName returns the unit's word.
 func (wordSpeller) FileName(u plugin.Unit) string { return u.Word + ".txt" }
 
-// A hand-built store routes into files the way a plan routes a store
-// whose packages are at their package paths, so a backend's suite
-// renders what a plan would hand it.
+// TestFiles checks that a hand-built store routes into files the way a
+// plan routes a store whose packages are at their package paths. The
+// suite of a backend then renders the files that a plan hands it.
 func TestFiles(t *testing.T) {
 	t.Parallel()
 
@@ -112,6 +112,19 @@ func TestFiles(t *testing.T) {
 			assert.Length(t, files, 2, "two packages spell one path apart")
 			assert.Equal(t, files[0].Pkg, native.Pkg, "the package that sorts first")
 			assert.Equal(t, files[1].Pkg, foreign.Pkg, "the package that sorts second")
+		})
+
+		t.Run("returns the header that the emit.File declarations of a file state", func(t *testing.T) {
+			t.Parallel()
+
+			header := symbol.Annotations{{Name: "protobuf:syntax", Args: []string{"proto3"}}}
+			u := routable("gen", leftPkg, "stub", "Row")
+			u.Decls = append(u.Decls, &emit.File{Annotations: header})
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(u), "the unit arrives")
+			files := backendtest.Files(e, wordSpeller{})
+			assert.Length(t, files, 1, "the unit routes into one file")
+			assert.Equal(t, files[0].Header, emit.File{Annotations: header}, "the file has the header of its unit")
 		})
 	})
 }

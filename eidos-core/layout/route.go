@@ -87,7 +87,9 @@ func (in Input) check() error {
 // declarations' order. A declaration that a finding refuses is absent
 // from every file, and a file left with no declaration is absent too. A
 // file whose units derive from one source file has the identity and the
-// annotations of that file, as [plugin.File] states.
+// annotations of that file, as [plugin.File] states. Each file has the
+// header that [plugin.HeaderOf] returns for its units, and the target's
+// package half reads its annotations.
 //
 // Route reports routing problems to the sink under [diag.PhaseLayout],
 // each an Error. It sets the package of every bare reference and every
@@ -104,7 +106,9 @@ func (in Input) check() error {
 // visits a unit's declarations again only where one of them has an
 // override. A unit without one joins its file whole, without a copy,
 // so no declaration allocates. Each file costs its path, and the
-// target's filename and split of the unit it comes from.
+// target's filename and split of the unit it comes from. The header of
+// a file costs what [plugin.HeaderOf] allocates, which is nothing for a
+// file with at most one emit.File.
 func Route(in Input) ([]plugin.File, error) {
 	if err := in.check(); err != nil {
 		return nil, err
@@ -550,17 +554,22 @@ func (r *router) name() error {
 
 // packages names each file's package through the target's package
 // half, or gives it its first unit's package where the target has
-// none. A target's error leaves the file with the zero package and
-// keeps the reason, which a reference into the file reports.
+// none. It gives each file its header first, so the package half reads
+// the annotations of the header. A target's error leaves the file with
+// the zero package and keeps the reason, which a reference into the file
+// reports.
 func (r *router) packages() {
 	for fi := range r.files {
 		f := &r.files[fi]
+		f.file.Header = plugin.HeaderOf(f.file.Units)
 		origin := f.file.Units[0].Pkg
 		if r.in.Packager == nil {
 			f.file.Pkg = origin
 			continue
 		}
-		at := plugin.Placement{Path: f.file.Path, Origin: origin, Modules: r.in.Modules}
+		at := plugin.Placement{
+			Path: f.file.Path, Origin: origin, Modules: r.in.Modules, Header: f.file.Header.Annotations,
+		}
 		if r.in.Residents != nil {
 			at.Residents = r.in.Residents(path.Dir(f.file.Path))
 		}
@@ -905,16 +914,20 @@ func unitAt(u *plugin.Unit) position.Pos {
 // Describe names a declaration in a finding and in the record of a
 // written file: its kind and its name, such as "method Close", and its
 // kind alone for a declaration without a name. It returns the empty
-// string for a nil declaration. A method has its own name, which
-// [emit.DeclaredName] leaves out. Describe allocates the joined text, one
-// allocation, and nothing for a declaration without a name.
+// string for a nil declaration. A method and a field have their own
+// names, which [emit.DeclaredName] leaves out. Describe allocates the
+// joined text, one allocation, and nothing for a declaration without a
+// name.
 func Describe(d symbol.Symbol) string {
 	if d == nil {
 		return ""
 	}
 	name := emit.DeclaredName(d)
-	if m, method := d.(*emit.Method); method {
-		name = m.Name
+	switch member := d.(type) {
+	case *emit.Method:
+		name = member.Name
+	case *emit.Field:
+		name = member.Name
 	}
 	if name == "" {
 		return d.Kind().String()

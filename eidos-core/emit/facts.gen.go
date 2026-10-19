@@ -265,6 +265,9 @@ func statedFacts(
 		if x.Computed {
 			f(host, symbol.KindField, symbol.FactComputed)
 		}
+		if x.Receives != nil {
+			f(host, symbol.KindField, symbol.FactReceives)
+		}
 		if x.Value != "" {
 			f(host, symbol.KindField, symbol.FactValue)
 		}
@@ -321,6 +324,9 @@ func statedFacts(
 		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindStruct, symbol.FactTypeParams)
+		}
+		if x.Methods.Len() > 0 {
+			f(host, symbol.KindStruct, symbol.FactMethods)
 		}
 		if x.Types.Len() > 0 {
 			f(host, symbol.KindStruct, symbol.FactTypes)
@@ -527,6 +533,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactHardPrivate,
 			symbol.FactOptional,
 			symbol.FactComputed,
+			symbol.FactReceives,
 			symbol.FactValue,
 			symbol.FactTag,
 			symbol.FactAnnotations,
@@ -551,6 +558,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactFinal,
 			symbol.FactSealed,
 			symbol.FactTypeParams,
+			symbol.FactMethods,
 			symbol.FactTypes,
 			symbol.FactEmbeds,
 			symbol.FactExtends,

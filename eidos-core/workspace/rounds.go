@@ -640,8 +640,8 @@ func (wp *warmPlan) renamed(e *plugin.Emit) (bool, error) {
 				}
 				n := emittedName{pkg: u.Pkg.Package, emitted: name, kind: kind}
 				n.origin, _ = emit.OriginOf(carrier)
-				if m, attached := carrier.(*emit.Method); attached && m.Receives != nil {
-					n.receiver = m.Receives.Spelling
+				if receives := emit.ReceivesOf(carrier); receives != nil {
+					n.receiver = receives.Spelling
 				}
 				counts[n]++
 				return name, nil

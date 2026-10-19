@@ -252,13 +252,14 @@ func TestWalk(t *testing.T) {
 
 			subject := &Field{}
 			subject.Type = &TypeRef{}
+			subject.Receives = &TypeRef{}
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 2,
+			assert.Equal(t, seen, 3,
 				"the walk descends into every traversed field")
 		})
 
@@ -554,6 +555,7 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -880,6 +882,7 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -1194,6 +1197,7 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1400,6 +1404,22 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Field{}
+				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1697,6 +1717,7 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -2013,6 +2034,7 @@ func TestWalk(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				var yielded int
 				for range Declarations(subject) {
 					yielded++

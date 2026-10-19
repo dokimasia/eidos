@@ -121,6 +121,19 @@ type WellKnownRules interface {
 	WellKnown(id symbol.Identity) (symbol.Identity, bool)
 }
 
+// ShapeRules is the optional capability of a language that declares a type
+// whose values have the shape of another form, such as a GraphQL custom
+// scalar whose specification is a signed integer of 64 bits. The fold asks
+// the rules of the language of a target after [WellKnownRules] and before
+// it classifies the target.
+type ShapeRules interface {
+	// ShapeOf returns the shape of the values of decl, and reports false
+	// for a declaration whose references fold to a reference to it. The
+	// fold gives the shape the spelling of the reference. ShapeOf reads
+	// through v, so each read records.
+	ShapeOf(decl symbol.Symbol, v View) (TypeShape, bool)
+}
+
 // SatisfactionRules is the optional capability of a language whose
 // satisfaction of an interface reads more than the member sets: a method
 // that belongs to a pointer to its type alone, such as a Go method with a

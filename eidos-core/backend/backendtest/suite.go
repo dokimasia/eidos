@@ -86,8 +86,19 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 // never visit a member a template never renders, so this check
 // reads the rendered bytes. It reads only the files that contain
 // the host's name, and a declaration elsewhere that shares a
-// member's name does not count for the member. A host of a kind the
-// backend refuses renders nothing, so the check skips its members.
+// member's name does not count for the member.
+//
+// The check skips what the backend declares that it does not render:
+//
+//   - the members of a host of a kind that the backend refuses;
+//   - the members of a host that states a fact that the coverage
+//     rejects, at the host or at a member, because the guard leaves the
+//     host out;
+//   - the methods of a struct and the fields of an interface where the
+//     coverage refuses the fact of the list, Methods and Properties,
+//     because the host renders without the list and the guard reports
+//     the fact.
+//
 // Each member reports on its own, as Host.Member, in the store's order.
 func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	tb.Helper()
@@ -105,12 +116,13 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	}
 
 	refused := b.RefusedKinds()
+	coverage := b.Coverage()
 	for u := range f.Emit.Units() {
 		for _, d := range u.Decls {
-			if _, skipped := refused[d.Kind()]; skipped {
+			if _, skipped := refused[d.Kind()]; skipped || rejects(coverage, d) {
 				continue
 			}
-			host, members := memberNames(d)
+			host, members := memberNames(d, coverage)
 			for _, name := range members {
 				accounted := renderedBeside(files, host, name) || strings.Contains(excused.String(), name)
 				expect.True(tb, accounted, host+"."+name+" renders beside its host, or a finding names it")
@@ -159,9 +171,22 @@ func identByte(c byte) bool {
 		c >= utf8.RuneSelf
 }
 
+// rejects reports whether the coverage c rejects a fact that d or a member
+// of d states, which leaves d out of the render as the guard of the render
+// leaves it out.
+func rejects(c render.Coverage, d symbol.Symbol) bool {
+	rejected := false
+	emit.Facts(d, func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
+		rejected = rejected || c.Of(kind, fact) == render.Rejects
+	})
+	return rejected
+}
+
 // memberNames returns the name of a declaration and the names of its
-// members, which the presence check searches in the rendered bytes.
-func memberNames(s symbol.Symbol) (string, []string) {
+// members, which the presence check searches in the rendered bytes. It
+// leaves out the methods of a struct and the fields of an interface where
+// the coverage c refuses the fact of the list.
+func memberNames(s symbol.Symbol, c render.Coverage) (string, []string) {
 	var names []string
 	member := func(n string) {
 		if n != "" {
@@ -173,13 +198,17 @@ func memberNames(s symbol.Symbol) (string, []string) {
 		for _, m := range d.Fields.Items() {
 			member(m.Name)
 		}
-		for _, m := range d.Methods.Items() {
-			member(m.Name)
+		if c.Of(symbol.KindStruct, symbol.FactMethods) != render.Refuses {
+			for _, m := range d.Methods.Items() {
+				member(m.Name)
+			}
 		}
 		return d.Name, names
 	case *emit.Interface:
-		for _, m := range d.Fields.Items() {
-			member(m.Name)
+		if c.Of(symbol.KindInterface, symbol.FactProperties) != render.Refuses {
+			for _, m := range d.Fields.Items() {
+				member(m.Name)
+			}
 		}
 		for _, m := range d.Methods.Items() {
 			member(m.Name)
@@ -245,22 +274,30 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 		fact symbol.Fact
 	}
 	stated := map[statedOn]int{}
+	count := func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
+		if v := coverage.Of(kind, fact); v == render.Refuses || v == render.Rejects {
+			stated[statedOn{kind: kind, fact: fact}]++
+		}
+	}
 	refused := b.RefusedKinds()
 	for u := range f.Emit.Units() {
 		for _, d := range u.Decls {
-			if _, skipped := refused[d.Kind()]; skipped {
+			_, skipped := refused[d.Kind()]
+			// An emit.File states part of the header of its file, which the
+			// render guards once for each file.
+			if _, header := d.(*emit.File); skipped || header {
 				continue
 			}
-			emit.Facts(d, func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
-				if v := coverage.Of(kind, fact); v == render.Refuses || v == render.Rejects {
-					stated[statedOn{kind: kind, fact: fact}]++
-				}
-			})
+			emit.Facts(d, count)
 		}
 	}
 
 	sink := diag.NewSink()
-	_, err := b.Render(f.Context(b, sink))
+	ctx := f.Context(b, sink)
+	for i := range ctx.Files {
+		emit.Facts(&ctx.Files[i].Header, count)
+	}
+	_, err := b.Render(ctx)
 	assert.NoError(tb, err, "the render completes")
 	// Per key and not per total: matching counts with one refusal
 	// missing and one undeclared cancel out, and the undeclared half

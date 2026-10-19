@@ -156,6 +156,10 @@ func (x *Method) Docs() []string { return x.Doc }
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Doc is the documentation of the parameter, such as the description of
+// a GraphQL argument. A language that documents a parameter in the
+// documentation of its callable leaves it empty.
+//
 // A parameter is a subject: an authored value attaches to it in a
 // language whose comments can address it, and its identity is the
 // host's chain, its name or its position, and the host's
@@ -163,6 +167,7 @@ func (x *Method) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type Param struct {
+	Doc         []string           `json:"doc,omitzero"`
 	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`    // "" when unnamed
 	Label       string             `json:"label,omitzero"`   // caller-facing name; Swift and Objective-C
@@ -181,7 +186,7 @@ func (x *Param) Position() position.Pos { return position.Pos{} }
 
 // Docs returns the documentation of the declaration, or nil when it
 // has none.
-func (x *Param) Docs() []string { return nil }
+func (x *Param) Docs() []string { return x.Doc }
 
 // TypeRef returns the type reference of the declaration, or nil when
 // the declaration has none.
@@ -579,6 +584,13 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 // entry to the field of another plugin through the slot view of its
 // emitter, so the header of the file names the plugin.
 //
+// Receives names the type a field attaches to when the field is
+// declared outside that type's own declaration: a protobuf extension, a
+// Kotlin extension property. Host remains the declaration that contains
+// the field, or the file of a field at file level, so the identity of
+// the field is in the scope that declares it. A field declared inside
+// its type leaves Receives nil.
+//
 // This is the emit spelling of the kind.
 type Field struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
@@ -592,8 +604,9 @@ type Field struct {
 	Optional    bool               `json:"optional,omitzero"` // present-or-absent: TypeScript's ?
 	Computed    bool               `json:"computed,omitzero"` // the name is an expression: TypeScript's [expr]
 	Type        *TypeRef           `json:"type,omitzero"`
-	Value       string             `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
-	Tags        Slot[*TagEntry]    `json:"tags,omitzero"`  // the entries of the tag, in order
+	Receives    *TypeRef           `json:"receives,omitzero"` // set when declared outside the type it attaches to
+	Value       string             `json:"value,omitzero"`    // initializer's source spelling, unevaluated; "" when none
+	Tags        Slot[*TagEntry]    `json:"tags,omitzero"`     // the entries of the tag, in order
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
 }
 

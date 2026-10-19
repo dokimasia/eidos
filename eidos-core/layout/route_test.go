@@ -132,6 +132,19 @@ type source struct {
 // storeAnnotations are the annotations of storeFile: a build constraint.
 var storeAnnotations = symbol.Annotations{{Name: "go:build", Args: []string{"linux"}}}
 
+// The annotations that a header of the cases states: the marker of a
+// syntax and a file option.
+var (
+	syntaxMarker = symbol.Annotation{Name: "protobuf:syntax", Args: []string{"proto3"}}
+	goPackage    = symbol.Annotation{Name: "go_package", Args: []string{`"example.com/svc/storepb"`}}
+)
+
+// The documentation lines that a header of the cases states.
+const (
+	storeDoc     = "Package store serves the rows."
+	generatedDoc = "The stubs of the store."
+)
+
 // The identities of the files storeFile and rowFile, as sourcePackage
 // gives them.
 var (
@@ -359,8 +372,8 @@ func (r recording) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 	return p.Origin, nil
 }
 
-// A plan's declarations route to files by family, configuration and
-// target, before anything renders.
+// TestRoute checks that the declarations of a plan route to files by
+// family, configuration and target, before anything renders.
 func TestRoute(t *testing.T) {
 	t.Parallel()
 
@@ -572,6 +585,43 @@ func TestRoute(t *testing.T) {
 				expect.Equal(t, files[0].Annotations, tt.wantAnnotations, "the annotations of the source file")
 			})
 		}
+
+		// headed returns a fixture of one file of storeFile with a unit of
+		// docgen and a unit of stubgen, each with one emit.File. The store
+		// orders its units by plugin, so the unit of docgen with first is
+		// the first unit of the file.
+		headed := func(first, second *emit.File) *fixture {
+			f := newFixture(
+				stubOf(storeFile, storePkg, second, generated(storeID, "StoreStub")),
+				unitOf(docgen, families()[docgen][0], storeFile, coretest.PackageID(storePkg),
+					first, generated(storeID, "StoreDoc")),
+			)
+			f.config = layout.Config{Families: map[layout.Family]layout.Refinement{
+				{Plugin: docgen}: {File: "store_stub.go"},
+			}}
+			return f
+		}
+		t.Run("returns the header that the emit.File declarations of the units of a file state", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := headed(
+				&emit.File{Doc: []string{storeDoc}, Annotations: symbol.Annotations{syntaxMarker}},
+				&emit.File{Doc: []string{generatedDoc}, Annotations: symbol.Annotations{goPackage}},
+			).route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the units route to one file")
+			assert.Equal(t, files[0].Header, emit.File{
+				Doc: []string{storeDoc, generatedDoc}, Annotations: symbol.Annotations{syntaxMarker, goPackage},
+			}, "the header joins both units in unit order")
+		})
+
+		t.Run("returns the zero header for a file without an emit.File", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := newFixture(stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))).route(t)
+			assert.Length(t, files, 1, "the unit routes to one file")
+			assert.Equal(t, files[0].Header, emit.File{}, "the file has no header")
+		})
 
 		centralised := layout.Config{Policy: layout.PolicyCentralised, Dir: genDir}
 		routes := []struct {
@@ -795,6 +845,19 @@ func TestRoute(t *testing.T) {
 				ImportBase: "example.com/gen",
 				BaseDir:    genDir,
 			}}, "the placement names the file, its origin, its directory's residents and the modules")
+		})
+
+		t.Run("hands the target the annotations of the header", func(t *testing.T) {
+			t.Parallel()
+
+			var seen []plugin.Placement
+			f := newFixture(stubOf(storeFile, storePkg,
+				&emit.File{Annotations: symbol.Annotations{syntaxMarker}}, generated(storeID, "StoreStub")))
+			f.packager = recording{seen: &seen}
+			f.route(t)
+			assert.Length(t, seen, 1, "one file is placed")
+			assert.Equal(t, seen[0].Header, symbol.Annotations{syntaxMarker},
+				"the placement has the annotations of the header")
 		})
 
 		t.Run("hands the target no residents for an input without a residents function", func(t *testing.T) {
@@ -1065,6 +1128,10 @@ func TestRoute(t *testing.T) {
 				give: &emit.Method{Name: "Close"}, want: symbol.KindMethod.String() + " Close",
 			},
 			{
+				name: "returns the kind and the name of a field",
+				give: &emit.Field{Name: "tag"}, want: symbol.KindField.String() + " tag",
+			},
+			{
 				name: "returns the kind alone for a declaration without a name",
 				give: &emit.Struct{}, want: symbol.KindStruct.String(),
 			},
@@ -1080,8 +1147,8 @@ func TestRoute(t *testing.T) {
 	})
 }
 
-// Route allocates within its ceiling over one package of the canonical
-// shape in the ordinary run, which runs no benchmark.
+// TestRouteAllocs checks the ceiling of Route over one package of the
+// canonical shape in the ordinary run, which runs no benchmark.
 func TestRouteAllocs(t *testing.T) {
 	in := benchInput(t, 1)
 	var (

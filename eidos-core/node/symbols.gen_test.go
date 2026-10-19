@@ -472,6 +472,7 @@ func TestSymbols(t *testing.T) {
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
+				subject.Receives = &TypeRef{}
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Field with every child the original has", assert.EquateEmpty())
 			}
@@ -952,6 +953,7 @@ func symbolsList() Symbols {
 	{
 		subject := &Field{}
 		subject.Type = &TypeRef{}
+		subject.Receives = &TypeRef{}
 		out = append(out, subject)
 	}
 	{

@@ -73,8 +73,9 @@ func (k keptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 	return out
 }
 
-// A plan's name table lists what each file declares, under the names
-// that a kept file's references resolve against.
+// TestNames checks the name table of a plan. The table lists what each
+// file declares, under the names that the references of a kept file
+// resolve against.
 func TestNames(t *testing.T) {
 	t.Parallel()
 
@@ -169,6 +170,18 @@ func TestNames(t *testing.T) {
 			assert.Equal(t, got[0].Receiver, exportForeign, "no file declares the type")
 		})
 
+		t.Run("sets Receiver to the emitted name of the type that a field extends", func(t *testing.T) {
+			t.Parallel()
+
+			extension := &emit.Field{
+				Origin: settleOrigin("tag", symbol.KindField), Name: "tag",
+				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "box"},
+			}
+			got := namesAfterSettle(t, nil, boxWithItem(), extension)
+			assert.Length(t, got, 2, "the struct has an entry, and so does the field")
+			assert.Equal(t, got[1].Receiver, "box", "the field attaches to the struct as it was emitted")
+		})
+
 		t.Run("returns no NameEntry for a record of a family that claims its files", func(t *testing.T) {
 			t.Parallel()
 
@@ -195,10 +208,11 @@ func TestNames(t *testing.T) {
 	})
 }
 
-// NamesOf allocates its list of entries and its sorted declarations, and
-// NameKey.Compare allocates nothing, in the ordinary run, which runs no
-// benchmark. The check runs alone, because the count includes every
-// goroutine's allocations.
+// TestNamesAllocs checks the ceilings of NamesOf and NameKey.Compare in
+// the ordinary run, which runs no benchmark. NamesOf allocates its list
+// of entries and its sorted declarations. Compare allocates nothing. The
+// check runs alone, because the count includes the allocations of every
+// goroutine.
 func TestNamesAllocs(t *testing.T) {
 	files := keyedFiles(1000)
 	var got []plugin.NameEntry

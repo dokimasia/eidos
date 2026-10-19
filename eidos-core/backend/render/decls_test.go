@@ -28,10 +28,10 @@ const (
 	runCall = "pkg.Run"
 )
 
-// Declarations render in the order the flush fixed, and a
-// declaration the language cannot spell whole is skipped with the
-// imports it recorded, so the order, the skip and the nested
-// indentation are contract.
+// TestDecls checks the declaration run. Declarations render in the
+// order that the flush fixed. A declaration that the language cannot
+// spell whole is skipped with the imports that it recorded. A host
+// writes its nested declarations at member depth.
 func TestDecls(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +93,15 @@ func TestDecls(t *testing.T) {
 			files, _ := runPass(t, refusing(language()), seeded(t, unspelt()))
 			assert.Equal(t, string(files[0].Body), "type "+alphaName+" struct{}\n",
 				"with the spelt declaration alone")
+		})
+
+		t.Run("skips an emit.File in the declaration run", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, language(), seeded(t, headed(unitOf(emitter, storeKey, alphaName))))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" struct{}\n",
+				"the header renders no declaration")
 		})
 
 		t.Run("withdraws the imports a skipped declaration recorded", func(t *testing.T) {

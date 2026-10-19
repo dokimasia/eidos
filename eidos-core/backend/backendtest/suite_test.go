@@ -31,8 +31,10 @@ import (
 // backends of the cases, and the words, names and bodies that the cases
 // render.
 const (
-	// fixtureEmitter is the plugin that emits every unit of the fixture.
+	// fixtureEmitter is the plugin that emits every unit of the fixture,
+	// and weaverPlugin a second plugin whose unit shares a file with it.
 	fixtureEmitter plugin.ID = "gen"
+	weaverPlugin   plugin.ID = "weaver"
 	// printerName, memberName and halfName are the names of the fixture's
 	// backends.
 	printerName plugin.ID = "printer"
@@ -319,6 +321,90 @@ func TestSuite(t *testing.T) {
 			})
 		})
 
+		lists := []struct {
+			name    string
+			kind    symbol.Kind
+			give    string
+			verdict map[symbol.Fact]render.Verdict
+		}{
+			{
+				name: "passes the methods of a struct whose coverage refuses them",
+				kind: symbol.KindStruct, give: "type {{.Name}} struct {\n" + fieldLines + "}\n",
+				verdict: map[symbol.Fact]render.Verdict{symbol.FactMethods: render.Refuses},
+			},
+			{
+				name: "passes the fields of an interface whose coverage refuses its properties",
+				kind: symbol.KindInterface, give: "type {{.Name}} interface {\n" + methodLines + "}\n",
+				verdict: map[symbol.Fact]render.Verdict{symbol.FactProperties: render.Refuses},
+			},
+		}
+		for _, tt := range lists {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				// The coverage declares that the render leaves the list out,
+				// and the guard reports the fact.
+				backendtest.AssertRenderedMembers(t, func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+					tb.Helper()
+
+					kinds := spellsMembers()
+					kinds[tt.kind] = tt.give
+					return memberBuilder(tb, kinds).Coverage(total(tt.verdict)).Build(), memberFixture(tb)
+				})
+			})
+		}
+
+		t.Run("fails the methods of a struct whose coverage renders them", func(t *testing.T) {
+			t.Parallel()
+
+			rendering := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				tb.Helper()
+
+				kinds := spellsMembers()
+				kinds[symbol.KindStruct] = "type {{.Name}} struct {\n" + fieldLines + "}\n"
+				return memberBuilder(tb, kinds).Coverage(total(nil)).Build(), memberFixture(tb)
+			}
+			failure := assert.Rejects(t, "a dropped method that the coverage renders must fail",
+				func(tb assert.TB) {
+					backendtest.AssertRenderedMembers(tb, rendering)
+				})
+			assertMissing(t, failure, []string{hostStruct + "." + structMethod},
+				"the excusal is the verdict of the coverage")
+		})
+
+		t.Run("passes the members of a host whose coverage rejects a fact it states", func(t *testing.T) {
+			t.Parallel()
+
+			// The guard leaves the generic struct out, so no member of it is
+			// missing.
+			backendtest.AssertRenderedMembers(t, func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				tb.Helper()
+
+				kinds := spellsMembers()
+				kinds[symbol.KindStruct] = dropsMembers()[symbol.KindStruct]
+				coverage := total(map[symbol.Fact]render.Verdict{symbol.FactTypeParams: render.Rejects})
+				return memberBuilder(tb, kinds).Coverage(coverage).Build(), genericMemberFixture(tb)
+			})
+		})
+
+		t.Run("fails the members of a host whose stated fact the coverage renders", func(t *testing.T) {
+			t.Parallel()
+
+			rendering := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				tb.Helper()
+
+				kinds := spellsMembers()
+				kinds[symbol.KindStruct] = dropsMembers()[symbol.KindStruct]
+				return memberBuilder(tb, kinds).Coverage(total(nil)).Build(), genericMemberFixture(tb)
+			}
+			failure := assert.Rejects(t, "a dropped member of a rendered host must fail",
+				func(tb assert.TB) {
+					backendtest.AssertRenderedMembers(tb, rendering)
+				})
+			assertMissing(t, failure, []string{hostStruct + "." + structField, hostStruct + "." + structMethod},
+				"the skip is the rejection of the coverage")
+		})
+
 		t.Run("fails a lowering that drops its input's origin", func(t *testing.T) {
 			t.Parallel()
 
@@ -405,6 +491,30 @@ func TestSuite(t *testing.T) {
 			for range 30 {
 				backendtest.AssertCoveredFacts(t, setup)
 			}
+		})
+
+		t.Run("counts the refusal of a header once for each file", func(t *testing.T) {
+			t.Parallel()
+
+			// The units of two plugins in one file state one annotation of
+			// the header alike, and the render guards the merged header once.
+			setup := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				tb.Helper()
+
+				refusing := total(nil)
+				refusing.Except = map[symbol.Kind]map[symbol.Fact]render.Verdict{
+					symbol.KindFile: {symbol.FactAnnotations: render.Refuses},
+				}
+				syntax := symbol.Annotations{{Name: "protobuf:syntax", Args: []string{"proto3"}}}
+				first := unit(stubWord, &emit.File{Annotations: syntax}, &emit.Struct{Name: hostStruct})
+				second := unit(stubWord, &emit.File{Annotations: syntax})
+				second.Plugin = weaverPlugin
+				e := plugin.NewEmit()
+				assert.Total(tb, e.Add, []plugin.Unit{first, second}, "the units arrive")
+				return wellBuilder(tb).Coverage(refusing).Build(),
+					&backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter, weaverPlugin}}
+			}
+			backendtest.AssertCoveredFacts(t, setup)
 		})
 
 		t.Run("passes a refused fact stated on a declaration of a refused kind", func(t *testing.T) {
@@ -1332,6 +1442,22 @@ func memberFixture(tb assert.TB) *backendtest.Fixture {
 	assert.NoError(tb, e.Add(unit(hostsWord, row, store, phase, shapeOf("", ""))),
 		"the memberful unit arrives")
 	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
+}
+
+// genericMemberFixture returns the store of [memberFixture] in which the
+// struct has one type parameter, a fact that a coverage can reject.
+func genericMemberFixture(tb assert.TB) *backendtest.Fixture {
+	tb.Helper()
+
+	f := memberFixture(tb)
+	for u := range f.Emit.Units() {
+		for _, d := range u.Decls {
+			if s, isStruct := d.(*emit.Struct); isStruct {
+				s.TypeParams = []*emit.TypeParam{{Name: "T"}}
+			}
+		}
+	}
+	return f
 }
 
 // collidingFixture returns a store with a struct of two fields, to

@@ -3,7 +3,12 @@
 
 package plugin
 
-import "go.dokimi.dev/eidos/core/symbol"
+import (
+	"slices"
+
+	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/symbol"
+)
 
 // File is one output file a plan writes: where it is written, the
 // package it declares, and the units it assembles, in render order.
@@ -29,6 +34,64 @@ type File struct {
 	// build constraint, which the target writes where its language
 	// carries one over to a file that derives from the source.
 	Annotations symbol.Annotations
+	// Header is the file-level statement of the generators of the file,
+	// which [HeaderOf] returns for its units. The zero Header states
+	// nothing.
+	Header emit.File
+	// Referents are the packages of the other files that the layout
+	// qualified a reference of the file into, each once and sorted by
+	// package path. A target whose package clause does not follow from the
+	// package path, such as protobuf, reads the clause of such a file from
+	// the Name of its package.
+	Referents []symbol.Identity
+}
+
+// HeaderOf returns the header that the emit.File declarations of units
+// state: the documentation and the annotations of each, in unit order.
+// An annotation that an earlier emit.File states alike is left out, and
+// so is a documentation. One emit.File keeps every annotation that it
+// states. The path of an emit.File is not part of the header.
+//
+// # Allocation contract
+//
+// HeaderOf visits each declaration once. The header of one emit.File
+// shares its lists, capped so that a later append copies them, and
+// allocates nothing. Each later emit.File allocates what the merged
+// documentation and annotations grow by, and HeaderOf never writes into
+// the lists of an emit.File.
+func HeaderOf(units []Unit) emit.File {
+	var h emit.File
+	// earlier lists the emit.File declarations that the header took in,
+	// in an array on the stack for the few that one file has.
+	var stack [4]*emit.File
+	earlier := stack[:0]
+	for _, u := range units {
+		for _, d := range u.Decls {
+			x, header := d.(*emit.File)
+			if !header {
+				continue
+			}
+			if len(earlier) == 0 {
+				h.Doc, h.Annotations = slices.Clip(x.Doc), slices.Clip(x.Annotations)
+				earlier = append(earlier, x)
+				continue
+			}
+			if !slices.ContainsFunc(earlier, func(e *emit.File) bool { return slices.Equal(e.Doc, x.Doc) }) {
+				h.Doc = append(h.Doc, x.Doc...)
+			}
+			stated := len(h.Annotations)
+			for _, a := range x.Annotations {
+				alike := func(b symbol.Annotation) bool {
+					return a.Name == b.Name && a.Assigned == b.Assigned && slices.Equal(a.Args, b.Args)
+				}
+				if !slices.ContainsFunc(h.Annotations[:stated], alike) {
+					h.Annotations = append(h.Annotations, a)
+				}
+			}
+			earlier = append(earlier, x)
+		}
+	}
+	return h
 }
 
 // FileSpeller is a target's filename half: how a unit splits into the

@@ -304,11 +304,13 @@ func derivation(units []plugin.Unit) (plugins []plugin.ID, sources []string) {
 }
 
 // fileView is what the skeleton executes over: the file's spelled
-// name, its package identity and the annotations of its source file.
+// name, its package identity, the annotations of its source file and
+// the header that its generators state.
 type fileView struct {
 	Name        string
 	Pkg         symbol.Identity
 	Annotations symbol.Annotations
+	Header      *emit.File
 }
 
 // frame is one render call's mutable state: the buffer the files
@@ -351,6 +353,9 @@ type frame struct {
 	set     ImportSet
 	at      position.Pos
 	plugin  plugin.ID
+	// head is the header of the file under render, which the header
+	// builtin returns.
+	head *emit.File
 	// bound is the frame's own template set once bind ran, which the
 	// nested builtin renders through.
 	bound *bound
@@ -409,6 +414,7 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		BuiltinImports:    f.importsBlock,
 		BuiltinDecls:      f.decls,
 		BuiltinNested:     f.nested,
+		BuiltinHeader:     f.header,
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(p.kinds))
 	for k, t := range p.kinds {
@@ -481,42 +487,64 @@ func (f *frame) decls() (string, error) {
 	return f.out.String(), nil
 }
 
+// header returns the header of the file under render, which
+// [plugin.File.Header] describes. It is the header builtin of every
+// template of the file, and it allocates nothing.
+func (f *frame) header() *emit.File {
+	return f.head
+}
+
 // file renders one routed file into the frame's shared buffer: every
 // unit's declarations in the order the flush fixed, then the
 // formatter. A file that a family claims renders through the family's
-// file template instead. The file's package is the import home, so a
-// reference into it spells bare and every other package it names is
-// imported. A false result means the file is withheld, and the findings
-// that explain it are on the sink: the skeleton, the formatter or the
-// claimed file's template refused the file, the file mixes the units of
-// a claimed family with other units, or every declaration of it was
-// skipped, which leaves no content to stamp. The buffer is reset per
-// file and its bytes are copied out, so a formatter that returns its
-// input, as a pass-through one does, never aliases storage a following
-// file overwrites.
+// file template instead. An emit.File of a unit is part of the header of
+// the file and no declaration, and every template of the file reads the
+// header through the header builtin. The header passes the guard of the
+// coverage before the declarations render. The file's package is the import
+// home, so a reference into it spells bare and every other package it
+// names is imported. A false result means the file is withheld, and the
+// findings that explain it are on the sink: the skeleton, the formatter
+// or the claimed file's template refused the file, the file mixes the
+// units of a claimed family with other units, the coverage rejects a
+// fact of the header, or every declaration of it was skipped, which
+// leaves no content to stamp. A file whose units contain an emit.File
+// alone renders its skeleton. The buffer is reset per file and its bytes
+// are copied out, so a formatter that returns its input, as a
+// pass-through one does, never aliases storage a following file
+// overwrites.
 func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 	f.out.Reset()
 	f.fileOut.Reset()
 	f.set.Reset()
-	f.set.SetHome(g.Pkg.Package)
+	f.set.SetPackage(g.Pkg)
+	f.set.SetReferents(g.Referents)
 	f.at = position.Pos{File: g.Path}
+	f.head = &g.Header
 	c, claimed, mixed := claimOf(g)
-	switch {
-	case mixed:
+	if mixed {
 		f.sink.Errorf(MixedClaim, f.at, f.origin,
 			"%s mixes the units of a family that claims its files with other units, and is withheld", g.Path)
 		return nil, false
-	case claimed:
+	}
+	// The header passes the guard before anything renders, as a
+	// declaration does before its template runs.
+	if !f.guard(&g.Header) {
+		return nil, false
+	}
+	if claimed {
 		if !f.claimed(g, c) {
 			return nil, false
 		}
-	default:
+	} else {
 		// The file's own declarations take their names before anything
 		// renders, so no import binds a name the file declares.
 		declared := 0
 		for _, u := range g.Units {
-			declared += len(u.Decls)
 			for _, d := range u.Decls {
+				if _, header := d.(*emit.File); header {
+					continue
+				}
+				declared++
 				f.set.Reserve(emit.DeclaredName(d))
 			}
 		}
@@ -529,8 +557,8 @@ func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 			return nil, false
 		}
 	}
-	name := path.Base(g.Path)
-	if err := b.file.Execute(&f.fileOut, fileView{Name: name, Pkg: g.Pkg, Annotations: g.Annotations}); err != nil {
+	view := fileView{Name: path.Base(g.Path), Pkg: g.Pkg, Annotations: g.Annotations, Header: &g.Header}
+	if err := b.file.Execute(&f.fileOut, view); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the file skeleton refused %s: %v", g.Path, err)
 		return nil, false

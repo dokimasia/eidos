@@ -25,8 +25,10 @@ type fileKey struct {
 // paths: each unit splits through the target's speller, each part
 // takes its spelled name under its package's path, and parts sharing
 // a package and a name assemble one file, in the store's order. A plan
-// unit, which has no package, takes its name alone. The files sort by
-// path, then by package, which is the order a plan's layout returns.
+// unit, which has no package, takes its name alone. Each file has the
+// header that [plugin.HeaderOf] returns for its units, as a plan's layout
+// gives it. The files sort by path, then by package, which is the order a
+// plan's layout returns.
 func Files(e *plugin.Emit, s plugin.FileSpeller) []plugin.File {
 	byKey := map[fileKey]int{}
 	var files []plugin.File
@@ -41,6 +43,9 @@ func Files(e *plugin.Emit, s plugin.FileSpeller) []plugin.File {
 			}
 			files[at].Units = append(files[at].Units, part)
 		}
+	}
+	for i := range files {
+		files[i].Header = plugin.HeaderOf(files[i].Units)
 	}
 	slices.SortStableFunc(files, func(a, b plugin.File) int {
 		return cmp.Or(cmp.Compare(a.Path, b.Path), a.Pkg.Compare(b.Pkg))

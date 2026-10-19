@@ -64,9 +64,10 @@ const (
 	memberOpen   = "func (r) " + handleName + "() {\n"
 )
 
-// A declaration renders with its whole body or not at all, so the
-// fixed composition order, reference resolution in the emitter's
-// tree and the marker placement of pending slots are contract.
+// TestBody checks the bodies of callables. A declaration renders with
+// its whole body or not at all. The cases pin the order of the fixed
+// composition, the resolution of a reference in the tree of the emitter
+// and the placement of pending slots at their markers.
 func TestBody(t *testing.T) {
 	t.Parallel()
 
@@ -255,6 +256,24 @@ func TestBody(t *testing.T) {
 			assert.ContainsInOrder(t, body,
 				[]string{refCall + "(" + markData + ") for " + handleName, proCall},
 				"the content where the template places it, then the marker's slots")
+		})
+
+		t.Run("renders a reference template that reads the header of the file", func(t *testing.T) {
+			t.Parallel()
+
+			p, err := render.New(passName, language())
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, headed(fn(storeKey, handleName, refBody())))
+			sink := diag.NewSink()
+			src := "{{with " + render.BuiltinHeader + "}}{{range .Annotations}}\t{{.Name}}\n{{end}}{{end}}" + slots
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, p), Trees: refTree(src), Sink: sink, Plugin: passName,
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the function renders")
+			assert.Contains(t, string(files[0].Body), "\t"+syntaxName+"\n",
+				"the template writes the annotation of the header")
 		})
 
 		t.Run("reports RefusedTemplate for a reference template that reads a missing key", func(t *testing.T) {

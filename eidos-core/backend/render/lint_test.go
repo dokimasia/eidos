@@ -70,10 +70,10 @@ func (sealed) Open(name string) (fs.File, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
 }
 
-// The lint is the static half of the marker rule: every template of a
-// plugin's tree parses against the merged vocabulary before any run,
-// and a template that places no marker is reported before a render
-// strands a contribution.
+// TestLint checks the static half of the marker rule. Every template of
+// the tree of a plugin parses against the merged vocabulary before any
+// run. The lint reports a template that places no marker before a
+// render strands a contribution.
 func TestLint(t *testing.T) {
 	t.Parallel()
 
@@ -114,6 +114,24 @@ func TestLint(t *testing.T) {
 				[]string{fileTpl},
 			)
 			assert.Empty(t, findings, "a file template places each body through the body builtin")
+		})
+
+		// header writes the name of each annotation of the header of the
+		// file.
+		header := "{{with " + render.BuiltinHeader + "}}{{range .Annotations}}{{.Name}}{{end}}{{end}}"
+
+		t.Run("returns nothing for a tree that reads the header of the file", func(t *testing.T) {
+			t.Parallel()
+
+			findings := linter(t).Lint(tree(refName, header+slots), nil, nil, nil)
+			assert.Empty(t, findings, "a reference template resolves the header builtin")
+		})
+
+		t.Run("returns nothing for a file template that reads the header of the file", func(t *testing.T) {
+			t.Parallel()
+
+			findings := linter(t).Lint(tree(fileTpl, header), nil, nil, []string{fileTpl})
+			assert.Empty(t, findings, "a file template resolves the header builtin")
 		})
 
 		t.Run("returns a finding for a file template that places a marker", func(t *testing.T) {
@@ -300,8 +318,8 @@ func TestLint(t *testing.T) {
 	})
 }
 
-// A lint of a tree of one template allocates within its ceiling in the
-// ordinary run, which runs no benchmark.
+// TestLintAllocs checks the ceiling of a lint of a tree of one template
+// in the ordinary run, which runs no benchmark.
 func TestLintAllocs(t *testing.T) {
 	p, marked := lintFixture(t)
 	var findings []error

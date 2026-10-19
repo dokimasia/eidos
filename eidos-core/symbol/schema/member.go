@@ -29,6 +29,13 @@ import (
 // entry to the field of another plugin through the slot view of its
 // emitter, so the header of the file names the plugin.
 //
+// Receives names the type a field attaches to when the field is
+// declared outside that type's own declaration: a protobuf extension, a
+// Kotlin extension property. Host remains the declaration that contains
+// the field, or the file of a field at file level, so the identity of
+// the field is in the scope that declares it. A field declared inside
+// its type leaves Receives nil.
+//
 //eidos:subject
 type Field struct {
 	ID          symbol.Identity    `eidos:"node"`
@@ -44,6 +51,7 @@ type Field struct {
 	Optional    bool               `eidos:"both,fact=Optional"`    // present-or-absent: TypeScript's ?
 	Computed    bool               `eidos:"both,fact=Computed"`    // the name is an expression: TypeScript's [expr]
 	Type        *TypeRef           `eidos:"both,walk"`
+	Receives    *TypeRef           `eidos:"both,walk,fact=Receives"` // set when declared outside the type it attaches to
 	Value       string             `eidos:"both,fact=Value"`         // initializer's source spelling, unevaluated; "" when none
 	Tag         string             `eidos:"node"`                    // tag text without delimiters, "" when none
 	Tags        []*TagEntry        `eidos:"emit,slot=tags,fact=Tag"` // the entries of the tag, in order

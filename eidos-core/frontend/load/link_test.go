@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -105,9 +106,9 @@ const (
 	loopFile   = "svc/loop/index.zz"
 )
 
-// The resolution step turns spellings into identities through each
-// language's own bindings, and its degradations are pinned beside
-// its successes.
+// TestLink checks that the resolution step turns spellings into
+// identities through the bindings of each language. The cases pin each
+// degradation beside the successes.
 func TestLink(t *testing.T) {
 	t.Parallel()
 
@@ -165,6 +166,20 @@ func TestLink(t *testing.T) {
 			assert.Equal(t, plain.(*node.Struct).Fields[0].Type.Target,
 				genDecl("", typeParamName, symbol.KindStruct),
 				"a sibling type sees no parameter of another declaration")
+		})
+
+		t.Run("resolves the type that a field at file level receives", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, stdTree(), with(&extending{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			field, found := g.Lookup(symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: storePath, Name: extensionName, Kind: symbol.KindField,
+			})
+			assert.True(t, found, "the field is indexed")
+			assert.Equal(t, field.(*node.Field).Receives.Target, symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: apiPath, Name: userName, Kind: symbol.KindStruct,
+			}, "the type resolves through the bindings of the file that declares the field")
 		})
 
 		t.Run("resolves a reference among an inline body's members", func(t *testing.T) {
@@ -582,6 +597,32 @@ func (f *inlined) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 					}},
 				}
 			}
+		}
+	}
+	return nil
+}
+
+// extending is the scripted language with a field at file level in the
+// store's file, which the User of the api package receives through the
+// import of the file.
+type extending struct {
+	*frontendtest.Scripted
+}
+
+// Parse lowers the unit, then adds the field to the file of the store.
+func (f *extending) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := f.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	for _, pkg := range u.Graph().Packages() {
+		for _, file := range pkg.Files {
+			if file.Path != storeFile {
+				continue
+			}
+			at := position.Pos{File: storeFile, Line: 1}
+			file.Decls = append(file.Decls, &node.Field{
+				Name: extensionName, Pos: at, Receives: &node.TypeRef{Spelling: "api." + userName, Pos: at},
+			})
 		}
 	}
 	return nil

@@ -137,7 +137,9 @@ func IsWellKnown(id symbol.Identity) bool {
 //
 //   - A reference to a type parameter folds to Opaque.
 //   - A reference whose target the view contains folds by the
-//     declaration that it references.
+//     declaration that it references. The rules of the language of the
+//     target can bless the declaration as a well-known type through
+//     [WellKnownRules], or give its values a shape through [ShapeRules].
 //   - A reference without a target folds through the language's Builtin.
 //
 // Where the Builtin returns a structural form without children for a
@@ -185,6 +187,9 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 			return Reference(ref.Spelling, id)
 		}
 		if decl, held := b.view.Lookup(ref.Target); held {
+			if s, shaped := b.shaped(ref, decl); shaped {
+				return s
+			}
 			return b.classify(ref, decl)
 		}
 		// A target outside the view's scope is as unreachable as
@@ -211,6 +216,23 @@ func (b Bound) wellKnown(target symbol.Identity) (symbol.Identity, bool) {
 		return symbol.Identity{}, false
 	}
 	return w.WellKnown(target)
+}
+
+// shaped returns the shape that the rules of the language of the target of
+// ref give the values of decl, with the spelling of ref. It reports false
+// where those rules give decl no shape, and where they do not implement
+// [ShapeRules]. It allocates what the rules allocate.
+func (b Bound) shaped(ref *node.TypeRef, decl symbol.Symbol) (TypeShape, bool) {
+	r, is := b.rulesOf(ref.Target.Lang).(ShapeRules)
+	if !is {
+		return TypeShape{}, false
+	}
+	s, shaped := r.ShapeOf(decl, b.view)
+	if !shaped {
+		return TypeShape{}, false
+	}
+	s.Spelling = ref.Spelling
+	return s, true
 }
 
 // children returns s with each of refs folded as its children, in order.

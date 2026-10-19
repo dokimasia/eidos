@@ -55,14 +55,24 @@ const (
 	// declaration of it does, under the refused-kind or the
 	// unspelt-kind code, and spells nothing.
 	BuiltinNested = "nested"
+	// BuiltinHeader returns the header of the file under render, the
+	// documentation and the annotations that the generators of the file
+	// state for it, as a *emit.File. Every template of the file can call
+	// it, so a kind template reads a version or a package that the
+	// header states.
+	BuiltinHeader = "header"
 )
+
+// errUnbound is the error of a builtin that a template calls before a
+// render call binds the builtins to its frame.
+var errUnbound = errors.New("render: the builtin is unbound")
 
 // reserved reports whether a name belongs to the pass's builtins,
 // which no vocabulary may claim.
 func reserved(name string) bool {
 	switch name {
 	case BuiltinBody, BuiltinMemberBody, BuiltinUse, BuiltinImports, BuiltinDecls,
-		BuiltinSlots, BuiltinSlot, BuiltinNested:
+		BuiltinSlots, BuiltinSlot, BuiltinNested, BuiltinHeader:
 		return true
 	}
 	return false
@@ -71,9 +81,7 @@ func reserved(name string) bool {
 // unbound returns the builtin names for parse-time resolution; a
 // render call rebinds them to its own frame before any execute.
 func unbound() template.FuncMap {
-	refuse := func() (string, error) {
-		return "", errors.New("render: the builtin is unbound")
-	}
+	refuse := func() (string, error) { return "", errUnbound }
 	body := func(any) (string, error) { return refuse() }
 	return template.FuncMap{
 		BuiltinBody:       body,
@@ -82,17 +90,19 @@ func unbound() template.FuncMap {
 		BuiltinImports:    refuse,
 		BuiltinDecls:      refuse,
 		BuiltinNested:     func(string, symbol.Symbol) (string, error) { return refuse() },
+		BuiltinHeader:     func() (*emit.File, error) { return nil, errUnbound },
 	}
 }
 
 // referenceBuiltins is the builtin set a body-claiming template
-// resolves against: the slots and slot markers and the use
-// recorder. The render binds it to a frame and the lint binds
-// stubs, so both parse against one set of names.
+// resolves against: the slots and slot markers, the use recorder
+// and the header of the file. The render binds it to a frame and
+// the lint binds stubs, so both parse against one set of names.
 func referenceBuiltins(
 	all func() (string, error),
 	one func(string) (string, error),
 	use func(string, ...string) (string, error),
+	header func() *emit.File,
 ) template.FuncMap {
-	return template.FuncMap{BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use}
+	return template.FuncMap{BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use, BuiltinHeader: header}
 }

@@ -728,6 +728,65 @@ func TestSettle(t *testing.T) {
 				"each keeps its emitted name")
 		})
 
+		t.Run("settles one field name on two receiving types without a collision", func(t *testing.T) {
+			t.Parallel()
+
+			first := &emit.Field{
+				Origin: settleOrigin("row_tag", symbol.KindField), Name: "tag",
+				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
+			}
+			second := &emit.Field{
+				Origin: settleOrigin("box_tag", symbol.KindField), Name: "tag",
+				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "box"},
+			}
+			e := storeOf(t, settleUnit("svc", "svc/a.src", first, second))
+			coretest.AssertCodes(t, settled(t, e, capitalizing()))
+			assert.Equal(t, []string{first.Name, second.Name}, []string{"Tag", "Tag"},
+				"each receiving type declares the settled name")
+		})
+
+		t.Run("keeps the emitted names of two spellings of one field on one receiving type", func(t *testing.T) {
+			t.Parallel()
+
+			upper := &emit.Field{
+				Origin: settleOrigin("row_tag2", symbol.KindField), Name: "Tag",
+				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
+			}
+			lower := &emit.Field{
+				Origin: settleOrigin("row_tag3", symbol.KindField), Name: "tag",
+				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
+			}
+			e := storeOf(t, settleUnit("svc", "svc/a.src", upper, lower))
+			coretest.AssertCodes(t, settled(t, e, capitalizing()), plugin.CollidingNames)
+			assert.Equal(t, []string{upper.Name, lower.Name}, []string{"Tag", "tag"},
+				"each keeps its emitted name")
+		})
+
+		t.Run("rewrites a bare reference to a struct that shares its name with a received field", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook capitalizes the name of a struct and keeps the name of
+			// a field, so a field in the table of bare names would make the
+			// reference ambiguous.
+			b := respelling(func(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+				if kind == symbol.KindField {
+					return name, nil
+				}
+				return strings.ToUpper(name[:1]) + name[1:], nil
+			})
+			tag := &emit.Struct{Origin: settleOrigin("tag", symbol.KindStruct), Name: "tag"}
+			extension := &emit.Field{
+				Origin: settleOrigin("row_tag", symbol.KindField), Name: "tag",
+				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
+			}
+			holder := &emit.Variable{
+				Origin: settleOrigin("ref", symbol.KindVariable), Name: "ref", Type: &emit.TypeRef{Spelling: "tag"},
+			}
+			e := storeOf(t, settleUnit("svc", "svc/a.src", tag, extension, holder))
+			coretest.AssertCodes(t, settled(t, e, b))
+			assert.Equal(t, holder.Type.Spelling, "Tag", "the reference follows the struct")
+		})
+
 		t.Run("keeps the emitted names of a member collision", func(t *testing.T) {
 			t.Parallel()
 

@@ -47,6 +47,7 @@ var factNamings = []struct {
 	{fact: FactFields, want: "Fields"},
 	{fact: FactMethods, want: "Methods"},
 	{fact: FactValue, want: "Value"},
+	{fact: FactReceives, want: "Receives"},
 	{fact: FactTag, want: "Tag"},
 	{fact: FactSealed, want: "Sealed"},
 	{fact: FactTypes, want: "Types"},

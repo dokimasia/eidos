@@ -338,7 +338,76 @@ func TestReference(t *testing.T) {
 			assert.Empty(t, files, "the referencing declaration is refused")
 			coretest.AssertCodes(t, sink, layout.UntranslatedReference)
 		})
+
+		t.Run("records the package of a file that a bare reference is qualified into", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName}), rowStub()).
+				on(rowID, written(stubDirective, 1, keyOut, "fakes/"))
+			f.packager = directories{}
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, referentsOf(t, files, referringPath), []symbol.Identity{dirPackage(fakesDir)},
+				"the referring file refers into the fakes file")
+			assert.Empty(t, referentsOf(t, files, fakesDir+"/row_stub.go"), "the fakes file refers into no file")
+		})
+
+		t.Run("records the package of a kept file that a translated reference is qualified into", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName, Target: rowID}))
+			f.packager = directories{}
+			f.others = keptFiles{keptRowStub(fakesDir)}
+			f.target = tsxTarget
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, referentsOf(t, files, referringPath), []symbol.Identity{dirPackage(fakesDir)},
+				"the referring file refers into the kept file")
+		})
+
+		t.Run("records the package of a file once for two references into it", func(t *testing.T) {
+			t.Parallel()
+
+			referrer := stubOf(storeFile, storePkg, generated(storeID, "StoreStub",
+				&emit.Field{Name: "row", Type: &emit.TypeRef{Spelling: rowStubName}},
+				&emit.Field{Name: "next", Type: &emit.TypeRef{Spelling: rowStubName}}))
+			f := newFixture(referrer, rowStub()).on(rowID, written(stubDirective, 1, keyOut, "fakes/"))
+			f.packager = directories{}
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, referentsOf(t, files, referringPath), []symbol.Identity{dirPackage(fakesDir)},
+				"the referring file lists the fakes file once")
+		})
+
+		t.Run("records no package for a reference within one package", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName}), rowStub())
+			f.packager = directories{}
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Empty(t, referentsOf(t, files, referringPath), "the reference stays in its package")
+		})
 	})
+}
+
+// referringPath is the file that [referring] routes into.
+const referringPath = "svc/store/store_stub.go"
+
+// referentsOf returns the referents of the routed file at path, and fails
+// the test where the layout routed no file there.
+func referentsOf(tb testing.TB, files []plugin.File, path string) []symbol.Identity {
+	tb.Helper()
+
+	at := slices.IndexFunc(files, func(f plugin.File) bool { return f.Path == path })
+	assert.InRange(tb, at, 0, float64(len(files)-1), "the layout routes a file to "+path)
+	return files[at].Referents
+}
+
+// dirPackage returns the package that the [directories] target names for
+// a directory.
+func dirPackage(dir string) symbol.Identity {
+	return symbol.Identity{Lang: coretest.Lang, Package: dir, Name: path.Base(dir), Kind: symbol.KindPackage}
 }
 
 // referring returns stubgen's primary unit of store.go: StoreStub, with

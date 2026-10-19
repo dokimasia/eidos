@@ -134,7 +134,7 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 		parsed, err = template.New(b.Ref.Name).
 			Option(missingKeyError).
 			Funcs(f.vocab).Funcs(f.merged).
-			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use)).
+			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use, f.header)).
 			Parse(string(src))
 		if err != nil {
 			f.sink.Errorf(UnresolvedRef, f.at, f.origin,

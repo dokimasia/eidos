@@ -28,9 +28,9 @@ const (
 	rangeEnd     = "{{end}}"
 )
 
-// A family that claims its files renders each file through its file
-// template, over the file's records, inside the frame of the target's
-// skeleton.
+// TestClaim checks the files that a family claims. The file template of
+// the family renders each such file over its records. The skeleton of
+// the target frames the output.
 func TestClaim(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +93,24 @@ func TestClaim(t *testing.T) {
 			_, sink := renderClaim(t, claimTree(recordsRange+action(render.BuiltinBody, ".Decl")+rangeEnd),
 				claimedUnit(handleName, nil, b))
 			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("returns the header of the file to the template of a claimed file", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderClaim(t, claimTree("{{with header}}{{range .Annotations}}{{.Name}}\n{{end}}{{end}}"),
+				headed(claimedUnit(handleName, nil, emit.Body{})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, body, syntaxName+"\n", "the template writes the annotation of the header")
+		})
+
+		t.Run("leaves an emit.File out of the records of a claimed file", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderClaim(t, claimTree(recordsRange+"{{.Decl.Kind}}\n"+rangeEnd),
+				headed(claimedUnit(handleName, nil, emit.Body{})))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, body, symbol.KindFunction.String()+"\n", "the function is the one record")
 		})
 
 		unresolved := []struct {

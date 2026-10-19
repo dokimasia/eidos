@@ -17,7 +17,7 @@ import (
 
 // factsStated is how many facts the every-kind subjects state: each
 // fact of each kind, set once.
-const factsStated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+const factsStated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
 
 // factsKinds is how many kinds state a fact of their own.
 const factsKinds = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
@@ -716,6 +716,15 @@ func TestFacts(t *testing.T) {
 			}
 			{
 				subject := &Field{}
+				subject.Receives = &TypeRef{}
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the stated fact alone arrives")
+				assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
+				assert.Equal(t, facts[0], symbol.FactReceives, "as itself")
+				assert.Nil(t, hosts[0], "the top level has no host")
+			}
+			{
+				subject := &Field{}
 				subject.Value = "x"
 				hosts, kinds, facts := stated(subject)
 				assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -899,6 +908,15 @@ func TestFacts(t *testing.T) {
 			}
 			{
 				subject := &Struct{}
+				subject.MethodsSlot().Append(&Method{})
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the stated fact alone arrives")
+				assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
+				assert.Equal(t, facts[0], symbol.FactMethods, "as itself")
+				assert.Nil(t, hosts[0], "the top level has no host")
+			}
+			{
+				subject := &Struct{}
 				subject.TypesSlot().Append(&Struct{})
 				hosts, kinds, facts := stated(subject)
 				assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -960,19 +978,6 @@ func TestFacts(t *testing.T) {
 				hosts, kinds, facts := stated(subject)
 				assert.Length(t, facts, 1, "the child's fact arrives")
 				assert.Equal(t, kinds[0], symbol.KindField, "under the child's kind")
-				assert.Equal(t, facts[0], symbol.FactComment, "as itself")
-				assert.Equal(t, hosts[0], symbol.Symbol(subject),
-					"a member's host is its enclosing declaration", assert.ByIdentity())
-			}
-			{
-				// stated in Struct.Methods
-				subject := &Struct{}
-				child := &Method{}
-				child.Comment = "x"
-				subject.MethodsSlot().Append(child)
-				hosts, kinds, facts := stated(subject)
-				assert.Length(t, facts, 1, "the child's fact arrives")
-				assert.Equal(t, kinds[0], symbol.KindMethod, "under the child's kind")
 				assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 				assert.Equal(t, hosts[0], symbol.Symbol(subject),
 					"a member's host is its enclosing declaration", assert.ByIdentity())
@@ -1243,13 +1248,13 @@ func TestFacts(t *testing.T) {
 				"the Sum facts in schema order")
 			assert.Length(t, table[symbol.KindSumVariant], 2,
 				"the SumVariant facts in schema order")
-			assert.Length(t, table[symbol.KindField], 10,
+			assert.Length(t, table[symbol.KindField], 11,
 				"the Field facts in schema order")
 			assert.Length(t, table[symbol.KindVariable], 5,
 				"the Variable facts in schema order")
 			assert.Length(t, table[symbol.KindConstant], 3,
 				"the Constant facts in schema order")
-			assert.Length(t, table[symbol.KindStruct], 13,
+			assert.Length(t, table[symbol.KindStruct], 14,
 				"the Struct facts in schema order")
 			assert.Length(t, table[symbol.KindInterface], 10,
 				"the Interface facts in schema order")
@@ -1429,6 +1434,7 @@ func factsSubjects() []symbol.Symbol {
 		subject.Hard = true
 		subject.Optional = true
 		subject.Computed = true
+		subject.Receives = &TypeRef{}
 		subject.Value = "x"
 		subject.TagsSlot().Append(&TagEntry{})
 		subject.Annotations = symbol.Annotations{{}}
@@ -1459,6 +1465,7 @@ func factsSubjects() []symbol.Symbol {
 		subject.Final = true
 		subject.Sealed = true
 		subject.TypeParams = []*TypeParam{{}}
+		subject.MethodsSlot().Append(&Method{})
 		subject.TypesSlot().Append(&Struct{})
 		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = []*TypeRef{{}}

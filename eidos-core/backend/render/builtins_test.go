@@ -30,9 +30,9 @@ const (
 	auditHead = "audit"
 )
 
-// The builtins are the names every template resolves against, so
-// what each records and returns, and that no vocabulary claims one,
-// are contract.
+// TestBuiltins checks what each builtin of the pass records and
+// returns. It also checks that no vocabulary claims the name of a
+// builtin.
 func TestBuiltins(t *testing.T) {
 	t.Parallel()
 
@@ -49,6 +49,18 @@ func TestBuiltins(t *testing.T) {
 			_, err := render.New(passName, l)
 			assert.HasError(t, err, "the builtin names are the pass's own")
 			assert.Contains(t, err.Error(), render.BuiltinNested, "naming the claim")
+		})
+
+		t.Run("returns an error for a vocabulary helper named header", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Funcs = helpers(template.FuncMap{
+				render.BuiltinHeader: func() *emit.File { return nil },
+			})
+			_, err := render.New(passName, l)
+			assert.HasError(t, err, "the header is a builtin of the pass")
+			assert.Contains(t, err.Error(), render.BuiltinHeader, "naming the claim")
 		})
 	})
 

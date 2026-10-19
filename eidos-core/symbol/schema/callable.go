@@ -139,6 +139,10 @@ type Method struct {
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Doc is the documentation of the parameter, such as the description of
+// a GraphQL argument. A language that documents a parameter in the
+// documentation of its callable leaves it empty.
+//
 // A parameter is a subject: an authored value attaches to it in a
 // language whose comments can address it, and its identity is the
 // host's chain, its name or its position, and the host's
@@ -148,6 +152,7 @@ type Method struct {
 type Param struct {
 	ID          symbol.Identity    `eidos:"node"`
 	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
 	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`         // "" when unnamed
 	Label       string             `eidos:"both,fact=Label"`   // caller-facing name; Swift and Objective-C

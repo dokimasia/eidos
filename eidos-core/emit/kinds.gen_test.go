@@ -208,8 +208,8 @@ func TestKinds(t *testing.T) {
 			assert.Length(t, (&Method{Doc: kindsLines}).Docs(), len(kindsLines),
 				"a documented Method returns its documentation")
 
-			assert.Nil(t, (&Param{}).Docs(),
-				"a Param without a documentation field returns nil")
+			assert.Length(t, (&Param{Doc: kindsLines}).Docs(), len(kindsLines),
+				"a documented Param returns its documentation")
 
 			assert.Nil(t, (&Return{}).Docs(),
 				"a Return without a documentation field returns nil")
@@ -596,6 +596,7 @@ func kindsCases() []kindsCase {
 	}
 	{
 		subject := &Param{}
+		subject.Doc = kindsLines
 		subject.Type = &TypeRef{}
 		subject.Type = &TypeRef{}
 		var (
@@ -623,7 +624,7 @@ func kindsCases() []kindsCase {
 				name: "Param.Docs",
 				call: func() { docs = subject.Docs() },
 				check: func(tb testing.TB) {
-					assert.Nil(tb, docs, "Docs returns nil")
+					assert.Length(tb, docs, len(kindsLines), "Docs returns the documentation")
 				},
 			},
 			kindsCase{
@@ -1043,6 +1044,7 @@ func kindsCases() []kindsCase {
 		subject := &Field{}
 		subject.Doc = kindsLines
 		subject.Type = &TypeRef{}
+		subject.Receives = &TypeRef{}
 		subject.Type = &TypeRef{}
 		var (
 			kind  symbol.Kind
