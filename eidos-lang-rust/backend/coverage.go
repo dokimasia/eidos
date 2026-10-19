@@ -8,9 +8,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Coverage declares the fact coverage of Rust, the feature table as data:
-// the guard of the render reads it, and the conformance suite checks it
-// total and the rendered findings against it.
+// Coverage declares the fact coverage of Rust, the feature table as data.
+// The guard of the render reads it, and the conformance suite checks that
+// it is total and that the rendered findings match it.
 //
 //   - Final takes the [render.Holds] verdict, because nothing subclasses a
 //     struct and nothing overrides an inherent method. The final of a trait
@@ -22,6 +22,9 @@ import (
 //   - The nested types of a trait render as associated types where the
 //     nested types of every other kind refuse, because Rust nests nothing
 //     else.
+//   - The methods of a struct render in its inherent impl block, where the
+//     methods of an enum and of a sum refuse, because the backend writes no
+//     impl block for either.
 //   - Throws renders through the Result fold that the lowering spells.
 //   - The value of an enum variant renders as its discriminant where the
 //     initializer of a field refuses, because a struct declares no field
@@ -34,10 +37,13 @@ import (
 //   - The underlying type of an enum renders as its repr attribute. A
 //     computed member has no name in Rust, so the declaration does not
 //     render with the fact or without it.
+//   - A field that another type receives refuses, because Rust has no
+//     extension field. The annotations of a file refuse, because the
+//     skeleton does not write the header that a generator states.
 //
 // Coverage builds the table on every call, which the caller keeps: four
 // allocations of the fact map, and two of the exception map with two for
-// each of its four kinds, 14 allocations.
+// each of its five kinds, 16 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		RefusesEmbeds: true,
@@ -68,6 +74,7 @@ func Coverage() render.Coverage {
 			symbol.FactFields:           render.Refuses,
 			symbol.FactMethods:          render.Refuses,
 			symbol.FactValue:            render.Refuses,
+			symbol.FactReceives:         render.Refuses,
 			symbol.FactComment:          render.Renders,
 			symbol.FactMutability:       render.Refuses,
 			symbol.FactTag:              render.Refuses,
@@ -93,9 +100,13 @@ func Coverage() render.Coverage {
 			symbol.KindStruct: {
 				symbol.FactExtends: render.Refuses, // nothing inherits
 				symbol.FactLevel:   render.Refuses, // no static types
+				symbol.FactMethods: render.Renders, // the inherent impl block
 			},
 			symbol.KindInterface: {
 				symbol.FactTypes: render.Renders, // associated types
+			},
+			symbol.KindFile: {
+				symbol.FactAnnotations: render.Refuses, // no header of a generator
 			},
 		},
 	}

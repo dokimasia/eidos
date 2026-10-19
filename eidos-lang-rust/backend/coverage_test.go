@@ -13,13 +13,13 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// coverageAllocs is the coverage table: the fact map's four, and the
-// exception map's two with its four kinds' two each.
-const coverageAllocs = 4 + 2 + 4*2
+// coverageAllocs is the count of the coverage table: four for the fact
+// map, and two for the exception map with two for each of its five kinds.
+const coverageAllocs = 4 + 2 + 5*2
 
-// The suite checks the declaration total and the rendered findings
-// against the table, and these cases pin the cells that distinguish
-// Rust.
+// TestCoverage pins the verdicts that distinguish Rust. The conformance
+// suite checks that the table is total and that the rendered findings
+// match it.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -43,6 +43,14 @@ func TestCoverage(t *testing.T) {
 			{
 				name: "returns Holds for a struct's final",
 				kind: symbol.KindStruct, fact: symbol.FactFinal, want: render.Holds,
+			},
+			{
+				name: "returns Renders for a struct's methods",
+				kind: symbol.KindStruct, fact: symbol.FactMethods, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for a sum's methods",
+				kind: symbol.KindSum, fact: symbol.FactMethods, want: render.Refuses,
 			},
 			{
 				name: "returns Holds for a method's final",
@@ -84,19 +92,28 @@ func TestCoverage(t *testing.T) {
 				name: "returns Renders for a parameter's attributes",
 				kind: symbol.KindParam, fact: symbol.FactAnnotations, want: render.Renders,
 			},
+			{
+				name: "returns Refuses for a field that another type receives",
+				kind: symbol.KindField, fact: symbol.FactReceives, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for a file's annotations",
+				kind: symbol.KindFile, fact: symbol.FactAnnotations, want: render.Refuses,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want, "the verdict")
+				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want,
+					"Coverage returns the verdict of Rust")
 			})
 		}
 	})
 }
 
-// The table allocates its maps. The ordinary run, which runs no
-// benchmark, checks that ceiling here.
+// TestCoverageAllocs checks the ceiling of the table in the ordinary run,
+// which runs no benchmark.
 func TestCoverageAllocs(t *testing.T) {
 	checkAllocs(t, coverageCalls())
 }
