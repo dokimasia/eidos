@@ -40,6 +40,7 @@ const (
 	durationSpelling   = "time.Duration"
 	uuidSpelling       = "uuid.UUID"
 	unknownSpelling    = "Unknown"
+	emptyStruct        = "struct{}"
 )
 
 // The fixture's declarations and fields the value cases derive.
@@ -295,7 +296,15 @@ func TestValues(t *testing.T) {
 			},
 			{
 				name: "returns RefusedNoLiteral for an inline struct",
-				give: &node.TypeRef{Spelling: "struct{}", Form: symbol.FormInline}, want: rules.RefusedNoLiteral,
+				give: &node.TypeRef{
+					Spelling: "struct{ A int }",
+					Form:     symbol.FormInline,
+					Fields: []*node.Field{
+						{Name: "A", Type: builtin(intSpelling)},
+					},
+					Elems: []*node.TypeRef{builtin(intSpelling)},
+				},
+				want: rules.RefusedNoLiteral,
 			},
 			{name: "returns RefusedNoLiteral for a nil reference", want: rules.RefusedNoLiteral},
 			{
@@ -359,6 +368,44 @@ func TestValues(t *testing.T) {
 				emit.Composite(rules.EmitRef(m),
 					emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+alternateSuffix), value)),
 			}, "the halves differ in the key, because a map to an empty struct is a set")
+		})
+
+		t.Run("returns the one value of a struct without fields", func(t *testing.T) {
+			t.Parallel()
+
+			empty := &node.TypeRef{Spelling: emptyStruct, Form: symbol.FormInline}
+			sample, alternate := gorules.New().DeriveSamples(empty, "", loaded(t).view)
+			expect.Equal(t, sample, rules.Of(emit.Composite(rules.EmitRef(empty))), "the sample is struct{}{}")
+			expect.Equal(t, alternate, rules.Refused(rules.RefusedNoLiteral),
+				"a struct without fields has no second value")
+		})
+
+		t.Run("returns a one-entry composite of the empty struct for a map of empty structs", func(t *testing.T) {
+			t.Parallel()
+
+			empty := &node.TypeRef{Spelling: emptyStruct, Form: symbol.FormInline}
+			set := composite("map[string]struct{}", symbol.FormMap, builtin(stringSpelling), empty)
+			s, a := pairOf(t, loaded(t), set, keyHint)
+			member := emit.Composite(rules.EmitRef(empty))
+			expect.Equal(t, s, emit.Composite(rules.EmitRef(set),
+				emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+sampleSuffix), member)),
+				"the sample keys the empty struct by the sample of the key")
+			expect.Equal(t, a, emit.Composite(rules.EmitRef(set),
+				emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+alternateSuffix), member)),
+				"the alternate keys the empty struct by the alternate of the key")
+		})
+
+		t.Run("refuses the alternate of a slice of empty structs", func(t *testing.T) {
+			t.Parallel()
+
+			slice := composite(
+				"[]struct{}",
+				symbol.FormList,
+				&node.TypeRef{Spelling: emptyStruct, Form: symbol.FormInline},
+			)
+			_, alternate := gorules.New().DeriveSamples(slice, "", loaded(t).view)
+			assert.Equal(t, alternate.Refusal, rules.RefusedNoLiteral,
+				"the two halves of a slice differ in the element, and the empty struct has one value")
 		})
 
 		t.Run("returns a composite setting the first exported field for a struct", func(t *testing.T) {

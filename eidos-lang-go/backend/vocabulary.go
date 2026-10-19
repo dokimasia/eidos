@@ -29,8 +29,14 @@ const (
 	FuncMemberDocs = "memberdocs"
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
+	// FuncSpellValue is the template name of [Speller.Spell] in a value
+	// position. Go imports a package and not a declaration, so a reference
+	// spells alike in a type position and in a value position.
+	FuncSpellValue = render.HelperSpellValue
 	// FuncTypeParams is the template name of [Speller.TypeParams].
 	FuncTypeParams = render.HelperTypeParams
+	// FuncTypeArgs is the template name of [Speller.TypeArgs].
+	FuncTypeArgs = render.HelperTypeArgs
 	// FuncParams is the template name of [Speller.Params].
 	FuncParams = render.HelperParams
 	// FuncResults is the template name of [Speller.Results].
@@ -294,6 +300,18 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return "[" + strings.Join(parts, ", ") + "]", nil
 }
 
+// TypeArgs writes a list of type parameters or of type references as the
+// type arguments of a reference in brackets, and nothing for an empty
+// list: the parameters of a generic declaration as the arguments of a
+// reference to it, as in *Builder[T], and the witnesses of a test, as in
+// [int]. Each reference spells through [Speller.Spell], which binds its
+// import. TypeArgs returns an error for a list of another type. It
+// allocates what [spellref.TypeArgs] allocates. A template passes the list
+// as a value of type any, which text/template boxes, one allocation.
+func (s Speller) TypeArgs(list any) (string, error) {
+	return spellref.TypeArgs(list, argsOpen, argsClose, s.Spell)
+}
+
 // Params writes the parameter list in the slot ps with the variadic
 // marker. A template passes the slot by address, as in
 // {{params .Params}}, so the call reads the slot without a reflective
@@ -479,15 +497,18 @@ func (s Speller) param(p *emit.Param) (string, error) {
 // additions. Every helper takes a fixed list of arguments, because
 // text/template allocates the list of a variadic call and a value for
 // each string argument in a template. Funcs allocates the map of
-// seventeen helpers in four allocations, and the six bound helpers of the
-// speller.
+// nineteen helpers in four allocations, and the seven bound helpers of the
+// speller. spell and spellvalue share one bound helper.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
+	spell := s.Spell
 	return template.FuncMap{
 		FuncDocs:             Docs,
 		FuncMemberDocs:       MemberDocs,
-		FuncSpell:            s.Spell,
+		FuncSpell:            spell,
+		FuncSpellValue:       spell,
 		FuncTypeParams:       s.TypeParams,
+		FuncTypeArgs:         s.TypeArgs,
 		FuncParams:           s.Params,
 		FuncResults:          s.Results,
 		FuncReceiver:         s.Receiver,

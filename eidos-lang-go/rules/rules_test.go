@@ -40,13 +40,14 @@ const (
 	foreignContext = "example.test/context"
 )
 
-// rulesAllocs is one projection pass over the fixture tree: 203 at the
-// default benchtime. A memory profile attributes 107 to TypeOf, 44 to
-// SamplesOf, 17 to CallableOf, 17 to MembersOf and 3 to the fresh view
-// and its binding, and it samples the tiny allocations of the rest only
-// in part. The 2 more are for the runtime's own allocations in a run of
-// one iteration: 300 fresh processes counted 0 or 1.
-const rulesAllocs = 203 + 2
+// rulesAllocs is one projection pass over the fixture tree: 212 at the
+// default benchtime and at 2,000 iterations. A memory profile attributes
+// 107 to TypeOf, 53 to SamplesOf, 17 to CallableOf, 17 to MembersOf and 3
+// to the fresh view and its binding, and it samples the tiny allocations
+// of the rest only in part. The 2 more are for the runtime's own
+// allocations in a run of one iteration: 300 fresh processes counted 0 or
+// 1.
+const rulesAllocs = 212 + 2
 
 // returnRolesAllocs is the classification of a signature: the list of the
 // roles of its returns.

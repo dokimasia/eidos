@@ -89,15 +89,23 @@ const platformWidth = 0
 //   - the pair of a pointer as the address of its inner composite
 //   - time.Time as a call, and time.Duration as a conversion, with or
 //     without a target, because both are well-known types
+//   - the one value of a struct without fields, struct{}{}, beside an
+//     alternate that refuses with no literal
+//
+// A map of empty structs, the set of Go, derives its pair from the pair of
+// its keys with struct{}{} as the value of each entry. A slice of empty
+// structs derives no alternate, because the halves of its pair differ in
+// the element.
 //
 // The type arguments of a reference to a generic type replace its type
 // parameters in the type of each field and in the target of a defined
 // type, through [rules.Substitute], so a field of Box[int] that T types
 // derives the pair of int. A number states the width of its builtin. An
-// interface, a function type, a channel, an inline body, a predeclared
-// type without a literal and a pointer to anything but a composite refuse
-// with no literal, because Go takes the address of a composite literal
-// alone. A named type outside the view refuses as unresolved.
+// interface, a function type, a channel, an inline body with members, a
+// predeclared type without a literal and a pointer to anything but a
+// composite refuse with no literal, because Go takes the address of a
+// composite literal alone. A named type outside the view refuses as
+// unresolved.
 //
 // The element of a slice or an array, the key and the value of a map, and
 // the field of a struct take the values that an author stated for them
@@ -153,6 +161,12 @@ func (r Rules) derive(
 			return r.builtinPair(ref, hint)
 		}
 		return r.declaredPair(ref, hint, v, depth)
+	case symbol.FormInline:
+		if len(ref.Fields) > 0 || len(ref.Methods) > 0 || !strings.HasPrefix(named(ref), structKeyword) {
+			return rules.RefusedPair(rules.RefusedNoLiteral)
+		}
+		// Every value of a struct without fields is the one value struct{}{}.
+		return rules.Of(emit.Composite(rules.EmitRef(ref))), rules.Refused(rules.RefusedNoLiteral)
 	default:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}

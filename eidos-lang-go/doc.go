@@ -44,7 +44,9 @@
 // [PointerReceiver] states a pointer receiver on an emit method that
 // receives a type, named apart from the method's signature: what a
 // generator writing Go stubs calls after the kernel's Mirror, which
-// leaves the receiver to the target.
+// leaves the receiver to the target. [RenamePredeclared] renames a
+// parameter or a result of an emit method that would hide a predeclared
+// identifier of Go, so the body of a stub can call append.
 //
 // [Restate] writes the syntax of a Go composite type from the spellings
 // of its children: a pointer, a slice, an array, a map, a channel and a

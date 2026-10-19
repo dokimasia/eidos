@@ -94,10 +94,13 @@ const (
 	resultsAllocs = 1 + 1 + 1
 	// varTypeAllocs is a variable's type behind its space.
 	varTypeAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of seventeen
-	// helpers in four allocations, and the six bound helpers of the
-	// speller.
-	funcsAllocs = 4 + 6
+	// typeArgsAllocs is the type arguments of two type parameters: the
+	// text in one buffer of its size.
+	typeArgsAllocs = 1
+	// funcsAllocs is the vocabulary of a file: the map of nineteen
+	// helpers in four allocations, and the seven bound helpers of the
+	// speller, of which spell and spellvalue share one.
+	funcsAllocs = 4 + 7
 	// tagAllocs is the tag of a field, built on the stack and allocated
 	// once.
 	tagAllocs = 1
@@ -128,6 +131,57 @@ func TestVocabulary(t *testing.T) {
 			_, err := spell(imported(timePkg, timePkg, "Duration"))
 			assert.NoError(t, err, "the reference spells")
 			assert.Equal(t, set.Paths(), []string{timePkg}, "the import is the file's")
+		})
+
+		t.Run("returns a spellvalue helper that spells a reference as spell does", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			spell, is := backend.Funcs(&set)[backend.FuncSpellValue].(func(*emit.TypeRef) (string, error))
+			assert.True(t, is, "the helper spells a reference")
+			got, err := spell(imported(timePkg, timePkg, "Duration"))
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got, "time.Duration", "a Go value position spells a reference as a type position does")
+		})
+	})
+
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes the names of type parameters in brackets", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			got, err := s.TypeArgs([]*emit.TypeParam{{Name: "K"}, {Name: "V"}})
+			assert.NoError(t, err, "the parameters spell")
+			assert.Equal(t, got, "[K, V]", "the arguments of a reference to the declaration")
+		})
+
+		t.Run("binds the import of a type reference", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			got, err := s.TypeArgs([]*emit.TypeRef{ref("int"), imported(timePkg, timePkg, "Duration")})
+			assert.NoError(t, err, "the references spell")
+			assert.Equal(t, got, "[int, time.Duration]", "the arguments qualified")
+			assert.Equal(t, set.Paths(), []string{timePkg}, "the package of the argument is imported")
+		})
+
+		t.Run("writes nothing for no arguments", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			got, err := s.TypeArgs([]*emit.TypeRef(nil))
+			assert.NoError(t, err, "no arguments spell")
+			assert.Equal(t, got, "", "as nothing")
+		})
+
+		t.Run("returns an error for a list of another type", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.TypeArgs([]string{"K"})
+			assert.HasError(t, err, "a list of text has no type arguments")
 		})
 	})
 
@@ -1464,6 +1518,7 @@ func vocabularyCalls() []allocCall {
 	bare, qualified := ref(intType), imported(storeName, storePkg, rowName)
 	doc := []string{rowDoc}
 	params := []*emit.TypeParam{{Name: keyParam, Bounds: []*emit.TypeRef{ref(comparableBound)}}, {Name: valueParam}}
+	var list any = params
 	args := new(emit.SlotOf(
 		&emit.Param{Name: contextName, Type: imported(contextPkg, contextPkg, contextType)},
 		&emit.Param{Name: idName, Type: ref(intType)},
@@ -1514,6 +1569,10 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.TypeParams(params) }, check: spells("[K comparable, V any]"),
 		},
 		{
+			name: "TypeArgs", allocs: typeArgsAllocs,
+			call: func() { out, err = s.TypeArgs(list) }, check: spells("[K, V]"),
+		},
+		{
 			name: "Params", caseName: "two parameters", allocs: paramsAllocs,
 			call: func() { out, err = s.Params(args) }, check: spells("ctx context.Context, id int"),
 		},
@@ -1533,7 +1592,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 17, "Funcs returns the seventeen helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 19, "Funcs returns the nineteen helpers") },
 		},
 		{
 			name: "Docs", allocs: docsAllocs,

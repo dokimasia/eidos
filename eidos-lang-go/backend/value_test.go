@@ -126,6 +126,12 @@ func TestValue(t *testing.T) {
 				want: "\treturn &Row{}\n",
 			},
 			{
+				name: "writes a composite of a slice type that the substitution left without a spelling",
+				give: emit.Composite(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{ref("int")}},
+					emit.Element(emit.Literal(emit.LiteralInt, "1"))),
+				want: "\treturn []int{1}\n",
+			},
+			{
 				name: "writes the name of a constant of another package qualified",
 				give: emit.Name(symbol.Identity{
 					Lang: golang.Lang, Package: timePkg, Name: "Second", Kind: symbol.KindConstant,
@@ -179,6 +185,12 @@ func TestValue(t *testing.T) {
 				name:    "returns a value error for the address of anything but a composite literal",
 				give:    emit.Address(emit.Literal(emit.LiteralInt, "1")),
 				want:    "composite literal alone",
+				wantErr: true,
+			},
+			{
+				name:    "returns a value error for a construction",
+				give:    emit.Construction(valueRef(rowName, svcPkg, rowName)),
+				want:    "has no construction of Row",
 				wantErr: true,
 			},
 		}

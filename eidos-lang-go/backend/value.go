@@ -101,3 +101,11 @@ func (t target) Address(inner emit.Value, spelled string) (string, error) {
 	}
 	return "&" + spelled, nil
 }
+
+// Construction refuses: Go builds a value through a composite literal or
+// the call of a function, and has no expression that constructs a type
+// from arguments.
+func (t target) Construction(ref *emit.TypeRef, _ []string) (string, error) {
+	return "", render.RefuseValue(t.Lang(),
+		"Go builds a value through a composite literal or a call, and has no construction of %s", ref.Spelling)
+}
