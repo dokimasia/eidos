@@ -45,7 +45,7 @@ const (
 	// template and the seven kind templates. The five lowering policies
 	// add eight: their specs, the kit's list of them, and the check of
 	// the specs that Build makes.
-	newAllocs = 1_788
+	newAllocs = 1_790
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 8,851,050, and the budget is a round number about

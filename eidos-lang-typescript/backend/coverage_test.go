@@ -13,13 +13,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// coverageAllocs is the table: the fact map's four allocations, and the
-// exception map's four with its twelve kinds' two each.
+// coverageAllocs is the count of the coverage table: four for the fact
+// map, and four for the exception map with two for each of its twelve
+// kinds.
 const coverageAllocs = 4 + 4 + 12*2
 
-// The suite checks the declaration total and the rendered findings
-// against the table; this twin pins the cells that distinguish
-// TypeScript.
+// TestCoverage pins the verdicts that distinguish TypeScript. The
+// conformance suite checks that the table is total and that the rendered
+// findings match it.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -57,22 +58,39 @@ func TestCoverage(t *testing.T) {
 				kind: symbol.KindStruct, fact: symbol.FactLevel, want: render.Refuses,
 			},
 			{
+				name: "returns Renders for a class's methods",
+				kind: symbol.KindStruct, fact: symbol.FactMethods, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for an enum's methods",
+				kind: symbol.KindEnum, fact: symbol.FactMethods, want: render.Refuses,
+			},
+			{
 				name: "returns Refuses for a function's throws",
 				kind: symbol.KindFunction, fact: symbol.FactThrows, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for a field that another type receives",
+				kind: symbol.KindField, fact: symbol.FactReceives, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for a file's annotations",
+				kind: symbol.KindFile, fact: symbol.FactAnnotations, want: render.Refuses,
 			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want, "the table's verdict")
+				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want,
+					"Coverage returns the verdict of TypeScript")
 			})
 		}
 	})
 }
 
-// The table allocates its maps. The ordinary run, which runs no
-// benchmark, checks that ceiling here.
+// TestCoverageAllocs checks the ceiling of the table in the ordinary run,
+// which runs no benchmark.
 func TestCoverageAllocs(t *testing.T) {
 	checkAllocs(t, coverageCalls())
 }

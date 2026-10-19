@@ -9,20 +9,25 @@ import (
 )
 
 // Coverage declares the fact coverage of TypeScript, the feature table as
-// data: the guard of the render reads it, and the conformance suite checks
-// it total and the rendered findings against it.
+// data. The guard of the render reads it, and the conformance suite checks
+// that it is total and that the rendered findings match it.
 //
 // Decorators apply to classes and their members, so annotations refuse
 // everywhere else, the parameter position included. The default of a
 // parameter renders behind its equals sign. Field tags are an idiom of Go
-// and refuse. An index signature and a constructor take a narrower set of
+// and refuse. The methods of a class render as its members, where the
+// methods of an enum and of a sum refuse, because neither has members in
+// TypeScript. An index signature and a constructor take a narrower set of
 // modifiers than a method, and their keyword helpers refuse the rest.
 // Nothing promotes members, so the coverage refuses an embed with every
-// fact on it.
+// fact on it. A field that another type receives refuses, because the
+// backend does not write a declaration merge. The annotations of a file
+// refuse, because the skeleton does not write the header that a
+// generator states.
 //
 // Coverage builds the table on every call, which the caller keeps: four
 // allocations of the fact map, and four of the exception map with two for
-// each of its eleven kinds, 30 allocations.
+// each of its twelve kinds, 32 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		RefusesEmbeds: true,
@@ -53,6 +58,7 @@ func Coverage() render.Coverage {
 			symbol.FactFields:           render.Refuses,
 			symbol.FactMethods:          render.Refuses,
 			symbol.FactValue:            render.Renders,
+			symbol.FactReceives:         render.Refuses,
 			symbol.FactComment:          render.Renders,
 			symbol.FactMutability:       render.Renders,
 			symbol.FactTag:              render.Refuses,
@@ -100,7 +106,11 @@ func Coverage() render.Coverage {
 				symbol.FactAnnotations: render.Refuses,
 			},
 			symbol.KindStruct: {
-				symbol.FactLevel: render.Refuses, // no static classes
+				symbol.FactLevel:   render.Refuses, // no static classes
+				symbol.FactMethods: render.Renders, // class members
+			},
+			symbol.KindFile: {
+				symbol.FactAnnotations: render.Refuses, // no header of a generator
 			},
 		},
 	}
