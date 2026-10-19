@@ -23,22 +23,22 @@ The [repository README](../../README.md) lists every module, its
 import path and what it holds. This document explains the boundary
 that list reflects.
 
-The root module `go.dokimi.dev/eidos` owns the import-path prefix
-and pins the toolchain for CI. It holds no packages and is not a
-workspace member. The kernel module's root package is called
-`eidos`, so plugin authors write `eidos.NewPlugin(…)`.
+The root module `go.dokimi.dev/eidos` is the prefix of every import
+path of the repository, and the workspace uses it as `.`. It contains
+the command `eidos`, the main package `cmd/eidos`
+([14-distribution-and-cli.md](14-distribution-and-cli.md)). The kernel
+module's root package is called `eidos`, so plugin authors write
+`eidos.NewPlugin(…)`.
 
-Language support is uneven by design, because a satellite arrives
-one side at a time. Go reads and writes, through a frontend, its
-rules, a backend and an annotator. TypeScript, Java and Rust have
-backends only, so a Go workspace renders into them before they can
-be read from. protobuf reads and writes every construct of its
-versions, through a frontend, its rules and a backend. GraphQL reads
-and writes every construct of the September 2025 edition in the same
-way. The Kotlin and
-PHP modules contain a package comment
-alone, and further languages such as `eidos-lang-python` join as
-new modules
+Go reads and writes through a frontend, its rules, a backend and an
+annotator.
+TypeScript reads and writes through a frontend, its rules and a
+backend, and Java and Rust through a frontend and a backend. protobuf
+reads and writes every construct of its versions through a frontend,
+its rules and a backend. GraphQL reads and writes every construct of
+the September 2025 edition in the same way. The Kotlin and PHP modules
+contain a package comment alone, and further languages such as
+`eidos-lang-python` join as new modules
 ([11-languages.md](11-languages.md)). There are no bridge modules:
 cross-language conversion goes through the kernel's hub, never
 pairwise ([10-cross-language.md](10-cross-language.md)).
@@ -56,11 +56,12 @@ below the satellites rather than beside them. It is also where the
 tree-sitter cgo dependency stays, so the kernel keeps its zero
 dependencies and a binding or grammar upgrade touches one module.
 
-`eidos-cli` contains the seven command kernels, the config file and its
+`eidos-cli` contains the eight command kernels, the config file and its
 discovery, and `acceptancetest` ([20-cli.md](20-cli.md)). It depends on
-the kernel and on one YAML library. No satellite or plugin module
-depends on it, so the kernel keeps its zero dependencies and a
-satellite never builds the YAML library.
+the kernel, the declarative host, go-cli (`go.stealthscale.io/cli`) and
+one YAML library. No satellite or plugin module depends on it, so the
+kernel keeps its zero dependencies and a satellite never builds go-cli
+or the YAML library.
 
 `eidos-declarative` contains the declarative host. Its `Load` builds a
 generator from a plugin directory of a YAML manifest and template trees
@@ -94,6 +95,8 @@ eidos-core/
   directive/     one grammar, schema machinery, the canonical parsed form
   diag/          positioned diagnostics with stable codes
   position/      the leaf
+  jsonschema/    the JSON Schema, draft 2020-12, of a Go type from the
+                 tags of its fields
   plugin/        roles + capabilities, per-role priorities, plugin
                  values
                  plugintest/ — the kit holding a plugin to its roles
@@ -120,8 +123,16 @@ eidos-core/
   toolchain/     the skeleton of every language's toolchain harness: the
                  generated-output fixture, the assertion set, and the
                  adapter a satellite implements over its own compiler
+  layout/        the routing of a settled plan's declarations to the
+                 files they are written in, after the settle and before
+                 the render
   output/        the output contract: rendered files to sink, headers,
                  provenance trailers, manifests
+  manifest/      the record of every file a workspace generated, in up
+                 to 256 deterministic documents
+  ledger/        a workspace's record as named blobs in the brand's state
+                 directory: the manifest, the generations of the sealed
+                 state and the parse memo
   workspace/     workspaces, plans, plan exports, cross-plan checks,
                  the audit mode
   internal/
@@ -134,16 +145,10 @@ eidos-core/
     coretest/    the assertions and fixtures the kernel's own tests share
 ```
 
-Planned kernel packages, and the milestone that builds each:
-
-- `engine/` — incrementality: fingerprints, red-green invalidation,
-  the sealed-graph persistence format. Milestone 0007.
-
-Two names the map used to carry live elsewhere. Conformance is its
-own module, `eidos-conformance`, because it drives the satellites
-and nothing may depend on it. Case conversion is `eidos-lang`'s
-`naming`, because only satellites ask for it and the kernel takes
-nothing its satellites alone consume.
+Conformance is its own module, `eidos-conformance`, because it drives
+the satellites and nothing may depend on it. Case conversion is
+`eidos-lang`'s `naming`, because only satellites ask for it and the
+kernel takes nothing its satellites alone consume.
 
 The SDK is a generated re-export facade over the kernel's
 plugin-facing packages, laid flat under one namespace whatever
@@ -164,7 +169,8 @@ consumers (dokimi, org binaries) ──► eidos-cli (command kernels) ───
 
 Nothing in the kernel names anything to its left, and no satellite
 imports another satellite. Cross-language needs go through the
-kernel's hub ([10-cross-language.md](10-cross-language.md)).
+kernel's hub ([10-cross-language.md](10-cross-language.md)). The
+command `eidos` of the root module is one of the consumers.
 
 ## The read/write seam
 
@@ -194,7 +200,8 @@ import line rather than in review.
 
 ## What is deliberately not in the kernel
 
-- Any binary. eidos ships no executable
+- A binary. The command `eidos` is the main package `cmd/eidos` of the
+  root module, and it composes the command kernels and the satellites
   ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
 - The command line. The command kernels read a YAML config file, so
   they are the module `eidos-cli`, beside the kernel.
