@@ -860,6 +860,11 @@ const (
 	// constant or a variable: time.Second. A target spells the name with
 	// the import of its package, as it spells the callee of a call.
 	ValueName = core.ValueName
+	// ValueConstruction constructs Type from Args: new Set([42]). A target
+	// whose language constructs a value through its type, such as the new
+	// expression of TypeScript and Java, spells it with the import of the
+	// type. A target without such a form refuses it.
+	ValueConstruction = core.ValueConstruction
 )
 
 // LiteralKind is the kind of the text of a literal. A target spells each
@@ -974,6 +979,16 @@ func Address(inner Value) Value {
 // nothing.
 func Name(id symbol.Identity) Value {
 	return core.Name(id)
+}
+
+// Construction returns a construction of the type t from the arguments
+// args, such as new Map([["a", "b"]]) in TypeScript. A construction
+// without arguments is the empty value of a collection type, such as new
+// Set(). A backend imports the type, as it does for the type of a
+// composite. Construction allocates the list of arguments of a variadic
+// call, one allocation, and nothing without arguments.
+func Construction(t *TypeRef, args ...Value) Value {
+	return core.Construction(t, args...)
 }
 
 // Walk visits s and every declaration it contains, depth first, in

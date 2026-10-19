@@ -211,6 +211,45 @@ func TestMatch(t *testing.T) {
 		})
 	})
 
+	t.Run("SubjectMatch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("lets one function report at the subjects of two kinds", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+			store := coretest.Interface(coretest.StorePath, "Store")
+			store.Pos = position.Pos{File: "store.go", Line: 9, Col: 1}
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, alpha, store))
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			refuse := func(m eidos.SubjectMatch) error {
+				m.Errorf(reported, "the subject in %s is refused", m.Lang())
+				return nil
+			}
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error { return refuse(m) })).
+				Handle(eidos.OnInterface(func(m *eidos.InterfaceMatch, _ *eidos.Emitter) error { return refuse(m) })).
+				Generator()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			var at []position.Pos
+			for d := range ctx.Sink.All() {
+				at = append(at, d.Pos)
+			}
+			assert.Permutation(t, at, []position.Pos{alpha.Pos, store.Pos},
+				"the function reports at the subject of each match that it receives")
+		})
+
+		t.Run("is not satisfied by a graph match", func(t *testing.T) {
+			t.Parallel()
+
+			var m any = &eidos.GraphMatch{}
+			_, satisfied := m.(eidos.SubjectMatch)
+			assert.False(t, satisfied, "a graph match has no subject")
+		})
+	})
+
 	t.Run("Lang", func(t *testing.T) {
 		t.Parallel()
 

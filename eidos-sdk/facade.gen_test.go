@@ -241,6 +241,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Reporter", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[sdk.Reporter](), reflect.TypeFor[core.Reporter](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("SubjectMatch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[sdk.SubjectMatch](), reflect.TypeFor[core.SubjectMatch](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("Mirror", func(t *testing.T) {
 		t.Parallel()
 
@@ -271,6 +291,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("TemplatesDir", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, sdk.TemplatesDir, core.TemplatesDir, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("TargetOption", func(t *testing.T) {
 		t.Parallel()
 
@@ -288,6 +318,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(sdk.Templates), reflect.TypeOf(core.Templates), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("TemplatesOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(sdk.TemplatesOf), reflect.TypeOf(core.TemplatesOf), "the wrapper has the kernel function's signature")
 		})
 	})
 
@@ -438,6 +478,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(sdk.OnEmit), reflect.TypeOf(core.OnEmit), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("PackageMatch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[sdk.PackageMatch](), reflect.TypeFor[core.PackageMatch](), "the facade aliases the kernel's type")
 		})
 	})
 }

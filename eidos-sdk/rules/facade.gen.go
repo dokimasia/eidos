@@ -65,10 +65,10 @@ func NewBound(source SourceRules, view View, forLang func(symbol.Lang) SourceRul
 type Callable = core.Callable
 
 // ParamView is one parameter: its name, its reference, the role the
-// language gave it, and whether it collects the rest. It contains the
-// reference and no shape. A consumer that needs the shape asks
-// [Bound.TypeOf], which memoises, so a detector folds only the shapes it
-// reads.
+// language gave it, whether it collects the rest, and whether a call can
+// leave it out. It contains the reference and no shape. A consumer that
+// needs the shape asks [Bound.TypeOf], which memoises, so a detector folds
+// only the shapes it reads.
 type ParamView = core.ParamView
 
 // ReturnView is one return: its name where the language names
@@ -269,6 +269,31 @@ const (
 
 // Gap is one contributor that yielded nothing, and why.
 type Gap = core.Gap
+
+// Mentioned returns the type parameters of tps that the references refs
+// mention, in the order of tps. It adds each type parameter that the
+// bounds, the default or the value type of a returned parameter mention,
+// so a declaration of the result declares every parameter that its own
+// parameters use. Mentioned returns the parameters of tps themselves, and
+// nil where no reference mentions one.
+//
+// A named reference mentions a parameter where its spelling is the name of
+// the parameter, or where a type argument of it mentions the parameter. A
+// qualified spelling, such as pkg.V, names a declaration of another
+// package and mentions no parameter. A structural reference mentions a
+// parameter where one of its children mentions it. The children of an
+// inline body are the types of its members, so the name of a member is no
+// mention. A nil reference mentions nothing.
+//
+// # Allocation contract
+//
+// Mentioned allocates the list that it returns, one allocation, and
+// nothing where it returns nil. A walk over more than 32 type parameters
+// also allocates its flags, one allocation, because Go places a list of
+// variable length on the stack up to 32 bytes.
+func Mentioned(tps []*emit.TypeParam, refs ...*emit.TypeRef) []*emit.TypeParam {
+	return core.Mentioned(tps, refs...)
+}
 
 // EnumRules projects an enumeration.
 type EnumRules = core.EnumRules

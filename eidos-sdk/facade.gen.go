@@ -307,6 +307,23 @@ func OnAlias[E Effect](h func(*AliasMatch, E) error) Rule {
 // package satisfy it, because the base surface is unexported.
 type Matcher = core.Matcher
 
+// Reporter is the part of a match with a subject that reports findings:
+// at the position of the subject, and at a position that the handler
+// passes. Every match of a declaration satisfies it, and so do
+// [EmitMatch] and [PackageMatch]. A [GraphMatch] has no subject, so it
+// reports at a position alone and does not satisfy it.
+type Reporter = core.Reporter
+
+// SubjectMatch is the part that every match with a subject has: the
+// language and the rules of the subject, the reader, the gating
+// directive, the keys of the kernel, the exports of the plans that the
+// plan depends on, and the reports of [Reporter]. A function that two
+// handlers of different kinds share takes a SubjectMatch, such as one
+// that writes the double of an interface and of a struct. Every match of
+// a declaration satisfies it, and so do [EmitMatch] and [PackageMatch].
+// The interface is closed, because [Matcher] is.
+type SubjectMatch = core.SubjectMatch
+
 // Fact returns the value of the first-ranked claim of k on the subject,
 // and records the read at (subject, key) into the read set of the
 // invocation, a miss included. On an emit match the subject is the
@@ -393,10 +410,16 @@ func TypeArgs(tps []*emit.TypeParam) []*emit.TypeRef {
 	return core.TypeArgs(tps)
 }
 
+// TemplatesDir is the directory of the templates of a plugin, which
+// [TemplatesOf] reads. The tree of each target is the directory below it
+// that has the name of the target, such as templates/golang. A plugin
+// embeds the directory with //go:embed templates.
+const TemplatesDir = core.TemplatesDir
+
 // TargetOption is one declaration of the presentation of one target, which
 // [Builder.For] takes. It declares a template tree, helpers or overrides,
-// and [Templates], [Funcs] and [Overrides] construct it. The zero value
-// declares nothing, and a typed build panics on it.
+// and [Templates], [TemplatesOf], [Funcs] and [Overrides] construct it. The
+// zero value declares nothing, and a typed build panics on it.
 type TargetOption = core.TargetOption
 
 // Templates declares the template tree of a target. The plans of the
@@ -405,6 +428,26 @@ type TargetOption = core.TargetOption
 // tree. Templates returns the option by value and allocates nothing.
 func Templates(tree fs.FS) TargetOption {
 	return core.Templates(tree)
+}
+
+// TemplatesOf declares the template tree of the target t from the files of
+// a plugin, as [Templates] declares a tree: the directory templates/<t> of
+// files, such as the files that a plugin embeds with //go:embed templates.
+// A name of the tree is the path of a template below that directory, so a
+// plugin of several targets declares each target in one call.
+//
+// A typed build panics where the name of t is no name of a directory,
+// where files has no directory templates/<t>, and on nil files. Each
+// defect comes from the source of the plugin, so the first build in any
+// test reports it.
+//
+// # Allocation contract
+//
+// TemplatesOf returns the option by value. It allocates the joined path,
+// what [fs.Stat] allocates for the directory, and the tree of [fs.Sub]. A
+// refused declaration allocates the text of its defect.
+func TemplatesOf(files fs.FS, t plugin.Target) TargetOption {
+	return core.TemplatesOf(files, t)
 }
 
 // Funcs declares helpers for the plans of a target, layered over the
@@ -622,4 +665,27 @@ type EmitMatch = core.EmitMatch
 // allocations.
 func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 	return core.OnEmit(k, h)
+}
+
+// PackageMatch is the OnPackage subject. It is one package of the scope
+// with its files and their declarations, so a handler checks the
+// declarations of a package as one set. Its reports have the position of
+// the package.
+type PackageMatch = core.PackageMatch
+
+// OnPackage runs the handler once for each package in scope, or once for
+// each gating instance of a directive on a package under a Directive
+// wrapper. The effect parameter selects the role, as it does for the
+// triggers of the declaration kinds. A handler walks the declarations of
+// the package without a tracked read, so the invocation records a package
+// edge, and a change of any member of the package runs the handler again.
+//
+// # Allocation contract
+//
+// OnPackage allocates the leaf of the rule and the closure of its
+// invocation over the handler, two allocations. The first invocation of a
+// phase call allocates the tracked reader of the lane, which records the
+// package edge.
+func OnPackage[E Effect](h func(*PackageMatch, E) error) Rule {
+	return core.OnPackage[E](h)
 }

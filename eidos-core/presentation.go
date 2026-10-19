@@ -7,21 +7,32 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
 	"slices"
 	"strconv"
+	"strings"
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
+// TemplatesDir is the directory of the templates of a plugin, which
+// [TemplatesOf] reads. The tree of each target is the directory below it
+// that has the name of the target, such as templates/golang. A plugin
+// embeds the directory with //go:embed templates.
+const TemplatesDir = "templates"
+
 // TargetOption is one declaration of the presentation of one target, which
 // [Builder.For] takes. It declares a template tree, helpers or overrides,
-// and [Templates], [Funcs] and [Overrides] construct it. The zero value
-// declares nothing, and a typed build panics on it.
+// and [Templates], [TemplatesOf], [Funcs] and [Overrides] construct it. The
+// zero value declares nothing, and a typed build panics on it.
 type TargetOption struct {
 	kind  optionKind
 	tree  fs.FS
 	funcs template.FuncMap
+	// defect is the defect of the tree that [TemplatesOf] found, which the
+	// typed build reports, and empty for a tree without one.
+	defect string
 }
 
 // Templates declares the template tree of a target. The plans of the
@@ -30,6 +41,49 @@ type TargetOption struct {
 // tree. Templates returns the option by value and allocates nothing.
 func Templates(tree fs.FS) TargetOption {
 	return TargetOption{kind: optionTemplates, tree: tree}
+}
+
+// TemplatesOf declares the template tree of the target t from the files of
+// a plugin, as [Templates] declares a tree: the directory templates/<t> of
+// files, such as the files that a plugin embeds with //go:embed templates.
+// A name of the tree is the path of a template below that directory, so a
+// plugin of several targets declares each target in one call.
+//
+// A typed build panics where the name of t is no name of a directory,
+// where files has no directory templates/<t>, and on nil files. Each
+// defect comes from the source of the plugin, so the first build in any
+// test reports it.
+//
+// # Allocation contract
+//
+// TemplatesOf returns the option by value. It allocates the joined path,
+// what [fs.Stat] allocates for the directory, and the tree of [fs.Sub]. A
+// refused declaration allocates the text of its defect.
+func TemplatesOf(files fs.FS, t plugin.Target) TargetOption {
+	opt := TargetOption{kind: optionTemplates}
+	if files == nil {
+		return opt
+	}
+	if name := string(t); strings.Contains(name, "/") || !fs.ValidPath(name) {
+		opt.defect = "the target " + strconv.Quote(name) + " is no name of a directory"
+		return opt
+	}
+	dir := path.Join(TemplatesDir, string(t))
+	info, err := fs.Stat(files, dir)
+	switch {
+	case err != nil:
+		opt.defect = err.Error()
+	case !info.IsDir():
+		opt.defect = dir + " is no directory"
+	default:
+		tree, err := fs.Sub(files, dir)
+		if err != nil {
+			opt.defect = err.Error()
+			return opt
+		}
+		opt.tree = tree
+	}
+	return opt
 }
 
 // Funcs declares helpers for the plans of a target, layered over the
@@ -142,6 +196,9 @@ func resolveLevel(name, where string, opts []TargetOption) level {
 	for _, o := range opts {
 		switch o.kind {
 		case optionTemplates:
+			if o.defect != "" {
+				panic("eidos: " + name + " declares the template tree " + where + ", and " + o.defect)
+			}
 			if o.tree == nil {
 				panic("eidos: " + name + " declares a nil template tree " + where)
 			}

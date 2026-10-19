@@ -491,6 +491,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Mentioned", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rules.Mentioned), reflect.TypeOf(core.Mentioned), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("EnumRules", func(t *testing.T) {
 		t.Parallel()
 

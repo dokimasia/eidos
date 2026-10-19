@@ -31,6 +31,11 @@ const (
 	// constant or a variable: time.Second. A target spells the name with
 	// the import of its package, as it spells the callee of a call.
 	ValueName
+	// ValueConstruction constructs Type from Args: new Set([42]). A target
+	// whose language constructs a value through its type, such as the new
+	// expression of TypeScript and Java, spells it with the import of the
+	// type. A target without such a form refuses it.
+	ValueConstruction
 )
 
 // String returns the spelling of the kind, and the decimal number of a
@@ -51,6 +56,8 @@ func (k ValueKind) String() string {
 		return "address"
 	case ValueName:
 		return "name"
+	case ValueConstruction:
+		return "construction"
 	default:
 		return strconv.Itoa(int(k))
 	}
@@ -115,10 +122,10 @@ type Value struct {
 	Text    string          `json:"text,omitzero"`
 	Bits    int             `json:"bits,omitzero"`   // LiteralInt and LiteralFloat: the width in bits of the number type, 0 for none
 	Lang    symbol.Lang     `json:"lang,omitzero"`   // LiteralRaw: the language of the text
-	Type    *TypeRef        `json:"type,omitzero"`   // Conversion and Composite: the type of the result
+	Type    *TypeRef        `json:"type,omitzero"`   // Conversion, Composite and Construction: the type of the result
 	Callee  symbol.Identity `json:"callee,omitzero"` // Call and Name: the declaration that the target spells and imports
 	Fields  []ValueField    `json:"fields,omitzero"` // Composite
-	Args    []Value         `json:"args,omitzero"`   // Call
+	Args    []Value         `json:"args,omitzero"`   // Call and Construction
 	Inner   *Value          `json:"inner,omitzero"`  // Conversion and Address
 }
 
@@ -203,4 +210,14 @@ func Address(inner Value) Value {
 // nothing.
 func Name(id symbol.Identity) Value {
 	return Value{Kind: ValueName, Callee: id}
+}
+
+// Construction returns a construction of the type t from the arguments
+// args, such as new Map([["a", "b"]]) in TypeScript. A construction
+// without arguments is the empty value of a collection type, such as new
+// Set(). A backend imports the type, as it does for the type of a
+// composite. Construction allocates the list of arguments of a variadic
+// call, one allocation, and nothing without arguments.
+func Construction(t *TypeRef, args ...Value) Value {
+	return Value{Kind: ValueConstruction, Type: t, Args: args}
 }

@@ -521,6 +521,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("HelperSpellValue", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperSpellValue, core.HelperSpellValue, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("HelperTypeParams", func(t *testing.T) {
 		t.Parallel()
 
@@ -528,6 +538,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, render.HelperTypeParams, core.HelperTypeParams, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("HelperTypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperTypeArgs, core.HelperTypeArgs, "the facade re-declares the kernel's value")
 		})
 	})
 

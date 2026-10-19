@@ -53,9 +53,10 @@ type journaled struct {
 	plugin.Invocation
 	// read reports whether the invocation passed a read set.
 	read bool
-	// identities and facts are the declaration edges and the fact edges of
-	// the set.
+	// identities, packages and facts are the declaration edges, the
+	// package edges and the fact edges of the set.
 	identities []symbol.Identity
+	packages   []symbol.Identity
 	facts      []meta.FactRef
 }
 
@@ -86,6 +87,7 @@ func (r *recorder) Invoked(inv plugin.Invocation) {
 	j.Findings = slices.Clone(inv.Findings)
 	if inv.Reads != nil {
 		j.identities = slices.Collect(inv.Reads.Identities())
+		j.packages = slices.Collect(inv.Reads.Packages())
 		for id, key := range inv.Reads.Facts() {
 			j.facts = append(j.facts, meta.FactRef{Subject: id, Key: key})
 		}

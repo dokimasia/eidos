@@ -4,6 +4,7 @@
 package eidos
 
 import (
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -50,6 +51,8 @@ type EmitMatch struct {
 	Value symbol.Symbol
 }
 
+var _ SubjectMatch = (*EmitMatch)(nil)
+
 // Origin returns the node identity that the emit value derives from. It
 // allocates nothing.
 func (m *EmitMatch) Origin() symbol.Identity { return m.subject }
@@ -76,6 +79,56 @@ func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 			m := bindMatch[EmitMatch](inv)
 			m.Value = inv.value
 			return h(m, inv.rs.emitterFor(&m.match))
+		},
+	}}
+}
+
+// PackageMatch is the OnPackage subject. It is one package of the scope
+// with its files and their declarations, so a handler checks the
+// declarations of a package as one set. Its reports have the position of
+// the package.
+type PackageMatch struct {
+	subjectMatch
+	// Package is the package, with its files and their declarations.
+	Package *node.Package
+}
+
+var _ SubjectMatch = (*PackageMatch)(nil)
+
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released package matches.
+func (m *PackageMatch) unbind() any {
+	*m = PackageMatch{}
+	return (*PackageMatch)(nil)
+}
+
+// OnPackage runs the handler once for each package in scope, or once for
+// each gating instance of a directive on a package under a Directive
+// wrapper. The effect parameter selects the role, as it does for the
+// triggers of the declaration kinds. A handler walks the declarations of
+// the package without a tracked read, so the invocation records a package
+// edge, and a change of any member of the package runs the handler again.
+//
+// # Allocation contract
+//
+// OnPackage allocates the leaf of the rule and the closure of its
+// invocation over the handler, two allocations. The first invocation of a
+// phase call allocates the tracked reader of the lane, which records the
+// package edge.
+func OnPackage[E Effect](h func(*PackageMatch, E) error) Rule {
+	return Rule{leaf: &leaf{
+		kind:  symbol.KindPackage,
+		phase: phaseOf[E](),
+		invoke: func(inv invocation) error {
+			pkg, held := inv.value.(*node.Package)
+			if !held {
+				return nil
+			}
+			m := bindMatch[PackageMatch](inv)
+			m.Package = pkg
+			// A lookup of the identity of a package records its package edge.
+			m.Reader().Lookup(pkg.ID)
+			return h(m, effectFor[E](inv.rs, &m.match))
 		},
 	}}
 }

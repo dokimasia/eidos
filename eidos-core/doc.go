@@ -36,7 +36,9 @@
 // handlers, the key registrations that [Builder.Keys] declares and the
 // template helpers are functions. Handlers attach to triggers indexed by
 // kind, with one generated constructor for each subject kind, such as
-// [OnInterface], and [OnGraph] and [OnEmit]. Gates are declarative.
+// [OnInterface], and [OnGraph], [OnEmit] and [OnPackage]. Every match with
+// a subject satisfies [SubjectMatch], so a function that the handlers of
+// two kinds share takes one type. Gates are declarative.
 // [Directive] binds a schema and [Where] binds fact predicates, and a
 // handler contains no filter. A predicate on a key of another plugin takes
 // a handle from [meta.Named], which the workspace binds through
@@ -59,7 +61,9 @@
 // A plugin whose emit names templates declares where they resolve.
 // [Builder.Templates] and [Builder.Funcs] declare the tree and the helpers
 // of the plugin level, which serve every target. [Builder.For] layers the
-// [Templates], [Funcs] and [Overrides] of one target over them. A plugin
+// [Templates], [Funcs] and [Overrides] of one target over them.
+// [TemplatesOf] declares the tree of a target from the templates that a
+// plugin embeds, the directory templates/<target> of its files. A plugin
 // that declares trees for named targets alone serves those targets alone,
 // and the workspace refuses a plan of any other target at Build.
 // [Emitter.JoinName] joins a family word onto a generated identifier in

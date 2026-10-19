@@ -661,6 +661,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ValueConstruction", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, emit.ValueConstruction, core.ValueConstruction, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("LiteralKind", func(t *testing.T) {
 		t.Parallel()
 
@@ -858,6 +868,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeOf(emit.Name), reflect.TypeOf(core.Name), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Construction", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(emit.Construction), reflect.TypeOf(core.Construction), "the wrapper has the kernel function's signature")
 		})
 	})
 

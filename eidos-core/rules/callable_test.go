@@ -151,6 +151,47 @@ func TestCallable(t *testing.T) {
 			assert.Equal(t, c.Returns[1].Ref.Spelling, strSpelling, "the declared returns remain in order")
 		})
 
+		{
+			tests := []struct {
+				name string
+				give *node.Param
+				want bool
+			}{
+				{
+					name: "sets Optional for a parameter with a default",
+					give: &node.Param{Name: "n", Type: builtin(intSpelling), Default: "1"},
+					want: true,
+				},
+				{
+					name: "sets Optional for a parameter with the optional mark",
+					give: &node.Param{Name: "n", Type: builtin(intSpelling), Optional: true},
+					want: true,
+				},
+				{
+					name: "sets Optional for a parameter that collects the rest",
+					give: &node.Param{Name: "n", Type: builtin(intSpelling), Variadic: symbol.VariadicPositional},
+					want: true,
+				},
+				{
+					name: "leaves Optional false for a parameter that needs an argument",
+					give: &node.Param{Name: "n", Type: builtin(intSpelling)},
+					want: false,
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					fn := coretest.Function(svcPath, "One")
+					fn.Params = []*node.Param{tt.give}
+					c, _ := rules.NewBound(scripted(), viewOnly(t), nil).CallableOf(fn)
+					assert.Length(t, c.Params, 1, "the parameter has a view")
+					assert.Equal(t, c.Params[0].Optional, tt.want,
+						"the view states whether a call can leave the parameter out")
+				})
+			}
+		}
+
 		t.Run("returns nil lists for a bare signature", func(t *testing.T) {
 			t.Parallel()
 

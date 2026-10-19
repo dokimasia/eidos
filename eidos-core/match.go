@@ -404,6 +404,40 @@ type Matcher interface {
 	unbind() any
 }
 
+// Reporter is the part of a match with a subject that reports findings:
+// at the position of the subject, and at a position that the handler
+// passes. Every match of a declaration satisfies it, and so do
+// [EmitMatch] and [PackageMatch]. A [GraphMatch] has no subject, so it
+// reports at a position alone and does not satisfy it.
+type Reporter interface {
+	Errorf(c diag.Code, format string, a ...any)
+	Warnf(c diag.Code, format string, a ...any)
+	Infof(c diag.Code, format string, a ...any)
+	ErrorfAt(c diag.Code, at position.Pos, format string, a ...any)
+	WarnfAt(c diag.Code, at position.Pos, format string, a ...any)
+	InfofAt(c diag.Code, at position.Pos, format string, a ...any)
+}
+
+// SubjectMatch is the part that every match with a subject has: the
+// language and the rules of the subject, the reader, the gating
+// directive, the keys of the kernel, the exports of the plans that the
+// plan depends on, and the reports of [Reporter]. A function that two
+// handlers of different kinds share takes a SubjectMatch, such as one
+// that writes the double of an interface and of a struct. Every match of
+// a declaration satisfies it, and so do [EmitMatch] and [PackageMatch].
+// The interface is closed, because [Matcher] is.
+type SubjectMatch interface {
+	Matcher
+	Reporter
+	Lang() symbol.Lang
+	Rules() rules.Bound
+	RulesFor(lang symbol.Lang) rules.Bound
+	Reader() *store.Reader
+	Directive() *directive.Directive
+	Kernel() meta.KernelKeys
+	Export(plan string) (plugin.ExportDoc, bool)
+}
+
 // Fact returns the value of the first-ranked claim of k on the subject,
 // and records the read at (subject, key) into the read set of the
 // invocation, a miss included. On an emit match the subject is the

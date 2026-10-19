@@ -22,15 +22,20 @@ type Callable struct {
 }
 
 // ParamView is one parameter: its name, its reference, the role the
-// language gave it, and whether it collects the rest. It contains the
-// reference and no shape. A consumer that needs the shape asks
-// [Bound.TypeOf], which memoises, so a detector folds only the shapes it
-// reads.
+// language gave it, whether it collects the rest, and whether a call can
+// leave it out. It contains the reference and no shape. A consumer that
+// needs the shape asks [Bound.TypeOf], which memoises, so a detector folds
+// only the shapes it reads.
 type ParamView struct {
 	Name     string
 	Ref      *node.TypeRef
 	Role     ParamRole
 	Variadic bool
+	// Optional reports whether a call can leave the parameter out: the
+	// parameter has a default, the optional mark of its language, or
+	// collects the rest of the arguments. A callable whose parameters are
+	// all optional takes a call without arguments.
+	Optional bool
 }
 
 // ReturnView is one return: its name where the language names
@@ -73,11 +78,13 @@ func (b Bound) callable(
 			if p == nil {
 				continue
 			}
+			variadic := p.Variadic != symbol.VariadicNone
 			c.Params = append(c.Params, ParamView{
 				Name:     p.Name,
 				Ref:      p.Type,
 				Role:     b.source.ParamRole(p, b.view),
-				Variadic: p.Variadic != symbol.VariadicNone,
+				Variadic: variadic,
+				Optional: variadic || p.Optional || p.Default != "",
 			})
 		}
 	}

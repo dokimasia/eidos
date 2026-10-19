@@ -12,6 +12,8 @@ type {{.Name}}Match struct {
 	{{.Name}} *node.{{.Name}}
 }
 
+var _ SubjectMatch = (*{{.Name}}Match)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released {{.Name}}Match
 // values.

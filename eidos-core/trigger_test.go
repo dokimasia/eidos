@@ -12,10 +12,13 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -188,6 +191,118 @@ func TestTrigger(t *testing.T) {
 		})
 	})
 
+	t.Run("OnPackage", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("runs once for each package in scope", func(t *testing.T) {
+			t.Parallel()
+
+			store := coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))
+			cache := coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Beta"))
+			var visited []symbol.Identity
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnPackage(func(m *eidos.PackageMatch, _ *eidos.Emitter) error {
+					visited = append(visited, m.Package.ID)
+					return nil
+				})).
+				Generator(), store, cache)
+			assert.Permutation(t, visited, []symbol.Identity{store.ID, cache.ID},
+				"the rule runs once for each package of the graph")
+		})
+
+		t.Run("passes the package with its declarations to the handler", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			var files []*node.File
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnPackage(func(m *eidos.PackageMatch, _ *eidos.Emitter) error {
+					files = m.Package.Files
+					return nil
+				})).
+				Generator(), coretest.Package(coretest.StorePath, alpha))
+			assert.Length(t, files, 1, "the package has its one file")
+			assert.Contains(t, files[0].Decls, symbol.Symbol(alpha), "the file has the declaration of the package",
+				assert.ByIdentity())
+		})
+
+		t.Run("records a package edge for the package of the match", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnPackage(func(*eidos.PackageMatch, *eidos.Emitter) error { return nil })).
+				Generator()
+			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
+			assert.Length(t, rec.invoked, 1, "the one package has one invocation")
+			assert.Equal(t, rec.invoked[0].packages, []symbol.Identity{coretest.PackageID(coretest.StorePath)},
+				"a change of any member of the package runs the invocation again")
+		})
+
+		t.Run("runs once for each gating instance of a directive on a package", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))
+			g := store.New()
+			assert.NoError(t, g.AddPackage(pkg), "the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(pkg.ID, []directive.Raw{{Name: gateName}, {Name: gateName}}),
+				"the gating instances attach to the package")
+			g.Freeze()
+			_, facts := boolKey(t)
+			schema := stubSchema(gateName)
+			schema.Repeatable = true
+			var instances []int
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.Directive(schema, eidos.OnPackage(func(m *eidos.PackageMatch, _ *eidos.Emitter) error {
+					instances = append(instances, m.Directive().Instance)
+					return nil
+				}))).
+				Generator()
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, repeated(pkg.ID, schema, 2))),
+				"the phase call passes")
+			assert.Equal(t, instances, []int{0, 1}, "the handler runs for each instance in instance order")
+		})
+
+		t.Run("passes over a value that is not a package", func(t *testing.T) {
+			t.Parallel()
+
+			var visited []symbol.Identity
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnPackage(func(m *eidos.PackageMatch, _ *eidos.Emitter) error {
+					visited = append(visited, m.Package.ID)
+					return nil
+				})).
+				Generator(),
+				coretest.Package(coretest.StorePath, coretest.Foreign(
+					coretest.StorePath, coretest.ForeignName, symbol.KindPackage)))
+			assert.Equal(t, visited, []symbol.Identity{coretest.PackageID(coretest.StorePath)},
+				"the handler sees the package and not a declaration of another type under its kind")
+		})
+
+		t.Run("returns a rule of the package kind in the generate phase", func(t *testing.T) {
+			t.Parallel()
+
+			got := subscriptionsOf(t, eidos.OnPackage(func(*eidos.PackageMatch, *eidos.Emitter) error { return nil }))
+			assert.Equal(t, got, []plugin.Subscription{{
+				Rule: 0, Kind: symbol.KindPackage, Phase: plugin.PhaseGenerate,
+			}}, "an emitter handler generates")
+		})
+
+		t.Run("returns a rule of the package kind in the annotate phase", func(t *testing.T) {
+			t.Parallel()
+
+			stamps := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnPackage(func(*eidos.PackageMatch, *eidos.Stamper) error { return nil })).
+				Annotator()
+			subscribed, held := stamps.(plugin.Subscribed)
+			assert.True(t, held, "a built plugin declares its gates")
+			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
+				Rule: 0, Kind: symbol.KindPackage, Phase: plugin.PhaseAnnotate,
+			}}, "a stamper handler annotates")
+		})
+	})
+
 	t.Run("EmitMatch.Origin", func(t *testing.T) {
 		t.Parallel()
 
@@ -227,6 +342,10 @@ func TestTriggerAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { rule = eidos.OnEmit(symbol.KindStruct, onEmit) }, triggerAllocs,
 		"OnEmit allocates the rule's leaf and its invocation")
 	assert.Length(t, subscriptionsOf(t, rule), 1, "OnEmit returns one rule")
+	onPackage := func(*eidos.PackageMatch, *eidos.Emitter) error { return nil }
+	assert.MaxAllocs(t, func() { rule = eidos.OnPackage(onPackage) }, triggerAllocs,
+		"OnPackage allocates the rule's leaf and its invocation")
+	assert.Length(t, subscriptionsOf(t, rule), 1, "OnPackage returns one rule")
 }
 
 // BenchmarkTrigger measures the two triggers' constructors, a graph
@@ -256,6 +375,17 @@ func BenchmarkTrigger(b *testing.B) {
 		}
 		assert.Length(b, subscriptionsOf(b, rule), 1, "OnEmit returns one rule")
 	})
+
+	b.Run("OnPackage", func(b *testing.B) {
+		handler := func(*eidos.PackageMatch, *eidos.Emitter) error { return nil }
+		c := bench.Start(b).MaxAllocs(triggerAllocs)
+		defer c.End()
+		var rule eidos.Rule
+		for c.Loop() {
+			rule = eidos.OnPackage(handler)
+		}
+		assert.Length(b, subscriptionsOf(b, rule), 1, "OnPackage returns one rule")
+	})
 }
 
 // triggerCases returns a graph phase call over the invocation fixture
@@ -282,6 +412,9 @@ func triggerCases(tb assert.TB) []phaseCase {
 	for _, s := range structs {
 		origins[s.ID] = true
 	}
+	// visited is the package of the last package match, which the check of
+	// the package case reads after the count.
+	var visited symbol.Identity
 	return []phaseCase{
 		{
 			name: "GraphMatch.ErrorfAt", allocs: graphReportAllocs, fresh: fresh, check: one,
@@ -305,6 +438,20 @@ func triggerCases(tb assert.TB) []phaseCase {
 				Generator()),
 			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
 				assert.False(tb, ctx.Sink.Failed(), "the emit call reports nothing")
+			},
+		},
+		{
+			name: "PackageMatch.Package", allocs: readerAllocs, fresh: fresh,
+			gen: generatorOf(tb, eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnPackage(func(m *eidos.PackageMatch, _ *eidos.Emitter) error {
+					visited = m.Package.ID
+					return nil
+				})).
+				Generator()),
+			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
+				assert.Equal(tb, visited, coretest.PackageID(coretest.StorePath),
+					"the match has the package of the fixture")
+				assert.False(tb, ctx.Sink.Failed(), "the package call reports nothing")
 			},
 		},
 	}

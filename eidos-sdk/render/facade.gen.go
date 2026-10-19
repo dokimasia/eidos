@@ -346,8 +346,17 @@ const (
 	HelperDocs = core.HelperDocs
 	// HelperSpell writes a type reference as the target spells it.
 	HelperSpell = core.HelperSpell
+	// HelperSpellValue writes a type reference in a value position, where
+	// the declaration must exist at run time, such as the class of a
+	// construction. A target that imports a declaration for its type
+	// checker alone imports it for its value there.
+	HelperSpellValue = core.HelperSpellValue
 	// HelperTypeParams writes the type parameter list of a declaration.
 	HelperTypeParams = core.HelperTypeParams
+	// HelperTypeArgs writes a list of type parameters or of type
+	// references as the type arguments of a reference, and nothing for an
+	// empty list.
+	HelperTypeArgs = core.HelperTypeArgs
 	// HelperParams writes the parameter list of a callable.
 	HelperParams = core.HelperParams
 	// HelperResults writes the results of a callable.

@@ -4,7 +4,10 @@
 package eidos_test
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
+	"path"
 	"slices"
 	"strings"
 	"testing"
@@ -33,12 +36,27 @@ const (
 	targetText                 = "target"
 )
 
+// templatesOfAllocs is the ceiling of TemplatesOf over the files of
+// embedded: the joined path, the four allocations of the Stat and the Open
+// of fstest.MapFS for a directory that it synthesizes, and the tree.
+const templatesOfAllocs = 6
+
 // shout and whisper are two helpers of one shape, told apart by
 // what they return for toneInput.
 var (
 	shout   = strings.ToUpper
 	whisper = strings.ToLower
 )
+
+// errRefusedSub is the error of the Sub of [refusingSub].
+var errRefusedSub = errors.New("eidos_test: the files refuse a subtree")
+
+// refusingSub is a tree of files whose Sub refuses every directory, as an
+// [fs.SubFS] may.
+type refusingSub struct{ fstest.MapFS }
+
+// Sub returns errRefusedSub for every directory.
+func (refusingSub) Sub(string) (fs.FS, error) { return nil, errRefusedSub }
 
 // A target's presentation layers over the plugin-level one, which is
 // what lets one plugin serve every target and specialise a few.
@@ -71,6 +89,71 @@ func TestPresentation(t *testing.T) {
 			assert.True(t, held, "the other target has a tree")
 			assert.Equal(t, readTree(t, tree), pluginText, "the plugin-level tree serves it")
 		})
+	})
+
+	t.Run("TemplatesOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("serves the directory of its target", func(t *testing.T) {
+			t.Parallel()
+
+			tp := provider(t, eidos.NewPlugin(styledPlugin).
+				For(stubTarget, eidos.TemplatesOf(embedded(), stubTarget)).
+				For(otherTarget, eidos.TemplatesOf(embedded(), otherTarget)))
+			tree, held := tp.Templates(stubTarget)
+			assert.True(t, held, "the target has a tree")
+			assert.Equal(t, readTree(t, tree), targetText, "the tree is the directory of the target")
+		})
+
+		tests := []struct {
+			name  string
+			files fs.FS
+			give  plugin.Target
+			want  string
+		}{
+			{
+				name:  "panics at the typed build where the files have no directory of its target",
+				files: embedded(),
+				give:  "absent",
+				want:  "templates/absent",
+			},
+			{
+				name: "panics at the typed build where the path of its target is a file",
+				files: fstest.MapFS{
+					path.Join(eidos.TemplatesDir, string(stubTarget)): &fstest.MapFile{Data: []byte(targetText)},
+				},
+				give: stubTarget,
+				want: "is no directory",
+			},
+			{
+				name:  "panics at the typed build for a target that is no name of a directory",
+				files: embedded(),
+				give:  "../" + stubTarget,
+				want:  "no name of a directory",
+			},
+			{
+				name:  "panics at the typed build where the files refuse the directory of its target",
+				files: refusingSub{embedded()},
+				give:  stubTarget,
+				want:  errRefusedSub.Error(),
+			},
+			{
+				name:  "panics at the typed build for nil files",
+				files: nil,
+				give:  stubTarget,
+				want:  "a nil template tree",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got := assert.Panics(t, func() {
+					provider(t, eidos.NewPlugin(styledPlugin).For(stubTarget, eidos.TemplatesOf(tt.files, tt.give)))
+				}, "the typed build refuses the declaration")
+				assert.Contains(t, fmt.Sprint(got), tt.want, "the panic states the defect of the declaration")
+			})
+		}
 	})
 
 	t.Run("Funcs", func(t *testing.T) {
@@ -159,23 +242,33 @@ func TestPresentationAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { opt = eidos.Overrides(fm) }, 0, "Overrides allocates nothing")
 	tp := provider(t, eidos.NewPlugin(styledPlugin).For(stubTarget, opt))
 	assert.Equal(t, tp.Overrides(stubTarget), []string{toneHelper}, "Overrides returns the option")
+	files := embedded()
+	assert.MaxAllocs(t, func() { opt = eidos.TemplatesOf(files, stubTarget) }, templatesOfAllocs,
+		"TemplatesOf allocates the path, the information of the directory and the tree")
+	served, held := provider(t, eidos.NewPlugin(styledPlugin).For(stubTarget, opt)).Templates(stubTarget)
+	assert.True(t, held, "TemplatesOf declares the tree of the target")
+	assert.Equal(t, readTree(t, served), targetText, "TemplatesOf returns the directory of the target")
 }
 
 // BenchmarkPresentation measures each option constructor, which a
 // plugin's constructor calls once per declaration.
 func BenchmarkPresentation(b *testing.B) {
-	tree, fm := stubTree(), template.FuncMap{toneHelper: shout}
+	tree, fm, files := stubTree(), template.FuncMap{toneHelper: shout}, embedded()
 	options := []struct {
-		name  string
-		build func() eidos.TargetOption
+		name   string
+		build  func() eidos.TargetOption
+		allocs uint64
 	}{
 		{name: "Templates", build: func() eidos.TargetOption { return eidos.Templates(tree) }},
+		{name: "TemplatesOf", build: func() eidos.TargetOption {
+			return eidos.TemplatesOf(files, stubTarget)
+		}, allocs: templatesOfAllocs},
 		{name: "Funcs", build: func() eidos.TargetOption { return eidos.Funcs(fm) }},
 		{name: "Overrides", build: func() eidos.TargetOption { return eidos.Overrides(fm) }},
 	}
 	for _, tt := range options {
 		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(0)
+			c := bench.Start(b).MaxAllocs(tt.allocs)
 			defer c.End()
 			var opt eidos.TargetOption
 			for c.Loop() {
@@ -190,6 +283,16 @@ func BenchmarkPresentation(b *testing.B) {
 // stubTreeOf returns a one-template tree whose template reads text.
 func stubTreeOf(text string) fstest.MapFS {
 	return fstest.MapFS{stubFile: &fstest.MapFile{Data: []byte(text)}}
+}
+
+// embedded returns the files of a plugin in the layout that TemplatesOf
+// reads: a directory below the templates directory for each target, whose
+// template reads the text of its tree.
+func embedded() fstest.MapFS {
+	return fstest.MapFS{
+		path.Join(eidos.TemplatesDir, string(stubTarget), stubFile):  &fstest.MapFile{Data: []byte(targetText)},
+		path.Join(eidos.TemplatesDir, string(otherTarget), stubFile): &fstest.MapFile{Data: []byte(pluginText)},
+	}
 }
 
 // stubTree returns a one-template tree for template declarations.

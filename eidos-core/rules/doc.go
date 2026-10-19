@@ -16,6 +16,13 @@
 // inside those walks, what a spelling names in a scope, and the values
 // of a type.
 //
+// # Emitted references
+//
+// [EmitRef] restates a node reference in the emit model, which a
+// generator writes. [Mentioned] returns the type parameters that emitted
+// references mention, so a generator declares a type for one part of a
+// generic declaration with the parameters that the part uses.
+//
 // # Resolution
 //
 // [Resolve] is the walk of the resolution of a directive's spelling that

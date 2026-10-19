@@ -16,6 +16,8 @@ type FunctionMatch struct {
 	Function *node.Function
 }
 
+var _ SubjectMatch = (*FunctionMatch)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released FunctionMatch
 // values.
@@ -49,6 +51,8 @@ type MethodMatch struct {
 	subjectMatch
 	Method *node.Method
 }
+
+var _ SubjectMatch = (*MethodMatch)(nil)
 
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released MethodMatch
@@ -84,6 +88,8 @@ type ParamMatch struct {
 	Param *node.Param
 }
 
+var _ SubjectMatch = (*ParamMatch)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released ParamMatch
 // values.
@@ -117,6 +123,8 @@ type ReturnMatch struct {
 	subjectMatch
 	Return *node.Return
 }
+
+var _ SubjectMatch = (*ReturnMatch)(nil)
 
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released ReturnMatch
@@ -152,6 +160,8 @@ type EnumMatch struct {
 	Enum *node.Enum
 }
 
+var _ SubjectMatch = (*EnumMatch)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released EnumMatch
 // values.
@@ -185,6 +195,8 @@ type SumMatch struct {
 	subjectMatch
 	Sum *node.Sum
 }
+
+var _ SubjectMatch = (*SumMatch)(nil)
 
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released SumMatch
@@ -220,6 +232,8 @@ type FieldMatch struct {
 	Field *node.Field
 }
 
+var _ SubjectMatch = (*FieldMatch)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released FieldMatch
 // values.
@@ -253,6 +267,8 @@ type VariableMatch struct {
 	subjectMatch
 	Variable *node.Variable
 }
+
+var _ SubjectMatch = (*VariableMatch)(nil)
 
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released VariableMatch
@@ -288,6 +304,8 @@ type ConstantMatch struct {
 	Constant *node.Constant
 }
 
+var _ SubjectMatch = (*ConstantMatch)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released ConstantMatch
 // values.
@@ -321,6 +339,8 @@ type StructMatch struct {
 	subjectMatch
 	Struct *node.Struct
 }
+
+var _ SubjectMatch = (*StructMatch)(nil)
 
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released StructMatch
@@ -356,6 +376,8 @@ type InterfaceMatch struct {
 	Interface *node.Interface
 }
 
+var _ SubjectMatch = (*InterfaceMatch)(nil)
+
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released InterfaceMatch
 // values.
@@ -389,6 +411,8 @@ type AliasMatch struct {
 	subjectMatch
 	Alias *node.Alias
 }
+
+var _ SubjectMatch = (*AliasMatch)(nil)
 
 // unbind zeroes the match for the next phase call of its lane, and
 // returns the key under which the lane keeps released AliasMatch

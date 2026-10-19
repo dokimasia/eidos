@@ -47,6 +47,7 @@ func TestValue(t *testing.T) {
 			{name: "returns call for ValueCall", give: emit.ValueCall, want: "call"},
 			{name: "returns address for ValueAddress", give: emit.ValueAddress, want: "address"},
 			{name: "returns name for ValueName", give: emit.ValueName, want: "name"},
+			{name: "returns construction for ValueConstruction", give: emit.ValueConstruction, want: "construction"},
 			{name: "returns the number of a kind nothing declares", give: emit.ValueKind(9), want: "9"},
 		}
 		for _, tt := range tests {
@@ -241,6 +242,28 @@ func TestValue(t *testing.T) {
 		})
 	})
 
+	t.Run("Construction", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a construction of the type from the arguments", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: pointType}
+			got := emit.Construction(ref, forty())
+			assert.Equal(t, got.Kind, emit.ValueConstruction, "a construction")
+			assert.Equal(t, got.Type, ref, "of the type given", assert.ByIdentity())
+			assert.Equal(t, got.Args, []emit.Value{forty()}, "from the arguments given")
+		})
+
+		t.Run("returns a construction without arguments", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: pointType}
+			assert.Equal(t, emit.Construction(ref), emit.Value{Kind: emit.ValueConstruction, Type: ref},
+				"the type is the only field besides the kind")
+		})
+	})
+
 	t.Run("JSON", func(t *testing.T) {
 		t.Parallel()
 
@@ -252,6 +275,7 @@ func TestValue(t *testing.T) {
 				emit.ValueField{Name: "X", Value: emit.Conversion(ref, forty())},
 				emit.ValueField{Name: "Y", Value: emit.Number(emit.LiteralFloat, "2.5", 32)},
 				emit.ValueField{Name: "Z", Value: emit.Name(second)},
+				emit.ValueField{Name: "W", Value: emit.Construction(ref, forty())},
 			))
 			assert.RoundTrip(t, func(v emit.Value) ([]byte, error) { return json.Marshal(v) },
 				func(b []byte) (emit.Value, error) {
@@ -296,6 +320,9 @@ func TestValueAllocs(t *testing.T) {
 	assert.Equal(t, *got.Inner, value, "Address points at the value given")
 	assert.MaxAllocs(t, func() { got = emit.Name(second) }, 0, "Name allocates nothing")
 	assert.Equal(t, got.Callee, second, "Name returns the identity given")
+	assert.MaxAllocs(t, func() { got = emit.Construction(ref, value) }, 1,
+		"Construction allocates its list of arguments")
+	assert.Length(t, got.Args, 1, "Construction returns the argument given")
 }
 
 // BenchmarkValue measures the kinds' spellings, the zero question, and
@@ -445,6 +472,16 @@ func BenchmarkValue(b *testing.B) {
 			got = emit.Name(second)
 		}
 		assert.Equal(b, got.Callee, second, "Name returns the identity")
+	})
+
+	b.Run("Construction", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got emit.Value
+		for c.Loop() {
+			got = emit.Construction(ref, value)
+		}
+		assert.Length(b, got.Args, 1, "Construction holds its argument")
 	})
 }
 
