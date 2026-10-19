@@ -10,13 +10,12 @@ import (
 	"strings"
 
 	"github.com/bufbuild/protocompile/experimental/ast"
-	"github.com/bufbuild/protocompile/experimental/parser"
 	"github.com/bufbuild/protocompile/experimental/report"
-	"github.com/bufbuild/protocompile/experimental/source"
 	"github.com/bufbuild/protocompile/experimental/token"
 	"github.com/bufbuild/protocompile/experimental/token/keyword"
 
 	"go.dokimi.dev/eidos/lang/protobuf"
+	protoparse "go.dokimi.dev/eidos/lang/protobuf/internal/parse"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -105,31 +104,20 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// parseSource parses the source of a file with the experimental parser of
-// protocompile. It returns the tree, the report of the parser, the syntax
-// or edition statement and the version that the statement declares. The
-// report has no warnings, because each of them is about the style of a
-// schema. It reports false for a version outside the table of the
-// frontend.
-//
-// The parser does not know Edition 2026, which has the grammar of
-// Edition 2024. It parses a 2026 file a second time, from a copy whose
-// edition value is 2024. Both values have four bytes, so every position in
-// the copy is the position in the file.
-func parseSource(path string, src []byte) (*ast.File, *report.Report, ast.DeclSyntax, version, bool) {
-	text := string(src)
-	r := &report.Report{SuppressWarnings: true}
-	tree, _ := parser.Parse(path, source.NewFile(path, text), r)
+// parseSource parses the source of a file through [protoparse.File]. It returns
+// the tree, the report of the parser, the syntax or edition statement and
+// the version that the statement declares. It reports false for a version
+// outside the table of the frontend. A file of edition 2026 parses from a
+// copy that states 2024, so its version is the version of its own text and
+// not of the statement of the tree.
+func parseSource(path string, src []byte) (*ast.File, *report.Report, ast.DeclSyntax, protobuf.Edition, bool) {
+	tree, r, patched := protoparse.File(path, string(src))
 	statement := tree.Syntax()
-	v, known := versionOf(statement)
-	content := statement.Value().AsLiteral().AsString().RawContent()
-	if v.name != edition2026 || content.Text() != edition2026 {
+	if patched {
+		v, known := versionNamed(keyword.Edition, protobuf.Edition2026)
 		return tree, r, statement, v, known
 	}
-	patched := text[:content.Start] + edition2024 + text[content.End:]
-	r = &report.Report{SuppressWarnings: true}
-	tree, _ = parser.Parse(path, source.NewFile(path, patched), r)
-	statement = tree.Syntax()
+	v, known := versionOf(statement)
 	return tree, r, statement, v, known
 }
 
@@ -137,13 +125,13 @@ func parseSource(path string, src []byte) (*ast.File, *report.Report, ast.DeclSy
 // file declares, and proto2 for a file without a statement. It reports
 // false for a statement whose value is not a string of the table of the
 // frontend.
-func versionOf(statement ast.DeclSyntax) (version, bool) {
+func versionOf(statement ast.DeclSyntax) (protobuf.Edition, bool) {
 	if statement.IsZero() {
-		return versionNamed(keyword.Syntax, versionProto2)
+		return versionNamed(keyword.Syntax, protobuf.Proto2)
 	}
 	value := statement.Value().AsLiteral().AsString()
 	if value.IsZero() {
-		return version{}, false
+		return protobuf.Edition{}, false
 	}
 	return versionNamed(statement.Keyword(), value.Text())
 }
@@ -157,7 +145,7 @@ type lowered struct {
 	path   string
 	// version is the protobuf language version of the file. The
 	// resolution of every feature starts from its defaults.
-	version version
+	version protobuf.Edition
 	// head is the first token of the file other than white space and
 	// comments. The position of head is the position of the file.
 	head token.Token
@@ -235,7 +223,7 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 		file.Doc, file.Annotations = c.doc, append(file.Annotations, c.annotations...)
 	}
 	fileOptions := statementOptions(decls)
-	scope := l.version.defaults.with(fileOptions)
+	scope := with(l.version.Defaults, fileOptions)
 
 	for i := range decls.Len() {
 		decl := decls.At(i)
@@ -258,12 +246,7 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 			case ast.DefKindService:
 				out = l.service(def)
 			case ast.DefKindExtend:
-				// An extension adds a field to a message that another file
-				// declares, so the model cannot represent it.
-				first, _ := l.bounds(def)
-				l.unit.Errorf(RefusedExtension, l.at(first.LeafSpan()),
-					"%s extends %s, which it does not declare, so the frontend does not load the block",
-					l.path, def.AsExtend().Extendee.Canonicalized())
+				file.Decls = append(file.Decls, l.extend(def, scope)...)
 				continue
 			default:
 				continue
@@ -285,7 +268,7 @@ func (l *lowered) file(statement ast.DeclSyntax) {
 		gb.Stamp(file, meta.RawStamp{Key: protobuf.PackageKey, Value: l.pkg, Pos: file.Pos})
 	}
 	if !statement.IsZero() {
-		gb.Stamp(file, meta.RawStamp{Key: protobuf.SyntaxKey, Value: l.version.name, Pos: file.Pos})
+		gb.Stamp(file, meta.RawStamp{Key: protobuf.SyntaxKey, Value: l.version.Name, Pos: file.Pos})
 	}
 	l.stampOptions(file, file.Pos, fileOptions)
 	if len(l.imports) > 0 {
@@ -347,7 +330,7 @@ func (l *lowered) sweep(file *node.File) {
 // protoc attributes to it, and its members through [lowered.members].
 // outer is the features of the scope that declares the message, and
 // nested reports a message that another message declares.
-func (l *lowered) message(def ast.DeclDef, outer features, nested bool) *node.Struct {
+func (l *lowered) message(def ast.DeclDef, outer protobuf.Features, nested bool) *node.Struct {
 	first, last := l.bounds(def)
 	s := &node.Struct{
 		Pos:        l.at(first.LeafSpan()),
@@ -362,16 +345,18 @@ func (l *lowered) message(def ast.DeclDef, outer features, nested bool) *node.St
 
 // members lowers the body of a message into a struct. Its fields lower as
 // fields, its oneofs as nested sums, and its groups, nested messages and
-// nested enums as nested types. Its reserved and extension ranges, its
-// options and its visibility are stamps.
+// nested enums as nested types. The fields of its extend blocks are nested
+// declarations too, because an extension adds no field to the message
+// that declares it. Its reserved and extension ranges, its options and its
+// visibility are stamps.
 //
 // A nested declaration is a nested type and not a file-level one, as
 // protobuf addresses it. The features of the message override outer for
 // its members and its nested declarations.
-func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, nested bool) {
+func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer protobuf.Features, nested bool) {
 	decls := def.Body().Decls()
 	options := statementOptions(decls)
-	scope := outer.with(options)
+	scope := with(outer, options)
 
 	var reserved, extensions []string
 	for i := range decls.Len() {
@@ -406,10 +391,7 @@ func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, neste
 		case ast.DefKindEnum:
 			s.Types = append(s.Types, l.enum(d, scope, true))
 		case ast.DefKindExtend:
-			first, _ := l.bounds(d)
-			l.unit.Errorf(RefusedExtension, l.at(first.LeafSpan()),
-				"%s extends %s inside %s, so the frontend does not load the block",
-				l.path, d.AsExtend().Extendee.Canonicalized(), s.Name)
+			s.Types = append(s.Types, l.extend(d, scope)...)
 		default:
 			// An option of the message loads as a stamp, and no other
 			// definition is a member of a message.
@@ -439,16 +421,16 @@ func (l *lowered) members(def ast.DeclDef, s *node.Struct, outer features, neste
 // resolved message_encoding is DELIMITED. The parse does not resolve the
 // type, so a field of an enum type has the mark under an inherited
 // DELIMITED as well. protoc ignores the encoding of an enum field.
-func (l *lowered) field(def ast.DeclDef, outer features, member bool) *node.Field {
+func (l *lowered) field(def ast.DeclDef, outer protobuf.Features, member bool) *node.Field {
 	f := def.AsField()
 	options := compactOptions(f.Options)
 	ty, label := labelled(f.Type)
 	if key, value := ty.AsGeneric().AsMap(); !key.IsZero() {
 		return l.mapField(def, ty, key, value, options)
 	}
-	scope := outer.with(options)
+	scope := with(outer, options)
 	inner := namedRef(spelled(ty), l.at(ty.Span()))
-	typ, required := fieldType(inner, label, scope.presence, member)
+	typ, required := fieldType(inner, label, scope.Presence, member)
 	out := l.fieldDecl(def, f.Name.Text(), f.Tag, typ, options)
 	gb := l.unit.Graph()
 	if required {
@@ -457,8 +439,11 @@ func (l *lowered) field(def ast.DeclDef, outer features, member bool) *node.Fiel
 		// optional. The frontend stamps the label instead.
 		gb.Stamp(out, meta.RawStamp{Key: protobuf.LabelKey, Value: labelRequired, Pos: out.Pos})
 	}
-	if scope.encoding == encodingDelimited && !protobuf.IsScalar(inner.Spelling) {
-		gb.Stamp(out, meta.RawStamp{Key: protobuf.DelimitedKey, Value: encodingDelimited, Pos: out.Pos})
+	if scope.Encoding == protobuf.EncodingDelimited && !protobuf.IsScalar(inner.Spelling) {
+		gb.Stamp(
+			out,
+			meta.RawStamp{Key: protobuf.DelimitedKey, Value: string(protobuf.EncodingDelimited), Pos: out.Pos},
+		)
 	}
 	return out
 }
@@ -472,7 +457,9 @@ func (l *lowered) field(def ast.DeclDef, outer features, member bool) *node.Fiel
 // presence. A required field and a field without presence are the type
 // itself. proto2 marks a required field with its label, and an edition
 // marks it with legacy required presence.
-func fieldType(inner *node.TypeRef, label keyword.Keyword, presence string, member bool) (*node.TypeRef, bool) {
+func fieldType(
+	inner *node.TypeRef, label keyword.Keyword, presence protobuf.Presence, member bool,
+) (*node.TypeRef, bool) {
 	switch {
 	case label == keyword.Repeated:
 		return plugin.Composite(labelRepeated+" "+inner.Spelling, inner.Pos, symbol.FormList, inner), false
@@ -482,12 +469,12 @@ func fieldType(inner *node.TypeRef, label keyword.Keyword, presence string, memb
 		return plugin.Composite(labelOptional+" "+inner.Spelling, inner.Pos, symbol.FormOptional, inner), false
 	case label == keyword.Required:
 		return inner, true
-	case presence == presenceExplicit:
+	case presence == protobuf.PresenceExplicit:
 		// An edition sets presence with a feature and not with a label,
 		// so the spelling is the type as written.
 		return plugin.Composite(inner.Spelling, inner.Pos, symbol.FormOptional, inner), false
 	default:
-		return inner, presence == presenceLegacyRequired
+		return inner, presence == protobuf.PresenceLegacyRequired
 	}
 }
 
@@ -580,20 +567,23 @@ func (l *lowered) fieldDecl(
 // The message repeats the documentation of the field. Both are at the
 // position of the group. outer is the features of the scope that declares
 // the group, and member reports a group inside a oneof.
-func (l *lowered) group(def ast.DeclDef, outer features, member bool) (*node.Field, *node.Struct) {
+func (l *lowered) group(def ast.DeclDef, outer protobuf.Features, member bool) (*node.Field, *node.Struct) {
 	g := def.AsGroup()
 	name := g.Name.Text()
 	_, label := labelled(def.Type())
 	options := compactOptions(g.Options)
-	scope := outer.with(options)
+	scope := with(outer, options)
 	first, _ := l.bounds(def)
-	typ, required := fieldType(namedRef(name, l.at(first.LeafSpan())), label, scope.presence, member)
+	typ, required := fieldType(namedRef(name, l.at(first.LeafSpan())), label, scope.Presence, member)
 	field := l.fieldDecl(def, strings.ToLower(name), g.Tag, typ, options)
 	gb := l.unit.Graph()
 	if required {
 		gb.Stamp(field, meta.RawStamp{Key: protobuf.LabelKey, Value: labelRequired, Pos: field.Pos})
 	}
-	gb.Stamp(field, meta.RawStamp{Key: protobuf.DelimitedKey, Value: encodingDelimited, Pos: field.Pos})
+	gb.Stamp(
+		field,
+		meta.RawStamp{Key: protobuf.DelimitedKey, Value: string(protobuf.EncodingDelimited), Pos: field.Pos},
+	)
 	message := &node.Struct{
 		Pos:        field.Pos,
 		Name:       name,
@@ -602,6 +592,59 @@ func (l *lowered) group(def ast.DeclDef, outer features, member bool) (*node.Fie
 	}
 	l.members(def, message, outer, true)
 	return field, message
+}
+
+// extend lowers the fields of an extend block. Each field has the
+// extended message as written as its Receives, and every stamp of a
+// field. A group of the block is a field with Receives and a message in
+// the scope of the block, as the group of a message is. scope is the
+// features of the file or of the message that declares the block.
+//
+// A block is no declaration of the model, so its comments belong to its
+// first field. The documentation above the block comes before the
+// documentation of the field, and the comment after the opening brace of
+// the block comes before the comment of the field. A carrier in them
+// attaches to the field. A block without a field leaves its comments to
+// the sweep of the file.
+func (l *lowered) extend(def ast.DeclDef, scope protobuf.Features) []symbol.Symbol {
+	extendee := def.AsExtend().Extendee
+	decls := def.Body().Decls()
+	out := make([]symbol.Symbol, 0, decls.Len())
+	var head *node.Field
+	for i := range decls.Len() {
+		d := decls.At(i).AsDef()
+		var f *node.Field
+		switch d.Classify() {
+		case ast.DefKindField:
+			f = l.field(d, scope, false)
+			out = append(out, f)
+		case ast.DefKindGroup:
+			var group *node.Struct
+			f, group = l.group(d, scope, false)
+			out = append(out, f, group)
+		default:
+			// No other definition is an extension, and the parser reports
+			// one that the block cannot contain.
+			continue
+		}
+		f.Receives = namedRef(extendee.Canonicalized(), l.at(extendee.Span()))
+		if head == nil {
+			head = f
+		}
+	}
+	if head != nil {
+		first, last := l.bounds(def)
+		c := l.commentsOf(first, last, head)
+		head.Doc = append(c.doc, head.Doc...)
+		head.Annotations = append(c.annotations, head.Annotations...)
+		switch {
+		case head.Comment == "":
+			head.Comment = c.comment
+		case c.comment != "":
+			head.Comment = c.comment + " " + head.Comment
+		}
+	}
+	return out
 }
 
 // variantOf returns the variant of a member of a oneof. The variant has
@@ -624,7 +667,7 @@ func variantOf(f *node.Field) *node.SumVariant {
 // repeats the documentation, the comment and the annotations of the
 // field. oneof also returns the messages of the groups among the members.
 // The message of the oneof declares them, because a oneof is not a scope.
-func (l *lowered) oneof(def ast.DeclDef, outer features) (*node.Sum, []symbol.Symbol) {
+func (l *lowered) oneof(def ast.DeclDef, outer protobuf.Features) (*node.Sum, []symbol.Symbol) {
 	first, last := l.bounds(def)
 	s := &node.Sum{
 		Pos:        l.at(first.LeafSpan()),
@@ -635,7 +678,7 @@ func (l *lowered) oneof(def ast.DeclDef, outer features) (*node.Sum, []symbol.Sy
 	s.Doc, s.Annotations, s.Comment = c.doc, c.annotations, c.comment
 	decls := def.Body().Decls()
 	options := statementOptions(decls)
-	scope := outer.with(options)
+	scope := with(outer, options)
 	var groups []symbol.Symbol
 	for i := range decls.Len() {
 		d := decls.At(i).AsDef()
@@ -663,7 +706,7 @@ func (l *lowered) oneof(def ast.DeclDef, outer features) (*node.Sum, []symbol.Sy
 // visibility of the enum are stamps. outer is the features of the scope
 // that declares the enum, and nested reports an enum that a message
 // declares.
-func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum {
+func (l *lowered) enum(def ast.DeclDef, outer protobuf.Features, nested bool) *node.Enum {
 	first, last := l.bounds(def)
 	out := &node.Enum{
 		Pos:        l.at(first.LeafSpan()),
@@ -674,7 +717,7 @@ func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum 
 	out.Doc, out.Annotations, out.Comment = c.doc, c.annotations, c.comment
 	decls := def.Body().Decls()
 	options := statementOptions(decls)
-	scope := outer.with(options)
+	scope := with(outer, options)
 
 	var reserved []string
 	for i := range decls.Len() {
@@ -713,8 +756,8 @@ func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum 
 		})
 	}
 	l.stampOptions(out, out.Pos, options)
-	if scope.enumType == enumClosed {
-		gb.Stamp(out, meta.RawStamp{Key: protobuf.ClosedKey, Value: enumClosed, Pos: out.Pos})
+	if scope.EnumType == protobuf.EnumClosed {
+		gb.Stamp(out, meta.RawStamp{Key: protobuf.ClosedKey, Value: string(protobuf.EnumClosed), Pos: out.Pos})
 	}
 	l.stampLocal(out, def, outer, nested)
 	return out
@@ -725,14 +768,14 @@ func (l *lowered) enum(def ast.DeclDef, outer features, nested bool) *node.Enum 
 // without the keyword local or export takes the default visibility of
 // the scope that declares it. The keywords are prefixes of the type of the
 // definition.
-func (l *lowered) stampLocal(subject symbol.Symbol, def ast.DeclDef, outer features, nested bool) {
+func (l *lowered) stampLocal(subject symbol.Symbol, def ast.DeclDef, outer protobuf.Features, nested bool) {
 	stated := keyword.Unknown
 	for ty := def.Type(); ty.Kind() == ast.TypeKindPrefixed; ty = ty.AsPrefixed().Type() {
 		if k := ty.AsPrefixed().Prefix(); k == keyword.Local || k == keyword.Export {
 			stated = k
 		}
 	}
-	if outer.local(stated, nested) {
+	if local(outer, stated, nested) {
 		first, _ := l.bounds(def)
 		l.unit.Graph().Stamp(subject, meta.RawStamp{
 			Key: protobuf.LocalKey, Value: localValue, Pos: l.at(first.LeafSpan()),

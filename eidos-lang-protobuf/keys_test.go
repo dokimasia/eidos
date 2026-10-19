@@ -94,6 +94,21 @@ func TestKeys(t *testing.T) {
 			assert.Contains(t, err.Error(), string(protobuf.FieldKey), "the error names the key")
 		})
 
+		t.Run("returns an error for a list key whose spelling a group took", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			rival := r.For(rivalPlugin)
+			assert.NoError(t, rival.ClaimNamespace(rivalPlugin), "the rival claims its own namespace")
+			_, err := meta.Register[bool](rival, meta.KeySpec{
+				Name: rivalPlugin + ".grouped", Group: meta.GroupName(protobuf.ImportKey), Doc: "a key in a group",
+			})
+			assert.NoError(t, err, "the rival's key registers into a group that spells a protobuf key")
+			err = protobuf.Keys(r)
+			assert.HasError(t, err, "a key and a group share no spelling")
+			assert.Contains(t, err.Error(), string(protobuf.ImportKey), "the error names the list key")
+		})
+
 		t.Run("registers every other key when a group took the spelling of one", func(t *testing.T) {
 			t.Parallel()
 

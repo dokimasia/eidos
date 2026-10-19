@@ -35,7 +35,17 @@ const Extension = ".proto"
 // bump it when a load would put something different in the graph,
 // which invalidates every unit loaded under the old value and keeps
 // a warm run equal to a cold one.
-const Version = "0.4.0"
+const Version = "0.5.0"
+
+// Target names the rendering target a plan resolves to select the
+// protobuf backend. It is the spelling of [Lang], so the emitter copies a
+// reference of a protobuf source as written into a plan of the target.
+const Target plugin.Target = "protobuf"
+
+// BackendVersion is the backend's behavior version, folded into the
+// composition fingerprint: bump it with any change to the rendered
+// output.
+const BackendVersion = "0.1.0"
 
 // Syntax returns protobuf's comment forms, which the frontend
 // strips documentation with and the render side would spell

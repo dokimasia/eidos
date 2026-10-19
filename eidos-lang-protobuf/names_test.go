@@ -119,6 +119,32 @@ func TestNames(t *testing.T) {
 			assert.Equal(t, file, structFile, "Value is declared beside Struct")
 		})
 
+		tests := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "returns the file of Value", give: protobuf.TypeValue, want: structFile},
+			{name: "returns the file of Timestamp", give: protobuf.TypeTimestamp, want: timestampFile},
+			{name: "returns the file of Duration", give: protobuf.TypeDuration, want: "google/protobuf/duration.proto"},
+			{name: "returns the file of Empty", give: protobuf.TypeEmpty, want: "google/protobuf/empty.proto"},
+			{name: "returns the file of Any", give: "google.protobuf.Any", want: "google/protobuf/any.proto"},
+			{
+				name: "returns the file of FieldMask",
+				give: "google.protobuf.FieldMask", want: "google/protobuf/field_mask.proto",
+			},
+			{name: "returns the file of a wrapper", give: wrapperName, want: "google/protobuf/wrappers.proto"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				file, known := protobuf.WellKnownImport(tt.give)
+				assert.True(t, known, tt.give+" is a well-known type")
+				assert.Equal(t, file, tt.want, "the import path protoc resolves it under")
+			})
+		}
+
 		t.Run("reports false outside the well-known set", func(t *testing.T) {
 			t.Parallel()
 

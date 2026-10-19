@@ -31,17 +31,6 @@ var UnparsedFile = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Meaning: "a proto file has a syntax error",
 })
 
-// RefusedExtension reports an extend block at the block.
-//
-// Severity is Error. An extension adds a field to a message that another
-// file declares, for which the model has no shape, so the block
-// contributes nothing and the rest of the file loads. The finding contains
-// the extended message, whether or not this workspace declares it.
-var RefusedExtension = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
-	Number:  2,
-	Meaning: "a proto file extends a message it does not declare",
-})
-
 // UnknownEdition reports a syntax or an edition that the table of versions
 // of the frontend does not contain, such as the edition 2025, which
 // protobuf never released, or UNSTABLE, which protoc reserves for features
@@ -49,7 +38,7 @@ var RefusedExtension = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 // any declaration, because the defaults that define presence and the
 // openness of enums are unknown.
 //
-// Severity is Error. The satellite does not reuse the number 5.
+// Severity is Error. The satellite does not reuse the numbers 2 and 5.
 var UnknownEdition = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Number:  6,
 	Meaning: "a proto file has a syntax or an edition that the frontend does not know",
@@ -94,11 +83,11 @@ var UnaddressedCarrier = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 // call writes only through its own unit.
 //
 // The frontend does not return an error for a problem of a schema. It
-// reports a syntax error under [UnparsedFile], an extension under
-// [RefusedExtension] and a version that it does not know under
-// [UnknownEdition], and the load continues. A returned error means that
-// the load itself failed, for example because the tree does not contain
-// the file of a unit. Such an error ends the load for every frontend.
+// reports a syntax error under [UnparsedFile] and a version that it does
+// not know under [UnknownEdition], and the load continues. A returned error
+// means that the load itself failed, for example because the tree does not
+// contain the file of a unit. Such an error ends the load for every
+// frontend.
 //
 // # Allocation contract
 //

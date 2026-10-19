@@ -17,12 +17,10 @@ import (
 
 // The option spellings the lowering reads.
 const (
-	// featuresOption is the option that sets edition features through a
-	// message literal, as in features = { field_presence: IMPLICIT }.
-	// featuresPrefix opens the option of one feature. Both are stamped
-	// apart from the other options.
-	featuresOption = "features"
-	featuresPrefix = featuresOption + "."
+	// featuresPrefix opens the option of one feature, and
+	// [protobuf.FeaturesOption] sets features through a message literal.
+	// Both are stamped apart from the other options.
+	featuresPrefix = protobuf.FeaturesOption + "."
 	// jsonNameOption is the field option that renames a field in
 	// JSON, which decides its spelling there and nothing about its
 	// type.
@@ -107,7 +105,7 @@ func (l *lowered) stampOptions(subject symbol.Symbol, at position.Pos, opts []op
 	var plain, features []string
 	for _, o := range opts {
 		entry := o.name + optionAssign + o.value
-		if o.name == featuresOption || strings.HasPrefix(o.name, featuresPrefix) {
+		if o.name == protobuf.FeaturesOption || strings.HasPrefix(o.name, featuresPrefix) {
 			features = append(features, entry)
 			continue
 		}

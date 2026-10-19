@@ -28,6 +28,34 @@ const (
 	depPkg = "dep"
 )
 
+// extendPath is the file of extendSchema, which extends Row at file level
+// and inside Holder.
+const extendPath = "svc/store.proto"
+
+// extendSchema declares the message Row and two extend blocks of it, one
+// beside it and one inside the message Holder.
+const extendSchema = `syntax = "proto2";
+
+package svc.store;
+
+message Row {
+  optional string name = 1;
+  extensions 100 to 200;
+}
+
+extend Row {
+  optional int64 size = 100;
+}
+
+message Holder {
+  optional string id = 1;
+
+  extend Row {
+    optional string label = 101;
+  }
+}
+`
+
 // rulesAllocs is one projection pass over the schema tree: 80 at the
 // default benchtime. A memory profile attributes about 30 to SamplesOf,
 // 27 to TypeOf, 6 to CallableOf, 4 to MembersOf and 3 to the fresh view
@@ -183,6 +211,24 @@ func TestRules(t *testing.T) {
 
 			assert.Equal(t, protorules.New().Members().Shadowing, rules.ShadowOverride, "the policy is total")
 		})
+
+		t.Run("returns a policy under which an extension is no member of the message that it extends",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, map[string]string{extendPath: extendSchema})
+				assert.Equal(t, memberNames(t, f, id(svcPkg, "Row", symbol.KindStruct)), []string{"name"},
+					"the fields of the extend blocks add no member to Row")
+			})
+
+		t.Run("returns a policy under which an extension is no member of the message that declares it",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, map[string]string{extendPath: extendSchema})
+				assert.Equal(t, memberNames(t, f, id(svcPkg, "Holder", symbol.KindStruct)), []string{"id"},
+					"the field of the extend block inside Holder adds no member to Holder")
+			})
 	})
 
 	t.Run("ParamRole", func(t *testing.T) {
@@ -639,6 +685,22 @@ func identityOf(tb assert.TB, sym symbol.Symbol) symbol.Identity {
 // id returns a top-level identity in one namespace.
 func id(pkg, name string, kind symbol.Kind) symbol.Identity {
 	return symbol.Identity{Lang: protobuf.Lang, Package: pkg, Name: name, Kind: kind}
+}
+
+// memberNames returns the names of the members that the bound rules of a
+// fixture project for one message, in the order of the member set.
+func memberNames(tb assert.TB, f *fixture, message symbol.Identity) []string {
+	tb.Helper()
+
+	set, projected := f.bound().MembersOf(f.decl(tb, message))
+	assert.True(tb, projected, "the message has members")
+	names := make([]string, 0, len(set.Members))
+	for _, m := range set.Members {
+		if field, is := m.Symbol.(*node.Field); is {
+			names = append(names, field.Name)
+		}
+	}
+	return names
 }
 
 // ref returns a resolved reference to a fixture declaration.

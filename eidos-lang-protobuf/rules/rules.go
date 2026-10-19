@@ -62,10 +62,11 @@ func (Rules) Lang() symbol.Lang { return protobuf.Lang }
 //
 // protobuf states no embedding, no supertypes and no implemented
 // interfaces, so a message's effective members are exactly its
-// declared fields and the kernel's walk descends into nothing. An
-// extension is the one construct that would add a member from
-// elsewhere, and the frontend refuses it at the load, so the walk
-// never meets one.
+// declared fields and the kernel's walk descends into nothing. A field
+// of an extend block is a declaration of the file or of the message
+// that declares the block, and never a field of a message. So the walk
+// leaves it out of the members of the message that it extends and of
+// the message that declares it.
 //
 // The walk never applies the shadowing rule. The policy states it as
 // override so the policy is total and not zero-valued. Members

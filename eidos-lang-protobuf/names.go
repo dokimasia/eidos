@@ -29,35 +29,29 @@ var scalars = map[string]bool{
 	"bool": true, "string": true, "bytes": true,
 }
 
-// The files that declare two or more of the well-known types.
-const (
-	structProto   = "google/protobuf/struct.proto"
-	wrappersProto = "google/protobuf/wrappers.proto"
-)
-
 // wellKnown maps the well-known types a projection maps by name, by
 // their names inside [WellKnownPackage], to the import path of the
 // file that declares each, the path protoc and every protobuf
 // toolchain resolve it under.
 var wellKnown = map[string]string{
-	"Any":         "google/protobuf/any.proto",
-	"Duration":    "google/protobuf/duration.proto",
-	"Empty":       "google/protobuf/empty.proto",
-	"FieldMask":   "google/protobuf/field_mask.proto",
-	"Struct":      structProto,
-	"Value":       structProto,
-	"ListValue":   structProto,
-	"NullValue":   structProto,
-	"Timestamp":   "google/protobuf/timestamp.proto",
-	"DoubleValue": wrappersProto,
-	"FloatValue":  wrappersProto,
-	"Int64Value":  wrappersProto,
-	"UInt64Value": wrappersProto,
-	"Int32Value":  wrappersProto,
-	"UInt32Value": wrappersProto,
-	"BoolValue":   wrappersProto,
-	"StringValue": wrappersProto,
-	"BytesValue":  wrappersProto,
+	"Any":         AnyFile,
+	"Duration":    DurationFile,
+	"Empty":       EmptyFile,
+	"FieldMask":   FieldMaskFile,
+	"Struct":      StructFile,
+	"Value":       StructFile,
+	"ListValue":   StructFile,
+	"NullValue":   StructFile,
+	"Timestamp":   TimestampFile,
+	"DoubleValue": WrappersFile,
+	"FloatValue":  WrappersFile,
+	"Int64Value":  WrappersFile,
+	"UInt64Value": WrappersFile,
+	"Int32Value":  WrappersFile,
+	"UInt32Value": WrappersFile,
+	"BoolValue":   WrappersFile,
+	"StringValue": WrappersFile,
+	"BytesValue":  WrappersFile,
 }
 
 // IsScalar reports whether a spelling names one of protobuf's scalar

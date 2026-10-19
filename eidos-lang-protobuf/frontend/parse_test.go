@@ -109,6 +109,38 @@ service Store {
 }
 `
 
+// extendSource declares an extend block of two fields at file level, an
+// extend block inside a message, and an extend block of a group.
+const extendSource = `syntax = "proto2";
+
+package svc.store;
+
+message Row {
+  optional string name = 1;
+  extensions 100 to 200;
+}
+
+// The extensions of a row.
+extend Row {
+  // Size is the size of the row.
+  optional int64 size = 100 [deprecated = true];
+  // Weight is the weight of the row.
+  optional int64 weight = 101;
+}
+
+message Holder {
+  extend Row {
+    optional string label = 102;
+  }
+}
+
+extend Row {
+  optional group Extra = 103 {
+    optional string note = 1;
+  }
+}
+`
+
 // groupSource declares a proto2 group inside a message.
 const groupSource = `syntax = "proto2";
 
@@ -555,7 +587,85 @@ message Row {
 			assert.Empty(t, row.Fields[4].Type.Package, "a scalar names no declaration")
 		})
 
-		t.Run("reports RefusedExtension at an extend block", func(t *testing.T) {
+		t.Run("loads a field of an extend block at file level as a field with Receives", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, extendSource)
+			assert.Empty(t, codesOf(sink), "an extension loads without a finding")
+			size, is := declOf(t, onlyFile(t, gb), "size").(*node.Field)
+			assert.True(t, is, "the extension is a field among the declarations of the file")
+			assert.NotNil(t, size.Receives, "the field names the type that receives it")
+			expect.Equal(t, size.Receives.Spelling, "Row", "the extended message as written")
+			expect.Equal(t, stampsOn(gb, size, string(protobuf.FieldKey)), []string{"100"}, "the wire number")
+			expect.Equal(t, stampsOn(gb, size, string(protobuf.OptionsKey)), []string{"deprecated=true"},
+				"the options of the field")
+		})
+
+		t.Run("documents the first field of an extend block with the comments above the block", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, extendSource)
+			file := onlyFile(t, gb)
+			size, _ := declOf(t, file, "size").(*node.Field)
+			assert.NotNil(t, size, "the first field of the block loads")
+			expect.Equal(t, size.Doc, []string{"The extensions of a row.", "Size is the size of the row."},
+				"the documentation of the block, then the documentation of the field")
+			weight, _ := declOf(t, file, "weight").(*node.Field)
+			assert.NotNil(t, weight, "the second field of the block loads")
+			expect.Equal(t, weight.Doc, []string{"Weight is the weight of the row."},
+				"the second field keeps its own documentation")
+		})
+
+		t.Run("loads a field of an extend block inside a message among the nested declarations", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, extendSource)
+			holder, _ := declOf(t, onlyFile(t, gb), "Holder").(*node.Struct)
+			assert.NotNil(t, holder, "the message that declares the block loads")
+			assert.Empty(t, holder.Fields, "an extension is not a field of the message that declares it")
+			assert.Length(t, holder.Types, 1, "the extension is a nested declaration of the message")
+			label, is := holder.Types[0].(*node.Field)
+			assert.True(t, is, "the nested declaration is a field")
+			assert.NotNil(t, label.Receives, "the field names the type that receives it")
+			assert.Equal(t, label.Receives.Spelling, "Row", "the extended message as written")
+		})
+
+		t.Run("loads a group of an extend block as a message and a field with Receives", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, extendSource)
+			file := onlyFile(t, gb)
+			_, is := declOf(t, file, "Extra").(*node.Struct)
+			assert.True(t, is, "the group is a message in the scope of the block")
+			extra, is := declOf(t, file, "extra").(*node.Field)
+			assert.True(t, is, "and a field in the scope of the block")
+			assert.NotNil(t, extra.Receives, "the field of the group names the type that receives it")
+			expect.Equal(t, extra.Receives.Spelling, "Row", "the extended message as written")
+			expect.Equal(t, stampsOn(gb, extra, string(protobuf.DelimitedKey)), []string{"DELIMITED"},
+				"the field of a group is delimited")
+		})
+
+		t.Run("joins the comment of an extend block before the comment of its first field", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, `syntax = "proto2";
+
+package svc.store;
+
+message Row {
+  extensions 100 to 200;
+}
+
+extend Row { // sizes
+  optional int64 size = 100; // in bytes
+}
+`)
+			size, _ := declOf(t, onlyFile(t, gb), "size").(*node.Field)
+			assert.NotNil(t, size, "the field of the block loads")
+			assert.Equal(t, size.Comment, "sizes in bytes", "the comment of the block, then the comment of the field")
+		})
+
+		t.Run("loads no message that an extend block declares", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto2";
@@ -563,25 +673,83 @@ message Row {
 package svc.store;
 
 message Row {
-  optional string name = 1;
+  extensions 100 to 200;
 }
 
 extend Row {
+  message Inner {}
   optional int64 size = 100;
 }
 `)
-			assert.True(t, sink.Failed(), "an extension changes a declaration the file does not declare")
-			assert.Contains(t, codesOf(sink), protofrontend.RefusedExtension, "under the refusal's own code")
-			var msg string
-			for d := range sink.All() {
-				if d.Code == protofrontend.RefusedExtension {
-					msg = d.Msg
-					assert.Equal(t, d.Pos.Line, 9, "at the block")
-				}
-			}
-			assert.Contains(t, msg, "Row", "naming the message it would extend")
+			assert.Contains(t, codesOf(sink), protofrontend.UnparsedFile, "the parser reports the message")
 			file := onlyFile(t, gb)
-			assert.Length(t, file.Decls, 1, "and the block loads as nothing")
+			assert.Length(t, file.Decls, 2, "the block contributes its field alone beside the message")
+			_, is := declOf(t, file, "size").(*node.Field)
+			assert.True(t, is, "the field of the block loads")
+		})
+
+		t.Run("stamps the required label of a group", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, `syntax = "proto2";
+
+package svc.store;
+
+message Row {
+  required group Inner = 1 {
+    optional string v = 2;
+  }
+}
+`)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.NotNil(t, row, "the message loads")
+			assert.Length(t, row.Fields, 1, "the group is one field of the message")
+			assert.Equal(t, stampsOn(gb, row.Fields[0], string(protobuf.LabelKey)), []string{"required"},
+				"the field of the group keeps its label")
+		})
+
+		t.Run("loads a file without a syntax statement as proto2", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, "package svc.store;\n\nenum Colour {\n  RED = 1;\n}\n")
+			colour, _ := declOf(t, onlyFile(t, gb), "Colour").(*node.Enum)
+			assert.NotNil(t, colour, "the enum loads")
+			assert.Equal(t, stampsOn(gb, colour, string(protobuf.ClosedKey)), []string{"CLOSED"},
+				"every enum of proto2 is closed")
+		})
+
+		t.Run("loads a field type that is not a path as written", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, "syntax = \"proto2\";\n\npackage svc.store;\n\n"+
+				"message Row {\n  optional repeated int32 ids = 1;\n}\n")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.NotNil(t, row, "the message loads")
+			assert.Length(t, row.Fields, 1, "the field loads")
+			assert.Equal(t, row.Fields[0].Type.Elems[0].Spelling, "repeated int32",
+				"the type under the outer label is its source text")
+		})
+
+		t.Run("stamps a json_name that is not a string as written", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, "syntax = \"proto3\";\n\npackage svc.store;\n\n"+
+				"message Row {\n  string name = 1 [json_name = rowName];\n}\n")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.NotNil(t, row, "the message loads")
+			assert.Equal(t, stampsOn(gb, row.Fields[0], string(protobuf.JSONNameKey)), []string{"rowName"},
+				"the value as written")
+		})
+
+		t.Run("loads a message whose body does not close", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, "syntax = \"proto3\";\n\npackage svc.store;\n\n"+
+				"message Row {\n  string name = 1;\n")
+			assert.Contains(t, codesOf(sink), protofrontend.UnparsedFile, "the parser reports the open body")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.NotNil(t, row, "the message loads")
+			assert.Length(t, row.Fields, 1, "with its field")
 		})
 
 		t.Run("reports UnparsedFile at a syntax error", func(t *testing.T) {
@@ -1001,19 +1169,14 @@ message Req {}
 				"a default is on the field the model gives it to")
 		})
 
-		t.Run("reports every proto2 extension, which the model has no shape for", func(t *testing.T) {
+		t.Run("loads every proto2 extension without a finding", func(t *testing.T) {
 			t.Parallel()
 
-			_, sink := grammar(t, "proto2.proto")
-			var refusals []diag.Diag
-			for d := range sink.All() {
-				refusals = append(refusals, d)
-			}
-			assert.Length(t, refusals, 2, "the extend inside the message and the one beside it report")
-			for _, d := range refusals {
-				expect.Equal(t, d.Code, protofrontend.RefusedExtension, "each refusal is an extension's")
-				expect.InRange(t, d.Pos.Line, 1, math.Inf(1), "each refusal is positioned")
-			}
+			gb, sink := grammar(t, "proto2.proto")
+			assert.Empty(t, codesOf(sink), "the extend inside the message and the one beside it load")
+			outer, is := declOf(t, onlyFile(t, gb), "outer_extension").(*node.Field)
+			assert.True(t, is, "the extension beside the message is a field of the file")
+			assert.NotNil(t, outer.Receives, "the field names the type that receives it")
 		})
 
 		t.Run("returns the context's error for a cancelled load", func(t *testing.T) {
@@ -1134,6 +1297,10 @@ func declOf(tb assert.TB, f *node.File, name string) symbol.Symbol {
 				return d
 			}
 		case *node.Interface:
+			if d.Name == name {
+				return d
+			}
+		case *node.Field:
 			if d.Name == name {
 				return d
 			}

@@ -63,6 +63,27 @@ func TestLang(t *testing.T) {
 		})
 	})
 
+	t.Run("Target", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells the language", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, string(protobuf.Target), string(protobuf.Lang),
+				"the emitter copies a reference of a protobuf source as written into a plan of the target")
+		})
+	})
+
+	t.Run("BackendVersion", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells a version", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, protobuf.BackendVersion, "", "the version the composition fingerprint folds")
+		})
+	})
+
 	t.Run("Syntax", func(t *testing.T) {
 		t.Parallel()
 

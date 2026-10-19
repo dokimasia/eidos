@@ -39,6 +39,11 @@
 //   - A oneof is a sum whose variants are its members.
 //   - A proto2 group is a nested message with the name of the group, and a
 //     field with the name of the group in lower case, marked delimited.
+//   - A field of an extend block is a field whose Receives is the extended
+//     message as written. At file level it is a declaration of the file,
+//     and inside a message it is a nested declaration of the message, so it
+//     is no field of the message that declares it. The comments above the
+//     block document its first field.
 //   - An enum is the enum kind, each variant with its declared number, and
 //     an enum whose resolved enum_type is CLOSED is marked closed.
 //   - A service is an interface, and an rpc is an abstract method, which
@@ -84,8 +89,6 @@
 //
 //   - [UnknownEdition]: a syntax or an edition outside the table of
 //     versions of the frontend.
-//   - [RefusedExtension]: an extend block changes a declaration that the
-//     file does not declare.
 //   - [UnparsedFile]: a syntax error at its position. The file still
 //     contributes what the parser recovered. The warnings of the parser,
 //     which are about the style of a schema, do not report.
