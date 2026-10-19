@@ -4,11 +4,11 @@
 // Command eidos generates the code of a workspace with the declarative
 // plugins that its config file adds to the plans of the binary.
 //
-// The binary composes the frontends of Go, TypeScript, Java, Rust and
-// protobuf, the rules of Go, TypeScript and protobuf, and one extensible
-// plan for each of the targets golang, typescript, java and rust. It has
-// no generator and no annotator of its own. A plan without a plugin writes
-// no file.
+// The binary composes the frontends of Go, TypeScript, Java, Rust, protobuf
+// and GraphQL, the rules of Go, TypeScript, protobuf and GraphQL, and one
+// extensible plan for each of the targets golang, typescript, java, rust,
+// protobuf and graphql. It has no generator and no annotator of its own. A
+// plan without a plugin writes no file.
 //
 // # The config file
 //
@@ -38,6 +38,8 @@
 // # Dependency position
 //
 // The command imports the command kernels of eidos-cli, core/output,
-// core/workspace, and the frontend, backend and rules packages of the Go,
-// TypeScript, Java, Rust and protobuf satellites.
+// core/workspace, the root, frontend and backend packages of the Go,
+// TypeScript, Java, Rust, protobuf and GraphQL satellites, the rules
+// packages of the Go, TypeScript, protobuf and GraphQL satellites, and the
+// Go stdlib.
 package main

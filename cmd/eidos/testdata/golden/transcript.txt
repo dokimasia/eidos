@@ -42,11 +42,14 @@ frontend golang 0.8.0
 frontend typescript 0.3.0; tree-sitter-typescript v0.23.2, go-tree-sitter v0.25.0
 frontend java 0.2.0; tree-sitter-java v0.23.5, go-tree-sitter v0.25.0
 frontend rust 0.4.0; tree-sitter-rust v0.24.2, go-tree-sitter v0.25.0
-frontend protobuf 0.4.0
+frontend protobuf 0.5.0
+frontend graphql 0.1.0
 annotator 1 golang-lowering
-annotator 2 java-lowering
-annotator 3 rust-lowering
-annotator 4 typescript-lowering
+annotator 2 graphql-lowering
+annotator 3 java-lowering
+annotator 4 protobuf-lowering
+annotator 5 rust-lowering
+annotator 6 typescript-lowering
 plan golang: target golang, backend golang, commit order 1
   sources: language golang, packages ./...
   generator 1 audit 0.3.0+e0e53984172bbc0b3a25eb7e6194d7a80f04cdf0c6c5890773ae8b0d0ff06ca6
@@ -62,6 +65,14 @@ plan java: target java, backend java, commit order 3
 plan rust: target rust, backend rust, commit order 4
   sources: language rust, packages ./...
   layout: policy inherit
+plan protobuf: target protobuf, backend protobuf, commit order 5
+  sources: language protobuf, packages ./...
+  layout: policy inherit
+  policies: protobuf.int32 int32, protobuf.int64 int64, protobuf.uint32 uint32, protobuf.uint64 uint64
+plan graphql: target graphql, backend graphql, commit order 6
+  sources: language graphql, packages ./...
+  layout: policy inherit
+  policies: graphql.bytes String, graphql.duration String, graphql.dynamic String, graphql.int64 String, graphql.map entries, graphql.timestamp String, graphql.uint32 Float, graphql.uint64 String
 [exit 0]
 
 # The plugin writes a Go implementation, its test, a Go mirror and a TypeScript mirror.

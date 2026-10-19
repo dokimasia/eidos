@@ -13,9 +13,15 @@ import (
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
+	"go.dokimi.dev/eidos/lang/graphql"
+	graphqlbackend "go.dokimi.dev/eidos/lang/graphql/backend"
+	graphqlfrontend "go.dokimi.dev/eidos/lang/graphql/frontend"
+	graphqlrules "go.dokimi.dev/eidos/lang/graphql/rules"
 	"go.dokimi.dev/eidos/lang/java"
 	javabackend "go.dokimi.dev/eidos/lang/java/backend"
 	javafrontend "go.dokimi.dev/eidos/lang/java/frontend"
+	"go.dokimi.dev/eidos/lang/protobuf"
+	protobackend "go.dokimi.dev/eidos/lang/protobuf/backend"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
 	"go.dokimi.dev/eidos/lang/rust"
@@ -45,8 +51,9 @@ func main() {
 }
 
 // compose returns the composition of the binary: the frontends of Go,
-// TypeScript, Java, Rust and protobuf, the rules of Go, TypeScript and
-// protobuf, and one extensible plan without generators for each target.
+// TypeScript, Java, Rust, protobuf and GraphQL, the rules of Go, TypeScript,
+// protobuf and GraphQL, and one extensible plan without generators for each
+// target.
 // Each plan has the name of its target and reads the packages of the
 // language of the target below the workspace root. A phase call runs on
 // as many workers as the process has processors. Each call returns new
@@ -55,9 +62,9 @@ func compose() *workspace.Builder {
 	return workspace.New().
 		Brand(brand).
 		Frontends(gofrontend.New(nil), tsfrontend.New(), javafrontend.New(nil), rustfrontend.New(nil),
-			protofrontend.New()).
-		Rules(gorules.New(), tsrules.New(), protorules.New()).
-		Targets(golang.Target, typescript.Target, java.Target, rust.Target).
+			protofrontend.New(), graphqlfrontend.New()).
+		Rules(gorules.New(), tsrules.New(), protorules.New(), graphqlrules.New()).
+		Targets(golang.Target, typescript.Target, java.Target, rust.Target, protobuf.Target, graphql.Target).
 		Plans(
 			workspace.Plan{
 				Name:       string(golang.Target),
@@ -81,6 +88,18 @@ func compose() *workspace.Builder {
 				Name:       string(rust.Target),
 				Sources:    workspace.Sources{Lang: rust.Lang, Packages: []string{treeSources}},
 				Backend:    rustbackend.New(),
+				Extensible: true,
+			},
+			workspace.Plan{
+				Name:       string(protobuf.Target),
+				Sources:    workspace.Sources{Lang: protobuf.Lang, Packages: []string{treeSources}},
+				Backend:    protobackend.New(),
+				Extensible: true,
+			},
+			workspace.Plan{
+				Name:       string(graphql.Target),
+				Sources:    workspace.Sources{Lang: graphql.Lang, Packages: []string{treeSources}},
+				Backend:    graphqlbackend.New(),
 				Extensible: true,
 			},
 		).

@@ -10,6 +10,7 @@ require (
 	go.dokimi.dev/eidos/cli v0.2.0
 	go.dokimi.dev/eidos/core v0.2.0
 	go.dokimi.dev/eidos/lang/go v0.1.1
+	go.dokimi.dev/eidos/lang/graphql v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/java v0.1.1
 	go.dokimi.dev/eidos/lang/protobuf v0.1.1
 	go.dokimi.dev/eidos/lang/rust v0.1.1
