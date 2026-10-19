@@ -35,10 +35,10 @@ type Entry struct {
 //
 // [Value] walks the tree, because the tree has the same shape in every
 // language: a conversion wraps one value, a composite lists its fields in
-// order, and a call lists its arguments. Every C-family target spells a
-// call as callee(args), so the walk writes the call. The target spells
-// every other form, and its method refuses a form that the language has
-// no syntax for.
+// order, and a call and a construction list their arguments. Every
+// C-family target spells a call as callee(args), so the walk writes the
+// call. The target spells every other form, and its method refuses a form
+// that the language has no syntax for.
 //
 // A method that spells a reference or a callee records the import that
 // the spelling needs, so a target is bound to the import set of one file.
@@ -63,7 +63,10 @@ type Target interface {
 	// spelling that the C-family targets share.
 	Literal(v emit.Value) (string, error)
 	// Type spells the reference of a value, and records its import. The
-	// walk passes only a reference with a spelling.
+	// walk passes a named reference with its spelling, and a structural
+	// reference with or without one. A target restates a structural
+	// reference without a spelling from its children, which the
+	// substitution of a type parameter leaves, or refuses it.
 	Type(t *emit.TypeRef) (string, error)
 	// Callee spells the declaration that a call or a name value refers
 	// to, and records its import. The walk passes only an identity with a
@@ -83,6 +86,14 @@ type Target interface {
 	// some values alone reads the kind of the value. Go takes the address
 	// of a composite literal alone.
 	Address(inner emit.Value, spelled string) (string, error)
+	// Construction spells a construction of a type from the spellings of
+	// its arguments, such as new Set([1]) in TypeScript, and records the
+	// import of the type. The walk passes the reference unspelled, because
+	// a construction needs the type at run time, and a language that
+	// imports a declaration for its type checker alone imports the type of
+	// a construction for its value. A language without a construction
+	// form refuses it.
+	Construction(ref *emit.TypeRef, args []string) (string, error)
 }
 
 // Leaves is the spelling of the literal leaves of one target, in which the
@@ -163,13 +174,15 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 // passes each part to the target, so a language states its syntax and
 // not the recursion. A composite lists its entries in the order of the
 // value. A call spells as the callee and its arguments, which commas join
-// in parentheses. A name spells as the target spells a callee.
+// in parentheses. A name spells as the target spells a callee. A
+// construction passes its type unspelled and the spellings of its
+// arguments to the target.
 //
 // Error modes, each a [render.ValueError]:
 //   - A value kind that the vocabulary does not declare.
 //   - A conversion or an address without an inner value.
-//   - A conversion or a composite without a type, or with a type that has
-//     no spelling.
+//   - A conversion, a composite or a construction without a type, or with
+//     a named type that has no spelling.
 //   - A call or a name without an identity, or with an identity that has
 //     no name.
 //
@@ -178,11 +191,13 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 // # Allocation contract
 //
 // The walk allocates the list of entries that a composite with fields
-// passes to [Target.Composite], one allocation, because the argument of
-// an interface method escapes. A call allocates its spelling, one
-// allocation, and the list of its spelled arguments where it has more
-// than eight. Literals, names, conversions and addresses allocate nothing
-// in the walk. The methods of the target add their own allocations.
+// passes to [Target.Composite], and the list of the spelled arguments
+// that a construction with arguments passes to [Target.Construction], one
+// allocation each, because the argument of an interface method escapes. A
+// call allocates its spelling, one allocation, and the list of its spelled
+// arguments where it has more than eight. Literals, names, conversions and
+// addresses allocate nothing in the walk. The methods of the target add
+// their own allocations.
 func Value(t Target, v emit.Value) (string, error) {
 	switch v.Kind {
 	case emit.ValueLiteral:
@@ -209,9 +224,28 @@ func Value(t Target, v emit.Value) (string, error) {
 		return t.Address(*v.Inner, inner)
 	case emit.ValueName:
 		return callee(t, v, "a name value")
+	case emit.ValueConstruction:
+		return construction(t, v)
 	default:
 		return "", render.RefuseValue(t.Lang(), "no spelling for the %s value", v.Kind)
 	}
+}
+
+// construction spells a construction from its type and the spellings of its
+// arguments, in the order of the value.
+func construction(t Target, v emit.Value) (string, error) {
+	if err := typed(t, v, "a construction"); err != nil {
+		return "", err
+	}
+	args := make([]string, 0, len(v.Args))
+	for _, arg := range v.Args {
+		spelled, err := Value(t, arg)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, spelled)
+	}
+	return t.Construction(v.Type, args)
 }
 
 // composite spells a composite from its type and its fields, in the order
@@ -288,17 +322,29 @@ func callee(t Target, v emit.Value, what string) (string, error) {
 	return t.Callee(v.Callee)
 }
 
-// namedType spells the type of a conversion or a composite. A language
-// cannot invent the type, so namedType refuses a value without a type and
-// a type without a spelling.
+// namedType spells the type of a conversion or a composite through the
+// target, after [typed] admits it.
 func namedType(t Target, v emit.Value, what string) (string, error) {
-	switch {
-	case v.Type == nil:
-		return "", render.RefuseValue(t.Lang(), "%s value has no type", what)
-	case v.Type.Spelling == "":
-		return "", render.RefuseValue(t.Lang(), "the type of a value has no spelling")
+	if err := typed(t, v, what); err != nil {
+		return "", err
 	}
 	return t.Type(v.Type)
+}
+
+// typed refuses the type of a conversion, a composite or a construction
+// that the target cannot spell. A language cannot invent a named type, so
+// typed refuses a value without a type and a named reference without a
+// spelling. A structural reference without a spelling passes to the
+// target, which restates it from its children or refuses it. what is the
+// value in the refusal.
+func typed(t Target, v emit.Value, what string) error {
+	switch {
+	case v.Type == nil:
+		return render.RefuseValue(t.Lang(), "%s value has no type", what)
+	case v.Type.Spelling == "" && v.Type.Form == symbol.FormNamed:
+		return render.RefuseValue(t.Lang(), "the type of a value has no spelling")
+	}
+	return nil
 }
 
 // wrapped spells the inner value of a conversion or an address.

@@ -314,6 +314,63 @@ func restatedStructural(
 	return out, false, err
 }
 
+// TypeArgs writes a list of type parameters or of type references as the
+// type arguments of a reference: the entries between opener and closer,
+// separated by commas, and nothing for an empty list or nil. A type
+// parameter writes its name, so a generic declaration refers to itself, as
+// in *Builder[T]. A type reference writes what spell returns for it, so
+// the file imports the package of each argument, as in the witnesses
+// [int] of a test. TypeArgs returns an error for a list of another type,
+// and the error of spell as it is.
+//
+// # Allocation contract
+//
+// TypeArgs allocates the text that it writes in one buffer of its size,
+// and the list of its entries where the list has more than two, beside
+// what spell allocates. An empty list allocates nothing.
+func TypeArgs(list any, opener, closer string, spell func(*emit.TypeRef) (string, error)) (string, error) {
+	var parts []string
+	switch l := list.(type) {
+	case nil:
+		return "", nil
+	case []*emit.TypeParam:
+		parts = make([]string, 0, len(l))
+		for _, tp := range l {
+			parts = append(parts, tp.Name)
+		}
+	case []*emit.TypeRef:
+		parts = make([]string, 0, len(l))
+		for _, t := range l {
+			spelled, err := spell(t)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, spelled)
+		}
+	default:
+		return "", fmt.Errorf("spellref: type arguments are a list of type parameters or of type references, "+
+			"and the list is a %T", list)
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	n := len(opener) + len(closer) + len(argSeparator)*(len(parts)-1)
+	for _, p := range parts {
+		n += len(p)
+	}
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(opener)
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteString(argSeparator)
+		}
+		b.WriteString(p)
+	}
+	b.WriteString(closer)
+	return b.String(), nil
+}
+
 // PackageOf returns the package of a named reference for a backend of
 // the language lang. It returns the target's package where the target is
 // a declaration of lang, and the package that the reference records

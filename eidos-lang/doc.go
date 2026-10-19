@@ -11,7 +11,8 @@
 //   - [go.dokimi.dev/eidos/lang/lowering] copies emit-model shapes and
 //     checks method names for the backends' Lower hooks.
 //   - [go.dokimi.dev/eidos/lang/naming] converts identifiers between
-//     case conventions and builds filenames from a unit's parts.
+//     case conventions, builds filenames from a unit's parts, and
+//     chooses the free names of a method.
 //   - [go.dokimi.dev/eidos/lang/numeric] types an author's number at
 //     a type's width, for the rules' literal lifting.
 //   - [go.dokimi.dev/eidos/lang/scaffold] spells the statement and
@@ -30,8 +31,8 @@
 //
 // # Dependency position
 //
-// The root package imports nothing. naming imports the Go stdlib
-// alone. lowering and spellref import sdk/emit, numeric imports
+// The root package imports nothing. naming, lowering and spellref
+// import sdk/emit, numeric imports
 // sdk/emit and sdk/rules, spoke imports sdk/emit, sdk/rules and
 // sdk/symbol, textfmt imports sdk/render and sdk/symbol,
 // and scaffold imports sdk/emit, sdk/render and sdk/symbol, each

@@ -44,6 +44,10 @@ const spelledAllocs = 1
 // the fixture's restate returns.
 const restatedAllocs = 2
 
+// typeArgsAllocs is the type arguments of two type parameters: the text,
+// in one buffer of its size.
+const typeArgsAllocs = 1
+
 // errRestate is the refusal of the restate that a case passes.
 var errRestate = errors.New("spellref_test: the restate refuses the composite")
 
@@ -294,6 +298,56 @@ func TestSpellRef(t *testing.T) {
 		})
 	})
 
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		spelled := func(t *emit.TypeRef) (string, error) { return spellref.Spell(t, opener, closer, standIn), nil }
+		tests := []struct {
+			name string
+			give any
+			want string
+		}{
+			{
+				name: "writes the names of type parameters inside the given brackets",
+				give: []*emit.TypeParam{{Name: paramName}, {Name: rowName}},
+				want: opener + paramName + ", " + rowName + closer,
+			},
+			{
+				name: "writes each type reference through spell",
+				give: []*emit.TypeRef{named(rowName), nested()},
+				want: "<Row, Map<K, List<V>>>",
+			},
+			{name: "writes nothing for an empty list of type parameters", give: []*emit.TypeParam{}, want: ""},
+			{name: "writes nothing for an empty list of type references", give: []*emit.TypeRef{}, want: ""},
+			{name: "writes nothing for nil", give: nil, want: ""},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spellref.TypeArgs(tt.give, opener, closer, spelled)
+				assert.NoError(t, err, "TypeArgs writes the list")
+				assert.Equal(t, got, tt.want, "TypeArgs writes the type arguments")
+			})
+		}
+
+		t.Run("returns an error for a list of another type", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := spellref.TypeArgs([]string{paramName}, opener, closer, spelled)
+			assert.HasError(t, err, "a list of text is no list of type arguments")
+			assert.Contains(t, err.Error(), "[]string", "the error names the type of the list")
+		})
+
+		t.Run("returns the error of spell", func(t *testing.T) {
+			t.Parallel()
+
+			refusing := func(*emit.TypeRef) (string, error) { return "", errRestate }
+			_, err := spellref.TypeArgs([]*emit.TypeRef{named(rowName)}, opener, closer, refusing)
+			assert.ErrorIs(t, err, errRestate, "the error of spell is returned")
+		})
+	})
+
 	t.Run("PackageOf", func(t *testing.T) {
 		t.Parallel()
 
@@ -377,6 +431,11 @@ func TestSpellRefAllocs(t *testing.T) {
 	assert.Equal(t, got, "Row2[]", "SpellRestated returns the restatement")
 	assert.MaxAllocs(t, func() { got = spellref.PackageOf(target, lang) }, 0, "PackageOf allocates nothing")
 	assert.Equal(t, got, targetPkg, "PackageOf returns the target's package")
+	var params any = []*emit.TypeParam{{Name: paramName}, {Name: rowName}}
+	assert.MaxAllocs(t, func() { got, err = spellref.TypeArgs(params, opener, closer, nil) }, typeArgsAllocs,
+		"TypeArgs allocates the text that it writes")
+	assert.Equal(t, got, "<T, Row>", "TypeArgs writes the names of the type parameters")
+	assert.NoError(t, err, "TypeArgs writes every list")
 }
 
 // BenchmarkSpellRef measures the spelling a backend writes for every
@@ -474,6 +533,21 @@ func BenchmarkSpellRef(b *testing.B) {
 			got = spellref.PackageOf(target, lang)
 		}
 		assert.Equal(b, got, targetPkg, "PackageOf returns the target's package")
+	})
+
+	b.Run("TypeArgs", func(b *testing.B) {
+		var params any = []*emit.TypeParam{{Name: paramName}, {Name: rowName}}
+		c := bench.Start(b).MaxAllocs(typeArgsAllocs)
+		defer c.End()
+		var (
+			got string
+			err error
+		)
+		for c.Loop() {
+			got, err = spellref.TypeArgs(params, opener, closer, nil)
+		}
+		assert.NoError(b, err, "TypeArgs writes the list")
+		assert.Equal(b, got, "<T, Row>", "TypeArgs writes the names of the type parameters")
 	})
 }
 

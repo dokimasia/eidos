@@ -127,6 +127,16 @@ func TestComments(t *testing.T) {
 			assert.Equal(t, texts(c.Leading(field)), []string{"// doc"}, "the run ends below the stopping comment")
 		})
 
+		t.Run("ends the run at a comment that another subject took", func(t *testing.T) {
+			t.Parallel()
+
+			tree := parse(t, stopJava)
+			c := javaComments()
+			c.Take(commentsOf(c, first(tree.Root(), g.Kind(classBodyKind)))[0])
+			assert.Equal(t, texts(c.Leading(first(tree.Root(), g.Kind(fieldDeclKind)))), []string{"// doc"},
+				"the taken comment belongs to its subject")
+		})
+
 		t.Run("uses LastLine for the line on which a comment ends", func(t *testing.T) {
 			t.Parallel()
 
@@ -291,14 +301,15 @@ func BenchmarkComments(b *testing.B) {
 }
 
 // commentCalls returns a call of each step of the walk over the run of
-// runJava and the trailing comment of tailJava.
+// runJava and the trailing comment of tailJava. Leading runs on a walk
+// that took no comment, because a taken comment ends the run.
 func commentCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
 	g := java.Grammar
 	field := first(parse(tb, runJava).Root(), g.Kind(fieldDeclKind))
 	tailed := first(parse(tb, tailJava).Root(), g.Kind(fieldDeclKind))
-	c := javaComments()
+	c, untaken := javaComments(), javaComments()
 	comments := c.Leading(field)
 	runs := 0
 	count := func(string, position.Pos) { runs++ }
@@ -311,7 +322,7 @@ func commentCalls(tb testing.TB) []allocCall {
 	return []allocCall{
 		{
 			name: "Leading", allocs: leadingAllocs,
-			call:  func() { got = c.Leading(field) },
+			call:  func() { got = untaken.Leading(field) },
 			check: func(tb assert.TB) { assert.Length(tb, got, 2, "Leading returns the run of two comments") },
 		},
 		{

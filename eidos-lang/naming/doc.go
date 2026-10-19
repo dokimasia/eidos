@@ -35,7 +35,9 @@
 // [Unique] returns the first of its candidate names that a set of taken
 // names does not contain. Where the set contains every candidate, it
 // numbers the last candidate from 0. A backend chooses the name of a
-// receiver or a parameter of a method through it.
+// receiver or a parameter of a method through it. [Params] names each
+// parameter of an emitted method that has no name through it, so a
+// generated body passes every parameter on by its name.
 //
 // # Allocation contract
 //
@@ -49,8 +51,8 @@
 //
 // # Dependency position
 //
-// lang/naming imports the Go stdlib and nothing else. It knows no
-// single language: which spellings a target reserves, and which
-// style it names files or types in, are each satellite's own
-// knowledge.
+// lang/naming imports sdk/emit, for the methods that [Params] names,
+// and the Go stdlib. It knows no single language: which spellings a
+// target reserves, and which style it names files or types in, are
+// each satellite's own knowledge.
 package naming

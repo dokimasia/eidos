@@ -22,10 +22,10 @@
 //
 // # Allocation contract
 //
-// The walk allocates a statement's buffer, a composite's entries and a
-// call value's spelling. A grammar's functions and a target's methods
-// add their own allocations, and each function's docblock states the
-// count.
+// The walk allocates a statement's buffer, a composite's entries, the
+// arguments of a construction and a call value's spelling. A grammar's
+// functions and a target's methods add their own allocations, and each
+// function's docblock states the count.
 //
 // # Dependency position
 //

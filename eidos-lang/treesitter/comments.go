@@ -85,10 +85,11 @@ type Comments struct {
 // Leading returns the comments directly above n in source order. A run ends
 // on the line above n, or on its line, and has no blank line inside it. It
 // passes over the siblings that Passes reports, and ends at a comment that
-// Stops reports. It also ends at a comment that shares a line with the
-// sibling before it, where Trails admits the comment. Such a comment is the
-// trailing comment of that sibling. The comments of the child that Inner
-// returns follow the run.
+// Stops reports. It ends at a comment that a run or [Comments.Take] took,
+// because that comment belongs to another subject. It also ends at a
+// comment that shares a line with the sibling before it, where Trails
+// admits the comment. Such a comment is the trailing comment of that
+// sibling. The comments of the child that Inner returns follow the run.
 func (c *Comments) Leading(n Node) []Node {
 	var group []Node
 	next := n.Pos().Line
@@ -97,7 +98,7 @@ func (c *Comments) Leading(n Node) []Node {
 			next = prev.Pos().Line
 			continue
 		}
-		if !c.IsComment(prev) || c.Stops != nil && c.Stops(prev) || c.lastLine(prev) < next-1 {
+		if !c.IsComment(prev) || c.Stops != nil && c.Stops(prev) || c.lastLine(prev) < next-1 || c.isTaken(prev) {
 			break
 		}
 		before := prev.PrevNamedSibling()

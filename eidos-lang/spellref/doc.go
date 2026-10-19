@@ -9,7 +9,9 @@
 // refers to it by. [SpellRestated] is the walk of [SpellWith] for a
 // language whose composite spelling follows from its structure. The
 // language passes a function of the type [Restate], which writes a
-// structural reference again where a child spells otherwise. [PackageOf]
+// structural reference again where a child spells otherwise. [TypeArgs]
+// writes a list of type parameters or of type references as type
+// arguments, which the helper typeargs of each backend binds. [PackageOf]
 // returns the package a reference's import names for a backend of one
 // language.
 //

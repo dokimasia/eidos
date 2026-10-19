@@ -44,6 +44,9 @@ const (
 	// quoteAllocs is a string through the fixture's quoting, which
 	// concatenates the quotes.
 	quoteAllocs = 1
+	// constructionAllocs is a construction with arguments: the list of
+	// the spelled arguments the walk passes to Construction.
+	constructionAllocs = 1
 )
 
 // leaves is the fixture leaf spelling: a target named scripted, whose
@@ -94,10 +97,15 @@ func (s *scripted) Literal(v emit.Value) (string, error) {
 }
 
 // Type returns the reference's spelling, and records the package of
-// a resolved target as an import.
+// a resolved target as an import. It restates a list without a spelling
+// as [] before the spelling of its element, as a target restates a list
+// that the substitution of a type parameter leaves.
 func (s *scripted) Type(t *emit.TypeRef) (string, error) {
 	if t.Target.Package != "" {
 		s.imported = append(s.imported, t.Target.Package)
+	}
+	if t.Spelling == "" && t.Form == symbol.FormList && len(t.Elems) == 1 {
+		return "[]" + t.Elems[0].Spelling, nil
 	}
 	return t.Spelling, nil
 }
@@ -140,6 +148,16 @@ func (s *scripted) Address(inner emit.Value, spelled string) (string, error) {
 	return "&" + spelled, nil
 }
 
+// Construction spells a construction as new, the type that Type spells and
+// the arguments in parentheses.
+func (s *scripted) Construction(ref *emit.TypeRef, args []string) (string, error) {
+	typ, err := s.Type(ref)
+	if err != nil {
+		return "", err
+	}
+	return "new " + typ + "(" + strings.Join(args, ", ") + ")", nil
+}
+
 // unspelling is a target that refuses callees, conversions, composites
 // and addresses, so each of the walk's error paths runs against it.
 type unspelling struct{ scripted }
@@ -162,6 +180,11 @@ func (unspelling) Composite(*emit.TypeRef, string, []scaffold.Entry) (string, er
 // Address returns an error: the target has no address form.
 func (unspelling) Address(emit.Value, string) (string, error) {
 	return "", errors.New("scripted: no address form")
+}
+
+// Construction returns an error: the target has no construction form.
+func (unspelling) Construction(*emit.TypeRef, []string) (string, error) {
+	return "", errors.New("scripted: no construction form")
 }
 
 // passthrough is a target that composes nothing: each method returns a
@@ -191,6 +214,11 @@ func (passthrough) Composite(_ *emit.TypeRef, typ string, _ []scaffold.Entry) (s
 
 // Address returns the inner value's spelling.
 func (passthrough) Address(_ emit.Value, spelled string) (string, error) { return spelled, nil }
+
+// Construction returns the type's spelling.
+func (passthrough) Construction(ref *emit.TypeRef, _ []string) (string, error) {
+	return ref.Spelling, nil
+}
 
 // The Go, Java, Rust and TypeScript backends spell their values through
 // Value and Leaves. The walk's order, its recursion and its refusals
@@ -261,6 +289,25 @@ func TestValue(t *testing.T) {
 			{
 				name: "writes a name inside a conversion",
 				give: emit.Conversion(ref("svc", "Weight"), emit.Name(second)), want: "Weight(Second)",
+			},
+			{
+				name: "writes a composite whose list type the target restates",
+				give: emit.Composite(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: "int"}}},
+					emit.Element(integer("1"))),
+				want: "[]int{1}",
+			},
+			{
+				name: "writes a construction with its arguments",
+				give: emit.Construction(
+					ref("svc", "Set"),
+					emit.Composite(ref("svc", "List"), emit.Element(integer("1"))),
+				),
+				want: "new Set(List{1})",
+			},
+			{
+				name: "writes a construction without arguments",
+				give: emit.Construction(ref("svc", "Set")),
+				want: "new Set()",
 			},
 		}
 		for _, tt := range tests {
@@ -364,6 +411,14 @@ func TestValue(t *testing.T) {
 				give: emit.Composite(ref("svc", "Index"), emit.KeyedEntry(emit.Value{}, integer("2"))),
 				want: "no spelling",
 			},
+			{
+				name: "returns a value error for a construction without a type",
+				give: emit.Value{Kind: emit.ValueConstruction}, want: "a construction value has no type",
+			},
+			{
+				name: "returns a value error for a broken value inside a construction",
+				give: emit.Construction(ref("svc", "Set"), emit.Value{}), want: "no spelling",
+			},
 		}
 		for _, tt := range walkErrors {
 			t.Run(tt.name, func(t *testing.T) {
@@ -412,6 +467,11 @@ func TestValue(t *testing.T) {
 				name:   "returns the target's error for a name it has no form for",
 				give:   emit.Name(second),
 				target: &unspelling{}, want: "no callee form",
+			},
+			{
+				name:   "returns the target's error for a construction it has no form for",
+				give:   emit.Construction(ref("svc", "Set")),
+				target: &unspelling{}, want: "no construction form",
 			},
 		}
 		for _, tt := range targetErrors {
@@ -528,6 +588,13 @@ func TestValueAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, name) }, 0,
 		"Value allocates nothing for a name")
 	assert.Equal(t, got, "Second", "Value spells the name")
+	set, empty := emit.Construction(ref("svc", "Set"), integer("1")), emit.Construction(ref("svc", "Set"))
+	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, set) }, constructionAllocs,
+		"Value allocates the list of the arguments of a construction")
+	assert.Equal(t, got, "Set", "Value spells the construction")
+	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, empty) }, 0,
+		"Value allocates nothing for a construction without arguments")
+	assert.Equal(t, got, "Set", "Value spells the construction without arguments")
 	assert.NoError(t, err, "Value spells every tree")
 	assert.MaxAllocs(t, func() { got, err = plain.Literal(lit) }, 0,
 		"Literal allocates nothing for a number without a number spelling")
@@ -550,6 +617,10 @@ func BenchmarkValue(b *testing.B) {
 		{name: "a call", give: unixCall(), allocs: callAllocs, want: "Unix(1, 0)"},
 		{name: "a composite", give: rowValue(), allocs: compositeAllocs, want: "Row"},
 		{name: "a name", give: emit.Name(second), want: "Second"},
+		{
+			name: "a construction", give: emit.Construction(ref("svc", "Set"), integer("1")),
+			allocs: constructionAllocs, want: "Set",
+		},
 	}
 	b.Run("Value", func(b *testing.B) {
 		for _, tt := range trees {
