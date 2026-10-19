@@ -1,7 +1,7 @@
 ---
 milestone: 0013
 title: Regressions block the tag
-status: Planned
+status: Done
 depends-on: 0007, 0008, 0009
 ships-in: unscheduled
 deadline: none
@@ -40,7 +40,7 @@ more plans in Go and TypeScript.
       cross-language workspace. acceptancetest drives its binary, and
       warm≡cold and workspacetest run over its Go-plus-TypeScript
       composition.
-- [ ] The ring job runs eidos-reference, eidos-plugin-shape and the
+- [x] The ring job runs eidos-reference, eidos-plugin-shape and the
       language satellites against kernel HEAD, and a seeded breaking
       change on a kernel branch blocks the tag in a demonstration run.
 
@@ -82,6 +82,7 @@ eidos-reference and the canary ring of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-19 | Ticked the last bullet and set the milestone to Done | The CI run of 745cbd0d on main ran the ring job against the kernel at HEAD. The job tested the latest releases of 13 modules. eidos-reference, eidos-plugin-shape and the five language satellites are among them. Six of the 13 failed. The kernel at HEAD states the facts `Receives` and `Methods` on a struct and declares the capability `ShapeRules`. The tests of the releases reject each of them. The failure blocks the tag, because version.yml opens the version pull request only after a passed run on main. The breaking change was a change of the kernel on main, not a seeded change on a branch |
 | 2026-10-11 | The third bullet waits for a demonstration run | The ring job runs the program `internal/ring` of eidos-reference, which tests the latest release of each module that requires the kernel against the checkout. No module has a release yet, so a breaking change of the kernel blocks the tag through the Go checks of CI alone. The tests of the program run it against a module proxy that serves a release whose test fails against the checkout, and the run fails |
 | 2026-10-11 | Ticked the first two bullets | Each of the nineteen plugins passes `plugintest.RunPluginSuite`. A cold run of the composition writes the 18 files of `testdata/want`, and `RunWorkspaceSuite` and `RunWarmColdSuite` pass over the tree with the stores that the command line passes. `go vet` passes over the Go output, the five generated Go tests pass with their 24 subtests, and `tsc` type-checks the TypeScript output. The binary passes eight of the nine checks of `acceptancetest`. It has no command that panics, so its test leaves out `AssertPanic` |
 | 2026-10-11 | Linked RFC-0026 | The RFC designs the nineteen plugins, the composition, the workspace tree, the reference expression of the scaffolding and the ring job |

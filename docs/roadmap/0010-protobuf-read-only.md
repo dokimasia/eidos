@@ -61,7 +61,7 @@ protocompile (D16), and the well-known-type mappings of
 
 ## Not in this milestone
 
-- Writing proto: refused permanently (D7), not deferred.
+- Writing proto. The backend of the satellite writes it outside this milestone.
 
 ## Risks to the sequence
 
@@ -80,3 +80,4 @@ protocompile (D16), and the well-known-type mappings of
 | 2026-09-30 | Status set to In progress | The read-only-shape bullet is checked, and the status read Planned |
 | 2026-09-30 | The residue namespace is spelled `protobuf.*` | A satellite claims the namespace its language identity spells, and the identity is `protobuf` |
 | 2026-10-10 | Linked RFC-0024, ticked every bullet and set the milestone to Done | The frontend parses through protocompile's experimental parser and loads proto2, proto3 and the editions 2023, 2024 and 2026, and it reports `UnknownEdition` for any other version. The conformance service fixture writes `svc/store_server.go` and `svc/store.ts` from one proto service in one run, and the schema of each of the five versions writes the same two files. The fixture passes the workspace suite and the warm suite in each version, tsc type-checks the client, and the Go toolchain type-checks the server. A oneof lowers to a Go interface with a marker method and to a TypeScript union of variant interfaces, a message to a Go struct and a TypeScript interface, and an enum through `EnumRules`. Timestamp and Duration lower to `*time.Time` and `*time.Duration` in Go, and to `Date` and the choice of `typescript.duration` in TypeScript. A NullValue field reports `RefusedType` in each plan. `frontendtest.RunFrontendSuite` passes over the protobuf frontend, the corpus grades every inventory row, and the matrix test writes the support matrix with the probes of Dynamic, the well-known `empty`, the asynchronous stream and `typescript.duration`. The gate passes, and the race detector passes over every touched module |
+| 2026-10-19 | Writing proto left the list of what this milestone refuses | The satellite gained a backend that writes every construct of proto2, proto3 and the editions, which RFC-0067 designs. The goal and the scope of this milestone are unchanged |

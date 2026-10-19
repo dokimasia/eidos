@@ -3,7 +3,7 @@ milestone: 0014
 title: Consumers can depend on tagged modules
 status: Planned
 depends-on: 0008, 0010, 0011, 0012, 0013
-ships-in: v0.1.0
+ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
@@ -85,6 +85,7 @@ and the first version tags.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-19 | The milestone ships in no fixed release, and no bullet is ticked | The releases of 2026-10-13 tagged every module of the fifth bullet before this milestone. The tags are v0.1.0 and then v0.2.0 or v0.1.1. No CI job proves a kernel range at its declared minimum, because every module builds against the kernel at the commit and the ring tests each release against the same kernel. The manifest loader refuses a manifest of another contract version with a fault that contains the plugin and both versions. `version` prints the contract version. No API baseline is committed. The schema index, the evolution classifier, the diff of `doctor` and the generation of the documentation in the tag pipeline do not exist. The releases have no assets, and CI uploads the support matrix as an artifact of each run. The consumer example of 14-distribution-and-cli.md calls `golang.ServerPlan`, `typescript.ClientPlan` and `shapefull.Annotators`. No module declares them, so the example does not build against the tags |
 | 2026-10-11 | The fourth bullet publishes no benchmark comparison against the previous release | We do not gate or report benchmark regressions between releases |
 | 2026-10-08 | The handshake bullet has `version` print the contract version, and eidos-cli joins the first tags | Milestone 0008's `version` has no contract version to print before the handshake exists, and the command kernels are a module of their own |
 | 2026-08-30 | Added at position 14 | The release comes last because it freezes what everything before it was still free to change |

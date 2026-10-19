@@ -36,6 +36,8 @@ flowchart LR
     M11 --> M14
     M12 --> M14
     M13 --> M14
+    M5 --> M15[0015 Python]
+    M9 --> M15
 ```
 
 | Order | Milestone | Status | Depends on | Ships in |
@@ -52,8 +54,9 @@ flowchart LR
 | 10 | [0010](0010-protobuf-read-only.md) protobuf schemas drive generation | Done | 0009 | unscheduled |
 | 11 | [0011](0011-shape-catalog.md) The shape catalog classifies callables | Done | 0005 | unscheduled |
 | 12 | [0012](0012-declarative-plugins.md) A plugin runs from files alone | Done | 0005 | unscheduled |
-| 13 | [0013](0013-regressions-block-tag.md) Regressions block the tag | Planned | 0007, 0008, 0009 | unscheduled |
-| 14 | [0014](0014-first-tagged-release.md) Consumers can depend on tagged modules | Planned | 0008, 0010, 0011, 0012, 0013 | v0.1.0 |
+| 13 | [0013](0013-regressions-block-tag.md) Regressions block the tag | Done | 0007, 0008, 0009 | unscheduled |
+| 14 | [0014](0014-first-tagged-release.md) Consumers can depend on tagged modules | Planned | 0008, 0010, 0011, 0012, 0013 | unscheduled |
+| 15 | [0015](0015-python-reads-and-writes.md) Python reads and writes | Planned | 0005, 0009 | unscheduled |
 
 Three notes on the order.
 
@@ -72,9 +75,10 @@ and their frontends load in milestone 0004. The Kotlin and PHP
 satellites exist as stub modules and are not scheduled. Each becomes
 a milestone when someone commits to it. dokimi, the reference
 consumer, reads Go, TypeScript, Rust, Java, Kotlin and Python, so the
-unscheduled satellites are demand, not speculation, and
-eidos-lang-python still needs its stub module before it can become
-one. Their sequencing notes are in
+unscheduled satellites are demand, not speculation. eidos-lang-python
+is milestone 0015. The backend of protobuf and the GraphQL satellite
+have no milestone, and RFC-0067 and RFC-0068 design them. The
+sequencing notes of Kotlin and PHP are in
 [11-languages.md](../architecture/11-languages.md): Kotlin waits on
 its grammar closing a measured gap, and PHP forces no new model
 element, so it can come early and cheap.
