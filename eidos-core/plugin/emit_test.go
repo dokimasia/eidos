@@ -286,6 +286,15 @@ func TestEmit(t *testing.T) {
 				"a nil declaration would abort a render worker, so the door refuses it")
 		})
 
+		t.Run("returns an error for a nil pointer of a declaration kind", func(t *testing.T) {
+			t.Parallel()
+
+			u := unit("stubgen", "svc/store/unit.go")
+			u.Decls = append(u.Decls, (*emit.File)(nil))
+			assert.HasError(t, plugin.NewEmit().Add(u),
+				"a nil header would abort the lowering of a backend, so the door refuses it")
+		})
+
 		t.Run("seals every slot of a declaration that the unit places", func(t *testing.T) {
 			t.Parallel()
 

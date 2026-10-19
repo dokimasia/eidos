@@ -450,6 +450,22 @@ func TestEmitter(t *testing.T) {
 			assert.Equal(t, names, []string{"A0", "B0", "A1", "B1"},
 				"each instance's declarations precede the next instance's, in rule order")
 		})
+
+		t.Run("returns an error for a nil pointer of a declaration kind", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			p := eidos.NewPlugin(contextPlugin).
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "impl"}).
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+					e.PlanFile().Append((*emit.File)(nil))
+					return nil
+				})).
+				Generator()
+			assert.HasError(t, generatorOf(t, p).Generate(ctx), "the flush refuses the unit of a nil header")
+		})
 	})
 
 	t.Run("Record", func(t *testing.T) {
@@ -517,6 +533,22 @@ func TestEmitter(t *testing.T) {
 
 			empty := func(m *eidos.StructMatch, out *eidos.Out) { out.Record(m.Struct.Name) }
 			assert.Nil(t, recorded(t, empty).Data, "a record without a declaration attaches nothing")
+		})
+
+		t.Run("returns an error for a nil pointer of a declaration kind", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			p := eidos.NewPlugin(recordPlugin).
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "test", Template: claimTemplate}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.PlanFile().Record(m.Struct.Name, (*emit.Struct)(nil))
+					return nil
+				})).
+				Generator()
+			assert.HasError(t, generatorOf(t, p).Generate(ctx), "the flush refuses the unit of a nil record")
 		})
 	})
 

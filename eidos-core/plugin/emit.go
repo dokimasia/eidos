@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -231,7 +232,8 @@ func (e *Emit) Translates() bool { return e.translates }
 // accumulator once. A zero cardinality and an empty word are refused
 // the same way, because a unit missing either cannot be routed, and so
 // is a plan unit naming a key, because a plan has one output and its
-// key is empty.
+// key is empty. A nil declaration is refused, and so is a nil pointer of
+// a declaration kind, because no renderer could spell either.
 func (e *Emit) Add(u Unit) error {
 	if u.Per == 0 {
 		return fmt.Errorf("plugin: %s flushes a unit with no cardinality", u.Plugin)
@@ -246,7 +248,9 @@ func (e *Emit) Add(u Unit) error {
 		)
 	}
 	for _, d := range u.Decls {
-		if d == nil {
+		// A nil pointer of a declaration kind, such as a header that a
+		// helper returns nil for, is no declaration either.
+		if v := reflect.ValueOf(d); d == nil || v.Kind() == reflect.Pointer && v.IsNil() {
 			return fmt.Errorf(
 				"plugin: %s flushes a nil declaration, which no renderer could spell",
 				u.Plugin,

@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -335,7 +336,9 @@ type Out struct {
 // call copies the declarations, so the caller may reuse the slice that it
 // passed. It buffers them in the pooled storage of the phase call and
 // allocates nothing once the state of the call is warm. The flush
-// allocates the lists of declarations and origins of the unit.
+// allocates the lists of declarations and origins of the unit. A nil
+// declaration, or a nil pointer of a declaration kind, fails the phase
+// call at the flush with the error of [plugin.Emit.Add].
 func (o *Out) Append(decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
@@ -518,6 +521,11 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 		for _, p := range acc.places {
 			decls = append(decls, p.decl)
 			if p.data == nil {
+				continue
+			}
+			// A nil pointer of a declaration kind has no origin, and Add
+			// refuses the unit that contains it.
+			if v := reflect.ValueOf(p.decl); v.Kind() == reflect.Pointer && v.IsNil() {
 				continue
 			}
 			origin, _ := emit.OriginOf(p.decl)
