@@ -10,11 +10,18 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// caser is the case conversion of Rust. Rust writes an acronym in Pascal
+// case as one word, as Uuid and HttpStatus, so the conversion recognises
+// no initialism. A name that the source declares in its style, such as
+// Uuid, keeps its spelling.
+var caser = naming.New()
+
 // Name spells one declared name in Rust's convention: types and
 // their variants take Pascal case, a constant takes screaming snake
 // case, everything callable or bound takes snake case, and a type
 // parameter keeps its spelling, so a const parameter's N keeps its
-// case. Visibility never changes a spelling, because Rust scopes
+// case. The conversion raises no initialism, so http_status becomes
+// HttpStatus. Visibility never changes a spelling, because Rust scopes
 // through pub.
 //
 // A name that is no identifier is refused, because a convention must
@@ -42,11 +49,11 @@ func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error)
 	case symbol.KindStruct, symbol.KindInterface, symbol.KindAlias,
 		symbol.KindEnum, symbol.KindEnumVariant,
 		symbol.KindSum, symbol.KindSumVariant:
-		out = naming.Pascal(name)
+		out = caser.Pascal(name)
 	case symbol.KindConstant:
-		out = naming.ScreamingSnake(name)
+		out = caser.ScreamingSnake(name)
 	default:
-		out = naming.Snake(name)
+		out = caser.Snake(name)
 	}
 	switch {
 	case out == "":

@@ -24,9 +24,6 @@ const (
 	floatPoint = ".0"
 	// castOp converts a number to another numeric type.
 	castOp = " as "
-	// turbofishOpener opens an argument list in an expression's
-	// path.
-	turbofishOpener = "::<"
 	// emptyBraces closes a struct literal that names no field, which
 	// Rust accepts for every struct that has no field.
 	emptyBraces = " {}"
@@ -57,31 +54,19 @@ func (target) Lang() string { return string(rust.Lang) }
 // Literal spells one leaf through [leaves].
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
-// Type spells a reference in an expression's path through the file's
-// [Speller], so a value and a declaration use one item under one
-// name. Rust opens the argument list there with the turbofish, so a
-// struct literal of Pair<Vec<i32>> spells Pair::<Vec<i32>> { .. },
-// and the nested arguments, which are in type position, keep their
-// angle brackets. A reference that states no type, itself or in an
-// argument list, refuses.
+// Type spells a reference in an expression's path through
+// [Speller.SpellValue] of the file, so a value and a declaration use one
+// item under one name, and a struct literal of Pair<Vec<i32>> spells
+// Pair::<Vec<i32>> { .. }. A reference that states no type, itself or in
+// an argument list, refuses. A structural reference without a spelling,
+// which the substitution of a type parameter leaves, states no type
+// either, because the spelling of a Rust composite does not follow from
+// its structure.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
 	if !complete(ref) {
 		return "", render.RefuseValue(t.Lang(), unstatedType)
 	}
-	s := NewSpeller(t.set)
-	if len(ref.Args) == 0 || ref.Form != symbol.FormNamed {
-		return s.Spell(ref)
-	}
-	head := s.use(ref)
-	args := make([]string, 0, len(ref.Args))
-	for _, a := range ref.Args {
-		arg, err := s.Spell(a)
-		if err != nil {
-			return "", err
-		}
-		args = append(args, arg)
-	}
-	return head + turbofishOpener + strings.Join(args, ", ") + genericsCloser, nil
+	return NewSpeller(t.set).SpellValue(ref)
 }
 
 // Callee spells the function of a call or the item of a name value under
@@ -159,6 +144,14 @@ func (target) Address(inner emit.Value, spelled string) (string, error) {
 		return "&(" + spelled + ")", nil
 	}
 	return "&" + spelled, nil
+}
+
+// Construction refuses: Rust builds a value through a struct literal or a
+// call of an associated function, such as HashSet::from, and has no
+// expression that constructs a type from arguments.
+func (t target) Construction(ref *emit.TypeRef, _ []string) (string, error) {
+	return "", render.RefuseValue(t.Lang(),
+		"Rust builds a value through a struct literal or a call, and has no construction of %s", ref.Spelling)
 }
 
 // number spells a number for Rust. A float written without a

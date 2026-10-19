@@ -140,6 +140,17 @@ func TestValue(t *testing.T) {
 					emit.NamedField("left", integer("1"))),
 				want: "states no type", wantErr: true,
 			},
+			{
+				name: "returns a value error for a list type without a spelling",
+				give: emit.Composite(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{ref("i64")}},
+					emit.Element(integer("2"))),
+				want: "states no type", wantErr: true,
+			},
+			{
+				name: "returns a value error for a construction",
+				give: emit.Construction(valueRef(rowName, storeModule, rowName)),
+				want: "has no construction of Row", wantErr: true,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

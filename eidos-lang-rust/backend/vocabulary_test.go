@@ -80,10 +80,10 @@ const (
 	// selfParamsAllocs is a method of two parameters: the parameter list,
 	// and the receiver joined before it.
 	selfParamsAllocs = paramsAllocs + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-seven
-	// helpers, four allocations, and the twelve bound helpers of the
+	// funcsAllocs is the vocabulary of a file: the map of twenty-nine
+	// helpers, four allocations, and the fourteen bound helpers of the
 	// speller.
-	funcsAllocs = 4 + 12
+	funcsAllocs = 4 + 14
 	// typeNamesAllocs is two parameter names: the joined list, and its
 	// brackets.
 	typeNamesAllocs = 1 + 1
@@ -107,6 +107,17 @@ func TestVocabulary(t *testing.T) {
 			_, err := spell(imported(storeModule, rowName))
 			assert.NoError(t, err, "the reference spells")
 			assert.Equal(t, set.Paths(), []string{storeModule}, "the use is the file's")
+		})
+
+		t.Run("returns a spellvalue helper that writes the arguments behind the turbofish", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			spell, is := backend.Funcs(&set)[backend.FuncSpellValue].(func(*emit.TypeRef) (string, error))
+			assert.True(t, is, "the helper spells a reference")
+			got, err := spell(generic(rowName, ref(u32Type)))
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got, "Row::<u32>", "the path of an expression")
 		})
 	})
 
@@ -229,6 +240,127 @@ func TestVocabulary(t *testing.T) {
 				_, err := s.Spell(tt.give)
 				assert.HasError(t, err, "the unit type in its place changes the declaration")
 				assert.Contains(t, err.Error(), string(rust.Lang)+": ", "under the language's prefix")
+			})
+		}
+	})
+
+	t.Run("SpellValue", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give *emit.TypeRef
+			want string
+		}{
+			{name: "returns the spelling of a reference without arguments", give: ref(rowName), want: rowName},
+			{
+				name: "writes the arguments behind the turbofish",
+				give: generic("Pair", generic("Vec", ref("i32"))),
+				want: "Pair::<Vec<i32>>",
+			},
+			{
+				name: "returns the written spelling of a structural reference",
+				give: &emit.TypeRef{Form: symbol.FormArray, Spelling: "[u8; 4]", Elems: []*emit.TypeRef{ref("u8")}},
+				want: "[u8; 4]",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				assert.Equal(t, must(t)(s.SpellValue(tt.give)), tt.want, "the path of an expression")
+			})
+		}
+
+		t.Run("uses the item of a reference with arguments", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			pair := imported(storeModule, rowName)
+			pair.Args = []*emit.TypeRef{imported(legacyModule, baseName)}
+			assert.Equal(t, must(t)(s.SpellValue(pair)), "Row::<Base>", "the bound names")
+			assert.Equal(
+				t,
+				set.Entries(),
+				[]render.Entry{{Path: legacyModule, Name: baseName}, {Path: storeModule, Name: rowName}},
+				"the use of the item and of its argument",
+			)
+		})
+
+		refusals := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{name: "returns an error for a missing reference", give: nil},
+			{name: "returns an error for an empty spelling with arguments", give: generic("", ref("i32"))},
+			{name: "returns an error for an unstated argument", give: generic("Pair", nil)},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.SpellValue(tt.give)
+				assert.HasError(t, err, "Rust spells no type in place of a missing one")
+				assert.Contains(t, err.Error(), string(rust.Lang)+": ", "under the language's prefix")
+			})
+		}
+	})
+
+	t.Run("TypeArgs", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give any
+			want string
+		}{
+			{name: "returns nothing for no list", give: nil, want: ""},
+			{name: "returns nothing for an empty list", give: []*emit.TypeRef{}, want: ""},
+			{
+				name: "writes the names of type parameters as the arguments of a reference",
+				give: []*emit.TypeParam{{Name: keyParam, Bounds: []*emit.TypeRef{ref(eqTrait)}}, {Name: valueParam}},
+				want: "<K, V>",
+			},
+			{
+				name: "writes the spellings of type references as the arguments of a reference",
+				give: []*emit.TypeRef{ref(stringType), generic("Vec", ref(rowName))},
+				want: "<String, Vec<Row>>",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				assert.Equal(t, must(t)(s.TypeArgs(tt.give)), tt.want, "the type arguments")
+			})
+		}
+
+		t.Run("uses the item of a type reference", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			assert.Equal(t, must(t)(s.TypeArgs([]*emit.TypeRef{imported(storeModule, rowName)})), "<Row>",
+				"the item's name")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storeModule, Name: rowName}}, "the item's use")
+		})
+
+		refusals := []struct {
+			name string
+			give any
+		}{
+			{name: "returns an error for an unstated type reference", give: []*emit.TypeRef{nil}},
+			{name: "returns an error for a list of another type", give: []string{rowName}},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.TypeArgs(tt.give)
+				assert.HasError(t, err, "the list does not spell")
 			})
 		}
 	})
@@ -1149,11 +1281,13 @@ func BenchmarkVocabulary(b *testing.B) {
 func vocabularyCalls() []allocCall {
 	s, set := speller()
 	bare, row := ref(u32Type), imported(storeModule, rowName)
+	pair := generic("Pair", bare)
 	constant := &emit.Constant{Name: limitName, Type: bare, Value: "8"}
 	params := []*emit.TypeParam{
 		{Name: keyParam, Bounds: []*emit.TypeRef{ref(eqTrait), ref(hashTrait)}},
 		{Name: valueParam},
 	}
+	var list any = params
 	assoc := &emit.Alias{Name: itemAlias}
 	payload := variantOf(&emit.Field{Name: idName, Type: bare})
 	trait := &emit.Interface{Name: storeTrait, Extends: []*emit.TypeRef{ref(cloneTrait), ref(sendTrait)}}
@@ -1192,6 +1326,14 @@ func vocabularyCalls() []allocCall {
 		},
 		{name: "Spell", caseName: "a builtin type", call: func() { out, err = s.Spell(bare) }, check: spells(u32Type)},
 		{name: "Spell", caseName: "a used item", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
+		{
+			name: "SpellValue", allocs: textAllocs,
+			call: func() { out, err = s.SpellValue(pair) }, check: spells("Pair::<u32>"),
+		},
+		{
+			name: "TypeArgs", allocs: textAllocs,
+			call: func() { out, err = s.TypeArgs(list) }, check: spells("<K, V>"),
+		},
 		{name: "ConstType", call: func() { out, err = s.ConstType(constant) }, check: spells(u32Type)},
 		{
 			name: "TypeParams", allocs: paramListAllocs,
@@ -1236,7 +1378,7 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 27, "Funcs returns the twenty-seven helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 29, "Funcs returns the twenty-nine helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,

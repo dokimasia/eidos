@@ -40,7 +40,15 @@ func TestName(t *testing.T) {
 		}{
 			{
 				name: "returns the Pascal-case spelling of a struct name",
-				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HTTPRow",
+				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HttpRow",
+			},
+			{
+				name: "returns a struct name that writes an acronym as a word unchanged",
+				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "Uuid", want: "Uuid",
+			},
+			{
+				name: "returns the Pascal-case spelling of a snake-case enum without an initialism",
+				kind: symbol.KindEnum, vis: symbol.VisibilityUnknown, give: "http_status", want: "HttpStatus",
 			},
 			{
 				name: "returns the snake-case spelling of a method of any scope",
@@ -128,7 +136,7 @@ func TestNameAllocs(t *testing.T) {
 		got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, "httpRow")
 	}, conversionAllocs, "Name allocates the converted spelling")
 	assert.NoError(t, err, "Name spells the name")
-	assert.Equal(t, got, "HTTPRow", "Name converts the name")
+	assert.Equal(t, got, "HttpRow", "Name converts the name")
 	assert.MaxAllocs(t, func() {
 		got, err = spell.Name(symbol.KindStruct, symbol.KindField, symbol.VisibilityPublic, "type")
 	}, rawAllocs, "Name allocates the raw form")
@@ -156,9 +164,9 @@ func BenchmarkName(b *testing.B) {
 			kind:   symbol.KindStruct,
 			give:   "httpRow",
 			allocs: conversionAllocs,
-			want:   "HTTPRow",
+			want:   "HttpRow",
 		},
-		{name: "a name in its style", kind: symbol.KindStruct, give: "HTTPRow", want: "HTTPRow"},
+		{name: "a name in its style", kind: symbol.KindStruct, give: "HttpRow", want: "HttpRow"},
 		{name: "a keyword", kind: symbol.KindField, give: "type", allocs: rawAllocs, want: "r#type"},
 	}
 	b.Run("Name", func(b *testing.B) {

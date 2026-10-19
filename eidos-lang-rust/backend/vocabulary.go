@@ -27,8 +27,12 @@ const (
 	FuncMemberDocs = "memberdocs"
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
+	// FuncSpellValue is the template name of [Speller.SpellValue].
+	FuncSpellValue = render.HelperSpellValue
 	// FuncTypeParams is the template name of [Speller.TypeParams].
 	FuncTypeParams = render.HelperTypeParams
+	// FuncTypeArgs is the template name of [Speller.TypeArgs].
+	FuncTypeArgs = render.HelperTypeArgs
 	// FuncImplParams is the template name of [Speller.ImplParams].
 	FuncImplParams = "implparams"
 	// FuncFnParams is the template name of [Speller.FnParams].
@@ -92,14 +96,16 @@ const (
 	selfMutType    = "&mut Self"
 )
 
-// genericsOpener and genericsCloser enclose an argument list.
-// unitSpelling is the spelling of a missing type in the shared speller,
-// and discardName is the pattern of an unnamed parameter.
+// genericsOpener and genericsCloser enclose an argument list, and
+// turbofishOpener opens one in an expression's path. unitSpelling is the
+// spelling of a missing type in the shared speller, and discardName is
+// the pattern of an unnamed parameter.
 const (
-	genericsOpener = "<"
-	genericsCloser = ">"
-	unitSpelling   = "()"
-	discardName    = "_"
+	genericsOpener  = "<"
+	genericsCloser  = ">"
+	turbofishOpener = "::<"
+	unitSpelling    = "()"
+	discardName     = "_"
 )
 
 // pathSep separates the segments of a Rust path.
@@ -197,6 +203,46 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 		return "", refuse("%w", err)
 	}
 	return out, nil
+}
+
+// SpellValue writes the reference t in an expression's path, such as the
+// path of a struct literal or of a call, and adds a use of its item. Rust
+// opens the argument list there with the turbofish, so Pair<Vec<i32>>
+// spells Pair::<Vec<i32>>. The nested arguments are in type position and
+// keep their angle brackets. A reference without arguments and a
+// structural reference spell as [Speller.Spell] writes them. SpellValue
+// returns the errors of Spell, for the reference and for each argument.
+//
+// SpellValue allocates what Spell allocates for each argument, and the
+// path with its arguments, one allocation where the reference has one
+// argument. Two or more arguments also allocate their join.
+func (s Speller) SpellValue(t *emit.TypeRef) (string, error) {
+	if t == nil || t.Spelling == "" || len(t.Args) == 0 || t.Form != symbol.FormNamed {
+		return s.Spell(t)
+	}
+	args := make([]string, 0, len(t.Args))
+	for _, a := range t.Args {
+		arg, err := s.Spell(a)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, arg)
+	}
+	return s.use(t) + turbofishOpener + strings.Join(args, ", ") + genericsCloser, nil
+}
+
+// TypeArgs writes a list of type parameters or of type references as the
+// type arguments of a reference in angle brackets, and nothing for an
+// empty list: the parameters of a generic declaration as the arguments of
+// a reference to it, as in PageBuilder<T>, and the witnesses of a test, as
+// in <u32>. A template writes the separator of an expression's path before
+// the list, as in check::<u32>. Each reference spells through
+// [Speller.Spell], which adds a use of its item. TypeArgs returns an
+// error for a list of another type. It allocates what [spellref.TypeArgs]
+// allocates. A template passes the list as a value of type any, which
+// text/template boxes, one allocation.
+func (s Speller) TypeArgs(list any) (string, error) {
+	return spellref.TypeArgs(list, genericsOpener, genericsCloser, s.Spell)
 }
 
 // ConstType writes the type of the constant c. It returns an error for a
@@ -583,15 +629,17 @@ const (
 // set, the import set of one file. Every helper takes a
 // fixed list of arguments, because text/template allocates the list of a
 // variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty-seven helpers in four allocations,
-// and the twelve bound helpers of the speller.
+// Funcs allocates the map of twenty-nine helpers in four allocations,
+// and the fourteen bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:        Docs,
 		FuncMemberDocs:  MemberDocs,
 		FuncSpell:       s.Spell,
+		FuncSpellValue:  s.SpellValue,
 		FuncTypeParams:  s.TypeParams,
+		FuncTypeArgs:    s.TypeArgs,
 		FuncImplParams:  s.ImplParams,
 		FuncFnParams:    s.FnParams,
 		FuncBinder:      Binder,
