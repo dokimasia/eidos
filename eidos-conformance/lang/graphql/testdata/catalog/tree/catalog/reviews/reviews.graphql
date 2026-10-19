@@ -1,0 +1,21 @@
+"A review of a product."
+type Review implements Node {
+  id: ID!
+  "The rating from 1 to 5."
+  rating: Int!
+  body: String
+  product: Product!
+}
+
+extend type Warehouse @key(fields: "id") {
+  id: ID!
+  city: String
+}
+
+"The key of an entity of a federated graph."
+directive @key(fields: String!) repeatable on OBJECT | INTERFACE
+
+extend type Product {
+  "The reviews of the product."
+  reviews(first: Int = 10): [Review!]!
+}

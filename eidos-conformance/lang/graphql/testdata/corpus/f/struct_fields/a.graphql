@@ -1,0 +1,4 @@
+type Point {
+  f0: Int!
+  f1: String!
+}

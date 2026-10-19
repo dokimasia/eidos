@@ -1,0 +1,11 @@
+edition = "2024";
+
+package acme.kinds;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "example.com/acme/kinds";
+
+extend google.protobuf.FieldOptions {
+  string label = 50000;
+}

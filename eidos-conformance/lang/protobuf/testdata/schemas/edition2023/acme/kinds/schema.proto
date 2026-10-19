@@ -1,0 +1,27 @@
+edition = "2023";
+
+package acme.kinds;
+
+import "google/protobuf/descriptor.proto";
+
+option features.field_presence = IMPLICIT;
+option go_package = "example.com/acme/kinds";
+
+// Color is the color of a row.
+enum Color {
+  option features.enum_type = CLOSED;
+  RED = 1;
+  GREEN = 2;
+}
+
+// Label is a label of a row.
+message Label {
+  reserved old_text;
+  extensions 100 to 199 [verification = UNVERIFIED];
+  string text = 1;
+  int32 weight = 2 [features.field_presence = EXPLICIT];
+}
+
+extend google.protobuf.FieldOptions {
+  string label = 50000;
+}

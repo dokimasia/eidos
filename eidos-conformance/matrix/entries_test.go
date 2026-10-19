@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/conformance/matrix"
 	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/lang/rust"
@@ -25,7 +26,7 @@ func TestEntries(t *testing.T) {
 	t.Run("Entries", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the satellites in the order Go, TypeScript, Java, Rust and protobuf", func(t *testing.T) {
+		t.Run("returns the satellites in the documented order", func(t *testing.T) {
 			t.Parallel()
 
 			entries := matrix.Entries()
@@ -33,10 +34,11 @@ func TestEntries(t *testing.T) {
 			for _, e := range entries {
 				langs = append(langs, e.Corpus.Frontend.Lang())
 			}
-			assert.Equal(t, langs, []symbol.Lang{golang.Lang, typescript.Lang, java.Lang, rust.Lang, protobuf.Lang},
-				"the entries follow the order of the satellites")
+			assert.Equal(t, langs, []symbol.Lang{
+				golang.Lang, typescript.Lang, java.Lang, rust.Lang, protobuf.Lang, graphql.Lang,
+			}, "the entries follow the order of the satellites")
 		})
-		t.Run("returns a backend of the language's target for each satellite but protobuf", func(t *testing.T) {
+		t.Run("returns a backend of the language's target for each satellite", func(t *testing.T) {
 			t.Parallel()
 
 			entries := matrix.Entries()
@@ -50,8 +52,8 @@ func TestEntries(t *testing.T) {
 			}
 			assert.Equal(t, targets, []plugin.Target{
 				plugin.Target(golang.Lang), plugin.Target(typescript.Lang), plugin.Target(java.Lang),
-				plugin.Target(rust.Lang), "",
-			}, "the target of each backend has the spelling of its language, and protobuf does not have a backend")
+				plugin.Target(rust.Lang), plugin.Target(protobuf.Lang), plugin.Target(graphql.Lang),
+			}, "the target of each backend has the spelling of its language")
 		})
 		t.Run("returns corpora without a tree", func(t *testing.T) {
 			t.Parallel()

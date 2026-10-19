@@ -1,0 +1,5 @@
+subscription ($id: ID!) {
+  productChanged(id: $id) {
+    name
+  }
+}

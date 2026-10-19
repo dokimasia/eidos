@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.dokimi.dev/eidos/lang/graphql"
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -82,9 +84,14 @@ var (
 	result     = symbol.Identity{Lang: probeLang, Package: probePkg, Name: resultName, Kind: symbol.KindSum}
 	text       = rules.Leaf(symbol.FormText, textSource)
 	boolean    = rules.Leaf(symbol.FormBool, boolSource)
+	narrowInt  = rules.Scalar(intSource, rules.ScalarInt, narrowBits)
 	wideInt    = rules.Scalar(intSource, rules.ScalarInt, wideBits)
+	narrowUint = rules.Scalar(uintSource, rules.ScalarUint, narrowBits)
+	wideUint   = rules.Scalar(uintSource, rules.ScalarUint, wideBits)
 	optional   = rules.TypeShape{Form: symbol.FormOptional, Spelling: textSource, Elems: []rules.TypeShape{text}}
 	octets     = rules.Leaf(symbol.FormBytes, textSource)
+	dynamic    = rules.Leaf(symbol.FormDynamic, textSource)
+	textMap    = rules.TypeShape{Form: symbol.FormMap, Elems: []rules.TypeShape{text, text}}
 	timestamp  = rules.Reference(textSource, rules.WellKnownTimestamp)
 	duration   = rules.Reference(textSource, rules.WellKnownDuration)
 	sessionRef = rules.Reference(sessionName, session)
@@ -98,20 +105,20 @@ var (
 var probes = []probe{
 	{label: "Scalar int, 8 bits", shape: rules.Scalar(intSource, rules.ScalarInt, byteBits)},
 	{label: "Scalar int, 16 bits", shape: rules.Scalar(intSource, rules.ScalarInt, shortBits)},
-	{label: "Scalar int, 32 bits", shape: rules.Scalar(intSource, rules.ScalarInt, narrowBits)},
+	{label: "Scalar int, 32 bits", shape: narrowInt},
 	{label: "Scalar int, 64 bits", shape: wideInt},
 	{label: "Scalar int, platform width", shape: rules.Scalar(intSource, rules.ScalarInt, platformBits)},
 	{label: "Scalar uint, 8 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, byteBits)},
 	{label: "Scalar uint, 16 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, shortBits)},
-	{label: "Scalar uint, 32 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, narrowBits)},
-	{label: "Scalar uint, 64 bits", shape: rules.Scalar(uintSource, rules.ScalarUint, wideBits)},
+	{label: "Scalar uint, 32 bits", shape: narrowUint},
+	{label: "Scalar uint, 64 bits", shape: wideUint},
 	{label: "Scalar uint, platform width", shape: rules.Scalar(uintSource, rules.ScalarUint, platformBits)},
 	{label: "Scalar float, 32 bits", shape: rules.Scalar(realSource, rules.ScalarFloat, narrowBits)},
 	{label: "Scalar float, 64 bits", shape: rules.Scalar(realSource, rules.ScalarFloat, wideBits)},
 	{label: "Bool", shape: boolean},
 	{label: "Text", shape: text},
 	{label: "Bytes", shape: octets},
-	{label: "Dynamic", shape: rules.Leaf(symbol.FormDynamic, textSource)},
+	{label: "Dynamic", shape: dynamic},
 	{label: "Optional of text", shape: optional},
 	{label: "List of text", shape: rules.TypeShape{Form: symbol.FormList, Elems: []rules.TypeShape{text}}},
 	{
@@ -122,7 +129,7 @@ var probes = []probe{
 		label: "Array of an unstated length",
 		shape: rules.TypeShape{Form: symbol.FormArray, Elems: []rules.TypeShape{text}},
 	},
-	{label: "Map of text to text", shape: rules.TypeShape{Form: symbol.FormMap, Elems: []rules.TypeShape{text, text}}},
+	{label: "Map of text to text", shape: textMap},
 	{
 		label: "Function of text to text",
 		shape: rules.TypeShape{Form: symbol.FormFunc, Split: funcParamsLen, Elems: []rules.TypeShape{text, text}},
@@ -172,11 +179,23 @@ var probes = []probe{
 // spelling the policy decides. The hub's section contains the spelling
 // of the shape under each choice of the policy.
 var policyProbes = map[plugin.PolicyKey]rules.TypeShape{
-	typescript.Int64:     wideInt,
-	typescript.Absent:    optional,
-	typescript.Timestamp: timestamp,
-	typescript.Bytes:     octets,
-	typescript.Duration:  duration,
+	typescript.Int64:        wideInt,
+	typescript.Absent:       optional,
+	typescript.Timestamp:    timestamp,
+	typescript.Bytes:        octets,
+	typescript.Duration:     duration,
+	protobuf.Int32Encoding:  narrowInt,
+	protobuf.Int64Encoding:  wideInt,
+	protobuf.Uint32Encoding: narrowUint,
+	protobuf.Uint64Encoding: wideUint,
+	graphql.Int64Type:       wideInt,
+	graphql.Uint32Type:      narrowUint,
+	graphql.Uint64Type:      wideUint,
+	graphql.BytesType:       octets,
+	graphql.TimestampType:   timestamp,
+	graphql.DurationType:    duration,
+	graphql.DynamicType:     dynamic,
+	graphql.MapType:         textMap,
 }
 
 // hub writes the hub's section. A row of a probe contains the spelling of

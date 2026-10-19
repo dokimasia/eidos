@@ -87,6 +87,7 @@ var verdictWords = map[render.Verdict]string{
 	render.Renders:           rendersWord,
 	render.Holds:             "holds",
 	render.Refuses:           refusesWord,
+	render.Rejects:           "rejects",
 }
 
 // renderKinds are the kinds of declaration that a file can declare, in
@@ -104,6 +105,7 @@ var capabilities = []capability{
 	capabilityOf[rules.ErrorTypeRules](),
 	capabilityOf[rules.TagRules](),
 	capabilityOf[rules.WellKnownRules](),
+	capabilityOf[rules.ShapeRules](),
 	capabilityOf[rules.SatisfactionRules](),
 	capabilityOf[rules.GenericsRules](),
 	capabilityOf[rules.PropertyRules](),

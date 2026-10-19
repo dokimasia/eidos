@@ -1,0 +1,59 @@
+// Schema of the store.
+syntax = "proto3";
+
+package acme.store;
+
+import "acme/kinds/schema.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "example.com/acme/store";
+option java_multiple_files = true;
+
+// Page is one page of rows.
+message Page {
+  repeated Row rows = 1;
+  string next = 2;
+}
+
+// Row is one record of the store.
+message Row { // keyed by id
+  option deprecated = false;
+  reserved 20 to 29, 40;
+  reserved "legacy";
+  // id identifies the row.
+  string id = 1; // never empty
+  optional int32 count = 2;
+  repeated string tags = 3 [(acme.kinds.label) = "tag"];
+  map<string, int64> totals = 4;
+  acme.kinds.Color color = 5;
+  google.protobuf.Timestamp created = 6;
+  Inner inner = 7 [json_name = "innerValue"];
+  State state = 8;
+  oneof choice {
+    option (acme.kinds.choice_label) = "pick";
+    string name = 9;
+    acme.kinds.Label label = 10;
+  }
+  // Inner is a nested message.
+  message Inner {
+    bytes data = 1;
+  }
+  // State is the lifecycle of a row.
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_ACTIVE = 1;
+  }
+}
+
+// Store serves rows.
+service Store {
+  option deprecated = true;
+  // Get returns one row.
+  rpc Get(Row) returns (Row);
+  rpc List(google.protobuf.Empty) returns (Page);
+  rpc Upload(stream Row) returns (google.protobuf.Empty);
+  rpc Watch(Row) returns (stream Row) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}

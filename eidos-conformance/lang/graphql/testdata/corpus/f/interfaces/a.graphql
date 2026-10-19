@@ -1,0 +1,3 @@
+interface Reader {
+  read: String
+}

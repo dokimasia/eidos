@@ -1,0 +1,8 @@
+extend schema @tag(name: "live") {
+  subscription: Subscription
+}
+
+"The changes that a client follows."
+type Subscription {
+  productChanged(id: ID!): Product!
+}

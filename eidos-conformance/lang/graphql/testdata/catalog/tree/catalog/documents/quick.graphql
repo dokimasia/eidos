@@ -1,0 +1,5 @@
+mutation {
+  addProduct(input: {name: "Lamp"}) {
+    id
+  }
+}

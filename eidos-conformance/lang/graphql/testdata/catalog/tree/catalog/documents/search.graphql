@@ -1,0 +1,12 @@
+query Search($text: String!) {
+  search(text: $text) {
+    __typename
+    ... on Product {
+      id
+      name
+    }
+    ... on Vendor {
+      name
+    }
+  }
+}

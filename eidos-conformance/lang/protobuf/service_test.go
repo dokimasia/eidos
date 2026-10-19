@@ -20,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
+	protobuftesting "go.dokimi.dev/eidos/lang/protobuf/testing"
 	"go.dokimi.dev/eidos/lang/typescript"
 	tstesting "go.dokimi.dev/eidos/lang/typescript/testing"
 	eidos "go.dokimi.dev/eidos/sdk"
@@ -239,6 +240,33 @@ func TestService(t *testing.T) {
 			files.Absent(t, filepath.Join(root, filepath.FromSlash(serverPath)), "the server plan writes no file")
 			files.Absent(t, filepath.Join(root, filepath.FromSlash(clientPath)), "the client plan writes no file")
 		})
+	})
+
+	t.Run("SchemaPlan", func(t *testing.T) {
+		t.Parallel()
+
+		for _, version := range versions {
+			t.Run("writes a mirror of the "+version+" schema that the toolchain adapter compiles", func(t *testing.T) {
+				t.Parallel()
+
+				root := serviceRoot(t, version)
+				cleanBuild(t, root, protobuf.ComposeService(root).Plans(protobuf.SchemaPlan()))
+				toolchain.AssertTypeChecks(t.Context(), t, protobuftesting.New(), mirrored(t, root))
+			})
+
+			t.Run("writes the mirror of the "+version+" schema again from the mirror", func(t *testing.T) {
+				t.Parallel()
+
+				root := serviceRoot(t, version)
+				written := filepath.Join(protobuf.MirrorDir, filepath.FromSlash(schemaPath))
+				cleanBuild(t, root, protobuf.ComposeService(root).Plans(protobuf.SchemaPlan()))
+				first := bodyOf(t, files.Read(t, filepath.Join(root, written)))
+				again := files.Workspace(t, files.Tree{schemaPath: files.Text(first)})
+				cleanBuild(t, again, protobuf.ComposeService(again).Plans(protobuf.SchemaPlan()))
+				second := bodyOf(t, files.Read(t, filepath.Join(again, written)))
+				assert.Equal(t, second, first, "the frontend loads the mirror with the stamps of its source")
+			})
+		}
 	})
 
 	t.Run("EditService", func(t *testing.T) {

@@ -1,0 +1,5 @@
+type Holder {
+  f0: Target
+  f1: [Target!]!
+  f2: [[Target]]
+}

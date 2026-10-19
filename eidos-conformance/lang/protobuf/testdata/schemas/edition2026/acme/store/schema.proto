@@ -1,0 +1,20 @@
+edition = "2026";
+
+package acme.store;
+
+import "acme/kinds/schema.proto";
+
+// Row is one record of the store.
+export message Row {
+  acme.kinds.Color color = 1;
+  acme.kinds.Label label = 2;
+  int32 count = 3 [features.field_presence = IMPLICIT];
+  message Inner {
+    int32 x = 1 [features.field_presence = IMPLICIT];
+  }
+}
+
+// Store serves rows.
+service Store {
+  rpc Get(Row) returns (Row);
+}

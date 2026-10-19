@@ -1,0 +1,6 @@
+subscription Watch($id: ID!) {
+  productChanged(id: $id) {
+    id
+    name
+  }
+}

@@ -1,0 +1,31 @@
+syntax = "proto2";
+
+package acme.kinds;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "example.com/acme/kinds";
+
+// Color is the color of a row.
+enum Color {
+  reserved 5 to 9;
+  reserved "BLUE";
+  RED = 1;
+  GREEN = 2 [deprecated = true];
+}
+
+// Label is a label of a row.
+message Label {
+  extensions 100 to 199;
+  required string text = 1;
+  optional string note = 2 [default = "none"];
+}
+
+extend google.protobuf.FieldOptions {
+  // label names a field in a report.
+  optional string label = 50000;
+}
+
+extend Label {
+  optional int32 weight = 100;
+}

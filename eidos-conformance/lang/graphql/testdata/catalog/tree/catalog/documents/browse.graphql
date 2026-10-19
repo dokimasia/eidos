@@ -1,0 +1,14 @@
+query Browse($filter: ProductFilter, $limit: Int = 10, $withVendor: Boolean = false) {
+  products(filter: $filter, limit: $limit) {
+    ...ProductCard
+    vendor @include(if: $withVendor) {
+      name
+    }
+  }
+}
+
+fragment ProductCard on Product {
+  id
+  title: name
+  availability
+}

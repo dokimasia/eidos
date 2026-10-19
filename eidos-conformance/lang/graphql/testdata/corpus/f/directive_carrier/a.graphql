@@ -1,0 +1,4 @@
+#+fixture:gen:table name=t
+type Table {
+  name: String
+}

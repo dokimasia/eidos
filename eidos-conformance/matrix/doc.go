@@ -29,9 +29,9 @@
 // # Dependency position
 //
 // matrix imports the conformance package and the language entries under
-// conformance/lang, the backend packages of the Go, TypeScript, Java and
-// Rust satellites, the root package of the TypeScript satellite,
-// lang/spellref and the SDK facade. Its tests also import the assert
-// module and the root packages of the satellites. No package imports
-// matrix.
+// conformance/lang, the backend packages of the Go, TypeScript, Java,
+// Rust, protobuf and GraphQL satellites, the root packages of the
+// TypeScript, protobuf and GraphQL satellites, lang/spellref and the SDK
+// facade. Its tests also import the assert module and the root packages of
+// the satellites. No package imports matrix.
 package matrix

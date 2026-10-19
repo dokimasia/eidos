@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 	golang "go.dokimi.dev/eidos/lang/go"
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
+	protolang "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
 	"go.dokimi.dev/eidos/lang/typescript"
@@ -47,6 +48,8 @@ const (
 	clientWord            = "client"
 	clientFile            = "store.ts"
 	serviceBase           = "example.com/acme"
+	schemaPlan            = "proto-schema"
+	storeFile             = "store.proto"
 )
 
 // The parameter that a Go server method takes before its request, and
@@ -71,15 +74,16 @@ const (
 
 // ComposeService returns the composition of the service fixture over root
 // without its plans. The composition has the protobuf frontend and rules,
-// the Go and TypeScript targets, a disk sink at root and the ledger of the
-// state directory under root. [ServicePlans] returns the plans that it
-// runs.
+// the Go, TypeScript and protobuf targets, a disk sink at root and the
+// ledger of the state directory under root. [ServicePlans] returns the
+// plans that write the same files from every version of the schema, and
+// [SchemaPlan] returns the plan that mirrors the schema.
 func ComposeService(root string) *workspace.Builder {
 	return workspace.New().
 		Brand(Brand).
 		Frontends(protofrontend.New()).
 		Rules(protorules.New()).
-		Targets(golang.Target, typescript.Target).
+		Targets(golang.Target, typescript.Target, protolang.Target).
 		Output(func() (output.Sink, error) { return output.NewDisk(root, Brand) }).
 		Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, Brand) })
 }
@@ -106,6 +110,15 @@ func ServicePlans() []workspace.Plan {
 			},
 		},
 	}
+}
+
+// SchemaPlan returns the plan proto-schema of the service fixture. It runs
+// mirrorgen toward the protobuf backend, and it writes the mirror of
+// svc/store.proto at mirror/svc/store.proto. The mirror differs from the
+// schema of each version, so the plan is not one of [ServicePlans]. Each
+// call returns a new generator and a new backend.
+func SchemaPlan() workspace.Plan {
+	return MirrorPlan(schemaPlan, storeFile)
 }
 
 // EditService is the edit of the service fixture. It narrows the field size

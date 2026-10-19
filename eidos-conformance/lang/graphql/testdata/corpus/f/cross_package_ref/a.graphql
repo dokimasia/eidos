@@ -1,0 +1,3 @@
+type Holder {
+  f0: Target!
+}

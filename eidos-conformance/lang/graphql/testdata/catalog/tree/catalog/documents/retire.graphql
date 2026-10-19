@@ -1,0 +1,11 @@
+extend type Vendor {
+  "The products of the vendor."
+  products: [Product!]!
+}
+
+mutation Retire($id: ID!) {
+  retire(id: $id) {
+    id
+    availability
+  }
+}

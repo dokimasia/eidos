@@ -1,0 +1,29 @@
+edition = "2024";
+
+package acme.store;
+
+import option "acme/kinds/schema.proto";
+
+option features.field_presence = IMPLICIT;
+
+// Row is one record of the store.
+message Row {
+  string id = 1 [(acme.kinds.label) = "key"];
+  int32 limit = 2 [features.field_presence = EXPLICIT];
+  Inner inner = 3;
+  export message Inner {
+    int32 x = 1;
+  }
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+  }
+}
+
+local enum State {
+  STATE_UNSPECIFIED = 0;
+}
+
+// Store serves rows.
+service Store {
+  rpc Get(Row) returns (Row);
+}

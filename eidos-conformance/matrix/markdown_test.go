@@ -47,11 +47,12 @@ var headings = []string{
 // The rows that the cases expect, the headers of the satellites' columns
 // among them.
 const (
-	readHeader       = "| Feature | golang | typescript | java | rust | protobuf |\n"
-	projectionHeader = "| Capability | golang | typescript | java | rust | protobuf |\n"
-	renderHeader     = "| Fact or kind | golang | typescript | java | rust |\n"
+	readHeader       = "| Feature | golang | typescript | java | rust | protobuf | graphql |\n"
+	projectionHeader = "| Capability | golang | typescript | java | rust | protobuf | graphql |\n"
+	renderHeader     = "| Fact or kind | golang | typescript | java | rust | protobuf | graphql |\n"
 	exceptedRow      = "| Value | renders; refuses on Param, Field |\n"
 	undeclaredRow    = "| Comment | undeclared |\n"
+	rejectedRow      = "| TypeParams | rejects |\n"
 	refusedRow       = "| Function | refuses |\n"
 	renderedRow      = "| Method | renders |\n"
 	escapedRow       = "| Bool | `A\\|B` |\n"
@@ -221,7 +222,17 @@ func TestMarkdown(t *testing.T) {
 
 			doc, err := matrix.Markdown(matrix.Entries())
 			assert.NoError(t, err, "the matrix of the satellites renders")
-			assert.Contains(t, doc, renderHeader, "the render side has a column for each satellite but protobuf")
+			assert.Contains(t, doc, renderHeader, "the render side has a column for each satellite")
+		})
+		t.Run("writes rejects for a fact that the backend rejects", func(t *testing.T) {
+			t.Parallel()
+
+			backend := coveredBackend{coverage: render.Coverage{
+				Facts: map[symbol.Fact]render.Verdict{symbol.FactTypeParams: render.Rejects},
+			}}
+			doc, err := matrix.Markdown([]matrix.Entry{{Corpus: gocorpus.Corpus(nil), Backend: backend}})
+			assert.NoError(t, err, "the matrix of a rejecting backend renders")
+			assert.Contains(t, doc, rejectedRow, "the cell names the verdict Rejects")
 		})
 		t.Run("lists the kinds of each verdict that differs from the base verdict", func(t *testing.T) {
 			t.Parallel()

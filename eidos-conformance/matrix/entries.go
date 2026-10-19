@@ -6,12 +6,15 @@ package matrix
 import (
 	"go.dokimi.dev/eidos/conformance"
 	gocorpus "go.dokimi.dev/eidos/conformance/lang/go"
+	graphqlcorpus "go.dokimi.dev/eidos/conformance/lang/graphql"
 	javacorpus "go.dokimi.dev/eidos/conformance/lang/java"
 	protocorpus "go.dokimi.dev/eidos/conformance/lang/protobuf"
 	rustcorpus "go.dokimi.dev/eidos/conformance/lang/rust"
 	tscorpus "go.dokimi.dev/eidos/conformance/lang/typescript"
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
+	graphqlbackend "go.dokimi.dev/eidos/lang/graphql/backend"
 	javabackend "go.dokimi.dev/eidos/lang/java/backend"
+	protobackend "go.dokimi.dev/eidos/lang/protobuf/backend"
 	rustbackend "go.dokimi.dev/eidos/lang/rust/backend"
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -45,7 +48,8 @@ type Entry struct {
 	// fills the hub.
 	Backend plugin.Backend
 	// ArgsOpen and ArgsClose are the brackets in which the target writes
-	// the type arguments of a reference, such as < and >.
+	// the type arguments of a reference, such as < and >, and empty for a
+	// target without type arguments, such as protobuf and GraphQL.
 	ArgsOpen, ArgsClose string
 	// Marker is the spelling of a marker of the brand acme, such as
 	// @acme.stub, and empty for a language without markers.
@@ -53,8 +57,8 @@ type Entry struct {
 }
 
 // Entries returns the entry of each satellite, in the order Go,
-// TypeScript, Java, Rust and protobuf. The matrix reads only the coverage
-// of each corpus, so a corpus does not have a tree.
+// TypeScript, Java, Rust, protobuf and GraphQL. The matrix reads only the
+// coverage of each corpus, so a corpus does not have a tree.
 func Entries() []Entry {
 	return []Entry{
 		{Corpus: gocorpus.Corpus(nil), Backend: gobackend.New(), ArgsOpen: squareOpen, ArgsClose: squareClose},
@@ -70,6 +74,7 @@ func Entries() []Entry {
 			Corpus: rustcorpus.Corpus(nil), Backend: rustbackend.New(), ArgsOpen: angleOpen, ArgsClose: angleClose,
 			Marker: attributeMarker,
 		},
-		{Corpus: protocorpus.Corpus(nil)},
+		{Corpus: protocorpus.Corpus(nil), Backend: protobackend.New()},
+		{Corpus: graphqlcorpus.Corpus(nil), Backend: graphqlbackend.New()},
 	}
 }

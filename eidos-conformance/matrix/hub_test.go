@@ -16,35 +16,54 @@ import (
 // The rows of the hub that the cases expect from the satellites. Each
 // spelling is the one that the spoke of its target declares for the form.
 const (
-	int64Row    = "| Scalar int, 64 bits | `int64` | `bigint` | `long` | `i64` |\n"
+	int64Row    = "| Scalar int, 64 bits | `int64` | `bigint` | `long` | `i64` | `int64` | `String` |\n"
 	argumentRow = "| Reference with a type argument | `Session[string]` | `Session<string>` | " +
-		"`Session<String>` | `Session<String>` |\n"
-	inlineRow    = "| Inline type | refused | refused | refused | refused |\n"
-	int64Choices = "| typescript.int64: bigint | none | `bigint` | none | none |\n" +
-		"| typescript.int64: string | none | `string` | none | none |\n" +
-		"| typescript.int64: number | none | `number` | none | none |\n"
+		"`Session<String>` | `Session<String>` | refused | refused |\n"
+	inlineRow    = "| Inline type | refused | refused | refused | refused | refused | refused |\n"
+	int64Choices = "| typescript.int64: bigint | none | `bigint` | none | none | none | none |\n" +
+		"| typescript.int64: string | none | `string` | none | none | none | none |\n" +
+		"| typescript.int64: number | none | `number` | none | none | none | none |\n"
 	unspelledRow = "| Bool | refused |\n"
 )
 
 // The rows of the top type, the empty value, the error value, the
-// asynchronous stream and the choices of the duration's policy.
+// asynchronous stream and the choices of the duration's policy and of the
+// encoding of a 32-bit integer of protobuf.
 const (
-	dynamicRow = "| Dynamic | `any` | `unknown` | `Object` | refused |\n"
-	emptyRow   = "| Empty | `struct{}` | `Record<string, never>` | refused | `()` |\n"
-	errorRow   = "| Error | `error` | `Error` | `Exception` | `Box<dyn std::error::Error>` |\n"
-	asyncRow   = "| Asynchronous stream of text | `iter.Seq2[string, error]` | `AsyncIterable<string>` | " +
-		"refused | refused |\n"
-	durationChoices = "| typescript.duration: string | none | `string` | none | none |\n" +
-		"| typescript.duration: number | none | `number` | none | none |\n"
+	dynamicRow = "| Dynamic | `any` | `unknown` | `Object` | refused | `google.protobuf.Value` | `String` |\n"
+	emptyRow   = "| Empty | `struct{}` | `Record<string, never>` | refused | `()` | `google.protobuf.Empty` | " +
+		"refused |\n"
+	errorRow = "| Error | `error` | `Error` | `Exception` | `Box<dyn std::error::Error>` | refused | refused |\n"
+	asyncRow = "| Asynchronous stream of text | `iter.Seq2[string, error]` | `AsyncIterable<string>` | " +
+		"refused | refused | `stream string` | `String!` |\n"
+	durationChoices = "| typescript.duration: string | none | `string` | none | none | none | none |\n" +
+		"| typescript.duration: number | none | `number` | none | none | none | none |\n"
+	int32Choices = "| protobuf.int32: int32 | none | none | none | none | `int32` | none |\n" +
+		"| protobuf.int32: sint32 | none | none | none | none | `sint32` | none |\n" +
+		"| protobuf.int32: sfixed32 | none | none | none | none | `sfixed32` | none |\n"
 )
 
 // The rows of the integers of 8 and 16 bits and of the float of 32 bits.
 const (
-	int8Row    = "| Scalar int, 8 bits | `int8` | `number` | `byte` | `i8` |\n"
-	int16Row   = "| Scalar int, 16 bits | `int16` | `number` | `short` | `i16` |\n"
-	uint8Row   = "| Scalar uint, 8 bits | `uint8` | `number` | `byte` | `u8` |\n"
-	uint16Row  = "| Scalar uint, 16 bits | `uint16` | `number` | `short` | `u16` |\n"
-	float32Row = "| Scalar float, 32 bits | `float32` | `number` | `float` | `f32` |\n"
+	int8Row    = "| Scalar int, 8 bits | `int8` | `number` | `byte` | `i8` | `int32` | `Int` |\n"
+	int16Row   = "| Scalar int, 16 bits | `int16` | `number` | `short` | `i16` | `int32` | `Int` |\n"
+	uint8Row   = "| Scalar uint, 8 bits | `uint8` | `number` | `byte` | `u8` | `uint32` | `Int` |\n"
+	uint16Row  = "| Scalar uint, 16 bits | `uint16` | `number` | `short` | `u16` | `uint32` | `Int` |\n"
+	float32Row = "| Scalar float, 32 bits | `float32` | `number` | `float` | `f32` | `float` | `Float` |\n"
+)
+
+// The rows of the choices of the GraphQL type of a 64-bit integer, and the
+// rows of the map, whose list of entries the lowering of the GraphQL backend
+// names after its field. The spoke leaves the map of entries without a
+// spelling, so the cell is the stand-in of the hub.
+const (
+	graphqlInt64Choices = "| graphql.int64: String | none | none | none | none | none | `String` |\n" +
+		"| graphql.int64: Float | none | none | none | none | none | `Float` |\n" +
+		"| graphql.int64: Long | none | none | none | none | none | `Long` |\n"
+	mapRow = "| Map of text to text | `map[string]string` | `Record<string, string>` | `Map<String, String>` | " +
+		"`HashMap<String, String>` | `map<string, string>` | `?` |\n"
+	graphqlMapChoices = "| graphql.map: entries | none | none | none | none | none | `?` |\n" +
+		"| graphql.map: Any | none | none | none | none | none | `Any` |\n"
 )
 
 // The policy of the stub target that the cases declare, and the error of
@@ -112,11 +131,15 @@ func TestHub(t *testing.T) {
 			{name: "writes the error value of each target", want: errorRow},
 			{name: "writes the asynchronous stream of each target", want: asyncRow},
 			{name: "writes the spelling of each choice of the duration's policy", want: durationChoices},
+			{name: "writes the spelling of each encoding of a 32-bit integer of protobuf", want: int32Choices},
 			{name: "writes the integer of 8 bits of each target", want: int8Row},
 			{name: "writes the integer of 16 bits of each target", want: int16Row},
 			{name: "writes the unsigned integer of 8 bits of each target", want: uint8Row},
 			{name: "writes the unsigned integer of 16 bits of each target", want: uint16Row},
 			{name: "writes the float of 32 bits of each target", want: float32Row},
+			{name: "writes the spelling of each GraphQL type of a 64-bit integer", want: graphqlInt64Choices},
+			{name: "writes the map of each target", want: mapRow},
+			{name: "writes the spelling of each GraphQL type of a map", want: graphqlMapChoices},
 		}
 		for _, tt := range rows {
 			t.Run(tt.name, func(t *testing.T) {

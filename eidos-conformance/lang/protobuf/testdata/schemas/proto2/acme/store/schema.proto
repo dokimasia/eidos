@@ -1,0 +1,41 @@
+syntax = "proto2";
+
+package acme.store;
+
+import weak "acme/kinds/schema.proto";
+import public "google/protobuf/timestamp.proto";
+
+option go_package = "example.com/acme/store";
+
+// Row is one record of the store.
+message Row {
+  required string id = 1;
+  optional int32 count = 2 [default = 8];
+  repeated int64 totals = 3 [packed = true];
+  optional acme.kinds.Color color = 4 [default = GREEN];
+  // Result is the result of the last check.
+  optional group Result = 5 {
+    optional string code = 1;
+  }
+  map<string, string> labels = 6;
+  optional google.protobuf.Timestamp created = 7;
+  oneof choice {
+    string name = 8;
+    group Pick = 9 {
+      optional int32 at = 1;
+    }
+  }
+  // Kind is the kind of a row.
+  enum Kind {
+    PLAIN = 0;
+    SPECIAL = 1;
+  }
+  extend acme.kinds.Label {
+    optional string origin = 101;
+  }
+}
+
+// Store serves rows.
+service Store {
+  rpc Get(Row) returns (Row);
+}

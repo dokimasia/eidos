@@ -1,0 +1,11 @@
+query Lookup($id: ID!) {
+  node(id: $id) {
+    id
+    ... on Product {
+      name @skip(if: false)
+    }
+    ... on Vendor {
+      name
+    }
+  }
+}
