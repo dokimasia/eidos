@@ -192,6 +192,17 @@ language, an address in a language with no operator for one, a map
 literal in a language that states none. The declaration is skipped
 and the file renders without it, the way any refused spelling is.
 
+A construction builds a value of a class from argument values, as
+`new Set<string>(['a'])`. The walk passes its type to the target
+without a spelling, because a target that imports a declaration for
+its type checker alone imports the class of a construction for its
+value. TypeScript and Java write a construction. Go and Rust refuse it
+under `UnspeltValue`. A structural type without a spelling, which the
+substitution of a type parameter leaves, also passes to the target.
+The Go and TypeScript targets restate it from its children. The Java
+and Rust targets refuse it under `UnspeltValue`, because the spelling
+of their composites does not follow from the structure.
+
 `Sample` is the rendered form of a Values-projection answer
 ([03-projection.md](03-projection.md)): a literal that a template or
 the builder places into a body, gated on `OK()` like every refusable
@@ -244,6 +255,24 @@ replace verb.
 There are no per-plugin prefixes. A helper has one documented name
 everywhere, so templates move between plugins and the documentation
 can name what authors actually type.
+
+The backends of Go, TypeScript, Java and Rust declare the seven shared
+names of the render package:
+
+| Helper | Writes |
+|---|---|
+| `docs` | the documentation of a declaration in the comment form of the target |
+| `spell` | a type reference in a type position |
+| `spellvalue` | a type reference in a value position, where the declaration must exist at run time, such as the class of a construction |
+| `typeparams` | the type parameter list of a declaration |
+| `typeargs` | a list of type parameters or of type references as the type arguments of a reference, and nothing for an empty list |
+| `params` | the parameter list of a callable |
+| `results` | the results of a callable |
+
+A TypeScript `spellvalue` imports the declaration for its value and
+the type arguments for the type checker alone. A Rust `spellvalue`
+writes the type arguments behind the turbofish of an expression's
+path.
 
 ## The engine is text/template
 

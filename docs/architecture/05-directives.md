@@ -42,6 +42,15 @@ carriers, and Kubernetes markers such as
 product. Each frontend recognizes its own carriers and hands the
 workspace one canonical parsed form.
 
+A directive on a package has a place of its own in each language that
+addresses a package. The Go frontend attaches the carriers of the doc of a
+package clause to the package. The TypeScript frontend attaches the
+carriers of the header of a module to the package of the module. The
+header is every comment above the first statement, and below the
+hashbang line where the module has one. The run directly above a
+first declaration or export is not part of it. `OnPackage` takes a
+directive on a package ([06b-authoring.md](06b-authoring.md)).
+
 A language satellite may also register **native sugar**, meaning
 syntax the language already has for attaching metadata, read
 statically and lowered into the same canonical directive. Rust

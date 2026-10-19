@@ -48,6 +48,17 @@ value produced by a plugin of an earlier turn in the same plan, which
 is what a weaver subscribes to. `OnGraph` takes the whole graph, and
 it is the pressure valve for logic that genuinely spans subjects.
 
+`OnPackage` gives its handler the package with its files and their
+declarations, so the handler checks those declarations as one set.
+The rule runs once for each package of the scope. Under a `Directive`
+wrapper it runs once for each gating instance of the directive on a
+package. The handler reads the declarations
+without a tracked read. So each invocation records the package edge,
+and an edit of any declaration of the package runs the handler again.
+A directive on a package is written in the doc of a Go package clause
+or in the header of a TypeScript module
+([05-directives.md](05-directives.md)).
+
 The kind-indexed set is bounded by the model rather than by use
 cases, and it generates from `symbol/schema` alongside the kinds
 ([02-symbol-model.md](02-symbol-model.md)), so a new kind
@@ -184,6 +195,12 @@ already filled in, and the tracked `Reader()`. A per-subject handler
 that needs a sibling declaration looks it up like anyone else,
 instead of escaping to `OnGraph` for an ordinary lookup.
 
+`SubjectMatch` is the interface of those methods, and every match
+with a subject satisfies it. A function that handlers of two kinds
+share takes a `SubjectMatch`, such as one that writes the double of an
+interface and of a struct. A function that only reports takes its
+reporting half, `Reporter`.
+
 ## The Emitter
 
 **Every target is an accumulator, and the Emitter owns the bookkeeping.**
@@ -211,11 +228,21 @@ plugin repeats the copy, and leaves the receiver to the target: the
 Go satellite's `PointerReceiver` names a pointer receiver against
 the parameter names. Imports are collected at render.
 
+A body passes each parameter on by its name. `naming.Params` of
+eidos-lang names each parameter that a mirrored signature has without
+a name. The Go satellite's `RenamePredeclared` renames a parameter or
+a result that would hide a predeclared identifier, such as the
+`append` that the body of a stub calls.
+
 `MirrorTypeParams` copies the type parameters of a generic declaration
 onto a declaration that a plugin derives from it. `TypeArgs` returns
 those parameters as the arguments of a reference inside the derived
 declaration, such as the interface that the mock of a generic interface
-implements.
+implements. `rules.Mentioned` returns the type parameters that the
+references of one part of the declaration mention, with the parameters
+that their bounds and defaults use. A declaration derived from that
+part, such as the call record of a method of a stub, declares those
+parameters alone.
 
 Slot access is one `SlotView` type, which `Emitter.Slot` returns,
 whether you are appending into your own method's prologue or, through
@@ -328,6 +355,12 @@ specializations over those defaults. A plugin with no `For` stays
 target-universal, and a plan targeting a language that a
 template-claiming plugin never declared fails at **Build**, naming
 the plugin and the target, rather than at render.
+
+A plugin that serves more than one target embeds one directory of
+templates for each, below `templates`. `TemplatesOf(files, target)`
+declares the tree of a target from those files. A typed build panics
+where the target is no name of a single directory, and where the
+files have no directory `templates/<target>`.
 
 One composition rule keeps imports working: a helper that produces
 type spellings composes the language funcmap's spelling helpers
@@ -484,6 +517,7 @@ func (b *Builder) Templates(tree fs.FS) *Builder
 func (b *Builder) Funcs(fm template.FuncMap) *Builder
 func (b *Builder) For(t rules.Target, opts ...TargetOption) *Builder
 func Templates(tree fs.FS) TargetOption
+func TemplatesOf(files fs.FS, t plugin.Target) TargetOption // the directory templates/<t> of files
 func Funcs(fm template.FuncMap) TargetOption
 func Overrides(fm template.FuncMap) TargetOption // the replace verb
 
@@ -498,6 +532,7 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule
 //   OnVariable, OnAlias: same shape per kind …
 func OnEmit(k emit.Kind, h func(*EmitMatch, *Emitter) error) Rule
 func OnGraph(h func(*GraphMatch, *Emitter) error) Rule
+func OnPackage[E Effect](h func(*PackageMatch, E) error) Rule // each package of the scope
 
 // Scoping wrappers compose around any rules.
 func Directive(s directive.Schema, rules ...Rule) Rule // gate + register
@@ -517,8 +552,9 @@ func Not(p Pred) Pred
 //   Kernel() meta.KernelKeys     // the kernel's own keys, for its facts
 //   Errorf / Warnf(code, format, ...) // origin and position pre-bound
 //   ErrorfAt(code, pos, format, ...)  // at a carrier line instead
-// plus its subject field (.Interface, .Enum, .Method, …). The host of
-// a method is the identity m.Method.Host.
+// plus its subject field (.Interface, .Enum, .Method, .Package, …). The
+// host of a method is the identity m.Method.Host. SubjectMatch is that
+// surface as an interface, and Reporter is its reporting half.
 // EmitMatch also carries Origin(), the emit value's source symbol,
 // with tracked fact reads, so a weaver can ask whose output it is
 // looking at without ever seeing another plugin's directive.

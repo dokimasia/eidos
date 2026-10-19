@@ -120,6 +120,12 @@ an ok-bool, or a stream. A stream carries an async flag, which
 covers Kotlin Flow, Rust Stream, TypeScript AsyncIterator and Python
 async generators.
 
+A parameter of the view reports whether a call can leave it out. A
+call can leave out a parameter with a default or with the optional
+mark of its language, and a parameter that collects the rest of the
+arguments. A constructor whose parameters are all optional constructs
+without an argument.
+
 **ErrorModel** is `None | LastReturn | ResultType | Thrown |
 Raised`. That turns "does this return an error" into one question
 across Go's last return, Rust's `Result`, TypeScript's `throw`,
@@ -290,6 +296,16 @@ value came from.
 default gets compared against. The spellings differ per language,
 `nil` against `None`, so a kernel table would be returning for one
 language.
+
+A value of a class that a constructor builds from other values is a
+construction in the value tree ([07-rendering.md](07-rendering.md)).
+The TypeScript rules derive a `Set`, a `ReadonlySet`, a `Map` and a
+`ReadonlyMap` this way, as `new Set<string>(['tags-a'])`, and the
+empty construction is the zero. The construction of a readonly type
+calls the constructor of its mutable class, and keeps the type
+arguments of the reference. The Go rules derive `struct{}{}` as the
+one value of the empty struct, so a map of empty structs, the set of
+Go, derives its pair from the pair of its keys.
 
 `LiteralFor` reads text as a value of a type in the scope of a
 declaration, and reports false when it cannot. That serves values read

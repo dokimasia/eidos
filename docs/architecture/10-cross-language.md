@@ -146,6 +146,15 @@ such as `golang.name`, at `plugin` authority. A consumer can therefore
 override any single name at the declaration with a directive, and
 `explain` shows where every spelling came from.
 
+Each target converts a name through the initialisms of its own
+convention. Go writes an initialism in one case, so `user_id` becomes
+`userID`. TypeScript, Java, Rust, protobuf and GraphQL write an acronym
+as a word, as their style guides do, so `httpRow` becomes `HttpRow`.
+Their conversion keeps a name that the source writes in its style,
+such as `getById` and `toJSON`. A class that a generator mirrors from
+an interface then implements each method under the name of the
+interface, and a GraphQL field keeps the key of its response.
+
 A nested declaration crosses under its flat name. `Identity.FlatName`
 joins the parts of the declaration's owner chain and its name, and
 writes the first letter of each part after the first in upper case, so
