@@ -14,9 +14,8 @@ import (
 )
 
 // coverageAllocs is the count of the coverage table: four for the fact
-// map, and two for the exception map with two for each of its three
-// kinds.
-const coverageAllocs = 4 + 2 + 3*2
+// map, and two for the exception map with two for each of its four kinds.
+const coverageAllocs = 4 + 2 + 4*2
 
 // TestCoverage pins the verdicts that distinguish Java. The conformance
 // suite checks that the table is total and that the rendered findings
@@ -54,6 +53,10 @@ func TestCoverage(t *testing.T) {
 				kind: symbol.KindSum, fact: symbol.FactMethods, want: render.Refuses,
 			},
 			{
+				name: "returns Renders for a class's methods",
+				kind: symbol.KindStruct, fact: symbol.FactMethods, want: render.Renders,
+			},
+			{
 				name: "returns Renders for a class's nested types",
 				kind: symbol.KindStruct, fact: symbol.FactTypes, want: render.Renders,
 			},
@@ -88,6 +91,14 @@ func TestCoverage(t *testing.T) {
 			{
 				name: "returns Renders for a parameter's annotations",
 				kind: symbol.KindParam, fact: symbol.FactAnnotations, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for a field that another type receives",
+				kind: symbol.KindField, fact: symbol.FactReceives, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for a file's annotations",
+				kind: symbol.KindFile, fact: symbol.FactAnnotations, want: render.Refuses,
 			},
 		}
 		for _, tt := range tests {

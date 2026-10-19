@@ -8,9 +8,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Coverage declares the fact coverage of Java, the feature table as data:
-// the guard of the render reads it, and the conformance suite checks it
-// total and the rendered findings against it.
+// Coverage declares the fact coverage of Java, the feature table as data.
+// The guard of the render reads it, and the conformance suite checks that
+// it is total and that the rendered findings match it.
 //
 //   - A callable returns one value, so several refuse. A second result
 //     arrives thrown, which is why throws renders.
@@ -32,10 +32,13 @@ import (
 //     and so does the mutability of an index signature. A computed member
 //     has no name in Java, so the declaration does not render with the
 //     fact or without it.
+//   - A field that another type receives refuses, because Java has no
+//     extension field. The annotations of a file refuse, because the
+//     skeleton does not write the header that a generator states.
 //
 // Coverage builds the table on every call, which the caller keeps: four
 // allocations of the fact map, and two of the exception map with two for
-// each of its three kinds, 12 allocations.
+// each of its four kinds, 14 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		RefusesEmbeds: true,
@@ -66,6 +69,7 @@ func Coverage() render.Coverage {
 			symbol.FactFields:           render.Renders,
 			symbol.FactMethods:          render.Renders,
 			symbol.FactValue:            render.Renders,
+			symbol.FactReceives:         render.Refuses,
 			symbol.FactComment:          render.Renders,
 			symbol.FactMutability:       render.Renders,
 			symbol.FactTag:              render.Refuses,
@@ -90,6 +94,9 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindSum: {
 				symbol.FactMethods: render.Refuses, // no per-variant bodies
+			},
+			symbol.KindFile: {
+				symbol.FactAnnotations: render.Refuses, // no header of a generator
 			},
 		},
 	}
