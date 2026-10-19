@@ -86,3 +86,7 @@ the decision is already made and there is nothing left to argue, write an
 | [0067](0067-the-protobuf-backend.md) | The protobuf backend | Accepted |
 | [0068](0068-the-graphql-satellite.md) | The GraphQL satellite | Accepted |
 | [0069](0069-constructions-module-directives-and-the-shared-helpers-of-plugins.md) | Constructions, module directives and the shared helpers of plugins | Draft |
+| [0070](0070-names-collide-in-the-routed-package.md) | Names collide in the routed package | Draft |
+| [0071](0071-wire-names.md) | Wire names | Draft |
+| [0072](0072-translated-supertypes.md) | Translated supertypes | Draft |
+| [0073](0073-the-python-satellite.md) | The Python satellite | Draft |
