@@ -2,6 +2,11 @@
 #
 # The rules: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
 
+# A blank line inside a list item may keep the indentation of the item. The release flow writes the
+# changelogs that way.
+MD009:
+  list_item_empty_lines: true
+
 # Hard tabs are allowed in fenced code blocks, because a tab-indented language is shown as it is
 # written. Prose still may not contain them.
 MD010:

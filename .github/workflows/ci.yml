@@ -65,9 +65,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+      - uses: ./.github/actions/setup-ergon
+      - name: Keep the tools of ergon
+        id: ergon-tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          globs: "**/*.md\n#node_modules"
+          key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock') }}"
+          path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
+          restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Lint the Markdown files
+        run: |
+          make lint-common
+      - name: Prune the tools of ergon
+        if: "steps.ergon-tools.outputs.cache-hit != 'true'"
+        run: |
+          ergon tool prune
   commits:
     name: Commits
     needs: skip
@@ -138,6 +150,33 @@ jobs:
       - name: Check the managed files
         run: |
           ergon init check
+  workflows:
+    name: Workflows
+    needs: skip
+    if: "needs.skip.outputs.skip != 'true'"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ergon
+      - name: Keep the tools of ergon
+        id: ergon-tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock') }}"
+          path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
+          restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Lint the workflows
+        run: |
+          make lint-github
+      - name: Prune the tools of ergon
+        if: "steps.ergon-tools.outputs.cache-hit != 'true'"
+        run: |
+          ergon tool prune
   license:
     name: License
     needs: skip
@@ -234,7 +273,7 @@ jobs:
   result:
     name: Result
     if: always()
-    needs: [skip, docs, commits, changeset, baseline, license, check-go, ring]
+    needs: [skip, docs, commits, changeset, baseline, workflows, license, check-go, ring]
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions: {}

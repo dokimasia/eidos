@@ -1,8 +1,10 @@
 # Managed by ergon init. Add repository settings to .ergon/local/.github/workflows/security.yml and run ergon init sync.
 #
 # The security checks: the review of the dependencies that a pull request changes, the weekly
-# OpenSSF Scorecard, and the CodeQL analysis of each language that a producer of ergon init
-# contributes, which calls codeql.yml.
+# OpenSSF Scorecard of a public repository, and the CodeQL analysis of each language that a
+# producer of ergon init contributes, which calls codeql.yml. ergon init renders this workflow only
+# when the key code-security of the section github of .ergon.yaml is true, because a private
+# repository needs GitHub Code Security for the analysis and the review.
 
 name: Security
 
@@ -33,11 +35,32 @@ jobs:
           persist-credentials: false
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
 
+  # A scheduled run has no event payload with the visibility of the repository, so this job queries
+  # the API of GitHub. The Scorecard runs only in a public repository.
+  visibility:
+    name: Visibility
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      private: ${{ steps.visibility.outputs.private }}
+    steps:
+      - name: Find whether the repository is private
+        id: visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          private="$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)"
+          echo "private=$private" >> "$GITHUB_OUTPUT"
+
   # Scorecard publishes its results only from a job whose steps are actions of its allow list, in a
   # workflow without defaults or environment variables at its top level.
   scorecard:
     name: Scorecard
-    if: github.event_name == 'schedule'
+    needs: visibility
+    if: needs.visibility.outputs.private == 'false'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -61,6 +84,7 @@ jobs:
     name: "CodeQL (Go)"
     uses: ./.github/workflows/codeql.yml
     permissions:
+      actions: read
       contents: read
       security-events: write
     with:

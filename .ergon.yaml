@@ -16,26 +16,34 @@ common:
         linux/amd64: bf9666441262bf8d31345a6d29d6f788d0dadea7d47e5b91890c3a651999c118
         windows/amd64: e8f90d08616ab8cd987b2dbef7ae0ee7fd1cb43c97f5a1ad171e8a56d1bd2f3d
       version: 0.12.0
+    # The release of rumdl, which lint-common runs on the Markdown files with the rules of
+    # .markdownlint.yml. It skips the files of .markdownlintignore.
+    rumdl:
+      sha256:
+        darwin/arm64: 8c0ecf93a61bf612df5f6c6f22813d066a6f51a5680f3c12da49b93ed892aebb
+        linux/amd64: a85ae77c6880616118e10dda1e36292df59815bcfbf767201736ff6971213cf3
+        windows/amd64: 07d12118c143976fadaaf7d053ac6be328798ce3b59b3f774572ac946b123672
+      version: 0.2.79
   # The release of github.com/pre-commit/pre-commit-hooks, whose hooks check the hygiene of the
   # files before each commit.
   pre-commit-hooks: v6.0.0
-  # The targets of the Makefile that the hooks of .pre-commit-config.yaml run, at each stage of git.
-  # An empty list turns the hooks of its stage off.
+  # The hooks of .pre-commit-config.yaml: the paths that the hooks of file hygiene keep as they are,
+  # and the targets of the Makefile that the hooks run at each stage of git. An empty list of
+  # targets turns the hooks of its stage off.
   hooks:
+    # A regular expression of the paths whose content the hooks trailing-whitespace,
+    # end-of-file-fixer, mixed-line-ending and check-added-large-files keep as it is, such as
+    # ^models/. pre-commit matches it with the re module of Python. The other hooks still check
+    # those paths. The empty string turns the exclusion off.
+    exclude: ""
     # The targets that run before each commit, in order: fmt, lint, test, audit or check.
     pre-commit: [lint, test]
     # The targets that run before each push, in order: fmt, lint, test, audit or check.
     pre-push: [check]
-  # The pins of the actions of the jobs docs and commits of ci.yml, and the limit of each job in
-  # minutes.
+  # The limit in minutes of each job of the common files in ci.yml: docs, commits and changeset. The
+  # jobs run ergon, and they do not run an action of their own.
   ci:
-    actions:
-      # The action that lints the Markdown files in the job docs, with the rules of
-      # .markdownlint.yml.
-      markdownlint:
-        uses: DavidAnson/markdownlint-cli2-action
-        commit: 21c1be1b93ad9ed58fa840aacc3f279cde2a72ff
-        release: v24.2.0
+    actions: {}
     timeout: 10
 github:
   # The runner images of the jobs that run on every runner, each pinned to a version of its system.
@@ -46,6 +54,16 @@ github:
   # The release of GNU make that the action setup-make installs from Chocolatey on a Windows runner,
   # whose image has no make.
   make: 4.4.1
+  # The tools of the GitHub files.
+  tools:
+    # The release of actionlint, which lint-github runs on the workflows with the configuration of
+    # .github/actionlint.yaml.
+    actionlint:
+      sha256:
+        darwin/arm64: aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f
+        linux/amd64: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        windows/amd64: 6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9
+      version: 1.7.12
   # The options of nightly.yml, which runs the steps under the key nightly of each language on a
   # schedule, each in a job of its own.
   nightly:
@@ -111,6 +129,11 @@ github:
         commit: 1e69f48acb82d1966a394da916b4c1698aa569d6
         release: v4.2.2
     timeout: 15
+  # When true, ergon init renders security.yml with the CodeQL analysis of each language, the
+  # dependency review of each pull request and the weekly Scorecard, and codeql.yml. A private
+  # repository needs GitHub Code Security for the analysis and the review, so a private repository
+  # without it sets false. The Scorecard runs in a public repository alone.
+  code-security: true
 license:
   # The copyright holder of the headers and of the license files. ergon init writes it from --owner,
   # and ergon init sync --owner changes it.
@@ -265,8 +288,9 @@ go:
   # packages and cask; module, the directory of the module in go.work, . for the root; main, the
   # package of the command in the module; description, one line, and for a cask one that brew audit
   # accepts, such as one without a full stop at its end; platforms, every platform when empty;
-  # completions, true for a cobra program; packages, from deb, rpm and apk; homebrew, true for a
-  # cask in homebrew.tap; license, the license of the repository when empty.
+  # completions, true for a command whose command completion writes the scripts of bash, zsh and
+  # fish, as in a program of cobra or of go.stealthscale.io/cli; packages, from deb, rpm and apk;
+  # homebrew, true for a cask in homebrew.tap; license, the license of the repository when empty.
   binaries: []
   # The options of the casks of the commands under binaries whose homebrew is true.
   homebrew:

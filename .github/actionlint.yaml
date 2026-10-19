@@ -1,0 +1,8 @@
+# Managed by ergon init. Add repository settings to .ergon/local/.github/actionlint.yaml and run ergon init sync.
+#
+# The configuration of actionlint, which lint-github runs on the workflows. actionlint reports a
+# runner label that its release does not know, and it accepts the labels under self-hosted-runner.
+# ergon init lists the runners of the section github of .ergon.yaml there.
+
+self-hosted-runner:
+  labels: [ubuntu-26.04, macos-26, windows-2025]

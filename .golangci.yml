@@ -461,8 +461,11 @@ formatters:
     gofumpt:
       extra:
         group-params: true
+    # golines keeps each struct tag as it is written. Its default, reformat-tags, pads the keys of
+    # the tags of a struct into columns.
     golines:
       max-len: 120
+      reformat-tags: false
     # The modules of eidos form an import group of their own.
     gci:
       sections:

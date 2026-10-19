@@ -1,17 +1,22 @@
 # Managed by ergon init. Add repository settings to .ergon/local/Makefile and run ergon init sync.
 #
-# make check is the gate of the repository. Each language adds its own fmt, lint, test, generate,
-# audit and check targets as prerequisites of the targets below, and CI runs make check-<language>
-# per language. Every target runs its tools through ergon tool run, which installs the version that
-# .ergon.yaml names. make help lists the targets in groups. A line ##@ <name> starts a group: the
-# common targets, then the targets of each language, and the targets of .ergon/local/Makefile after
-# a line of its own.
+# make check is the gate of the repository. lint-common lints the Markdown files, and lint-github
+# lints the workflows. Each language adds its own fmt, lint, test, generate, audit and check
+# targets as prerequisites of the targets below. CI runs make check-<language> per language. It
+# runs lint-common and lint-github in jobs of their own. Every target runs its tools through ergon
+# tool run, which installs the version that .ergon.yaml names. make help lists the targets in
+# groups. A line ##@ <name> starts a group: the common targets, the targets of the GitHub files,
+# then the targets of each language, and the targets of .ergon/local/Makefile after a line of its
+# own.
 
 .DEFAULT_GOAL := check
 
 # The command that runs ergon for the tools of the targets. The key ergon of the section common of
 # .ergon.yaml sets it.
 ERGON ?= ergon
+
+# The tools of the common targets, which ergon installs at the versions of the section common.
+RUMDL := $(ERGON) tool run common.rumdl --
 
 # verify-generated runs the command of the variable $(1) and fails when the run changes a file of
 # the repository, with the target $(2) that updates the files in its message. It compares the
@@ -24,7 +29,7 @@ verify-generated = before="$$(git diff HEAD --binary 2>/dev/null; git ls-files -
 	echo "$(2): the generated files are out of date, so run make $(2) and commit the result:" >&2; \
 	git status --short >&2; exit 1; fi
 
-.PHONY: help fmt lint test generate audit check
+.PHONY: help fmt lint test generate audit check lint-common
 
 ##@ Common
 
@@ -32,11 +37,32 @@ help: ## List the targets in groups
 	@awk 'BEGIN {FS = ":.*## "} /^##@ / {group = substr($$0, 5); next} /^[a-z][a-z-]*:.*## / {if (group != shown) {printf "%s%s\n", (shown == "" ? "" : "\n"), group; shown = group} printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 fmt: ## Format the sources of every language
-lint: ## Lint the sources of every language
+lint: ## Lint the Markdown files, the workflows and the sources of every language
 test: ## Run the tests of every language
 generate: ## Run the generators of every language
 audit: ## Run the vulnerability scan of every language
-check: ## Run the gate of every language
+check: ## Run the gate of every language, and lint the Markdown files and the workflows
+lint: lint-common
+check: lint-common
+
+lint-common: ## Lint the Markdown files with rumdl and the rules of .markdownlint.yml
+	$(RUMDL) check --no-cache .
+
+##@ GitHub
+#
+# The section github of .ergon.yaml sets the tools of the GitHub targets.
+
+# The tools of the GitHub targets, which ergon installs at the versions of the section github.
+ACTIONLINT := $(ERGON) tool run github.actionlint --
+
+.PHONY: lint-github
+lint: lint-github
+check: lint-github
+
+# actionlint runs shellcheck and pyflakes on the scripts of the steps, and the flags turn both off.
+# ergon pins neither program, so actionlint would run the versions that the machine has.
+lint-github: ## Lint the workflows with actionlint and the configuration of .github/actionlint.yaml
+	$(ACTIONLINT) -shellcheck= -pyflakes=
 
 ##@ Go
 #
