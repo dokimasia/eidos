@@ -72,8 +72,8 @@ const (
 //     synchronous stream as a channel, and an asynchronous stream as
 //     iter.Seq2[T, error], with the import of iter;
 //   - an optional of a list, bytes, a map, a function type, a stream, the
-//     top type, the error value or a sum as the type itself, because the
-//     nil value of its Go spelling is the absent value;
+//     top type, the error value, an interface or a sum as the type itself,
+//     because the nil value of its Go spelling is the absent value;
 //   - a wildcard as its upper bound, and as any where it has no bound;
 //   - the well-known timestamp and duration as time.Time and
 //     time.Duration, with the import of time, the well-known empty value
@@ -275,14 +275,14 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // nilable reports whether the nil value of Go's spelling of s is the
 // absent value: a slice, bytes, a map, a function, a channel, an iterator,
-// any, error and the interface of a sum.
+// any, error, an interface and the interface of a sum.
 func nilable(s rules.TypeShape) bool {
 	switch s.Form {
 	case symbol.FormList, symbol.FormBytes, symbol.FormMap, symbol.FormFunc, symbol.FormStream,
 		symbol.FormDynamic, symbol.FormSum:
 		return true
 	case symbol.FormReference:
-		return s.Ref == rules.WellKnownError
+		return s.Ref == rules.WellKnownError || s.Ref.Kind == symbol.KindInterface
 	default:
 		return false
 	}

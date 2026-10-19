@@ -252,6 +252,24 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{Spelling: resultName, Target: result},
 			},
 			{
+				name: "returns the translated reference for an optional of a reference to an interface",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Session | undefined", Elems: []rules.TypeShape{sessionTo},
+				},
+				want: &emit.TypeRef{Spelling: sessionName, Target: session},
+			},
+			{
+				name: "returns a pointer for an optional of a reference to an enum",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "Session.State | undefined",
+					Elems: []rules.TypeShape{rules.Reference("Session.State", state)},
+				},
+				want: &emit.TypeRef{
+					Spelling: "*SessionState", Form: symbol.FormOptional,
+					Elems: []*emit.TypeRef{{Spelling: "SessionState", Target: state}},
+				},
+			},
+			{
 				name: "returns a slice of a translated reference for a list",
 				give: rules.TypeShape{
 					Form:     symbol.FormList,

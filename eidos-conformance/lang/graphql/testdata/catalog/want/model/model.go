@@ -70,7 +70,7 @@ type ProductInput struct {
 // The entry points of the catalog.
 type QueryResolver interface {
 	Version(ctx context.Context) (string, error)
-	Node(ctx context.Context, id string) (*Node, error)
+	Node(ctx context.Context, id string) (Node, error)
 	Product(ctx context.Context, id string) (*Product, error)
 	Products(ctx context.Context, filter *ProductFilter, limit *int32) ([]Product, error)
 	Search(ctx context.Context, text string) ([]SearchResult, error)
@@ -109,4 +109,4 @@ type Warehouse struct {
 	ID   string
 	City *string
 }
-// acme:provenance sha256:dbce7e9fe2c8310751185a614a1a2d38fab3120404caa78d9e2cfb09edf82631
+// acme:provenance sha256:de35681d3548b19ee19678d690b1b76d16d96f0983db6eef776774f85a5b97c5
