@@ -1,5 +1,39 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.2.0
+
+### Minor Changes
+
+- c0ecc95: Add `RenamePredeclared` to rename each parameter and result whose name Go predeclares.
+- bca12c4: Add `spell.Handler` and `spell.Home`, the binder of grpc-go and connect-go.
+- c0ecc95: Add `Speller.TypeArgs` and the template helpers `spellvalue` and `typeargs`.
+- 21875ef: Add the policy `golang.grpc`, under whose choices `grpc-go` and `connect-go` a reference to a protobuf declaration spells as protoc-gen-go names it.
+- 21875ef: Derive the samples of a function type, a channel and the empty interface in `Rules.DeriveSamples` of the Go rules.
+- c0ecc95: Derive `struct{}{}` as the one value of the empty struct, and the samples of a map of empty structs from its keys.
+- bca12c4: Mark a reference to a protobuf declaration bound under the choices `grpc-go` and `connect-go`.
+- bca12c4: Reject the fact `Overload`.
+- 21875ef: Resolve a name that a full import path qualifies in `Rules.Resolve` and `Rules.LiteralFor` of the Go rules.
+- bca12c4: Spell a type parameter by its name at every depth of a type.
+- 21875ef: Spell a function value as a function literal and a make value as a call of `make` in the Go backend.
+- 21875ef: Spell the well-known context as `context.Context`.
+- afb1411: Refuse the fact `Receives` and the annotations of a file, and render the methods of a struct under the fact `Methods`.
+- 21875ef: Add the verdicts of the facts `Wire` and `Passing` to the coverage table of the Go backend.
+- 21875ef: Add the template helper `wrapdocs` and `backend.WrapDocs` to the Go backend.
+- 21875ef: Write each test file of an external family into the external test package of its directory.
+- 21875ef: Add `backend.Value` to write a value of the value tree for the builtin `value`.
+- bca12c4: Add `spell.Split` to write the internal tests of an external family into an internal test file.
+
+### Patch Changes
+
+- c0ecc95: Refuse a construction value, which Go builds through a composite literal or a call.
+- 21875ef: Refuse the deleter of a property in the Go lowering.
+- 21875ef: Cover the refusal of the deleter of a property in the spec of `backend.Lower`.
+- 66c5fe9: Fix the Go spoke to spell an optional of an interface as the interface.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, 09edb8b, 78909e0, c55b40a, 4ee3b36, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

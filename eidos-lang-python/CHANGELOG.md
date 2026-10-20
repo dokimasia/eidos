@@ -1,0 +1,22 @@
+# go.dokimi.dev/eidos/lang/python
+
+## 0.1.0
+
+### Minor Changes
+
+- e2fbfcb: Add the Python satellite, which reads and writes every declaration construct of Python 3 in modules and stub files.
+- e176e64: Give each variant dataclass of a sum the contracts of the sum as its bases.
+- e176e64: Mark a callable under the decorator `overload` as an overload signature.
+- e176e64: Write the declarations of a module in the order that the module evaluates them.
+- e176e64: Refuse the overload signatures of a method without an implementation in a module class that is not a Protocol.
+- e2fbfcb: Refuse the well-known context, for which Python has no standard type.
+- e176e64: Refuse the contracts of an enum.
+- e176e64: Spell a type parameter by its name at every depth of a type.
+- e176e64: Write the decorator `overload` for an overload signature.
+
+### Patch Changes
+
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, 09edb8b, 78909e0, c55b40a, 4ee3b36, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0

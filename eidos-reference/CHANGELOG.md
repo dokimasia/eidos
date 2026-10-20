@@ -1,5 +1,28 @@
 # go.dokimi.dev/eidos/reference
 
+## 0.1.2
+
+### Patch Changes
+
+- bb34e68: Check the setter of a field of a map of empty structs in the tests that builder writes.
+- bb34e68: Declare the template tree of each target through `sdk.TemplatesOf`, and remove `internal/tree`.
+- bb34e68: Declare the type parameters of a call record of stubgen through `rules.Mentioned`, with each parameter that their bounds use.
+- 00b8f57: Expect a blank line before the provenance trailer of each golden file.
+- 00b8f57: Expect the declarations of each golden file in the order of the positions of their origins.
+- c53b949: Fix `naming.Params` to name a parameter called `_` by its position.
+- bb34e68: Name the parameters of a double through `naming.Params` and `golang.RenamePredeclared`.
+- 2d5aa6c: Report a release of the ring that requires an earlier compatibility line of the kernel instead of testing it.
+- c55b40a: Require the fork `github.com/dokimasia/tree-sitter-typescript` at its commit 839d520b in place of `github.com/tree-sitter/tree-sitter-typescript` v0.23.2.
+- bb34e68: Write the type arguments of the templates of builder and stubgen through `typeargs`.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, c0ecc95, 09edb8b, 78909e0, bca12c4, 1e22241, 21875ef, f9800cb, 763fb69, e4916b2, c55b40a, 4ee3b36, 62d7b18, 6741030, df52360, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e, 66c5fe9, afb1411, 76c473b, ba70166]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+  - go.dokimi.dev/eidos/lang/go@0.2.0
+  - go.dokimi.dev/eidos/lang/typescript@0.2.0
+  - go.dokimi.dev/eidos/declarative@0.1.2
+  - go.dokimi.dev/eidos/cli@0.2.1
+
 ## 0.1.1
 
 ### Patch Changes

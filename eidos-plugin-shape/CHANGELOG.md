@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.0.3
+
+### Patch Changes
+
+- 3940196: Regenerate the registry and its wiring with a blank line before the provenance trailer.
+- Updated dependencies [eed0fb8, d5e68cb, 2a85f93, 09edb8b, 78909e0, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.0.2
 
 ### Patch Changes

@@ -1,5 +1,40 @@
 # go.dokimi.dev/eidos/lang/rust
 
+## 0.2.0
+
+### Minor Changes
+
+- 85f0e91: Add `spell.Supertype` to spell a supertrait of another language as its bare name.
+- 4340d2b: Add `Speller.SpellValue`, `Speller.TypeArgs` and the template helpers `spellvalue` and `typeargs`.
+- 85f0e91: Add `lang/rust/rules`, the projection rules of Rust.
+- c392627: Fold the trait of a trait impl onto an enum and a data enum.
+- 85f0e91: Keep the type of an associated type binding, as the `T` of `Item = T`, as the argument of its reference.
+- c392627: Read the trait impls of an enum and a data enum in `ErrorContract`, `Comparable` and `ZeroValue`.
+- 85f0e91: Refuse the well-known context, for which Rust has no standard type.
+- c392627: Reject the fact `Overload`.
+- 85f0e91: Resolve `Self` to the type of its impl block, and lower a receiver `&self` as a borrow of `Self`.
+- c392627: Spell a type parameter by its name at every depth of a type.
+- 85f0e91: Spell a value of a trait of another language as the trait object `Box<dyn Trait>`.
+- 4340d2b: **Breaking:** Spell type names without the initialisms of Go, so `Uuid` keeps its spelling and `httpRow` becomes `HttpRow`.
+- a301097: Refuse the fact `Receives` and the annotations of a file, and render the methods of a struct in its inherent impl block.
+- 85f0e91: Add the verdicts of the facts `Wire` and `Passing` to the coverage table of the Rust backend.
+- 85f0e91: Add the template helper `wrapdocs` and `backend.WrapDocs` to the Rust backend.
+- 85f0e91: Write a function value as a closure in the Rust backend.
+- 85f0e91: Add `backend.Value` to write a value of the value tree for the builtin `value`.
+- 85f0e91: Write a map, a tuple, a tuple struct, a variant and an associated function as Rust values.
+
+### Patch Changes
+
+- 85f0e91: Fix `backend.Speller` to use the module that the first segment of a path names, as `std::io` for `io::Error`, and no item for a path from a crate.
+- 4340d2b: Refuse a construction value, which Rust builds through a struct literal or a call.
+- 85f0e91: Refuse a make value in the Rust backend.
+- 85f0e91: Refuse the deleter of a property in the Rust lowering.
+- 85f0e91: Fix `Satisfies` of the Rust toolchain adapter to report a directory or a crate root that it cannot read before it runs cargo.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, 09edb8b, 78909e0, c55b40a, 4ee3b36, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes
