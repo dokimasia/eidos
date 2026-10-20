@@ -133,6 +133,46 @@ func TestParse(t *testing.T) {
 			assert.Length(t, fileIn(t, gb, tsxPackage).Decls, 1, "the constant is declared")
 		})
 
+		forms := []struct {
+			name       string
+			giveFile   string
+			giveSource string
+		}{
+			{
+				name:     "parses an array of an import type without a syntax error",
+				giveFile: aFile, giveSource: "export type Nodes = import('./lib').Node[];\n",
+			},
+			{
+				name:     "parses typeof import() as a type argument of a call without a syntax error",
+				giveFile: aFile, giveSource: "export const m = load<typeof import('./lib')>();\n",
+			},
+			{
+				name:     "parses a bare & in JSX text without a syntax error",
+				giveFile: tsxFile, giveSource: "export const View = () => <p>a & b</p>;\n",
+			},
+			{
+				name:     "parses abstract as the name of a property without a syntax error",
+				giveFile: aFile, giveSource: "export interface I {\n  abstract: string;\n}\n",
+			},
+			{
+				name:     "parses a keyword as the label of a tuple element without a syntax error",
+				giveFile: aFile, giveSource: "export type T = [symbol: string];\n",
+			},
+			{
+				name:     "parses a call signature on the line after a type without a syntax error",
+				giveFile: aFile, giveSource: "export interface S {\n  next: S\n  <T>(value: T): T\n}\n",
+			},
+		}
+		for _, tt := range forms {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, found := parsedTree(t, fstest.MapFS{tt.giveFile: {Data: []byte(tt.giveSource)}}, tt.giveFile,
+					plugin.DepthFull)
+				assert.Empty(t, found, "the grammar parses the form")
+			})
+		}
+
 		t.Run("reports BadConfig for a tsconfig that does not parse", func(t *testing.T) {
 			t.Parallel()
 
