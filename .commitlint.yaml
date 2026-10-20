@@ -50,6 +50,7 @@ settings:
       - kotlin
       - php
       - protobuf
+      - python
       - rust
       - typescript
       - shape

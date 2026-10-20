@@ -162,7 +162,7 @@ license:
   # no header. A key here replaces the style that ergon resolves.
   styles: {}
   # The doublestar globs of the paths whose files have no header, such as testdata/**.
-  exclude: ['**/testdata/**']
+  exclude: ['**/testdata/**', eidos-lang-python/frontend/typeshed/stdlib/**]
   # The limit in minutes of the job license of ci.yml, which runs ergon license check.
   ci:
     actions: {}
@@ -338,4 +338,14 @@ go:
         run:
           - rustup toolchain install stable --profile minimal --component rustfmt
           - rustup default stable
+      - name: Set up Python
+        uses:
+          uses: actions/setup-python
+          commit: 5fda3b95a4ea91299a34e894583c3862153e4b97
+          release: v7.0.0
+        with:
+          python-version: "3.15"
+      - name: Install pyright
+        run:
+          - npm install --global pyright@1.1.414
     timeout: 60

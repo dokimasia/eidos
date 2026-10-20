@@ -134,10 +134,12 @@ linters:
           files:
             - "**/eidos-lang/**"
             - "**/eidos-lang-go/**"
+            - "**/eidos-lang-graphql/**"
             - "**/eidos-lang-java/**"
             - "**/eidos-lang-kotlin/**"
             - "**/eidos-lang-php/**"
             - "**/eidos-lang-protobuf/**"
+            - "**/eidos-lang-python/**"
             - "**/eidos-lang-rust/**"
             - "**/eidos-lang-typescript/**"
             - "**/eidos-plugin-shape/**"
@@ -421,7 +423,7 @@ linters:
       # refusal of a fixed text is a sentinel that errors.New declares.
       - path: ^backend/
         linters: [errorprefix]
-        text: 'the text "(go|graphql|java|kotlin|php|protobuf|rust|typescript): '
+        text: 'the text "(go|graphql|java|kotlin|php|protobuf|python|rust|typescript): '
       # passLine is the text that the test driver of the Java adapter prints for a passing test.
       # It is no credential.
       - path: testing/adapter\.go
@@ -440,12 +442,12 @@ linters:
       - path: internal/stagefile/stagefile\.go
         linters: [gosec]
         text: "G404:"
-      # A load and the parse of one crate keep the context of their call in the state of that
-      # call. The record of a load, the record of the phases and the parse memo keep the context
-      # of the run that opened them. They implement the prior and the memo of a load and the bag
-      # source of a fact store. The methods of these interfaces take no context, so the three
-      # types read the ledger under the context of the run.
-      - path: (frontend/load/load|internal/state/(loadrecord|memo|phases)|frontend/parse)\.go
+      # A load, the parse of one crate and the lowering of one Python module keep the context of
+      # their call in the state of that call. The record of a load, the record of the phases and
+      # the parse memo keep the context of the run that opened them. They implement the prior and
+      # the memo of a load and the bag source of a fact store. The methods of these interfaces
+      # take no context, so the three types read the ledger under the context of the run.
+      - path: (frontend/load/load|internal/state/(loadrecord|memo|phases)|frontend/(parse|lower))\.go
         linters: [containedctx]
 formatters:
   enable:
