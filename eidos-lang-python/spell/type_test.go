@@ -96,7 +96,19 @@ var (
 	namedTo   = rules.Reference(namedName, named)
 	sizedTo   = rules.Reference(sizedName, sized)
 	inline    = rules.TypeShape{Form: symbol.FormInline, Spelling: "struct{}"}
+	// paramShape is the shape that the fold gives a reference to the type
+	// parameter paramName of page.
+	paramShape = rules.TypeShape{
+		Form:     symbol.FormOpaque,
+		Spelling: paramName,
+		Ref: symbol.Identity{
+			Lang: sourceLang, Package: "svc", Owner: pageName, Name: paramName, Kind: symbol.KindTypeParam,
+		},
+	}
 )
+
+// paramName is the name of the type parameter of the cases.
+const paramName = "T"
 
 // typeCall is one spelling that the allocation test and the benchmark
 // measure: the shape, its ceiling and the spelling that it returns.
@@ -192,6 +204,16 @@ func TestType(t *testing.T) {
 					Spelling: "list",
 					Package:  builtinsModule,
 					Args:     []*emit.TypeRef{{Spelling: sessionName, Target: session}},
+				},
+			},
+			{name: "returns the name of a type parameter", give: paramShape, want: &emit.TypeRef{Spelling: paramName}},
+			{
+				name: "returns list for a list of a type parameter",
+				give: rules.TypeShape{Form: symbol.FormList, Spelling: "[]T", Elems: []rules.TypeShape{paramShape}},
+				want: &emit.TypeRef{
+					Spelling: "list",
+					Package:  builtinsModule,
+					Args:     []*emit.TypeRef{{Spelling: paramName}},
 				},
 			},
 			{

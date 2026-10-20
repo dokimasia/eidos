@@ -43,10 +43,6 @@ const (
 	// not keep.
 	InitVarKey meta.KeyName = "python.initVar"
 
-	// ImplementationKey marks the implementation of an overloaded callable,
-	// which follows the overloads of its name.
-	ImplementationKey meta.KeyName = "python.implementation"
-
 	// GeneratorKey marks a function or a method whose own body yields.
 	GeneratorKey meta.KeyName = "python.generator"
 
@@ -114,10 +110,6 @@ func Keys(r *meta.Registry) error {
 		{
 			Name: InitVarKey, Kinds: []symbol.Kind{symbol.KindField},
 			Doc: "marks a field of a dataclass that the generated __init__ takes and the instance does not keep",
-		},
-		{
-			Name: ImplementationKey, Kinds: callable,
-			Doc: "marks the implementation of an overloaded callable",
 		},
 		{Name: GeneratorKey, Kinds: callable, Doc: "marks a function or a method whose own body yields"},
 	} {

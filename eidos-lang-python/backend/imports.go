@@ -20,8 +20,8 @@ import (
 // in import numpy as np. An entry whose path starts with specialMark is no
 // import: a type variable, whose path starts with typeVarMark and continues
 // with the call that declares the variable, a public name of the file, a
-// module that the file imports lazily, and a function of the file that no
-// overload decorator marks. No module path contains the marks.
+// module that the file imports lazily, and a function of the file without
+// the mark Overload. No module path contains the marks.
 const (
 	moduleMark  = "\x00"
 	specialMark = "\x00"

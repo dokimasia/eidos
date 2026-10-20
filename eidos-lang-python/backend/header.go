@@ -18,7 +18,7 @@ import (
 // entries that name the public declarations of the file, which the head of
 // the file reads for its __all__, the entries that name the modules that
 // the file imports lazily, which the import block reads, the entries that
-// name the functions of the file that no overload decorator marks, which
+// name the functions of the file without the mark Overload, which
 // [Writer.Function] reads, the entries that name the bound names of the
 // imports that the file does not use, which the import block leaves out,
 // and the entries that name the bound names of the re-exports of the

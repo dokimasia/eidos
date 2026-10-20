@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,22 +26,26 @@ const (
 	resultName         = "result"
 	typeName           = "type"
 	hardMark           = "#"
-	overloadDecorator  = "overload"
 )
 
 // Lower checks one declaration and reshapes the constructs that Python
 // states in other declarations, before the settle respells the names:
 //
 //   - a sum becomes one frozen dataclass for each variant, named after the
-//     sum and the variant, with the fields of the variant and the type
-//     parameters of the sum, and an alias of the sum that joins the
-//     dataclasses in a union;
+//     sum and the variant, with the fields of the variant, the type
+//     parameters of the sum and the contracts of the sum as its bases, and
+//     an alias of the sum that joins the dataclasses in a union;
 //   - an intersection of interfaces becomes a Protocol that extends each
 //     member, named after the declaration and the member that states the
 //     type, and the declaration refers to the Protocol. An alias of an
 //     intersection becomes the Protocol under the name of the alias;
 //   - a hard-private member loses the # of its name and is private, which
-//     Python writes with two underscores.
+//     Python writes with two underscores;
+//   - a function or a method whose annotations state the decorator overload
+//     has the mark Overload, so the writer reads the mark alone;
+//   - the overload signatures of each method name of a class come right
+//     before the implementation of the name, through
+//     [lowering.GroupOverloads].
 //
 // Lower returns an error for each construct of this list, and the settle
 // withholds the declaration:
@@ -62,14 +67,39 @@ const (
 //     before it;
 //   - a name that a class declares twice, outside the overloads of one
 //     method and the accessors of one property;
+//   - the overload signatures of a method name of a class without an
+//     implementation, unless they are abstract. A Protocol declares
+//     signatures without one;
 //   - a sum without a variant, a sum with methods, and a variant with a
 //     field without a name.
 //
 // A declaration without these constructs passes through and allocates
-// nothing beyond the parse of its texts. Lower is the lowering of the
-// backend kit, and any number of goroutines may call it.
+// nothing beyond the parse of its texts and the list that
+// [lowering.GroupOverloads] allocates for a class whose overloads stand
+// apart. Lower is the lowering of the backend kit, and any number of
+// goroutines may call it.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
-	if err := checkDecl(s); err != nil {
+	return lower(s, true)
+}
+
+// LowerStub lowers a declaration of a stub file as [Lower] lowers it, after
+// it drops the body of each callable that the declaration is or contains. A
+// stub file writes ... for every body, so it imports nothing that a body
+// names. A stub file states the overload signatures of a name without its
+// implementation, so LowerStub accepts the signatures of a method name
+// without one. LowerStub allocates what Lower allocates.
+func LowerStub(s symbol.Symbol) ([]symbol.Symbol, error) {
+	dropBodies(s)
+	return lower(s, false)
+}
+
+// lower checks and reshapes the declaration s as [Lower] states. Where
+// implemented is set, the overload signatures of each method name of a
+// class need an implementation, as a module needs and a stub file does
+// not.
+func lower(s symbol.Symbol, implemented bool) ([]symbol.Symbol, error) {
+	overloads(s)
+	if err := checkDecl(s, implemented); err != nil {
 		return nil, err
 	}
 	harden(s)
@@ -89,13 +119,38 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	return append(protocols, s), nil
 }
 
-// LowerStub lowers a declaration of a stub file as [Lower] lowers it, after
-// it drops the body of each callable that the declaration is or contains. A
-// stub file writes ... for every body, so it imports nothing that a body
-// names. LowerStub allocates what Lower allocates.
-func LowerStub(s symbol.Symbol) ([]symbol.Symbol, error) {
-	dropBodies(s)
-	return Lower(s)
+// overloads gives the mark Overload to the function or the method s, and
+// to each method of the class s and of the classes that it nests, whose
+// annotations state the decorator overload. It puts the overload
+// signatures of each method name of such a class right before the
+// implementation of the name.
+func overloads(s symbol.Symbol) {
+	var methods *emit.Slot[*emit.Method]
+	var types []symbol.Symbol
+	switch d := s.(type) {
+	case *emit.Function:
+		d.Overload = d.Overload || stated(d.Annotations, overloadDecorator)
+	case *emit.Method:
+		d.Overload = d.Overload || stated(d.Annotations, overloadDecorator)
+	case *emit.Struct:
+		methods, types = &d.Methods, d.Types.Items()
+	case *emit.Interface:
+		methods, types = &d.Methods, d.Types.Items()
+	case *emit.Enum:
+		methods = &d.Methods
+	}
+	if methods == nil {
+		return
+	}
+	for _, m := range methods.Items() {
+		m.Overload = m.Overload || stated(m.Annotations, overloadDecorator)
+	}
+	if methods.Len() > 1 {
+		methods.Replace(lowering.GroupOverloads(methods.Items())...)
+	}
+	for _, t := range types {
+		overloads(t)
+	}
 }
 
 // dropBodies clears the body of the function or the method s, and of each
@@ -124,13 +179,14 @@ func dropBodies(s symbol.Symbol) {
 }
 
 // checkDecl returns the first refusal of the lowering of s and of each
-// declaration that s contains.
-func checkDecl(s symbol.Symbol) error {
+// declaration that s contains. implemented states whether the overload
+// signatures of a method name of a class need an implementation.
+func checkDecl(s symbol.Symbol, implemented bool) error {
 	switch d := s.(type) {
 	case *emit.Struct:
-		return checkHost(d, d.Name, d.Annotations, d.Fields.Items(), d.Methods.Items(), d.Types.Items())
+		return checkHost(d, d.Name, d.Annotations, d.Fields.Items(), d.Methods.Items(), d.Types.Items(), implemented)
 	case *emit.Interface:
-		return checkHost(d, d.Name, d.Annotations, d.Fields.Items(), d.Methods.Items(), d.Types.Items())
+		return checkHost(d, d.Name, d.Annotations, d.Fields.Items(), d.Methods.Items(), d.Types.Items(), implemented)
 	case *emit.Enum:
 		if err := checkAnnotations(d, d.Annotations); err != nil {
 			return err
@@ -143,7 +199,7 @@ func checkDecl(s symbol.Symbol) error {
 				return err
 			}
 		}
-		return checkHost(d, d.Name, nil, d.Fields.Items(), d.Methods.Items(), nil)
+		return checkHost(d, d.Name, nil, d.Fields.Items(), d.Methods.Items(), nil, implemented)
 	case *emit.Sum:
 		return checkSum(d)
 	case *emit.Function:
@@ -171,10 +227,12 @@ func checkDecl(s symbol.Symbol) error {
 }
 
 // checkHost checks a class host with its annotations, its fields, its
-// methods and its nested types, and the names that it declares.
+// methods and its nested types, and the names that it declares. A Protocol
+// needs no implementation of its overload signatures, and neither does a
+// class where implemented is not set.
 func checkHost(
 	host symbol.Symbol, name string, annotations symbol.Annotations,
-	fields []*emit.Field, methods []*emit.Method, types []symbol.Symbol,
+	fields []*emit.Field, methods []*emit.Method, types []symbol.Symbol, implemented bool,
 ) error {
 	if err := checkAnnotations(host, annotations); err != nil {
 		return err
@@ -193,11 +251,12 @@ func checkHost(
 		}
 	}
 	for _, t := range types {
-		if err := checkDecl(t); err != nil {
+		if err := checkDecl(t, implemented); err != nil {
 			return err
 		}
 	}
-	return members(name, fields, methods)
+	_, protocol := host.(*emit.Interface)
+	return members(name, fields, methods, implemented && !protocol)
 }
 
 // checkMethod checks a method, its parameters and their texts.
@@ -347,10 +406,13 @@ func checkParams(name string, ps []*emit.Param) error {
 
 // members returns an error for a name that the class host declares twice:
 // a field and another member of one name, two methods of one name unless
-// all but the last are overloads or each is another accessor of one
-// property, and a setter or a deleter without a getter of its name before
-// it, which Python decorates through the property of the getter.
-func members(host string, fields []*emit.Field, methods []*emit.Method) error {
+// all but the last are overload signatures or each is another accessor of
+// one property, and a setter or a deleter without a getter of its name
+// before it, which Python decorates through the property of the getter.
+// Where implemented is set, members also returns an error for the overload
+// signatures of a name and a level without an implementation, unless they
+// are abstract.
+func members(host string, fields []*emit.Field, methods []*emit.Method, implemented bool) error {
 	for i, f := range fields {
 		for _, g := range fields[:i] {
 			if g.Name == f.Name {
@@ -376,7 +438,7 @@ func members(host string, fields []*emit.Field, methods []*emit.Method) error {
 			getter = getter || earlier.Accessor == symbol.AccessorGet
 			accessors := m.Accessor != symbol.AccessorNone && earlier.Accessor != symbol.AccessorNone &&
 				m.Accessor != earlier.Accessor
-			if !accessors && !stated(earlier.Annotations, overloadDecorator) {
+			if !accessors && !earlier.Overload {
 				return refuse("%s declares two methods named %s, and a class declares a name once "+
 					"outside the overloads and the accessors of one name", host, m.Name)
 			}
@@ -388,6 +450,11 @@ func members(host string, fields []*emit.Field, methods []*emit.Method) error {
 		case m.Accessor == symbol.AccessorDelete && !getter:
 			return refuse("a deleter belongs to a property, and %s declares the deleter %s before its getter",
 				host, m.Name)
+		case implemented && m.Overload && !m.Abstract && !slices.ContainsFunc(methods, func(other *emit.Method) bool {
+			return !other.Overload && !other.Indexer && other.Name == m.Name && other.Level == m.Level
+		}):
+			return refuse("%s declares the overload signatures of %s and no implementation, "+
+				"and a class of a module implements each overloaded name", host, m.Name)
 		}
 	}
 	return nil
@@ -426,7 +493,9 @@ func harden(s symbol.Symbol) {
 }
 
 // lowerSum lowers a sum into a frozen dataclass for each variant and an
-// alias that joins them.
+// alias that joins them. Each dataclass has its own copy of the type
+// parameters and the contracts of the sum, because the settle rewrites a
+// reference in place.
 func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 	variants := s.Variants.Items()
 	out := make([]symbol.Symbol, 0, len(variants)+1)
@@ -439,6 +508,7 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 		class := &emit.Struct{
 			Origin: s.Origin, Doc: v.Doc, Comment: v.Comment, Name: name, Visibility: s.Visibility,
 			TypeParams:  lowering.CopyTypeParams(s.TypeParams),
+			Implements:  lowering.CopyTypeRefs(s.Implements),
 			Annotations: symbol.Annotations{{Name: dataclassDecorator, Args: []string{frozenArg}}},
 		}
 		class.Fields.Append(v.Fields.Items()...)

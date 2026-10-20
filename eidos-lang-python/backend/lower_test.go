@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/python/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -26,6 +27,10 @@ var frozen = symbol.Annotations{{Name: "dataclass", Args: []string{"frozen=True"
 // and Closer. The lowering rewrites an intersection in place and keeps its
 // members, so each case builds its own intersection of these members.
 var sizedCloser = []*emit.TypeRef{{Spelling: "Sized"}, {Spelling: "Closer"}}
+
+// overloaded are the annotations of an overload signature that a source of
+// Python states.
+var overloaded = symbol.Annotations{{Name: overloadDecorator}}
 
 // TestLower pins the lowering of the constructs that Python declares in
 // other declarations, and the refusals of the constructs that it cannot
@@ -78,6 +83,26 @@ func TestLower(t *testing.T) {
 			alias, is := got[1].(*emit.Alias)
 			assert.True(t, is, "the second declaration is the union")
 			assert.Equal(t, alias.Target.Elems[0].Args[0].Spelling, "T", "the argument of the variant in the union")
+		})
+
+		t.Run("returns the contracts of a sum as the bases of each dataclass", func(t *testing.T) {
+			t.Parallel()
+
+			sum := &emit.Sum{
+				Name: "Shape", Implements: []*emit.TypeRef{{Spelling: "Measured"}},
+				Variants: emit.SlotOf(&emit.SumVariant{Name: "circle"}, &emit.SumVariant{Name: "empty"}),
+			}
+			got, err := backend.Lower(sum)
+			assert.NoError(t, err, "Python declares the sum")
+			assert.Length(t, got, 3, "two dataclasses and the union")
+			circle, is := got[0].(*emit.Struct)
+			assert.True(t, is, "the first declaration is a dataclass")
+			empty, is := got[1].(*emit.Struct)
+			assert.True(t, is, "the second declaration is a dataclass")
+			expect.Equal(t, circle.Implements, sum.Implements, "the contracts of the first dataclass")
+			expect.NoDuplicates(t, func() ([]*emit.TypeRef, error) {
+				return []*emit.TypeRef{sum.Implements[0], circle.Implements[0], empty.Implements[0]}, nil
+			}, "the settle rewrites each reference of a dataclass once", assert.ByIdentity())
 		})
 
 		t.Run("returns a Protocol for an intersection that a field states", func(t *testing.T) {
@@ -241,6 +266,81 @@ func TestLower(t *testing.T) {
 			}, "each member without its mark and private")
 		})
 
+		// Each case returns a declaration and the mark of the callable whose
+		// annotations state the decorator overload. The lowering sets the
+		// mark, so each case builds its own declaration.
+		marks := []struct {
+			name string
+			give func() (symbol.Symbol, *bool)
+		}{
+			{
+				name: "marks a function whose annotations state the decorator overload",
+				give: func() (symbol.Symbol, *bool) {
+					f := &emit.Function{Name: "load", Annotations: symbol.Annotations{{Name: "typing.overload"}}}
+					return f, &f.Overload
+				},
+			},
+			{
+				name: "marks a method whose annotations state the decorator overload",
+				give: func() (symbol.Symbol, *bool) {
+					m := &emit.Method{Name: "get", Annotations: overloaded}
+					return m, &m.Overload
+				},
+			},
+			{
+				name: "marks an overload of a method of a class",
+				give: func() (symbol.Symbol, *bool) {
+					m := &emit.Method{Name: "get", Annotations: overloaded}
+					return &emit.Struct{Name: rowName, Methods: emit.SlotOf(m, &emit.Method{Name: "get"})}, &m.Overload
+				},
+			},
+			{
+				name: "marks an overload of a method of a Protocol",
+				give: func() (symbol.Symbol, *bool) {
+					m := &emit.Method{Name: "get", Annotations: overloaded}
+					return &emit.Interface{Name: "Store", Methods: emit.SlotOf(m)}, &m.Overload
+				},
+			},
+			{
+				name: "marks an overload of a method of an enum",
+				give: func() (symbol.Symbol, *bool) {
+					m := &emit.Method{Name: "label", Annotations: overloaded}
+					enum := &emit.Enum{Name: phaseName, Methods: emit.SlotOf(m, &emit.Method{Name: "label"})}
+					return enum, &m.Overload
+				},
+			},
+			{
+				name: "marks an overload of a method of a nested class",
+				give: func() (symbol.Symbol, *bool) {
+					m := &emit.Method{Name: "get", Annotations: overloaded}
+					inner := &emit.Struct{Name: "Inner", Methods: emit.SlotOf(m, &emit.Method{Name: "get"})}
+					return &emit.Struct{Name: rowName, Types: emit.SlotOf[symbol.Symbol](inner)}, &m.Overload
+				},
+			},
+		}
+		for _, tt := range marks {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				d, overload := tt.give()
+				_, err := backend.Lower(d)
+				assert.NoError(t, err, "Python declares the overload")
+				assert.True(t, *overload, "the callable is an overload signature")
+			})
+		}
+
+		t.Run("groups the overload signatures of a method name before its implementation", func(t *testing.T) {
+			t.Parallel()
+
+			implementation, put := &emit.Method{Name: "get"}, &emit.Method{Name: "put"}
+			signature := &emit.Method{Name: "get", Overload: true}
+			row := &emit.Struct{Name: rowName, Methods: emit.SlotOf(implementation, put, signature)}
+			_, err := backend.Lower(row)
+			assert.NoError(t, err, "Python declares the overloads")
+			assert.Equal(t, row.Methods.Items(), []*emit.Method{signature, implementation, put},
+				"the signature right before the implementation")
+		})
+
 		passes := []struct {
 			name string
 			give symbol.Symbol
@@ -257,6 +357,19 @@ func TestLower(t *testing.T) {
 				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(
 					&emit.Method{Name: "get", Annotations: symbol.Annotations{{Name: overloadDecorator}}},
 					&emit.Method{Name: "get"},
+				)},
+			},
+			{
+				name: "returns nothing for the overload signatures of a method of a Protocol",
+				give: &emit.Interface{Name: "Store", Methods: emit.SlotOf(
+					&emit.Method{Name: "get", Overload: true}, &emit.Method{Name: "get", Overload: true},
+				)},
+			},
+			{
+				name: "returns nothing for the abstract overload signatures of a method",
+				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(
+					&emit.Method{Name: "get", Overload: true, Abstract: true},
+					&emit.Method{Name: "get", Overload: true, Abstract: true},
 				)},
 			},
 			{
@@ -448,6 +561,30 @@ func TestLower(t *testing.T) {
 				},
 				want: "python: Store declares two methods named get, and a class declares a name once " +
 					"outside the overloads and the accessors of one name",
+			},
+			{
+				name: "returns an error for the second implementation of an overloaded method",
+				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(
+					&emit.Method{Name: "get", Overload: true}, &emit.Method{Name: "get"}, &emit.Method{Name: "get"},
+				)},
+				want: "python: Row declares two methods named get, and a class declares a name once " +
+					"outside the overloads and the accessors of one name",
+			},
+			{
+				name: "returns an error for the overload signatures of a method without an implementation",
+				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(
+					&emit.Method{Name: "get", Overload: true}, &emit.Method{Name: "get", Overload: true},
+				)},
+				want: "python: Row declares the overload signatures of get and no implementation, " +
+					"and a class of a module implements each overloaded name",
+			},
+			{
+				name: "returns an error for the overload signatures of a method whose implementation is at another level",
+				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(
+					&emit.Method{Name: "get", Overload: true, Level: symbol.LevelType}, &emit.Method{Name: "get"},
+				)},
+				want: "python: Row declares the overload signatures of get and no implementation, " +
+					"and a class of a module implements each overloaded name",
 			},
 			{
 				name: "returns an error for a sum without a variant", give: &emit.Sum{Name: "Shape"},
@@ -647,6 +784,16 @@ func TestLower(t *testing.T) {
 				assert.Equal(t, *body, emit.Body{}, "the body of the stub")
 			})
 		}
+
+		t.Run("returns nothing for the overload signatures of a method without an implementation", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.LowerStub(&emit.Struct{Name: rowName, Methods: emit.SlotOf(
+				&emit.Method{Name: "get", Overload: true}, &emit.Method{Name: "get", Overload: true},
+			)})
+			assert.NoError(t, err, "a stub file states the signatures alone")
+			assert.Nil(t, got, "the class passes through")
+		})
 	})
 }
 

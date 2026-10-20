@@ -28,7 +28,7 @@ const (
 // keysAllocs is the count of a registration into a fresh registry. Keys
 // allocates the eight kind lists of the keys. The registry allocates
 // fifteen times for its namespace claim and for the growth of its lists and
-// its map to fourteen keys.
+// its map to thirteen keys.
 const keysAllocs = 8 + 15
 
 // value is the type of the value that the frontend stamps under a key.
@@ -258,7 +258,6 @@ func every() []key {
 		{name: python.StubbedKey, kinds: file},
 		{name: python.TypedDictKey, kinds: []symbol.Kind{symbol.KindInterface}},
 		{name: python.InitVarKey, kinds: []symbol.Kind{symbol.KindField}},
-		{name: python.ImplementationKey, kinds: callable},
 		{name: python.GeneratorKey, kinds: callable},
 		{name: python.TypeVarKey, value: text, kinds: []symbol.Kind{symbol.KindVariable}},
 		{name: python.BasesKey, value: list, kinds: []symbol.Kind{symbol.KindEnum}},

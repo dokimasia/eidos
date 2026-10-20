@@ -92,16 +92,23 @@ func TestDecorators(t *testing.T) {
 				{
 					name: "returns the decorators of the facts of a method in the order that Python applies them",
 					give: &emit.Method{
-						Name: "load", Override: true, Final: true, Level: symbol.LevelType, Abstract: true,
-						Accessor: symbol.AccessorGet,
+						Name: "load", Overload: true, Override: true, Final: true, Level: symbol.LevelType,
+						Abstract: true, Accessor: symbol.AccessorGet,
 					},
 					giveVersion: python.Version312,
-					want:        "@override\n@final\n@staticmethod\n@property\n@abstractmethod\n",
+					want:        "@overload\n@override\n@final\n@staticmethod\n@property\n@abstractmethod\n",
 					wantImports: []render.Entry{
 						{Path: "abc", Name: "abstractmethod"},
 						{Path: "typing", Name: "final"},
+						{Path: "typing", Name: "overload"},
 						{Path: "typing", Name: "override"},
 					},
+				},
+				{
+					name:        "returns overload for an overload signature of a function",
+					give:        &emit.Function{Name: "load", Overload: true},
+					want:        "@overload\n",
+					wantImports: []render.Entry{{Path: "typing", Name: "overload"}},
 				},
 				{
 					name: "returns override from typing_extensions before Python 3.12",

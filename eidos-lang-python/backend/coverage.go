@@ -26,7 +26,10 @@ import (
 // result of a signature has no comment of its own. Python passes an
 // argument by position or by keyword, so the passing of a parameter
 // renders. The fields of an enum render as attributes of its members that
-// are no members.
+// are no members. The contracts of an enum refuse, because the metaclass of
+// an enum conflicts with the metaclass of a Protocol. Each variant class of
+// a sum takes the contracts of the sum as its bases. An overload signature
+// renders under the decorator overload of typing.
 //
 // Coverage builds the table on every call, which the caller keeps.
 func Coverage() render.Coverage {
@@ -43,6 +46,7 @@ func Coverage() render.Coverage {
 			symbol.FactAbstract:         render.Renders,
 			symbol.FactFinal:            render.Renders,
 			symbol.FactOverride:         render.Renders,
+			symbol.FactOverload:         render.Renders,
 			symbol.FactDefaultBody:      render.Renders,
 			symbol.FactAccessor:         render.Renders,
 			symbol.FactIndexer:          render.Renders,
@@ -79,6 +83,9 @@ func Coverage() render.Coverage {
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
 			symbol.KindStruct: {
 				symbol.FactLevel: render.Holds, // a nested class is at the level of its type
+			},
+			symbol.KindEnum: {
+				symbol.FactImplements: render.Refuses, // the metaclasses of Enum and Protocol conflict
 			},
 			symbol.KindSum: {
 				symbol.FactMethods: render.Refuses, // a union has no members

@@ -83,6 +83,8 @@ const floatBits = 64
 // spoke of the Python target in the cross-language hub, and it spells each
 // form this way:
 //
+//   - a type parameter as its name, through [spoke.Param], at every depth
+//     of a shape;
 //   - every integer as int, whose values have no bound, and a float of 64
 //     bits or fewer as float;
 //   - Bool, Text and Bytes as bool, str and bytes, and the top type as the
@@ -118,12 +120,13 @@ const floatBits = 64
 // either mutability as an immutable tuple.
 //
 // Type refuses an inline type, because its shape has the types of its
-// members and not their names. It refuses an opaque type and an
-// intersection of a member that is not an interface, because Python has no
-// form of them. It refuses a wildcard with a lower bound, a float of more
-// than 64 bits, an array of an unstated length and an intersection without
-// members. It refuses a form whose child it refuses, and the error contains
-// the source spelling of the child.
+// members and not their names. It refuses an opaque type of another
+// reference than a type parameter and an intersection of a member that is
+// not an interface, because Python has no form of them. It refuses a
+// wildcard with a lower bound, a float of more than 64 bits, an array of
+// an unstated length and an intersection without members. It refuses a
+// form whose child it refuses, and the error contains the source spelling
+// of the child.
 //
 // # Allocation contract
 //
@@ -143,6 +146,9 @@ func Type(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 // pythonType spells one shape by the rules of [Type], and returns a refusal
 // without the language's prefix.
 func pythonType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	if t, param := spoke.Param(s); param {
+		return t, nil
+	}
 	spell := func(c rules.TypeShape) (*emit.TypeRef, error) { return pythonType(c, p) }
 	switch s.Form {
 	case symbol.FormScalar:

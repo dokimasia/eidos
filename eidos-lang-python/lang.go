@@ -52,7 +52,7 @@ const Indent = "    "
 // graph, and not the release of the module. Every unit key folds it beside
 // the version of the grammar. A change of the load changes it, which
 // invalidates every unit that the old value keyed.
-const FrontendVersion = "0.1.0"
+const FrontendVersion = "0.2.0"
 
 // Target is the rendering target through which a plan selects the Python
 // backend. Its spelling is the spelling of [Lang], so the emitter copies a
@@ -62,7 +62,7 @@ const Target plugin.Target = "python"
 // BackendVersion is the version of the output of the backend. The
 // composition fingerprint folds it, and every change of the rendered output
 // changes it.
-const BackendVersion = "0.1.0"
+const BackendVersion = "0.2.0"
 
 // Syntax returns the comment forms of Python: the line comment # and no
 // block comment. A docstring is a string, and the frontend reads it as

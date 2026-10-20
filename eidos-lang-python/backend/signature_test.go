@@ -178,6 +178,11 @@ func TestSignature(t *testing.T) {
 					give: &emit.Function{Name: "load", Annotations: symbol.Annotations{{Name: "traced"}}},
 					want: "@traced\ndef load() -> None: ...\n",
 				},
+				{
+					name: "returns the decorator overload before an overload signature",
+					give: &emit.Function{Name: "load", Overload: true},
+					want: "@" + overloadDecorator + "\ndef load() -> None: ...\n",
+				},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
@@ -220,12 +225,11 @@ func TestSignature(t *testing.T) {
 				t.Parallel()
 
 				w, _ := newWriter(t, python.Version311, false)
-				overloaded := symbol.Annotations{{Name: overloadDecorator}}
 				assert.Total(t, func(f *emit.Function) error {
 					_, err := w.Function(nil, f, "")
 					return err
 				}, []*emit.Function{
-					{Name: "find", Annotations: overloaded}, {Name: "find", Annotations: overloaded}, {Name: "find"},
+					{Name: "find", Overload: true}, {Name: "find", Overload: true}, {Name: "find"},
 				}, "Python declares the overloads and the implementation of one function")
 			})
 
@@ -236,9 +240,7 @@ func TestSignature(t *testing.T) {
 					w, _ := newWriter(t, python.Version311, false)
 					_, err := w.Function(nil, &emit.Function{Name: "find"}, "")
 					assert.NoError(t, err, "Python declares the first function")
-					_, err = w.Function(nil, &emit.Function{Name: "find", Annotations: symbol.Annotations{
-						{Name: overloadDecorator},
-					}}, "")
+					_, err = w.Function(nil, &emit.Function{Name: "find", Overload: true}, "")
 					assert.HasError(t, err, "Python refuses the second function")
 					assert.Equal(t, err.Error(), "python: a module declares two functions named find, and a module "+
 						"declares a name once outside the overloads of one function", "the refusal names the function")

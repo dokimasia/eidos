@@ -89,15 +89,14 @@ func (l *lowering) definition(outermost treesitter.Node, host *classBody) symbol
 
 // function lowers a function at the top level of a module. The overloads
 // of a name and the implementation after them are functions of one name,
-// each with its discriminator, and the implementation is stamped
-// python.implementation. A function whose own body yields is stamped
-// python.generator. A function that the signature depth leaves out, and a
-// second declaration of a name, take their comments with them.
+// each with its discriminator. A function under the decorator overload of
+// typing has the mark Overload. A function whose own body yields is
+// stamped python.generator. A function that the signature depth leaves
+// out, and a second declaration of a name, take their comments with them.
 func (l *lowering) function(def, outermost treesitter.Node, decorators []decorator) symbol.Symbol {
 	nameNode := def.Child(l.v.fieldName)
 	name := nameNode.Text()
 	overload := decoratedBy(decorators, typingModule, overloadName)
-	implementation := !overload && l.scope.declared[name] && l.overloads[name]
 	if !l.declare(name, l.pos(nameNode), overload) {
 		l.skip(outermost)
 		return nil
@@ -111,10 +110,12 @@ func (l *lowering) function(def, outermost treesitter.Node, decorators []decorat
 	sig := l.signature(def, false, nil)
 	fn := &node.Function{
 		Name: name, Pos: l.pos(nameNode), Doc: sig.doc, Comment: comment, Visibility: vis, Async: sig.async,
-		TypeParams: sig.typeParams, Params: sig.params, Returns: sig.returns,
+		Overload: overload, TypeParams: sig.typeParams, Params: sig.params, Returns: sig.returns,
 	}
 	fn.Annotations = l.decorate(fn, decorators)
-	l.callableStamps(fn, implementation, sig.generator, def)
+	if sig.generator {
+		l.u.Graph().Stamp(fn, meta.RawStamp{Key: python.GeneratorKey, Value: true, Pos: l.pos(def)})
+	}
 	l.u.AttachCarriers(fn, carriers, BadCarrier)
 	return fn
 }
@@ -125,8 +126,10 @@ func (l *lowering) function(def, outermost treesitter.Node, decorators []decorat
 // method are at type level, and so is __new__. __init__ and __new__
 // construct. A getter of a property, and its setter and its deleter under
 // the decorators of the name of the property, are three methods of one
-// name. A method of a Protocol is abstract where its body has no statement
-// beside a docstring, ... and pass, and has a default body otherwise.
+// name. A method under the decorator overload of typing has the mark
+// Overload. A method of a Protocol is abstract where its body has no
+// statement beside a docstring, ... and pass, and has a default body
+// otherwise.
 func (l *lowering) method(def, outermost treesitter.Node, decorators []decorator, c *classBody) *node.Method {
 	nameNode := def.Child(l.v.fieldName)
 	name := nameNode.Text()
@@ -142,7 +145,6 @@ func (l *lowering) method(def, outermost treesitter.Node, decorators []decorator
 		accessor = symbol.AccessorGet
 	}
 	overload := decoratedBy(decorators, typingModule, overloadName)
-	implementation := !overload && c.declared[name] && c.overloads[name]
 	if !c.declare(l, name, l.pos(nameNode), overload, accessor != symbol.AccessorNone) {
 		l.skip(outermost)
 		return nil
@@ -163,6 +165,7 @@ func (l *lowering) method(def, outermost treesitter.Node, decorators []decorator
 		Final:      decoratedBy(decorators, typingModule, finalName),
 		Override:   decoratedBy(decorators, typingModule, overrideName),
 		Async:      sig.async,
+		Overload:   overload,
 		Accessor:   accessor,
 		Constructs: name == initMethod || name == newMethod,
 		Receiver:   sig.receiver,
@@ -175,26 +178,15 @@ func (l *lowering) method(def, outermost treesitter.Node, decorators []decorator
 		m.Level = symbol.LevelType
 	}
 	m.Annotations = l.decorate(m, decorators)
-	l.callableStamps(m, implementation, sig.generator, def)
+	if sig.generator {
+		l.u.Graph().Stamp(m, meta.RawStamp{Key: python.GeneratorKey, Value: true, Pos: l.pos(def)})
+	}
 	l.u.AttachCarriers(m, carriers, BadCarrier)
 	if !l.signatures && !static && sig.receiver != nil {
 		body := methodBody{block: def.Child(l.v.fieldBody), self: sig.receiver.Name, init: name == initMethod}
 		c.bodies = append(c.bodies, body)
 	}
 	return m
-}
-
-// callableStamps stamps the marks of a callable that the model has no field
-// for: python.implementation on the implementation after the overloads of
-// its name, and python.generator on a callable whose own body yields.
-func (l *lowering) callableStamps(subject symbol.Symbol, implementation, generator bool, def treesitter.Node) {
-	gb := l.u.Graph()
-	if implementation {
-		gb.Stamp(subject, meta.RawStamp{Key: python.ImplementationKey, Value: true, Pos: l.pos(def)})
-	}
-	if generator {
-		gb.Stamp(subject, meta.RawStamp{Key: python.GeneratorKey, Value: true, Pos: l.pos(def)})
-	}
 }
 
 // signature lowers the signature of a callable: its type parameters, its

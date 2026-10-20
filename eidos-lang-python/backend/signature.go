@@ -69,15 +69,15 @@ type callable struct {
 // file writes ... for every body. The signature is on one line where it
 // fits in the line, and wraps as [Layout.Format] wraps a group otherwise.
 //
-// A module declares a function of a name once, outside the overloads of
-// one function: every function of a name before the last has the overload
-// decorator. The import set of the file records each function without the
-// decorator, so the writer refuses a later function of its name.
+// A module declares a function of a name once, outside the overload
+// signatures of one function. The import set of the file records each
+// function without the mark Overload, so the writer refuses a later
+// function of its name.
 //
 // Error modes: a function of a name that an earlier function of the file
-// without the overload decorator declares, the refusals of the type
-// parameters, the parameters and the results, and the errors of the start
-// of a declaration.
+// without the mark Overload declares, the refusals of the type parameters,
+// the parameters and the results, and the errors of the start of a
+// declaration.
 func (w *Writer) Function(h *emit.File, f *emit.Function, body string) (string, error) {
 	if err := w.declare(h, f); err != nil {
 		return "", err
@@ -86,7 +86,7 @@ func (w *Writer) Function(h *emit.File, f *emit.Function, body string) (string, 
 		return "", refuse("a module declares two functions named %s, and a module declares a name once "+
 			"outside the overloads of one function", f.Name)
 	}
-	if !stated(f.Annotations, overloadDecorator) {
+	if !f.Overload {
 		w.set.AddNamed(implementedPath, f.Name)
 	}
 	c := callable{

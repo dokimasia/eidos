@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/python"
 	"go.dokimi.dev/eidos/lang/python/backend"
@@ -19,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -27,12 +29,19 @@ import (
 // output contract stamps.
 const contractBrand = "python"
 
+// The names of the function whose overloads the cases render, and of the
+// class that extends [baseName].
+const (
+	loadName    = "load"
+	derivedName = "Derived"
+)
+
 // These constants are the allocations of a build and of the scaled corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the table of
 	// the versions of the standard library, the file template and the seven
 	// kind templates.
-	newAllocs = 855
+	newAllocs = 852
 	// renderAllocs is one render of the scaled corpus of 10,000 files and
 	// 200,000 declarations. One run counted 3,351,712: about seven in ten in
 	// text/template's execution and its reflective calls of the vocabulary,
@@ -186,6 +195,41 @@ func TestNew(t *testing.T) {
 			assert.Equal(t, got["svc/id_gen.py"], "type Id = string  # opaque\n\"\"\"ID names a row.\"\"\"\n\n"+
 				"type Match[T: Codec] = Keyed[T]\n\"\"\"Match names a keyed lookup.\"\"\"\n", "the type statements")
 		})
+
+		t.Run("returns a backend that writes the overload signatures of a function before its implementation",
+			func(t *testing.T) {
+				t.Parallel()
+
+				body, diags := rendered(t, backend.New(), versionPolicy(t, python.Version311),
+					loader("object", false), loader("int", true))
+				assert.Empty(t, diags, "the render reports nothing")
+				assert.ContainsInOrder(t, body, []string{
+					"@overload\ndef load(id: int) -> None: ...\n", "def load(id: object) -> None: ...\n",
+				}, "the signature before the implementation")
+			})
+
+		t.Run("returns a backend that skips the overload signatures of a function without an implementation",
+			func(t *testing.T) {
+				t.Parallel()
+
+				body, diags := rendered(t, backend.New(), versionPolicy(t, python.Version311),
+					&emit.Constant{Name: "LIMIT", Value: "8"}, loader("int", true))
+				assert.Length(t, diags, 1, "one finding")
+				expect.Equal(t, diags[0].Code, render.UnimplementedOverload, "Python requires the implementation")
+				expect.NotContains(t, body, "def "+loadName, "the signature does not render")
+			})
+
+		t.Run("returns a backend that writes a class after the class that it extends", func(t *testing.T) {
+			t.Parallel()
+
+			base := &emit.Struct{Name: baseName}
+			derived := &emit.Struct{Name: derivedName, Extends: []*emit.TypeRef{{Spelling: baseName}}}
+			body, diags := rendered(t, backend.New(), versionPolicy(t, python.Version311), derived, base)
+			assert.Empty(t, diags, "the render reports nothing")
+			head := "class " + derivedName + "(" + baseName + ")"
+			assert.ContainsInOrder(t, body, []string{"class " + baseName, head},
+				"Python defines a base before a class names it")
+		})
 	})
 
 	t.Run("Stubs", func(t *testing.T) {
@@ -224,6 +268,30 @@ func TestNew(t *testing.T) {
 			for path, want := range canonicalStubs {
 				assert.Equal(t, got[path], want, "the stub file "+path)
 			}
+		})
+
+		t.Run("returns a backend that writes the overload signatures of a function without an implementation",
+			func(t *testing.T) {
+				t.Parallel()
+
+				body, diags := rendered(t, backend.Stubs(), versionPolicy(t, python.Version311),
+					loader("int", true), loader("str", true))
+				assert.Empty(t, diags, "the render reports nothing")
+				assert.ContainsInOrder(t, body, []string{
+					"@overload\ndef load(id: int) -> None: ...\n", "@overload\ndef load(id: str) -> None: ...\n",
+				}, "a stub file states the signatures alone")
+			})
+
+		t.Run("returns a backend that keeps the order of the flush", func(t *testing.T) {
+			t.Parallel()
+
+			base := &emit.Struct{Name: baseName}
+			derived := &emit.Struct{Name: derivedName, Extends: []*emit.TypeRef{{Spelling: baseName}}}
+			body, diags := rendered(t, backend.Stubs(), versionPolicy(t, python.Version311), derived, base)
+			assert.Empty(t, diags, "the render reports nothing")
+			head := "class " + derivedName + "(" + baseName + ")"
+			assert.ContainsInOrder(t, body, []string{head, "class " + baseName},
+				"a type checker reads a stub file without running it")
 		})
 	})
 }
@@ -293,6 +361,19 @@ func benchSetup(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
 	f := backendtest.ScaledFixture(tb, backend.RefusedKinds())
 	adapted(tb, f)
 	return backend.New(), f
+}
+
+// loader returns the function load of the module of the unit, which takes
+// an id of the type param, marked as an overload signature where signature
+// is set.
+func loader(param string, signature bool) *emit.Function {
+	return &emit.Function{
+		Origin: symbol.Identity{
+			Lang: python.Lang, Package: unitPkg, Name: loadName, Kind: symbol.KindFunction, Disc: param,
+		},
+		Name: loadName, Overload: signature,
+		Params: emit.SlotOf(&emit.Param{Name: idField, Type: &emit.TypeRef{Spelling: param}}),
+	}
 }
 
 // adapted states the bodies of the fixture f in the indentation of Python,

@@ -113,6 +113,18 @@ func TestCoverage(t *testing.T) {
 				name: "returns Renders for the fields of an enum",
 				kind: symbol.KindEnum, fact: symbol.FactFields, want: render.Renders,
 			},
+			{
+				name: "returns Refuses for the contracts of an enum",
+				kind: symbol.KindEnum, fact: symbol.FactImplements, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for the contracts of a sum",
+				kind: symbol.KindSum, fact: symbol.FactImplements, want: render.Renders,
+			},
+			{
+				name: "returns Renders for an overload signature of a function",
+				kind: symbol.KindFunction, fact: symbol.FactOverload, want: render.Renders,
+			},
 		}
 		coverage := backend.Coverage()
 		for _, tt := range tests {

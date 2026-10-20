@@ -21,6 +21,8 @@
 // assign to their receiver. A function and a method load with their
 // parameters, each passed by position, by keyword or in the way of the
 // language, their results, their type parameters and their decorators. A
+// callable under the decorator overload of typing has the mark Overload,
+// and the callable of its name without the mark is the implementation. A
 // module loads its variables, its constants under Final, its aliases, its
 // type variables, its imports and its __all__. An assignment without an
 // annotation whose value is a type expression, such as Ids = list[int], is
@@ -31,10 +33,10 @@
 //
 // The frontend stamps what the model has no field for under the keys of
 // the satellite root: the base TypedDict, the bases of an enum, the
-// keywords of a class statement, InitVar, the implementation of an
-// overloaded callable, a callable that yields, a type variable, the
-// metadata of Annotated, and the lazy imports, the future statements, the
-// comments of the head and the excluded branches of a file.
+// keywords of a class statement, InitVar, a callable that yields, a type
+// variable, the metadata of Annotated, and the lazy imports, the future
+// statements, the comments of the head and the excluded branches of a
+// file.
 //
 // # Types
 //

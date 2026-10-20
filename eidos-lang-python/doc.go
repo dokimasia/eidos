@@ -38,8 +38,7 @@
 //   - [TypedDictKey], [BasesKey] and [KeywordsKey] state the parts of a
 //     class statement, and [InitVarKey] a field of a dataclass that its
 //     instances do not keep.
-//   - [ImplementationKey] marks the implementation of an overloaded
-//     callable, and [GeneratorKey] a callable whose body yields.
+//   - [GeneratorKey] marks a callable whose body yields.
 //   - [TypeVarKey] marks the variable of a type variable, and
 //     [AnnotatedKey] lists the metadata of an Annotated type.
 //   - [LazyKey], [FutureKey], [HeadKey] and [ConditionKey] state the parts

@@ -12,9 +12,9 @@ import (
 )
 
 // The decorators that the writer writes for a fact of the model: the level
-// of a method, its accessor, and its abstract, final and overriding marks.
-// The property decorators of a setter and a deleter follow the name of the
-// property.
+// of a method, its accessor, its abstract, final and overriding marks, and
+// the mark of an overload signature. The property decorators of a setter
+// and a deleter follow the name of the property.
 const (
 	staticDecorator   = "staticmethod"
 	classDecorator    = "classmethod"
@@ -22,6 +22,7 @@ const (
 	abstractDecorator = "abstractmethod"
 	finalDecorator    = "final"
 	overrideDecorator = overrideName
+	overloadDecorator = "overload"
 	setterSuffix      = ".setter"
 	deleterSuffix     = ".deleter"
 )
@@ -31,8 +32,9 @@ const (
 const deprecatedDecorator = "deprecated"
 
 // factCount is the number of decorators that the facts of a method state at
-// most: override, final, the level, the accessor and abstractmethod.
-const factCount = 5
+// most: overload, override, final, the level, the accessor and
+// abstractmethod.
+const factCount = 6
 
 // decoratorLine is the room that the decorator lines of a declaration
 // reserve for each line. A longer line grows the text once more.
@@ -55,7 +57,7 @@ var decoratorModules = map[string]string{
 	abstractDecorator:      abcBaseModule,
 	finalDecorator:         typingModule,
 	overrideDecorator:      typingModule,
-	"overload":             typingModule,
+	overloadDecorator:      typingModule,
 	"runtime_checkable":    typingModule,
 	"no_type_check":        typingModule,
 	"dataclass_transform":  typingModule,
@@ -80,14 +82,16 @@ var decoratorModules = map[string]string{
 
 // Decorators writes the decorator lines of a class or a callable d: first
 // the decorators of its facts that its annotations do not state, then its
-// annotations in order. The facts of a method are override, final, the
-// level as staticmethod or classmethod, the accessor as property or as the
-// setter or the deleter of the property, and abstractmethod, in that order,
-// which is the order in which Python applies them from the inside out. An
+// annotations in order. The facts of a method are overload, override,
+// final, the level as staticmethod or classmethod, the accessor as property
+// or as the setter or the deleter of the property, and abstractmethod, in
+// that order, which is the order in which Python applies them from the
+// inside out. overload is the first line, as typeshed writes it. An
 // abstract method of a Protocol has no abstractmethod, because a method of
 // a Protocol without a body is abstract, and __new__ has no level
-// decorator, because Python makes it a static method of its own. The fact of
-// a class is final. A marker is no decorator.
+// decorator, because Python makes it a static method of its own. The fact
+// of a function is overload, and the fact of a class is final. A marker is
+// no decorator.
 //
 // A decorator of the table of the standard library imports from its module,
 // a dotted decorator imports the module of its first name, and a decorator
@@ -208,7 +212,14 @@ func (w *Writer) marked(name string) bool {
 // method, and an abstract method of a Protocol states no abstractmethod.
 func factDecorators(d, host symbol.Symbol, annotations symbol.Annotations, facts []string) []string {
 	switch t := d.(type) {
+	case *emit.Function:
+		if t.Overload {
+			facts = append(facts, overloadDecorator)
+		}
 	case *emit.Method:
+		if t.Overload {
+			facts = append(facts, overloadDecorator)
+		}
 		if t.Override {
 			facts = append(facts, overrideDecorator)
 		}

@@ -69,17 +69,19 @@ func TestCallable(t *testing.T) {
 			expect.Empty(t, stampsOn(gb, fn, python.GeneratorKey), "the body of outer does not yield")
 		})
 
-		t.Run("stamps python.implementation on the implementation after the overloads", func(t *testing.T) {
+		t.Run("marks a function under the decorator overload as an overload signature", func(t *testing.T) {
 			t.Parallel()
 
-			gb, _ := parsedSource(t, "import typing\n\n@typing.overload\ndef f(x: int) -> int: ...\n"+
-				"def f(x): return x\n")
-			decls := fileOf(t, gb).Decls
+			decls := declsOf(t, "import typing\n\n@typing.overload\ndef f(x: int) -> int: ...\ndef f(x): return x\n")
 			assert.Length(t, decls, 2, "the overload and the implementation")
-			expect.Empty(t, stampsOn(gb, decls[0], python.ImplementationKey), "the overload is no implementation")
-			expect.Equal(t, stampsOn(gb, decls[1], python.ImplementationKey), []any{true}, "the implementation")
-			fn, _ := decls[0].(*node.Function)
-			expect.Equal(t, fn.Annotations, symbol.Annotations{{Name: "typing.overload"}}, "the decorator as written")
+			overload, _ := decls[0].(*node.Function)
+			implementation, _ := decls[1].(*node.Function)
+			assert.NotNil(t, overload, "the overload is a function")
+			assert.NotNil(t, implementation, "the implementation is a function")
+			expect.True(t, overload.Overload, "the overload is a signature")
+			expect.False(t, implementation.Overload, "the implementation is no signature")
+			expect.Equal(t, overload.Annotations, symbol.Annotations{{Name: "typing.overload"}},
+				"the decorator as written")
 		})
 
 		t.Run("takes the trailing comment on the line of the name", func(t *testing.T) {
@@ -182,6 +184,25 @@ func TestCallable(t *testing.T) {
 			expect.True(t, it.Methods[0].Abstract, "a docstring is no body")
 			expect.False(t, it.Methods[0].HasDefault, "an abstract method has no default")
 			expect.True(t, it.Methods[1].HasDefault, "a body is the default of a class that names the Protocol")
+		})
+
+		t.Run("marks a method under the decorator overload as an overload signature", func(t *testing.T) {
+			t.Parallel()
+
+			st := named[*node.Struct](t, declsOf(t, "from typing import overload\n\n\nclass C:\n"+
+				"    @overload\n    def get(self, key: int) -> int: ...\n    def get(self, key): ...\n"), "C")
+			assert.Length(t, st.Methods, 2, "the overload and the implementation")
+			expect.True(t, st.Methods[0].Overload, "the overload is a signature")
+			expect.False(t, st.Methods[1].Overload, "the implementation is no signature")
+		})
+
+		t.Run("stamps python.generator on a method whose body yields", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "class C:\n    def rows(self):\n        yield 1\n")
+			st := named[*node.Struct](t, fileOf(t, gb).Decls, "C")
+			assert.Length(t, st.Methods, 1, "the generator method")
+			expect.Equal(t, stampsOn(gb, st.Methods[0], python.GeneratorKey), []any{true}, "the body yields")
 		})
 
 		t.Run("lowers a mangled method as private at run time", func(t *testing.T) {

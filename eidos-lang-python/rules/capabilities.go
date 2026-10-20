@@ -270,7 +270,7 @@ func (r Rules) declaredConstructors(s *node.Struct, v rules.View) ([]rules.Calla
 			if m == nil || m.Name != name {
 				continue
 			}
-			if implementation, _ := rules.Fact(v, m.ID, meta.Named[bool](python.ImplementationKey)); implementation {
+			if rules.IsImplementation(m, s.Methods) {
 				overloaded = true
 				continue
 			}
