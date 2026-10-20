@@ -116,8 +116,8 @@ func (l *lowering) implItem(n treesitter.Node, c container, a attributes) {
 // fold folds every impl block onto its type, in the order in which the
 // modules of the crate lowered them. The type is the first candidate of
 // the name of the type in the module of the impl that the crate declares.
-// A trait impl adds its trait to the Implements of a struct, and an enum
-// has no list of implemented traits. An inherent impl adds its methods to
+// A trait impl adds its trait to the Implements of a struct, an enum or a
+// data enum. An inherent impl adds its methods to
 // the type, and its constants to the fields of a struct or an enum. A data
 // enum has no field list, so its constants report under [UnmodeledItem].
 // An inherent impl of a type that the crate does not declare lowers its
@@ -127,8 +127,13 @@ func (w *crate) fold() {
 	for _, impl := range w.impls {
 		owner := w.ownerOf(impl)
 		if impl.trait != nil {
-			if st, is := owner.(*node.Struct); is {
-				st.Implements = append(st.Implements, impl.trait)
+			switch t := owner.(type) {
+			case *node.Struct:
+				t.Implements = append(t.Implements, impl.trait)
+			case *node.Enum:
+				t.Implements = append(t.Implements, impl.trait)
+			case *node.Sum:
+				t.Implements = append(t.Implements, impl.trait)
 			}
 			continue
 		}

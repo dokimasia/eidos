@@ -43,7 +43,9 @@ var (
 	idID       = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Id", Kind: symbol.KindStruct}
 	statusID   = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Status", Kind: symbol.KindEnum}
 	colorID    = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Color", Kind: symbol.KindEnum}
+	gradeID    = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Grade", Kind: symbol.KindEnum}
 	shapeID    = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Shape", Kind: symbol.KindSum}
+	readingID  = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Reading", Kind: symbol.KindSum}
 	pageID     = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Page", Kind: symbol.KindStruct}
 	settingsID = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Settings", Kind: symbol.KindStruct}
 	guardedID  = symbol.Identity{Lang: rust.Lang, Package: modelsPkg, Name: "Guarded", Kind: symbol.KindStruct}

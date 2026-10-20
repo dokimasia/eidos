@@ -77,6 +77,8 @@ var (
 // target in the cross-language hub. Rust does not declare a lowering
 // policy, so Type does not read p. It spells each form this way:
 //
+//   - a type parameter as its name, through [spoke.Param], at every depth
+//     of a shape;
 //   - a scalar as the primitive of its class and width, and isize and
 //     usize for the platform's width;
 //   - Bool, Text and Bytes as bool, String and Vec<u8>;
@@ -98,7 +100,8 @@ var (
 //     arguments, which Rust writes in angle brackets.
 //
 // Type refuses a union, an intersection, a stream, an inline type and an
-// opaque type, because Rust has no spelling of them. It refuses the top
+// opaque type of another reference than a type parameter, because Rust
+// has no spelling of them. It refuses the top
 // type, because Rust does not have a type of every value. It refuses a
 // borrow of either mutability, because a Rust borrow needs a lifetime,
 // and a type of another language has none. It refuses an immutable list,
@@ -159,6 +162,9 @@ func Supertype(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
 // rustType spells one shape by the rules of [Type], and returns a
 // refusal without the language's prefix.
 func rustType(s rules.TypeShape) (*emit.TypeRef, error) {
+	if t, param := spoke.Param(s); param {
+		return t, nil
+	}
 	switch s.Form {
 	case symbol.FormScalar:
 		return scalar(s)

@@ -83,11 +83,9 @@ func implementsTrait(refs []*node.TypeRef, trait string) bool {
 }
 
 // hasTrait reports whether the declaration sym has the trait of the standard
-// library: a struct that derives it or that a trait impl implements it for,
-// and an enum or a data enum that derives it. The frontend adds the trait
-// impls of a struct alone to its implements clause, so a trait impl for an
-// enum does not count. Every other declaration has no trait. It allocates
-// nothing.
+// library: a struct, an enum or a data enum that derives it or that a trait
+// impl implements it for. Every other declaration has no trait. It
+// allocates nothing.
 func hasTrait(sym symbol.Symbol, trait string) bool {
 	var (
 		annotations symbol.Annotations
@@ -100,11 +98,11 @@ func hasTrait(sym symbol.Symbol, trait string) bool {
 		}
 	case *node.Enum:
 		if d != nil {
-			annotations = d.Annotations
+			annotations, implements = d.Annotations, d.Implements
 		}
 	case *node.Sum:
 		if d != nil {
-			annotations = d.Annotations
+			annotations, implements = d.Annotations, d.Implements
 		}
 	}
 	return derives(annotations, trait) || implementsTrait(implements, trait)

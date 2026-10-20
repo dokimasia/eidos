@@ -588,7 +588,8 @@ func textPair(hint string) (rules.Sample, rules.Sample) {
 //     SystemTime;
 //   - the variant that #[default] marks for an enum that derives Default,
 //     and T::default() for a struct and a data enum that derive Default, and
-//     for a struct that a trait impl implements Default for;
+//     for a struct, an enum and a data enum that a trait impl implements
+//     Default for;
 //   - the zero of its target for an alias.
 //
 // Every other type has no zero value, and ZeroValue reports false: a
@@ -672,20 +673,19 @@ func (r Rules) declaredZero(ref *node.TypeRef, v rules.View, depth int) (emit.Va
 				return emit.Name(variant.ID), true
 			}
 		}
-		return emit.Value{}, false
-	case *node.Struct, *node.Sum:
-		if !hasTrait(sym, defaultTrait) {
-			return emit.Value{}, false
-		}
-		return emit.Call(symbol.Identity{
-			Lang: rust.Lang, Package: ref.Target.Package, Owner: ref.Target.Name, Name: defaultFunction,
-			Kind: symbol.KindMethod,
-		}), true
 	case *node.Alias:
 		return r.zero(rules.Substitute(d.Target, d.TypeParams, typeArgsFor(d.TypeParams, ref)), v, depth+1)
+	case *node.Struct, *node.Sum:
 	default:
 		return emit.Value{}, false
 	}
+	if !hasTrait(sym, defaultTrait) {
+		return emit.Value{}, false
+	}
+	return emit.Call(symbol.Identity{
+		Lang: rust.Lang, Package: ref.Target.Package, Owner: ref.Target.Name, Name: defaultFunction,
+		Kind: symbol.KindMethod,
+	}), true
 }
 
 // libZero returns the zero of a reference ref without a target, by the

@@ -95,7 +95,19 @@ var (
 		Spelling: "string | int32",
 		Elems:    []rules.TypeShape{text, int32Of},
 	}
+	// paramShape is the shape that the fold gives a reference to the type
+	// parameter paramName of page.
+	paramShape = rules.TypeShape{
+		Form:     symbol.FormOpaque,
+		Spelling: paramName,
+		Ref: symbol.Identity{
+			Lang: sourceLang, Package: "svc", Owner: pageName, Name: paramName, Kind: symbol.KindTypeParam,
+		},
+	}
 )
+
+// paramName is the name of the type parameter of the cases.
+const paramName = "T"
 
 // typeCall is one spelling that the allocation test and the benchmark
 // measure: the shape, its ceiling and the spelling that it returns.
@@ -190,6 +202,12 @@ func TestType(t *testing.T) {
 					Elems:    []rules.TypeShape{sessionTo},
 				},
 				want: &emit.TypeRef{Spelling: "Vec", Args: []*emit.TypeRef{{Spelling: sessionName, Target: session}}},
+			},
+			{name: "returns the name of a type parameter", give: paramShape, want: &emit.TypeRef{Spelling: paramName}},
+			{
+				name: "returns a vector of a type parameter for a list",
+				give: rules.TypeShape{Form: symbol.FormList, Spelling: "[]T", Elems: []rules.TypeShape{paramShape}},
+				want: &emit.TypeRef{Spelling: "Vec", Args: []*emit.TypeRef{{Spelling: paramName}}},
 			},
 			{
 				name: "returns an array of its length for an array",
@@ -605,6 +623,15 @@ func TestType(t *testing.T) {
 				give: rules.Reference("error", rules.WellKnownError),
 				want: &emit.TypeRef{Spelling: "std::error::Error"},
 			},
+			{
+				name: "returns a type parameter among the arguments of an interface",
+				give: rules.Reference(listingName, listing, paramShape),
+				want: &emit.TypeRef{
+					Spelling: listingName,
+					Target:   listing,
+					Args:     []*emit.TypeRef{{Spelling: paramName}},
+				},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -622,6 +649,7 @@ func TestType(t *testing.T) {
 			want string
 		}{
 			{name: "returns an error for a shape that is no reference", give: text, want: supertypeLine},
+			{name: "returns an error for a type parameter", give: paramShape, want: supertypeLine},
 			{
 				name: "returns an error for the well-known timestamp",
 				give: rules.Reference("time.Time", rules.WellKnownTimestamp), want: supertypeLine,

@@ -183,6 +183,29 @@ func TestCapabilities(t *testing.T) {
 			})
 		}
 
+		implemented := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{
+				name: "returns the contract of an enum that implements the error trait",
+				give: &node.Enum{Name: "Code", Implements: []*node.TypeRef{{Spelling: errorName}}},
+			},
+			{
+				name: "returns the contract of a data enum that implements the error trait",
+				give: &node.Sum{Name: "Failure", Implements: []*node.TypeRef{{Spelling: errorName}}},
+			},
+		}
+		for _, tt := range implemented {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				c, is := rustrules.Rules{}.ErrorContract(tt.give, rules.View{})
+				assert.True(t, is, "the declaration is an error type")
+				expect.Equal(t, c, rules.ErrorContract{}, "the variants state their own causes")
+			})
+		}
+
 		t.Run("returns the contract of a struct that derives the path of thiserror", func(t *testing.T) {
 			t.Parallel()
 

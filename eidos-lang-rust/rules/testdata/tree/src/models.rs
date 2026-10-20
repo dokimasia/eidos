@@ -25,6 +25,27 @@ pub enum Color {
     Green,
 }
 
+/// A grade, which trait impls give equality and a default.
+#[derive(Debug, Clone, Copy)]
+pub enum Grade {
+    /// Low.
+    Low,
+    /// High.
+    High,
+}
+
+impl PartialEq for Grade {
+    fn eq(&self, other: &Self) -> bool {
+        matches!((self, other), (Grade::Low, Grade::Low) | (Grade::High, Grade::High))
+    }
+}
+
+impl Default for Grade {
+    fn default() -> Self {
+        Grade::Low
+    }
+}
+
 /// The identifier of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub u64);
@@ -182,6 +203,27 @@ pub enum Shape {
         /// The length of a side.
         side: f64,
     },
+}
+
+/// A reading, which trait impls give equality and a default.
+#[derive(Debug, Clone)]
+pub enum Reading {
+    /// No reading.
+    Missing,
+    /// A measured value.
+    Value(f64),
+}
+
+impl PartialEq for Reading {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Default for Reading {
+    fn default() -> Self {
+        Reading::Missing
+    }
 }
 
 /// A page of values.

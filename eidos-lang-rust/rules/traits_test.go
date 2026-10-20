@@ -137,8 +137,18 @@ func TestTraits(t *testing.T) {
 				give: &node.TypeRef{Spelling: "Color", Target: colorID},
 			},
 			{
+				name: "reads a trait that a trait impl implements for an enum",
+				give: &node.TypeRef{Spelling: "Grade", Target: gradeID},
+				want: true,
+			},
+			{
 				name: "reads a trait that a data enum derives",
 				give: &node.TypeRef{Spelling: "Shape", Target: shapeID},
+				want: true,
+			},
+			{
+				name: "reads a trait that a trait impl implements for a data enum",
+				give: &node.TypeRef{Spelling: "Reading", Target: readingID},
 				want: true,
 			},
 		}

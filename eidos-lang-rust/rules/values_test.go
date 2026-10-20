@@ -853,10 +853,24 @@ func TestValues(t *testing.T) {
 				}),
 			},
 			{
+				name: "returns default for an enum that a trait impl implements Default for",
+				give: &node.TypeRef{Spelling: "Grade", Target: gradeID},
+				want: emit.Call(symbol.Identity{
+					Lang: rust.Lang, Package: modelsPkg, Owner: "Grade", Name: "default", Kind: symbol.KindMethod,
+				}),
+			},
+			{
 				name: "returns default for a data enum that derives Default",
 				give: &node.TypeRef{Spelling: "Shape", Target: shapeID},
 				want: emit.Call(symbol.Identity{
 					Lang: rust.Lang, Package: modelsPkg, Owner: "Shape", Name: "default", Kind: symbol.KindMethod,
+				}),
+			},
+			{
+				name: "returns default for a data enum that a trait impl implements Default for",
+				give: &node.TypeRef{Spelling: "Reading", Target: readingID},
+				want: emit.Call(symbol.Identity{
+					Lang: rust.Lang, Package: modelsPkg, Owner: "Reading", Name: "default", Kind: symbol.KindMethod,
 				}),
 			},
 			{

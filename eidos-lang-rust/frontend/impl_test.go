@@ -120,6 +120,22 @@ func TestImpl(t *testing.T) {
 			assert.Empty(t, st.Methods, "and no method, because the trait declares them")
 		})
 
+		t.Run("adds a trait impl's trait to the enum's Implements", func(t *testing.T) {
+			t.Parallel()
+
+			e := named[*node.Enum](t, declsOf(t, "pub enum E {\n    A,\n}\nimpl Default for E {\n"+
+				"    fn default() -> Self { E::A }\n}\n"), "E")
+			assert.Equal(t, spellingsOf(e.Implements), []string{"Default"}, "the trait")
+		})
+
+		t.Run("adds a trait impl's trait to the data enum's Implements", func(t *testing.T) {
+			t.Parallel()
+
+			sum := named[*node.Sum](t, declsOf(t, "pub enum S {\n    A(u8),\n}\nimpl std::error::Error for S {}\n"),
+				"S")
+			assert.Equal(t, spellingsOf(sum.Implements), []string{"std::error::Error"}, "the trait")
+		})
+
 		t.Run("adds no trait of an impl for a reference to the struct", func(t *testing.T) {
 			t.Parallel()
 

@@ -100,6 +100,18 @@ func TestCoverage(t *testing.T) {
 				name: "returns Refuses for a file's annotations",
 				kind: symbol.KindFile, fact: symbol.FactAnnotations, want: render.Refuses,
 			},
+			{
+				name: "returns Refuses for an enum's trait impls",
+				kind: symbol.KindEnum, fact: symbol.FactImplements, want: render.Refuses,
+			},
+			{
+				name: "returns Rejects for an overload signature of a function",
+				kind: symbol.KindFunction, fact: symbol.FactOverload, want: render.Rejects,
+			},
+			{
+				name: "returns Refuses for a data enum's trait impls",
+				kind: symbol.KindSum, fact: symbol.FactImplements, want: render.Refuses,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

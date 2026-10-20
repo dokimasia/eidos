@@ -172,12 +172,10 @@ func (r Rules) builds(ret *node.TypeRef, s *node.Struct, v rules.View, depth int
 	return false, false
 }
 
-// ErrorContract returns the contract of an error type: a struct whose trait
-// impls implement std::error::Error, and a struct, an enum or a data enum
-// that derives Error of thiserror, as #[derive(thiserror::Error)] or
-// #[derive(Error)] beside use thiserror::Error. The frontend adds the trait
-// impls of a struct alone to its implements clause, so a trait impl of the
-// error trait for an enum does not make it an error type.
+// ErrorContract returns the contract of an error type: a struct, an enum or
+// a data enum whose trait impls implement std::error::Error, or that derives
+// Error of thiserror, as #[derive(thiserror::Error)] or #[derive(Error)]
+// beside use thiserror::Error.
 //
 // Cause is the field of a struct that the attribute #[source] or #[from]
 // marks, and else the field named source, which std::error::Error::source
@@ -208,12 +206,12 @@ func (Rules) ErrorContract(decl symbol.Symbol, v rules.View) (rules.ErrorContrac
 		if d == nil {
 			return rules.ErrorContract{}, false
 		}
-		id, annotations = d.ID, d.Annotations
+		id, annotations, implements = d.ID, d.Annotations, d.Implements
 	case *node.Sum:
 		if d == nil {
 			return rules.ErrorContract{}, false
 		}
-		id, annotations = d.ID, d.Annotations
+		id, annotations, implements = d.ID, d.Annotations, d.Implements
 	default:
 		return rules.ErrorContract{}, false
 	}

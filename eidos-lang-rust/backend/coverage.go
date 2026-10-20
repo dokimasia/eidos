@@ -36,7 +36,8 @@ import (
 //     every fact on it.
 //   - The underlying type of an enum renders as its repr attribute. A
 //     computed member has no name in Rust, so the declaration does not
-//     render with the fact or without it.
+//     render with the fact or without it. Neither does an overload
+//     signature, because Rust has no overloads.
 //   - A field that another type receives refuses, because Rust has no
 //     extension field. The annotations of a file refuse, because the
 //     skeleton does not write the header that a generator states.
@@ -69,6 +70,7 @@ func Coverage() render.Coverage {
 			symbol.FactSealed:           render.Refuses,
 			symbol.FactPermits:          render.Refuses,
 			symbol.FactOverride:         render.Refuses,
+			symbol.FactOverload:         render.Rejects,
 			symbol.FactDefaultBody:      render.Renders,
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Refuses,
