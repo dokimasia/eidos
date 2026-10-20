@@ -78,3 +78,19 @@ way.
 | [0057](0057-eidos-reads-and-writes-graphql-through-gqlparser.md) | eidos reads and writes GraphQL through gqlparser | Accepted |
 | [0058](0058-a-graphql-unit-is-a-schema-and-its-documents.md) | A GraphQL unit is a schema and its documents | Accepted |
 | [0059](0059-a-parameter-has-documentation.md) | A parameter has documentation | Accepted |
+| [0060](0060-eidos-lang-graphql-requires-the-gqlparser-fork.md) | eidos-lang-graphql requires the fork of gqlparser | Accepted |
+| [0061](0061-file-level-names-collide-in-the-namespace-of-their-file.md) | File-level names collide in the namespace of their routed file | Accepted |
+| [0062](0062-a-wire-field-keeps-the-name-that-its-generator-wrote.md) | A wire field keeps the name that its generator wrote | Accepted |
+| [0063](0063-a-supertype-translates-through-the-spelling-of-its-position.md) | A supertype translates through the spelling of its position | Accepted |
+| [0064](0064-eidos-reads-python-through-the-fork-of-tree-sitter-python.md) | eidos reads Python through the fork of tree-sitter-python | Accepted |
+| [0065](0065-a-python-unit-is-one-module.md) | A Python unit is one module | Accepted |
+| [0066](0066-the-python-frontend-reads-the-standard-library-from-typeshed.md) | The Python frontend reads the standard library from typeshed | Accepted |
+| [0067](0067-a-parameter-states-how-a-caller-passes-its-argument.md) | A parameter states how a caller passes its argument | Accepted |
+| [0068](0068-a-property-has-a-delete-accessor.md) | A property has a delete accessor | Accepted |
+| [0069](0069-a-target-that-overloads-lets-the-overloads-of-a-function-share-its-name.md) | A target that overloads lets the overloads of a function share its name | Accepted |
+| [0070](0070-a-backend-respells-a-member-by-its-level-and-its-mutability.md) | A backend respells a member by its level and its mutability | Accepted |
+| [0071](0071-the-kernel-splits-a-return-of-a-result-type.md) | The kernel splits a return of a result type | Accepted |
+| [0072](0072-an-authored-text-takes-the-value-that-its-language-writes.md) | An authored text takes the value that its language writes | Accepted |
+| [0073](0073-the-rust-rules-fold-the-standard-library-through-a-table.md) | The Rust rules fold the standard library through a table | Accepted |
+| [0074](0074-the-projection-of-an-rpc-states-its-context-and-its-failure.md) | The projection of an rpc states its context and its failure | Accepted |
+| [0075](0075-a-policy-of-the-target-selects-the-grpc-binding.md) | A policy of the target selects the gRPC binding | Accepted |

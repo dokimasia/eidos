@@ -8,7 +8,7 @@ updated: 2026-10-19
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: ADR-0057, ADR-0058, ADR-0059
+produces-adr: ADR-0057, ADR-0058, ADR-0059, ADR-0060
 ---
 
 <!--
@@ -28,13 +28,13 @@ type. The executable language covers operations, fragments, variables and select
 also reads and writes the two constructs of the working draft that graphql-js 17.0.2 parses: the
 directives of a directive definition, and the extension of a directive.
 
-The frontend parses through `github.com/vektah/gqlparser/v2`, the parser of gqlgen. It is pure Go
-and keeps the comments of a document with their positions. gqlparser refuses four forms of the
-specification and its working draft, and the satellite contributes the fixes upstream. Each schema
-loads as one unit with its documents. A unit contains the files that a graphql-config project or a
-gqlgen configuration lists, or else the files of one directory. The frontend types each selection
-of a document against the schema of its unit, so an operation loads as a function whose result is
-the struct of its selection.
+The frontend parses through gqlparser, the parser of gqlgen. It is pure Go and keeps the comments of
+a document with their positions. gqlparser refuses four forms of the specification and its working
+draft. The satellite requires the fork `github.com/dokimasia/gqlparser/v2`, which fixes the four
+forms, and contributes the fixes upstream. Each schema loads as one unit with its documents. A unit
+contains the files that a graphql-config project or a gqlgen configuration lists, or else the files
+of one directory. The frontend types each selection of a document against the schema of its unit,
+so an operation loads as a function whose result is the struct of its selection.
 
 The backend writes GraphQL documents from the emit model. A keyword that the model has no field for
 is a marker, an annotation whose name contains a colon, such as `graphql:input`. The schema
@@ -205,9 +205,12 @@ The parser refuses four forms of the specification and its working draft:
 
 The tracker of gqlparser has no issue or pull request about any of the four. Its pull request 476,
 merged on 2026-09-30, decodes a surrogate pair of `\u` escapes and leaves the braced form refused.
-The satellite contributes a fix for each form upstream as a pull request, and pins the first release
-of gqlparser that contains the four. A mixed document does not need a fix, because the frontend
-parses each language from a copy of the file of its own.
+The satellite contributes a fix for each form upstream as a pull request. It requires the fork
+`github.com/dokimasia/gqlparser/v2`, whose master merges the four fixes into v2.5.63. The fork
+declares its own module path, so a consumer of the satellite and `go install` resolve the fork
+without a replace directive. The first release of gqlparser that contains the four fixes replaces
+the fork. A mixed document does not need a fix, because the frontend parses each language from a
+copy of the file of its own.
 
 ### Schemas, units and packages
 
@@ -467,11 +470,13 @@ is neither. The kernel's rules gain an optional capability for such a declaratio
 // the rules of the language of a target after [WellKnownRules] and before
 // it classifies the target.
 type ShapeRules interface {
-    // ShapeOf returns the shape of the values of decl, and reports false
-    // for a declaration whose references fold to a reference to it. The
-    // fold gives the shape the spelling of the reference. ShapeOf reads
-    // through v, so each read records.
-    ShapeOf(decl symbol.Symbol, v View) (TypeShape, bool)
+    // ShapeOf returns the shape of the values of the reference ref to
+    // decl, and reports false for a declaration whose references fold to a
+    // reference to it. The fold gives the shape the spelling of the
+    // reference. Where the shape is a structural form without children and
+    // ref has type arguments, the fold takes the folded arguments as the
+    // children of the form. ShapeOf reads through v, so each read records.
+    ShapeOf(ref *node.TypeRef, decl symbol.Symbol, v View) (TypeShape, bool)
 }
 ```
 
@@ -1094,10 +1099,26 @@ gqlparser could gain a parser of a mixed document. It models the two languages a
 types, `ast.SchemaDocument` and `ast.QueryDocument`, so such a parser would return two documents as
 the two copies do. The copies do not need a change upstream.
 
+### A replace directive for the fork
+
+The satellite could require `github.com/vektah/gqlparser/v2` and replace it with the fork. A replace
+directive applies only in the main module, so a consumer of the satellite would build it against
+gqlparser without the fixes. `go install` at a version refuses a module with a replace directive,
+so the root module, whose command `eidos` composes the satellite, cannot contain one.
+
+### A release of gqlparser
+
+A release of gqlparser with the four fixes would let the satellite keep the module path of upstream.
+Upstream has not reviewed the fixes, so no date of such a release is known. A document that uses
+one of the four forms would not load in the meantime, and the test cases of the four forms would
+fail on every commit.
+
 ## Drawbacks
 
-- The satellite depends on four changes of gqlparser that upstream has not reviewed yet. Until a
-  release contains them, a document that uses one of the four forms does not parse.
+- The satellite requires a fork of gqlparser. The fork must merge each release of gqlparser before
+  the satellite can use it, and each merge renames the import paths of the files that the release
+  adds or changes.
+- A binary that also links gqlgen contains two copies of gqlparser under two module paths.
 - An anonymous operation takes the base name of its file. Two anonymous operations in files of one
   name collide in the package of the documents, and the load keeps the first.
 - A fragment spread loads as the fields that it adds, so the struct of a selection repeats the fields
@@ -1145,6 +1166,10 @@ None.
 - [gqlparser](https://github.com/vektah/gqlparser): v2.5.63, `parser.ParseSchema`,
   `parser.ParseQuery`, `gqlparser.LoadSchema`, `validator.ValidateSchemaDocument`,
   `validator.Validate`, the rules of `validator/rules`, `Schema.Implements` and the lexer.
+- [dokimasia/gqlparser](https://github.com/dokimasia/gqlparser): the fork of v2.5.63 with the fixes
+  of the four forms, under the module path `github.com/dokimasia/gqlparser/v2`.
+- [Go Modules Reference](https://go.dev/ref/mod): the replace directive, which applies only in the
+  main module, and `go install` at a version, which refuses a module with a replace directive.
 - [graphql-tools' validation of documents](https://github.com/ardatan/graphql-tools/blob/master/packages/utils/src/validate-documents.ts):
   the rules `NoUnusedFragmentsRule`, `NoUnusedVariablesRule` and `KnownDirectivesRule` that
   `createDefaultRules` leaves out.

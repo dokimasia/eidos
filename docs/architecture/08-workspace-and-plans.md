@@ -392,15 +392,22 @@ an empty one, a `..` element, a backslash, an absolute path, and
 
 A package matches `packages` only when every one of its files is in
 a named directory, so a scope admits a package whole or not at all.
-A package that a store provides, such as the standard library's, is
-in no workspace directory, so no pattern admits it. `module` admits
-such a package only where its own `gen.module` fact names the module,
-and a plan scoped by `lang` alone matches the store's packages of its
-language, as an unscoped plan matches every package. Each run binds a
-plan's sources to the frozen graph before the plan generates, and the
-composition's fingerprint folds them. When a change to a package's
-files or its module fact moves the package into a plan's sources or
-out of them, a warm run runs the plan whole
+
+A dependency package is a package that a dependency round loaded,
+such as a package of the standard library that a store provides, or a
+vendored package. A scope admits a dependency package by `lang` alone,
+and `packages` and `module` do not apply to it. A plan reads the
+dependency packages of its language, so a member walk in a plan that
+`./internal/...` narrows returns the methods of an embedded `io.Closer`.
+A rule of the generate phase does not run on a declaration of a
+dependency package, so a generator does not write into a vendor tree.
+An annotator runs on such a declaration, and a rule of the emit phase
+runs on an emit value whose origin is such a declaration.
+
+Each run binds a plan's sources to the frozen graph before the plan
+generates, and the composition's fingerprint folds them. When a change
+to a package's files, its module fact or its round moves the package
+into a plan's sources or out of them, a warm run runs the plan whole
 ([09-incrementality.md](09-incrementality.md)).
 
 ## Plan exports: the one declared edge between plans

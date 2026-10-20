@@ -2,13 +2,13 @@
 rfc: 0070
 title: Names collide in the routed package
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-19
-updated: 2026-10-19
+updated: 2026-10-20
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0061
 ---
 
 <!--
@@ -26,9 +26,10 @@ target reads every name in the package of its routed file. Two source
 packages can write one name twice into one routed package without a
 finding. The settle can also refuse two names of one source package that
 collide in no file. This RFC moves the check of file-level names into the
-layout. The layout knows the routed package of every file. The settle
-keeps the check of members, because a member collides in its host wherever
-the host is routed.
+layout. The layout knows the routed package of every file, and the target
+names the namespace of the names of each file. The settle keeps the check
+of members, because a member collides in its host wherever the host is
+routed.
 
 ## Motivation
 
@@ -39,13 +40,13 @@ the plan. The layout runs after the settle and sets `File.Pkg` through the
 `Packager` of the target. The `Packager` returns the package that the
 frontend of the target names when it reads the routed file:
 
-| Target | The package of a routed file |
-|---|---|
-| Go, Java | the directory of the file |
-| TypeScript | the file, because every file is a module |
-| Rust | the module of the file |
-| protobuf | the package that the file declares |
-| GraphQL | one namespace for every file of the plan |
+| Target | The package of a routed file | The namespace of its names |
+|---|---|---|
+| Go, Java | the directory of the file | the package |
+| TypeScript | the file, because every file is a module | the package |
+| Rust | the module of the file | the package |
+| protobuf | the file, because a file imports a file | the protobuf package that the file declares |
+| GraphQL | one package for every file of the plan | the package |
 
 The scopes differ, with these effects:
 
@@ -70,7 +71,8 @@ The second refuses a plan that writes valid files.
 The check belongs in the layout, because the layout is the first step that
 knows the routed package of every declaration. It does not belong in a
 backend. The rule is the same in every target: each file-level name occurs
-once in its package.
+once in its namespace. The namespace is the package of the file, except in
+protobuf, where the files of one protobuf package share their names.
 
 ## Detailed design
 
@@ -79,16 +81,20 @@ once in its package.
 | Component | Responsibility after this RFC |
 |---|---|
 | `plugin` settle | Respells every name, applies the overrides, checks the members of each host, and builds the reference tables. It no longer checks file-level names |
-| `layout` | Checks the file-level names of every routed package after it names the packages, and returns the names with the files |
+| `plugin.NameScoper` | Is the optional role of a target that names a namespace apart from the package of a file |
+| `layout` | Names the namespace of each routed file beside its package, checks the file-level names of every namespace, and returns the names with the files |
 | `plugin.Names` | Returns the kept names of one routed scope |
-| `internal/state` | Records each kept name under its routed scope as well, and hashes the edge of each routed scope |
-| `workspace` | Records the names that the layout returns. A group reads the routed edge of each name of its files, and a changed name makes that edge dirty |
+| `backend` kit | Declares the namespace rule of a target through `Builder.NameScopes` |
+| `eidos-lang-protobuf` | Names the protobuf package of a file as its namespace |
+| `internal/state` | Records the namespace of each file, and each kept name under its routed scope as well |
+| `workspace` | Records the names that the layout returns |
 
 ### Invariants
 
 1. Each settled file-level name occurs once in its routed scope. The scope
-   is the routed package, and for a method or a received field also its
-   receiver.
+   is the namespace of the routed file, and for a method or a received
+   field also its receiver. The overloads of one function in a target
+   whose language overloads functions share one name.
 2. A collision is reported once, under `CollidingNames`, as an Error of the
    layout. The plan that reports it commits nothing, because a plan with
    an Error does not commit.
@@ -98,18 +104,45 @@ once in its package.
 
 ### The scope of a file-level name
 
-The scope of a file-level declaration is the package of its routed file,
-`File.Pkg`. A method with a receiver and a field that another type
-receives have the scope of that package and the emitted spelling of the
+The scope of a file-level declaration is the namespace of its routed file,
+`File.Scope`. A method with a receiver and a field that another type
+receives have the scope of that namespace and the emitted spelling of the
 receiver, as `NameEntry.Receiver` records it. A record of a family that
-claims its files does not declare a name. It does not join a scope.
+claims its files does not declare a name. It does not join a scope. A
+file without a package, for which the target derives none, has no
+namespace, so its names join no scope.
+
+### The namespace of a file
+
+The layout derives the namespace of each file after its package:
+
+```go
+// NameScoper is the role of a target whose file-level names share one
+// namespace across the files of different packages. The layout checks
+// the file-level names of a routed file in the namespace that NameScope
+// returns for the package of the file, and in the package of the file
+// where the target does not implement the role.
+type NameScoper interface {
+	// NameScope returns the namespace of the file-level names of a file
+	// that declares the package pkg.
+	NameScope(pkg symbol.Identity) symbol.Identity
+}
+```
+
+`plugin.File.Scope` records the namespace beside `File.Pkg`. A backend of
+the kit declares its rule through `Builder.NameScopes`, and the built
+backend serves it as `NameScoper`. A kit backend without a rule returns
+the package. The protobuf backend returns the protobuf package that a file
+declares, the `Name` of its package, so the files of one protobuf package
+check their names in one namespace. Every other backend of the hub uses
+the package.
 
 The check orders the names of a scope by the path of their file. The
 names of one file follow the order of their declarations, and the kept
 names of the scope take part in the same order. The first declaration of
 a settled name in a scope opens a group. Each later declaration of the
 same name joins it. The finding of a group is positioned at the origin of
-its second declaration, with the origin of the first as related:
+its second declaration, with the origins of the others as related:
 
 ```text
 svc/a.User in schema/a.graphql and svc/b.User in schema/b.graphql settle to "User" in one package
@@ -117,6 +150,14 @@ svc/a.User in schema/a.graphql and svc/b.User in schema/b.graphql settle to "Use
 
 The layout reports the finding and keeps every declaration of the group.
 The Error fails the plan, so no file of the group is written.
+
+A group of functions of one emitted name is no collision where the target
+implements the role `plugin.Overloader` and its `Overloads` reports true,
+because its declarations are the overloads of one function. Python
+declares the overloads of a function this way. Two emitted names that
+settle to one name still collide, and so does a function beside a
+declaration of another kind. The backend of such a target checks the
+overloads of a name itself.
 
 ### The layout
 
@@ -155,28 +196,31 @@ type Names interface {
 	InScope(pkg, receiver string) []NameEntry
 
 	// InFileScope returns the entries of one routed scope, sorted by
-	// settled name: the names that the kept files of the package pkg
-	// declare under receiver, and every other file-level name of the
-	// package where receiver is empty.
-	InFileScope(pkg symbol.Identity, receiver string) []NameEntry
+	// settled name: the names that the kept files of the namespace scope
+	// declare under receiver, and every other file-level name of those
+	// files where receiver is empty.
+	InFileScope(scope symbol.Identity, receiver string) []NameEntry
 }
 ```
 
 `InScope` keeps its source scope. A bare reference and the spelling of a
-receiver resolve in the source package. The record lists each name a
-second time under the plan, the routed package, the receiver and the
-emitted name. `state.FileScopeEdge(plan, pkg, receiver)` hashes the
-routed scope.
+receiver resolve in the source package. The artifact of a file records its
+namespace. The record lists each name a second time under the plan, the
+namespace of its file, the receiver and the settled name, so `InFileScope`
+reads the rows of one routed scope in the order of their settled names.
 
 ### Warm runs
 
-A group reads the routed edge of each name of its files, beside the edge
-of its source scope. `warmPlan.nameChanged` makes the routed edge of a
-changed name dirty. A name compares with its routed file and package
-already, so a name that moves into another routed package counts as
-changed. The rounds of the warm plan run until no group joins, so the
-layout of the last round checks every routed scope that changed against
-the kept names of the scope. Invariant 3 follows.
+A warm run routes the files of its dirty groups alone. The layout of each
+round compares their names with the kept names of each routed scope, and
+the kept names leave out every file of a dirty group. Kept files do not
+collide with each other, because the run that wrote them committed. So
+the layout of the last round finds every collision that a cold run finds.
+Invariant 3 follows.
+
+The check does not change a name, and a render reads the names of its own
+file alone. So a kept file is not rendered again when a name of its routed
+scope changes. A group does not read an edge of its routed scope.
 
 ### Migration
 
@@ -184,11 +228,14 @@ the kept names of the scope. Invariant 3 follows.
   `first` and `groups` maps with their finding. Its doc comment and the doc
   comment of `SettleWith` state the new split.
 - The cases of `plugin/settle_test.go` that assert a file-level
-  `CollidingNames` move to `layout/route_test.go`, with a routed package in
-  each fixture. The member cases remain.
+  `CollidingNames` move to `layout/collision_test.go`, with a routed package
+  in each fixture. The member cases remain.
 - The workspace uses `Routes.Names` in `groups.go` and in
   `warmPlan.respelled`, in place of its own call of `plugin.NamesOf`.
-- The SDK facade regenerates for `plugin.Names` and the new method.
+- The protobuf backend declares `NameScopes(spell.NameScope)`.
+- The artifact of the sealed state records `Scope` after `Pkg`.
+- The SDK facade regenerates for `plugin.Names`, `plugin.NameScoper`,
+  `plugin.File.Scope` and `Builder.NameScopes`.
 
 ## Alternatives considered
 
@@ -217,6 +264,28 @@ Each backend could check the names of its files in the render.
 **Why not:** the rule is the same in every target, and six backends would
 each contain a copy of it.
 
+### The namespace on each name entry
+
+Each `NameEntry` could record the namespace of its file, so the check
+would read it from the entry.
+
+**Why not:** the namespace is a fact of the file, which `File.Scope` and
+the artifact record once. A field of each entry costs 88 bytes for each
+of the 200,000 names of the canonical corpus. The check finds the file of
+each name in one walk of the files and the names, which are in one order.
+
+### An edge of each routed scope
+
+A group could read an edge of the routed scope of each name of its files,
+and a changed name could make the edge dirty, as a changed name makes the
+edge of its source scope dirty.
+
+**Why not:** the layout reads the kept names of a routed scope without a
+render of their files, and no render reads the names of the other files
+of its package. The edge would render every file of a routed scope again
+for each new name. Every file of a GraphQL plan is in one namespace, so a
+new type would render the whole plan again.
+
 ## Drawbacks
 
 - The settle no longer reverts a respelled collision. Where two names
@@ -224,15 +293,19 @@ each contain a copy of it.
   names, and the settle wrote the emitted names before. The plan commits
   nothing in both designs, so no written file differs.
 - The record lists each file-level name twice. A corpus of 200,000
-  file-level declarations records 200,000 more rows and the edge of each
-  routed scope.
+  file-level declarations records 200,000 more rows.
 - `layout.Route` changes its result type. The workspace and four calls in
   `layout/route_test.go` change with it.
-- The allocation ceilings of `Route` grow by what `plugin.NamesOf`
-  allocates, which the workspace no longer allocates. A run allocates the
-  same, and the ceilings of `BenchmarkRoute` and `TestRouteAllocs` change.
+- The allocation ceilings of `Route` grow by three allocations of a pass:
+  the entries and the sorted declarations of `plugin.NamesOf`, which the
+  workspace no longer allocates, and the order of the check.
+  `BenchmarkRoute` measures 30,180 allocations over 200,000 declarations
+  and 54 over one package of 200.
 - `plugin.Names` gains a method, so a type outside the kernel that
   implements it adds `InFileScope`.
+- The kernel gains one optional role, one field of a routed file and one
+  builder method of the kit. The artifact of each file records its
+  namespace, so the format of the sealed state changes.
 
 ## References
 

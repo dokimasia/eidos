@@ -146,6 +146,9 @@ each addition:
 | `Method.Computed` / `Field.Computed` | a member whose name is an expression: TypeScript's `[Symbol.iterator]`. The member keeps the brackets in its name, and the member walk leaves it out under the gap reason `GapComputed` |
 | `Field.Receives` | the type that a field attaches to from outside the declaration of the type: a protobuf extension, a field of a GraphQL type extension. The field keeps the identity of the scope that declares it, and the name table lists it under the spelling of its `Receives` |
 | `Param.Doc` | the documentation of a parameter: the description of a GraphQL argument. A language that documents a parameter in the documentation of its callable leaves it empty |
+| `Param.Passing` | `Default \| Positional \| Keyword`: whether a caller passes the argument by position alone, by keyword alone, or in the way of the language. A Python parameter before the `/` of its signature is positional, and one after its `*` a keyword. Every other language leaves the default |
+| `Method.Accessor` | `None \| Get \| Set \| Delete`: the accessors of a property. The delete accessor is the deleter of a Python property, and every backend but the Python backend refuses it |
+| `Field.Wire` | an emit field whose name is a key of a wire format, such as the `__typename` of a GraphQL response. The settle keeps the name that the generator wrote, and the node side has no such field |
 | `TypeRef.Mutability` | whether a holder can write through a list, an array, a tuple, a map or a borrow: TypeScript's `readonly T[]`, and Rust's `&T` and `&mut T` |
 | `TypeRef.Absent` | the members of a source union that an optional folds, in source order, such as the `null` of TypeScript's `T \| null`. It is on the node side alone, and an optional that a mark states, such as Go's `*T`, has none |
 | `Enum.Underlying` | the representation that an enum declares: the target of Go's `type Level uint8` and the integer of Rust's `#[repr(u8)]`. TypeScript, protobuf and Java leave it nil |
@@ -157,6 +160,13 @@ each addition:
 Every symbol has a **canonical identity**: package path, kind, name,
 and a signature discriminator. Overloads differ by the
 discriminator, and a language without overloads never produces two.
+In a language that overloads, the discriminator spells the types of
+the parameters with the marks of their passing, and the type of a
+receiver that states one, because a Python stub overloads on the
+annotation of `self`. A parameter without a type spells `_`, so the
+setter of a property without annotations differs from its getter. A
+deleter of a property takes no parameter, as its getter does, so its
+discriminator is `del`.
 
 Identity survives reparsing. A reloaded file yields symbols with the
 same identities wherever the declarations did not change. Everything

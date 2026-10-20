@@ -45,9 +45,11 @@ authored rather than as a fact nobody wrote
 ([05-directives.md](05-directives.md)).
 
 The same directive sets a fact with `+<brand>:meta set=<key> value=<value>`,
-or with `values=[<a>, <b>]` for a key of the type `[]string`. Validation
-types the value as the type that the key registered with, so a wrong
-value reports at the instance. A set writes at `directive` authority as
+or with `values=[<a>, <b>]` for a key of the type `[]string` or
+`[]symbol.Identity`. Validation types the value as the type that the key
+registered with, so a wrong value reports at the instance. Each element
+of a key of `[]symbol.Identity` resolves as a type in scope, as the
+`value` of a key of `symbol.Identity` does. A set writes at `directive` authority as
 well, so it ranks above a `plugin` stamp. A set of a boolean writes true
 alone, because absence is the negative.
 
@@ -114,22 +116,23 @@ registry at Build, so a typo names the candidates instead of missing
 silently.
 
 A key's type comes from a **closed vocabulary**: `string`, `int`,
-`bool`, `[]string` and `symbol.Identity`. Nothing else registers.
-The fact store persists these values
+`bool`, `[]string`, `symbol.Identity` and `[]symbol.Identity`. Nothing
+else registers. The fact store persists these values
 ([09-incrementality.md](09-incrementality.md)), `explain` renders
 them, and the parity matrix tabulates them. Any further type would
 put a codec in public API, versioned with the sealed state and
 breakable by any plugin. A fact that needs structure becomes flat
-keys under a fact group, which is what groups already model, and a
-fact that names a declaration carries an identity rather than a
-string.
+keys under a fact group, which is what groups already model. A fact
+that refers to one declaration contains an identity rather than a
+string. A fact that refers to two or more declarations contains a list
+of identities.
 
 The registration contract, pinned:
 
 ```go
 // FactValue is the closed vocabulary; nothing else serializes.
 type FactValue interface {
-    string | int64 | bool | []string | symbol.Identity
+    string | int64 | bool | []string | symbol.Identity | []symbol.Identity
 }
 
 // KeyName is the interior form of a key's name: a generated

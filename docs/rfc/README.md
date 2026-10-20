@@ -85,8 +85,12 @@ the decision is already made and there is nothing left to argue, write an
 | [0066](0066-the-ring-tests-a-release-from-its-tag.md) | The ring tests a release from its tag | Accepted |
 | [0067](0067-the-protobuf-backend.md) | The protobuf backend | Accepted |
 | [0068](0068-the-graphql-satellite.md) | The GraphQL satellite | Accepted |
-| [0069](0069-constructions-module-directives-and-the-shared-helpers-of-plugins.md) | Constructions, module directives and the shared helpers of plugins | Draft |
-| [0070](0070-names-collide-in-the-routed-package.md) | Names collide in the routed package | Draft |
-| [0071](0071-wire-names.md) | Wire names | Draft |
-| [0072](0072-translated-supertypes.md) | Translated supertypes | Draft |
-| [0073](0073-the-python-satellite.md) | The Python satellite | Draft |
+| [0069](0069-constructions-module-directives-and-the-shared-helpers-of-plugins.md) | Constructions, module directives and the shared helpers of plugins | Accepted |
+| [0070](0070-names-collide-in-the-routed-package.md) | Names collide in the routed package | Accepted |
+| [0071](0071-wire-names.md) | Wire names | Accepted |
+| [0072](0072-translated-supertypes.md) | Translated supertypes | Accepted |
+| [0073](0073-the-python-satellite.md) | The Python satellite | Accepted |
+| [0074](0074-wrapped-documentation-function-values-identity-lists-and-the-order-of-a-unit.md) | Wrapped documentation, function values, identity lists and the order of a unit | Draft |
+| [0075](0075-dependency-packages-the-routing-of-a-placement-authored-literals-the-trailer-and-the-external-test-package.md) | Dependency packages, the routing of a placement, authored literals, the trailer and the external test package | Draft |
+| [0076](0076-the-projection-rules-of-rust.md) | The projection rules of Rust | Accepted |
+| [0077](0077-the-grpc-bindings-of-a-protobuf-service.md) | The gRPC bindings of a protobuf service | Accepted |

@@ -2,13 +2,13 @@
 rfc: 0072
 title: Translated supertypes
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-19
 updated: 2026-10-19
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0063
 ---
 
 <!--
@@ -121,7 +121,10 @@ optional of a trait is `Option<Box<dyn Name>>`, and a list is
 
 The Rust supertype spelling is the reference spelling of the spoke: the
 flat name with the translated arguments. Each argument is a value. A trait
-that extends `Page<Node>` writes `Page<Box<dyn Node>>`.
+that extends `Page<Node>` writes `Page<Box<dyn Node>>`. The well-known
+error is the trait `std::error::Error`. A supertype of Rust is a trait, so
+the spelling refuses a shape that is neither a reference nor a sum, such
+as a list, and the well-known structs, such as a timestamp.
 
 ### The callers
 

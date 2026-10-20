@@ -2,7 +2,7 @@
 rfc: 0069
 title: Constructions, module directives and the shared helpers of plugins
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-19
 updated: 2026-10-19
 discussion: dokimasia/eidos#7 to dokimasia/eidos#19

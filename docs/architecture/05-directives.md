@@ -220,9 +220,10 @@ Four directive names belong to the kernel, with reserved semantics.
 group. That is the only way to negate a stamped boolean, since
 absence is the negative and `false` is never written
 ([04-metadata.md](04-metadata.md)). Its `set=<key>` param writes a
-fact, with `value=<value>` or, for a key of the type `[]string`,
-`values=[<a>, <b>]`. Validation types the value as the type of the
-key. An instance writes exactly one of `drop` and `set`.
+fact, with `value=<value>` or, for a key of the type `[]string` or
+`[]symbol.Identity`, `values=[<a>, <b>]`. Validation types the value as
+the type of the key, and resolves each element of a list of identities
+as a type in scope. An instance writes exactly one of `drop` and `set`.
 
 `out` overrides routing for a declaration
 ([18-routing-and-layout.md](18-routing-and-layout.md)).

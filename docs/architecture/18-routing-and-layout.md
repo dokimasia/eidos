@@ -69,6 +69,13 @@ its own. Its tag does not apply to the declarations. A tag selects a
 family of one plugin, and the directive on a package applies to every
 plugin of the plan.
 
+A declaration takes the overrides of its origin. Where the origin
+states none, the declaration takes the overrides of the subject whose
+match placed it, which `plugin.Unit.Subjects` records. The double of a
+handle that the handler of an interface writes then arrives beside the
+double of the interface. The subject is the origin of the routing in
+every step of the resolution pass.
+
 ## The resolution pass
 
 Layout runs once per plan, after the settle and before the render,
@@ -93,7 +100,8 @@ decides it.
    author's path or the output's configuration that names a file
    takes precedence.
 5. **Package.** The target names the package each file declares from
-   the file's path, by its language's rule.
+   the file's path, by its language's rule, and the namespace of the
+   file-level names of the file.
 6. **Record.** Declarations with one path form one file, unless the
    collision rules refuse it. The plan's render pass renders the files
    ([07-rendering.md](07-rendering.md)), so routing is settled before
@@ -106,6 +114,16 @@ decides it.
    package clause does not follow from the package path, such as
    protobuf, reads the clause of the other file from the name of that
    package.
+8. **Names.** Each settled file-level name occurs once in the namespace
+   of its file and its receiver. The layout reports the declarations of
+   one name as one `CollidingNames` Error, positioned at the second
+   declaration with the others as related. The check refuses no
+   declaration, and the Error fails the plan. A warm run compares the
+   names of the files that it routes with the names of the files that it
+   keeps. The backend of a target whose language overloads functions,
+   such as Python, implements the role `plugin.Overloader`. The functions
+   of one emitted name are then the overloads of one function, and the
+   backend checks them.
 
 ## The route of a file
 
@@ -174,10 +192,18 @@ declare ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
 | Target | The package of a routed file |
 |---|---|
-| Go | the package the directory's non-test files declare, and for a test file of an external test package's declarations that package. In a directory without one, the innermost containing module's path joined with the directory's path below its root. Outside every module, `importBase` joined with the path below the output directory |
+| Go | the package the directory's non-test files declare, and for a test file of an external test package's declarations that package. For a test file of a family that states `External`, the external test package of the directory: the one that a file of the directory declares, or else the package of the directory with `_test` after its path and its name. In a directory without one, the innermost containing module's path joined with the directory's path below its root. Outside every module, `importBase` joined with the path below the output directory |
 | TypeScript | the file itself, a module named by its path without the extension |
 | Java | the package its declarations derive from, because a Java file states its package in its clause |
 | Rust | the module the directory's files belong to, joined with the file's stem. A `mod.rs` or a crate root names the directory's module, and a crate root is a file whose module is a crate the `gen.module` facts name |
+| protobuf | the file itself, named by its import path, because a protobuf file imports a file. The name of the package is the protobuf package that the file declares |
+| GraphQL | one package for every file of the plan, because a schema has one namespace |
+
+The names of a file are in the namespace of its package, except where
+the target names another namespace through `plugin.NameScoper`. The
+files of one protobuf package declare their names in one namespace, so
+the protobuf backend returns the protobuf package as the namespace.
+`plugin.File.Scope` records the namespace of a file.
 
 A file written beside its source keeps its source's package. A Go
 file in a `main` package declares `main`. A TypeScript or Rust file
@@ -242,8 +268,10 @@ carrier line of the directive that caused them:
 | EID-0052 | `EscapingPath` | an `out=` path that is absolute or leaves the workspace root |
 | EID-0053 | `PathCollision` | two routed paths one tree cannot contain |
 | EID-0054 | `UnderivedPackage` | a reference into a file whose package the target derives none for |
+| EID-0031 | `CollidingNames` | two file-level declarations of one namespace and receiver with one settled name |
 
 A refused declaration is left out, and the rest of its file renders.
+`CollidingNames` refuses no declaration.
 A static contradiction in config, such as an override naming an
 unknown plugin or tag, fails at workspace Build instead. A
 configuration error should never wait for a run.

@@ -99,7 +99,12 @@ options:
 
 A message field has presence in every version. Its presence depends on
 the declaration that the field's type resolves to, so the rules report
-it through `PresenceRules`. A group loads as a nested message of the
+it through `PresenceRules`. Every rpc projects with the context of its
+call before its request, through `ContextRules`, and with the error
+model `raised`, because every binding of gRPC passes a context to a
+handler and fails a call with a status. Under the choices `grpc-go` and
+`connect-go` of the policy `golang.grpc`, the Go spoke spells a reference
+to a protobuf declaration as protoc-gen-go names it. A group loads as a nested message of the
 group's name and a field of that name in lower case. The field has the
 marker `protobuf.delimited`. An extend block loads as its fields, each
 with the extended message as its `Receives`. Each field is a
@@ -164,11 +169,61 @@ between a built-in type and a scalar of the table for the shapes that
 GraphQL has no built-in type for. The `testing/` package parses and
 validates generated documents through gqlparser, in process.
 
+`eidos-lang-python` reads and writes every declaration construct of
+Python 3 in modules and stub files, and every type form of the typing
+specification, so its module has every package of the anatomy but
+`sdk/`. A unit is one module. Its files are a `.py` file, a `.pyi` file,
+or both files of one name in one directory, and the stub states the types
+of both.
+The package of a module is its dotted name with slashes, below the
+source root that the table of the build backend of its `pyproject.toml`
+states. The frontend loads the standard library from the stubs of
+typeshed, which the satellite embeds at one commit, and the installed
+distributions from the site-packages directory of the virtual
+environment that `VIRTUAL_ENV` names.
+
+The kind of a class follows from its direct bases: a Protocol and a
+TypedDict are interfaces, a class of enum is an enum, and every other
+class is a struct. A string annotation is the type that it contains.
+The frontend evaluates `TYPE_CHECKING` as true and compares the checks
+of `sys.version_info` and `sys.platform` with its options, so it loads
+the branches that a type checker reads.
+
+The backend writes modules and stub files for Python 3.11 to 3.15
+under the policy `python.version`, in the layout of ruff's formatter.
+A construct that the model has no field for is a marker, an annotation
+whose name starts with `python:`, and the head of a module is the
+header of its file. `python.Stated` and `python.Header` restate the
+stamps of a Python source in these channels, so a generator over Python
+sources writes a module as its source states it. The `testing/` package
+parses generated files with the `ast` module of CPython, type-checks
+them with pyright in its strict mode and runs their tests with
+unittest.
+
+The rules of `eidos-lang-rust` project a crate without a load of the
+standard library. A type of the standard library that a signature names
+folds through the table of builtins of the rules: the primitives and the
+texts, `Option`, the lists, the maps, `Box`, `Rc`, `Arc` and the cells as
+borrows, `Duration`, `SystemTime`, the error types, and the iterators and
+streams of their `Item`. A set, `Instant`, a type of another crate and a
+`Result` outside the return of a callable fold to Opaque, because the
+kernel has no form for a set or for a tagged union of two types.
+
+A return of `Result<T, E>`, of an alias of the crate for it and of a
+`Result` of a module, such as `io::Result<T>`, has the result-type error
+model. The kernel splits it into the views of its value and its failure
+through `ResultRules`. The frontend resolves `Self` to the struct, the
+enum or the trait of its impl block or its body, and a receiver `&self` is
+a borrow of `Self`. The rules derive the values of Rust's grammar of
+expressions, such as `String::from("a")`, `vec![x]` and
+`HashMap::from([(k, v)])`, and an authored text of a `String` takes its
+call through `TextRules`.
+
 ## The language landscape
 
 Go and TypeScript are fully supported. protobuf reads and writes every
-construct of its versions, and GraphQL every construct of the
-September 2025 edition.
+construct of its versions, GraphQL every construct of the September
+2025 edition, and Python every declaration construct of Python 3.
 
 The vocabulary already anticipates the rest, and each row below
 names the language that forced the model or tier addition
@@ -192,6 +247,8 @@ names the language that forced the model or tier addition
 | Nested modules | Rust `mod`, TS namespaces | hierarchical `Package.Path` |
 | Nullability-unknown | Java unannotated refs | metadata plus lowering policy |
 | Ownership and borrowing | Rust | Tier 2 `OwnershipRules` |
+| A failure in the type of a return | Rust `Result<T, E>` | Tier 2 `ResultRules` |
+| A text that a call writes | Rust `String::from` | Tier 2 `TextRules` |
 | Erasure | Java and Kotlin generics | Tier 2 `GenericsRules` fact |
 
 Out of scope and recorded rather than half-built: header-based C and
@@ -412,9 +469,9 @@ keeps even the parser deviation invisible downstream:
 | Go | stdlib `go/parser` | the reference grammar as a zero-dependency pure-Go library, with exact positions and comment attachment |
 | TypeScript | tree-sitter | proven in the current satellite. The native TS 7 compiler is written in Go but ships internal packages only, so there is nothing importable to pin |
 | protobuf | the experimental parser of `bufbuild/protocompile`, pinned to a commit | pure Go and declarative. The released parser stops at Edition 2023, and a file of Edition 2026, whose grammar is Edition 2024's, parses as Edition 2024 |
-| GraphQL | `vektah/gqlparser/v2`, pinned to a release | the parser of gqlgen, pure Go, with the comments of a document and their positions. Its validator types each selection against its schema. It refuses three forms of the September 2025 edition, and the satellite contributes the fixes upstream |
+| GraphQL | the fork `dokimasia/gqlparser/v2` of gqlparser, pinned to a commit | the parser of gqlgen, pure Go, with the comments of a document and their positions. Its validator types each selection against its schema. The fork fixes four forms that gqlparser refuses, and the satellite contributes the fixes upstream |
 | Rust | tree-sitter-rust | no production pure-Go Rust parser exists, and the grammar is org-maintained |
-| Python | tree-sitter-python | the same, and docstrings enter through the kit's `Doc` and `DocLines` door |
+| Python | the fork `dokimasia/tree-sitter-python` of tree-sitter-python, pinned to a commit | no pure-Go parser reads Python 3. The upstream grammar has merged no change since 2025-09-15, and the fork adds the lazy imports of Python 3.15, the unpacking of PEP 798, the defaults of PEP 696 and the plus sign of a literal pattern. Docstrings enter through the kit's `Doc` and `DocLines` door |
 | Java | tree-sitter-java plus the class-file reader (D31) | a mature grammar, and JARs supply signature-only dependencies |
 | Kotlin | tree-sitter-kotlin, **flagged** | the community grammar reports a 61% structural match against the JetBrains PSI reference. Sequence this satellite late and expect more level-2 and level-3 rows in its feature matrix until the grammar closes the gap |
 | PHP | tree-sitter-php | a pure-Go parser exists, VKCOM's `php-parser` for PHP 8, but nobody has maintained it since 2022. Adopt it only with a maintenance commitment |
@@ -493,11 +550,6 @@ overridable metadata through `AnnotationRules`, with no special
 cases. Lowering has to account for erasure. C# is conceptually free
 once Java exists, and Swift adds protocol conformance the model
 already holds.
-
-**eidos-lang-rust and eidos-lang-python** are anticipated by
-decision (D6): Result and async in Tier 1, ownership in Tier 2,
-Optional surviving `None`, and dynamic typing degrading through the
-scale.
 
 **eidos-lang-php** forces no new model element. Native union types
 are already in the shape vocabulary, since TypeScript forced them.

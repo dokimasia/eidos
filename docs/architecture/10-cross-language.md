@@ -98,7 +98,10 @@ fifth:
    or an invalid choice is a Build error naming the candidates.
 3. **Override.** A directive on a declaration overrides at
    `directive` authority, checked against the registered choices at
-   Freeze like any other directive param.
+   Freeze like any other directive param. A policy of the plan,
+   `PolicySpec.Plan`, applies to every file of a plan and has no param:
+   the render reads it, as the Python backend reads the version that its
+   files run on.
 4. **Hand over.** The `Policy` a lowering receives is total: every
    registered key resolves to a default, a selection or an override.
    A lowering never sees an unresolved policy, so it never carries a
@@ -163,6 +166,13 @@ target. Each spoke spells a translated reference with the referent's
 flat name. A generator that mirrors a nested declaration emits it in
 the file under that name, and the naming annotator stamps the respell
 of that name on the nested declaration.
+
+A generator translates the type of a value through `Emitter.Type`, and
+a type that a declaration extends, implements or embeds, or that bounds
+a type parameter, through `Emitter.Supertype`. A target spells the two
+positions apart through `plugin.SupertypeSpeller`. Rust spells a value
+of a trait as `Box<dyn Node>` and a supertrait as `Node`. Every other
+target spells both positions alike.
 
 The timing matters. The stamps arrive during **Annotate**, written by
 a naming annotator that each target language provides and the

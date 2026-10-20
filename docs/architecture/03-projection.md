@@ -204,14 +204,16 @@ that the body states, in the order of the body. A backend binds the
 imports of the children and keeps the spelling of the body.
 
 **Well-known types are not shapes.** They are blessed `Reference`
-identities in a small kernel registry, which has four entries:
-`timestamp`, `duration`, `empty`, a value without data, and `error`,
-the value of a failure. A frontend maps its spelling in, so `time.Time`
-becomes `timestamp`, protobuf's `Empty` becomes `empty`, and Go's
-`error` and TypeScript's `Error` become `error`. A lowering spells it
-out, as `Date`, as `struct{}` or as `Exception`. A semantic type nobody
-mapped remains an ordinary Reference. The registry is public API, and
-growing it only adds.
+identities in a small kernel registry, which has five entries:
+`timestamp`, `duration`, `empty`, a value without data, `error`, the
+value of a failure, and `context`, the cancellation and the deadline of
+a call. A frontend maps its spelling in, so `time.Time` becomes
+`timestamp`, protobuf's `Empty` becomes `empty`, and Go's `error` and
+TypeScript's `Error` become `error`. A reference whose target is an
+identity of the registry folds to it, as the context of an rpc does. A
+lowering spells it out, as `Date`, as `struct{}`, as `Exception` or as
+`context.Context`. A semantic type nobody mapped remains an ordinary
+Reference. The registry is public API, and growing it only adds.
 
 Java's unannotated references are nullability-unknown. That does not
 become a third Optional state. The frontend stamps
@@ -258,8 +260,9 @@ Every generator that builds a double asks this first, wanting the
 full contract of an interface, and nothing outside the language
 contract can return it. Promotion, override, merge and MRO are
 language rules. Go promotes, Java overrides, TypeScript interfaces
-merge, and Python linearises. A generator that re-derives any of
-them gets it wrong for the next language.
+merge, and Python linearises its bases in the C3 order of its method
+resolution. A generator that re-derives any of them gets it wrong for
+the next language.
 
 A `MemberSet` records, per member, which supertype or embed it
 arrived through. For any contributor that yielded nothing, it
@@ -307,6 +310,17 @@ arguments of the reference. The Go rules derive `struct{}{}` as the
 one value of the empty struct, so a map of empty structs, the set of
 Go, derives its pair from the pair of its keys.
 
+A function and a make are fresh values. Each is a new value wherever a
+body writes it, so a check compares it by its identity. The two halves
+of its pair differ although their trees are equal. The Go rules
+derive two functions that return the zero value of each result for a
+function type, as `func(context.Context) error { return nil }`, and two
+makes for a channel, as `make(chan string)`. A part of a composite, such
+as an element or a field of a struct, takes no fresh value, because two
+composites would then differ in the identity of a new value alone. The
+Go rules derive the pair of a string from the hint for `any` and
+`interface{}`.
+
 `LiteralFor` reads text as a value of a type in the scope of a
 declaration, and reports false when it cannot. That serves values read
 from carriers that already consumed the language's quoting, where bare
@@ -332,12 +346,23 @@ contract rather than a
 convention, because a preference each generator has to remember is a
 preference two of them will forget.
 
-An authored text of a text, a boolean or a number type lifts by the
-shape of the type. A text of any other type lifts through `LiteralFor`
-in the scope of the declaration that states it. Where `LiteralFor` does
-not read the text, or the declaration has another language than the
-rules, the text lifts to raw text in the language of the declaration.
-Only the backend of that language spells raw text.
+An authored text lifts through the `LiteralFor` of the language of the
+declaration that states it, in the scope of that declaration, for every
+type. A name and a call are values of a number type too, so the author
+of `type Level int` can state `NewLevel()`. Where `LiteralFor` does not
+read the text, the lift depends on the shape of the type:
+
+- A text type takes the text as the content of a string. Rules with
+  `TextRules` give the value of the string, because their language
+  writes some texts through a call, as Rust writes `String::from("a")`.
+- A boolean and a number type refuse with `RefusedAuthored`, because the
+  text is not a value of the type.
+- Every other type takes raw text in the language of the declaration.
+  Only the backend of that language spells raw text.
+
+`SamplesOf` keeps a refused stated half. The generator then receives the
+refusal of the authored text instead of a value that the language
+derived.
 
 ## Tier 2: declared by satisfying, found by asserting
 
@@ -364,6 +389,15 @@ type ErrorValueRules interface {
 type ErrorTypeRules interface {
     ErrorContract(decl symbol.Symbol, v View) (ErrorContract, bool) // message, cause, hooks, pointer
 }
+type ResultRules interface {
+    Result(ref *node.TypeRef, v View) (value, failure *node.TypeRef, ok bool) // the parts of a result type
+}
+type TextRules interface {
+    Text(ref *node.TypeRef, text string, v View) emit.Value // the value of an authored text
+}
+type ContextRules interface {
+    Context(sym symbol.Symbol, v View) (ParamView, bool) // the context that a signature does not state
+}
 type TagRules interface {
     Tag(f *node.Field, key string) (string, bool)
 }
@@ -371,7 +405,7 @@ type WellKnownRules interface {
     WellKnown(id symbol.Identity) (symbol.Identity, bool) // the well-known identity of a library type
 }
 type ShapeRules interface {
-    ShapeOf(decl symbol.Symbol, v View) (TypeShape, bool) // the shape of the values of a declared type
+    ShapeOf(ref *node.TypeRef, decl symbol.Symbol, v View) (TypeShape, bool) // the shape of the values of a reference
 }
 type SatisfactionRules interface {
     ValueReceiver(m *node.Method, v View) bool // whether a value of the type of m has m
@@ -413,9 +447,12 @@ field is the projection.
 | `EnumRules` | project an enumeration: form, zero, foreign values | Go const groups, Java enum classes, TS enums, proto |
 | `ErrorValueRules` | sentinel conventions: the name of a base and the base of a name, paired so they cannot drift | Go |
 | `ErrorTypeRules` | the error contract of a type: the member of its message, the field of its cause, the hooks that the error functions call, and whether a pointer to it is the error | Go method sets, TypeScript classes that extend Error |
+| `ResultRules` | the value and the failure of a result type, which `CallableOf` splits into two views of a return under the result-type error model | Rust `Result<T, E>` |
+| `TextRules` | the value of a text that an author states for a text type, which `View.Authored` asks for in place of a string literal | Rust `String::from("a")`, and the character literal of `char` |
+| `ContextRules` | the context of a call that a signature does not state, which `CallableOf` puts first among the parameters | the context of every protobuf rpc, which every gRPC binding passes to a handler |
 | `TagRules` | stringly per-field tags | Go struct tags |
 | `WellKnownRules` | the well-known identity of a type of the standard library, which the fold reads before it classifies a target | Go `time.Time` and `time.Duration` |
-| `ShapeRules` | the shape of the values of a declared type, which the fold reads after `WellKnownRules` and before it classifies a target | GraphQL custom scalars with a `@specifiedBy` URL of the table of scalars |
+| `ShapeRules` | the shape of the values of a reference to a declared type, which the fold reads after `WellKnownRules` and before it classifies a target. The fold takes the folded type arguments of the reference as the children of a structural shape without children, and the first argument alone as the child of a stream, because a generator states the types that it receives and returns after the type that it yields | GraphQL custom scalars with a `@specifiedBy` URL of the table of scalars, the builtins and the generic classes of Python's typeshed, and `Literal` |
 | `SatisfactionRules` | the satisfaction of an interface beyond the member sets: a method of a pointer to the type alone, and an interface that constrains a type set | Go pointer receivers and constraint interfaces |
 | `GenericsRules` | witnesses, constraint reasoning, whether generics are reified or erased | every generic language; erasure matters to a Java backend |
 | `PropertyRules` | the computed properties view, pairing getters with setters. A projection, never a change to the model | Kotlin, C#, Swift, Python `@property`, JavaBeans |

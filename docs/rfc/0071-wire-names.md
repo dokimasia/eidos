@@ -2,13 +2,13 @@
 rfc: 0071
 title: Wire names
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-19
 updated: 2026-10-19
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0062
 ---
 
 <!--
@@ -105,14 +105,16 @@ Each backend declares a verdict for `FactWire` in its coverage table:
 | Target | Verdict | The name in the file |
 |---|---|---|
 | TypeScript | Renders | bare where it is an identifier, and quoted otherwise, as `memberKey` writes a property key |
-| GraphQL | Renders | the name, where it is a GraphQL name that does not begin with `__`. The backend refuses any other name, because a schema cannot declare it |
-| protobuf | Renders | the name, where it is an identifier. The backend refuses any other name |
-| Go | Refuses | a Go file writes a key in a struct tag, and the case of a Go name states its visibility |
-| Java | Refuses | a Java file writes a key in an annotation |
-| Rust | Refuses | a Rust file writes a key in a serde attribute |
+| GraphQL | Renders | the name, where it is a GraphQL name that does not begin with `__`. The lowering refuses any other name, because a schema cannot declare it |
+| protobuf | Renders | the name, where it is an identifier. The lowering refuses any other name |
+| Go | Rejects | a Go file writes a key in a struct tag, and the case of a Go name states its visibility |
+| Java | Rejects | a Java file writes a key in an annotation |
+| Rust | Rejects | a Rust file writes a key in a serde attribute |
 
-A refusal is a positioned finding of the coverage guard. The backend
-withholds the declaration.
+A rejection is a positioned Error of the coverage guard, `RejectedFact`,
+and the backend withholds the declaration. A refusal of the GraphQL or the
+protobuf lowering is a positioned Error under `RefusedConstruct`, which
+withholds the declaration too.
 
 ### The client of the conformance fixture
 
@@ -134,7 +136,8 @@ for _, f := range out {
   regenerate.
 - Every coverage table gains the verdict, and `backendtest` checks that
   every table is total, as it checks every fact.
-- The GraphQL and protobuf backends check a wire name in their guards.
+- The GraphQL and protobuf backends check a wire name in their lowerings,
+  which run in the settle before the respell.
 
 ## Alternatives considered
 
