@@ -30,7 +30,8 @@ require (
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9 // indirect
-	github.com/dokimasia/gqlparser/v2 v2.0.0-00010101000000-000000000000 // indirect
+	github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed // indirect
+	github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260716134002-a9b348f0a2b9 // indirect

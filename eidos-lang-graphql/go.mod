@@ -7,7 +7,7 @@ go 1.27.2
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
-	github.com/dokimasia/gqlparser/v2 v2.0.0-00010101000000-000000000000
+	github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed
 	github.com/pelletier/go-toml/v2 v2.4.3
 	go.dokimi.dev/assert v0.2.0
 	go.dokimi.dev/eidos/lang v0.1.1
@@ -18,6 +18,7 @@ require (
 require (
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	go.dokimi.dev/eidos/core v0.2.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )
 
 replace go.dokimi.dev/eidos/core => ../eidos-core
