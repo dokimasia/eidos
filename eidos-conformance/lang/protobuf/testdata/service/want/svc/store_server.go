@@ -10,18 +10,6 @@ import (
 	"time"
 )
 
-type Chunk struct {
-	Data []byte
-}
-
-type Event struct {
-	Session *Session
-}
-
-type GetRequest struct {
-	Key string
-}
-
 // Session is one signed-in user's state.
 type Session struct {
 	Owner      string
@@ -33,19 +21,6 @@ type Session struct {
 	Labels     map[string]string
 	Note       *string
 	Credential SessionCredential
-}
-
-// Store serves sessions.
-type StoreServer interface {
-	Get(ctx context.Context, request GetRequest) (Session, error)
-	Watch(ctx context.Context, request GetRequest) (iter.Seq2[Event, error], error)
-	Upload(ctx context.Context, request iter.Seq2[Chunk, error]) (Summary, error)
-	Chat(ctx context.Context, request iter.Seq2[Event, error]) (iter.Seq2[Event, error], error)
-	Ping(ctx context.Context, request struct{}) (struct{}, error)
-}
-
-type Summary struct {
-	Size int64
 }
 
 // State is the lifecycle of a session.
@@ -72,4 +47,30 @@ type SessionCredentialKey struct {
 }
 
 func (*SessionCredentialKey) isSessionCredential() {}
-// acme:provenance sha256:0a145d1d290c015d583af0673de1a48fb68c5f853257a0d7ce287564b21d2279
+
+type GetRequest struct {
+	Key string
+}
+
+type Event struct {
+	Session *Session
+}
+
+type Chunk struct {
+	Data []byte
+}
+
+type Summary struct {
+	Size int64
+}
+
+// Store serves sessions.
+type StoreServer interface {
+	Get(ctx context.Context, request GetRequest) (Session, error)
+	Watch(ctx context.Context, request GetRequest) (iter.Seq2[Event, error], error)
+	Upload(ctx context.Context, request iter.Seq2[Chunk, error]) (Summary, error)
+	Chat(ctx context.Context, request iter.Seq2[Event, error]) (iter.Seq2[Event, error], error)
+	Ping(ctx context.Context, request struct{}) (struct{}, error)
+}
+
+// acme:provenance sha256:8babd514fe3f1a677f5eafe23787df0cca9624b0e683bcb1d99887d77529a775

@@ -5,4 +5,5 @@
 export function transferAudit(from: string, to: string, cents: bigint): void {
   console.warn("Transfer", from, to, cents);
 }
+
 // acme:provenance sha256:11b2eb49b36d8c23fded1f84f14d4660c050ccaa263ea199a56ac8d932a22930

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/python"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -81,6 +83,7 @@ type probe struct {
 // references.
 var (
 	session    = symbol.Identity{Lang: probeLang, Package: probePkg, Name: sessionName, Kind: symbol.KindStruct}
+	sessions   = symbol.Identity{Lang: probeLang, Package: probePkg, Name: sessionName, Kind: symbol.KindInterface}
 	result     = symbol.Identity{Lang: probeLang, Package: probePkg, Name: resultName, Kind: symbol.KindSum}
 	text       = rules.Leaf(symbol.FormText, textSource)
 	boolean    = rules.Leaf(symbol.FormBool, boolSource)
@@ -93,6 +96,11 @@ var (
 	dynamic    = rules.Leaf(symbol.FormDynamic, textSource)
 	textMap    = rules.TypeShape{Form: symbol.FormMap, Elems: []rules.TypeShape{text, text}}
 	timestamp  = rules.Reference(textSource, rules.WellKnownTimestamp)
+	// protoMessage is a reference to a protobuf message, whose spelling the
+	// gRPC binding of Go decides.
+	protoMessage = rules.Reference(sessionName, symbol.Identity{
+		Lang: protobuf.Lang, Package: "svc", Name: sessionName, Kind: symbol.KindStruct,
+	})
 	duration   = rules.Reference(textSource, rules.WellKnownDuration)
 	sessionRef = rules.Reference(sessionName, session)
 )
@@ -167,18 +175,23 @@ var probes = []probe{
 	{label: "Inline type", shape: rules.TypeShape{Form: symbol.FormInline, Spelling: textSource}},
 	{label: "Reference", shape: sessionRef},
 	{label: "Reference with a type argument", shape: rules.Reference(sessionName, session, text)},
+	{label: "Reference to an interface", shape: rules.Reference(sessionName, sessions)},
 	{label: "Sum", shape: rules.TypeShape{Form: symbol.FormSum, Spelling: resultName, Ref: result}},
 	{label: "Timestamp", shape: timestamp},
 	{label: "Duration", shape: duration},
 	{label: "Empty", shape: rules.Reference(textSource, rules.WellKnownEmpty)},
 	{label: "Error", shape: rules.Reference(textSource, rules.WellKnownError)},
+	{label: "Context", shape: rules.Reference(textSource, rules.WellKnownContext)},
 	{label: "Opaque", shape: rules.Opaque(nil)},
 }
 
 // policyProbes maps each lowering policy of a target to the shape whose
 // spelling the policy decides. The hub's section contains the spelling
-// of the shape under each choice of the policy.
+// of the shape under each choice of the policy. The version of Python
+// decides the syntax of the written files and no spelling of a type, so
+// its rows contain one spelling, the optional of text.
 var policyProbes = map[plugin.PolicyKey]rules.TypeShape{
+	golang.GRPC:             protoMessage,
 	typescript.Int64:        wideInt,
 	typescript.Absent:       optional,
 	typescript.Timestamp:    timestamp,
@@ -196,6 +209,8 @@ var policyProbes = map[plugin.PolicyKey]rules.TypeShape{
 	graphql.DurationType:    duration,
 	graphql.DynamicType:     dynamic,
 	graphql.MapType:         textMap,
+	python.VersionPolicy:    optional,
+	python.DynamicPolicy:    dynamic,
 }
 
 // hub writes the hub's section. A row of a probe contains the spelling of

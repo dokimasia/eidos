@@ -34,7 +34,7 @@ const (
 const (
 	carriedName    = "export interface CatalogProduct {\n"
 	carriedPolicy  = "  added?: string | undefined;\n"
-	typenameKey    = "  \"__typename\": \"Product\";\n"
+	typenameKey    = "  __typename: \"Product\";\n"
 	searchUnion    = "export type SearchQuerySearch = SearchQuerySearchProduct | SearchQuerySearchVendor;\n"
 	browseVars     = "export interface BrowseVariables {\n"
 	nullableVar    = "  withVendor?: boolean | undefined;\n"

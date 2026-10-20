@@ -15,6 +15,7 @@ require (
 	go.dokimi.dev/eidos/lang/graphql v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/java v0.1.1
 	go.dokimi.dev/eidos/lang/protobuf v0.1.1
+	go.dokimi.dev/eidos/lang/python v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/rust v0.1.1
 	go.dokimi.dev/eidos/lang/typescript v0.1.1
 	go.dokimi.dev/eidos/plugin/shape v0.0.2
@@ -29,6 +30,7 @@ require (
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9 // indirect
+	github.com/dokimasia/gqlparser/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260716134002-a9b348f0a2b9 // indirect
@@ -39,7 +41,6 @@ require (
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.63 // indirect
 	go.stealthscale.io/cli/yaml v0.1.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
@@ -64,6 +65,8 @@ replace go.dokimi.dev/eidos/lang/graphql => ../eidos-lang-graphql
 replace go.dokimi.dev/eidos/lang/java => ../eidos-lang-java
 
 replace go.dokimi.dev/eidos/lang/protobuf => ../eidos-lang-protobuf
+
+replace go.dokimi.dev/eidos/lang/python => ../eidos-lang-python
 
 replace go.dokimi.dev/eidos/lang/rust => ../eidos-lang-rust
 

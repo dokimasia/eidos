@@ -47,9 +47,9 @@ var headings = []string{
 // The rows that the cases expect, the headers of the satellites' columns
 // among them.
 const (
-	readHeader       = "| Feature | golang | typescript | java | rust | protobuf | graphql |\n"
-	projectionHeader = "| Capability | golang | typescript | java | rust | protobuf | graphql |\n"
-	renderHeader     = "| Fact or kind | golang | typescript | java | rust | protobuf | graphql |\n"
+	readHeader       = "| Feature | golang | typescript | java | rust | protobuf | graphql | python |\n"
+	projectionHeader = "| Capability | golang | typescript | java | rust | protobuf | graphql | python |\n"
+	renderHeader     = "| Fact or kind | golang | typescript | java | rust | protobuf | graphql | python |\n"
 	exceptedRow      = "| Value | renders; refuses on Param, Field |\n"
 	undeclaredRow    = "| Comment | undeclared |\n"
 	rejectedRow      = "| TypeParams | rejects |\n"

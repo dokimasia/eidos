@@ -39,7 +39,7 @@ const (
 
 // caser converts names as the respell of the TypeScript backend does,
 // without initialisms. The client gives each interface of a union its final
-// name through it, and [keepKey] checks a key against it.
+// name through it.
 var caser = naming.New()
 
 // ClientPlan returns the plan ts-client of the catalog fixture. It runs
@@ -74,11 +74,10 @@ func ClientPlan() workspace.Plan {
 //     <Definition>Variables with a property for each variable.
 //
 // A property has the GraphQL name of its field or its variable, because the
-// name is a key of the JSON of a response or of the variables. Where the
-// camel convention of TypeScript would change the name, as it changes
-// __typename, the property is a computed property whose name is the key as
-// a string literal. The generator writes nothing for a directive definition
-// and for a custom scalar of the table, whose references fold to its shape.
+// name is a key of the JSON of a response or of the variables. Each property
+// is a wire field, so the settle keeps its name, such as __typename. The
+// generator writes nothing for a directive definition and for a custom
+// scalar of the table, whose references fold to its shape.
 func clientgen() plugin.Generator {
 	return eidos.NewPlugin(clientgenID).
 		Output(plugin.Output{Per: plugin.PerPlan, Word: clientWord}).
@@ -122,7 +121,7 @@ func clientInterface(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 		Origin: i.ID, Doc: i.Doc, Name: i.ID.FlatName(), Visibility: i.Visibility, Fields: emit.SlotOf(fields...),
 	}
 	for _, ref := range i.Extends {
-		t, spelled := e.Type(i.ID, ref)
+		t, spelled := e.Supertype(i.ID, ref)
 		if !spelled {
 			return nil
 		}
@@ -188,7 +187,7 @@ func clientSum(m *eidos.SumMatch, e *eidos.Emitter) error {
 			return nil
 		}
 		for _, f := range fields {
-			if f.Computed && f.Name == strconv.Quote(typenameKey) {
+			if f.Name == typenameKey {
 				f.Type = &emit.TypeRef{Spelling: strconv.Quote(v.Name)}
 			}
 		}
@@ -226,12 +225,10 @@ func clientVariables(m *eidos.FunctionMatch, e *eidos.Emitter) error {
 		if !spelled {
 			return nil
 		}
-		property := &emit.Field{
+		out.Fields.Append(&emit.Field{
 			Origin: p.ID, Doc: p.Doc, Name: p.Name, Visibility: f.Visibility, Type: t,
-			Optional: bound.TypeOf(p.Type).Form == symbol.FormOptional,
-		}
-		keepKey(property)
-		out.Fields.Append(property)
+			Optional: bound.TypeOf(p.Type).Form == symbol.FormOptional, Wire: true,
+		})
 	}
 	e.PlanFile().Append(out)
 	return nil
@@ -240,9 +237,9 @@ func clientVariables(m *eidos.FunctionMatch, e *eidos.Emitter) error {
 // properties returns the TypeScript properties of the fields and the methods
 // of a GraphQL type: a property for each field, and one for each method with
 // the type of its result. A property is optional where its type is
-// nullable, which the rules bound of GraphQL decide, and keeps its key, as
-// [keepKey] keeps it. properties reports false where TypeScript has no
-// spelling of a type, after the Emitter reports the refusal.
+// nullable, which the rules bound of GraphQL decide, and each property is a
+// wire field, which keeps its key. properties reports false where TypeScript
+// has no spelling of a type, after the Emitter reports the refusal.
 func properties(
 	bound rules.Bound,
 	e *eidos.Emitter,
@@ -269,18 +266,7 @@ func properties(
 		}
 	}
 	for _, f := range out {
-		keepKey(f)
+		f.Wire = true
 	}
 	return out, true
-}
-
-// keepKey keeps the GraphQL name of the property f, which is a key of the
-// JSON of a response or of the variables. Where the camel convention of
-// TypeScript would change the name, f becomes a computed property whose name
-// is the key as a string literal, which the respell of TypeScript keeps and
-// the backend writes as written.
-func keepKey(f *emit.Field) {
-	if caser.Camel(f.Name) != f.Name {
-		f.Name, f.Computed = strconv.Quote(f.Name), true
-	}
 }

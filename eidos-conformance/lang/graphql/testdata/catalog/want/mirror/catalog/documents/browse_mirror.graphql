@@ -16,4 +16,5 @@ fragment ProductCard on Product {
   title: name
   availability
 }
+
 # acme:provenance sha256:e4333e58cabddc986801375c543559fb30b99ba00e4345433ad0f57307ffcb6f

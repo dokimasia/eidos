@@ -178,7 +178,7 @@ func modelInterface(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	}
 	out := &emit.Interface{Origin: i.ID, Doc: i.Doc, Name: i.Name, Visibility: i.Visibility}
 	for _, ref := range i.Extends {
-		t, spelled := e.Type(i.ID, ref)
+		t, spelled := e.Supertype(i.ID, ref)
 		if !spelled {
 			return nil
 		}

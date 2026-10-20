@@ -8,6 +8,25 @@ import (
 	"time"
 )
 
+// A review of a product.
+type Review struct {
+	ID string
+	// The rating from 1 to 5.
+	Rating  int32
+	Body    *string
+	Product Product
+}
+
+type Warehouse struct {
+	ID   string
+	City *string
+}
+
+// The changes that a client follows.
+type SubscriptionResolver interface {
+	ProductChanged(ctx context.Context, id string) (Product, error)
+}
+
 // The availability of a product.
 type Availability string
 
@@ -76,22 +95,8 @@ type QueryResolver interface {
 	Search(ctx context.Context, text string) ([]SearchResult, error)
 }
 
-// A review of a product.
-type Review struct {
-	ID string
-	// The rating from 1 to 5.
-	Rating  int32
-	Body    *string
-	Product Product
-}
-
 // A result of a search.
 type SearchResult interface {
-}
-
-// The changes that a client follows.
-type SubscriptionResolver interface {
-	ProductChanged(ctx context.Context, id string) (Product, error)
 }
 
 // A location of a resource.
@@ -105,8 +110,4 @@ type Vendor struct {
 	Products []Product
 }
 
-type Warehouse struct {
-	ID   string
-	City *string
-}
-// acme:provenance sha256:de35681d3548b19ee19678d690b1b76d16d96f0983db6eef776774f85a5b97c5
+// acme:provenance sha256:7e7d285379154d6191a997b6789a57ad6669d5d3c51b6da8d31a53804cb601ad

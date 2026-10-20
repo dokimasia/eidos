@@ -16,13 +16,14 @@ import (
 // The rows of the hub that the cases expect from the satellites. Each
 // spelling is the one that the spoke of its target declares for the form.
 const (
-	int64Row    = "| Scalar int, 64 bits | `int64` | `bigint` | `long` | `i64` | `int64` | `String` |\n"
+	int64Row    = "| Scalar int, 64 bits | `int64` | `bigint` | `long` | `i64` | `int64` | `String` | `int` |\n"
 	argumentRow = "| Reference with a type argument | `Session[string]` | `Session<string>` | " +
-		"`Session<String>` | `Session<String>` | refused | refused |\n"
-	inlineRow    = "| Inline type | refused | refused | refused | refused | refused | refused |\n"
-	int64Choices = "| typescript.int64: bigint | none | `bigint` | none | none | none | none |\n" +
-		"| typescript.int64: string | none | `string` | none | none | none | none |\n" +
-		"| typescript.int64: number | none | `number` | none | none | none | none |\n"
+		"`Session<String>` | `Session<String>` | refused | refused | `Session[str]` |\n"
+	inlineRow    = "| Inline type | refused | refused | refused | refused | refused | refused | refused |\n"
+	traitRow     = "| Reference to an interface | `Session` | `Session` | `Session` | `Box<dyn Session>` |"
+	int64Choices = "| typescript.int64: bigint | none | `bigint` | none | none | none | none | none |\n" +
+		"| typescript.int64: string | none | `string` | none | none | none | none | none |\n" +
+		"| typescript.int64: number | none | `number` | none | none | none | none | none |\n"
 	unspelledRow = "| Bool | refused |\n"
 )
 
@@ -30,26 +31,28 @@ const (
 // asynchronous stream and the choices of the duration's policy and of the
 // encoding of a 32-bit integer of protobuf.
 const (
-	dynamicRow = "| Dynamic | `any` | `unknown` | `Object` | refused | `google.protobuf.Value` | `String` |\n"
-	emptyRow   = "| Empty | `struct{}` | `Record<string, never>` | refused | `()` | `google.protobuf.Empty` | " +
-		"refused |\n"
-	errorRow = "| Error | `error` | `Error` | `Exception` | `Box<dyn std::error::Error>` | refused | refused |\n"
+	dynamicRow = "| Dynamic | `any` | `unknown` | `Object` | refused | `google.protobuf.Value` | `String` | " +
+		"`object` |\n"
+	emptyRow = "| Empty | `struct{}` | `Record<string, never>` | refused | `()` | `google.protobuf.Empty` | " +
+		"refused | `None` |\n"
+	errorRow = "| Error | `error` | `Error` | `Exception` | `Box<dyn std::error::Error>` | refused | refused | " +
+		"`Exception` |\n"
 	asyncRow = "| Asynchronous stream of text | `iter.Seq2[string, error]` | `AsyncIterable<string>` | " +
-		"refused | refused | `stream string` | `String!` |\n"
-	durationChoices = "| typescript.duration: string | none | `string` | none | none | none | none |\n" +
-		"| typescript.duration: number | none | `number` | none | none | none | none |\n"
-	int32Choices = "| protobuf.int32: int32 | none | none | none | none | `int32` | none |\n" +
-		"| protobuf.int32: sint32 | none | none | none | none | `sint32` | none |\n" +
-		"| protobuf.int32: sfixed32 | none | none | none | none | `sfixed32` | none |\n"
+		"refused | refused | `stream string` | `String!` | `AsyncIterator[str]` |\n"
+	durationChoices = "| typescript.duration: string | none | `string` | none | none | none | none | none |\n" +
+		"| typescript.duration: number | none | `number` | none | none | none | none | none |\n"
+	int32Choices = "| protobuf.int32: int32 | none | none | none | none | `int32` | none | none |\n" +
+		"| protobuf.int32: sint32 | none | none | none | none | `sint32` | none | none |\n" +
+		"| protobuf.int32: sfixed32 | none | none | none | none | `sfixed32` | none | none |\n"
 )
 
 // The rows of the integers of 8 and 16 bits and of the float of 32 bits.
 const (
-	int8Row    = "| Scalar int, 8 bits | `int8` | `number` | `byte` | `i8` | `int32` | `Int` |\n"
-	int16Row   = "| Scalar int, 16 bits | `int16` | `number` | `short` | `i16` | `int32` | `Int` |\n"
-	uint8Row   = "| Scalar uint, 8 bits | `uint8` | `number` | `byte` | `u8` | `uint32` | `Int` |\n"
-	uint16Row  = "| Scalar uint, 16 bits | `uint16` | `number` | `short` | `u16` | `uint32` | `Int` |\n"
-	float32Row = "| Scalar float, 32 bits | `float32` | `number` | `float` | `f32` | `float` | `Float` |\n"
+	int8Row    = "| Scalar int, 8 bits | `int8` | `number` | `byte` | `i8` | `int32` | `Int` | `int` |\n"
+	int16Row   = "| Scalar int, 16 bits | `int16` | `number` | `short` | `i16` | `int32` | `Int` | `int` |\n"
+	uint8Row   = "| Scalar uint, 8 bits | `uint8` | `number` | `byte` | `u8` | `uint32` | `Int` | `int` |\n"
+	uint16Row  = "| Scalar uint, 16 bits | `uint16` | `number` | `short` | `u16` | `uint32` | `Int` | `int` |\n"
+	float32Row = "| Scalar float, 32 bits | `float32` | `number` | `float` | `f32` | `float` | `Float` | `float` |\n"
 )
 
 // The rows of the choices of the GraphQL type of a 64-bit integer, and the
@@ -57,13 +60,21 @@ const (
 // names after its field. The spoke leaves the map of entries without a
 // spelling, so the cell is the stand-in of the hub.
 const (
-	graphqlInt64Choices = "| graphql.int64: String | none | none | none | none | none | `String` |\n" +
-		"| graphql.int64: Float | none | none | none | none | none | `Float` |\n" +
-		"| graphql.int64: Long | none | none | none | none | none | `Long` |\n"
+	graphqlInt64Choices = "| graphql.int64: String | none | none | none | none | none | `String` | none |\n" +
+		"| graphql.int64: Float | none | none | none | none | none | `Float` | none |\n" +
+		"| graphql.int64: Long | none | none | none | none | none | `Long` | none |\n"
 	mapRow = "| Map of text to text | `map[string]string` | `Record<string, string>` | `Map<String, String>` | " +
-		"`HashMap<String, String>` | `map<string, string>` | `?` |\n"
-	graphqlMapChoices = "| graphql.map: entries | none | none | none | none | none | `?` |\n" +
-		"| graphql.map: Any | none | none | none | none | none | `Any` |\n"
+		"`HashMap<String, String>` | `map<string, string>` | `?` | `dict[str, str]` |\n"
+	graphqlMapChoices = "| graphql.map: entries | none | none | none | none | none | `?` | none |\n" +
+		"| graphql.map: Any | none | none | none | none | none | `Any` | none |\n"
+)
+
+// The rows of the choices of the type of a dynamic value of Python, and of
+// the first version of Python, whose syntax decides no spelling of a type.
+const (
+	pythonDynamicChoices = "| python.dynamic: object | none | none | none | none | none | none | `object` |\n" +
+		"| python.dynamic: Any | none | none | none | none | none | none | `Any` |\n"
+	pythonVersionRow = "| python.version: 3.11 | none | none | none | none | none | none | `str \\| None` |\n"
 )
 
 // The policy of the stub target that the cases declare, and the error of
@@ -122,6 +133,13 @@ func TestHub(t *testing.T) {
 			assert.NoError(t, err, "the matrix of the satellites renders")
 			assert.Contains(t, doc, inlineRow, "no target spells an inline type")
 		})
+		t.Run("writes the owned trait object of an interface for Rust", func(t *testing.T) {
+			t.Parallel()
+
+			doc, err := matrix.Markdown(matrix.Entries())
+			assert.NoError(t, err, "the matrix of the satellites renders")
+			assert.Contains(t, doc, traitRow, "Rust spells a value of an interface as a boxed trait object")
+		})
 		rows := []struct {
 			name string
 			want string
@@ -140,6 +158,8 @@ func TestHub(t *testing.T) {
 			{name: "writes the spelling of each GraphQL type of a 64-bit integer", want: graphqlInt64Choices},
 			{name: "writes the map of each target", want: mapRow},
 			{name: "writes the spelling of each GraphQL type of a map", want: graphqlMapChoices},
+			{name: "writes the spelling of each type of a dynamic value of Python", want: pythonDynamicChoices},
+			{name: "writes the optional of text for a version of Python", want: pythonVersionRow},
 		}
 		for _, tt := range rows {
 			t.Run(tt.name, func(t *testing.T) {

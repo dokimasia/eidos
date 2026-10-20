@@ -30,8 +30,8 @@
 //
 // matrix imports the conformance package and the language entries under
 // conformance/lang, the backend packages of the Go, TypeScript, Java,
-// Rust, protobuf and GraphQL satellites, the root packages of the
-// TypeScript, protobuf and GraphQL satellites, lang/spellref and the SDK
-// facade. Its tests also import the assert module and the root packages of
+// Rust, protobuf, GraphQL and Python satellites, the root packages of the
+// TypeScript, protobuf, GraphQL and Python satellites, lang/spellref and
+// the SDK facade. Its tests also import the assert module and the root packages of
 // the satellites. No package imports matrix.
 package matrix

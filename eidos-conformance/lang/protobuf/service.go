@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/layout"
@@ -52,15 +53,9 @@ const (
 	storeFile             = "store.proto"
 )
 
-// The parameter that a Go server method takes before its request, and
-// the failure that it declares, which the Go backend lowers into the error
-// result.
-const (
-	contextParam   = "ctx"
-	contextType    = "context.Context"
-	contextPackage = "context"
-	errorType      = "error"
-)
+// The failure that a Go server method declares for an rpc, which the Go
+// backend lowers into the error result.
+const errorType = "error"
 
 // The schema that the edit of the service fixture changes, the field of
 // Summary before and after the edit, and the mode of the file that the
@@ -278,12 +273,13 @@ func enumOf(m *eidos.EnumMatch, e *eidos.Emitter) error {
 }
 
 // serverService writes the Go interface <Service>Server of one service,
-// with a method for each rpc. A method takes a context before the request
-// of the rpc and declares a failure. The Go backend lowers the failure into
-// the error result, because a Go server reports a failed call through it. A
-// streaming side translates as an iterator over pairs of a message and an
-// error. serverService withholds the interface where Go has no spelling of
-// a type, after the Emitter reports the refusal.
+// with a method for each rpc. A method takes the context of the call and
+// the request of the rpc, as the projection states them, and declares a
+// failure where the projection states one. The Go backend lowers the
+// failure into the error result, because a Go server reports a failed call
+// through it. A streaming side translates as an iterator over pairs of a
+// message and an error. serverService withholds the interface where Go has
+// no spelling of a type, after the Emitter reports the refusal.
 func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	service := m.Interface
 	out := &emit.Interface{
@@ -294,10 +290,11 @@ func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	for _, method := range service.Methods {
 		// An rpc is a method, so the projection reports true.
 		c, _ := bound.CallableOf(method)
-		ctx := &emit.Param{Name: contextParam, Type: &emit.TypeRef{Spelling: contextType, Package: contextPackage}}
 		lowered := &emit.Method{
 			Origin: method.ID, Doc: method.Doc, Name: method.Name, Visibility: method.Visibility,
-			Params: emit.SlotOf(ctx), Throws: []*emit.TypeRef{{Spelling: errorType}},
+		}
+		if c.Errors != rules.ErrorsNone {
+			lowered.Throws = []*emit.TypeRef{{Spelling: errorType}}
 		}
 		if !signature(lowered, c.Params, c.Returns, method.ID, e) {
 			return nil
@@ -310,10 +307,12 @@ func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 
 // clientService writes the TypeScript interface <Service>Client of one
 // service, with a method for each rpc. A method is asynchronous where its
-// rpc is, so the caller awaits a response that is not a stream. A streaming
-// side translates as an asynchronous iterable. clientService withholds the
-// interface where TypeScript has no spelling of a type, after the Emitter
-// reports the refusal.
+// rpc is, so the caller awaits a response that is not a stream. A method
+// leaves out the context of the call, because a caller of a TypeScript
+// client passes the signal of a call in the options of the call. A
+// streaming side translates as an asynchronous iterable. clientService
+// withholds the interface where TypeScript has no spelling of a type, after
+// the Emitter reports the refusal.
 func clientService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	service := m.Interface
 	out := &emit.Interface{
@@ -327,7 +326,10 @@ func clientService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 		lowered := &emit.Method{
 			Origin: method.ID, Doc: method.Doc, Name: method.Name, Visibility: method.Visibility, Async: c.Async,
 		}
-		if !signature(lowered, c.Params, c.Returns, method.ID, e) {
+		params := slices.DeleteFunc(slices.Clone(c.Params), func(p rules.ParamView) bool {
+			return p.Role == rules.ParamContext
+		})
+		if !signature(lowered, params, c.Returns, method.ID, e) {
 			return nil
 		}
 		out.Methods.Append(lowered)

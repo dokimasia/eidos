@@ -4,13 +4,14 @@
 // Package rust declares Rust's conformance entry, and its tests grade
 // Rust against the shared feature inventory.
 //
-// [Corpus] is Rust's entry: the Rust frontend over one crate that
-// spells every inventory feature but method overloads, which Rust does
-// not have.
+// [Corpus] is Rust's entry: the Rust frontend and the Rust rules over one
+// crate that spells every inventory feature but method overloads, which
+// Rust does not have. Each feature states the level at which the rules
+// project it.
 //
 // # Dependency position
 //
 // rust imports the conformance package, core/frontend/frontendtest and
-// the Rust satellite's frontend. No package imports rust but its own
-// tests.
+// the frontend and the rules of the Rust satellite. No package imports
+// rust but its own tests.
 package rust

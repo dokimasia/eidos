@@ -9,12 +9,14 @@ import (
 	graphqlcorpus "go.dokimi.dev/eidos/conformance/lang/graphql"
 	javacorpus "go.dokimi.dev/eidos/conformance/lang/java"
 	protocorpus "go.dokimi.dev/eidos/conformance/lang/protobuf"
+	pythoncorpus "go.dokimi.dev/eidos/conformance/lang/python"
 	rustcorpus "go.dokimi.dev/eidos/conformance/lang/rust"
 	tscorpus "go.dokimi.dev/eidos/conformance/lang/typescript"
 	gobackend "go.dokimi.dev/eidos/lang/go/backend"
 	graphqlbackend "go.dokimi.dev/eidos/lang/graphql/backend"
 	javabackend "go.dokimi.dev/eidos/lang/java/backend"
 	protobackend "go.dokimi.dev/eidos/lang/protobuf/backend"
+	pythonbackend "go.dokimi.dev/eidos/lang/python/backend"
 	rustbackend "go.dokimi.dev/eidos/lang/rust/backend"
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -57,8 +59,8 @@ type Entry struct {
 }
 
 // Entries returns the entry of each satellite, in the order Go,
-// TypeScript, Java, Rust, protobuf and GraphQL. The matrix reads only the
-// coverage of each corpus, so a corpus does not have a tree.
+// TypeScript, Java, Rust, protobuf, GraphQL and Python. The matrix reads
+// only the coverage of each corpus, so a corpus does not have a tree.
 func Entries() []Entry {
 	return []Entry{
 		{Corpus: gocorpus.Corpus(nil), Backend: gobackend.New(), ArgsOpen: squareOpen, ArgsClose: squareClose},
@@ -76,5 +78,9 @@ func Entries() []Entry {
 		},
 		{Corpus: protocorpus.Corpus(nil), Backend: protobackend.New()},
 		{Corpus: graphqlcorpus.Corpus(nil), Backend: graphqlbackend.New()},
+		{
+			Corpus: pythoncorpus.Corpus(nil), Backend: pythonbackend.New(), ArgsOpen: squareOpen,
+			ArgsClose: squareClose, Marker: decoratorMarker,
+		},
 	}
 }

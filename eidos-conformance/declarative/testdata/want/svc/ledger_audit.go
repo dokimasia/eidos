@@ -13,4 +13,5 @@ func (l LedgerAudit) Post(account string, cents int64) string {
 	record("Post", "info", account, cents)
 	return l.next.Post(account, cents)
 }
+
 // acme:provenance sha256:88162342398065f9351efb9bfc2ba6d2ce06cc94c30177dbf53c15b63f5db8ae

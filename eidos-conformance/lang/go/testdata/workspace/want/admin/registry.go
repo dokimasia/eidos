@@ -9,4 +9,5 @@ import (
 )
 
 type StubStore = svc.StubStore
+
 // acme:provenance sha256:fb8bb692358c4e927738cd8ce0b8bd46403011f167db04792e1567766d4ec2ef

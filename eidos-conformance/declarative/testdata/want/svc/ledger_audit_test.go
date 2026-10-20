@@ -12,4 +12,5 @@ import (
 func TestLedgerAudit(t *testing.T) {
 	var _ Ledger = LedgerAudit{}
 }
+
 // acme:provenance sha256:adca759b5ba0405f8f4fbe1dfb79bc2f838e2b7d17f49f38d445bbff17bf6eff

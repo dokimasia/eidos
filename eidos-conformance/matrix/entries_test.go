@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/lang/python"
 	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -35,7 +36,7 @@ func TestEntries(t *testing.T) {
 				langs = append(langs, e.Corpus.Frontend.Lang())
 			}
 			assert.Equal(t, langs, []symbol.Lang{
-				golang.Lang, typescript.Lang, java.Lang, rust.Lang, protobuf.Lang, graphql.Lang,
+				golang.Lang, typescript.Lang, java.Lang, rust.Lang, protobuf.Lang, graphql.Lang, python.Lang,
 			}, "the entries follow the order of the satellites")
 		})
 		t.Run("returns a backend of the language's target for each satellite", func(t *testing.T) {
@@ -53,6 +54,7 @@ func TestEntries(t *testing.T) {
 			assert.Equal(t, targets, []plugin.Target{
 				plugin.Target(golang.Lang), plugin.Target(typescript.Lang), plugin.Target(java.Lang),
 				plugin.Target(rust.Lang), plugin.Target(protobuf.Lang), plugin.Target(graphql.Lang),
+				plugin.Target(python.Lang),
 			}, "the target of each backend has the spelling of its language")
 		})
 		t.Run("returns corpora without a tree", func(t *testing.T) {
