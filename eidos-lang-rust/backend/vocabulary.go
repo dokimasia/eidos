@@ -25,6 +25,8 @@ const (
 	FuncDocs = render.HelperDocs
 	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
 	// FuncSpellValue is the template name of [Speller.SpellValue].
@@ -629,13 +631,14 @@ const (
 // set, the import set of one file. Every helper takes a
 // fixed list of arguments, because text/template allocates the list of a
 // variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty-nine helpers in four allocations,
-// and the fourteen bound helpers of the speller.
+// Funcs allocates the map of thirty helpers in four allocations, and the
+// fourteen bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:        Docs,
 		FuncMemberDocs:  MemberDocs,
+		FuncWrapDocs:    WrapDocs,
 		FuncSpell:       s.Spell,
 		FuncSpellValue:  s.SpellValue,
 		FuncTypeParams:  s.TypeParams,
@@ -678,6 +681,14 @@ func Docs(lines []string) string {
 // block. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.LineDocs(lines, docMark, memberIndent)
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that [Docs]
+// and [MemberDocs] write. rustdoc reads the documentation as CommonMark, so
+// the wrap starts no line with a block opener. It allocates what
+// [textfmt.Wrap] allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupMarkdown)
 }
 
 // TypeNames writes the names of the type parameters ps alone, in the

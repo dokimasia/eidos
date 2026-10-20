@@ -42,6 +42,7 @@ func New() backend.Backend {
 		Cluster(Cluster).
 		Groups(Groups()).
 		Scaffold(Scaffold).
+		Value(Value).
 		MemberIndent(memberIndent).
 		Imports(Imports).
 		TemplateImport(TemplateImport).

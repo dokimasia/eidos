@@ -25,6 +25,23 @@ const (
 	weightName  = "Weight"
 )
 
+// The allocations of a value.
+const (
+	// literalAllocs is an integer literal, which Rust writes as its text.
+	literalAllocs = 0
+	// callAllocs is a call of a function of another module with one
+	// argument, in a file that uses the function already: the text of the
+	// call.
+	callAllocs = 1
+	// funcAllocs is a function with one parameter and one result: the list
+	// of the spelled results, and the text of the closure.
+	funcAllocs = 2
+)
+
+// makeCall is the call make(1) of the function make of the module util.
+// The specs only read it.
+var makeCall = emit.Call(valueFn(utilModule, makeName), emit.Literal(emit.LiteralInt, "1"))
+
 // Every value spelling is pinned, for the reason the statement
 // spellings are: the text is spliced into generated bodies, and a
 // drift rewrites files.
@@ -151,6 +168,47 @@ func TestValue(t *testing.T) {
 				give: emit.Construction(valueRef(rowName, storeModule, rowName)),
 				want: "has no construction of Row", wantErr: true,
 			},
+			{
+				name: "writes a function as a closure that returns its result",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "fn(i64) -> i64", Form: symbol.FormFunc, Split: 1,
+					Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+				}, integer("0")),
+				want: "|_| 0",
+			},
+			{
+				name: "writes a function without parameters as a closure without parameters",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "fn() -> i64", Form: symbol.FormFunc, Elems: []*emit.TypeRef{ref("i64")},
+				}, integer("0")),
+				want: "|| 0",
+			},
+			{
+				name: "writes a function without results as a closure with an empty block",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "fn(i64, i64)", Form: symbol.FormFunc, Split: 2,
+					Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+				}),
+				want: "|_, _| {}",
+			},
+			{
+				name: "writes the results of a function of two results as a tuple",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "dyn Fn() -> (i64, i64)", Form: symbol.FormFunc,
+					Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+				}, integer("0"), integer("1")),
+				want: "|| (0, 1)",
+			},
+			{
+				name: "returns a value error for a function of a type that is not a function type",
+				give: emit.Func(generic("Box", &emit.TypeRef{Spelling: "dyn Fn(i64) -> i64", Form: symbol.FormFunc})),
+				want: "Box is not one", wantErr: true,
+			},
+			{
+				name: "returns a value error for a make",
+				give: emit.Make(&emit.TypeRef{Spelling: "Receiver<i64>", Form: symbol.FormStream}),
+				want: "no make of Receiver<i64>", wantErr: true,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -233,6 +291,84 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Len(), 0, "a literal names no module")
 		})
 	})
+
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes a value as the scaffold writes it", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Value(makeCall, &render.ImportSet{})
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, makeName+"(1)", "the Rust spelling")
+		})
+
+		t.Run("uses the function a call names", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := backend.Value(makeCall, &set)
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilModule, Name: makeName}}, "the function's use")
+		})
+
+		t.Run("returns a value error for a value that Rust cannot spell", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Value(emit.Construction(valueRef(rowName, storeModule, rowName)), &render.ImportSet{})
+			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+			assert.Equal(t, refused.Lang, string(rust.Lang), "naming the target")
+		})
+	})
+}
+
+// A literal allocates nothing, a call allocates its text, and a function
+// allocates the list of its results and its text. The ordinary run, which
+// runs no benchmark, checks those ceilings here.
+func TestValueAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls())
+}
+
+// BenchmarkValue measures the spelling of one value that a template
+// writes.
+func BenchmarkValue(b *testing.B) {
+	benchCalls(b, valueCalls())
+}
+
+// valueCalls returns a call of Value over an integer literal, over a call
+// of a function that the file uses already, and over a function with one
+// parameter and one result.
+func valueCalls() []allocCall {
+	literal := integer("42")
+	fn := emit.Func(&emit.TypeRef{
+		Spelling: "fn(i64) -> i64", Form: symbol.FormFunc, Split: 1,
+		Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+	}, literal)
+	set := &render.ImportSet{}
+	var (
+		out string
+		err error
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "Value spells the value")
+			assert.Equal(tb, out, want, "Value writes the Rust spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "Value", caseName: "an integer", allocs: literalAllocs,
+			call: func() { out, err = backend.Value(literal, set) }, check: spells("42"),
+		},
+		{
+			name: "Value", caseName: "a call of another module", allocs: callAllocs,
+			call: func() { out, err = backend.Value(makeCall, set) }, check: spells(makeName + "(1)"),
+		},
+		{
+			name: "Value", caseName: "a function with one result", allocs: funcAllocs,
+			call: func() { out, err = backend.Value(fn, set) }, check: spells("|_| 42"),
+		},
+	}
 }
 
 // valueRef returns a resolved reference to an item of one module.

@@ -27,6 +27,17 @@ const (
 	// emptyBraces closes a struct literal that names no field, which
 	// Rust accepts for every struct that has no field.
 	emptyBraces = " {}"
+	// closureOpen and closureClose enclose the parameters of a closure,
+	// and closureParam is a parameter that the body of the closure does
+	// not read.
+	closureOpen  = "|"
+	closureClose = "| "
+	closureParam = "_"
+	// emptyBlock is the body of a closure without results, and listSep
+	// separates the parameters of a closure and the results of a closure
+	// that returns a tuple.
+	emptyBlock = "{}"
+	listSep    = ", "
 	// unicodeOpen opens the braced Unicode escape of a control
 	// character, and unicodeDigits is the most hex digits a Unicode
 	// scalar value takes.
@@ -152,6 +163,69 @@ func (target) Address(inner emit.Value, spelled string) (string, error) {
 func (t target) Construction(ref *emit.TypeRef, _ []string) (string, error) {
 	return "", render.RefuseValue(t.Lang(),
 		"Rust builds a value through a struct literal or a call, and has no construction of %s", ref.Spelling)
+}
+
+// Func spells a closure of a function type, as |_| 0. It writes a
+// wildcard pattern for each parameter of the type. The body of the
+// closure is the result, and a function without results has an empty
+// block, as |_, _| {}. A function of two or more results returns them as
+// a tuple, because its function type returns a tuple. A closure without captures coerces to a function pointer. Func
+// does not write a type, so the file does not use anything for the
+// closure. A reference that is not a function type refuses, such as the
+// Box of a trait object, whose value is a call that boxes a closure.
+func (t target) Func(ref *emit.TypeRef, results []string) (string, error) {
+	if ref.Form != symbol.FormFunc {
+		return "", render.RefuseValue(t.Lang(),
+			"Rust writes a closure of a function type, and %s is not one", ref.Spelling)
+	}
+	params := max(ref.Split, 0)
+	n := len(closureOpen) + params*(len(closureParam)+len(listSep)) + len(closureClose) + len(emptyBlock) + len("()")
+	for _, r := range results {
+		n += len(r) + len(listSep)
+	}
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(closureOpen)
+	for i := range params {
+		if i > 0 {
+			b.WriteString(listSep)
+		}
+		b.WriteString(closureParam)
+	}
+	b.WriteString(closureClose)
+	switch len(results) {
+	case 0:
+		b.WriteString(emptyBlock)
+	case 1:
+		b.WriteString(results[0])
+	default:
+		b.WriteByte('(')
+		for i, r := range results {
+			if i > 0 {
+				b.WriteString(listSep)
+			}
+			b.WriteString(r)
+		}
+		b.WriteByte(')')
+	}
+	return b.String(), nil
+}
+
+// Make refuses: Rust has no make.
+func (t target) Make(_ *emit.TypeRef, typ string) (string, error) {
+	return "", render.RefuseValue(t.Lang(), "Rust has no make of %s", typ)
+}
+
+// Value spells one value of the value tree as Rust, through a target that
+// uses in set the items that the references and the callees of the value
+// name. The value builtin calls it, so a template writes a value as a
+// body of the same file writes it. A value that Rust has no form for
+// returns a [render.ValueError].
+//
+// Value allocates what [scaffold.Value] allocates: the text of each part
+// of the value that it joins. A literal does not allocate.
+func Value(v emit.Value, set *render.ImportSet) (string, error) {
+	return scaffold.Value(target{set: set}, v)
 }
 
 // number spells a number for Rust. A float written without a
