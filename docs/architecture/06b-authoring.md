@@ -40,8 +40,9 @@ Only the handlers are functions.
 ## Triggers
 
 **Triggers are indexed by the symbol model's subject kinds**:
-`OnInterface`, `OnStruct`, `OnEnum`, `OnSum`, `OnFunction`,
-`OnMethod`, `OnField`, `OnConstant`, `OnVariable` and `OnAlias`.
+`OnInterface`, `OnStruct`, `OnEnum`, `OnEnumVariant`, `OnSum`,
+`OnFunction`, `OnMethod`, `OnParam`, `OnReturn`, `OnField`,
+`OnConstant`, `OnVariable` and `OnAlias`.
 
 Two structural triggers join them. `OnEmit(kind)` takes one emit
 value produced by a plugin of an earlier turn in the same plan, which
@@ -212,6 +213,14 @@ per-file output. Package registries assemble across a package
 ([18-routing-and-layout.md](18-routing-and-layout.md)). One rule,
 three keys.
 
+`FileOf(id, tag?)` returns the per-source file of another declaration
+of the subject's package. `File` of a package match returns the file
+of the package clause. A package match that checks the error values of
+its package keys its output on the file of the first error value
+through `FileOf`. The invocation records the read of that declaration.
+An identity that the package does not declare is refused under
+`RefusedFile`, and the run fails.
+
 Multiple files per plugin are families crossed with keys: declare
 several tagged outputs, each with its own cardinality, and address
 them independently from one handler.
@@ -285,11 +294,16 @@ claims by their canonical order and not by their arrival
 the subject and the gating instance. Every run computes it the same
 way, so a claim a warm run keeps ranks against a new one.
 
-**An accumulator file orders its contributions** by subject identity,
-then by directive-instance source order, then by canonical match order
-and the order of the appends. So repeatable instances arrive in the order
-the author wrote them, and never in the order the dispatcher happened
-to run them.
+**An accumulator file orders its contributions** by the source
+position of their subject: the file, then the line, then the column. A
+subject without a position, such as a declaration that a plugin
+creates, comes after every subject with one. Contributions of one
+position order by subject identity, then by directive-instance source
+order, then by canonical match order and the order of the appends. So
+a file lists its declarations in the order of the source, repeatable
+instances arrive in the order the author wrote them, and neither
+follows the order in which the dispatcher ran them. The provenance of
+a unit, `Unit.Origins`, is sorted by identity.
 
 ## Annotators
 
@@ -469,6 +483,16 @@ entry(m, out.PackageFile(TagTest))       // → suite_test.go
 The target spells the join of word and tag per its own ecosystem
 ([18-routing-and-layout.md](18-routing-and-layout.md)).
 
+A family whose files test their package from outside states
+`External`. The Go target writes each test file of such a family into
+the external test package of its directory, such as `store_test` beside
+`store`, and qualifies each reference into the package under test. The
+other families of the plugin keep the package of their directory.
+
+```go
+Output(Output{Tag: TagTest, Per: PerSource, Word: "check", External: true}) // package store_test
+```
+
 ## The lowering guarantee
 
 This is the layer boundary's contract. Every rule set lowers to the
@@ -528,8 +552,9 @@ type Effect interface{ *Emitter | *Stamper }
 // Triggers: one constructor per subject kind, plus two structural.
 func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule
 func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule
-// … OnStruct, OnSum, OnFunction, OnMethod, OnField, OnConstant,
-//   OnVariable, OnAlias: same shape per kind …
+// … OnStruct, OnEnumVariant, OnSum, OnFunction, OnMethod, OnParam,
+//   OnReturn, OnField, OnConstant, OnVariable, OnAlias: the same
+//   signature for each kind …
 func OnEmit(k emit.Kind, h func(*EmitMatch, *Emitter) error) Rule
 func OnGraph(h func(*GraphMatch, *Emitter) error) Rule
 func OnPackage[E Effect](h func(*PackageMatch, E) error) Rule // each package of the scope
@@ -553,7 +578,8 @@ func Not(p Pred) Pred
 //   Errorf / Warnf(code, format, ...) // origin and position pre-bound
 //   ErrorfAt(code, pos, format, ...)  // at a carrier line instead
 // plus its subject field (.Interface, .Enum, .Method, .Package, …). The
-// host of a method is the identity m.Method.Host. SubjectMatch is that
+// host of a method is the identity m.Method.Host, and the enumeration
+// of a variant is the identity m.EnumVariant.Host. SubjectMatch is that
 // surface as an interface, and Reporter is its reporting half.
 // EmitMatch also carries Origin(), the emit value's source symbol,
 // with tracked fact reads, so a weaver can ask whose output it is
@@ -571,6 +597,7 @@ func Stmts(ss ...Stmt) Body                    // the scaffolding vocabulary
 // them, never the plugin's declaration. Every write is buffered and
 // applies in canonical match order when the phase call ends.
 func (e *Emitter) File(tag ...Tag) *Out                    // per source file
+func (e *Emitter) FileOf(id symbol.Identity, tag ...Tag) *Out // the source file of id, of the package
 func (e *Emitter) PackageFile(tag ...Tag) *Out             // per package
 func (e *Emitter) PlanFile(tag ...Tag) *Out                // per plan
 func (o *Out) Append(decls ...symbol.Symbol)               // declarations of the file

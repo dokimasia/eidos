@@ -208,8 +208,11 @@ per-plan family adds that file's full cost to each such edit.
 O(dirty) is real without persisting emit, because "whose inputs
 moved" is a table lookup rather than a rerun. Two earlier rules are
 what make partial re-execution byte-stable: contributions order by
-subject identity, and gate-free handlers make contributor sets
-computable from tables rather than by running code.
+the source position of their subject, then by its identity, and
+gate-free handlers make contributor sets computable from tables rather
+than by running code. A subject's position is part of its declaration
+edge, so a subject that moves runs its contributors again, and the
+group orders their contributions as a cold run does.
 
 An artifact whose identity changes, because layout inputs moved its
 path, is not kept. The old row's producer is gone, so it is swept,
@@ -243,9 +246,9 @@ cannot see.
 - An enumeration by kind or by directive records a membership edge
   under the reader's scope, so adding or removing a symbol in scope
   runs the enumerators again, while changing one runs only its
-  targeted readers. A package whose files or module fact move it into
-  a plan's scope or out of it runs the plan whole, because a reader
-  records no read that its scope refused.
+  targeted readers. A package whose files, module fact or round move
+  it into a plan's scope or out of it runs the plan whole, because a
+  reader does not record a read that its scope refused.
 - A package taken whole, through `PackageOf` or a package's own
   `Lookup`, records a package edge, which any member's change
   dirties, because the reader walks the members without another
@@ -284,7 +287,10 @@ out so that O(dirty) names an algorithm rather than a hope.
    them.
 3. **Diff by identity.** Unchanged declarations keep their canonical
    identities ([02-symbol-model.md](02-symbol-model.md)), and the
-   changed remainder seeds the dirty set S.
+   changed remainder seeds the dirty set S. A declaration whose unit
+   moved between the partition and a dependency round counts as
+   changed, because a rule of the generate phase runs on it in only
+   one of the two runs.
 4. **Link again.** A reference whose candidate appeared or
    disappeared, or whose followed re-export changed, selects its
    target again from the candidate tiers its region recorded. A

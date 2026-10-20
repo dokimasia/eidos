@@ -307,6 +307,17 @@ arguments of the reference. The Go rules derive `struct{}{}` as the
 one value of the empty struct, so a map of empty structs, the set of
 Go, derives its pair from the pair of its keys.
 
+A function and a make are fresh values. Each is a new value wherever a
+body writes it, so a check compares it by its identity. The two halves
+of its pair differ although their trees are equal. The Go rules
+derive two functions that return the zero value of each result for a
+function type, as `func(context.Context) error { return nil }`, and two
+makes for a channel, as `make(chan string)`. A part of a composite, such
+as an element or a field of a struct, takes no fresh value, because two
+composites would then differ in the identity of a new value alone. The
+Go rules derive the pair of a string from the hint for `any` and
+`interface{}`.
+
 `LiteralFor` reads text as a value of a type in the scope of a
 declaration, and reports false when it cannot. That serves values read
 from carriers that already consumed the language's quoting, where bare
@@ -332,12 +343,21 @@ contract rather than a
 convention, because a preference each generator has to remember is a
 preference two of them will forget.
 
-An authored text of a text, a boolean or a number type lifts by the
-shape of the type. A text of any other type lifts through `LiteralFor`
-in the scope of the declaration that states it. Where `LiteralFor` does
-not read the text, or the declaration has another language than the
-rules, the text lifts to raw text in the language of the declaration.
-Only the backend of that language spells raw text.
+An authored text lifts through the `LiteralFor` of the language of the
+declaration that states it, in the scope of that declaration, for every
+type. A name and a call are values of a number type too, so the author
+of `type Level int` can state `NewLevel()`. Where `LiteralFor` does not
+read the text, the lift depends on the shape of the type:
+
+- A text type takes the text as the content of a string.
+- A boolean and a number type refuse with `RefusedAuthored`, because the
+  text is not a value of the type.
+- Every other type takes raw text in the language of the declaration.
+  Only the backend of that language spells raw text.
+
+`SamplesOf` keeps a refused stated half. The generator then receives the
+refusal of the authored text instead of a value that the language
+derived.
 
 ## Tier 2: declared by satisfying, found by asserting
 

@@ -86,3 +86,5 @@ the decision is already made and there is nothing left to argue, write an
 | [0067](0067-the-protobuf-backend.md) | The protobuf backend | Accepted |
 | [0068](0068-the-graphql-satellite.md) | The GraphQL satellite | Accepted |
 | [0069](0069-constructions-module-directives-and-the-shared-helpers-of-plugins.md) | Constructions, module directives and the shared helpers of plugins | Draft |
+| [0074](0074-wrapped-documentation-function-values-identity-lists-and-the-order-of-a-unit.md) | Wrapped documentation, function values, identity lists and the order of a unit | Draft |
+| [0075](0075-dependency-packages-the-routing-of-a-placement-authored-literals-the-trailer-and-the-external-test-package.md) | Dependency packages, the routing of a placement, authored literals, the trailer and the external test package | Draft |

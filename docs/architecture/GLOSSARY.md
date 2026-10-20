@@ -62,7 +62,7 @@ The document named in each row carries the full contract.
 | boundary string | a spelling a human types in YAML, a directive or the CLI, resolved against a registry at Build | [README](README.md) |
 | trigger | what makes a rule's handler run: every subject, a directive, a stamped fact, an emit value, or the graph | [06b](06b-authoring.md) |
 | match | a handler's read surface: the subject, plus rules, reader and reporting already bound | [06b](06b-authoring.md) |
-| accumulator output | a `PerPackage` or `PerPlan` file filled across matches, ordered by subject identity | [18](18-routing-and-layout.md) |
+| accumulator output | a `PerPackage` or `PerPlan` file filled across matches, ordered by the source positions of its subjects | [18](18-routing-and-layout.md) |
 | Link | the step after Load that resolves type spellings to canonical identities | [02](02-symbol-model.md) |
 | kit | the frontend and backend authoring surface: declarations plus a few language callbacks, with the kit owning the rest | [11](11-languages.md) |
 | unit | the load granule the language defines. `u.Read` is its only door to the filesystem, and the unit's key folds the digest of every file the door admits | [11](11-languages.md) |

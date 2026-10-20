@@ -203,10 +203,50 @@ The Go and TypeScript targets restate it from its children. The Java
 and Rust targets refuse it under `UnspeltValue`, because the spelling
 of their composites does not follow from the structure.
 
+A function is a value of a function type that returns its result
+values, and a make is the empty value of a type that `make` returns.
+The walk passes the type of a function to the target without a
+spelling, beside the spellings of its results. It passes the type of a
+make with its spelling. Each target writes the function literal of its
+language:
+
+| Target | A function of one result | A function without results |
+|---|---|---|
+| Go | `func(context.Context) error { return nil }` | `func(string) {}` |
+| TypeScript | `() => 0` | `() => {}` |
+| Java | `(unused0) -> 0L` | `() -> {}` |
+| Rust | `\|_\| 0` | `\|_, _\| {}` |
+
+The targets follow these rules:
+
+- The Go target writes the signature through its speller, so the file
+  imports each type of the signature. The other targets do not write a
+  type, and a function there does not import anything.
+- TypeScript and Rust return the results of a function of two or more
+  results as a tuple, as their function types do. Java refuses such a
+  function, because a lambda returns one value.
+- Every target refuses a function of a type that is not a function type
+  under `UnspeltValue`, and TypeScript refuses a constructor type.
+- The Go target writes a make as `make(chan string)`. `make` is the
+  built-in of Go, so the TypeScript, Java and Rust targets refuse a make
+  under `UnspeltValue`.
+
 `Sample` is the rendered form of a Values-projection answer
 ([03-projection.md](03-projection.md)): a literal that a template or
 the builder places into a body, gated on `OK()` like every refusable
 answer.
+
+A template writes a value inside an expression through the `value`
+builtin, such as a field of a composite literal or the initializer of a
+variable. The builtin passes the `emit.Value` to the language's `Value`,
+which writes it through the scaffold target of the file and records its
+imports. So a template and a body of one file write a value with one
+spelling. A kind template, a body template and a file template all
+resolve the builtin. The backends of Go, TypeScript, Java and Rust
+declare a writer. The protobuf and GraphQL backends do not write bodies
+or declare a writer, so a call there fails under `RefusedTemplate` with
+the name of the language. A value that the target cannot spell reports
+`UnspeltValue`, as it does in a body.
 
 A body's own content is one of four things, with the body slots
 around it:
@@ -256,12 +296,14 @@ There are no per-plugin prefixes. A helper has one documented name
 everywhere, so templates move between plugins and the documentation
 can name what authors actually type.
 
-The backends of Go, TypeScript, Java and Rust declare the seven shared
-names of the render package:
+The backends of Go, TypeScript, Java and Rust declare the eight shared
+names of the render package. The protobuf and GraphQL backends declare
+`docs` and `wrapdocs`:
 
 | Helper | Writes |
 |---|---|
 | `docs` | the documentation of a declaration in the comment form of the target |
+| `wrapdocs` | the lines of a text wrapped at 72 columns, which a template passes to `docs` or to the comment helper of a member |
 | `spell` | a type reference in a type position |
 | `spellvalue` | a type reference in a value position, where the declaration must exist at run time, such as the class of a construction |
 | `typeparams` | the type parameter list of a declaration |
@@ -273,6 +315,13 @@ A TypeScript `spellvalue` imports the declaration for its value and
 the type arguments for the type checker alone. A Rust `spellvalue`
 writes the type arguments behind the turbofish of an expression's
 path.
+
+`wrapdocs` keeps a word that the documentation syntax of the target
+reads as the start of a block off the start of a line: a block tag of
+TSDoc and Javadoc, and a block opener of CommonMark in TypeScript, Rust
+and GraphQL. A Go and a protobuf comment read an unindented line as
+text. The wrap never breaks a word, so a word longer than the width is
+a line of its own.
 
 ## The engine is text/template
 
@@ -333,8 +382,8 @@ flow runs the same way in every satellite:
    so the kit parallelises the per-file loop, and each file's package
    is the import home its references qualify against.
 2. **Render declarations** through the language's kind templates, in
-   canonical order: origin identity, then the unit's declaration
-   order. A plugin's claimed file template takes the whole file
+   canonical order: the source position of each origin, then the
+   unit's declaration order. A plugin's claimed file template takes the whole file
    instead, per the order above. A backend declares each kind its
    language cannot spell refused, with a reason, and the pass
    skips a declaration of that kind under an Error that states

@@ -201,7 +201,11 @@ Third, nothing else. No version that churns the diff, no date.
 
 Every rendered file ends with the target language's comment form of
 `<brand>:provenance sha256:<hash>`, hashing the body, meaning the
-bytes between the header and the trailer.
+bytes between the header and the blank line before the trailer. gofmt
+separates a comment after the last declaration of a file by one blank
+line, so it leaves a stamped Go file unchanged. A file whose trailer
+follows the body on the next line verifies too, also after a formatter
+added the blank line.
 
 The header says "generated, do not edit". The trailer proves whose
 it is and that it is intact. It is the file's ownership record,
