@@ -103,8 +103,8 @@
     {
       "path": ".golangci.yml",
       "producer": "go",
-      "local": "79e64fbb64c8b2a2b9517053ba6fe8f60347f94649912c2b3278b65b3c0f1daa",
-      "sha256": "d940c50657d3234903a559d9537aea6a49f52c746eb4b9327fdbbd8c4c9ea95d"
+      "local": "c23796c8bb6f507c0f71c610e0a35a039dabdcc5bc40037cc823ecfd3238b918",
+      "sha256": "7b97928fca85a00277dda37b1f9905952e3f5a52f7b5d4c97555a7ed58d200e4"
     },
     {
       "path": ".markdownlint.yml",

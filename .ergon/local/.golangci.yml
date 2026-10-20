@@ -79,6 +79,8 @@ linters:
           deny:
             - pkg: github.com/tree-sitter
               desc: parse through go.dokimi.dev/eidos/lang/treesitter, the one package that binds tree-sitter
+            - pkg: github.com/dokimasia/tree-sitter
+              desc: parse through go.dokimi.dev/eidos/lang/treesitter, the one package that binds tree-sitter
 
         # A frontend reads bytes through its unit's door and the load's stores, which fold every
         # byte into a unit key. A tool's output is bytes no key folds, so no frontend runs one.
