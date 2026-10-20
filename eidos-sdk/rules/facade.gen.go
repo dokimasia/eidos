@@ -79,6 +79,17 @@ type ParamView = core.ParamView
 // results, its reference, and the role the language gave it.
 type ReturnView = core.ReturnView
 
+// IsImplementation reports whether the method m is the implementation of
+// an overloaded name among methods: m has no mark Overload, and another
+// method of its name and its level has the mark. A reader of the
+// signatures that callers see, such as the constructors of a class, leaves
+// the implementation out, because TypeScript and Python show callers the
+// overload signatures alone. It reports false for a nil method, and it
+// allocates nothing.
+func IsImplementation(m *node.Method, methods []*node.Method) bool {
+	return core.IsImplementation(m, methods)
+}
+
 // AbsentRules reports a handler asking the rules of a language the
 // composition registered none for. The refusal is a value, so the
 // run continues; the Warning is what keeps the omission from

@@ -271,6 +271,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("UnimplementedOverload", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.UnimplementedOverload, core.UnimplementedOverload, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("RefusedFact", func(t *testing.T) {
 		t.Parallel()
 
@@ -448,6 +458,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[render.Cluster](), reflect.TypeFor[core.Cluster](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Evaluated", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[render.Evaluated](), reflect.TypeFor[core.Evaluated](), "the facade aliases the kernel's type")
 		})
 	})
 

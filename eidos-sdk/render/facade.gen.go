@@ -156,6 +156,14 @@ var HelperCollision = core.HelperCollision
 // render leaves the helper out of the merged vocabulary.
 var UnbindableHelper = core.UnbindableHelper
 
+// UnimplementedOverload reports an overloaded function name of a file
+// without one implementation after its overload signatures, in a language
+// that is [Language.Implemented]. A name with signatures and no
+// implementation skips every declaration of the name. A name with two or
+// more implementations skips each implementation after the first. The file
+// renders without the skipped declarations.
+var UnimplementedOverload = core.UnimplementedOverload
+
 // RefusedFact reports a stated fact the backend declares no idiom
 // for: the declaration renders without it, and the finding is what
 // keeps the narrowing loud. It is a warning, because one neutral
@@ -302,6 +310,15 @@ type Clustered = core.Clustered
 // canonical order survive. A nil Cluster leaves every declaration a
 // singleton.
 type Cluster = core.Cluster
+
+// Evaluated yields the names that the language evaluates when a module
+// runs the declaration d. Each name is the declared name of a declaration
+// of the file that d needs defined before it, such as the base of a class
+// in Python and the superclass of a class in TypeScript. The render
+// ignores a name that no declaration of the file declares, and the name of
+// d itself. It calls Evaluated on the workers of a render, so the function
+// is safe for concurrent use.
+type Evaluated = core.Evaluated
 
 // Language is what varies between targets. The pass implements
 // everything else.

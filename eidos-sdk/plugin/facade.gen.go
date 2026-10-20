@@ -68,6 +68,51 @@ type TypeSpeller = core.TypeSpeller
 // An implementation is safe for concurrent use, as a TypeSpeller is.
 type SupertypeSpeller = core.SupertypeSpeller
 
+// Binder is the role of a backend whose target writes code against the
+// code generator of a gRPC binding, such as the messages of protoc-gen-go.
+// The emitter calls it for the handler of an rpc, and the layout calls it
+// for the package of a bound reference, whose [emit.TypeRef.Bound] is set.
+//
+// # Concurrency
+//
+// An implementation is safe for concurrent use, as a TypeSpeller is.
+type Binder = core.Binder
+
+// Translate spells a reference of the graph in the target of a plan, as
+// [eidos.Emitter.Type] translates a type, and returns the reason of a
+// refusal. [eidos.Emitter.Handler] passes one to a [Binder] for the
+// references of an rpc.
+type Translate = core.Translate
+
+// RPC is an rpc that a [Binder] serves: the identity, the documentation and
+// the visibility of the rpc as the load placed it, the service that declares
+// it, and its projection, which has its name.
+type RPC = core.RPC
+
+// CanonicalHandler returns the canonical method that serves the rpc r. The
+// method has the origin, the documentation, the name and the visibility of
+// the rpc, and the asynchrony of its projection. It has a parameter for each
+// parameter of the projection and a return for each return, in their order,
+// and translate spells each reference. Under [rules.ErrorsRaised] the method
+// states its failure in Throws, as types spells the well-known error under
+// the policy p. Another error model states the failure in the returns of the
+// projection, and CanonicalHandler does not read types, so the caller may
+// pass nil. A backend without a binder serves this method, and a binder
+// starts from it under a policy that selects no binding.
+//
+// Error modes: the error of translate, and the error of types for a target
+// without a spelling of the well-known error.
+//
+// # Allocation contract
+//
+// CanonicalHandler allocates the method, a parameter for each parameter
+// view, a return for each return view, the storage of each slot that is not
+// empty, and what translate allocates for each reference. A failure
+// allocates its list and what types allocates for its reference.
+func CanonicalHandler(r RPC, p Policy, types TypeSpeller, translate Translate) (*emit.Method, error) {
+	return core.CanonicalHandler(r, p, types, translate)
+}
+
 // ContinuedCarrier refuses a carrier that continues onto the next
 // line while its own line has the tool-directive shape. A formatter
 // may move such a line to the end of its doc comment, as gofmt does,

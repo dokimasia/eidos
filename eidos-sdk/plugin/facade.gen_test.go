@@ -71,6 +71,46 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Binder", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Binder](), reflect.TypeFor[core.Binder](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Translate", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Translate](), reflect.TypeFor[core.Translate](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("RPC", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.RPC](), reflect.TypeFor[core.RPC](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("CanonicalHandler", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.CanonicalHandler), reflect.TypeOf(core.CanonicalHandler), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("ContinuedCarrier", func(t *testing.T) {
 		t.Parallel()
 

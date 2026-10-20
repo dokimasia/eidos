@@ -81,6 +81,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("FactOverload", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactOverload, core.FactOverload, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("FactTypeParams", func(t *testing.T) {
 		t.Parallel()
 
@@ -331,6 +341,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("FactImplements", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactImplements, core.FactImplements, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("FactValue", func(t *testing.T) {
 		t.Parallel()
 
@@ -408,16 +428,6 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.FactExtends, core.FactExtends, "the facade re-declares the kernel's value")
-		})
-	})
-
-	t.Run("FactImplements", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("equals the kernel's value", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, symbol.FactImplements, core.FactImplements, "the facade re-declares the kernel's value")
 		})
 	})
 

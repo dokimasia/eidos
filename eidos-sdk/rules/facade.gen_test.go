@@ -71,6 +71,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("IsImplementation", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rules.IsImplementation), reflect.TypeOf(core.IsImplementation), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("AbsentRules", func(t *testing.T) {
 		t.Parallel()
 

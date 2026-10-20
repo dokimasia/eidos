@@ -39,6 +39,7 @@ const (
 	FactComment          = core.FactComment
 	FactVisibility       = core.FactVisibility
 	FactAsync            = core.FactAsync
+	FactOverload         = core.FactOverload
 	FactTypeParams       = core.FactTypeParams
 	FactMultiReturn      = core.FactMultiReturn
 	FactThrows           = core.FactThrows
@@ -64,6 +65,7 @@ const (
 	FactUnderlying       = core.FactUnderlying
 	FactFields           = core.FactFields
 	FactMethods          = core.FactMethods
+	FactImplements       = core.FactImplements
 	FactValue            = core.FactValue
 	FactWire             = core.FactWire
 	FactReceives         = core.FactReceives
@@ -72,7 +74,6 @@ const (
 	FactTypes            = core.FactTypes
 	FactEmbeds           = core.FactEmbeds
 	FactExtends          = core.FactExtends
-	FactImplements       = core.FactImplements
 	FactPermits          = core.FactPermits
 	FactProperties       = core.FactProperties
 	FactDefined          = core.FactDefined

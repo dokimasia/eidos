@@ -96,6 +96,12 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 // declared throws leaves it empty, and the error model remains the
 // projection's neutral question.
 //
+// Overload marks one overload signature of an overloaded name. The
+// signature has no body, and the function of the name without the mark
+// is the implementation. TypeScript writes an overload signature without
+// a body, and Python writes it under the decorator overload. A language
+// that writes a body for each overload, such as Java, leaves it false.
+//
 // The node model records the signature and never a body, because
 // parsed bodies are out of scope entirely. The emit model records a
 // generated body in its Body field: the standard slots, and one
@@ -141,6 +147,10 @@ type Function = core.Function
 // leaves it unknown. Computed marks a name that is an expression of the
 // language, such as TypeScript's [Symbol.iterator], and the name is the
 // source text of the expression.
+//
+// Overload marks one overload signature of an overloaded name, as it does
+// for a [Function]. The method of the name and the level without the mark
+// is the implementation.
 //
 // The node model records the signature and never a body, and the
 // emit model records a generated body in its Body field.
@@ -298,6 +308,11 @@ type Binding = core.Binding
 // integer type of a Rust repr attribute. It is nil where the language
 // does not declare one, as in a TypeScript, a protobuf or a Java enum.
 //
+// Implements contains the contracts that the enum satisfies. A Java
+// enum states them after implements, and a Rust impl block implements a
+// trait for an enum. A language whose enums implement nothing leaves it
+// empty.
+//
 // This is the emit spelling of the kind.
 type Enum = core.Enum
 
@@ -320,6 +335,9 @@ type EnumVariant = core.EnumVariant
 // Python spell with a bar is a type shape instead, and the two stay
 // separate because conflating them is how a target language ends up
 // guessing which one it is spelling.
+//
+// Implements contains the contracts that every variant satisfies. A
+// Rust impl block implements a trait for the whole data enum.
 //
 // This is the emit spelling of the kind.
 type Sum = core.Sum
@@ -571,6 +589,13 @@ type Alias = core.Alias
 // resolves the references among them. Only the node model has them. A
 // backend writes an inline body from the spelling of the reference, and
 // binds the imports of its children.
+//
+// Bound marks a reference to code that the code generator of a binding
+// of the plan's target writes for Target, such as a message that
+// protoc-gen-go writes under a gRPC binding. The plan does not emit its
+// referent. The layout qualifies it by the package that the binder of
+// the backend returns for Target. Only the emit model has it, because a
+// spoke of a binding sets it.
 //
 // This is the emit spelling of the kind.
 type TypeRef = core.TypeRef
