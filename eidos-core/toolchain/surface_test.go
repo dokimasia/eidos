@@ -35,6 +35,7 @@ Row extends Base
 Row implements Reader
 Row.Kind.A = 1
 Row.Kind.B
+Row.Put(string/, limit: int)
 Row.Touch()
 Row.note? string
 Shape.Area() float
@@ -51,6 +52,7 @@ async Function Load[T any](at: string, ...int) (Row, error)
 async Row.fetch(...string, int? = 10) (Row, error)
 const Enum Row.Kind
 constructor Row.New()
+delete Row.Value()
 final Struct Leaf
 get Row.Value() int
 indexer Row.At(int) string
@@ -240,6 +242,14 @@ func everyKind(path, _ string) []symbol.Symbol {
 			{
 				Name: "Value", Visibility: public, Accessor: symbol.AccessorSet,
 				Params: []*node.Param{{Name: "v", Type: &node.TypeRef{Spelling: "int"}}},
+			},
+			{Name: "Value", Visibility: public, Accessor: symbol.AccessorDelete},
+			{
+				Name: "Put", Visibility: public,
+				Params: []*node.Param{
+					{Name: "key", Passing: symbol.PassingPositional, Type: &node.TypeRef{Spelling: "string"}},
+					{Name: "limit", Passing: symbol.PassingKeyword, Type: &node.TypeRef{Spelling: "int"}},
+				},
 			},
 			{Name: "New", Visibility: public, Constructs: true},
 			{

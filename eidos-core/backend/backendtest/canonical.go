@@ -188,9 +188,10 @@ func unitFor(stem string, decls ...symbol.Symbol) plugin.Unit {
 	}
 }
 
-// flushOrder sorts decls into the order that a flush leaves. It sorts by
-// origin identity and keeps the insertion order of equal origins. It
-// returns the distinct origins in that order.
+// flushOrder sorts decls into the order that a flush leaves for origins
+// without a position, which the canonical origins are. It sorts by origin
+// identity and keeps the insertion order of equal origins. It returns the
+// distinct origins in that order.
 func flushOrder(decls []symbol.Symbol) []symbol.Identity {
 	slices.SortStableFunc(decls, func(a, b symbol.Symbol) int {
 		oa, _ := emit.OriginOf(a)

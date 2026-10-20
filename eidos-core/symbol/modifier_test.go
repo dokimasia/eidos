@@ -88,6 +88,42 @@ func TestModifier(t *testing.T) {
 		})
 	})
 
+	t.Run("Accessor", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("the zero value is an ordinary method", func(t *testing.T) {
+			t.Parallel()
+
+			var got symbol.Accessor
+			assert.Equal(t, got, symbol.AccessorNone, "the zero Accessor is no accessor")
+		})
+
+		t.Run("distinguishes AccessorDelete from AccessorGet", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, symbol.AccessorDelete, symbol.AccessorGet,
+				"a Python deleter and its getter take no parameter and spell differently")
+		})
+	})
+
+	t.Run("Passing", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("the zero value passes in the way of the language", func(t *testing.T) {
+			t.Parallel()
+
+			var got symbol.Passing
+			assert.Equal(t, got, symbol.PassingDefault, "the zero Passing is the way of the language")
+		})
+
+		t.Run("distinguishes PassingPositional from PassingKeyword", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, symbol.PassingPositional, symbol.PassingKeyword,
+				"a Python parameter before the slash and one after the star spell differently")
+		})
+	})
+
 	t.Run("Structural", func(t *testing.T) {
 		t.Parallel()
 

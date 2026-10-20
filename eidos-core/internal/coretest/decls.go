@@ -47,8 +47,9 @@ func Function(path, name string) *node.Function {
 
 // Param returns a named parameter of one callable, carrying the
 // identity the resolution step assigns it under the callable's
-// name. The fixture's parameters spell no type, so every
-// discriminator is empty, the way the step spells it.
+// name. The fixture's parameters spell no type, so the step spells
+// every discriminator empty in a language without overloads, and _
+// in a language that overloads.
 func Param(path, callable, name string) *node.Param {
 	return &node.Param{ID: MemberID(path, callable, name, symbol.KindParam), Name: name}
 }
@@ -185,7 +186,7 @@ func Populated(path, name string) *node.Struct {
 }
 
 // EveryKind returns a package holding one declaration of every kind
-// a rule can match: the twelve kinds the generated constructors
+// a rule can match: the thirteen kinds the generated constructors
 // cover, with the member kinds hanging on their hosts rather than
 // sitting loose in the file, and the function's parameter and
 // return on its signature.
@@ -236,6 +237,7 @@ func MatchableKinds() []symbol.Kind {
 		symbol.KindMethod,
 		symbol.KindInterface,
 		symbol.KindEnum,
+		symbol.KindEnumVariant,
 		symbol.KindSum,
 		symbol.KindAlias,
 		symbol.KindFunction,

@@ -14,4 +14,4 @@ package node
 // values as integers: a graph recorded under one shape must not be
 // served under another. The hash reads the lowered schema and not
 // the rendered files, so a documentation edit does not change it.
-const ModelFingerprint = "5d0de19d7b0c8fe16c51d896ba5f7f1c5f5e5f93f9e6e1edf6a45dff1b7e5f5b"
+const ModelFingerprint = "0c4d270f2cbef5f1c7b8fe1d47e46aa634f0dacef3b9587cdf7cfc513a462433"

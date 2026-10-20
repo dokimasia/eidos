@@ -71,10 +71,29 @@ const (
 	refusedStart = "X"
 )
 
+// memberMark is the mark that the convention of a member of the member case
+// puts before the name of a member.
+const memberMark = "m"
+
 // widthPolicy is the one lowering policy of the fixture target.
 var widthPolicy = plugin.PolicySpec{
 	Key: widthKey, Choices: []plugin.Choice{narrow, wide, full}, Default: narrow,
 	Doc: "the width of a declaration in the fixture target",
+}
+
+// The policy of the plan of the plan cases: its key, its choices, and the
+// line of a directive that writes its param.
+const (
+	dialectKey  plugin.PolicyKey = "tsx.dialect"
+	oldDialect  plugin.Choice    = "old"
+	newDialect  plugin.Choice    = "new"
+	dialectLine                  = "+tsx dialect=new\n"
+)
+
+// dialectPolicy is a policy that applies to every file of a plan.
+var dialectPolicy = plugin.PolicySpec{
+	Key: dialectKey, Choices: []plugin.Choice{oldDialect, newDialect}, Default: oldDialect,
+	Doc: "the dialect of every file of a plan of the fixture target", Plan: true,
 }
 
 // TestLowering tests the lowering entry of a target. The entry stamps the
@@ -190,6 +209,14 @@ func TestLowering(t *testing.T) {
 			assert.True(t, named, "every target has a name key")
 		})
 
+		t.Run("registers no key for a policy of the plan", func(t *testing.T) {
+			t.Parallel()
+
+			report := lowerRun(t, planComposition(t), lowerTree(rowLine))
+			_, chosen := meta.Lookup[string](report.Facts.Registry(), meta.KeyName(dialectKey))
+			assert.False(t, chosen, "no declaration overrides the policy of the plan")
+		})
+
 		t.Run("registers the target's keys beside the keys of its language's frontend", func(t *testing.T) {
 			t.Parallel()
 
@@ -276,6 +303,15 @@ func TestLowering(t *testing.T) {
 			refused := findings(report.Sink, directive.BadSpelling)
 			assert.Length(t, refused, 1, "the run reports the refused value")
 			assert.Contains(t, refused[0].Msg, "narrow, wide, full", "the finding lists the choices")
+		})
+
+		t.Run("returns a directive without a param for a policy of the plan", func(t *testing.T) {
+			t.Parallel()
+
+			report, err := built(t, planComposition(t)).
+				Run(t.Context(), workspace.Input{Tree: lowerTree(rowLine, dialectLine)})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the param of the policy of the plan fails the run")
+			assert.Length(t, findings(report.Sink, directive.UnknownKey), 1, "the run reports the param")
 		})
 
 		t.Run("returns a directive with a name param for a backend that keeps every name", func(t *testing.T) {
@@ -475,6 +511,24 @@ func TestLowering(t *testing.T) {
 			assert.Equal(t, targetFacts(t, report.Facts, lowerName), want,
 				"each declaration, field, method and variant has its name, and a nested type has its flat name")
 		})
+
+		t.Run("stamps the name of each member through the convention of a member", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, workspace.New().
+				Brand(fixtureBrand).
+				Targets(lowerTarget).
+				Plans(workspace.Plan{
+					Name: clientPlan, Generators: []plugin.Generator{mirror(clientMirror)},
+					Backend: memberMarking{Backend: lowerBackend(t, clientBackend, lowerTarget, camel, widthPolicy)},
+				}))
+			report := cleanRun(t, w, coretest.Frozen(t, everyNamedKind()))
+			names := targetFacts(t, report.Facts, lowerName)
+			expect.Equal(t, names["Row.Column"], memberMark+"Column", "a field takes the convention of a member")
+			expect.Equal(t, names["Row.Scan"], memberMark+"Scan", "a method takes the convention of a member")
+			expect.Equal(t, names["Row"], "row", "a struct takes the respell hook")
+			expect.Equal(t, names["Status.StatusOpen"], "statusOpen", "a variant takes the respell hook")
+		})
 	})
 
 	t.Run("selected", func(t *testing.T) {
@@ -591,6 +645,19 @@ func camel(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	return strings.ToLower(name[:1]) + name[1:], nil
 }
 
+// memberMarking is a printer whose convention of a member puts memberMark
+// before the name of each member.
+type memberMarking struct {
+	plugin.Backend
+}
+
+var _ plugin.MemberRespeller = memberMarking{}
+
+// RespellMember puts memberMark before the name of the member.
+func (memberMarking) RespellMember(_ plugin.Member, name string) (string, error) {
+	return memberMark + name, nil
+}
+
 // lowerBackend returns a printer of target under name. It declares
 // policies, and respells names through respell where respell is not nil.
 func lowerBackend(
@@ -652,6 +719,21 @@ func policyComposition(tb assert.TB) *workspace.Builder {
 		Plans(workspace.Plan{
 			Name: clientPlan, Generators: []plugin.Generator{mirror(clientMirror)},
 			Backend: lowerBackend(tb, clientBackend, lowerTarget, nil, widthPolicy),
+		})
+}
+
+// planComposition returns the lowering composition with a printer that
+// declares the width policy and the policy of the plan.
+func planComposition(tb assert.TB) *workspace.Builder {
+	tb.Helper()
+
+	return workspace.New().
+		Brand(fixtureBrand).
+		Frontends(frontendtest.NewScripted()).
+		Targets(lowerTarget).
+		Plans(workspace.Plan{
+			Name: clientPlan, Generators: []plugin.Generator{mirror(clientMirror)},
+			Backend: lowerBackend(tb, clientBackend, lowerTarget, camel, widthPolicy, dialectPolicy),
 		})
 }
 

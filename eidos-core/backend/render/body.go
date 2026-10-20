@@ -12,6 +12,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // missingKeyError is the option of text/template under which the
@@ -24,16 +25,14 @@ const missingKeyError = "missingkey=error"
 // content with: the standard slots, the owner's named slots and
 // the one content form, composed in the fixed order.
 func (f *frame) body(d any) (string, error) {
-	var b *emit.Body
 	switch decl := d.(type) {
 	case *emit.Function:
-		b = &decl.Body
+		return f.renderBody(decl, &decl.Body, "")
 	case *emit.Method:
-		b = &decl.Body
+		return f.renderBody(decl, &decl.Body, "")
 	default:
 		return "", fmt.Errorf("render: a %T has no body", d)
 	}
-	return f.renderBody(d, b, "")
 }
 
 // memberBody is the builtin a host's template places a member's content
@@ -55,8 +54,13 @@ func (f *frame) memberBody(m *emit.Method) (string, error) {
 // statement the language cannot spell fails the declaration under the
 // execute-time code. The fixed composition writes the indent as it
 // writes the lines, so an indent does not allocate on its own. Under a
-// claimed file's template, the frame records the body as placed.
-func (f *frame) renderBody(d any, b *emit.Body, indent string) (string, error) {
+// claimed file's template, the frame records the body as placed. While
+// the body renders, the import set names d as the callable of the body
+// and the declaration whose template executes as its host.
+func (f *frame) renderBody(d symbol.Symbol, b *emit.Body, indent string) (string, error) {
+	callable, host := f.set.callable, f.set.host
+	f.set.callable, f.set.host = d, f.decl
+	defer func() { f.set.callable, f.set.host = callable, host }()
 	if f.claiming {
 		if f.placed == nil {
 			f.placed = map[*emit.Body]bool{}
@@ -134,7 +138,7 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 		parsed, err = template.New(b.Ref.Name).
 			Option(missingKeyError).
 			Funcs(f.vocab).Funcs(f.merged).
-			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use, f.header)).
+			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use, f.header, f.value)).
 			Parse(string(src))
 		if err != nil {
 			f.sink.Errorf(UnresolvedRef, f.at, f.origin,

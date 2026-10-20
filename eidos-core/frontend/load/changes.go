@@ -29,7 +29,8 @@ type Changes struct {
 	Disappeared []symbol.Identity
 	// Changed lists the declarations that the load and the record both
 	// declare with a different subtree, position, reference target,
-	// directive or stamp.
+	// directive or stamp, and the declarations of a unit that a dependency
+	// round loads in only one of them.
 	Changed []symbol.Identity
 	// Packages lists the packages that contain a declaration that
 	// appeared, disappeared or changed, and the packages whose own fields,
@@ -48,6 +49,9 @@ type Changes struct {
 	// declare under different names: a package clause that an edit
 	// changed.
 	Renamed []symbol.Identity
+	// Dependency lists the packages that the load and the record both
+	// declare, and that a dependency round loads in only one of them.
+	Dependency []symbol.Identity
 }
 
 // Spelling is one directive spelling that a subject gained or lost, and
@@ -60,16 +64,18 @@ type Spelling struct {
 
 // fingerprint is what a change of one declaration compares: the digest
 // of its subtree's encoding, which covers its position and its
-// references' targets, and the directives and stamps attached to it.
+// references' targets, the directives and stamps attached to it, and
+// whether a dependency round loaded its unit.
 type fingerprint struct {
 	digest     [sha256.Size]byte
 	directives []directive.Raw
 	stamps     []meta.RawStamp
+	dependency bool
 }
 
 // equal reports whether two fingerprints state one declaration.
 func (f fingerprint) equal(o fingerprint) bool {
-	return f.digest == o.digest &&
+	return f.digest == o.digest && f.dependency == o.dependency &&
 		reflect.DeepEqual(f.directives, o.directives) && reflect.DeepEqual(f.stamps, o.stamps)
 }
 
@@ -99,11 +105,12 @@ func newSide() *side {
 }
 
 // add adds the fingerprints of a region's declarations and package parts,
-// and the raw directives and stamps that the region attaches.
+// and the raw directives and stamps that the region attaches. dependency
+// reports that a dependency round loaded the unit of the region.
 //
 // Error modes: the error of [node.AppendBinary] for a symbol the model
 // does not declare.
-func (s *side) add(r *store.Region) error {
+func (s *side) add(r *store.Region, dependency bool) error {
 	for id, raws := range r.Directives {
 		s.directives[id] = append(s.directives[id], raws...)
 	}
@@ -119,6 +126,7 @@ func (s *side) add(r *store.Region) error {
 		}
 		s.packages[p.ID] = append(s.packages[p.ID], fingerprint{
 			digest: sha256.Sum256(b), directives: r.Directives[p.ID], stamps: r.Stamps[p.ID],
+			dependency: dependency,
 		})
 		s.names[p.ID] = append(s.names[p.ID], p.Name)
 		for _, f := range p.Files {
@@ -136,6 +144,7 @@ func (s *side) add(r *store.Region) error {
 				id := d.Identity()
 				s.decls[id] = fingerprint{
 					digest: sha256.Sum256(enc), directives: r.Directives[id], stamps: r.Stamps[id],
+					dependency: dependency,
 				}
 				return true
 			})
@@ -164,20 +173,20 @@ func (l *loader) changes(units []*unit, removed []*UnitRecord) (*Changes, error)
 		if u.record != nil {
 			old, err := l.recordedRegion(u)
 			if err == nil {
-				err = before.add(old)
+				err = before.add(old, u.record.Round > 0)
 			}
 			if err != nil {
 				return nil, err
 			}
 		}
-		if err := after.add(u.region); err != nil {
+		if err := after.add(u.region, u.round > 0); err != nil {
 			return nil, err
 		}
 	}
 	for _, rec := range removed {
 		old, err := l.history.region(rec)
 		if err == nil {
-			err = before.add(old)
+			err = before.add(old, rec.Round > 0)
 		}
 		if err != nil {
 			return nil, err
@@ -242,6 +251,15 @@ func compare(before, after *side) *Changes {
 			c.Renamed = append(c.Renamed, id)
 		}
 	}
+	partition := func(f fingerprint) bool { return !f.dependency }
+	for id, parts := range after.packages {
+		if was, held := before.packages[id]; held &&
+			slices.ContainsFunc(was, partition) != slices.ContainsFunc(parts, partition) {
+
+			c.Dependency = append(c.Dependency, id)
+		}
+	}
+	slices.SortFunc(c.Dependency, symbol.Identity.Compare)
 	slices.SortFunc(c.Renamed, symbol.Identity.Compare)
 	slices.SortFunc(c.Appeared, symbol.Identity.Compare)
 	slices.SortFunc(c.Disappeared, symbol.Identity.Compare)

@@ -90,6 +90,16 @@ const (
 // refName is the template every reference-form fixture body names.
 const refName = "method1.tpl"
 
+// The policy of a context: the target that declares it, its key and
+// choices, and the helper that writes the choice of the key.
+const (
+	policyTarget plugin.Target    = "fixture"
+	widthKey     plugin.PolicyKey = "fixture.width"
+	narrowWidth  plugin.Choice    = "narrow"
+	wideWidth    plugin.Choice    = "wide"
+	widthHelper                   = "width"
+)
+
 // The pass's fixture: the packages, keys, plugins and declarations
 // the cases route and render.
 const (
@@ -760,6 +770,32 @@ func TestPass(t *testing.T) {
 			assert.Empty(t, files[0].Packages, "the file read no declared name")
 		})
 
+		t.Run("gives the import set of each file the policy of the context", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Funcs = func(set *render.ImportSet) template.FuncMap {
+				return template.FuncMap{widthHelper: func() plugin.Choice {
+					c, _ := set.Policy().Lookup(widthKey)
+					return c
+				}}
+			}
+			l.Kinds[symbol.KindStruct] = "type {{.Name}} " + action(widthHelper) + "\n"
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey, alphaName), unitOf(emitter, userKey, betaName))
+			sink := diag.NewSink()
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName, Policy: widthPolicy(t),
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 2, "the units route into two files")
+			for _, f := range files {
+				assert.HasSuffix(t, string(f.Body), " "+string(wideWidth)+"\n", f.Path+" reads the chosen width")
+			}
+		})
+
 		t.Run("gives the import set of each file the files that it refers into", func(t *testing.T) {
 			t.Parallel()
 
@@ -850,12 +886,12 @@ const (
 	// refusedKindsAllocs is one copy of a refusal map of one entry: the
 	// map and its group.
 	refusedKindsAllocs = 2
-	// renderOneAllocs is one Render of one file of one struct: 26 for
-	// the clone of the parsed templates and the seven builtins that bind
+	// renderOneAllocs is one Render of one file of one struct: 27 for
+	// the clone of the parsed templates and the eight builtins that bind
 	// them to the file's import set, about 22 for the worker, its frame
 	// and its import set, and about 23 for the file: the template's run
 	// through reflection, its buffers and the rendered bytes.
-	renderOneAllocs = 71
+	renderOneAllocs = 72
 	// renderStructsAllocs is one render of 1,000 files of 200 structs:
 	// 613,293 on average with a standard deviation of 6. Each struct's
 	// template run through reflection allocates 3, and each file about
@@ -1133,7 +1169,8 @@ func stubNaming(u plugin.Unit) string {
 
 // language returns the smallest valid language: a struct
 // spelling, a callable spelling that places its body, a scaffold
-// printer for names and returns, and a pass-through formatter.
+// printer for names and returns, a writer of values, and a pass-through
+// formatter.
 func language() render.Language {
 	return render.Language{
 		Kinds: map[symbol.Kind]string{
@@ -1142,6 +1179,7 @@ func language() render.Language {
 		},
 		Naming:   stubNaming,
 		Scaffold: scaffold,
+		Value:    valueOf,
 		Imports:  pathImports,
 		Finalise: func(src []byte) ([]byte, error) { return src, nil },
 	}
@@ -1160,6 +1198,19 @@ func pathImports(set *render.ImportSet) string {
 // fixture template names a builtin or a helper through its constant.
 func action(words ...string) string {
 	return "{{" + strings.Join(words, " ") + "}}"
+}
+
+// widthPolicy returns the resolved policy of policyTarget, which selects
+// wideWidth for widthKey.
+func widthPolicy(tb assert.TB) plugin.Policy {
+	tb.Helper()
+
+	p, err := plugin.NewPolicy(policyTarget, []plugin.PolicySpec{{
+		Key: widthKey, Choices: []plugin.Choice{narrowWidth, wideWidth}, Default: narrowWidth,
+		Doc: "the width of a line",
+	}}, map[plugin.PolicyKey]plugin.Choice{widthKey: wideWidth})
+	assert.NoError(tb, err, "the policy of the fixture resolves")
+	return p
 }
 
 // helpers returns a vocabulary that binds nothing to the file's
@@ -1253,6 +1304,23 @@ func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 		return []byte("\treturn\n"), nil
 	default:
 		return nil, errors.New("the fixture spells names and returns only")
+	}
+}
+
+// valueOf is the fixture's writer of values. It writes a value with a
+// callee as the package and the name of the callee, and records the
+// package as an import. It writes any other value as its text, and
+// refuses a value without text, as a target refuses a form that it has
+// no syntax for.
+func valueOf(v emit.Value, set *render.ImportSet) (string, error) {
+	switch {
+	case !v.Callee.IsZero():
+		set.Add(v.Callee.Package)
+		return v.Callee.Package + "." + v.Callee.Name, nil
+	case v.Text != "":
+		return v.Text, nil
+	default:
+		return "", render.RefuseValue("fixture", "the fixture writes no %s without text", v.Kind)
 	}
 }
 

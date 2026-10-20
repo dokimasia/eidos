@@ -45,6 +45,7 @@ const (
 		"// fixture:source svc/store\n" +
 		"\n" +
 		"type ForRow struct{}\n" +
+		"\n" +
 		"// fixture:provenance sha256:4404d869611c27ccb644bbccc50ca9a36c455d69d54c72eec8e8b9428ad46b48\n"
 )
 
@@ -65,6 +66,7 @@ const (
 		"// fixture:source svc/api\n" +
 		"\n" +
 		"type ForUserOfLib struct{}\n" +
+		"\n" +
 		"// fixture:provenance sha256:9364e921b5b45a0e083608a1358d6f8b03f7659a7b42c35780baf5bb14bca749\n"
 )
 

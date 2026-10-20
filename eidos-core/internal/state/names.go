@@ -15,10 +15,12 @@ import (
 )
 
 // The tags that open the second part of a key of the names table: an
-// entry under its collision scope, or under its origin.
+// entry under its source scope, under its origin, or under its routed
+// scope.
 const (
-	rowByScope  = 's'
-	rowByOrigin = 'o'
+	rowByScope     = 's'
+	rowByOrigin    = 'o'
+	rowByFileScope = 'f'
 )
 
 // KeptNames is the name table that a generation records for one plan,
@@ -26,8 +28,9 @@ const (
 // out every entry of a file that skip reports, which are the files that
 // the run generates again. Each lookup scans the rows of one key prefix.
 // InPackage reads the rows of the package's scope under the emitted name,
-// OfOrigin the rows of the origin under the emitted name, and InScope the
-// rows of the scope, which it sorts by settled name once and keeps.
+// OfOrigin the rows of the origin under the emitted name, and InScope and
+// InFileScope the rows of a source scope and of a routed scope, which each
+// sorts by settled name once and keeps.
 //
 // The methods of [plugin.Names] return no error. A lookup that meets a row
 // that does not read whole or does not decode finds nothing, and
@@ -47,20 +50,29 @@ type KeptNames struct {
 	s    *PhaseState
 	plan string
 	skip func(file string) bool
-	// scopes keeps the entries of each scope that InScope read, and strings
-	// the strings that the decodes share.
-	scopes  map[scopeName][]plugin.NameEntry
-	strings map[string]string
-	err     error
+	// scopes keeps the entries of each source scope that InScope read,
+	// fileScopes the entries of each routed scope that InFileScope read,
+	// and strings the strings that the decodes share.
+	scopes     map[scopeName][]plugin.NameEntry
+	fileScopes map[fileScopeName][]plugin.NameEntry
+	strings    map[string]string
+	err        error
 }
 
 var _ plugin.Names = (*KeptNames)(nil)
 
-// scopeName names one collision scope: a package, and the receiver that
-// its methods and its received fields attach to, empty for the package's
-// other names.
+// scopeName names one source scope: a package, and the receiver that its
+// methods and its received fields attach to, empty for the package's other
+// names.
 type scopeName struct {
 	pkg      string
+	receiver string
+}
+
+// fileScopeName names one routed scope: the namespace of a routed file,
+// and the receiver as [scopeName] has it.
+type fileScopeName struct {
+	scope    symbol.Identity
 	receiver string
 }
 
@@ -106,7 +118,7 @@ func (n *KeptNames) OfOrigin(origin symbol.Identity, emitted string) (plugin.Nam
 	return entries[0], true
 }
 
-// InScope returns the entries of one collision scope, sorted by settled
+// InScope returns the entries of one source scope, sorted by settled
 // name: the methods and the fields that attach to the receiver where it
 // is set, and the package's other file-level names where it is empty. It
 // reads each scope once and returns the same list to every later call,
@@ -123,6 +135,26 @@ func (n *KeptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 		n.scopes = map[scopeName][]plugin.NameEntry{}
 	}
 	n.scopes[at] = entries
+	return entries
+}
+
+// InFileScope returns the entries of one routed scope, sorted by settled
+// name: the names that the kept files of the namespace scope declare under
+// receiver, and their other file-level names where receiver is empty. It
+// reads each scope once and returns the same list to every later call,
+// which the caller does not mutate.
+func (n *KeptNames) InFileScope(scope symbol.Identity, receiver string) []plugin.NameEntry {
+	at := fileScopeName{scope: scope, receiver: receiver}
+	if entries, read := n.fileScopes[at]; read {
+		return entries
+	}
+	var key [spellingCap]byte
+	entries := n.entries(fileScopePrefix(key[:0], n.plan, scope, receiver))
+	slices.SortStableFunc(entries, func(a, b plugin.NameEntry) int { return strings.Compare(a.Settled, b.Settled) })
+	if n.fileScopes == nil {
+		n.fileScopes = map[fileScopeName][]plugin.NameEntry{}
+	}
+	n.fileScopes[at] = entries
 	return entries
 }
 
@@ -165,13 +197,33 @@ func scopePrefix(dst []byte, plan, pkg, receiver string) []byte {
 	return append(append(dst, receiver...), keySep)
 }
 
-// scopeRowKey appends the key of a name's row under its collision scope to
+// scopeRowKey appends the key of a name's row under its source scope to
 // dst: the scope's prefix, then the emitted name, the separator and the
 // settled name. A plan that commits declares one settled name once in a
 // scope, so the key is the entry's own.
 func scopeRowKey(dst []byte, plan string, e *plugin.NameEntry) []byte {
 	dst = append(append(scopePrefix(dst, plan, e.Package, e.Receiver), e.Emitted...), keySep)
 	return append(dst, e.Settled...)
+}
+
+// fileScopePrefix appends the prefix of a routed scope's rows to dst: the
+// plan, the routed scope tag, the namespace of the routed file and the
+// receiver, each closed by the separator.
+func fileScopePrefix(dst []byte, plan string, scope symbol.Identity, receiver string) []byte {
+	dst = append(append(dst, plan...), keySep, rowByFileScope, keySep)
+	dst = append(identityKey(dst, scope), keySep)
+	return append(append(dst, receiver...), keySep)
+}
+
+// fileScopeRowKey appends the key of a name's row under its routed scope
+// to dst: the prefix of the namespace scope of the name's file, then the
+// settled name, the source package and the emitted name. A plan that
+// commits declares one settled name once in a routed scope, so the key is
+// the entry's own.
+func fileScopeRowKey(dst []byte, plan string, scope symbol.Identity, e *plugin.NameEntry) []byte {
+	dst = append(append(fileScopePrefix(dst, plan, scope, e.Receiver), e.Settled...), keySep)
+	dst = append(append(dst, e.Package...), keySep)
+	return append(dst, e.Emitted...)
 }
 
 // originRowKey appends the key of a name's row under its origin to dst:

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"reflect"
 	"runtime"
 	"slices"
 	"sync"
@@ -880,7 +881,7 @@ func (w *Workspace) metaClaims(
 				errs = append(errs, facts.Withdraw(key, claim))
 				continue
 			}
-			if value, typed := setValue(d); typed {
+			if value, typed := setValue(d, w.keys.Type(key)); typed {
 				errs = append(errs, facts.StampRaw(meta.RawStamp{Key: name, Value: value, Pos: d.Pos}, claim))
 			}
 			continue
@@ -909,12 +910,24 @@ func (w *Workspace) metaClaims(
 	return touched, errors.Join(errs...)
 }
 
-// setValue returns the fact that a validated set instance writes: the
-// list of its values param, or the typed value of its value param. It
-// reports false for an identity without a target, which only a validation
-// without a resolver leaves, and the workspace always validates with one.
-func setValue(d directive.Directive) (any, bool) {
+// setValue returns the fact that a validated set instance of a key of the
+// type keyType writes: the list of its values param, or the typed value of
+// its value param. The values of a key of a list of identities are the
+// identities that the validation bound. It reports false for an identity
+// without a target, which only a validation without a resolver leaves, and
+// the workspace always validates with one.
+func setValue(d directive.Directive, keyType reflect.Type) (any, bool) {
 	if list, held := d.Param(directive.MetaValues); held {
+		if keyType == reflect.TypeFor[[]symbol.Identity]() {
+			ids := make([]symbol.Identity, 0, len(list.List))
+			for _, e := range list.List {
+				if e.Target.IsZero() {
+					return nil, false
+				}
+				ids = append(ids, e.Target)
+			}
+			return ids, true
+		}
 		values := make([]string, 0, len(list.List))
 		for _, e := range list.List {
 			values = append(values, e.Str)

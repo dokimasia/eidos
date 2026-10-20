@@ -95,6 +95,7 @@ func TestMirror(t *testing.T) {
 					Default:  keysDefault,
 					Optional: true,
 					Variadic: symbol.VariadicPositional,
+					Passing:  symbol.PassingKeyword,
 					Type: &node.TypeRef{
 						Spelling: keysSpelling,
 						Form:     symbol.FormList,
@@ -129,6 +130,7 @@ func TestMirror(t *testing.T) {
 					Default:  keysDefault,
 					Optional: true,
 					Variadic: symbol.VariadicPositional,
+					Passing:  symbol.PassingKeyword,
 					Type: &emit.TypeRef{
 						Spelling: keysSpelling,
 						Form:     symbol.FormList,

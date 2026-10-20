@@ -156,6 +156,13 @@ func (x *Method) Docs() []string { return x.Doc }
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Passing states whether a caller passes the argument by position alone,
+// by keyword alone, or in the way of the language. A Python parameter
+// before the slash of its signature is positional, and one after its star
+// is a keyword. A generator that writes a keyword parameter as an ordinary
+// one changes the calls that the callee accepts, so the passing is a field
+// of the parameter and not metadata.
+//
 // Doc is the documentation of the parameter, such as the description of
 // a GraphQL argument. A language that documents a parameter in the
 // documentation of its callable leaves it empty.
@@ -175,6 +182,7 @@ type Param struct {
 	Default     string             `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
 	Optional    bool               `json:"optional,omitzero"` // present-or-absent: TypeScript's ?, Swift's defaulted trailing
 	Variadic    symbol.Variadic    `json:"variadic,omitzero"` // positional or keyword
+	Passing     symbol.Passing     `json:"passing,omitzero"`  // by position, by keyword, or the way of the language
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
 }
 
@@ -591,6 +599,13 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 // the field is in the scope that declares it. A field declared inside
 // its type leaves Receives nil.
 //
+// Wire marks an emitted name that is a key of a wire format, which a
+// consumer matches by string, such as a key of a JSON object. The settle
+// keeps such a name as the generator wrote it, and the target writes it as
+// it is or refuses it. The node side has no such field, because a source
+// states a key through its own syntax: a protobuf json_name, a Go struct
+// tag, a GraphQL field name.
+//
 // This is the emit spelling of the kind.
 type Field struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
@@ -603,6 +618,7 @@ type Field struct {
 	Hard        bool               `json:"hard,omitzero"`     // runtime-private: TypeScript's # names
 	Optional    bool               `json:"optional,omitzero"` // present-or-absent: TypeScript's ?
 	Computed    bool               `json:"computed,omitzero"` // the name is an expression: TypeScript's [expr]
+	Wire        bool               `json:"wire,omitzero"`     // the name is a key of a wire format
 	Type        *TypeRef           `json:"type,omitzero"`
 	Receives    *TypeRef           `json:"receives,omitzero"` // set when declared outside the type it attaches to
 	Value       string             `json:"value,omitzero"`    // initializer's source spelling, unevaluated; "" when none

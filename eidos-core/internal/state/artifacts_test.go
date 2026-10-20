@@ -33,8 +33,10 @@ const recordedHash = "sha256:00112233445566778899aabbccddeeff0011223344556677889
 // reader keeps the block that the lookup reads.
 const (
 	// artifactAllocs is one artifact's lookup: the strings and the lists of
-	// the decoded record, whose decoder stays on the stack.
-	artifactAllocs = 31
+	// the decoded record, whose decoder is on the stack. Two of them are
+	// the strings of the namespace, which the recorded artifact names apart
+	// from its package.
+	artifactAllocs = 33
 	// clashesAllocs is one path's clashes: the rows of the scan that finds
 	// the path, and the list of clashes with the path and the plan of its
 	// row. The prefixes of the four scans stay on the stack, and the scans
@@ -59,6 +61,15 @@ func TestArtifacts(t *testing.T) {
 				want := recordedArtifact(artifactPath, recordedSubject)
 				got := artifactOf(t, func(l *state.Lane) { l.Artifact(want) })
 				assert.Equal(t, got, want, "the record contains the entry, the export rows and the names")
+			})
+
+			t.Run("returns the record of a file whose namespace is its package", func(t *testing.T) {
+				t.Parallel()
+
+				want := recordedArtifact(artifactPath, recordedSubject)
+				want.Scope = want.Pkg
+				got := artifactOf(t, func(l *state.Lane) { l.Artifact(want) })
+				assert.Equal(t, got, want, "the record restores the namespace from the package")
 			})
 
 			t.Run("returns false for a path that no plan wrote", func(t *testing.T) {
@@ -281,6 +292,10 @@ func lookedUpArtifact(tb testing.TB) *state.Generation {
 	})
 }
 
+// artifactScope is the namespace of the names of the recorded artifacts,
+// which the target names apart from their package.
+var artifactScope = symbol.Identity{Lang: edgePackage.Lang, Package: "svc", Kind: symbol.KindPackage}
+
 // recordedArtifact returns the recorded plan's artifact of one file at a
 // path, generated from a subject by the generator into the host unit: one
 // export row and one name, each the subject's name.
@@ -291,6 +306,7 @@ func recordedArtifact(at string, subject symbol.Identity) state.Artifact {
 			Plugins: []diag.Origin{generatorID}, Sources: []string{recordedPos.File},
 		},
 		Pkg:   edgePackage,
+		Scope: artifactScope,
 		Group: hostUnit,
 		At:    recordedPos,
 		First: "struct " + subject.Name,

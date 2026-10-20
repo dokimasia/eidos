@@ -38,6 +38,10 @@ type Fixture struct {
 	// reads them from the plugins.
 	Funcs     map[plugin.ID]template.FuncMap
 	Overrides map[plugin.ID][]string
+	// Policy is the plan's resolved lowering policy, which the render reads
+	// through the import set of each file. The zero Policy declares no key,
+	// and a backend then renders under the defaults of its policies.
+	Policy plugin.Policy
 }
 
 // Setup builds the backend under test and the emit fixture that it
@@ -53,7 +57,7 @@ type Setup func(tb assert.TB) (backend.Backend, *Fixture)
 // files through the filename speller of b.
 func (f *Fixture) Context(b backend.Backend, sink *diag.Sink) *plugin.RenderContext {
 	return &plugin.RenderContext{
-		Emit: f.Emit, Files: Files(f.Emit, b), Schedule: f.Schedule, Trees: f.Trees,
+		Emit: f.Emit, Files: Files(f.Emit, b), Schedule: f.Schedule, Trees: f.Trees, Policy: f.Policy,
 		Funcs: f.Funcs, Overrides: f.Overrides,
 		Sink: sink, Plugin: origin,
 	}

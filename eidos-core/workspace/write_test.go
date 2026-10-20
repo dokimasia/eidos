@@ -24,6 +24,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -106,6 +107,20 @@ func (s *refusingSink) Discard() error {
 	return nil
 }
 
+// withholding is a printer whose render withholds the first routed file
+// of a plan without a finding, and renders the other files through the
+// printer.
+type withholding struct {
+	plugin.Backend
+}
+
+// Render renders every routed file of the context but the first.
+func (w withholding) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+	rest := *ctx
+	rest.Files = ctx.Files[1:]
+	return w.Backend.Render(&rest)
+}
+
 // opener records the sinks that the output of a composition opens, a
 // new memory sink for each call. It is safe for concurrent runs.
 type opener struct {
@@ -137,6 +152,10 @@ const wordHelper = "word"
 // clauseHelper is the name of the helper through which the struct template
 // of the clause printer writes the name that a package declares.
 const clauseHelper = "clause"
+
+// widthHelper is the name of the helper through which the struct template
+// of the width printer writes the choice of the width policy.
+const widthHelper = "width"
 
 // cacheClause is the name that the package clause of the cache package
 // declares in the cases of the declared names, and renamedClause the name
@@ -300,6 +319,31 @@ func TestWrite(t *testing.T) {
 			assert.Contains(t, body, "type ForAlpha \n", "the render has no name for the cache package")
 		})
 
+		t.Run("renders under the policy that the plan selects", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			w, err := workspace.New().
+				Brand(fixtureBrand).
+				Annotators(stamper("noter", quiet)).
+				Targets(lowerTarget).
+				Plans(workspace.Plan{
+					Name:       "plan",
+					Generators: []plugin.Generator{mirror("mirror")},
+					Backend:    widthPrinter(),
+					Sources:    workspace.Sources{Packages: []string{coretest.StorePath}},
+				}).
+				Config(workspace.Config{Policies: map[plugin.PolicyKey]plugin.Choice{widthKey: wide}}).
+				Output(o.open).
+				Build()
+			assert.NoError(t, err, "the width composition composes")
+			_, err = w.Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			body := string(o.opened()[0].Files()[coretest.StorePath+"/gen.txt"])
+			assert.Contains(t, body, "type ForAlpha "+string(wide)+"\n", "the render reads the plan's choice")
+		})
+
 		t.Run("discards the staging after a refused write", func(t *testing.T) {
 			t.Parallel()
 
@@ -329,6 +373,22 @@ func TestWrite(t *testing.T) {
 			cfg := layout.Config{Policy: layout.PolicyCentralised, Dir: "out"}
 			assert.Permutation(t, writtenPaths(t, routing(t, cfg, o.open), g, &o),
 				[]string{"out/" + coretest.StorePath + "/gen.txt"}, "the source directory under the output directory")
+		})
+
+		t.Run("records the names of the files that a backend renders", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := built(t, sealingPlans(mem, workspace.Plan{
+				Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)}, Backend: withholding{fixturePrinter()},
+			}))
+			sealedRun(t, w, workspace.Input{Tree: roundsTree(rowLine, userLine)})
+			names := phasesIn(t, mem).Names("plan", nil)
+			got, held := names.InPackage(storePackage.Package, "ForRow")
+			assert.True(t, held, "the rendered file of the store package records its name")
+			assert.Equal(t, got.File, storeGenerated, "the name is the name of the store package's file")
+			_, held = names.InPackage(apiPackage.Package, "ForUser")
+			assert.False(t, held, "the withheld file of the api package records no name")
 		})
 
 		t.Run("opens no sink for a run whose layout rejects a declaration", func(t *testing.T) {
@@ -440,6 +500,32 @@ func clausePrinter(target plugin.Target, path string) plugin.Backend {
 		Imports(func(*render.ImportSet) string { return "" }).
 		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
 		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// widthPrinter returns a kit backend of the lowering target that declares
+// the width policy. Its struct template writes the choice of the policy,
+// as the import set of the file has it, after the name of the struct. Each
+// call returns a new backend.
+func widthPrinter() plugin.Backend {
+	return backend.New("widths", lowerTarget, plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} {{" + widthHelper + "}}\n",
+		}).
+		Funcs(func(set *render.ImportSet) template.FuncMap {
+			return template.FuncMap{widthHelper: func() plugin.Choice {
+				c, _ := set.Policy().Lookup(widthKey)
+				return c
+			}}
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Policies(widthPolicy).
 		Build()
 }
 

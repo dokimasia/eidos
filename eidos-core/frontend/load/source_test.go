@@ -54,5 +54,36 @@ func TestSource(t *testing.T) {
 			assert.False(t, held, "the region reads as absent")
 			assert.ErrorIs(t, warm.g.Damaged(), errUnreadable, "and the graph reports why")
 		})
+
+		t.Run("marks the package of a unit of a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, depTree(), with(recorded()), stores(depStore()))
+			assert.True(t, g.Dependency(declIn(libPath, libName)), "a dependency round loads the library")
+		})
+
+		t.Run("marks the package of a vendored unit of a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, vendorTree(), with(vendoring()))
+			assert.True(t, g.Dependency(declIn(libPath, libName)),
+				"a dependency round loads the library from the workspace")
+		})
+
+		t.Run("marks no package of a unit of the partition", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, depTree(), with(recorded()), stores(depStore()))
+			assert.False(t, g.Dependency(declIn(appPath, appName)), "the partition loads the application")
+		})
+
+		t.Run("marks the package of a kept unit of a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, depTree(), depTree(), with(recorded()), stores(depStore()))
+			assert.Equal(t, unitOf(t, warm.report, member(libFile)).From, load.FromGeneration,
+				"the warm load keeps the library's unit")
+			assert.True(t, warm.g.Dependency(declIn(libPath, libName)), "the record states the round of the unit")
+		})
 	})
 }

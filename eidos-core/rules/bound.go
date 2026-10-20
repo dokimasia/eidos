@@ -71,7 +71,9 @@ func (b Bound) Lang() symbol.Lang { return b.source.Lang() }
 
 // CallableOf projects a function or a method, and reports false for any
 // other symbol, nil included. The language classifies each parameter and
-// each return, and names the error model.
+// each return, and names the error model. Under [ErrorsResultType], a
+// language with [ResultRules] splits a return of a result type into its
+// value and its failure.
 //
 // # Allocation contract
 //
@@ -134,8 +136,9 @@ func (b Bound) FieldTypeOf(f *node.Field) TypeShape {
 // MembersOf allocates the members it returns, the gaps it returns, and
 // the path of each contributor it descends into. A contributor with type
 // arguments allocates the members it restates. The walk's working
-// storage comes from a pool. A walk of a struct that embeds one type
-// allocates two: the members and the one path.
+// storage, the linearizations of [ShadowLinearise] included, comes from
+// a pool. A walk of a struct that embeds one type allocates two: the
+// members and the one path.
 func (b Bound) MembersOf(sym symbol.Symbol) (MemberSet, bool) { return b.membersOf(sym) }
 
 // SamplesOf returns two distinct values of a type. The values an

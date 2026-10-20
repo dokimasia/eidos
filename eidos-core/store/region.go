@@ -51,6 +51,10 @@ type RegionInfo struct {
 	// Directives are the spellings of the raw directives attached in
 	// the region, sorted.
 	Directives []directive.Name
+	// Dependency reports that a dependency round of a frontend loaded the
+	// unit of the region. The load sets it from the round of the unit, and
+	// [Region.Info] leaves it false.
+	Dependency bool
 }
 
 // RegionFile is one file of a region and the package it declares.

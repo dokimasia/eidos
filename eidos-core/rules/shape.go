@@ -96,7 +96,7 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 // A language's Builtin maps its own spelling of a well-known type onto
 // one of these blessed reference identities, so a Go time.Time and a
 // proto Timestamp project to one shape. The registry contains these
-// four, and growing it only adds entries.
+// five, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = wellKnown("timestamp")
@@ -108,6 +108,11 @@ var (
 	// WellKnownError is the value of a failure, such as Go's error and
 	// TypeScript's Error.
 	WellKnownError = wellKnown("error")
+	// WellKnownContext is the context of a call: its cancellation and its
+	// deadline, as Go's context.Context and the signal of a Connect-ES
+	// handler. The view of an rpc of protobuf takes it through
+	// [ContextRules].
+	WellKnownContext = wellKnown("context")
 )
 
 // No frontend declares the registry's own language and package, so no
@@ -125,7 +130,8 @@ func wellKnown(name string) symbol.Identity {
 // IsWellKnown reports whether an identity is one the registry
 // blesses. It allocates nothing.
 func IsWellKnown(id symbol.Identity) bool {
-	return id == WellKnownTimestamp || id == WellKnownDuration || id == WellKnownEmpty || id == WellKnownError
+	return id == WellKnownTimestamp || id == WellKnownDuration || id == WellKnownEmpty || id == WellKnownError ||
+		id == WellKnownContext
 }
 
 // typeOf is the kernel's fold. A structural form folds into the same
@@ -136,17 +142,21 @@ func IsWellKnown(id symbol.Identity) bool {
 // on its target:
 //
 //   - A reference to a type parameter folds to Opaque.
+//   - A reference whose target is an identity of the registry folds to
+//     the well-known reference, as the context of an rpc does.
 //   - A reference whose target the view contains folds by the
 //     declaration that it references. The rules of the language of the
 //     target can bless the declaration as a well-known type through
-//     [WellKnownRules], or give its values a shape through [ShapeRules].
+//     [WellKnownRules], or give the values of the reference a shape
+//     through [ShapeRules].
 //   - A reference without a target folds through the language's Builtin.
 //
-// Where the Builtin returns a structural form without children for a
-// reference with type arguments, the folded arguments become the form's
-// children. It is total and never panics. A reference in the memo
-// returns its shape and allocates nothing. A first fold allocates what
-// the allocation contract of [Bound.TypeOf] lists.
+// Where the Builtin or the shape rules return a structural form without
+// children for a reference with type arguments, the folded arguments
+// become the form's children, and the first argument alone becomes the
+// child of a stream. It is total and never panics. A reference in
+// the memo returns its shape and allocates nothing. A first fold allocates
+// what the allocation contract of [Bound.TypeOf] lists.
 func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 	if ref == nil {
 		return Opaque(nil)
@@ -183,12 +193,15 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		return Opaque(ref)
 	}
 	if !ref.Target.IsZero() {
+		if IsWellKnown(ref.Target) {
+			return Reference(ref.Spelling, ref.Target)
+		}
 		if id, blessed := b.wellKnown(ref.Target); blessed {
 			return Reference(ref.Spelling, id)
 		}
 		if decl, held := b.view.Lookup(ref.Target); held {
 			if s, shaped := b.shaped(ref, decl); shaped {
-				return s
+				return b.argued(ref, s)
 			}
 			return b.classify(ref, decl)
 		}
@@ -196,14 +209,30 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		// one the graph never contained, and the read is recorded.
 		return Opaque(ref)
 	}
-	s := b.source.Builtin(ref, b.view)
+	return b.argued(ref, b.source.Builtin(ref, b.view))
+}
+
+// argued returns the shape s of the reference ref with the folded type
+// arguments of ref as its children, where s is a structural form without
+// children. A stream takes the first type argument alone, the type of the
+// values that it yields, because a generator also states the types that it
+// receives and returns after it, as Generator[Y, S, R] of Python and
+// AsyncGenerator<T, TReturn, TNext> of TypeScript do. argued returns s
+// where ref has no type arguments, where s has children and where s is a
+// leaf. It returns Opaque where the form of s does not take the number of
+// the arguments of ref.
+func (b Bound) argued(ref *node.TypeRef, s TypeShape) TypeShape {
 	if len(ref.Args) == 0 || len(s.Elems) > 0 || !s.Form.Structural() {
 		return s
 	}
-	if !takes(s.Form, len(ref.Args)) {
+	args := ref.Args
+	if s.Form == symbol.FormStream {
+		args = args[:1]
+	}
+	if !takes(s.Form, len(args)) {
 		return Opaque(ref)
 	}
-	return b.children(s, ref.Args)
+	return b.children(s, args)
 }
 
 // wellKnown returns the well-known identity that the rules of the
@@ -219,15 +248,15 @@ func (b Bound) wellKnown(target symbol.Identity) (symbol.Identity, bool) {
 }
 
 // shaped returns the shape that the rules of the language of the target of
-// ref give the values of decl, with the spelling of ref. It reports false
-// where those rules give decl no shape, and where they do not implement
-// [ShapeRules]. It allocates what the rules allocate.
+// ref give the values of ref, a reference to decl, with the spelling of ref.
+// It reports false where those rules give decl no shape, and where they do
+// not implement [ShapeRules]. It allocates what the rules allocate.
 func (b Bound) shaped(ref *node.TypeRef, decl symbol.Symbol) (TypeShape, bool) {
 	r, is := b.rulesOf(ref.Target.Lang).(ShapeRules)
 	if !is {
 		return TypeShape{}, false
 	}
-	s, shaped := r.ShapeOf(decl, b.view)
+	s, shaped := r.ShapeOf(ref, decl, b.view)
 	if !shaped {
 		return TypeShape{}, false
 	}

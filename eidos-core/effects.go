@@ -295,9 +295,11 @@ func (c *phaseCall) merge(through int, visit func(*runState, effect)) {
 
 // applyEffect applies one effect a lane buffered. A touch applies
 // before every placement through its handle, because both are on one
-// lane and the touch is earlier in its stream. Where a record fills, a
-// touch, a host and a reported finding also enter it. The report of a
-// failed call fills none.
+// lane and the touch is earlier in its stream. A placement looks up the
+// position of its origin in the index once, and the flush orders each of
+// its declarations by that position. Where a record fills, a touch, a
+// host and a reported finding also enter it. The report of a failed call
+// fills none.
 func (c *phaseCall) applyEffect(ln *runState, e effect) {
 	switch e.kind {
 	case effectTouch:
@@ -313,8 +315,10 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 		p := ln.fx.places[e.at]
 		t := &ln.fx.touches[p.touch]
 		origin := subjectOf(t.fr, t.value)
+		pos := c.positionOf(origin)
 		for _, d := range ln.fx.decls[p.from:p.to] {
 			t.acc.places = append(t.acc.places, placed{
+				pos:      pos,
 				origin:   origin,
 				instance: t.instance,
 				seq:      len(t.acc.places),

@@ -104,6 +104,14 @@ type Language struct {
 	// statement the language cannot spell returns an error, and the
 	// declaration is skipped under the execute-time code.
 	Scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
+	// Value spells one value of the value tree the language's way, and
+	// records into the file's import set the imports of the references
+	// and the callees of the value. The value builtin calls it, so a
+	// template writes a value as a body of the same file writes it. A
+	// value the language cannot spell returns an error, and the
+	// declaration is skipped under the execute-time code. With a nil
+	// Value, every call of the value builtin fails.
+	Value func(v emit.Value, set *ImportSet) (string, error)
 	// MemberIndent is the indentation of a member's statements in the
 	// body of its type, relative to the statements that Scaffold
 	// writes. The memberbody builtin writes it before every line of a

@@ -10,6 +10,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The vocabulary's runtime behaviour: values copy at the boundary
@@ -74,5 +75,41 @@ func TestValue(t *testing.T) {
 		again, _ := meta.Get(f, subject, tags)
 		assert.Equal(t, again, []string{"a", "b"},
 			"a caller cannot reach into a bag")
+	})
+
+	t.Run("an identical identity list re-stamp changes nothing", func(t *testing.T) {
+		t.Parallel()
+
+		r := claimed(t)
+		errs, err := meta.Register[[]symbol.Identity](r, meta.KeySpec{
+			Name: "gen.errors", Doc: "the error values of the subject",
+		})
+		assert.NoError(t, err, "the identity list key registers")
+		f := meta.NewFacts(r)
+		assert.NoError(t, meta.Stamp(f, errs, []symbol.Identity{subject, sibling}, by("gen", 1)),
+			"the identity list stamps")
+		assert.NoError(t, meta.Stamp(f, errs, []symbol.Identity{subject, sibling}, by("gen", 1)),
+			"and re-stamps")
+
+		assert.Length(t, slices.Collect(f.Claims(subject, errs.ID())), 1,
+			"element-wise equality dedupes the repeat")
+	})
+
+	t.Run("copies an identity list out", func(t *testing.T) {
+		t.Parallel()
+
+		r := claimed(t)
+		errs, err := meta.Register[[]symbol.Identity](r, meta.KeySpec{
+			Name: "gen.errors", Doc: "the error values of the subject",
+		})
+		assert.NoError(t, err, "the identity list key registers")
+		f := meta.NewFacts(r)
+		assert.NoError(t, meta.Stamp(f, errs, []symbol.Identity{subject, sibling}, by("gen", 1)),
+			"the identity list stamps")
+
+		got, _ := meta.Get(f, subject, errs)
+		got[0] = sibling
+		again, _ := meta.Get(f, subject, errs)
+		assert.Equal(t, again, []symbol.Identity{subject, sibling}, "a caller cannot reach into a bag")
 	})
 }

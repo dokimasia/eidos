@@ -33,14 +33,18 @@ type Builder struct {
 	// vocab lists the declared vocabulary parts in declaration
 	// order, and helpers records every name they declare, so a name
 	// declared twice is a defect before any render.
-	vocab    []func(set *render.ImportSet) template.FuncMap
-	helpers  map[string]bool
-	lower    plugin.Lower
-	respell  plugin.Respell
-	packages plugin.PackageRule
-	types    func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
-	policies []plugin.PolicySpec
-	defects  []string
+	vocab      []func(set *render.ImportSet) template.FuncMap
+	helpers    map[string]bool
+	lower      plugin.Lower
+	respell    plugin.Respell
+	member     plugin.MemberRespell
+	packages   plugin.PackageRule
+	scopes     func(pkg symbol.Identity) symbol.Identity
+	overloads  bool
+	types      func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	supertypes func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	policies   []plugin.PolicySpec
+	defects    []string
 }
 
 // New starts a backend declaration for one target.
@@ -125,6 +129,17 @@ func (b *Builder) Scaffold(
 	return b
 }
 
+// Value sets the language's writer of values: how one value of the
+// value tree spells, recording into the file's import set the imports
+// of its references and its callees. The value builtin calls it. A
+// backend that declares none fails every call of the builtin.
+func (b *Builder) Value(
+	f func(v emit.Value, set *render.ImportSet) (string, error),
+) *Builder {
+	b.lang.Value = f
+	return b
+}
+
 // MemberIndent sets the indentation of a member's statements in the
 // body of its type, which the memberbody builtin writes before each
 // line of a member's content. A language that leaves it unset places
@@ -180,6 +195,25 @@ func (b *Builder) Split(s render.Split) *Builder {
 // the package of its first unit.
 func (b *Builder) Packages(r plugin.PackageRule) *Builder {
 	b.packages = r
+	return b
+}
+
+// NameScopes sets the target's namespace rule: the namespace of the
+// file-level names of a file that declares a package, which the built
+// backend serves as [plugin.NameScoper]. Undeclared, the namespace of a
+// file is its package.
+func (b *Builder) NameScopes(scope func(pkg symbol.Identity) symbol.Identity) *Builder {
+	b.scopes = scope
+	return b
+}
+
+// Overloads declares that the language of the target declares the
+// overloads of a function: two functions of one name in one module, told
+// apart by their parameters. The built backend serves the declaration as
+// [plugin.Overloader]. Undeclared, the target does not overload, and two
+// functions of one name in one routed scope collide.
+func (b *Builder) Overloads() *Builder {
+	b.overloads = true
 	return b
 }
 
@@ -258,11 +292,31 @@ func (b *Builder) Respell(r plugin.Respell) *Builder {
 	return b
 }
 
+// RespellMember sets the name convention of a member, which reads the level
+// and the mutability of the member as well: every field and every method
+// spells through it in place of the convention of [Builder.Respell]. The
+// built backend serves it as [plugin.MemberRespeller], and its Render refuses
+// an unsettled store.
+func (b *Builder) RespellMember(r plugin.MemberRespell) *Builder {
+	b.member = r
+	return b
+}
+
 // Types declares the target's spoke, which the built backend serves as
 // [plugin.TypeSpeller]: the spelling of the canonical shape of a type
 // that another language declares, under a plan's resolved policy.
 func (b *Builder) Types(spell func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)) *Builder {
 	b.types = spell
+	return b
+}
+
+// Supertypes declares the target's spelling of a supertype of another
+// language, which the built backend serves as [plugin.SupertypeSpeller]:
+// the reference of a shape that a declaration extends, implements or
+// embeds, or that bounds a type parameter. A target without it spells a
+// supertype as the spoke of [Builder.Types] spells a value.
+func (b *Builder) Supertypes(spell func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)) *Builder {
+	b.supertypes = spell
 	return b
 }
 
@@ -275,12 +329,19 @@ func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
 }
 
 // Backend is a backend that the kit built. It is the backend of the
-// SPI, with the fact coverage that the guard of the render reads and the
-// kinds that the language refuses, which the backend suite checks.
+// SPI, with the fact coverage that the guard of the render reads, the
+// kinds that the language refuses, which the backend suite checks, the
+// spelling of a supertype of another language, the namespace of the
+// names of a file, whether the language overloads a function, and the
+// convention of a member.
 type Backend interface {
 	plugin.Backend
 	render.Coverer
 	render.Refuser
+	plugin.SupertypeSpeller
+	plugin.NameScoper
+	plugin.Overloader
+	plugin.MemberRespeller
 }
 
 // Build freezes the declaration and returns the lowered backend. Its
@@ -291,9 +352,13 @@ type Backend interface {
 //
 //   - Lower keeps every declaration;
 //   - Respell returns every name unchanged;
+//   - RespellMember spells as Respell does;
 //   - SpellType returns an error that the target does not spell the
 //     types of other languages;
+//   - SpellSupertype spells as SpellType does;
 //   - PackageAt returns the origin package of the file;
+//   - NameScope returns the package that it is given;
+//   - Overloads reports false;
 //   - Policies returns nil.
 //
 // Build panics on a declaration defect, because a wrong declaration
@@ -332,9 +397,9 @@ func (b *Builder) Build() Backend {
 	}
 	return &builtBackend{
 		name: b.name, target: b.target, syntax: b.syntax,
-		version: b.version, pass: pass, packages: b.packages,
-		lower: b.lower, respell: b.respell,
-		types: b.types, policies: b.policies,
+		version: b.version, pass: pass, packages: b.packages, scopes: b.scopes, overloads: b.overloads,
+		lower: b.lower, respell: b.respell, member: b.member,
+		types: b.types, supertypes: b.supertypes, policies: b.policies,
 	}
 }
 
@@ -346,16 +411,23 @@ type builtBackend struct {
 	syntax  plugin.CommentSyntax
 	version string
 	pass    *render.Pass
-	// packages is the declared package rule, nil where the backend
-	// declares none.
-	packages plugin.PackageRule
-	// lower and respell are the declared hooks of the settle, nil where
-	// the backend declares none. Render refuses an unsettled store
-	// where the backend declares either.
+	// packages is the declared package rule, and scopes the declared
+	// namespace rule, each nil where the backend declares none. overloads
+	// reports that the language overloads a function.
+	packages  plugin.PackageRule
+	scopes    func(pkg symbol.Identity) symbol.Identity
+	overloads bool
+	// lower, respell and member are the declared hooks of the settle, nil
+	// where the backend declares none. Render refuses an unsettled store
+	// where the backend declares any of them.
 	lower   plugin.Lower
 	respell plugin.Respell
-	// types is the declared spoke, nil where the backend declares none.
-	types func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	member  plugin.MemberRespell
+	// types is the declared spoke, nil where the backend declares none,
+	// and supertypes is the declared spelling of a supertype, nil where the
+	// backend declares none.
+	types      func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	supertypes func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
 	// policies are the declared lowering policies, in declaration
 	// order.
 	policies []plugin.PolicySpec
@@ -405,6 +477,16 @@ func (b *builtBackend) SpellType(s rules.TypeShape, p plugin.Policy) (*emit.Type
 	return b.types(s, p)
 }
 
+// SpellSupertype implements [plugin.SupertypeSpeller] through the declared
+// spelling of a supertype, and through [builtBackend.SpellType] where the
+// backend declares none.
+func (b *builtBackend) SpellSupertype(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	if b.supertypes == nil {
+		return b.SpellType(s, p)
+	}
+	return b.supertypes(s, p)
+}
+
 // Policies implements [plugin.PolicyProvider]: the declared specs, and
 // nil where the backend declares none.
 func (b *builtBackend) Policies() []plugin.PolicySpec { return b.policies }
@@ -419,12 +501,25 @@ func (b *builtBackend) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 	return b.packages(p)
 }
 
+// NameScope implements [plugin.NameScoper] through the declared namespace
+// rule, and returns pkg where the backend declares none.
+func (b *builtBackend) NameScope(pkg symbol.Identity) symbol.Identity {
+	if b.scopes == nil {
+		return pkg
+	}
+	return b.scopes(pkg)
+}
+
+// Overloads implements [plugin.Overloader]: whether the backend declared
+// that its language overloads a function.
+func (b *builtBackend) Overloads() bool { return b.overloads }
+
 // Render implements [plugin.Renderer] through the composed pass. A
 // backend declaring a seam refuses an unsettled store: the plan
 // never settled, and rendering it would write the wrong bytes
 // without a finding.
 func (b *builtBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	seams := b.lower != nil || b.respell != nil
+	seams := b.lower != nil || b.respell != nil || b.member != nil
 	if seams && ctx != nil && ctx.Emit != nil && !ctx.Emit.Settled() {
 		return nil, errors.New("backend: " + string(b.name) +
 			" declares a lowering seam, and the store is unsettled: " +
@@ -451,6 +546,16 @@ func (b *builtBackend) Respell(host, kind symbol.Kind, v symbol.Visibility, name
 		return name, nil
 	}
 	return b.respell(host, kind, v, name)
+}
+
+// RespellMember implements [plugin.MemberRespeller] through the declared hook
+// of a member, and through [builtBackend.Respell] where the backend declares
+// none. It allocates what the hook allocates.
+func (b *builtBackend) RespellMember(m plugin.Member, name string) (string, error) {
+	if b.member == nil {
+		return b.Respell(m.Host, m.Kind, m.Visibility, name)
+	}
+	return b.member(m, name)
 }
 
 // vocabulary joins the declared parts into the one vocabulary the

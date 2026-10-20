@@ -44,13 +44,15 @@ const (
 	// derivedKey is a key of the fixture whose value its registrant
 	// derives, so a meta directive cannot drop it.
 	derivedKey = "shape.shape"
-	// flagKey, countKey, tagsKey and targetKey are keys of the fixture of
-	// the boolean, integer, list and identity types. interfaceKey admits
-	// an interface alone, and the subject of the fixture is a struct.
+	// flagKey, countKey, tagsKey, targetKey and twinsKey are keys of the
+	// fixture of the boolean, integer, list, identity and identity list
+	// types. interfaceKey admits an interface alone, and the subject of the
+	// fixture is a struct.
 	flagKey      = "shape.flag"
 	countKey     = "shape.count"
 	tagsKey      = "shape.tags"
 	targetKey    = "shape.target"
+	twinsKey     = "shape.twins"
 	interfaceKey = "shape.contract"
 	// modeKey is a string key of the fixture that takes the choices eager
 	// and lazy alone.
@@ -863,6 +865,14 @@ func TestValidate(t *testing.T) {
 					{Kind: directive.TypeString, Str: "a"}, {Kind: directive.TypeString, Str: "b"},
 				}},
 			},
+			{
+				name:    "keeps the spellings of a set of an identity list key without a resolver",
+				give:    "meta set=" + twinsKey + " values=[Row, Col]",
+				wantKey: directive.MetaValues,
+				want: directive.Value{Kind: directive.TypeList, List: []directive.Value{
+					{Kind: directive.TypeReference, Ref: "Row"}, {Kind: directive.TypeReference, Ref: "Col"},
+				}},
+			},
 		}
 		for _, tt := range sets {
 			t.Run(tt.name, func(t *testing.T) {
@@ -917,6 +927,63 @@ func TestValidate(t *testing.T) {
 			assert.Empty(t, got, "the instance drops")
 			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.UnresolvedReference},
 				"the set reports the reference that does not resolve")
+		})
+
+		t.Run("binds each identity of a set of an identity list key through the resolver", func(t *testing.T) {
+			t.Parallel()
+
+			row := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Row", Kind: symbol.KindStruct}
+			col := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Col", Kind: symbol.KindStruct}
+			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind) (symbol.Identity, error) {
+				if name == row.Name {
+					return row, nil
+				}
+				return col, nil
+			}
+			sink := diag.NewSink()
+			got := directive.Validate(
+				validationSubject,
+				[]directive.Raw{parse(t, "meta set="+twinsKey+" values=[Row, Col]", 1)},
+				sealed(t),
+				keyed(t),
+				resolve,
+				sink,
+			)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the instance is returned")
+			values, _ := got[0].Param(directive.MetaValues)
+			assert.Length(t, values.List, 2, "the list has both elements")
+			expect.Equal(t, values.List[0].Target, row, "the first element is the identity of Row")
+			expect.Equal(t, values.List[1].Target, col, "the second element is the identity of Col")
+		})
+
+		t.Run("reports UnresolvedReference for an unresolved element of an identity list", func(t *testing.T) {
+			t.Parallel()
+
+			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+				return symbol.Identity{}, errMissingType
+			}
+			sink := diag.NewSink()
+			got := directive.Validate(
+				validationSubject,
+				[]directive.Raw{parse(t, "meta set="+twinsKey+" values=[Ghost]", 1)},
+				sealed(t),
+				keyed(t),
+				resolve,
+				sink,
+			)
+			assert.Empty(t, got, "the instance drops")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.UnresolvedReference},
+				"the set reports the element that does not resolve")
+		})
+
+		t.Run("reports TypeMismatch for the value of a set of an identity list key", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t, "meta set="+twinsKey+" value=Row")
+			assert.Empty(t, got, "the instance drops")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.TypeMismatch},
+				"a key of a list takes values and not value")
 		})
 
 		tuner := directive.Schema{
@@ -1645,6 +1712,8 @@ func keyed(tb assert.TB) *meta.Registry {
 	assert.NoError(tb, err, "the list key registers")
 	_, err = meta.Register[symbol.Identity](r, meta.KeySpec{Name: targetKey, Doc: "names the twin"})
 	assert.NoError(tb, err, "the identity key registers")
+	_, err = meta.Register[[]symbol.Identity](r, meta.KeySpec{Name: twinsKey, Doc: "names the twins"})
+	assert.NoError(tb, err, "the identity list key registers")
 	_, err = meta.Register[string](r, meta.KeySpec{
 		Name: interfaceKey, Kinds: []symbol.Kind{symbol.KindInterface}, Doc: "the contract of an interface",
 	})

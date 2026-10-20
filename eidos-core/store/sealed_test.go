@@ -142,6 +142,18 @@ func (f split) sealed() (*store.Graph, *memory) {
 	return store.Sealed(src), src
 }
 
+// dependent returns a sealed graph over the fixture's regions, whose
+// summaries mark the regions at the indexes as regions of a dependency
+// round, and the source that counts their decodes.
+func (f split) dependent(marked ...int) (*store.Graph, *memory) {
+	src := newMemory(f.regions...)
+	infos := src.Regions()
+	for _, i := range marked {
+		infos[i].Dependency = true
+	}
+	return store.Sealed(summarized{memory: src, infos: infos}), src
+}
+
 // loaded returns the graph a load of the same packages builds through
 // [store.New]: the store package merged the way the splice merges it,
 // over the same declarations, with every region's attachments.
@@ -588,6 +600,8 @@ func TestSealedAllocs(t *testing.T) {
 	assert.NotEmpty(t, stamps, "StampsOf returns the declaration's stamps")
 	assert.MaxAllocs(t, func() { held = g.Holds(f.store.ID) }, 0, "Holds allocates nothing")
 	assert.True(t, held, "Holds reports the declaration")
+	assert.MaxAllocs(t, func() { held = g.Dependency(f.store.ID) }, 0, "Dependency allocates nothing")
+	assert.False(t, held, "Dependency reports false for a package of the partition")
 	assert.MaxAllocs(t, func() {
 		for range g.Packages() {
 		}

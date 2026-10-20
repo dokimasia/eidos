@@ -733,10 +733,11 @@ func scalar(spec ParamSpec, t ParamType, text string) (Value, string) {
 
 // metaInstance checks a meta instance and types the value of a set by the
 // type of its key. An instance writes exactly one of drop and set, and
-// value or values go with set alone. A key of the type []string takes
-// values, and every other key takes value. A set of a key that does not
-// admit the kind of the subject is misplaced. It reports false when it
-// reported a violation.
+// value or values go with set alone. A key of the type []string or
+// []symbol.Identity takes values, and every other key takes value. Each
+// element of the values of a list of identities binds as the value of an
+// identity key binds. A set of a key that does not admit the kind of the
+// subject is misplaced. It reports false when it reported a violation.
 func (v *validator) metaInstance(d *Directive) bool {
 	drop, drops := d.Params[MetaDrop]
 	set, sets := d.Params[MetaSet]
@@ -768,8 +769,9 @@ func (v *validator) metaInstance(d *Directive) bool {
 		return false
 	}
 	keyType := v.keys.Type(id)
+	identities := keyType == reflect.TypeFor[[]symbol.Identity]()
 	wants, given, other, otherKey := MetaValue, hasValue, hasValues, MetaValues
-	if keyType == reflect.TypeFor[[]string]() {
+	if identities || keyType == reflect.TypeFor[[]string]() {
 		wants, given, other, otherKey = MetaValues, hasValues, hasValue, MetaValue
 	}
 	if other {
@@ -781,14 +783,38 @@ func (v *validator) metaInstance(d *Directive) bool {
 		v.report(MissingParam, d.Pos, "%s sets %s and omits %s", d.Name, set.Ref, wants)
 		return false
 	}
-	if wants == MetaValues {
+	if wants == MetaValues && !identities {
 		return true
 	}
-	typed, ok := v.fact(d.Name, keyType, set.Ref, spec.Choices, value.Str)
+	var (
+		typed Value
+		ok    bool
+	)
+	if identities {
+		typed, ok = v.identities(d.Name, set.Ref, d.Params[MetaValues])
+	} else {
+		typed, ok = v.fact(d.Name, keyType, set.Ref, spec.Choices, value.Str)
+	}
 	if ok {
-		d.Params[MetaValue] = typed
+		d.Params[wants] = typed
 	}
 	return ok
+}
+
+// identities types each element of the values of a set as the identity of
+// a type in scope, as [validator.fact] types the value of an identity key.
+// It returns a list of references in the order of the elements, and
+// reports false when it reported a violation. It allocates the list.
+func (v *validator) identities(name Name, key string, list Value) (Value, bool) {
+	out := Value{Kind: TypeList, List: make([]Value, 0, len(list.List))}
+	for _, e := range list.List {
+		ref, ok := v.fact(name, reflect.TypeFor[symbol.Identity](), key, nil, e.Str)
+		if !ok {
+			return Value{}, false
+		}
+		out.List = append(out.List, ref)
+	}
+	return out, true
 }
 
 // fact types the spelling of the value of a set as the type of its key: a

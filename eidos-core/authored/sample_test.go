@@ -38,6 +38,7 @@ const (
 	alphaName    = "Alpha"
 	itemName     = "Item"
 	loadName     = "Load"
+	sourceName   = "Source"
 	paramT       = "T"
 	fixtureFile  = "box.go"
 	fixtureBrand = "fixture"
@@ -52,14 +53,15 @@ const (
 const sampleAllocs = 60
 
 // fixture is the graph the cases run over: a generic Box[T] with
-// one field, a plain Alpha a witness can name, and a Load function
-// with one parameter and one return.
+// one field, a plain Alpha a witness can name, a Load function
+// with one parameter and one return, and a Source interface.
 type fixture struct {
-	graph *store.Graph
-	box   *node.Struct
-	item  *node.Field
-	alpha *node.Struct
-	load  *node.Function
+	graph  *store.Graph
+	box    *node.Struct
+	item   *node.Field
+	alpha  *node.Struct
+	load   *node.Function
+	source *node.Interface
 }
 
 // fakeBackend is a backend by name and target alone. Its settle keeps
@@ -265,6 +267,34 @@ func TestSample(t *testing.T) {
 			assert.Equal(t, v, "out", "a return is a subject the sample reaches")
 		})
 
+		t.Run("stamps the value on an interface", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.source.ID, 16, directive.KernelSample, "value=DefaultSource()",
+				"alternate=OtherSource()")
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.NoError(t, err, "the run is clean")
+			v, held := meta.Get(report.Facts, f.source.ID, w.Kernel().Sample)
+			assert.True(t, held, "the value is stamped")
+			assert.Equal(t, v, "DefaultSource()", "the value arrives as the text the author wrote")
+		})
+
+		t.Run("stamps the alternate on an interface", func(t *testing.T) {
+			t.Parallel()
+
+			f := build(t)
+			attach(t, f.graph, f.source.ID, 16, directive.KernelSample, "value=DefaultSource()",
+				"alternate=OtherSource()")
+			w := composed(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
+			assert.NoError(t, err, "the run is clean")
+			alt, held := meta.Get(report.Facts, f.source.ID, w.Kernel().Alternate)
+			assert.True(t, held, "the alternate is stamped")
+			assert.Equal(t, alt, "OtherSource()", "the alternate arrives as the text the author wrote")
+		})
+
 		t.Run("reports RefusedStamp for a sample on a callable", func(t *testing.T) {
 			t.Parallel()
 
@@ -330,10 +360,12 @@ func build(tb assert.TB) fixture {
 	alpha.Pos = position.Pos{File: fixtureFile, Line: 8, Col: 1}
 	load := coretest.Function(pkgPath, loadName)
 	load.Pos = position.Pos{File: fixtureFile, Line: 12, Col: 1}
+	source := coretest.Interface(pkgPath, sourceName)
+	source.Pos = position.Pos{File: fixtureFile, Line: 16, Col: 1}
 	g := store.New()
-	assert.NoError(tb, g.AddPackage(coretest.Package(pkgPath, box, alpha, load)),
+	assert.NoError(tb, g.AddPackage(coretest.Package(pkgPath, box, alpha, load, source)),
 		"the fixture package is admitted")
-	return fixture{graph: g, box: box, item: item, alpha: alpha, load: load}
+	return fixture{graph: g, box: box, item: item, alpha: alpha, load: load, source: source}
 }
 
 // composed returns a workspace listing both authored annotators,

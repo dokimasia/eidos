@@ -23,6 +23,7 @@ import (
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/rules/rulestest"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -61,6 +62,10 @@ const (
 	// the first group of the store's set of keys, the key, and its list
 	// of units.
 	unitAllocs = 3
+	// fileOfAllocs is a call whose invocations each address the file of
+	// their subject through FileOf: what unitAllocs counts, and the tracked
+	// reader that the lane creates on the first read of the call.
+	fileOfAllocs = unitAllocs + 1
 	// appendAllocs is a call whose invocations append one declaration
 	// each to one accumulator: the unit, its list of declarations and
 	// its list of origins. The declaration has no origin, so the store
@@ -149,6 +154,22 @@ func (sp *tsxSpoke) SpellType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef
 	default:
 		return nil, errUnspelled
 	}
+}
+
+// superPrefix opens the supertype spelling of [superSpoke].
+const superPrefix = "super:"
+
+// superSpoke is the translation fixture's spoke with a supertype spelling
+// of its own: superPrefix followed by the name of the referent.
+type superSpoke struct{ tsxSpoke }
+
+var _ plugin.SupertypeSpeller = (*superSpoke)(nil)
+
+// SpellSupertype spells the reference s as superPrefix and the name of its
+// referent, and records s.
+func (sp *superSpoke) SpellSupertype(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
+	sp.last = s
+	return &emit.TypeRef{Spelling: superPrefix + s.Ref.Name, Target: s.Ref}, nil
 }
 
 // translationFixture is a generator context over a session struct of
@@ -466,6 +487,98 @@ func TestEmitter(t *testing.T) {
 				Generator()
 			assert.HasError(t, generatorOf(t, p).Generate(ctx), "the flush refuses the unit of a nil header")
 		})
+
+		t.Run("orders the declarations of one file by the positions of their origins", func(t *testing.T) {
+			t.Parallel()
+
+			zebra := coretest.Struct(coretest.StorePath, "Zebra")
+			zebra.Pos = position.Pos{File: "shapes.go", Line: 3, Col: 6}
+			apple := coretest.Struct(coretest.StorePath, "Apple")
+			apple.Pos = position.Pos{File: "shapes.go", Line: 9, Col: 6}
+			assert.Equal(t, declNames(t, orderedUnit(t, zebra, apple)), []string{"ForZebra", "ForApple"},
+				"the declarations are in the order of the source")
+		})
+
+		t.Run("orders the declaration of an origin without a position after the others", func(t *testing.T) {
+			t.Parallel()
+
+			able := coretest.Struct(coretest.StorePath, "Able")
+			able.Pos = position.Pos{File: "shapes.go", Line: 3, Col: 6}
+			loose := coretest.Struct(coretest.StorePath, "Mid")
+			zed := coretest.Struct(coretest.StorePath, "Zed")
+			zed.Pos = position.Pos{File: "shapes.go", Line: 9, Col: 6}
+			assert.Equal(t, declNames(t, orderedUnit(t, able, loose, zed)), []string{"ForAble", "ForZed", "ForMid"},
+				"a declaration without a place in the source comes last")
+		})
+
+		t.Run("orders the declarations of origins without a position by their identity", func(t *testing.T) {
+			t.Parallel()
+
+			beta := coretest.Struct(coretest.StorePath, "Beta")
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			assert.Equal(t, declNames(t, orderedUnit(t, beta, alpha)), []string{"ForAlpha", "ForBeta"},
+				"the identity of the origin breaks the tie")
+		})
+
+		t.Run("lists the origins of a unit in the order of their identities", func(t *testing.T) {
+			t.Parallel()
+
+			zebra := coretest.Struct(coretest.StorePath, "Zebra")
+			zebra.Pos = position.Pos{File: "shapes.go", Line: 3, Col: 6}
+			apple := coretest.Struct(coretest.StorePath, "Apple")
+			apple.Pos = position.Pos{File: "shapes.go", Line: 9, Col: 6}
+			assert.Equal(t, orderedUnit(t, zebra, apple).Origins, []symbol.Identity{apple.ID, zebra.ID},
+				"the provenance is sorted")
+		})
+
+		handle := coretest.Struct(coretest.StorePath, "Handle").ID
+
+		t.Run("records the subject of a declaration whose origin is another declaration", func(t *testing.T) {
+			t.Parallel()
+
+			_, alpha, _ := fixtureGraph(t)
+			u := placedUnit(t, func(m *eidos.StructMatch) []symbol.Symbol {
+				if m.Struct.ID != alpha.ID {
+					return nil
+				}
+				return []symbol.Symbol{
+					&emit.Struct{Origin: alpha.ID, Name: "AlphaProbe"},
+					&emit.Struct{Origin: handle, Name: "HandleProbe"},
+				}
+			})
+			assert.Equal(t, u.Subjects, map[symbol.Identity]symbol.Identity{handle: alpha.ID},
+				"the layout routes the double of the handle with its subject")
+		})
+
+		t.Run("records the subject of the first placement for an origin that two matches place", func(t *testing.T) {
+			t.Parallel()
+
+			_, alpha, _ := fixtureGraph(t)
+			u := placedUnit(t, func(m *eidos.StructMatch) []symbol.Symbol {
+				return []symbol.Symbol{&emit.Struct{Origin: handle, Name: "HandleFor" + m.Struct.Name}}
+			})
+			assert.Equal(t, u.Subjects, map[symbol.Identity]symbol.Identity{handle: alpha.ID},
+				"Alpha precedes Beta in the order of the unit")
+		})
+
+		t.Run("records no subject where every declaration originates from the subject of its match",
+			func(t *testing.T) {
+				t.Parallel()
+
+				u := placedUnit(t, func(m *eidos.StructMatch) []symbol.Symbol {
+					return []symbol.Symbol{&emit.Struct{Origin: m.Struct.ID, Name: "For" + m.Struct.Name}}
+				})
+				assert.Nil(t, u.Subjects, "each declaration routes with its own origin")
+			})
+
+		t.Run("records no subject for a declaration without an origin", func(t *testing.T) {
+			t.Parallel()
+
+			u := placedUnit(t, func(m *eidos.StructMatch) []symbol.Symbol {
+				return []symbol.Symbol{&emit.Struct{Name: "Loose" + m.Struct.Name}}
+			})
+			assert.Nil(t, u.Subjects, "a declaration without an origin has nothing to map")
+		})
 	})
 
 	t.Run("Record", func(t *testing.T) {
@@ -643,6 +756,82 @@ func TestEmitter(t *testing.T) {
 		})
 	})
 
+	t.Run("FileOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keys the accumulator on the source file of a declaration of the package", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			p := eidos.NewPlugin("perfile").
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Handle(eidos.OnPackage(func(_ *eidos.PackageMatch, e *eidos.Emitter) error {
+					e.FileOf(beta.ID).Append(&emit.Struct{Origin: beta.ID, Name: "Gen" + beta.Name})
+					return nil
+				})).
+				Generator()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+
+			units := slices.Collect(ctx.Emit.Units())
+			assert.Length(t, units, 1, "the package match assembles one unit")
+			assert.Equal(t, units[0].Key, beta.Pos.File, "the unit has the file of the declaration as its key")
+		})
+
+		t.Run("records the read of the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			p := eidos.NewPlugin(contextPlugin).
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Handle(eidos.OnPackage(func(_ *eidos.PackageMatch, e *eidos.Emitter) error {
+					e.FileOf(beta.ID)
+					return nil
+				})).
+				Generator()
+			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
+			assert.Length(t, rec.invoked, 1, "the one package has one invocation")
+			assert.Contains(t, rec.invoked[0].identities, beta.ID,
+				"a move of the declaration to another file runs the invocation again")
+		})
+
+		refusals := []struct {
+			name string
+			give symbol.Identity
+		}{
+			{
+				name: "reports RefusedFile for a declaration of another package",
+				give: coretest.ID(coretest.CachePath, coretest.StructName, symbol.KindStruct),
+			},
+			{
+				name: "reports RefusedFile for an identity that the package of the subject does not declare",
+				give: coretest.ID(coretest.StorePath, coretest.ForeignName, symbol.KindStruct),
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				ctx, alpha := fileOfRun(t, tt.give)
+				one := onlyFinding(t, ctx.Sink)
+				expect.Equal(t, one.Code, eidos.RefusedFile, "the finding has the code of the refusal")
+				expect.Equal(t, one.Severity, diag.SeverityError, "the refusal is an Error")
+				expect.Equal(t, one.Pos, alpha.Pos, "the finding is at the position of the subject")
+			})
+		}
+
+		t.Run("returns the accumulator of the file of the subject for a refused identity", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, alpha := fileOfRun(t, coretest.ID(coretest.StorePath, coretest.ForeignName, symbol.KindStruct))
+			units := slices.Collect(ctx.Emit.Units())
+			assert.Length(t, units, 1, "the handler appends into one unit")
+			assert.Equal(t, units[0].Key, alpha.Pos.File, "the unit has the file of the subject as its key")
+		})
+	})
+
 	t.Run("PackageFile", func(t *testing.T) {
 		t.Parallel()
 
@@ -727,6 +916,48 @@ func TestEmitter(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, referenced(t).Data, any(refPayload), "the payload is the one given")
+		})
+	})
+
+	t.Run("Supertype", func(t *testing.T) {
+		t.Parallel()
+
+		// supertype runs one phase call over f, whose handler translates a
+		// reference to the session struct as a supertype of expires.
+		supertype := func(t *testing.T, f translationFixture) (*emit.TypeRef, bool) {
+			t.Helper()
+
+			var (
+				got *emit.TypeRef
+				ok  bool
+			)
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+					got, ok = e.Supertype(f.expires.ID, &node.TypeRef{Spelling: sessionName, Target: f.session.ID})
+					return nil
+				})).
+				Generator()
+			assert.NoError(t, generatorOf(t, p).Generate(f.ctx), "the phase call passes")
+			return got, ok
+		}
+
+		t.Run("returns the supertype spelling of a backend that declares one", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			f.ctx.Types = &superSpoke{}
+			got, ok := supertype(t, f)
+			assert.True(t, ok, "the backend spells the supertype")
+			assert.Equal(t, got.Spelling, superPrefix+sessionName, "the spelling is the supertype spelling")
+		})
+
+		t.Run("returns the spelling of a value for a backend without a supertype spelling", func(t *testing.T) {
+			t.Parallel()
+
+			f := newTranslationFixture(t)
+			got, ok := supertype(t, f)
+			assert.True(t, ok, "the spoke spells the reference")
+			assert.Equal(t, got.Spelling, sessionName, "the spelling is the spoke's")
 		})
 	})
 
@@ -1222,6 +1453,93 @@ func woven(tb assert.TB, fields int) (*emit.Struct, plugin.Unit) {
 	return host, earlier
 }
 
+// orderedUnit runs a generator over a package of structs whose handler
+// appends a declaration For<Name> of each struct into one package file. It
+// returns the one unit of the run.
+func orderedUnit(tb assert.TB, structs ...*node.Struct) plugin.Unit {
+	tb.Helper()
+
+	decls := make([]symbol.Symbol, 0, len(structs))
+	for _, s := range structs {
+		decls = append(decls, s)
+	}
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, decls...)), "the fixture package is admitted")
+	g.Freeze()
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+	p := eidos.NewPlugin(contextPlugin).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "audit"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			e.PackageFile().Append(&emit.Struct{Origin: m.Struct.ID, Name: "For" + m.Struct.Name})
+			return nil
+		})).
+		Generator()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	units := slices.Collect(ctx.Emit.Units())
+	assert.Length(tb, units, 1, "the package file assembles one unit")
+	return units[0]
+}
+
+// placedUnit runs a generator over the fixture graph whose handler
+// appends the declarations that place returns for its subject into one
+// package file. It returns the one unit of the run.
+func placedUnit(tb assert.TB, place func(m *eidos.StructMatch) []symbol.Symbol) plugin.Unit {
+	tb.Helper()
+
+	g, _, _ := fixtureGraph(tb)
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+	p := eidos.NewPlugin(contextPlugin).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "probe"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			e.PackageFile().Append(place(m)...)
+			return nil
+		})).
+		Generator()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	units := slices.Collect(ctx.Emit.Units())
+	assert.Length(tb, units, 1, "the package file assembles one unit")
+	return units[0]
+}
+
+// declNames returns the names of the emit structs of u, in the order of
+// the unit.
+func declNames(tb assert.TB, u plugin.Unit) []string {
+	tb.Helper()
+
+	names := make([]string, 0, len(u.Decls))
+	for _, d := range u.Decls {
+		s, ok := d.(*emit.Struct)
+		assert.True(tb, ok, "the unit contains what the handler appended")
+		names = append(names, s.Name)
+	}
+	return names
+}
+
+// fileOfRun runs a generator over the fixture graph whose handler appends a
+// declaration of the first struct through the accumulator that FileOf
+// returns for give. It returns the context of the run and the first
+// struct.
+func fileOfRun(tb assert.TB, give symbol.Identity) (*plugin.GeneratorContext, *node.Struct) {
+	tb.Helper()
+
+	g, alpha, _ := fixtureGraph(tb)
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+	p := eidos.NewPlugin("perfile").
+		Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			if m.Struct.ID == alpha.ID {
+				e.FileOf(give).Append(&emit.Struct{Origin: alpha.ID, Name: "Gen" + alpha.Name})
+			}
+			return nil
+		})).
+		Generator()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	return ctx, alpha
+}
+
 // emitterCases returns a phase call over the invocation fixture for each
 // method of the emitter, its handle and its slot view, each called once
 // per invocation. The plugin declares a family at each cardinality.
@@ -1286,6 +1604,10 @@ func emitterCases(tb assert.TB) []phaseCase {
 		{
 			name: "File", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerSource, 0),
 			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { e.File() }),
+		},
+		{
+			name: "FileOf", allocs: fileOfAllocs, fresh: fresh, check: oneUnit(plugin.PerSource, 0),
+			gen: families(func(m *eidos.StructMatch, e *eidos.Emitter) { e.FileOf(m.Struct.ID) }),
 		},
 		{
 			name: "PackageFile", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerPackage, 0),

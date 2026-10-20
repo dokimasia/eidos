@@ -40,8 +40,12 @@ const (
 )
 
 // promotedMethods is the number of methods that the base of [promoted]
-// declares.
-const promotedMethods = 20
+// declares, and mixinName is the second base of [linearised], which
+// declares the same methods.
+const (
+	promotedMethods = 20
+	mixinName       = "Mixin"
+)
 
 // presentField is the field for which [presenceLang] reports presence.
 // dynamicSpelling is the builtin that it folds to the top type.
@@ -85,6 +89,11 @@ const (
 	// contributor that it descends into. The working storage of the walk
 	// comes from a pool.
 	membersAllocs = 2
+	// linearisedAllocs is a member walk under ShadowLinearise of a struct
+	// that extends two types with the same methods. It allocates the
+	// members that it returns and the paths of the two contributors. The
+	// bases and the linearizations of the walk come from the pool.
+	linearisedAllocs = 3
 	// fieldTypeOfAllocs is the list of the one child of the optional that
 	// wraps the type of a field with presence.
 	fieldTypeOfAllocs = 1
@@ -715,6 +724,7 @@ func boundCalls(tb assert.TB) []allocCall {
 	b, _, _ := boundOver(tb, coretest.Frozen(tb, hierarchy()))
 	promoting, embedder := promoted(tb, rules.ShadowPromote)
 	overriding, extender := promoted(tb, rules.ShadowOverride)
+	linearising, mixer := linearised(tb)
 	source, view := scripted(), b.View()
 	intRef, strRef := builtin(intSpelling), builtin(strSpelling)
 	b.TypeOf(intRef)
@@ -737,6 +747,7 @@ func boundCalls(tb assert.TB) []allocCall {
 		held      bool
 		promotes  rules.MemberSet
 		overrides rules.MemberSet
+		linears   rules.MemberSet
 		sample    rules.Sample
 		name      string
 		witnesses []*node.TypeRef
@@ -784,6 +795,13 @@ func boundCalls(tb assert.TB) []allocCall {
 			call: func() { overrides, _ = overriding.MembersOf(extender) },
 			check: func(tb assert.TB) {
 				assert.Length(tb, overrides.Members, promotedMethods, "MembersOf inherits every method")
+			},
+		},
+		{
+			name: "MembersOf", caseName: "under ShadowLinearise", allocs: linearisedAllocs,
+			call: func() { linears, _ = linearising.MembersOf(mixer) },
+			check: func(tb assert.TB) {
+				assert.Length(tb, linears.Members, promotedMethods, "MembersOf takes each method from the first base")
 			},
 		},
 		{
@@ -866,6 +884,32 @@ func promoted(tb assert.TB, rule rules.Shadowing) (rules.Bound, *node.Struct) {
 	}
 	v, _, _ := viewOver(tb, coretest.Frozen(tb, coretest.Package(svcPath, base, derived)))
 	source := policy{scripted(), rules.MemberPolicy{Contributes: []rules.Contribution{contribution}, Shadowing: rule}}
+	return rules.NewBound(source, v, nil), derived
+}
+
+// linearised returns a binding under ShadowLinearise over a struct that
+// extends two contributors, and the struct. Each contributor declares the
+// [promotedMethods] methods of [promoted], so every name arrives twice
+// and the settle computes the C3 linearization of the struct.
+func linearised(tb assert.TB) (rules.Bound, *node.Struct) {
+	tb.Helper()
+
+	derived := coretest.Struct(svcPath, derivedName)
+	hosts := []string{baseName, mixinName}
+	decls := make([]symbol.Symbol, 0, len(hosts)+1)
+	decls = append(decls, derived)
+	for _, host := range hosts {
+		s := coretest.Struct(svcPath, host)
+		for i := range promotedMethods {
+			s.Methods = append(s.Methods, method(svcPath, host, "M"+strconv.Itoa(i)))
+		}
+		derived.Extends = append(derived.Extends, named(svcPath, host, symbol.KindStruct))
+		decls = append(decls, s)
+	}
+	v, _, _ := viewOver(tb, coretest.Frozen(tb, coretest.Package(svcPath, decls...)))
+	source := policy{scripted(), rules.MemberPolicy{
+		Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowLinearise,
+	}}
 	return rules.NewBound(source, v, nil), derived
 }
 

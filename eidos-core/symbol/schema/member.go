@@ -36,6 +36,13 @@ import (
 // the field is in the scope that declares it. A field declared inside
 // its type leaves Receives nil.
 //
+// Wire marks an emitted name that is a key of a wire format, which a
+// consumer matches by string, such as a key of a JSON object. The settle
+// keeps such a name as the generator wrote it, and the target writes it as
+// it is or refuses it. The node side has no such field, because a source
+// states a key through its own syntax: a protobuf json_name, a Go struct
+// tag, a GraphQL field name.
+//
 //eidos:subject
 type Field struct {
 	ID          symbol.Identity    `eidos:"node"`
@@ -50,6 +57,7 @@ type Field struct {
 	Hard        bool               `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
 	Optional    bool               `eidos:"both,fact=Optional"`    // present-or-absent: TypeScript's ?
 	Computed    bool               `eidos:"both,fact=Computed"`    // the name is an expression: TypeScript's [expr]
+	Wire        bool               `eidos:"emit,fact=Wire"`        // the name is a key of a wire format
 	Type        *TypeRef           `eidos:"both,walk"`
 	Receives    *TypeRef           `eidos:"both,walk,fact=Receives"` // set when declared outside the type it attaches to
 	Value       string             `eidos:"both,fact=Value"`         // initializer's source spelling, unevaluated; "" when none

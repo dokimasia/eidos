@@ -280,10 +280,10 @@ func (w *Workspace) runPlan(
 	if ctx.Err() != nil {
 		return nil, nil, ctx.Err()
 	}
-	staged, rendered, err := w.write(pl, ix, src, p.emit, p.sink, nil)
+	staged, rendered, names, err := w.write(pl, ix, src, p.emit, p.sink, nil)
 	if err == nil && touches != nil && !p.sink.Failed() {
 		pg := planGroups{
-			plan: pl.name, emit: p.emit, files: rendered, staged: staged,
+			plan: pl.name, emit: p.emit, files: rendered, staged: staged, names: names,
 			touches: touches.touches, settled: settled,
 		}
 		pg.record(p.lane)

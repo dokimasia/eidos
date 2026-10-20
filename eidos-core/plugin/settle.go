@@ -35,9 +35,11 @@ var RefusedName = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 })
 
 // CollidingNames is the code of two declarations in one scope that
-// settle to one name. Both keep their emitted names, and the references
-// to either follow the emitted names. The finding names the declarations
-// to fix.
+// settle to one name. The settle reports two members of one host, which
+// keep their emitted names, and the references to either follow the
+// emitted names. The layout reports two file-level declarations of one
+// routed scope, which keep their settled names. The finding names the
+// declarations to fix, and the Error fails the plan.
 var CollidingNames = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 31, Meaning: "two declarations settle to one name in one scope",
 })
@@ -90,6 +92,32 @@ type Respeller interface {
 	Respell(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
 }
 
+// Member is what the convention of a target reads of a declared member
+// beside its name: the kind of its host, its own kind, its visibility, its
+// level and its mutability. A method has the zero mutability.
+type Member struct {
+	Host       symbol.Kind
+	Kind       symbol.Kind
+	Visibility symbol.Visibility
+	Level      symbol.Level
+	Mutability symbol.Mutability
+}
+
+// MemberRespell spells the name of one member in the convention of the
+// target, as [Respell] spells a declared name, by the level and the
+// mutability of the member too. An error means that the target cannot
+// spell the name.
+type MemberRespell func(m Member, name string) (string, error)
+
+// MemberRespeller is the role of a backend whose convention spells a member
+// by its level and its mutability, as Python keeps the capitals of a
+// constant of a class. The settle respells each field and each method of a
+// declaration through it in place of [Respeller.Respell], and the lowering
+// of a target names a member through it in the same way.
+type MemberRespeller interface {
+	RespellMember(m Member, name string) (string, error)
+}
+
 // Settle takes the store of one plan through the hooks of the backend,
 // once, after the schedule and before the render. Every declaration
 // lowers into the construct shapes of the target, and every declared
@@ -115,6 +143,15 @@ type Respeller interface {
 // not apply an override where the fact store is nil, or where the
 // composition did not register the name key.
 //
+// A field and a method respell through the [MemberRespeller] role of a
+// backend that has it, with the level and the mutability of the member.
+//
+// A field that is a key of a wire format, [emit.Field.Wire], keeps the
+// name that the generator wrote. The settle calls neither the hook nor the
+// override for it, because a consumer matches the key by string and a
+// renamed key breaks the consumer. Such a field joins the check of the
+// members of its host as any field does.
+//
 // The settle respells the records of a family that claims its files.
 // The units of such a family have a [Unit.Template], and the template
 // reads the names of the target. A record declares no name of its file,
@@ -127,10 +164,12 @@ type Respeller interface {
 //
 // The settle reports its findings to the sink under the name of the
 // backend. A refused construct or name withholds its declaration.
-// Colliding names keep their emitted spellings, and the settle leaves an
-// ambiguous reference as written. A returned error is a defect of the
-// hooks of the backend, a lowering that drops the origin of its input.
-// The error fails the whole plan, not one declaration.
+// Colliding members of one host keep their emitted spellings, and the
+// settle leaves an ambiguous reference as written. The settle does not
+// check the file-level names, which the layout checks in their routed
+// packages. A returned error is a defect of the hooks of the backend, a
+// lowering that drops the origin of its input. The error fails the whole
+// plan, not one declaration.
 //
 // A nil backend marks the store settled and changes nothing in it.
 //
@@ -151,10 +190,9 @@ func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 // [Settle] does, and resolves each reference that the store does not
 // settle against others, the names of the plan's other files. A bare
 // reference that both declare under different settled names is
-// ambiguous, as it is where the store declares the plan whole. Names
-// collide only with the store's own names, so the plan places the units
-// of every file with a name in a changed scope into the store before it
-// settles. Settle is SettleWith with no others.
+// ambiguous, as it is where the store declares the plan whole. Members
+// collide only with the members of their host, which the store contains.
+// Settle is SettleWith with no others.
 //
 // SettleWith returns what each unit read. It lists every entry that the
 // unit's references looked up, whether a file declares the entry or not.
@@ -320,8 +358,8 @@ type planned struct {
 }
 
 // respellAll settles every declared name and rewrites the references to
-// them. Every visit plans first, and the collisions resolve per scope.
-// The plans then apply, and the references follow the names of the
+// them. Every visit plans first, and the collisions of members resolve per
+// host. The plans then apply, and the references follow the names of the
 // store and then the names of others. The withheld declarations leave
 // their units last, because every earlier pass addresses a plan by the
 // index of its declaration. reads records the override reads and the
@@ -331,7 +369,7 @@ func respellAll(
 	e *Emit, r Respeller, t Target, over overrides, others Names, by diag.Origin, sink *diag.Sink, reads *readLog,
 ) {
 	plans := planNames(e, r, over, reads)
-	table, byOrigin := resolveTop(e, plans, by, sink)
+	table, byOrigin := resolveTop(e, plans)
 	resolveMembers(e, plans, by, sink)
 	applyNames(e, plans, by, sink)
 	res := &resolver{
@@ -372,9 +410,11 @@ func (p *plan) of(i, j int) []planned {
 // planNames runs the recording walk over every declaration. Each visit
 // calls the hook, takes the override of the declaration that renders its
 // origin in place of the spelling of the hook, and stores the result by
-// value. Nothing writes yet. The apply walk replays the visits in their
-// order. reads records the override that each unit read for each origin
-// that its declarations render.
+// value. A field and a method spell through the [MemberRespeller] role
+// where the backend has it. The visit of a wire field keeps the emitted
+// name and reads no override. Nothing writes yet. The apply walk replays the
+// visits in their order. reads records the override that each unit read for
+// each origin that its declarations render.
 func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 	total := 0
 	for i := range e.units {
@@ -384,6 +424,7 @@ func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 		spans: make(map[[2]int]span, total),
 		all:   make([]planned, 0, total*2),
 	}
+	members, _ := r.(MemberRespeller)
 	var at position.Pos
 	// One recording callback serves every walk. Its per-visit state
 	// is declared beside it, so planning allocates the arena's
@@ -394,14 +435,27 @@ func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 		host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
 	) (string, error) {
 		p := planned{host: host, kind: kind, at: at, emitted: name}
-		p.settled, p.err = r.Respell(hostKind(host), kind, v, name)
+		m := Member{Host: hostKind(host), Kind: kind, Visibility: v}
+		member := false
+		switch c := carrier.(type) {
+		case *emit.Field:
+			if c.Wire {
+				p.settled, p.final = name, name
+				plans.all = append(plans.all, p)
+				return name, nil
+			}
+			m.Level, m.Mutability, member = c.Level, c.Mutability, true
+		case *emit.Method:
+			m.Level, member = c.Level, true
+		}
+		p.settled, p.err = respellName(r, members, m, member, name)
 		// A carrier without an origin reads the zero identity, which
 		// takes no override.
 		origin, _ := emit.OriginOf(carrier)
 		if over.facts != nil && !origin.IsZero() {
 			reads.fact(origin, over.name)
 		}
-		if override, renders := overrideOf(r, over, host, origin, kind, v, p.settled); renders {
+		if override, renders := overrideOf(r, members, over, host, origin, m, member, p.settled); renders {
 			p.settled = override
 		}
 		p.final = p.settled
@@ -431,13 +485,15 @@ func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 // name of the carrier, settled. A file-level carrier renders a nested
 // origin under the flat name of the origin, [symbol.Identity.FlatName],
 // because a target without nested types declares the origin in the
-// file. overrideOf reports false for an origin without an override, for
-// a name that the hook refuses and for a name that the hook spells apart
-// from the name of the origin. It allocates the flat name of a nested
-// origin that has an override, and nothing otherwise.
+// file. The hook spells the name of the origin as [respellName] spells the
+// name of the carrier m, a member where member is true. overrideOf reports
+// false for an origin without an override, for a name that the hook refuses
+// and for a name that the hook spells apart from the name of the origin. It
+// allocates the flat name of a nested origin that has an override, and
+// nothing otherwise.
 func overrideOf(
-	r Respeller, over overrides, host symbol.Symbol, origin symbol.Identity,
-	kind symbol.Kind, v symbol.Visibility, settled string,
+	r Respeller, members MemberRespeller, over overrides, host symbol.Symbol, origin symbol.Identity,
+	m Member, member bool, settled string,
 ) (string, bool) {
 	override, written := over.on(origin)
 	if !written {
@@ -447,11 +503,21 @@ func overrideOf(
 	if host == nil {
 		name = origin.FlatName()
 	}
-	own, err := r.Respell(hostKind(host), kind, v, name)
+	own, err := respellName(r, members, m, member, name)
 	if err != nil || own != settled {
 		return "", false
 	}
 	return override, true
+}
+
+// respellName spells a declared name through the hook of r: a member, which
+// member reports, through members, the [MemberRespeller] role of r, where r
+// has the role, and every other name through r.
+func respellName(r Respeller, members MemberRespeller, m Member, member bool, name string) (string, error) {
+	if member && members != nil {
+		return members.RespellMember(m, name)
+	}
+	return r.Respell(m.Host, m.Kind, m.Visibility, name)
 }
 
 // hostKind returns the kind of a host for the hook, and the invalid kind
@@ -480,12 +546,6 @@ type originEntry struct {
 	unit    int
 }
 
-// scopeName keys one settled spelling in one collision scope.
-type scopeName struct {
-	scope   string
-	settled string
-}
-
 // pkgName keys one emitted spelling in one package's reference
 // table.
 type pkgName struct {
@@ -499,73 +559,16 @@ type originName struct {
 	emitted string
 }
 
-// resolveTop settles the file-level names. A collision in a scope
-// reverts its names to the emitted spellings under one finding, and the
-// remaining names form the table that the references follow. The scope
-// of a declaration is its package. The scope of a method with a receiver
-// is its receiver, because two types can declare one method name in
-// every language. The scope of a field that another type receives is
-// that type, because the field adds its name to the members of the
-// type. byOrigin records the same decisions keyed by the identity of the
-// origin, for resolved references. Both record the unit that declares
+// resolveTop builds the tables of the file-level names that the
+// references follow. table records the settled name of each emitted name
+// of each package, and byOrigin records the same keyed by the identity of
+// the origin, for resolved references. Both record the unit that declares
 // each name. The records of a claimed family declare no name of their
-// file, so they join no scope and no table. The clean path allocates per
-// name and never per group, because a group exists only where a second
-// name arrives.
-func resolveTop(
-	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
-) (map[pkgName]tableEntry, map[originName]originEntry) {
-	first := make(map[scopeName]*planned, len(plans.spans))
-	var groups map[scopeName][]*planned
-	for i := range e.units {
-		if e.units[i].Template != "" {
-			continue
-		}
-		pkg := e.units[i].Pkg.Package
-		for j, d := range e.units[i].Decls {
-			key := scopeKey(pkg, d)
-			list := plans.of(i, j)
-			for k := range list {
-				p := &list[k]
-				if p.host != nil || p.err != nil {
-					continue
-				}
-				at := scopeName{scope: key, settled: p.settled}
-				occupant, taken := first[at]
-				if !taken {
-					first[at] = p
-					continue
-				}
-				if groups == nil {
-					groups = map[scopeName][]*planned{}
-				}
-				if len(groups[at]) == 0 {
-					groups[at] = append(groups[at], occupant)
-				}
-				groups[at] = append(groups[at], p)
-			}
-		}
-	}
-	if len(groups) > 0 {
-		keys := slices.SortedFunc(maps.Keys(groups), func(a, b scopeName) int {
-			if c := strings.Compare(a.scope, b.scope); c != 0 {
-				return c
-			}
-			return strings.Compare(a.settled, b.settled)
-		})
-		for _, at := range keys {
-			group := groups[at]
-			names := make([]string, 0, len(group))
-			for _, p := range group {
-				names = append(names, p.emitted)
-				p.final = p.emitted
-			}
-			sink.Errorf(CollidingNames, group[0].at, by,
-				"%s settle to %q in %s, and every one keeps its emitted name",
-				strings.Join(names, " and "), at.settled, at.scope)
-		}
-	}
-
+// file, so they join no table. The settle does not check whether two
+// file-level names collide. The layout checks them in the packages of
+// their routed files, which the settle does not know. It allocates the two
+// tables, each sized once to the store.
+func resolveTop(e *Emit, plans *plan) (map[pkgName]tableEntry, map[originName]originEntry) {
 	table := make(map[pkgName]tableEntry, len(plans.spans))
 	byOrigin := make(map[originName]originEntry, len(plans.spans))
 	for i := range e.units {
@@ -610,23 +613,6 @@ func resolveTop(
 		}
 	}
 	return table, byOrigin
-}
-
-// scopeSep separates a package from a receiver in the key of a
-// collision scope. No spelling contains the byte, so a joined key never
-// collides with a plain one.
-const scopeSep = "\x00"
-
-// scopeKey returns the key of the collision scope of one file-level
-// declaration. The key is the package, followed by the receiver of a
-// method or of a field that another type receives, so two receivers can
-// declare one name without a collision.
-func scopeKey(pkg string, d symbol.Symbol) string {
-	receives := emit.ReceivesOf(d)
-	if receives == nil {
-		return pkg
-	}
-	return pkg + scopeSep + receives.Spelling
 }
 
 // resolveMembers reverts member collisions. Members of one host whose

@@ -33,12 +33,14 @@ const (
 	FactLabel
 	FactParamDefault
 	FactVariadic
+	FactPassing
 	FactNamedReturn
 	FactConstEnum
 	FactUnderlying
 	FactFields
 	FactMethods
 	FactValue
+	FactWire
 	FactReceives
 	FactTag
 	FactSealed
@@ -79,12 +81,14 @@ var factNames = [...]string{
 	FactLabel:            "Label",
 	FactParamDefault:     "ParamDefault",
 	FactVariadic:         "Variadic",
+	FactPassing:          "Passing",
 	FactNamedReturn:      "NamedReturn",
 	FactConstEnum:        "ConstEnum",
 	FactUnderlying:       "Underlying",
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
 	FactValue:            "Value",
+	FactWire:             "Wire",
 	FactReceives:         "Receives",
 	FactTag:              "Tag",
 	FactSealed:           "Sealed",
@@ -134,12 +138,14 @@ func Facts() []Fact {
 		FactLabel,
 		FactParamDefault,
 		FactVariadic,
+		FactPassing,
 		FactNamedReturn,
 		FactConstEnum,
 		FactUnderlying,
 		FactFields,
 		FactMethods,
 		FactValue,
+		FactWire,
 		FactReceives,
 		FactTag,
 		FactSealed,

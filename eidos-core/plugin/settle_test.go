@@ -31,11 +31,13 @@ const (
 )
 
 // The documentation of the name key, the name that the override cases
-// write, and the settled name of row in a kept file.
+// write, the settled name of row in a kept file, and the mark that a
+// member convention puts before the name of a member.
 const (
 	nameDoc      = "a declaration's name in the test target"
 	overrideName = "Record"
 	keptRow      = "KeptRow"
+	memberMark   = "m"
 )
 
 // nestedState is the enum state that the struct box declares. Its flat
@@ -135,6 +137,26 @@ func capitalizing() *respellingOnly {
 	return respelling(func(_, _ symbol.Kind, _ symbol.Visibility, n string) (string, error) {
 		return strings.ToUpper(n[:1]) + n[1:], nil
 	})
+}
+
+// memberSpelling is a backend with the respell hook of [capitalizing] and
+// the role of a member convention, whose function is member.
+type memberSpelling struct {
+	respellingOnly
+	member plugin.MemberRespell
+}
+
+var _ plugin.MemberRespeller = (*memberSpelling)(nil)
+
+// RespellMember spells the name of a member through the case's function.
+func (b *memberSpelling) RespellMember(m plugin.Member, name string) (string, error) {
+	return b.member(m, name)
+}
+
+// membering returns a backend whose member convention is fn, and whose
+// respell hook raises the first letter of every other name.
+func membering(fn plugin.MemberRespell) *memberSpelling {
+	return &memberSpelling{respellingOnly: *capitalizing(), member: fn}
 }
 
 // respelledStore is the fixture of the reference cases after its
@@ -595,31 +617,6 @@ func TestSettle(t *testing.T) {
 			})
 		}
 
-		t.Run("reports CollidingNames for two names settling to one in a package", func(t *testing.T) {
-			t.Parallel()
-
-			e := storeOf(t, settleUnit("svc", "svc/a.src",
-				&emit.Constant{Origin: settleOrigin("alpha", symbol.KindConstant), Name: "alpha", Value: "1"},
-				&emit.Constant{Origin: settleOrigin("beta", symbol.KindConstant), Name: "beta", Value: "2"},
-			))
-			coretest.AssertCodes(t, settled(t, e, respelling(same)), plugin.CollidingNames)
-		})
-
-		t.Run("reports CollidingNames for two declarations that a lowering gives one name", func(t *testing.T) {
-			t.Parallel()
-
-			twin := lowering(func(s symbol.Symbol) ([]symbol.Symbol, error) {
-				c, is := s.(*emit.Constant)
-				if !is {
-					return nil, nil
-				}
-				return []symbol.Symbol{c, &emit.Constant{Origin: c.Origin, Name: c.Name, Value: c.Value}}, nil
-			})
-			e := storeOf(t, settleUnit("svc", "svc/a.src",
-				&emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}))
-			coretest.AssertCodes(t, settled(t, e, twin), plugin.CollidingNames)
-		})
-
 		// claimedRecord returns a unit of a family that claims its
 		// files, with one constant of the name as its record.
 		claimedRecord := func(name string) (plugin.Unit, *emit.Constant) {
@@ -628,15 +625,6 @@ func TestSettle(t *testing.T) {
 			u.Tag, u.Template = claimTag, claimTemplate
 			return u, c
 		}
-
-		t.Run("reports no CollidingNames for a record of a claimed family", func(t *testing.T) {
-			t.Parallel()
-
-			declared := settleUnit("svc", "svc/a.src",
-				&emit.Constant{Origin: settleOrigin("alpha", symbol.KindConstant), Name: "alpha", Value: "1"})
-			record, _ := claimedRecord("beta")
-			coretest.AssertCodes(t, settled(t, storeOf(t, declared, record), respelling(same)))
-		})
 
 		t.Run("respells a record of a claimed family", func(t *testing.T) {
 			t.Parallel()
@@ -657,109 +645,15 @@ func TestSettle(t *testing.T) {
 			assert.Equal(t, holder.Type.Spelling, "beta", "a record declares no name that a reference follows")
 		})
 
-		t.Run("keeps the emitted names of a package collision", func(t *testing.T) {
+		t.Run("settles two file-level names to one name without a finding", func(t *testing.T) {
 			t.Parallel()
 
 			alpha := &emit.Constant{Origin: settleOrigin("alpha", symbol.KindConstant), Name: "alpha", Value: "1"}
 			beta := &emit.Constant{Origin: settleOrigin("beta", symbol.KindConstant), Name: "beta", Value: "2"}
 			e := storeOf(t, settleUnit("svc", "svc/a.src", alpha, beta))
-			settled(t, e, respelling(same))
-			assert.Equal(t, []string{alpha.Name, beta.Name}, []string{"alpha", "beta"},
-				"both names are the emitted ones")
-		})
-
-		t.Run("orders collision findings by scope before settled spelling", func(t *testing.T) {
-			t.Parallel()
-
-			settles := map[string]string{
-				"alpha": "Same", "beta": "Same",
-				"gamma": "Other", "delta": "Other",
-				"epsilon": "Same", "zeta": "Same",
-			}
-			b := respelling(func(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
-				return settles[name], nil
-			})
-			constant := func(name string) *emit.Constant {
-				return &emit.Constant{Origin: settleOrigin(name, symbol.KindConstant), Name: name, Value: "1"}
-			}
-			e := storeOf(t,
-				settleUnit("svc", "svc/a.src",
-					constant("gamma"), constant("delta"), constant("epsilon"), constant("zeta")),
-				settleUnit("api", "api/a.src", constant("alpha"), constant("beta")),
-			)
-			got := messages(settled(t, e, b))
-			assert.Length(t, got, 3, "one finding per group")
-			expect.Contains(t, got[0], "in api", "the scope orders the groups")
-			expect.Contains(t, got[1], `to "Other"`, "and inside one scope the settled spelling does")
-			expect.Contains(t, got[2], `to "Same"`, "so the last group settles to the latest spelling")
-		})
-
-		t.Run("settles one method name on two receivers without a collision", func(t *testing.T) {
-			t.Parallel()
-
-			first := &emit.Method{
-				Origin: settleOrigin("row.track", symbol.KindMethod), Name: "track",
-				Receives: &emit.TypeRef{Spelling: "row"},
-			}
-			second := &emit.Method{
-				Origin: settleOrigin("box.track", symbol.KindMethod), Name: "track",
-				Receives: &emit.TypeRef{Spelling: "box"},
-			}
-			e := storeOf(t, settleUnit("svc", "svc/a.src", first, second))
-			coretest.AssertCodes(t, settled(t, e, capitalizing()))
-			assert.Equal(t, []string{first.Name, second.Name}, []string{"Track", "Track"},
-				"each receiver declares the settled name")
-		})
-
-		t.Run("keeps the emitted names of two spellings of one method on one receiver", func(t *testing.T) {
-			t.Parallel()
-
-			twice := &emit.Method{
-				Origin: settleOrigin("row.track2", symbol.KindMethod), Name: "Track",
-				Receives: &emit.TypeRef{Spelling: "row"},
-			}
-			again := &emit.Method{
-				Origin: settleOrigin("row.track3", symbol.KindMethod), Name: "track",
-				Receives: &emit.TypeRef{Spelling: "row"},
-			}
-			e := storeOf(t, settleUnit("svc", "svc/a.src", twice, again))
-			coretest.AssertCodes(t, settled(t, e, capitalizing()), plugin.CollidingNames)
-			assert.Equal(t, []string{twice.Name, again.Name}, []string{"Track", "track"},
-				"each keeps its emitted name")
-		})
-
-		t.Run("settles one field name on two receiving types without a collision", func(t *testing.T) {
-			t.Parallel()
-
-			first := &emit.Field{
-				Origin: settleOrigin("row_tag", symbol.KindField), Name: "tag",
-				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
-			}
-			second := &emit.Field{
-				Origin: settleOrigin("box_tag", symbol.KindField), Name: "tag",
-				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "box"},
-			}
-			e := storeOf(t, settleUnit("svc", "svc/a.src", first, second))
-			coretest.AssertCodes(t, settled(t, e, capitalizing()))
-			assert.Equal(t, []string{first.Name, second.Name}, []string{"Tag", "Tag"},
-				"each receiving type declares the settled name")
-		})
-
-		t.Run("keeps the emitted names of two spellings of one field on one receiving type", func(t *testing.T) {
-			t.Parallel()
-
-			upper := &emit.Field{
-				Origin: settleOrigin("row_tag2", symbol.KindField), Name: "Tag",
-				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
-			}
-			lower := &emit.Field{
-				Origin: settleOrigin("row_tag3", symbol.KindField), Name: "tag",
-				Type: &emit.TypeRef{Spelling: "int"}, Receives: &emit.TypeRef{Spelling: "row"},
-			}
-			e := storeOf(t, settleUnit("svc", "svc/a.src", upper, lower))
-			coretest.AssertCodes(t, settled(t, e, capitalizing()), plugin.CollidingNames)
-			assert.Equal(t, []string{upper.Name, lower.Name}, []string{"Tag", "tag"},
-				"each keeps its emitted name")
+			coretest.AssertCodes(t, settled(t, e, respelling(same)))
+			assert.Equal(t, []string{alpha.Name, beta.Name}, []string{"Same", "Same"},
+				"the layout checks the names in their routed package")
 		})
 
 		t.Run("rewrites a bare reference to a struct that shares its name with a received field", func(t *testing.T) {
@@ -1278,6 +1172,76 @@ func TestSettle(t *testing.T) {
 			assert.Equal(t, row.Fields.Items()[0].Name, overrideName, "the field takes its override")
 		})
 
+		t.Run("keeps the emitted name of a wire field", func(t *testing.T) {
+			t.Parallel()
+
+			row := &emit.Struct{Origin: settleOrigin("row", symbol.KindStruct), Name: "row"}
+			row.Fields.Append(&emit.Field{Name: "__typename", Type: &emit.TypeRef{Spelling: "string"}, Wire: true})
+			row.Fields.Append(&emit.Field{Name: "item", Type: &emit.TypeRef{Spelling: "int"}})
+			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+			assert.NoError(t, plugin.Settle(e, capitalizing(), nil, diag.NewSink()), "the settle completes")
+			fields := row.Fields.Items()
+			expect.Equal(t, fields[0].Name, "__typename", "the key of the wire format keeps its spelling")
+			expect.Equal(t, fields[1].Name, "Item", "a field without the flag takes the spelling of the hook")
+		})
+
+		t.Run("ignores the override of a wire field", func(t *testing.T) {
+			t.Parallel()
+
+			keyOrigin := settleOrigin("first_name", symbol.KindField)
+			row := &emit.Struct{Origin: settleOrigin("row", symbol.KindStruct), Name: "row"}
+			row.Fields.Append(&emit.Field{
+				Origin: keyOrigin, Name: "first_name", Type: &emit.TypeRef{Spelling: "string"}, Wire: true,
+			})
+			facts, key := nameFacts(t)
+			stampName(t, facts, key, keyOrigin, overrideName, meta.AuthorityDirective)
+			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+			assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
+			assert.Equal(t, row.Fields.Items()[0].Name, "first_name", "a consumer matches the key by string")
+		})
+
+		t.Run("respells a member through the role of a member convention", func(t *testing.T) {
+			t.Parallel()
+
+			row := &emit.Struct{Origin: settleOrigin("row", symbol.KindStruct), Name: "row"}
+			row.Fields.Append(&emit.Field{
+				Name: "limit", Type: &emit.TypeRef{Spelling: "int"}, Level: symbol.LevelType,
+				Mutability: symbol.MutabilityImmutable,
+			})
+			row.Methods.Append(&emit.Method{Name: "load", Level: symbol.LevelType})
+			var seen []plugin.Member
+			b := membering(func(m plugin.Member, name string) (string, error) {
+				seen = append(seen, m)
+				return memberMark + name, nil
+			})
+			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+			assert.NoError(t, plugin.Settle(e, b, nil, diag.NewSink()), "the settle completes")
+			expect.Equal(t, row.Name, "Row", "the struct takes the spelling of the respell hook")
+			expect.Equal(t, row.Fields.Items()[0].Name, memberMark+"limit", "the field takes the member convention")
+			expect.Equal(t, row.Methods.Items()[0].Name, memberMark+"load", "the method takes the member convention")
+			assert.Permutation(t, seen, []plugin.Member{
+				{
+					Host: symbol.KindStruct, Kind: symbol.KindField, Level: symbol.LevelType,
+					Mutability: symbol.MutabilityImmutable,
+				},
+				{Host: symbol.KindStruct, Kind: symbol.KindMethod, Level: symbol.LevelType},
+			}, "the convention reads the level and the mutability of each member")
+		})
+
+		t.Run("replaces the member convention's spelling of a member with its override", func(t *testing.T) {
+			t.Parallel()
+
+			itemOrigin := settleOrigin("item", symbol.KindField)
+			row := &emit.Struct{Origin: settleOrigin("row", symbol.KindStruct), Name: "row"}
+			row.Fields.Append(&emit.Field{Origin: itemOrigin, Name: "item", Type: &emit.TypeRef{Spelling: "int"}})
+			facts, key := nameFacts(t)
+			stampName(t, facts, key, itemOrigin, overrideName, meta.AuthorityDirective)
+			b := membering(func(_ plugin.Member, name string) (string, error) { return memberMark + name, nil })
+			e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+			assert.NoError(t, plugin.Settle(e, b, facts, diag.NewSink()), "the settle completes")
+			assert.Equal(t, row.Fields.Items()[0].Name, overrideName, "the field takes its override")
+		})
+
 		t.Run("applies the override of a nested origin to its declaration under the flat name", func(t *testing.T) {
 			t.Parallel()
 
@@ -1634,8 +1598,8 @@ func linkedRow(origin symbol.Identity) *emit.Struct {
 }
 
 // messages returns the message text of the findings of a sink, in
-// report order. A case about the order of the findings compares the
-// texts, because the codes cannot tell one collision from another.
+// report order. A case reads the text where the code of a finding does
+// not name the declaration that the finding is about.
 func messages(s *diag.Sink) []string {
 	var out []string
 	for d := range s.All() {

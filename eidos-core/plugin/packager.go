@@ -86,6 +86,9 @@ type Placement struct {
 	// [File.Header] describes, so a rule can read a package that a
 	// generator states for the file.
 	Header symbol.Annotations
+	// External reports that the family of the first unit of the file tests
+	// its package from outside, as [Output.External] states.
+	External bool
 }
 
 // ModuleOf returns the innermost module of a language whose root
@@ -114,3 +117,29 @@ type Packager interface {
 // PackageRule is a target's package rule in the form a backend kit
 // declares it: the function [Packager.PackageAt] runs.
 type PackageRule func(p Placement) (symbol.Identity, error)
+
+// NameScoper is the role of a target whose file-level names share one
+// namespace across the files of different packages. A protobuf file is a
+// package of its own, because a protobuf file imports a file, and the
+// files of one protobuf package declare their names in one namespace. The
+// layout checks the file-level names of a routed file in the namespace
+// that NameScope returns for the package of the file, and in the package
+// of the file where the target does not implement the role.
+type NameScoper interface {
+	// NameScope returns the namespace of the file-level names of a file
+	// that declares the package pkg.
+	NameScope(pkg symbol.Identity) symbol.Identity
+}
+
+// Overloader is the role of a target whose language declares two functions
+// of one name in one module, told apart by their parameters, as Python
+// declares the overloads of a function. The layout does not count the
+// functions of one emitted name in one routed scope as a collision of names
+// where the target overloads. Functions of two emitted names that settle to
+// one name still collide, and so do two declarations of one name where one
+// of them is no function.
+type Overloader interface {
+	// Overloads reports whether the language of the target declares the
+	// overloads of a function.
+	Overloads() bool
+}

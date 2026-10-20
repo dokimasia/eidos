@@ -50,8 +50,8 @@ const (
 // than an ordinary method.
 //
 // The zero value is [AccessorNone], which every ordinary method has.
-// TypeScript, C# and Kotlin state accessors in syntax. A language that
-// spells properties as a convention never sets it.
+// TypeScript, C#, Kotlin and Python state accessors in syntax. A language
+// that spells properties as a convention never sets it.
 type Accessor uint8
 
 const (
@@ -61,6 +61,28 @@ const (
 	AccessorGet
 	// AccessorSet writes the property: one parameter, no result.
 	AccessorSet
+	// AccessorDelete deletes the property: no parameters, no result. The
+	// deleter of a Python property is one.
+	AccessorDelete
+)
+
+// Passing is the way a caller passes the argument of a parameter.
+//
+// The zero value is [PassingDefault], the way of the language of the
+// callable: by position in Go, Java, TypeScript and Rust, and by position
+// or by keyword in Python, Kotlin and C#.
+type Passing uint8
+
+const (
+	// PassingDefault passes the argument in the way of the language.
+	PassingDefault Passing = iota
+	// PassingPositional passes the argument by position alone: a Python
+	// parameter before the slash of its signature.
+	PassingPositional
+	// PassingKeyword passes the argument by keyword alone: a Python
+	// parameter after the star of its signature, and a Ruby keyword
+	// parameter.
+	PassingKeyword
 )
 
 // Variance is the variance of a type parameter.

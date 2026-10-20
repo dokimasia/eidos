@@ -4,7 +4,6 @@
 package rules
 
 import (
-	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/store"
@@ -123,38 +122,38 @@ func (v View) ScopeOf(id symbol.Identity) Scope {
 // type. Each half reads the declaration that has the type first, and then
 // the declaration of the type. The two halves resolve independently. A
 // half that neither declaration states is the zero [Sample], which the
-// caller derives. A zero subject and a reference without a target state
-// nothing. Every fact read records on the view.
+// caller derives. Authored reads no fact of a zero subject or of a
+// reference without a target. Every fact read records on the view.
 //
-// A stated text lifts by the shape that src folds for the type, with an
-// alias followed to its target:
-//   - Text lifts to a string literal of the text.
-//   - A boolean lifts to a truth value.
-//   - A scalar lifts to a number at the width of the shape.
-//   - Every other form lifts through the LiteralFor of src, in the scope
-//     of the declaration that states the text, where that declaration has
-//     the language of src. A text that LiteralFor does not read lifts to
-//     raw text in the language of the declaration, and so does a text of a
-//     declaration in another language. Only the backend of that language
-//     spells raw text.
+// The rules of the language of the declaration that states a text read it
+// first, through their LiteralFor in the scope of that declaration. src
+// reads a text of its own language, and the resolver of the view from
+// [View.WithRules] returns the rules of another language. Where those
+// rules do not read the text, the lift depends on the shape that src
+// folds for the type, with an alias followed to its target:
+//   - A text type lifts the text to a string literal, and through the
+//     [TextRules] of those rules where they implement them, so a String of
+//     Rust takes String::from of the text.
+//   - A boolean or a scalar refuses with [RefusedAuthored].
+//   - Every other form lifts the text to raw text in the language of the
+//     declaration. Only the backend of that language spells raw text.
 //
-// Nil rules read no text. The kernel reads the authored values of a type
-// here before it asks the language to derive. The composite walk of a
-// language reads the values of each element here before it derives the
-// element. The type folds only where a half is stated.
+// Nil rules have the zero language and do not read a text. The kernel
+// reads the authored values of a type here before it asks the language to
+// derive. The composite walk of a language reads the values of each
+// element here before it derives the element. The type folds only for a
+// stated text that the rules do not read.
 //
 // # Allocation contract
 //
 // Authored allocates nothing where no declaration states a value. A stated
-// value allocates the fold of its type in a binding of its own, which is
-// the memo of the binding, the first group of the memo and the shape,
-// three allocations for a builtin type, and the children of a structural
-// one. A text of another form also allocates what LiteralFor allocates,
-// and what the read set allocates to record the reads of [View.ScopeOf].
+// value allocates a binding of its own, one allocation, what LiteralFor
+// allocates, and what the read set allocates to record the reads of
+// [View.ScopeOf]. A text that the rules do not read also allocates the
+// fold of its type. For a builtin type the fold allocates the first group
+// of the memo of the binding and the shape, and for a structural type also
+// the children.
 func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeRef) (Sample, Sample) {
-	if src == nil {
-		src = Absent("")
-	}
 	var target symbol.Identity
 	if ref != nil {
 		target = ref.Target
@@ -164,13 +163,13 @@ func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeR
 	if !sampled && !alternated {
 		return Sample{}, Sample{}
 	}
-	shape := NewBound(src, v, nil).valueShape(ref)
+	bound := NewBound(src, v, nil)
 	var s, a Sample
 	if sampled {
-		s = Of(v.authoredValue(src, sampleBy, ref, shape, sample))
+		s = bound.authored(sampleBy, ref, sample)
 	}
 	if alternated {
-		a = Of(v.authoredValue(src, alternateBy, ref, shape, alternate))
+		a = bound.authored(alternateBy, ref, alternate)
 	}
 	return s, a
 }
@@ -186,36 +185,6 @@ func (v View) stated(k meta.Key[string], subject, target symbol.Identity) (strin
 		return text, target, true
 	}
 	return "", symbol.Identity{}, false
-}
-
-// authoredValue returns authored text as a value of a shape. It returns a
-// string literal for text, a truth value for a boolean, and a number at
-// the width of the shape for a scalar. For every other form, it returns
-// the value that the LiteralFor of src reads in the scope of by, the
-// declaration that states the text, where by has the language of src. It
-// returns raw text in the language of by otherwise.
-func (v View) authoredValue(
-	src SourceRules, by symbol.Identity, ref *node.TypeRef, shape TypeShape, text string,
-) emit.Value {
-	switch shape.Form {
-	case symbol.FormText:
-		return emit.Literal(emit.LiteralString, text)
-	case symbol.FormBool:
-		return emit.Literal(emit.LiteralBool, text)
-	case symbol.FormScalar:
-		if shape.Class == ScalarFloat {
-			return emit.Number(emit.LiteralFloat, text, shape.Bits)
-		}
-		return emit.Number(emit.LiteralInt, text, shape.Bits)
-	default:
-		// Every other form lifts through the rules below.
-	}
-	if by.Lang == src.Lang() {
-		if value, read := src.LiteralFor(v.ScopeOf(by), ref, text, v); read {
-			return value
-		}
-	}
-	return emit.Raw(by.Lang, text)
 }
 
 // Fact returns the value that the arbitration selects for a subject and a

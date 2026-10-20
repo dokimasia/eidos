@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -61,6 +62,18 @@ type Entry struct {
 // refers into. [ImportSet.SetReferents] sets them for one file, and
 // [ImportSet.Referent] returns the package of one such file.
 //
+// A set has the plan's lowering policy, which [ImportSet.SetPolicy] sets
+// for a render and [ImportSet.Policy] returns, so a helper that a
+// vocabulary binds to the set reads the policy. A set also has the order
+// of the file-level declarations of its file: the order of their
+// reservations. [ImportSet.Enter] names the declaration under render, and
+// [ImportSet.Pending] reports a name that the declaration under render or
+// a later declaration takes. While the pass spells a body,
+// [ImportSet.Body] returns the callable of the body and the declaration
+// whose template places it. [ImportSet.Has] reports whether the set
+// records an entry, so a vocabulary keeps a fact of the file under render
+// as an entry under a path that no import has.
+//
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
 type ImportSet struct {
@@ -91,13 +104,26 @@ type ImportSet struct {
 	// referents are the packages of the files that the file refers into,
 	// sorted by package path, and nil for a file that refers into none.
 	referents []symbol.Identity
+	// policy is the plan's lowering policy, which a Reset keeps.
+	policy plugin.Policy
+	// reservations counts the names that Reserve took, and current is the
+	// position of the reservation of the declaration under render.
+	reservations int
+	current      int
+	// callable is the function or the method whose body the pass spells,
+	// and host is the declaration whose template places the body. Both are
+	// nil outside a body.
+	callable, host symbol.Symbol
 }
 
 // binding is what a local name refers to: a whole package, one
-// declaration of a path, or a name the file declares itself.
+// declaration of a path, or a name the file declares itself. index is the
+// position of a reservation among the reservations of the file, and zero
+// for every other binding.
 type binding struct {
 	path, item string
 	reserved   bool
+	index      int
 }
 
 // record is one journaled change: the entry it added, where added
@@ -199,8 +225,9 @@ func (s *ImportSet) Referent(path string) (symbol.Identity, bool) {
 // Reserve takes names for the declarations of the file itself, so
 // no import binds one of them. The render pass reserves every
 // file-level declaration's name before the first declaration
-// renders. An empty name reserves nothing, and a name already bound
-// keeps its binding.
+// renders, in the order in which the declarations render. An empty
+// name reserves nothing, and a name already bound keeps its binding,
+// so the first declaration of a name gives the name its position.
 func (s *ImportSet) Reserve(names ...string) {
 	for _, name := range names {
 		if name == "" {
@@ -212,7 +239,8 @@ func (s *ImportSet) Reserve(names ...string) {
 		if s.locals == nil {
 			s.locals = map[string]binding{}
 		}
-		s.locals[name] = binding{reserved: true}
+		s.locals[name] = binding{reserved: true, index: s.reservations}
+		s.reservations++
 	}
 }
 
@@ -224,6 +252,50 @@ func (s *ImportSet) Reserved(name string) bool {
 	b, held := s.locals[name]
 	return held && b.reserved
 }
+
+// Enter names the file-level declaration under render by the name that
+// [ImportSet.Reserve] took for it. The render pass enters each declaration
+// before its template runs, and a cluster by its first declaration. A
+// name that no declaration of the file took enters nothing, and the
+// declaration entered before stays under render. Enter allocates nothing.
+func (s *ImportSet) Enter(name string) {
+	if b, held := s.locals[name]; held && b.reserved {
+		s.current = b.index
+	}
+}
+
+// Pending reports whether name is the name of a file-level declaration of
+// the file that has not finished rendering: the declaration under render,
+// or a declaration that the render writes after it. Before the first
+// [ImportSet.Enter], every declaration of the file is pending. A language
+// that runs the declarations of a file in order, such as Python, writes a
+// reference to a pending name in a form that it evaluates later. Pending
+// reports false for a name that no declaration of the file takes, and
+// allocates nothing.
+func (s *ImportSet) Pending(name string) bool {
+	b, held := s.locals[name]
+	return held && b.reserved && b.index >= s.current
+}
+
+// Body returns the callable whose body the pass spells and the declaration
+// whose template places the body. The host of a method is the type whose
+// template places the method, and the host of a function is the function.
+// A body that the template of a claimed file places has no host. Body
+// returns nil for both outside a body. The pass names the two for the
+// statements and the reference template of each body, so a language whose
+// statements spell a name that the callable or its host declares, such as
+// a type parameter, finds the declaration. Body allocates nothing.
+func (s *ImportSet) Body() (callable, host symbol.Symbol) { return s.callable, s.host }
+
+// SetPolicy sets the plan's lowering policy, which [ImportSet.Policy]
+// returns. The render pass sets the policy of its context on the set of
+// each worker before it binds the vocabulary to the set. A Reset keeps
+// the policy, because the files of one render share it.
+func (s *ImportSet) SetPolicy(p plugin.Policy) { s.policy = p }
+
+// Policy returns the plan's lowering policy that [ImportSet.SetPolicy]
+// set, and the zero Policy for a set without one. It allocates nothing.
+func (s *ImportSet) Policy() plugin.Policy { return s.policy }
 
 // Bind imports a whole package and returns the name the file refers
 // to it by: name where no other binding and no declaration of the
@@ -389,6 +461,15 @@ func (s *ImportSet) AddType(path, name string) {
 	s.add(Entry{Path: path, Name: name, TypeOnly: true})
 }
 
+// Has reports whether the set records the entry of path and name that
+// [ImportSet.Add] records for an empty name and [ImportSet.AddNamed]
+// records otherwise, so a language reads back what it recorded for the
+// file under render. Has allocates nothing.
+func (s *ImportSet) Has(path, name string) bool {
+	_, held := s.entries[Entry{Path: path, Name: name}]
+	return held
+}
+
 // Paths returns every recorded path, distinct and sorted, so two
 // renders spell one block. A renderer that binds no names reads
 // nothing else. It allocates the list it returns, and nothing for an
@@ -467,8 +548,9 @@ func (s *ImportSet) Len() int {
 }
 
 // Reset drops every entry, binding, reservation, declared name and
-// referent of the file, and keeps the storage and the names, so the pass
-// reuses one set across a call's files.
+// referent of the file, and the declaration under render. It keeps the
+// storage, the names and the policy, so the pass reuses one set across a
+// call's files.
 func (s *ImportSet) Reset() {
 	clear(s.entries)
 	clear(s.locals)
@@ -477,6 +559,8 @@ func (s *ImportSet) Reset() {
 	clear(s.declared)
 	s.known = 0
 	s.referents = nil
+	s.reservations = 0
+	s.current = 0
 	s.journal = s.journal[:0]
 }
 

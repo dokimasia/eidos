@@ -51,7 +51,9 @@ const (
 //     derivation. A target without nested types declares a nested type
 //     in the file, so the value of a nested type is the respell of its
 //     flat name, [symbol.Identity.FlatName], at the kind and the
-//     visibility of a declaration of the file.
+//     visibility of a declaration of the file. A field and a method spell
+//     at their level and the mutability of a field too, through the
+//     [plugin.MemberRespeller] role of a backend that has it.
 //   - Rule 1 stamps the values of each instance of the target's
 //     directive on the instance's subject. The name param stamps the
 //     name key, and each policy param stamps the key of its policy. The
@@ -87,8 +89,10 @@ type lowering struct {
 	target    plugin.Target
 	directive directive.Name
 	// respell is the backend of the target, whose respell hook spells
-	// the names of rule 0.
+	// the names of rule 0, and members is its role for members, nil for a
+	// backend without it.
 	respell plugin.Respeller
+	members plugin.MemberRespeller
 	// policies are the backend's lowering policies, each with its param
 	// and its key, and nil where the backend declares a defective one.
 	policies []policyParam
@@ -122,7 +126,9 @@ type planScope struct {
 // each target of an enabled plan. The entries are in the order of their
 // names. Each entry keeps the sources of every enabled plan of its
 // target, and the backend's policies where broken does not list the
-// backend. The step returns an error that lists the backends for two
+// backend. A policy of the plan, [plugin.PolicySpec.Plan], has no param
+// and no key of the entry, because no declaration overrides it. The step
+// returns an error that lists the backends for two
 // backends of one target. It returns the roster's error of a duplicate
 // name for an entry whose name a plugin of the roster has. A composition
 // without a plan allocates nothing in the step.
@@ -137,8 +143,10 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 		}
 		t := b.Target()
 		seen = append(seen, t)
+		members, _ := b.(plugin.MemberRespeller)
 		l := &lowering{
 			name: plugin.ID(string(t) + loweringSuffix), target: t, directive: directive.Name(t), respell: b,
+			members: members,
 		}
 		var backends []string
 		for _, other := range plans {
@@ -163,6 +171,9 @@ func lowerings(plans []Plan, byName map[plugin.ID]plugin.Plugin, broken map[plug
 		}
 		if !broken[b.Name()] {
 			for _, spec := range b.Policies() {
+				if spec.Plan {
+					continue
+				}
 				choices := make([]string, len(spec.Choices))
 				for i, c := range spec.Choices {
 					choices[i] = string(c)
@@ -439,74 +450,90 @@ func (c *lowerCall) pkg(id symbol.Identity) (bool, error) {
 // kind adds none.
 func (c *lowerCall) collect(host symbol.Kind, s symbol.Symbol, nested bool) {
 	var (
-		id   symbol.Identity
-		kind symbol.Kind
-		v    symbol.Visibility
-		name string
+		id     symbol.Identity
+		name   string
+		method bool
 	)
+	m := plugin.Member{Host: host}
 	switch x := s.(type) {
 	case *node.Struct:
-		id, kind, v, name = x.ID, symbol.KindStruct, x.Visibility, x.Name
-		c.members(kind, x.Fields, x.Methods)
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindStruct, x.Visibility, x.Name
+		c.members(m.Kind, x.Fields, x.Methods)
 		for _, t := range x.Types {
-			c.collect(kind, t, true)
+			c.collect(m.Kind, t, true)
 		}
 	case *node.Interface:
-		id, kind, v, name = x.ID, symbol.KindInterface, x.Visibility, x.Name
-		c.members(kind, x.Fields, x.Methods)
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindInterface, x.Visibility, x.Name
+		c.members(m.Kind, x.Fields, x.Methods)
 		for _, t := range x.Types {
-			c.collect(kind, t, true)
+			c.collect(m.Kind, t, true)
 		}
 	case *node.Enum:
-		id, kind, v, name = x.ID, symbol.KindEnum, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindEnum, x.Visibility, x.Name
 		for _, variant := range x.Variants {
-			c.add(kind, variant.ID, symbol.KindEnumVariant, 0, variant.Name)
+			c.add(variant.ID, plugin.Member{Host: m.Kind, Kind: symbol.KindEnumVariant}, false, variant.Name)
 		}
-		c.members(kind, x.Fields, x.Methods)
+		c.members(m.Kind, x.Fields, x.Methods)
 	case *node.Sum:
-		id, kind, v, name = x.ID, symbol.KindSum, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindSum, x.Visibility, x.Name
 		for _, variant := range x.Variants {
-			c.add(kind, variant.ID, symbol.KindSumVariant, 0, variant.Name)
+			c.add(variant.ID, plugin.Member{Host: m.Kind, Kind: symbol.KindSumVariant}, false, variant.Name)
 			c.members(symbol.KindSumVariant, variant.Fields, nil)
 		}
-		c.members(kind, nil, x.Methods)
+		c.members(m.Kind, nil, x.Methods)
 	case *node.Function:
-		id, kind, v, name = x.ID, symbol.KindFunction, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindFunction, x.Visibility, x.Name
 	case *node.Method:
-		id, kind, v, name = x.ID, symbol.KindMethod, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, m.Level, name, method = x.ID, symbol.KindMethod, x.Visibility, x.Level, x.Name, true
 	case *node.Alias:
-		id, kind, v, name = x.ID, symbol.KindAlias, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindAlias, x.Visibility, x.Name
 	case *node.Constant:
-		id, kind, v, name = x.ID, symbol.KindConstant, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindConstant, x.Visibility, x.Name
 	case *node.Variable:
-		id, kind, v, name = x.ID, symbol.KindVariable, x.Visibility, x.Name
+		id, m.Kind, m.Visibility, name = x.ID, symbol.KindVariable, x.Visibility, x.Name
 	}
 	if nested {
-		c.add(symbol.KindInvalid, id, kind, v, id.FlatName())
+		m.Host = symbol.KindInvalid
+		c.add(id, m, false, id.FlatName())
 		return
 	}
-	c.add(host, id, kind, v, name)
+	c.add(id, m, method, name)
 }
 
-// members adds the stamps of the fields and the methods of one host.
+// members adds the stamps of the fields and the methods of one host, each
+// with its level, and a field with its mutability.
 func (c *lowerCall) members(host symbol.Kind, fields []*node.Field, methods []*node.Method) {
 	for _, f := range fields {
-		c.add(host, f.ID, symbol.KindField, f.Visibility, f.Name)
+		m := plugin.Member{
+			Host: host, Kind: symbol.KindField, Visibility: f.Visibility, Level: f.Level, Mutability: f.Mutability,
+		}
+		c.add(f.ID, m, true, f.Name)
 	}
-	for _, m := range methods {
-		c.add(host, m.ID, symbol.KindMethod, m.Visibility, m.Name)
+	for _, method := range methods {
+		m := plugin.Member{Host: host, Kind: symbol.KindMethod, Visibility: method.Visibility, Level: method.Level}
+		c.add(method.ID, m, true, method.Name)
 	}
 }
 
-// add adds the stamp of one declaration: the respell of its name at its
-// host's kind, its own kind and its visibility. A declaration without an
-// identity or a name, one that a skip excludes from the entry, and one
-// whose name the respell hook refuses add none.
-func (c *lowerCall) add(host symbol.Kind, id symbol.Identity, kind symbol.Kind, v symbol.Visibility, name string) {
+// add adds the stamp of one declaration: the respell of its name at the
+// kind of its host, its own kind and its visibility, and for a member,
+// which member reports, at its level and its mutability through the
+// [plugin.MemberRespeller] role of a backend that has it. A declaration
+// without an identity or a name, one that a skip excludes from the entry,
+// and one whose name the respell hook refuses add none.
+func (c *lowerCall) add(id symbol.Identity, m plugin.Member, member bool, name string) {
 	if id.IsZero() || name == "" || c.ctx.Index.Skipped(id, c.ctx.Plugin) {
 		return
 	}
-	spelled, err := c.l.respell.Respell(host, kind, v, name)
+	var (
+		spelled string
+		err     error
+	)
+	if member && c.l.members != nil {
+		spelled, err = c.l.members.RespellMember(m, name)
+	} else {
+		spelled, err = c.l.respell.Respell(m.Host, m.Kind, m.Visibility, name)
+	}
 	if err != nil {
 		return
 	}

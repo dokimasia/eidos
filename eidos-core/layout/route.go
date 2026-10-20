@@ -51,7 +51,8 @@ type Input struct {
 	// Others are the names of the plan's files that the run keeps
 	// without routing them again, nil for a store that contains the whole
 	// plan. A bare reference to a name of a kept file qualifies with the
-	// package of that file.
+	// package of that file, and each name of a routed file is checked
+	// against the kept names of its routed scope.
 	Others plugin.Names
 	// Target is the plan's target, the target of the backend that settled
 	// Emit. A type reference whose target is a declaration of another
@@ -81,37 +82,55 @@ func (in Input) check() error {
 	return nil
 }
 
+// Routes is the result of routing one plan: the files and the file-level
+// names that they declare.
+type Routes struct {
+	// Files are the routed files, sorted by path.
+	Files []plugin.File
+	// Names are the file-level names of Files, as [plugin.NamesOf]
+	// returns them.
+	Names []plugin.NameEntry
+}
+
 // Route resolves every declaration of one settled plan to the file it
-// is written in, and returns the files sorted by path. Each file's
-// units keep the store's unit order, and each unit keeps its
-// declarations' order. A declaration that a finding refuses is absent
-// from every file, and a file left with no declaration is absent too. A
-// file whose units derive from one source file has the identity and the
-// annotations of that file, as [plugin.File] states. Each file has the
-// header that [plugin.HeaderOf] returns for its units, and the target's
-// package half reads its annotations.
+// is written in, and returns the files sorted by path with their
+// file-level names. Each file's units keep the store's unit order, and
+// each unit keeps its declarations' order. A declaration that a finding
+// refuses is absent from every file, and a file left with no declaration
+// is absent too. A file whose units derive from one source file has the
+// identity and the annotations of that file, as [plugin.File] states.
+// Each file has the header that [plugin.HeaderOf] returns for its units,
+// and the target's package half reads its annotations.
 //
 // Route reports routing problems to the sink under [diag.PhaseLayout],
-// each an Error. It sets the package of every bare reference and every
+// each an Error. It reports [plugin.CollidingNames] for two file-level
+// declarations of one routed scope with one settled name. The scope of a
+// name is the namespace of its routed file, [plugin.File.Scope], and the
+// receiver of a method or of a received field, because the layout is the
+// first step that knows the routed package of every declaration. Where
+// Input.Others is set, it compares the names of the routed files with the
+// kept names of each scope too. Functions of one emitted name are the
+// overloads of one function, and no collision, where the target's package
+// half is a [plugin.Overloader] that overloads. It sets the package of every bare reference and every
 // translated reference that crosses into a file of another package, in
-// place. It returns an
-// error only for a defect in its inputs: a nil store, an unsettled
-// store, a missing speller, index or sink, a speller whose parts do not
-// contain the declarations of the unit it split, and a filename that is
-// not one path element.
+// place. It returns an error only for a defect in its inputs: a nil store,
+// an unsettled store, a missing speller, index or sink, a speller whose
+// parts do not contain the declarations of the unit it split, and a
+// filename that is not one path element.
 //
 // # Cost
 //
-// Route reads the overrides on each declaration's origin once, and
-// visits a unit's declarations again only where one of them has an
-// override. A unit without one joins its file whole, without a copy,
+// Route reads the overrides on each declaration's origin once, and on the
+// subject that placed a declaration whose origin has none. It visits a
+// unit's declarations again only where one of them has an override. A unit without one joins its file whole, without a copy,
 // so no declaration allocates. Each file costs its path, and the
 // target's filename and split of the unit it comes from. The header of
 // a file costs what [plugin.HeaderOf] allocates, which is nothing for a
-// file with at most one emit.File.
-func Route(in Input) ([]plugin.File, error) {
+// file with at most one emit.File. The names cost what [plugin.NamesOf]
+// allocates, and their check sorts one list of their indexes.
+func Route(in Input) (Routes, error) {
 	if err := in.check(); err != nil {
-		return nil, err
+		return Routes{}, err
 	}
 	// A plan routes about one batch and one file per unit, so the
 	// unit count sizes both.
@@ -133,13 +152,16 @@ func Route(in Input) ([]plugin.File, error) {
 	r.readOverrides()
 	r.place()
 	if err := r.name(); err != nil {
-		return nil, err
+		return Routes{}, err
 	}
 	r.packages()
 	r.sources()
 	r.collide()
 	r.qualify()
-	return r.assemble(), nil
+	files := r.assemble()
+	names := plugin.NamesOf(files, in.Emit, in.Others)
+	r.collideNames(files, names)
+	return Routes{Files: files, Names: names}, nil
 }
 
 // router is one plan's routing state.
@@ -249,7 +271,10 @@ type building struct {
 
 // readOverrides reads the routing on every declaration's origin once,
 // before any declaration is placed, because an ambiguity depends on
-// every family an origin's declarations are placed in.
+// every family an origin's declarations are placed in. A declaration
+// whose origin states no routing takes the routing of the subject that
+// placed it, which [plugin.Unit.Subjects] records, and the subject is then
+// the origin of the routing.
 func (r *router) readOverrides() {
 	k := 0
 	for i := range r.units {
@@ -262,9 +287,13 @@ func (r *router) readOverrides() {
 			}
 			origin, _ := emit.OriginOf(d)
 			ov := r.overrideOf(origin, u.Plugin)
+			if subject, placed := u.Subjects[origin]; placed && ov == (override{}) {
+				origin, ov = subject, r.overrideOf(subject, u.Plugin)
+			}
 			if ov == (override{}) {
 				continue
 			}
+			ov.origin = origin
 			if r.overrides == nil {
 				r.overrides = map[int]override{}
 			}
@@ -352,13 +381,14 @@ func (r *router) overridden(k, n int) bool {
 
 // destine resolves the destination of one declaration with an
 // override: the family its tag names, the key the family's cardinality
-// derives, and the directory its path names. It also returns the route of
-// the destination. It reports false, with the finding on the sink, where
-// no destination resolves.
+// derives, and the directory its path names. The origin of the override
+// derives the key and the directory, and positions a finding. destine also
+// returns the route of the destination. It reports false, with the finding
+// on the sink, where no destination resolves.
 func (r *router) destine(
 	u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov override,
 ) (destination, plugin.Route, bool) {
-	origin, _ := emit.OriginOf(d)
+	origin := ov.origin
 	fam, family := own, plugin.RouteHandler
 	if u.Tag == "" && ov.tag != "" {
 		moved, known := familyOf(r.in.Outputs[u.Plugin], ov.tag)
@@ -555,20 +585,26 @@ func (r *router) name() error {
 // packages names each file's package through the target's package
 // half, or gives it its first unit's package where the target has
 // none. It gives each file its header first, so the package half reads
-// the annotations of the header. A target's error leaves the file with
-// the zero package and keeps the reason, which a reference into the file
-// reports.
+// the annotations of the header. The family of the first unit states
+// whether the file tests its package from outside. The namespace of the
+// names of a file is the namespace that a target with [plugin.NameScoper]
+// returns for its package, and its package otherwise. A target's error
+// leaves the file with the zero package and the zero namespace, and keeps
+// the reason, which a reference into the file reports.
 func (r *router) packages() {
+	scoper, scopes := r.in.Packager.(plugin.NameScoper)
 	for fi := range r.files {
 		f := &r.files[fi]
 		f.file.Header = plugin.HeaderOf(f.file.Units)
-		origin := f.file.Units[0].Pkg
+		first := f.file.Units[0]
 		if r.in.Packager == nil {
-			f.file.Pkg = origin
+			f.file.Pkg, f.file.Scope = first.Pkg, first.Pkg
 			continue
 		}
+		fam, _ := familyOf(r.in.Outputs[first.Plugin], first.Tag)
 		at := plugin.Placement{
-			Path: f.file.Path, Origin: origin, Modules: r.in.Modules, Header: f.file.Header.Annotations,
+			Path: f.file.Path, Origin: first.Pkg, Modules: r.in.Modules, Header: f.file.Header.Annotations,
+			External: fam.External,
 		}
 		if r.in.Residents != nil {
 			at.Residents = r.in.Residents(path.Dir(f.file.Path))
@@ -581,7 +617,10 @@ func (r *router) packages() {
 			f.reason = err
 			continue
 		}
-		f.file.Pkg = pkg
+		f.file.Pkg, f.file.Scope = pkg, pkg
+		if scopes {
+			f.file.Scope = scoper.NameScope(pkg)
+		}
 	}
 }
 

@@ -16,8 +16,8 @@ import (
 // Names is the name table of the files that a warm run keeps without
 // generating them again. [SettleWith] resolves a reference that its store
 // does not declare against it, and the layout qualifies a reference into a
-// kept file of another package through it. A plan reads the kept names of a
-// collision scope through it.
+// kept file of another package through it. The layout checks the names of
+// the routed files against the kept names of each routed scope through it.
 //
 // # Concurrency
 //
@@ -34,11 +34,19 @@ type Names interface {
 	// from the origin declares under an emitted name, and false where
 	// none does.
 	OfOrigin(origin symbol.Identity, emitted string) (NameEntry, bool)
-	// InScope returns the entries of one collision scope, sorted by
-	// settled name: the methods and the fields of the package that attach
-	// to the receiver where receiver is set, and every other file-level
-	// name of the package where it is empty.
+	// InScope returns the entries of one source scope, sorted by settled
+	// name: the methods and the fields of the source package pkg that
+	// attach to the receiver where receiver is set, and every other
+	// file-level name of the package where it is empty. A bare reference and
+	// the spelling of a receiver resolve in the source package.
 	InScope(pkg, receiver string) []NameEntry
+	// InFileScope returns the entries of one routed scope, sorted by
+	// settled name: the names that the kept files of the namespace scope
+	// declare under receiver, and every other file-level name of those files
+	// where receiver is empty. The namespace of a file is its [File.Scope].
+	// Each file-level name occurs once in its routed scope, which the layout
+	// checks.
+	InFileScope(scope symbol.Identity, receiver string) []NameEntry
 }
 
 // NameEntry is one file-level name of a plan's file: what the name
@@ -53,7 +61,7 @@ type NameEntry struct {
 	// Receiver is the emitted spelling of the type that a method or a
 	// field attaches to from outside the declaration of the type, and
 	// empty for every other declaration. A name collides with the other
-	// names of its package and receiver.
+	// names of its namespace and receiver.
 	Receiver string
 	// Origin is the declaration's origin, and the zero identity for a
 	// declaration without one.

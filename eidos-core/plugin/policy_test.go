@@ -272,6 +272,45 @@ func TestPolicy(t *testing.T) {
 		})
 	})
 
+	t.Run("Lookup", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the resolved choice of a key that the policy declares", func(t *testing.T) {
+			t.Parallel()
+
+			got, declared := resolved(t, map[plugin.PolicyKey]plugin.Choice{int64Key: text}).Lookup(int64Key)
+			assert.True(t, declared, "the policy declares the key")
+			assert.Equal(t, got, text, "the selected choice applies")
+		})
+
+		t.Run("returns the override's choice where the override reports one", func(t *testing.T) {
+			t.Parallel()
+
+			p := resolved(t, nil).Overridden(func(k plugin.PolicyKey) (plugin.Choice, bool) {
+				return number, k == int64Key
+			})
+			got, declared := p.Lookup(int64Key)
+			assert.True(t, declared, "the policy declares the key")
+			assert.Equal(t, got, number, "the override's choice applies")
+		})
+
+		t.Run("reports false for a key that the policy does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			got, declared := resolved(t, nil).Lookup("typescript.bytes")
+			assert.False(t, declared, "the policy does not declare the key")
+			assert.Equal(t, got, plugin.Choice(""), "an undeclared key has no choice")
+		})
+
+		t.Run("reports false for any key of the zero policy", func(t *testing.T) {
+			t.Parallel()
+
+			var p plugin.Policy
+			_, declared := p.Lookup(int64Key)
+			assert.False(t, declared, "the zero policy has no keys")
+		})
+	})
+
 	t.Run("Overridden", func(t *testing.T) {
 		t.Parallel()
 
@@ -294,16 +333,19 @@ func TestPolicy(t *testing.T) {
 	})
 }
 
-// A spoke reads a policy on every translation, so Choice and Overridden
-// allocate nothing, in the ordinary run, which runs no benchmark. The
-// check runs alone, because the count includes every goroutine's
-// allocations.
+// A spoke reads a policy on every translation, so Choice, Lookup and
+// Overridden allocate nothing, in the ordinary run, which runs no
+// benchmark. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestPolicyAllocs(t *testing.T) {
 	p := resolved(t, map[plugin.PolicyKey]plugin.Choice{int64Key: text})
 	override := func(k plugin.PolicyKey) (plugin.Choice, bool) { return number, k == int64Key }
 	var got plugin.Choice
 	assert.MaxAllocs(t, func() { got = p.Choice(int64Key) }, 0, "Choice allocates nothing")
 	assert.Equal(t, got, text, "Choice returns the selected choice")
+	var declared bool
+	assert.MaxAllocs(t, func() { got, declared = p.Lookup(int64Key) }, 0, "Lookup allocates nothing")
+	assert.True(t, declared, "Lookup reports the declared key")
 	var copied plugin.Policy
 	assert.MaxAllocs(t, func() { copied = p.Overridden(override) }, 0, "Overridden allocates nothing")
 	assert.MaxAllocs(t, func() { got = copied.Choice(int64Key) }, 0, "Choice allocates nothing through an override")
@@ -311,7 +353,7 @@ func TestPolicyAllocs(t *testing.T) {
 }
 
 // BenchmarkPolicy measures the reads a spoke makes on every translation:
-// a choice, a choice through an override, and the copy that the
+// a choice, a choice through an override, a lookup, and the copy that the
 // authoring kit makes for one translation.
 func BenchmarkPolicy(b *testing.B) {
 	p := resolved(b, map[plugin.PolicyKey]plugin.Choice{int64Key: text})
@@ -338,6 +380,20 @@ func BenchmarkPolicy(b *testing.B) {
 			}
 			assert.Equal(b, got, number, "Choice returns the override's choice")
 		})
+	})
+
+	b.Run("Lookup", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			got      plugin.Choice
+			declared bool
+		)
+		for c.Loop() {
+			got, declared = p.Lookup(int64Key)
+		}
+		assert.True(b, declared, "Lookup reports the declared key")
+		assert.Equal(b, got, text, "Lookup returns the selected choice")
 	})
 
 	b.Run("Overridden", func(b *testing.B) {

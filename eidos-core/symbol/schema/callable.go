@@ -139,6 +139,13 @@ type Method struct {
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Passing states whether a caller passes the argument by position alone,
+// by keyword alone, or in the way of the language. A Python parameter
+// before the slash of its signature is positional, and one after its star
+// is a keyword. A generator that writes a keyword parameter as an ordinary
+// one changes the calls that the callee accepts, so the passing is a field
+// of the parameter and not metadata.
+//
 // Doc is the documentation of the parameter, such as the description of
 // a GraphQL argument. A language that documents a parameter in the
 // documentation of its callable leaves it empty.
@@ -160,6 +167,7 @@ type Param struct {
 	Default     string             `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
 	Optional    bool               `eidos:"both,fact=Optional"`     // present-or-absent: TypeScript's ?, Swift's defaulted trailing
 	Variadic    symbol.Variadic    `eidos:"both,fact=Variadic"`     // positional or keyword
+	Passing     symbol.Passing     `eidos:"both,fact=Passing"`      // by position, by keyword, or the way of the language
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 

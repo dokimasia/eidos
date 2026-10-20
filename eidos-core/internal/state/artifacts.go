@@ -20,9 +20,10 @@ import (
 )
 
 // Artifact is the record of one file that a plan generated: the file's
-// manifest entry, the package it declares, the group that generates it,
-// where a finding about the file is positioned, the export rows of its
-// declarations and the file-level names it declares. The artifacts table
+// manifest entry, the package it declares and the namespace of its names,
+// the group that generates it, where a finding about the file is
+// positioned, the export rows of its declarations and the file-level names
+// it declares. The artifacts table
 // keeps each artifact under its path. It keeps a second row under the
 // path in lower case, through which [PhaseState.Clashes] finds the paths
 // that one tree cannot contain beside a new path.
@@ -31,8 +32,10 @@ type Artifact struct {
 	// artifact's row.
 	Entry manifest.Entry
 	// Pkg is the package the file declares, and the zero identity where
-	// the target derives none.
-	Pkg symbol.Identity
+	// the target derives none. Scope is the namespace of the file's names,
+	// which [plugin.File.Scope] describes.
+	Pkg   symbol.Identity
+	Scope symbol.Identity
 	// Group is the key unit of the file's group.
 	Group plugin.UnitRef
 	// At is where a finding about the file is positioned: the position of
@@ -174,8 +177,10 @@ func foldedRow(e entry) (string, string, bool) {
 // appendArtifact appends an artifact's row to dst. The row opens with the
 // plan, so a commit decides from the plan alone which prior rows it keeps.
 // The digest, the plugins and the sources of the manifest entry follow,
-// then the package, the group, the position of its findings, the export
-// rows and the names.
+// then the package, the namespace, the group, the position of its
+// findings, the export rows and the names. A flag states whether the
+// namespace differs from the package, and only a namespace that differs
+// follows it.
 func appendArtifact(dst []byte, a *Artifact) []byte {
 	e := encoder{buf: dst}
 	e.text(a.Entry.Plan)
@@ -186,6 +191,11 @@ func appendArtifact(dst []byte, a *Artifact) []byte {
 	}
 	e.texts(a.Entry.Sources)
 	e.identity(a.Pkg)
+	apart := a.Scope != a.Pkg
+	e.boolean(apart)
+	if apart {
+		e.identity(a.Scope)
+	}
 	e.buf = appendUnitRef(e.buf, a.Group)
 	e.pos(a.At)
 	e.text(a.First)
@@ -214,7 +224,8 @@ func appendArtifact(dst []byte, a *Artifact) []byte {
 }
 
 // decodeArtifact decodes the row of the artifact at path. Each export row
-// and each name takes the artifact's path and package.
+// and each name takes the artifact's path and package. An artifact without
+// a namespace of its own takes its package as its namespace.
 func decodeArtifact(d *decoder, at string) Artifact {
 	a := Artifact{Entry: manifest.Entry{Path: at, Plan: d.text(), Hash: d.text()}}
 	if n := d.Count(); n > 0 {
@@ -225,6 +236,10 @@ func decodeArtifact(d *decoder, at string) Artifact {
 	}
 	a.Entry.Sources = d.texts()
 	a.Pkg = d.identity()
+	a.Scope = a.Pkg
+	if d.Bool() {
+		a.Scope = d.identity()
+	}
 	a.Group = d.unitRef()
 	a.At = d.pos()
 	a.First = d.text()

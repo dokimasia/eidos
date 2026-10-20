@@ -60,12 +60,13 @@ type KernelKeys struct {
 func (k KernelKeys) IsZero() bool { return k.Module.IsZero() }
 
 // sampled lists the kinds an authored value may be stamped on: every
-// declaration that has one type.
+// declaration that has one type. An interface is one type, and a
+// function that returns an implementation of it gives a value of it.
 func sampled() []symbol.Kind {
 	return []symbol.Kind{
 		symbol.KindField, symbol.KindParam, symbol.KindReturn,
 		symbol.KindVariable, symbol.KindConstant, symbol.KindAlias,
-		symbol.KindStruct, symbol.KindEnum, symbol.KindSum,
+		symbol.KindStruct, symbol.KindInterface, symbol.KindEnum, symbol.KindSum,
 	}
 }
 

@@ -346,10 +346,11 @@ func (w *Workspace) coldState(sink *diag.Sink, format string, args ...any) {
 }
 
 // recordFiles records each file that the plan staged into the plan's
-// lane: its manifest entry with the digest of its commit, its package,
-// its group, where a finding about it is positioned, the export rows of
-// its declarations for a plan marked exported, and the names it
-// declares. A plan without a lane records nothing.
+// lane: its manifest entry with the digest of its commit, its package and
+// the namespace of its names, its group, where a finding about it is
+// positioned, the export rows of its declarations for a plan marked
+// exported, and the names it declares. A plan without a lane records
+// nothing.
 func (p *planRun) recordFiles() {
 	if p.lane == nil {
 		return
@@ -364,7 +365,7 @@ func (p *planRun) recordFiles() {
 	for i, e := range p.entries() {
 		f := &p.files[i]
 		p.lane.Artifact(state.Artifact{
-			Entry: e, Pkg: f.pkg, Group: f.group, At: f.at, First: layout.Describe(f.first),
+			Entry: e, Pkg: f.pkg, Scope: f.scope, Group: f.group, At: f.at, First: layout.Describe(f.first),
 			Export: exported[f.path], Names: f.names,
 		})
 	}

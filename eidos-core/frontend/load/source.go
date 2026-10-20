@@ -22,7 +22,9 @@ type source struct {
 }
 
 // newSource returns the source over a load's units, every region the
-// load built, restored or relinked already set.
+// load built, restored or relinked already set. The summary of the unit
+// of a dependency round marks the region, kept or parsed, because the
+// round of a kept unit is the round of its record.
 func newSource(h *history, units []*unit) *source {
 	infos := make([]store.RegionInfo, len(units))
 	for i, u := range units {
@@ -31,6 +33,7 @@ func newSource(h *history, units []*unit) *source {
 		} else {
 			infos[i] = u.record.Summary
 		}
+		infos[i].Dependency = u.round > 0
 	}
 	return &source{h: h, units: units, infos: infos}
 }

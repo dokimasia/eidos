@@ -179,6 +179,33 @@ func (a *arrival) signature() string {
 // chain is where a name's arrivals start and currently end.
 type chain struct{ first, last int }
 
+// span is a range of one of the flat lists of a walk: the bases of a type,
+// or a linearization.
+type span struct{ start, end int }
+
+// lineState is how far the linearization of a type has come.
+type lineState uint8
+
+const (
+	// lineUnknown is a type whose linearization the walk has not computed.
+	lineUnknown lineState = iota
+	// lineMerging is a type whose linearization is under computation, so a
+	// base that reaches the type again closes a cycle.
+	lineMerging
+	// lineDone is a type whose linearization is at its span.
+	lineDone
+	// lineFailed is a type whose hierarchy has no C3 linearization.
+	lineFailed
+)
+
+// lineage is what the walk records of one type for the C3 linearization:
+// the span of its bases in the bases of the walk, and the span of its
+// linearization in the linearizations of the walk.
+type lineage struct {
+	bases, lin span
+	state      lineState
+}
+
 // walk is the state of one member walk. A walk serves one call of
 // [Bound.membersOf] at a time and returns to the pool when the call
 // returns, so a walk's storage serves the calls after it.
@@ -190,11 +217,24 @@ type walk struct {
 	order    []string
 	gaps     []Gap
 	visiting map[symbol.Identity]bool
+	// linear reports that the root settles under [ShadowLinearise], so
+	// each visit records the bases of its type in bases, at the span of
+	// the lineage of the type. The settle computes the linearizations into
+	// lins on the first name that needs the order, and merges the
+	// sequences of one type in seqs.
+	linear   bool
+	bases    []symbol.Identity
+	lineages map[symbol.Identity]lineage
+	lins     []symbol.Identity
+	seqs     []span
 }
 
 // walks pools the walks of finished calls, with their storage.
 var walks = sync.Pool{New: func() any {
-	return &walk{names: map[string]chain{}, visiting: map[symbol.Identity]bool{}}
+	return &walk{
+		names: map[string]chain{}, visiting: map[symbol.Identity]bool{},
+		lineages: map[symbol.Identity]lineage{},
+	}
 }}
 
 // membersOf runs the kernel walk under the subject language's
@@ -211,6 +251,7 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 	defer w.release()
 	w.b, w.root = b, root.id
 	policy := b.source.Members()
+	w.linear = policy.Shadowing == ShadowLinearise
 	w.visit(root, policy, b.source, nil, 0, false, nil)
 	set := MemberSet{Members: make([]Member, 0, len(w.order))}
 	for _, name := range w.order {
@@ -226,16 +267,20 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 }
 
 // release empties the walk and returns it to the pool. It zeroes the
-// arrivals and the gaps, so a pooled walk keeps no declaration of the
-// graph alive.
+// arrivals, the gaps and the identities of the linearizations, so a pooled
+// walk keeps no declaration of the graph alive.
 func (w *walk) release() {
 	clear(w.arrivals)
 	clear(w.names)
 	clear(w.order)
 	clear(w.gaps)
 	clear(w.visiting)
+	clear(w.bases)
+	clear(w.lineages)
+	clear(w.lins)
 	*w = walk{
 		arrivals: w.arrivals[:0], names: w.names, order: w.order[:0], gaps: w.gaps[:0], visiting: w.visiting,
+		bases: w.bases[:0], lineages: w.lineages, lins: w.lins[:0], seqs: w.seqs[:0],
 	}
 	walks.Put(w)
 }
@@ -244,8 +289,10 @@ func (w *walk) release() {
 // descends into its contributors under the policy that applies to
 // it. The members record in list order: fields, embedded fields
 // where the policy records them, then methods. A field or a method
-// whose name is computed records a gap in its place. via is the
-// contributor that reached the type, nil at the root.
+// whose name is computed records a gap in its place. A walk under
+// [ShadowLinearise] records the target of each contributor with a
+// target as a base of the type, once per type, before it descends. via
+// is the contributor that reached the type, nil at the root.
 func (w *walk) visit(
 	t membered, policy MemberPolicy, source SourceRules,
 	through []symbol.Identity, depth int, viaOptional bool, via *node.TypeRef,
@@ -283,6 +330,17 @@ func (w *walk) visit(
 		}
 		mem := Member{Symbol: m, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
 		w.record(m.Name, mem, via)
+	}
+	if _, met := w.lineages[t.id]; w.linear && !met {
+		start := len(w.bases)
+		for _, c := range policy.Contributes {
+			for _, ref := range t.contributors(c) {
+				if target := namedUnder(ref); target != nil && !target.Target.IsZero() {
+					w.bases = append(w.bases, target.Target)
+				}
+			}
+		}
+		w.lineages[t.id] = lineage{bases: span{start: start, end: len(w.bases)}}
 	}
 	budget := policy.Depth
 	if budget <= 0 {
@@ -450,7 +508,10 @@ func (w *walk) each(name string, fn func(a *arrival) bool) {
 // settle applies the shadowing rule to one name's arrivals and
 // appends the members the rule keeps to dst: a declared member always
 // takes its name or its signature, and on an interface one name
-// with one signature arriving twice is one member.
+// with one signature arriving twice is one member. Under
+// [ShadowLinearise] the arrivals from the type that comes first in the C3
+// linearization of the root take the name, and a hierarchy without a
+// linearization takes the nearest arrival.
 func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool) []Member {
 	if iface {
 		w.dedupe(name)
@@ -479,6 +540,9 @@ func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool
 	case ShadowMerge:
 		return w.appendAt(dst, name, -1)
 	case ShadowLinearise:
+		if mro, ordered := w.linearise(w.root); ordered {
+			return w.appendFirstOwner(dst, name, w.lins[mro.start:mro.end])
+		}
 		return w.appendFirstAt(dst, name, shallowest)
 	case ShadowPromote:
 		if w.countAt(name, shallowest) != 1 {
@@ -521,6 +585,113 @@ func (w *walk) nearestPerSignature(dst []Member, name string) []Member {
 		dst = append(dst, w.arrivals[i].member)
 	}
 	return dst
+}
+
+// appendFirstOwner appends to dst a name's kept arrivals from the type
+// that comes first in the linearization mro, by the path that first
+// reached that type. The overloads of one type stay together, and a type
+// that the walk reaches twice, as the shared base of a diamond, counts
+// once. The owner of every arrival is in mro, because the walk records
+// each contributor that it follows as a base of its host.
+func (w *walk) appendFirstOwner(dst []Member, name string, mro []symbol.Identity) []Member {
+	first, rank := w.names[name].first, len(mro)
+	for i := w.names[name].first; i >= 0; i = w.arrivals[i].next {
+		a := &w.arrivals[i]
+		if r := slices.Index(mro, a.member.Owner); !a.dropped && r < rank {
+			first, rank = i, r
+		}
+	}
+	winner := w.arrivals[first].member
+	w.each(name, func(a *arrival) bool {
+		if !a.dropped && a.member.Owner == winner.Owner && slices.Equal(a.member.Through, winner.Through) {
+			dst = append(dst, a.member)
+		}
+		return true
+	})
+	return dst
+}
+
+// linearise returns the span of the C3 linearization of the type id in
+// the linearizations of the walk, and computes it on the first call: the
+// type, then the merge of the linearizations of its bases and the list
+// of its bases. A type without recorded bases, such as a contributor that
+// the walk did not follow, linearises to itself. linearise reports false
+// for a type among its own bases, and for a hierarchy whose merge finds
+// no head, such as two bases that two classes order both ways, which
+// Python refuses.
+func (w *walk) linearise(id symbol.Identity) (span, bool) {
+	l := w.lineages[id]
+	if l.state != lineUnknown {
+		return l.lin, l.state == lineDone
+	}
+	w.lineages[id] = lineage{bases: l.bases, state: lineMerging}
+	l.lin, l.state = w.merge(id, l.bases)
+	w.lineages[id] = l
+	return l.lin, l.state == lineDone
+}
+
+// merge computes the C3 linearization of the type id with the bases at
+// the span bases, and returns its span and lineDone, or lineFailed where
+// a base has no linearization or the merge finds no head. The sequences
+// of the merge are the linearizations of the bases and a copy of the
+// bases at the end of the linearizations. The merge appends a head that
+// no sequence lists after its own head, and drops it from the head of
+// every sequence, until the sequences are empty.
+func (w *walk) merge(id symbol.Identity, bases span) (span, lineState) {
+	for _, b := range w.bases[bases.start:bases.end] {
+		if _, ordered := w.linearise(b); !ordered {
+			return span{}, lineFailed
+		}
+	}
+	w.seqs = w.seqs[:0]
+	for _, b := range w.bases[bases.start:bases.end] {
+		w.seqs = append(w.seqs, w.lineages[b].lin)
+	}
+	listed := len(w.lins)
+	w.lins = append(w.lins, w.bases[bases.start:bases.end]...)
+	w.seqs = append(w.seqs, span{start: listed, end: len(w.lins)})
+	out := span{start: len(w.lins)}
+	w.lins = append(w.lins, id)
+	for {
+		head, found, left := w.mergeHead()
+		if !left {
+			break
+		}
+		if !found {
+			return span{}, lineFailed
+		}
+		w.lins = append(w.lins, head)
+		for i := range w.seqs {
+			if s := &w.seqs[i]; s.start < s.end && w.lins[s.start] == head {
+				s.start++
+			}
+		}
+	}
+	out.end = len(w.lins)
+	return out, lineDone
+}
+
+// mergeHead returns the first head of the sequences of a merge that no
+// sequence lists after its own head, and reports whether one exists and
+// whether a sequence has an element left.
+func (w *walk) mergeHead() (head symbol.Identity, found, left bool) {
+	for _, s := range w.seqs {
+		if s.start == s.end {
+			continue
+		}
+		left, head = true, w.lins[s.start]
+		tailed := false
+		for _, t := range w.seqs {
+			if t.start < t.end && slices.Contains(w.lins[t.start+1:t.end], head) {
+				tailed = true
+				break
+			}
+		}
+		if !tailed {
+			return head, true, true
+		}
+	}
+	return symbol.Identity{}, false, left
 }
 
 // appendFirstAt appends a name's first kept arrival at one depth to
@@ -595,16 +766,21 @@ func (w *walk) hostOf(a *arrival) symbol.Identity {
 const signatureSize = 64
 
 // signature spells a method's parameter and return types by what
-// they name, each parameter's variadic kind included, so two
-// arrivals of one name compare equal only when they state one
-// signature. It allocates the spelling once for a signature of up to
-// signatureSize bytes.
+// they name, each parameter's variadic kind and passing included, so
+// two arrivals of one name compare equal only when they state one
+// signature. A parameter that a caller passes by keyword alone also
+// spells its name, because the call names it. It allocates the spelling
+// once for a signature of up to signatureSize bytes.
 func signature(m *node.Method) string {
 	var b strings.Builder
 	b.Grow(signatureSize)
 	for _, p := range m.Params {
 		if p != nil {
 			b.WriteString(strconv.Itoa(int(p.Variadic)))
+			b.WriteString(strconv.Itoa(int(p.Passing)))
+			if p.Passing == symbol.PassingKeyword {
+				b.WriteString(p.Name)
+			}
 			typeKey(&b, p.Type)
 		}
 		b.WriteByte(',')

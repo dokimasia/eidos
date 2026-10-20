@@ -67,22 +67,27 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 }
 
 // Complete returns a pair from the halves that an author stated and the
-// halves that a language derived. Complete keeps a stated half. A half
-// that no author stated takes the first of these values that applies:
+// halves that a language derived. A half is stated where it has a value
+// or a refusal, and Complete keeps a stated half. The caller then receives
+// the refusal of an authored text instead of a derived value. A half that
+// no author stated takes the first of these values that applies:
 //   - the derived value of its own position, where that value differs
 //     from the stated half
 //   - the other derived value, where that value differs
 //   - a [RefusedNoLiteral] refusal, where neither differs
 //
-// The pair then contains two distinct values. Where no half is stated,
-// Complete returns the derived pair unchanged. It allocates nothing.
+// The completed half then differs from the stated half. Where no half is
+// stated, Complete returns the derived pair unchanged. It allocates
+// nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
+	sampled := sample.OK() || sample.Refusal != RefusedNone
+	alternated := alternate.OK() || alternate.Refusal != RefusedNone
 	switch {
-	case sample.OK() && alternate.OK():
+	case sampled && alternated:
 		return sample, alternate
-	case sample.OK():
+	case sampled:
 		return sample, differing(sample, derivedAlternate, derived)
-	case alternate.OK():
+	case alternated:
 		return differing(alternate, derived, derivedAlternate), alternate
 	default:
 		return derived, derivedAlternate
@@ -125,6 +130,9 @@ const (
 	// RefusedDepth means a self-referential type past the budget of the
 	// walk.
 	RefusedDepth
+	// RefusedAuthored means an authored text that the rules of its
+	// language do not read as a value of a boolean or a scalar type.
+	RefusedAuthored
 )
 
 // FirstRefusal returns the first refusal among samples, and
@@ -157,6 +165,8 @@ func (r Refusal) String() string {
 		return "unresolved"
 	case RefusedDepth:
 		return "depth"
+	case RefusedAuthored:
+		return "authored"
 	default:
 		return strconv.Itoa(int(r))
 	}
@@ -211,18 +221,44 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 }
 
 // samplesOf returns the halves that an author stated, which
-// [View.Authored] reads. It asks the language to derive only where a half
-// is missing.
+// [View.Authored] reads, and a refused stated half too. It asks the
+// language to derive only where a half is not stated.
 func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
 	if b.view.IsZero() {
 		return RefusedPair(RefusedNoView)
 	}
 	sample, alternate := b.view.Authored(b.source, subject, ref)
-	if sample.OK() && alternate.OK() {
+	sampled := sample.OK() || sample.Refusal != RefusedNone
+	if sampled && (alternate.OK() || alternate.Refusal != RefusedNone) {
 		return sample, alternate
 	}
 	derived, derivedAlternate := b.source.DeriveSamples(ref, hint, b.view)
 	return Complete(sample, alternate, derived, derivedAlternate)
+}
+
+// authored returns a text that an author stated as a sample of a type. The
+// rules of the language of by, the declaration that states the text, read
+// it first in the scope of by. Where they do not read it, the lift depends
+// on the shape of the type. A text type lifts it to a string literal, or to
+// the value that the [TextRules] of those rules give it, and a boolean or a
+// scalar refuses with [RefusedAuthored]. Every other form lifts it to raw
+// text in the language of by.
+func (b Bound) authored(by symbol.Identity, ref *node.TypeRef, text string) Sample {
+	r := b.rulesOf(by.Lang)
+	if value, read := r.LiteralFor(b.view.ScopeOf(by), ref, text, b.view); read {
+		return Of(value)
+	}
+	switch b.valueShape(ref).Form {
+	case symbol.FormText:
+		if texts, converts := r.(TextRules); converts {
+			return Of(texts.Text(ref, text, b.view))
+		}
+		return Of(emit.Literal(emit.LiteralString, text))
+	case symbol.FormBool, symbol.FormScalar:
+		return Refused(RefusedAuthored)
+	default:
+		return Of(emit.Raw(by.Lang, text))
+	}
 }
 
 // valueShape returns the shape by which an authored value of a type

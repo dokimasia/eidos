@@ -4,6 +4,7 @@
 package rulestest_test
 
 import (
+	"io/fs"
 	"testing"
 	"testing/fstest"
 
@@ -39,6 +40,17 @@ const (
 	leftSource   = "package a/left\ntype Thing string\n"
 	rightSource  = "package a/right\ntype Thing string\n"
 	holderSource = "package svc/hold\nimport dual a/left a/right\ntype Holder dual.Thing\n"
+)
+
+// These constants are the tree whose one file imports a package of the
+// store of the scripted dependent language, and the file of the store that
+// declares the package.
+const (
+	appFile   = "app/main.zz"
+	libFile   = "ext/lib/lib.zz"
+	libPath   = "ext/lib"
+	appSource = "package app\nimport ext " + libPath + "\ntype App ext.Lib\n"
+	libSource = "package " + libPath + "\ntype Lib string\n"
 )
 
 // keyedScripted is the scripted frontend that registers its
@@ -130,7 +142,38 @@ func TestLoaded(t *testing.T) {
 			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), frontendtest.ScriptedKeys)
 			assert.Empty(t, f.Findings, "the load of the scripted tree reports nothing")
 		})
+
+		t.Run("places no dependency of a frontend that reads a store", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{appFile: {Data: []byte(appSource)}}
+			f := rulestest.Loaded(t, frontendtest.NewScriptedDependent(), tree)
+			assert.NotContains(t, packagePaths(f), libPath, "the graph contains no package of a store")
+		})
 	})
+
+	t.Run("LoadedWith", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("loads the dependency units of the frontend from the stores", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{appFile: {Data: []byte(appSource)}}
+			stores := map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{libFile: {Data: []byte(libSource)}}}
+			f := rulestest.LoadedWith(t, frontendtest.NewScriptedDependent(), tree, stores)
+			assert.Contains(t, packagePaths(f), libPath, "the graph contains the package of the store")
+		})
+	})
+}
+
+// packagePaths returns the path of every package of the graph of a
+// fixture, in the order of the graph.
+func packagePaths(f *rulestest.Fixture) []string {
+	var paths []string
+	for pkg := range f.Graph.Packages() {
+		paths = append(paths, pkg.ID.Package)
+	}
+	return paths
 }
 
 // scriptedTree returns the scripted tree.

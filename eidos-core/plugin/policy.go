@@ -50,6 +50,13 @@ type PolicySpec struct {
 	// documentation of the policy's metadata key and of the directive
 	// param that overrides the policy.
 	Doc string
+	// Plan reports a policy that applies to every file of a plan, such as
+	// the version of the language that the files run on, which the render
+	// reads through [RenderContext.Policy]. A config file selects its
+	// choice for every plan or for one plan. The directive of the target
+	// has no param for it, and the target registers no metadata key for
+	// it, so no declaration overrides it.
+	Plan bool
 }
 
 // Policy is a resolved lowering policy: one choice for every key that a
@@ -63,8 +70,8 @@ type PolicySpec struct {
 //
 // # Allocation contract
 //
-// [Policy.Choice] and [Policy.Overridden] do not allocate. A call of the
-// override function allocates what the function allocates.
+// [Policy.Choice], [Policy.Lookup] and [Policy.Overridden] do not allocate.
+// A call of the override function allocates what the function allocates.
 type Policy struct {
 	specs    []PolicySpec // sorted by key
 	chosen   []Choice     // the choice of each spec, in the same order
@@ -147,19 +154,32 @@ func NewPolicy(t Target, specs []PolicySpec, chosen map[PolicyKey]Choice) (Polic
 // otherwise. It panics for a key that the policy does not declare,
 // because a spoke reads only the keys of its own backend.
 func (p Policy) Choice(k PolicyKey) Choice {
-	i, declared := slices.BinarySearchFunc(p.specs, k, func(s PolicySpec, k PolicyKey) int {
-		return strings.Compare(string(s.Key), string(k))
-	})
+	c, declared := p.Lookup(k)
 	if !declared {
 		panic("plugin: the policy does not declare the key " + string(k) +
 			", and a spoke reads only the keys of its own backend")
 	}
+	return c
+}
+
+// Lookup returns the choice of a key as [Policy.Choice] returns it, and
+// reports false for a key that the policy does not declare, such as every
+// key of the zero Policy. A reader whose policy can be the zero Policy,
+// such as the vocabulary of a render that a test runs without a plan, takes
+// the default of the key where Lookup reports false.
+func (p Policy) Lookup(k PolicyKey) (Choice, bool) {
+	i, declared := slices.BinarySearchFunc(p.specs, k, func(s PolicySpec, k PolicyKey) int {
+		return strings.Compare(string(s.Key), string(k))
+	})
+	if !declared {
+		return "", false
+	}
 	if p.override != nil {
 		if c, overridden := p.override(k); overridden {
-			return c
+			return c, true
 		}
 	}
-	return p.chosen[i]
+	return p.chosen[i], true
 }
 
 // Overridden returns a copy of the policy whose Choice asks override

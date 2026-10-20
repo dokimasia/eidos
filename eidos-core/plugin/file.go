@@ -22,6 +22,11 @@ type File struct {
 	// the target writes in its package clause. The zero identity means
 	// the target derives no package for the path.
 	Pkg symbol.Identity
+	// Scope is the namespace of the file-level names of the file: the
+	// namespace that the target's [NameScoper] returns for Pkg, and Pkg
+	// itself for a target without the role. The zero identity means that
+	// the target derives no package for the path.
+	Scope symbol.Identity
 	// Units are the file's units in the store's order. A unit that
 	// routing split keeps its plugin, family and key, and contains
 	// only the declarations written in this file.

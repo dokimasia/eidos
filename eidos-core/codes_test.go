@@ -38,4 +38,16 @@ func TestCodes(t *testing.T) {
 		assert.Equal(t, meaning, "the plan's target cannot spell a type of another language",
 			"the meaning anchors the published index")
 	})
+
+	t.Run("RefusedFile", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, eidos.RefusedFile.String(), "EID-0078",
+			"the code spells its prefix and padded number")
+		meaning, held := diag.Kernel().Meaning(eidos.RefusedFile)
+		assert.True(t, held, "the code registered at initialization")
+		assert.Equal(t, meaning,
+			"a handler addresses the source file of an identity that the package of its subject does not declare",
+			"the meaning anchors the published index")
+	})
 }

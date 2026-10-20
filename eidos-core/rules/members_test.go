@@ -138,37 +138,127 @@ func TestMembers(t *testing.T) {
 			}
 		})
 
-		nearest := []struct {
-			name string
-			rule rules.Shadowing
-		}{
-			{name: "takes the nearest arrival under ShadowOverride", rule: rules.ShadowOverride},
-			{name: "takes the nearest arrival under ShadowLinearise", rule: rules.ShadowLinearise},
+		t.Run("takes the nearest arrival under ShadowOverride", func(t *testing.T) {
+			t.Parallel()
+
+			grand := coretest.Struct(svcPath, "Grand")
+			grand.Methods = []*node.Method{method(svcPath, "Grand", "Run")}
+			left := coretest.Struct(svcPath, "Left")
+			left.Extends = []*node.TypeRef{named(svcPath, "Grand", symbol.KindStruct)}
+			right := coretest.Struct(svcPath, "Right")
+			right.Methods = []*node.Method{method(svcPath, "Right", "Run")}
+			both := coretest.Struct(svcPath, "Both")
+			both.Extends = []*node.TypeRef{
+				named(svcPath, "Left", symbol.KindStruct), named(svcPath, "Right", symbol.KindStruct),
+			}
+			v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, grand, left, right, both)))
+			b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+				Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowOverride,
+			}}, v, nil)
+			set, _ := b.MembersOf(both)
+			assert.Equal(t, names(set), []string{"Run"}, "one Run remains")
+			assert.Equal(t, set.Members[0].Owner, right.ID,
+				"Right's Run, one level up, over Grand's, which the walk meets first")
+		})
+
+		// extending returns a struct that extends the structs of bases in
+		// their order, with a method Run where run is true.
+		extending := func(name string, run bool, bases ...string) *node.Struct {
+			s := coretest.Struct(svcPath, name)
+			for _, base := range bases {
+				s.Extends = append(s.Extends, named(svcPath, base, symbol.KindStruct))
+			}
+			if run {
+				s.Methods = []*node.Method{method(svcPath, name, "Run")}
+			}
+			return s
 		}
-		for _, tt := range nearest {
+		linearised := []struct {
+			name      string
+			give      []*node.Struct
+			wantOwner string
+			wantGaps  []rules.GapReason
+		}{
+			{
+				name: "takes the arrival of the first type in the C3 order under ShadowLinearise",
+				give: []*node.Struct{
+					extending("Grand", true), extending("Left", false, "Grand"), extending("Right", true),
+					extending("Both", false, "Left", "Right"),
+				},
+				wantOwner: "Grand",
+			},
+			{
+				name: "takes the arrival of a type before the shared base of a diamond under ShadowLinearise",
+				give: []*node.Struct{
+					extending("A", true), extending("B", false, "A"), extending("C", true, "A"),
+					extending("D", false, "B", "C"),
+				},
+				wantOwner: "C",
+			},
+			{
+				name: "takes the shared base of a diamond once under ShadowLinearise",
+				give: []*node.Struct{
+					extending("A", true), extending("B", false, "A"), extending("C", false, "A"),
+					extending("D", false, "B", "C"),
+				},
+				wantOwner: "A",
+			},
+			{
+				name: "takes the nearest arrival for a hierarchy without a C3 order under ShadowLinearise",
+				give: []*node.Struct{
+					extending("G", true), extending("A", false, "G"), extending("X", true, "A"),
+					extending("Z", false, "A", "X"),
+				},
+				wantOwner: "X",
+			},
+			{
+				name: "takes the nearest arrival for a cyclic hierarchy under ShadowLinearise",
+				give: []*node.Struct{
+					extending("A", false, "B"), extending("B", true, "A"), extending("C", true),
+					extending("R", false, "A", "C"),
+				},
+				wantOwner: "C", wantGaps: []rules.GapReason{rules.GapCyclic},
+			},
+		}
+		for _, tt := range linearised {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				grand := coretest.Struct(svcPath, "Grand")
-				grand.Methods = []*node.Method{method(svcPath, "Grand", "Run")}
-				left := coretest.Struct(svcPath, "Left")
-				left.Extends = []*node.TypeRef{named(svcPath, "Grand", symbol.KindStruct)}
-				right := coretest.Struct(svcPath, "Right")
-				right.Methods = []*node.Method{method(svcPath, "Right", "Run")}
-				both := coretest.Struct(svcPath, "Both")
-				both.Extends = []*node.TypeRef{
-					named(svcPath, "Left", symbol.KindStruct), named(svcPath, "Right", symbol.KindStruct),
+				decls := make([]symbol.Symbol, 0, len(tt.give))
+				for _, s := range tt.give {
+					decls = append(decls, s)
 				}
-				v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, grand, left, right, both)))
+				v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, decls...)))
 				b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
-					Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: tt.rule,
+					Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowLinearise,
 				}}, v, nil)
-				set, _ := b.MembersOf(both)
+				set, _ := b.MembersOf(tt.give[len(tt.give)-1])
 				assert.Equal(t, names(set), []string{"Run"}, "one Run remains")
-				assert.Equal(t, set.Members[0].Owner, right.ID,
-					"Right's Run, one level up, over Grand's, which the walk meets first")
+				assert.Equal(t, set.Members[0].Owner, coretest.ID(svcPath, tt.wantOwner, symbol.KindStruct),
+					"the Run of the type that Python finds first")
+				assert.Equal(t, reasons(set), tt.wantGaps, "the gaps of the walk", assert.EquateEmpty())
 			})
 		}
+
+		t.Run("keeps the overloads of the first type in the C3 order under ShadowLinearise", func(t *testing.T) {
+			t.Parallel()
+
+			base := coretest.Struct(svcPath, baseName)
+			wide := method(svcPath, baseName, "Run")
+			wide.ID.Disc = strSpelling
+			wide.Params[0].Type = builtin(strSpelling)
+			base.Methods = []*node.Method{method(svcPath, baseName, "Run"), wide}
+			other := extending("Other", true)
+			derived := extending(derivedName, false, baseName, "Other")
+			v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, base, other, derived)))
+			b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+				Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowLinearise,
+			}}, v, nil)
+			set, _ := b.MembersOf(derived)
+			assert.Equal(t, names(set), []string{"Run", "Run"}, "both overloads of Base remain")
+			assert.Equal(t, set.Members[0].Owner, base.ID, "the first overload is Base's")
+			assert.Equal(t, set.Members[1].Owner, base.ID, "the second overload is Base's")
+		})
 
 		t.Run("keeps an inherited overload beside a declared one under override", func(t *testing.T) {
 			t.Parallel()
@@ -423,6 +513,23 @@ func TestMembers(t *testing.T) {
 					"one spelling of two signatures conflicts")
 			})
 		}
+
+		t.Run("reports GapConflict for parameters of one spelling with two passings", func(t *testing.T) {
+			t.Parallel()
+
+			host := iface(svcPath, "Host")
+			host.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Local", symbol.KindInterface)},
+				{Ref: named(svcPath, "Second", symbol.KindInterface)},
+			}
+			local := reading("Local", svcPath, symbol.VariadicNone)
+			second := reading("Second", svcPath, symbol.VariadicNone)
+			second.Methods[0].Params[0].Passing = symbol.PassingKeyword
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, local, second, host)))
+			set, _ := b.MembersOf(host)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
+				"a parameter that a call passes by keyword alone differs from one that it passes by position")
+		})
 
 		t.Run("compares a structural parameter by its elements", func(t *testing.T) {
 			t.Parallel()

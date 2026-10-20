@@ -202,14 +202,14 @@ func (wp *warmPlan) run(
 		if err != nil {
 			return nil, fmt.Errorf("settle: %w", err)
 		}
-		staged, rendered, err := wp.w.write(pl, wp.ix, src, filtered, p.sink, names)
+		staged, rendered, routed, err := wp.w.write(pl, wp.ix, src, filtered, p.sink, names)
 		if err == nil {
 			err = names.Err()
 		}
 		if err != nil {
 			return nil, err
 		}
-		if grew, err = wp.respelled(rendered, filtered, names); err != nil {
+		if grew, err = wp.respelled(rendered, routed); err != nil {
 			return nil, err
 		}
 		if grew {
@@ -218,8 +218,8 @@ func (wp *warmPlan) run(
 		p.emit = filtered
 		if !p.sink.Failed() {
 			pg := planGroups{
-				plan: pl.name, emit: filtered, files: rendered, staged: staged,
-				touches: touches.touches, settled: settled, others: names,
+				plan: pl.name, emit: filtered, files: rendered, staged: staged, names: routed,
+				touches: touches.touches, settled: settled,
 			}
 			pg.record(p.lane)
 		}
@@ -669,17 +669,17 @@ func (wp *warmPlan) renamed(e *plugin.Emit) (bool, error) {
 	return grew, nil
 }
 
-// respelled compares the names that the round's routed files declare with
-// the names that the generation records for the files of the dirty
-// groups, after the settle and the layout: a name that settled apart, or
-// moved to another file or package, makes its scope and its entries
-// dirty. It also makes dirty the group of each recorded file of the plan
-// that a new path equals or clashes with. It reports whether a group
-// joined the dirty groups.
+// respelled compares names, the file-level names that the round's routed
+// files declare, with the names that the generation records for the files
+// of the dirty groups, after the settle and the layout: a name that
+// settled apart, or moved to another file or package, makes its scope and
+// its entries dirty. It also makes dirty the group of each recorded file
+// of the plan that a new path equals or clashes with. It reports whether a
+// group joined the dirty groups.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that does
 // not read whole.
-func (wp *warmPlan) respelled(files []plugin.File, settled *plugin.Emit, others plugin.Names) (bool, error) {
+func (wp *warmPlan) respelled(files []plugin.File, names []plugin.NameEntry) (bool, error) {
 	grew := false
 	for _, f := range files {
 		clashes, err := wp.ws.phases.Clashes(f.Path)
@@ -702,7 +702,7 @@ func (wp *warmPlan) respelled(files []plugin.File, settled *plugin.Emit, others 
 		pkg           symbol.Identity
 	}
 	spelled := map[emittedName][]spelling{}
-	for _, e := range plugin.NamesOf(files, settled, others) {
+	for _, e := range names {
 		spelled[nameOf(e)] = append(spelled[nameOf(e)], spelling{settled: e.Settled, file: e.File, pkg: e.FilePkg})
 	}
 	prior, err := wp.priorNames()

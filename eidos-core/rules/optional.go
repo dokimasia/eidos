@@ -103,6 +103,41 @@ type ErrorContract struct {
 	Pointer bool
 }
 
+// ResultRules is the optional capability of a language whose callable
+// reports a failure in the type of its return, as a Rust function returns
+// Result<T, E>. [Bound.CallableOf] asks it for each return of a callable
+// whose error model is [ErrorsResultType], and splits a return of a result
+// type into the view of its value and the view of its failure.
+type ResultRules interface {
+	// Result returns the reference of the value and the reference of the
+	// failure of the result type ref, and reports false for a reference of
+	// another type. value is nil for a result without a value, such as
+	// Result<(), E>. Result reads through v, so each read records.
+	Result(ref *node.TypeRef, v View) (value, failure *node.TypeRef, ok bool)
+}
+
+// TextRules is the optional capability of a language whose text types take
+// a string literal through a conversion, as a String of Rust takes
+// String::from("a"). [View.Authored] asks it for the value of a text that an
+// author stated for a type that folds to text.
+type TextRules interface {
+	// Text returns the value of the type ref whose content is text, and the
+	// string literal of text where the type takes the literal itself. Text
+	// reads through v, so each read records.
+	Text(ref *node.TypeRef, text string, v View) emit.Value
+}
+
+// ContextRules is the optional capability of a language whose callables
+// take a context that their signatures do not state, as every rpc of
+// protobuf takes the cancellation and the deadline of its call.
+// [Bound.CallableOf] asks it for each callable and puts the view of the
+// context before the parameters.
+type ContextRules interface {
+	// Context returns the view of the context of the callable sym, with the
+	// role [ParamContext], and reports false for a callable without one.
+	Context(sym symbol.Symbol, v View) (ParamView, bool)
+}
+
 // TagRules reads a language's per-field tags.
 type TagRules interface {
 	// Tag returns a field's tag value under a key, and reports false
@@ -123,15 +158,21 @@ type WellKnownRules interface {
 
 // ShapeRules is the optional capability of a language that declares a type
 // whose values have the shape of another form, such as a GraphQL custom
-// scalar whose specification is a signed integer of 64 bits. The fold asks
-// the rules of the language of a target after [WellKnownRules] and before
-// it classifies the target.
+// scalar whose specification is a signed integer of 64 bits and the class
+// list of Python, whose values are lists. The fold asks the rules of the
+// language of a target after [WellKnownRules] and before it classifies the
+// target.
 type ShapeRules interface {
-	// ShapeOf returns the shape of the values of decl, and reports false
-	// for a declaration whose references fold to a reference to it. The
-	// fold gives the shape the spelling of the reference. ShapeOf reads
-	// through v, so each read records.
-	ShapeOf(decl symbol.Symbol, v View) (TypeShape, bool)
+	// ShapeOf returns the shape of the values of the reference ref to
+	// decl, and reports false for a declaration whose references fold to a
+	// reference to it. The shape can depend on the type arguments of ref,
+	// as the shape of Literal["a"] of Python does. The fold gives the shape
+	// the spelling of the reference. Where the shape is a structural form
+	// without children and ref has type arguments, the fold takes the
+	// folded arguments as the children of the form, and the first argument
+	// alone as the child of a stream, as it does for the shape of
+	// [SourceRules.Builtin]. ShapeOf reads through v, so each read records.
+	ShapeOf(ref *node.TypeRef, decl symbol.Symbol, v View) (TypeShape, bool)
 }
 
 // SatisfactionRules is the optional capability of a language whose

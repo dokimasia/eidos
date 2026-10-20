@@ -407,6 +407,7 @@ func (w *binaryWriter) encodeParam(x *Param) {
 	w.str(x.Default)
 	w.boolean(x.Optional)
 	w.unsigned(uint64(x.Variadic))
+	w.unsigned(uint64(x.Passing))
 	w.annotations(x.Annotations)
 }
 
@@ -424,6 +425,7 @@ func (r *binaryReader) decodeParam() *Param {
 	x.Default = r.str()
 	x.Optional = r.boolean()
 	x.Variadic = symbol.Variadic(r.unsigned())
+	x.Passing = symbol.Passing(r.unsigned())
 	x.Annotations = r.annotations()
 	return x
 }

@@ -37,11 +37,13 @@ type stagedFile struct {
 	// file names through [layout.Describe], and nil for a file without
 	// one.
 	first symbol.Symbol
-	// pkg is the package the file declares, and findings are what the
-	// render reported about the file. A recording run's groups set group,
-	// the key unit of the file's group, and names, the file-level names
-	// the file declares, which the file's artifact records.
+	// pkg is the package the file declares, scope the namespace of its
+	// names, and findings are what the render reported about the file. A
+	// recording run's groups set group, the key unit of the file's group,
+	// and names, the file-level names the file declares, which the file's
+	// artifact records.
 	pkg      symbol.Identity
+	scope    symbol.Identity
 	findings []diag.Diag
 	group    plugin.UnitRef
 	names    []plugin.NameEntry
@@ -53,12 +55,13 @@ type stagedFile struct {
 // write routes one plan's settled store to files against the run's
 // source tree, renders the files and stamps each one. others are the
 // names of the plan's files that a warm run keeps, and nil for a store
-// that contains the whole plan. It returns the stamped files, and the
-// routed files that rendered at the same places. A defect in the inputs
-// of the routing returns an error.
+// that contains the whole plan. It returns the stamped files, the routed
+// files that rendered at the same places, and the file-level names of
+// those files that the layout returned, in their order. A defect in the
+// inputs of the routing returns an error.
 func (w *Workspace) write(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink, others plugin.Names,
-) ([]stagedFile, []plugin.File, error) {
+) ([]stagedFile, []plugin.File, []plugin.NameEntry, error) {
 	in := layout.Input{
 		Emit:       into,
 		Config:     pl.routing,
@@ -73,11 +76,41 @@ func (w *Workspace) write(
 		Target:     pl.backend.Target(),
 		Sink:       sink,
 	}
-	files, err := layout.Route(in)
+	routes, err := layout.Route(in)
 	if err != nil {
-		return nil, nil, fmt.Errorf("route: %w", err)
+		return nil, nil, nil, fmt.Errorf("route: %w", err)
 	}
-	return render(pl, ix, src, into, files, sink)
+	staged, rendered, err := render(pl, ix, src, into, routes.Files, sink)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return staged, rendered, renderedNames(routes.Names, rendered), nil
+}
+
+// renderedNames returns the names of the files that the render rendered.
+// The names are in the path order of the routed files, and rendered is a
+// subsequence of those files in the same order, so one walk of both finds
+// the names of each rendered file. It returns names itself, without
+// allocating, where the render rendered every file that declares a name.
+func renderedNames(names []plugin.NameEntry, rendered []plugin.File) []plugin.NameEntry {
+	var out []plugin.NameEntry
+	at := 0
+	for i := range names {
+		for at < len(rendered) && rendered[at].Path < names[i].File {
+			at++
+		}
+		kept := at < len(rendered) && rendered[at].Path == names[i].File
+		switch {
+		case kept && out != nil:
+			out = append(out, names[i])
+		case !kept && out == nil:
+			out = append(make([]plugin.NameEntry, 0, len(names)), names[:i]...)
+		}
+	}
+	if out == nil {
+		return names
+	}
+	return out
 }
 
 // render drives one plan's backend over the files its layout routed
@@ -111,7 +144,7 @@ func render(
 		}
 		staged := stagedFile{
 			path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path},
-			pkg: files[routed].Pkg, findings: f.Findings,
+			pkg: files[routed].Pkg, scope: files[routed].Scope, findings: f.Findings,
 		}
 		if len(f.Packages) > 0 {
 			staged.packages = make([]symbol.Identity, 0, len(f.Packages))
@@ -162,10 +195,11 @@ func describeFile(staged *stagedFile, f *plugin.File, ix *plugin.Index) {
 
 // renderContext assembles what the pass reads: the settled store, the
 // routed files, the plan's schedule, the template surfaces its
-// generators declare for the backend's target, and the declared names of
-// the packages that the run loaded in the language of the target. The
-// names cover every package of the run, because a file can import a
-// package outside the sources of its plan.
+// generators declare for the backend's target, the declared names of
+// the packages that the run loaded in the language of the target, and
+// the plan's resolved lowering policy. The names cover every package of
+// the run, because a file can import a package outside the sources of
+// its plan.
 func renderContext(
 	pl *compiledPlan, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) *plugin.RenderContext {
@@ -177,6 +211,7 @@ func renderContext(
 		Trees:     map[plugin.ID]fs.FS{},
 		Funcs:     map[plugin.ID]template.FuncMap{},
 		Overrides: map[plugin.ID][]string{},
+		Policy:    pl.policy,
 		Sink:      sink,
 		Plugin:    pl.backend.Name(),
 	}

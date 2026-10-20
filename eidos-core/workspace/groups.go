@@ -64,17 +64,17 @@ func (j *touchJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 
 // planGroups is the input of one plan's groups: the plan's settled store,
 // the files its layout routed and its render rendered, in path order,
-// with their staged forms at the same places, what each invocation
-// touched, what the settle read, and the names of the plan's files that a
-// warm run keeps, nil for a store that contains the whole plan.
+// with their staged forms at the same places, the file-level names of
+// those files that the layout returned, what each invocation touched, and
+// what the settle read.
 type planGroups struct {
 	plan    string
 	emit    *plugin.Emit
 	files   []plugin.File
 	staged  []stagedFile
+	names   []plugin.NameEntry
 	touches []touch
 	settled plugin.Settled
-	others  plugin.Names
 }
 
 // record records the plan's groups into lane, and sets the group and the
@@ -268,7 +268,7 @@ func (pg *planGroups) record(lane *state.Lane) {
 			g.Reads = append(g.Reads, state.FactEdge(r.Fact.Subject, r.Fact.Key))
 		}
 	}
-	names := plugin.NamesOf(pg.files, pg.emit, pg.others)
+	names := pg.names
 	for fi := range pg.staged {
 		s := &pg.staged[fi]
 		count := 0

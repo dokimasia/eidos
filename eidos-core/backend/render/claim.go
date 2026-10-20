@@ -57,18 +57,20 @@ func claimOf(g *plugin.File) (c claim, claimed, mixed bool) {
 
 // fileBuiltins is the builtin set a claimed file's template resolves
 // against: the body and the member body of a record's callable, the use
-// recorder, the nested declaration and the header of the file. The
-// render binds it to a frame and the lint binds stubs, so both parse
-// against one set of names.
+// recorder, the nested declaration, the header of the file and the
+// writer of values. The render binds it to a frame and the lint binds
+// stubs, so both parse against one set of names.
 func fileBuiltins(
 	body func(any) (string, error),
 	member func(*emit.Method) (string, error),
 	use func(string, ...string) (string, error),
 	nested func(string, symbol.Symbol) (string, error),
 	header func() *emit.File,
+	value func(emit.Value) (string, error),
 ) template.FuncMap {
 	return template.FuncMap{
-		BuiltinBody: body, BuiltinMemberBody: member, BuiltinUse: use, BuiltinNested: nested, BuiltinHeader: header,
+		BuiltinBody: body, BuiltinMemberBody: member, BuiltinUse: use, BuiltinNested: nested,
+		BuiltinHeader: header, BuiltinValue: value,
 	}
 }
 
@@ -81,9 +83,10 @@ func fileBuiltins(
 // explains it is on the sink: the template does not resolve, or it
 // failed at execution. A record body with slot content that the template
 // did not place is reported under [DroppedSlots], and the file renders
-// without the content.
+// without the content. A body that the template places has no host.
 func (f *frame) claimed(g *plugin.File, c claim) bool {
 	f.plugin = c.plugin
+	f.decl = nil
 	t, resolved := f.fileTemplate(c)
 	if !resolved {
 		return false
@@ -141,7 +144,7 @@ func (f *frame) fileTemplate(c claim) (*template.Template, bool) {
 	t, err := template.New(c.template).
 		Option(missingKeyError).
 		Funcs(f.vocab).Funcs(f.merged).
-		Funcs(fileBuiltins(f.body, f.memberBody, f.use, f.nested, f.header)).
+		Funcs(fileBuiltins(f.body, f.memberBody, f.use, f.nested, f.header, f.value)).
 		Parse(string(src))
 	if err != nil {
 		f.sink.Errorf(UnresolvedRef, f.at, f.origin,

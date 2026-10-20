@@ -97,14 +97,17 @@ const (
 
 // The ceilings of one routing pass, the same in each of 8 runs. Each
 // routed file allocates three times, its path, the target's filename
-// and the target's split, and no declaration allocates.
+// and the target's split, and no declaration allocates. The names of the
+// files allocate three times: the list of entries and the sorted
+// declarations of plugin.NamesOf, and the order of the check of the
+// names.
 const (
 	// routeAllocs is one pass over the canonical corpus: 30,000 for its
-	// 10,000 files, and 177 for the pass's tables.
-	routeAllocs = 30_177
+	// 10,000 files, 177 for the pass's tables and 3 for the names.
+	routeAllocs = 30_180
 	// routeOneAllocs is one pass over one package: 30 for its 10 files,
-	// and 21 for the pass's tables.
-	routeOneAllocs = 51
+	// 21 for the pass's tables and 3 for the names.
+	routeOneAllocs = 54
 )
 
 // The fixture's source declarations, one struct per source file.
@@ -252,10 +255,10 @@ func (f *fixture) route(tb testing.TB) ([]plugin.File, *diag.Sink) {
 	tb.Helper()
 
 	in, sink := f.input(tb)
-	files, err := layout.Route(in)
+	routes, err := layout.Route(in)
 	assert.NoError(tb, err, "the fixture plan routes")
 	coretest.AssertPositioned(tb, sink)
-	return files, sink
+	return routes.Files, sink
 }
 
 // spelling is the test target's filename half: one file per unit,
@@ -504,6 +507,67 @@ func TestRoute(t *testing.T) {
 			},
 		}
 		for _, tt := range layouts {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				files, sink := tt.give().route(t)
+				assert.Equal(t, layoutOf(files), tt.want, "the routed files")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		// placed returns the primary unit of stubgen for storeFile with the
+		// double of Store and the double of other, which the handler of Store
+		// placed.
+		placed := func(other symbol.Identity, name string) plugin.Unit {
+			u := stubOf(storeFile, storePkg, generated(storeID, "StoreProbe"), generated(other, name))
+			u.Subjects = map[symbol.Identity]symbol.Identity{other: storeID}
+			return u
+		}
+		subjects := []struct {
+			name string
+			give func() *fixture
+			want []string
+		}{
+			{
+				name: "returns a declaration in the directory of the out of the subject that placed it",
+				give: func() *fixture {
+					return newFixture(placed(cacheID, "CacheProbe")).
+						on(storeID, written(stubDirective, 1, keyOut, "probetest/"))
+				},
+				want: []string{"svc/store/probetest/store_stub.go: StoreProbe CacheProbe"},
+			},
+			{
+				name: "returns a declaration in the directory of the out of its own origin",
+				give: func() *fixture {
+					return newFixture(placed(rowID, "RowProbe")).
+						on(storeID, written(stubDirective, 1, keyOut, "probetest/")).
+						on(rowID, written(stubDirective, 2, keyOut, "mocks/"))
+				},
+				want: []string{
+					"svc/store/mocks/store_stub.go: RowProbe",
+					"svc/store/probetest/store_stub.go: StoreProbe",
+				},
+			},
+			{
+				name: "returns a declaration in the family that the tag of the subject that placed it names",
+				give: func() *fixture {
+					return newFixture(placed(cacheID, "CacheProbe")).
+						on(storeID, written(stubDirective, 1, keyTag, tagPkg))
+				},
+				want: []string{"svc/store/suite_pkg.go: StoreProbe CacheProbe"},
+			},
+			{
+				name: "returns a declaration of a unit without subjects beside its source",
+				give: func() *fixture {
+					u := placed(cacheID, "CacheProbe")
+					u.Subjects = nil
+					return newFixture(u).on(storeID, written(stubDirective, 1, keyOut, "probetest/"))
+				},
+				want: []string{"svc/store/probetest/store_stub.go: StoreProbe", "svc/store/store_stub.go: CacheProbe"},
+			},
+		}
+		for _, tt := range subjects {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
@@ -794,6 +858,22 @@ func TestRoute(t *testing.T) {
 			})
 		}
 
+		t.Run("returns the file-level names of the routed files", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(storeStub(), rowStub())
+			f.packager = directories{}
+			in, sink := f.input(t)
+			got, err := layout.Route(in)
+			assert.NoError(t, err, "the fixture plan routes")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, got.Names, 2, "each struct declares one name")
+			expect.Equal(t, got.Names, plugin.NamesOf(got.Files, in.Emit, nil),
+				"Route returns the names that NamesOf lists for its files")
+			expect.Equal(t, got.Names[0].FilePkg, dirPackage(storePkg),
+				"the entry has the package that the target names for its file")
+		})
+
 		t.Run("returns the package the target names for a file", func(t *testing.T) {
 			t.Parallel()
 
@@ -804,6 +884,48 @@ func TestRoute(t *testing.T) {
 			assert.Equal(t, files[0].Pkg, symbol.Identity{
 				Lang: coretest.Lang, Package: storePkg, Name: "store", Kind: symbol.KindPackage,
 			}, "the file declares its directory's package")
+		})
+
+		t.Run("returns the namespace that the target names for a file", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(storeStub())
+			f.packager = namespaces{}
+			files, _ := f.route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.Equal(t, files[0].Scope, symbol.Identity{
+				Lang: coretest.Lang, Package: storePkg, Kind: symbol.KindPackage,
+			}, "the file declares its names in the namespace of its directory")
+		})
+
+		t.Run("returns the package of a file as its namespace for a target without a NameScoper", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(storeStub())
+			f.packager = directories{}
+			files, _ := f.route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.Equal(t, files[0].Scope, dirPackage(storePkg), "the namespace of the file is its package")
+		})
+
+		t.Run("returns the first unit's package as the namespace of a file of a target without a packager",
+			func(t *testing.T) {
+				t.Parallel()
+
+				files, _ := newFixture(storeStub()).route(t)
+				assert.Length(t, files, 1, "one file routes")
+				assert.Equal(t, files[0].Scope, coretest.PackageID(storePkg),
+					"the namespace of the file is its package")
+			})
+
+		t.Run("returns the zero namespace for a file the target derives no package for", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(storeStub())
+			f.packager = directories{refuse: storePkg}
+			files, _ := f.route(t)
+			assert.Length(t, files, 1, "the file still routes")
+			assert.Equal(t, files[0].Scope, symbol.Identity{}, "the file declares its names in no namespace")
 		})
 
 		t.Run("returns the first unit's package for a file of a target without a packager", func(t *testing.T) {
@@ -858,6 +980,19 @@ func TestRoute(t *testing.T) {
 			assert.Length(t, seen, 1, "one file is placed")
 			assert.Equal(t, seen[0].Header, symbol.Annotations{syntaxMarker},
 				"the placement has the annotations of the header")
+		})
+
+		t.Run("hands the target the external mark of the family of the first unit of a file", func(t *testing.T) {
+			t.Parallel()
+
+			var seen []plugin.Placement
+			f := newFixture(unitOf(stubgen, families()[stubgen][1], storeFile, coretest.PackageID(storePkg),
+				generated(storeID, "StoreCheck")))
+			f.outputs[stubgen][1].External = true
+			f.packager = recording{seen: &seen}
+			f.route(t)
+			assert.Length(t, seen, 1, "one file is placed")
+			assert.True(t, seen[0].External, "the test family of stubgen tests its package from outside")
 		})
 
 		t.Run("hands the target no residents for an input without a residents function", func(t *testing.T) {
@@ -1152,13 +1287,13 @@ func TestRoute(t *testing.T) {
 func TestRouteAllocs(t *testing.T) {
 	in := benchInput(t, 1)
 	var (
-		files []plugin.File
-		err   error
+		routes layout.Routes
+		err    error
 	)
-	assert.MaxAllocs(t, func() { files, err = layout.Route(in) }, routeOneAllocs,
+	assert.MaxAllocs(t, func() { routes, err = layout.Route(in) }, routeOneAllocs,
 		"Route allocates each file's path, filename and split, and the pass's tables")
 	assert.NoError(t, err, "the input routes")
-	assert.Length(t, files, benchFiles, "to one file per source file")
+	assert.Length(t, routes.Files, benchFiles, "to one file per source file")
 }
 
 // BenchmarkRoute measures one plan's routing: per-source units beside
@@ -1332,14 +1467,14 @@ func benchRoute(b *testing.B, packages int, allocs uint64) {
 	c := bench.Start(b).MaxAllocs(allocs)
 	defer c.End()
 	var (
-		files []plugin.File
-		err   error
+		routes layout.Routes
+		err    error
 	)
 	for c.Loop() {
-		files, err = layout.Route(in)
+		routes, err = layout.Route(in)
 	}
 	assert.NoError(b, err, "the input routes")
-	assert.Length(b, files, packages*benchFiles, "to one file per source file")
+	assert.Length(b, routes.Files, packages*benchFiles, "to one file per source file")
 }
 
 // benchTree returns a frozen graph of the given number of packages of

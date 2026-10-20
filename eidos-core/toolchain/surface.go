@@ -31,30 +31,33 @@ const (
 	modReadonly    = 6
 	modGet         = 7
 	modSet         = 8
-	modConstructor = 9
-	modIndexer     = 10
-	modCount       = 11
+	modDelete      = 9
+	modConstructor = 10
+	modIndexer     = 11
+	modCount       = 12
 )
 
 // modifierWords are the words of the modifiers, each at the index of its
 // modifier.
 var modifierWords = [modCount]string{
-	"static", "abstract", "final", "sealed", "const", "async", "readonly", "get", "set", "constructor", "indexer",
+	"static", "abstract", "final", "sealed", "const", "async", "readonly", "get", "set", "delete", "constructor",
+	"indexer",
 }
 
 // These constants are the words of a line of the surface: the start of
 // the line of a package, the relations of a host, and the marks of a
 // parameter, a value and an optional member.
 const (
-	packageLine   = "package "
-	relExtends    = " extends "
-	relImplements = " implements "
-	relEmbeds     = " embeds "
-	relPermits    = " permits "
-	variadicMark  = "..."
-	optionalMark  = "?"
-	labelMark     = ": "
-	valueMark     = " = "
+	packageLine    = "package "
+	relExtends     = " extends "
+	relImplements  = " implements "
+	relEmbeds      = " embeds "
+	relPermits     = " permits "
+	variadicMark   = "..."
+	optionalMark   = "?"
+	positionalMark = "/"
+	labelMark      = ": "
+	valueMark      = " = "
 )
 
 // Surface returns the public surface of the files of g that the frontend
@@ -70,11 +73,12 @@ const (
 //
 // A line starts with the modifiers of its declaration, each one word and
 // a space: static, abstract, final, sealed, const, async, readonly, get,
-// set, constructor and indexer. A line of a declaration at file level
-// continues with the spelling of its kind and its name. Every type, value
-// and default in a line is the spelling that the frontend recorded. A
-// parameter renders as its type, without its name. The surface has no
-// comment, no body, and no order of declarations or members.
+// set, delete, constructor and indexer. A line of a declaration at file
+// level continues with the spelling of its kind and its name. Every type,
+// value and default in a line is the spelling that the frontend recorded.
+// A parameter renders as its type, without its name, unless a caller
+// passes it by keyword alone. The surface has no comment, no body, and no
+// order of declarations or members.
 //
 // Error modes: Surface returns the error of a source of g that does not
 // read, the error of the load, and an error that joins one error for each
@@ -237,6 +241,7 @@ func appendMethods(lines []string, host string, methods []*node.Method) []string
 			modAsync:       m.Async,
 			modGet:         m.Accessor == symbol.AccessorGet,
 			modSet:         m.Accessor == symbol.AccessorSet,
+			modDelete:      m.Accessor == symbol.AccessorDelete,
 			modConstructor: m.Constructs,
 			modIndexer:     m.Indexer,
 		})+host+"."+m.Name+typeParams(m.TypeParams)+params(m.Params)+results(m.Returns))
@@ -301,18 +306,27 @@ func typeParams(tps []*node.TypeParam) string {
 // params returns the parameters in parentheses. Each parameter renders as
 // its label and a colon in a language with labels, the variadic mark,
 // its type, the mark of an optional parameter, and its default after an
-// equals sign. A parameter renders without its name.
+// equals sign. A parameter renders without its name, except a parameter
+// that a caller passes by keyword alone: the call names it, so its name
+// renders as its label. A parameter that a caller passes by position
+// alone renders the positional mark after its type.
 func params(ps []*node.Param) string {
 	parts := make([]string, len(ps))
 	for i, p := range ps {
 		var b strings.Builder
-		if p.Label != "" {
+		switch {
+		case p.Label != "":
 			b.WriteString(p.Label + labelMark)
+		case p.Passing == symbol.PassingKeyword:
+			b.WriteString(p.Name + labelMark)
 		}
 		if p.Variadic != symbol.VariadicNone {
 			b.WriteString(variadicMark)
 		}
 		b.WriteString(spelling(p.Type))
+		if p.Passing == symbol.PassingPositional {
+			b.WriteString(positionalMark)
+		}
 		if p.Optional {
 			b.WriteString(optionalMark)
 		}

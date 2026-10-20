@@ -116,10 +116,11 @@ func bareOf(id symbol.Identity) symbol.Identity {
 //   - a member is lang:package.Owner#Name, the owner the dotted
 //     chain of enclosing type names; a top-level method's owner is
 //     the spelling of the type it attaches to
-//   - a callable's discriminator is its parameters' spellings,
-//     comma-joined, where the frontend reports that its language
-//     overloads, so overloads spell apart, and empty where it does
-//     not. [assigner.disc] states how one parameter spells
+//   - a callable's discriminator is the type of its receiver where the
+//     receiver has one, and its parameters' spellings, comma-joined,
+//     where the frontend reports that its language overloads, so
+//     overloads spell apart, and empty where it does not.
+//     [assigner.disc] states how the receiver and one parameter spell.
 //
 // Members get their Host filled beside the identity. A second
 // declaration spelling one identity reports under
@@ -230,7 +231,7 @@ func (a *assigner) claim(
 func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, drop bool) {
 	switch x := s.(type) {
 	case *node.Function:
-		id := a.derive(x, owner, x.Name, symbol.KindFunction, a.disc(x.Params))
+		id := a.derive(x, owner, x.Name, symbol.KindFunction, a.disc(nil, x.Params))
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		a.signature(childOwner(owner, x.Name), id, dropping, x.TypeParams, x.Params, x.Returns)
@@ -240,7 +241,11 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		if at == "" && x.Receives != nil {
 			at = x.Receives.Spelling
 		}
-		id := a.derive(x, at, x.Name, symbol.KindMethod, a.disc(x.Params))
+		disc := a.disc(x.Receiver, x.Params)
+		if x.Accessor == symbol.AccessorDelete {
+			disc = discDelete
+		}
+		id := a.derive(x, at, x.Name, symbol.KindMethod, disc)
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		x.Host = host
@@ -480,11 +485,24 @@ func childOwner(owner, name string) string {
 // instantiation's arguments in the angle brackets every language that
 // overloads writes, a ... prefix where the parameter is positionally
 // variadic, a ** prefix where it is variadic by keyword, and a ? suffix
-// where it is optional: each changes which calls the callable accepts.
-// In a language that cannot overload it is empty. A nil parameter
-// panics with [assigner.nilSlot] in either language, before anything
-// reads it.
-func (a *assigner) disc(params []*node.Param) string {
+// where it is optional. A parameter without a type spells _, so a
+// callable of one such parameter, such as the setter of a property
+// without annotations, spells apart from a nullary callable of its name,
+// such as the getter. A parameter that a caller passes by keyword alone
+// spells its name and = before its type, because the call names it, and
+// one that a caller passes by position alone spells a / suffix. Each
+// mark changes which calls the callable accepts. A receiver with a type
+// spells its type and a ; before the parameters, because a language can
+// overload on the type of the receiver, as a stub of Python does on the
+// annotation of self and TypeScript on the type of this. A receiver
+// without a type spells nothing. In a language that cannot overload the
+// discriminator is empty. A nil parameter panics with [assigner.nilSlot]
+// in either language, before anything reads it.
+//
+// A method with the delete accessor takes no parameter, as the getter of
+// its property does, so the caller of disc spells its discriminator
+// [discDelete] in place of the empty list.
+func (a *assigner) disc(receiver *node.Param, params []*node.Param) string {
 	if slices.Contains(params, nil) {
 		panic(a.nilSlot(symbol.KindParam))
 	}
@@ -492,6 +510,10 @@ func (a *assigner) disc(params []*node.Param) string {
 		return ""
 	}
 	var b strings.Builder
+	if receiver != nil && receiver.Type != nil {
+		discType(&b, receiver.Type)
+		b.WriteString(discReceiver)
+	}
 	for i, p := range params {
 		if i > 0 {
 			b.WriteString(discSeparator)
@@ -504,30 +526,47 @@ func (a *assigner) disc(params []*node.Param) string {
 		case symbol.VariadicNone:
 			// A parameter that is not variadic has no mark.
 		}
+		if p.Passing == symbol.PassingKeyword {
+			b.WriteString(p.Name)
+			b.WriteString(discKeywordOnly)
+		}
 		discType(&b, p.Type)
 		if p.Optional {
 			b.WriteString(discOptional)
+		}
+		if p.Passing == symbol.PassingPositional {
+			b.WriteString(discPositionalOnly)
 		}
 	}
 	return b.String()
 }
 
-// The marks a discriminator spells between and around its parameters.
+// The marks a discriminator spells between and around its parameters and
+// after the type of a receiver, the spelling of a parameter without a
+// type, and the discriminator of a delete accessor. del is a keyword of
+// Python, the one language with a delete accessor, so no parameter type
+// of a Python callable has that spelling.
 const (
-	discSeparator  = ","
-	discPositional = "..."
-	discKeyword    = "**"
-	discOptional   = "?"
-	discArgsOpen   = "<"
-	discArgsClose  = ">"
+	discSeparator      = ","
+	discPositional     = "..."
+	discKeyword        = "**"
+	discOptional       = "?"
+	discKeywordOnly    = "="
+	discPositionalOnly = "/"
+	discReceiver       = ";"
+	discArgsOpen       = "<"
+	discArgsClose      = ">"
+	discUntyped        = "_"
+	discDelete         = "del"
 )
 
 // discType spells one parameter type into a discriminator: the
 // reference's spelling, and an instantiation's arguments after it in
 // angle brackets, each spelled the same way. A nil type spells
-// nothing.
+// [discUntyped].
 func discType(b *strings.Builder, t *node.TypeRef) {
 	if t == nil {
+		b.WriteString(discUntyped)
 		return
 	}
 	b.WriteString(t.Spelling)

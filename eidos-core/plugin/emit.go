@@ -61,6 +61,12 @@ type Output struct {
 	// Tag selects the family, and "" selects the primary family.
 	Tag string
 	Per Cardinality
+	// External reports that the files of the family test their package
+	// through its exported API, as an importer does. The Go target writes
+	// each test file of the family into the external test package of its
+	// directory. The other targets write the files of the family as they
+	// write the files of any family.
+	External bool
 	// Word is the word of the family, such as "stub".
 	Word string
 	// Template is the slash-separated path of the file template that
@@ -98,14 +104,24 @@ type Unit struct {
 	// unit, and zero for a plan unit. It is the namespace half of the
 	// routing key.
 	Pkg symbol.Identity
-	// Decls are the emit declarations, ordered by origin identity, then
-	// by instance order under a repeatable directive, then by insertion,
-	// so contributions arrive in canonical subject order and never in
-	// dispatch order.
+	// Decls are the emit declarations, ordered by the source position of
+	// their origin, then by origin identity, then by instance order under
+	// a repeatable directive, then by insertion. An origin without a
+	// position orders after every origin with one. Contributions arrive in
+	// the order of the source and never in dispatch order.
 	Decls []symbol.Symbol
 	// Origins are the node identities whose matches contributed, sorted
 	// and deduplicated. A manifest records them as the provenance.
 	Origins []symbol.Identity
+	// Subjects maps the origin of each declaration that a match placed for
+	// another subject to that subject, such as the double of a handle that
+	// the handler of an interface writes. The layout routes such a
+	// declaration with the routing of the subject where the origin has
+	// none. Where two matches place declarations of one origin, the subject
+	// of the first placement in the order of Decls applies. It is nil where
+	// every declaration of the unit originates from the subject of its
+	// match.
+	Subjects map[symbol.Identity]symbol.Identity
 	// Contributors are the plugins other than the plugin of the unit that
 	// appended into slots of its declarations through their Emitter,
 	// sorted. The frame of the file and its manifest entry name a weaver

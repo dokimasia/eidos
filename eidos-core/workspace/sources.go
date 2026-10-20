@@ -83,15 +83,16 @@ type packageKey struct {
 
 // admission is what a package's admission into a plan's sources read in
 // the generation: the package, the paths of its files, each as a file
-// without declarations, and its module fact, named where it had one. A
-// warm run lists the admission of each package whose files or whose
-// module fact changed, so each plan can tell whether its scope now
-// decides the package otherwise.
+// without declarations, its module fact, named where it had one, and
+// whether a dependency round loaded it. A warm run lists the admission of
+// each package whose files, whose module fact or whose round changed, so
+// each plan can tell whether its scope now decides the package otherwise.
 type admission struct {
-	pkg    symbol.Identity
-	files  []*node.File
-	module string
-	named  bool
+	pkg        symbol.Identity
+	files      []*node.File
+	module     string
+	named      bool
+	dependency bool
 }
 
 // Sources is a plan's source scope: which packages its generators see,
@@ -102,12 +103,13 @@ type admission struct {
 // runs. The bound scope decides each package the first time a reader
 // asks about it.
 //
-// The fields apply to every package of the graph. A dependency
-// package, whose files a store provides, lies in no workspace
-// directory, so no pattern matches it, and it matches a module only
-// where its own gen.module fact names that module. A plan scoped by
-// Lang alone admits the dependency packages of its language, as an
-// unscoped plan admits every package.
+// A dependency package is a package that a dependency round loaded,
+// such as a package of a store or a vendored package. Lang decides a
+// dependency package, and Packages and Module do not. A plan admits each
+// dependency package of its language, so its reader returns the
+// declarations that a walk crosses into, such as the methods of an
+// embedded interface of the standard library. A rule of the generate
+// phase runs on no declaration of a dependency package.
 type Sources struct {
 	// Lang admits the packages of one source language. Build refuses a
 	// language that no registered frontend loads and no registered
@@ -194,18 +196,19 @@ func (s Sources) bind(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) stor
 
 // rebinds reports whether a run's scope admits or refuses a package of
 // prior otherwise than the generation's admission of it did, because the
-// package's files or its module fact moved it into the sources or out of
-// them. A plan whose scope rebinds runs whole. A reader records only the
-// reads inside its scope, so the record cannot list the readers that a
-// package entering the scope concerns. A nil scope admits every package in
-// both runs, and rebinds nothing.
+// package's files, its module fact or its round moved it into the sources
+// or out of them. A plan whose scope rebinds runs whole. A reader records
+// only the reads inside its scope, so the record cannot list the readers
+// that a package entering the scope concerns. A nil scope admits every
+// package in both runs, and rebinds nothing.
 func (s Sources) rebinds(scope store.Scope, prior []admission) bool {
 	if scope == nil {
 		return false
 	}
 	dirs := s.directories()
 	for _, a := range prior {
-		before := (s.Lang == "" || a.pkg.Lang == s.Lang) && s.placed(a.files, a.module, a.named, dirs)
+		before := (s.Lang == "" || a.pkg.Lang == s.Lang) &&
+			(a.dependency || s.placed(a.files, a.module, a.named, dirs))
 		if before != scope(a.pkg) {
 			return true
 		}
@@ -226,10 +229,11 @@ func (s Sources) directories() []directory {
 }
 
 // admits reports whether the graph contains a package and every field
-// that is set matches it. dirs are the parsed patterns, and an empty list
-// with patterns declared admits no package, because none of them names a
-// directory. The language decides first, so the run decodes no package of
-// another language.
+// that is set matches it. Lang alone decides a dependency package. dirs
+// are the parsed patterns, and an empty list with patterns declared admits
+// no package of the partition, because none of them names a directory.
+// The language decides first, so the run decodes no package of another
+// language.
 func (s Sources) admits(
 	g *store.Graph, id symbol.Identity, dirs []directory, facts *meta.Facts, k meta.KernelKeys,
 ) bool {
@@ -237,7 +241,7 @@ func (s Sources) admits(
 		return false
 	}
 	p, held := g.PackageOf(id)
-	return held && s.contains(p, dirs, facts, k)
+	return held && (g.Dependency(id) || s.contains(p, dirs, facts, k))
 }
 
 // contains reports whether the patterns and the module that are set
@@ -288,14 +292,20 @@ func inDirectories(files []*node.File, dirs []directory) bool {
 // prior returns the generation's admission of each package whose
 // admission into a plan's sources the run can change, in identity order:
 // each package that the graph and the generation both contain, a file of
-// which joined or left it, or whose module fact changed. A package
-// without a file in the generation is new, and its declarations appeared.
+// which joined or left it, whose module fact changed, or that a dependency
+// round loaded in only one of the two. A package of the partition without
+// a file in the generation is new, and its declarations appeared. A
+// dependency package of the generation keeps its admission without a
+// file, because the run does not track the files of a store.
 func (r *warmRun) prior() []admission {
 	pkgs := map[symbol.Identity]struct{}{}
 	for _, moved := range []map[symbol.Identity][]string{r.joined, r.left} {
 		for id := range moved {
 			pkgs[id] = struct{}{}
 		}
+	}
+	for _, id := range r.changes.Dependency {
+		pkgs[id] = struct{}{}
 	}
 	key := r.w.kernel.Module
 	for f := range r.changed {
@@ -318,11 +328,13 @@ func (r *warmRun) prior() []admission {
 		for _, gone := range r.left[id] {
 			files = append(files, &node.File{Path: gone})
 		}
-		if len(files) == 0 {
+		_, flipped := slices.BinarySearchFunc(r.changes.Dependency, id, symbol.Identity.Compare)
+		dependency := r.g.Dependency(id) != flipped
+		if len(files) == 0 && !dependency {
 			continue
 		}
 		module, named := meta.Get(r.recorded, id, key)
-		out = append(out, admission{pkg: id, files: files, module: module, named: named})
+		out = append(out, admission{pkg: id, files: files, module: module, named: named, dependency: dependency})
 	}
 	return out
 }

@@ -43,10 +43,11 @@ type KeyID uint32
 
 // FactValue is the closed value vocabulary, and [Register] accepts
 // no other value type. A fact that needs structure becomes flat keys
-// under a fact group, and a fact that names a declaration stores an
-// identity, not a string.
+// under a fact group. A fact that refers to one declaration stores an
+// identity, not a string. A fact that refers to two or more
+// declarations stores a list of identities.
 type FactValue interface {
-	string | int64 | bool | []string | symbol.Identity
+	string | int64 | bool | []string | symbol.Identity | []symbol.Identity
 }
 
 // Key is the typed handle registration returns. Reads, writes and

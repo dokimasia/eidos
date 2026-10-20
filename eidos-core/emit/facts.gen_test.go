@@ -17,7 +17,7 @@ import (
 
 // factsStated is how many facts the every-kind subjects state: each
 // fact of each kind, set once.
-const factsStated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+const factsStated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
 
 // factsKinds is how many kinds state a fact of their own.
 const factsKinds = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
@@ -376,6 +376,15 @@ func TestFacts(t *testing.T) {
 			}
 			{
 				subject := &Param{}
+				subject.Passing = 1
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the stated fact alone arrives")
+				assert.Equal(t, kinds[0], symbol.KindParam, "under its kind")
+				assert.Equal(t, facts[0], symbol.FactPassing, "as itself")
+				assert.Nil(t, hosts[0], "the top level has no host")
+			}
+			{
+				subject := &Param{}
 				subject.Annotations = symbol.Annotations{{}}
 				hosts, kinds, facts := stated(subject)
 				assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -712,6 +721,15 @@ func TestFacts(t *testing.T) {
 				assert.Length(t, facts, 1, "the stated fact alone arrives")
 				assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
 				assert.Equal(t, facts[0], symbol.FactComputed, "as itself")
+				assert.Nil(t, hosts[0], "the top level has no host")
+			}
+			{
+				subject := &Field{}
+				subject.Wire = true
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the stated fact alone arrives")
+				assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
+				assert.Equal(t, facts[0], symbol.FactWire, "as itself")
 				assert.Nil(t, hosts[0], "the top level has no host")
 			}
 			{
@@ -1234,7 +1252,7 @@ func TestFacts(t *testing.T) {
 				"the Function facts in schema order")
 			assert.Length(t, table[symbol.KindMethod], 19,
 				"the Method facts in schema order")
-			assert.Length(t, table[symbol.KindParam], 6,
+			assert.Length(t, table[symbol.KindParam], 7,
 				"the Param facts in schema order")
 			assert.Length(t, table[symbol.KindReturn], 2,
 				"the Return facts in schema order")
@@ -1248,7 +1266,7 @@ func TestFacts(t *testing.T) {
 				"the Sum facts in schema order")
 			assert.Length(t, table[symbol.KindSumVariant], 2,
 				"the SumVariant facts in schema order")
-			assert.Length(t, table[symbol.KindField], 11,
+			assert.Length(t, table[symbol.KindField], 12,
 				"the Field facts in schema order")
 			assert.Length(t, table[symbol.KindVariable], 5,
 				"the Variable facts in schema order")
@@ -1378,6 +1396,7 @@ func factsSubjects() []symbol.Symbol {
 		subject.Default = "x"
 		subject.Optional = true
 		subject.Variadic = 1
+		subject.Passing = 1
 		subject.Annotations = symbol.Annotations{{}}
 		out = append(out, subject)
 	}
@@ -1434,6 +1453,7 @@ func factsSubjects() []symbol.Symbol {
 		subject.Hard = true
 		subject.Optional = true
 		subject.Computed = true
+		subject.Wire = true
 		subject.Receives = &TypeRef{}
 		subject.Value = "x"
 		subject.TagsSlot().Append(&TagEntry{})

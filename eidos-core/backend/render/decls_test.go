@@ -6,6 +6,7 @@ package render_test
 import (
 	"strconv"
 	"testing"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 
@@ -26,7 +27,15 @@ const (
 	phaseName = "Phase"
 	// runCall is a qualified call whose head the scaffold records.
 	runCall = "pkg.Run"
+	// pendingHelper is the helper of [ordering], which reports whether a
+	// declaration of the file is pending in its import set.
+	pendingHelper = "pending"
 )
+
+// pendingPair writes whether alphaName and then betaName are pending in
+// the import set of the file under render, with a slash between the two.
+var pendingPair = action(pendingHelper, strconv.Quote(alphaName)) + "/" +
+	action(pendingHelper, strconv.Quote(betaName))
 
 // TestDecls checks the declaration run. Declarations render in the
 // order that the flush fixed. A declaration that the language cannot
@@ -205,6 +214,31 @@ func TestDecls(t *testing.T) {
 				"the skipped declaration withdraws nothing it did not add")
 		})
 
+		t.Run("names each declaration under render in the import set of the file", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, ordering(), seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"type "+alphaName+" true/true\n\ntype "+betaName+" false/true\n",
+				"a declaration and the declarations after it are pending")
+		})
+
+		t.Run("names the first member of a cluster as the declaration under render", func(t *testing.T) {
+			t.Parallel()
+
+			l := ordering()
+			l.Cluster = func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: blockGroup, Decls: decls[1:]}}
+			}
+			l.Groups = map[render.GroupName]string{blockGroup: "block " + pendingPair + "\n"}
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName, gammaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"type "+alphaName+" true/true\n\nblock false/true\n",
+				"the cluster renders at its first member")
+		})
+
 		t.Run("withdraws the imports of a cluster its group template fails on", func(t *testing.T) {
 			t.Parallel()
 
@@ -360,6 +394,18 @@ func hosting() render.Language {
 	l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
 		"{{- range .Types.Items}}\n" + action(render.BuiltinNested, strconv.Quote("\t"), ".") +
 		"{{- end}}\n}\n"
+	return l
+}
+
+// ordering returns the fixture language with a struct spelling that
+// writes, after the name of the struct, whether alphaName and betaName
+// are pending in the import set of the file.
+func ordering() render.Language {
+	l := language()
+	l.Funcs = func(set *render.ImportSet) template.FuncMap {
+		return template.FuncMap{pendingHelper: set.Pending}
+	}
+	l.Kinds[symbol.KindStruct] = "type {{.Name}} " + pendingPair + "\n"
 	return l
 }
 

@@ -70,3 +70,21 @@ type TypeSpeller interface {
 	// positions the refusal at the declaration with the type.
 	SpellType(s rules.TypeShape, p Policy) (*emit.TypeRef, error)
 }
+
+// SupertypeSpeller is the role of a backend whose target spells a
+// supertype of another language otherwise than a value, as Rust spells the
+// supertrait Node bare and a value of the trait as Box<dyn Node>. The
+// emitter asserts it on the TypeSpeller of the plan, and spells a supertype
+// through SpellType where the backend does not implement it.
+//
+// # Concurrency
+//
+// An implementation is safe for concurrent use, as a TypeSpeller is.
+type SupertypeSpeller interface {
+	// SpellSupertype returns the target's reference for s where a
+	// declaration extends, implements or embeds it, or where it bounds a
+	// type parameter. s is a reference or a sum. For a shape without a
+	// spelling in the target, it returns an error with the reason, as
+	// SpellType does.
+	SpellSupertype(s rules.TypeShape, p Policy) (*emit.TypeRef, error)
+}

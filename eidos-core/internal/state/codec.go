@@ -20,14 +20,15 @@ import (
 )
 
 // The tag a stored value states its type with: nothing, or one of the
-// fact vocabulary's five types.
+// fact vocabulary's six types.
 const (
-	valueNone     = 0
-	valueString   = 1
-	valueInt      = 2
-	valueBool     = 3
-	valueStrings  = 4
-	valueIdentity = 5
+	valueNone       = 0
+	valueString     = 1
+	valueInt        = 2
+	valueBool       = 3
+	valueStrings    = 4
+	valueIdentity   = 5
+	valueIdentities = 6
 )
 
 // encoder appends one record's values to buf in the kernel's record
@@ -169,7 +170,8 @@ func (e *encoder) stamp(s meta.RawStamp) error {
 // none tag for nil.
 //
 // Error modes: an error naming the type of a value outside the
-// vocabulary: a string, an int64, a bool, a []string or an identity.
+// vocabulary: a string, an int64, a bool, a []string, an identity or a
+// list of identities.
 func (e *encoder) value(v any) error {
 	switch x := v.(type) {
 	case nil:
@@ -189,6 +191,9 @@ func (e *encoder) value(v any) error {
 	case symbol.Identity:
 		e.buf = append(e.buf, valueIdentity)
 		e.identity(x)
+	case []symbol.Identity:
+		e.buf = append(e.buf, valueIdentities)
+		e.identities(x)
 	default:
 		return fmt.Errorf("state: a value of type %T is outside the fact vocabulary", v)
 	}
@@ -360,6 +365,8 @@ func (d *decoder) value() any {
 		return d.texts()
 	case valueIdentity:
 		return d.identity()
+	case valueIdentities:
+		return d.identities()
 	default:
 		d.Fail(fmt.Errorf("%w: value tag %d is outside the fact vocabulary", wire.ErrMalformed, tag))
 		return nil

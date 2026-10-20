@@ -456,6 +456,7 @@ func populated() []symbol.Symbol {
 		subject.Default = "Default"
 		subject.Optional = true
 		subject.Variadic = 10
+		subject.Passing = 11
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Type = &TypeRef{}
 		out = append(out, subject)

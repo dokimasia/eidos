@@ -153,6 +153,9 @@ func statedFacts(
 		if x.Variadic != 0 {
 			f(host, symbol.KindParam, symbol.FactVariadic)
 		}
+		if x.Passing != 0 {
+			f(host, symbol.KindParam, symbol.FactPassing)
+		}
 		if len(x.Annotations) > 0 {
 			f(host, symbol.KindParam, symbol.FactAnnotations)
 		}
@@ -264,6 +267,9 @@ func statedFacts(
 		}
 		if x.Computed {
 			f(host, symbol.KindField, symbol.FactComputed)
+		}
+		if x.Wire {
+			f(host, symbol.KindField, symbol.FactWire)
 		}
 		if x.Receives != nil {
 			f(host, symbol.KindField, symbol.FactReceives)
@@ -491,6 +497,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactParamDefault,
 			symbol.FactOptional,
 			symbol.FactVariadic,
+			symbol.FactPassing,
 			symbol.FactAnnotations,
 		},
 		symbol.KindReturn: {
@@ -533,6 +540,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactHardPrivate,
 			symbol.FactOptional,
 			symbol.FactComputed,
+			symbol.FactWire,
 			symbol.FactReceives,
 			symbol.FactValue,
 			symbol.FactTag,

@@ -25,9 +25,15 @@ const (
 	zetaPkg  = "zeta"
 	// examplePkg is the package a file belongs to.
 	examplePkg = "example.com/store"
-	// auditCall is a qualified callee whose head the scaffold records.
-	auditCall = "audit.Log"
+	// auditCall is a qualified callee whose head the scaffold records,
+	// and auditFunc is the name of the callee.
+	auditCall = auditHead + "." + auditFunc
 	auditHead = "audit"
+	auditFunc = "Log"
+	// sampleHelper is a vocabulary helper that returns a literal value of
+	// the text sevenText.
+	sampleHelper = "sample"
+	sevenText    = "7"
 )
 
 // TestBuiltins checks what each builtin of the pass records and
@@ -61,6 +67,18 @@ func TestBuiltins(t *testing.T) {
 			_, err := render.New(passName, l)
 			assert.HasError(t, err, "the header is a builtin of the pass")
 			assert.Contains(t, err.Error(), render.BuiltinHeader, "naming the claim")
+		})
+
+		t.Run("returns an error for a vocabulary helper named value", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Funcs = helpers(template.FuncMap{
+				render.BuiltinValue: func(emit.Value) (string, error) { return "", nil },
+			})
+			_, err := render.New(passName, l)
+			assert.HasError(t, err, "the value builtin is a builtin of the pass")
+			assert.Contains(t, err.Error(), render.BuiltinValue, "naming the claim")
 		})
 	})
 
@@ -182,7 +200,82 @@ func TestBuiltins(t *testing.T) {
 			assert.NotContains(t, string(files[0].Body), alphaName,
 				"the declaration is absent from the file")
 		})
+
+		t.Run("writes a value through the writer of the language in a kind template", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, sampling(), seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, string(files[0].Body), "type "+alphaName+" = "+sevenText+"\n",
+				"the kind template writes the value of the helper")
+		})
+
+		t.Run("writes a value in a body template", func(t *testing.T) {
+			t.Parallel()
+
+			b := emit.Body{Ref: &emit.TemplateRef{Name: refName, Data: emit.Literal(emit.LiteralInt, sevenText)}}
+			body, sink := renderRef(t, language(),
+				refTree("\treturn "+action(render.BuiltinValue, ".Data")+"\n"+action(render.BuiltinSlots)), b)
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, body, "\treturn "+sevenText+"\n", "the body template writes the value of its data")
+		})
+
+		t.Run("writes a value in the template of a claimed file", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderClaim(t, claimTree(recordsRange+action(render.BuiltinValue, ".Data")+rangeEnd),
+				claimedUnit(handleName, emit.Literal(emit.LiteralInt, sevenText), emit.Body{}))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, body, sevenText, "the file template writes the value of the record")
+		})
+
+		t.Run("records the imports of a value into the file", func(t *testing.T) {
+			t.Parallel()
+
+			callee := symbol.Identity{
+				Lang: coretest.Lang, Package: auditHead, Name: auditFunc, Kind: symbol.KindFunction,
+			}
+			b := emit.Body{Ref: &emit.TemplateRef{Name: refName, Data: emit.Name(callee)}}
+			body, sink := renderRef(t, language(),
+				refTree("\t"+action(render.BuiltinValue, ".Data")+"()\n"+action(render.BuiltinSlots)), b)
+			coretest.AssertCodes(t, sink)
+			assert.ContainsInOrder(t, body, []string{"import (" + auditHead + ")", auditCall + "()"},
+				"the import of the callee is in the import block of the file")
+		})
+
+		t.Run("reports RefusedTemplate for a value in a language without a writer", func(t *testing.T) {
+			t.Parallel()
+
+			l := sampling()
+			l.Value = nil
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), string(passName),
+				"the finding names the language")
+		})
+
+		t.Run("reports UnspeltValue for a value that the writer refuses", func(t *testing.T) {
+			t.Parallel()
+
+			l := sampling()
+			l.Funcs = helpers(template.FuncMap{
+				sampleHelper: func() emit.Value { return emit.Literal(emit.LiteralInt, "") },
+			})
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertReports(t, sink, render.UnspeltValue)
+		})
 	})
+}
+
+// sampling returns the fixture language with a vocabulary helper that
+// returns a literal value of sevenText, and a struct spelling that writes
+// the value through the value builtin.
+func sampling() render.Language {
+	l := language()
+	l.Funcs = helpers(template.FuncMap{
+		sampleHelper: func() emit.Value { return emit.Literal(emit.LiteralInt, sevenText) },
+	})
+	l.Kinds[symbol.KindStruct] = "type {{.Name}} = " + action(render.BuiltinValue, sampleHelper) + "\n"
+	return l
 }
 
 // use spells a use builtin over the given arguments, each quoted.

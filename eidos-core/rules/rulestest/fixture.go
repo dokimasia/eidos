@@ -17,18 +17,32 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// Loaded loads a source tree through one frontend into a fixture. The
-// fixture has the sealed graph, the findings of the load, and a fact
-// store with the classification stamps of the load. The store registers
-// its keys through [frontendtest.Registry], so a nil function of keys
-// registers nothing. Each stamp has the claim of [meta.LoadClaim], as in
-// a workspace run. The load runs under [frontendtest.Brand], so a
-// fixture tree writes its carriers the way the frontend suite reads
-// them, and under the context of tb, which ends with the test. A load
-// that reports an Error fails the test, because a tree that the language
-// refuses proves nothing about its rules.
+// Loaded loads a source tree through one frontend into a fixture, as
+// [LoadedWith] loads it without stores. A frontend whose dependency units
+// read a store then places no dependency.
 func Loaded(
 	tb assert.TB, f plugin.Frontend, sources fs.FS, keys ...func(*meta.Registry) error,
+) *Fixture {
+	tb.Helper()
+
+	return LoadedWith(tb, f, sources, nil, keys...)
+}
+
+// LoadedWith loads a source tree through one frontend into a fixture. The
+// dependency units of the frontend read the read-only trees of stores under
+// the name of each store, such as the stubs of the standard library of
+// Python, and a nil map provides no store. The fixture has the sealed
+// graph, the findings of the load, and a fact store with the classification
+// stamps of the load. The store registers its keys through
+// [frontendtest.Registry], so a nil function of keys registers nothing.
+// Each stamp has the claim of [meta.LoadClaim], as in a workspace run. The
+// load runs under [frontendtest.Brand], so a fixture tree writes its
+// carriers the way the frontend suite reads them, and under the context of
+// tb, which ends with the test. A load that reports an Error fails the
+// test, because a tree that the language refuses proves nothing about its
+// rules.
+func LoadedWith(
+	tb assert.TB, f plugin.Frontend, sources fs.FS, stores map[string]fs.FS, keys ...func(*meta.Registry) error,
 ) *Fixture {
 	tb.Helper()
 
@@ -38,6 +52,7 @@ func Loaded(
 		Frontends: []plugin.Frontend{f},
 		Sink:      sink,
 		Brand:     frontendtest.Brand,
+		Stores:    stores,
 	})
 	assert.NoError(tb, err, "the fixture tree loads")
 	findings := slices.Collect(sink.All())

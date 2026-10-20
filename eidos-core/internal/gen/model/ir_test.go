@@ -142,7 +142,7 @@ func TestIR(t *testing.T) {
 				types = append(types, e.Type)
 			}
 			assert.Equal(t, types, []string{
-				"Accessor", "Level", "Mutability", "TypeForm", "Variadic", "Variance", "Visibility",
+				"Accessor", "Level", "Mutability", "Passing", "TypeForm", "Variadic", "Variance", "Visibility",
 			}, "every hand-written enum of the symbol package, sorted by type name")
 		})
 

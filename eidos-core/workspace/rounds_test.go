@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -86,6 +87,10 @@ const readerName = "Reader"
 // auditLine is the directive of the weaver on the struct of the line
 // before it.
 const auditLine = "+weaver:audit\n"
+
+// movedLine is the kernel out directive that routes the declarations of
+// the struct of the line before it into a file of the store directory.
+const movedLine = `+out path="../store/user.txt"` + "\n"
 
 // The codes of the findings of the generators of the rounds cases, the
 // warning of the warning mirror on the user and the error of the failing
@@ -415,6 +420,26 @@ func TestRounds(t *testing.T) {
 				"the warm run reports the same findings as the cold run")
 		})
 
+		t.Run("reports the CollidingNames of a new name that a kept file of its routed package declares",
+			func(t *testing.T) {
+				t.Parallel()
+
+				build := func() *workspace.Workspace {
+					return built(t, sealingPlans(ledger.NewMem(), workspace.Plan{
+						Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)}, Backend: directoryPrinter(t),
+					}))
+				}
+				after := roundsTree(rowLine+userLine, userLine+movedLine)
+				warm, err := warmAfter(t, build(), roundsTree(rowLine, userLine+movedLine), after)
+				assert.ErrorIs(t, err, workspace.ErrRunFailed, "the collision fails the plan")
+				expect.Equal(t, warm.Stats.Rendered, 1, "the run keeps the file of the api package")
+				expect.Length(t, findings(warm.Sink, plugin.CollidingNames), 1, "the warm run reports the collision")
+				cold, _ := build().Run(t.Context(), workspace.Input{Tree: after})
+				expect.Equal(t, slices.SortedStableFunc(warm.Sink.All(), diag.Diag.Compare),
+					slices.SortedStableFunc(cold.Sink.All(), diag.Diag.Compare),
+					"the warm run reports the same findings as the cold run")
+			})
+
 		t.Run("reports the render finding of a group that the run keeps", func(t *testing.T) {
 			t.Parallel()
 
@@ -663,6 +688,28 @@ func receivers(tb assert.TB) plugin.Backend {
 			symbol.KindField:  "var {{.Receives.Spelling}}.{{.Name}} int\n",
 		}).
 		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// directoryPrinter returns the printer of the target fixture with the
+// package rule of a directory: a file declares the package of its
+// directory, as a Go file does.
+func directoryPrinter(tb assert.TB) plugin.Backend {
+	tb.Helper()
+
+	return backend.New("directories", "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Packages(func(p plugin.Placement) (symbol.Identity, error) {
+			pkg := symbol.Identity{Lang: frontendtest.ScriptedLang, Package: path.Dir(p.Path), Kind: symbol.KindPackage}
+			return pkg, nil
+		}).
 		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
 			return nil, errors.New("the fixture spells no statements")
 		}).

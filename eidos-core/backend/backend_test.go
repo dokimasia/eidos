@@ -15,6 +15,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/backend/backendtest"
@@ -66,8 +67,10 @@ const (
 	// fixture's lowering adds beside every struct.
 	cursorSuffix = "Cursor"
 	// respellPrefix is the prefix that the fixture's respell puts before
-	// every declared name.
+	// every declared name, and memberPrefix the prefix that the convention
+	// of a member of the member cases puts before the name of a member.
 	respellPrefix = "t_"
+	memberPrefix  = "m_"
 	// kitReason is the reason that the fixture gives for a kind that it
 	// refuses.
 	kitReason = "the fixture language declares no such construct"
@@ -76,6 +79,12 @@ const (
 	// builtin.
 	kitIndent    = "\t"
 	memberMethod = "func {{.Name}}() {\n{{memberbody .}}}\n"
+	// sampleHelper is a helper that returns a literal value of the text
+	// sevenText. valueStruct is a struct template that writes the value
+	// through the value builtin.
+	sampleHelper = "sample"
+	sevenText    = "7"
+	valueStruct  = "type {{.Name}} = {{value " + sampleHelper + "}}\n"
 )
 
 // The allocation ceilings of the steps of a declaration.
@@ -97,10 +106,11 @@ const (
 	// buildAllocs is the allocation count of a Build of the fixture's
 	// declaration, with or without hooks. text/template allocates most of
 	// them, for the parse trees of the file skeleton and the two kind
-	// templates and for the function maps of the builtins that the render
-	// binds to each template. The composed pass and the backend allocate
-	// the rest.
-	buildAllocs = 167
+	// templates and for the function maps that it keeps for each template.
+	// The eight builtins and the helper of the fixture are nine names, so
+	// each of these maps grows past one group of eight slots. The composed
+	// pass and the backend allocate the rest.
+	buildAllocs = 185
 	// policiesAllocs is the allocation count of a Policies call that adds
 	// one spec to a new declaration. The call allocates the list of specs.
 	policiesAllocs = 1
@@ -497,6 +507,35 @@ func TestBackend(t *testing.T) {
 		})
 	})
 
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend whose templates write a value through the declared writer", func(t *testing.T) {
+			t.Parallel()
+
+			sample := func(*render.ImportSet) template.FuncMap {
+				return template.FuncMap{
+					sampleHelper: func() emit.Value { return emit.Literal(emit.LiteralInt, sevenText) },
+				}
+			}
+			b := backend.New(kitName, kitTarget, kitSyntax()).
+				FileTemplate(kitFile).
+				KindTemplates(map[symbol.Kind]string{symbol.KindStruct: valueStruct}).
+				KindTemplates(kitCallables()).
+				Funcs(sample).
+				Naming(kitNaming).
+				Scaffold(kitScaffold).
+				Value(kitValue).
+				Imports(kitImports).
+				Finalise(kitFinalise).
+				Build()
+			files := kitRender(t, b)
+			assert.Length(t, files, 1, "the fixture renders one file")
+			assert.Contains(t, string(files[0].Body), "type "+rowName+" = "+sevenText+"\n",
+				"the struct template writes the value through the writer")
+		})
+	})
+
 	t.Run("TemplateImport", func(t *testing.T) {
 		t.Parallel()
 
@@ -609,6 +648,47 @@ func TestBackend(t *testing.T) {
 			got, err := kitBackend(plainName, kitTarget).Build().PackageAt(at)
 			assert.NoError(t, err, "the origin needs no derivation")
 			assert.Equal(t, got, at.Origin, "a file declares the package of the declarations in it")
+		})
+	})
+
+	t.Run("NameScopes", func(t *testing.T) {
+		t.Parallel()
+
+		pkg := coretest.PackageID(coretest.StorePath)
+
+		t.Run("returns the namespace of the declared rule", func(t *testing.T) {
+			t.Parallel()
+
+			rule := func(p symbol.Identity) symbol.Identity {
+				return symbol.Identity{Lang: p.Lang, Package: path.Dir(p.Package), Kind: symbol.KindPackage}
+			}
+			got := kitBackend(kitName, kitTarget).NameScopes(rule).Build().NameScope(pkg)
+			assert.Equal(t, got, rule(pkg), "the backend returns the namespace of the rule")
+		})
+
+		t.Run("returns the package for a backend without a rule", func(t *testing.T) {
+			t.Parallel()
+
+			got := kitBackend(plainName, kitTarget).Build().NameScope(pkg)
+			assert.Equal(t, got, pkg, "the names of a file are in the namespace of its package")
+		})
+	})
+
+	t.Run("Overloads", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for a backend that declares it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, kitBackend(kitName, kitTarget).Overloads().Build().Overloads(),
+				"the language of the target overloads a function")
+		})
+
+		t.Run("reports false for a backend that does not declare it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, kitBackend(plainName, kitTarget).Build().Overloads(),
+				"two functions of one name collide in the language of the target")
 		})
 	})
 
@@ -763,6 +843,45 @@ func TestBackend(t *testing.T) {
 		})
 	})
 
+	t.Run("RespellMember", func(t *testing.T) {
+		t.Parallel()
+
+		member := plugin.Member{Host: symbol.KindStruct, Kind: symbol.KindField, Level: symbol.LevelType}
+
+		t.Run("returns the name of the declared hook of a member", func(t *testing.T) {
+			t.Parallel()
+
+			var got plugin.Member
+			b := kitBackend(kitName, kitTarget).Respell(kitRespell).RespellMember(
+				func(m plugin.Member, name string) (string, error) {
+					got = m
+					return memberPrefix + name, nil
+				}).Build()
+			name, err := b.RespellMember(member, coretest.StructName)
+			assert.NoError(t, err, "the fixture hook spells every name")
+			expect.Equal(t, name, memberPrefix+coretest.StructName, "the backend returns the name of the hook")
+			expect.Equal(t, got, member, "the hook reads the member")
+		})
+
+		t.Run("returns the name of the respell hook for a backend without the hook of a member", func(t *testing.T) {
+			t.Parallel()
+
+			name, err := kitBackend(kitName, kitTarget).Respell(kitRespell).Build().RespellMember(member,
+				coretest.StructName)
+			assert.NoError(t, err, "the fixture hook spells every name")
+			assert.Equal(t, name, respellPrefix+coretest.StructName, "the backend spells the member as any name")
+		})
+
+		t.Run("returns an error rendering an unsettled store", func(t *testing.T) {
+			t.Parallel()
+
+			err := kitUnsettled(t, kitBackend(kitName, kitTarget).RespellMember(
+				func(_ plugin.Member, name string) (string, error) { return name, nil }).Build())
+			assert.HasError(t, err, "a backend with the hook of a member does not render a store that did not settle")
+			assert.Contains(t, err.Error(), "unsettled", "the error states why the render wrote no bytes")
+		})
+	})
+
 	t.Run("SpellType", func(t *testing.T) {
 		t.Parallel()
 
@@ -791,6 +910,30 @@ func TestBackend(t *testing.T) {
 			assert.HasError(t, err, "a backend without a spoke spells no shape")
 			assert.Contains(t, err.Error(), "target "+string(kitTarget)+" does not spell the types",
 				"the error contains the target")
+		})
+	})
+
+	t.Run("SpellSupertype", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the reference of the declared supertype spelling", func(t *testing.T) {
+			t.Parallel()
+
+			super := &emit.TypeRef{Spelling: kitText}
+			got, err := kitBackend(kitName, kitTarget).Types(kitSpoke).
+				Supertypes(func(rules.TypeShape, plugin.Policy) (*emit.TypeRef, error) { return super, nil }).Build().
+				SpellSupertype(rules.Leaf(symbol.FormText, "string"), plugin.Policy{})
+			assert.NoError(t, err, "the supertype spelling spells text")
+			assert.Equal(t, got, super, "the backend returns the supertype spelling", assert.ByIdentity())
+		})
+
+		t.Run("returns the reference of the spoke for a backend without a supertype spelling", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := kitBackend(kitName, kitTarget).Types(kitSpoke).Build().
+				SpellSupertype(rules.Leaf(symbol.FormText, "string"), plugin.Policy{})
+			assert.NoError(t, err, "the spoke spells text")
+			assert.Equal(t, got, kitTextRef, "a supertype spells as a value", assert.ByIdentity())
 		})
 	})
 
@@ -1050,6 +1193,13 @@ func kitScaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	return []byte("\treturn\n"), nil
 }
 
+// kitValue writes the text of a value. It records an import, as a writer
+// records each package that a qualified name needs.
+func kitValue(v emit.Value, set *render.ImportSet) (string, error) {
+	set.Add(runtimePkg)
+	return v.Text, nil
+}
+
 // kitImports renders the collected set as a one-line block.
 func kitImports(set *render.ImportSet) string {
 	if set.Len() == 0 {
@@ -1205,6 +1355,7 @@ func setters() []setter {
 		{name: "Version", set: func(b *backend.Builder) *backend.Builder { return b.Version(kitVersion) }},
 		{name: "FileTemplate", set: func(b *backend.Builder) *backend.Builder { return b.FileTemplate(kitFile) }},
 		{name: "Scaffold", set: func(b *backend.Builder) *backend.Builder { return b.Scaffold(kitScaffold) }},
+		{name: "Value", set: func(b *backend.Builder) *backend.Builder { return b.Value(kitValue) }},
 		{name: "Naming", set: func(b *backend.Builder) *backend.Builder { return b.Naming(kitNaming) }},
 		{name: "Split", set: func(b *backend.Builder) *backend.Builder { return b.Split(split) }},
 		{name: "Packages", set: func(b *backend.Builder) *backend.Builder { return b.Packages(rule) }},
@@ -1215,6 +1366,7 @@ func setters() []setter {
 		{name: "Lower", set: func(b *backend.Builder) *backend.Builder { return b.Lower(kitLower) }},
 		{name: "Respell", set: func(b *backend.Builder) *backend.Builder { return b.Respell(kitRespell) }},
 		{name: "Types", set: func(b *backend.Builder) *backend.Builder { return b.Types(kitSpoke) }},
+		{name: "Supertypes", set: func(b *backend.Builder) *backend.Builder { return b.Supertypes(kitSpoke) }},
 		{name: "MemberIndent", set: func(b *backend.Builder) *backend.Builder { return b.MemberIndent(kitIndent) }},
 		{
 			name: "TemplateImport",

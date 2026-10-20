@@ -51,10 +51,14 @@ const (
 )
 
 // The method the discriminator cases declare, and the discriminator
-// its parameters spell in a language that overloads.
+// its parameters spell in a language that overloads. deleteDisc is the
+// discriminator of a delete accessor, and untypedDisc the spelling of a
+// parameter without a type.
 const (
-	getName = "Get"
-	getDisc = "string,int"
+	getName     = "Get"
+	getDisc     = "string,int"
+	deleteDisc  = "del"
+	untypedDisc = "_"
 )
 
 // TestAssign pins the canonical identities that the assignment step
@@ -96,13 +100,20 @@ func TestAssign(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := loadTree(t, oneFileTree(), with(&everyKind{frontendtest.NewScripted()}))
+			// The scripted language overloads, and the parameter of the
+			// function spells no type, so the function, its parameter and
+			// its return take the discriminator of an untyped parameter.
+			function := assigned("", coretest.FunctionName, symbol.KindFunction)
+			param := assigned(coretest.FunctionName, coretest.ParamName, symbol.KindParam)
+			ret := assigned(coretest.FunctionName, coretest.ReturnName, symbol.KindReturn)
+			function.Disc, param.Disc, ret.Disc = untypedDisc, untypedDisc, untypedDisc
 			want := map[symbol.Kind]symbol.Identity{
 				symbol.KindStruct:    assigned("", coretest.StructName, symbol.KindStruct),
 				symbol.KindInterface: assigned("", coretest.InterfaceName, symbol.KindInterface),
 				symbol.KindEnum:      assigned("", coretest.EnumName, symbol.KindEnum),
 				symbol.KindSum:       assigned("", coretest.SumName, symbol.KindSum),
 				symbol.KindAlias:     assigned("", coretest.AliasName, symbol.KindAlias),
-				symbol.KindFunction:  assigned("", coretest.FunctionName, symbol.KindFunction),
+				symbol.KindFunction:  function,
 				symbol.KindVariable:  assigned("", coretest.VariableName, symbol.KindVariable),
 				symbol.KindConstant:  assigned("", coretest.ConstantName, symbol.KindConstant),
 				symbol.KindField: assigned(
@@ -111,12 +122,11 @@ func TestAssign(t *testing.T) {
 				symbol.KindMethod: assigned(
 					coretest.StructName, coretest.MethodName, symbol.KindMethod,
 				),
-				symbol.KindParam: assigned(
-					coretest.FunctionName, coretest.ParamName, symbol.KindParam,
+				symbol.KindEnumVariant: assigned(
+					coretest.EnumName, coretest.EnumVariantName, symbol.KindEnumVariant,
 				),
-				symbol.KindReturn: assigned(
-					coretest.FunctionName, coretest.ReturnName, symbol.KindReturn,
-				),
+				symbol.KindParam:  param,
+				symbol.KindReturn: ret,
 			}
 			for _, kind := range coretest.MatchableKinds() {
 				assert.Contains(t, want, kind,
@@ -357,9 +367,23 @@ func TestAssign(t *testing.T) {
 				want: stringType + "?",
 			},
 			{
-				name:   "spells a parameter without a type as nothing between its separators",
+				name: "spells a parameter that a caller passes by keyword alone behind its name and =",
+				params: []*node.Param{{
+					Name: keyName, Type: &node.TypeRef{Spelling: stringType}, Passing: symbol.PassingKeyword,
+				}},
+				want: keyName + "=" + stringType,
+			},
+			{
+				name: "spells a parameter that a caller passes by position alone before a / suffix",
+				params: []*node.Param{{
+					Name: keyName, Type: &node.TypeRef{Spelling: stringType}, Passing: symbol.PassingPositional,
+				}},
+				want: stringType + "/",
+			},
+			{
+				name:   "spells a parameter without a type as _",
 				params: []*node.Param{{Name: keyName}, {Name: blankName, Type: &node.TypeRef{Spelling: stringType}}},
-				want:   "," + stringType,
+				want:   untypedDisc + "," + stringType,
 			},
 		}
 		for _, tt := range spelled {
@@ -377,6 +401,62 @@ func TestAssign(t *testing.T) {
 				coretest.AssertCodes(t, sink)
 			})
 		}
+
+		t.Run("spells del for a method with the delete accessor", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{Name: keyName, Accessor: symbol.AccessorGet},
+				{Name: keyName, Accessor: symbol.AccessorDelete},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{Scripted: frontendtest.NewScripted(), decl: holder}))
+			getter := assigned(outerName, keyName, symbol.KindMethod)
+			deleter := getter
+			deleter.Disc = deleteDisc
+			got, held := g.Lookup(deleter)
+			assert.True(t, held, "the deleter has a discriminator of its own")
+			assert.Equal(t, got.(*node.Method).Accessor, symbol.AccessorDelete, "the method is the deleter")
+			_, held = g.Lookup(getter)
+			assert.True(t, held, "the getter keeps the empty discriminator")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("spells a setter without a type apart from its getter", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{Name: keyName, Accessor: symbol.AccessorGet},
+				{Name: keyName, Accessor: symbol.AccessorSet, Params: []*node.Param{{Name: keyName}}},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{Scripted: frontendtest.NewScripted(), decl: holder}))
+			getter := assigned(outerName, keyName, symbol.KindMethod)
+			setter := getter
+			setter.Disc = untypedDisc
+			got, held := g.Lookup(setter)
+			assert.True(t, held, "the setter has a discriminator of its own")
+			assert.Equal(t, got.(*node.Method).Accessor, symbol.AccessorSet, "the method is the setter")
+			_, held = g.Lookup(getter)
+			assert.True(t, held, "the getter keeps the empty discriminator")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("spells the type of a receiver before a ; ahead of the parameters", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{Name: keyName, Receiver: &node.Param{Name: blankName, Type: &node.TypeRef{Spelling: stringType}}},
+				{Name: keyName, Receiver: &node.Param{Name: blankName}},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{Scripted: frontendtest.NewScripted(), decl: holder}))
+			untyped := assigned(outerName, keyName, symbol.KindMethod)
+			typed := untyped
+			typed.Disc = stringType + ";"
+			_, held := g.Lookup(typed)
+			assert.True(t, held, "the overload of a typed receiver has the type in its discriminator")
+			_, held = g.Lookup(untyped)
+			assert.True(t, held, "the overload of a receiver without a type has the empty discriminator")
+			coretest.AssertCodes(t, sink)
+		})
 
 		t.Run("spells empty for a callable in a language without overloads", func(t *testing.T) {
 			t.Parallel()
@@ -659,14 +739,14 @@ func (*blanks) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// holey declares one function with a nil entry in its signature, in
-// the list the case chooses.
+// holey declares the one declaration that the case chooses, such as a
+// function with a nil entry in its signature.
 type holey struct {
 	*frontendtest.Scripted
-	decl *node.Function
+	decl symbol.Symbol
 }
 
-// Parse declares the one function.
+// Parse declares the one declaration.
 func (h *holey) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	pkg := u.Graph().Package(coretest.StorePath)
 	pkg.Files = append(pkg.Files, &node.File{

@@ -17,10 +17,12 @@ import (
 )
 
 // The spellings the kept names cases declare: a settled name that a
-// second declaration of one emitted name takes, and a method's name.
+// second declaration of one emitted name takes, a method's name, and the
+// package of a second namespace of the source package.
 const (
 	respelledName = "User2"
 	methodName    = "Save"
+	routedDir     = "svc/web"
 )
 
 // manyNames is how many files declare a name in the scope whose rows fill
@@ -210,6 +212,88 @@ func TestNames(t *testing.T) {
 			})
 		})
 
+		t.Run("InFileScope", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns the entries of the namespace sorted by settled name", func(t *testing.T) {
+				t.Parallel()
+
+				got := keptNames(t, nil,
+					recordedArtifact(artifactPath, recordedSubject), recordedArtifact(siblingPath, siblingSubject),
+				).InFileScope(artifactScope, "")
+				assert.Length(t, got, 2, "both files declare a name in the namespace")
+				assert.Equal(t, got[0].Settled, siblingSubject.Name, "the sibling's name sorts first")
+			})
+
+			t.Run("returns the entries of one namespace of a source package", func(t *testing.T) {
+				t.Parallel()
+
+				moved := recordedArtifact(siblingPath, siblingSubject)
+				moved.Scope.Package = routedDir
+				names := keptNames(t, nil, recordedArtifact(artifactPath, recordedSubject), moved)
+				assert.Length(t, names.InScope(edgeDir, ""), 2, "both files declare a name of the source package")
+				got := names.InFileScope(moved.Scope, "")
+				assert.Length(t, got, 1, "one file declares a name in the second namespace")
+				assert.Equal(t, got[0].File, siblingPath, "the namespace is the namespace of the sibling's file")
+			})
+
+			t.Run("returns no entry for the package of a file whose namespace differs", func(t *testing.T) {
+				t.Parallel()
+
+				got := keptNames(t, nil, recordedArtifact(artifactPath, recordedSubject)).InFileScope(edgePackage, "")
+				assert.Empty(t, got, "the rows of a routed scope are under the namespace of the file")
+			})
+
+			t.Run("returns the names that attach to the receiver", func(t *testing.T) {
+				t.Parallel()
+
+				a := recordedArtifact(artifactPath, recordedSubject)
+				a.Names = append(a.Names, plugin.NameEntry{
+					Package: edgeDir, Receiver: recordedSubject.Name, Kind: symbol.KindMethod,
+					Emitted: methodName, Settled: methodName,
+				})
+				got := keptNames(t, nil, a).InFileScope(artifactScope, recordedSubject.Name)
+				assert.Length(t, got, 1, "the type has one method")
+				assert.Equal(t, got[0].Settled, methodName, "the method is the type's")
+			})
+
+			t.Run("returns no entry of a file that skip reports", func(t *testing.T) {
+				t.Parallel()
+
+				again := func(file string) bool { return file == artifactPath }
+				names := keptNames(t, again, recordedArtifact(artifactPath, recordedSubject))
+				assert.Empty(t, names.InFileScope(artifactScope, ""), "the run generates the file again")
+			})
+
+			t.Run("leaves out the entries of a file that a later commit dropped", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					plan := r.Lane(recordedPlan)
+					plan.Artifact(recordedArtifact(artifactPath, recordedSubject))
+					plan.Artifact(recordedArtifact(siblingPath, siblingSubject))
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.KeepPlan(recordedPlan)
+					r.DropFile(artifactPath)
+				})
+				got := g.Phases(t.Context()).Names(recordedPlan, nil).InFileScope(artifactScope, "")
+				assert.Length(t, got, 1, "one file remains")
+				assert.Equal(t, got[0].File, siblingPath, "the sibling's name remains")
+			})
+
+			t.Run("returns the list of the first call to a second call", func(t *testing.T) {
+				t.Parallel()
+
+				names := keptNames(t, nil, recordedArtifact(artifactPath, recordedSubject))
+				first := names.InFileScope(artifactScope, "")
+				assert.Equal(t, names.InFileScope(artifactScope, ""), first, "the scope is read once",
+					assert.ByIdentity())
+			})
+		})
+
 		t.Run("Err", func(t *testing.T) {
 			t.Parallel()
 
@@ -252,6 +336,9 @@ func TestNamesAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { scope = names.InScope(edgeDir, "") }, 0,
 		"InScope allocates nothing for a scope it read")
 	assert.Length(t, scope, 1, "the package declares one name")
+	assert.MaxAllocs(t, func() { scope = names.InFileScope(artifactScope, "") }, 0,
+		"InFileScope allocates nothing for a scope it read")
+	assert.Length(t, scope, 1, "the namespace declares one name")
 	assert.NoError(t, names.Err(), "every row decodes")
 }
 
@@ -289,6 +376,16 @@ func BenchmarkNames(b *testing.B) {
 				got = names.InScope(edgeDir, "")
 			}
 			assert.Length(b, got, 1, "InScope returns the package's name")
+		})
+
+		b.Run("InFileScope", func(b *testing.B) {
+			c := bench.Start(b).Warmup(1).MaxAllocs(0)
+			defer c.End()
+			var got []plugin.NameEntry
+			for c.Loop() {
+				got = names.InFileScope(artifactScope, "")
+			}
+			assert.Length(b, got, 1, "InFileScope returns the name of the namespace")
 		})
 	})
 }

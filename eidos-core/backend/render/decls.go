@@ -61,7 +61,7 @@ func (f *frame) declRun(u plugin.Unit, b *bound) bool {
 			continue
 		}
 		rendered[ci] = true
-		spelt = f.clustered(u, clusters[ci], b) || spelt
+		spelt = f.clustered(u, clusters[ci], d, b) || spelt
 	}
 	return spelt
 }
@@ -70,7 +70,9 @@ func (f *frame) declRun(u plugin.Unit, b *bound) bool {
 // into scratch first: a template that refuses mid-write must leave
 // no fragment in the file and no import it recorded, because the
 // finding reports the declaration as skipped and the file must
-// match it. It reports whether the declaration rendered.
+// match it. The import set names the declaration under render
+// before the template runs, and the declaration hosts the bodies that
+// its template places. It reports whether the declaration rendered.
 func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) bool {
 	t, templated := b.kinds[d.Kind()]
 	if !templated {
@@ -80,6 +82,8 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) bool {
 	if !f.guard(d) {
 		return false
 	}
+	f.set.Enter(emit.DeclaredName(d))
+	f.decl = d
 	f.scratch.Reset()
 	mark := f.set.mark()
 	if err := t.Execute(&f.scratch, d); err != nil {
@@ -110,8 +114,11 @@ func (f *frame) unspelt(k symbol.Kind, what string) {
 
 // clustered renders one cluster through the group template its
 // name selects, into the same scratch singleton uses and for the
-// same reason. It reports whether the cluster rendered.
-func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) bool {
+// same reason. first is the member that the cluster renders at, its
+// first member in the order of the unit. The import set names it as the
+// declaration under render, and it hosts the bodies that the group
+// template places. It reports whether the cluster rendered.
+func (f *frame) clustered(u plugin.Unit, c Clustered, first symbol.Symbol, b *bound) bool {
 	t, held := b.groups[c.Group]
 	if !held {
 		f.sink.Errorf(UnknownGroup, f.at, f.origin,
@@ -126,6 +133,8 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) bool {
 	if !renders {
 		return false
 	}
+	f.set.Enter(emit.DeclaredName(first))
+	f.decl = first
 	f.scratch.Reset()
 	mark := f.set.mark()
 	if err := t.Execute(&f.scratch, c); err != nil {
@@ -199,8 +208,10 @@ func (f *frame) guard(d symbol.Symbol) bool {
 // break, because the host's template supplies the separators its
 // member layout uses. The template writes into the frame's buffer for
 // the depth of the call, which every later call at that depth reuses.
-// A call allocates a copy of the text, and a second copy behind a
-// non-empty indent. It allocates no growth once its buffer has grown.
+// The nested declaration hosts the bodies that its template places, and
+// the host of the call hosts the bodies after it. A call allocates a copy
+// of the text, and a second copy behind a non-empty indent. It allocates
+// no growth once its buffer has grown.
 func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	t, spelt := f.bound.kinds[s.Kind()]
 	if !spelt {
@@ -212,9 +223,12 @@ func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	}
 	out := f.nestOut[f.depth]
 	out.Reset()
+	host := f.decl
+	f.decl = s
 	f.depth++
 	err := t.Execute(out, s)
 	f.depth--
+	f.decl = host
 	if err != nil {
 		return "", fmt.Errorf("render: %w", err)
 	}

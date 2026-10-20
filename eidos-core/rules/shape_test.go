@@ -55,14 +55,15 @@ const (
 	recordSpelling  = "Record"
 	pairSpelling    = "Pair"
 	fnSpelling      = "Fn"
+	genSpelling     = "Gen"
 	wrappedSpelling = "Wrapped"
 )
 
 // genericLang classifies library types that take type arguments, as the
 // Builtin of TypeScript classifies Array and Record. It returns Array as a
-// list, Record as a map, Pair as a tuple and Fn as a function, each
-// without children, and Wrapped as an optional with a child of text. It
-// passes every other spelling to the rules that it wraps.
+// list, Record as a map, Pair as a tuple, Fn as a function and Gen as a
+// stream, each without children, and Wrapped as an optional with a child of
+// text. It passes every other spelling to the rules that it wraps.
 type genericLang struct {
 	rules.SourceRules
 }
@@ -79,6 +80,8 @@ func (g genericLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 		return rules.TypeShape{Form: symbol.FormTuple, Spelling: ref.Spelling}
 	case fnSpelling:
 		return rules.TypeShape{Form: symbol.FormFunc, Spelling: ref.Spelling}
+	case genSpelling:
+		return rules.TypeShape{Form: symbol.FormStream, Spelling: ref.Spelling}
 	case wrappedSpelling:
 		return rules.TypeShape{
 			Form: symbol.FormOptional, Spelling: ref.Spelling,
@@ -115,21 +118,37 @@ func (blessing) WellKnown(id symbol.Identity) (symbol.Identity, bool) {
 	return rules.WellKnownTimestamp, true
 }
 
-// shaping is the scripted rules of a language that gives the values of the
-// struct rowName the shape of a signed integer of 64 bits, as the GraphQL
-// rules give a custom scalar of a known specification the shape of its
-// specification.
+// shaping is the scripted rules of a language that gives the values of three
+// declarations a shape, as the GraphQL rules give a custom scalar of a known
+// specification the shape of its specification and the Python rules give
+// the class list the shape of a list:
+//
+//   - the struct rowName has the shape of a signed integer of 64 bits;
+//   - the struct derivedName has the shape of a list without children;
+//   - the interface storeName has the shape of text where the reference has
+//     type arguments, and the shape of a bool otherwise.
 type shaping struct{ rules.SourceRules }
 
 var _ rules.ShapeRules = shaping{}
 
-// ShapeOf gives the struct rowName the shape of a signed integer of 64 bits,
-// and gives every other declaration none.
-func (shaping) ShapeOf(decl symbol.Symbol, _ rules.View) (rules.TypeShape, bool) {
-	if s, is := decl.(*node.Struct); !is || s.Name != rowName {
+// ShapeOf returns the shapes of the three declarations of [shaping], and
+// gives every other declaration none.
+func (shaping) ShapeOf(ref *node.TypeRef, decl symbol.Symbol, _ rules.View) (rules.TypeShape, bool) {
+	d, named := decl.(node.Declaration)
+	switch {
+	case !named:
+		return rules.TypeShape{}, false
+	case d.Identity().Name == rowName:
+		return rules.Scalar(int64Spelling, rules.ScalarInt, int64Bits), true
+	case d.Identity().Name == derivedName:
+		return rules.TypeShape{Form: symbol.FormList}, true
+	case d.Identity().Name == storeName && len(ref.Args) > 0:
+		return rules.Leaf(symbol.FormText, strSpelling), true
+	case d.Identity().Name == storeName:
+		return rules.Leaf(symbol.FormBool, boolSpelling), true
+	default:
 		return rules.TypeShape{}, false
 	}
-	return rules.Scalar(int64Spelling, rules.ScalarInt, int64Bits), true
 }
 
 // TestShape checks the fold of the kernel. The kernel folds every
@@ -154,6 +173,14 @@ func TestShape(t *testing.T) {
 			assert.Equal(t, s.Ref, rules.WellKnownTimestamp, "to the well-known identity")
 		})
 
+		t.Run("folds a target of the registry to the well-known reference", func(t *testing.T) {
+			t.Parallel()
+
+			s := rules.NewBound(scripted(), viewOnly(t), nil).TypeOf(
+				&node.TypeRef{Spelling: "context", Target: rules.WellKnownContext})
+			assert.Equal(t, s, rules.Reference("context", rules.WellKnownContext), "the well-known context")
+		})
+
 		t.Run("folds a target that its rules shape to the shape that they give it", func(t *testing.T) {
 			t.Parallel()
 
@@ -173,6 +200,65 @@ func TestShape(t *testing.T) {
 				rules.Reference(baseName, coretest.ID(svcPath, baseName, symbol.KindStruct)),
 				"a target without a shape of its rules folds to a reference to the declaration")
 		})
+
+		derivedID := coretest.ID(svcPath, derivedName, symbol.KindStruct)
+		storeID := coretest.ID(svcPath, storeName, symbol.KindInterface)
+		shapes := []struct {
+			name     string
+			give     *node.TypeRef
+			form     symbol.TypeForm
+			children []symbol.TypeForm
+		}{
+			{
+				name: "folds the type argument of a shaped list into its child",
+				give: &node.TypeRef{
+					Spelling: derivedName,
+					Target:   derivedID,
+					Args:     []*node.TypeRef{builtin(intSpelling)},
+				},
+				form:     symbol.FormList,
+				children: []symbol.TypeForm{symbol.FormScalar},
+			},
+			{
+				name: "returns a shaped list without type arguments without children",
+				give: named(svcPath, derivedName, symbol.KindStruct),
+				form: symbol.FormList,
+			},
+			{
+				name: "folds a shaped list with two type arguments to opaque",
+				give: &node.TypeRef{
+					Spelling: derivedName, Target: derivedID,
+					Args: []*node.TypeRef{builtin(intSpelling), builtin(intSpelling)},
+				},
+				form: symbol.FormOpaque,
+			},
+			{
+				name: "passes the type arguments of the reference to the shape rules",
+				give: &node.TypeRef{Spelling: storeName, Target: storeID, Args: []*node.TypeRef{builtin(strSpelling)}},
+				form: symbol.FormText,
+			},
+			{
+				name: "folds a reference without type arguments to the shape that the rules give it",
+				give: named(svcPath, storeName, symbol.KindInterface),
+				form: symbol.FormBool,
+			},
+		}
+		for _, tt := range shapes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				v, _, _ := viewOver(t, coretest.Frozen(t, hierarchy()))
+				s := rules.NewBound(shaping{scripted()}, v, nil).TypeOf(tt.give)
+				var children []symbol.TypeForm
+				for _, child := range s.Elems {
+					children = append(children, child.Form)
+				}
+				expect.Equal(t, s.Form, tt.form, "the form is the form of the shape rules, or opaque for a count "+
+					"of arguments that it does not take")
+				expect.Equal(t, children, tt.children, "the children are the folded arguments")
+				expect.Equal(t, s.Spelling, tt.give.Spelling, "the shape keeps the spelling of the reference")
+			})
+		}
 
 		t.Run("folds every structural form with its children", func(t *testing.T) {
 			t.Parallel()
@@ -353,6 +439,15 @@ func TestShape(t *testing.T) {
 				},
 				form:     symbol.FormTuple,
 				children: []symbol.TypeForm{symbol.FormScalar, symbol.FormText, symbol.FormBool},
+			},
+			{
+				name: "folds the first type argument of a builtin stream into its child",
+				give: &node.TypeRef{
+					Spelling: genSpelling,
+					Args:     []*node.TypeRef{builtin(intSpelling), builtin(strSpelling), builtin(boolSpelling)},
+				},
+				form:     symbol.FormStream,
+				children: []symbol.TypeForm{symbol.FormScalar},
 			},
 			{
 				name: "folds a builtin list of the eight-bit unsigned scalar to bytes",
@@ -536,6 +631,7 @@ func TestShape(t *testing.T) {
 			{name: "reports true for WellKnownDuration", give: rules.WellKnownDuration, want: true},
 			{name: "reports true for WellKnownEmpty", give: rules.WellKnownEmpty, want: true},
 			{name: "reports true for WellKnownError", give: rules.WellKnownError, want: true},
+			{name: "reports true for WellKnownContext", give: rules.WellKnownContext, want: true},
 			{
 				name: "reports false for a declaration",
 				give: coretest.ID(svcPath, rowName, symbol.KindStruct),

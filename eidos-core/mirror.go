@@ -45,6 +45,7 @@ func Mirror(host string, m *node.Method) *emit.Method {
 			Default:  p.Default,
 			Optional: p.Optional,
 			Variadic: p.Variadic,
+			Passing:  p.Passing,
 		})
 	}
 	returns := make([]*emit.Return, 0, len(m.Returns))

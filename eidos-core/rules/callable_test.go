@@ -15,10 +15,14 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The names of the fixture callables.
+// The names of the fixture callables, and the spellings of the result
+// type, of its unit value and of its failure in the language of results.
 const (
-	fetchName = "Fetch"
-	getName   = "Get"
+	fetchName      = "Fetch"
+	getName        = "Get"
+	resultSpelling = "Result"
+	unitSpelling   = "()"
+	errorSpelling  = "error"
 )
 
 // roles overrides the scripted language's classification the way a
@@ -54,6 +58,51 @@ type short struct {
 func (short) ReturnRoles([]*node.Return, rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	return []rules.ReturnRole{rules.ReturnValue}, rules.ErrorsNone
 }
+
+// results reports its failures in a result type, the way Rust returns
+// Result<T, E>.
+type results struct {
+	rules.SourceRules
+}
+
+// ReturnRoles gives every return the role of a value, and states the
+// result-type model where a return is spelled Result.
+func (results) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
+	model := rules.ErrorsNone
+	for _, r := range rs {
+		if r.Type.Spelling == resultSpelling {
+			model = rules.ErrorsResultType
+		}
+	}
+	return make([]rules.ReturnRole, len(rs)), model
+}
+
+// Result splits Result<T, E> into T and E, and a result of the unit value
+// into its failure alone.
+func (results) Result(ref *node.TypeRef, _ rules.View) (value, failure *node.TypeRef, ok bool) {
+	switch {
+	case ref.Spelling != resultSpelling:
+		return nil, nil, false
+	case ref.Args[0].Spelling == unitSpelling:
+		return nil, ref.Args[1], true
+	default:
+		return ref.Args[0], ref.Args[1], true
+	}
+}
+
+// contexts gives every callable the context of a call, the way protobuf
+// gives one to every rpc.
+type contexts struct {
+	rules.SourceRules
+}
+
+// contextView is the view of the context that contexts gives.
+var contextView = rules.ParamView{
+	Name: "ctx", Ref: &node.TypeRef{Spelling: "context", Target: rules.WellKnownContext}, Role: rules.ParamContext,
+}
+
+// Context returns the view of the context for every callable.
+func (contexts) Context(symbol.Symbol, rules.View) (rules.ParamView, bool) { return contextView, true }
 
 // The mapping is the kernel's and the roles are the language's, so
 // the shape of the view and the split of the work are pinned here.
@@ -192,6 +241,93 @@ func TestCallable(t *testing.T) {
 			}
 		}
 
+		t.Run("returns the way a call passes each parameter", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(svcPath, "Passed")
+			fn.Params = []*node.Param{
+				{Name: "a", Type: builtin(intSpelling), Passing: symbol.PassingPositional},
+				{Name: "b", Type: builtin(intSpelling), Passing: symbol.PassingKeyword},
+			}
+			c, _ := rules.NewBound(scripted(), viewOnly(t), nil).CallableOf(fn)
+			assert.Length(t, c.Params, 2, "each parameter has a view")
+			expect.Equal(t, c.Params[0].Passing, symbol.PassingPositional, "the first passes by position alone")
+			expect.Equal(t, c.Params[1].Passing, symbol.PassingKeyword, "the second passes by keyword alone")
+		})
+
+		t.Run("splits a return of a result type into its value and its failure", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(svcPath, "Load")
+			fn.Returns = []*node.Return{{Name: "out", Type: result(builtin(intSpelling))}}
+			c, _ := rules.NewBound(results{scripted()}, viewOnly(t), nil).CallableOf(fn)
+			assert.Length(t, c.Returns, 2, "the result has the view of its value and of its failure")
+			expect.Equal(t, c.Returns[0].Ref.Spelling, intSpelling, "the value comes first")
+			expect.Equal(t, c.Returns[0].Role, rules.ReturnValue, "the value has the role of the return")
+			expect.Equal(t, c.Returns[1].Ref.Spelling, errorSpelling, "the failure comes second")
+			expect.Equal(t, c.Returns[1].Role, rules.ReturnError, "the failure has the role of an error")
+			expect.Equal(t, c.Returns[1].Name, "out", "the failure has the name of the return")
+		})
+
+		t.Run("returns the failure alone for a result without a value", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(svcPath, "Store")
+			fn.Returns = []*node.Return{{Type: result(builtin(unitSpelling))}}
+			c, _ := rules.NewBound(results{scripted()}, viewOnly(t), nil).CallableOf(fn)
+			assert.Length(t, c.Returns, 1, "a result of the unit value has no view of a value")
+			expect.Equal(t, c.Returns[0].Role, rules.ReturnError, "the one view is the failure")
+		})
+
+		t.Run("keeps a return of another type under the result-type model", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(svcPath, "Pair")
+			fn.Returns = []*node.Return{{Type: result(builtin(intSpelling))}, {Type: builtin(strSpelling)}}
+			c, _ := rules.NewBound(results{scripted()}, viewOnly(t), nil).CallableOf(fn)
+			assert.Length(t, c.Returns, 3, "the result splits and the other return keeps one view")
+			expect.Equal(t, c.Returns[2].Ref.Spelling, strSpelling, "the other return keeps its reference")
+			expect.Equal(t, c.Returns[2].Role, rules.ReturnValue, "the other return keeps its role")
+		})
+
+		t.Run("returns one view of each return under another error model", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(svcPath, "Plain")
+			fn.Returns = []*node.Return{{Type: builtin(strSpelling)}}
+			c, _ := rules.NewBound(results{scripted()}, viewOnly(t), nil).CallableOf(fn)
+			assert.Length(t, c.Returns, 1, "a callable without a result type has one view of each return")
+			expect.Equal(t, c.Errors, rules.ErrorsNone, "the language states no failure channel")
+		})
+
+		t.Run("keeps a result type of a language without the capability", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(svcPath, "Load")
+			fn.Returns = []*node.Return{{Type: result(builtin(intSpelling))}}
+			c, _ := rules.NewBound(scripted(), viewOnly(t), nil).CallableOf(fn)
+			assert.Length(t, c.Returns, 1, "the result has one view")
+			expect.Equal(t, c.Returns[0].Ref.Spelling, resultSpelling, "the view has the reference of the result")
+		})
+
+		t.Run("puts the context of the language before the parameters", func(t *testing.T) {
+			t.Parallel()
+
+			c, _ := rules.NewBound(contexts{scripted()}, viewOnly(t), nil).CallableOf(fetch())
+			assert.Length(t, c.Params, len(fetch().Params)+1, "the context and every parameter")
+			expect.Equal(t, c.Params[0], contextView, "the context comes first")
+			expect.Equal(t, c.Params[1].Name, fetch().Params[0].Name, "the first parameter follows")
+		})
+
+		t.Run("returns the context alone for a signature without parameters", func(t *testing.T) {
+			t.Parallel()
+
+			bare := coretest.Function(svcPath, "Bare")
+			bare.Params = nil
+			c, _ := rules.NewBound(contexts{scripted()}, viewOnly(t), nil).CallableOf(bare)
+			assert.Equal(t, c.Params, []rules.ParamView{contextView}, "the one view is the context")
+		})
+
 		t.Run("returns nil lists for a bare signature", func(t *testing.T) {
 			t.Parallel()
 
@@ -230,7 +366,15 @@ func fetch() *node.Function {
 		{Name: "ctx", Type: builtin("Context")},
 		{Name: "rest", Type: builtin(intSpelling), Variadic: symbol.VariadicPositional},
 	}
-	fn.Returns = []*node.Return{{Type: builtin(strSpelling)}, {Name: "err", Type: builtin("error")}}
+	fn.Returns = []*node.Return{{Type: builtin(strSpelling)}, {Name: "err", Type: builtin(errorSpelling)}}
 	fn.Async = true
 	return fn
+}
+
+// result returns the reference Result<value, error> of the language of
+// results.
+func result(value *node.TypeRef) *node.TypeRef {
+	ref := builtin(resultSpelling)
+	ref.Args = []*node.TypeRef{value, builtin(errorSpelling)}
+	return ref
 }

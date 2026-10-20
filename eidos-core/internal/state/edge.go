@@ -133,8 +133,8 @@ func NameEdge(plan string, k plugin.NameKey) EdgeHash {
 	return hashOf(wire.AppendText(b, k.Emitted))
 }
 
-// ScopeEdge returns the hash of the edge of one collision scope of a
-// plan, the names of a package that attach to receiver: what a group
+// ScopeEdge returns the hash of the edge of one source scope of a plan,
+// the names of a source package that attach to receiver: what a group
 // records for each scope that its files declare a name in. It is dirty
 // when a name enters or leaves the scope. It allocates nothing for a
 // spelling that fits in 255 bytes.

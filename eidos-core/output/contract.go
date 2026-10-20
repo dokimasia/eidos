@@ -171,7 +171,9 @@ func (c *Contract) Brand() Brand { return c.brand }
 
 // Stamp returns the finished bytes: the marker line, one
 // derivation line per plugin and per source, one blank line, the
-// file's body unchanged, and the trailer as the final line. The
+// file's body unchanged, one blank line, and the trailer as the final
+// line. gofmt separates a comment after the last declaration of a file
+// by one blank line, so it leaves a stamped Go file unchanged. The
 // derivation is sorted and deduplicated here, so two renderers
 // listing one file's emitters in two orders stamp one frame.
 //
@@ -231,6 +233,7 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	}
 	out.WriteByte('\n')
 	out.Write(f.Body)
+	out.WriteByte('\n')
 	out.WriteString(c.opener)
 	out.WriteString(string(c.brand))
 	out.WriteString(trailerKey)
@@ -242,7 +245,10 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 
 // Verify reads a stamped file back and checks it whole: the frame
 // parses, the trailer names this contract's brand, the trailer
-// is the file's final line, and its digest matches the body.
+// is the file's final line, and its digest matches the body. A file
+// whose trailer follows the body on the next line verifies too, and so
+// does such a file after a formatter put a blank line before the
+// trailer.
 //
 // It returns the record it verified. Anything appended after the
 // trailer, another brand's file, or a body edited since stamping
@@ -266,7 +272,7 @@ func verify(stamped []byte, brand Brand) (Provenance, error) {
 			string(f.record.Brand), string(brand),
 		)
 	}
-	if !attests(f.body, f.record.Hash) {
+	if !f.intact() {
 		return Provenance{}, fmt.Errorf(
 			"output: the body hashes to %s and the trailer claims %s",
 			digest(f.body), f.record.Hash,
@@ -300,11 +306,23 @@ func HasTrailerKey(tail []byte) bool {
 	return bytes.Contains(tail, []byte(trailerKey))
 }
 
-// frame is one parsed stamped file: the record it contains and the
-// body its trailer attests.
+// frame is one parsed stamped file: the record it contains, the body
+// its trailer attests, and the bytes between the frame's blank line and
+// the trailer. The body is those bytes without the blank line that the
+// stamp writes before the trailer, where they end in a blank line.
 type frame struct {
 	record Provenance
 	body   []byte
+	region []byte
+}
+
+// intact reports whether the trailer attests the body. Where the last
+// blank line of the region is part of the body, as in a file whose
+// trailer follows a body that ends in a blank line, the trailer attests
+// the region whole. intact spells each claim on the stack and does not
+// allocate.
+func (f frame) intact() bool {
+	return attests(f.body, f.record.Hash) || len(f.region) != len(f.body) && attests(f.region, f.record.Hash)
 }
 
 // parse reads a stamped file's frame without being told the brand or
@@ -350,9 +368,11 @@ func parse(stamped []byte) (frame, bool) {
 
 // head reads the frame above the body: the marker, the derivation
 // lines, and the blank line that ends them. Everything after that
-// line is the body, byte for byte. The frame's lines copy into one
-// string, which the record's derivation values are parts of, so the
-// record keeps none of the body.
+// line is the region of the body, byte for byte, and the body is the
+// region without its last line where that line is blank: the blank
+// line that the stamp writes before the trailer. The frame's lines copy
+// into one string, which the record's derivation values are parts of,
+// so the record keeps none of the body.
 func (c *Contract) head(above []byte, hash string) (frame, bool) {
 	end := bytes.Index(above, []byte("\n\n"))
 	if end < 0 {
@@ -392,7 +412,12 @@ func (c *Contract) head(above []byte, hash string) (frame, bool) {
 			rec.Sources = append(rec.Sources, value)
 		}
 	}
-	return frame{record: rec, body: above[end+2:]}, true
+	region := above[end+2:]
+	body := region
+	if bytes.HasSuffix(region, []byte("\n\n")) {
+		body = region[:len(region)-1]
+	}
+	return frame{record: rec, body: body, region: region}, true
 }
 
 // marker reports whether a line is the frame's marker under the

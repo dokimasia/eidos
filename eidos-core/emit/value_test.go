@@ -15,10 +15,13 @@ import (
 )
 
 // The fixture values: the text of an integer literal, the type a
-// conversion and a composite spell, and the function a call names.
+// conversion and a composite spell, the function type of a function value
+// and the channel type of a make.
 const (
-	fortyTwo  = "42"
-	pointType = "Point"
+	fortyTwo    = "42"
+	pointType   = "Point"
+	handlerType = "func() int"
+	streamType  = "chan int"
 )
 
 // unix is the function of the call fixtures, and second is the constant of
@@ -48,7 +51,9 @@ func TestValue(t *testing.T) {
 			{name: "returns address for ValueAddress", give: emit.ValueAddress, want: "address"},
 			{name: "returns name for ValueName", give: emit.ValueName, want: "name"},
 			{name: "returns construction for ValueConstruction", give: emit.ValueConstruction, want: "construction"},
-			{name: "returns the number of a kind nothing declares", give: emit.ValueKind(9), want: "9"},
+			{name: "returns func for ValueFunc", give: emit.ValueFunc, want: "func"},
+			{name: "returns make for ValueMake", give: emit.ValueMake, want: "make"},
+			{name: "returns the number of a kind nothing declares", give: emit.ValueKind(99), want: "99"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -98,6 +103,45 @@ func TestValue(t *testing.T) {
 
 			assert.False(t, forty().IsZero(), "a literal names something")
 		})
+	})
+
+	t.Run("Fresh", func(t *testing.T) {
+		t.Parallel()
+
+		handler := &emit.TypeRef{Spelling: handlerType, Form: symbol.FormFunc}
+		tests := []struct {
+			name string
+			give emit.Value
+			want bool
+		}{
+			{name: "reports true for a function", give: emit.Func(handler), want: true},
+			{name: "reports true for a make", give: emit.Make(&emit.TypeRef{Spelling: streamType}), want: true},
+			{
+				name: "reports true for a conversion of a function",
+				give: emit.Conversion(&emit.TypeRef{Spelling: pointType}, emit.Func(handler)), want: true,
+			},
+			{name: "reports false for a literal", give: forty(), want: false},
+			{
+				name: "reports false for a conversion of a literal",
+				give: emit.Conversion(&emit.TypeRef{Spelling: pointType}, forty()), want: false,
+			},
+			{
+				name: "reports false for a composite with a function inside",
+				give: emit.Composite(&emit.TypeRef{Spelling: pointType}, emit.NamedField("F", emit.Func(handler))),
+				want: false,
+			},
+			{
+				name: "reports false for a conversion without an inner value",
+				give: emit.Value{Kind: emit.ValueConversion},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.Fresh(), tt.want, "a function and a make are new values")
+			})
+		}
 	})
 
 	t.Run("Literal", func(t *testing.T) {
@@ -264,6 +308,40 @@ func TestValue(t *testing.T) {
 		})
 	})
 
+	t.Run("Func", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a function of the type that returns the results", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: handlerType, Form: symbol.FormFunc}
+			got := emit.Func(ref, forty())
+			assert.Equal(t, got.Kind, emit.ValueFunc, "a function")
+			assert.Equal(t, got.Type, ref, "of the type given", assert.ByIdentity())
+			assert.Equal(t, got.Args, []emit.Value{forty()}, "that returns the results given")
+		})
+
+		t.Run("returns a function without results", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: handlerType, Form: symbol.FormFunc}
+			assert.Equal(t, emit.Func(ref), emit.Value{Kind: emit.ValueFunc, Type: ref},
+				"the type is the only field besides the kind")
+		})
+	})
+
+	t.Run("Make", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the empty value of the type", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: streamType, Form: symbol.FormStream}
+			assert.Equal(t, emit.Make(ref), emit.Value{Kind: emit.ValueMake, Type: ref},
+				"the type is the only field besides the kind")
+		})
+	})
+
 	t.Run("JSON", func(t *testing.T) {
 		t.Parallel()
 
@@ -271,11 +349,15 @@ func TestValue(t *testing.T) {
 			t.Parallel()
 
 			ref := &emit.TypeRef{Spelling: pointType}
+			handler := emit.Func(&emit.TypeRef{Spelling: handlerType, Form: symbol.FormFunc}, forty())
+			stream := emit.Make(&emit.TypeRef{Spelling: streamType, Form: symbol.FormStream})
 			in := emit.Address(emit.Composite(ref,
 				emit.ValueField{Name: "X", Value: emit.Conversion(ref, forty())},
 				emit.ValueField{Name: "Y", Value: emit.Number(emit.LiteralFloat, "2.5", 32)},
 				emit.ValueField{Name: "Z", Value: emit.Name(second)},
 				emit.ValueField{Name: "W", Value: emit.Construction(ref, forty())},
+				emit.ValueField{Name: "F", Value: handler},
+				emit.ValueField{Name: "M", Value: stream},
 			))
 			assert.RoundTrip(t, func(v emit.Value) ([]byte, error) { return json.Marshal(v) },
 				func(b []byte) (emit.Value, error) {
@@ -306,6 +388,10 @@ func TestValueAllocs(t *testing.T) {
 	var zero bool
 	assert.MaxAllocs(t, func() { zero = value.IsZero() }, 0, "IsZero allocates nothing")
 	assert.False(t, zero, "a literal names something")
+	converted := emit.Conversion(ref, emit.Func(ref))
+	var fresh bool
+	assert.MaxAllocs(t, func() { fresh = converted.Fresh() }, 0, "Fresh allocates nothing")
+	assert.True(t, fresh, "Fresh reports true for a conversion of a function")
 	assert.MaxAllocs(t, func() { got = emit.Literal(emit.LiteralInt, fortyTwo) }, 0, "Literal allocates nothing")
 	assert.MaxAllocs(t, func() { got = emit.Number(emit.LiteralFloat, "1.5", 32) }, 0, "Number allocates nothing")
 	assert.MaxAllocs(t, func() { got = emit.Raw("golang", "time.Second") }, 0, "Raw allocates nothing")
@@ -323,6 +409,10 @@ func TestValueAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = emit.Construction(ref, value) }, 1,
 		"Construction allocates its list of arguments")
 	assert.Length(t, got.Args, 1, "Construction returns the argument given")
+	assert.MaxAllocs(t, func() { got = emit.Func(ref, value) }, 1, "Func allocates its list of results")
+	assert.Length(t, got.Args, 1, "Func returns the result given")
+	assert.MaxAllocs(t, func() { got = emit.Make(ref) }, 0, "Make allocates nothing")
+	assert.Equal(t, got.Type, ref, "Make returns the type given", assert.ByIdentity())
 }
 
 // BenchmarkValue measures the kinds' spellings, the zero question, and
@@ -361,6 +451,17 @@ func BenchmarkValue(b *testing.B) {
 			got = value.IsZero()
 		}
 		assert.False(b, got, "a literal names something")
+	})
+
+	b.Run("Fresh", func(b *testing.B) {
+		converted := emit.Conversion(ref, emit.Func(ref))
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = converted.Fresh()
+		}
+		assert.True(b, got, "Fresh reports true for a conversion of a function")
 	})
 
 	b.Run("Literal", func(b *testing.B) {
@@ -482,6 +583,26 @@ func BenchmarkValue(b *testing.B) {
 			got = emit.Construction(ref, value)
 		}
 		assert.Length(b, got.Args, 1, "Construction holds its argument")
+	})
+
+	b.Run("Func", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got emit.Value
+		for c.Loop() {
+			got = emit.Func(ref, value)
+		}
+		assert.Length(b, got.Args, 1, "Func holds its result")
+	})
+
+	b.Run("Make", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got emit.Value
+		for c.Loop() {
+			got = emit.Make(ref)
+		}
+		assert.Equal(b, got.Kind, emit.ValueMake, "Make returns a make")
 	})
 }
 

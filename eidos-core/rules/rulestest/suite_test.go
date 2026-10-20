@@ -99,6 +99,31 @@ func TestSuite(t *testing.T) {
 				return nested{rulestest.Scripted()}, f
 			})
 		})
+
+		fresh := []struct {
+			name string
+			give func(t *emit.TypeRef) emit.Value
+		}{
+			{
+				name: "passes a pair of two functions of one type",
+				give: func(t *emit.TypeRef) emit.Value { return emit.Func(t) },
+			},
+			{name: "passes a pair of two makes of one type", give: emit.Make},
+			{
+				name: "passes a pair of two conversions of functions",
+				give: func(t *emit.TypeRef) emit.Value { return emit.Conversion(t, emit.Func(t)) },
+			},
+		}
+		for _, tt := range fresh {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				rulestest.AssertDistinctSamples(t, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
+					_, f := setup(tb)
+					return twice{SourceRules: rulestest.Scripted(), value: tt.give}, f
+				})
+			})
+		}
 	})
 
 	t.Run("AssertRefusesWithReason", func(t *testing.T) {
@@ -260,6 +285,19 @@ func (nested) DeriveSamples(ref *node.TypeRef, _ string, _ rules.View) (rules.Sa
 		return rules.Of(emit.Composite(rules.EmitRef(ref), emit.NamedField("a", inner)))
 	}
 	return outer(nestedSample), outer(nestedAlternate)
+}
+
+// twice derives one tree for both halves through value. A function and a
+// make are new values wherever a body writes them, so the halves of such a
+// pair differ although their trees are equal.
+type twice struct {
+	rules.SourceRules
+	value func(t *emit.TypeRef) emit.Value
+}
+
+// DeriveSamples returns the tree of value for the reference, twice.
+func (w twice) DeriveSamples(ref *node.TypeRef, _ string, _ rules.View) (rules.Sample, rules.Sample) {
+	return rules.Of(w.value(rules.EmitRef(ref))), rules.Of(w.value(rules.EmitRef(ref)))
 }
 
 // silent refuses without a reason.

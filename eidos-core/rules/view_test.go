@@ -5,6 +5,7 @@ package rules_test
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -24,9 +25,11 @@ const (
 	authoredText      = "us-east"
 	authoredAlternate = "eu-west"
 	authoredTrue      = "true"
+	authoredFalse     = "false"
 	authoredNumber    = "7"
 	authoredFloat     = "1.5"
 	authoredRow       = "Row{}"
+	authoredName      = "Top"
 	modulePath        = "example.test/svc"
 	foreignLang       = symbol.Lang("other")
 )
@@ -51,14 +54,19 @@ const (
 	codeName   = "Code"   // a type defined over string
 )
 
-// authoredAllocs is the allocation count of the lift of a value that an
-// author stated on a declaration of a text type. The lift allocates the
-// memo of folded shapes of the binding, the first group of the memo, and
-// the shape that the memo stores out of line.
-const authoredAllocs = 3
+// The allocation counts of the lift of a value that an author stated. A
+// text that the rules read allocates the memo of folded shapes of the
+// binding of the lift. A text of a builtin type that the rules do not read
+// also allocates the first group of the memo and the shape that the memo
+// stores out of line.
+const (
+	authoredAllocs = 1
+	foldedAllocs   = 3
+)
 
 // widths classifies the sized spellings as a language with number widths
-// does, and passes every other spelling to the rules that it wraps.
+// does, reads their literals, and passes every other spelling to the rules
+// that it wraps.
 type widths struct {
 	rules.SourceRules
 }
@@ -67,6 +75,28 @@ type widths struct {
 // the name of the subject of its scope. It reads nothing in a scope
 // without a file, so a case proves the scope that a caller passes.
 type scoped struct {
+	rules.SourceRules
+}
+
+// converting is the scripted rules with the text rules of a language whose
+// text types take a string literal through a call, as a String of Rust
+// takes String::from("a").
+type converting struct {
+	rules.SourceRules
+}
+
+// convertID is the function through which [converting] builds a text.
+var convertID = symbol.Identity{Lang: coretest.Lang, Name: "from", Kind: symbol.KindFunction}
+
+// Text returns the call of [convertID] with the string literal of text.
+func (converting) Text(_ *node.TypeRef, text string, _ rules.View) emit.Value {
+	return emit.Call(convertID, emit.Literal(emit.LiteralString, text))
+}
+
+// unread is the scripted rules with a LiteralFor that reads no text, so a
+// case proves what the lift does with a text that its language does not
+// read.
+type unread struct {
 	rules.SourceRules
 }
 
@@ -80,6 +110,40 @@ func (w widths) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	default:
 		return w.SourceRules.Builtin(ref, v)
 	}
+}
+
+// LiteralFor reads a truth value of bool, and a decimal number of int64
+// and float32 at their widths. It passes every other reference to the
+// rules that it wraps, and reports false for a text that is no literal of
+// a sized spelling.
+func (w widths) LiteralFor(s rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	if ref == nil {
+		return w.SourceRules.LiteralFor(s, ref, text, v)
+	}
+	switch ref.Spelling {
+	case boolSpelling:
+		if text != authoredTrue && text != authoredFalse {
+			return emit.Value{}, false
+		}
+		return emit.Literal(emit.LiteralBool, text), true
+	case int64Spelling:
+		if _, err := strconv.ParseInt(text, 10, int64Bits); err != nil {
+			return emit.Value{}, false
+		}
+		return emit.Number(emit.LiteralInt, text, int64Bits), true
+	case float32Spelling:
+		if _, err := strconv.ParseFloat(text, float32Bits); err != nil {
+			return emit.Value{}, false
+		}
+		return emit.Number(emit.LiteralFloat, text, float32Bits), true
+	default:
+		return w.SourceRules.LiteralFor(s, ref, text, v)
+	}
+}
+
+// LiteralFor reads no text.
+func (unread) LiteralFor(rules.Scope, *node.TypeRef, string, rules.View) (emit.Value, bool) {
+	return emit.Value{}, false
 }
 
 // LiteralFor returns the name of the subject of s, and reports false for a
@@ -343,6 +407,95 @@ func TestView(t *testing.T) {
 				assert.Equal(t, sample.Value, tt.want, "the stated text lifts by the shape of the type")
 			})
 		}
+
+		t.Run("returns the value that the text rules return for a text type", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy(), aliases()))
+			subject := rowField(nameField)
+			stamp(t, facts, v.Kernel().Sample, subject, authoredText)
+			sample, _ := v.Authored(converting{unread{scripted()}}, subject, builtin(strSpelling))
+			assert.Equal(t, sample.Value, emit.Call(convertID, emit.Literal(emit.LiteralString, authoredText)),
+				"the text lifts through the text rules of the language")
+		})
+
+		unreadTexts := []struct {
+			name     string
+			giveRef  *node.TypeRef
+			giveText string
+			want     rules.Sample
+		}{
+			{
+				name:     "returns a string with the text for a text type whose text the rules do not read",
+				giveRef:  builtin(strSpelling),
+				giveText: authoredText,
+				want:     rules.Of(emit.Literal(emit.LiteralString, authoredText)),
+			},
+			{
+				name:     "returns RefusedAuthored for a boolean type whose text the rules do not read",
+				giveRef:  builtin(boolSpelling),
+				giveText: authoredName,
+				want:     rules.Refused(rules.RefusedAuthored),
+			},
+			{
+				name:     "returns RefusedAuthored for an integer type whose text the rules do not read",
+				giveRef:  builtin(int64Spelling),
+				giveText: authoredName,
+				want:     rules.Refused(rules.RefusedAuthored),
+			},
+			{
+				name:     "returns RefusedAuthored for a float type whose text the rules do not read",
+				giveRef:  builtin(float32Spelling),
+				giveText: authoredName,
+				want:     rules.Refused(rules.RefusedAuthored),
+			},
+		}
+		for _, tt := range unreadTexts {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy(), aliases()))
+				subject := rowField(nameField)
+				stamp(t, facts, v.Kernel().Sample, subject, tt.giveText)
+				sample, _ := v.Authored(widths{unread{scripted()}}, subject, tt.giveRef)
+				assert.Equal(t, sample, tt.want, "the shape decides the lift of a text that its language does not read")
+			})
+		}
+
+		read := []struct {
+			name    string
+			giveRef *node.TypeRef
+		}{
+			{name: "returns the value that the rules read for a text type", giveRef: builtin(strSpelling)},
+			{name: "returns the value that the rules read for an integer type", giveRef: builtin(intSpelling)},
+		}
+		for _, tt := range read {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
+				subject := rowField(nameField)
+				stamp(t, facts, v.Kernel().Sample, subject, authoredName)
+				sample, _ := v.Authored(scoped{scripted()}, subject, tt.giveRef)
+				assert.Equal(t, sample.Value, emit.Name(subject),
+					"the text lifts through LiteralFor before the shape of the type decides")
+			})
+		}
+
+		t.Run("returns the value that the rules of the language of the declaration read", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
+			row := coretest.ID(svcPath, rowName, symbol.KindStruct)
+			stamp(t, facts, v.Kernel().Sample, row, authoredRow)
+			foreign := symbol.Identity{
+				Lang: foreignLang, Package: svcPath, Owner: rowName, Name: nameField, Kind: symbol.KindField,
+			}
+			resolved := v.WithRules(func(symbol.Lang) rules.SourceRules { return scoped{scripted()} })
+			sample, _ := resolved.Authored(otherLang{scripted()}, foreign, named(svcPath, rowName, symbol.KindStruct))
+			assert.Equal(t, sample.Value, emit.Name(row),
+				"the resolver of the view returns the rules that read the text of the declaration of the type")
+		})
 
 		t.Run("returns the value of the subject before the value of the type", func(t *testing.T) {
 			t.Parallel()
@@ -642,7 +795,7 @@ func viewCalls(tb assert.TB) []allocCall {
 	stamp(tb, facts, keys.Sample, stated, authoredText)
 	assert.NoError(tb, meta.Stamp(facts, keys.Module, modulePath, meta.Claim{Subject: pkg}), "a fact stamps")
 	strRef, intRef := builtin(strSpelling), builtin(intSpelling)
-	var scopedSource rules.SourceRules = scoped{source}
+	var scopedSource, unreadSource rules.SourceRules = scoped{source}, unread{source}
 	rowRef := named(svcPath, rowName, symbol.KindStruct)
 	reader := v.Reader()
 	var (
@@ -700,6 +853,14 @@ func viewCalls(tb assert.TB) []allocCall {
 			call: func() { sample, _ = v.Authored(scopedSource, stated, rowRef) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value, emit.Name(stated), "Authored returns the value that LiteralFor reads")
+			},
+		},
+		{
+			name: "Authored", caseName: "a stated value that the rules do not read", allocs: foldedAllocs,
+			call: func() { sample, _ = v.Authored(unreadSource, stated, strRef) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value, emit.Literal(emit.LiteralString, authoredText),
+					"Authored returns the string literal that the shape of the type decides")
 			},
 		},
 		{

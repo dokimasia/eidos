@@ -73,6 +73,20 @@ func (k keptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 	return out
 }
 
+// InFileScope returns the entries of the namespace and receiver, sorted by
+// settled name. The namespace of a kept file is its package. It allocates
+// the list it returns.
+func (k keptNames) InFileScope(scope symbol.Identity, receiver string) []plugin.NameEntry {
+	var out []plugin.NameEntry
+	for _, e := range k {
+		if e.FilePkg == scope && e.Receiver == receiver {
+			out = append(out, e)
+		}
+	}
+	slices.SortFunc(out, func(a, b plugin.NameEntry) int { return strings.Compare(a.Settled, b.Settled) })
+	return out
+}
+
 // TestNames checks the name table of a plan. The table lists what each
 // file declares, under the names that the references of a kept file
 // resolve against.

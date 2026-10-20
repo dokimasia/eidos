@@ -86,6 +86,12 @@ type RenderContext struct {
 	// load. The workers of a render call it concurrently, so it must be
 	// safe for concurrent use. A nil Names has no name for any path.
 	Names func(path string) (string, bool)
+	// Policy is the plan's resolved lowering policy, the one that each
+	// generator of the plan receives. A target whose output depends on a
+	// policy reads it in the render, such as the version of Python that the
+	// files run on. The zero Policy declares no key, which a context of a
+	// test without a plan has.
+	Policy Policy
 	// Sink takes the pass's findings: an unresolved reference, a
 	// dropped slot marker, a format failure.
 	Sink *diag.Sink

@@ -61,6 +61,12 @@ const (
 	// it, so a kind template reads a version or a package that the
 	// header states.
 	BuiltinHeader = "header"
+	// BuiltinValue writes one emit.Value through the language's
+	// [Language.Value] and records its imports into the file under
+	// render. Every template of the file can call it, so a template
+	// writes a value inside an expression, such as a field of a
+	// composite literal or the initializer of a variable.
+	BuiltinValue = "value"
 )
 
 // errUnbound is the error of a builtin that a template calls before a
@@ -72,7 +78,7 @@ var errUnbound = errors.New("render: the builtin is unbound")
 func reserved(name string) bool {
 	switch name {
 	case BuiltinBody, BuiltinMemberBody, BuiltinUse, BuiltinImports, BuiltinDecls,
-		BuiltinSlots, BuiltinSlot, BuiltinNested, BuiltinHeader:
+		BuiltinSlots, BuiltinSlot, BuiltinNested, BuiltinHeader, BuiltinValue:
 		return true
 	}
 	return false
@@ -91,18 +97,23 @@ func unbound() template.FuncMap {
 		BuiltinDecls:      refuse,
 		BuiltinNested:     func(string, symbol.Symbol) (string, error) { return refuse() },
 		BuiltinHeader:     func() (*emit.File, error) { return nil, errUnbound },
+		BuiltinValue:      func(emit.Value) (string, error) { return "", errUnbound },
 	}
 }
 
 // referenceBuiltins is the builtin set a body-claiming template
-// resolves against: the slots and slot markers, the use recorder
-// and the header of the file. The render binds it to a frame and
-// the lint binds stubs, so both parse against one set of names.
+// resolves against: the slots and slot markers, the use recorder,
+// the header of the file and the writer of values. The render binds
+// it to a frame and the lint binds stubs, so both parse against one
+// set of names.
 func referenceBuiltins(
 	all func() (string, error),
 	one func(string) (string, error),
 	use func(string, ...string) (string, error),
 	header func() *emit.File,
+	value func(emit.Value) (string, error),
 ) template.FuncMap {
-	return template.FuncMap{BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use, BuiltinHeader: header}
+	return template.FuncMap{
+		BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use, BuiltinHeader: header, BuiltinValue: value,
+	}
 }

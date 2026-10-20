@@ -182,7 +182,51 @@ func TestChanges(t *testing.T) {
 			warm, _ := warmCold(t, stdTree(), withAPI("package svc/api\ntype User string\nstamp fake.testFile yes\n"))
 			assert.Equal(t, warm.report.Changes.Restamped, []symbol.Identity{apiFileID}, "the API file has a new stamp")
 		})
+
+		libPackage := symbol.Identity{Lang: frontendtest.ScriptedLang, Package: libPath, Kind: symbol.KindPackage}
+
+		t.Run("reports a package that moves into a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			warm := vendoredAfter(t)
+			assert.Equal(t, warm.report.Changes.Dependency, []symbol.Identity{libPackage},
+				"the partition loaded the library, and a dependency round loads it now")
+		})
+
+		t.Run("reports a declaration of a package that moves into a dependency round as changed", func(t *testing.T) {
+			t.Parallel()
+
+			warm := vendoredAfter(t)
+			assert.Contains(t, warm.report.Changes.Changed, declIn(libPath, libName),
+				"a rule of the generate phase skips the declaration now")
+		})
+
+		t.Run("reports a package that leaves a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			prior := committed(t, loadOf(t, vendorTree(), with(vendoring())).report)
+			warm := loadOf(t, vendorTree(), with(recorded()), func(cfg *load.Config) { cfg.Prior = prior })
+			assert.Equal(t, warm.report.Changes.Dependency, []symbol.Identity{libPackage},
+				"a dependency round loaded the library, and the partition loads it now")
+		})
+
+		t.Run("reports no package of a kept dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			warm, _ := warmCold(t, depTree(), depTree(), with(recorded()), stores(depStore()))
+			assert.Empty(t, warm.report.Changes.Dependency, "the rounds load the same packages")
+		})
 	})
+}
+
+// vendoredAfter returns a warm load of the vendored tree, in which a
+// dependency round loads the library, over the record of a load in which
+// the partition loaded the same file.
+func vendoredAfter(tb testing.TB) loaded {
+	tb.Helper()
+
+	prior := committed(tb, loadOf(tb, vendorTree(), with(recorded())).report)
+	return loadOf(tb, vendorTree(), with(vendoring()), func(cfg *load.Config) { cfg.Prior = prior })
 }
 
 // storeBody returns the body of the standard tree's store file with the

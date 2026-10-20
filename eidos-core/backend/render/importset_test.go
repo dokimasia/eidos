@@ -4,12 +4,21 @@
 package render_test
 
 import (
+	"cmp"
+	"strconv"
 	"testing"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
+	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -35,6 +44,13 @@ const (
 
 // referentLang is the language of the files that [referents] lists.
 const referentLang symbol.Lang = "fixture"
+
+// The body's fixture: the helper that reports whether a body is under
+// render, and the host that [owned] writes for a body without one.
+const (
+	bodiedHelper = "bodied"
+	noHost       = "none"
+)
 
 // The size of [filledSet]: four entries over three paths, and one package
 // whose declared name the file read.
@@ -181,6 +197,206 @@ func TestImportSet(t *testing.T) {
 
 			var s render.ImportSet
 			assert.False(t, s.Reserved(rowName), "nothing took the name")
+		})
+	})
+
+	t.Run("Enter", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("finishes the declarations that the file declares before the entered one", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName)
+			s.Enter(rowName)
+			assert.False(t, s.Pending(storeName), "the earlier declaration has rendered")
+		})
+
+		t.Run("keeps the entered declaration pending", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName)
+			s.Enter(rowName)
+			assert.True(t, s.Pending(rowName), "the declaration under render has not finished")
+		})
+
+		t.Run("keeps the declaration under render for a name that no declaration takes", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName)
+			s.Enter(rowName)
+			s.Enter(storeLocal)
+			assert.False(t, s.Pending(storeName), "the earlier declaration stays finished")
+		})
+
+		t.Run("keeps the declaration under render for a name that an import binds", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName)
+			s.Enter(rowName)
+			s.Bind(storePkg, storeLocal)
+			s.Enter(storeLocal)
+			assert.False(t, s.Pending(storeName), "an import is not a declaration of the file")
+		})
+	})
+
+	t.Run("Pending", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for every declaration before the first Enter", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName)
+			assert.True(t, s.Pending(storeName), "nothing has rendered")
+		})
+
+		t.Run("reports false for a name that no declaration takes", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName)
+			assert.False(t, s.Pending(rowName), "the file declares no such name")
+		})
+
+		t.Run("reports false for a name that an import binds", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.BindItem(storePkg, rowName, false)
+			assert.False(t, s.Pending(rowName), "an import is not a declaration of the file")
+		})
+
+		t.Run("gives a name the position of its first reservation", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName, storeName)
+			s.Enter(rowName)
+			assert.False(t, s.Pending(storeName), "the first declaration of the name has rendered")
+		})
+	})
+
+	t.Run("Body", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns no callable for a set outside a render", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			callable, host := s.Body()
+			expect.Nil(t, callable, "no body is under render")
+			expect.Nil(t, host, "no template places a body")
+		})
+
+		t.Run("returns no callable to a helper outside a body", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Funcs = func(set *render.ImportSet) template.FuncMap {
+				return template.FuncMap{bodiedHelper: func() bool {
+					callable, _ := set.Body()
+					return callable != nil
+				}}
+			}
+			l.Kinds[symbol.KindStruct] = "type {{.Name}} " + action(bodiedHelper) + "\n"
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" false\n",
+				"the struct template runs outside a body")
+		})
+
+		statement := emit.Body{Stmts: []emit.Stmt{call(contentCall)}}
+		// host returns a unit of one struct that nests inner and has a
+		// method whose body is statement.
+		host := func(inner ...symbol.Symbol) plugin.Unit {
+			row := &emit.Struct{Name: rowName}
+			for _, d := range inner {
+				row.Types.Append(d)
+			}
+			row.Methods.Append(&emit.Method{Name: handleName, Body: statement})
+			u := unitOf(emitter, storeKey)
+			u.Decls = append(u.Decls, row)
+			return u
+		}
+		nested := &emit.Struct{Name: innerName}
+		nested.Methods.Append(&emit.Method{Name: handleName, Body: statement})
+
+		tests := []struct {
+			name string
+			give plugin.Unit
+			want string
+		}{
+			{
+				name: "returns the function as the host of its own body",
+				give: fn(storeKey, handleName, statement),
+				want: handleName + " in " + handleName,
+			},
+			{
+				name: "returns the type that places a method as the host of its body",
+				give: host(),
+				want: handleName + " in " + rowName,
+			},
+			{
+				name: "returns the nested type as the host of the body of its method",
+				give: host(nested),
+				want: handleName + " in " + innerName,
+			},
+			{
+				name: "returns the host of a nested type as the host of a body after it",
+				give: host(&emit.Struct{Name: innerName}),
+				want: handleName + " in " + rowName,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				files, sink := runPass(t, owning(), seeded(t, tt.give))
+				coretest.AssertCodes(t, sink)
+				assert.Contains(t, string(files[0].Body), "\t"+tt.want+"\n",
+					"the statement names the callable and its host")
+			})
+		}
+
+		t.Run("returns no host for a body that the template of a claimed file places", func(t *testing.T) {
+			t.Parallel()
+
+			p, err := render.New(passName, owning())
+			assert.NoError(t, err, "the language composes")
+			sink := diag.NewSink()
+			e := seeded(t, claimedUnit(handleName, nil, statement))
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName,
+				Trees: claimTree(recordsRange + action(render.BuiltinBody, ".Decl") + rangeEnd),
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), "\t"+handleName+" in "+noHost+"\n",
+				"the file template places the body of a record")
+		})
+	})
+
+	t.Run("Policy", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the policy that SetPolicy set", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetPolicy(widthPolicy(t))
+			assert.Equal(t, s.Policy().Choice(widthKey), wideWidth, "the set has the policy of the render")
+		})
+
+		t.Run("returns the zero policy for a set without one", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			_, declared := s.Policy().Lookup(widthKey)
+			assert.False(t, declared, "the zero policy declares no key")
 		})
 	})
 
@@ -660,6 +876,46 @@ func TestImportSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Has", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name     string
+			givePath string
+			giveName string
+			want     bool
+		}{
+			{
+				name:     "reports true for an entry that AddNamed recorded",
+				givePath: auditPkg,
+				giveName: rowName,
+				want:     true,
+			},
+			{name: "reports true for a path that Add recorded", givePath: sidePkg, want: true},
+			{
+				name:     "reports false for a name that the set records under another path",
+				givePath: sidePkg,
+				giveName: rowName,
+			},
+			{name: "reports false for a name that AddType alone recorded", givePath: auditPkg, giveName: storeName},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, filledSet(t).Has(tt.givePath, tt.giveName), tt.want, "the entry of the set")
+			})
+		}
+
+		t.Run("reports false after a Reset", func(t *testing.T) {
+			t.Parallel()
+
+			s := filledSet(t)
+			s.Reset()
+			assert.False(t, s.Has(auditPkg, rowName), "the next file records its own entries")
+		})
+	})
+
 	t.Run("Paths", func(t *testing.T) {
 		t.Parallel()
 
@@ -778,6 +1034,26 @@ func TestImportSet(t *testing.T) {
 			_, held := s.Referent(storePkg)
 			assert.False(t, held, "the next file refers into its own files")
 		})
+
+		t.Run("drops the declaration under render", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.Reserve(storeName, rowName)
+			s.Enter(rowName)
+			s.Reset()
+			s.Reserve(storeName, rowName)
+			assert.True(t, s.Pending(storeName), "the next file renders its declarations from the first")
+		})
+
+		t.Run("keeps the policy of the set", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetPolicy(widthPolicy(t))
+			s.Reset()
+			assert.Equal(t, s.Policy().Choice(widthKey), wideWidth, "the next file renders under the same policy")
+		})
 	})
 }
 
@@ -800,13 +1076,25 @@ func TestImportSetAllocs(t *testing.T) {
 		}, tt.allocs, msg)
 		assert.InRange(t, s.Len(), 0, 2, tt.name+" records at most two paths")
 	}
-	full := filledSet()
+	full := filledSet(t)
 	var home string
 	assert.MaxAllocs(t, func() { home = full.Home() }, 0, "Home allocates nothing")
 	assert.Equal(t, home, storePkg, "Home returns the file's own package")
 	var reserved bool
 	assert.MaxAllocs(t, func() { reserved = full.Reserved(storeName) }, 0, "Reserved allocates nothing")
 	assert.True(t, reserved, "Reserved reports the file's own declaration")
+	var pending bool
+	assert.MaxAllocs(t, func() { pending = full.Pending(storeName) }, 0, "Pending allocates nothing")
+	assert.True(t, pending, "Pending reports the declaration under render")
+	var callable symbol.Symbol
+	assert.MaxAllocs(t, func() { callable, _ = full.Body() }, 0, "Body allocates nothing")
+	assert.Nil(t, callable, "Body returns no callable outside a render")
+	var policy plugin.Policy
+	assert.MaxAllocs(t, func() { policy = full.Policy() }, 0, "Policy allocates nothing")
+	assert.Equal(t, policy.Choice(widthKey), wideWidth, "Policy returns the policy of the render")
+	var has bool
+	assert.MaxAllocs(t, func() { has = full.Has(auditPkg, rowName) }, 0, "Has allocates nothing")
+	assert.True(t, has, "Has reports the entry that the file recorded")
 	var paths []string
 	assert.MaxAllocs(t, func() { paths = full.Paths() }, 1, "Paths allocates the list it returns")
 	assert.Length(t, paths, filledPaths, "Paths returns every distinct path")
@@ -850,7 +1138,7 @@ func BenchmarkImportSet(b *testing.B) {
 		})
 	}
 
-	full := filledSet()
+	full := filledSet(b)
 
 	b.Run("Home", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(0)
@@ -870,6 +1158,46 @@ func BenchmarkImportSet(b *testing.B) {
 			got = full.Reserved(storeName)
 		}
 		assert.True(b, got, "Reserved reports the file's own declaration")
+	})
+
+	b.Run("Pending", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = full.Pending(storeName)
+		}
+		assert.True(b, got, "Pending reports the declaration under render")
+	})
+
+	b.Run("Body", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got symbol.Symbol
+		for c.Loop() {
+			got, _ = full.Body()
+		}
+		assert.Nil(b, got, "Body returns no callable outside a render")
+	})
+
+	b.Run("Policy", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got plugin.Policy
+		for c.Loop() {
+			got = full.Policy()
+		}
+		assert.Equal(b, got.Choice(widthKey), wideWidth, "Policy returns the policy of the render")
+	})
+
+	b.Run("Has", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = full.Has(auditPkg, rowName)
+		}
+		assert.True(b, got, "Has reports the entry that the file recorded")
 	})
 
 	b.Run("Paths", func(b *testing.B) {
@@ -956,7 +1284,15 @@ func importWrites() []importWrite {
 		{name: "SetHome", write: func(s *render.ImportSet) { s.SetHome(storePkg) }},
 		{name: "SetPackage", write: func(s *render.ImportSet) { s.SetPackage(refs[1]) }},
 		{name: "SetReferents", write: func(s *render.ImportSet) { s.SetReferents(refs) }},
+		{name: "SetPolicy", write: func(s *render.ImportSet) { s.SetPolicy(plugin.Policy{}) }},
 		{name: "Reserve", write: func(s *render.ImportSet) { s.Reserve(rowName) }},
+		{
+			name: "Enter",
+			write: func(s *render.ImportSet) {
+				s.Reserve(rowName)
+				s.Enter(rowName)
+			},
+		},
 		{
 			name:     "Bind",
 			caseName: "a name no other package binds",
@@ -1014,9 +1350,13 @@ func grownSet() *render.ImportSet {
 // filledSet returns a set for the file of storePkg with [filledEntries]
 // entries over [filledPaths] paths, a declaration of the file named
 // storeName, [filledPackages] paths whose declared names the file read,
-// and the files of [referents] as the files that the file refers into.
-func filledSet() *render.ImportSet {
+// the files of [referents] as the files that the file refers into, and
+// the policy of [widthPolicy].
+func filledSet(tb assert.TB) *render.ImportSet {
+	tb.Helper()
+
 	s := &render.ImportSet{}
+	s.SetPolicy(widthPolicy(tb))
 	s.SetNames(declaring)
 	s.SetPackage(referents()[1])
 	s.SetReferents(referents())
@@ -1051,4 +1391,29 @@ func declaring(path string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// owning returns the fixture language with a struct spelling that places
+// its nested types one tab deep and then the bodies of its methods behind
+// the member indent, and with [owned] as its scaffold.
+func owning() render.Language {
+	l := language()
+	l.MemberIndent = memberIndent
+	l.Scaffold = owned
+	l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
+		"{{- range .Types.Items}}\n" + action(render.BuiltinNested, strconv.Quote("\t"), ".") + "{{- end}}" +
+		"{{- range .Methods.Items}}\n" + action(render.BuiltinMemberBody, ".") + "{{- end}}\n}\n"
+	return l
+}
+
+// owned spells a statement as the name of the callable whose body the
+// import set names, the word in, and the name of the host of the body, or
+// noHost for a body without a host.
+func owned(_ emit.Stmt, set *render.ImportSet) ([]byte, error) {
+	callable, host := set.Body()
+	name := emit.DeclaredName(callable)
+	if m, member := callable.(*emit.Method); member {
+		name = m.Name
+	}
+	return []byte("\t" + name + " in " + cmp.Or(emit.DeclaredName(host), noHost) + "\n"), nil
 }

@@ -30,7 +30,7 @@ const skeletonName = "file"
 // for concurrent use: its fields are fixed at [New], and every
 // render call has frames of its own. Within one call, files
 // render in parallel on up to GOMAXPROCS workers. The language's
-// Scaffold, Imports, Finalise and Cluster, every helper in its
+// Scaffold, Value, Imports, Finalise and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
 // trees run on those workers concurrently, so each must be safe
 // for concurrent use. Naming and Split run where the plan's layout
@@ -50,6 +50,9 @@ type Pass struct {
 	split    Split
 	cluster  Cluster
 	scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
+	// value is the language's [Language.Value], which the value builtin
+	// calls, and nil for a language without a writer of values.
+	value    func(v emit.Value, set *ImportSet) (string, error)
 	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
 	coverage Coverage
@@ -166,7 +169,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		name: name, kinds: kinds, refused: maps.Clone(l.Refused),
 		groups: groups, file: file, shared: shared,
 		vocab: l.Funcs, spell: l.Naming, split: l.Split, cluster: l.Cluster,
-		scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
+		scaffold: l.Scaffold, value: l.Value, imports: l.Imports, final: l.Finalise,
 		coverage: l.Coverage, memberIndent: l.MemberIndent, templateImport: l.TemplateImport,
 	}, nil
 }
@@ -191,7 +194,9 @@ func (p *Pass) SplitUnit(u plugin.Unit) []plugin.Unit {
 // and a rendered file lists its own in its Findings. The import set of
 // each file reads the declared names of the context's Names, and a
 // rendered file lists the packages whose names it read in its Packages.
-// A returned error is a defect in the inputs, never a finding.
+// The import set of each file has the context's Policy, and it names each
+// declaration under render. A returned error is a defect in the inputs,
+// never a finding.
 func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	if ctx == nil || ctx.Emit == nil {
 		return nil, errors.New("render: the pass needs a plan's emit store")
@@ -237,6 +242,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				trees: ctx.Trees, merged: merged,
 			}
 			w.set.SetNames(ctx.Names)
+			w.set.SetPolicy(ctx.Policy)
 			b, err := p.bind(w)
 			if err != nil {
 				bindErr.CompareAndSwap(nil, &err)
@@ -356,6 +362,10 @@ type frame struct {
 	// head is the header of the file under render, which the header
 	// builtin returns.
 	head *emit.File
+	// decl is the declaration whose kind template or group template
+	// executes, which the import set names as the host of a body. It is
+	// nil while the template of a claimed file executes.
+	decl symbol.Symbol
 	// bound is the frame's own template set once bind ran, which the
 	// nested builtin renders through.
 	bound *bound
@@ -415,6 +425,7 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		BuiltinDecls:      f.decls,
 		BuiltinNested:     f.nested,
 		BuiltinHeader:     f.header,
+		BuiltinValue:      f.value,
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(p.kinds))
 	for k, t := range p.kinds {

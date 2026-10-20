@@ -55,7 +55,8 @@ type SourceRules interface {
 	// classify, and the fold keeps an inline reference inline then.
 	// Where it returns a structural form without children
 	// for a reference with type arguments, the kernel's fold takes the
-	// folded arguments as the form's children.
+	// folded arguments as the form's children, and the first argument
+	// alone as the child of a stream.
 	Builtin(ref *node.TypeRef, v View) TypeShape
 
 	// Resolve returns the declaration a human's spelling names in a
@@ -226,8 +227,11 @@ const (
 	// ShadowMerge keeps every arrival, as overloads: TypeScript
 	// interfaces.
 	ShadowMerge
-	// ShadowLinearise takes the nearest arrival, the first at one
-	// depth over the rest: Python.
+	// ShadowLinearise takes the arrivals from the type that comes
+	// first in the C3 linearization of the walked type, by the path
+	// that first reached it: the method resolution order of Python. A
+	// hierarchy without a linearization, which Python refuses, takes
+	// the nearest arrival, the first at one depth over the rest.
 	ShadowLinearise
 )
 
