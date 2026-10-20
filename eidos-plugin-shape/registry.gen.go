@@ -6032,4 +6032,5 @@ func Specs() []Spec {
 		},
 	}
 }
+
 // shapegen:provenance sha256:400bec0e68dd3298e93b3624b8f3fa0dc447c4e4d40a2ad3e02d77d0b4209469

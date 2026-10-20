@@ -17,4 +17,5 @@ func Detections() []shape.Detection {
 		{Shape: shape.ProbeReader, Detect: detectors.ProbeReader},
 	}
 }
+
 // shapegen:provenance sha256:1f52ac5b6c52d6d0758d2bc6992741c26743f4c9702e1a0e9b07e1aae954f1bc
